@@ -1,8 +1,10 @@
 rules_version = '2';
 
-// Day-one lockdown (SPEC §E): clients touch only their own data; cases and
-// availability are written ONLY by the Worker's service account (which
-// bypasses these rules); there is no open test mode, ever.
+// Day-one lockdown (SPEC §E): clients touch only their own data; cases,
+// availability, and subscription lifecycle are written ONLY by the Worker's
+// service account (which bypasses these rules). The single client-writable
+// surface on parent docs is the `lastMessage` chat pointer.
+// No open test mode, ever.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -13,6 +15,21 @@ service cloud.firestore {
     function isAdmin() {
       return signedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function validMessage() {
+      return request.resource.data.keys().hasOnly(['from', 'role', 'text', 'ts'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && (isAdmin()
+            ? request.resource.data.role == 'admin'
+            : request.resource.data.role == 'client');
+    }
+
+    function onlyLastMessageChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessage']);
     }
 
     match /users/{uid} {
@@ -27,17 +44,26 @@ service cloud.firestore {
     }
 
     match /cases/{caseId} {
-      // Case docs are created and mutated only by the Stripe webhook / Worker.
+      // Case docs are created and mutated by the Worker — except the
+      // lastMessage pointer, which chat participants may update.
       allow read: if signedIn() &&
         (resource.data.clientUid == request.auth.uid || isAdmin());
-      allow write: if false;
+      allow update: if signedIn()
+        && (resource.data.clientUid == request.auth.uid || isAdmin())
+        && onlyLastMessageChanged();
+      allow create, delete: if false;
 
-      // Chat arrives in Phase 3; readable now, writable by no one yet.
+      // Case chat: dies with the case (SPEC §H-6 — separate from subscriber chat).
       match /chat/{msgId} {
         allow read: if signedIn() &&
           (get(/databases/$(database)/documents/cases/$(caseId)).data.clientUid == request.auth.uid
             || isAdmin());
-        allow write: if false;
+        allow create: if signedIn()
+          && (get(/databases/$(database)/documents/cases/$(caseId)).data.clientUid == request.auth.uid
+              || isAdmin())
+          && get(/databases/$(database)/documents/cases/$(caseId)).data.status != 'closed'
+          && validMessage();
+        allow update, delete: if false;
       }
     }
 
@@ -48,9 +74,31 @@ service cloud.firestore {
     }
 
     match /subscriptions/{uid} {
-      // Pocket Advocate lands in Phase 3; access states come from Stripe webhooks.
+      // Lifecycle fields come from Stripe webhooks via the Worker.
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
-      allow write: if false;
+      allow update: if signedIn()
+        && (request.auth.uid == uid || isAdmin())
+        && onlyLastMessageChanged();
+      allow create, delete: if false;
+
+      // Subscriber chat: lives as long as the subscription (access runs to
+      // the end of the paid period — currentPeriodEnd is Worker-maintained).
+      match /chat/{msgId} {
+        allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+        allow create: if signedIn()
+          && validMessage()
+          && (isAdmin()
+              || (request.auth.uid == uid
+                  && request.time < get(/databases/$(database)/documents/subscriptions/$(uid)).data.currentPeriodEnd));
+        allow update, delete: if false;
+      }
+    }
+
+    match /settings/{doc} {
+      // e.g. settings/subscriberChat.expectationLine ("Eric typically replies
+      // within a few days") — public copy, Eric-controlled.
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     match /{document=**} {

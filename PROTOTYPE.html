@@ -88,6 +88,9 @@
   #tab-book:checked ~ #scr-stripe:checked  ~ main #s-stripe  { display: block; }
   #tab-book:checked ~ #scr-return:checked  ~ main #s-return  { display: block; }
   #tab-book:checked ~ #scr-case:checked    ~ main #s-case    { display: block; }
+  #tab-book:checked ~ #scr-subterms:checked  ~ main #s-subterms  { display: block; }
+  #tab-book:checked ~ #scr-substripe:checked ~ main #s-substripe { display: block; }
+  #tab-book:checked ~ #scr-subchat:checked   ~ main #s-subchat   { display: block; }
 
   .btn {
     display: inline-block; cursor: pointer; border-radius: 10px;
@@ -159,6 +162,17 @@
     .btn { padding: .55rem .95rem; font-size: .84rem; }
     .fine { font-size: .7rem; }
   }
+
+  /* chat mock */
+  .chat-log { display: flex; flex-direction: column; gap: .45rem; padding: .5rem 0; }
+  .msg { max-width: 82%; padding: .5rem .75rem; border-radius: 12px; font-size: .92rem; line-height: 1.45; }
+  .msg .meta { display: block; font-size: .64rem; color: var(--dim); margin-top: .15rem; }
+  .msg.me { align-self: flex-end; background: rgba(45,226,255,.12); border: 1px solid var(--cyan-dim); border-bottom-right-radius: 4px; }
+  .msg.them { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .chat-form { display: flex; gap: .5rem; margin-top: .4rem; }
+  .chat-form input { flex: 1; }
+  .p-dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; background: var(--cyan); box-shadow: var(--glow-c); margin-right: .3rem; }
+  .expectation { font-size: .85rem; color: var(--dim); font-style: italic; }
 
   /* ---------- wizard chrome ---------- */
   .crumbs { display: flex; flex-wrap: wrap; gap: .3rem; margin: 0 0 1rem; padding: 0; list-style: none; }
@@ -292,6 +306,9 @@
 <input class="vh" type="radio" name="scr" id="scr-stripe">
 <input class="vh" type="radio" name="scr" id="scr-return">
 <input class="vh" type="radio" name="scr" id="scr-case">
+<input class="vh" type="radio" name="scr" id="scr-subterms">
+<input class="vh" type="radio" name="scr" id="scr-substripe">
+<input class="vh" type="radio" name="scr" id="scr-subchat">
 
 <header class="bar">
   <div class="banner">PROTOTYPE — SIMULATED · NO REAL PAYMENT OR STORAGE</div>
@@ -355,11 +372,11 @@
     <p class="desc">One live deep-dive with Eric + your written report within 7 days.</p>
   </label>
 
-  <div class="pack rec-m">
+  <label class="pack rec-m" for="scr-subterms" tabindex="0">
     <span class="tag m">ALWAYS-ON</span>
     <h3>Pocket Advocate subscription</h3><span class="price">$20/mo</span>
-    <p class="desc">Anytime chat with Eric — he replies when he's free. Cancel anytime.</p>
-  </div>
+    <p class="desc">Anytime chat with Eric — he replies when he's free. Cancel anytime. Tap to try it.</p>
+  </label>
 
   <div class="pack">
     <h3>Follow-up add-on</h3><span class="price">+$50</span>
@@ -596,9 +613,69 @@
     <div class="privrow">
       <p class="dim small">Session: <strong style="color:var(--cyan);">PRIVATE</strong> — election revoked; the consent record keeps the history. Nothing else changes.</p>
     </div>
-    <p class="dim small" style="margin-bottom:0;">Uploads, live chat with Eric, and the report all land here in Phase 2–3.</p>
+    <h3 style="margin-top:1rem;">Chat with Eric</h3>
+    <p style="margin:.15rem 0 .2rem;"><span class="p-dot"></span><span class="dim small">Eric is online</span></p>
+    <div class="chat-log">
+      <div class="msg me">Just uploaded my MRI report and the last two lab panels.<span class="meta">2:14 PM</span></div>
+      <div class="msg them">Got them. The ferritin trend is the first thing I want to walk through on the call — bring your symptom timeline too.<span class="meta">2:31 PM</span></div>
+    </div>
+    <div class="chat-form"><input type="text" placeholder="Write a message… (live in the real app)"><span class="btn" style="opacity:.5;">Send</span></div>
   </div>
   <footer class="legal">This case file is an advocacy record, not a medical record. Nothing in it is a diagnosis, treatment, or medical advice — share it with your care team. Emergency? Call 911.</footer>
+</section>
+
+
+<!-- ================= SUBSCRIPTION TERMS (form 5) ================= -->
+<section id="s-subterms">
+  <h1>Pocket Advocate subscription</h1>
+  <p class="dim small">An always-open chat line to Eric for <span class="mono" style="color:var(--magenta); font-weight:700;">$20/mo</span>. One read before you pay — the no-guarantee clause is the whole deal.</p>
+  <div class="reader">
+    <h3>The honest deal, up front</h3>
+    <p><strong>Response timing is never guaranteed.</strong> Your subscription buys an always-open chat line to your advocate, with his live online status visible. He replies on his own time, when he is available. Sometimes that is minutes; sometimes it is days. That trade-off is the deal, and by subscribing you accept it.</p>
+    <h3>Still not medical advice</h3>
+    <p>Nothing written in chat is a diagnosis, a treatment plan, or medical advice. Chat is for understanding your situation and preparing for your care team. Emergencies: call 911.</p>
+    <h3>Billing &amp; cancellation</h3>
+    <p>$20/month through Stripe, renewed automatically. Cancel anytime — access runs to the end of the period you paid for, and your message history stays visible to you.</p>
+    <h3>Separate from cases</h3>
+    <p>Case chats live in their case file and close with the case; this chat lives with your subscription.</p>
+    <p><em>DRAFT — reviewed by an attorney before the first paying client.</em></p>
+  </div>
+  <input type="checkbox" class="vh ackbox" id="ack-sub">
+  <label class="readbox" for="ack-sub"><span class="box"></span>Read it, end to end</label>
+  <div class="actions">
+    <label class="btn mute" for="scr-landing" tabindex="0">Back</label>
+    <label class="btn mag gated" for="scr-substripe" tabindex="0">Accept &amp; subscribe →</label>
+  </div>
+</section>
+
+<!-- ================= SIMULATED STRIPE (subscription) ================= -->
+<section id="s-substripe">
+  <div class="stripe-sim">
+    <div class="s-head"><span class="s-brand">Checkout — Pocket Advocate</span><span class="sim-tag">SIMULATED</span></div>
+    <div class="s-line"><span>Pocket Advocate subscription</span><span>$20.00 / month</span></div>
+    <div class="s-line total"><span>Due today</span><span>$20.00</span></div>
+    <div class="s-field">you@example.com</div>
+    <div class="s-field">Card number · MM/YY · CVC (disabled in prototype)</div>
+    <label class="s-pay" for="scr-subchat" tabindex="0">Subscribe</label>
+    <label class="s-cancel" for="scr-subterms" tabindex="0">← Cancel and return</label>
+  </div>
+  <p class="dim small" style="margin-top:.8rem;">Real app: Stripe's hosted page; renewals, failed payments, and cancellations sync back automatically.</p>
+</section>
+
+<!-- ================= SUBSCRIBER CHAT ================= -->
+<section id="s-subchat">
+  <h1>Your chat with Eric</h1>
+  <p style="margin:.2rem 0 .4rem;"><span class="p-dot"></span><span class="dim small">Eric is online</span>
+    <span class="expectation"> · "Eric typically replies within a few days."</span></p>
+  <div class="panel">
+    <div class="chat-log">
+      <div class="msg me">New symptom since Tuesday — tingling in the left hand, mostly mornings. Worth flagging to my neuro before the follow-up?<span class="meta">9:02 AM</span></div>
+      <div class="msg them">Yes — and write down exactly when it started and what makes it better or worse. That timeline is what gets it taken seriously instead of brushed off.<span class="meta">11:40 AM</span></div>
+    </div>
+    <div class="chat-form"><input type="text" placeholder="Write a message… (live in the real app)"><span class="btn" style="opacity:.5;">Send</span></div>
+  </div>
+  <p class="dim small">Renews August 11 · <span style="color:var(--cyan);">Manage subscription</span> (Stripe portal in the real app)</p>
+  <div class="actions"><label class="btn mute" for="scr-landing" tabindex="0">← Back to start</label></div>
 </section>
 
 </main>

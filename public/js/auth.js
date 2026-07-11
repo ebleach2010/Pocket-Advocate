@@ -2,12 +2,16 @@
 import {
   auth,
   db,
+  rtdb,
   doc,
   getDoc,
   setDoc,
   onAuthStateChanged,
   sendSignInLinkToEmail,
   signOut,
+  rtdbRef,
+  rtdbSet,
+  onDisconnect,
 } from './firebase.js';
 
 const EMAIL_KEY = 'pa-signin-email';
@@ -79,7 +83,20 @@ export async function requireAdmin() {
     location.href = '/';
     return null;
   }
+  startPresence();
   return user;
+}
+
+// Eric's presence sets itself while any admin page is open, and clears when
+// the connection drops (SPEC §D — Tether's onDisconnect pattern).
+function startPresence() {
+  try {
+    const presenceRef = rtdbRef(rtdb, 'presence/eric');
+    onDisconnect(presenceRef).set(false);
+    rtdbSet(presenceRef, true);
+  } catch (err) {
+    console.warn('presence unavailable', err);
+  }
 }
 
 /** Fills the shared top-nav sign-in/out state on any page that has it. */

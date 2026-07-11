@@ -7,6 +7,7 @@ import {
   ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata,
 } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
+import { mountChat, watchPresence } from './chat.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -111,6 +112,10 @@ function renderCase(c) {
          <progress data-progress max="100" value="0" hidden></progress>
          <p class="error" data-upload-error hidden></p>`}
     <ul class="filelist" data-files><li class="dim small">Loading files…</li></ul>
+
+    <h3 style="margin-top:1.1rem;">Chat with Eric</h3>
+    <p style="margin:.15rem 0 .3rem;"><span class="p-dot"></span><span class="p-label">Checking…</span></p>
+    <div data-chat></div>
   `;
 
   el.querySelector('[data-ics]')?.addEventListener('click', (e) => {
@@ -120,6 +125,16 @@ function renderCase(c) {
   el.querySelector('[data-private]')?.addEventListener('click', (e) => makePrivate(c.id, e.target));
   const input = el.querySelector('[data-file-input]');
   input?.addEventListener('change', () => uploadFiles(c, el, [...input.files]));
+
+  watchPresence(el);
+  mountChat({
+    container: el.querySelector('[data-chat]'),
+    parentPath: ['cases', c.id],
+    user,
+    myRole: 'client',
+    disabled: closed,
+    notice: 'This chat ended when the case closed. Your documents remain yours forever.',
+  });
   return el;
 }
 

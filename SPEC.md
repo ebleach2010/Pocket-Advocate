@@ -311,3 +311,4 @@ replies within a few days") and subscriptions can be paused from his side.
 6. **Merged or separate chats** when a Pocket Advocate subscriber also buys a case?
    (Recommended: separate — the case chat closes with the case; the subscriber chat
    lives as long as the subscription.)
+   ✅ **Implemented as recommended (Phase 3, 2026-07-11): separate chats.**

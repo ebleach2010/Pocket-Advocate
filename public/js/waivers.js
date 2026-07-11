@@ -52,3 +52,19 @@ export const WAIVERS = [
 
 export const ELECTION_QUOTE =
   'Other patients gain insight into their medical journey when live discussion of cases are presented. However, this is entirely optional depending on your privacy preferences.';
+
+// Form 5 (SPEC §B) — subscribers only. Same DRAFT status as forms 1–3.
+export const SUBSCRIPTION_TERMS = {
+  id: 'subscriptionTerms',
+  title: 'Pocket Advocate subscription terms',
+  body: `
+<h3>The honest deal, up front</h3>
+<p><strong>Response timing is never guaranteed.</strong> Your subscription buys an always-open chat line to your advocate, with his live online status visible. He replies on his own time, when he is available. Sometimes that is minutes; sometimes it is days. That trade-off is the deal, stated plainly, and by subscribing you accept it.</p>
+<h3>Still not medical advice</h3>
+<p>Everything in the service disclaimer applies to chat: nothing your advocate writes is a diagnosis, a treatment plan, or medical advice. Chat is for understanding your situation and preparing for your care team — it is not a substitute for one, and it is not for emergencies. If this is an emergency, call 911.</p>
+<h3>Billing & cancellation</h3>
+<p>$20 per month through Stripe, renewed automatically. Cancel anytime from the Manage Subscription page — access runs to the end of the period you already paid for, and your message history stays visible to you. If a renewal payment fails, access likewise runs out at the end of the paid period.</p>
+<h3>Separate from cases</h3>
+<p>The subscription is independent of any Advocacy Case. Case chats live in their case file and close with the case; this chat lives with your subscription.</p>
+<p><em>DRAFT — this document will be reviewed by an attorney before the service accepts its first paying client.</em></p>`,
+};

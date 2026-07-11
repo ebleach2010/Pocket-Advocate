@@ -7,6 +7,9 @@ One-time wiring to take the Phase 1 code live. Everything here is config, not co
 1. Create a project at console.firebase.google.com (US region for Firestore/Storage).
 2. **Auth** → enable the **Email link (passwordless)** sign-in provider. Add your
    domains (localhost:8787 and the production domain) to authorized domains.
+2b. **Realtime Database** → create an instance (any US location); paste its URL
+   into `databaseURL` in `public/js/firebase-config.js`. It powers Eric's
+   online-status dot; its rules deploy with the command below.
 3. **Firestore** → create the database, then deploy rules:
    `npx firebase deploy --only firestore:rules,storage:rules,database` (uses `firebase.json`).
 4. **Web app** → register one, copy the config object into
@@ -18,12 +21,15 @@ One-time wiring to take the Phase 1 code live. Everything here is config, not co
 ## 2. Worker config
 
 - `wrangler.jsonc` vars: set `FIREBASE_PROJECT_ID`, `FIREBASE_WEB_API_KEY`
-  (the same apiKey as the web config), and `PUBLIC_BASE_URL` (production origin).
+  (the same apiKey as the web config), `PUBLIC_BASE_URL` (production origin),
+  `ADMIN_EMAIL` (where Eric's chat nudges go), and `EMAIL_FROM` (a sender on
+  your verified Resend domain).
 - Secrets:
   ```
   wrangler secret put STRIPE_SECRET_KEY
   wrangler secret put STRIPE_WEBHOOK_SECRET
   wrangler secret put FIREBASE_SERVICE_ACCOUNT   # paste the JSON on one line
+  wrangler secret put RESEND_API_KEY
   ```
 - Local dev: copy `.dev.vars.example` → `.dev.vars`, fill in, then `npm run dev`.
 
@@ -31,10 +37,13 @@ One-time wiring to take the Phase 1 code live. Everything here is config, not co
 
 1. In the Stripe dashboard (start in test mode), grab the secret key.
 2. Add a webhook endpoint: `https://<domain>/api/stripe/webhook`, subscribed to
-   `checkout.session.completed` and `checkout.session.expired`. Copy the signing
-   secret into `STRIPE_WEBHOOK_SECRET`.
+   `checkout.session.completed`, `checkout.session.expired`,
+   `customer.subscription.updated`, `customer.subscription.deleted`, and
+   `invoice.payment_failed`. Copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
 3. No products need to be created — prices are defined inline ($100 case,
-   $50 add-on) in `worker/index.js`.
+   $50 add-on, $20/mo subscription) in `worker/index.js`. Enable the
+   **customer portal** (Settings → Billing → Customer portal) so subscribers
+   can cancel themselves.
 4. Local testing: `stripe listen --forward-to localhost:8787/api/stripe/webhook`.
 
 ## 4. Admin account
@@ -49,6 +58,14 @@ slots (the old `seed-slots` script still works but the editor replaces it).
 Admin pages: `/admin.html` (case list + report-due counters),
 `/admin-case.html?id=…` (files, join link, milestones, close),
 `/admin-availability.html` (slots).
+
+## 4b. Resend (email)
+
+1. Sign up at resend.com, verify your sending domain (or use their onboarding
+   domain for testing), and create an API key → `RESEND_API_KEY` secret.
+2. Set `EMAIL_FROM` in `wrangler.jsonc` to a sender on that domain.
+3. Emails no-op gracefully until both exist, so this can wait — but the
+   report-ready ping and chat nudges depend on it.
 
 ## 5. Deploy
 

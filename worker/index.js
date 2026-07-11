@@ -2,21 +2,28 @@
 //   POST   /api/checkout           hold a slot, create a Stripe Checkout Session
 //   GET    /api/case-for-session   poll after checkout: has the webhook made my case?
 //   POST   /api/make-private       revoke a public election (allowed until call time)
-//   POST   /api/stripe/webhook     checkout.session.completed -> create the case
+//   POST   /api/subscribe          Pocket Advocate subscription Checkout ($20/mo)
+//   POST   /api/portal             Stripe customer portal (manage/cancel)
+//   POST   /api/stripe/webhook     payments + subscription lifecycle -> Firestore
 //   POST   /api/admin/slots        open availability slots (admin)
 //   DELETE /api/admin/slots/:id    remove an open slot (admin)
 //   POST   /api/admin/case-update  join link / milestones / close (admin)
+// Plus a cron (see scheduled()) that emails unread-chat digests.
 // Everything else falls through to the static app in public/.
 
 import { requireUser } from './firebase-auth.js';
 import { getDoc, patchDoc, deleteDoc, queryDocs } from './firestore.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import { slotTimingProblem, windowProblem, HOLD_MINUTES } from './schedule.js';
+import { sendEmail } from './email.js';
 
 const CASE_PRICE_CENTS = 10000;
 const ADDON_PRICE_CENTS = 5000;
+const SUB_PRICE_CENTS = 2000;
 const METHODS = ['discord', 'zoom', 'phone'];
 const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording', 'election'];
+// A chat message this old with no in-app read gets an email nudge (spec: batched).
+const DIGEST_MIN_AGE_MS = 10 * 60_000;
 
 export default {
   async fetch(request, env, ctx) {
@@ -28,6 +35,10 @@ export default {
         return await handleCaseForSession(request, env, url);
       if (url.pathname === '/api/make-private' && request.method === 'POST')
         return await handleMakePrivate(request, env);
+      if (url.pathname === '/api/subscribe' && request.method === 'POST')
+        return await handleSubscribe(request, env);
+      if (url.pathname === '/api/portal' && request.method === 'POST')
+        return await handlePortal(request, env);
       if (url.pathname === '/api/stripe/webhook' && request.method === 'POST')
         return await handleWebhook(request, env);
       if (url.pathname === '/api/admin/slots' && request.method === 'POST')
@@ -42,6 +53,10 @@ export default {
       return json({ error: 'Internal error' }, 500);
     }
     return env.ASSETS.fetch(request);
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runChatDigest(env));
   },
 };
 
@@ -176,6 +191,56 @@ async function handleMakePrivate(request, env) {
   return json({ ok: true, choice: 'private' });
 }
 
+// ---- POST /api/subscribe ----  Body: { termsAckAt } (form 5 acknowledgment)
+async function handleSubscribe(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in to subscribe.' }, 401);
+  const { termsAckAt } = await request.json().catch(() => ({}));
+  if (typeof termsAckAt !== 'number')
+    return json({ error: 'Please read and acknowledge the subscription terms first.' }, 400);
+
+  const existing = await getDoc(env, `subscriptions/${user.uid}`);
+  if (existing && new Date(existing.data.currentPeriodEnd || 0) > new Date())
+    return json({ error: 'You already have an active subscription.' }, 409);
+
+  const session = await stripePost(env, '/checkout/sessions', {
+    mode: 'subscription',
+    customer_email: user.email || undefined,
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: 'usd',
+          unit_amount: SUB_PRICE_CENTS,
+          recurring: { interval: 'month' },
+          product_data: {
+            name: 'Pocket Advocate subscription',
+            description: 'Anytime chat with your advocate',
+          },
+        },
+      },
+    ],
+    success_url: `${env.PUBLIC_BASE_URL}/subscription.html?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${env.PUBLIC_BASE_URL}/subscribe.html?canceled=1`,
+    metadata: { uid: user.uid, termsAckAt: String(termsAckAt) },
+    subscription_data: { metadata: { uid: user.uid } },
+  });
+  return json({ url: session.url });
+}
+
+// ---- POST /api/portal ----  Manage/cancel via Stripe's customer portal
+async function handlePortal(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Unauthorized' }, 401);
+  const sub = await getDoc(env, `subscriptions/${user.uid}`);
+  if (!sub || !sub.data.stripeCustomerId) return json({ error: 'No subscription found.' }, 404);
+  const session = await stripePost(env, '/billing_portal/sessions', {
+    customer: sub.data.stripeCustomerId,
+    return_url: `${env.PUBLIC_BASE_URL}/subscription.html`,
+  });
+  return json({ url: session.url });
+}
+
 // ---- POST /api/stripe/webhook ----
 async function handleWebhook(request, env) {
   const payload = await request.text();
@@ -185,13 +250,114 @@ async function handleWebhook(request, env) {
     env.STRIPE_WEBHOOK_SECRET
   );
   if (!event) return json({ error: 'Invalid signature' }, 400);
+  const obj = event.data.object;
 
   if (event.type === 'checkout.session.completed') {
-    await createCaseFromSession(env, event.data.object);
+    if (obj.mode === 'subscription') await activateSubscription(env, obj);
+    else await createCaseFromSession(env, obj);
   } else if (event.type === 'checkout.session.expired') {
-    await releaseHold(env, event.data.object);
+    await releaseHold(env, obj);
+  } else if (
+    event.type === 'customer.subscription.updated' ||
+    event.type === 'customer.subscription.deleted'
+  ) {
+    await syncSubscription(env, obj);
+  } else if (event.type === 'invoice.payment_failed') {
+    await markSubscription(env, obj.customer, { status: 'past_due' });
   }
   return json({ received: true });
+}
+
+// ---- subscription lifecycle (SPEC: access runs to the end of the paid period) ----
+
+async function activateSubscription(env, session) {
+  const uid = session.metadata && session.metadata.uid;
+  if (!uid) return;
+  const now = new Date();
+  await patchDoc(env, `subscriptions/${uid}`, {
+    stripeCustomerId: session.customer || null,
+    subscriptionId: session.subscription || null,
+    status: 'active',
+    email: session.customer_email || session.customer_details?.email || null,
+    termsAckAt: session.metadata.termsAckAt
+      ? new Date(Number(session.metadata.termsAckAt))
+      : now,
+    startedAt: now,
+    // Provisional; the customer.subscription.updated event corrects it.
+    currentPeriodEnd: new Date(now.getTime() + 32 * 86_400_000),
+  });
+  const email = session.customer_email || session.customer_details?.email;
+  await sendEmail(env, {
+    to: email,
+    subject: 'Your Pocket Advocate subscription is live',
+    html: `<p>Your chat line to Eric is open. He replies when he's available — response
+      timing is never guaranteed, exactly as the terms you accepted say.</p>
+      <p><a href="${env.PUBLIC_BASE_URL}/subscription.html">Open your chat</a></p>`,
+  });
+}
+
+/** Handles customer.subscription.updated / .deleted. */
+async function syncSubscription(env, sub) {
+  const uid = (sub.metadata && sub.metadata.uid) || (await uidForCustomer(env, sub.customer));
+  if (!uid) return;
+  const status = sub.status === 'canceled' ? 'canceled' : sub.status;
+  const fields = { status };
+  if (sub.current_period_end) fields.currentPeriodEnd = new Date(sub.current_period_end * 1000);
+  await patchDoc(env, `subscriptions/${uid}`, fields, { mask: Object.keys(fields) });
+  if (status === 'canceled') {
+    const doc = await getDoc(env, `subscriptions/${uid}`);
+    await sendEmail(env, {
+      to: doc?.data.email,
+      subject: 'Your Pocket Advocate subscription has ended',
+      html: `<p>Your subscription is canceled. Chat access runs to the end of the period
+        you already paid for, and your message history stays visible to you.</p>`,
+    });
+  }
+}
+
+async function markSubscription(env, customerId, fields) {
+  const uid = await uidForCustomer(env, customerId);
+  if (!uid) return;
+  await patchDoc(env, `subscriptions/${uid}`, fields, { mask: Object.keys(fields) });
+}
+
+async function uidForCustomer(env, customerId) {
+  if (!customerId) return null;
+  const rows = await queryDocs(env, 'subscriptions', [
+    ['stripeCustomerId', 'EQUAL', customerId],
+  ], 1);
+  return rows.length ? rows[0].id : null;
+}
+
+// ---- chat email digest (cron, every 15 min) ----
+// One nudge per thread per run, only for messages old enough that the
+// recipient clearly hasn't seen them in-app. No message content in email.
+export async function runChatDigest(env, now = Date.now()) {
+  for (const coll of ['cases', 'subscriptions']) {
+    const rows = await queryDocs(env, coll, [['lastMessage.emailed', 'EQUAL', false]], 50);
+    for (const row of rows) {
+      const lm = row.data.lastMessage;
+      if (!lm || !lm.ts) continue;
+      if (now - new Date(lm.ts).getTime() < DIGEST_MIN_AGE_MS) continue;
+      const to = lm.role === 'admin'
+        ? row.data.clientEmail || row.data.email
+        : env.ADMIN_EMAIL;
+      const link = lm.role === 'admin'
+        ? coll === 'cases' ? '/case.html' : '/subscription.html'
+        : '/admin-chats.html';
+      if (to) {
+        await sendEmail(env, {
+          to,
+          subject: 'New message on Pocket Advocate',
+          html: `<p>You have an unread message waiting.</p>
+            <p><a href="${env.PUBLIC_BASE_URL}${link}">Open the chat</a></p>`,
+        });
+      }
+      await patchDoc(env, `${coll}/${row.id}`, { lastMessage: { emailed: true } }, {
+        mask: ['lastMessage.emailed'],
+      });
+    }
+  }
 }
 
 /** The ONLY place a case is ever created. */
@@ -246,6 +412,22 @@ async function createCaseFromSession(env, session) {
     },
     { mustNotExist: true }
   );
+
+  const clientEmail = m.email || session.customer_email;
+  if (clientEmail && start) {
+    const mtFmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Etc/GMT+7', weekday: 'long', month: 'long', day: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+    });
+    await sendEmail(env, {
+      to: clientEmail,
+      subject: 'Your Pocket Advocate case is open',
+      html: `<p>Payment confirmed — your case file is live.</p>
+        <p><strong>${mtFmt.format(start)} MST</strong> · ${m.method}</p>
+        <p>Upload labs, imaging, or records any time before the call.</p>
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+    });
+  }
 
   if (slot) {
     // Book the slot for this case. If a stale hold raced us (extremely
@@ -356,6 +538,13 @@ async function handleCaseUpdate(request, env) {
     if (doc.data.status === 'closed') return json({ error: 'Case is closed.' }, 409);
     await patchDoc(env, `cases/${caseId}`, { status: 'delivered', reportDeliveredAt: now }, {
       mask: ['status', 'reportDeliveredAt'],
+    });
+    await sendEmail(env, {
+      to: doc.data.clientEmail,
+      subject: 'Your Pocket Advocate report is ready',
+      html: `<p>Your written report is in your case file — yours to download,
+        print, and keep forever. Share it with your care team.</p>
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
     });
   } else if (action === 'close') {
     await patchDoc(env, `cases/${caseId}`, { status: 'closed', closedAt: now }, {

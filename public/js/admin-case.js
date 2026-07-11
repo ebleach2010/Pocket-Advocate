@@ -7,6 +7,7 @@ import {
   ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata,
 } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
+import { mountChat } from './chat.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 const caseId = new URLSearchParams(location.search).get('id');
@@ -77,6 +78,11 @@ function render(el) {
     </div>
 
     <div class="panel">
+      <h3>Chat with the client</h3>
+      <div id="chat"></div>
+    </div>
+
+    <div class="panel">
       <h3>Milestones</h3>
       <div class="actions" style="margin-top:.3rem;">
         <button class="btn secondary" data-action="recording-uploaded">Call done — start 7-day report clock</button>
@@ -93,6 +99,15 @@ function render(el) {
     upload(e.target.files[0], 'recording', 'recording-uploaded'));
   el.querySelector('#up-report').addEventListener('change', (e) =>
     upload(e.target.files[0], 'report', 'report-uploaded'));
+
+  mountChat({
+    container: el.querySelector('#chat'),
+    parentPath: ['cases', caseId],
+    user,
+    myRole: 'admin',
+    disabled: c.status === 'closed',
+    notice: 'Chat ended when this case closed.',
+  });
 }
 
 async function api(body) {

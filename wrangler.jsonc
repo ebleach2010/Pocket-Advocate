@@ -1,7 +1,8 @@
 // Cloudflare Worker config — same assets-hosting pattern as the Tether repo.
 // The Worker serves the static app from public/ and is the ONLY server-side code:
-// Stripe Checkout creation, the Stripe webhook (which creates cases), and the
-// scheduling trust boundary (72h lead time, 8am–6pm Mountain, slot holds).
+// Stripe Checkout creation, the Stripe webhook (which creates cases and syncs
+// subscriptions), the scheduling trust boundary (72h lead time, 8am–6pm MST,
+// slot holds), the admin API, and the chat email digest cron.
 {
   "name": "pocket-advocate",
   "main": "worker/index.js",
@@ -10,15 +11,23 @@
     "directory": "public",
     "binding": "ASSETS"
   },
+  "triggers": {
+    // Chat digest: email a nudge for unread messages (spec: batched email).
+    "crons": ["*/15 * * * *"]
+  },
   "vars": {
     // Non-secret config. Replace after creating the Firebase project (docs/SETUP.md).
     "FIREBASE_PROJECT_ID": "REPLACE_ME",
     "FIREBASE_WEB_API_KEY": "REPLACE_ME",
     // Where success/cancel URLs point. Production: the deployed origin.
-    "PUBLIC_BASE_URL": "http://localhost:8787"
+    "PUBLIC_BASE_URL": "http://localhost:8787",
+    // Email (Resend). EMAIL_FROM must be a verified sender/domain in Resend.
+    "EMAIL_FROM": "Pocket Advocate <no-reply@REPLACE_ME>",
+    "ADMIN_EMAIL": "REPLACE_ME"
   }
   // Secrets (never in this file — `wrangler secret put NAME`, or .dev.vars locally):
   //   STRIPE_SECRET_KEY          sk_live_... / sk_test_...
   //   STRIPE_WEBHOOK_SECRET      whsec_...
   //   FIREBASE_SERVICE_ACCOUNT   full service-account JSON, one line
+  //   RESEND_API_KEY             re_...
 }

@@ -15,8 +15,14 @@ import {
   getDoc,
   getDocs,
   setDoc,
+  addDoc,
+  updateDoc,
+  onSnapshot,
   query,
   where,
+  orderBy,
+  limit,
+  serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {
   getStorage,
@@ -26,12 +32,20 @@ import {
   getDownloadURL,
   getMetadata,
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js';
+import {
+  getDatabase,
+  ref as rtdbRef,
+  onValue,
+  set as rtdbSet,
+  onDisconnect,
+} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 import { firebaseConfig } from './firebase-config.js';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+export const rtdb = getDatabase(app);
 export {
   onAuthStateChanged,
   sendSignInLinkToEmail,
@@ -43,11 +57,21 @@ export {
   getDoc,
   getDocs,
   setDoc,
+  addDoc,
+  updateDoc,
+  onSnapshot,
   query,
   where,
+  orderBy,
+  limit,
+  serverTimestamp,
   ref,
   uploadBytesResumable,
   listAll,
   getDownloadURL,
   getMetadata,
+  rtdbRef,
+  onValue,
+  rtdbSet,
+  onDisconnect,
 };
