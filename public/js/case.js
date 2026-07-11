@@ -5,7 +5,8 @@
 import { db, collection, getDocs, query, where } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
 
-const MOUNTAIN_TZ = 'America/Denver';
+// MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
+const MOUNTAIN_TZ = 'Etc/GMT+7';
 const STATUS_LABELS = {
   paid: 'Paid — finish your forms',
   forms: 'Paid — finish your forms',
@@ -49,7 +50,7 @@ function renderCase(c) {
   const start = c.appointment && toDate(c.appointment.start);
   const mtFmt = new Intl.DateTimeFormat('en-US', {
     timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric',
-    hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+    hour: 'numeric', minute: '2-digit',
   });
   const localFmt = new Intl.DateTimeFormat('en-US', {
     weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
@@ -77,7 +78,7 @@ function renderCase(c) {
       <h3>Advocacy Case</h3>
       <span class="muted small">${STATUS_LABELS[c.status] || c.status}</span>
     </div>
-    ${start ? `<p><strong>${mtFmt.format(start)}</strong><br><span class="muted small">${localFmt.format(start)} your time</span></p>` : ''}
+    ${start ? `<p><strong>${mtFmt.format(start)} MST</strong><br><span class="muted small">${localFmt.format(start)} your time</span></p>` : ''}
     <p class="muted small">${methodLine}</p>
     <p class="muted small">Session: <strong>${election.choice === 'public' ? 'Public — will be broadcast live on YouTube' : 'Private'}</strong></p>
     ${revocable ? `<p><button class="btn secondary" data-make-private="${c.id}">Make my session private</button></p>` : ''}

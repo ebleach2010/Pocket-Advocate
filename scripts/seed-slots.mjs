@@ -12,9 +12,9 @@
 import { initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
-const SLOT_START_HOURS = [9, 10, 11, 13, 14, 15, 16]; // Mountain time
+const SLOT_START_HOURS = [9, 10, 11, 13, 14, 15, 16]; // MST (fixed UTC-7)
 const SLOT_MINUTES = 60;
-const MOUNTAIN_TZ = 'America/Denver';
+const MOUNTAIN_TZ = 'Etc/GMT+7'; // = UTC-7 year-round; IANA inverts the sign
 
 const [fromArg, toArg] = process.argv.slice(2);
 if (!fromArg || !toArg) {
@@ -25,20 +25,10 @@ if (!fromArg || !toArg) {
 initializeApp({ credential: applicationDefault() });
 const db = getFirestore();
 
-// Find the UTC instant for a Mountain-time wall clock on a given date.
+// MST is fixed UTC-7, so the wall-clock conversion is pure arithmetic.
 function mountainDate(ymd, hour) {
   const [y, m, d] = ymd.split('-').map(Number);
-  // Start from a UTC guess and correct by the zone offset at that instant.
-  let guess = new Date(Date.UTC(y, m - 1, d, hour + 7)); // MST offset
-  for (let i = 0; i < 2; i++) {
-    const wall = new Intl.DateTimeFormat('en-US', {
-      timeZone: MOUNTAIN_TZ, hour: 'numeric', hour12: false,
-    }).format(guess);
-    const diff = hour - (Number(wall) % 24);
-    if (diff === 0) break;
-    guess = new Date(guess.getTime() + diff * 3600_000);
-  }
-  return guess;
+  return new Date(Date.UTC(y, m - 1, d, hour + 7));
 }
 
 let created = 0;

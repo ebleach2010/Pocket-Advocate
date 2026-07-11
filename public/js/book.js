@@ -8,7 +8,8 @@ import { db, collection, getDocs, query, where } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
 import { WAIVERS, ELECTION_QUOTE } from './waivers.js';
 
-const MOUNTAIN_TZ = 'America/Denver';
+// MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
+const MOUNTAIN_TZ = 'Etc/GMT+7';
 const LEAD_TIME_MS = 72 * 3600 * 1000;
 
 const state = {
@@ -147,7 +148,7 @@ function renderElection(preselected = state.election) {
 async function renderSchedule() {
   const el = mount(`
     <h2>Pick a time</h2>
-    <p class="muted small">Times are anchored to Mountain time (8am–6pm), with your local time shown underneath. Appointments must be at least 72 hours out.</p>
+    <p class="muted small">Times are anchored to MST (8am–6pm), with your local time shown underneath. Appointments must be at least 72 hours out.</p>
     <div id="days"><p class="muted">Loading available times…</p></div>
     <p>
       <button class="btn quiet" id="back">Back</button>
@@ -185,12 +186,11 @@ async function renderSchedule() {
     timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric',
   });
   const mtFmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: MOUNTAIN_TZ, hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+    timeZone: MOUNTAIN_TZ, hour: 'numeric', minute: '2-digit',
   });
   const localFmt = new Intl.DateTimeFormat('en-US', {
     hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
   });
-  const sameZone = Intl.DateTimeFormat().resolvedOptions().timeZone === MOUNTAIN_TZ;
 
   const byDay = new Map();
   for (const slot of slots) {
@@ -206,8 +206,8 @@ async function renderSchedule() {
         ${daySlots
           .map(
             (s) => `<button class="slot" data-id="${s.id}">
-              ${mtFmt.format(s.start)}
-              ${sameZone ? '' : `<span class="local">${localFmt.format(s.start)} your time</span>`}
+              ${mtFmt.format(s.start)} MST
+              <span class="local">${localFmt.format(s.start)} your time</span>
             </button>`
           )
           .join('')}
@@ -286,7 +286,7 @@ function renderMethod() {
 function renderReview() {
   const mtFmt = new Intl.DateTimeFormat('en-US', {
     timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric',
-    hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+    hour: 'numeric', minute: '2-digit',
   });
   const methodLabel = { discord: 'Discord voice channel', zoom: 'Zoom call', phone: `Phone call to ${state.phone}` }[state.method];
 
@@ -295,7 +295,7 @@ function renderReview() {
     <div class="card">
       <div class="row"><h3>Advocacy Case</h3><span class="price">$100</span></div>
       <p class="muted small">
-        ${mtFmt.format(state.slot.start)}<br>
+        ${mtFmt.format(state.slot.start)} MST<br>
         ${methodLabel} · ${state.election === 'public' ? 'Public session (broadcast live; revocable until the broadcast starts)' : 'Private session'}
       </p>
     </div>

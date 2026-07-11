@@ -58,9 +58,9 @@ the API. Point the domain's DNS at the Worker route.
   cannot expire sooner than 30 minutes, and the hold must outlive the session
   so a paid checkout can never lose its slot. The `checkout.session.expired`
   webhook releases the hold the moment checkout is abandoned.
-- **"MST" is implemented as America/Denver** (Mountain local time, DST-aware).
-  If Eric truly wants fixed UTC-7 year-round, change `MOUNTAIN_TZ` in
-  `worker/schedule.js` and the two client files.
+- **MST is fixed UTC-7 year-round** (Eric's decision, 2026-07-11) — implemented
+  as the IANA zone `Etc/GMT+7`, which is UTC-7 (the sign is inverted by design).
+  Bookable hours never shift with daylight saving.
 - **Case creation is webhook-only.** The browser never writes to `cases` or
   `availability` (see `firestore.rules`); it only reads. The Worker's service
   account bypasses rules by design.

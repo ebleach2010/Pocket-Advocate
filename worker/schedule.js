@@ -1,12 +1,13 @@
 // The scheduling trust boundary. The browser shows these rules; the Worker
-// enforces them. Times are anchored to Mountain time (America/Denver) per the
-// spec's "fixed Mountain anchor" — clients see their local equivalent, but
-// bookable windows never move with the client's timezone.
+// enforces them. Times are anchored to MST — fixed UTC-7 year-round, no
+// daylight-saving shift (Eric's call, 2026-07-11). Clients see their local
+// equivalent, but bookable windows never move with the client's timezone.
+// Note: the IANA 'Etc/GMT+7' zone IS UTC-7 (the sign is inverted by design).
 
 export const LEAD_TIME_HOURS = 72;
-export const OPEN_HOUR = 8; // 8am Mountain
-export const CLOSE_HOUR = 18; // 6pm Mountain
-export const MOUNTAIN_TZ = 'America/Denver';
+export const OPEN_HOUR = 8; // 8am MST
+export const CLOSE_HOUR = 18; // 6pm MST
+export const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Spec asks for a ~15-minute hold; Stripe Checkout sessions cannot expire in
 // less than 30 minutes, so the hold matches the session's real lifetime.
 export const HOLD_MINUTES = 30;
@@ -25,7 +26,7 @@ export function slotTimingProblem(startIso, durationMin, now = new Date()) {
   const startMinutes = startParts.hour * 60 + startParts.minute;
   const endMinutes = endParts.hour * 60 + endParts.minute;
   if (startMinutes < OPEN_HOUR * 60 || endMinutes > CLOSE_HOUR * 60 || endMinutes <= startMinutes)
-    return `Appointments run 8:00am–6:00pm Mountain time.`;
+    return `Appointments run 8:00am–6:00pm MST.`;
   return null;
 }
 
