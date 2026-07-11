@@ -5,217 +5,397 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pocket Advocate — Prototype</title>
 <style>
+  /* Neon system — deliberately single-theme: this design IS the dark screen. */
   :root {
-    --ground: #F6F9F8; --card: #FFFFFF; --ink: #1C2B2A; --muted: #5C6E6B;
-    --line: #DCE6E3; --accent: #2E7D6E; --accent-soft: #E4F0ED;
-    --amber: #A96F1A; --amber-soft: #F6EBD8; --danger: #9C4232; --btn-ink: #FFFFFF;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --ground: #0F1D1B; --card: #162624; --ink: #E4EEEB; --muted: #93A8A3;
-      --line: #27403C; --accent: #5FB3A1; --accent-soft: #1C3733;
-      --amber: #D9A24A; --amber-soft: #33290F; --danger: #D98871; --btn-ink: #0F1D1B;
-    }
-  }
-  :root[data-theme="dark"] {
-    --ground: #0F1D1B; --card: #162624; --ink: #E4EEEB; --muted: #93A8A3;
-    --line: #27403C; --accent: #5FB3A1; --accent-soft: #1C3733;
-    --amber: #D9A24A; --amber-soft: #33290F; --danger: #D98871; --btn-ink: #0F1D1B;
-  }
-  :root[data-theme="light"] {
-    --ground: #F6F9F8; --card: #FFFFFF; --ink: #1C2B2A; --muted: #5C6E6B;
-    --line: #DCE6E3; --accent: #2E7D6E; --accent-soft: #E4F0ED;
-    --amber: #A96F1A; --amber-soft: #F6EBD8; --danger: #9C4232; --btn-ink: #FFFFFF;
+    --bg: #07090F;
+    --panel: #0D1220;
+    --panel-2: #111830;
+    --ink: #EAF0FF;
+    --dim: #8A93AC;
+    --line: #1C2542;
+    --cyan: #2DE2FF;
+    --cyan-dim: #1596B0;
+    --magenta: #FF4FD8;
+    --danger: #FF6B6B;
+    --glow-c: 0 0 18px rgba(45, 226, 255, .35);
+    --glow-m: 0 0 18px rgba(255, 79, 216, .30);
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    margin: 0; background: var(--ground); color: var(--ink);
-    font-family: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
-    line-height: 1.6; font-size: 17px; -webkit-text-size-adjust: 100%;
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+    line-height: 1.5; font-size: 16px; -webkit-text-size-adjust: 100%;
+    background-image:
+      radial-gradient(1200px 500px at 85% -10%, rgba(45,226,255,.07), transparent 60%),
+      radial-gradient(900px 500px at 0% 110%, rgba(255,79,216,.06), transparent 60%);
+    background-attachment: fixed;
   }
-  main { max-width: 41rem; margin: 0 auto; padding: 1.5rem 1.25rem 5rem; }
-  h1, h2, h3 {
-    font-family: "Iowan Old Style", "Palatino", "Book Antiqua", Georgia, serif;
-    line-height: 1.2; text-wrap: balance; margin: 0 0 .6rem;
-  }
-  h1 { font-size: 1.8rem; } h2 { font-size: 1.35rem; } h3 { font-size: 1.05rem; }
-  p { margin: 0 0 1rem; }
-  a { color: var(--accent); }
-  .muted { color: var(--muted); }
-  .small { font-size: .85rem; }
+  h1, h2, h3 { margin: 0 0 .5rem; line-height: 1.15; letter-spacing: -.02em; font-weight: 800; text-wrap: balance; }
+  h1 { font-size: 1.7rem; } h2 { font-size: 1.25rem; } h3 { font-size: 1rem; }
+  p { margin: 0 0 .8rem; }
+  .dim { color: var(--dim); }
+  .small { font-size: .84rem; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 
-  .demo-banner {
-    background: var(--amber-soft); color: var(--amber);
-    font-size: .78rem; font-weight: 600; letter-spacing: .06em;
-    text-align: center; padding: .45rem 1rem;
-  }
-  .topnav {
-    display: flex; justify-content: space-between; align-items: center; gap: 1rem;
-    max-width: 41rem; margin: 0 auto; padding: .9rem 1.25rem;
-    border-bottom: 1px solid var(--line); font-size: .9rem;
-  }
-  .topnav .brand { font-family: "Iowan Old Style", Georgia, serif; font-weight: 700; color: var(--ink); text-decoration: none; }
-  .topnav .restart { font-size: .85rem; }
-
-  .card {
-    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
-    padding: 1.1rem 1.2rem; margin-bottom: .9rem;
-  }
-  .notbox {
-    border-left: 3px solid var(--danger); padding: .2rem 0 .2rem 1rem;
-    color: var(--muted); font-size: .95rem; margin: 1rem 0;
-  }
-  .notbox strong { color: var(--ink); }
-  .btn {
-    display: inline-block; border: none; border-radius: 8px; cursor: pointer;
-    background: var(--accent); color: var(--btn-ink); font: inherit; font-weight: 600;
-    padding: .6rem 1.3rem; text-decoration: none;
-  }
-  .btn.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-  .btn.quiet { background: transparent; color: var(--muted); border: 1px solid var(--line); }
-  .price { font-family: "Iowan Old Style", Georgia, serif; font-size: 1.35rem; font-weight: 700; color: var(--amber); white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
-
-  input[type=email], input[type=tel] {
-    width: 100%; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: 8px;
-    background: var(--card); color: var(--ink); font: inherit;
-  }
-  .field-label { display: block; margin-bottom: .35rem; font-size: .9rem; color: var(--muted); }
-  .actions { margin-top: 1.2rem; display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
-
-  .waiver-body {
-    max-height: 42vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px;
-    padding: 1rem 1.1rem; background: var(--card); font-size: .93rem;
-  }
-  .waiver-body h3 { margin-top: 1rem; }
-
-  .crumbs { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 1.3rem; padding: 0; list-style: none; font-size: .72rem; }
-  .crumbs li { padding: .15rem .6rem; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
-  .crumbs li.now { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-  .crumbs li.done { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
-
-  .footer-disclaimer {
-    margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid var(--line);
-    font-size: .8rem; color: var(--muted);
+  .banner {
+    font: 600 .58rem/1.3 ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: .14em; text-align: center; padding: .2rem .8rem;
+    color: var(--magenta); background: rgba(255,79,216,.07);
+    border-bottom: 1px solid rgba(255,79,216,.18);
   }
 
-  /* ---- screens: one <section> each, driven purely by :target (no JS) ---- */
+  header.bar {
+    position: sticky; top: 0; z-index: 5;
+    background: rgba(7,9,15,.85); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar-inner {
+    max-width: 42rem; margin: 0 auto; padding: .55rem 1.1rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  }
+  .brand {
+    font: 800 1rem/1 "SF Pro Display", system-ui, sans-serif; letter-spacing: -.01em;
+    color: var(--ink); text-decoration: none;
+  }
+  .brand .spark { color: var(--cyan); text-shadow: var(--glow-c); }
+  .tabs { display: flex; gap: .3rem; }
+  .tabs label {
+    font: 600 .82rem/1 inherit; color: var(--dim); cursor: pointer;
+    padding: .45rem .85rem; border-radius: 999px; border: 1px solid transparent;
+  }
+  #tab-book:checked ~ header label[for="tab-book"],
+  #tab-about:checked ~ header label[for="tab-about"] {
+    color: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c);
+  }
+
+  main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
   main > section { display: none; }
-  main > section:target { display: block; }
-  /* #landing is the LAST section, so any targeted screen before it hides it */
-  #landing { display: block; }
-  main > section:target ~ #landing { display: none; }
 
-  /* visually hidden radio/checkbox inputs that drive CSS state */
+  /* ---- navigation: hidden radios, zero JS, zero URL fragments ---- */
   .vh { position: absolute; opacity: 0; pointer-events: none; }
+  #tab-about:checked ~ main #s-about { display: block; }
+  #tab-book:checked ~ #scr-landing:checked ~ main #s-landing { display: flex; }
+  #tab-book:checked ~ #scr-signin:checked  ~ main #s-signin  { display: block; }
+  #tab-book:checked ~ #scr-w1:checked      ~ main #s-w1      { display: block; }
+  #tab-book:checked ~ #scr-w2:checked      ~ main #s-w2      { display: block; }
+  #tab-book:checked ~ #scr-w3:checked      ~ main #s-w3      { display: block; }
+  #tab-book:checked ~ #scr-elect:checked   ~ main #s-elect   { display: block; }
+  #tab-book:checked ~ #scr-sched:checked   ~ main #s-sched   { display: block; }
+  #tab-book:checked ~ #scr-method:checked  ~ main #s-method  { display: block; }
+  #tab-book:checked ~ #scr-review:checked  ~ main #s-review  { display: block; }
+  #tab-book:checked ~ #scr-stripe:checked  ~ main #s-stripe  { display: block; }
+  #tab-book:checked ~ #scr-return:checked  ~ main #s-return  { display: block; }
+  #tab-book:checked ~ #scr-case:checked    ~ main #s-case    { display: block; }
 
-  /* read-acknowledge gate: checkbox unlocks the continue link */
-  .gated { pointer-events: none; opacity: .45; }
+  .btn {
+    display: inline-block; cursor: pointer; border-radius: 10px;
+    font: 700 .92rem/1 inherit; letter-spacing: .01em;
+    padding: .7rem 1.25rem; text-decoration: none; border: 1px solid var(--cyan);
+    color: #041018; background: var(--cyan); box-shadow: var(--glow-c);
+  }
+  .btn.ghost { background: transparent; color: var(--cyan); box-shadow: none; }
+  .btn.mute { background: transparent; color: var(--dim); border-color: var(--line); box-shadow: none; }
+  .btn.mag { background: var(--magenta); border-color: var(--magenta); color: #1A0413; box-shadow: var(--glow-m); }
+  .actions { margin-top: 1.1rem; display: flex; gap: .55rem; flex-wrap: wrap; align-items: center; }
+  .gated { pointer-events: none; opacity: .35; }
   .ackbox:checked ~ .actions .gated { pointer-events: auto; opacity: 1; }
-  .readbox { display: block; margin-top: .8rem; font-size: .9rem; color: var(--muted); cursor: pointer; }
-  .readbox .box::before { content: "☐ "; }
-  .ackbox:checked ~ .readbox .box::before { content: "☑ "; color: var(--accent); }
 
-  /* choice cards (election, add-on) */
-  .choice { display: block; border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin-bottom: .8rem; cursor: pointer; background: var(--card); }
-  .vh:checked + .choice { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .consent-quote {
-    margin: 1rem 0; padding: 1rem 1.2rem; background: var(--accent-soft); border-radius: 10px;
-    font-family: "Iowan Old Style", Georgia, serif; font-style: italic;
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: .95rem 1.05rem;
   }
 
-  /* slot picker */
-  .day { margin-bottom: 1rem; }
-  .day h3 { font-family: inherit; font-size: .82rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-  .slots { display: flex; flex-wrap: wrap; gap: .5rem; }
+  /* ---------- LANDING: one screen, no scroll ---------- */
+  #s-landing {
+    flex-direction: column; justify-content: center; gap: .55rem;
+    min-height: min(calc(100dvh - 10rem), 40rem);
+  }
+  .hero-eyebrow {
+    font: 600 .68rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .22em;
+    color: var(--cyan); text-shadow: var(--glow-c);
+  }
+  #s-landing h1 { font-size: clamp(1.35rem, 5vw, 1.9rem); margin-bottom: .3rem; }
+  .hero-sub { color: var(--dim); font-size: .85rem; margin: 0; line-height: 1.4; }
+
+  .pack {
+    position: relative; display: grid; grid-template-columns: 1fr auto; gap: .1rem .8rem;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: .55rem .85rem; text-decoration: none; color: var(--ink);
+  }
+  .pack h3 { margin: 0; font-size: .98rem; }
+  .pack .desc { grid-column: 1 / -1; color: var(--dim); font-size: .78rem; margin: 0; line-height: 1.4; }
+  .pack .price {
+    font: 700 1.05rem/1.3 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .pack.rec-c { border-color: var(--cyan); box-shadow: var(--glow-c), inset 0 0 30px rgba(45,226,255,.05); }
+  .pack.rec-c .price { color: var(--cyan); }
+  .pack.rec-m { border-color: var(--magenta); box-shadow: var(--glow-m), inset 0 0 30px rgba(255,79,216,.05); }
+  .pack.rec-m .price { color: var(--magenta); }
+  .tag {
+    position: absolute; top: -.6rem; left: .9rem;
+    font: 700 .6rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .18em;
+    padding: .22rem .55rem; border-radius: 999px; background: var(--bg);
+  }
+  .tag.c { color: var(--cyan); border: 1px solid var(--cyan); box-shadow: var(--glow-c); }
+  .tag.m { color: var(--magenta); border: 1px solid var(--magenta); box-shadow: var(--glow-m); }
+  .fine {
+    font-size: .72rem; color: var(--dim); margin: 0; line-height: 1.45;
+  }
+  .fine strong { color: var(--ink); }
+
+  /* short screens (SE-class): tighten until the landing fits */
+  @media (max-height: 700px) {
+    #s-landing { gap: .4rem; }
+    #s-landing h1 { font-size: 1.2rem; }
+    .hero-sub { font-size: .78rem; }
+    .hero-eyebrow { font-size: .6rem; }
+    .pack { padding: .45rem .75rem; }
+    .pack h3 { font-size: .9rem; }
+    .pack .price { font-size: .95rem; }
+    .pack .desc { font-size: .7rem; }
+    .btn { padding: .55rem .95rem; font-size: .84rem; }
+    .fine { font-size: .62rem; }
+  }
+
+  /* ---------- wizard chrome ---------- */
+  .crumbs { display: flex; flex-wrap: wrap; gap: .3rem; margin: 0 0 1rem; padding: 0; list-style: none; }
+  .crumbs li {
+    font: 600 .62rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .08em;
+    padding: .28rem .55rem; border-radius: 999px; border: 1px solid var(--line); color: var(--dim);
+  }
+  .crumbs li.now { border-color: var(--cyan); color: var(--cyan); box-shadow: var(--glow-c); }
+  .crumbs li.done { border-color: var(--cyan-dim); color: var(--cyan-dim); }
+
+  .reader {
+    max-height: 40vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px;
+    padding: .9rem 1rem; background: var(--panel); font-size: .88rem;
+  }
+  .reader h3 { color: var(--cyan); font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; margin-top: .9rem; }
+  .reader h3:first-child { margin-top: 0; }
+  .readbox { display: block; margin-top: .7rem; font-size: .86rem; color: var(--dim); cursor: pointer; }
+  .readbox .box::before { content: "[ ] "; font-family: ui-monospace, monospace; color: var(--dim); }
+  .ackbox:checked ~ .readbox .box::before { content: "[x] "; color: var(--cyan); }
+
+  .choice {
+    display: block; border: 1px solid var(--line); border-radius: 12px;
+    padding: .85rem 1rem; margin-bottom: .7rem; cursor: pointer; background: var(--panel);
+  }
+  .vh:checked + .choice { border-color: var(--cyan); box-shadow: var(--glow-c); }
+  .quote {
+    margin: .9rem 0; padding: .85rem 1rem; border-left: 2px solid var(--magenta);
+    background: rgba(255,79,216,.05); border-radius: 0 10px 10px 0;
+    font-style: italic; font-size: .9rem; color: var(--ink);
+  }
+
+  .day { margin-bottom: .8rem; }
+  .day h3 { font: 600 .66rem/1 ui-monospace, monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-bottom: .45rem; }
+  .slots { display: flex; flex-wrap: wrap; gap: .45rem; }
   .slot {
-    display: inline-block; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink);
-    font-size: .88rem; padding: .45rem .7rem; cursor: pointer;
+    display: inline-block; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--panel); color: var(--ink); font-size: .84rem; padding: .4rem .65rem; cursor: pointer;
+    font-variant-numeric: tabular-nums;
   }
-  .slot .local { display: block; font-size: .72rem; color: var(--muted); }
-  .vh:checked + .slot { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .slot .local { display: block; font-size: .68rem; color: var(--dim); }
+  .vh:checked + .slot { border-color: var(--cyan); box-shadow: var(--glow-c); }
 
-  /* method chips + conditional phone row */
-  .chip-label { display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--line); border-radius: 999px; padding: .35rem .9rem; margin: 0 .4rem .5rem 0; cursor: pointer; background: var(--card); font-size: .9rem; }
-  .vh:checked + .chip-label { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-  .pref-badge { font-size: .7rem; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 .4rem; }
-  .phone-row { display: none; margin-top: .8rem; }
+  .chip {
+    display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--line);
+    border-radius: 999px; padding: .38rem .85rem; margin: 0 .35rem .45rem 0; cursor: pointer;
+    background: var(--panel); font-size: .86rem; color: var(--ink);
+  }
+  .vh:checked + .chip { border-color: var(--cyan); color: var(--cyan); box-shadow: var(--glow-c); }
+  .pref { font: 700 .6rem/1 ui-monospace, monospace; letter-spacing: .1em; color: var(--magenta); border: 1px solid var(--magenta); border-radius: 999px; padding: .15rem .4rem; }
+  .phone-row { display: none; margin-top: .7rem; }
   #m-phone:checked ~ .phone-row { display: block; }
 
-  /* add-on toggle swaps the displayed total */
+  input[type=email], input[type=tel] {
+    width: 100%; padding: .6rem .75rem; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--panel-2); color: var(--ink); font: inherit;
+  }
+  .field-label { display: block; margin-bottom: .3rem; font-size: .8rem; color: var(--dim); }
+
   .t-addon { display: none; }
   #addon:checked ~ .actions .t-addon { display: inline; }
   #addon:checked ~ .actions .t-base { display: none; }
 
-  /* simulated Stripe checkout — visibly a stand-in, styled unlike the app */
-  .stripe-sim { background: #1a1f36; border-radius: 12px; padding: 1.5rem 1.4rem; color: #e3e8ee; }
-  .stripe-sim .s-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; gap: .8rem; flex-wrap: wrap; }
-  .stripe-sim .s-brand { font-weight: 700; letter-spacing: .02em; color: #b7c0d1; font-size: .9rem; }
-  .stripe-sim .sim-tag { font-size: .7rem; border: 1px solid #8792a2; color: #b7c0d1; border-radius: 999px; padding: .1rem .55rem; letter-spacing: .08em; }
-  .stripe-sim .s-line { display: flex; justify-content: space-between; font-size: .92rem; padding: .45rem 0; border-bottom: 1px solid #2c3352; font-variant-numeric: tabular-nums; gap: 1rem; }
-  .stripe-sim .s-line.total { border-bottom: none; font-weight: 700; font-size: 1.05rem; }
-  .stripe-sim .s-field { background: #262b49; border: 1px solid #3c4368; border-radius: 6px; color: #8792a2; font-size: .85rem; padding: .55rem .7rem; margin: .4rem 0; }
-  .stripe-sim .s-pay { display: block; text-align: center; margin-top: 1rem; background: #635bff; color: #fff; border-radius: 6px; font-weight: 600; padding: .7rem; text-decoration: none; }
-  .stripe-sim .s-cancel { display: block; text-align: center; margin-top: .5rem; color: #8792a2; font-size: .85rem; text-decoration: none; }
+  .stripe-sim { background: #1a1f36; border: 1px solid #2c3352; border-radius: 14px; padding: 1.3rem 1.2rem; color: #e3e8ee; }
+  .stripe-sim .s-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: .8rem; flex-wrap: wrap; }
+  .stripe-sim .s-brand { font-weight: 700; color: #b7c0d1; font-size: .85rem; }
+  .stripe-sim .sim-tag { font: 600 .62rem/1 ui-monospace, monospace; border: 1px solid #8792a2; color: #b7c0d1; border-radius: 999px; padding: .2rem .5rem; letter-spacing: .1em; }
+  .stripe-sim .s-line { display: flex; justify-content: space-between; font-size: .88rem; padding: .4rem 0; border-bottom: 1px solid #2c3352; font-variant-numeric: tabular-nums; gap: 1rem; }
+  .stripe-sim .s-line.total { border-bottom: none; font-weight: 700; font-size: 1rem; }
+  .stripe-sim .s-field { background: #262b49; border: 1px solid #3c4368; border-radius: 8px; color: #8792a2; font-size: .8rem; padding: .5rem .65rem; margin: .35rem 0; }
+  .stripe-sim .s-pay { display: block; text-align: center; margin-top: .9rem; background: #635bff; color: #fff; border-radius: 8px; font-weight: 700; padding: .65rem; text-decoration: none; cursor: pointer; }
+  .stripe-sim .s-cancel { display: block; text-align: center; margin-top: .45rem; color: #8792a2; font-size: .8rem; cursor: pointer; }
 
-  /* case timeline */
-  .timeline { list-style: none; margin: 1rem 0; padding: 0; }
-  .timeline li { display: flex; gap: .6rem; align-items: baseline; padding: .25rem 0; font-size: .9rem; color: var(--muted); }
-  .timeline .t-dot { width: .65rem; height: .65rem; border-radius: 50%; border: 2px solid var(--line); flex: none; position: relative; top: .05rem; }
+  .timeline { list-style: none; margin: .8rem 0; padding: 0; }
+  .timeline li { display: flex; gap: .55rem; align-items: baseline; padding: .18rem 0; font-size: .86rem; color: var(--dim); }
+  .t-dot { width: .55rem; height: .55rem; border-radius: 50%; border: 2px solid var(--line); flex: none; }
   .timeline li.done { color: var(--ink); }
-  .timeline li.done .t-dot { background: var(--accent); border-color: var(--accent); }
-  .timeline li.now { color: var(--accent); font-weight: 600; }
-  .timeline li.now .t-dot { border-color: var(--accent); }
+  .timeline li.done .t-dot { background: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c); }
+  .timeline li.now { color: var(--cyan); font-weight: 600; }
+  .timeline li.now .t-dot { border-color: var(--cyan); box-shadow: var(--glow-c); }
 
-  /* make-private toggle on the case page */
   .privrow { display: none; }
   #mkpriv:checked ~ .pubrow { display: none; }
   #mkpriv:checked ~ .privrow { display: block; }
-  .btn-label { display: inline-block; border-radius: 8px; cursor: pointer; background: transparent; color: var(--accent); border: 1px solid var(--accent); font-weight: 600; padding: .6rem 1.3rem; }
 
-  a.btn:focus-visible, .slot:focus-visible, .choice:focus-visible, .chip-label:focus-visible, .btn-label:focus-visible {
-    outline: 2px solid var(--accent); outline-offset: 2px;
+  /* ---------- ABOUT tab ---------- */
+  #s-about h2 { color: var(--cyan); font-size: 1.05rem; margin-top: 1.8rem; }
+  #s-about h2:first-of-type { margin-top: .4rem; }
+  .steps-list { list-style: none; margin: .8rem 0 0; padding: 0; counter-reset: step; }
+  .steps-list li {
+    counter-increment: step; position: relative; padding: 0 0 1rem 2.4rem;
+    border-left: 1px solid var(--line); margin-left: .85rem; font-size: .9rem; color: var(--dim);
+  }
+  .steps-list li strong { color: var(--ink); display: block; font-size: .94rem; }
+  .steps-list li::before {
+    content: counter(step); position: absolute; left: -.95rem; top: -.1rem;
+    width: 1.8rem; height: 1.8rem; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font: 700 .78rem/1 ui-monospace, monospace; color: var(--cyan);
+    background: var(--bg); border: 1px solid var(--cyan); box-shadow: var(--glow-c);
+  }
+  .steps-list li:last-child { border-left-color: transparent; }
+
+  footer.legal {
+    margin-top: 2.2rem; padding-top: 1rem; border-top: 1px solid var(--line);
+    font-size: .74rem; color: var(--dim);
+  }
+
+  label.btn:focus-visible, .slot:focus-visible, .choice:focus-visible, .chip:focus-visible, .tabs label:focus-visible {
+    outline: 2px solid var(--magenta); outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .tag { animation: pulse 3s ease-in-out infinite; }
+    @keyframes pulse { 50% { filter: brightness(1.25); } }
   }
 </style>
 </head>
 <body>
 
-<div class="demo-banner">PROTOTYPE · SIMULATED DATA · NO REAL PAYMENT, EMAIL, OR STORAGE</div>
-<nav class="topnav">
-  <a class="brand" href="#landing">Pocket Advocate</a>
-  <a class="restart" href="#landing">Restart demo</a>
-</nav>
+<!-- navigation state: tabs + wizard screen. Pure CSS, no JS, no URL changes. -->
+<input class="vh" type="radio" name="tab" id="tab-book" checked>
+<input class="vh" type="radio" name="tab" id="tab-about">
+<input class="vh" type="radio" name="scr" id="scr-landing" checked>
+<input class="vh" type="radio" name="scr" id="scr-signin">
+<input class="vh" type="radio" name="scr" id="scr-w1">
+<input class="vh" type="radio" name="scr" id="scr-w2">
+<input class="vh" type="radio" name="scr" id="scr-w3">
+<input class="vh" type="radio" name="scr" id="scr-elect">
+<input class="vh" type="radio" name="scr" id="scr-sched">
+<input class="vh" type="radio" name="scr" id="scr-method">
+<input class="vh" type="radio" name="scr" id="scr-review">
+<input class="vh" type="radio" name="scr" id="scr-stripe">
+<input class="vh" type="radio" name="scr" id="scr-return">
+<input class="vh" type="radio" name="scr" id="scr-case">
+
+<header class="bar">
+  <div class="banner">PROTOTYPE — SIMULATED · NO REAL PAYMENT OR STORAGE</div>
+  <div class="bar-inner">
+    <span class="brand">Pocket<span class="spark">Advocate</span></span>
+    <nav class="tabs">
+      <label for="tab-book" tabindex="0">Book</label>
+      <label for="tab-about" tabindex="0">About</label>
+      <label for="scr-landing" tabindex="0" title="Back to the start">↺</label>
+    </nav>
+  </div>
+</header>
 
 <main>
 
-<!-- ============ SIGN IN ============ -->
-<section id="signin">
-  <h1>Sign in</h1>
-  <p class="muted">Enter your email and we'll send you a sign-in link. No password to remember.</p>
-  <div class="card">
-    <label class="field-label" for="email">Email address</label>
-    <input type="email" id="email" placeholder="you@example.com">
-    <label class="readbox"><input type="checkbox"> I confirm I am a resident of the United States. This service is offered to US residents only.</label>
-    <p class="muted small" style="margin-top:.8rem;">In the real app this sends a Firebase magic link to your inbox. In the prototype, just continue.</p>
-    <div class="actions"><a class="btn" href="#w1">Email me a sign-in link →</a></div>
-  </div>
-  <footer class="footer-disclaimer">This is advocacy, not medicine — no diagnosis, no treatment, no prescriptions, and not a substitute for your own care team. If this is an emergency, call 911.</footer>
+<!-- ================= ABOUT ================= -->
+<section id="s-about">
+  <h1>What this is, straight up</h1>
+  <p class="dim">You've sat in the 12-minute appointment. You've googled your own labs at 2am. You've left the specialist's office with more questions than you walked in with. Pocket Advocate exists for exactly that moment: someone in your corner who has lived this, speaks the language, and has the time your doctor doesn't.</p>
+
+  <h2>The purpose</h2>
+  <p class="dim small">Eric is a patient advocate — not a doctor, and that's the point. He doesn't diagnose or treat. He helps you <strong style="color:var(--ink)">understand what's in front of you</strong>: what your labs and imaging actually say in plain English, what questions will get real answers from your care team, and what options are worth raising at your next appointment. US clients only.</p>
+
+  <h2>How a case runs</h2>
+  <ol class="steps-list">
+    <li><strong>Sign in with your email</strong>No passwords. A link lands in your inbox, you tap it, you're in.</li>
+    <li><strong>Three short reads</strong>The disclaimer, the privacy terms, and recording consent — one screen each, so you know exactly what you're buying and exactly who sees your data (you and Eric; that's the list).</li>
+    <li><strong>Your call: public or private</strong>Private is the default. Or let your session stream live on the TheBroScientist YouTube channel so other patients can learn from it — your files stay private either way, and you can flip back to private any time before the broadcast starts.</li>
+    <li><strong>Pick a time, pick a channel, pay</strong>Slots run 8am–6pm MST, at least 72 hours out. Discord, Zoom, or a phone call. $100 through Stripe — the slot is only yours when the payment lands, and the case file opens itself the moment it does.</li>
+    <li><strong>Load your ammunition</strong>Labs, imaging, records — upload anything you want Eric to see before the call.</li>
+    <li><strong>The discussion</strong>A real conversation about your symptoms, your history, your dead ends. Recorded, and the recording is yours.</li>
+    <li><strong>The report — within 7 days</strong>A written battle plan: what was discussed, what to ask, where to push next, plus anything Eric dug up after the call. Yours forever, downloadable, printable.</li>
+    <li><strong>Follow-up if you want it</strong>Grab the +$50 follow-up at checkout for a second session on the same case. Skip it, and a later follow-up is simply a fresh case.</li>
+  </ol>
+
+  <h2>What you get out of it</h2>
+  <p class="dim small">A second set of eyes that has seen this movie before. Questions your doctor has to answer instead of deflect. A single organized file of your whole story — instead of a shoebox of PDFs. And a written plan you can put in front of any specialist, anywhere, forever.</p>
+
+  <h2>The subscription</h2>
+  <p class="dim small">Pocket Advocate subscription, $20/month: an always-open chat line to Eric, with his live online status. He answers when he's available — response time is never guaranteed, and the terms say so in plain words. That's the honest trade for $20. Completely separate from cases; cancel anytime.</p>
+
+  <h2>The honest legal picture</h2>
+  <p class="dim small">This is advocacy, not medicine — no diagnosis, no treatment, no prescriptions, no doctor-patient relationship, no emergency care (call 911). Your data is encrypted, stored in the US, visible to exactly two people, and deletable on request. A licensed attorney reviews every form before the first paying client.</p>
+
+  <div class="actions"><label class="btn" for="tab-book" tabindex="0">Go book a case →</label></div>
+
+  <footer class="legal">Pocket Advocate is a patient-advocacy service, offered to US residents only. It does not provide diagnosis, treatment, prescriptions, or medical advice, and does not create a doctor-patient relationship. If this is an emergency, call 911.</footer>
 </section>
 
-<!-- ============ WAIVER 1 ============ -->
-<section id="w1">
-  <h1>Book an Advocacy Case</h1>
-  <ol class="crumbs"><li class="now">Disclaimer</li><li>Privacy</li><li>Recording</li><li>Public/private</li><li>Time</li><li>Method</li><li>Pay</li></ol>
-  <h2>Service disclaimer &amp; waiver</h2>
-  <p class="muted small">Please read to the end. In the real app the acknowledge button stays locked until you've scrolled through the whole document.</p>
-  <div class="waiver-body">
+<!-- ================= LANDING (one screen, no scroll) ================= -->
+<section id="s-landing">
+  <div>
+    <div class="hero-eyebrow">PATIENT ADVOCACY · US ONLY</div>
+    <h1>Walk into your next appointment armed.</h1>
+    <p class="hero-sub">Eric turns your labs, scans, and story into questions that get answers — and a written plan you keep forever.</p>
+  </div>
+
+  <label class="pack rec-c" for="scr-signin" tabindex="0">
+    <span class="tag c">RECOMMENDED</span>
+    <h3>Advocacy Case</h3><span class="price">$100</span>
+    <p class="desc">Live 1-on-1 deep-dive + private case file + written report in 7 days. Tap to start.</p>
+  </label>
+
+  <div class="pack rec-m">
+    <span class="tag m">ALWAYS-ON</span>
+    <h3>Pocket Advocate subscription</h3><span class="price">$20/mo</span>
+    <p class="desc">24/7 chat line to Eric, live status shown. He replies when he's free — that's the deal. Cancel anytime.</p>
+  </div>
+
+  <div class="pack">
+    <h3>Follow-up add-on</h3><span class="price">+$50</span>
+    <p class="desc">Second session, same case. Offered once — at checkout only.</p>
+  </div>
+
+  <div class="actions" style="margin-top:.2rem;">
+    <label class="btn" for="scr-signin" tabindex="0">Book a case →</label>
+    <label class="btn ghost" for="tab-about" tabindex="0">How it works</label>
+  </div>
+
+  <p class="fine"><strong>Advocacy, not medicine.</strong> No diagnosis, no treatment, no prescriptions, not a substitute for your care team. Emergency? Call 911.</p>
+</section>
+
+<!-- ================= SIGN IN ================= -->
+<section id="s-signin">
+  <h1>Sign in</h1>
+  <p class="dim small">No passwords, ever. We email you a link; you tap it; you're in.</p>
+  <div class="panel">
+    <label class="field-label" for="email">Email</label>
+    <input type="email" id="email" placeholder="you@example.com">
+    <label class="readbox"><input type="checkbox"> I'm a US resident — this service is US-only.</label>
+    <p class="dim small" style="margin-top:.7rem;">The real app sends a Firebase magic link. The prototype just lets you through.</p>
+    <div class="actions"><label class="btn" for="scr-w1" tabindex="0">Send my link →</label></div>
+  </div>
+</section>
+
+<!-- ================= WAIVER 1 ================= -->
+<section id="s-w1">
+  <ol class="crumbs"><li class="now">TERMS</li><li>PRIVACY</li><li>RECORDING</li><li>PUBLIC?</li><li>TIME</li><li>CHANNEL</li><li>PAY</li></ol>
+  <h2>The unskippable part, 1 of 3</h2>
+  <p class="dim small">Know exactly what you're buying. In the real app this button stays locked until you've scrolled the whole document.</p>
+  <div class="reader">
     <h3>What this service is</h3>
     <p>Pocket Advocate is a <strong>patient-advocacy</strong> service offered to residents of the United States only. Your advocate helps you navigate your medical journey: organizing your story, helping you understand your labs and imaging in plain language, preparing questions to bring to your doctors, and identifying options to discuss with your care team.</p>
     <h3>What this service is NOT</h3>
-    <p>This service is <strong>not medical care</strong>. Specifically, it is:</p>
-    <p>• <strong>Not diagnosis, not treatment, and not prescriptions.</strong> Nothing said in a discussion, written in chat, or included in a report is a diagnosis, a treatment plan, or medical advice.<br>
-    • <strong>Not a doctor-patient relationship</strong>, and not a substitute for one.<br>
-    • <strong>Not therapy and not emergency care.</strong> If this is an emergency, call 911.</p>
+    <p>This service is <strong>not medical care</strong>. It is not diagnosis, not treatment, and not prescriptions. Nothing said in a discussion, written in chat, or included in a report is a diagnosis, a treatment plan, or medical advice. It is not a doctor-patient relationship, and not a substitute for one. It is not therapy and not emergency care — if this is an emergency, call 911.</p>
     <h3>The advocacy relationship</h3>
     <p>By purchasing an Advocacy Case you engage the advocate to review the materials you choose to share, discuss them with you, and prepare a written advocacy summary. You remain responsible for all decisions about your health, made together with your own licensed care team.</p>
     <h3>Limitation of liability</h3>
@@ -223,238 +403,201 @@
     <p><em>DRAFT — reviewed by an attorney before the first paying client.</em></p>
   </div>
   <input type="checkbox" class="vh ackbox" id="ack1">
-  <label class="readbox" for="ack1"><span class="box"></span>I have read this document to the end</label>
+  <label class="readbox" for="ack1"><span class="box"></span>Read it, end to end</label>
   <div class="actions">
-    <a class="btn quiet" href="#signin">Back</a>
-    <a class="btn gated" href="#w2">I acknowledge — continue</a>
+    <label class="btn mute" for="scr-signin" tabindex="0">Back</label>
+    <label class="btn gated" for="scr-w2" tabindex="0">Acknowledge →</label>
   </div>
 </section>
 
-<!-- ============ WAIVER 2 ============ -->
-<section id="w2">
-  <h1>Book an Advocacy Case</h1>
-  <ol class="crumbs"><li class="done">Disclaimer</li><li class="now">Privacy</li><li>Recording</li><li>Public/private</li><li>Time</li><li>Method</li><li>Pay</li></ol>
-  <h2>Privacy &amp; data handling</h2>
-  <div class="waiver-body">
+<!-- ================= WAIVER 2 ================= -->
+<section id="s-w2">
+  <ol class="crumbs"><li class="done">TERMS</li><li class="now">PRIVACY</li><li>RECORDING</li><li>PUBLIC?</li><li>TIME</li><li>CHANNEL</li><li>PAY</li></ol>
+  <h2>The unskippable part, 2 of 3</h2>
+  <div class="reader">
     <h3>What we store</h3>
     <p>Your account email; the files you choose to upload (labs, imaging, records); the recording of your discussion; the written report; and your chat messages.</p>
     <h3>Where it lives</h3>
-    <p>Google Firebase (United States region), encrypted in transit and at rest. Payments are processed by Stripe — your card details never touch this application.</p>
+    <p>Google Firebase (United States region), encrypted in transit and at rest. Payments run through Stripe — your card details never touch this application.</p>
     <h3>Who can see it</h3>
-    <p>Exactly two parties: <strong>you</strong> and <strong>your advocate (Eric)</strong>. If you elect a public session, the live discussion itself is broadcast — your uploaded files and case file are never public.</p>
+    <p>Two people: <strong>you</strong> and <strong>Eric</strong>. That's the entire list, enforced by security rules on every document and file. If you elect a public session, the live discussion itself is broadcast — your uploads and case file are never public.</p>
     <h3>Retention &amp; deletion</h3>
-    <p>Your case file remains available to you indefinitely after your case closes. You may request deletion of your account and all data at any time, honored within 30 days.</p>
+    <p>Your case file stays available to you indefinitely after your case closes. Request deletion of your account and all data any time; honored within 30 days.</p>
     <h3>Breach notification</h3>
     <p>If a breach affecting your data occurs, you will be notified promptly and candidly, consistent with the FTC Health Breach Notification Rule and applicable state law.</p>
     <p><em>DRAFT — reviewed by an attorney before the first paying client.</em></p>
   </div>
   <input type="checkbox" class="vh ackbox" id="ack2">
-  <label class="readbox" for="ack2"><span class="box"></span>I have read this document to the end</label>
+  <label class="readbox" for="ack2"><span class="box"></span>Read it, end to end</label>
   <div class="actions">
-    <a class="btn quiet" href="#w1">Back</a>
-    <a class="btn gated" href="#w3">I acknowledge — continue</a>
+    <label class="btn mute" for="scr-w1" tabindex="0">Back</label>
+    <label class="btn gated" for="scr-w3" tabindex="0">Acknowledge →</label>
   </div>
 </section>
 
-<!-- ============ WAIVER 3 ============ -->
-<section id="w3">
-  <h1>Book an Advocacy Case</h1>
-  <ol class="crumbs"><li class="done">Disclaimer</li><li class="done">Privacy</li><li class="now">Recording</li><li>Public/private</li><li>Time</li><li>Method</li><li>Pay</li></ol>
-  <h2>Recording consent</h2>
-  <div class="waiver-body">
+<!-- ================= WAIVER 3 ================= -->
+<section id="s-w3">
+  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="now">RECORDING</li><li>PUBLIC?</li><li>TIME</li><li>CHANNEL</li><li>PAY</li></ol>
+  <h2>The unskippable part, 3 of 3</h2>
+  <div class="reader">
     <h3>Your discussion is recorded</h3>
-    <p>Every Advocacy Case discussion is recorded so the recording can be placed in your private case file for you to revisit, download, and keep.</p>
-    <h3>What you are consenting to</h3>
-    <p>You give written consent for your advocate to record the audio and video of your discussion — Discord, Zoom, or phone. Written consent is collected from every participant before any recording begins, satisfying all-party consent laws (California, Washington, Florida, and others).</p>
+    <p>Every case discussion is recorded so the recording can live in your private case file — yours to revisit, download, and keep.</p>
+    <h3>What you're consenting to</h3>
+    <p>Written consent for your advocate to record the audio and video of your discussion — Discord, Zoom, or phone. Collected from every participant before recording begins, which satisfies all-party consent laws (California, Washington, Florida, and others).</p>
     <h3>Where the recording goes</h3>
-    <p>Into your case file, visible only to you and your advocate — unless you separately and explicitly elect a public session on the next screen. You can revoke a public election any time before the broadcast starts.</p>
+    <p>Into your case file, visible only to you and Eric — unless you separately and explicitly choose a public session on the next screen. A public choice can be revoked any time before the broadcast starts.</p>
     <p><em>DRAFT — reviewed by an attorney before the first paying client.</em></p>
   </div>
   <input type="checkbox" class="vh ackbox" id="ack3">
-  <label class="readbox" for="ack3"><span class="box"></span>I have read this document to the end</label>
+  <label class="readbox" for="ack3"><span class="box"></span>Read it, end to end</label>
   <div class="actions">
-    <a class="btn quiet" href="#w2">Back</a>
-    <a class="btn gated" href="#election">I acknowledge — continue</a>
+    <label class="btn mute" for="scr-w2" tabindex="0">Back</label>
+    <label class="btn gated" for="scr-elect" tabindex="0">Acknowledge →</label>
   </div>
 </section>
 
-<!-- ============ ELECTION ============ -->
-<section id="election">
-  <h1>Book an Advocacy Case</h1>
-  <ol class="crumbs"><li class="done">Disclaimer</li><li class="done">Privacy</li><li class="done">Recording</li><li class="now">Public/private</li><li>Time</li><li>Method</li><li>Pay</li></ol>
-  <h2>Public or private?</h2>
-  <blockquote class="consent-quote">"Other patients gain insight into their medical journey when live discussion of cases are presented. However, this is entirely optional depending on your privacy preferences."</blockquote>
-
+<!-- ================= ELECTION ================= -->
+<section id="s-elect">
+  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="done">RECORDING</li><li class="now">PUBLIC?</li><li>TIME</li><li>CHANNEL</li><li>PAY</li></ol>
+  <h2>Your session, your call</h2>
+  <blockquote class="quote">"Other patients gain insight into their medical journey when live discussion of cases are presented. However, this is entirely optional depending on your privacy preferences."</blockquote>
   <input type="radio" class="vh" name="election" id="e-private" checked>
   <label class="choice" for="e-private">
-    <strong>Private session</strong><br>
-    <span class="muted small">The discussion happens only between you and Eric. The recording lives only in your case file. Same price, every benefit included.</span>
+    <strong>Private</strong> <span class="dim small">— the default</span><br>
+    <span class="dim small">Just you and Eric. The recording lives in your file and nowhere else. Same price, every benefit.</span>
   </label>
   <input type="radio" class="vh" name="election" id="e-public">
   <label class="choice" for="e-public">
-    <strong>Public session</strong><br>
-    <span class="muted small">The live discussion is broadcast on the TheBroScientist YouTube channel so other patients can learn from it. You can make it private any time before the broadcast starts.</span>
+    <strong>Public</strong> <span class="dim small">— pay it forward</span><br>
+    <span class="dim small">Your session streams live on the TheBroScientist YouTube channel so other patients can learn from it. Change your mind any time before the broadcast starts — one tap.</span>
   </label>
   <div class="actions">
-    <a class="btn quiet" href="#w3">Back</a>
-    <a class="btn" href="#schedule">Continue</a>
+    <label class="btn mute" for="scr-w3" tabindex="0">Back</label>
+    <label class="btn" for="scr-sched" tabindex="0">Continue →</label>
   </div>
 </section>
 
-<!-- ============ SCHEDULE ============ -->
-<section id="schedule">
-  <h1>Book an Advocacy Case</h1>
-  <ol class="crumbs"><li class="done">Disclaimer</li><li class="done">Privacy</li><li class="done">Recording</li><li class="done">Public/private</li><li class="now">Time</li><li>Method</li><li>Pay</li></ol>
-  <h2>Pick a time</h2>
-  <p class="muted small">Times are anchored to MST — fixed UTC-7, year-round. In the real app the calendar is live, only times at least 72 hours out are shown, your actual local time appears under each slot, and the server enforces every rule again at payment. Example week (local times shown for Eastern):</p>
-
-  <div class="day"><h3>Monday, July 20</h3><div class="slots">
-    <input type="radio" class="vh" name="slot" id="s1"><label class="slot" for="s1">9:00 AM MST<span class="local">11:00 AM your time</span></label>
-    <input type="radio" class="vh" name="slot" id="s2"><label class="slot" for="s2">11:00 AM MST<span class="local">1:00 PM your time</span></label>
-    <input type="radio" class="vh" name="slot" id="s3"><label class="slot" for="s3">2:00 PM MST<span class="local">4:00 PM your time</span></label>
+<!-- ================= SCHEDULE ================= -->
+<section id="s-sched">
+  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="done">RECORDING</li><li class="done">PUBLIC?</li><li class="now">TIME</li><li>CHANNEL</li><li>PAY</li></ol>
+  <h2>Pick your slot</h2>
+  <p class="dim small">All times MST — fixed UTC-7, year-round. Live app shows your local time under each slot, only offers times 72+ hours out, and re-checks everything server-side at payment. Example week:</p>
+  <div class="day"><h3>Mon · Jul 20</h3><div class="slots">
+    <input type="radio" class="vh" name="slot" id="s1"><label class="slot" for="s1">9:00 AM<span class="local">11:00 AM yours</span></label>
+    <input type="radio" class="vh" name="slot" id="s2"><label class="slot" for="s2">11:00 AM<span class="local">1:00 PM yours</span></label>
+    <input type="radio" class="vh" name="slot" id="s3"><label class="slot" for="s3">2:00 PM<span class="local">4:00 PM yours</span></label>
   </div></div>
-  <div class="day"><h3>Tuesday, July 21</h3><div class="slots">
-    <input type="radio" class="vh" name="slot" id="s4"><label class="slot" for="s4">10:00 AM MST<span class="local">12:00 PM your time</span></label>
-    <input type="radio" class="vh" name="slot" id="s5" checked><label class="slot" for="s5">1:00 PM MST<span class="local">3:00 PM your time</span></label>
-    <input type="radio" class="vh" name="slot" id="s6"><label class="slot" for="s6">4:00 PM MST<span class="local">6:00 PM your time</span></label>
+  <div class="day"><h3>Tue · Jul 21</h3><div class="slots">
+    <input type="radio" class="vh" name="slot" id="s4"><label class="slot" for="s4">10:00 AM<span class="local">12:00 PM yours</span></label>
+    <input type="radio" class="vh" name="slot" id="s5" checked><label class="slot" for="s5">1:00 PM<span class="local">3:00 PM yours</span></label>
+    <input type="radio" class="vh" name="slot" id="s6"><label class="slot" for="s6">4:00 PM<span class="local">6:00 PM yours</span></label>
   </div></div>
-  <div class="day"><h3>Thursday, July 23</h3><div class="slots">
-    <input type="radio" class="vh" name="slot" id="s7"><label class="slot" for="s7">9:00 AM MST<span class="local">11:00 AM your time</span></label>
-    <input type="radio" class="vh" name="slot" id="s8"><label class="slot" for="s8">3:00 PM MST<span class="local">5:00 PM your time</span></label>
+  <div class="day"><h3>Thu · Jul 23</h3><div class="slots">
+    <input type="radio" class="vh" name="slot" id="s7"><label class="slot" for="s7">9:00 AM<span class="local">11:00 AM yours</span></label>
+    <input type="radio" class="vh" name="slot" id="s8"><label class="slot" for="s8">3:00 PM<span class="local">5:00 PM yours</span></label>
   </div></div>
-
   <div class="actions">
-    <a class="btn quiet" href="#election">Back</a>
-    <a class="btn" href="#method">Continue</a>
+    <label class="btn mute" for="scr-elect" tabindex="0">Back</label>
+    <label class="btn" for="scr-method" tabindex="0">Continue →</label>
   </div>
 </section>
 
-<!-- ============ METHOD ============ -->
-<section id="method">
-  <h1>Book an Advocacy Case</h1>
-  <ol class="crumbs"><li class="done">Disclaimer</li><li class="done">Privacy</li><li class="done">Recording</li><li class="done">Public/private</li><li class="done">Time</li><li class="now">Method</li><li>Pay</li></ol>
-  <h2>How should the call happen?</h2>
-
+<!-- ================= METHOD ================= -->
+<section id="s-method">
+  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="done">RECORDING</li><li class="done">PUBLIC?</li><li class="done">TIME</li><li class="now">CHANNEL</li><li>PAY</li></ol>
+  <h2>Where do we talk?</h2>
   <input type="radio" class="vh" name="method" id="m-discord" checked>
-  <label class="chip-label" for="m-discord">Discord voice channel <span class="pref-badge">Preferred</span></label>
+  <label class="chip" for="m-discord">Discord <span class="pref">PREFERRED</span></label>
   <input type="radio" class="vh" name="method" id="m-zoom">
-  <label class="chip-label" for="m-zoom">Zoom call</label>
+  <label class="chip" for="m-zoom">Zoom</label>
   <input type="radio" class="vh" name="method" id="m-phone">
-  <label class="chip-label" for="m-phone">Phone call</label>
-
-  <p class="muted small">Discord is preferred — you can stream your own camera there, so it works like any video meeting. Your case page will show the join link (or the number to expect) before the call.</p>
-
+  <label class="chip" for="m-phone">Phone</label>
+  <p class="dim small">Discord wins because you can stream your camera, your screen, whatever helps. Your case page shows the join link (or the number to expect) before the call.</p>
   <div class="phone-row">
-    <label class="field-label" for="phone">Your phone number (we'll call you)</label>
+    <label class="field-label" for="phone">Your number — Eric calls you</label>
     <input type="tel" id="phone" placeholder="+1 555 555 5555">
   </div>
-
   <div class="actions">
-    <a class="btn quiet" href="#schedule">Back</a>
-    <a class="btn" href="#review">Continue</a>
+    <label class="btn mute" for="scr-sched" tabindex="0">Back</label>
+    <label class="btn" for="scr-review" tabindex="0">Continue →</label>
   </div>
 </section>
 
-<!-- ============ REVIEW & PAY ============ -->
-<section id="review">
-  <h1>Book an Advocacy Case</h1>
-  <ol class="crumbs"><li class="done">Disclaimer</li><li class="done">Privacy</li><li class="done">Recording</li><li class="done">Public/private</li><li class="done">Time</li><li class="done">Method</li><li class="now">Pay</li></ol>
-  <h2>Review &amp; pay</h2>
-  <div class="card">
-    <div class="row"><h3>Advocacy Case</h3><span class="price">$100</span></div>
-    <p class="muted small">Tuesday, July 21 · 1:00 PM MST<br>Discord voice channel · Private session</p>
+<!-- ================= REVIEW & PAY ================= -->
+<section id="s-review">
+  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="done">RECORDING</li><li class="done">PUBLIC?</li><li class="done">TIME</li><li class="done">CHANNEL</li><li class="now">PAY</li></ol>
+  <h2>Lock it in</h2>
+  <div class="panel" style="margin-bottom:.8rem;">
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:1rem;">
+      <h3 style="margin:0;">Advocacy Case</h3><span class="mono" style="color:var(--cyan); font-weight:700;">$100</span>
+    </div>
+    <p class="dim small" style="margin:.3rem 0 0;">Tue Jul 21 · 1:00 PM MST · Discord · Private</p>
   </div>
-
   <input type="checkbox" class="vh" id="addon">
   <label class="choice" for="addon">
-    <strong>Add a follow-up discussion — +$50</strong><br>
-    <span class="muted small">A second schedulable discussion on this case, bookable any time after your report lands. Only available right now, at checkout — a follow-up later is a fresh $100 case.</span>
+    <strong>+ Follow-up session · $50</strong><br>
+    <span class="dim small">Second discussion on this case, bookable any time after your report lands. This offer exists right now and never again — later follow-ups are a fresh $100 case.</span>
   </label>
-
-  <p class="muted small">Your time slot is held while you complete payment. You'll be taken to Stripe's secure checkout — card details never touch this site.</p>
+  <p class="dim small">Your slot is held while you pay. Stripe handles the card — it never touches this site.</p>
   <div class="actions">
-    <a class="btn quiet" href="#method">Back</a>
-    <a class="btn" href="#stripe"><span class="t-base">Pay $100 &amp; book</span><span class="t-addon">Pay $150 &amp; book</span></a>
+    <label class="btn mute" for="scr-method" tabindex="0">Back</label>
+    <label class="btn mag" for="scr-stripe" tabindex="0"><span class="t-base">Pay $100 →</span><span class="t-addon">Pay $150 →</span></label>
   </div>
 </section>
 
-<!-- ============ SIMULATED STRIPE ============ -->
-<section id="stripe">
+<!-- ================= SIMULATED STRIPE ================= -->
+<section id="s-stripe">
   <div class="stripe-sim">
     <div class="s-head"><span class="s-brand">Checkout — Pocket Advocate</span><span class="sim-tag">SIMULATED</span></div>
     <div class="s-line"><span>Advocacy Case</span><span>$100.00</span></div>
     <div class="s-line"><span>Follow-up add-on (if selected)</span><span>$50.00</span></div>
-    <div class="s-line total"><span>Total due</span><span>$100 – $150</span></div>
+    <div class="s-line total"><span>Total due</span><span>$100–$150</span></div>
     <div class="s-field">you@example.com</div>
-    <div class="s-field">Card number · MM/YY · CVC (disabled in the prototype)</div>
-    <a class="s-pay" href="#return">Pay &amp; book</a>
-    <a class="s-cancel" href="#review">← Cancel and return</a>
+    <div class="s-field">Card number · MM/YY · CVC (disabled in prototype)</div>
+    <label class="s-pay" for="scr-return" tabindex="0">Pay &amp; book</label>
+    <label class="s-cancel" for="scr-review" tabindex="0">← Cancel and return</label>
   </div>
-  <p class="muted small" style="margin-top:1rem;">In the real app this is Stripe's hosted checkout page. Your slot is held while you're here; abandoning checkout releases it automatically.</p>
+  <p class="dim small" style="margin-top:.8rem;">Real app: this is Stripe's hosted page. Abandon it and your slot frees automatically.</p>
 </section>
 
-<!-- ============ RETURN ============ -->
-<section id="return">
-  <h1>Your case is open</h1>
-  <p class="muted">Payment confirmed. Your appointment is booked and your case file is ready.</p>
-  <p class="muted small">Behind the scenes: Stripe confirms the payment to the server, and the server — never your browser — creates the case and books the slot. A case cannot exist without a payment.</p>
-  <div class="actions"><a class="btn" href="#case">Go to my case</a></div>
+<!-- ================= RETURN ================= -->
+<section id="s-return">
+  <h1>Case open. <span style="color:var(--cyan); text-shadow:var(--glow-c);">You're in.</span></h1>
+  <p class="dim">Payment confirmed, appointment booked, case file live.</p>
+  <p class="dim small">Behind the curtain: Stripe tells the server, and the server — never your browser — creates the case and books the slot. No payment, no case, no exceptions.</p>
+  <div class="actions"><label class="btn" for="scr-case" tabindex="0">Open my case →</label></div>
 </section>
 
-<!-- ============ CASE ============ -->
-<section id="case">
-  <h1>My cases</h1>
-  <div class="card">
-    <div class="row"><h3>Advocacy Case</h3><span class="muted small">Confirmed</span></div>
-    <p><strong>Tuesday, July 21 · 1:00 PM MST</strong><br><span class="muted small">3:00 PM your time</span></p>
+<!-- ================= CASE ================= -->
+<section id="s-case">
+  <h1>My case</h1>
+  <div class="panel">
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:1rem;">
+      <h3 style="margin:0;">Advocacy Case</h3>
+      <span class="mono small" style="color:var(--cyan);">CONFIRMED</span>
+    </div>
+    <p style="margin:.5rem 0 0;"><strong>Tue Jul 21 · 1:00 PM MST</strong> <span class="dim small">(3:00 PM your time)</span></p>
     <ul class="timeline">
       <li class="done"><span class="t-dot"></span>Paid</li>
       <li class="done"><span class="t-dot"></span>Forms acknowledged</li>
       <li class="now"><span class="t-dot"></span>Confirmed — upload labs &amp; imaging before the call</li>
       <li><span class="t-dot"></span>The discussion</li>
-      <li><span class="t-dot"></span>Recording in your file</li>
-      <li><span class="t-dot"></span>Report (within 7 days of the call)</li>
-      <li><span class="t-dot"></span>Case closed — file stays yours forever</li>
+      <li><span class="t-dot"></span>Recording lands in your file</li>
+      <li><span class="t-dot"></span>Report — within 7 days of the call</li>
+      <li><span class="t-dot"></span>Closed — the file is yours forever</li>
     </ul>
-    <p class="muted small">Discord voice channel — the join link will appear here before the call.</p>
-
+    <p class="dim small">Discord — your join link appears here before the call.</p>
     <input type="checkbox" class="vh" id="mkpriv">
     <div class="pubrow">
-      <p class="muted small">Session: <strong>Public — will be broadcast live on YouTube</strong> <span class="muted">(shown if you chose public; choose private and this section never appears)</span></p>
-      <p><label class="btn-label" for="mkpriv">Make my session private</label></p>
+      <p class="dim small">Session: <strong style="color:var(--magenta);">PUBLIC</strong> — streams live on YouTube <span class="dim">(only shown if you chose public)</span></p>
+      <p><label class="btn ghost" for="mkpriv" tabindex="0">Make it private</label></p>
     </div>
     <div class="privrow">
-      <p class="muted small">Session: <strong>Private</strong> — your public election was revoked. The consent record keeps the history; nothing else about your case changes.</p>
+      <p class="dim small">Session: <strong style="color:var(--cyan);">PRIVATE</strong> — election revoked; the consent record keeps the history. Nothing else changes.</p>
     </div>
-
-    <p class="muted small">Uploads, chat with Eric, and the report all land here in Phase 2–3.</p>
+    <p class="dim small" style="margin-bottom:0;">Uploads, live chat with Eric, and the report all land here in Phase 2–3.</p>
   </div>
-  <footer class="footer-disclaimer">This case file is an advocacy record, not a medical record. Nothing in it is a diagnosis, treatment, or medical advice — share it with your care team. If this is an emergency, call 911.</footer>
-</section>
-
-<!-- ============ LANDING (last on purpose — the CSS relies on it) ============ -->
-<section id="landing">
-  <h1>An advocate in your corner for your medical journey</h1>
-  <p class="muted">Organize your story. Understand your labs and imaging in plain language. Walk into your next appointment with the right questions. Built on deep personal knowledge and lived experience. United States only.</p>
-  <p class="notbox"><strong>This is advocacy, not medicine.</strong> No diagnosis, no treatment, no prescriptions. Not a doctor-patient relationship, and not a substitute for one. Not therapy, and not emergency care — if this is an emergency, call 911.</p>
-  <h2>The offer</h2>
-  <div class="card">
-    <div class="row"><h3>Advocacy Case</h3><span class="price">$100</span></div>
-    <p class="muted small">A live discussion with Eric covering your symptoms, labs, and medical journey. A private case file holds your uploads, the call recording, and a live chat. Within one week of the call: a comprehensive written report and flow chart.</p>
-    <a class="btn" href="#signin">Book a case</a>
-  </div>
-  <div class="card">
-    <div class="row"><h3>Follow-up add-on</h3><span class="price">+$50</span></div>
-    <p class="muted small">Offered only at checkout. A second schedulable discussion on the same case, bookable any time after your report lands. Skip it, and a later follow-up is a fresh $100 case.</p>
-  </div>
-  <div class="card">
-    <div class="row"><h3>Pocket Advocate subscription</h3><span class="price">$20/mo</span></div>
-    <p class="muted small">Round-the-clock access to the chat with Eric, with his live online status. Eric replies on his own time — response timing is never guaranteed. Separate from cases. Cancel anytime.</p>
-    <span class="btn quiet">Coming in Phase 3</span>
-  </div>
-  <h2>Learn from real cases</h2>
-  <p class="muted small">If you choose, your session can be broadcast live on the TheBroScientist YouTube channel so others can learn from it — entirely optional, private by default, revocable any time before the broadcast starts.</p>
-  <footer class="footer-disclaimer">Pocket Advocate is a patient-advocacy service, offered to US residents only. It does not provide diagnosis, treatment, prescriptions, or medical advice, and does not create a doctor-patient relationship. If this is an emergency, call 911.</footer>
+  <footer class="legal">This case file is an advocacy record, not a medical record. Nothing in it is a diagnosis, treatment, or medical advice — share it with your care team. Emergency? Call 911.</footer>
 </section>
 
 </main>
