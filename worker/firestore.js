@@ -55,6 +55,14 @@ export async function patchDoc(env, path, data, options = {}) {
   return true;
 }
 
+/** Delete a document. Returns true (idempotent — deleting a missing doc is fine). */
+export async function deleteDoc(env, path) {
+  const res = await authedFetch(env, `${baseUrl(env)}/${path}`, { method: 'DELETE' });
+  if (!res.ok && res.status !== 404)
+    throw new Error(`firestore delete ${path}: ${res.status} ${await res.text()}`);
+  return true;
+}
+
 /** Run a simple single-collection query. Returns array of { id, data }. */
 export async function queryDocs(env, collectionId, filters, limit = 20) {
   const structuredQuery = {

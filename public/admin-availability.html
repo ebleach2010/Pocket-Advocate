@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Availability — Pocket Advocate admin</title>
+<link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
+    <nav class="tabs">
+      <a href="/admin.html">Cases</a>
+      <a href="/admin-availability.html" class="active">Availability</a>
+      <span data-nav-auth></span>
+    </nav>
+  </div>
+</header>
+<main>
+  <h1>Availability</h1>
+  <p class="dim small">All times MST — fixed UTC-7, year-round, 8am–6pm. Clients can only book slots you open here, 72+ hours out.</p>
+
+  <div class="panel">
+    <h3>Open new slots</h3>
+    <label>From <input type="date" id="from"></label>
+    <label style="margin-top:.5rem;">Through <input type="date" id="to"></label>
+    <label style="margin-top:.5rem;">Start times (MST, 60-minute sessions)</label>
+    <div id="hours"></div>
+    <label class="inline" style="margin-top:.5rem;"><input type="checkbox" id="weekdays" checked> Weekdays only</label>
+    <p class="error" id="create-error" hidden></p>
+    <p class="ok" id="create-ok" hidden></p>
+    <div class="actions"><button class="btn" id="create">Open these slots</button></div>
+  </div>
+
+  <h2 style="margin-top:1.5rem;">The calendar</h2>
+  <div id="calendar"><p class="dim">Loading…</p></div>
+</main>
+<script type="module" src="/js/admin-availability.js"></script>
+</body>
+</html>

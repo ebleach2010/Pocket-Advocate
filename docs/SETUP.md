@@ -37,15 +37,18 @@ One-time wiring to take the Phase 1 code live. Everything here is config, not co
    $50 add-on) in `worker/index.js`.
 4. Local testing: `stripe listen --forward-to localhost:8787/api/stripe/webhook`.
 
-## 4. Seed data & admin
+## 4. Admin account
 
 ```
 npm install
 GOOGLE_APPLICATION_CREDENTIALS=service-account.json npm run set-admin -- eric@example.com
-GOOGLE_APPLICATION_CREDENTIALS=service-account.json npm run seed-slots -- 2026-07-20 2026-08-15
 ```
 
-The availability editor (Phase 2) replaces the seed script.
+Then open **/admin-availability.html** signed in as that account to open booking
+slots (the old `seed-slots` script still works but the editor replaces it).
+Admin pages: `/admin.html` (case list + report-due counters),
+`/admin-case.html?id=…` (files, join link, milestones, close),
+`/admin-availability.html` (slots).
 
 ## 5. Deploy
 

@@ -80,8 +80,8 @@ function mount(html) {
 
 function renderWaiver(waiver) {
   const el = mount(`
-    <h2>${waiver.title}</h2>
-    <p class="muted small">Please read to the end. The acknowledge button unlocks when you've scrolled through the whole document.</p>
+    <h2>The unskippable part — ${waiver.title}</h2>
+    <p class="muted small">Know exactly what you're buying. The acknowledge button unlocks when you've scrolled to the end.</p>
     <div class="waiver-body" id="wbody">${waiver.body}</div>
     <p class="scroll-hint" id="hint">Scroll to the end to continue…</p>
     <p>
@@ -291,7 +291,7 @@ function renderReview() {
   const methodLabel = { discord: 'Discord voice channel', zoom: 'Zoom call', phone: `Phone call to ${state.phone}` }[state.method];
 
   const el = mount(`
-    <h2>Review & pay</h2>
+    <h2>Lock it in</h2>
     <div class="card">
       <div class="row"><h3>Advocacy Case</h3><span class="price">$100</span></div>
       <p class="muted small">

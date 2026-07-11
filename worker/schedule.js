@@ -19,7 +19,13 @@ export function slotTimingProblem(startIso, durationMin, now = new Date()) {
   const leadMs = start.getTime() - now.getTime();
   if (leadMs < LEAD_TIME_HOURS * 3600_000)
     return `Appointments must be booked at least ${LEAD_TIME_HOURS} hours in advance.`;
+  return windowProblem(startIso, durationMin);
+}
 
+/** The 8am–6pm MST window check alone — used when the admin opens slots. */
+export function windowProblem(startIso, durationMin) {
+  const start = new Date(startIso);
+  if (Number.isNaN(start.getTime())) return 'Invalid slot time.';
   const startParts = mountainParts(start);
   const end = new Date(start.getTime() + durationMin * 60_000);
   const endParts = mountainParts(end);

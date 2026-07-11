@@ -15,15 +15,18 @@ Static web app on Cloudflare (one Worker as the only server-side code) + Firebas
 
 ## Status
 
-**Phase 1 (skeleton + money) built:** landing, magic-link auth, waiver flow, public/private election, schedule-and-pay through the Worker + Stripe webhook, case created end-to-end. See §G of the spec for the phase plan and [docs/SETUP.md](docs/SETUP.md) to wire up Firebase/Stripe/Cloudflare.
+**Phases 1–2 built.** Phase 1 (skeleton + money): landing, magic-link auth, waiver flow, public/private election, schedule-and-pay through the Worker + Stripe webhook, case created end-to-end. Phase 2 (the case file): uploads to Storage, the client case dashboard (timeline, appointment card + calendar file, files, make-private), the admin side (case list with report-due counters, case detail with milestones, availability editor). Neon UI throughout. Next: Phase 3 (chat, presence, the subscription). See §G of the spec and [docs/SETUP.md](docs/SETUP.md) to wire up Firebase/Stripe/Cloudflare.
 
 ## Layout
 
 ```
-public/          static app (landing, sign-in, booking wizard, case view)
-worker/          the one Cloudflare Worker (checkout, Stripe webhook, trust boundary)
-firestore.rules  day-one security rules (clients read own data; Worker writes)
-storage.rules    per-case file access (uploads land in Phase 2)
-scripts/         seed availability slots, set the admin account
+public/          static app — client: landing, about, sign-in, booking wizard,
+                 case dashboard · admin: case list/detail, availability editor
+worker/          the one Cloudflare Worker (checkout, Stripe webhook, admin API,
+                 trust boundary)
+firestore.rules  clients read own data; cases/availability are Worker-writable only
+storage.rules    per-case file access; client uploads only while the case is open
+scripts/         set the admin account (slot seeding now lives in the admin UI)
 docs/SETUP.md    one-time Firebase / Stripe / Cloudflare wiring
+PROTOTYPE.html   self-contained click-through of the client flow (no backend needed)
 ```

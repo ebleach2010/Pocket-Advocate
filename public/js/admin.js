@@ -1,0 +1,71 @@
+// Admin case list: every case, status badges, and the "report due in N days"
+// countdown that keeps the 7-day SLA from silently slipping (SPEC §F).
+
+import { db, collection, getDocs } from './firebase.js';
+import { requireAdmin, hydrateNav } from './auth.js';
+
+const MOUNTAIN_TZ = 'Etc/GMT+7';
+const OPEN_ORDER = { awaiting_report: 0, confirmed: 1, forms: 2, paid: 3, delivered: 4, closed: 5 };
+
+hydrateNav();
+const user = await requireAdmin();
+if (user) load();
+
+async function load() {
+  const listEl = document.getElementById('list');
+  let cases = [];
+  try {
+    const snapshot = await getDocs(collection(db, 'cases'));
+    snapshot.forEach((d) => cases.push({ id: d.id, ...d.data() }));
+  } catch (err) {
+    listEl.innerHTML = `<p class="error">Couldn't load cases: ${err.message}</p>`;
+    return;
+  }
+  if (!cases.length) {
+    listEl.innerHTML = '<p class="dim">No cases yet. They appear here the moment a payment lands.</p>';
+    return;
+  }
+  cases.sort((a, b) =>
+    (OPEN_ORDER[a.status] ?? 9) - (OPEN_ORDER[b.status] ?? 9) ||
+    toDate(a.appointment?.start) - toDate(b.appointment?.start));
+
+  const mtFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+  listEl.innerHTML = cases.map((c) => {
+    const start = c.appointment && toDate(c.appointment.start);
+    return `
+    <a class="panel" style="display:block; text-decoration:none; color:inherit;" href="/admin-case.html?id=${c.id}">
+      <div class="row">
+        <strong>${esc(c.clientEmail || c.clientUid)}</strong>
+        <span class="status-pill ${c.status === 'closed' ? 'closed' : ''} ${dueSoon(c) ? 'due' : ''}">${badge(c)}</span>
+      </div>
+      <p class="dim small" style="margin:.3rem 0 0;">
+        ${start ? `${mtFmt.format(start)} MST · ${c.appointment.method}` : 'no appointment'}
+        · ${c.publicElection?.choice === 'public' ? 'PUBLIC' : 'private'}
+        ${c.addOnFollowUp ? '· +follow-up' : ''}
+        ${c.needsReschedule ? '· <strong style="color:var(--danger)">NEEDS RESCHEDULE</strong>' : ''}
+      </p>
+    </a>`;
+  }).join('');
+}
+
+function badge(c) {
+  if (c.status === 'awaiting_report' && c.reportDueAt) {
+    const days = Math.ceil((toDate(c.reportDueAt) - Date.now()) / 86_400_000);
+    return days >= 0 ? `REPORT DUE ${days}d` : `OVERDUE ${-days}d`;
+  }
+  return (c.status || '?').replace('_', ' ').toUpperCase();
+}
+function dueSoon(c) {
+  if (c.status !== 'awaiting_report' || !c.reportDueAt) return false;
+  return toDate(c.reportDueAt) - Date.now() < 3 * 86_400_000;
+}
+function toDate(v) {
+  if (!v) return new Date(0);
+  if (v.toDate) return v.toDate();
+  return new Date(v);
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}

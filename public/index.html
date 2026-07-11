@@ -7,50 +7,48 @@
 <link rel="stylesheet" href="/css/site.css">
 </head>
 <body>
-<nav class="topnav">
-  <a class="brand" href="/">Pocket Advocate</a>
-  <span data-nav-auth></span>
-</nav>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
+    <nav class="tabs">
+      <a href="/" class="active">Book</a>
+      <a href="/about.html">About</a>
+      <span data-nav-auth></span>
+    </nav>
+  </div>
+</header>
 <main>
-  <h1>An advocate in your corner for your medical journey</h1>
-  <p class="muted">Organize your story. Understand your labs and imaging in plain language. Walk into your next appointment with the right questions. Built on deep personal knowledge and lived experience. United States only.</p>
+  <section class="landing">
+    <div>
+      <div class="hero-eyebrow">PATIENT ADVOCACY · US ONLY</div>
+      <h1>Walk into your next appointment armed.</h1>
+      <p class="hero-sub">Eric turns your labs, scans, and story into questions that get answers — and a written plan you keep forever.</p>
+    </div>
 
-  <p class="notbox"><strong>This is advocacy, not medicine.</strong> No diagnosis, no treatment, no prescriptions. Not a doctor-patient relationship, and not a substitute for one. Not therapy, and not emergency care — if this is an emergency, call 911.</p>
+    <a class="pack rec-c" href="/book.html">
+      <span class="tag c">RECOMMENDED</span>
+      <h3>Advocacy Case</h3><span class="price">$100</span>
+      <p class="desc">Live 1-on-1 deep-dive + private case file + written report in 7 days. Tap to start.</p>
+    </a>
 
-  <h2>The offer</h2>
-  <div class="card">
-    <div class="row"><h3>Advocacy Case</h3><span class="price">$100</span></div>
-    <p class="muted small">A live discussion with Eric covering your symptoms, labs, and medical journey. A private case file holds your uploads, the call recording, and a live chat. Within one week of the call: a comprehensive written report and flow chart — what was discussed, next steps, and anything Eric found afterward.</p>
-    <a class="btn" href="/book.html">Book a case</a>
-  </div>
-  <div class="card">
-    <div class="row"><h3>Follow-up add-on</h3><span class="price">+$50</span></div>
-    <p class="muted small">Offered only at checkout. Adds a second schedulable discussion to the same case, bookable any time after your report lands. Skip it, and a later follow-up is a fresh $100 case with the full benefits.</p>
-  </div>
-  <div class="card">
-    <div class="row"><h3>Pocket Advocate subscription</h3><span class="price">$20/mo</span></div>
-    <p class="muted small">Round-the-clock access to the chat with Eric, with his live online status. Eric replies on his own time — response timing is never guaranteed, and that trade-off is stated plainly in the terms. Separate from cases. Cancel anytime.</p>
-    <span class="btn quiet" aria-disabled="true" title="Arriving in a later release">Coming soon</span>
-  </div>
+    <div class="pack rec-m">
+      <span class="tag m">ALWAYS-ON</span>
+      <h3>Pocket Advocate subscription</h3><span class="price">$20/mo</span>
+      <p class="desc">24/7 chat line to Eric, live status shown. He replies when he's free — that's the deal. Cancel anytime. Arrives Phase 3.</p>
+    </div>
 
-  <h2>Learn from real cases</h2>
-  <p class="muted">Other patients gain insight into their medical journey when live discussions of cases are presented. If you choose, your session can be broadcast live on the TheBroScientist YouTube channel so others can learn from it — <strong>entirely optional</strong>, private by default, and revocable any time before the broadcast starts. Choosing private never costs more and never removes any benefit.</p>
+    <div class="pack">
+      <h3>Follow-up add-on</h3><span class="price">+$50</span>
+      <p class="desc">Second session, same case. Offered once — at checkout only.</p>
+    </div>
 
-  <h2>Common questions</h2>
-  <div class="card">
-    <h3>Is this medical advice?</h3>
-    <p class="muted small">No. It is advocacy: help understanding your situation and preparing questions and options to discuss with your own care team.</p>
-    <h3>How does the call happen?</h3>
-    <p class="muted small">Your choice: a Discord voice channel (preferred — you can stream your camera there, so it works like any video meeting), a Zoom call, or a phone call.</p>
-    <h3>When do I get the report?</h3>
-    <p class="muted small">Within one week of your call, in your case file — downloadable and printable, forever.</p>
-    <h3>Who can see my files?</h3>
-    <p class="muted small">You and Eric. That's the whole list. Everything is encrypted in transit and at rest.</p>
-  </div>
+    <div class="actions" style="margin-top:.2rem;">
+      <a class="btn" href="/book.html">Book a case →</a>
+      <a class="btn ghost" href="/about.html">How it works</a>
+    </div>
 
-  <footer class="footer-disclaimer">
-    Pocket Advocate is a patient-advocacy service, offered to US residents only. It does not provide diagnosis, treatment, prescriptions, or medical advice, and does not create a doctor-patient relationship. If this is an emergency, call 911.
-  </footer>
+    <p class="fine"><strong>Advocacy, not medicine.</strong> No diagnosis, no treatment, no prescriptions, not a substitute for your care team. Emergency? Call 911.</p>
+  </section>
 </main>
 <script type="module">
   import { hydrateNav } from '/js/auth.js';

@@ -1,9 +1,9 @@
 rules_version = '2';
 
-// Files live under cases/{caseId}/... — readable and writable only by the
-// case's client and the admin. Uploads UI arrives in Phase 2; the rules are
-// locked down from day one. 25 MB cap on client uploads (recordings and
-// reports are uploaded by the admin).
+// Files live under cases/{caseId}/... — readable only by the case's client
+// and the admin. Clients may write only into uploads/ while the case is open
+// (25 MB per file); recordings and reports are the admin's to place, with no
+// size cap (recordings are big). Overlapping match blocks are OR'd.
 service firebase.storage {
   match /b/{bucket}/o {
 
@@ -16,11 +16,18 @@ service firebase.storage {
         firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    function isCaseClient(caseId) {
+      return request.auth != null && caseData(caseId).clientUid == request.auth.uid;
+    }
+
     match /cases/{caseId}/{allPaths=**} {
-      allow read: if request.auth != null &&
-        (caseData(caseId).clientUid == request.auth.uid || isAdmin());
-      allow write: if request.auth != null &&
-        (caseData(caseId).clientUid == request.auth.uid || isAdmin()) &&
+      allow read: if isCaseClient(caseId) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /cases/{caseId}/uploads/{fileName} {
+      allow write: if isCaseClient(caseId) &&
+        caseData(caseId).status != 'closed' &&
         request.resource.size < 25 * 1024 * 1024;
     }
 

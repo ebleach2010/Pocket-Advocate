@@ -61,13 +61,37 @@ async function ensureProfile(user) {
   }
 }
 
+/** True when the signed-in user is the admin (Eric). */
+export async function isAdmin(user) {
+  try {
+    const snapshot = await getDoc(doc(db, 'users', user.uid));
+    return snapshot.exists() && snapshot.data().role === 'admin';
+  } catch {
+    return false;
+  }
+}
+
+/** Redirects non-admins away from admin pages; returns the admin user. */
+export async function requireAdmin() {
+  const user = await requireUser();
+  if (!user) return null;
+  if (!(await isAdmin(user))) {
+    location.href = '/';
+    return null;
+  }
+  return user;
+}
+
 /** Fills the shared top-nav sign-in/out state on any page that has it. */
 export async function hydrateNav() {
   const el = document.querySelector('[data-nav-auth]');
   if (!el) return;
   const user = await currentUser();
   if (user) {
-    el.innerHTML = `<span class="who">${user.email || ''}</span> <a href="/case.html">My cases</a> · <a href="#" data-signout>Sign out</a>`;
+    const admin = await isAdmin(user);
+    el.innerHTML =
+      (admin ? `<a href="/admin.html">Admin</a>` : `<a href="/case.html">My cases</a>`) +
+      ` <a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
     el.querySelector('[data-signout]').addEventListener('click', async (e) => {
       e.preventDefault();
       await signOut(auth);
