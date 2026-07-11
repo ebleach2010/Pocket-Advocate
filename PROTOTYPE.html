@@ -30,7 +30,6 @@
     background-image:
       radial-gradient(1200px 500px at 85% -10%, rgba(45,226,255,.07), transparent 60%),
       radial-gradient(900px 500px at 0% 110%, rgba(255,79,216,.06), transparent 60%);
-    background-attachment: fixed;
   }
   h1, h2, h3 { margin: 0 0 .5rem; line-height: 1.15; letter-spacing: -.02em; font-weight: 800; text-wrap: balance; }
   h1 { font-size: 1.7rem; } h2 { font-size: 1.25rem; } h3 { font-size: 1rem; }
@@ -181,7 +180,7 @@
   /* reviews strip */
   .reviews-strip { overflow: hidden; touch-action: pan-y; cursor: grab; }
   .reviews-strip:active { cursor: grabbing; }
-  .reviews-track { display: flex; gap: .6rem; width: max-content; animation: rv-scroll 40s linear infinite; user-select: none; -webkit-user-select: none; }
+  .reviews-track { display: flex; gap: .6rem; width: max-content; animation: rv-scroll 40s linear infinite; user-select: none; -webkit-user-select: none; will-change: transform; }
   @keyframes rv-scroll { to { transform: translateX(-50%); } }
   @media (prefers-reduced-motion: reduce) { .reviews-track { animation: none; } .reviews-strip { overflow-x: auto; } }
   .review { flex: 0 0 14rem; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: .4rem .65rem; }
@@ -429,8 +428,8 @@
   </div>
 
   <div>
-    <p class="reviews-label">★ REVIEWS · SAMPLES — GOOGLE REVIEWS CONNECT HERE</p>
-    <div class="reviews-strip"><div class="reviews-track"><div class="review"><span class="stars">★★★★★</span><span class="rv-text">Walked into my neuro appointment with a one-page list of questions. First time I felt heard.</span><span class="rv-name">Sample review</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">He went through two years of labs and found the pattern nobody had time to look for.</span><span class="rv-name">Sample review</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">The written report alone was worth it — my new specialist read it start to finish.</span><span class="rv-name">Sample review</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">Finally understood what my MRI report actually said, in plain English.</span><span class="rv-name">Sample review</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">Walked into my neuro appointment with a one-page list of questions. First time I felt heard.</span><span class="rv-name">Sample review</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">He went through two years of labs and found the pattern nobody had time to look for.</span><span class="rv-name">Sample review</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">The written report alone was worth it — my new specialist read it start to finish.</span><span class="rv-name">Sample review</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">Finally understood what my MRI report actually said, in plain English.</span><span class="rv-name">Sample review</span></div></div></div>
+    <p class="reviews-label">★ GOOGLE REVIEWS</p>
+    <div class="reviews-strip"><div class="reviews-track"><div class="review"><span class="stars">★★★★★</span><span class="rv-text">This interview was a really positive experience for me. The interviewer was very kind, respectful, and easy to talk to, which made the whole process feel comfortable instead of intimidating.</span><span class="rv-name">Jessica Naylor</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">Good information and help for autoimmune encephalitis patients that often get lost and have no one to help them.</span><span class="rv-name">Max GG</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-name">Adam Leach</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">This interview was a really positive experience for me. The interviewer was very kind, respectful, and easy to talk to, which made the whole process feel comfortable instead of intimidating.</span><span class="rv-name">Jessica Naylor</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">Good information and help for autoimmune encephalitis patients that often get lost and have no one to help them.</span><span class="rv-name">Max GG</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-name">Adam Leach</span></div></div></div></div>
   </div>
 
   <p class="fine"><strong>Advocacy, not medicine.</strong> No diagnosis, no treatment, no prescriptions, not a substitute for your care team. Emergency? Call 911.</p>
@@ -747,27 +746,55 @@
 
 </main>
 <script>
-// Drag + momentum for the reviews strip (same physics as the real app).
-// No-JS viewers fall back to the CSS autoscroll above.
+// Reviews strip: one motion engine for autoscroll, drag, and momentum
+// (same physics as the real app). The CSS animation is only the no-JS
+// fallback; JS takes over at init with a MEASURED wrap period, so the loop
+// is pixel-exact — no blank seam.
 (function () {
+  var AUTO_SPEED = 0.03, FRICTION = 0.97, MAX_DT = 50;
   var strip = document.querySelector('.reviews-strip');
   var track = strip && strip.querySelector('.reviews-track');
-  if (!track) return;
-  var x = null, v = 0, raf = null, dragging = false, moved = 0, lastPX = 0, samples = [];
-  function half() { return track.scrollWidth / 2; }
-  function wrap(val) { var h = half(); if (h <= 0) return val; while (val <= -h) val += h; while (val > 0) val -= h; return val; }
-  function apply() { track.style.transform = 'translateX(' + x + 'px)'; }
-  function takeover() {
-    if (x !== null) return;
-    var m = new DOMMatrixReadOnly(getComputedStyle(track).transform);
-    x = wrap(m.m41);
-    track.style.animation = 'none';
-    apply();
+  if (!track || track.children.length < 2) return;
+  var x = 0, v = 0, dragging = false, rafId = null, prevT = null;
+  var moved = 0, lastPX = 0, samples = [], per = 0;
+  var auto = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function period() {
+    if (per > 0) return per;
+    var kids = track.children, n = Math.floor(kids.length / 2);
+    per = n >= 1 && kids[n] ? kids[n].offsetLeft - kids[0].offsetLeft : 0;
+    return per;
   }
+  addEventListener('resize', function () { per = 0; });
+  function wrap(val) {
+    var p = period();
+    if (p <= 0) return val;
+    val %= p;
+    if (val > 0) val -= p;
+    return val;
+  }
+  function apply() { track.style.transform = 'translate3d(' + x + 'px,0,0)'; }
+  var m = new DOMMatrixReadOnly(getComputedStyle(track).transform);
+  x = wrap(m.m41 || 0);
+  track.style.animation = 'none';
+  apply();
+  function tick(t) {
+    var dt = prevT == null ? 0 : Math.min(t - prevT, MAX_DT);
+    prevT = t;
+    if (!dragging && dt > 0) {
+      if (auto) { x = wrap(x - AUTO_SPEED * dt); apply(); }
+      else if (v !== 0) {
+        x = wrap(x + v * dt); apply();
+        v *= Math.pow(FRICTION, dt / 16.7);
+        if (Math.abs(v) < 0.02) v = 0;
+      }
+    }
+    if ((auto && !dragging) || v !== 0) rafId = requestAnimationFrame(tick);
+    else { rafId = null; prevT = null; }
+  }
+  function ensureLoop() { if (rafId == null) { prevT = null; rafId = requestAnimationFrame(tick); } }
+  ensureLoop();
   strip.addEventListener('pointerdown', function (e) {
-    takeover();
-    if (raf) cancelAnimationFrame(raf);
-    dragging = true; moved = 0; v = 0; lastPX = e.clientX;
+    auto = false; v = 0; dragging = true; moved = 0; lastPX = e.clientX;
     samples = [{ t: performance.now(), x: e.clientX }];
     strip.setPointerCapture(e.pointerId);
   });
@@ -786,14 +813,8 @@
     var now = performance.now();
     var s0 = samples[0], s1 = samples[samples.length - 1];
     v = s1 && s0 && s1.t > s0.t && now - s1.t < 80 ? (s1.x - s0.x) / (s1.t - s0.t) : 0;
-    var prev = performance.now();
-    function step(t) {
-      var dt = Math.min(t - prev, 50); prev = t;
-      x = wrap(x + v * dt); apply();
-      v *= Math.pow(0.97, dt / 16.7);
-      if (Math.abs(v) > 0.02) raf = requestAnimationFrame(step);
-    }
-    if (Math.abs(v) > 0.05) raf = requestAnimationFrame(step);
+    if (Math.abs(v) < 0.05) v = 0;
+    if (v !== 0) ensureLoop();
   }
   strip.addEventListener('pointerup', release);
   strip.addEventListener('pointercancel', release);
