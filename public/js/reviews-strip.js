@@ -62,8 +62,11 @@ export function enhanceReviewsStrip(strip) {
     prevT = t;
     if (!dragging && dt > 0) {
       if (auto) {
-        x = wrap(x - AUTO_SPEED * dt);
-        apply();
+        // strip may start on a hidden tab: don't accumulate until measurable
+        if (period() > 0) {
+          x = wrap(x - AUTO_SPEED * dt);
+          apply();
+        }
       } else if (v !== 0) {
         x = wrap(x + v * dt);
         apply();

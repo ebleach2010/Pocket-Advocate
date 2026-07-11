@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reviews — Pocket Advocate</title>
+<link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
+    <nav class="tabs">
+      <a href="/">Book</a>
+      <a href="/about.html">About</a>
+      <a href="/reviews.html" class="active">Reviews</a>
+      <span data-nav-auth></span>
+    </nav>
+  </div>
+</header>
+<main>
+  <h1>What clients say</h1>
+  <p class="reviews-label" id="reviews-label">★ GOOGLE REVIEWS</p>
+  <div class="reviews-strip"><div class="reviews-track" id="reviews-track"></div></div>
+
+  <div id="reviews-full" style="margin-top:1.4rem;"></div>
+  <p class="dim small" id="google-link-slot"></p>
+
+  <div class="actions"><a class="btn" href="/book.html">Book a case →</a></div>
+  <footer class="footer-disclaimer">
+    Pocket Advocate is a patient-advocacy service, offered to US residents only. It does not provide diagnosis, treatment, prescriptions, or medical advice, and does not create a doctor-patient relationship. If this is an emergency, call 911.
+  </footer>
+</main>
+<script type="module">
+  import { hydrateNav } from '/js/auth.js';
+  import { GOOGLE_REVIEWS_URL, REVIEWS } from '/js/reviews-config.js';
+  import { enhanceReviewsStrip } from '/js/reviews-strip.js';
+  hydrateNav();
+
+  const esc = (s) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+  // the draggable strip (clamped teasers)
+  const card = (r) => `
+    <${GOOGLE_REVIEWS_URL ? `a href="${GOOGLE_REVIEWS_URL}" target="_blank" rel="noopener"` : 'div'} class="review">
+      <span class="stars">${'★'.repeat(r.stars)}</span>
+      ${r.text ? `<span class="rv-text">${esc(r.text)}</span>` : ''}
+      <span class="rv-name">${esc(r.name)}</span>
+    </${GOOGLE_REVIEWS_URL ? 'a' : 'div'}>`;
+  const cards = REVIEWS.map(card).join('');
+  document.getElementById('reviews-track').innerHTML = cards + cards;
+  enhanceReviewsStrip(document.querySelector('.reviews-strip'));
+
+  // the full, uncropped reviews
+  document.getElementById('reviews-full').innerHTML = REVIEWS.map((r) => `
+    <div class="panel review-full">
+      <div class="row">
+        <strong>${esc(r.name)}</strong>
+        <span class="stars">${'★'.repeat(r.stars)}</span>
+      </div>
+      ${r.text ? `<p class="rv-full-text">${esc(r.text)}</p>` : '<p class="dim small" style="margin:.3rem 0 0;">Rated 5 stars.</p>'}
+    </div>`).join('');
+
+  document.getElementById('google-link-slot').innerHTML = GOOGLE_REVIEWS_URL
+    ? `<a href="${GOOGLE_REVIEWS_URL}" target="_blank" rel="noopener">Read all reviews on Google →</a>`
+    : 'These reviews are from our Google listing — the live Google link lands here once the business profile is up.';
+</script>
+</body>
+</html>

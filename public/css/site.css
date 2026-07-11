@@ -313,3 +313,7 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 .review .rv-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--soft); font-size: .8rem; line-height: 1.4; margin: .15rem 0; }
 .review .rv-name { color: var(--dim); font-size: .7rem; }
 .reviews-label { font: 600 .62rem/1 ui-monospace, monospace; letter-spacing: .16em; color: var(--dim); margin: 0 0 .3rem; }
+
+/* full reviews (reviews page) */
+.review-full .stars { color: var(--magenta); font-size: .8rem; letter-spacing: .12em; }
+.review-full .rv-full-text { color: var(--soft); font-size: .95rem; line-height: 1.55; margin: .4rem 0 0; }

@@ -65,7 +65,8 @@
     padding: .45rem .85rem; border-radius: 999px; border: 1px solid transparent;
   }
   #tab-book:checked ~ header label[for="tab-book"],
-  #tab-about:checked ~ header label[for="tab-about"] {
+  #tab-about:checked ~ header label[for="tab-about"],
+  #tab-reviews:checked ~ header label[for="tab-reviews"] {
     color: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c);
   }
 
@@ -75,6 +76,7 @@
   /* ---- navigation: hidden radios, zero JS, zero URL fragments ---- */
   .vh { position: absolute; opacity: 0; pointer-events: none; }
   #tab-about:checked ~ main #s-about { display: block; }
+  #tab-reviews:checked ~ main #s-reviews { display: block; }
   #tab-book:checked ~ #scr-landing:checked ~ main #s-landing { display: flex; }
   #tab-book:checked ~ #scr-signin:checked  ~ main #s-signin  { display: block; }
   #tab-book:checked ~ #scr-w1:checked      ~ main #s-w1      { display: block; }
@@ -111,20 +113,20 @@
 
   /* ---------- LANDING: one screen, no scroll ---------- */
   #s-landing {
-    flex-direction: column; justify-content: center; gap: .7rem;
+    flex-direction: column; justify-content: center; gap: .95rem;
     min-height: min(calc(100dvh - 10rem), 40rem);
   }
   .hero-eyebrow {
     font: 600 .68rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .22em;
     color: var(--cyan); text-shadow: var(--glow-c);
   }
-  #s-landing h1 { font-size: clamp(1.3rem, 4.5vw, 1.7rem); margin-bottom: .2rem; }
-  .hero-sub { color: var(--soft); font-size: .97rem; margin: 0; line-height: 1.42; }
+  #s-landing h1 { font-size: clamp(1.35rem, 4.8vw, 1.8rem); margin-bottom: .25rem; }
+  .hero-sub { color: var(--soft); font-size: 1rem; margin: 0; line-height: 1.5; }
 
   .pack {
     position: relative; display: grid; grid-template-columns: 1fr auto; gap: .15rem .8rem;
     background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-    padding: .6rem .9rem; text-decoration: none; color: var(--ink);
+    padding: .7rem .95rem; text-decoration: none; color: var(--ink);
   }
   .pack h3 { margin: 0; font-size: 1.08rem; }
   .pack .desc { grid-column: 1 / -1; color: var(--soft); font-size: .95rem; margin: 0; line-height: 1.45; }
@@ -160,7 +162,6 @@
     .pack .desc { font-size: .82rem; }
     .btn { padding: .55rem .95rem; font-size: .84rem; }
     .fine { font-size: .7rem; }
-    .reviews-strip, .reviews-label { display: none; }
   }
 
   /* case sub-tabs */
@@ -201,6 +202,9 @@
   .filelist .fmeta { color: var(--dim); font-size: .72rem; white-space: nowrap; }
   .kind-pill { font: 700 .58rem/1 ui-monospace, monospace; letter-spacing: .12em; padding: .18rem .45rem; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); margin-right: .45rem; }
   .kind-pill.report { border-color: var(--magenta); color: var(--magenta); }
+
+  .review-full .stars { color: var(--magenta); font-size: .8rem; letter-spacing: .12em; }
+  .review-full .rv-full-text { color: var(--soft); font-size: .95rem; line-height: 1.55; margin: .4rem 0 0; }
 
   /* chat mock */
   .chat-log { display: flex; flex-direction: column; gap: .45rem; padding: .5rem 0; }
@@ -333,6 +337,7 @@
 <!-- navigation state: tabs + wizard screen. Pure CSS, no JS, no URL changes. -->
 <input class="vh" type="radio" name="tab" id="tab-book" checked>
 <input class="vh" type="radio" name="tab" id="tab-about">
+<input class="vh" type="radio" name="tab" id="tab-reviews">
 <input class="vh" type="radio" name="scr" id="scr-landing" checked>
 <input class="vh" type="radio" name="scr" id="scr-signin">
 <input class="vh" type="radio" name="scr" id="scr-w1">
@@ -356,6 +361,7 @@
     <nav class="tabs">
       <label for="tab-book" tabindex="0">Book</label>
       <label for="tab-about" tabindex="0">About</label>
+      <label for="tab-reviews" tabindex="0">Reviews</label>
       <label for="scr-landing" tabindex="0" title="Back to the start">↺</label>
     </nav>
   </div>
@@ -425,11 +431,6 @@
   <div class="actions" style="margin-top:.2rem;">
     <label class="btn" for="scr-signin" tabindex="0">Book a case →</label>
     <label class="btn ghost" for="tab-about" tabindex="0">How it works</label>
-  </div>
-
-  <div>
-    <p class="reviews-label">★ GOOGLE REVIEWS</p>
-    <div class="reviews-strip"><div class="reviews-track"><div class="review"><span class="stars">★★★★★</span><span class="rv-text">This interview was a really positive experience for me. The interviewer was very kind, respectful, and easy to talk to, which made the whole process feel comfortable instead of intimidating.</span><span class="rv-name">Jessica Naylor</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">Good information and help for autoimmune encephalitis patients that often get lost and have no one to help them.</span><span class="rv-name">Max GG</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-name">Adam Leach</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">This interview was a really positive experience for me. The interviewer was very kind, respectful, and easy to talk to, which made the whole process feel comfortable instead of intimidating.</span><span class="rv-name">Jessica Naylor</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">Good information and help for autoimmune encephalitis patients that often get lost and have no one to help them.</span><span class="rv-name">Max GG</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-name">Adam Leach</span></div></div></div></div>
   </div>
 
   <p class="fine"><strong>Advocacy, not medicine.</strong> No diagnosis, no treatment, no prescriptions, not a substitute for your care team. Emergency? Call 911.</p>
@@ -744,6 +745,34 @@
   <div class="actions"><label class="btn mute" for="scr-landing" tabindex="0">← Back to start</label></div>
 </section>
 
+
+<!-- ================= REVIEWS TAB ================= -->
+<section id="s-reviews">
+  <h1>What clients say</h1>
+  <p class="reviews-label">★ GOOGLE REVIEWS</p>
+  <div>
+    <div class="reviews-strip"><div class="reviews-track"><div class="review"><span class="stars">★★★★★</span><span class="rv-text">This interview was a really positive experience for me. The interviewer was very kind, respectful, and easy to talk to, which made the whole process feel comfortable instead of intimidating.</span><span class="rv-name">Jessica Naylor</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">Good information and help for autoimmune encephalitis patients that often get lost and have no one to help them.</span><span class="rv-name">Max GG</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-name">Adam Leach</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">This interview was a really positive experience for me. The interviewer was very kind, respectful, and easy to talk to, which made the whole process feel comfortable instead of intimidating.</span><span class="rv-name">Jessica Naylor</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-text">Good information and help for autoimmune encephalitis patients that often get lost and have no one to help them.</span><span class="rv-name">Max GG</span></div><div class="review"><span class="stars">★★★★★</span><span class="rv-name">Adam Leach</span></div></div></div></div>
+  </div>
+
+
+  <div style="margin-top:1.2rem;">
+    <div class="panel review-full">
+      <div class="row"><strong>Jessica Naylor</strong><span class="stars">★★★★★</span></div>
+      <p class="rv-full-text">This interview was a really positive experience for me. The interviewer was very kind, respectful, and easy to talk to, which made the whole process feel comfortable instead of intimidating. The work being done is so important, and it meant a lot to speak with someone who truly related to my experiences. I took a lot away from the conversation.</p>
+    </div>
+    <div class="panel review-full" style="margin-top:.8rem;">
+      <div class="row"><strong>Max GG</strong><span class="stars">★★★★★</span></div>
+      <p class="rv-full-text">Good information and help for autoimmune encephalitis patients that often get lost and have no one to help them.</p>
+    </div>
+    <div class="panel review-full" style="margin-top:.8rem;">
+      <div class="row"><strong>Adam Leach</strong><span class="stars">★★★★★</span></div>
+      <p class="dim small" style="margin:.3rem 0 0;">Rated 5 stars.</p>
+    </div>
+  </div>
+  <p class="dim small" style="margin-top:.8rem;">These reviews are from our Google listing — the live Google link lands here once the business profile is up.</p>
+  <div class="actions"><label class="btn" for="tab-book" tabindex="0">Book a case →</label></div>
+</section>
+
 </main>
 <script>
 // Reviews strip: one motion engine for autoscroll, drag, and momentum
@@ -781,7 +810,7 @@
     var dt = prevT == null ? 0 : Math.min(t - prevT, MAX_DT);
     prevT = t;
     if (!dragging && dt > 0) {
-      if (auto) { x = wrap(x - AUTO_SPEED * dt); apply(); }
+      if (auto) { if (period() > 0) { x = wrap(x - AUTO_SPEED * dt); apply(); } }
       else if (v !== 0) {
         x = wrap(x + v * dt); apply();
         v *= Math.pow(FRICTION, dt / 16.7);
