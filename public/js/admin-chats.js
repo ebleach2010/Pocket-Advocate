@@ -37,6 +37,7 @@ async function loadThread() {
     parentPath: ['subscriptions', subUid],
     user,
     myRole: 'admin',
+    saveUid: subUid,
     // Eric can always write; the client-side gate is the one that lapses.
     disabled: false,
   });

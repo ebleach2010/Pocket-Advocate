@@ -1,6 +1,6 @@
-// The client case dashboard (Phase 2): status timeline, appointment card with
-// add-to-calendar, uploads to Storage, the file list (uploads + recording +
-// report), and the make-my-session-private revocation. Chat lands in Phase 3.
+// The client case dashboard (Phases 2–3): after booking, the case lives in
+// three tabs — Progress (timeline + appointment), Chat (live, with file
+// sharing), and Documents (uploads from both ends + files saved from chat).
 
 import {
   db, storage, collection, getDocs, query, where,
@@ -23,7 +23,6 @@ const STEPS = [
   ['delivered', 'Report — within 7 days of the call'],
   ['closed', 'Closed — the file is yours forever'],
 ];
-// How far along the timeline each case status reaches.
 const STATUS_RANK = { paid: 1, forms: 1, confirmed: 2, awaiting_report: 4, delivered: 6, closed: 7 };
 const STATUS_LABEL = {
   paid: 'OPEN', forms: 'FINISH FORMS', confirmed: 'CONFIRMED',
@@ -32,76 +31,137 @@ const STATUS_LABEL = {
 
 hydrateNav();
 const user = await requireUser();
-if (user) loadCases();
+let cases = [];
+let currentId = null;
+let currentTab = 'progress';
+if (user) boot();
 
-async function loadCases() {
+async function boot() {
   const container = document.getElementById('cases');
-  let docs = [];
   try {
     const snapshot = await getDocs(query(collection(db, 'cases'), where('clientUid', '==', user.uid)));
-    snapshot.forEach((d) => docs.push({ id: d.id, ...d.data() }));
+    cases = [];
+    snapshot.forEach((d) => cases.push({ id: d.id, ...d.data() }));
   } catch (err) {
     container.innerHTML = `<p class="error">Couldn't load your cases: ${err.message}</p>`;
     return;
   }
-  if (!docs.length) {
+  if (!cases.length) {
     container.innerHTML =
       '<p class="dim">No cases yet.</p><p><a class="btn" href="/book.html">Book an Advocacy Case →</a></p>';
     return;
   }
-  docs.sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
-  container.innerHTML = '';
-  for (const c of docs) container.appendChild(renderCase(c));
-  docs.forEach((c) => refreshFiles(c));
+  cases.sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
+  currentId = currentId && cases.some((c) => c.id === currentId) ? currentId : cases[0].id;
+  render();
 }
 
-function renderCase(c) {
-  const el = document.createElement('div');
-  el.className = 'panel';
-  el.id = `case-${c.id}`;
+function render() {
+  const container = document.getElementById('cases');
+  const c = cases.find((x) => x.id === currentId);
+  const mtFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+
+  container.innerHTML = `
+    ${cases.length > 1 ? `
+      <div class="case-picker">
+        ${cases.map((x) => `
+          <button class="chip-label ${x.id === currentId ? 'selected' : ''}" data-case="${x.id}">
+            ${x.appointment?.start ? mtFmt.format(toDate(x.appointment.start)) : 'Case'}
+            ${x.status === 'closed' ? ' · closed' : ''}
+          </button>`).join('')}
+      </div>` : ''}
+    <div class="row">
+      <h2 style="margin:0;">Advocacy Case</h2>
+      <span class="status-pill ${c.status === 'closed' ? 'closed' : ''}">${STATUS_LABEL[c.status] || c.status}</span>
+    </div>
+    <nav class="subtabs" role="tablist">
+      <button data-tab="progress" class="${currentTab === 'progress' ? 'active' : ''}">Progress</button>
+      <button data-tab="chat" class="${currentTab === 'chat' ? 'active' : ''}">Chat</button>
+      <button data-tab="docs" class="${currentTab === 'docs' ? 'active' : ''}">Documents</button>
+    </nav>
+    <section id="tab-body"></section>`;
+
+  container.querySelectorAll('[data-case]').forEach((b) =>
+    b.addEventListener('click', () => { currentId = b.dataset.case; render(); }));
+  container.querySelectorAll('[data-tab]').forEach((b) =>
+    b.addEventListener('click', () => { currentTab = b.dataset.tab; render(); }));
+
+  const body = container.querySelector('#tab-body');
+  if (currentTab === 'progress') renderProgress(body, c);
+  else if (currentTab === 'chat') renderChat(body, c);
+  else renderDocs(body, c);
+}
+
+// ---- Progress tab ----
+function renderProgress(el, c) {
   const start = c.appointment && toDate(c.appointment.start);
   const closed = c.status === 'closed';
   const rank = STATUS_RANK[c.status] ?? 1;
-
   const mtFmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: MOUNTAIN_TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
   });
   const localFmt = new Intl.DateTimeFormat('en-US', {
     weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
   });
-
   const method = c.appointment?.method;
   const methodLine = method === 'phone'
     ? `Phone — Eric calls you at <strong>${esc(c.appointment.phone || 'your number')}</strong>`
     : c.appointment?.joinLink
       ? `${method === 'zoom' ? 'Zoom' : 'Discord'} — <a href="${esc(c.appointment.joinLink)}" rel="noopener">join link</a>`
       : `${method === 'zoom' ? 'Zoom' : 'Discord'} — your join link appears here before the call`;
-
   const election = c.publicElection || { choice: 'private' };
   const revocable = election.choice === 'public' && !closed &&
     (!election.revocableUntil || toDate(election.revocableUntil) > new Date());
 
   el.innerHTML = `
-    <div class="row">
-      <h3 style="margin:0;">Advocacy Case</h3>
-      <span class="status-pill ${closed ? 'closed' : ''}">${STATUS_LABEL[c.status] || c.status}</span>
-    </div>
-    ${start ? `
-      <p style="margin:.5rem 0 0;"><strong>${mtFmt.format(start)} MST</strong>
-      <span class="dim small">(${localFmt.format(start)} your time)</span>
-      <a href="#" class="small" data-ics>+ calendar</a></p>` : ''}
-    <ul class="timeline">
-      ${STEPS.map(([, label], i) => `
-        <li class="${i + 1 < rank ? 'done' : i + 1 === rank ? (closed ? 'done' : 'now') : ''}">
-          <span class="t-dot"></span>${label}</li>`).join('')}
-    </ul>
-    <p class="dim small">${methodLine}</p>
-    <p class="dim small">Session: <strong style="color:${election.choice === 'public' ? 'var(--magenta)' : 'var(--cyan)'};">
-      ${election.choice === 'public' ? 'PUBLIC — streams live on YouTube' : 'PRIVATE'}</strong></p>
-    ${revocable ? `<p><button class="btn ghost" data-private>Make it private</button></p>` : ''}
-    ${c.addOnFollowUp ? '<p class="dim small">Follow-up add-on included — book your second session once the report lands.</p>' : ''}
+    <div class="panel">
+      ${start ? `
+        <p style="margin:0 0 .3rem;"><strong>${mtFmt.format(start)} MST</strong><br>
+        <span class="dim small">${localFmt.format(start)} your time</span>
+        <a href="#" class="small" data-ics>+ calendar</a></p>` : ''}
+      <p class="dim small">${methodLine}</p>
+      <ul class="timeline">
+        ${STEPS.map(([, label], i) => `
+          <li class="${i + 1 < rank ? 'done' : i + 1 === rank ? (closed ? 'done' : 'now') : ''}">
+            <span class="t-dot"></span>${label}</li>`).join('')}
+      </ul>
+      <p class="dim small">Session: <strong style="color:${election.choice === 'public' ? 'var(--magenta)' : 'var(--cyan)'};">
+        ${election.choice === 'public' ? 'PUBLIC — streams live on YouTube' : 'PRIVATE'}</strong></p>
+      ${revocable ? `<p><button class="btn ghost" data-private>Make it private</button></p>` : ''}
+      ${c.addOnFollowUp ? '<p class="dim small">Follow-up add-on included — book your second session once the report lands.</p>' : ''}
+    </div>`;
 
-    <h3 style="margin-top:1rem;">Your files</h3>
+  el.querySelector('[data-ics]')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    downloadIcs(c, start);
+  });
+  el.querySelector('[data-private]')?.addEventListener('click', (e) => makePrivate(c.id, e.target));
+}
+
+// ---- Chat tab ----
+function renderChat(el, c) {
+  const closed = c.status === 'closed';
+  el.innerHTML = `
+    <p style="margin:.2rem 0 .3rem;"><span class="p-dot"></span><span class="p-label">Checking…</span></p>
+    <div class="panel" data-chat></div>`;
+  watchPresence(el);
+  mountChat({
+    container: el.querySelector('[data-chat]'),
+    parentPath: ['cases', c.id],
+    user,
+    myRole: 'client',
+    saveUid: user.uid,
+    disabled: closed,
+    notice: 'This chat ended when the case closed. Your documents remain yours forever.',
+  });
+}
+
+// ---- Documents tab ----
+function renderDocs(el, c) {
+  const closed = c.status === 'closed';
+  el.innerHTML = `
     ${closed
       ? '<p class="dim small">This case is closed. Your documents stay here forever — download or print any of them.</p>'
       : `<label class="dropzone" data-drop>
@@ -111,42 +171,21 @@ function renderCase(c) {
          </label>
          <progress data-progress max="100" value="0" hidden></progress>
          <p class="error" data-upload-error hidden></p>`}
-    <ul class="filelist" data-files><li class="dim small">Loading files…</li></ul>
-
-    <h3 style="margin-top:1.1rem;">Chat with Eric</h3>
-    <p style="margin:.15rem 0 .3rem;"><span class="p-dot"></span><span class="p-label">Checking…</span></p>
-    <div data-chat></div>
-  `;
-
-  el.querySelector('[data-ics]')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    downloadIcs(c, start);
-  });
-  el.querySelector('[data-private]')?.addEventListener('click', (e) => makePrivate(c.id, e.target));
+    <ul class="filelist" data-files><li class="dim small">Loading files…</li></ul>`;
   const input = el.querySelector('[data-file-input]');
   input?.addEventListener('change', () => uploadFiles(c, el, [...input.files]));
-
-  watchPresence(el);
-  mountChat({
-    container: el.querySelector('[data-chat]'),
-    parentPath: ['cases', c.id],
-    user,
-    myRole: 'client',
-    disabled: closed,
-    notice: 'This chat ended when the case closed. Your documents remain yours forever.',
-  });
-  return el;
+  refreshFiles(c, el);
+  document.addEventListener('pa-saved-file', () => refreshFiles(c, el), { once: true });
 }
 
-// ---- files: everything lives under cases/{id}/ in Storage ----
-
-async function refreshFiles(c) {
-  const listEl = document.querySelector(`#case-${c.id} [data-files]`);
+async function refreshFiles(c, el) {
+  const listEl = el.querySelector('[data-files]');
   if (!listEl) return;
   const kinds = [
     ['report', `cases/${c.id}/report`],
     ['recording', `cases/${c.id}/recording`],
     ['upload', `cases/${c.id}/uploads`],
+    ['saved', `profiles/${user.uid}/saved`],
   ];
   const rows = [];
   for (const [kind, path] of kinds) {
@@ -159,14 +198,15 @@ async function refreshFiles(c) {
     } catch { /* folder may not exist yet */ }
   }
   if (!rows.length) {
-    listEl.innerHTML = '<li class="dim small">Nothing here yet.</li>';
+    listEl.innerHTML = '<li class="dim small">Nothing here yet. Add files above, or share them in chat and long-press to save.</li>';
     return;
   }
-  rows.sort((a, b) => (a.kind === b.kind ? b.ts - a.ts : a.kind === 'report' ? -1 : b.kind === 'report' ? 1 : a.kind === 'recording' ? -1 : 1));
+  const order = { report: 0, recording: 1, upload: 2, saved: 3 };
+  rows.sort((a, b) => order[a.kind] - order[b.kind] || b.ts - a.ts);
   const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
   listEl.innerHTML = rows.map((r) => `
     <li>
-      <span class="fname"><span class="kind-pill ${r.kind}">${r.kind.toUpperCase()}</span>
+      <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
         <a href="${r.url}" target="_blank" rel="noopener">${esc(r.name)}</a></span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
     </li>`).join('');
@@ -201,7 +241,7 @@ async function uploadFiles(c, el, files) {
   zone.classList.remove('busy');
   bar.hidden = true;
   el.querySelector('[data-file-input]').value = '';
-  refreshFiles(c);
+  refreshFiles(c, el);
 }
 
 // ---- actions ----
@@ -217,7 +257,7 @@ async function makePrivate(caseId, btn) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Could not update.');
-    loadCases();
+    boot();
   } catch (err) {
     btn.disabled = false;
     alert(err.message);

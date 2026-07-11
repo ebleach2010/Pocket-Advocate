@@ -18,11 +18,13 @@ service cloud.firestore {
     }
 
     function validMessage() {
-      return request.resource.data.keys().hasOnly(['from', 'role', 'text', 'ts'])
+      return request.resource.data.keys().hasOnly(['from', 'role', 'text', 'ts', 'attachment'])
         && request.resource.data.from == request.auth.uid
         && request.resource.data.text is string
-        && request.resource.data.text.size() > 0
         && request.resource.data.text.size() <= 2000
+        // a message is words, a file, or both — never neither
+        && (request.resource.data.text.size() > 0
+            || request.resource.data.keys().hasAny(['attachment']))
         && (isAdmin()
             ? request.resource.data.role == 'admin'
             : request.resource.data.role == 'client');

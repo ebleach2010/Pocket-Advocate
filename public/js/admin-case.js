@@ -105,6 +105,7 @@ function render(el) {
     parentPath: ['cases', caseId],
     user,
     myRole: 'admin',
+    saveUid: c.clientUid,
     disabled: c.status === 'closed',
     notice: 'Chat ended when this case closed.',
   });
@@ -172,6 +173,7 @@ async function refreshFiles() {
     ['report', `cases/${caseId}/report`],
     ['recording', `cases/${caseId}/recording`],
     ['upload', `cases/${caseId}/uploads`],
+    ['saved', `profiles/${data.clientUid}/saved`],
   ]) {
     try {
       const res = await listAll(ref(storage, path));
@@ -188,7 +190,7 @@ async function refreshFiles() {
   const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
   listEl.innerHTML = rows.map((r) => `
     <li>
-      <span class="fname"><span class="kind-pill ${r.kind}">${r.kind.toUpperCase()}</span>
+      <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
         <a href="${r.url}" target="_blank" rel="noopener">${esc(r.name)}</a></span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
     </li>`).join('');

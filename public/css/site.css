@@ -272,3 +272,45 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 .p-label { font-size: .8rem; color: var(--dim); }
 .expectation { font-size: .85rem; color: var(--dim); font-style: italic; }
 .unread-hint { font: 700 .6rem/1 ui-monospace, monospace; letter-spacing: .12em; color: var(--magenta); border: 1px solid var(--magenta); border-radius: 999px; padding: .18rem .45rem; }
+
+/* sub-tabs (case dashboard) */
+.subtabs { display: flex; gap: .35rem; margin: .8rem 0 1rem; }
+.subtabs button {
+  font: 600 .85rem/1 inherit; color: var(--dim); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 999px; padding: .5rem 1rem; cursor: pointer;
+}
+.subtabs button.active { color: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c); }
+.case-picker { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .8rem; }
+.kind-pill.saved { border-color: var(--magenta); color: var(--magenta); }
+
+/* chat attachments */
+.attach-btn {
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  width: 2.6rem; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2);
+  font-size: 1.05rem; margin: 0;
+}
+.msg-img { max-width: 100%; max-height: 220px; border-radius: 10px; display: block; margin-top: .25rem; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.file-chip {
+  display: inline-block; margin-top: .25rem; padding: .4rem .6rem; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--cyan);
+  font-size: .85rem; text-decoration: none; overflow-wrap: anywhere;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+
+/* google reviews strip (landing) */
+.reviews-strip { overflow: hidden; position: relative; }
+.reviews-track { display: flex; gap: .6rem; width: max-content; animation: rv-scroll 40s linear infinite; }
+.reviews-strip:hover .reviews-track { animation-play-state: paused; }
+@keyframes rv-scroll { to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) {
+  .reviews-track { animation: none; }
+  .reviews-strip { overflow-x: auto; }
+}
+.review {
+  flex: 0 0 15rem; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; padding: .55rem .75rem;
+}
+.review .stars { color: var(--magenta); font-size: .72rem; letter-spacing: .12em; }
+.review .rv-text { display: block; color: var(--soft); font-size: .8rem; line-height: 1.4; margin: .15rem 0; }
+.review .rv-name { color: var(--dim); font-size: .7rem; }
+.reviews-label { font: 600 .62rem/1 ui-monospace, monospace; letter-spacing: .16em; color: var(--dim); margin: 0 0 .3rem; }

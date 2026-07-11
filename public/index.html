@@ -47,12 +47,33 @@
       <a class="btn ghost" href="/about.html">How it works</a>
     </div>
 
+    <div>
+      <p class="reviews-label" id="reviews-label">★ REVIEWS</p>
+      <div class="reviews-strip"><div class="reviews-track" id="reviews-track"></div></div>
+    </div>
+
     <p class="fine"><strong>Advocacy, not medicine.</strong> No diagnosis, no treatment, no prescriptions, not a substitute for your care team. Emergency? Call 911.</p>
   </section>
 </main>
 <script type="module">
   import { hydrateNav } from '/js/auth.js';
+  import { GOOGLE_REVIEWS_URL, SAMPLE_REVIEWS } from '/js/reviews-config.js';
   hydrateNav();
+
+  // Reviews strip: duplicated content scrolls seamlessly; taps go to Google
+  // once the Business Profile link exists.
+  const track = document.getElementById('reviews-track');
+  const esc = (s) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const card = (r) => `
+    <${GOOGLE_REVIEWS_URL ? `a href="${GOOGLE_REVIEWS_URL}" target="_blank" rel="noopener"` : 'div'} class="review">
+      <span class="stars">${'★'.repeat(r.stars)}</span>
+      <span class="rv-text">${esc(r.text)}</span>
+      <span class="rv-name">${esc(r.name)}</span>
+    </${GOOGLE_REVIEWS_URL ? 'a' : 'div'}>`;
+  const cards = SAMPLE_REVIEWS.map(card).join('');
+  track.innerHTML = cards + cards; // x2 for the seamless loop
+  if (!GOOGLE_REVIEWS_URL)
+    document.getElementById('reviews-label').textContent = '★ REVIEWS · SAMPLES — GOOGLE REVIEWS CONNECT HERE';
 </script>
 </body>
 </html>

@@ -63,6 +63,7 @@ async function load() {
     parentPath: ['subscriptions', user.uid],
     user,
     myRole: 'client',
+    saveUid: user.uid,
     disabled: !active,
     notice: 'Chat is paused — your subscription has ended. Resubscribe any time; your history stays.',
   });
