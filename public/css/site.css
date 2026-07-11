@@ -103,13 +103,13 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
   font: 600 .68rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .22em;
   color: var(--cyan); text-shadow: var(--glow-c);
 }
-.landing { display: flex; flex-direction: column; justify-content: center; gap: .55rem; min-height: min(calc(100dvh - 8rem), 40rem); }
-.landing h1 { font-size: clamp(1.35rem, 5vw, 1.9rem); margin-bottom: .3rem; }
+.landing { display: flex; flex-direction: column; justify-content: center; gap: .95rem; min-height: min(calc(100dvh - 8rem), 40rem); }
+.landing h1 { font-size: clamp(1.3rem, 4.6vw, 1.75rem); margin-bottom: .2rem; }
 .hero-sub { color: var(--dim); font-size: .85rem; margin: 0; line-height: 1.4; }
 .pack {
-  position: relative; display: grid; grid-template-columns: 1fr auto; gap: .1rem .8rem;
+  position: relative; display: grid; grid-template-columns: 1fr auto; gap: .18rem .8rem;
   background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-  padding: .55rem .85rem; text-decoration: none; color: var(--ink); margin: 0;
+  padding: .7rem .95rem; text-decoration: none; color: var(--ink); margin: 0;
 }
 .pack h3 { margin: 0; font-size: .98rem; }
 .pack .desc { grid-column: 1 / -1; color: var(--dim); font-size: .78rem; margin: 0; line-height: 1.4; }
@@ -125,13 +125,13 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
 }
 .tag.c { color: var(--cyan); border: 1px solid var(--cyan); box-shadow: var(--glow-c); }
 .tag.m { color: var(--magenta); border: 1px solid var(--magenta); box-shadow: var(--glow-m); }
-.fine { font-size: .72rem; color: var(--dim); margin: 0; line-height: 1.45; }
+.fine { font-size: .7rem; color: var(--dim); margin: 0; line-height: 1.4; }
 .fine strong { color: var(--ink); }
 @media (max-height: 700px) {
-  .landing { gap: .4rem; }
-  .landing h1 { font-size: 1.2rem; }
+  .landing { gap: .7rem; }
+  .landing h1 { font-size: 1.15rem; }
   .hero-sub { font-size: .78rem; }
-  .pack { padding: .45rem .75rem; }
+  .pack { padding: .55rem .8rem; }
   .pack h3 { font-size: .9rem; }
   .pack .desc { font-size: .7rem; }
   .btn { padding: .55rem .95rem; font-size: .84rem; }
