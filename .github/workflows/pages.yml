@@ -1,7 +1,8 @@
-# Deploys the self-contained prototype to GitHub Pages on every push to main,
-# so the Home-Screen app at https://ebleach2010.github.io/Pocket-Advocate/
-# always shows the latest reviewed state. (The real app deploys to Cloudflare
-# separately — this is the zero-backend review build.)
+# Publishes the self-contained prototype to the gh-pages branch on every push
+# to main, so the Home-Screen app at
+# https://ebleach2010.github.io/Pocket-Advocate/ always shows the latest
+# reviewed state. (The real app deploys to Cloudflare separately — this is the
+# zero-backend review build.)
 name: Deploy prototype to Pages
 
 on:
@@ -10,9 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
@@ -21,9 +20,6 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - name: Assemble site
@@ -32,9 +28,10 @@ jobs:
           cp PROTOTYPE.html _site/index.html
           cp icon-180.png manifest.webmanifest _site/
           cp FLOW.html _site/flow.html
-      - uses: actions/configure-pages@v5
+          touch _site/.nojekyll
+      - name: Push to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_site
+          force_orphan: true
