@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in — TheBroScientist Neuro Advocacy</title>
+<link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<nav class="topnav">
+  <a class="brand" href="/">TheBroScientist Neuro Advocacy</a>
+  <span data-nav-auth></span>
+</nav>
+<main>
+  <h1>Sign in</h1>
+  <p class="muted">Enter your email and we'll send you a sign-in link. No password to remember.</p>
+
+  <div class="card" id="email-form">
+    <label for="email">Email address</label>
+    <input type="email" id="email" autocomplete="email" placeholder="you@example.com">
+    <label style="margin-top:.8rem;">
+      <input type="checkbox" id="us-attest"> I confirm I am a resident of the United States. This service is offered to US residents only.
+    </label>
+    <p class="error" id="error" hidden></p>
+    <p style="margin-top:1rem;"><button class="btn" id="send">Email me a sign-in link</button></p>
+  </div>
+
+  <div class="card" id="sent" hidden>
+    <h3>Check your email</h3>
+    <p class="muted">We sent a sign-in link to <strong id="sent-to"></strong>. Open it on this device to finish signing in.</p>
+  </div>
+</main>
+<script type="module">
+  import { auth, isSignInWithEmailLink, signInWithEmailLink } from '/js/firebase.js';
+  import { sendMagicLink, recallEmail, hydrateNav } from '/js/auth.js';
+
+  hydrateNav();
+  const params = new URLSearchParams(location.search);
+  const returnTo = params.get('to') || '/book.html';
+  const errEl = document.getElementById('error');
+
+  // Completing a magic-link sign-in?
+  if (isSignInWithEmailLink(auth, location.href)) {
+    let email = recallEmail();
+    if (!email) email = prompt('Confirm your email to finish signing in:') || '';
+    signInWithEmailLink(auth, email, location.href)
+      .then(() => { location.href = returnTo; })
+      .catch((err) => {
+        errEl.textContent = `Sign-in failed: ${err.message}`;
+        errEl.hidden = false;
+      });
+  }
+
+  document.getElementById('send').addEventListener('click', async () => {
+    const email = document.getElementById('email').value.trim();
+    errEl.hidden = true;
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      errEl.textContent = 'Enter a valid email address.';
+      errEl.hidden = false;
+      return;
+    }
+    if (!document.getElementById('us-attest').checked) {
+      errEl.textContent = 'This service is available to US residents only.';
+      errEl.hidden = false;
+      return;
+    }
+    try {
+      await sendMagicLink(email, returnTo);
+      document.getElementById('email-form').hidden = true;
+      document.getElementById('sent-to').textContent = email;
+      document.getElementById('sent').hidden = false;
+    } catch (err) {
+      errEl.textContent = `Couldn't send the link: ${err.message}`;
+      errEl.hidden = false;
+    }
+  });
+</script>
+</body>
+</html>

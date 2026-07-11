@@ -1,0 +1,12 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "presence": {
+      "eric": {
+        ".read": true,
+        ".write": "auth != null && auth.token.admin === true"
+      }
+    }
+  }
+}

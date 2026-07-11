@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Payment complete — TheBroScientist Neuro Advocacy</title>
+<link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<nav class="topnav">
+  <a class="brand" href="/">TheBroScientist Neuro Advocacy</a>
+  <span data-nav-auth></span>
+</nav>
+<main>
+  <h1 id="title">Finishing up…</h1>
+  <p class="muted" id="msg">Payment received — opening your case now. This usually takes a few seconds.</p>
+  <p id="actions" hidden><a class="btn" id="case-link" href="/case.html">Go to my case</a></p>
+</main>
+<script type="module">
+  import { requireUser, hydrateNav } from '/js/auth.js';
+
+  hydrateNav();
+  const user = await requireUser();
+  const sessionId = new URLSearchParams(location.search).get('session_id');
+  const title = document.getElementById('title');
+  const msg = document.getElementById('msg');
+
+  if (user && sessionId) {
+    // The case is created by the Stripe webhook, never by this browser —
+    // so we poll until it lands (normally 1–5 seconds).
+    const started = Date.now();
+    const poll = async () => {
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch(`/api/case-for-session?session_id=${encodeURIComponent(sessionId)}`, {
+          headers: { authorization: `Bearer ${idToken}` },
+        });
+        const data = await res.json();
+        if (data.ready) {
+          title.textContent = 'Your case is open';
+          msg.textContent = 'Your appointment is booked and your case file is ready. You can upload labs and imaging any time before the call.';
+          document.getElementById('case-link').href = `/case.html?id=${data.caseId}`;
+          document.getElementById('actions').hidden = false;
+          return;
+        }
+      } catch { /* transient — keep polling */ }
+      if (Date.now() - started < 90_000) {
+        setTimeout(poll, 2500);
+      } else {
+        title.textContent = 'Almost there';
+        msg.textContent = 'Your payment went through, but your case is taking longer than usual to open. Check "My cases" in a minute — it will be there.';
+        document.getElementById('actions').hidden = false;
+      }
+    };
+    poll();
+  } else if (!sessionId) {
+    title.textContent = 'Nothing to finish';
+    msg.textContent = 'No checkout session found.';
+  }
+</script>
+</body>
+</html>

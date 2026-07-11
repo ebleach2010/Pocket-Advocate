@@ -1,0 +1,112 @@
+/* Shared look for the whole app — same palette as FLOW.html. */
+:root {
+  --ground: #F6F9F8; --card: #FFFFFF; --ink: #1C2B2A; --muted: #5C6E6B;
+  --line: #DCE6E3; --accent: #2E7D6E; --accent-soft: #E4F0ED;
+  --amber: #A96F1A; --amber-soft: #F6EBD8; --danger: #9C4232;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #0F1D1B; --card: #162624; --ink: #E4EEEB; --muted: #93A8A3;
+    --line: #27403C; --accent: #5FB3A1; --accent-soft: #1C3733;
+    --amber: #D9A24A; --amber-soft: #33290F; --danger: #D98871;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink);
+  font-family: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+  line-height: 1.6; font-size: 17px; -webkit-text-size-adjust: 100%;
+}
+main { max-width: 41rem; margin: 0 auto; padding: 2rem 1.25rem 5rem; }
+h1, h2, h3 {
+  font-family: "Iowan Old Style", "Palatino", "Book Antiqua", Georgia, serif;
+  line-height: 1.2; text-wrap: balance; margin: 0 0 .6rem;
+}
+h1 { font-size: 1.9rem; } h2 { font-size: 1.4rem; margin-top: 2rem; } h3 { font-size: 1.05rem; }
+p { margin: 0 0 1rem; }
+a { color: var(--accent); }
+.muted { color: var(--muted); }
+.small { font-size: .85rem; }
+
+.topnav {
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  max-width: 41rem; margin: 0 auto; padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--line); font-size: .9rem;
+}
+.topnav .brand { font-family: "Iowan Old Style", Georgia, serif; font-weight: 700; color: var(--ink); text-decoration: none; }
+.topnav .who { color: var(--muted); font-size: .8rem; }
+
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 1.1rem 1.2rem; margin-bottom: .9rem;
+}
+.notbox {
+  border-left: 3px solid var(--danger); padding: .2rem 0 .2rem 1rem;
+  color: var(--muted); font-size: .95rem; margin: 1rem 0;
+}
+.notbox strong { color: var(--ink); }
+
+.btn {
+  display: inline-block; border: none; border-radius: 8px; cursor: pointer;
+  background: var(--accent); color: #fff; font: inherit; font-weight: 600;
+  padding: .6rem 1.3rem; text-decoration: none;
+}
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.btn.quiet { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+
+.price { font-family: "Iowan Old Style", Georgia, serif; font-size: 1.35rem; font-weight: 700; color: var(--amber); white-space: nowrap; }
+.row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+
+input[type=email], input[type=tel], input[type=text] {
+  width: 100%; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card); color: var(--ink); font: inherit;
+}
+label { display: block; margin-bottom: .35rem; font-size: .9rem; color: var(--muted); }
+
+.error { color: var(--danger); font-size: .9rem; margin: .6rem 0; }
+.ok { color: var(--accent); font-size: .9rem; margin: .6rem 0; }
+
+/* Waiver reader */
+.waiver-body {
+  max-height: 45vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px;
+  padding: 1rem 1.1rem; background: var(--card); font-size: .93rem;
+}
+.waiver-body h3 { margin-top: 1rem; }
+.scroll-hint { font-size: .8rem; color: var(--amber); margin: .5rem 0; }
+
+/* Steps indicator */
+.crumbs { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 1.3rem; padding: 0; list-style: none; font-size: .75rem; }
+.crumbs li { padding: .15rem .6rem; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.crumbs li.now { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.crumbs li.done { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+
+/* Election screen */
+.choice { display: block; border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin-bottom: .8rem; cursor: pointer; background: var(--card); }
+.choice input { margin-right: .6rem; }
+.choice.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.consent-quote {
+  margin: 1rem 0; padding: 1rem 1.2rem; background: var(--accent-soft); border-radius: 10px;
+  font-family: "Iowan Old Style", Georgia, serif; font-style: italic;
+}
+
+/* Slot picker */
+.day { margin-bottom: 1rem; }
+.day h3 { font-family: inherit; font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.slots { display: flex; flex-wrap: wrap; gap: .5rem; }
+.slot {
+  border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink);
+  font: inherit; font-size: .88rem; padding: .45rem .7rem; cursor: pointer; text-align: left;
+}
+.slot .local { display: block; font-size: .72rem; color: var(--muted); }
+.slot.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+/* Method picker */
+.chip-label { display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--line); border-radius: 999px; padding: .35rem .9rem; margin: 0 .4rem .5rem 0; cursor: pointer; background: var(--card); font-size: .9rem; }
+.chip-label.selected { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.pref-badge { font-size: .7rem; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 .4rem; }
+
+.footer-disclaimer {
+  margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid var(--line);
+  font-size: .8rem; color: var(--muted);
+}

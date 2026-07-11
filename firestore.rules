@@ -1,0 +1,60 @@
+rules_version = '2';
+
+// Day-one lockdown (SPEC §E): clients touch only their own data; cases and
+// availability are written ONLY by the Worker's service account (which
+// bypasses these rules); there is no open test mode, ever.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      // A user may create/update their own profile but can never grant
+      // themselves a role other than 'client'.
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.role == 'client';
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.role == resource.data.role;
+      allow delete: if false;
+    }
+
+    match /cases/{caseId} {
+      // Case docs are created and mutated only by the Stripe webhook / Worker.
+      allow read: if signedIn() &&
+        (resource.data.clientUid == request.auth.uid || isAdmin());
+      allow write: if false;
+
+      // Chat arrives in Phase 3; readable now, writable by no one yet.
+      match /chat/{msgId} {
+        allow read: if signedIn() &&
+          (get(/databases/$(database)/documents/cases/$(caseId)).data.clientUid == request.auth.uid
+            || isAdmin());
+        allow write: if false;
+      }
+    }
+
+    match /availability/{slotId} {
+      // World-readable so the picker works pre-payment; Worker-writable only.
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /subscriptions/{uid} {
+      // Pocket Advocate lands in Phase 3; access states come from Stripe webhooks.
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

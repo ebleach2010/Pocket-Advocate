@@ -1,0 +1,9 @@
+# HTML is never cached (Tether pattern) so deploys are instant for everyone.
+/
+  Cache-Control: no-store
+/*.html
+  Cache-Control: no-store
+/css/*
+  Cache-Control: public, max-age=3600
+/js/*
+  Cache-Control: no-store
