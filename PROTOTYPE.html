@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pocket-Advocate — Phase 1 Prototype</title>
+<style>
+  :root {
+    --ground: #F6F9F8; --card: #FFFFFF; --ink: #1C2B2A; --muted: #5C6E6B;
+    --line: #DCE6E3; --accent: #2E7D6E; --accent-soft: #E4F0ED;
+    --amber: #A96F1A; --amber-soft: #F6EBD8; --danger: #9C4232; --btn-ink: #FFFFFF;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0F1D1B; --card: #162624; --ink: #E4EEEB; --muted: #93A8A3;
+      --line: #27403C; --accent: #5FB3A1; --accent-soft: #1C3733;
+      --amber: #D9A24A; --amber-soft: #33290F; --danger: #D98871; --btn-ink: #0F1D1B;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0F1D1B; --card: #162624; --ink: #E4EEEB; --muted: #93A8A3;
+    --line: #27403C; --accent: #5FB3A1; --accent-soft: #1C3733;
+    --amber: #D9A24A; --amber-soft: #33290F; --danger: #D98871; --btn-ink: #0F1D1B;
+  }
+  :root[data-theme="light"] {
+    --ground: #F6F9F8; --card: #FFFFFF; --ink: #1C2B2A; --muted: #5C6E6B;
+    --line: #DCE6E3; --accent: #2E7D6E; --accent-soft: #E4F0ED;
+    --amber: #A96F1A; --amber-soft: #F6EBD8; --danger: #9C4232; --btn-ink: #FFFFFF;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+    line-height: 1.6; font-size: 17px; -webkit-text-size-adjust: 100%;
+  }
+  main { max-width: 41rem; margin: 0 auto; padding: 1.5rem 1.25rem 5rem; }
+  h1, h2, h3 {
+    font-family: "Iowan Old Style", "Palatino", "Book Antiqua", Georgia, serif;
+    line-height: 1.2; text-wrap: balance; margin: 0 0 .6rem;
+  }
+  h1 { font-size: 1.8rem; } h2 { font-size: 1.35rem; } h3 { font-size: 1.05rem; }
+  p { margin: 0 0 1rem; }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); }
+  .small { font-size: .85rem; }
+
+  .demo-banner {
+    background: var(--amber-soft); color: var(--amber);
+    font-size: .78rem; font-weight: 600; letter-spacing: .06em;
+    text-align: center; padding: .45rem 1rem;
+  }
+  .topnav {
+    display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+    max-width: 41rem; margin: 0 auto; padding: .9rem 1.25rem;
+    border-bottom: 1px solid var(--line); font-size: .9rem;
+  }
+  .topnav .brand { font-family: "Iowan Old Style", Georgia, serif; font-weight: 700; color: var(--ink); text-decoration: none; cursor: pointer; }
+  .topnav .who { color: var(--muted); font-size: .78rem; }
+  .topnav button.linkish { background: none; border: none; color: var(--accent); font: inherit; font-size: .85rem; cursor: pointer; padding: 0; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.1rem 1.2rem; margin-bottom: .9rem;
+  }
+  .notbox {
+    border-left: 3px solid var(--danger); padding: .2rem 0 .2rem 1rem;
+    color: var(--muted); font-size: .95rem; margin: 1rem 0;
+  }
+  .notbox strong { color: var(--ink); }
+  .btn {
+    display: inline-block; border: none; border-radius: 8px; cursor: pointer;
+    background: var(--accent); color: var(--btn-ink, #fff); font: inherit; font-weight: 600;
+    padding: .6rem 1.3rem; text-decoration: none;
+  }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .btn.quiet { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  .price { font-family: "Iowan Old Style", Georgia, serif; font-size: 1.35rem; font-weight: 700; color: var(--amber); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+
+  input[type=email], input[type=tel] {
+    width: 100%; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--ink); font: inherit;
+  }
+  label { display: block; margin-bottom: .35rem; font-size: .9rem; color: var(--muted); }
+  .error { color: var(--danger); font-size: .9rem; margin: .6rem 0; }
+
+  .waiver-body {
+    max-height: 42vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px;
+    padding: 1rem 1.1rem; background: var(--card); font-size: .93rem;
+  }
+  .waiver-body h3 { margin-top: 1rem; }
+  .scroll-hint { font-size: .8rem; color: var(--amber); margin: .5rem 0; }
+
+  .crumbs { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 1.3rem; padding: 0; list-style: none; font-size: .72rem; }
+  .crumbs li { padding: .15rem .6rem; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .crumbs li.now { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .crumbs li.done { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+
+  .choice { display: block; border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin-bottom: .8rem; cursor: pointer; background: var(--card); }
+  .choice input { margin-right: .6rem; }
+  .choice.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .consent-quote {
+    margin: 1rem 0; padding: 1rem 1.2rem; background: var(--accent-soft); border-radius: 10px;
+    font-family: "Iowan Old Style", Georgia, serif; font-style: italic;
+  }
+  .day { margin-bottom: 1rem; }
+  .day h3 { font-family: inherit; font-size: .82rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .slots { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .slot {
+    border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink);
+    font: inherit; font-size: .88rem; padding: .45rem .7rem; cursor: pointer; text-align: left;
+  }
+  .slot .local { display: block; font-size: .72rem; color: var(--muted); }
+  .slot.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+  .chip-label { display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--line); border-radius: 999px; padding: .35rem .9rem; margin: 0 .4rem .5rem 0; cursor: pointer; background: var(--card); font-size: .9rem; }
+  .chip-label.selected { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .pref-badge { font-size: .7rem; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 .4rem; }
+
+  .footer-disclaimer {
+    margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid var(--line);
+    font-size: .8rem; color: var(--muted);
+  }
+
+  /* Simulated Stripe checkout — visibly a stand-in, styled unlike the app */
+  .stripe-sim { background: #1a1f36; border-radius: 12px; padding: 1.5rem 1.4rem; color: #e3e8ee; }
+  .stripe-sim .s-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; }
+  .stripe-sim .s-brand { font-weight: 700; letter-spacing: .02em; color: #b7c0d1; font-size: .9rem; }
+  .stripe-sim .sim-tag { font-size: .7rem; border: 1px solid #8792a2; color: #b7c0d1; border-radius: 999px; padding: .1rem .55rem; letter-spacing: .08em; }
+  .stripe-sim .s-line { display: flex; justify-content: space-between; font-size: .92rem; padding: .45rem 0; border-bottom: 1px solid #2c3352; font-variant-numeric: tabular-nums; }
+  .stripe-sim .s-line.total { border-bottom: none; font-weight: 700; font-size: 1.05rem; }
+  .stripe-sim .s-field { background: #262b49; border: 1px solid #3c4368; border-radius: 6px; color: #8792a2; font-size: .85rem; padding: .55rem .7rem; margin: .4rem 0; }
+  .stripe-sim .s-pay { width: 100%; margin-top: 1rem; background: #635bff; color: #fff; border: none; border-radius: 6px; font: inherit; font-weight: 600; padding: .7rem; cursor: pointer; }
+  .stripe-sim .s-cancel { width: 100%; margin-top: .5rem; background: none; color: #8792a2; border: none; font: inherit; font-size: .85rem; cursor: pointer; }
+
+  .timeline { list-style: none; margin: 1rem 0; padding: 0; }
+  .timeline li { display: flex; gap: .6rem; align-items: baseline; padding: .25rem 0; font-size: .9rem; color: var(--muted); }
+  .timeline .t-dot { width: .65rem; height: .65rem; border-radius: 50%; border: 2px solid var(--line); flex: none; position: relative; top: .05rem; }
+  .timeline li.done { color: var(--ink); }
+  .timeline li.done .t-dot { background: var(--accent); border-color: var(--accent); }
+  .timeline li.now { color: var(--accent); font-weight: 600; }
+  .timeline li.now .t-dot { border-color: var(--accent); }
+
+  .spin { display: inline-block; width: 1rem; height: 1rem; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: .4rem; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+  .btn:focus-visible, .slot:focus-visible, .choice:focus-within, .chip-label:focus-within,
+  .topnav button.linkish:focus-visible, .stripe-sim button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+</style>
+</head>
+<body>
+<div class="demo-banner">PROTOTYPE · SIMULATED DATA · NO REAL PAYMENT, EMAIL, OR STORAGE</div>
+<nav class="topnav">
+  <span class="brand" id="brand">TheBroScientist Neuro Advocacy</span>
+  <span><span class="who" id="who"></span> <button class="linkish" id="restart">Restart demo</button></span>
+</nav>
+<main id="app"></main>
+
+<script>
+'use strict';
+// A faithful click-through of the Phase 1 client journey. Same copy, same
+// rules, same screens as the real app in the Pocket-Advocate repo — with
+// sign-in, the calendar, and Stripe simulated in the browser.
+
+const MT = 'Etc/GMT+7'; // MST = fixed UTC-7 year-round
+const state = {
+  email: '', acks: {}, election: 'private',
+  slot: null, method: 'discord', phone: '', addOn: false,
+  caseOpen: false,
+};
+
+const WAIVERS = [
+  { id: 'disclaimer', title: 'Service disclaimer & waiver', body: `
+    <h3>What this service is</h3>
+    <p>TheBroScientist Neuro Advocacy is a <strong>patient-advocacy</strong> service offered to residents of the United States only. Your advocate helps you navigate your medical journey: organizing your story, helping you understand your labs and imaging in plain language, preparing questions to bring to your doctors, and identifying options to discuss with your care team.</p>
+    <h3>What this service is NOT</h3>
+    <p>This service is <strong>not medical care</strong>. Specifically, it is:</p>
+    <p>• <strong>Not diagnosis, not treatment, and not prescriptions.</strong> Nothing said in a discussion, written in chat, or included in a report is a diagnosis, a treatment plan, or medical advice.<br>
+    • <strong>Not a doctor-patient relationship</strong>, and not a substitute for one.<br>
+    • <strong>Not therapy and not emergency care.</strong> If this is an emergency, call 911.</p>
+    <h3>The advocacy relationship</h3>
+    <p>By purchasing an Advocacy Case you engage the advocate to review the materials you choose to share, discuss them with you, and prepare a written advocacy summary. You remain responsible for all decisions about your health, made together with your own licensed care team.</p>
+    <h3>Limitation of liability</h3>
+    <p>To the maximum extent permitted by law, the service's total liability for any claim arising out of an Advocacy Case is limited to the amount you paid for that case.</p>
+    <p><em>DRAFT — reviewed by an attorney before the first paying client.</em></p>` },
+  { id: 'privacy', title: 'Privacy & data handling', body: `
+    <h3>What we store</h3>
+    <p>Your account email; the files you choose to upload (labs, imaging, records); the recording of your discussion; the written report; and your chat messages.</p>
+    <h3>Where it lives</h3>
+    <p>Google Firebase (United States region), encrypted in transit and at rest. Payments are processed by Stripe — your card details never touch this application.</p>
+    <h3>Who can see it</h3>
+    <p>Exactly two parties: <strong>you</strong> and <strong>your advocate (Eric)</strong>. If you elect a public session, the live discussion itself is broadcast — your uploaded files and case file are never public.</p>
+    <h3>Retention & deletion</h3>
+    <p>Your case file remains available to you indefinitely after your case closes. You may request deletion of your account and all data at any time, honored within 30 days.</p>
+    <h3>Breach notification</h3>
+    <p>If a breach affecting your data occurs, you will be notified promptly and candidly, consistent with the FTC Health Breach Notification Rule and applicable state law.</p>
+    <p><em>DRAFT — reviewed by an attorney before the first paying client.</em></p>` },
+  { id: 'recording', title: 'Recording consent', body: `
+    <h3>Your discussion is recorded</h3>
+    <p>Every Advocacy Case discussion is recorded so the recording can be placed in your private case file for you to revisit, download, and keep.</p>
+    <h3>What you are consenting to</h3>
+    <p>You give written consent for your advocate to record the audio and video of your discussion — Discord, Zoom, or phone. Written consent is collected from every participant before any recording begins, satisfying all-party consent laws (California, Washington, Florida, and others).</p>
+    <h3>Where the recording goes</h3>
+    <p>Into your case file, visible only to you and your advocate — unless you separately and explicitly elect a public session on the next screen. You can revoke a public election any time before the broadcast starts.</p>
+    <p><em>DRAFT — reviewed by an attorney before the first paying client.</em></p>` },
+];
+
+const STEP_LABELS = ['Disclaimer', 'Privacy', 'Recording', 'Public/private', 'Time', 'Method', 'Pay'];
+
+const app = document.getElementById('app');
+document.getElementById('restart').addEventListener('click', () => { location.reload(); });
+document.getElementById('brand').addEventListener('click', showLanding);
+
+function who(text) { document.getElementById('who').textContent = text; }
+function render(html) { app.innerHTML = html; app.scrollIntoView(); window.scrollTo(0, 0); return app; }
+function crumbs(i) {
+  return '<ol class="crumbs">' + STEP_LABELS.map((l, j) =>
+    `<li class="${j < i ? 'done' : j === i ? 'now' : ''}">${l}</li>`).join('') + '</ol>';
+}
+function footer(text) {
+  return `<footer class="footer-disclaimer">${text || 'This is advocacy, not medicine — no diagnosis, no treatment, no prescriptions, and not a substitute for your own care team. If this is an emergency, call 911.'}</footer>`;
+}
+
+// ---------- Landing ----------
+function showLanding() {
+  const el = render(`
+    <h1>An advocate in your corner for your medical journey</h1>
+    <p class="muted">Organize your story. Understand your labs and imaging in plain language. Walk into your next appointment with the right questions. Built on deep personal knowledge and lived experience. United States only.</p>
+    <p class="notbox"><strong>This is advocacy, not medicine.</strong> No diagnosis, no treatment, no prescriptions. Not a doctor-patient relationship, and not a substitute for one. Not therapy, and not emergency care — if this is an emergency, call 911.</p>
+    <h2>The offer</h2>
+    <div class="card">
+      <div class="row"><h3>Advocacy Case</h3><span class="price">$100</span></div>
+      <p class="muted small">A live discussion with Eric covering your symptoms, labs, and medical journey. A private case file holds your uploads, the call recording, and a live chat. Within one week of the call: a comprehensive written report and flow chart.</p>
+      <button class="btn" id="book">Book a case</button>
+    </div>
+    <div class="card">
+      <div class="row"><h3>Follow-up add-on</h3><span class="price">+$50</span></div>
+      <p class="muted small">Offered only at checkout. A second schedulable discussion on the same case, bookable any time after your report lands. Skip it, and a later follow-up is a fresh $100 case.</p>
+    </div>
+    <div class="card">
+      <div class="row"><h3>Pocket Advocate</h3><span class="price">$20/mo</span></div>
+      <p class="muted small">Round-the-clock access to the chat with Eric, with his live online status. Eric replies on his own time — response timing is never guaranteed. Separate from cases. Cancel anytime.</p>
+      <span class="btn quiet">Coming in Phase 3</span>
+    </div>
+    <h2>Learn from real cases</h2>
+    <p class="muted small">If you choose, your session can be broadcast live on the TheBroScientist YouTube channel so others can learn from it — entirely optional, private by default, revocable any time before the broadcast starts.</p>
+    ${footer()}`);
+  el.querySelector('#book').addEventListener('click', showSignin);
+}
+
+// ---------- Sign-in ----------
+function showSignin() {
+  const el = render(`
+    <h1>Sign in</h1>
+    <p class="muted">Enter your email and we'll send you a sign-in link. No password to remember.</p>
+    <div class="card">
+      <label for="email">Email address</label>
+      <input type="email" id="email" placeholder="you@example.com" value="${state.email}">
+      <label style="margin-top:.8rem;"><input type="checkbox" id="us"> I confirm I am a resident of the United States. This service is offered to US residents only.</label>
+      <p class="error" id="err" hidden></p>
+      <p style="margin-top:1rem;"><button class="btn" id="send">Email me a sign-in link</button></p>
+      <p class="muted small">In the real app this sends a Firebase magic link. The prototype signs you straight in.</p>
+    </div>
+    ${footer()}`);
+  el.querySelector('#send').addEventListener('click', () => {
+    const email = el.querySelector('#email').value.trim();
+    const err = el.querySelector('#err');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { err.textContent = 'Enter a valid email address.'; err.hidden = false; return; }
+    if (!el.querySelector('#us').checked) { err.textContent = 'This service is available to US residents only.'; err.hidden = false; return; }
+    state.email = email;
+    who(email);
+    showWaiver(0);
+  });
+}
+
+// ---------- Waivers 1–3 ----------
+function showWaiver(i) {
+  const w = WAIVERS[i];
+  const el = render(`
+    <h1>Book an Advocacy Case</h1>
+    ${crumbs(i)}
+    <h2>${w.title}</h2>
+    <p class="muted small">Please read to the end. The acknowledge button unlocks when you've scrolled through the whole document.</p>
+    <div class="waiver-body" id="body">${w.body}</div>
+    <p class="scroll-hint" id="hint">Scroll to the end to continue…</p>
+    <p>
+      ${i > 0 ? '<button class="btn quiet" id="back">Back</button>' : ''}
+      <button class="btn" id="ack" disabled>I have read and acknowledge this</button>
+    </p>
+    ${footer()}`);
+  const body = el.querySelector('#body'), ack = el.querySelector('#ack'), hint = el.querySelector('#hint');
+  const check = () => {
+    if (body.scrollTop + body.clientHeight >= body.scrollHeight - 8) { ack.disabled = false; hint.hidden = true; }
+  };
+  body.addEventListener('scroll', check); check();
+  ack.addEventListener('click', () => {
+    state.acks[w.id] = Date.now();
+    i + 1 < WAIVERS.length ? showWaiver(i + 1) : showElection();
+  });
+  const back = el.querySelector('#back');
+  if (back) back.addEventListener('click', () => showWaiver(i - 1));
+}
+
+// ---------- Election ----------
+function showElection() {
+  const el = render(`
+    <h1>Book an Advocacy Case</h1>
+    ${crumbs(3)}
+    <h2>Public or private?</h2>
+    <blockquote class="consent-quote">"Other patients gain insight into their medical journey when live discussion of cases are presented. However, this is entirely optional depending on your privacy preferences."</blockquote>
+    <label class="choice ${state.election === 'private' ? 'selected' : ''}" id="c-private">
+      <input type="radio" name="e" value="private" ${state.election === 'private' ? 'checked' : ''}>
+      <strong>Private session</strong><br>
+      <span class="muted small">The discussion happens only between you and Eric. The recording lives only in your case file. Same price, every benefit included.</span>
+    </label>
+    <label class="choice ${state.election === 'public' ? 'selected' : ''}" id="c-public">
+      <input type="radio" name="e" value="public" ${state.election === 'public' ? 'checked' : ''}>
+      <strong>Public session</strong><br>
+      <span class="muted small">The live discussion is broadcast on the TheBroScientist YouTube channel so other patients can learn from it. You can make it private any time before the broadcast starts.</span>
+    </label>
+    <p><button class="btn quiet" id="back">Back</button> <button class="btn" id="go">Continue</button></p>
+    ${footer()}`);
+  el.querySelectorAll('input[name=e]').forEach(r => r.addEventListener('change', () => {
+    state.election = r.value;
+    el.querySelector('#c-private').classList.toggle('selected', r.value === 'private');
+    el.querySelector('#c-public').classList.toggle('selected', r.value === 'public');
+  }));
+  el.querySelector('#back').addEventListener('click', () => showWaiver(2));
+  el.querySelector('#go').addEventListener('click', () => { state.acks.election = Date.now(); showSchedule(); });
+}
+
+// ---------- Slot picker ----------
+function demoSlots() {
+  // Weekday slots starting 4 days out, 9am/11am/2pm/4pm MST, two weeks.
+  const out = [];
+  const hours = [9, 11, 14, 16];
+  for (let d = 4; d < 18; d++) {
+    const day = new Date(); day.setUTCDate(day.getUTCDate() + d);
+    const ymd = day.toISOString().slice(0, 10).split('-').map(Number);
+    for (const h of hours) {
+      const start = new Date(Date.UTC(ymd[0], ymd[1] - 1, ymd[2], h + 7)); // MST = UTC-7
+      const wd = new Intl.DateTimeFormat('en-US', { timeZone: MT, weekday: 'short' }).format(start);
+      if (wd !== 'Sat' && wd !== 'Sun') out.push({ id: start.toISOString(), start, durationMin: 60 });
+    }
+  }
+  return out;
+}
+
+function showSchedule() {
+  const slots = demoSlots();
+  const dayFmt = new Intl.DateTimeFormat('en-US', { timeZone: MT, weekday: 'long', month: 'long', day: 'numeric' });
+  const mtFmt = new Intl.DateTimeFormat('en-US', { timeZone: MT, hour: 'numeric', minute: '2-digit' });
+  const localFmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+  const byDay = new Map();
+  for (const s of slots) {
+    const k = dayFmt.format(s.start);
+    if (!byDay.has(k)) byDay.set(k, []);
+    byDay.get(k).push(s);
+  }
+  const el = render(`
+    <h1>Book an Advocacy Case</h1>
+    ${crumbs(4)}
+    <h2>Pick a time</h2>
+    <p class="muted small">Times are anchored to MST — fixed UTC-7, year-round — with your local time shown underneath. Appointments must be at least 72 hours out; the server enforces both rules again at payment.</p>
+    <div id="days">${[...byDay.entries()].map(([day, ds]) => `
+      <div class="day"><h3>${day}</h3><div class="slots">
+        ${ds.map(s => `<button class="slot" data-id="${s.id}">${mtFmt.format(s.start)} MST<span class="local">${localFmt.format(s.start)} your time</span></button>`).join('')}
+      </div></div>`).join('')}
+    </div>
+    <p><button class="btn quiet" id="back">Back</button> <button class="btn" id="go" disabled>Continue</button></p>
+    ${footer()}`);
+  el.querySelectorAll('.slot').forEach(b => b.addEventListener('click', () => {
+    el.querySelectorAll('.slot').forEach(x => x.classList.remove('selected'));
+    b.classList.add('selected');
+    state.slot = slots.find(s => s.id === b.dataset.id);
+    el.querySelector('#go').disabled = false;
+  }));
+  el.querySelector('#back').addEventListener('click', showElection);
+  el.querySelector('#go').addEventListener('click', () => state.slot && showMethod());
+}
+
+// ---------- Method ----------
+function showMethod() {
+  const el = render(`
+    <h1>Book an Advocacy Case</h1>
+    ${crumbs(5)}
+    <h2>How should the call happen?</h2>
+    <div>
+      <label class="chip-label ${state.method === 'discord' ? 'selected' : ''}"><input type="radio" name="m" value="discord" hidden ${state.method === 'discord' ? 'checked' : ''}>Discord voice channel <span class="pref-badge">Preferred</span></label>
+      <label class="chip-label ${state.method === 'zoom' ? 'selected' : ''}"><input type="radio" name="m" value="zoom" hidden ${state.method === 'zoom' ? 'checked' : ''}>Zoom call</label>
+      <label class="chip-label ${state.method === 'phone' ? 'selected' : ''}"><input type="radio" name="m" value="phone" hidden ${state.method === 'phone' ? 'checked' : ''}>Phone call</label>
+    </div>
+    <p class="muted small">Discord is preferred — you can stream your own camera there, so it works like any video meeting. Your case page will show the join link (or the number to expect) before the call.</p>
+    <div id="phone-row" ${state.method === 'phone' ? '' : 'hidden'}>
+      <label for="phone">Your phone number (we'll call you)</label>
+      <input type="tel" id="phone" placeholder="+1 555 555 5555" value="${state.phone}">
+    </div>
+    <p class="error" id="err" hidden></p>
+    <p style="margin-top:1rem;"><button class="btn quiet" id="back">Back</button> <button class="btn" id="go">Continue</button></p>
+    ${footer()}`);
+  el.querySelectorAll('input[name=m]').forEach(r => r.addEventListener('change', () => {
+    state.method = r.value;
+    el.querySelectorAll('.chip-label').forEach(c => c.classList.remove('selected'));
+    r.closest('.chip-label').classList.add('selected');
+    el.querySelector('#phone-row').hidden = r.value !== 'phone';
+  }));
+  el.querySelector('#back').addEventListener('click', showSchedule);
+  el.querySelector('#go').addEventListener('click', () => {
+    if (state.method === 'phone') {
+      state.phone = el.querySelector('#phone').value.trim();
+      if (!/^\+?[\d\s().-]{7,20}$/.test(state.phone)) {
+        const err = el.querySelector('#err');
+        err.textContent = 'Enter a valid phone number so Eric can call you.'; err.hidden = false; return;
+      }
+    }
+    showReview();
+  });
+}
+
+// ---------- Review & pay ----------
+function apptLine() {
+  const mtFmt = new Intl.DateTimeFormat('en-US', { timeZone: MT, weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return mtFmt.format(state.slot.start) + ' MST';
+}
+function methodLabel() {
+  return { discord: 'Discord voice channel', zoom: 'Zoom call', phone: `Phone call to ${state.phone}` }[state.method];
+}
+
+function showReview() {
+  const el = render(`
+    <h1>Book an Advocacy Case</h1>
+    ${crumbs(6)}
+    <h2>Review & pay</h2>
+    <div class="card">
+      <div class="row"><h3>Advocacy Case</h3><span class="price">$100</span></div>
+      <p class="muted small">${apptLine()}<br>${methodLabel()} · ${state.election === 'public' ? 'Public session (broadcast live; revocable until the broadcast starts)' : 'Private session'}</p>
+    </div>
+    <label class="choice ${state.addOn ? 'selected' : ''}" id="addon-box">
+      <input type="checkbox" id="addon" ${state.addOn ? 'checked' : ''}> <strong>Add a follow-up discussion — +$50</strong><br>
+      <span class="muted small">A second schedulable discussion on this case, bookable any time after your report lands. Only available right now, at checkout — a follow-up later is a fresh $100 case.</span>
+    </label>
+    <p class="muted small">Your time slot is held while you complete payment. You'll be taken to Stripe's secure checkout — card details never touch this site.</p>
+    <p><button class="btn quiet" id="back">Back</button> <button class="btn" id="pay">Pay $<span id="total">${state.addOn ? 150 : 100}</span> &amp; book</button></p>
+    ${footer()}`);
+  el.querySelector('#addon').addEventListener('change', (e) => {
+    state.addOn = e.target.checked;
+    el.querySelector('#addon-box').classList.toggle('selected', state.addOn);
+    el.querySelector('#total').textContent = state.addOn ? 150 : 100;
+  });
+  el.querySelector('#back').addEventListener('click', showMethod);
+  el.querySelector('#pay').addEventListener('click', showStripe);
+}
+
+// ---------- Simulated Stripe ----------
+function showStripe() {
+  const el = render(`
+    <div class="stripe-sim">
+      <div class="s-head"><span class="s-brand">Checkout — TheBroScientist Neuro Advocacy</span><span class="sim-tag">SIMULATED</span></div>
+      <div class="s-line"><span>Advocacy Case</span><span>$100.00</span></div>
+      ${state.addOn ? '<div class="s-line"><span>Follow-up add-on</span><span>$50.00</span></div>' : ''}
+      <div class="s-line total"><span>Total due</span><span>$${state.addOn ? '150' : '100'}.00</span></div>
+      <div class="s-field">${state.email}</div>
+      <div class="s-field">Card number · MM/YY · CVC (disabled in the prototype)</div>
+      <button class="s-pay" id="pay">Pay $${state.addOn ? '150' : '100'}.00</button>
+      <button class="s-cancel" id="cancel">← Cancel and return</button>
+    </div>
+    <p class="muted small" style="margin-top:1rem;">In the real app this is Stripe's hosted checkout page. Your slot is held while you're here; abandoning checkout releases it automatically.</p>`);
+  el.querySelector('#pay').addEventListener('click', showReturn);
+  el.querySelector('#cancel').addEventListener('click', () => showReview());
+}
+
+// ---------- Return / webhook ----------
+function showReturn() {
+  render(`
+    <h1>Finishing up…</h1>
+    <p class="muted"><span class="spin"></span>Payment received — opening your case now. This usually takes a few seconds.</p>
+    <p class="muted small">Behind the scenes: Stripe confirms the payment to the server, and the server — never your browser — creates the case and books the slot. A case cannot exist without a payment.</p>`);
+  setTimeout(() => {
+    state.caseOpen = true;
+    render(`
+      <h1>Your case is open</h1>
+      <p class="muted">Your appointment is booked and your case file is ready.</p>
+      <p><button class="btn" id="go">Go to my case</button></p>`);
+    document.getElementById('go').addEventListener('click', showCase);
+  }, 1800);
+}
+
+// ---------- Case page ----------
+function showCase() {
+  const localFmt = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+  const revocable = state.election === 'public';
+  const method = state.method;
+  const methodLine = method === 'phone'
+    ? `Phone call — Eric will call you at ${state.phone}`
+    : method === 'zoom' ? 'Zoom call — the join link will appear here before the call'
+    : 'Discord voice channel — the join link will appear here before the call';
+  const el = render(`
+    <h1>My cases</h1>
+    <div class="card">
+      <div class="row"><h3>Advocacy Case</h3><span class="muted small">Confirmed</span></div>
+      <p><strong>${apptLine()}</strong><br><span class="muted small">${localFmt.format(state.slot.start)} your time</span></p>
+      <ul class="timeline">
+        <li class="done"><span class="t-dot"></span>Paid</li>
+        <li class="done"><span class="t-dot"></span>Forms acknowledged</li>
+        <li class="now"><span class="t-dot"></span>Confirmed — upload labs &amp; imaging before the call</li>
+        <li><span class="t-dot"></span>The discussion</li>
+        <li><span class="t-dot"></span>Recording in your file</li>
+        <li><span class="t-dot"></span>Report (within 7 days of the call)</li>
+        ${state.addOn ? '<li><span class="t-dot"></span>Follow-up discussion (included)</li>' : ''}
+        <li><span class="t-dot"></span>Case closed — file stays yours forever</li>
+      </ul>
+      <p class="muted small">${methodLine}</p>
+      <p class="muted small">Session: <strong id="sess">${state.election === 'public' ? 'Public — will be broadcast live on YouTube' : 'Private'}</strong></p>
+      ${revocable ? '<p><button class="btn secondary" id="mp">Make my session private</button></p>' : ''}
+      <p class="muted small">Uploads, chat with Eric, and the report all land here in Phase 2–3.</p>
+    </div>
+    ${footer('This case file is an advocacy record, not a medical record. Nothing in it is a diagnosis, treatment, or medical advice — share it with your care team. If this is an emergency, call 911.')}`);
+  const mp = el.querySelector('#mp');
+  if (mp) mp.addEventListener('click', () => {
+    state.election = 'private';
+    el.querySelector('#sess').textContent = 'Private';
+    mp.remove();
+  });
+}
+
+showLanding();
+</script>
+
+</body>
+</html>
