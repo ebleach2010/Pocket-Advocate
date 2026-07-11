@@ -2,15 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pocket Advocate — Prototype</title>
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon-180.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Pocket Advocate">
-<meta name="theme-color" content="#07090F">
 <style>
   /* Neon system — deliberately single-theme: this design IS the dark screen. */
   :root {
@@ -47,7 +40,7 @@
 
   .banner {
     font: 600 .58rem/1.3 ui-monospace, "SF Mono", Menlo, monospace;
-    letter-spacing: .14em; text-align: center; padding: .2rem .8rem;
+    letter-spacing: .14em; text-align: center; padding: .14rem .8rem;
     color: var(--magenta); background: rgba(255,79,216,.07);
     border-bottom: 1px solid rgba(255,79,216,.18);
   }
@@ -58,7 +51,7 @@
     border-bottom: 1px solid var(--line);
   }
   .bar-inner {
-    max-width: 42rem; margin: 0 auto; padding: .55rem 1.1rem;
+    max-width: 42rem; margin: 0 auto; padding: .45rem 1.1rem;
     display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   }
   .brand {
@@ -76,7 +69,7 @@
     color: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c);
   }
 
-  main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
+  main { max-width: 42rem; margin: 0 auto; padding: .6rem 1.1rem 3rem; }
   main > section { display: none; }
 
   /* ---- navigation: hidden radios, zero JS, zero URL fragments ---- */
@@ -115,20 +108,20 @@
 
   /* ---------- LANDING: one screen, no scroll ---------- */
   #s-landing {
-    flex-direction: column; justify-content: center; gap: .55rem;
+    flex-direction: column; justify-content: center; gap: .95rem;
     min-height: min(calc(100dvh - 10rem), 40rem);
   }
   .hero-eyebrow {
     font: 600 .68rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .22em;
     color: var(--cyan); text-shadow: var(--glow-c);
   }
-  #s-landing h1 { font-size: clamp(1.35rem, 5vw, 1.9rem); margin-bottom: .3rem; }
+  #s-landing h1 { font-size: clamp(1.3rem, 4.6vw, 1.75rem); margin-bottom: .2rem; }
   .hero-sub { color: var(--dim); font-size: .85rem; margin: 0; line-height: 1.4; }
 
   .pack {
-    position: relative; display: grid; grid-template-columns: 1fr auto; gap: .1rem .8rem;
+    position: relative; display: grid; grid-template-columns: 1fr auto; gap: .18rem .8rem;
     background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-    padding: .55rem .85rem; text-decoration: none; color: var(--ink);
+    padding: .7rem .95rem; text-decoration: none; color: var(--ink);
   }
   .pack h3 { margin: 0; font-size: .98rem; }
   .pack .desc { grid-column: 1 / -1; color: var(--dim); font-size: .78rem; margin: 0; line-height: 1.4; }
@@ -148,17 +141,17 @@
   .tag.c { color: var(--cyan); border: 1px solid var(--cyan); box-shadow: var(--glow-c); }
   .tag.m { color: var(--magenta); border: 1px solid var(--magenta); box-shadow: var(--glow-m); }
   .fine {
-    font-size: .72rem; color: var(--dim); margin: 0; line-height: 1.45;
+    font-size: .7rem; color: var(--dim); margin: 0; line-height: 1.4;
   }
   .fine strong { color: var(--ink); }
 
   /* short screens (SE-class): tighten until the landing fits */
   @media (max-height: 700px) {
-    #s-landing { gap: .4rem; }
-    #s-landing h1 { font-size: 1.2rem; }
+    #s-landing { gap: .7rem; }
+    #s-landing h1 { font-size: 1.15rem; }
     .hero-sub { font-size: .78rem; }
     .hero-eyebrow { font-size: .6rem; }
-    .pack { padding: .45rem .75rem; }
+    .pack { padding: .55rem .8rem; }
     .pack h3 { font-size: .9rem; }
     .pack .price { font-size: .95rem; }
     .pack .desc { font-size: .7rem; }
