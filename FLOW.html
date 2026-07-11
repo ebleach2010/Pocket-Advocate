@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TheBroScientist Neuro Advocacy — v1 Blueprint</title>
+<style>
+  :root {
+    --ground: #F6F9F8;
+    --card: #FFFFFF;
+    --ink: #1C2B2A;
+    --muted: #5C6E6B;
+    --line: #DCE6E3;
+    --accent: #2E7D6E;
+    --accent-soft: #E4F0ED;
+    --amber: #A96F1A;
+    --amber-soft: #F6EBD8;
+    --danger: #9C4232;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0F1D1B;
+      --card: #162624;
+      --ink: #E4EEEB;
+      --muted: #93A8A3;
+      --line: #27403C;
+      --accent: #5FB3A1;
+      --accent-soft: #1C3733;
+      --amber: #D9A24A;
+      --amber-soft: #33290F;
+      --danger: #D98871;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0F1D1B;
+    --card: #162624;
+    --ink: #E4EEEB;
+    --muted: #93A8A3;
+    --line: #27403C;
+    --accent: #5FB3A1;
+    --accent-soft: #1C3733;
+    --amber: #D9A24A;
+    --amber-soft: #33290F;
+    --danger: #D98871;
+  }
+  :root[data-theme="light"] {
+    --ground: #F6F9F8;
+    --card: #FFFFFF;
+    --ink: #1C2B2A;
+    --muted: #5C6E6B;
+    --line: #DCE6E3;
+    --accent: #2E7D6E;
+    --accent-soft: #E4F0ED;
+    --amber: #A96F1A;
+    --amber-soft: #F6EBD8;
+    --danger: #9C4232;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+    font-size: 17px;
+    -webkit-text-size-adjust: 100%;
+  }
+  main { max-width: 41rem; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+
+  h1, h2, h3 {
+    font-family: "Iowan Old Style", "Palatino", "Book Antiqua", Georgia, serif;
+    line-height: 1.2;
+    text-wrap: balance;
+    margin: 0;
+  }
+  h1 { font-size: 2.1rem; font-weight: 700; }
+  h2 { font-size: 1.5rem; font-weight: 700; margin: 0 0 1rem; }
+  h3 { font-size: 1.1rem; font-weight: 700; margin: 0 0 .35rem; }
+  p { margin: 0 0 1rem; }
+  section { margin-top: 3.25rem; }
+
+  .eyebrow {
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: .6rem;
+  }
+  .lede { font-size: 1.06rem; color: var(--muted); margin-top: .9rem; }
+
+  header.top { padding-bottom: 1.8rem; border-bottom: 1px solid var(--line); }
+  .meta { font-size: .8rem; color: var(--muted); margin-top: 1rem; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1.1rem 1.2rem;
+  }
+
+  /* products */
+  .products { display: flex; flex-direction: column; gap: .8rem; }
+  .product { display: flex; flex-direction: column; gap: .2rem; }
+  .product .row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  .price {
+    font-family: "Iowan Old Style", "Palatino", Georgia, serif;
+    font-size: 1.35rem; font-weight: 700; color: var(--amber);
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .product p { color: var(--muted); font-size: .95rem; margin: 0; }
+
+  .notbox {
+    border-left: 3px solid var(--danger);
+    padding: .2rem 0 .2rem 1rem;
+    color: var(--muted);
+    font-size: .95rem;
+  }
+  .notbox strong { color: var(--ink); }
+
+  /* timeline */
+  .phase-label {
+    font-size: .72rem; font-weight: 600; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--muted);
+    margin: 2rem 0 .9rem; padding-left: 2.55rem; position: relative;
+  }
+  .phase-label:first-of-type { margin-top: 0; }
+  .steps { list-style: none; margin: 0; padding: 0; position: relative; }
+  .steps::before {
+    content: ""; position: absolute; left: .95rem; top: .4rem; bottom: .4rem;
+    width: 2px; background: var(--line);
+  }
+  .steps li { position: relative; padding: 0 0 1.4rem 2.55rem; }
+  .steps li:last-child { padding-bottom: .2rem; }
+  .dot {
+    position: absolute; left: 0; top: .1rem;
+    width: 1.9rem; height: 1.9rem; border-radius: 50%;
+    background: var(--card); border: 2px solid var(--accent);
+    color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: .8rem; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .dot.closing { border-color: var(--amber); color: var(--amber); }
+  .steps h3 { font-family: inherit; font-size: 1rem; }
+  .steps p { color: var(--muted); font-size: .93rem; margin: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; }
+  .chip {
+    font-size: .8rem; padding: .18rem .6rem; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); background: var(--card);
+  }
+  .chip.pref { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+  blockquote.consent {
+    margin: 1.2rem 0;
+    padding: 1rem 1.2rem;
+    background: var(--accent-soft);
+    border-radius: 10px;
+    font-family: "Iowan Old Style", "Palatino", Georgia, serif;
+    font-size: 1.02rem;
+    font-style: italic;
+  }
+  blockquote.consent footer { font-style: normal; font-size: .8rem; color: var(--muted); margin-top: .5rem; font-family: "Avenir Next", system-ui, sans-serif; }
+
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+  @media (max-width: 540px) { .duo { grid-template-columns: 1fr; } }
+  .duo .card h3 { font-family: inherit; font-size: .95rem; }
+  .duo ul { margin: .5rem 0 0; padding-left: 1.1rem; color: var(--muted); font-size: .92rem; }
+  .duo li { margin-bottom: .3rem; }
+
+  .rule { display: flex; gap: .8rem; padding: .8rem 0; border-bottom: 1px solid var(--line); }
+  .rule:last-child { border-bottom: none; }
+  .rule .k {
+    flex: 0 0 7.2rem; font-size: .78rem; font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase; color: var(--accent);
+    padding-top: .15rem;
+  }
+  .rule .v { font-size: .95rem; color: var(--muted); }
+  .rule .v strong { color: var(--ink); }
+  .needs { color: var(--amber); font-weight: 600; font-size: .8rem; }
+
+  ol.qs { margin: 0; padding-left: 1.3rem; }
+  ol.qs li { margin-bottom: .9rem; color: var(--muted); font-size: .95rem; }
+  ol.qs li strong { color: var(--ink); }
+
+  .costs { width: 100%; border-collapse: collapse; font-size: .93rem; }
+  .costs td { padding: .55rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .costs td:last-child { text-align: right; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .costs tr:last-child td { border-bottom: none; }
+
+  .phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .7rem; }
+  .phases li { display: flex; gap: .9rem; align-items: baseline; }
+  .phases .n {
+    font-family: "Iowan Old Style", Georgia, serif; font-weight: 700;
+    color: var(--accent); font-size: 1.1rem; flex: 0 0 1.2rem;
+  }
+  .phases p { margin: 0; font-size: .95rem; color: var(--muted); }
+  .phases strong { color: var(--ink); }
+
+  footer.end {
+    margin-top: 4rem; padding-top: 1.4rem; border-top: 1px solid var(--line);
+    font-size: .82rem; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<main>
+  <header class="top">
+    <div class="eyebrow">Blueprint · v1 · For Eric's review</div>
+    <h1>TheBroScientist Neuro Advocacy</h1>
+    <p class="lede">The complete package flow, from the moment someone lands on the page to their closed case file. Nothing is built yet — react to anything here and it changes before a line of code exists.</p>
+    <div class="meta">Repo: Pocket-Advocate · Web app (installable to home screen) · United States only · July 11, 2026</div>
+  </header>
+
+  <section>
+    <h2>The offer</h2>
+    <div class="products">
+      <div class="card product">
+        <div class="row"><h3>Advocacy Case</h3><span class="price">$100</span></div>
+        <p>A live discussion with you covering their symptoms, labs, and medical journey. A private case file holds their uploads, the recording, and a live chat with you. Within one week of the call, they receive a comprehensive written report and flow chart: what was discussed, next steps, and anything you found afterward.</p>
+      </div>
+      <div class="card product">
+        <div class="row"><h3>Follow-up add-on</h3><span class="price">+$50</span></div>
+        <p>Offered only at checkout. Adds a second schedulable discussion to the same case, bookable any time after the report lands. Skip it, and a later follow-up is a fresh $100 case with the full benefits — no discounted retro add-on.</p>
+      </div>
+      <div class="card product">
+        <div class="row"><h3>Pocket Advocate</h3><span class="price">$20/mo</span></div>
+        <p>Round-the-clock access to the chat with you, with your live online status. You reply on your own time, when you're available — the terms say plainly that response timing is never guaranteed, and that's the trade the subscriber accepts. Separate from cases. Cancel anytime.</p>
+      </div>
+    </div>
+    <p style="margin-top:1.1rem;" class="notbox"><strong>Everywhere, in writing:</strong> this is advocacy, not medicine. No diagnosis, no treatment, no prescriptions, not a doctor-patient relationship, not a substitute for one, not emergency care. This disclaimer appears at signup, on every case page, and in the footer of every report.</p>
+  </section>
+
+  <section>
+    <h2>The client's journey</h2>
+
+    <div class="phase-label">Before any money moves</div>
+    <ol class="steps">
+      <li><span class="dot">1</span><h3>Landing page</h3><p>The three products, plain-language pricing, what this is and is not, and the pitch for public sessions in your voice.</p></li>
+      <li><span class="dot">2</span><h3>Create an account</h3><p>Email magic-link sign-in. No passwords for anyone to forget or for you to support.</p></li>
+      <li><span class="dot">3</span><h3>Read and acknowledge the waivers</h3><p>Service disclaimer, privacy &amp; data handling, and recording consent — one per screen, scroll to the end, explicitly acknowledge each.</p></li>
+      <li><span class="dot">4</span><h3>Public or private?</h3><p>Its own screen, never bundled into the purchase. Private is pre-selected. Public consent can be revoked any time until the broadcast starts.</p></li>
+    </ol>
+
+    <blockquote class="consent">
+      "Other patients gain insight into their medical journey when live discussion of cases are presented. However, this is entirely optional depending on your privacy preferences."
+      <footer>Your framing, verbatim, on the election screen. Public = the call is broadcast live on the TheBroScientist YouTube channel.</footer>
+    </blockquote>
+
+    <div class="phase-label">Book &amp; pay — one flow</div>
+    <ol class="steps">
+      <li><span class="dot">5</span><h3>Pick a time and a meeting method</h3><p>Your availability calendar. Slots must be at least 72 hours out, between 8am and 6pm MST — shown alongside their local time.</p>
+        <div class="chips"><span class="chip pref">Discord voice channel · Preferred</span><span class="chip">Zoom call</span><span class="chip">Phone call</span></div>
+        <p style="margin-top:.5rem;">Discord is the default and badged preferred — they can stream their own camera there, so it works like any video meeting.</p></li>
+      <li><span class="dot">6</span><h3>Pay at the moment of scheduling</h3><p>Stripe Checkout: $100, plus the optional $50 follow-up add-on as a line item. The slot is held for ~15 minutes while they pay; abandon checkout and it frees up.</p></li>
+      <li><span class="dot">7</span><h3>The case opens — on both sides</h3><p>Payment confirmation creates the case with the appointment attached. A case can never exist without a payment. The live chat unlocks now, with your online status visible.</p></li>
+    </ol>
+
+    <div class="phase-label">Before the call</div>
+    <ol class="steps">
+      <li><span class="dot">8</span><h3>They upload, they finish forms</h3><p>Labs, imaging, and records go into the case file. The appointment stays "pending" until every required form is acknowledged — then it flips to <strong>confirmed</strong>. Reminders go out at 48 and 24 hours if forms are unfinished.</p></li>
+    </ol>
+
+    <div class="phase-label">The call</div>
+    <ol class="steps">
+      <li><span class="dot">9</span><h3>The discussion</h3><p>On the channel they chose — the case page shows the Discord or Zoom link, or the number to expect for a phone call. Public sessions stream live to your YouTube channel; private sessions stay between you.</p></li>
+    </ol>
+
+    <div class="phase-label">Afterward</div>
+    <ol class="steps">
+      <li><span class="dot">10</span><h3>You upload the recording</h3><p>It lands in their case file.</p></li>
+      <li><span class="dot">11</span><h3>Within 7 days: the report</h3><p>You upload the comprehensive report/flow chart; they get pinged instantly. Your admin view counts down the days so the deadline never silently slips.</p></li>
+      <li><span class="dot">12</span><h3>The follow-up, if they bought it</h3><p>With the $50 add-on, they book their second discussion any time after the report. Without it, the case page offers a follow-up as a fresh $100 case.</p></li>
+    </ol>
+
+    <div class="phase-label">Closing</div>
+    <ol class="steps">
+      <li><span class="dot closing">✓</span><h3>You close the case</h3><p>Once your obligations are fulfilled, one button closes it. The chat ends — but they keep access to their file forever, and every document (report, forms, recording) can be downloaded and printed.</p></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Pocket Advocate, side by side</h2>
+    <p class="lede" style="margin-top:0;">The subscription runs parallel to everything above and touches none of it.</p>
+    <div class="card">
+      <p style="margin:0; font-size:.95rem; color:var(--muted);">Account → subscription terms (the no-guarantee clause up front, in plain words) → Stripe subscription checkout → the chat unlocks immediately with your online status. Renewals, failed payments, and cancellations are handled automatically; access runs to the end of the last paid period. To protect your time, the chat shows an expectation line you control ("Eric typically replies within a few days"), and you can pause the whole thing from your side.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What each of you sees</h2>
+    <div class="duo">
+      <div class="card">
+        <h3>The client</h3>
+        <ul>
+          <li>Landing page with all three products</li>
+          <li>Waiver flow, then the public/private choice</li>
+          <li>Schedule-and-pay in one motion</li>
+          <li>Case dashboard: status timeline, appointment card with join link, uploads, forms, recording, report, chat</li>
+          <li>Closed-case view: chat gone, documents stay, Download / Print on everything</li>
+          <li>Pocket Advocate page and subscriber chat</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>You</h3>
+        <ul>
+          <li>Case list with status badges and "report due in N days" counters</li>
+          <li>Case detail: view uploads, post the meeting link, upload recording and report, close the case</li>
+          <li>Availability editor, constrained to 8am–6pm MST</li>
+          <li>All chats in one inbox — case chats and subscribers — newest first</li>
+          <li>Your online status sets itself while the admin app is open</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The rules the system enforces</h2>
+    <div class="card">
+      <div class="rule"><div class="k">Lead time</div><div class="v">Bookings must be <strong>72+ hours out</strong>. Enforced by the server, not the browser.</div></div>
+      <div class="rule"><div class="k">Hours</div><div class="v"><strong>8am–6pm MST</strong>, always anchored to Mountain time; clients see their local equivalent next to it.</div></div>
+      <div class="rule"><div class="k">Payment</div><div class="v">At scheduling. No pay, no case, no exceptions — the case is created by the payment confirmation itself.</div></div>
+      <div class="rule"><div class="k">Consent</div><div class="v">Private is the default. Public consent is separate, explicit, and revocable until the broadcast starts. Revoking it just makes the session private — nothing else changes.</div></div>
+      <div class="rule"><div class="k">Refunds</div><div class="v"><span class="needs">Needs your call:</span> proposed — full refund if canceled 72+ hours before the slot; inside 72 hours, one free reschedule, no cash refund.</div></div>
+      <div class="rule"><div class="k">No-shows</div><div class="v"><span class="needs">Needs your call:</span> proposed — client no-show forfeits after 15 minutes with one free reschedule; a no-show on your side is always a full refund or priority reschedule, their choice.</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The legal picture, honestly</h2>
+    <p>"HIPAA doesn't apply" is true — you're not a covered entity — but it isn't the end of the story. The FTC's Health Breach Notification Rule and state laws like Washington's My Health My Data Act reach non-HIPAA health services. Storing strangers' labs and imaging means real obligations either way. Serving the US only keeps Canadian privacy law out of scope entirely — the terms will say the service is offered to US residents only.</p>
+    <p>The app is designed for that from day one: encrypted storage, access locked to the client and you, an honest privacy notice, and strict security rules — never an open test mode. The advocacy framing ("questions to bring to your doctor," never "diagnosis" or "treatment plan") runs through every screen and the report template, because that wording is what keeps this on the right side of practicing medicine without a license.</p>
+    <p><strong>One non-negotiable:</strong> a real lawyer reviews the waiver, privacy notice, recording consent, and subscription terms before the first paying client. Everything here is structured to make that review cheap and fast.</p>
+  </section>
+
+  <section>
+    <h2>What it costs to run</h2>
+    <div class="card">
+      <table class="costs">
+        <tr><td>Stripe fee on a $100 case</td><td>≈ $3.20</td></tr>
+        <tr><td>Stripe fee on the $50 add-on</td><td>≈ $1.45</td></tr>
+        <tr><td>Stripe fee per $20 subscription month</td><td>≈ $0.90</td></tr>
+        <tr><td>Firebase (accounts, files, chat)</td><td>Free at launch volume</td></tr>
+        <tr><td>Cloudflare hosting</td><td>Free</td></tr>
+        <tr><td>Discord / Zoom</td><td>Free / existing</td></tr>
+        <tr><td>Domain</td><td>~$10–15 / yr</td></tr>
+      </table>
+    </div>
+    <p style="margin-top:1rem; font-size:.9rem; color:var(--muted);">The real costs are human: the 7-day report deadline per case, and the standing expectation of subscriber replies. The system surfaces the first and shields you on the second.</p>
+  </section>
+
+  <section>
+    <h2>How it gets built</h2>
+    <ol class="phases">
+      <li><span class="n">1</span><p><strong>Skeleton + money.</strong> Landing, waivers, consent, schedule-and-pay with real Stripe, a case created end-to-end.</p></li>
+      <li><span class="n">2</span><p><strong>The case file.</strong> Uploads, the dashboard timeline, your admin views, availability editor, recording and report delivery with the ping.</p></li>
+      <li><span class="n">3</span><p><strong>Chat + Pocket Advocate.</strong> Case chat with presence, the subscription, closed-case behavior, email notifications.</p></li>
+      <li><span class="n">4</span><p><strong>Hardening.</strong> Security audit, home-screen install polish, print-friendly reports, and the lawyer pass on all copy.</p></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Your calls to make</h2>
+    <ol class="qs">
+      <li><strong>Refund / cancellation and no-show policies</strong> — the proposals above need a yes or a change.</li>
+      <li><strong>Slot length</strong> (60 minutes? 90?) and how far ahead the calendar opens (2 weeks? 4?).</li>
+      <li><strong>Domain and public name</strong> — "TheBroScientist Neuro Advocacy" with "Pocket Advocate" as the subscription's name?</li>
+      <li><strong>Follow-up add-on details</strong> — a booking deadline after the report (say, 60 days)? Does the follow-up get its own written summary?</li>
+      <li><strong>Discord setup</strong> — one persistent lobby, or a fresh private channel per case? Recommended: fresh per case, so a privacy-opted client never bumps into the next one.</li>
+      <li><strong>Subscriber who also buys a case</strong> — one merged chat or two separate ones? Recommended: separate, since the case chat dies with the case and the subscriber chat doesn't.</li>
+    </ol>
+  </section>
+
+  <footer class="end">
+    TheBroScientist Neuro Advocacy · v1 blueprint · The full technical spec lives in SPEC.md in the Pocket-Advocate repo. Standalone project — unrelated to Tether.
+  </footer>
+</main>
+
+</body>
+</html>

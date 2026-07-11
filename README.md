@@ -1,0 +1,18 @@
+# Pocket-Advocate
+
+**TheBroScientist Neuro Advocacy** — a paid patient-advocacy service (US only). Clients book a live discussion of their symptoms, labs, and medical journey, get a private case file with chat, and receive a comprehensive written report within a week. A $20/mo "Pocket Advocate" subscription offers ongoing chat access.
+
+This is advocacy, not medicine: no diagnosis, no treatment, no prescriptions, and not a substitute for a doctor.
+
+## Documents
+
+- **[SPEC.md](SPEC.md)** — the full product spec (v1). Single source of truth for builders.
+- **[FLOW.html](FLOW.html)** — the phone-readable blueprint of the same spec, for Eric's review.
+
+## Stack
+
+Static web app on Cloudflare (one Worker as the only server-side code) + Firebase (Auth / Firestore / Storage / RTDB) + Stripe Checkout.
+
+## Status
+
+Building Phase 1 (skeleton + money): landing, waivers, public/private election, schedule-and-pay, case created end-to-end via the Stripe webhook. See §G of the spec for the phase plan.
