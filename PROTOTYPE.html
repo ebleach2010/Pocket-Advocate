@@ -11,7 +11,8 @@
     --panel: #0D1220;
     --panel-2: #111830;
     --ink: #EAF0FF;
-    --dim: #8A93AC;
+    --dim: #A9B2C8;
+    --soft: #C9D0E2;
     --line: #1C2542;
     --cyan: #2DE2FF;
     --cyan-dim: #1596B0;
@@ -35,7 +36,7 @@
   h1 { font-size: 1.7rem; } h2 { font-size: 1.25rem; } h3 { font-size: 1rem; }
   p { margin: 0 0 .8rem; }
   .dim { color: var(--dim); }
-  .small { font-size: .84rem; }
+  .small { font-size: .9rem; }
   .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 
   .banner {
@@ -115,18 +116,18 @@
     font: 600 .68rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .22em;
     color: var(--cyan); text-shadow: var(--glow-c);
   }
-  #s-landing h1 { font-size: clamp(1.3rem, 4.6vw, 1.75rem); margin-bottom: .2rem; }
-  .hero-sub { color: var(--dim); font-size: .85rem; margin: 0; line-height: 1.4; }
+  #s-landing h1 { font-size: clamp(1.35rem, 4.8vw, 1.8rem); margin-bottom: .25rem; }
+  .hero-sub { color: var(--soft); font-size: 1rem; margin: 0; line-height: 1.5; }
 
   .pack {
     position: relative; display: grid; grid-template-columns: 1fr auto; gap: .18rem .8rem;
     background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
     padding: .7rem .95rem; text-decoration: none; color: var(--ink);
   }
-  .pack h3 { margin: 0; font-size: .98rem; }
-  .pack .desc { grid-column: 1 / -1; color: var(--dim); font-size: .78rem; margin: 0; line-height: 1.4; }
+  .pack h3 { margin: 0; font-size: 1.08rem; }
+  .pack .desc { grid-column: 1 / -1; color: var(--soft); font-size: .95rem; margin: 0; line-height: 1.45; }
   .pack .price {
-    font: 700 1.05rem/1.3 ui-monospace, "SF Mono", Menlo, monospace;
+    font: 700 1.15rem/1.3 ui-monospace, "SF Mono", Menlo, monospace;
     color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums;
   }
   .pack.rec-c { border-color: var(--cyan); box-shadow: var(--glow-c), inset 0 0 30px rgba(45,226,255,.05); }
@@ -134,29 +135,29 @@
   .pack.rec-m { border-color: var(--magenta); box-shadow: var(--glow-m), inset 0 0 30px rgba(255,79,216,.05); }
   .pack.rec-m .price { color: var(--magenta); }
   .tag {
-    position: absolute; top: -.6rem; left: .9rem;
-    font: 700 .6rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .18em;
+    position: absolute; top: -.65rem; left: .9rem;
+    font: 700 .64rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .18em;
     padding: .22rem .55rem; border-radius: 999px; background: var(--bg);
   }
   .tag.c { color: var(--cyan); border: 1px solid var(--cyan); box-shadow: var(--glow-c); }
   .tag.m { color: var(--magenta); border: 1px solid var(--magenta); box-shadow: var(--glow-m); }
   .fine {
-    font-size: .7rem; color: var(--dim); margin: 0; line-height: 1.4;
+    font-size: .82rem; color: var(--dim); margin: 0; line-height: 1.45;
   }
   .fine strong { color: var(--ink); }
 
   /* short screens (SE-class): tighten until the landing fits */
   @media (max-height: 700px) {
-    #s-landing { gap: .7rem; }
-    #s-landing h1 { font-size: 1.15rem; }
-    .hero-sub { font-size: .78rem; }
+    #s-landing { gap: .6rem; }
+    #s-landing h1 { font-size: 1.2rem; }
+    .hero-sub { font-size: .86rem; }
     .hero-eyebrow { font-size: .6rem; }
     .pack { padding: .55rem .8rem; }
-    .pack h3 { font-size: .9rem; }
-    .pack .price { font-size: .95rem; }
-    .pack .desc { font-size: .7rem; }
+    .pack h3 { font-size: .95rem; }
+    .pack .price { font-size: 1rem; }
+    .pack .desc { font-size: .82rem; }
     .btn { padding: .55rem .95rem; font-size: .84rem; }
-    .fine { font-size: .62rem; }
+    .fine { font-size: .7rem; }
   }
 
   /* ---------- wizard chrome ---------- */
@@ -345,24 +346,24 @@
   <div>
     <div class="hero-eyebrow">PATIENT ADVOCACY · US ONLY</div>
     <h1>Walk into your next appointment armed.</h1>
-    <p class="hero-sub">Eric turns your labs, scans, and story into questions that get answers — and a written plan you keep forever.</p>
+    <p class="hero-sub">Your labs, scans, and story — turned into real questions, next steps, and a plan you keep.</p>
   </div>
 
   <label class="pack rec-c" for="scr-signin" tabindex="0">
     <span class="tag c">RECOMMENDED</span>
     <h3>Advocacy Case</h3><span class="price">$100</span>
-    <p class="desc">Live 1-on-1 deep-dive + private case file + written report in 7 days. Tap to start.</p>
+    <p class="desc">One live deep-dive with Eric + your written report within 7 days.</p>
   </label>
 
   <div class="pack rec-m">
     <span class="tag m">ALWAYS-ON</span>
     <h3>Pocket Advocate subscription</h3><span class="price">$20/mo</span>
-    <p class="desc">24/7 chat line to Eric, live status shown. He replies when he's free — that's the deal. Cancel anytime.</p>
+    <p class="desc">Anytime chat with Eric — he replies when he's free. Cancel anytime.</p>
   </div>
 
   <div class="pack">
     <h3>Follow-up add-on</h3><span class="price">+$50</span>
-    <p class="desc">Second session, same case. Offered once — at checkout only.</p>
+    <p class="desc">A second session on this case. Offered only at checkout.</p>
   </div>
 
   <div class="actions" style="margin-top:.2rem;">
