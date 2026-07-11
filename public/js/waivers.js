@@ -8,7 +8,7 @@ export const WAIVERS = [
     title: 'Service disclaimer & waiver',
     body: `
 <h3>What this service is</h3>
-<p>TheBroScientist Neuro Advocacy is a <strong>patient-advocacy</strong> service offered to residents of the United States only. Your advocate helps you navigate your medical journey: organizing your story, helping you understand your labs and imaging in plain language, preparing questions to bring to your doctors, and identifying options to discuss with your care team.</p>
+<p>Pocket Advocate is a <strong>patient-advocacy</strong> service offered to residents of the United States only. Your advocate helps you navigate your medical journey: organizing your story, helping you understand your labs and imaging in plain language, preparing questions to bring to your doctors, and identifying options to discuss with your care team.</p>
 <h3>What this service is NOT</h3>
 <p>This service is <strong>not medical care</strong>. Specifically, it is:</p>
 <p>• <strong>Not diagnosis, not treatment, and not prescriptions.</strong> Nothing said in a discussion, written in chat, or included in a report is a diagnosis, a treatment plan, or medical advice.<br>

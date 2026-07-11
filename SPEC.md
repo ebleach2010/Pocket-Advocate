@@ -300,6 +300,9 @@ replies within a few days") and subscriptions can be paused from his side.
 2. **Slot length** (60 min? 90?) and how far ahead the calendar opens (2 weeks? 4?).
 3. **Domain / public brand name** — "TheBroScientist Neuro Advocacy" with Pocket
    Advocate as the subscription's name?
+   ✅ **Decided (2026-07-11): the web app is called "Pocket Advocate."** The $20/mo
+   product is presented as the "Pocket Advocate subscription." Public sessions still
+   broadcast on the TheBroScientist YouTube channel. Domain still open.
 4. **Follow-up add-on details** — booking deadline after the report (e.g. within 60
    days)? Does the follow-up produce its own written summary, or is it summary-free?
 5. **Discord logistics** — one persistent lobby channel vs. a fresh private channel per

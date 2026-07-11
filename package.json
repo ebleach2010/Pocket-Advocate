@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "TheBroScientist Neuro Advocacy — patient-advocacy web app (Cloudflare Worker + Firebase + Stripe)",
+  "description": "Pocket Advocate — patient-advocacy web app (Cloudflare Worker + Firebase + Stripe)",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
