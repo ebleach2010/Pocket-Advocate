@@ -58,6 +58,7 @@
 <script type="module">
   import { hydrateNav } from '/js/auth.js';
   import { GOOGLE_REVIEWS_URL, SAMPLE_REVIEWS } from '/js/reviews-config.js';
+  import { enhanceReviewsStrip } from '/js/reviews-strip.js';
   hydrateNav();
 
   // Reviews strip: duplicated content scrolls seamlessly; taps go to Google
@@ -74,6 +75,7 @@
   track.innerHTML = cards + cards; // x2 for the seamless loop
   if (!GOOGLE_REVIEWS_URL)
     document.getElementById('reviews-label').textContent = '★ REVIEWS · SAMPLES — GOOGLE REVIEWS CONNECT HERE';
+  enhanceReviewsStrip(document.querySelector('.reviews-strip'));
 </script>
 </body>
 </html>

@@ -298,8 +298,9 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 }
 
 /* google reviews strip (landing) */
-.reviews-strip { overflow: hidden; position: relative; }
-.reviews-track { display: flex; gap: .6rem; width: max-content; animation: rv-scroll 40s linear infinite; }
+.reviews-strip { overflow: hidden; position: relative; touch-action: pan-y; cursor: grab; }
+.reviews-strip:active { cursor: grabbing; }
+.reviews-track { display: flex; gap: .6rem; width: max-content; animation: rv-scroll 40s linear infinite; user-select: none; -webkit-user-select: none; }
 .reviews-strip:hover .reviews-track { animation-play-state: paused; }
 @keyframes rv-scroll { to { transform: translateX(-50%); } }
 @media (prefers-reduced-motion: reduce) {
