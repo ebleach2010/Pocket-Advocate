@@ -179,8 +179,9 @@
   #ct-prog:checked ~ #tp-prog, #ct-chat:checked ~ #tp-chat, #ct-docs:checked ~ #tp-docs { display: block; }
 
   /* reviews strip */
-  .reviews-strip { overflow: hidden; }
-  .reviews-track { display: flex; gap: .6rem; width: max-content; animation: rv-scroll 40s linear infinite; }
+  .reviews-strip { overflow: hidden; touch-action: pan-y; cursor: grab; }
+  .reviews-strip:active { cursor: grabbing; }
+  .reviews-track { display: flex; gap: .6rem; width: max-content; animation: rv-scroll 40s linear infinite; user-select: none; -webkit-user-select: none; }
   @keyframes rv-scroll { to { transform: translateX(-50%); } }
   @media (prefers-reduced-motion: reduce) { .reviews-track { animation: none; } .reviews-strip { overflow-x: auto; } }
   .review { flex: 0 0 14rem; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: .4rem .65rem; }
@@ -745,5 +746,61 @@
 </section>
 
 </main>
+<script>
+// Drag + momentum for the reviews strip (same physics as the real app).
+// No-JS viewers fall back to the CSS autoscroll above.
+(function () {
+  var strip = document.querySelector('.reviews-strip');
+  var track = strip && strip.querySelector('.reviews-track');
+  if (!track) return;
+  var x = null, v = 0, raf = null, dragging = false, moved = 0, lastPX = 0, samples = [];
+  function half() { return track.scrollWidth / 2; }
+  function wrap(val) { var h = half(); if (h <= 0) return val; while (val <= -h) val += h; while (val > 0) val -= h; return val; }
+  function apply() { track.style.transform = 'translateX(' + x + 'px)'; }
+  function takeover() {
+    if (x !== null) return;
+    var m = new DOMMatrixReadOnly(getComputedStyle(track).transform);
+    x = wrap(m.m41);
+    track.style.animation = 'none';
+    apply();
+  }
+  strip.addEventListener('pointerdown', function (e) {
+    takeover();
+    if (raf) cancelAnimationFrame(raf);
+    dragging = true; moved = 0; v = 0; lastPX = e.clientX;
+    samples = [{ t: performance.now(), x: e.clientX }];
+    strip.setPointerCapture(e.pointerId);
+  });
+  strip.addEventListener('pointermove', function (e) {
+    if (!dragging) return;
+    var dx = e.clientX - lastPX;
+    lastPX = e.clientX; moved += Math.abs(dx);
+    x = wrap(x + dx); apply();
+    var now = performance.now();
+    samples.push({ t: now, x: e.clientX });
+    while (samples.length > 2 && now - samples[0].t > 100) samples.shift();
+  });
+  function release() {
+    if (!dragging) return;
+    dragging = false;
+    var now = performance.now();
+    var s0 = samples[0], s1 = samples[samples.length - 1];
+    v = s1 && s0 && s1.t > s0.t && now - s1.t < 80 ? (s1.x - s0.x) / (s1.t - s0.t) : 0;
+    var prev = performance.now();
+    function step(t) {
+      var dt = Math.min(t - prev, 50); prev = t;
+      x = wrap(x + v * dt); apply();
+      v *= Math.pow(0.97, dt / 16.7);
+      if (Math.abs(v) > 0.02) raf = requestAnimationFrame(step);
+    }
+    if (Math.abs(v) > 0.05) raf = requestAnimationFrame(step);
+  }
+  strip.addEventListener('pointerup', release);
+  strip.addEventListener('pointercancel', release);
+  strip.addEventListener('click', function (e) {
+    if (moved > 6) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
+})();
+</script>
 </body>
 </html>
