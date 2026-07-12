@@ -32,10 +32,11 @@
   </footer>
 </main>
 <script type="module">
-  import { hydrateNav } from '/js/auth.js';
   import { GOOGLE_REVIEWS_URL, BUSINESS_PHONE, REVIEWS } from '/js/reviews-config.js';
   import { enhanceReviewsStrip } from '/js/reviews-strip.js';
-  hydrateNav();
+  // Nav auth state rides the Firebase CDN — load it soft so the reviews
+  // themselves never depend on it.
+  import('/js/auth.js').then((m) => m.hydrateNav()).catch(() => {});
 
   const esc = (s) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 

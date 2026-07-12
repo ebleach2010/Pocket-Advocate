@@ -7,10 +7,10 @@
 // can replace this static list later (docs/SETUP.md).
 export const GOOGLE_REVIEWS_URL = null;
 
-// Tap-to-call: set to the Google Business Profile phone number (digits with
-// country code, e.g. '+15555555555') and the About and Reviews pages grow a
-// call button automatically.
-export const BUSINESS_PHONE = null;
+// Tap-to-call: Eric's Grasshopper business line (provided 2026-07-12).
+// The Google Business voice number belongs to another business, so the app
+// deliberately uses this one. About and Reviews render call buttons from it.
+export const BUSINESS_PHONE = '+12086708608';
 
 export const REVIEWS = [
   {
