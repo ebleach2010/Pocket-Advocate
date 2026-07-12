@@ -85,7 +85,7 @@ function renderWaiver(waiver) {
     <div class="waiver-body" id="wbody">${waiver.body}</div>
     <p class="scroll-hint" id="hint">Scroll to the end to continue…</p>
     <p>
-      ${stepIndex > 0 ? '<button class="btn quiet" id="back">Back</button>' : ''}
+      ${stepIndex > 0 ? '<button class="btn quiet" id="back">Back</button>' : '<a class="btn quiet" href="/">← Back</a>'}
       <button class="btn" id="ack" disabled>I have read and acknowledge this</button>
     </p>`);
 

@@ -243,6 +243,12 @@ progress { width: 100%; accent-color: var(--cyan); }
 }
 .steps-list li:last-child { border-left-color: transparent; }
 .about h2 { color: var(--cyan); font-size: 1.05rem; margin-top: 1.8rem; }
+.mission {
+  border-left: 3px solid var(--cyan); border-radius: 3px;
+  padding: .55rem .9rem .55rem 1rem; margin-top: .6rem;
+  background: linear-gradient(90deg, rgba(45,226,255,.07), transparent 70%);
+}
+.mission p { margin: 0; }
 
 .footer-disclaimer, footer.legal {
   margin-top: 2.2rem; padding-top: 1rem; border-top: 1px solid var(--line);
