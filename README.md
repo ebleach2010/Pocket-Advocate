@@ -1,6 +1,6 @@
 # Pocket-Advocate
 
-**Pocket Advocate** — a paid patient-advocacy service (US only). Clients book a live discussion of their symptoms, labs, and medical journey, get a private case file with chat, and receive a comprehensive written report within a week. A $20/mo subscription tier offers ongoing chat access.
+**Pocket Advocate** — a paid patient-advocacy service (US & Canada). Clients book a live discussion of their symptoms, labs, and medical journey, get a private case file with chat, and receive a comprehensive written report within a week. A $20/mo subscription tier offers ongoing chat access.
 
 This is advocacy, not medicine: no diagnosis, no treatment, no prescriptions, and not a substitute for a doctor.
 
@@ -15,7 +15,7 @@ Static web app on Cloudflare (one Worker as the only server-side code) + Firebas
 
 ## Status
 
-**Phases 1–3 built.** Phase 1 (skeleton + money): landing, magic-link auth, waiver flow, public/private election, schedule-and-pay through the Worker + Stripe webhook, case created end-to-end. Phase 2 (the case file): uploads to Storage, the client case dashboard (timeline, appointment card + calendar file, files, make-private), the admin side (case list with report-due counters, case detail with milestones, availability editor). Phase 3 (chat + subscription): live case chat and subscriber chat with Eric's presence, the $20/mo Pocket Advocate subscription through Stripe with lifecycle webhooks, closed-case chat behavior, and Resend email notifications with a chat-nudge cron. Neon UI throughout. Next: Phase 4 (hardening + lawyer pass). See §G of the spec and [docs/SETUP.md](docs/SETUP.md) to wire up Firebase/Stripe/Cloudflare.
+**Phases 1–3 built.** Phase 1 (skeleton + money): landing, magic-link auth, waiver flow, public/private election, schedule-and-pay through the Worker + Stripe webhook, case created end-to-end. Phase 2 (the case file): uploads to Storage, the client case dashboard (timeline, appointment card + calendar file, files, make-private), the admin side (case list with report-due counters, case detail with milestones, availability editor). Phase 3 (chat + subscription): live case chat and subscriber chat with Eric's presence, the $20/mo Pocket Advocate subscription through Stripe with lifecycle webhooks, closed-case chat behavior, and Resend email notifications with a chat-nudge cron. Neon UI throughout. Next: Phase 4 (hardening). See §G of the spec and [docs/SETUP.md](docs/SETUP.md) to wire up Firebase/Stripe/Cloudflare.
 
 ## Layout
 

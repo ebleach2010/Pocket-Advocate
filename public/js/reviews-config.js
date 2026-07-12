@@ -7,6 +7,11 @@
 // can replace this static list later (docs/SETUP.md).
 export const GOOGLE_REVIEWS_URL = null;
 
+// Tap-to-call: set to the Google Business Profile phone number (digits with
+// country code, e.g. '+15555555555') and the About and Reviews pages grow a
+// call button automatically.
+export const BUSINESS_PHONE = null;
+
 export const REVIEWS = [
   {
     name: 'Jessica Naylor',

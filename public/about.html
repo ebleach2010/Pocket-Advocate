@@ -49,15 +49,19 @@
   <p class="dim small">Pocket Advocate subscription, $20/month: an always-open chat line to Eric, with his live online status. He answers when he's available — response time is never guaranteed, and the terms say so in plain words. That's the honest trade for $20. Completely separate from cases; cancel anytime.</p>
 
   <h2>The honest legal picture</h2>
-  <p class="dim small">This is advocacy, not medicine — no diagnosis, no treatment, no prescriptions, no doctor-patient relationship, no emergency care (call 911). Your data is encrypted, stored in the US, visible to exactly two people, and deletable on request. A licensed attorney reviews every form before the first paying client.</p>
+  <p class="dim small">This is advocacy, not medicine — no diagnosis, no treatment, no prescriptions, no doctor-patient relationship, no emergency care (call 911). Your data is encrypted, stored in the US, visible to exactly two people, and deletable on request.</p>
 
-  <div class="actions"><a class="btn" href="/book.html">Go book a case →</a></div>
+  <div class="actions"><a class="btn" href="/book.html">Go book a case →</a><span id="call-slot"></span></div>
 
   <footer class="legal">Pocket Advocate is a patient-advocacy service, offered to residents of the United States and Canada. It does not provide diagnosis, treatment, prescriptions, or medical advice, and does not create a doctor-patient relationship. If this is an emergency, call 911.</footer>
 </main>
 <script type="module">
   import { hydrateNav } from '/js/auth.js';
+  import { BUSINESS_PHONE } from '/js/reviews-config.js';
   hydrateNav();
+  if (BUSINESS_PHONE)
+    document.getElementById('call-slot').outerHTML =
+      `<a class="btn ghost" href="tel:${BUSINESS_PHONE}">📞 Call</a>`;
 </script>
 </body>
 </html>

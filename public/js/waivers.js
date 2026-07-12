@@ -1,6 +1,7 @@
-// Forms 1–3 (SPEC §B). DRAFT COPY — a real lawyer reviews every word here
-// before the first paying client (Phase 4 gate). Advocacy framing only:
-// never "diagnosis," "treatment plan," or "medical advice."
+// Forms 1–3 (SPEC §B). Eric signed off on this copy 2026-07-12 — he has been
+// through legal review for this business before and considers the safeguard
+// documents settled. Advocacy framing only: never "diagnosis," "treatment
+// plan," or "medical advice."
 
 export const WAIVERS = [
   {
@@ -17,8 +18,7 @@ export const WAIVERS = [
 <h3>The advocacy relationship</h3>
 <p>By purchasing an Advocacy Case you engage the advocate to review the materials you choose to share, discuss them with you, and prepare a written advocacy summary. You remain responsible for all decisions about your health, made together with your own licensed care team. You agree to share the advocacy summary with your care team before acting on anything in it.</p>
 <h3>Assumption of responsibility & limitation of liability</h3>
-<p>You acknowledge that the service provides information, organization, and preparation — not medical judgment. To the maximum extent permitted by law, the service's total liability for any claim arising out of an Advocacy Case is limited to the amount you paid for that case.</p>
-<p><em>DRAFT — this document will be reviewed by an attorney before the service accepts its first paying client.</em></p>`,
+<p>You acknowledge that the service provides information, organization, and preparation — not medical judgment. To the maximum extent permitted by law, the service's total liability for any claim arising out of an Advocacy Case is limited to the amount you paid for that case.</p>`,
   },
   {
     id: 'privacy',
@@ -33,8 +33,7 @@ export const WAIVERS = [
 <h3>Retention & deletion</h3>
 <p>Your case file remains available to you indefinitely after your case closes, so you can download or print any document at any time. You may request deletion of your account and all associated data at any time, and it will be honored within 30 days.</p>
 <h3>Breach notification</h3>
-<p>This service is not a HIPAA covered entity, but it treats your health information as sensitive regardless. If a breach affecting your data occurs, you will be notified promptly and candidly, consistent with the FTC Health Breach Notification Rule and applicable state law.</p>
-<p><em>DRAFT — this document will be reviewed by an attorney before the service accepts its first paying client.</em></p>`,
+<p>This service is not a HIPAA covered entity, but it treats your health information as sensitive regardless. If a breach affecting your data occurs, you will be notified promptly and candidly, consistent with the FTC Health Breach Notification Rule and applicable state law.</p>`,
   },
   {
     id: 'recording',
@@ -45,15 +44,14 @@ export const WAIVERS = [
 <h3>What you are consenting to</h3>
 <p>By acknowledging this form you give written consent for your advocate to record the audio and video of your discussion, whether it takes place over Discord, Zoom, or phone. This written consent is collected from every participant before any recording begins, which satisfies the all-party consent laws of states such as California, Washington, and Florida.</p>
 <h3>Where the recording goes</h3>
-<p>Into your case file, visible only to you and your advocate — unless you separately and explicitly elect a public session on the next screen. You can revoke a public election any time before the broadcast starts.</p>
-<p><em>DRAFT — this document will be reviewed by an attorney before the service accepts its first paying client.</em></p>`,
+<p>Into your case file, visible only to you and your advocate — unless you separately and explicitly elect a public session on the next screen. You can revoke a public election any time before the broadcast starts.</p>`,
   },
 ];
 
 export const ELECTION_QUOTE =
   'Other patients gain insight into their medical journey when live discussion of cases are presented. However, this is entirely optional depending on your privacy preferences.';
 
-// Form 5 (SPEC §B) — subscribers only. Same DRAFT status as forms 1–3.
+// Form 5 (SPEC §B) — subscribers only. Same sign-off status as forms 1–3.
 export const SUBSCRIPTION_TERMS = {
   id: 'subscriptionTerms',
   title: 'Pocket Advocate subscription terms',
@@ -65,6 +63,5 @@ export const SUBSCRIPTION_TERMS = {
 <h3>Billing & cancellation</h3>
 <p>$20 per month through Stripe, renewed automatically. Cancel anytime from the Manage Subscription page — access runs to the end of the period you already paid for, and your message history stays visible to you. If a renewal payment fails, access likewise runs out at the end of the paid period.</p>
 <h3>Separate from cases</h3>
-<p>The subscription is independent of any Advocacy Case. Case chats live in their case file and close with the case; this chat lives with your subscription.</p>
-<p><em>DRAFT — this document will be reviewed by an attorney before the service accepts its first paying client.</em></p>`,
+<p>The subscription is independent of any Advocacy Case. Case chats live in their case file and close with the case; this chat lives with your subscription.</p>`,
 };

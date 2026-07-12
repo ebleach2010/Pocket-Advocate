@@ -33,7 +33,7 @@
 </main>
 <script type="module">
   import { hydrateNav } from '/js/auth.js';
-  import { GOOGLE_REVIEWS_URL, REVIEWS } from '/js/reviews-config.js';
+  import { GOOGLE_REVIEWS_URL, BUSINESS_PHONE, REVIEWS } from '/js/reviews-config.js';
   import { enhanceReviewsStrip } from '/js/reviews-strip.js';
   hydrateNav();
 
@@ -60,9 +60,10 @@
       ${r.text ? `<p class="rv-full-text">${esc(r.text)}</p>` : '<p class="dim small" style="margin:.3rem 0 0;">Rated 5 stars.</p>'}
     </div>`).join('');
 
-  document.getElementById('google-link-slot').innerHTML = GOOGLE_REVIEWS_URL
+  document.getElementById('google-link-slot').innerHTML = (GOOGLE_REVIEWS_URL
     ? `<a href="${GOOGLE_REVIEWS_URL}" target="_blank" rel="noopener">Read all reviews on Google →</a>`
-    : 'These reviews are from our Google listing — the live Google link lands here once the business profile is up.';
+    : 'These reviews are from our Google listing — the live Google link lands here once the business profile is up.')
+    + (BUSINESS_PHONE ? ` · <a href="tel:${BUSINESS_PHONE}">📞 Call us</a>` : '');
 </script>
 </body>
 </html>

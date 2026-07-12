@@ -303,7 +303,12 @@ replies within a few days") and subscriptions can be paused from his side.
 3. **Phase 3 — Chat + Pocket Advocate:** case chat, presence, subscriber flow with
    subscription webhooks, closed-case behavior, email notifications.
 4. **Phase 4 — Hardening:** security-rules audit, PWA install polish, print stylesheet
-   for reports, **lawyer pass on all copy before the first paying client**.
+   for reports, ~~lawyer pass on all copy before the first paying client~~.
+
+   > ✅ **Lawyer pass waived (2026-07-12), Eric's call.** He has been through this
+   > legal-review process before, has safeguard documents in place, and operates
+   > under the LLC. The "reviewed by an attorney" / DRAFT notices were removed
+   > from the app copy at his request.
 
 ---
 

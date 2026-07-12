@@ -84,4 +84,6 @@ the API. Point the domain's DNS at the Worker route.
 - **Case creation is webhook-only.** The browser never writes to `cases` or
   `availability` (see `firestore.rules`); it only reads. The Worker's service
   account bypasses rules by design.
-- **Waiver copy is draft.** Lawyer pass is the Phase 4 launch gate.
+- **Waiver copy is signed off.** Eric waived a fresh lawyer pass (2026-07-12) —
+  he has been through legal review for this business before and has safeguard
+  documents plus the LLC in place.
