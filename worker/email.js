@@ -5,7 +5,7 @@
 
 const FOOTER = `
   <p style="color:#888; font-size:12px; border-top:1px solid #ddd; padding-top:12px; margin-top:24px;">
-    Pocket Advocate is a patient-advocacy service, offered to US residents only.
+    Pocket Advocate is a patient-advocacy service, offered to residents of the United States and Canada.
     It does not provide diagnosis, treatment, prescriptions, or medical advice,
     and does not create a doctor-patient relationship. If this is an emergency, call 911.
   </p>`;

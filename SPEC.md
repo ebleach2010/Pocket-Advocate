@@ -12,6 +12,14 @@
 
 A paid **patient-advocacy** service run by Eric, serving clients in the
 **United States only**. Advocates help people navigate their medical journey —
+
+> ✅ **Amended (2026-07-12): the service also serves Canada.** Eric's call — he
+> is not bound by medical licensing law for advocacy work, has safeguard
+> documents in place, and operates under the LLC. All app copy (landing,
+> sign-in attestation, waivers, legal footers, email footer) now says US and
+> Canada. Canadian privacy law (PIPEDA) is therefore in scope — added to the
+> lawyer-review list below.
+
 organize their story, understand their labs and imaging in plain language, prepare
 questions for their doctors, and find next steps. It is built on deep personal knowledge
 and lived experience.
@@ -60,6 +68,11 @@ promises; and state laws (e.g. Washington's **My Health My Data Act**, Californi
 CCPA/CPRA) apply to consumer health data held by non-HIPAA businesses. US-only service
 keeps Canadian privacy law (PIPEDA and provincial statutes) out of scope — the terms
 should state the service is offered to US residents only.
+
+> ✅ **Superseded (2026-07-12): Canada is in scope.** The terms now say US and
+> Canada, so PIPEDA (and provincial statutes like Quebec's Law 25) apply to
+> Canadian clients' data. Flag for the attorney reviewing the DRAFT documents
+> before the first paying client.
 
 Practical consequences baked into this spec: collect only what's needed, encrypt in
 transit and at rest (Firebase does both), lock access down with security rules from day

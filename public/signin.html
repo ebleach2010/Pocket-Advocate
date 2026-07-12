@@ -26,7 +26,7 @@
     <label for="email">Email address</label>
     <input type="email" id="email" autocomplete="email" placeholder="you@example.com">
     <label style="margin-top:.8rem;">
-      <input type="checkbox" id="us-attest"> I confirm I am a resident of the United States. This service is offered to US residents only.
+      <input type="checkbox" id="us-attest"> I confirm I am a resident of the United States or Canada. This service is offered to US and Canadian residents only.
     </label>
     <p class="error" id="error" hidden></p>
     <p style="margin-top:1rem;">
@@ -70,7 +70,7 @@
       return;
     }
     if (!document.getElementById('us-attest').checked) {
-      errEl.textContent = 'This service is available to US residents only.';
+      errEl.textContent = 'This service is available to US and Canadian residents only.';
       errEl.hidden = false;
       return;
     }
