@@ -1,6 +1,6 @@
 # Pocket-Advocate
 
-**Pocket Advocate** — a paid patient-advocacy service (US & Canada). Clients book a live discussion of their symptoms, labs, and medical journey, get a private case file with chat, and receive a comprehensive written report within a week. A $20/mo subscription tier offers ongoing chat access.
+**Pocket Advocate** — a paid patient-advocacy service (US & Canada), headed for **thepocketadvocates.com**. Clients book a live discussion of their symptoms, labs, and medical journey, get a private case file with chat, and receive a comprehensive written report within a week. A $20/mo subscription tier offers ongoing chat access.
 
 This is advocacy, not medicine: no diagnosis, no treatment, no prescriptions, and not a substitute for a doctor.
 

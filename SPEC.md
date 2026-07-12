@@ -321,6 +321,7 @@ replies within a few days") and subscriptions can be paused from his side.
    ✅ **Decided (2026-07-11): the web app is called "Pocket Advocate."** The $20/mo
    product is presented as the "Pocket Advocate subscription." Public sessions still
    broadcast on the TheBroScientist YouTube channel. Domain still open.
+   ✅ **Decided (2026-07-12): the domain is thepocketadvocates.com.**
 4. **Follow-up add-on details** — booking deadline after the report (e.g. within 60
    days)? Does the follow-up produce its own written summary, or is it summary-free?
 5. **Discord logistics** — one persistent lobby channel vs. a fresh private channel per

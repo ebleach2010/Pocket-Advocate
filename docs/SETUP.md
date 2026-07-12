@@ -6,7 +6,7 @@ One-time wiring to take the Phase 1 code live. Everything here is config, not co
 
 1. Create a project at console.firebase.google.com (US region for Firestore/Storage).
 2. **Auth** → enable the **Email link (passwordless)** sign-in provider. Add your
-   domains (localhost:8787 and the production domain) to authorized domains.
+   domains (localhost:8787 and **thepocketadvocates.com**) to authorized domains.
 2b. **Realtime Database** → create an instance (any US location); paste its URL
    into `databaseURL` in `public/js/firebase-config.js`. It powers Eric's
    online-status dot; its rules deploy with the command below.
@@ -36,7 +36,7 @@ One-time wiring to take the Phase 1 code live. Everything here is config, not co
 ## 3. Stripe
 
 1. In the Stripe dashboard (start in test mode), grab the secret key.
-2. Add a webhook endpoint: `https://<domain>/api/stripe/webhook`, subscribed to
+2. Add a webhook endpoint: `https://thepocketadvocates.com/api/stripe/webhook`, subscribed to
    `checkout.session.completed`, `checkout.session.expired`,
    `customer.subscription.updated`, `customer.subscription.deleted`, and
    `invoice.payment_failed`. Copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
@@ -61,16 +61,20 @@ Admin pages: `/admin.html` (case list + report-due counters),
 
 ## 4b. Resend (email)
 
-1. Sign up at resend.com, verify your sending domain (or use their onboarding
-   domain for testing), and create an API key → `RESEND_API_KEY` secret.
-2. Set `EMAIL_FROM` in `wrangler.jsonc` to a sender on that domain.
+1. Sign up at resend.com, verify **thepocketadvocates.com** as the sending
+   domain (Resend shows the DNS records; add them in the Cloudflare DNS panel —
+   same account as the domain), and create an API key → `RESEND_API_KEY` secret.
+2. `EMAIL_FROM` in `wrangler.jsonc` is already `no-reply@thepocketadvocates.com`.
 3. Emails no-op gracefully until both exist, so this can wait — but the
    report-ready ping and chat nudges depend on it.
 
 ## 5. Deploy
 
 `npm run deploy` — the Worker serves both the static app (from `public/`) and
-the API. Point the domain's DNS at the Worker route.
+the API. Then attach the domain: Cloudflare dashboard → Workers & Pages →
+pocket-advocate → Settings → **Custom Domains** → add `thepocketadvocates.com`
+(and `www.thepocketadvocates.com` if wanted). Since the domain is registered
+in the same Cloudflare account, DNS and certificates are automatic.
 
 ## Notes / deliberate choices
 

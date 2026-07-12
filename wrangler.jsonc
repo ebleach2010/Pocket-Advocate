@@ -19,11 +19,12 @@
     // Non-secret config. Replace after creating the Firebase project (docs/SETUP.md).
     "FIREBASE_PROJECT_ID": "REPLACE_ME",
     "FIREBASE_WEB_API_KEY": "REPLACE_ME",
-    // Where success/cancel URLs point. Production: the deployed origin.
-    "PUBLIC_BASE_URL": "http://localhost:8787",
+    // Where success/cancel URLs point. thepocketadvocates.com is the production
+    // domain (Eric's, 2026-07-12); switch to http://localhost:8787 for local dev.
+    "PUBLIC_BASE_URL": "https://thepocketadvocates.com",
     // Email (Resend). EMAIL_FROM must be a verified sender/domain in Resend.
-    "EMAIL_FROM": "Pocket Advocate <no-reply@REPLACE_ME>",
-    "ADMIN_EMAIL": "REPLACE_ME"
+    "EMAIL_FROM": "Pocket Advocate <no-reply@thepocketadvocates.com>",
+    "ADMIN_EMAIL": "ebleach2010@gmail.com"
   }
   // Secrets (never in this file — `wrangler secret put NAME`, or .dev.vars locally):
   //   STRIPE_SECRET_KEY          sk_live_... / sk_test_...
