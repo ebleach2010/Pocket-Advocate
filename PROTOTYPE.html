@@ -89,6 +89,7 @@
   #tab-book:checked ~ #scr-stripe:checked  ~ main #s-stripe  { display: block; }
   #tab-book:checked ~ #scr-return:checked  ~ main #s-return  { display: block; }
   #tab-book:checked ~ #scr-case:checked    ~ main #s-case    { display: block; }
+  #tab-book:checked ~ #scr-adcase:checked  ~ main #s-adcase  { display: block; }
   #tab-book:checked ~ #scr-subterms:checked  ~ main #s-subterms  { display: block; }
   #tab-book:checked ~ #scr-substripe:checked ~ main #s-substripe { display: block; }
   #tab-book:checked ~ #scr-subchat:checked   ~ main #s-subchat   { display: block; }
@@ -177,6 +178,12 @@
     color: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c);
   }
   #ct-prog:checked ~ #tp-prog, #ct-chat:checked ~ #tp-chat, #ct-docs:checked ~ #tp-docs { display: block; }
+  #at-over:checked ~ .subtabs label[for="at-over"],
+  #at-chat:checked ~ .subtabs label[for="at-chat"],
+  #at-files:checked ~ .subtabs label[for="at-files"] {
+    color: var(--cyan); border-color: var(--cyan);
+  }
+  #at-over:checked ~ #ap-over, #at-chat:checked ~ #ap-chat, #at-files:checked ~ #ap-files { display: block; }
 
   /* reviews strip */
   .reviews-strip { overflow: hidden; touch-action: pan-y; cursor: grab; }
@@ -356,6 +363,7 @@
 <input class="vh" type="radio" name="scr" id="scr-stripe">
 <input class="vh" type="radio" name="scr" id="scr-return">
 <input class="vh" type="radio" name="scr" id="scr-case">
+<input class="vh" type="radio" name="scr" id="scr-adcase">
 <input class="vh" type="radio" name="scr" id="scr-subterms">
 <input class="vh" type="radio" name="scr" id="scr-substripe">
 <input class="vh" type="radio" name="scr" id="scr-subchat">
@@ -692,7 +700,71 @@
     </ul>
   </div>
 
+  <div class="actions"><label class="btn mute" for="scr-adcase" tabindex="0">See Eric's side of this case →</label></div>
+
   <footer class="legal">This case file is an advocacy record, not a medical record. Nothing in it is a diagnosis, treatment, or medical advice — share it with your care team. Emergency? Call 911.</footer>
+</section>
+
+<!-- ================= ADVOCATE VIEW (what Eric sees) ================= -->
+<section id="s-adcase">
+  <p class="mono small" style="color:var(--magenta); letter-spacing:.14em; margin:0 0 .4rem;">ADVOCATE VIEW — WHAT ERIC SEES</p>
+  <div class="row">
+    <h1 style="margin:0;">Jordan Mills</h1>
+    <span class="mono small" style="color:var(--cyan);">CONFIRMED</span>
+  </div>
+  <p class="dim small" style="margin:.2rem 0 0;">jordan.m@example.com · Private session · Discord · paid $150 (incl. follow-up add-on)</p>
+
+  <input type="radio" class="vh" name="atab" id="at-over" checked>
+  <input type="radio" class="vh" name="atab" id="at-chat">
+  <input type="radio" class="vh" name="atab" id="at-files">
+  <nav class="subtabs">
+    <label for="at-over" tabindex="0">Overview</label>
+    <label for="at-chat" tabindex="0">Chat <span style="color:var(--magenta);">●</span></label>
+    <label for="at-files" tabindex="0">Files</label>
+  </nav>
+
+  <div class="panel tabp" id="ap-over">
+    <p style="margin:0 0 .2rem;"><strong>Tue Jul 21 · 1:00 PM MST</strong> <span class="dim small">— in 9 days</span></p>
+    <p class="dim small">Join link (Discord): <span class="mono" style="color:var(--cyan);">discord.gg/pa-jordan</span> — the client sees it on their case page.</p>
+    <ul class="timeline">
+      <li class="done"><span class="t-dot"></span>Paid &amp; forms acknowledged — Jul 12</li>
+      <li class="done"><span class="t-dot"></span>Client uploaded 2 files — Jul 18</li>
+      <li class="now"><span class="t-dot"></span>Discussion — Jul 21, 1:00 PM MST</li>
+      <li><span class="t-dot"></span>Upload recording → starts the 7-day report clock</li>
+      <li><span class="t-dot"></span>Upload report → client gets the ping</li>
+      <li><span class="t-dot"></span>Close (follow-up add-on still bookable)</li>
+    </ul>
+    <div class="actions" style="margin-top:.6rem;">
+      <span class="btn ghost" style="opacity:.55;">Upload recording</span>
+      <span class="btn ghost" style="opacity:.55;">Upload report</span>
+      <span class="btn mute" style="opacity:.55;">Close case</span>
+    </div>
+    <p class="dim small" style="margin:.5rem 0 0;">Buttons are live in the real admin — uploads advance the milestones and email the client automatically.</p>
+  </div>
+
+  <div class="panel tabp" id="ap-chat">
+    <p style="margin:0 0 .2rem;"><span class="dim small">Chat with Jordan · </span><span class="mono small" style="color:var(--magenta);">1 NEW</span></p>
+    <div class="chat-log">
+      <div class="msg them">Just uploaded my MRI report — and here are the last two lab panels.<span class="meta">2:14 PM</span></div>
+      <div class="msg them"><span class="file-chip">📄 labs-march-april.pdf</span><span class="meta">2:14 PM</span></div>
+      <div class="msg me">Got them. The ferritin trend is the first thing I want to walk through on the call — bring your symptom timeline too.<span class="meta">2:31 PM</span></div>
+    </div>
+    <div class="chat-form"><span class="attach-btn">📎</span><input type="text" placeholder="Reply as Eric… (live in the real app)"><span class="btn" style="opacity:.5;">Send</span></div>
+    <p class="dim small" style="margin:.5rem 0 0;">Press and hold a client file → save it to Jordan's profile shelf.</p>
+  </div>
+
+  <div class="panel tabp" id="ap-files">
+    <p class="dim small" style="margin:0 0 .5rem;">Everything the client shared, plus your uploads when they land.</p>
+    <ul class="filelist">
+      <li><span class="fname"><span class="kind-pill">UPLOAD</span> mri-report-june.pdf</span><span class="fmeta">Jul 18 · 2.1 MB</span></li>
+      <li><span class="fname"><span class="kind-pill" style="border-color:var(--magenta); color:var(--magenta);">FROM CHAT</span> labs-march-april.pdf</span><span class="fmeta">Jul 18 · 800 KB</span></li>
+      <li><span class="fname"><span class="kind-pill">RECORDING</span> discussion-recording.mp4</span><span class="fmeta">after the call</span></li>
+      <li><span class="fname"><span class="kind-pill report">REPORT</span> advocacy-report.pdf</span><span class="fmeta">due within 7 days of the call</span></li>
+    </ul>
+  </div>
+
+  <div class="actions"><label class="btn mute" for="scr-case" tabindex="0">← Back to the client's view</label></div>
+  <footer class="legal">Simulated data — "Jordan Mills" is a sample patient, not a real person. In the real app this page lives at /admin-case.html and only Eric's account can open it.</footer>
 </section>
 
 <!-- ================= SUBSCRIPTION TERMS (form 5) ================= -->
