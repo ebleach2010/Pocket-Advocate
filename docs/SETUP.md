@@ -50,7 +50,7 @@ One-time wiring to take the Phase 1 code live. Everything here is config, not co
 
 ```
 npm install
-GOOGLE_APPLICATION_CREDENTIALS=service-account.json npm run set-admin -- eric@example.com
+GOOGLE_APPLICATION_CREDENTIALS=service-account.json npm run set-admin -- pocketadvocate.eric@gmail.com
 ```
 
 Then open **/admin-availability.html** signed in as that account to open booking
