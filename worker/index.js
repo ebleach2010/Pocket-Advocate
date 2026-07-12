@@ -15,7 +15,7 @@ import { requireUser } from './firebase-auth.js';
 import { getDoc, patchDoc, deleteDoc, queryDocs } from './firestore.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import { slotTimingProblem, windowProblem, HOLD_MINUTES } from './schedule.js';
-import { sendEmail } from './email.js';
+import { sendEmail, homeScreenTips } from './email.js';
 
 const CASE_PRICE_CENTS = 10000;
 const ADDON_PRICE_CENTS = 5000;
@@ -292,7 +292,8 @@ async function activateSubscription(env, session) {
     subject: 'Your Pocket Advocate subscription is live',
     html: `<p>Your chat line to Eric is open. He replies when he's available — response
       timing is never guaranteed, exactly as the terms you accepted say.</p>
-      <p><a href="${env.PUBLIC_BASE_URL}/subscription.html">Open your chat</a></p>`,
+      <p><a href="${env.PUBLIC_BASE_URL}/subscription.html">Open your chat</a></p>
+      ${homeScreenTips(env.PUBLIC_BASE_URL)}`,
   });
 }
 
@@ -425,7 +426,8 @@ async function createCaseFromSession(env, session) {
       html: `<p>Payment confirmed — your case file is live.</p>
         <p><strong>${mtFmt.format(start)} MST</strong> · ${m.method}</p>
         <p>Upload labs, imaging, or records any time before the call.</p>
-        <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>
+        ${homeScreenTips(env.PUBLIC_BASE_URL)}`,
     });
   }
 

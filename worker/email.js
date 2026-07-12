@@ -10,6 +10,31 @@ const FOOTER = `
     and does not create a doctor-patient relationship. If this is an emergency, call 911.
   </p>`;
 
+/**
+ * Step-by-step "keep this on your phone" instructions, appended to the two
+ * welcome emails (case opened, subscription started) — Eric's request:
+ * clients should never have to hunt for the portal again.
+ */
+export function homeScreenTips(baseUrl) {
+  const host = baseUrl.replace(/^https?:\/\//, '');
+  return `
+  <div style="background:#f5f7fa; border-radius:10px; padding:14px 16px; margin-top:20px;">
+    <p style="margin:0 0 8px;"><strong>Put Pocket Advocate on your Home Screen</strong> — it becomes an app icon, and you stay signed in.</p>
+    <p style="margin:0 0 4px;"><strong>iPhone / iPad:</strong></p>
+    <ol style="margin:0 0 10px; padding-left:20px;">
+      <li>Open <a href="${baseUrl}">${host}</a> in <strong>Safari</strong></li>
+      <li>Tap the <strong>Share</strong> button (the square with the arrow)</li>
+      <li>Scroll down, tap <strong>Add to Home Screen</strong>, then <strong>Add</strong></li>
+    </ol>
+    <p style="margin:0 0 4px;"><strong>Android:</strong></p>
+    <ol style="margin:0; padding-left:20px;">
+      <li>Open <a href="${baseUrl}">${host}</a> in <strong>Chrome</strong></li>
+      <li>Tap the <strong>⋮</strong> menu (top right)</li>
+      <li>Tap <strong>Add to Home screen</strong>, then <strong>Add</strong></li>
+    </ol>
+  </div>`;
+}
+
 export async function sendEmail(env, { to, subject, html }) {
   if (!env.RESEND_API_KEY || !env.EMAIL_FROM || !to) return false;
   try {
