@@ -303,6 +303,12 @@
   /* ---------- ABOUT tab ---------- */
   #s-about h2 { color: var(--cyan); font-size: 1.05rem; margin-top: 1.8rem; }
   #s-about h2:first-of-type { margin-top: .4rem; }
+  .mission {
+    border-left: 3px solid var(--cyan); border-radius: 3px;
+    padding: .55rem .9rem .55rem 1rem; margin-top: .6rem;
+    background: linear-gradient(90deg, rgba(45,226,255,.07), transparent 70%);
+  }
+  .mission p { margin: 0; }
   .steps-list { list-style: none; margin: .8rem 0 0; padding: 0; counter-reset: step; }
   .steps-list li {
     counter-increment: step; position: relative; padding: 0 0 1rem 2.4rem;
@@ -373,6 +379,11 @@
 <section id="s-about">
   <h1>What this is, straight up</h1>
   <p class="dim">You've sat in the 12-minute appointment. You've googled your own labs at 2am. You've left the specialist's office with more questions than you walked in with. Pocket Advocate exists for exactly that moment: someone in your corner who has lived this, speaks the language, and has the time your doctor doesn't.</p>
+
+  <h2>The mission</h2>
+  <div class="mission">
+    <p class="dim">Pocket Advocate is dedicated to empowering patients with neurological conditions throughout Canada and the United States. Founded by a professional patient advocate and autoimmune encephalitis survivor, the collective understands the immense challenges of navigating the medical system. With a deeply personal commitment to client well-being, they offer invaluable support and expertise to help patients navigate their health journey. Pocket Advocate stands firmly on the side of the patient, providing guidance and insight grounded in lived experience to help individuals achieve better health outcomes.</p>
+  </div>
 
   <h2>The purpose</h2>
   <p class="dim small">Eric is a patient advocate — not a doctor, and that's the point. He doesn't diagnose or treat. He helps you <strong style="color:var(--ink)">understand what's in front of you</strong>: what your labs and imaging actually say in plain English, what questions will get real answers from your care team, and what options are worth raising at your next appointment. US clients only.</p>
@@ -445,7 +456,10 @@
     <input type="email" id="email" placeholder="you@example.com">
     <label class="readbox"><input type="checkbox"> I'm a US resident — this service is US-only.</label>
     <p class="dim small" style="margin-top:.7rem;">The real app sends a Firebase magic link. The prototype just lets you through.</p>
-    <div class="actions"><label class="btn" for="scr-w1" tabindex="0">Send my link →</label></div>
+    <div class="actions">
+      <label class="btn mute" for="scr-landing" tabindex="0">← Back</label>
+      <label class="btn" for="scr-w1" tabindex="0">Send my link →</label>
+    </div>
   </div>
 </section>
 
