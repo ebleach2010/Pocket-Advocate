@@ -315,6 +315,10 @@ replies within a few days") and subscriptions can be paused from his side.
 ## H. Open questions for Eric
 
 1. **Refund/cancel + no-show policies** — the §C proposals need a yes/no.
+   ✅ **Partially decided (2026-07-13): the $100 case fee (and $50 add-on) is
+   non-refundable once the slot is booked** — stated in waiver 1's Payment
+   section and at checkout. The $20/mo subscription cancels anytime via the
+   Stripe customer portal (access runs to period end). No-show policy still open.
 2. **Slot length** (60 min? 90?) and how far ahead the calendar opens (2 weeks? 4?).
 3. **Domain / public brand name** — "TheBroScientist Neuro Advocacy" with Pocket
    Advocate as the subscription's name?

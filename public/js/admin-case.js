@@ -50,6 +50,7 @@ function render(el) {
     <p class="dim small" style="margin-top:.4rem;">
       ${start ? `${mtFmt.format(start)} MST · ${c.appointment.method}` : 'no appointment'}
       · ${c.publicElection?.choice === 'public' ? '<strong style="color:var(--magenta)">PUBLIC session</strong>' : 'private session'}
+      ${c.stripe?.amountTotal ? `· <strong style="color:var(--cyan)">$${(c.stripe.amountTotal / 100).toLocaleString()} paid</strong>` : ''}
       ${c.addOnFollowUp ? '· follow-up included' : ''}
       ${due !== null ? `· report due in <strong>${due}d</strong>` : ''}
     </p>
@@ -71,7 +72,7 @@ function render(el) {
         <input type="file" id="up-recording" accept="video/*,audio/*,.mp4,.m4a,.mp3,.mkv,.webm">
       </label>
       <label class="small" style="margin-top:.5rem;">Upload the report <span class="dim">(advances the case + pings the client)</span>
-        <input type="file" id="up-report" accept=".pdf,.html,.md,.doc,.docx">
+        <input type="file" id="up-report" accept=".pdf,.html,.md,.doc,.docx,.jpg,.jpeg,.png,.heic">
       </label>
       <progress id="bar" max="100" value="0" hidden></progress>
       <p class="error" id="err" hidden></p>

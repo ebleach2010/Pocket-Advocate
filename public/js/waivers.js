@@ -18,7 +18,9 @@ export const WAIVERS = [
 <h3>The advocacy relationship</h3>
 <p>By purchasing an Advocacy Case you engage the advocate to review the materials you choose to share, discuss them with you, and prepare a written advocacy summary. You remain responsible for all decisions about your health, made together with your own licensed care team. You agree to share the advocacy summary with your care team before acting on anything in it.</p>
 <h3>Assumption of responsibility & limitation of liability</h3>
-<p>You acknowledge that the service provides information, organization, and preparation — not medical judgment. To the maximum extent permitted by law, the service's total liability for any claim arising out of an Advocacy Case is limited to the amount you paid for that case.</p>`,
+<p>You acknowledge that the service provides information, organization, and preparation — not medical judgment. To the maximum extent permitted by law, the service's total liability for any claim arising out of an Advocacy Case is limited to the amount you paid for that case.</p>
+<h3>Payment</h3>
+<p>The Advocacy Case fee (and the optional follow-up add-on) is <strong>non-refundable</strong> once your time slot is booked. The Pocket Advocate subscription is separate: cancel it anytime, and access simply runs to the end of the period you already paid for.</p>`,
   },
   {
     id: 'privacy',

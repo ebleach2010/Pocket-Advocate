@@ -32,7 +32,18 @@ async function load() {
   const mtFmt = new Intl.DateTimeFormat('en-US', {
     timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   });
-  listEl.innerHTML = cases.map((c) => {
+  // Money at a glance: every case is created by a confirmed Stripe payment,
+  // so the sum of amountTotal IS confirmed case revenue. Subscriptions renew
+  // monthly inside Stripe — the dashboard there is the source of truth.
+  const cents = cases.reduce((sum, c) => sum + (c.stripe?.amountTotal || 0), 0);
+  const summary = `
+    <div class="panel" style="margin-bottom:1rem;">
+      <div class="row"><strong>Case revenue (paid via Stripe)</strong>
+        <span class="price" style="color:var(--cyan);">$${(cents / 100).toLocaleString()}</span></div>
+      <p class="dim small" style="margin:.3rem 0 0;">${cases.length} case${cases.length === 1 ? '' : 's'}, every one backed by a confirmed payment.
+        Subscriptions and refunds live in the <a href="https://dashboard.stripe.com" target="_blank" rel="noopener">Stripe dashboard</a>.</p>
+    </div>`;
+  listEl.innerHTML = summary + cases.map((c) => {
     const start = c.appointment && toDate(c.appointment.start);
     return `
     <a class="panel" style="display:block; text-decoration:none; color:inherit;" href="/admin-case.html?id=${c.id}">
@@ -43,6 +54,7 @@ async function load() {
       <p class="dim small" style="margin:.3rem 0 0;">
         ${start ? `${mtFmt.format(start)} MST · ${c.appointment.method}` : 'no appointment'}
         · ${c.publicElection?.choice === 'public' ? 'PUBLIC' : 'private'}
+        ${c.stripe?.amountTotal ? `· <strong style="color:var(--cyan)">$${(c.stripe.amountTotal / 100).toLocaleString()} paid</strong>` : ''}
         ${c.addOnFollowUp ? '· +follow-up' : ''}
         ${c.needsReschedule ? '· <strong style="color:var(--danger)">NEEDS RESCHEDULE</strong>' : ''}
       </p>
