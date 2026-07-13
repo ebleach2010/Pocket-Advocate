@@ -48,10 +48,22 @@ header.bar {
   color: var(--ink); text-decoration: none;
 }
 .brand .spark { color: var(--cyan); text-shadow: var(--glow-c); }
-.tabs { display: flex; gap: .3rem; align-items: center; }
+/* The signed-in nav holds up to 5 links — on phones it scrolls sideways
+   instead of shoving Admin/Sign out off the screen. */
+.tabs {
+  display: flex; gap: .3rem; align-items: center; min-width: 0;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tabs a {
   font: 600 .82rem/1 inherit; color: var(--dim); cursor: pointer; text-decoration: none;
   padding: .45rem .85rem; border-radius: 999px; border: 1px solid transparent;
+  white-space: nowrap; flex-shrink: 0;
+}
+[data-nav-auth] { display: contents; }
+@media (max-width: 480px) {
+  .bar-inner { gap: .5rem; padding-left: .8rem; padding-right: .8rem; }
+  .tabs a { padding: .45rem .55rem; font-size: .78rem; }
 }
 .tabs a.active { color: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c); }
 .who { color: var(--dim); font-size: .74rem; }
