@@ -17,8 +17,8 @@
   },
   "vars": {
     // Non-secret config. Replace after creating the Firebase project (docs/SETUP.md).
-    "FIREBASE_PROJECT_ID": "REPLACE_ME",
-    "FIREBASE_WEB_API_KEY": "REPLACE_ME",
+    "FIREBASE_PROJECT_ID": "pocket-advocate-f3148",
+    "FIREBASE_WEB_API_KEY": "AIzaSyBDH8QZxGYBWytbxx7aNM0uyUIOqRj-7T8",
     // Where success/cancel URLs point. thepocketadvocates.com is the production
     // domain (Eric's, 2026-07-12); switch to http://localhost:8787 for local dev.
     "PUBLIC_BASE_URL": "https://thepocketadvocates.com",
