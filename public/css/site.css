@@ -103,13 +103,13 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
   font: 600 .68rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .22em;
   color: var(--cyan); text-shadow: var(--glow-c);
 }
-.landing { display: flex; flex-direction: column; justify-content: center; gap: .95rem; min-height: min(calc(100dvh - 8rem), 40rem); }
-.landing h1 { font-size: clamp(1.35rem, 4.8vw, 1.8rem); margin-bottom: .25rem; }
+.landing { display: flex; flex-direction: column; justify-content: center; gap: 1.4rem; min-height: min(calc(100dvh - 8rem), 40rem); }
+.landing h1 { font-size: clamp(1.35rem, 4.8vw, 1.8rem); margin-bottom: .35rem; }
 .hero-sub { color: var(--soft); font-size: 1rem; margin: 0; line-height: 1.5; }
 .pack {
   position: relative; display: grid; grid-template-columns: 1fr auto; gap: .18rem .8rem;
   background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-  padding: .7rem .95rem; text-decoration: none; color: var(--ink); margin: 0;
+  padding: .95rem 1.1rem; text-decoration: none; color: var(--ink); margin: 0;
 }
 .pack h3 { margin: 0; font-size: 1.08rem; }
 .pack .desc { grid-column: 1 / -1; color: var(--soft); font-size: .95rem; margin: 0; line-height: 1.45; }
@@ -128,10 +128,10 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
 .fine { font-size: .82rem; color: var(--dim); margin: 0; line-height: 1.45; }
 .fine strong { color: var(--ink); }
 @media (max-height: 700px) {
-  .landing { gap: .6rem; }
+  .landing { gap: .85rem; }
   .landing h1 { font-size: 1.2rem; }
   .hero-sub { font-size: .86rem; }
-  .pack { padding: .55rem .8rem; }
+  .pack { padding: .7rem .9rem; }
   .pack h3 { font-size: .95rem; }
   .pack .desc { font-size: .82rem; }
   .btn { padding: .55rem .95rem; font-size: .84rem; }

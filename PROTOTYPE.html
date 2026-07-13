@@ -114,20 +114,20 @@
 
   /* ---------- LANDING: one screen, no scroll ---------- */
   #s-landing {
-    flex-direction: column; justify-content: center; gap: .95rem;
+    flex-direction: column; justify-content: center; gap: 1.4rem;
     min-height: min(calc(100dvh - 10rem), 40rem);
   }
   .hero-eyebrow {
     font: 600 .68rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .22em;
     color: var(--cyan); text-shadow: var(--glow-c);
   }
-  #s-landing h1 { font-size: clamp(1.35rem, 4.8vw, 1.8rem); margin-bottom: .25rem; }
+  #s-landing h1 { font-size: clamp(1.35rem, 4.8vw, 1.8rem); margin-bottom: .35rem; }
   .hero-sub { color: var(--soft); font-size: 1rem; margin: 0; line-height: 1.5; }
 
   .pack {
     position: relative; display: grid; grid-template-columns: 1fr auto; gap: .15rem .8rem;
     background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-    padding: .7rem .95rem; text-decoration: none; color: var(--ink);
+    padding: .95rem 1.1rem; text-decoration: none; color: var(--ink);
   }
   .pack h3 { margin: 0; font-size: 1.08rem; }
   .pack .desc { grid-column: 1 / -1; color: var(--soft); font-size: .95rem; margin: 0; line-height: 1.45; }
@@ -153,11 +153,11 @@
 
   /* short screens (SE-class): tighten until the landing fits */
   @media (max-height: 700px) {
-    #s-landing { gap: .55rem; }
+    #s-landing { gap: .85rem; }
     #s-landing h1 { font-size: 1.2rem; }
     .hero-sub { font-size: .86rem; }
     .hero-eyebrow { font-size: .6rem; }
-    .pack { padding: .55rem .8rem; }
+    .pack { padding: .7rem .9rem; }
     .pack h3 { font-size: .95rem; }
     .pack .price { font-size: 1rem; }
     .pack .desc { font-size: .82rem; }
