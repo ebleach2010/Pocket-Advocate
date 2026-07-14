@@ -11,6 +11,9 @@ import { WAIVERS, ELECTION_QUOTE } from './waivers.js';
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 const LEAD_TIME_MS = 72 * 3600 * 1000;
+// Quiet horizon: slots further out than 1.5 weeks simply don't render.
+// The Worker enforces the same cap server-side.
+const MAX_LEAD_MS = 252 * 3600 * 1000;
 
 const state = {
   acks: {}, // formId -> ms timestamp
@@ -162,10 +165,11 @@ async function renderSchedule() {
       query(collection(db, 'availability'), where('state', '==', 'open'))
     );
     const cutoff = Date.now() + LEAD_TIME_MS;
+    const horizon = Date.now() + MAX_LEAD_MS;
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
       const start = data.start && data.start.toDate ? data.start.toDate() : new Date(data.start);
-      if (start.getTime() >= cutoff)
+      if (start.getTime() >= cutoff && start.getTime() <= horizon)
         slots.push({ id: docSnap.id, start, durationMin: data.durationMin || 60 });
     });
   } catch (err) {

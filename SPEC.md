@@ -320,6 +320,11 @@ replies within a few days") and subscriptions can be paused from his side.
    section and at checkout. The $20/mo subscription cancels anytime via the
    Stripe customer portal (access runs to period end). No-show policy still open.
 2. **Slot length** (60 min? 90?) and how far ahead the calendar opens (2 weeks? 4?).
+   ✅ **Partially decided (2026-07-13): the booking horizon is 1.5 weeks (252h),
+   enforced quietly** — far-out slots don't render and the Worker rejects them.
+   Rationale: case chat opens at payment, so a distant appointment would buy an
+   outsized chat runway. Eric can still pre-open slots any distance ahead; they
+   surface to clients as they come inside the horizon. Slot length still open.
 3. **Domain / public brand name** — "TheBroScientist Neuro Advocacy" with Pocket
    Advocate as the subscription's name?
    ✅ **Decided (2026-07-11): the web app is called "Pocket Advocate."** The $20/mo

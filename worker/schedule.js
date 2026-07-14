@@ -5,6 +5,11 @@
 // Note: the IANA 'Etc/GMT+7' zone IS UTC-7 (the sign is inverted by design).
 
 export const LEAD_TIME_HOURS = 72;
+// Quiet booking horizon (Eric, 2026-07-13): cases can't be scheduled more
+// than 1.5 weeks out. Case chat opens the moment payment lands, so a far-out
+// appointment would buy months of chat runway for one $100 case. Not
+// advertised in the UI — far slots simply don't show, and the server rejects.
+export const MAX_LEAD_TIME_HOURS = 252; // 1.5 weeks
 export const OPEN_HOUR = 8; // 8am MST
 export const CLOSE_HOUR = 18; // 6pm MST
 export const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -19,6 +24,8 @@ export function slotTimingProblem(startIso, durationMin, now = new Date()) {
   const leadMs = start.getTime() - now.getTime();
   if (leadMs < LEAD_TIME_HOURS * 3600_000)
     return `Appointments must be booked at least ${LEAD_TIME_HOURS} hours in advance.`;
+  if (leadMs > MAX_LEAD_TIME_HOURS * 3600_000)
+    return 'That time is not open for booking yet — please pick a sooner slot.';
   return windowProblem(startIso, durationMin);
 }
 
