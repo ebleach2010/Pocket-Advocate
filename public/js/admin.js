@@ -35,7 +35,9 @@ async function load() {
   // Money at a glance: every case is created by a confirmed Stripe payment,
   // so the sum of amountTotal IS confirmed case revenue. Subscriptions renew
   // monthly inside Stripe — the dashboard there is the source of truth.
-  const cents = cases.reduce((sum, c) => sum + (c.stripe?.amountTotal || 0), 0);
+  const cents = cases.reduce((sum, c) =>
+    sum + (c.stripe?.amountTotal || 0) +
+    (Array.isArray(c.extraPayments) ? c.extraPayments.reduce((x, p) => x + (p.amountCents || 0), 0) : 0), 0);
   const summary = `
     <div class="panel" style="margin-bottom:1rem;">
       <div class="row"><strong>Case revenue (paid via Stripe)</strong>
@@ -55,7 +57,7 @@ async function load() {
         ${start ? `${mtFmt.format(start)} MST · ${c.appointment.method}` : 'no appointment'}
         · ${c.publicElection?.choice === 'public' ? 'PUBLIC' : 'private'}
         ${c.stripe?.amountTotal ? `· <strong style="color:var(--cyan)">$${(c.stripe.amountTotal / 100).toLocaleString()} paid</strong>` : ''}
-        ${c.addOnFollowUp ? '· +follow-up' : ''}
+        ${followUpFlag(c)}
         ${c.needsReschedule ? '· <strong style="color:var(--danger)">NEEDS RESCHEDULE</strong>' : ''}
       </p>
     </a>`;
@@ -69,6 +71,21 @@ function badge(c) {
   }
   return (c.status || '?').replace('_', ' ').toUpperCase();
 }
+/** Loud follow-up state in the list: paid+countdown, booked, or expired. */
+function followUpFlag(c) {
+  if (c.followUp) {
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric' });
+    return `· <strong style="color:var(--cyan)">FOLLOW-UP ${fmt.format(toDate(c.followUp.start))}</strong>`;
+  }
+  if (c.pendingExtra) return '· <strong style="color:var(--magenta)">AWAITING PAYMENT</strong>';
+  if (!c.addOnFollowUp) return '';
+  const base = c.appointment?.start ? toDate(c.appointment.start).getTime() : null;
+  if (!base) return '· <strong style="color:var(--magenta)">FOLLOW-UP PAID</strong>';
+  const days = Math.ceil((base + 30 * 86_400_000 - Date.now()) / 86_400_000);
+  if (days <= 0) return '· <strong style="color:var(--danger)">FOLLOW-UP EXPIRED</strong>';
+  return `· <strong style="color:var(--magenta)">FOLLOW-UP PAID · ${days}d left</strong>`;
+}
+
 function dueSoon(c) {
   if (c.status !== 'awaiting_report' || !c.reportDueAt) return false;
   return toDate(c.reportDueAt) - Date.now() < 3 * 86_400_000;

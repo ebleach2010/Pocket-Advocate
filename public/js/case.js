@@ -130,7 +130,7 @@ function renderProgress(el, c) {
       <p class="dim small">Session: <strong style="color:${election.choice === 'public' ? 'var(--magenta)' : 'var(--cyan)'};">
         ${election.choice === 'public' ? 'PUBLIC — streams live on YouTube' : 'PRIVATE'}</strong></p>
       ${revocable ? `<p><button class="btn ghost" data-private>Make it private</button></p>` : ''}
-      ${c.addOnFollowUp ? '<p class="dim small">Follow-up add-on included — book your second session once the report lands.</p>' : ''}
+      ${followUpSection(c)}
     </div>`;
 
   el.querySelector('[data-ics]')?.addEventListener('click', (e) => {
@@ -138,6 +138,41 @@ function renderProgress(el, c) {
     downloadIcs(c, start);
   });
   el.querySelector('[data-private]')?.addEventListener('click', (e) => makePrivate(c.id, e.target));
+  return;
+
+  /** Second-session state: scheduled follow-up, a pay-to-confirm prompt, or the unused add-on with its deadline. */
+  function followUpSection(c) {
+    const mt = new Intl.DateTimeFormat('en-US', {
+      timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+    if (c.followUp) {
+      const s = toDate(c.followUp.start);
+      return `<p class="small" style="margin-top:.5rem;"><strong style="color:var(--cyan)">
+        ${c.followUp.kind === 'followup' ? 'Follow-up session' : esc(c.followUp.label || 'Session')}:</strong>
+        ${mt.format(s)} MST</p>`;
+    }
+    if (c.pendingExtra) {
+      const s = toDate(c.pendingExtra.start);
+      return `<div style="border:1px solid var(--magenta); border-radius:10px; padding:.6rem .8rem; margin-top:.6rem;">
+        <p class="small" style="margin:0 0 .4rem;"><strong>${esc(c.pendingExtra.label)}</strong> —
+          ${mt.format(s)} MST · $${(c.pendingExtra.amountCents / 100).toLocaleString()}</p>
+        <p class="dim small" style="margin:0 0 .5rem;">Eric scheduled this for you. The time is held for 24 hours — pay to confirm it.</p>
+        <a class="btn" href="${esc(c.pendingExtra.url)}">Pay & confirm</a>
+      </div>`;
+    }
+    if (c.addOnFollowUp) {
+      const base = c.appointment?.start ? toDate(c.appointment.start).getTime() : null;
+      const expires = base ? base + 30 * 86_400_000 : null;
+      const lapsed = expires && Date.now() > expires;
+      if (lapsed) return '';
+      return `<p class="dim small">Follow-up add-on included — message Eric in chat to schedule your second session.${
+        expires && Date.now() > base
+          ? ` Use it by <strong style="color:var(--ink)">${mt.format(new Date(expires))} MST</strong> (one month after your discussion).`
+          : ' It must be used within one month of your first discussion.'
+      }</p>`;
+    }
+    return '';
+  }
 }
 
 // ---- Chat tab ----

@@ -333,6 +333,14 @@ replies within a few days") and subscriptions can be paused from his side.
    ✅ **Decided (2026-07-12): the domain is thepocketadvocates.com.**
 4. **Follow-up add-on details** — booking deadline after the report (e.g. within 60
    days)? Does the follow-up produce its own written summary, or is it summary-free?
+   ✅ **Partially decided (2026-07-13): follow-ups expire one month after the first
+   discussion.** Stated in waiver 1 and at checkout; Eric's admin view shows a
+   day countdown; the cron emails the client one warning a week before expiry.
+   Admin can honor an expired follow-up via the charge-at-0% scheduling mode.
+   Eric also gained full scheduling powers per case: reschedule, book the paid
+   follow-up, or charge a custom rate (0–150% of $100 in 25% steps) with an
+   invoice tagline — paid sessions confirm through Stripe Checkout with a 24h
+   slot hold. Summary-or-not for follow-ups still open.
 5. **Discord logistics** — one persistent lobby channel vs. a fresh private channel per
    case? (Matters so a privacy-opted client never bumps into the next client. Fresh
    channel per case is recommended.)

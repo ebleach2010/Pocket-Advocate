@@ -20,7 +20,7 @@ export const WAIVERS = [
 <h3>Assumption of responsibility & limitation of liability</h3>
 <p>You acknowledge that the service provides information, organization, and preparation — not medical judgment. To the maximum extent permitted by law, the service's total liability for any claim arising out of an Advocacy Case is limited to the amount you paid for that case.</p>
 <h3>Payment</h3>
-<p>The Advocacy Case fee (and the optional follow-up add-on) is <strong>non-refundable</strong> once your time slot is booked. The Pocket Advocate subscription is separate: cancel it anytime, and access simply runs to the end of the period you already paid for.</p>`,
+<p>The Advocacy Case fee (and the optional follow-up add-on) is <strong>non-refundable</strong> once your time slot is booked. A follow-up add-on must be used within <strong>one month of your first discussion</strong>; unused follow-ups expire (you'll get a reminder a week before). The Pocket Advocate subscription is separate: cancel it anytime, and access simply runs to the end of the period you already paid for.</p>`,
   },
   {
     id: 'privacy',

@@ -305,7 +305,7 @@ function renderReview() {
     </div>
     <label class="choice" id="addon-box">
       <input type="checkbox" id="addon"> <strong>Add a follow-up discussion — +$50</strong><br>
-      <span class="muted small">A second schedulable discussion on this case, bookable any time after your report lands. Only available right now, at checkout — a follow-up later is a fresh $100 case.</span>
+      <span class="muted small">A second schedulable discussion on this case, bookable any time after your report lands. Use it within one month of your first discussion — after that it expires. Only available right now, at checkout — a follow-up later is a fresh $100 case.</span>
     </label>
     <p class="muted small">Your time slot is held while you complete payment. You'll be taken to Stripe's secure checkout — card details never touch this site. Case fees are non-refundable once your slot is booked.</p>
     <p class="error" id="pay-error" hidden></p>

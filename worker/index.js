@@ -20,6 +20,12 @@ import { sendEmail, homeScreenTips } from './email.js';
 const CASE_PRICE_CENTS = 10000;
 const ADDON_PRICE_CENTS = 5000;
 const SUB_PRICE_CENTS = 2000;
+// Follow-up add-ons expire one month after the first discussion (Eric,
+// 2026-07-13); clients get one warning email a week before the deadline.
+const FOLLOWUP_EXPIRY_DAYS = 30;
+const FOLLOWUP_WARN_DAYS = 7;
+// Admin-priced sessions: percentage of the $100 case rate, 25% steps.
+const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
 const METHODS = ['discord', 'zoom', 'phone'];
 const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording', 'election'];
 // A chat message this old with no in-app read gets an email nudge (spec: batched).
@@ -47,6 +53,8 @@ export default {
         return await handleDeleteSlot(request, env, url);
       if (url.pathname === '/api/admin/case-update' && request.method === 'POST')
         return await handleCaseUpdate(request, env);
+      if (url.pathname === '/api/admin/schedule' && request.method === 'POST')
+        return await handleAdminSchedule(request, env);
       if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
     } catch (err) {
       console.error(`${url.pathname}:`, err.stack || err);
@@ -57,6 +65,7 @@ export default {
 
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runChatDigest(env));
+    ctx.waitUntil(runFollowUpWarnings(env));
   },
 };
 
@@ -254,6 +263,7 @@ async function handleWebhook(request, env) {
 
   if (event.type === 'checkout.session.completed') {
     if (obj.mode === 'subscription') await activateSubscription(env, obj);
+    else if (obj.metadata?.kind === 'extra') await confirmExtraSession(env, obj);
     else await createCaseFromSession(env, obj);
   } else if (event.type === 'checkout.session.expired') {
     await releaseHold(env, obj);
@@ -562,13 +572,274 @@ async function releaseHold(env, session) {
   const slotId = session.metadata && session.metadata.slotId;
   if (!slotId) return;
   const slot = await getDoc(env, `availability/${slotId}`);
-  if (!slot || slot.data.state !== 'held' || slot.data.heldBySession !== session.id) return;
-  await patchDoc(env, `availability/${slotId}`, {
-    state: 'open',
-    holdExpiresAt: null,
-    heldByUid: null,
-    heldBySession: null,
+  if (slot && slot.data.state === 'held' && slot.data.heldBySession === session.id) {
+    await patchDoc(env, `availability/${slotId}`, {
+      state: 'open',
+      holdExpiresAt: null,
+      heldByUid: null,
+      heldBySession: null,
+    });
+  }
+  // An admin-priced session that was never paid: clear the client's pay prompt.
+  if (session.metadata?.kind === 'extra' && session.metadata.caseId) {
+    const caseDoc = await getDoc(env, `cases/${session.metadata.caseId}`);
+    if (caseDoc?.data.pendingExtra?.sessionId === session.id)
+      await patchDoc(env, `cases/${session.metadata.caseId}`, { pendingExtra: null }, {
+        mask: ['pendingExtra'],
+      });
+  }
+}
+
+// ---- admin scheduling: reschedule, paid follow-up, or a custom-priced session ----
+
+const MT_FMT = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Etc/GMT+7', weekday: 'long', month: 'long', day: 'numeric',
+  hour: 'numeric', minute: '2-digit',
+});
+
+function followUpExpiry(c) {
+  const base = c.appointment?.start ? new Date(c.appointment.start) : null;
+  return base ? new Date(base.getTime() + FOLLOWUP_EXPIRY_DAYS * 86_400_000) : null;
+}
+
+/**
+ * POST /api/admin/schedule
+ * Body: { caseId, slotId, mode: 'reschedule'|'followup'|'charge', pct?, tagline? }
+ * Admin scheduling skips the 72h lead and 1.5-week horizon on purpose (Eric
+ * arranges these with the client directly); the 8am–6pm window still applies.
+ */
+async function handleAdminSchedule(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Admin only' }, 403);
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
+  const { caseId, slotId, mode, pct, tagline } = body;
+  if (typeof caseId !== 'string' || !/^[\w-]{1,64}$/.test(caseId))
+    return json({ error: 'Bad case id' }, 400);
+  if (typeof slotId !== 'string' || !/^[\w-]{1,64}$/.test(slotId))
+    return json({ error: 'Bad slot id' }, 400);
+  if (!['reschedule', 'followup', 'charge'].includes(mode))
+    return json({ error: 'Bad mode' }, 400);
+
+  const caseDoc = await getDoc(env, `cases/${caseId}`);
+  if (!caseDoc) return json({ error: 'No such case' }, 404);
+  const c = caseDoc.data;
+
+  const slot = await getDoc(env, `availability/${slotId}`);
+  if (!slot) return json({ error: 'No such slot' }, 404);
+  const now = new Date();
+  const holdExpired =
+    slot.data.state === 'held' &&
+    slot.data.holdExpiresAt &&
+    new Date(slot.data.holdExpiresAt) < now;
+  if (slot.data.state !== 'open' && !holdExpired)
+    return json({ error: 'That slot is not open.' }, 409);
+  const start = new Date(slot.data.start);
+  if (start.getTime() <= now.getTime()) return json({ error: 'That slot is in the past.' }, 409);
+  const wp = windowProblem(slot.data.start, slot.data.durationMin || 60);
+  if (wp) return json({ error: wp }, 409);
+  const durationMin = slot.data.durationMin || 60;
+  const when = `${MT_FMT.format(start)} MST`;
+
+  const bookSlot = () =>
+    patchDoc(env, `availability/${slotId}`, {
+      state: 'booked', caseId, holdExpiresAt: null, heldByUid: null, heldBySession: null,
+    });
+
+  if (mode === 'reschedule') {
+    // Free whatever slot(s) this case previously occupied, then take the new one.
+    const oldSlots = await queryDocs(env, 'availability', [['caseId', 'EQUAL', caseId]], 5);
+    for (const s of oldSlots)
+      if (s.id !== slotId)
+        await patchDoc(env, `availability/${s.id}`, { state: 'open', caseId: null }, {
+          mask: ['state', 'caseId'],
+        });
+    await bookSlot();
+    await patchDoc(env, `cases/${caseId}`, {
+      appointment: { ...c.appointment, start, durationMin },
+      needsReschedule: null,
+    }, { mask: ['appointment', 'needsReschedule'] });
+    await sendEmail(env, {
+      to: c.clientEmail,
+      subject: 'Your Pocket Advocate appointment moved',
+      html: `<p>Your discussion with Eric is now scheduled for:</p>
+        <p><strong>${when}</strong></p>
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+    });
+    return json({ ok: true, scheduled: when });
+  }
+
+  if (mode === 'followup') {
+    if (!c.addOnFollowUp) return json({ error: 'This case has no paid follow-up add-on.' }, 409);
+    if (c.followUp) return json({ error: 'The follow-up is already scheduled.' }, 409);
+    const expiry = followUpExpiry(c);
+    if (expiry && now > expiry)
+      return json({ error: `The follow-up window expired ${MT_FMT.format(expiry)}. Use "charge" at 0% to honor it anyway.` }, 409);
+    await bookSlot();
+    await patchDoc(env, `cases/${caseId}`, {
+      followUp: {
+        start, durationMin, slotId, kind: 'followup',
+        label: 'Follow-up discussion', amountCents: 0, scheduledAt: now,
+      },
+    }, { mask: ['followUp'] });
+    await sendEmail(env, {
+      to: c.clientEmail,
+      subject: 'Your follow-up session is booked',
+      html: `<p>Your paid follow-up discussion with Eric is scheduled:</p>
+        <p><strong>${when}</strong></p>
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+    });
+    return json({ ok: true, scheduled: when });
+  }
+
+  // mode === 'charge' — a custom-priced session (percentage of the $100 rate).
+  if (!CHARGE_PCTS.includes(pct)) return json({ error: 'Pick a rate (0–150% in 25% steps).' }, 400);
+  const label =
+    typeof tagline === 'string' && tagline.trim()
+      ? tagline.trim().slice(0, 120)
+      : 'Advocacy Session';
+  const amountCents = pct * 100; // pct% of $100
+
+  if (amountCents === 0) {
+    await bookSlot();
+    await patchDoc(env, `cases/${caseId}`, {
+      followUp: {
+        start, durationMin, slotId, kind: 'extra',
+        label, amountCents: 0, scheduledAt: now,
+      },
+    }, { mask: ['followUp'] });
+    await sendEmail(env, {
+      to: c.clientEmail,
+      subject: 'A session with Eric is booked',
+      html: `<p>${escHtml(label)} — no charge.</p>
+        <p><strong>${when}</strong></p>
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+    });
+    return json({ ok: true, scheduled: when });
+  }
+
+  // Paid: hold the slot for 24h and send the client to Stripe.
+  const holdExpiresAt = new Date(now.getTime() + 24 * 3600_000);
+  const held = await patchDoc(
+    env,
+    `availability/${slotId}`,
+    { state: 'held', holdExpiresAt, heldByUid: c.clientUid },
+    { ifUpdateTime: slot.updateTime, mask: ['state', 'holdExpiresAt', 'heldByUid'] }
+  );
+  if (!held) return json({ error: 'That slot was just taken. Pick another.' }, 409);
+
+  const session = await stripePost(env, '/checkout/sessions', {
+    mode: 'payment',
+    customer_email: c.clientEmail || undefined,
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: 'usd',
+          unit_amount: amountCents,
+          product_data: { name: label, description: `${when} with Eric` },
+        },
+      },
+    ],
+    success_url: `${env.PUBLIC_BASE_URL}/case.html?paid=1`,
+    cancel_url: `${env.PUBLIC_BASE_URL}/case.html`,
+    expires_at: Math.floor(holdExpiresAt.getTime() / 1000),
+    metadata: { kind: 'extra', caseId, slotId, uid: c.clientUid, tagline: label, pct: String(pct) },
   });
+  await patchDoc(env, `availability/${slotId}`, { heldBySession: session.id }, {
+    mask: ['heldBySession'],
+  });
+  await patchDoc(env, `cases/${caseId}`, {
+    pendingExtra: {
+      slotId, start, durationMin, amountCents, label,
+      sessionId: session.id, url: session.url, createdAt: now,
+    },
+  }, { mask: ['pendingExtra'] });
+  await sendEmail(env, {
+    to: c.clientEmail,
+    subject: 'Eric scheduled a session — payment needed to confirm',
+    html: `<p>${escHtml(label)} — $${(amountCents / 100).toFixed(2)}.</p>
+      <p><strong>${when}</strong></p>
+      <p>The time is held for 24 hours. <a href="${session.url}">Pay to confirm</a>,
+      or open <a href="${env.PUBLIC_BASE_URL}/case.html">your case page</a>.</p>`,
+  });
+  return json({ ok: true, scheduled: when, checkoutUrl: session.url, amountCents });
+}
+
+/** Webhook: an admin-priced session was paid — book it into the case. */
+async function confirmExtraSession(env, session) {
+  const m = session.metadata || {};
+  if (!m.caseId || !m.slotId) return;
+  const caseDoc = await getDoc(env, `cases/${m.caseId}`);
+  if (!caseDoc) return;
+  if (caseDoc.data.followUp?.sessionId === session.id) return; // webhook retry
+  const c = caseDoc.data;
+
+  const slot = await getDoc(env, `availability/${m.slotId}`);
+  const start = slot ? new Date(slot.data.start) : new Date(c.pendingExtra?.start);
+  const durationMin = slot ? slot.data.durationMin || 60 : c.pendingExtra?.durationMin || 60;
+  await patchDoc(env, `availability/${m.slotId}`, {
+    state: 'booked', caseId: m.caseId, holdExpiresAt: null, heldByUid: null, heldBySession: null,
+  });
+  const payments = Array.isArray(c.extraPayments) ? c.extraPayments : [];
+  payments.push({
+    amountCents: session.amount_total || 0,
+    label: m.tagline || 'Advocacy Session',
+    sessionId: session.id,
+    at: new Date(),
+  });
+  await patchDoc(env, `cases/${m.caseId}`, {
+    followUp: {
+      start, durationMin, slotId: m.slotId, kind: 'extra',
+      label: m.tagline || 'Advocacy Session',
+      amountCents: session.amount_total || 0,
+      sessionId: session.id, scheduledAt: new Date(),
+    },
+    pendingExtra: null,
+    extraPayments: payments,
+  }, { mask: ['followUp', 'pendingExtra', 'extraPayments'] });
+  await sendEmail(env, {
+    to: c.clientEmail,
+    subject: 'Your session is confirmed',
+    html: `<p>Payment received — you're booked:</p>
+      <p><strong>${MT_FMT.format(start)} MST</strong></p>
+      <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+  });
+}
+
+/**
+ * Cron: warn clients one week before an unscheduled follow-up add-on expires
+ * (30 days after the first discussion). One email, ever, per case.
+ */
+export async function runFollowUpWarnings(env, now = Date.now()) {
+  const rows = await queryDocs(env, 'cases', [['addOnFollowUp', 'EQUAL', true]], 100);
+  for (const row of rows) {
+    const c = row.data;
+    if (c.followUp || c.pendingExtra || c.followUpExpiryWarned) continue;
+    const base = c.appointment?.start ? new Date(c.appointment.start).getTime() : null;
+    if (!base || now < base) continue; // first discussion hasn't happened yet
+    const expires = base + FOLLOWUP_EXPIRY_DAYS * 86_400_000;
+    if (now >= expires) continue; // already lapsed — no email after the fact
+    if (expires - now > FOLLOWUP_WARN_DAYS * 86_400_000) continue; // not yet warning time
+    if (c.clientEmail) {
+      await sendEmail(env, {
+        to: c.clientEmail,
+        subject: 'Your follow-up session expires in one week',
+        html: `<p>Your case included a paid follow-up discussion, and it expires on
+          <strong>${MT_FMT.format(new Date(expires))} MST</strong> — one month after your first discussion.</p>
+          <p>To use it, message Eric in your case chat and he'll get it scheduled.</p>
+          <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+      });
+    }
+    await patchDoc(env, `cases/${row.id}`, { followUpExpiryWarned: true }, {
+      mask: ['followUpExpiryWarned'],
+    });
+  }
+}
+
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, (ch) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
 
 function safeJson(s) {

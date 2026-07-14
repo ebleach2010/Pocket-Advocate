@@ -3,7 +3,7 @@
 // report (which advances the status and pings the client in-app), close case.
 
 import {
-  db, storage, doc, getDoc,
+  db, storage, doc, getDoc, collection, getDocs, query, where,
   ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata,
 } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
@@ -51,9 +51,9 @@ function render(el) {
       ${start ? `${mtFmt.format(start)} MST · ${c.appointment.method}` : 'no appointment'}
       · ${c.publicElection?.choice === 'public' ? '<strong style="color:var(--magenta)">PUBLIC session</strong>' : 'private session'}
       ${c.stripe?.amountTotal ? `· <strong style="color:var(--cyan)">$${(c.stripe.amountTotal / 100).toLocaleString()} paid</strong>` : ''}
-      ${c.addOnFollowUp ? '· follow-up included' : ''}
       ${due !== null ? `· report due in <strong>${due}d</strong>` : ''}
     </p>
+    ${followUpLine(c, mtFmt)}
 
     <div class="panel">
       <h3>Meeting link / phone note</h3>
@@ -84,6 +84,31 @@ function render(el) {
     </div>
 
     <div class="panel">
+      <h3>Schedule a session</h3>
+      <p class="dim small">Book this client into any open slot — the 72-hour lead and booking horizon don't apply to you.</p>
+      <select id="sched-slot"><option value="">Loading open slots…</option></select>
+      <div id="sched-modes" style="margin-top:.6rem;">
+        <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="reschedule" checked>
+          Reschedule the main appointment <span class="dim">(no charge)</span></label>
+        <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="followup" ${followUpAvailable(c) ? '' : 'disabled'}>
+          Book their paid follow-up ${followUpAvailable(c) ? '' : `<span class="dim">(${followUpUnavailableReason(c)})</span>`}</label>
+        <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="charge">
+          Charge for a session:</label>
+        <div id="sched-charge" style="margin:.35rem 0 0 1.4rem;" hidden>
+          <select id="sched-pct">
+            ${[0, 25, 50, 75, 100, 125, 150].map((p) =>
+              `<option value="${p}" ${p === 50 ? 'selected' : ''}>${p}% — ${p === 0 ? 'no charge' : '$' + p}</option>`).join('')}
+          </select>
+          <input type="text" id="sched-tag" maxlength="120" placeholder="Invoice line (optional) — e.g. Records deep-dive session" style="margin-top:.35rem;">
+          <p class="dim small" style="margin:.3rem 0 0;">The client pays through Stripe to confirm; the slot holds for 24 hours. Your tagline is the line item on their receipt.</p>
+        </div>
+      </div>
+      <p class="error" id="sched-err" hidden></p>
+      <div id="sched-result" class="dim small" style="margin-top:.4rem;"></div>
+      <div class="actions"><button class="btn secondary" id="sched-go">Schedule</button></div>
+    </div>
+
+    <div class="panel">
       <h3>Milestones</h3>
       <div class="actions" style="margin-top:.3rem;">
         <button class="btn secondary" data-action="recording-uploaded">Call done — start 7-day report clock</button>
@@ -94,6 +119,7 @@ function render(el) {
     </div>`;
 
   el.querySelector('#save-link').addEventListener('click', saveLink);
+  wireScheduler(el);
   el.querySelectorAll('[data-action]').forEach((b) =>
     b.addEventListener('click', () => milestone(b.dataset.action, b)));
   el.querySelector('#up-recording').addEventListener('change', (e) =>
@@ -195,6 +221,111 @@ async function refreshFiles() {
         <a href="${r.url}" target="_blank" rel="noopener">${esc(r.name)}</a></span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
     </li>`).join('');
+}
+
+// ---- follow-up status + the scheduling panel ----
+
+const FOLLOWUP_EXPIRY_MS = 30 * 86_400_000;
+
+function followUpDaysLeft(c) {
+  const base = c.appointment?.start ? toDate(c.appointment.start).getTime() : null;
+  if (!base) return null;
+  return Math.ceil((base + FOLLOWUP_EXPIRY_MS - Date.now()) / 86_400_000);
+}
+function followUpAvailable(c) {
+  if (!c.addOnFollowUp || c.followUp) return false;
+  const days = followUpDaysLeft(c);
+  return days === null || days > 0;
+}
+function followUpUnavailableReason(c) {
+  if (!c.addOnFollowUp) return 'not purchased';
+  if (c.followUp) return 'already scheduled';
+  return 'expired — use Charge at 0% to honor it';
+}
+
+/** The banner under the header: add-on state, countdown, scheduled sessions, pending payments. */
+function followUpLine(c, mtFmt) {
+  const parts = [];
+  if (c.followUp) {
+    const s = toDate(c.followUp.start);
+    parts.push(`<strong style="color:var(--cyan)">${c.followUp.kind === 'followup' ? 'FOLLOW-UP' : esc((c.followUp.label || 'SESSION').toUpperCase())}
+      booked — ${mtFmt.format(s)} MST</strong>${c.followUp.amountCents ? ` · $${(c.followUp.amountCents / 100).toLocaleString()} paid` : ''}`);
+  } else if (c.addOnFollowUp) {
+    const days = followUpDaysLeft(c);
+    if (days === null) parts.push('<strong style="color:var(--magenta)">FOLLOW-UP ADD-ON PAID</strong> — unscheduled');
+    else if (days <= 0) parts.push('<strong style="color:var(--danger)">FOLLOW-UP EXPIRED</strong> — window was 1 month after the first discussion');
+    else parts.push(`<strong style="color:var(--magenta)">FOLLOW-UP ADD-ON PAID</strong> — <strong>${days}d</strong> left to use it${c.followUpExpiryWarned ? ' (client warned)' : ''}`);
+  }
+  if (c.pendingExtra) {
+    const s = toDate(c.pendingExtra.start);
+    parts.push(`<strong style="color:var(--magenta)">AWAITING PAYMENT</strong> — ${esc(c.pendingExtra.label)} $${(c.pendingExtra.amountCents / 100).toLocaleString()}, ${mtFmt.format(s)} MST`);
+  }
+  if (!parts.length) return '';
+  return `<div class="panel" style="margin-top:.6rem; padding:.6rem .9rem;">
+    <p class="small" style="margin:0;">${parts.join('<br>')}</p></div>`;
+}
+
+async function wireScheduler(el) {
+  const slotSel = el.querySelector('#sched-slot');
+  const chargeBox = el.querySelector('#sched-charge');
+  el.querySelectorAll('input[name=sched-mode]').forEach((r) =>
+    r.addEventListener('change', () => { chargeBox.hidden = r.value !== 'charge' || !r.checked; }));
+
+  const mtFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+  try {
+    const snapshot = await getDocs(query(collection(db, 'availability'), where('state', '==', 'open')));
+    const slots = [];
+    snapshot.forEach((d) => {
+      const s = d.data();
+      const start = toDate(s.start);
+      if (start.getTime() > Date.now()) slots.push({ id: d.id, start });
+    });
+    slots.sort((a, b) => a.start - b.start);
+    slotSel.innerHTML = slots.length
+      ? slots.map((s) => `<option value="${s.id}">${mtFmt.format(s.start)} MST</option>`).join('')
+      : '<option value="">No open slots — open some in Availability first</option>';
+  } catch (err) {
+    slotSel.innerHTML = `<option value="">Couldn't load slots: ${esc(err.message)}</option>`;
+  }
+
+  el.querySelector('#sched-go').addEventListener('click', async () => {
+    const btn = el.querySelector('#sched-go');
+    const errEl = el.querySelector('#sched-err');
+    const resultEl = el.querySelector('#sched-result');
+    const slotId = slotSel.value;
+    const mode = el.querySelector('input[name=sched-mode]:checked').value;
+    errEl.hidden = true;
+    if (!slotId) { errEl.textContent = 'Pick a slot.'; errEl.hidden = false; return; }
+    btn.disabled = true;
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/admin/schedule', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          caseId, slotId, mode,
+          pct: mode === 'charge' ? Number(el.querySelector('#sched-pct').value) : undefined,
+          tagline: mode === 'charge' ? el.querySelector('#sched-tag').value : undefined,
+        }),
+      });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || `Request failed (${res.status})`);
+      if (out.checkoutUrl) {
+        resultEl.innerHTML = `Scheduled pending payment ($${(out.amountCents / 100).toLocaleString()}).
+          The client got an email and a pay button on their case page — or send this link in chat:
+          <input type="text" readonly value="${esc(out.checkoutUrl)}" onclick="this.select()" style="margin-top:.3rem;">`;
+      } else {
+        resultEl.textContent = `Booked: ${out.scheduled}. The client has been emailed.`;
+        setTimeout(load, 1200);
+      }
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+    }
+    btn.disabled = false;
+  });
 }
 
 function toDate(v) { return v?.toDate ? v.toDate() : new Date(v || 0); }
