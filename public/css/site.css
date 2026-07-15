@@ -369,7 +369,12 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 .cal-key.booked { background: rgba(45,226,255,.5); }
 .cal-key.open { background: rgba(62,224,138,.45); }
 .cal-key.held { background: rgba(255,79,216,.5); }
-@media (max-width: 480px) {
-  .cal-cell { min-height: 3.6rem; padding: .2rem; }
-  .cal-mark { font-size: .52rem; }
+/* Phones: day cells are ~50px wide — text won't fit, so marks collapse to
+   iOS-style colored bars; tap the day for the full list below. */
+@media (max-width: 600px) {
+  .cal-cell { min-height: 3.2rem; padding: .2rem .25rem; }
+  .cal-mark {
+    font-size: 0; height: 5px; padding: 0; margin-top: 3px;
+    border-radius: 999px; max-width: 100%;
+  }
 }
