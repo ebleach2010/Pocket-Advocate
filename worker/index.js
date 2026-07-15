@@ -541,11 +541,29 @@ async function handleCaseUpdate(request, env) {
       mask: ['appointment.joinLink'],
     });
   } else if (action === 'recording-uploaded') {
-    // The call happened: start the 7-day report clock (SPEC: callEnd + 7 days).
+    // The call happened: start the report clock. Admin-side the deadline is a
+    // strict 7 calendar days; the client is told "7 business days, some take
+    // slightly longer" (Eric's leeway, 2026-07-13).
     if (doc.data.status === 'closed') return json({ error: 'Case is closed.' }, 409);
+    const alreadyStarted = !!doc.data.reportDueAt;
     const fields = { reportDueAt: new Date(now.getTime() + 7 * 86_400_000) };
     if (doc.data.status !== 'delivered') fields.status = 'awaiting_report';
     await patchDoc(env, `cases/${caseId}`, fields, { mask: Object.keys(fields) });
+    if (!alreadyStarted) {
+      await sendEmail(env, {
+        to: doc.data.clientEmail,
+        subject: 'Great meeting — your report is on the way',
+        html: `<p>It was great talking with you today. Your discussion is done,
+          and the recording will be in your case file for you to revisit anytime.</p>
+          <p>Eric is now putting together your written report. Expect it within
+          <strong>7 business days</strong> — some reports take slightly longer
+          depending on complexity, and yours will be worth the care.</p>
+          <p>When the report lands, you'll have a day to look it over and ask
+          any questions in your case chat before the case wraps up. Your file —
+          report, recording, everything — stays yours forever either way.</p>
+          <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+      });
+    }
   } else if (action === 'report-uploaded') {
     if (doc.data.status === 'closed') return json({ error: 'Case is closed.' }, 409);
     await patchDoc(env, `cases/${caseId}`, { status: 'delivered', reportDeliveredAt: now }, {
@@ -556,6 +574,8 @@ async function handleCaseUpdate(request, env) {
       subject: 'Your Pocket Advocate report is ready',
       html: `<p>Your written report is in your case file — yours to download,
         print, and keep forever. Share it with your care team.</p>
+        <p>Take a day to read it over — if anything raises a question, ask Eric
+        in your case chat before the case wraps up.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
     });
   } else if (action === 'close') {

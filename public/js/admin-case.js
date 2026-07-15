@@ -47,13 +47,7 @@ function render(el) {
       <h1 style="margin:0;">${esc(c.clientEmail || c.clientUid)}</h1>
       <span class="status-pill">${(c.status || '?').replace('_', ' ').toUpperCase()}</span>
     </div>
-    <p class="dim small" style="margin-top:.4rem;">
-      ${start ? `${mtFmt.format(start)} MST · ${c.appointment.method}` : 'no appointment'}
-      · ${c.publicElection?.choice === 'public' ? '<strong style="color:var(--magenta)">PUBLIC session</strong>' : 'private session'}
-      ${c.stripe?.amountTotal ? `· <strong style="color:var(--cyan)">$${(c.stripe.amountTotal / 100).toLocaleString()} paid</strong>` : ''}
-      ${due !== null ? `· report due in <strong>${due}d</strong>` : ''}
-    </p>
-    ${followUpLine(c, mtFmt)}
+    ${infoBar(c, mtFmt, start, due)}
 
     <div class="panel">
       <h3>Meeting link / phone note</h3>
@@ -243,26 +237,61 @@ function followUpUnavailableReason(c) {
   return 'expired — use Charge at 0% to honor it';
 }
 
-/** The banner under the header: add-on state, countdown, scheduled sessions, pending payments. */
-function followUpLine(c, mtFmt) {
-  const parts = [];
+/**
+ * Everything that matters, one section: appointment, session type, money,
+ * the report clock (strict 7 calendar days, loud as it tightens), follow-up
+ * state, and any payment the client still owes.
+ */
+function infoBar(c, mtFmt, start, due) {
+  const chip = (label, value, color) => `
+    <span style="display:inline-flex; align-items:baseline; gap:.4rem; border:1px solid var(--line);
+      border-radius:10px; padding:.4rem .7rem; background:var(--panel);">
+      <span class="dim" style="font:600 .62rem/1 ui-monospace,monospace; letter-spacing:.12em;">${label}</span>
+      <strong class="small" style="color:${color || 'var(--ink)'};">${value}</strong>
+    </span>`;
+
+  const chips = [];
+  // The call
+  chips.push(chip('CALL', start
+    ? `${mtFmt.format(start)} MST · ${esc(c.appointment.method)}`
+    : 'no appointment', start ? null : 'var(--danger)'));
+  // Session type
+  chips.push(chip('SESSION', c.publicElection?.choice === 'public' ? 'PUBLIC' : 'private',
+    c.publicElection?.choice === 'public' ? 'var(--magenta)' : null));
+  // Money (case fee + any admin-priced sessions)
+  const extraCents = Array.isArray(c.extraPayments)
+    ? c.extraPayments.reduce((x, p) => x + (p.amountCents || 0), 0) : 0;
+  const totalCents = (c.stripe?.amountTotal || 0) + extraCents;
+  if (totalCents) chips.push(chip('PAID', `$${(totalCents / 100).toLocaleString()}`, 'var(--cyan)'));
+  // The report clock — strict 7 calendar days on this side of the counter.
+  if (c.status === 'delivered' || c.status === 'closed') {
+    chips.push(chip('REPORT', c.status === 'closed' ? 'delivered · case closed' : 'DELIVERED', 'var(--cyan)'));
+  } else if (due !== null) {
+    const loud = due <= 3;
+    chips.push(chip('REPORT', due >= 0 ? `due in ${due}d` : `OVERDUE ${-due}d`,
+      due < 0 ? 'var(--danger)' : loud ? 'var(--magenta)' : 'var(--cyan)'));
+  } else {
+    chips.push(chip('REPORT', 'clock starts at "Call done"'));
+  }
+  // Follow-up / extra sessions
   if (c.followUp) {
-    const s = toDate(c.followUp.start);
-    parts.push(`<strong style="color:var(--cyan)">${c.followUp.kind === 'followup' ? 'FOLLOW-UP' : esc((c.followUp.label || 'SESSION').toUpperCase())}
-      booked — ${mtFmt.format(s)} MST</strong>${c.followUp.amountCents ? ` · $${(c.followUp.amountCents / 100).toLocaleString()} paid` : ''}`);
+    chips.push(chip(c.followUp.kind === 'followup' ? 'FOLLOW-UP' : 'SESSION',
+      `${mtFmt.format(toDate(c.followUp.start))} MST${c.followUp.amountCents ? ` · $${(c.followUp.amountCents / 100).toLocaleString()}` : ''}`,
+      'var(--cyan)'));
   } else if (c.addOnFollowUp) {
     const days = followUpDaysLeft(c);
-    if (days === null) parts.push('<strong style="color:var(--magenta)">FOLLOW-UP ADD-ON PAID</strong> — unscheduled');
-    else if (days <= 0) parts.push('<strong style="color:var(--danger)">FOLLOW-UP EXPIRED</strong> — window was 1 month after the first discussion');
-    else parts.push(`<strong style="color:var(--magenta)">FOLLOW-UP ADD-ON PAID</strong> — <strong>${days}d</strong> left to use it${c.followUpExpiryWarned ? ' (client warned)' : ''}`);
+    if (days !== null && days <= 0) chips.push(chip('FOLLOW-UP', 'EXPIRED', 'var(--danger)'));
+    else chips.push(chip('FOLLOW-UP', days === null
+      ? 'paid · unscheduled'
+      : `paid · ${days}d left${c.followUpExpiryWarned ? ' · client warned' : ''}`, 'var(--magenta)'));
   }
   if (c.pendingExtra) {
-    const s = toDate(c.pendingExtra.start);
-    parts.push(`<strong style="color:var(--magenta)">AWAITING PAYMENT</strong> — ${esc(c.pendingExtra.label)} $${(c.pendingExtra.amountCents / 100).toLocaleString()}, ${mtFmt.format(s)} MST`);
+    chips.push(chip('AWAITING $', `${esc(c.pendingExtra.label)} · $${(c.pendingExtra.amountCents / 100).toLocaleString()} · ${mtFmt.format(toDate(c.pendingExtra.start))} MST`,
+      'var(--magenta)'));
   }
-  if (!parts.length) return '';
-  return `<div class="panel" style="margin-top:.6rem; padding:.6rem .9rem;">
-    <p class="small" style="margin:0;">${parts.join('<br>')}</p></div>`;
+  if (c.needsReschedule) chips.push(chip('⚠', 'NEEDS RESCHEDULE', 'var(--danger)'));
+
+  return `<div style="display:flex; flex-wrap:wrap; gap:.45rem; margin:.7rem 0 1rem;">${chips.join('')}</div>`;
 }
 
 async function wireScheduler(el) {
