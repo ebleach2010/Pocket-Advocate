@@ -462,7 +462,7 @@ async function createCaseFromSession(env, session) {
         holdExpiresAt: null,
         heldByUid: null,
         heldBySession: null,
-      });
+      }, { mask: ['state', 'caseId', 'holdExpiresAt', 'heldByUid', 'heldBySession'] });
     } else {
       await patchDoc(env, `cases/${caseId}`, { needsReschedule: true }, {
         mask: ['needsReschedule'],
@@ -628,7 +628,7 @@ async function releaseHold(env, session) {
       holdExpiresAt: null,
       heldByUid: null,
       heldBySession: null,
-    });
+    }, { mask: ['state', 'holdExpiresAt', 'heldByUid', 'heldBySession'] });
   }
   // An admin-priced session that was never paid: clear the client's pay prompt.
   if (session.metadata?.kind === 'extra' && session.metadata.caseId) {
@@ -694,7 +694,7 @@ async function handleAdminSchedule(request, env) {
   const bookSlot = () =>
     patchDoc(env, `availability/${slotId}`, {
       state: 'booked', caseId, holdExpiresAt: null, heldByUid: null, heldBySession: null,
-    });
+    }, { mask: ['state', 'caseId', 'holdExpiresAt', 'heldByUid', 'heldBySession'] });
 
   if (mode === 'reschedule') {
     // Free whatever slot(s) this case previously occupied, then take the new one.
@@ -830,7 +830,7 @@ async function confirmExtraSession(env, session) {
   const durationMin = slot ? slot.data.durationMin || 60 : c.pendingExtra?.durationMin || 60;
   await patchDoc(env, `availability/${m.slotId}`, {
     state: 'booked', caseId: m.caseId, holdExpiresAt: null, heldByUid: null, heldBySession: null,
-  });
+  }, { mask: ['state', 'caseId', 'holdExpiresAt', 'heldByUid', 'heldBySession'] });
   const payments = Array.isArray(c.extraPayments) ? c.extraPayments : [];
   payments.push({
     amountCents: session.amount_total || 0,
