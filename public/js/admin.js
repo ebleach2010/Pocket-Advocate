@@ -22,16 +22,27 @@ async function load() {
     return;
   }
   if (!cases.length) {
-    listEl.innerHTML = '<p class="dim">No cases yet. They appear here the moment a payment lands.</p>';
+    listEl.innerHTML = '<p class="dim">No clients yet. They appear here the moment a payment lands.</p>';
     return;
   }
-  cases.sort((a, b) =>
-    (OPEN_ORDER[a.status] ?? 9) - (OPEN_ORDER[b.status] ?? 9) ||
-    toDate(a.appointment?.start) - toDate(b.appointment?.start));
 
   const mtFmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    timeZone: MOUNTAIN_TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   });
+  const dateFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric', year: 'numeric',
+  });
+  const now = Date.now();
+
+  // Three shelves (Eric, 2026-07-15): current clients (call happened, report
+  // phase) on top, future booked calls next, former (closed) at the bottom.
+  const former = cases.filter((c) => c.status === 'closed');
+  const future = cases.filter((c) =>
+    c.status !== 'closed' && c.appointment?.start && toDate(c.appointment.start).getTime() > now);
+  const current = cases.filter((c) => !former.includes(c) && !future.includes(c));
+  current.sort((a, b) => toDate(a.reportDueAt || 0) - toDate(b.reportDueAt || 0));
+  future.sort((a, b) => toDate(a.appointment?.start) - toDate(b.appointment?.start));
+  former.sort((a, b) => toDate(b.closedAt || 0) - toDate(a.closedAt || 0));
   // Money at a glance: every case is created by a confirmed Stripe payment,
   // so the sum of amountTotal IS confirmed case revenue. Subscriptions renew
   // monthly inside Stripe — the dashboard there is the source of truth.
@@ -45,23 +56,28 @@ async function load() {
       <p class="dim small" style="margin:.3rem 0 0;">${cases.length} case${cases.length === 1 ? '' : 's'}, every one backed by a confirmed payment.
         Subscriptions and refunds live in the <a href="https://dashboard.stripe.com" target="_blank" rel="noopener">Stripe dashboard</a>.</p>
     </div>`;
-  listEl.innerHTML = summary + cases.map((c) => {
-    const start = c.appointment && toDate(c.appointment.start);
-    return `
+  const rowFor = (c, detail) => `
     <a class="panel" style="display:block; text-decoration:none; color:inherit;" href="/admin-case.html?id=${c.id}">
       <div class="row">
         <strong>${esc(c.clientName || c.clientEmail || c.clientUid)}</strong>
         <span class="status-pill ${c.status === 'closed' ? 'closed' : ''} ${dueSoon(c) ? 'due' : ''}">${badge(c)}</span>
       </div>
-      <p class="dim small" style="margin:.3rem 0 0;">
-        ${start ? `${mtFmt.format(start)} MST · ${c.appointment.method}` : 'no appointment'}
-        · ${c.publicElection?.choice === 'public' ? 'PUBLIC' : 'private'}
-        ${c.stripe?.amountTotal ? `· <strong style="color:var(--cyan)">$${(c.stripe.amountTotal / 100).toLocaleString()} paid</strong>` : ''}
-        ${followUpFlag(c)}
-        ${c.needsReschedule ? '· <strong style="color:var(--danger)">NEEDS RESCHEDULE</strong>' : ''}
-      </p>
+      <p class="dim small" style="margin:.3rem 0 0;">${detail}
+        ${c.needsReschedule ? '· <strong style="color:var(--danger)">NEEDS RESCHEDULE</strong>' : ''}</p>
     </a>`;
-  }).join('');
+  const section = (title, color, rows) => rows.length
+    ? `<h2 style="font-size:.78rem; letter-spacing:.16em; color:${color}; font-family:ui-monospace,monospace; margin:1.4rem 0 .6rem;">${title}</h2>${rows.join('')}`
+    : '';
+
+  listEl.innerHTML = summary +
+    section('CURRENT CLIENTS — REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
+      `${c.reportDueAt ? `report due <strong style="color:var(--ink)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
+       ${followUpFlag(c)}`))) +
+    section('BOOKED — UPCOMING CALLS', 'var(--green)', future.map((c) => rowFor(c,
+      `<strong style="color:var(--ink)">${mtFmt.format(toDate(c.appointment.start))} MST</strong> · ${esc(c.appointment.method)}
+       ${followUpFlag(c)}`))) +
+    section('FORMER CLIENTS — CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
+      `closed <strong style="color:var(--ink)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : '—'}</strong>`)));
 }
 
 function badge(c) {

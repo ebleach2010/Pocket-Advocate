@@ -48,6 +48,12 @@ function render(el) {
       <span class="status-pill">${(c.status || '?').replace('_', ' ').toUpperCase()}</span>
     </div>
     ${infoBar(c, mtFmt, start, due)}
+    ${c.status !== 'closed' ? `
+    <div style="margin:0 0 1rem;">
+      <button class="btn danger" data-action="close" style="width:100%; padding:.8rem; font-size:1rem;">
+        Close case
+      </button>
+    </div>` : ''}
 
     <div class="panel">
       <h3>Meeting link / phone note</h3>
@@ -107,7 +113,7 @@ function render(el) {
       <div class="actions" style="margin-top:.3rem;">
         <button class="btn secondary" data-action="recording-uploaded">Call done — start 7-day report clock</button>
         <button class="btn secondary" data-action="report-uploaded">Report delivered</button>
-        ${c.status !== 'closed' ? '<button class="btn danger" data-action="close">Close case</button>' : '<span class="dim small">Case closed.</span>'}
+        ${c.status === 'closed' ? '<span class="dim small">Case closed.</span>' : ''}
       </div>
       <p class="dim small" style="margin-top:.6rem;">Uploading a recording or report triggers its milestone automatically; the buttons cover manual corrections.</p>
     </div>`;
