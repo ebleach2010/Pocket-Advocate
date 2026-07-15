@@ -362,13 +362,13 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
   font-size: .58rem; line-height: 1.5; border-radius: 4px; padding: 0 .25rem;
   margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.cal-mark.booked { background: rgba(45,226,255,.14); color: var(--cyan); }
-.cal-mark.open { background: rgba(62,224,138,.12); color: var(--green); }
-.cal-mark.held { background: rgba(255,79,216,.14); color: var(--magenta); }
+.cal-mark.booked { background: var(--cyan); color: #041018; box-shadow: 0 0 9px rgba(45,226,255,.75); }
+.cal-mark.open { background: var(--green); color: #04180D; box-shadow: 0 0 9px rgba(62,224,138,.7); }
+.cal-mark.held { background: var(--magenta); color: #1A0413; box-shadow: 0 0 9px rgba(255,79,216,.75); }
 .cal-key { display: inline-block; width: .8rem; height: .8rem; border-radius: 3px; vertical-align: -2px; }
-.cal-key.booked { background: rgba(45,226,255,.5); }
-.cal-key.open { background: rgba(62,224,138,.45); }
-.cal-key.held { background: rgba(255,79,216,.5); }
+.cal-key.booked { background: var(--cyan); box-shadow: 0 0 7px rgba(45,226,255,.7); }
+.cal-key.open { background: var(--green); box-shadow: 0 0 7px rgba(62,224,138,.65); }
+.cal-key.held { background: var(--magenta); box-shadow: 0 0 7px rgba(255,79,216,.7); }
 /* Phones: day cells are ~50px wide — text won't fit, so marks collapse to
    iOS-style colored bars; tap the day for the full list below. */
 @media (max-width: 600px) {
