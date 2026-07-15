@@ -50,7 +50,7 @@ async function load() {
     return `
     <a class="panel" style="display:block; text-decoration:none; color:inherit;" href="/admin-case.html?id=${c.id}">
       <div class="row">
-        <strong>${esc(c.clientEmail || c.clientUid)}</strong>
+        <strong>${esc(c.clientName || c.clientEmail || c.clientUid)}</strong>
         <span class="status-pill ${c.status === 'closed' ? 'closed' : ''} ${dueSoon(c) ? 'due' : ''}">${badge(c)}</span>
       </div>
       <p class="dim small" style="margin:.3rem 0 0;">

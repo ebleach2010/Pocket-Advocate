@@ -74,6 +74,8 @@ export default {
 async function handleCheckout(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in to book.' }, 401);
+  const identity = await requireAdultProfile(env, user.uid);
+  if (identity.error) return json({ error: identity.error }, identity.code);
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
@@ -144,6 +146,8 @@ async function handleCheckout(request, env) {
     metadata: {
       uid: user.uid,
       email: user.email || '',
+      name: identity.name,
+      dob: identity.dob,
       slotId,
       method,
       phone: method === 'phone' ? phone : '',
@@ -204,6 +208,8 @@ async function handleMakePrivate(request, env) {
 async function handleSubscribe(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in to subscribe.' }, 401);
+  const identity = await requireAdultProfile(env, user.uid);
+  if (identity.error) return json({ error: identity.error }, identity.code);
   const { termsAckAt } = await request.json().catch(() => ({}));
   if (typeof termsAckAt !== 'number')
     return json({ error: 'Please read and acknowledge the subscription terms first.' }, 400);
@@ -395,6 +401,8 @@ async function createCaseFromSession(env, session) {
     {
       clientUid: m.uid,
       clientEmail: m.email || session.customer_email || null,
+      clientName: m.name || null,
+      clientDob: m.dob || null,
       status: allFormsDone ? 'confirmed' : 'forms',
       createdAt: now,
       appointment: {
@@ -461,6 +469,27 @@ async function createCaseFromSession(env, session) {
       });
     }
   }
+}
+
+/**
+ * Identity gate (Eric, 2026-07-14): money can only move for a signed-in adult
+ * with a real name on file. The browser collects it; this is the enforcement.
+ */
+async function requireAdultProfile(env, uid) {
+  const profile = await getDoc(env, `users/${uid}`);
+  const p = profile?.data || {};
+  if (!p.firstName || !p.lastName || !p.dob)
+    return { error: 'Complete your profile (name and date of birth) first.', code: 400 };
+  const dob = new Date(`${p.dob}T00:00:00Z`);
+  if (Number.isNaN(dob.getTime()))
+    return { error: 'Your date of birth looks invalid — re-enter it.', code: 400 };
+  const now = new Date();
+  let age = now.getUTCFullYear() - dob.getUTCFullYear();
+  const m = now.getUTCMonth() - dob.getUTCMonth();
+  if (m < 0 || (m === 0 && now.getUTCDate() < dob.getUTCDate())) age--;
+  if (age < 18)
+    return { error: 'Pocket Advocate serves adults — a parent or guardian needs to reach out first.', code: 403 };
+  return { name: `${p.firstName} ${p.lastName}`.slice(0, 120), dob: p.dob };
 }
 
 // ---- admin: the availability editor and case milestones ----

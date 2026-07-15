@@ -44,7 +44,7 @@ function render(el) {
 
   el.innerHTML = `
     <div class="row">
-      <h1 style="margin:0;">${esc(c.clientEmail || c.clientUid)}</h1>
+      <h1 style="margin:0;">${esc(c.clientName || c.clientEmail || c.clientUid)}</h1>
       <span class="status-pill">${(c.status || '?').replace('_', ' ').toUpperCase()}</span>
     </div>
     ${infoBar(c, mtFmt, start, due)}
@@ -253,6 +253,10 @@ function infoBar(c, mtFmt, start, due) {
     <span style="font:600 .62rem/1.7 ui-monospace,monospace; letter-spacing:.13em; color:var(--dim); white-space:nowrap;">${label}</span>
     <span class="small" style="color:${color || 'var(--ink)'}; font-weight:600; min-width:0;">${value}</span>`);
 
+  if (c.clientName || c.clientDob) {
+    const age = c.clientDob ? Math.floor((Date.now() - new Date(c.clientDob + 'T00:00:00').getTime()) / 31_557_600_000) : null;
+    row('CLIENT', `${esc(c.clientName || '?')}${c.clientDob ? ` <span class="dim">· DOB ${esc(c.clientDob)}${age !== null ? ` (${age})` : ''}</span>` : ''}${c.clientEmail ? ` <span class="dim">· ${esc(c.clientEmail)}</span>` : ''}`);
+  }
   row('CALL', start
     ? `${fmt.format(start)} MST · ${esc(c.appointment.method)}${c.publicElection?.choice === 'public' ? ' · <span style="color:var(--magenta)">PUBLIC</span>' : ''}`
     : 'no appointment', start ? null : 'var(--danger)');

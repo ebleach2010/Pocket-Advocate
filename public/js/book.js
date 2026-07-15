@@ -6,6 +6,7 @@
 
 import { db, collection, getDocs, query, where } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
+import { ensureFullProfile } from './profile.js';
 import { WAIVERS, ELECTION_QUOTE } from './waivers.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
@@ -41,6 +42,8 @@ async function init() {
   hydrateNav();
   user = await requireUser();
   if (!user) return;
+  // Name + DOB before anything else; blocks under-18s (Worker re-checks).
+  await ensureFullProfile(user, document.getElementById('step'));
   if (new URLSearchParams(location.search).get('canceled')) {
     showError('Checkout was canceled. Your slot was released — pick a time to try again.');
   }

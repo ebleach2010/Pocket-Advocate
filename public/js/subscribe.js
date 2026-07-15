@@ -4,6 +4,7 @@
 
 import { db, doc, getDoc } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
+import { ensureFullProfile } from './profile.js';
 import { SUBSCRIPTION_TERMS } from './waivers.js';
 
 hydrateNav();
@@ -28,6 +29,7 @@ async function init() {
     err.textContent = 'Checkout was canceled — nothing was charged. Subscribe below whenever you like.';
     err.hidden = false;
   }
+  await ensureFullProfile(user, document.getElementById('flow'));
   renderTerms();
 }
 
