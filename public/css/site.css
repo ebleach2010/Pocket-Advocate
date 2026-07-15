@@ -11,9 +11,13 @@
   --cyan: #2DE2FF;
   --cyan-dim: #1596B0;
   --magenta: #FF4FD8;
+  --green: #3EE08A;
+  --blue: #6C9EFF;
   --danger: #FF6B6B;
   --glow-c: 0 0 18px rgba(45, 226, 255, .35);
   --glow-m: 0 0 18px rgba(255, 79, 216, .30);
+  --glow-g: 0 0 16px rgba(62, 224, 138, .30);
+  --glow-b: 0 0 16px rgba(108, 158, 255, .30);
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -128,14 +132,14 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
 .pack .price { font-size: 1.15rem; }
 .pack.rec-c { border-color: var(--cyan); box-shadow: var(--glow-c), inset 0 0 30px rgba(45,226,255,.05); }
 .pack.rec-c .price { color: var(--cyan); }
-.pack.rec-m { border-color: var(--magenta); box-shadow: var(--glow-m), inset 0 0 30px rgba(255,79,216,.05); }
-.pack.rec-m .price { color: var(--magenta); }
+.pack.rec-m { border-color: var(--blue); box-shadow: var(--glow-b), inset 0 0 30px rgba(108,158,255,.05); }
+.pack.rec-m .price { color: var(--blue); }
 .tag {
   position: absolute; top: -.6rem; left: .9rem;
   font: 700 .64rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .18em;
   padding: .22rem .55rem; border-radius: 999px; background: var(--bg);
 }
-.tag.c { color: var(--cyan); border: 1px solid var(--cyan); box-shadow: var(--glow-c); }
+.tag.c { color: var(--green); border: 1px solid var(--green); box-shadow: var(--glow-g); }
 .tag.m { color: var(--magenta); border: 1px solid var(--magenta); box-shadow: var(--glow-m); }
 .fine { font-size: .82rem; color: var(--dim); margin: 0; line-height: 1.45; }
 .fine strong { color: var(--ink); }
@@ -214,7 +218,11 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
   padding: .45rem 0; border-bottom: 1px solid var(--line); font-size: .86rem;
 }
 .filelist li:last-child { border-bottom: none; }
-.filelist .fname { overflow-wrap: anywhere; }
+.filelist .fname { min-width: 0; display: flex; align-items: center; gap: .5rem; }
+.filelist .fname a {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0; max-width: 16rem;
+}
 .filelist .fmeta { color: var(--dim); font-size: .72rem; white-space: nowrap; }
 .kind-pill {
   font: 700 .58rem/1 ui-monospace, monospace; letter-spacing: .12em;

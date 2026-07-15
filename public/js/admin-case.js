@@ -243,55 +243,54 @@ function followUpUnavailableReason(c) {
  * state, and any payment the client still owes.
  */
 function infoBar(c, mtFmt, start, due) {
-  const chip = (label, value, color) => `
-    <span style="display:inline-flex; align-items:baseline; gap:.4rem; border:1px solid var(--line);
-      border-radius:10px; padding:.4rem .7rem; background:var(--panel);">
-      <span class="dim" style="font:600 .62rem/1 ui-monospace,monospace; letter-spacing:.12em;">${label}</span>
-      <strong class="small" style="color:${color || 'var(--ink)'};">${value}</strong>
-    </span>`;
+  // Compact date form so values sit on one line even at phone width.
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, weekday: 'short', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+  });
+  const rows = [];
+  const row = (label, value, color) => rows.push(`
+    <span style="font:600 .62rem/1.7 ui-monospace,monospace; letter-spacing:.13em; color:var(--dim); white-space:nowrap;">${label}</span>
+    <span class="small" style="color:${color || 'var(--ink)'}; font-weight:600; min-width:0;">${value}</span>`);
 
-  const chips = [];
-  // The call
-  chips.push(chip('CALL', start
-    ? `${mtFmt.format(start)} MST · ${esc(c.appointment.method)}`
-    : 'no appointment', start ? null : 'var(--danger)'));
-  // Session type
-  chips.push(chip('SESSION', c.publicElection?.choice === 'public' ? 'PUBLIC' : 'private',
-    c.publicElection?.choice === 'public' ? 'var(--magenta)' : null));
-  // Money (case fee + any admin-priced sessions)
+  row('CALL', start
+    ? `${fmt.format(start)} MST · ${esc(c.appointment.method)}${c.publicElection?.choice === 'public' ? ' · <span style="color:var(--magenta)">PUBLIC</span>' : ''}`
+    : 'no appointment', start ? null : 'var(--danger)');
+
   const extraCents = Array.isArray(c.extraPayments)
     ? c.extraPayments.reduce((x, p) => x + (p.amountCents || 0), 0) : 0;
   const totalCents = (c.stripe?.amountTotal || 0) + extraCents;
-  if (totalCents) chips.push(chip('PAID', `$${(totalCents / 100).toLocaleString()}`, 'var(--cyan)'));
-  // The report clock — strict 7 calendar days on this side of the counter.
-  if (c.status === 'delivered' || c.status === 'closed') {
-    chips.push(chip('REPORT', c.status === 'closed' ? 'delivered · case closed' : 'DELIVERED', 'var(--cyan)'));
-  } else if (due !== null) {
-    const loud = due <= 3;
-    chips.push(chip('REPORT', due >= 0 ? `due in ${due}d` : `OVERDUE ${-due}d`,
-      due < 0 ? 'var(--danger)' : loud ? 'var(--magenta)' : 'var(--cyan)'));
-  } else {
-    chips.push(chip('REPORT', 'clock starts at "Call done"'));
-  }
-  // Follow-up / extra sessions
-  if (c.followUp) {
-    chips.push(chip(c.followUp.kind === 'followup' ? 'FOLLOW-UP' : 'SESSION',
-      `${mtFmt.format(toDate(c.followUp.start))} MST${c.followUp.amountCents ? ` · $${(c.followUp.amountCents / 100).toLocaleString()}` : ''}`,
-      'var(--cyan)'));
-  } else if (c.addOnFollowUp) {
-    const days = followUpDaysLeft(c);
-    if (days !== null && days <= 0) chips.push(chip('FOLLOW-UP', 'EXPIRED', 'var(--danger)'));
-    else chips.push(chip('FOLLOW-UP', days === null
-      ? 'paid · unscheduled'
-      : `paid · ${days}d left${c.followUpExpiryWarned ? ' · client warned' : ''}`, 'var(--magenta)'));
-  }
-  if (c.pendingExtra) {
-    chips.push(chip('AWAITING $', `${esc(c.pendingExtra.label)} · $${(c.pendingExtra.amountCents / 100).toLocaleString()} · ${mtFmt.format(toDate(c.pendingExtra.start))} MST`,
-      'var(--magenta)'));
-  }
-  if (c.needsReschedule) chips.push(chip('⚠', 'NEEDS RESCHEDULE', 'var(--danger)'));
+  if (totalCents)
+    row('PAID', `$${(totalCents / 100).toLocaleString()}${extraCents ? ` <span class="dim">(case $${((c.stripe?.amountTotal || 0) / 100).toLocaleString()} + sessions $${(extraCents / 100).toLocaleString()})</span>` : ''}`, 'var(--cyan)');
 
-  return `<div style="display:flex; flex-wrap:wrap; gap:.45rem; margin:.7rem 0 1rem;">${chips.join('')}</div>`;
+  // The report clock — strict 7 calendar days on this side of the counter.
+  if (c.status === 'delivered' || c.status === 'closed')
+    row('REPORT', c.status === 'closed' ? 'delivered · case closed' : 'DELIVERED', 'var(--cyan)');
+  else if (due !== null)
+    row('REPORT', due >= 0 ? `due in ${due} day${due === 1 ? '' : 's'}` : `OVERDUE ${-due}d`,
+      due < 0 ? 'var(--danger)' : due <= 3 ? 'var(--magenta)' : 'var(--cyan)');
+  else row('REPORT', '<span class="dim">clock starts at "Call done"</span>');
+
+  if (c.followUp)
+    row(c.followUp.kind === 'followup' ? 'FOLLOW-UP' : 'SESSION',
+      `${fmt.format(toDate(c.followUp.start))} MST${c.followUp.amountCents ? ` · $${(c.followUp.amountCents / 100).toLocaleString()} paid` : ''}`,
+      'var(--cyan)');
+  else if (c.addOnFollowUp) {
+    const days = followUpDaysLeft(c);
+    if (days !== null && days <= 0) row('FOLLOW-UP', 'EXPIRED', 'var(--danger)');
+    else row('FOLLOW-UP', days === null
+      ? 'paid · unscheduled'
+      : `paid · <strong>${days}d left</strong> to use${c.followUpExpiryWarned ? ' <span class="dim">· client warned</span>' : ''}`, 'var(--magenta)');
+  }
+
+  if (c.pendingExtra)
+    row('UNPAID', `${esc(c.pendingExtra.label)} · $${(c.pendingExtra.amountCents / 100).toLocaleString()} · ${fmt.format(toDate(c.pendingExtra.start))} MST`,
+      'var(--magenta)');
+  if (c.needsReschedule) row('ALERT', 'NEEDS RESCHEDULE', 'var(--danger)');
+
+  return `<div class="panel" style="display:grid; grid-template-columns:max-content 1fr;
+    column-gap:1.1rem; row-gap:.5rem; align-items:baseline;
+    margin:.7rem 0 1rem; padding:.85rem 1rem;">${rows.join('')}</div>`;
 }
 
 async function wireScheduler(el) {
