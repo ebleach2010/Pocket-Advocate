@@ -12,7 +12,7 @@
 // Everything else falls through to the static app in public/.
 
 import { requireUser } from './firebase-auth.js';
-import { getDoc, patchDoc, deleteDoc, queryDocs } from './firestore.js';
+import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate } from './firestore.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import { slotTimingProblem, windowProblem, HOLD_MINUTES } from './schedule.js';
 import { sendEmail, homeScreenTips } from './email.js';
@@ -517,21 +517,22 @@ async function handleCreateSlots(request, env) {
   if (!starts || !starts.length || starts.length > 500)
     return json({ error: 'Provide 1–500 slot start times.' }, 400);
 
-  let created = 0;
-  let skipped = 0;
+  // One batched write for the whole range — Workers cap outbound calls per
+  // request, so 100+ individual creates would die mid-loop (learned live,
+  // 2026-07-14). Invalid/past/out-of-window times are skipped up front.
+  let invalid = 0;
+  const entries = [];
   for (const iso of starts) {
     const start = new Date(iso);
-    if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) { skipped++; continue; }
-    if (windowProblem(iso, durationMin)) { skipped++; continue; }
-    const ok = await patchDoc(
-      env,
-      `availability/${slotIdFor(start)}`,
-      { start, durationMin, state: 'open' },
-      { mustNotExist: true }
-    );
-    ok ? created++ : skipped++; // exists already (open, held, or booked) -> skip
+    if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) { invalid++; continue; }
+    if (windowProblem(iso, durationMin)) { invalid++; continue; }
+    entries.push({
+      path: `availability/${slotIdFor(start)}`,
+      data: { start, durationMin, state: 'open' },
+    });
   }
-  return json({ created, skipped });
+  const { created, skipped } = await batchCreate(env, entries);
+  return json({ created, skipped: skipped + invalid });
 }
 
 // DELETE /api/admin/slots/:id — only slots nobody holds or has booked

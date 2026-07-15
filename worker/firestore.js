@@ -55,6 +55,32 @@ export async function patchDoc(env, path, data, options = {}) {
   return true;
 }
 
+/**
+ * Create up to 500 documents in ONE request (`:batchWrite`) — Workers cap
+ * outbound calls per request, so bulk slot creation cannot loop patchDoc.
+ * Each write is create-only; returns { created, skipped } where skipped
+ * counts docs that already existed.
+ */
+export async function batchCreate(env, entries) {
+  if (!entries.length) return { created: 0, skipped: 0 };
+  const docBase = `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+  const res = await authedFetch(env, `${baseUrl(env)}:batchWrite`, {
+    method: 'POST',
+    body: JSON.stringify({
+      writes: entries.map((e) => ({
+        update: { name: `${docBase}/${e.path}`, fields: toFields(e.data) },
+        currentDocument: { exists: false },
+      })),
+    }),
+  });
+  if (!res.ok) throw new Error(`firestore batchWrite: ${res.status} ${await res.text()}`);
+  const out = await res.json();
+  let created = 0;
+  let skipped = 0;
+  for (const s of out.status || []) (s.code ? skipped++ : created++);
+  return { created, skipped };
+}
+
 /** Delete a document. Returns true (idempotent — deleting a missing doc is fine). */
 export async function deleteDoc(env, path) {
   const res = await authedFetch(env, `${baseUrl(env)}/${path}`, { method: 'DELETE' });
