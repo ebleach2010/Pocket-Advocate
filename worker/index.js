@@ -16,6 +16,7 @@ import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate } from './firestore
 import { stripePost, verifyWebhook } from './stripe.js';
 import { slotTimingProblem, windowProblem, HOLD_MINUTES } from './schedule.js';
 import { sendEmail, homeScreenTips } from './email.js';
+import { notifyUser } from './push.js';
 
 const CASE_PRICE_CENTS = 10000;
 const ADDON_PRICE_CENTS = 5000;
@@ -55,6 +56,8 @@ export default {
         return await handleCaseUpdate(request, env);
       if (url.pathname === '/api/admin/schedule' && request.method === 'POST')
         return await handleAdminSchedule(request, env);
+      if (url.pathname === '/api/notify' && request.method === 'POST')
+        return await handleNotify(request, env);
       if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
     } catch (err) {
       console.error(`${url.pathname}:`, err.stack || err);
@@ -494,6 +497,60 @@ async function requireAdultProfile(env, uid) {
   if (age < 18)
     return { error: 'Pocket Advocate serves adults — a parent or guardian needs to reach out first.', code: 403 };
   return { name: `${p.firstName} ${p.lastName}`.slice(0, 120), dob: p.dob };
+}
+
+// ---- POST /api/notify ----
+// Body: { kind: 'case'|'sub', id }. Called fire-and-forget after a chat send;
+// pushes a content-free nudge to the *other* side of the thread. Titles and
+// bodies never include message text — same privacy policy as the email digest.
+async function handleNotify(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = await request.json().catch(() => null);
+  const kind = body?.kind;
+  const id = typeof body?.id === 'string' ? body.id : '';
+  if ((kind !== 'case' && kind !== 'sub') || !id) return json({ error: 'Bad request' }, 400);
+
+  const profile = await getDoc(env, `users/${user.uid}`);
+  const isAdmin = profile?.data.role === 'admin';
+
+  let clientUid; // the non-admin side of the thread
+  let adminLink;
+  let clientLink;
+  if (kind === 'case') {
+    const doc = await getDoc(env, `cases/${id}`);
+    if (!doc) return json({ error: 'Not found' }, 404);
+    clientUid = doc.data.clientUid;
+    adminLink = `/admin-case.html?id=${id}`;
+    clientLink = `/case.html?id=${id}`;
+  } else {
+    const sub = await getDoc(env, `subscriptions/${id}`);
+    if (!sub) return json({ error: 'Not found' }, 404);
+    clientUid = id;
+    adminLink = `/admin-chats.html?sub=${id}`;
+    clientLink = '/subscription.html';
+  }
+
+  if (user.uid === clientUid) {
+    // Client wrote — nudge every admin device.
+    const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5);
+    for (const a of admins) {
+      await notifyUser(env, a.id, {
+        title: 'Pocket Advocate',
+        body: 'New message from a client.',
+        link: adminLink,
+      });
+    }
+  } else if (isAdmin) {
+    await notifyUser(env, clientUid, {
+      title: 'Pocket Advocate',
+      body: 'Eric sent you a new message.',
+      link: clientLink,
+    });
+  } else {
+    return json({ error: 'Not your thread' }, 403);
+  }
+  return json({ ok: true });
 }
 
 // ---- admin: the availability editor and case milestones ----

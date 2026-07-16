@@ -107,6 +107,21 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         from: user.uid, role: myRole, ts: new Date(), emailed: false,
       },
     });
+    nudgeOtherSide();
+  }
+
+  // Fire-and-forget web push to the other participant. Failure is invisible —
+  // the email digest still covers anyone without notifications on.
+  async function nudgeOtherSide() {
+    try {
+      const kind = parentPath[0] === 'subscriptions' ? 'sub' : 'case';
+      const token = await user.getIdToken();
+      fetch('/api/notify', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ kind, id: parentPath[1] }),
+      }).catch(() => {});
+    } catch { /* best-effort only */ }
   }
 
   const form = container.querySelector('[data-form]');

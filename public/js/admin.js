@@ -3,6 +3,7 @@
 
 import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
+import { initPushPrompt } from './push.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 const OPEN_ORDER = { awaiting_report: 0, confirmed: 1, forms: 2, paid: 3, delivered: 4, closed: 5 };
@@ -13,6 +14,7 @@ if (user) load();
 
 async function load() {
   const listEl = document.getElementById('list');
+  initPushPrompt(user, document.querySelector('main')).catch(() => {});
   let cases = [];
   try {
     const snapshot = await getDocs(collection(db, 'cases'));

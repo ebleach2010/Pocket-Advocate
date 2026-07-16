@@ -23,6 +23,7 @@ import {
   orderBy,
   limit,
   serverTimestamp,
+  arrayUnion,
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {
   getStorage,
@@ -65,6 +66,7 @@ export {
   orderBy,
   limit,
   serverTimestamp,
+  arrayUnion,
   ref,
   uploadBytesResumable,
   listAll,

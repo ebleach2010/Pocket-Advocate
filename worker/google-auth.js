@@ -1,17 +1,18 @@
 // Service-account OAuth for Firestore REST calls, using WebCrypto (no SDK —
 // firebase-admin does not run on Workers). Token is cached per isolate.
 
-let cached = null; // { token, expiresAt }
+const cached = {}; // scope -> { token, expiresAt }
 
-export async function getAccessToken(env) {
+export async function getAccessToken(env, scope = 'https://www.googleapis.com/auth/datastore') {
   const now = Date.now();
-  if (cached && cached.expiresAt - 60_000 > now) return cached.token;
+  const hit = cached[scope];
+  if (hit && hit.expiresAt - 60_000 > now) return hit.token;
 
   const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
   const iat = Math.floor(now / 1000);
   const claims = {
     iss: sa.client_email,
-    scope: 'https://www.googleapis.com/auth/datastore',
+    scope,
     aud: sa.token_uri,
     iat,
     exp: iat + 3600,
@@ -37,8 +38,8 @@ export async function getAccessToken(env) {
   });
   if (!res.ok) throw new Error(`token exchange failed: ${res.status} ${await res.text()}`);
   const data = await res.json();
-  cached = { token: data.access_token, expiresAt: now + data.expires_in * 1000 };
-  return cached.token;
+  cached[scope] = { token: data.access_token, expiresAt: now + data.expires_in * 1000 };
+  return cached[scope].token;
 }
 
 async function importPrivateKey(pem) {

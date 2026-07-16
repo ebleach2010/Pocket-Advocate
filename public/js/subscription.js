@@ -4,6 +4,7 @@
 import { db, doc, getDoc } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence } from './chat.js';
+import { initPushPrompt } from './push.js';
 
 hydrateNav();
 const user = await requireUser();
@@ -58,6 +59,7 @@ async function load() {
     </p>`;
 
   watchPresence(page);
+  initPushPrompt(user, page).catch(() => {});
   mountChat({
     container: document.getElementById('chat'),
     parentPath: ['subscriptions', user.uid],

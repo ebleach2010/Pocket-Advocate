@@ -10,3 +10,8 @@ export const firebaseConfig = {
   databaseURL: 'https://pocket-advocate-f3148-default-rtdb.firebaseio.com',
   appId: '1:629123378205:web:03fc0b564c5d240cd32af4',
 };
+
+// Web-push (FCM) public VAPID key. From Firebase console → Project settings →
+// Cloud Messaging → Web Push certificates → Generate key pair. While this is
+// null the app simply never offers push — everything else works.
+export const VAPID_PUBLIC_KEY = null;

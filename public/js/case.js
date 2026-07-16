@@ -8,6 +8,7 @@ import {
 } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence } from './chat.js';
+import { initPushPrompt } from './push.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -54,6 +55,7 @@ async function boot() {
   cases.sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
   currentId = currentId && cases.some((c) => c.id === currentId) ? currentId : cases[0].id;
   render();
+  initPushPrompt(user, document.querySelector('main')).catch(() => {});
 }
 
 function render() {
