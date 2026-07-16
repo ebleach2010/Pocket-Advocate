@@ -350,6 +350,8 @@ function renderReview() {
           addOnFollowUp: state.addOnFollowUp,
           election: state.election,
           acks: state.acks,
+          // So emails can speak the client's local time (Eric, 2026-07-15).
+          tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
         }),
       });
       const data = await res.json();

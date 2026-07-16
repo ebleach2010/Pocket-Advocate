@@ -80,6 +80,7 @@ async function handleCheckout(request, env) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
   const { slotId, method, phone, addOnFollowUp, election, acks } = body;
+  const clientTz = validTz(body.tz);
 
   if (!METHODS.includes(method)) return json({ error: 'Choose a meeting method.' }, 400);
   if (method === 'phone' && !/^\+?[\d\s().-]{7,20}$/.test(phone || ''))
@@ -148,6 +149,7 @@ async function handleCheckout(request, env) {
       email: user.email || '',
       name: identity.name,
       dob: identity.dob,
+      tz: clientTz || '',
       slotId,
       method,
       phone: method === 'phone' ? phone : '',
@@ -403,6 +405,7 @@ async function createCaseFromSession(env, session) {
       clientEmail: m.email || session.customer_email || null,
       clientName: m.name || null,
       clientDob: m.dob || null,
+      clientTz: m.tz || null,
       status: allFormsDone ? 'confirmed' : 'forms',
       createdAt: now,
       appointment: {
@@ -442,7 +445,8 @@ async function createCaseFromSession(env, session) {
       to: clientEmail,
       subject: 'Your Pocket Advocate case is open',
       html: `<p>Payment confirmed — your case file is live.</p>
-        <p><strong>${mtFmt.format(start)} MST</strong> · ${m.method}</p>
+        ${whenHtml(start, m.tz)}
+        <p>Meeting method: ${m.method}.</p>
         <p>Upload labs, imaging, or records any time before the call.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>
         ${homeScreenTips(env.PUBLIC_BASE_URL)}`,
@@ -647,6 +651,30 @@ const MT_FMT = new Intl.DateTimeFormat('en-US', {
   hour: 'numeric', minute: '2-digit',
 });
 
+/** A usable IANA zone string, or null. */
+function validTz(tz) {
+  if (typeof tz !== 'string' || !tz || tz.length > 60) return null;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return tz; } catch { return null; }
+}
+
+/**
+ * Dual-zone time line for client emails (Eric, 2026-07-15): the client's
+ * local time leads, Eric's MST rides underneath. Falls back to MST-only
+ * when the zone is unknown or IS Mountain time.
+ */
+function whenHtml(start, tz) {
+  const mst = `${MT_FMT.format(start)} MST`;
+  const zone = validTz(tz);
+  if (!zone) return `<p><strong>${mst}</strong></p>`;
+  const local = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone, weekday: 'long', month: 'long', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  }).format(start);
+  if (local.replace(/\s/g, '') === `${MT_FMT.format(start)}`.replace(/\s/g, '')) return `<p><strong>${mst}</strong></p>`;
+  return `<p><strong>${local}</strong> (your time)<br>
+    <span style="color:#666;">${mst} for Eric</span></p>`;
+}
+
 function followUpExpiry(c) {
   const base = c.appointment?.start ? new Date(c.appointment.start) : null;
   return base ? new Date(base.getTime() + FOLLOWUP_EXPIRY_DAYS * 86_400_000) : null;
@@ -713,7 +741,7 @@ async function handleAdminSchedule(request, env) {
       to: c.clientEmail,
       subject: 'Your Pocket Advocate appointment moved',
       html: `<p>Your discussion with Eric is now scheduled for:</p>
-        <p><strong>${when}</strong></p>
+        ${whenHtml(start, c.clientTz)}
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
     });
     return json({ ok: true, scheduled: when });
@@ -736,7 +764,7 @@ async function handleAdminSchedule(request, env) {
       to: c.clientEmail,
       subject: 'Your follow-up session is booked',
       html: `<p>Your paid follow-up discussion with Eric is scheduled:</p>
-        <p><strong>${when}</strong></p>
+        ${whenHtml(start, c.clientTz)}
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
     });
     return json({ ok: true, scheduled: when });
@@ -762,7 +790,7 @@ async function handleAdminSchedule(request, env) {
       to: c.clientEmail,
       subject: 'A session with Eric is booked',
       html: `<p>${escHtml(label)} — no charge.</p>
-        <p><strong>${when}</strong></p>
+        ${whenHtml(start, c.clientTz)}
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
     });
     return json({ ok: true, scheduled: when });
@@ -809,7 +837,7 @@ async function handleAdminSchedule(request, env) {
     to: c.clientEmail,
     subject: 'Eric scheduled a session — payment needed to confirm',
     html: `<p>${escHtml(label)} — $${(amountCents / 100).toFixed(2)}.</p>
-      <p><strong>${when}</strong></p>
+      ${whenHtml(start, c.clientTz)}
       <p>The time is held for 24 hours. <a href="${session.url}">Pay to confirm</a>,
       or open <a href="${env.PUBLIC_BASE_URL}/case.html">your case page</a>.</p>`,
   });
@@ -852,7 +880,7 @@ async function confirmExtraSession(env, session) {
     to: c.clientEmail,
     subject: 'Your session is confirmed',
     html: `<p>Payment received — you're booked:</p>
-      <p><strong>${MT_FMT.format(start)} MST</strong></p>
+      ${whenHtml(start, c.clientTz)}
       <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
   });
 }
@@ -875,8 +903,9 @@ export async function runFollowUpWarnings(env, now = Date.now()) {
       await sendEmail(env, {
         to: c.clientEmail,
         subject: 'Your follow-up session expires in one week',
-        html: `<p>Your case included a paid follow-up discussion, and it expires on
-          <strong>${MT_FMT.format(new Date(expires))} MST</strong> — one month after your first discussion.</p>
+        html: `<p>Your case included a paid follow-up discussion, and it expires one month
+          after your first discussion:</p>
+          ${whenHtml(new Date(expires), c.clientTz)}
           <p>To use it, message Eric in your case chat and he'll get it scheduled.</p>
           <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
       });
