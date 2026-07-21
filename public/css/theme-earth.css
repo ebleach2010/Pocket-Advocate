@@ -57,17 +57,18 @@ body {
   animation-name: earth-breathe-c;
 }
 .pack.rec-m {
-  border-color: #F8D3BB;
-  box-shadow: 0 6px 16px rgba(192, 133, 82, .22);
+  border-color: #F0AC78;
+  box-shadow: 0 6px 16px rgba(214, 128, 60, .26);
   animation-name: earth-breathe-b;
 }
+.pack.rec-m .price { color: #BC6E2F; }
 @keyframes earth-breathe-c {
   0%, 100% { box-shadow: 0 4px 12px rgba(151, 134, 113, .20); }
   50%      { box-shadow: 0 8px 22px rgba(111, 130, 97, .38); }
 }
 @keyframes earth-breathe-b {
-  0%, 100% { box-shadow: 0 4px 12px rgba(151, 134, 113, .18); }
-  50%      { box-shadow: 0 8px 22px rgba(192, 133, 82, .34); }
+  0%, 100% { box-shadow: 0 4px 12px rgba(190, 120, 60, .20); }
+  50%      { box-shadow: 0 8px 22px rgba(214, 128, 60, .42); }
 }
 .tag.c { color: #55663F; border-color: #8FA07C; background: #E9EFE0; box-shadow: none; }
 .tag.m { color: #9A6034; border-color: #DBAA85; background: #FBE9DC; box-shadow: none; }
