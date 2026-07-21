@@ -61,7 +61,7 @@ body {
   box-shadow: 0 6px 16px rgba(214, 128, 60, .26);
   animation-name: earth-breathe-b;
 }
-.pack.rec-m .price { color: #BC6E2F; }
+.pack.rec-m .price { color: #DD8140; } /* same hue as the card's orange border */
 @keyframes earth-breathe-c {
   0%, 100% { box-shadow: 0 4px 12px rgba(151, 134, 113, .20); }
   50%      { box-shadow: 0 8px 22px rgba(111, 130, 97, .38); }
