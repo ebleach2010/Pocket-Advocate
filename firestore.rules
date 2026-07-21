@@ -37,11 +37,15 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
       // A user may create/update their own profile but can never grant
-      // themselves a role other than 'client'.
+      // themselves a role other than 'client'. The role defaults to 'client'
+      // on both sides so a starter record with no role yet (created by the
+      // code-login server step, which only stores email) can be completed into
+      // a full client profile — while an admin can never be demoted or a
+      // client self-promoted.
       allow create: if signedIn() && request.auth.uid == uid
-        && request.resource.data.role == 'client';
+        && request.resource.data.get('role', 'client') == 'client';
       allow update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.role == resource.data.role;
+        && request.resource.data.get('role', 'client') == resource.data.get('role', 'client');
       allow delete: if false;
     }
 
