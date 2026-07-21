@@ -21,6 +21,10 @@
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+/* The page never scrolls sideways — anything wider than the screen scrolls
+   inside its own box (nav tabs, calendar), not by dragging the whole page. */
+html, body { overflow-x: hidden; overflow-x: clip; }
+img, video { max-width: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font-family: "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif;
