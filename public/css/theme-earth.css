@@ -94,6 +94,11 @@ body {
 /* Chat bubbles / inputs inherit tokens; make sure own-message stays legible. */
 .msg.me { background: #DCE4D2; color: #33392B; }
 
+/* About page: its long-form copy is body text, not captions — near-ink so it
+   never blends into the sand. */
+.about p.dim, .about p.dim.small, .about .mission p, .about .steps-list li { color: #352F26; }
+.about .steps-list li strong, .about p strong { color: #201C15; }
+
 /* Mission block + calendar key dots, earth edition. */
 .mission { background: linear-gradient(90deg, rgba(178, 189, 163, .30), transparent 70%); }
 .cal-key.booked { background: #6F8261; box-shadow: none; }
