@@ -33,6 +33,8 @@
 
 /* Light header bar (the base theme hard-codes a dark one). */
 header.bar { background: rgba(244, 229, 217, .88); }
+/* Nav tabs in straight black; the active pill keeps its sage border. */
+.tabs a, .tabs a.active { color: #000; }
 
 /* Warm wash instead of neon haze. */
 body {
