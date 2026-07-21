@@ -63,7 +63,7 @@ export const SUBSCRIPTION_TERMS = {
 <h3>Still not medical advice</h3>
 <p>Everything in the service disclaimer applies to chat: nothing your advocate writes is a diagnosis, a treatment plan, or medical advice. Chat is for understanding your situation and preparing for your care team — it is not a substitute for one, and it is not for emergencies. If this is an emergency, call 911.</p>
 <h3>Billing & cancellation</h3>
-<p>$20 per month through Stripe, renewed automatically. Cancel anytime from the Manage Subscription page — access runs to the end of the period you already paid for, and your message history stays visible to you. If a renewal payment fails, access likewise runs out at the end of the paid period.</p>
+<p>$50 per month through Stripe, renewed automatically. Cancel anytime from the Manage Subscription page — access runs to the end of the period you already paid for, and your message history stays visible to you. If a renewal payment fails, access likewise runs out at the end of the paid period.</p>
 <h3>Separate from cases</h3>
 <p>The subscription is independent of any Advocacy Case. Case chats live in their case file and close with the case; this chat lives with your subscription.</p>`,
 };

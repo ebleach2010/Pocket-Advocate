@@ -28,7 +28,7 @@ async function load() {
   if (!sub) {
     page.innerHTML = `
       <h1>No subscription yet</h1>
-      <p class="dim">The Pocket Advocate subscription is an always-open chat line to Eric for $20/mo.</p>
+      <p class="dim">The Pocket Advocate subscription is an always-open chat line to Eric for $50/mo.</p>
       <div class="actions"><a class="btn mag" href="/subscribe.html">Get Pocket Advocate →</a></div>`;
     return;
   }

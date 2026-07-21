@@ -41,7 +41,7 @@ function renderTerms() {
     <div class="waiver-body" id="body">${SUBSCRIPTION_TERMS.body}</div>
     <p class="scroll-hint" id="hint">Scroll to the end to continue…</p>
     <div class="actions">
-      <button class="btn mag" id="go" disabled>Accept & subscribe — $20/mo</button>
+      <button class="btn mag" id="go" disabled>Accept & subscribe — $50/mo</button>
     </div>
     <p class="dim small" style="margin-top:.6rem;">You'll be taken to Stripe's secure checkout — card details never touch this site.</p>`;
 

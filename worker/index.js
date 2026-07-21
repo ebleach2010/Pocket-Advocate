@@ -2,7 +2,7 @@
 //   POST   /api/checkout           hold a slot, create a Stripe Checkout Session
 //   GET    /api/case-for-session   poll after checkout: has the webhook made my case?
 //   POST   /api/make-private       revoke a public election (allowed until call time)
-//   POST   /api/subscribe          Pocket Advocate subscription Checkout ($20/mo)
+//   POST   /api/subscribe          Pocket Advocate subscription Checkout ($50/mo)
 //   POST   /api/portal             Stripe customer portal (manage/cancel)
 //   POST   /api/stripe/webhook     payments + subscription lifecycle -> Firestore
 //   POST   /api/admin/slots        open availability slots (admin)
@@ -20,7 +20,7 @@ import { notifyUser } from './push.js';
 
 const CASE_PRICE_CENTS = 10000;
 const ADDON_PRICE_CENTS = 5000;
-const SUB_PRICE_CENTS = 2000;
+const SUB_PRICE_CENTS = 5000;
 // Follow-up add-ons expire one month after the first discussion (Eric,
 // 2026-07-13); clients get one warning email a week before the deadline.
 const FOLLOWUP_EXPIRY_DAYS = 30;
