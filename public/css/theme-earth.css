@@ -52,10 +52,11 @@ body {
 
 /* Package cards: sage-framed case, peach-framed subscription, soft breathing. */
 .pack.rec-c {
-  border-color: #B2BDA3;
-  box-shadow: 0 6px 16px rgba(151, 134, 113, .25);
+  border-color: #96C178;
+  box-shadow: 0 6px 16px rgba(110, 160, 75, .28);
   animation-name: earth-breathe-c;
 }
+.pack.rec-c .price { color: #649A3F; } /* same hue as the card's green border */
 .pack.rec-m {
   border-color: #F0AC78;
   box-shadow: 0 6px 16px rgba(214, 128, 60, .26);
@@ -63,8 +64,8 @@ body {
 }
 .pack.rec-m .price { color: #DD8140; } /* same hue as the card's orange border */
 @keyframes earth-breathe-c {
-  0%, 100% { box-shadow: 0 4px 12px rgba(151, 134, 113, .20); }
-  50%      { box-shadow: 0 8px 22px rgba(111, 130, 97, .38); }
+  0%, 100% { box-shadow: 0 4px 12px rgba(110, 160, 75, .20); }
+  50%      { box-shadow: 0 8px 22px rgba(110, 160, 75, .44); }
 }
 @keyframes earth-breathe-b {
   0%, 100% { box-shadow: 0 4px 12px rgba(190, 120, 60, .20); }
