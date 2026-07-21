@@ -153,12 +153,12 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
 /* Real neon doesn't sit still — the borders breathe, offset so the two
    cards never pulse in sync. */
 @keyframes neon-breathe-c {
-  0%, 100% { box-shadow: 0 0 10px rgba(45,226,255,.22), inset 0 0 30px rgba(45,226,255,.04); }
-  50%      { box-shadow: 0 0 24px rgba(45,226,255,.55), inset 0 0 34px rgba(45,226,255,.09); }
+  0%, 100% { box-shadow: 0 0 12px rgba(45,226,255,.27), inset 0 0 34px rgba(45,226,255,.05); }
+  50%      { box-shadow: 0 0 29px rgba(45,226,255,.66), inset 0 0 40px rgba(45,226,255,.11); }
 }
 @keyframes neon-breathe-b {
-  0%, 100% { box-shadow: 0 0 10px rgba(108,158,255,.20), inset 0 0 30px rgba(108,158,255,.04); }
-  50%      { box-shadow: 0 0 24px rgba(108,158,255,.52), inset 0 0 34px rgba(108,158,255,.09); }
+  0%, 100% { box-shadow: 0 0 12px rgba(108,158,255,.24), inset 0 0 34px rgba(108,158,255,.05); }
+  50%      { box-shadow: 0 0 29px rgba(108,158,255,.62), inset 0 0 40px rgba(108,158,255,.11); }
 }
 @media (prefers-reduced-motion: reduce) {
   .pack.rec-c, .pack.rec-m { animation: none; }
