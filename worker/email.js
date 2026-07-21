@@ -20,7 +20,6 @@ export function signinCodeEmail(code, baseUrl) {
        background:#f5f7fa; border-radius:10px; padding:16px 0; margin:0 0 6px;">${code}</p>
     <p style="margin:0 0 4px; color:#888; font-size:13px;">Didn't request this? You can ignore this email.</p>
     ${homeScreenTips(baseUrl)}
-    ${FOOTER}
   </div>`;
 }
 
