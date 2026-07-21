@@ -12,6 +12,6 @@ export const firebaseConfig = {
 };
 
 // Web-push (FCM) public VAPID key. From Firebase console → Project settings →
-// Cloud Messaging → Web Push certificates → Generate key pair. While this is
-// null the app simply never offers push — everything else works.
-export const VAPID_PUBLIC_KEY = null;
+// Cloud Messaging → Web Push certificates (public half — safe in the browser).
+export const VAPID_PUBLIC_KEY =
+  'BN2uifVCbTj93B3t4-XGl60SMhyocCdhSae-cvlZJ34usNVAbtfc1L8hljWDETMySGinwG9Z5hUsHXT8C1rn-R0';
