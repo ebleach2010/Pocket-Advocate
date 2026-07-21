@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
 <meta name="theme-color" content="#EBDFCE">
 <title>Sign in — Pocket Advocate</title>
-<link rel="stylesheet" href="/css/site.css?v=stat6">
+<link rel="stylesheet" href="/css/site.css?v=stat7">
 <link rel="stylesheet" href="/css/theme-earth.css?v=e7">
 </head>
 <body>
@@ -27,7 +27,7 @@
 </header>
 <main>
   <h1>Sign in</h1>
-  <p class="muted">Enter your email and we'll send you a sign-in link. No password to remember.</p>
+  <p class="muted">Enter your email and we'll send you a 6-digit code. No password to remember.</p>
 
   <div class="card" id="email-form">
     <label for="email">Email address</label>
@@ -38,35 +38,41 @@
     <p class="error" id="error" hidden></p>
     <p style="margin-top:1rem;">
       <a class="btn quiet" href="/">← Back</a>
-      <button class="btn" id="send">Email me a sign-in link</button>
+      <button class="btn" id="send">Email me a code</button>
     </p>
   </div>
 
-  <div class="card" id="sent" hidden>
-    <h3>Check your email</h3>
-    <p class="muted">We sent a sign-in link to <strong id="sent-to"></strong>. Open it on this device to finish signing in — you'll stay signed in afterward.</p>
-    <p class="muted small">Not there within a minute? Check <strong>Spam</strong> or <strong>Promotions</strong> — and tap "Not spam" so future links land in your inbox. Only the newest link works.</p>
+  <div class="card" id="code-form" hidden>
+    <h3>Enter your code</h3>
+    <p class="muted">We sent a 6-digit code to <strong id="code-to"></strong>. It arrives in a few seconds and expires in 10 minutes.</p>
+    <label for="code">6-digit code</label>
+    <input type="text" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="letter-spacing:6px; font-size:1.4rem; text-align:center;">
+    <p class="error" id="code-error" hidden></p>
+    <p style="margin-top:1rem;">
+      <button class="btn quiet" id="code-back">← Back</button>
+      <button class="btn" id="verify">Sign in</button>
+    </p>
+    <p class="muted small" style="margin-top:.6rem;">Didn't get it? Check <strong>Spam</strong> or <strong>Promotions</strong>. <a href="#" id="resend">Send a new code</a></p>
   </div>
 </main>
 <script type="module">
   import { auth, isSignInWithEmailLink, signInWithEmailLink, signInWithCustomToken } from '/js/firebase.js';
-  import { sendMagicLink, recallEmail, hydrateNav } from '/js/auth.js';
+  import { recallEmail, hydrateNav } from '/js/auth.js';
 
   hydrateNav();
   const params = new URLSearchParams(location.search);
   const returnTo = params.get('to') || '/book.html';
   const errEl = document.getElementById('error');
+  const codeErr = document.getElementById('code-error');
+  let pendingEmail = '';
 
-  // Completing a magic-link sign-in?
+  // Complete any legacy magic-link that's still floating around in an inbox.
   if (isSignInWithEmailLink(auth, location.href)) {
     let email = recallEmail();
     if (!email) email = prompt('Confirm your email to finish signing in:') || '';
     signInWithEmailLink(auth, email, location.href)
       .then(() => { location.href = returnTo; })
-      .catch((err) => {
-        errEl.textContent = `Sign-in failed: ${err.message}`;
-        errEl.hidden = false;
-      });
+      .catch((err) => { errEl.textContent = `Sign-in failed: ${err.message}`; errEl.hidden = false; });
   }
 
   document.getElementById('send').addEventListener('click', async () => {
@@ -105,15 +111,57 @@
       errEl.hidden = false;
       return;
     }
+    await requestCode(email);
+  });
+
+  async function requestCode(email) {
     try {
-      await sendMagicLink(email, returnTo);
+      const res = await fetch('/api/auth/request-code', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Try again.');
+      pendingEmail = email;
+      document.getElementById('code-to').textContent = email;
       document.getElementById('email-form').hidden = true;
-      document.getElementById('sent-to').textContent = email;
-      document.getElementById('sent').hidden = false;
+      document.getElementById('code-form').hidden = false;
+      document.getElementById('code').focus();
     } catch (err) {
-      errEl.textContent = `Couldn't send the link: ${err.message}`;
+      errEl.textContent = `Couldn't send the code: ${err.message}`;
       errEl.hidden = false;
     }
+  }
+
+  document.getElementById('verify').addEventListener('click', async () => {
+    const code = document.getElementById('code').value.trim();
+    codeErr.hidden = true;
+    if (!/^\d{6}$/.test(code)) {
+      codeErr.textContent = 'Enter the 6-digit code from your email.';
+      codeErr.hidden = false;
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth/verify-code', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: pendingEmail, code }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Invalid code.');
+      const { token } = await res.json();
+      await signInWithCustomToken(auth, token);
+      location.href = returnTo;
+    } catch (err) {
+      codeErr.textContent = err.message;
+      codeErr.hidden = false;
+    }
+  });
+
+  document.getElementById('code-back').addEventListener('click', () => {
+    document.getElementById('code-form').hidden = true;
+    document.getElementById('email-form').hidden = false;
+  });
+  document.getElementById('resend').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (pendingEmail) requestCode(pendingEmail);
   });
 </script>
 </body>

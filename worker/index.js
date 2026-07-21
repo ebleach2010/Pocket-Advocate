@@ -12,11 +12,11 @@
 // Everything else falls through to the static app in public/.
 
 import { requireUser } from './firebase-auth.js';
-import { mintCustomToken } from './google-auth.js';
+import { mintCustomToken, getAccessToken } from './google-auth.js';
 import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate } from './firestore.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import { slotTimingProblem, windowProblem, HOLD_MINUTES } from './schedule.js';
-import { sendEmail, homeScreenTips } from './email.js';
+import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 
 const CASE_PRICE_CENTS = 10000;
@@ -61,6 +61,10 @@ export default {
         return await handleNotify(request, env);
       if (url.pathname === '/api/admin/pin' && request.method === 'POST')
         return await handlePinLogin(request, env);
+      if (url.pathname === '/api/auth/request-code' && request.method === 'POST')
+        return await handleRequestCode(request, env);
+      if (url.pathname === '/api/auth/verify-code' && request.method === 'POST')
+        return await handleVerifyCode(request, env);
       if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
     } catch (err) {
       console.error(`${url.pathname}:`, err.stack || err);
@@ -589,6 +593,96 @@ async function handlePinLogin(request, env) {
   await cache.delete(rlKey);
   const token = await mintCustomToken(env, adminUid);
   return json({ token });
+}
+
+// ---- POST /api/auth/request-code + /api/auth/verify-code ----
+// In-app email code login. Replaces magic links so sign-in completes entirely
+// inside the installed app (iOS gives the Home-Screen PWA its own storage,
+// separate from Safari — a link tapped in Mail opens Safari and never logs the
+// app in, which is the infinite-relogin loop). A code typed in-app persists.
+const CODE_TTL_MS = 10 * 60 * 1000;
+
+async function handleRequestCode(request, env) {
+  const body = await request.json().catch(() => null);
+  const email = (body?.email || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: 'Enter a valid email address.' }, 400);
+
+  const key = await sha256hex(email);
+  const now = Date.now();
+  const existing = await getDoc(env, `authCodes/${key}`);
+  // Don't let someone spam a mailbox: at most one send per 30s.
+  if (existing?.data.lastSentAt && now - new Date(existing.data.lastSentAt).getTime() < 30_000) {
+    return json({ ok: true });
+  }
+  const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, '0');
+  await patchDoc(env, `authCodes/${key}`, {
+    email,
+    codeHash: await sha256hex(`${code}:${email}`),
+    expiresAt: new Date(now + CODE_TTL_MS).toISOString(),
+    attempts: 0,
+    lastSentAt: new Date(now).toISOString(),
+  });
+  await sendEmail(env, {
+    to: email,
+    subject: `Your Pocket Advocate sign-in code: ${code}`,
+    html: signinCodeEmail(code, env.PUBLIC_BASE_URL),
+  });
+  return json({ ok: true });
+}
+
+async function handleVerifyCode(request, env) {
+  const body = await request.json().catch(() => null);
+  const email = (body?.email || '').trim().toLowerCase();
+  const code = (body?.code || '').trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !/^\d{6}$/.test(code))
+    return json({ error: 'Invalid or expired code.' }, 400);
+
+  const key = await sha256hex(email);
+  const doc = await getDoc(env, `authCodes/${key}`);
+  if (!doc) return json({ error: 'Invalid or expired code.' }, 401);
+  const d = doc.data;
+  if (new Date(d.expiresAt).getTime() < Date.now()) {
+    await deleteDoc(env, `authCodes/${key}`);
+    return json({ error: 'Invalid or expired code.' }, 401);
+  }
+  if ((d.attempts || 0) >= 5) {
+    await deleteDoc(env, `authCodes/${key}`);
+    return json({ error: 'Too many attempts — request a new code.' }, 429);
+  }
+  if ((await sha256hex(`${code}:${email}`)) !== d.codeHash) {
+    await patchDoc(env, `authCodes/${key}`, { ...d, attempts: (d.attempts || 0) + 1 });
+    return json({ error: 'Invalid or expired code.' }, 401);
+  }
+
+  await deleteDoc(env, `authCodes/${key}`);
+  // Existing users keep their Firebase uid (and all their data); brand-new ones
+  // get a stable derived uid that custom-token sign-in auto-provisions.
+  const uid = (await lookupUidByEmail(env, email)) || (await deriveUid(email));
+  // Guarantee the app always has their email (custom-token accounts carry none).
+  await patchDoc(env, `users/${uid}`, { email }, { mask: ['email'] });
+  const token = await mintCustomToken(env, uid);
+  return json({ token });
+}
+
+async function lookupUidByEmail(env, email) {
+  const tok = await getAccessToken(env, 'https://www.googleapis.com/auth/cloud-platform');
+  const res = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${tok}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ email: [email] }),
+  });
+  if (!res.ok) return null;
+  const d = await res.json();
+  return d.users?.[0]?.localId || null;
+}
+
+async function deriveUid(email) {
+  return 'e' + (await sha256hex(`uid:${email}`)).slice(0, 31);
+}
+
+async function sha256hex(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // Constant-time-ish string compare (length is not sensitive here).

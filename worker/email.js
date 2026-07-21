@@ -10,6 +10,20 @@ const FOOTER = `
     and does not create a doctor-patient relationship. If this is an emergency, call 911.
   </p>`;
 
+/** The sign-in code email — the first thing a new client ever receives. */
+export function signinCodeEmail(code, baseUrl) {
+  return `
+  <div style="font-family: -apple-system, Segoe UI, sans-serif; max-width:480px; margin:0 auto;">
+    <h2 style="margin:0 0 6px;">Your sign-in code</h2>
+    <p style="margin:0 0 14px; color:#444;">Enter this code in the Pocket Advocate app to sign in. It expires in 10 minutes.</p>
+    <p style="font-size:34px; font-weight:800; letter-spacing:8px; text-align:center;
+       background:#f5f7fa; border-radius:10px; padding:16px 0; margin:0 0 6px;">${code}</p>
+    <p style="margin:0 0 4px; color:#888; font-size:13px;">Didn't request this? You can ignore this email.</p>
+    ${homeScreenTips(baseUrl)}
+    ${FOOTER}
+  </div>`;
+}
+
 /**
  * Step-by-step "keep this on your phone" instructions, appended to the two
  * welcome emails (case opened, subscription started) — Eric's request:
