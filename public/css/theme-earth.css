@@ -1,6 +1,7 @@
-/* EARTH THEME — one-time overhaul (2026-07-21), loaded after site.css.
-   To revert to the neon look: remove this stylesheet's <link> from the pages
-   (single git revert). The palette is Eric's five swatches:
+/* EARTH THEME — the approved look (Eric, 2026-07-21: "Much easier on the
+   eyes."). Loaded after site.css and overrides its neon tokens; the neon
+   system remains underneath as fallback history. Palette is Eric's five
+   swatches:
      Sage #B2BDA3 · Sand #EBDFCE · Pearl #F4E5D9 · Peach #F8D3BB · Stone #978671
    Mapping logic:
      Sand   = page ground          Pearl = cards & panels
