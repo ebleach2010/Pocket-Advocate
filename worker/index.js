@@ -359,8 +359,24 @@ async function uidForCustomer(env, customerId) {
 }
 
 // ---- chat email digest (cron, every 15 min) ----
-// One nudge per thread per run, only for messages old enough that the
-// recipient clearly hasn't seen them in-app. No message content in email.
+// Two different rhythms, by recipient (Eric, 2026-07-21):
+//   • CLIENT-directed nudges (Eric wrote): at most ONE per day, sent at 6pm in
+//     the client's own timezone, and only if they still haven't opened it. No
+//     inbox spam during a back-and-forth — push is the instant channel.
+//   • ADMIN-directed nudges (client wrote): stay prompt, so Eric hears quickly
+//     even without push.
+// Never any message content in the email.
+const CLIENT_DIGEST_HOUR = 18; // 6pm, client-local
+
+function hourInTz(now, tz) {
+  const zone = tz || 'Etc/GMT+7'; // default MST
+  try {
+    return Number(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: '2-digit', hourCycle: 'h23' }).format(new Date(now)));
+  } catch {
+    return Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Etc/GMT+7', hour: '2-digit', hourCycle: 'h23' }).format(new Date(now)));
+  }
+}
+
 export async function runChatDigest(env, now = Date.now()) {
   for (const coll of ['cases', 'subscriptions']) {
     const rows = await queryDocs(env, coll, [['lastMessage.emailed', 'EQUAL', false]], 50);
@@ -368,19 +384,32 @@ export async function runChatDigest(env, now = Date.now()) {
       const lm = row.data.lastMessage;
       if (!lm || !lm.ts) continue;
       if (now - new Date(lm.ts).getTime() < DIGEST_MIN_AGE_MS) continue;
-      const to = lm.role === 'admin'
-        ? row.data.clientEmail || row.data.email
-        : env.ADMIN_EMAIL;
-      const link = lm.role === 'admin'
-        ? coll === 'cases' ? '/case.html' : '/subscription.html'
-        : '/admin-chats.html';
-      if (to) {
-        await sendEmail(env, {
-          to,
-          subject: 'New message on Pocket Advocate',
-          html: `<p>You have an unread message waiting.</p>
-            <p><a href="${env.PUBLIC_BASE_URL}${link}">Open the chat</a></p>`,
-        });
+
+      if (lm.role === 'admin') {
+        // Client is the recipient — hold until 6pm their time, once a day.
+        const tz = row.data.clientTz || (coll === 'subscriptions' ? row.data.tz : null);
+        if (hourInTz(now, tz) !== CLIENT_DIGEST_HOUR) continue;
+        const to = row.data.clientEmail || row.data.email;
+        const link = coll === 'cases' ? '/case.html' : '/subscription.html';
+        if (to) {
+          await sendEmail(env, {
+            to,
+            subject: 'Something new is waiting in Pocket Advocate',
+            html: `<p>There's a new message, document, or update waiting for you in the app.</p>
+              <p><a href="${env.PUBLIC_BASE_URL}${link}">Open Pocket Advocate</a></p>
+              <p style="color:#888; font-size:13px;">You'll only get this once a day, and only when there's something you haven't seen yet.</p>`,
+          });
+        }
+      } else {
+        // Eric is the recipient — prompt.
+        if (env.ADMIN_EMAIL) {
+          await sendEmail(env, {
+            to: env.ADMIN_EMAIL,
+            subject: 'New message on Pocket Advocate',
+            html: `<p>You have an unread client message.</p>
+              <p><a href="${env.PUBLIC_BASE_URL}/admin-chats.html">Open the chat</a></p>`,
+          });
+        }
       }
       await patchDoc(env, `${coll}/${row.id}`, { lastMessage: { emailed: true } }, {
         mask: ['lastMessage.emailed'],
