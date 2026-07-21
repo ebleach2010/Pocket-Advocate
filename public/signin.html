@@ -49,7 +49,7 @@
   </div>
 </main>
 <script type="module">
-  import { auth, isSignInWithEmailLink, signInWithEmailLink } from '/js/firebase.js';
+  import { auth, isSignInWithEmailLink, signInWithEmailLink, signInWithCustomToken } from '/js/firebase.js';
   import { sendMagicLink, recallEmail, hydrateNav } from '/js/auth.js';
 
   hydrateNav();
@@ -72,6 +72,29 @@
   document.getElementById('send').addEventListener('click', async () => {
     const email = document.getElementById('email').value.trim();
     errEl.hidden = true;
+
+    // A purely-numeric entry is treated as an admin PIN. Verified server-side;
+    // on any failure it falls through to the same generic email error, so the
+    // page never reveals that a number does anything.
+    if (/^\d{4,12}$/.test(email)) {
+      try {
+        const res = await fetch('/api/admin/pin', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ pin: email }),
+        });
+        if (res.ok) {
+          const { token } = await res.json();
+          await signInWithCustomToken(auth, token);
+          location.href = '/admin.html';
+          return;
+        }
+      } catch { /* fall through */ }
+      errEl.textContent = 'Enter a valid email address.';
+      errEl.hidden = false;
+      return;
+    }
+
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       errEl.textContent = 'Enter a valid email address.';
       errEl.hidden = false;

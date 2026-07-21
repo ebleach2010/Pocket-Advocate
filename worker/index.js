@@ -12,6 +12,7 @@
 // Everything else falls through to the static app in public/.
 
 import { requireUser } from './firebase-auth.js';
+import { mintCustomToken } from './google-auth.js';
 import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate } from './firestore.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import { slotTimingProblem, windowProblem, HOLD_MINUTES } from './schedule.js';
@@ -58,6 +59,8 @@ export default {
         return await handleAdminSchedule(request, env);
       if (url.pathname === '/api/notify' && request.method === 'POST')
         return await handleNotify(request, env);
+      if (url.pathname === '/api/admin/pin' && request.method === 'POST')
+        return await handlePinLogin(request, env);
       if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
     } catch (err) {
       console.error(`${url.pathname}:`, err.stack || err);
@@ -551,6 +554,49 @@ async function handleNotify(request, env) {
     return json({ error: 'Not your thread' }, 403);
   }
   return json({ ok: true });
+}
+
+// ---- POST /api/admin/pin ----
+// Body: { pin }. A private shortcut: the correct PIN mints a real admin
+// session (custom token) so Eric can skip the email link. The PIN itself is a
+// Worker secret (ADMIN_PIN) — never shipped to the browser. Failed attempts are
+// throttled per-IP to blunt guessing; the response never hints that a numeric
+// entry means anything, so the sign-in page gives nothing away.
+async function handlePinLogin(request, env) {
+  const cache = caches.default;
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+  const rlKey = new Request(`https://pin-throttle.internal/${encodeURIComponent(ip)}`);
+  const prior = await cache.match(rlKey);
+  const fails = prior ? parseInt(await prior.text(), 10) || 0 : 0;
+  if (fails >= 5) return json({ error: 'Invalid.' }, 429);
+
+  const body = await request.json().catch(() => null);
+  const pin = typeof body?.pin === 'string' ? body.pin : '';
+  const expected = env.ADMIN_PIN || '';
+  const adminUid = env.ADMIN_UID || '';
+
+  // Slow automated guessing a little on every attempt.
+  await new Promise((r) => setTimeout(r, 400));
+
+  if (!expected || !adminUid || !timingSafeEqual(pin, expected)) {
+    await cache.put(
+      rlKey,
+      new Response(String(fails + 1), { headers: { 'cache-control': 'max-age=900' } })
+    );
+    return json({ error: 'Invalid.' }, 401);
+  }
+
+  await cache.delete(rlKey);
+  const token = await mintCustomToken(env, adminUid);
+  return json({ token });
+}
+
+// Constant-time-ish string compare (length is not sensitive here).
+function timingSafeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 // ---- admin: the availability editor and case milestones ----

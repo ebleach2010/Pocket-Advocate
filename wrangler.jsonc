@@ -24,7 +24,9 @@
     "PUBLIC_BASE_URL": "https://thepocketadvocates.com",
     // Email (Resend). EMAIL_FROM must be a verified sender/domain in Resend.
     "EMAIL_FROM": "Pocket Advocate <no-reply@thepocketadvocates.com>",
-    "ADMIN_EMAIL": "pocketadvocate.eric@gmail.com"
+    "ADMIN_EMAIL": "pocketadvocate.eric@gmail.com",
+    // Eric's admin auth uid — the PIN sign-in mints a session for this user.
+    "ADMIN_UID": "xnQf5en2BcMStjMmzQDBv33WJIv2"
   }
   // Secrets (never in this file — `wrangler secret put NAME`, or .dev.vars locally):
   //   STRIPE_SECRET_KEY          sk_live_... / sk_test_...

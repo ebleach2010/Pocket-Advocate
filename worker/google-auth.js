@@ -42,6 +42,34 @@ export async function getAccessToken(env, scope = 'https://www.googleapis.com/au
   return cached[scope].token;
 }
 
+// Mint a Firebase Auth custom token for a specific uid, signed with the
+// service-account key (same mechanism firebase-admin uses). The browser trades
+// it for a real session via signInWithCustomToken. Used by the PIN sign-in.
+const CUSTOM_TOKEN_AUD =
+  'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit';
+
+export async function mintCustomToken(env, uid) {
+  const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+  const iat = Math.floor(Date.now() / 1000);
+  const claims = {
+    iss: sa.client_email,
+    sub: sa.client_email,
+    aud: CUSTOM_TOKEN_AUD,
+    uid,
+    iat,
+    exp: iat + 3600,
+  };
+  const enc = (obj) => base64url(new TextEncoder().encode(JSON.stringify(obj)));
+  const signingInput = `${enc({ alg: 'RS256', typ: 'JWT' })}.${enc(claims)}`;
+  const key = await importPrivateKey(sa.private_key);
+  const sig = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    key,
+    new TextEncoder().encode(signingInput)
+  );
+  return `${signingInput}.${base64url(new Uint8Array(sig))}`;
+}
+
 async function importPrivateKey(pem) {
   const body = pem
     .replace('-----BEGIN PRIVATE KEY-----', '')
