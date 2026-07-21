@@ -292,6 +292,12 @@ progress { width: 100%; accent-color: var(--cyan); }
 }
 .steps-list li:last-child { border-left-color: transparent; }
 .about h2 { color: var(--cyan); font-size: 1.05rem; margin-top: 1.8rem; }
+/* Fading rule under the page title — bright at the left, dissolving right. */
+.title-rule {
+  border: 0; height: 2px; margin: .7rem 0 1.3rem;
+  background: linear-gradient(90deg, var(--cyan) 0%, rgba(45,226,255,.35) 45%, rgba(45,226,255,0) 95%);
+  box-shadow: 0 0 12px rgba(45,226,255,.25);
+}
 .mission {
   border-left: 3px solid var(--cyan); border-radius: 3px;
   padding: .55rem .9rem .55rem 1rem; margin-top: .6rem;
