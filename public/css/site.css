@@ -120,8 +120,9 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
 
 /* landing */
 .hero-eyebrow {
-  font: 600 .68rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .22em;
+  font: 600 .95rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .3em;
   color: var(--cyan); text-shadow: var(--glow-c);
+  text-align: center; text-indent: .3em; /* offsets the trailing letter-space so it centers true */
 }
 .landing { display: flex; flex-direction: column; justify-content: flex-start; gap: 1.4rem; min-height: min(calc(100dvh - 8rem), 40rem); padding-top: .5rem; }
 .hero-eyebrow { margin-bottom: .7rem; }
