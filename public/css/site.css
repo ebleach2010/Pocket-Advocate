@@ -123,9 +123,11 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
   font: 600 .68rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .22em;
   color: var(--cyan); text-shadow: var(--glow-c);
 }
-.landing { display: flex; flex-direction: column; justify-content: center; gap: 1.4rem; min-height: min(calc(100dvh - 8rem), 40rem); }
+.landing { display: flex; flex-direction: column; justify-content: flex-start; gap: 1.4rem; min-height: min(calc(100dvh - 8rem), 40rem); padding-top: .5rem; }
 .hero-eyebrow { margin-bottom: .7rem; }
-.landing h1 { font-size: clamp(1.35rem, 4.8vw, 1.8rem); line-height: 1.22; margin-bottom: .6rem; }
+/* The hero sits up top like a title, with clear air before the packages. */
+.landing > div:first-child { margin-bottom: 1rem; }
+.landing h1 { font-size: clamp(1.5rem, 5.4vw, 2.05rem); line-height: 1.2; margin: 0 0 .6rem; }
 .hero-sub { color: var(--soft); font-size: 1rem; margin: 0; line-height: 1.55; }
 .pack {
   position: relative; display: grid; grid-template-columns: 1fr auto; gap: .18rem .8rem;
@@ -135,10 +137,31 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
 .pack h3 { margin: 0; font-size: 1.08rem; }
 .pack .desc { grid-column: 1 / -1; color: var(--soft); font-size: .95rem; margin: 0; line-height: 1.45; }
 .pack .price { font-size: 1.15rem; }
-.pack.rec-c { border-color: var(--cyan); box-shadow: var(--glow-c), inset 0 0 30px rgba(45,226,255,.05); }
+.pack.rec-c {
+  border-color: var(--cyan);
+  box-shadow: var(--glow-c), inset 0 0 30px rgba(45,226,255,.05);
+  animation: neon-breathe-c 3.6s ease-in-out infinite;
+}
 .pack.rec-c .price { color: var(--cyan); }
-.pack.rec-m { border-color: var(--blue); box-shadow: var(--glow-b), inset 0 0 30px rgba(108,158,255,.05); }
+.pack.rec-m {
+  border-color: var(--blue);
+  box-shadow: var(--glow-b), inset 0 0 30px rgba(108,158,255,.05);
+  animation: neon-breathe-b 3.6s ease-in-out 1.8s infinite;
+}
 .pack.rec-m .price { color: var(--blue); }
+/* Real neon doesn't sit still — the borders breathe, offset so the two
+   cards never pulse in sync. */
+@keyframes neon-breathe-c {
+  0%, 100% { box-shadow: 0 0 10px rgba(45,226,255,.22), inset 0 0 30px rgba(45,226,255,.04); }
+  50%      { box-shadow: 0 0 24px rgba(45,226,255,.55), inset 0 0 34px rgba(45,226,255,.09); }
+}
+@keyframes neon-breathe-b {
+  0%, 100% { box-shadow: 0 0 10px rgba(108,158,255,.20), inset 0 0 30px rgba(108,158,255,.04); }
+  50%      { box-shadow: 0 0 24px rgba(108,158,255,.52), inset 0 0 34px rgba(108,158,255,.09); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pack.rec-c, .pack.rec-m { animation: none; }
+}
 .tag {
   position: absolute; top: -.6rem; left: .9rem;
   font: 700 .64rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .18em;
