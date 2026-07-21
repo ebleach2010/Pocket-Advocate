@@ -9,7 +9,7 @@
 // (profiles/{uid}/saved), where the Documents tab picks it up.
 
 import {
-  db, rtdb, storage, collection, doc, addDoc, updateDoc, onSnapshot,
+  db, rtdb, storage, collection, doc, addDoc, updateDoc, onSnapshot, getDocs,
   query, orderBy, limit, serverTimestamp, rtdbRef, onValue,
   ref, uploadBytesResumable, getDownloadURL,
 } from './firebase.js';
@@ -53,6 +53,10 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
          <progress data-progress max="100" value="0" hidden></progress>
          <p class="dim small" data-hint hidden>Tip: press and hold a shared file to save it to Documents.</p>
          <p class="error" data-err hidden></p>`}
+    <p style="margin:.5rem 0 0; text-align:right;">
+      <button class="btn quiet" type="button" data-export
+        style="font-size:.72rem; padding:.32rem .7rem;">⬇ Export chat (CSV)</button>
+    </p>
   `;
   const log = container.querySelector('[data-log]');
   const errEl = container.querySelector('[data-err]');
@@ -141,6 +145,38 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     }
   });
 
+  container.querySelector('[data-export]').addEventListener('click', async (e) => {
+    const btn = e.target;
+    btn.disabled = true;
+    try {
+      // Full history, not just the 200 shown on screen.
+      const snap = await getDocs(query(messagesRef, orderBy('ts', 'asc')));
+      const rows = [['Date', 'Time', 'Sender', 'Message', 'Attachment', 'Attachment URL']];
+      snap.forEach((m) => {
+        const d = m.data();
+        const when = d.ts?.toDate ? d.ts.toDate() : null;
+        rows.push([
+          when ? when.toLocaleDateString('en-CA') : '',   // YYYY-MM-DD
+          when ? when.toLocaleTimeString('en-US') : '',
+          d.role === 'admin' ? 'Eric' : 'Client',
+          d.text || '',
+          d.attachment?.name || '',
+          d.attachment?.url || '',
+        ]);
+      });
+      const csv = rows.map((r) => r.map(csvCell).join(',')).join('\r\n');
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }); // BOM so Excel reads UTF-8
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `pocket-advocate-chat-${parentPath.join('-')}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (err) {
+      alert(`Couldn't export: ${err.message}`);
+    }
+    btn.disabled = false;
+  });
+
   container.querySelector('[data-attach]')?.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     e.target.value = '';
@@ -221,6 +257,14 @@ async function promptSave(att, saveUid) {
   } catch (err) {
     alert(`Couldn't save: ${err.message}`);
   }
+}
+
+// CSV-safe: quote everything, double internal quotes, and defang cells that
+// spreadsheet apps would execute as formulas (=SUM…, +, -, @).
+function csvCell(v) {
+  let s = String(v).replace(/\r?\n/g, ' ');
+  if (/^[=+\-@]/.test(s)) s = `'${s}`;
+  return `"${s.replace(/"/g, '""')}"`;
 }
 
 function esc(s) {
