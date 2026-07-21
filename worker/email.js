@@ -19,7 +19,8 @@ export function homeScreenTips(baseUrl) {
   const host = baseUrl.replace(/^https?:\/\//, '');
   return `
   <div style="background:#f5f7fa; border-radius:10px; padding:14px 16px; margin-top:20px;">
-    <p style="margin:0 0 8px;"><strong>Put Pocket Advocate on your Home Screen</strong> — it becomes an app icon, and you stay signed in.</p>
+    <p style="margin:0 0 8px; font-size:15px;"><strong>⚠️ IMPORTANT: ADD POCKET ADVOCATE TO YOUR HOME SCREEN.</strong></p>
+    <p style="margin:0 0 10px;">This is the <strong>only way you'll receive notifications</strong> for all reminders, links, information, uploaded documents, and chat messages. Without it, you'll have to manually check the app for new information. It takes under a minute — the site becomes an app icon and you stay signed in:</p>
     <p style="margin:0 0 4px;"><strong>iPhone / iPad:</strong></p>
     <ol style="margin:0 0 10px; padding-left:20px;">
       <li>Open <a href="${baseUrl}">${host}</a> in <strong>Safari</strong></li>

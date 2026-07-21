@@ -69,9 +69,12 @@ body {
 .tag.c { color: #55663F; border-color: #8FA07C; background: #E9EFE0; box-shadow: none; }
 .tag.m { color: #9A6034; border-color: #DBAA85; background: #FBE9DC; box-shadow: none; }
 
-/* Fading title rule, sage edition. */
+/* Fading title rule, sage edition — dissolves at both edges. */
 .title-rule {
-  background: linear-gradient(90deg, #8FA07C 0%, rgba(143, 160, 124, .35) 45%, rgba(143, 160, 124, 0) 95%);
+  background: linear-gradient(90deg,
+    rgba(143, 160, 124, 0) 0%, rgba(143, 160, 124, .6) 25%,
+    rgba(143, 160, 124, .85) 50%,
+    rgba(143, 160, 124, .6) 75%, rgba(143, 160, 124, 0) 100%);
   box-shadow: none;
 }
 
