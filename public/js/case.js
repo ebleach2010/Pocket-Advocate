@@ -35,7 +35,11 @@ const user = await requireUser();
 let cases = [];
 let currentId = null;
 let currentTab = 'progress';
-if (user) boot();
+if (user) {
+  boot();
+  // Offer notifications to any signed-in client — not gated on having a case.
+  initPushPrompt(user, document.querySelector('main')).catch(() => {});
+}
 
 async function boot() {
   const container = document.getElementById('cases');
@@ -55,7 +59,6 @@ async function boot() {
   cases.sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
   currentId = currentId && cases.some((c) => c.id === currentId) ? currentId : cases[0].id;
   render();
-  initPushPrompt(user, document.querySelector('main')).catch(() => {});
 }
 
 function render() {
