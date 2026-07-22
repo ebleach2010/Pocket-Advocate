@@ -18,20 +18,25 @@ function supported() {
 }
 
 async function saveToken(uid) {
-  const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-  const { getMessaging, getToken } = await import(
+  const { getMessaging, getToken, isSupported } = await import(
     'https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js'
   );
+  if (!(await isSupported())) throw new Error('this browser can’t receive web push');
   const { initializeApp, getApps } = await import(
     'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js'
   );
   const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+  // Register the FCM worker and — crucially on iOS — wait until it is the
+  // active controller before asking for a token, or getToken races and fails.
+  const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+  await navigator.serviceWorker.ready;
   const token = await getToken(getMessaging(app), {
     vapidKey: VAPID_PUBLIC_KEY,
     serviceWorkerRegistration: reg,
   });
-  if (!token) throw new Error('no token');
+  if (!token) throw new Error('no token returned');
   await setDoc(doc(db, 'users', uid), { fcmTokens: arrayUnion(token) }, { merge: true });
+  return token;
 }
 
 /**
@@ -40,12 +45,26 @@ async function saveToken(uid) {
  */
 export async function initPushPrompt(user, mount) {
   if (!supported() || !user) return;
+  if (Notification.permission === 'denied') return;
 
+  // Permission already granted: refresh the token. If that fails, don't hide it
+  // — show the reason, because otherwise we'd never register and never know why.
   if (Notification.permission === 'granted') {
-    saveToken(user.uid).catch(() => {});
+    try {
+      await saveToken(user.uid);
+    } catch (err) {
+      console.error('push refresh:', err);
+      if (mount) {
+        const p = document.createElement('div');
+        p.className = 'panel push-prompt';
+        p.innerHTML = `<p class="dim small" style="margin:0;">Notifications aren’t registering on this device:<br><strong>${String(err && err.message || err)}</strong><br>
+          <button class="btn quiet" data-push="retry" style="margin-top:.5rem;">Try again</button></p>`;
+        p.querySelector('[data-push="retry"]').addEventListener('click', () => location.reload());
+        mount.prepend(p);
+      }
+    }
     return;
   }
-  if (Notification.permission === 'denied') return;
   if (!mount || localStorage.getItem(DISMISS_KEY)) return;
 
   const panel = document.createElement('div');
@@ -76,9 +95,11 @@ export async function initPushPrompt(user, mount) {
       setTimeout(() => panel.remove(), 4000);
     } catch (err) {
       console.error('push setup:', err);
+      // Show the real reason (and keep it on screen) so it can be diagnosed.
       panel.innerHTML =
-        '<p class="dim" style="margin:0;">Couldn’t turn on notifications on this device.</p>';
-      setTimeout(() => panel.remove(), 4000);
+        `<p class="dim small" style="margin:0;">Couldn’t turn on notifications:<br><strong>${String(err && err.message || err)}</strong><br>
+         <button class="btn quiet" data-push="retry" style="margin-top:.5rem;">Try again</button></p>`;
+      panel.querySelector('[data-push="retry"]')?.addEventListener('click', () => location.reload());
     }
   });
 }
