@@ -3,8 +3,8 @@
 // users/{uid}.fcmTokens for the Worker to push to. Silently does nothing when
 // push isn't possible (no VAPID key yet, unsupported browser, or Safari
 // without the app installed to the Home Screen).
-import { db, doc, setDoc, arrayUnion } from './firebase.js';
-import { firebaseConfig, VAPID_PUBLIC_KEY } from './firebase-config.js';
+import { db, doc, getDoc, setDoc, arrayUnion } from './firebase.js';
+import { VAPID_PUBLIC_KEY } from './firebase-config.js';
 
 const DISMISS_KEY = 'pa-push-dismissed';
 
@@ -17,26 +17,31 @@ function supported() {
   );
 }
 
+function urlB64ToUint8(b64) {
+  const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+  const base64 = (b64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+}
+
+// Native Web Push (RFC 8291). Subscribe via the browser's own push service —
+// no Firebase, which is what actually works inside iOS Home-Screen apps.
 async function saveToken(uid) {
-  const { getMessaging, getToken, isSupported } = await import(
-    'https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js'
-  );
-  if (!(await isSupported())) throw new Error('this browser can’t receive web push');
-  const { initializeApp, getApps } = await import(
-    'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js'
-  );
-  const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-  // Register the FCM worker and — crucially on iOS — wait until it is the
-  // active controller before asking for a token, or getToken races and fails.
-  const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+  const reg = await navigator.serviceWorker.register('/push-sw.js');
   await navigator.serviceWorker.ready;
-  const token = await getToken(getMessaging(app), {
-    vapidKey: VAPID_PUBLIC_KEY,
-    serviceWorkerRegistration: reg,
-  });
-  if (!token) throw new Error('no token returned');
-  await setDoc(doc(db, 'users', uid), { fcmTokens: arrayUnion(token) }, { merge: true });
-  return token;
+  const sub =
+    (await reg.pushManager.getSubscription()) ||
+    (await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlB64ToUint8(VAPID_PUBLIC_KEY),
+    }));
+  const j = sub.toJSON();
+  const rec = { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth };
+  const snap = await getDoc(doc(db, 'users', uid));
+  const cur = snap.exists() && Array.isArray(snap.data().pushSubs) ? snap.data().pushSubs : [];
+  if (!cur.some((s) => s.endpoint === rec.endpoint)) {
+    await setDoc(doc(db, 'users', uid), { pushSubs: arrayUnion(rec) }, { merge: true });
+  }
+  return rec;
 }
 
 /**

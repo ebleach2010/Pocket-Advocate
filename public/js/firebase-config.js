@@ -11,7 +11,9 @@ export const firebaseConfig = {
   appId: '1:629123378205:web:03fc0b564c5d240cd32af4',
 };
 
-// Web-push (FCM) public VAPID key. From Firebase console → Project settings →
-// Cloud Messaging → Web Push certificates (public half — safe in the browser).
+// Native Web Push (RFC 8291) VAPID public key — the applicationServerKey the
+// browser subscribes with. Public half only; the private half is a Worker
+// secret. (We use native web push, not FCM, because FCM's token flow fails
+// inside iOS Home-Screen apps.)
 export const VAPID_PUBLIC_KEY =
-  'BN2uifVCbTj93B3t4-XGl60SMhyocCdhSae-cvlZJ34usNVAbtfc1L8hljWDETMySGinwG9Z5hUsHXT8C1rn-R0';
+  'BEYXJvRQkNcn01FzAP3_zx0suQlmh_rEjBxIYDtT2oCrtP2hunlAqV47PkjoCS1aiPb4lszik8df64o0HwFSNQ4';

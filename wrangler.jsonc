@@ -26,7 +26,10 @@
     "EMAIL_FROM": "Pocket Advocate <no-reply@thepocketadvocates.com>",
     "ADMIN_EMAIL": "pocketadvocate.eric@gmail.com",
     // Eric's admin auth uid — the PIN sign-in mints a session for this user.
-    "ADMIN_UID": "xnQf5en2BcMStjMmzQDBv33WJIv2"
+    "ADMIN_UID": "xnQf5en2BcMStjMmzQDBv33WJIv2",
+    // Native Web Push (RFC 8292 VAPID). Public applicationServerKey + contact.
+    "VAPID_PUBLIC_KEY": "BEYXJvRQkNcn01FzAP3_zx0suQlmh_rEjBxIYDtT2oCrtP2hunlAqV47PkjoCS1aiPb4lszik8df64o0HwFSNQ4",
+    "VAPID_SUBJECT": "mailto:pocketadvocate.eric@gmail.com"
   }
   // Secrets (never in this file — `wrangler secret put NAME`, or .dev.vars locally):
   //   STRIPE_SECRET_KEY          sk_live_... / sk_test_...
