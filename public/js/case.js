@@ -8,7 +8,7 @@ import {
 } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence } from './chat.js';
-import { initPushPrompt } from './push.js';
+import { initSetupGuide } from './onboarding.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -37,8 +37,9 @@ let currentId = null;
 let currentTab = 'progress';
 if (user) {
   boot();
-  // Offer notifications to any signed-in client — not gated on having a case.
-  initPushPrompt(user, document.querySelector('main')).catch(() => {});
+  // Introductory setup guide (install + notifications) for any signed-in
+  // client — not gated on having a case.
+  initSetupGuide(user, document.querySelector('main'));
 }
 
 async function boot() {

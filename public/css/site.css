@@ -92,6 +92,9 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
 .btn.danger { background: transparent; color: var(--danger); border-color: var(--danger); box-shadow: none; }
 .actions { margin-top: 1.1rem; display: flex; gap: .55rem; flex-wrap: wrap; align-items: center; }
 
+/* Setup guide + notifications prompt stand out from ordinary panels. */
+.setup-guide, .push-prompt { border-color: var(--cyan); box-shadow: var(--glow-c); }
+
 /* surfaces */
 .card, .panel {
   background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
