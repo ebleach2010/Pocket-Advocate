@@ -15,9 +15,9 @@
   --bg: #EBDFCE;            /* Sand */
   --panel: #F4E5D9;         /* Pearl */
   --panel-2: #EFE0D0;
-  --ink: #3D362B;           /* deep warm brown-black for body text */
-  --dim: #978671;           /* Stone */
-  --soft: #6E6353;
+  --ink: #17130C;           /* near-black for headings + body text */
+  --dim: #4A4030;           /* muted, but still dark and readable (was light Stone) */
+  --soft: #2E2619;          /* secondary body — near-black */
   --line: #D9C9B4;
   --cyan: #6F8261;          /* deepened Sage — links, active states, headings */
   --cyan-dim: #93A186;
