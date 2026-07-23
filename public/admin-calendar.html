@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pocket Advocate">
+<meta name="theme-color" content="#EBDFCE">
+<title>Calendar — Pocket Advocate admin</title>
+<link rel="stylesheet" href="/css/site.css?v=stat9">
+<script>(function(){try{var t=localStorage.getItem('pa-theme')||'earth';document.documentElement.setAttribute('data-theme',t);var m={earth:'/css/theme-earth.css?v=e8',dark:'/css/theme-dark.css?v=d1',contrast:'/css/theme-contrast.css?v=c1'};if(m[t])document.write('<link rel="stylesheet" href="'+m[t]+'" data-theme-css="1">');}catch(e){}})();</script>
+</head>
+<body>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
+    <nav class="tabs">
+      <a href="/admin.html">Clients</a>
+      <a href="/admin-calendar.html" class="active">Calendar</a>
+      <a href="/admin-chats.html">Chats</a>
+      <a href="/admin-availability.html">Availability</a>
+      <span data-nav-auth></span>
+    </nav>
+  </div>
+</header>
+<main>
+  <div class="row">
+    <h1 style="margin:0;">Calendar</h1>
+    <span class="dim small">all times MST</span>
+  </div>
+  <div class="cal-nav">
+    <button class="btn quiet" id="cal-prev">‹</button>
+    <strong id="cal-title" style="min-width:11rem; text-align:center;"></strong>
+    <button class="btn quiet" id="cal-next">›</button>
+    <button class="btn quiet" id="cal-today">Today</button>
+  </div>
+  <div class="cal-grid" id="cal-head"></div>
+  <div class="cal-grid" id="cal-grid"><p class="dim">Loading…</p></div>
+  <div id="cal-day"></div>
+  <p class="dim small" style="margin-top:1rem;">
+    <span class="cal-key booked"></span> booked session &nbsp;
+    <span class="cal-key open"></span> open slot &nbsp;
+    <span class="cal-key held"></span> awaiting payment
+  </p>
+</main>
+<script type="module" src="/js/admin-calendar.js"></script>
+</body>
+</html>

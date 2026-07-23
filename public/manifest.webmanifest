@@ -1,0 +1,18 @@
+{
+  "name": "Pocket Advocate",
+  "short_name": "Pocket Advocate",
+  "description": "Independent patient advocacy \u2014 your case, your documents, your chat with Eric.",
+  "start_url": "/case.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#EBDFCE",
+  "theme_color": "#EBDFCE",
+  "icons": [
+    {
+      "src": "/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+// Cloudflare Worker config — same assets-hosting pattern as the Tether repo.
+// The Worker serves the static app from public/ and is the ONLY server-side code:
+// Stripe Checkout creation, the Stripe webhook (which creates cases and syncs
+// subscriptions), the scheduling trust boundary (72h lead time, 8am–6pm MST,
+// slot holds), the admin API, and the chat email digest cron.
+{
+  "name": "pocket-advocate",
+  "main": "worker/index.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "public",
+    "binding": "ASSETS"
+  },
+  "triggers": {
+    // Chat digest: email a nudge for unread messages (spec: batched email).
+    "crons": ["*/15 * * * *"]
+  },
+  "vars": {
+    // Non-secret config. Replace after creating the Firebase project (docs/SETUP.md).
+    "FIREBASE_PROJECT_ID": "pocket-advocate-f3148",
+    "FIREBASE_WEB_API_KEY": "AIzaSyBDH8QZxGYBWytbxx7aNM0uyUIOqRj-7T8",
+    // Where success/cancel URLs point. thepocketadvocates.com is the production
+    // domain (Eric's, 2026-07-12); switch to http://localhost:8787 for local dev.
+    "PUBLIC_BASE_URL": "https://thepocketadvocates.com",
+    // Email (Resend). EMAIL_FROM must be a verified sender/domain in Resend.
+    "EMAIL_FROM": "Pocket Advocate <no-reply@thepocketadvocates.com>",
+    "ADMIN_EMAIL": "pocketadvocate.eric@gmail.com",
+    // Eric's admin auth uid — the PIN sign-in mints a session for this user.
+    "ADMIN_UID": "xnQf5en2BcMStjMmzQDBv33WJIv2",
+    // Native Web Push (RFC 8292 VAPID). Public applicationServerKey + contact.
+    "VAPID_PUBLIC_KEY": "BEYXJvRQkNcn01FzAP3_zx0suQlmh_rEjBxIYDtT2oCrtP2hunlAqV47PkjoCS1aiPb4lszik8df64o0HwFSNQ4",
+    "VAPID_SUBJECT": "mailto:pocketadvocate.eric@gmail.com",
+    // Live Stripe customer-portal configuration (cancel at period end).
+    "STRIPE_PORTAL_CONFIG": "bpc_1TwFooCd0S5yK0YTvc5gYsPQ"
+  }
+  // Secrets (never in this file — `wrangler secret put NAME`, or .dev.vars locally):
+  //   STRIPE_SECRET_KEY          sk_live_... / sk_test_...
+  //   STRIPE_WEBHOOK_SECRET      whsec_...
+  //   FIREBASE_SERVICE_ACCOUNT   full service-account JSON, one line
+  //   RESEND_API_KEY             re_...
+}

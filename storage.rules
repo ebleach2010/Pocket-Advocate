@@ -1,0 +1,60 @@
+rules_version = '2';
+
+// Files live under cases/{caseId}/... — readable only by the case's client
+// and the admin. Clients may write only into uploads/ while the case is open
+// (25 MB per file); recordings and reports are the admin's to place, with no
+// size cap (recordings are big). Overlapping match blocks are OR'd.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function caseData(caseId) {
+      return firestore.get(/databases/(default)/documents/cases/$(caseId)).data;
+    }
+
+    function isAdmin() {
+      return request.auth != null &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isCaseClient(caseId) {
+      return request.auth != null && caseData(caseId).clientUid == request.auth.uid;
+    }
+
+    match /cases/{caseId}/{allPaths=**} {
+      allow read: if isCaseClient(caseId) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /cases/{caseId}/uploads/{fileName} {
+      allow write: if isCaseClient(caseId) &&
+        caseData(caseId).status != 'closed' &&
+        request.resource.size < 25 * 1024 * 1024;
+    }
+
+    // Files shared inside a case chat (either side, while the case is open).
+    match /cases/{caseId}/chat-files/{fileName} {
+      allow write: if (isCaseClient(caseId) || isAdmin()) &&
+        caseData(caseId).status != 'closed' &&
+        request.resource.size < 25 * 1024 * 1024;
+    }
+
+    // Files shared inside a subscriber chat.
+    match /subscriptions/{uid}/chat-files/{fileName} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow write: if request.auth != null && (request.auth.uid == uid || isAdmin()) &&
+        request.resource.size < 25 * 1024 * 1024;
+    }
+
+    // The client's profile shelf: chat attachments promoted via long-press
+    // "save" land here and follow the person, not the case.
+    match /profiles/{uid}/saved/{fileName} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow write: if request.auth != null && (request.auth.uid == uid || isAdmin()) &&
+        request.resource.size < 25 * 1024 * 1024;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

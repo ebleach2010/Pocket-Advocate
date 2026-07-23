@@ -1,0 +1,114 @@
+rules_version = '2';
+
+// Day-one lockdown (SPEC §E): clients touch only their own data; cases,
+// availability, and subscription lifecycle are written ONLY by the Worker's
+// service account (which bypasses these rules). The single client-writable
+// surface on parent docs is the `lastMessage` chat pointer.
+// No open test mode, ever.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function validMessage() {
+      return request.resource.data.keys().hasOnly(['from', 'role', 'text', 'ts', 'attachment'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 2000
+        // a message is words, a file, or both — never neither
+        && (request.resource.data.text.size() > 0
+            || request.resource.data.keys().hasAny(['attachment']))
+        && (isAdmin()
+            ? request.resource.data.role == 'admin'
+            : request.resource.data.role == 'client');
+    }
+
+    function onlyLastMessageChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessage']);
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      // A user may create/update their own profile but can never grant
+      // themselves a role other than 'client'. The role defaults to 'client'
+      // on both sides so a starter record with no role yet (created by the
+      // code-login server step, which only stores email) can be completed into
+      // a full client profile — while an admin can never be demoted or a
+      // client self-promoted.
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.get('role', 'client') == 'client';
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.get('role', 'client') == resource.data.get('role', 'client');
+      allow delete: if false;
+    }
+
+    match /cases/{caseId} {
+      // Case docs are created and mutated by the Worker — except the
+      // lastMessage pointer, which chat participants may update.
+      allow read: if signedIn() &&
+        (resource.data.clientUid == request.auth.uid || isAdmin());
+      allow update: if signedIn()
+        && (resource.data.clientUid == request.auth.uid || isAdmin())
+        && onlyLastMessageChanged();
+      allow create, delete: if false;
+
+      // Case chat: dies with the case (SPEC §H-6 — separate from subscriber chat).
+      match /chat/{msgId} {
+        allow read: if signedIn() &&
+          (get(/databases/$(database)/documents/cases/$(caseId)).data.clientUid == request.auth.uid
+            || isAdmin());
+        allow create: if signedIn()
+          && (get(/databases/$(database)/documents/cases/$(caseId)).data.clientUid == request.auth.uid
+              || isAdmin())
+          && get(/databases/$(database)/documents/cases/$(caseId)).data.status != 'closed'
+          && validMessage();
+        allow update, delete: if false;
+      }
+    }
+
+    match /availability/{slotId} {
+      // World-readable so the picker works pre-payment; Worker-writable only.
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /subscriptions/{uid} {
+      // Lifecycle fields come from Stripe webhooks via the Worker.
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow update: if signedIn()
+        && (request.auth.uid == uid || isAdmin())
+        && onlyLastMessageChanged();
+      allow create, delete: if false;
+
+      // Subscriber chat: lives as long as the subscription (access runs to
+      // the end of the paid period — currentPeriodEnd is Worker-maintained).
+      match /chat/{msgId} {
+        allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+        allow create: if signedIn()
+          && validMessage()
+          && (isAdmin()
+              || (request.auth.uid == uid
+                  && request.time < get(/databases/$(database)/documents/subscriptions/$(uid)).data.currentPeriodEnd));
+        allow update, delete: if false;
+      }
+    }
+
+    match /settings/{doc} {
+      // e.g. settings/subscriberChat.expectationLine ("Eric typically replies
+      // within a few days") — public copy, Eric-controlled.
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pocket Advocate">
+<meta name="theme-color" content="#EBDFCE">
+<title>Pocket Advocate</title>
+<link rel="stylesheet" href="/css/site.css?v=stat9">
+<script>(function(){try{var t=localStorage.getItem('pa-theme')||'earth';document.documentElement.setAttribute('data-theme',t);var m={earth:'/css/theme-earth.css?v=e8',dark:'/css/theme-dark.css?v=d1',contrast:'/css/theme-contrast.css?v=c1'};if(m[t])document.write('<link rel="stylesheet" href="'+m[t]+'" data-theme-css="1">');}catch(e){}})();</script>
+</head>
+<body>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
+    <nav class="tabs">
+      <a href="/" class="active">Book</a>
+      <a href="/about.html">About</a>
+      <a href="/reviews.html">Reviews</a>
+      <span data-nav-auth></span>
+    </nav>
+  </div>
+</header>
+<main>
+  <section class="landing">
+    <div>
+      <div class="hero-eyebrow">PATIENT ADVOCACY</div>
+      <h1>Walk into your next appointment armed.</h1>
+      <p class="hero-sub">Your labs, scans, and story — turned into real questions, next steps, and a plan you keep.</p>
+    </div>
+
+    <a class="pack rec-c" href="/book.html">
+      <span class="tag c">RECOMMENDED</span>
+      <h3>Advocacy Case</h3><span class="price">$100</span>
+      <p class="desc">One live deep-dive with Eric + your written report within 7 days. Optional $50 follow-up session offered at checkout.</p>
+    </a>
+
+    <a class="pack rec-m" href="/subscribe.html">
+      <h3>Pocket Advocate subscription</h3><span class="price">$50/mo</span>
+      <p class="desc">Anytime chat with Eric — he replies when he's free. Cancel anytime. Tap to subscribe.</p>
+    </a>
+
+    <div class="actions" style="margin-top:.2rem;">
+      <a class="btn" href="/book.html">Book a case →</a>
+      <a class="btn ghost" href="/about.html">How it works</a>
+    </div>
+
+    <p class="fine"><strong>Advocacy, not medicine.</strong> No diagnosis, no treatment, no prescriptions, not a substitute for your care team. Emergency? Call 911. Pocket Advocate currently only serves patients in the United States and Canada.</p>
+  </section>
+</main>
+<script type="module">
+  import { hydrateNav } from '/js/auth.js';
+  hydrateNav();
+</script>
+</body>
+</html>

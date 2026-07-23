@@ -1,0 +1,110 @@
+/* EARTH THEME — the approved look (Eric, 2026-07-21: "Much easier on the
+   eyes."). Loaded after site.css and overrides its neon tokens; the neon
+   system remains underneath as fallback history. Palette is Eric's five
+   swatches:
+     Sage #B2BDA3 · Sand #EBDFCE · Pearl #F4E5D9 · Peach #F8D3BB · Stone #978671
+   Mapping logic:
+     Sand   = page ground          Pearl = cards & panels
+     Sage   = primary action/accent (deepened to #6F8261 where it must read as text)
+     Peach  = secondary accent (subscription, highlights; deepened to #C08552 as text)
+     Stone  = quiet text, borders, structure
+   Neon glows become soft warm elevation shadows; the breathing animation stays
+   but whispers instead of glows. */
+
+:root {
+  --bg: #EBDFCE;            /* Sand */
+  --panel: #F4E5D9;         /* Pearl */
+  --panel-2: #EFE0D0;
+  --ink: #17130C;           /* near-black for headings + body text */
+  --dim: #4A4030;           /* muted, but still dark and readable (was light Stone) */
+  --soft: #2E2619;          /* secondary body — near-black */
+  --line: #D9C9B4;
+  --cyan: #6F8261;          /* deepened Sage — links, active states, headings */
+  --cyan-dim: #93A186;
+  --magenta: #C08552;       /* deepened Peach — badges, alerts */
+  --green: #7C9070;
+  --blue: #A98F6F;          /* warmed Stone-bronze for the subscription accent */
+  --danger: #B85C50;
+  --glow-c: 0 4px 14px rgba(151, 134, 113, .30);
+  --glow-m: 0 4px 14px rgba(192, 133, 82, .28);
+  --glow-g: 0 4px 12px rgba(111, 130, 97, .30);
+  --glow-b: 0 4px 12px rgba(169, 143, 111, .30);
+}
+
+/* Light header bar (the base theme hard-codes a dark one). */
+header.bar { background: rgba(244, 229, 217, .88); }
+/* Nav tabs in straight black; the active pill keeps its sage border. */
+.tabs a, .tabs a.active { color: #000; }
+
+/* Warm wash instead of neon haze. */
+body {
+  background-image:
+    radial-gradient(1200px 500px at 85% -10%, rgba(178, 189, 163, .30), transparent 60%),
+    radial-gradient(900px 500px at 0% 110%, rgba(248, 211, 187, .40), transparent 60%);
+}
+
+/* Text that used to sit on neon fills now sits on sage/peach — keep it dark. */
+.btn { color: #2E3428; background: #B2BDA3; border-color: #A3B092; }
+.btn.mag { background: #F8D3BB; border-color: #E9BE9F; color: #5C3E24; }
+.btn.secondary, .btn.ghost { color: #6F8261; border-color: #A3B092; }
+.brand .spark { text-shadow: none; }
+.hero-eyebrow { text-shadow: none; }
+
+/* Package cards: sage-framed case, peach-framed subscription, soft breathing. */
+.pack.rec-c {
+  border-color: #96C178;
+  box-shadow: 0 6px 16px rgba(110, 160, 75, .28);
+  animation-name: earth-breathe-c;
+}
+.pack.rec-c .price { color: #649A3F; } /* same hue as the card's green border */
+.pack.rec-m {
+  border-color: #F0AC78;
+  box-shadow: 0 6px 16px rgba(214, 128, 60, .26);
+  animation-name: earth-breathe-b;
+}
+.pack.rec-m .price { color: #DD8140; } /* same hue as the card's orange border */
+@keyframes earth-breathe-c {
+  0%, 100% { box-shadow: 0 4px 12px rgba(110, 160, 75, .20); }
+  50%      { box-shadow: 0 8px 22px rgba(110, 160, 75, .44); }
+}
+@keyframes earth-breathe-b {
+  0%, 100% { box-shadow: 0 4px 12px rgba(190, 120, 60, .20); }
+  50%      { box-shadow: 0 8px 22px rgba(214, 128, 60, .42); }
+}
+.tag.c { color: #55663F; border-color: #8FA07C; background: #E9EFE0; box-shadow: none; }
+.tag.m { color: #9A6034; border-color: #DBAA85; background: #FBE9DC; box-shadow: none; }
+
+/* Fading title rule, sage edition — dissolves at both edges. */
+.title-rule {
+  background: linear-gradient(90deg,
+    rgba(143, 160, 124, 0) 0%, rgba(143, 160, 124, .6) 25%,
+    rgba(143, 160, 124, .85) 50%,
+    rgba(143, 160, 124, .6) 75%, rgba(143, 160, 124, 0) 100%);
+  box-shadow: none;
+}
+
+/* Quiet the remaining neon-specific treatments. */
+.tabs a.active, .crumbs li.now, .slot.selected, .choice.selected,
+.chip-label.selected, .subtabs button.active, .timeline li.done .t-dot,
+.timeline li.now .t-dot, .cal-cell.today, .p-dot.on { box-shadow: none; }
+.consent-quote { background: rgba(248, 211, 187, .35); border-left-color: #C08552; }
+.status-pill.due { box-shadow: none; }
+
+/* Calendar marks in the earth language (still unmistakable at a glance). */
+.cal-mark.booked { background: #6F8261; color: #F4E5D9; box-shadow: none; }
+.cal-mark.open { background: #B2BDA3; color: #2E3428; box-shadow: none; }
+.cal-mark.held { background: #F8D3BB; color: #5C3E24; box-shadow: none; }
+
+/* Chat bubbles / inputs inherit tokens; make sure own-message stays legible. */
+.msg.me { background: #DCE4D2; color: #33392B; }
+
+/* About page: its long-form copy is body text, not captions — near-ink so it
+   never blends into the sand. */
+.about p.dim, .about p.dim.small, .about .mission p, .about .steps-list li { color: #352F26; }
+.about .steps-list li strong, .about p strong { color: #201C15; }
+
+/* Mission block + calendar key dots, earth edition. */
+.mission { background: linear-gradient(90deg, rgba(178, 189, 163, .30), transparent 70%); }
+.cal-key.booked { background: #6F8261; box-shadow: none; }
+.cal-key.open { background: #B2BDA3; box-shadow: none; }
+.cal-key.held { background: #F8D3BB; box-shadow: none; }

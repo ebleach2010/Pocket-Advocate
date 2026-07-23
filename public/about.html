@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pocket Advocate">
+<meta name="theme-color" content="#EBDFCE">
+<title>About — Pocket Advocate</title>
+<link rel="stylesheet" href="/css/site.css?v=stat9">
+<script>(function(){try{var t=localStorage.getItem('pa-theme')||'earth';document.documentElement.setAttribute('data-theme',t);var m={earth:'/css/theme-earth.css?v=e8',dark:'/css/theme-dark.css?v=d1',contrast:'/css/theme-contrast.css?v=c1'};if(m[t])document.write('<link rel="stylesheet" href="'+m[t]+'" data-theme-css="1">');}catch(e){}})();</script>
+</head>
+<body>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
+    <nav class="tabs">
+      <a href="/">Book</a>
+      <a href="/about.html" class="active">About</a>
+      <a href="/reviews.html">Reviews</a>
+      <span data-nav-auth></span>
+    </nav>
+  </div>
+</header>
+<main class="about">
+  <h1>What I can do for you, no fluff</h1>
+  <hr class="title-rule">
+  <h2>The mission</h2>
+  <div class="mission">
+    <p class="dim">Pocket Advocate is dedicated to empowering patients with neurological conditions throughout Canada and the United States. Founded by a professional patient advocate and autoimmune encephalitis survivor, Eric understands the immense challenges of navigating the medical system. With a deeply personal commitment to client well-being, he offers invaluable support and expertise to help patients navigate their health journey. Pocket Advocate stands firmly on the side of the patient, providing guidance and insight grounded in lived experience to help individuals achieve better health outcomes.</p>
+  </div>
+
+  <h2>From Eric</h2>
+  <div class="mission">
+    <p class="dim">I've spoken to hundreds of patients struggling in the medical system, and I have firsthand experience of how debilitating these diseases are, and how disheartening the process can be. My mission statement is simply this: <strong>earlier diagnosis and treatment leads to better outcome.</strong> My one job is to get you to the finish line faster, so you suffer less and have a better and more robust recovery.</p>
+  </div>
+
+  <h2>The purpose</h2>
+  <p class="dim small">Eric is a patient advocate — not a doctor, and that's the point. He doesn't diagnose or treat. He helps you <strong style="color:var(--ink)">understand what's in front of you</strong>: what your labs and imaging actually say in plain English, what questions will get real answers from your care team, and what options are worth raising at your next appointment. Part of the job is <strong style="color:var(--ink)">locating the best resources for you</strong> — including the physicians best suited to your case, chosen with your travel limitations in mind. Serving clients in the US and Canada.</p>
+
+  <h2>How a case runs</h2>
+  <ol class="steps-list">
+    <li><strong>Sign in with your email</strong>No passwords. A link lands in your inbox, you tap it, you're in.</li>
+    <li><strong>Three short reads</strong>The disclaimer, the privacy terms, and recording consent — one screen each, so you know exactly what you're buying and exactly who sees your data (you and Eric; that's the list).</li>
+    <li><strong>Your call: public or private</strong>Private is the default. Or let your session stream live on the TheBroScientist YouTube channel so other patients can learn from it — your files stay private either way, and you can flip back to private any time before the broadcast starts.</li>
+    <li><strong>Pick a time, pick a channel, pay</strong>Slots run 8am–6pm MST, at least 72 hours out. Discord, Zoom, or a phone call. $100 through Stripe — the slot is only yours when the payment lands, and the case file opens itself the moment it does.</li>
+    <li><strong>Load your ammunition</strong>Labs, imaging, records — upload anything you want Eric to see before the call.</li>
+    <li><strong>Live chat while your case is open</strong>From the moment your case opens, you have a direct chat line with Eric — questions, updates, new documents, anything. It stays open through your call and your report.</li>
+    <li><strong>The discussion</strong>A real conversation about your symptoms, your history, your dead ends. Recorded, and the recording is yours.</li>
+    <li><strong>The report — within 7 days</strong>A written battle plan: what was discussed, what to ask, where to push next, plus anything Eric dug up after the call. Yours forever, downloadable, printable.</li>
+    <li><strong>Follow-up if you want it</strong>Grab the +$50 follow-up at checkout for a second session on the same case. Skip it, and a later follow-up is simply a fresh case.</li>
+    <li><strong>Case close</strong>After your report lands you have a day to ask questions in chat; then the case closes and the chat ends. Your report and documents stay yours, and Eric retains your full case file — book another case or join the Pocket Advocate subscription and you pick up right where you left off, no re-telling your story.</li>
+  </ol>
+
+  <h2>What you get out of it</h2>
+  <p class="dim small">A second set of eyes that has seen this movie before. Questions your doctor has to answer instead of deflect. A single organized file of your whole story — instead of a shoebox of PDFs. And a written plan you can put in front of any specialist, anywhere, forever.</p>
+
+  <h2>The subscription</h2>
+  <p class="dim small">Pocket Advocate subscription, $50/month: an always-open chat line to Eric, with his live online status. He answers when he's available — response time is never guaranteed, and the terms say so in plain words. That's the honest trade for $50. Completely separate from cases; cancel anytime.</p>
+
+  <h2>The honest legal picture</h2>
+  <p class="dim small">This is advocacy, not medicine — no diagnosis, no treatment, no prescriptions, no doctor-patient relationship, no emergency care (call 911). Your data is encrypted, stored in the US, visible to exactly two people, and deletable on request.</p>
+
+  <div class="actions"><a class="btn" href="/book.html">Go book a case →</a><span id="call-slot"></span></div>
+
+  <footer class="legal">Pocket Advocate is a patient-advocacy service, offered to residents of the United States and Canada. It does not provide diagnosis, treatment, prescriptions, or medical advice, and does not create a doctor-patient relationship. If this is an emergency, call 911.</footer>
+</main>
+<script type="module">
+  import { BUSINESS_PHONE } from '/js/reviews-config.js';
+  // Nav auth state rides the Firebase CDN — load it soft so the call button
+  // never depends on it.
+  import('/js/auth.js').then((m) => m.hydrateNav()).catch(() => {});
+  if (BUSINESS_PHONE)
+    document.getElementById('call-slot').outerHTML =
+      `<a class="btn ghost" href="tel:${BUSINESS_PHONE}">📞 Call</a>`;
+</script>
+</body>
+</html>

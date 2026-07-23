@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pocket Advocate">
+<meta name="theme-color" content="#EBDFCE">
+<title>Subscribe — Pocket Advocate</title>
+<link rel="stylesheet" href="/css/site.css?v=stat9">
+<script>(function(){try{var t=localStorage.getItem('pa-theme')||'earth';document.documentElement.setAttribute('data-theme',t);var m={earth:'/css/theme-earth.css?v=e8',dark:'/css/theme-dark.css?v=d1',contrast:'/css/theme-contrast.css?v=c1'};if(m[t])document.write('<link rel="stylesheet" href="'+m[t]+'" data-theme-css="1">');}catch(e){}})();</script>
+</head>
+<body>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
+    <nav class="tabs">
+      <a href="/">Book</a>
+      <a href="/about.html">About</a>
+      <a href="/reviews.html">Reviews</a>
+      <span data-nav-auth></span>
+    </nav>
+  </div>
+</header>
+<main>
+  <h1>Pocket Advocate subscription</h1>
+  <p class="dim">An always-open chat line to Eric for <span class="mono" style="color:var(--magenta); font-weight:700;">$50/mo</span>. He replies when he's free — that's the deal, and the terms below say so in plain words.</p>
+  <p class="error" id="page-error" hidden></p>
+  <div id="flow"><p class="dim">Loading…</p></div>
+  <footer class="footer-disclaimer">
+    This is advocacy, not medicine — no diagnosis, no treatment, no prescriptions, and not a substitute for your own care team. If this is an emergency, call 911.
+  </footer>
+</main>
+<script type="module" src="/js/subscribe.js"></script>
+</body>
+</html>

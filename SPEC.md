@@ -12,6 +12,14 @@
 
 A paid **patient-advocacy** service run by Eric, serving clients in the
 **United States only**. Advocates help people navigate their medical journey —
+
+> ✅ **Amended (2026-07-12): the service also serves Canada.** Eric's call — he
+> is not bound by medical licensing law for advocacy work, has safeguard
+> documents in place, and operates under the LLC. All app copy (landing,
+> sign-in attestation, waivers, legal footers, email footer) now says US and
+> Canada. Canadian privacy law (PIPEDA) is therefore in scope — added to the
+> lawyer-review list below.
+
 organize their story, understand their labs and imaging in plain language, prepare
 questions for their doctors, and find next steps. It is built on deep personal knowledge
 and lived experience.
@@ -60,6 +68,11 @@ promises; and state laws (e.g. Washington's **My Health My Data Act**, Californi
 CCPA/CPRA) apply to consumer health data held by non-HIPAA businesses. US-only service
 keeps Canadian privacy law (PIPEDA and provincial statutes) out of scope — the terms
 should state the service is offered to US residents only.
+
+> ✅ **Superseded (2026-07-12): Canada is in scope.** The terms now say US and
+> Canada, so PIPEDA (and provincial statutes like Quebec's Law 25) apply to
+> Canadian clients' data. Flag for the attorney reviewing the DRAFT documents
+> before the first paying client.
 
 Practical consequences baked into this spec: collect only what's needed, encrypt in
 transit and at rest (Firebase does both), lock access down with security rules from day
@@ -290,21 +303,48 @@ replies within a few days") and subscriptions can be paused from his side.
 3. **Phase 3 — Chat + Pocket Advocate:** case chat, presence, subscriber flow with
    subscription webhooks, closed-case behavior, email notifications.
 4. **Phase 4 — Hardening:** security-rules audit, PWA install polish, print stylesheet
-   for reports, **lawyer pass on all copy before the first paying client**.
+   for reports, ~~lawyer pass on all copy before the first paying client~~.
+
+   > ✅ **Lawyer pass waived (2026-07-12), Eric's call.** He has been through this
+   > legal-review process before, has safeguard documents in place, and operates
+   > under the LLC. The "reviewed by an attorney" / DRAFT notices were removed
+   > from the app copy at his request.
 
 ---
 
 ## H. Open questions for Eric
 
 1. **Refund/cancel + no-show policies** — the §C proposals need a yes/no.
+   ✅ **Partially decided (2026-07-13): the $100 case fee (and $50 add-on) is
+   non-refundable once the slot is booked** — stated in waiver 1's Payment
+   section and at checkout. The $20/mo subscription cancels anytime via the
+   Stripe customer portal (access runs to period end). No-show policy still open.
 2. **Slot length** (60 min? 90?) and how far ahead the calendar opens (2 weeks? 4?).
+   ✅ **Partially decided (2026-07-13): the booking horizon is 1.5 weeks (252h),
+   enforced quietly** — far-out slots don't render and the Worker rejects them.
+   Rationale: case chat opens at payment, so a distant appointment would buy an
+   outsized chat runway. Eric can still pre-open slots any distance ahead; they
+   surface to clients as they come inside the horizon. Slot length still open.
 3. **Domain / public brand name** — "TheBroScientist Neuro Advocacy" with Pocket
    Advocate as the subscription's name?
+   ✅ **Decided (2026-07-11): the web app is called "Pocket Advocate."** The $20/mo
+   product is presented as the "Pocket Advocate subscription." Public sessions still
+   broadcast on the TheBroScientist YouTube channel. Domain still open.
+   ✅ **Decided (2026-07-12): the domain is thepocketadvocates.com.**
 4. **Follow-up add-on details** — booking deadline after the report (e.g. within 60
    days)? Does the follow-up produce its own written summary, or is it summary-free?
+   ✅ **Partially decided (2026-07-13): follow-ups expire one month after the first
+   discussion.** Stated in waiver 1 and at checkout; Eric's admin view shows a
+   day countdown; the cron emails the client one warning a week before expiry.
+   Admin can honor an expired follow-up via the charge-at-0% scheduling mode.
+   Eric also gained full scheduling powers per case: reschedule, book the paid
+   follow-up, or charge a custom rate (0–150% of $100 in 25% steps) with an
+   invoice tagline — paid sessions confirm through Stripe Checkout with a 24h
+   slot hold. Summary-or-not for follow-ups still open.
 5. **Discord logistics** — one persistent lobby channel vs. a fresh private channel per
    case? (Matters so a privacy-opted client never bumps into the next client. Fresh
    channel per case is recommended.)
 6. **Merged or separate chats** when a Pocket Advocate subscriber also buys a case?
    (Recommended: separate — the case chat closes with the case; the subscriber chat
    lives as long as the subscription.)
+   ✅ **Implemented as recommended (Phase 3, 2026-07-11): separate chats.**
