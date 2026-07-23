@@ -44,6 +44,23 @@ async function saveToken(uid) {
   return rec;
 }
 
+/** Request permission and register this device. Returns {ok} or {ok:false,error}. */
+export async function enablePush(user) {
+  if (!supported() || !user) return { ok: false, error: 'This device can’t receive notifications.' };
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') return { ok: false, error: 'Notifications were not allowed.' };
+  try {
+    await saveToken(user.uid);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
+  }
+}
+
+export const pushSupported = supported;
+export const pushInstalled = () =>
+  window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
 /**
  * Call on signed-in pages with a container to (maybe) show the opt-in panel.
  * Already-granted users get a silent token refresh instead of UI.

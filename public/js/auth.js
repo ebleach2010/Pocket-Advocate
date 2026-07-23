@@ -6,6 +6,10 @@ import {
   doc,
   getDoc,
   setDoc,
+  collection,
+  getDocs,
+  query,
+  where,
   onAuthStateChanged,
   sendSignInLinkToEmail,
   signOut,
@@ -106,15 +110,54 @@ export async function hydrateNav() {
   const user = await currentUser();
   if (user) {
     const admin = await isAdmin(user);
-    el.innerHTML =
-      (admin ? `<a href="/admin.html">Admin</a>` : `<a href="/case.html">My cases</a>`) +
-      ` <a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
+    const path = location.pathname;
+    if (admin) {
+      el.innerHTML =
+        `<a href="/admin.html">Admin</a> <a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
+    } else {
+      el.innerHTML =
+        `<a href="/case.html" class="${path === '/case.html' ? 'active' : ''}">My cases</a>` +
+        ` <a href="/chat.html" data-nav-chat class="${path === '/chat.html' ? 'active' : ''}">Chat</a>` +
+        ` <a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
+    }
     el.querySelector('[data-signout]').addEventListener('click', async (e) => {
       e.preventDefault();
       await signOut(auth);
       location.href = '/';
     });
+    markUnread(user, admin).catch(() => {});
   } else {
     el.innerHTML = `<a href="/signin.html">Sign in</a>`;
+  }
+}
+
+// Glowing golden diamond on the Chat tab when a conversation is waiting on you:
+// for Eric, any thread whose last word was a client's; for a client, any whose
+// last word was Eric's.
+async function markUnread(user, admin) {
+  let unread = false;
+  try {
+    if (admin) {
+      const [cases, subs] = await Promise.all([
+        getDocs(collection(db, 'cases')),
+        getDocs(collection(db, 'subscriptions')),
+      ]);
+      const any = (snap) => snap.docs.some((d) => d.data().lastMessage?.role === 'client');
+      unread = any(cases) || any(subs);
+    } else {
+      const cases = await getDocs(query(collection(db, 'cases'), where('clientUid', '==', user.uid)));
+      unread = cases.docs.some((d) => d.data().lastMessage?.role === 'admin');
+      if (!unread) {
+        const sub = await getDoc(doc(db, 'subscriptions', user.uid));
+        unread = sub.exists() && sub.data().lastMessage?.role === 'admin';
+      }
+    }
+  } catch { /* no badge on error */ }
+  if (!unread) return;
+  const link = admin
+    ? document.querySelector('.tabs a[href="/admin-chats.html"]')
+    : document.querySelector('[data-nav-chat]');
+  if (link && !link.querySelector('.diamond')) {
+    link.insertAdjacentHTML('beforeend', ' <span class="diamond" title="Unread messages">◆</span>');
   }
 }

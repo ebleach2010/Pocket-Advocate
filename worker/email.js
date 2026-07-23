@@ -19,7 +19,9 @@ export function signinCodeEmail(code, baseUrl) {
     <p style="font-size:34px; font-weight:800; letter-spacing:8px; text-align:center;
        background:#f5f7fa; border-radius:10px; padding:16px 0; margin:0 0 6px;">${code}</p>
     <p style="margin:0 0 4px; color:#888; font-size:13px;">Didn't request this? You can ignore this email.</p>
-    ${homeScreenTips(baseUrl)}
+    <div style="background:#f5f7fa; border-radius:10px; padding:12px 14px; margin-top:18px;">
+      <p style="margin:0;">⭐ <strong>First time?</strong> When you open Pocket Advocate, it'll walk you through a quick two-step setup — adding it to your Home Screen and turning on notifications — so you never miss a message, document, or update. <span style="color:#666;">(On iPhone: Share ⬆️ → Add to Home Screen.)</span></p>
+    </div>
   </div>`;
 }
 

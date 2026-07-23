@@ -9,26 +9,30 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
 <meta name="theme-color" content="#07090F">
-<title>Chats — Pocket Advocate admin</title>
 <!-- Chat is deliberately dark — its own focused space, separate from the rest. -->
+<title>Chat — Pocket Advocate</title>
 <link rel="stylesheet" href="/css/site.css?v=stat9">
 </head>
-<body>
+<body class="chat-page">
 <header class="bar">
   <div class="bar-inner">
     <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
     <nav class="tabs">
-      <a href="/admin.html">Clients</a>
-      <a href="/admin-calendar.html">Calendar</a>
-      <a href="/admin-chats.html" class="active">Chats</a>
-      <a href="/admin-availability.html">Availability</a>
+      <a href="/">Book</a>
+      <a href="/about.html">About</a>
+      <a href="/reviews.html">Reviews</a>
       <span data-nav-auth></span>
     </nav>
   </div>
 </header>
 <main>
-  <div id="page"><p class="dim">Loading…</p></div>
+  <div class="row">
+    <h1 style="margin:0;">Chat with Eric</h1>
+    <span><span class="p-dot"></span><span class="p-label">Checking…</span></span>
+  </div>
+  <div id="switcher" class="case-picker" hidden></div>
+  <div id="chat" class="panel" style="margin-top:.8rem;"><p class="dim small">Loading…</p></div>
 </main>
-<script type="module" src="/js/admin-chats.js"></script>
+<script type="module" src="/js/chat-page.js"></script>
 </body>
 </html>

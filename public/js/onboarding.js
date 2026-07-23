@@ -1,52 +1,111 @@
-// First-run setup guide for clients. The two things that make Pocket Advocate
-// work like a real app — installing to the Home Screen and turning on
-// notifications — are shown as a clear, in-app step-by-step, adapting to where
-// the person actually is. Once both are done it disappears for good.
-import { initPushPrompt } from './push.js';
+// A gentle first-run intro. New clients tap through a couple of soft welcome
+// cards — set up the app, turn on notifications — and land on their dashboard.
+// Shows once per device; after that, a small reminder appears only if setup
+// isn't finished yet.
+import { enablePush, pushInstalled, pushSupported } from './push.js';
 
-function isStandalone() {
-  return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    window.navigator.standalone === true
-  );
-}
-function isIOS() {
-  return /iphone|ipad|ipod/i.test(navigator.userAgent);
-}
-function notificationsOn() {
-  return 'Notification' in window && Notification.permission === 'granted';
-}
+const DONE_KEY = 'pa-intro-done';
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+const notifOn = () => 'Notification' in window && Notification.permission === 'granted';
 
-/** Render the setup guide into `mount` (top of the page). No-ops when done. */
 export function initSetupGuide(user, mount) {
   if (!mount || !user) return;
+  const fullySet = pushInstalled() && notifOn();
 
-  // Fully set up (installed + notifications on): nothing to show.
-  if (isStandalone() && notificationsOn()) return;
-
-  // Installed already → the only step left is notifications; use the prompt.
-  if (isStandalone()) {
-    initPushPrompt(user, mount).catch(() => {});
+  if (localStorage.getItem(DONE_KEY)) {
+    if (!fullySet) reminder(user, mount);
     return;
   }
+  runIntro(user, mount, fullySet);
+}
 
-  // Still in the browser → guide them to install first (that unlocks
-  // notifications, offline access, and a one-tap icon).
-  const steps = isIOS()
-    ? `<li>Tap the <strong>Share</strong> button <span style="font-size:1.1em;">⬆️</span> at the bottom of Safari</li>
-       <li>Scroll down and tap <strong>Add to Home Screen</strong></li>
-       <li>Tap <strong>Add</strong>, then open Pocket Advocate from the new icon</li>`
-    : `<li>Tap the <strong>⋮</strong> menu at the top right of Chrome</li>
-       <li>Tap <strong>Add to Home screen</strong> (or <strong>Install app</strong>)</li>
-       <li>Confirm, then open Pocket Advocate from the new icon</li>`;
+function finish() {
+  localStorage.setItem(DONE_KEY, '1');
+  document.getElementById('pa-intro')?.remove();
+}
 
+function runIntro(user, mount, fullySet) {
+  const steps = [
+    {
+      title: 'Welcome to Pocket Advocate 👋',
+      body: `<p>You're in. This is your private space — your case, your documents, and a direct line to Eric. Just a couple of quick things to set up first.</p>`,
+      cta: 'Get started',
+    },
+  ];
+
+  if (!pushInstalled()) {
+    steps.push({
+      title: 'Keep it one tap away',
+      body: isIOS()
+        ? `<p>Add Pocket Advocate to your Home Screen so it opens like an app and you stay signed in:</p>
+           <ol class="intro-steps"><li>Tap the <strong>Share</strong> button ⬆️ at the bottom of Safari</li>
+           <li>Scroll down, tap <strong>Add to Home Screen</strong></li>
+           <li>Tap <strong>Add</strong> — then open Pocket Advocate from the new icon</li></ol>
+           <p class="dim small">This is also how notifications work on iPhone.</p>`
+        : `<p>Add Pocket Advocate to your Home Screen so it opens like an app:</p>
+           <ol class="intro-steps"><li>Tap the <strong>⋮</strong> menu in Chrome</li>
+           <li>Tap <strong>Add to Home screen</strong></li>
+           <li>Confirm — then open it from the new icon</li></ol>`,
+      cta: 'Done — take me in',
+    });
+  } else if (!notifOn()) {
+    steps.push({
+      title: 'Turn on notifications',
+      body: `<p>Get a gentle alert when there's a new message, document, or update — so you never have to keep checking back. No message content is ever shown.</p>`,
+      cta: 'Turn on notifications',
+      action: async (btn) => {
+        btn.disabled = true;
+        const r = await enablePush(user);
+        if (!r.ok && pushSupported()) alert(r.error);
+        btn.disabled = false;
+      },
+    });
+  }
+
+  let i = 0;
+  const overlay = document.createElement('div');
+  overlay.id = 'pa-intro';
+  overlay.className = 'intro-overlay';
+  document.body.appendChild(overlay);
+
+  const paint = () => {
+    const s = steps[i];
+    const last = i === steps.length - 1;
+    overlay.innerHTML = `
+      <div class="intro-card">
+        <div class="intro-dots">${steps.map((_, k) => `<span class="${k === i ? 'on' : ''}"></span>`).join('')}</div>
+        <h2>${s.title}</h2>
+        ${s.body}
+        <div class="intro-actions">
+          ${last ? '' : '<button class="btn quiet" data-skip>Skip</button>'}
+          <button class="btn" data-next>${last ? 'Enter my dashboard →' : s.cta || 'Next'}</button>
+        </div>
+      </div>`;
+    overlay.querySelector('[data-skip]')?.addEventListener('click', finish);
+    overlay.querySelector('[data-next]').addEventListener('click', async (e) => {
+      if (s.action) await s.action(e.target);
+      if (i < steps.length - 1) { i += 1; paint(); } else finish();
+    });
+  };
+  paint();
+}
+
+// Small, non-blocking nudge shown after the intro if setup is still incomplete.
+function reminder(user, mount) {
   const card = document.createElement('div');
   card.className = 'panel setup-guide';
-  card.innerHTML = `
-    <h3 style="margin:0 0 .3rem;">Set up Pocket Advocate</h3>
-    <p class="dim small" style="margin:0 0 .6rem;">Two quick steps so you never miss a message, document, or update — this is how you get notifications on your phone.</p>
-    <p style="margin:0 0 .2rem;"><strong>Step 1 — Add it to your Home Screen</strong></p>
-    <ol style="margin:.2rem 0 .6rem 1.1rem; padding:0; line-height:1.5;">${steps}</ol>
-    <p class="dim small" style="margin:0;"><strong>Step 2 —</strong> Open it from that icon and tap <strong>Turn on notifications</strong>. That's it.</p>`;
+  if (!pushInstalled()) {
+    card.innerHTML = `<p style="margin:0;"><strong>Finish setup:</strong> add Pocket Advocate to your Home Screen
+      ${isIOS() ? '(Share ⬆️ → Add to Home Screen)' : '(⋮ menu → Add to Home screen)'} to get notifications.</p>`;
+  } else {
+    card.innerHTML = `<p style="margin:0 0 .5rem;"><strong>Turn on notifications</strong> so you don't miss a reply.</p>
+      <button class="btn" data-on>Turn on notifications</button>`;
+    card.querySelector('[data-on]').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      const r = await enablePush(user);
+      if (r.ok) card.innerHTML = '<p class="dim" style="margin:0;">Notifications are on. ✓</p>';
+      else { e.target.disabled = false; alert(r.error); }
+    });
+  }
   mount.prepend(card);
 }

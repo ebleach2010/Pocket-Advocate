@@ -14,6 +14,7 @@
   --green: #3EE08A;
   --blue: #6C9EFF;
   --danger: #FF6B6B;
+  --gold: #FFCC55;
   --glow-c: 0 0 18px rgba(45, 226, 255, .35);
   --glow-m: 0 0 18px rgba(255, 79, 216, .30);
   --glow-g: 0 0 16px rgba(62, 224, 138, .30);
@@ -94,6 +95,35 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
 
 /* Setup guide + notifications prompt stand out from ordinary panels. */
 .setup-guide, .push-prompt { border-color: var(--cyan); box-shadow: var(--glow-c); }
+
+/* Glowing golden diamond — unread-chat marker on the Chat tab. */
+.diamond {
+  color: var(--gold); font-size: .72em; vertical-align: middle; margin-left: .1rem;
+  text-shadow: 0 0 6px rgba(255,204,85,.9), 0 0 12px rgba(255,204,85,.5);
+  animation: diamond-pulse 1.8s ease-in-out infinite;
+}
+@keyframes diamond-pulse {
+  0%, 100% { opacity: .7; }
+  50% { opacity: 1; text-shadow: 0 0 11px rgba(255,204,85,1), 0 0 20px rgba(255,204,85,.7); }
+}
+
+/* Gentle first-run intro overlay. */
+.intro-overlay {
+  position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+  padding: 1.2rem; background: rgba(4,6,10,.8); backdrop-filter: blur(6px);
+}
+.intro-card {
+  background: var(--panel); border: 1px solid var(--cyan); box-shadow: var(--glow-c);
+  border-radius: 16px; padding: 1.3rem 1.2rem; max-width: 26rem; width: 100%;
+}
+.intro-card h2 { margin: 0 0 .5rem; }
+.intro-card p { color: var(--soft); }
+.intro-steps { margin: .5rem 0 .6rem 1.1rem; padding: 0; line-height: 1.6; }
+.intro-steps li { margin-bottom: .3rem; }
+.intro-actions { display: flex; gap: .6rem; justify-content: flex-end; margin-top: 1.1rem; }
+.intro-dots { display: flex; gap: .35rem; margin-bottom: .7rem; }
+.intro-dots span { width: .5rem; height: .5rem; border-radius: 50%; background: var(--line); }
+.intro-dots span.on { background: var(--cyan); box-shadow: var(--glow-c); }
 
 /* surfaces */
 .card, .panel {
