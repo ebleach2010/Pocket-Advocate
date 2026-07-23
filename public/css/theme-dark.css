@@ -1,0 +1,39 @@
+/* DARK THEME — a calm, neutral dark mode (no neon glow). Loaded after site.css
+   and overrides its tokens + the neon-specific component treatments. */
+:root {
+  --bg: #14161B; --panel: #1D2027; --panel-2: #232732;
+  --ink: #E7E9ED; --dim: #9AA0AB; --soft: #C2C7CF; --line: #2C313B;
+  --cyan: #7FB5D6; --cyan-dim: #5E8BA6; --magenta: #E0A98A;
+  --green: #86C199; --blue: #8FA8D8; --danger: #E77E72;
+  --glow-c: 0 2px 10px rgba(0,0,0,.45); --glow-m: 0 2px 10px rgba(0,0,0,.45);
+  --glow-g: 0 2px 10px rgba(0,0,0,.45); --glow-b: 0 2px 10px rgba(0,0,0,.45);
+}
+header.bar { background: rgba(20,22,27,.92); }
+.tabs a, .tabs a.active { color: var(--ink); }
+.tabs a.active { border-color: var(--cyan); box-shadow: none; }
+body { background-image: none; }
+.btn { color: #0E1116; background: var(--cyan); border-color: var(--cyan); box-shadow: none; }
+.btn.mag { background: var(--magenta); border-color: var(--magenta); color: #1B0E06; box-shadow: none; }
+.btn.secondary, .btn.ghost { color: var(--cyan); border-color: var(--line); background: transparent; }
+.brand .spark, .hero-eyebrow { text-shadow: none; }
+.pack.rec-c { border-color: var(--cyan); box-shadow: 0 4px 16px rgba(0,0,0,.5); animation: none; }
+.pack.rec-c .price { color: var(--cyan); }
+.pack.rec-m { border-color: var(--magenta); box-shadow: 0 4px 16px rgba(0,0,0,.5); animation: none; }
+.pack.rec-m .price { color: var(--magenta); }
+.tag.c { color: var(--green); border-color: var(--green); background: transparent; box-shadow: none; }
+.tag.m { color: var(--magenta); border-color: var(--magenta); background: transparent; box-shadow: none; }
+.title-rule {
+  background: linear-gradient(90deg, rgba(127,181,214,0) 0%, rgba(127,181,214,.6) 25%,
+    rgba(127,181,214,.85) 50%, rgba(127,181,214,.6) 75%, rgba(127,181,214,0) 100%);
+  box-shadow: none;
+}
+.tabs a.active, .crumbs li.now, .slot.selected, .choice.selected, .chip-label.selected,
+.subtabs button.active, .timeline li.done .t-dot, .timeline li.now .t-dot,
+.cal-cell.today, .p-dot.on, .status-pill, .status-pill.due { box-shadow: none; }
+.cal-mark.booked { background: var(--cyan); color: #0E1116; box-shadow: none; }
+.cal-mark.open { background: var(--green); color: #0E1116; box-shadow: none; }
+.cal-mark.held { background: var(--magenta); color: #1B0E06; box-shadow: none; }
+.cal-key.booked { background: var(--cyan); box-shadow: none; }
+.cal-key.open { background: var(--green); box-shadow: none; }
+.cal-key.held { background: var(--magenta); box-shadow: none; }
+.msg.me { background: #2A3340; color: #E7E9ED; border-color: var(--cyan-dim); }

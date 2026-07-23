@@ -126,6 +126,7 @@ export async function hydrateNav() {
       location.href = '/';
     });
     markUnread(user, admin).catch(() => {});
+    import('./settings.js').then((m) => m.initSettings(user)).catch(() => {});
   } else {
     el.innerHTML = `<a href="/signin.html">Sign in</a>`;
   }

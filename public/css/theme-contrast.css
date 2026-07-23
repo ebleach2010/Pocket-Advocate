@@ -1,0 +1,41 @@
+/* HIGH-CONTRAST THEME — for low vision. Maximum contrast, larger + bolder
+   type, thicker borders, strong focus rings. Loaded after site.css. */
+:root {
+  --bg: #000; --panel: #000; --panel-2: #101010;
+  --ink: #FFF; --dim: #EDEDED; --soft: #FFF; --line: #FFF;
+  --cyan: #FFD400; --cyan-dim: #FFE873; --magenta: #5CE1FF;
+  --green: #6EF08A; --blue: #9CC3FF; --danger: #FF7A6E;
+  --glow-c: none; --glow-m: none; --glow-g: none; --glow-b: none;
+}
+html, body { font-size: 18.5px; }
+body { background-image: none; }
+p, .dim, .small { color: var(--ink) !important; }
+.muted { color: var(--dim) !important; }
+header.bar { background: #000; border-bottom-width: 2px; }
+.tabs a { color: #FFF; border-width: 2px; }
+.tabs a.active { color: var(--cyan); border-color: var(--cyan); box-shadow: none; }
+.panel, .card { border-width: 2px; }
+.btn { color: #000; background: var(--cyan); border-color: var(--cyan); border-width: 2px; box-shadow: none; font-weight: 800; }
+.btn.mag { background: var(--magenta); border-color: var(--magenta); color: #000; }
+.btn.secondary, .btn.ghost { color: var(--cyan); border-color: var(--cyan); background: transparent; }
+.brand .spark, .hero-eyebrow { text-shadow: none; color: var(--cyan); }
+.pack { border-width: 2px; }
+.pack.rec-c, .pack.rec-m { border-color: var(--cyan); box-shadow: none; animation: none; }
+.pack.rec-c .price, .pack.rec-m .price { color: var(--cyan); }
+.tag { border-width: 2px; }
+.tag.c, .tag.m { color: #000; background: var(--cyan); border-color: var(--cyan); box-shadow: none; }
+.title-rule { background: var(--cyan); box-shadow: none; height: 3px; }
+.status-pill { border-width: 2px; box-shadow: none; }
+.timeline li .t-dot { border-width: 3px; }
+.timeline li.done .t-dot, .timeline li.now .t-dot { background: var(--cyan); border-color: var(--cyan); box-shadow: none; }
+.subtabs button.active { color: var(--cyan); border-bottom-color: var(--cyan); box-shadow: none; }
+.cal-mark.booked, .cal-mark.open, .cal-mark.held { color: #000; box-shadow: none; }
+.cal-mark.booked { background: var(--cyan); }
+.cal-mark.open { background: var(--green); }
+.cal-mark.held { background: var(--magenta); }
+.msg.me { background: #003A46; color: #FFF; border: 2px solid var(--magenta); }
+.msg.them { border: 2px solid #FFF; }
+a { color: var(--magenta); }
+a:focus-visible, button:focus-visible, input:focus-visible, .btn:focus-visible {
+  outline: 3px solid var(--cyan); outline-offset: 2px;
+}

@@ -107,6 +107,38 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
   50% { opacity: 1; text-shadow: 0 0 11px rgba(255,204,85,1), 0 0 20px rgba(255,204,85,.7); }
 }
 
+/* Settings cog + panel. */
+.cog-btn {
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+  width: 1.9rem; height: 1.9rem; min-width: 1.9rem; border-radius: 50%; font-size: 1rem;
+  display: grid; place-items: center; cursor: pointer; padding: 0; flex-shrink: 0;
+}
+.settings-overlay {
+  position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center;
+  padding: 3.5rem 1.1rem 1.1rem; background: rgba(4,6,10,.6); backdrop-filter: blur(4px);
+}
+.settings-card {
+  background: var(--panel); border: 1px solid var(--cyan); box-shadow: var(--glow-c);
+  border-radius: 16px; padding: 1.1rem 1.2rem; max-width: 26rem; width: 100%;
+}
+.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .6rem; }
+.switch {
+  width: 2.7rem; height: 1.55rem; min-width: 2.7rem; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--line); position: relative; cursor: pointer; padding: 0; transition: background .15s;
+}
+.switch::after {
+  content: ""; position: absolute; top: .17rem; left: .2rem; width: 1.15rem; height: 1.15rem;
+  border-radius: 50%; background: var(--panel); transition: left .15s;
+}
+.switch.on { background: var(--cyan); box-shadow: var(--glow-c); }
+.switch.on::after { left: calc(100% - 1.35rem); background: var(--panel); }
+.seg { display: flex; flex-wrap: wrap; gap: .45rem; }
+.seg button {
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+  border-radius: 999px; padding: .42rem .85rem; font-weight: 600; font-size: .85rem; cursor: pointer;
+}
+.seg button.on { border-color: var(--cyan); color: var(--cyan); box-shadow: var(--glow-c); }
+
 /* Gentle first-run intro overlay. */
 .intro-overlay {
   position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
