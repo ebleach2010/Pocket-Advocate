@@ -264,6 +264,7 @@ async function handlePortal(request, env) {
   const session = await stripePost(env, '/billing_portal/sessions', {
     customer: sub.data.stripeCustomerId,
     return_url: `${env.PUBLIC_BASE_URL}/subscription.html`,
+    ...(env.STRIPE_PORTAL_CONFIG ? { configuration: env.STRIPE_PORTAL_CONFIG } : {}),
   });
   return json({ url: session.url });
 }

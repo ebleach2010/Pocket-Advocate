@@ -29,7 +29,9 @@
     "ADMIN_UID": "xnQf5en2BcMStjMmzQDBv33WJIv2",
     // Native Web Push (RFC 8292 VAPID). Public applicationServerKey + contact.
     "VAPID_PUBLIC_KEY": "BEYXJvRQkNcn01FzAP3_zx0suQlmh_rEjBxIYDtT2oCrtP2hunlAqV47PkjoCS1aiPb4lszik8df64o0HwFSNQ4",
-    "VAPID_SUBJECT": "mailto:pocketadvocate.eric@gmail.com"
+    "VAPID_SUBJECT": "mailto:pocketadvocate.eric@gmail.com",
+    // Live Stripe customer-portal configuration (cancel at period end).
+    "STRIPE_PORTAL_CONFIG": "bpc_1TwFooCd0S5yK0YTvc5gYsPQ"
   }
   // Secrets (never in this file — `wrangler secret put NAME`, or .dev.vars locally):
   //   STRIPE_SECRET_KEY          sk_live_... / sk_test_...
