@@ -1,8 +1,8 @@
-// The book-and-pay wizard (SPEC §C/§D): waivers 1–3 (one per screen,
-// scroll-to-end + explicit acknowledge) → public/private election (its own
-// screen, private pre-selected) → slot picker (Mountain + local time) →
-// meeting method (Discord badged Preferred) → review, optional $50 add-on,
-// Stripe Checkout. The Worker re-validates everything; this UI is not trusted.
+// The book-and-pay wizard: waivers 1–3 (one per screen, scroll-to-end +
+// explicit acknowledge) → slot picker (client-local + Mountain time) →
+// meeting method (phone recommended, or Zoom) → review, optional $50 add-on,
+// Stripe Checkout. Every session is private. The Worker re-validates
+// everything; this UI is not trusted.
 
 import { db, collection, getDocs, query, where } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
