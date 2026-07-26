@@ -423,8 +423,8 @@
   <ol class="steps-list">
     <li><strong>Sign in with your email</strong>No passwords. A link lands in your inbox, you tap it, you're in.</li>
     <li><strong>Three short reads</strong>The disclaimer, the privacy terms, and recording consent — one screen each, so you know exactly what you're buying and exactly who sees your data (you and Eric; that's the list).</li>
-    <li><strong>Your call: public or private</strong>Private is the default. Or let your session stream live on the TheBroScientist YouTube channel so other patients can learn from it — your files stay private either way, and you can flip back to private any time before the broadcast starts.</li>
-    <li><strong>Pick a time, pick a channel, pay</strong>Slots run 8am–6pm MST, at least 72 hours out. Discord, Zoom, or a phone call. $100 through Stripe — the slot is only yours when the payment lands, and the case file opens itself the moment it does.</li>
+    <li><strong>Always private</strong>Every session is just you and Eric. It's recorded only so the recording lives in your private case file for you to keep — never shared, never public.</li>
+    <li><strong>Pick a time, pick how you talk, pay</strong>Slots run 8am–6pm MST, at least 72 hours out. A phone call (simplest) or a Zoom meeting. $100 through Stripe — the slot is only yours when the payment lands, and the case file opens itself the moment it does.</li>
     <li><strong>Load your ammunition</strong>Labs, imaging, records — upload anything you want Eric to see before the call.</li>
     <li><strong>Live chat while your case is open</strong>From the moment your case opens, you have a direct chat line with Eric — questions, updates, new documents, anything. It stays open through your call and your report.</li>
     <li><strong>The discussion</strong>A real conversation about your symptoms, your history, your dead ends. Recorded, and the recording is yours.</li>
@@ -492,7 +492,7 @@
 
 <!-- ================= WAIVER 1 ================= -->
 <section id="s-w1">
-  <ol class="crumbs"><li class="now">TERMS</li><li>PRIVACY</li><li>RECORDING</li><li>PUBLIC?</li><li>TIME</li><li>CHANNEL</li><li>PAY</li></ol>
+  <ol class="crumbs"><li class="now">TERMS</li><li>PRIVACY</li><li>RECORDING</li><li>PRIVATE</li><li>TIME</li><li>CHANNEL</li><li>PAY</li></ol>
   <h2>The unskippable part, 1 of 3</h2>
   <p class="dim small">Know exactly what you're buying. In the real app this button stays locked until you've scrolled the whole document.</p>
   <div class="reader">
@@ -514,7 +514,7 @@
 
 <!-- ================= WAIVER 2 ================= -->
 <section id="s-w2">
-  <ol class="crumbs"><li class="done">TERMS</li><li class="now">PRIVACY</li><li>RECORDING</li><li>PUBLIC?</li><li>TIME</li><li>CHANNEL</li><li>PAY</li></ol>
+  <ol class="crumbs"><li class="done">TERMS</li><li class="now">PRIVACY</li><li>RECORDING</li><li>PRIVATE</li><li>TIME</li><li>CHANNEL</li><li>PAY</li></ol>
   <h2>The unskippable part, 2 of 3</h2>
   <div class="reader">
     <h3>What we store</h3>
@@ -522,7 +522,7 @@
     <h3>Where it lives</h3>
     <p>Google Firebase (United States region), encrypted in transit and at rest. Payments run through Stripe — your card details never touch this application.</p>
     <h3>Who can see it</h3>
-    <p>Two people: <strong>you</strong> and <strong>Eric</strong>. That's the entire list, enforced by security rules on every document and file. If you elect a public session, the live discussion itself is broadcast — your uploads and case file are never public.</p>
+    <p>Two people: <strong>you</strong> and <strong>Eric</strong>. That's the entire list, enforced by security rules on every document and file. Your discussion, your uploads, and your case file are always private.</p>
     <h3>Retention &amp; deletion</h3>
     <p>Your case file stays available to you indefinitely after your case closes. Request deletion of your account and all data any time; honored within 30 days.</p>
     <h3>Breach notification</h3>
@@ -537,15 +537,15 @@
 
 <!-- ================= WAIVER 3 ================= -->
 <section id="s-w3">
-  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="now">RECORDING</li><li>PUBLIC?</li><li>TIME</li><li>CHANNEL</li><li>PAY</li></ol>
+  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="now">RECORDING</li><li>PRIVATE</li><li>TIME</li><li>CHANNEL</li><li>PAY</li></ol>
   <h2>The unskippable part, 3 of 3</h2>
   <div class="reader">
     <h3>Your discussion is recorded</h3>
     <p>Every case discussion is recorded so the recording can live in your private case file — yours to revisit, download, and keep.</p>
     <h3>What you're consenting to</h3>
-    <p>Written consent for your advocate to record the audio and video of your discussion — Discord, Zoom, or phone. Collected from every participant before recording begins, which satisfies all-party consent laws (California, Washington, Florida, and others).</p>
+    <p>Written consent for your advocate to record the audio and video of your discussion — Zoom or phone. Collected from every participant before recording begins, which satisfies all-party consent laws (California, Washington, Florida, and others).</p>
     <h3>Where the recording goes</h3>
-    <p>Into your case file, visible only to you and Eric — unless you separately and explicitly choose a public session on the next screen. A public choice can be revoked any time before the broadcast starts.</p>  </div>
+    <p>Into your private case file, visible only to you and Eric. It is never shared or made public.</p>  </div>
   <input type="checkbox" class="vh ackbox" id="ack3">
   <label class="readbox" for="ack3"><span class="box"></span>Read it, end to end</label>
   <div class="actions">
@@ -556,18 +556,11 @@
 
 <!-- ================= ELECTION ================= -->
 <section id="s-elect">
-  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="done">RECORDING</li><li class="now">PUBLIC?</li><li>TIME</li><li>CHANNEL</li><li>PAY</li></ol>
-  <h2>Your session, your call</h2>
-  <blockquote class="quote">"Other patients gain insight into their medical journey when live discussion of cases are presented. However, this is entirely optional depending on your privacy preferences."</blockquote>
-  <input type="radio" class="vh" name="election" id="e-private" checked>
-  <label class="choice" for="e-private">
-    <strong>Private</strong> <span class="dim small">— the default</span><br>
-    <span class="dim small">Just you and Eric. The recording lives in your file and nowhere else. Same price, every benefit.</span>
-  </label>
-  <input type="radio" class="vh" name="election" id="e-public">
-  <label class="choice" for="e-public">
-    <strong>Public</strong> <span class="dim small">— pay it forward</span><br>
-    <span class="dim small">Your session streams live on the TheBroScientist YouTube channel so other patients can learn from it. Change your mind any time before the broadcast starts — one tap.</span>
+  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="done">RECORDING</li><li class="now">PRIVATE</li><li>TIME</li><li>CHANNEL</li><li>PAY</li></ol>
+  <h2>Your session is private</h2>
+  <label class="choice">
+    <strong>Just you and Eric.</strong><br>
+    <span class="dim small">Every discussion is completely private. It's recorded only so the recording lives in your own case file for you to keep — it is never shared, streamed, or made public.</span>
   </label>
   <div class="actions">
     <label class="btn mute" for="scr-w3" tabindex="0">Back</label>
@@ -577,7 +570,7 @@
 
 <!-- ================= SCHEDULE ================= -->
 <section id="s-sched">
-  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="done">RECORDING</li><li class="done">PUBLIC?</li><li class="now">TIME</li><li>CHANNEL</li><li>PAY</li></ol>
+  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="done">RECORDING</li><li class="done">PRIVATE</li><li class="now">TIME</li><li>CHANNEL</li><li>PAY</li></ol>
   <h2>Pick your slot</h2>
   <p class="dim small">All times MST — fixed UTC-7, year-round. Live app shows your local time under each slot, only offers times 72+ hours out, and re-checks everything server-side at payment. Example week:</p>
   <div class="day"><h3>Mon · Jul 20</h3><div class="slots">
@@ -602,15 +595,13 @@
 
 <!-- ================= METHOD ================= -->
 <section id="s-method">
-  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="done">RECORDING</li><li class="done">PUBLIC?</li><li class="done">TIME</li><li class="now">CHANNEL</li><li>PAY</li></ol>
+  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="done">RECORDING</li><li class="done">PRIVATE</li><li class="done">TIME</li><li class="now">CHANNEL</li><li>PAY</li></ol>
   <h2>Where do we talk?</h2>
-  <input type="radio" class="vh" name="method" id="m-discord" checked>
-  <label class="chip" for="m-discord">Discord <span class="pref">PREFERRED</span></label>
+  <input type="radio" class="vh" name="method" id="m-phone" checked>
+  <label class="chip" for="m-phone">Phone call <span class="pref">RECOMMENDED</span></label>
   <input type="radio" class="vh" name="method" id="m-zoom">
   <label class="chip" for="m-zoom">Zoom</label>
-  <input type="radio" class="vh" name="method" id="m-phone">
-  <label class="chip" for="m-phone">Phone</label>
-  <p class="dim small">Discord wins because you can stream your camera, your screen, whatever helps. Your case page shows the join link (or the number to expect) before the call.</p>
+  <p class="dim small">A phone call is the simplest — no apps, no setup. Prefer to see each other? Choose Zoom. Your case page shows the number to expect or the join link before the call.</p>
   <div class="phone-row">
     <label class="field-label" for="phone">Your number — Eric calls you</label>
     <input type="tel" id="phone" placeholder="+1 555 555 5555">
@@ -623,13 +614,13 @@
 
 <!-- ================= REVIEW & PAY ================= -->
 <section id="s-review">
-  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="done">RECORDING</li><li class="done">PUBLIC?</li><li class="done">TIME</li><li class="done">CHANNEL</li><li class="now">PAY</li></ol>
+  <ol class="crumbs"><li class="done">TERMS</li><li class="done">PRIVACY</li><li class="done">RECORDING</li><li class="done">PRIVATE</li><li class="done">TIME</li><li class="done">CHANNEL</li><li class="now">PAY</li></ol>
   <h2>Lock it in</h2>
   <div class="panel" style="margin-bottom:.8rem;">
     <div style="display:flex; justify-content:space-between; align-items:baseline; gap:1rem;">
       <h3 style="margin:0;">Advocacy Case</h3><span class="mono" style="color:var(--cyan); font-weight:700;">$100</span>
     </div>
-    <p class="dim small" style="margin:.3rem 0 0;">Tue Jul 21 · 1:00 PM MST · Discord · Private</p>
+    <p class="dim small" style="margin:.3rem 0 0;">Tue Jul 21 · 1:00 PM MST · Phone · Private</p>
   </div>
   <input type="checkbox" class="vh" id="addon">
   <label class="choice" for="addon">
@@ -684,7 +675,7 @@
 
   <div class="panel tabp" id="tp-prog">
     <p style="margin:0 0 .2rem;"><strong>Tue Jul 21 · 1:00 PM MST</strong> <span class="dim small">(3:00 PM your time)</span></p>
-    <p class="dim small">Discord voice channel — your join link appears here before the call.</p>
+    <p class="dim small">Phone — Eric calls you at the number you gave, at your appointment time.</p>
     <ul class="timeline">
       <li class="done"><span class="t-dot"></span>Paid</li>
       <li class="done"><span class="t-dot"></span>Forms acknowledged</li>
@@ -736,7 +727,7 @@
     <h1 style="margin:0;">Jordan Mills</h1>
     <span class="mono small" style="color:var(--cyan);">CONFIRMED</span>
   </div>
-  <p class="dim small" style="margin:.2rem 0 0;">jordan.m@example.com · Private session · Discord · paid $150 (incl. follow-up add-on)</p>
+  <p class="dim small" style="margin:.2rem 0 0;">jordan.m@example.com · Private session · Phone · paid $150 (incl. follow-up add-on)</p>
 
   <input type="radio" class="vh" name="atab" id="at-over" checked>
   <input type="radio" class="vh" name="atab" id="at-chat">
@@ -749,7 +740,7 @@
 
   <div class="panel tabp" id="ap-over">
     <p style="margin:0 0 .2rem;"><strong>Tue Jul 21 · 1:00 PM MST</strong> <span class="dim small">— in 9 days</span></p>
-    <p class="dim small">Join link (Discord): <span class="mono" style="color:var(--cyan);">discord.gg/pa-jordan</span> — the client sees it on their case page.</p>
+    <p class="dim small">Calling from: <span class="mono" style="color:var(--cyan);">+1 (208) 670-8608</span> — the client sees this on their case page.</p>
     <ul class="timeline">
       <li class="done"><span class="t-dot"></span>Paid &amp; forms acknowledged — Jul 12</li>
       <li class="done"><span class="t-dot"></span>Client uploaded 2 files — Jul 18</li>
