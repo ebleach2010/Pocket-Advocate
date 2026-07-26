@@ -28,8 +28,8 @@ const FOLLOWUP_EXPIRY_DAYS = 30;
 const FOLLOWUP_WARN_DAYS = 7;
 // Admin-priced sessions: percentage of the $100 case rate, 25% steps.
 const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
-const METHODS = ['discord', 'zoom', 'phone'];
-const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording', 'election'];
+const METHODS = ['zoom', 'phone'];
+const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording'];
 // A chat message this old with no in-app read gets an email nudge (spec: batched).
 const DIGEST_MIN_AGE_MS = 10 * 60_000;
 
@@ -95,8 +95,6 @@ async function handleCheckout(request, env) {
   if (!METHODS.includes(method)) return json({ error: 'Choose a meeting method.' }, 400);
   if (method === 'phone' && !/^\+?[\d\s().-]{7,20}$/.test(phone || ''))
     return json({ error: 'A valid phone number is required for a phone call.' }, 400);
-  if (election !== 'private' && election !== 'public')
-    return json({ error: 'Choose public or private.' }, 400);
   for (const form of REQUIRED_ACKS)
     if (!acks || typeof acks[form] !== 'number')
       return json({ error: 'All acknowledgment forms must be completed first.' }, 400);
@@ -455,11 +453,7 @@ async function createCaseFromSession(env, session) {
         phone: m.phone || null,
         joinLink: null,
       },
-      publicElection: {
-        choice: m.election === 'public' ? 'public' : 'private',
-        history: [{ choice: m.election, at: now }],
-        revocableUntil: start,
-      },
+      publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] },
       addOnFollowUp: m.addOnFollowUp === '1',
       forms: Object.fromEntries(
         REQUIRED_ACKS.map((f) => [f, typeof acks[f] === 'number' ? new Date(acks[f]) : null])

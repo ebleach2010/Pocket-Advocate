@@ -59,7 +59,7 @@ function render(el) {
       <h3>Meeting link / phone note</h3>
       <p class="dim small">${c.appointment?.method === 'phone'
         ? `Client expects a call at <strong>${esc(c.appointment.phone || '?')}</strong>. Post the number you'll call from:`
-        : 'Paste the Discord voice-channel or Zoom link the client should join:'}</p>
+        : 'Paste the Zoom link the client should join:'}</p>
       <input type="url" id="joinlink" placeholder="${c.appointment?.method === 'phone' ? 'Calling from +1 …' : 'https://…'}"
         value="${esc(c.appointment?.joinLink || '')}">
       <div class="actions"><button class="btn secondary" id="save-link">Save</button></div>
@@ -264,7 +264,7 @@ function infoBar(c, mtFmt, start, due) {
     row('CLIENT', `${esc(c.clientName || '?')}${c.clientDob ? ` <span class="dim">· DOB ${esc(c.clientDob)}${age !== null ? ` (${age})` : ''}</span>` : ''}${c.clientEmail ? ` <span class="dim">· ${esc(c.clientEmail)}</span>` : ''}`);
   }
   row('CALL', start
-    ? `${fmt.format(start)} MST · ${esc(c.appointment.method)}${c.publicElection?.choice === 'public' ? ' · <span style="color:var(--magenta)">PUBLIC</span>' : ''}`
+    ? `${fmt.format(start)} MST · ${esc(c.appointment.method)}`
     : 'no appointment', start ? null : 'var(--danger)');
 
   const extraCents = Array.isArray(c.extraPayments)

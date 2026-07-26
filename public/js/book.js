@@ -7,7 +7,7 @@
 import { db, collection, getDocs, query, where } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
 import { ensureFullProfile } from './profile.js';
-import { WAIVERS, ELECTION_QUOTE } from './waivers.js';
+import { WAIVERS } from './waivers.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -18,16 +18,15 @@ const MAX_LEAD_MS = 252 * 3600 * 1000;
 
 const state = {
   acks: {}, // formId -> ms timestamp
-  election: 'private',
+  election: 'private', // every session is private
   slot: null, // { id, start: Date, durationMin }
-  method: 'discord',
+  method: 'phone',
   phone: '',
   addOnFollowUp: false,
 };
 
 const STEPS = [
   ...WAIVERS.map((w) => ({ label: w.title.split(' ')[0], render: () => renderWaiver(w) })),
-  { label: 'Public/private', render: renderElection },
   { label: 'Time', render: renderSchedule },
   { label: 'Method', render: renderMethod },
   { label: 'Pay', render: renderReview },
@@ -112,41 +111,6 @@ function renderWaiver(waiver) {
     next();
   });
   el.querySelector('#back')?.addEventListener('click', back);
-}
-
-// ---- Public/private election (form 4, its own screen) ----
-
-function renderElection(preselected = state.election) {
-  const el = mount(`
-    <h2>Public or private?</h2>
-    <blockquote class="consent-quote">"${ELECTION_QUOTE}"</blockquote>
-    <label class="choice ${preselected === 'private' ? 'selected' : ''}" id="c-private">
-      <input type="radio" name="election" value="private" ${preselected === 'private' ? 'checked' : ''}>
-      <strong>Private session</strong><br>
-      <span class="muted small">The discussion happens only between you and Eric. The recording lives only in your case file. Same price, every benefit included.</span>
-    </label>
-    <label class="choice ${preselected === 'public' ? 'selected' : ''}" id="c-public">
-      <input type="radio" name="election" value="public" ${preselected === 'public' ? 'checked' : ''}>
-      <strong>Public session</strong><br>
-      <span class="muted small">The live discussion is broadcast on the TheBroScientist YouTube channel so other patients can learn from it. You can change your mind and make it private any time before the broadcast starts.</span>
-    </label>
-    <p>
-      <button class="btn quiet" id="back">Back</button>
-      <button class="btn" id="continue">Continue</button>
-    </p>`);
-
-  el.querySelectorAll('input[name=election]').forEach((input) =>
-    input.addEventListener('change', () => {
-      el.querySelector('#c-private').classList.toggle('selected', input.value === 'private' && input.checked);
-      el.querySelector('#c-public').classList.toggle('selected', input.value === 'public' && input.checked);
-      state.election = input.value;
-    })
-  );
-  el.querySelector('#continue').addEventListener('click', () => {
-    state.acks.election = Date.now();
-    next();
-  });
-  el.querySelector('#back').addEventListener('click', back);
 }
 
 // ---- Slot picker ----
@@ -244,20 +208,16 @@ function renderMethod() {
   const el = mount(`
     <h2>How should the call happen?</h2>
     <div id="chips">
-      <label class="chip-label ${state.method === 'discord' ? 'selected' : ''}">
-        <input type="radio" name="method" value="discord" hidden ${state.method === 'discord' ? 'checked' : ''}>
-        Discord voice channel <span class="pref-badge">Preferred</span>
+      <label class="chip-label ${state.method === 'phone' ? 'selected' : ''}">
+        <input type="radio" name="method" value="phone" hidden ${state.method === 'phone' ? 'checked' : ''}>
+        Phone call <span class="pref-badge">Recommended</span>
       </label>
       <label class="chip-label ${state.method === 'zoom' ? 'selected' : ''}">
         <input type="radio" name="method" value="zoom" hidden ${state.method === 'zoom' ? 'checked' : ''}>
         Zoom call
       </label>
-      <label class="chip-label ${state.method === 'phone' ? 'selected' : ''}">
-        <input type="radio" name="method" value="phone" hidden ${state.method === 'phone' ? 'checked' : ''}>
-        Phone call
-      </label>
     </div>
-    <p class="muted small">Discord is preferred — you can stream your own camera there, so it works like any video meeting. Your case page will show the join link (or the number to expect) before the call.</p>
+    <p class="muted small">A phone call is the simplest — no apps, no setup, Eric just calls you. Prefer to see each other? Choose Zoom. Your case page shows the number to expect or the join link before the call.</p>
     <div id="phone-row" ${state.method === 'phone' ? '' : 'hidden'}>
       <label for="phone">Your phone number (we'll call you)</label>
       <input type="tel" id="phone" placeholder="+1 555 555 5555" value="${state.phone}">
@@ -302,7 +262,7 @@ function renderReview() {
     timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric',
     hour: 'numeric', minute: '2-digit',
   });
-  const methodLabel = { discord: 'Discord voice channel', zoom: 'Zoom call', phone: `Phone call to ${state.phone}` }[state.method];
+  const methodLabel = { zoom: 'Zoom call', phone: `Phone call to ${state.phone}` }[state.method];
 
   const el = mount(`
     <h2>Lock it in</h2>
@@ -311,7 +271,7 @@ function renderReview() {
       <p class="muted small">
         <strong style="color:var(--ink)">${localLong.format(state.slot.start)}</strong> (your time)<br>
         ${mtFmt.format(state.slot.start)} MST for Eric<br>
-        ${methodLabel} · ${state.election === 'public' ? 'Public session (broadcast live; revocable until the broadcast starts)' : 'Private session'}
+        ${methodLabel} · Private session
       </p>
     </div>
     <label class="choice" id="addon-box">

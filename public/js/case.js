@@ -153,11 +153,8 @@ function renderProgress(el, c) {
   const methodLine = method === 'phone'
     ? `Phone — Eric calls you at <strong>${esc(c.appointment.phone || 'your number')}</strong>`
     : c.appointment?.joinLink
-      ? `${method === 'zoom' ? 'Zoom' : 'Discord'} — <a href="${esc(c.appointment.joinLink)}" rel="noopener">join link</a>`
-      : `${method === 'zoom' ? 'Zoom' : 'Discord'} — your join link appears here before the call`;
-  const election = c.publicElection || { choice: 'private' };
-  const revocable = election.choice === 'public' && !closed &&
-    (!election.revocableUntil || toDate(election.revocableUntil) > new Date());
+      ? `Zoom — <a href="${esc(c.appointment.joinLink)}" rel="noopener">join link</a>`
+      : `Zoom — your join link appears here before the call`;
 
   el.innerHTML = `
     <div class="panel">
@@ -171,9 +168,7 @@ function renderProgress(el, c) {
           <li class="${i + 1 < rank ? 'done' : i + 1 === rank ? (closed ? 'done' : 'now') : ''}">
             <span class="t-dot"></span>${label}</li>`).join('')}
       </ul>
-      <p class="dim small">Session: <strong style="color:${election.choice === 'public' ? 'var(--magenta)' : 'var(--cyan)'};">
-        ${election.choice === 'public' ? 'PUBLIC — streams live on YouTube' : 'PRIVATE'}</strong></p>
-      ${revocable ? `<p><button class="btn ghost" data-private>Make it private</button></p>` : ''}
+      <p class="dim small">Session: <strong style="color:var(--cyan);">PRIVATE</strong> — just you and Eric.</p>
       ${followUpSection(c)}
     </div>`;
 
@@ -181,7 +176,6 @@ function renderProgress(el, c) {
     e.preventDefault();
     downloadIcs(c, start);
   });
-  el.querySelector('[data-private]')?.addEventListener('click', (e) => makePrivate(c.id, e.target));
   return;
 
   /** Second-session state: scheduled follow-up, a pay-to-confirm prompt, or the unused add-on with its deadline. */
@@ -371,24 +365,6 @@ async function uploadFiles(c, el, files) {
 }
 
 // ---- actions ----
-
-async function makePrivate(caseId, btn) {
-  btn.disabled = true;
-  try {
-    const idToken = await user.getIdToken();
-    const res = await fetch('/api/make-private', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-      body: JSON.stringify({ caseId }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Could not update.');
-    boot();
-  } catch (err) {
-    btn.disabled = false;
-    alert(err.message);
-  }
-}
 
 function downloadIcs(c, start) {
   const end = new Date(start.getTime() + (c.appointment.durationMin || 60) * 60_000);
