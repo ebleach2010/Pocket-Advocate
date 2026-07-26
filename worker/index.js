@@ -905,7 +905,7 @@ function followUpExpiry(c) {
  * POST /api/admin/schedule
  * Body: { caseId, slotId, mode: 'reschedule'|'followup'|'charge', pct?, tagline? }
  * Admin scheduling skips the 72h lead and 1.5-week horizon on purpose (Eric
- * arranges these with the client directly); the 8am–6pm window still applies.
+ * arranges these with the client directly); the 8am–8pm window still applies.
  */
 async function handleAdminSchedule(request, env) {
   const admin = await requireAdmin(request, env);

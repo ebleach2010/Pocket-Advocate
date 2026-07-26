@@ -11,7 +11,7 @@ export const LEAD_TIME_HOURS = 72;
 // advertised in the UI — far slots simply don't show, and the server rejects.
 export const MAX_LEAD_TIME_HOURS = 252; // 1.5 weeks
 export const OPEN_HOUR = 8; // 8am MST
-export const CLOSE_HOUR = 18; // 6pm MST
+export const CLOSE_HOUR = 20; // 8pm MST
 export const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Spec asks for a ~15-minute hold; Stripe Checkout sessions cannot expire in
 // less than 30 minutes, so the hold matches the session's real lifetime.
@@ -29,7 +29,7 @@ export function slotTimingProblem(startIso, durationMin, now = new Date()) {
   return windowProblem(startIso, durationMin);
 }
 
-/** The 8am–6pm MST window check alone — used when the admin opens slots. */
+/** The 8am–8pm MST window check alone — used when the admin opens slots. */
 export function windowProblem(startIso, durationMin) {
   const start = new Date(startIso);
   if (Number.isNaN(start.getTime())) return 'Invalid slot time.';

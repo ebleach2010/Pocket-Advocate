@@ -6,7 +6,7 @@ import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7'; // MST = fixed UTC-7 (IANA sign is inverted)
-const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]; // last 60-min slot ends 6pm
+const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]; // last 60-min slot ends 8pm
 
 hydrateNav();
 const user = await requireAdmin();
