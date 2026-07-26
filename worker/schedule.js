@@ -4,7 +4,7 @@
 // equivalent, but bookable windows never move with the client's timezone.
 // Note: the IANA 'Etc/GMT+7' zone IS UTC-7 (the sign is inverted by design).
 
-export const LEAD_TIME_HOURS = 72;
+export const LEAD_TIME_HOURS = 24;
 // Quiet booking horizon (Eric, 2026-07-13): cases can't be scheduled more
 // than 1.5 weeks out. Case chat opens the moment payment lands, so a far-out
 // appointment would buy months of chat runway for one $100 case. Not

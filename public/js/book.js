@@ -11,7 +11,7 @@ import { WAIVERS } from './waivers.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
-const LEAD_TIME_MS = 72 * 3600 * 1000;
+const LEAD_TIME_MS = 24 * 3600 * 1000;
 // Quiet horizon: slots further out than 1.5 weeks simply don't render.
 // The Worker enforces the same cap server-side.
 const MAX_LEAD_MS = 252 * 3600 * 1000;
@@ -119,7 +119,7 @@ async function renderSchedule() {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
   const el = mount(`
     <h2>Pick a time</h2>
-    <p class="muted small">All times are shown in <strong>your</strong> time zone (${zone.replace(/_/g, ' ')}), with Eric's MST time underneath. Appointments must be at least 72 hours out.</p>
+    <p class="muted small">All times are shown in <strong>your</strong> time zone (${zone.replace(/_/g, ' ')}), with Eric's MST time underneath. Appointments must be at least 24 hours out.</p>
     <div id="days"><p class="muted">Loading available times…</p></div>
     <p>
       <button class="btn quiet" id="back">Back</button>
