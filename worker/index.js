@@ -108,7 +108,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-advisor-opus-2';
+const BUILD_TAG = 'v2026-08-19-advisor-opus-3';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -1003,7 +1003,15 @@ async function handleAdvisorState(request, env, url) {
     getDoc(env, `${parent}/${id}/advisor/state`),
     listDocs(env, `${parent}/${id}/advisor/qa`, { pageSize: 20, orderBy: 'at' }).catch(() => []),
   ]);
-  return json({ state: state?.data || {}, qa: qa.map((r) => r.data) });
+  // keyConfigured: admin-only visibility into whether the ANTHROPIC_API_KEY
+  // secret is actually bound to the running version — "saved in the dashboard"
+  // and "attached to the deployment" are different states in Cloudflare, and
+  // the difference is invisible from outside without this.
+  return json({
+    state: state?.data || {},
+    qa: qa.map((r) => r.data),
+    keyConfigured: Boolean(env.ANTHROPIC_API_KEY),
+  });
 }
 
 /**
