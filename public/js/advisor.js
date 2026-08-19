@@ -57,6 +57,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
 
   let paused = false;
   let draftShown = null;
+  let firedFor = null; // pendingAt value we already launched an analysis for
 
   const post = async (payload) => {
     errEl.hidden = true;
@@ -68,7 +69,9 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
         body: JSON.stringify({ kind, id, ...payload }),
       });
       const out = await res.json();
-      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      // Long actions stream keepalive whitespace and always return HTTP 200 —
+      // failure arrives as { ok: false } in the body, not as a status code.
+      if (!res.ok || out.ok === false) throw new Error(out.error || `Failed (${res.status})`);
       setTimeout(refresh, 400);
       return out;
     } catch (err) {
@@ -83,7 +86,10 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
     pauseBtn.textContent = paused ? 'Resume' : 'Pause';
     pauseBtn.classList.toggle('on', paused);
 
-    const running = d.status === 'running';
+    // A "running" older than 15 minutes is a run that died (connection lost
+    // mid-analysis) — treat it as not running so the panel never wedges.
+    const running = d.status === 'running' &&
+      (!d.startedAt || Date.now() - toDate(d.startedAt).getTime() < 15 * 60_000);
     statusEl.textContent = running ? '● thinking' : paused ? '‖ paused' : '';
     statusEl.className = `advisor-status${running ? ' live' : ''}`;
 
@@ -119,7 +125,16 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
           ? '<span class="dim small">thinking…</span>'
           : md(q.answer || '')}</div>
       </div>`).join('');
-    return d;
+
+    // The thread changed since the last assessment and nothing is on it yet —
+    // run the analysis from here. This open panel is what holds the connection
+    // alive through a long Opus turn; the cron only covers the panel being
+    // closed. Fire once per pending flag, not once per poll.
+    if (d.pendingAt && !running && !paused && firedFor !== d.pendingAt) {
+      firedFor = d.pendingAt;
+      post({ action: 'analyze' });
+    }
+    return { ...d, running };
   }
 
   // Poll fast while something is running, slowly when it isn't — an assessment
@@ -137,7 +152,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       if (res.ok) {
         const out = await res.json();
         const d = apply(out.state || {}, out.qa || []);
-        busy = d.status === 'running' || d.draftStatus === 'running' ||
+        busy = d.running || d.draftStatus === 'running' ||
           (out.qa || []).some((q) => q.status === 'running');
       }
     } catch { /* transient — the next tick tries again */ }

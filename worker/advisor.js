@@ -8,7 +8,7 @@
 // a single well-scoped request whose state lives in Firestore.
 
 import Anthropic from '@anthropic-ai/sdk';
-import { getDoc, patchDoc, listDocs } from './firestore.js';
+import { getDoc, patchDoc, listDocs, deleteDoc } from './firestore.js';
 
 const MODEL = 'claude-opus-5';
 // "Opus max" — deepest reasoning. Streaming keeps the socket warm through the
@@ -88,9 +88,50 @@ function myVoice(rows) {
 
 const statePath = (kind, id) =>
   `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state`;
+// Top-level queue of cases waiting on an analysis. Top-level on purpose:
+// subcollections can't be swept without a collection-group index, and the
+// cron needs to find this work with a plain list.
+const queuePath = (kind, id) => `advisorQueue/${kind}_${id}`;
 
 async function setState(env, kind, id, fields) {
   await patchDoc(env, statePath(kind, id), fields, { mask: Object.keys(fields) });
+}
+
+/**
+ * Flag that the thread changed and the assessment is stale. Cheap and instant,
+ * so it's safe anywhere — including the ~30s of background grace a Worker gets
+ * after answering a request, which is exactly where a real analysis dies.
+ * Whoever runs next (Eric's open panel, or the cron) picks it up.
+ */
+export async function markPending(env, kind, id) {
+  const now = new Date();
+  await setState(env, kind, id, { pendingAt: now });
+  await patchDoc(env, queuePath(kind, id), { kind, id, at: now });
+}
+
+/**
+ * Cron backstop: run ONE queued analysis per firing. A scheduled event gets a
+ * full 15 minutes of wall clock — the one place in a Worker where a long Opus
+ * turn is safe without a client holding a connection open — and one max-effort
+ * turn can eat most of it.
+ */
+export async function runQueuedAnalyses(env) {
+  try {
+    const rows = await listDocs(env, 'advisorQueue', { pageSize: 5 });
+    for (const row of rows) {
+      const { kind, id } = row.data;
+      if (!kind || !id) { await deleteDoc(env, `advisorQueue/${row.id}`); continue; }
+      const state = await getDoc(env, statePath(kind, id));
+      if (state?.data.paused) { await deleteDoc(env, `advisorQueue/${row.id}`); continue; }
+      // Someone (the panel) is already mid-run — leave it alone unless stale.
+      const startedAt = state?.data.startedAt ? new Date(state.data.startedAt).getTime() : 0;
+      if (state?.data.status === 'running' && Date.now() - startedAt < 12 * 60_000) continue;
+      await runAnalysis(env, kind, id);
+      break; // one per firing
+    }
+  } catch (err) {
+    console.warn('advisor queue:', err.message || err);
+  }
 }
 
 /**
@@ -100,7 +141,7 @@ async function setState(env, kind, id, fields) {
  */
 export async function runAnalysis(env, kind, id) {
   try {
-    await setState(env, kind, id, { status: 'running', error: null });
+    await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date() });
     const [rows, state] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
@@ -144,7 +185,9 @@ of padding it.` }],
 
     await setState(env, kind, id, {
       analysis, status: 'idle', error: null, updatedAt: new Date(),
+      pendingAt: null, startedAt: null,
     });
+    await deleteDoc(env, queuePath(kind, id));
   } catch (err) {
     console.error('advisor analysis:', err.stack || err);
     await setState(env, kind, id, { status: 'error', error: String(err.message || err) })
