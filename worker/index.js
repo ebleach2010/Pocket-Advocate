@@ -8,6 +8,7 @@
 //   POST   /api/admin/slots        open availability slots (admin)
 //   DELETE /api/admin/slots/:id    remove an open slot (admin)
 //   POST   /api/admin/case-update  join link / milestones / close (admin)
+//   POST   /api/admin/schedule     book a client at any time at all (admin)
 // Plus a cron (see scheduled()) that emails unread-chat digests.
 // Everything else falls through to the static app in public/.
 
@@ -89,7 +90,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-price-125-2499-availability-fixes';
+const BUILD_TAG = 'v2026-08-19-admin-rebook-anywhere';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -1061,12 +1062,16 @@ async function releaseHold(env, session) {
   if (!slotId) return;
   const slot = await getDoc(env, `availability/${slotId}`);
   if (slot && slot.data.state === 'held' && slot.data.heldBySession === session.id) {
-    await patchDoc(env, `availability/${slotId}`, {
-      state: 'open',
-      holdExpiresAt: null,
-      heldByUid: null,
-      heldBySession: null,
-    }, { mask: ['state', 'holdExpiresAt', 'heldByUid', 'heldBySession'] });
+    // A slot I created by hand for one client goes away when the sale falls
+    // through — it was never meant to be public inventory.
+    if (slot.data.adminCreated) await deleteDoc(env, `availability/${slotId}`);
+    else
+      await patchDoc(env, `availability/${slotId}`, {
+        state: 'open',
+        holdExpiresAt: null,
+        heldByUid: null,
+        heldBySession: null,
+      }, { mask: ['state', 'holdExpiresAt', 'heldByUid', 'heldBySession'] });
   }
   // An admin-priced session that was never paid: clear the client's pay prompt.
   if (session.metadata?.kind === 'extra' && session.metadata.caseId) {
@@ -1116,20 +1121,24 @@ function followUpExpiry(c) {
 
 /**
  * POST /api/admin/schedule
- * Body: { caseId, slotId, mode: 'reschedule'|'followup'|'charge', pct?, tagline? }
- * Admin scheduling skips the 72h lead and 1.5-week horizon on purpose (Eric
- * arranges these with the client directly); the 8am–6pm window still applies.
+ * Body: { caseId, mode: 'reschedule'|'followup'|'charge',
+ *         slotId? | customStart? (ISO), customDurationMin?, pct?, tagline? }
+ *
+ * Admin scheduling has no restriction on WHEN. Picking an open slot off the
+ * calendar is the convenient path; `customStart` books any wall-clock time at
+ * all and creates the availability doc on demand. The 72h lead, the 1.5-week
+ * horizon, the 8am–6pm window and the must-already-be-open rule exist to keep
+ * client self-service booking sane — none of them should stop me from putting
+ * a client where the two of us actually agreed to meet.
  */
 async function handleAdminSchedule(request, env) {
   const admin = await requireAdmin(request, env);
   if (!admin) return json({ error: 'Admin only' }, 403);
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
-  const { caseId, slotId, mode, pct, tagline } = body;
+  const { caseId, customStart, customDurationMin, mode, pct, tagline } = body;
   if (typeof caseId !== 'string' || !/^[\w-]{1,64}$/.test(caseId))
     return json({ error: 'Bad case id' }, 400);
-  if (typeof slotId !== 'string' || !/^[\w-]{1,64}$/.test(slotId))
-    return json({ error: 'Bad slot id' }, 400);
   if (!['reschedule', 'followup', 'charge'].includes(mode))
     return json({ error: 'Bad mode' }, 400);
 
@@ -1137,19 +1146,44 @@ async function handleAdminSchedule(request, env) {
   if (!caseDoc) return json({ error: 'No such case' }, 404);
   const c = caseDoc.data;
 
-  const slot = await getDoc(env, `availability/${slotId}`);
-  if (!slot) return json({ error: 'No such slot' }, 404);
   const now = new Date();
+
+  // Resolve the slot — an existing one, or a brand new one at a time I typed.
+  let slotId;
+  let slot;
+  if (typeof customStart === 'string' && customStart) {
+    const at = new Date(customStart);
+    if (Number.isNaN(at.getTime())) return json({ error: 'Pick a valid date and time.' }, 400);
+    const mins = Number(customDurationMin) > 0 ? Math.min(Math.round(Number(customDurationMin)), 480) : 60;
+    slotId = slotIdFor(at);
+    slot = await getDoc(env, `availability/${slotId}`);
+    if (!slot) {
+      // `adminCreated` marks this as mine, not public inventory: rescheduling
+      // away from it deletes it instead of leaving an odd-hour opening on the
+      // client picker.
+      await patchDoc(env, `availability/${slotId}`,
+        { start: at, durationMin: mins, state: 'open', adminCreated: true },
+        { mustNotExist: true });
+      slot = await getDoc(env, `availability/${slotId}`);
+      if (!slot) return json({ error: "Couldn't open that time — try again." }, 409);
+    }
+  } else {
+    if (typeof body.slotId !== 'string' || !/^[\w-]{1,64}$/.test(body.slotId))
+      return json({ error: 'Bad slot id' }, 400);
+    slotId = body.slotId;
+    slot = await getDoc(env, `availability/${slotId}`);
+    if (!slot) return json({ error: 'No such slot' }, 404);
+  }
+
   const holdExpired =
     slot.data.state === 'held' &&
     slot.data.holdExpiresAt &&
     new Date(slot.data.holdExpiresAt) < now;
-  if (slot.data.state !== 'open' && !holdExpired)
-    return json({ error: 'That slot is not open.' }, 409);
+  // The only genuine conflict is someone ELSE sitting in that time. A slot this
+  // same case already occupies is fine to re-take.
+  if (slot.data.state !== 'open' && !holdExpired && slot.data.caseId !== caseId)
+    return json({ error: 'Another client is already booked at that time.' }, 409);
   const start = new Date(slot.data.start);
-  if (start.getTime() <= now.getTime()) return json({ error: 'That slot is in the past.' }, 409);
-  const wp = windowProblem(slot.data.start, slot.data.durationMin || 60);
-  if (wp) return json({ error: wp }, 409);
   const durationMin = slot.data.durationMin || 60;
   const when = `${MT_FMT.format(start)} MST`;
 
@@ -1160,12 +1194,17 @@ async function handleAdminSchedule(request, env) {
 
   if (mode === 'reschedule') {
     // Free whatever slot(s) this case previously occupied, then take the new one.
+    // A slot I invented for this client isn't public inventory — delete it
+    // rather than reopening an odd-hour time on the client picker.
     const oldSlots = await queryDocs(env, 'availability', [['caseId', 'EQUAL', caseId]], 5);
-    for (const s of oldSlots)
-      if (s.id !== slotId)
+    for (const s of oldSlots) {
+      if (s.id === slotId) continue;
+      if (s.data.adminCreated) await deleteDoc(env, `availability/${s.id}`);
+      else
         await patchDoc(env, `availability/${s.id}`, { state: 'open', caseId: null }, {
           mask: ['state', 'caseId'],
         });
+    }
     await bookSlot();
     await patchDoc(env, `cases/${caseId}`, {
       appointment: { ...c.appointment, start, durationMin },

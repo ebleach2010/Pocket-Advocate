@@ -15,6 +15,9 @@ const MOUNTAIN_TZ = 'Etc/GMT+7';
 const CASE_PRICE_CENTS = 12500;
 const dollars = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 const caseId = new URLSearchParams(location.search).get('id');
+// Sentinel value for "a time that isn't on the calendar" in the slot dropdown.
+const CUSTOM = '__custom__';
+const CUSTOM_OPTION = `<option value="${CUSTOM}">A time not on the calendar…</option>`;
 
 hydrateNav();
 const user = await requireAdmin();
@@ -100,8 +103,16 @@ function render(el) {
 
     <div class="panel">
       <h3>Schedule a session</h3>
-      <p class="dim small">Book this client into any open slot — the 72-hour lead and booking horizon don't apply to you.</p>
+      <p class="dim small">Book this client at any time at all — pick an open slot, or type a time that isn't on the calendar. Lead time, booking horizon and business hours don't apply to you.</p>
       <select id="sched-slot"><option value="">Loading open slots…</option></select>
+      <div id="sched-custom" style="margin-top:.5rem;" hidden>
+        <input type="datetime-local" id="sched-when">
+        <select id="sched-dur" style="margin-top:.35rem;">
+          ${[30, 45, 60, 90, 120].map((m) =>
+            `<option value="${m}" ${m === 60 ? 'selected' : ''}>${m} minutes</option>`).join('')}
+        </select>
+        <p class="dim small" style="margin:.3rem 0 0;">Times are MST. Evenings, weekends and tomorrow are all fair game — the slot is created for this client only and never shows up on the public picker.</p>
+      </div>
       <div id="sched-modes" style="margin-top:.6rem;">
         <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="reschedule" checked>
           Reschedule the main appointment <span class="dim">(no charge)</span></label>
@@ -336,12 +347,22 @@ async function wireScheduler(el) {
       if (start.getTime() > Date.now()) slots.push({ id: d.id, start });
     });
     slots.sort((a, b) => a.start - b.start);
+    // Custom time goes last when there's real inventory (an open slot is the
+    // common case) and first when there isn't — with no slots open, typing a
+    // time is the only thing left to do.
     slotSel.innerHTML = slots.length
-      ? slots.map((s) => `<option value="${s.id}">${mtFmt.format(s.start)} MST</option>`).join('')
-      : '<option value="">No open slots — open some in Availability first</option>';
+      ? slots.map((s) => `<option value="${s.id}">${mtFmt.format(s.start)} MST</option>`).join('') + CUSTOM_OPTION
+      : CUSTOM_OPTION;
   } catch (err) {
-    slotSel.innerHTML = `<option value="">Couldn't load slots: ${esc(err.message)}</option>`;
+    slotSel.innerHTML = CUSTOM_OPTION;
+    console.warn("couldn't load open slots:", err.message);
   }
+
+  const customBox = el.querySelector('#sched-custom');
+  const whenInput = el.querySelector('#sched-when');
+  const syncCustom = () => { customBox.hidden = slotSel.value !== CUSTOM; };
+  slotSel.addEventListener('change', syncCustom);
+  syncCustom();
 
   el.querySelector('#sched-go').addEventListener('click', async () => {
     const btn = el.querySelector('#sched-go');
@@ -350,7 +371,24 @@ async function wireScheduler(el) {
     const slotId = slotSel.value;
     const mode = el.querySelector('input[name=sched-mode]:checked').value;
     errEl.hidden = true;
-    if (!slotId) { errEl.textContent = 'Pick a slot.'; errEl.hidden = false; return; }
+
+    // A custom time is typed as MST wall-clock; MST is a fixed -07:00, so
+    // stamping the offset on turns it into the exact instant regardless of
+    // which timezone this browser thinks it's in.
+    let customStart;
+    if (slotId === CUSTOM) {
+      if (!whenInput.value) { errEl.textContent = 'Pick a date and time.'; errEl.hidden = false; return; }
+      const at = new Date(`${whenInput.value}:00-07:00`);
+      if (Number.isNaN(at.getTime())) { errEl.textContent = "That date and time didn't parse."; errEl.hidden = false; return; }
+      if (at.getTime() < Date.now() &&
+          !confirm(`${mtFmt.format(at)} MST is in the past. Book it anyway?`)) return;
+      customStart = at.toISOString();
+    } else if (!slotId) {
+      errEl.textContent = 'Pick a slot.';
+      errEl.hidden = false;
+      return;
+    }
+
     btn.disabled = true;
     try {
       const idToken = await user.getIdToken();
@@ -358,7 +396,10 @@ async function wireScheduler(el) {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
-          caseId, slotId, mode,
+          caseId, mode,
+          slotId: customStart ? undefined : slotId,
+          customStart,
+          customDurationMin: customStart ? Number(el.querySelector('#sched-dur').value) : undefined,
           pct: mode === 'charge' ? Number(el.querySelector('#sched-pct').value) : undefined,
           tagline: mode === 'charge' ? el.querySelector('#sched-tag').value : undefined,
         }),
