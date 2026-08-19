@@ -2,7 +2,7 @@
 //   POST   /api/checkout           hold a slot, create a Stripe Checkout Session
 //   GET    /api/case-for-session   poll after checkout: has the webhook made my case?
 //   POST   /api/make-private       revoke a public election (allowed until call time)
-//   POST   /api/subscribe          24/7 Priority Chat subscription Checkout ($19.99/mo)
+//   POST   /api/subscribe          24/7 Priority Chat subscription Checkout ($24.99/mo)
 //   POST   /api/portal             Stripe customer portal (manage/cancel)
 //   POST   /api/stripe/webhook     payments + subscription lifecycle -> Firestore
 //   POST   /api/admin/slots        open availability slots (admin)
@@ -22,14 +22,14 @@ import {
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 
-const CASE_PRICE_CENTS = 15000;
+const CASE_PRICE_CENTS = 12500;
 const ADDON_PRICE_CENTS = 5000;
-const SUB_PRICE_CENTS = 1999;
+const SUB_PRICE_CENTS = 2499;
 // Follow-up add-ons expire one month after the first discussion (Eric,
 // 2026-07-13); clients get one warning email a week before the deadline.
 const FOLLOWUP_EXPIRY_DAYS = 30;
 const FOLLOWUP_WARN_DAYS = 7;
-// Admin-priced sessions: percentage of the $150 case rate, 25% steps.
+// Admin-priced sessions: percentage of the $125 case rate, 25% steps.
 const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
 const METHODS = ['phone', 'video'];
 const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording'];
@@ -70,6 +70,8 @@ export default {
         return await handleVerifyCode(request, env);
       if (url.pathname === '/api/auth/device-signin' && request.method === 'POST')
         return await handleDeviceSignin(request, env);
+      if (url.pathname === '/api/version' && request.method === 'GET')
+        return json({ tag: BUILD_TAG });
       if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
     } catch (err) {
       console.error(`${url.pathname}:`, err.stack || err);
@@ -81,8 +83,33 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runChatDigest(env));
     ctx.waitUntil(runFollowUpWarnings(env));
+    ctx.waitUntil(cleanupStaleSlots(env));
   },
 };
+
+// Bumped on each meaningful deploy; served at GET /api/version so a human can
+// confirm which build is live without guessing about caches.
+const BUILD_TAG = 'v2026-08-19-price-125-2499-availability-fixes';
+
+// Open, unbooked slots whose start is already past — or inside the booking
+// lead window — can never be booked. The cron sweeps them out of the database
+// so the admin calendar and the client picker never show dead inventory.
+// Booked and actively-held slots are never touched. Deletions are capped per
+// run: Workers limit outbound calls per invocation, and the cron comes back
+// every 15 minutes anyway.
+async function cleanupStaleSlots(env) {
+  try {
+    const open = await queryDocs(env, 'availability', [['state', 'EQUAL', 'open']], 300);
+    const cutoff = Date.now() + LEAD_TIME_HOURS * 3600_000;
+    const stale = open
+      .filter((s) => new Date(s.data.start).getTime() < cutoff)
+      .slice(0, 40);
+    for (const s of stale) await deleteDoc(env, `availability/${s.id}`);
+    if (stale.length) console.log(`slot cleanup: deleted ${stale.length} unbookable open slots`);
+  } catch (err) {
+    console.warn('slot cleanup failed:', err.message || err);
+  }
+}
 
 /** Stripe line items for a case, with the optional follow-up add-on. */
 function caseLineItems(addOnFollowUp) {
@@ -893,7 +920,10 @@ async function handleCreateSlots(request, env) {
   const entries = [];
   for (const iso of starts) {
     const start = new Date(iso);
-    if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) { invalid++; continue; }
+    // A slot inside the booking lead window can never be booked by a client,
+    // so opening one would only create dead inventory for the cron to sweep.
+    if (Number.isNaN(start.getTime())) { invalid++; continue; }
+    if (start.getTime() < Date.now() + LEAD_TIME_HOURS * 3600_000) { invalid++; continue; }
     if (windowProblem(iso, durationMin)) { invalid++; continue; }
     entries.push({
       path: `availability/${slotIdFor(start)}`,
@@ -1174,7 +1204,7 @@ async function handleAdminSchedule(request, env) {
     return json({ ok: true, scheduled: when });
   }
 
-  // mode === 'charge' — a custom-priced session (percentage of the $150 rate).
+  // mode === 'charge' — a custom-priced session (percentage of the $125 rate).
   if (!CHARGE_PCTS.includes(pct)) return json({ error: 'Pick a rate (0–150% in 25% steps).' }, 400);
   const label =
     typeof tagline === 'string' && tagline.trim()
