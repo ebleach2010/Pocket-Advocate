@@ -163,6 +163,9 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
 .intro-dots span.on { background: var(--cyan); box-shadow: var(--glow-c); }
 
 /* The "?" beside the case title, and the panel it opens. */
+/* Post-payment reassurance at the top of a live case. */
+.confirm-banner { border-color: var(--cyan); box-shadow: var(--glow-c); }
+
 /* "This is a web app ?" — deliberately quiet, sitting above the tiers. */
 .webapp-note {
   margin: .2rem 0 -.35rem; font-size: .82rem; letter-spacing: .02em;
