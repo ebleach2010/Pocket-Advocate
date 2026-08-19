@@ -163,6 +163,13 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
 .intro-dots span.on { background: var(--cyan); box-shadow: var(--glow-c); }
 
 /* The "?" beside the case title, and the panel it opens. */
+/* "This is a web app ?" — deliberately quiet, sitting above the tiers. */
+.webapp-note {
+  margin: .2rem 0 -.35rem; font-size: .82rem; letter-spacing: .02em;
+  color: var(--dim); display: flex; align-items: center; gap: .1rem;
+}
+.webapp-note .help-dot { width: 1.25rem; height: 1.25rem; min-width: 1.25rem; font-size: .76rem; }
+
 .help-dot {
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.5rem; height: 1.5rem; min-width: 1.5rem; padding: 0; margin-left: .4rem;

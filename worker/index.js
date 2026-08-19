@@ -68,6 +68,8 @@ export default {
         return await handleAdminSchedule(request, env);
       if (url.pathname === '/api/notify' && request.method === 'POST')
         return await handleNotify(request, env);
+      if (url.pathname === '/api/push/test' && request.method === 'POST')
+        return await handlePushTest(request, env);
       if (url.pathname === '/api/admin/pin' && request.method === 'POST')
         return await handlePinLogin(request, env);
       if (url.pathname === '/api/auth/request-code' && request.method === 'POST')
@@ -95,7 +97,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-checkout-price-fix-case-help';
+const BUILD_TAG = 'v2026-08-19-webapp-help-push-test-swipe';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -715,6 +717,26 @@ async function handleNotify(request, env) {
 }
 
 // ---- POST /api/admin/pin ----
+// POST /api/push/test — send a notification to the caller's OWN devices.
+// "Are notifications actually working?" is otherwise unanswerable without
+// waiting for a real event, and a silent failure looks identical to nothing
+// having happened. Only ever pushes to the authenticated user's own
+// subscriptions, so it can't be used to bother anyone else.
+async function handlePushTest(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in first.' }, 401);
+  const profile = await getDoc(env, `users/${user.uid}`);
+  const subs = Array.isArray(profile?.data.pushSubs) ? profile.data.pushSubs : [];
+  if (!subs.length)
+    return json({ error: 'This device isn\'t registered for notifications yet. Turn them on above, then try again.' }, 409);
+  await notifyUser(env, user.uid, {
+    title: 'Pocket Advocate',
+    body: 'Notifications are working. This is the only test message you\'ll get.',
+    link: '/',
+  });
+  return json({ ok: true, devices: subs.length });
+}
+
 // Body: { pin }. A private shortcut: the correct PIN mints a real admin
 // session (custom token) so Eric can skip the email link. The PIN itself is a
 // Worker secret (ADMIN_PIN) — never shipped to the browser. Failed attempts are
