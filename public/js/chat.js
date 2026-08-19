@@ -257,16 +257,9 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   };
   input?.addEventListener('input', autoGrow);
 
-  // Enter sends on a real keyboard; on a phone it types a newline and the Send
-  // button does the sending, because an on-screen Return that fires messages
-  // half-written is its own kind of hell.
-  const hasKeyboard = window.matchMedia?.('(pointer: fine)').matches;
-  input?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && hasKeyboard) {
-      e.preventDefault();
-      form?.requestSubmit();
-    }
-  });
+  // Return is a paragraph break, always, on every device. The Send button is
+  // the only thing that sends — a keystroke that fires a half-written message
+  // at a client is not a tradeoff worth having.
 
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -351,6 +344,9 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     }
     bar.hidden = true;
   });
+
+  // Handed back so the advisor panel can post an approved draft as me.
+  return { send: (text) => send({ text }) };
 }
 
 // ---- attachment rendering + long-press save ----

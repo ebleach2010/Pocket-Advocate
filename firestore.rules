@@ -59,6 +59,15 @@ service cloud.firestore {
         && onlyLastMessageChanged();
       allow create, delete: if false;
 
+
+      // The private advisor. Admin-only by rule, Worker-written only: a client
+      // must never be able to read Eric's working assessment of their own case,
+      // and nothing outside the Worker may write one.
+      match /advisor/{document=**} {
+        allow read: if signedIn() && isAdmin();
+        allow write: if false;
+      }
+
       // Case chat: dies with the case (SPEC §H-6 — separate from subscriber chat).
       match /chat/{msgId} {
         allow read: if signedIn() &&
@@ -89,6 +98,15 @@ service cloud.firestore {
 
       // Subscriber chat: lives as long as the subscription (access runs to
       // the end of the paid period — currentPeriodEnd is Worker-maintained).
+
+      // The private advisor. Admin-only by rule, Worker-written only: a client
+      // must never be able to read Eric's working assessment of their own case,
+      // and nothing outside the Worker may write one.
+      match /advisor/{document=**} {
+        allow read: if signedIn() && isAdmin();
+        allow write: if false;
+      }
+
       match /chat/{msgId} {
         allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
         allow create: if signedIn()

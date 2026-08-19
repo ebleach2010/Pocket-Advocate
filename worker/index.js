@@ -9,6 +9,7 @@
 //   DELETE /api/admin/slots/:id    remove an open slot (admin)
 //   POST   /api/admin/case-update  join link / milestones / close (admin)
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
+//   POST   /api/advisor            private LLM advisor: analyse / ask / draft (admin)
 // Plus a cron (see scheduled()) that emails unread-chat digests.
 // Everything else falls through to the static app in public/.
 
@@ -22,6 +23,7 @@ import {
 } from './schedule.js';
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
+import { runAnalysis, runQuestion, runDraft } from './advisor.js';
 
 // These build the real Stripe line items. Three browser files mirror them for
 // display — public/js/book.js, public/js/subscribe.js, public/js/admin-case.js
@@ -67,11 +69,13 @@ export default {
       if (url.pathname === '/api/admin/schedule' && request.method === 'POST')
         return await handleAdminSchedule(request, env);
       if (url.pathname === '/api/notify' && request.method === 'POST')
-        return await handleNotify(request, env);
+        return await handleNotify(request, env, ctx);
       if (url.pathname === '/api/chat/react' && request.method === 'POST')
         return await handleChatReact(request, env);
       if (url.pathname === '/api/chat/edit' && request.method === 'POST')
         return await handleChatEdit(request, env);
+      if (url.pathname === '/api/advisor' && request.method === 'POST')
+        return await handleAdvisor(request, env, ctx);
       if (url.pathname === '/api/push/test' && request.method === 'POST')
         return await handlePushTest(request, env);
       if (url.pathname === '/api/admin/pin' && request.method === 'POST')
@@ -102,7 +106,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-emoji-reactions-edit-composer';
+const BUILD_TAG = 'v2026-08-19-advisor-opus';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -743,7 +747,7 @@ async function requireAdultProfile(env, uid) {
 // Body: { kind: 'case'|'sub', id }. Called fire-and-forget after a chat send;
 // pushes a content-free nudge to the *other* side of the thread. Titles and
 // bodies never include message text — same privacy policy as the email digest.
-async function handleNotify(request, env) {
+async function handleNotify(request, env, ctx) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in required' }, 401);
   const body = await request.json().catch(() => null);
@@ -772,7 +776,9 @@ async function handleNotify(request, env) {
   }
 
   if (user.uid === clientUid) {
-    // Client wrote — nudge every admin device.
+    // Client wrote — nudge every admin device, and let the advisor re-read the
+    // case so Eric's panel is current before he even opens it.
+    refreshAdvisor(env, ctx, kind, id);
     const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5);
     for (const a of admins) {
       await notifyUser(env, a.id, {
@@ -967,6 +973,89 @@ async function handleChatEdit(request, env) {
   }
 
   return json({ ok: true, text });
+}
+
+/**
+ * POST /api/advisor  Body: { kind: 'case'|'sub', id, action, question?, instruction? }
+ * action: 'analyze' | 'ask' | 'draft' | 'pause' | 'resume' | 'clear-draft'
+ *
+ * Admin only, and invisible to clients by rule — see the `advisor` match in
+ * firestore.rules. The model calls run in ctx.waitUntil and land in Firestore,
+ * so the panel just watches the document rather than holding a request open
+ * for a long Opus turn.
+ */
+async function handleAdvisor(request, env, ctx) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const profile = await getDoc(env, `users/${user.uid}`);
+  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+
+  const body = await request.json().catch(() => null);
+  const kind = body?.kind === 'sub' ? 'sub' : 'case';
+  const id = typeof body?.id === 'string' ? body.id : '';
+  const action = body?.action;
+  if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad id' }, 400);
+
+  const parent = kind === 'case' ? 'cases' : 'subscriptions';
+  const statePath = `${parent}/${id}/advisor/state`;
+
+  if (action === 'pause' || action === 'resume') {
+    await patchDoc(env, statePath, { paused: action === 'pause' }, { mask: ['paused'] });
+    return json({ ok: true, paused: action === 'pause' });
+  }
+
+  if (action === 'clear-draft') {
+    await patchDoc(env, statePath, { draft: null, draftStatus: null }, {
+      mask: ['draft', 'draftStatus'],
+    });
+    return json({ ok: true });
+  }
+
+  if (action === 'analyze') {
+    ctx.waitUntil(runAnalysis(env, kind, id));
+    return json({ ok: true, started: true });
+  }
+
+  if (action === 'draft') {
+    const instruction = typeof body?.instruction === 'string' ? body.instruction.slice(0, 1000) : '';
+    ctx.waitUntil(runDraft(env, kind, id, instruction));
+    return json({ ok: true, started: true });
+  }
+
+  if (action === 'ask') {
+    const question = typeof body?.question === 'string' ? body.question.trim() : '';
+    if (!question || question.length > 2000) return json({ error: 'Ask something (1–2000 chars).' }, 400);
+    const qaId = crypto.randomUUID();
+    await patchDoc(env, `${parent}/${id}/advisor/qa/${qaId}`, {
+      question, answer: null, status: 'running', at: new Date(),
+    });
+    ctx.waitUntil(runQuestion(env, kind, id, qaId, question));
+    return json({ ok: true, qaId });
+  }
+
+  return json({ error: 'Unknown action' }, 400);
+}
+
+/**
+ * A client wrote something — refresh the advisor's read of the case in the
+ * background, unless Eric paused it. Best-effort: the advisor is a convenience,
+ * never a reason for a message to fail.
+ */
+function refreshAdvisor(env, ctx, kind, id) {
+  ctx.waitUntil((async () => {
+    try {
+      const parent = kind === 'case' ? 'cases' : 'subscriptions';
+      const state = await getDoc(env, `${parent}/${id}/advisor/state`);
+      if (state?.data.paused) return;
+      // One re-read a minute at most. A client firing off six short messages
+      // shouldn't trigger six Opus analyses, and the next one picks them all up.
+      const last = state?.data.updatedAt ? new Date(state.data.updatedAt).getTime() : 0;
+      if (Date.now() - last < 60_000) return;
+      await runAnalysis(env, kind, id);
+    } catch (err) {
+      console.warn('advisor refresh:', err.message || err);
+    }
+  })());
 }
 
 // POST /api/push/test — send a notification to the caller's OWN devices.

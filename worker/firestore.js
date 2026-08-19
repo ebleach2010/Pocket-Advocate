@@ -81,6 +81,26 @@ export async function batchCreate(env, entries) {
   return { created, skipped };
 }
 
+/**
+ * List a subcollection by path (e.g. `cases/abc/chat`). `queryDocs` can only
+ * reach top-level collections — a `runQuery` against a subcollection has to be
+ * posted to the parent document — so plain listing is both simpler and enough
+ * when there is nothing to filter on.
+ *
+ * `orderBy` takes Firestore's syntax: "ts" ascending, "ts desc" descending.
+ */
+export async function listDocs(env, collectionPath, { pageSize = 100, orderBy } = {}) {
+  const params = new URLSearchParams({ pageSize: String(pageSize) });
+  if (orderBy) params.set('orderBy', orderBy);
+  const res = await authedFetch(env, `${baseUrl(env)}/${collectionPath}?${params}`);
+  if (!res.ok) throw new Error(`firestore list ${collectionPath}: ${res.status} ${await res.text()}`);
+  const out = await res.json();
+  return (out.documents || []).map((d) => ({
+    id: d.name.split('/').pop(),
+    data: fromFields(d.fields || {}),
+  }));
+}
+
 /** Delete a document. Returns true (idempotent — deleting a missing doc is fine). */
 export async function deleteDoc(env, path) {
   const res = await authedFetch(env, `${baseUrl(env)}/${path}`, { method: 'DELETE' });
