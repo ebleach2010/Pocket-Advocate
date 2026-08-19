@@ -7,6 +7,12 @@ import { requireUser, hydrateNav } from './auth.js';
 import { ensureFullProfile } from './profile.js';
 import { SUBSCRIPTION_TERMS } from './waivers.js';
 
+// Keep in sync with SUB_PRICE_CENTS in worker/index.js — the Worker builds the
+// real Stripe line item from its own copy, so a hardcoded figure here can only
+// ever be a lie waiting to happen.
+const SUB_PRICE_CENTS = 2499;
+const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
+
 hydrateNav();
 const user = await requireUser();
 if (user) init();
@@ -41,7 +47,7 @@ function renderTerms() {
     <div class="waiver-body" id="body">${SUBSCRIPTION_TERMS.body}</div>
     <p class="scroll-hint" id="hint">Scroll to the end to continue…</p>
     <div class="actions">
-      <button class="btn mag" id="go" disabled>Accept &amp; subscribe — $24.99/mo</button>
+      <button class="btn mag" id="go" disabled>Accept &amp; subscribe — $${money(SUB_PRICE_CENTS)}/mo</button>
     </div>
     <p class="dim small" style="margin-top:.6rem;">You'll be taken to Stripe's secure checkout — card details never touch this site.</p>`;
 

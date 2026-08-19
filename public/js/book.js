@@ -9,6 +9,14 @@ import { requireUser, hydrateNav } from './auth.js';
 import { ensureFullProfile } from './profile.js';
 import { WAIVERS } from './waivers.js';
 
+// Keep in sync with CASE_PRICE_CENTS / ADDON_PRICE_CENTS in worker/index.js.
+// Every price on this screen is derived from these two — the Worker builds the
+// real Stripe line items from its own copies, and a hardcoded number here
+// silently lied about the total for weeks after the case rate changed.
+const CASE_PRICE_CENTS = 12500;
+const ADDON_PRICE_CENTS = 5000;
+const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
+
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 const LEAD_TIME_MS = 72 * 3600 * 1000;
@@ -338,7 +346,7 @@ function renderReview() {
   const el = mount(`
     <h2>Lock it in</h2>
     <div class="card">
-      <div class="row"><h3>Advocacy Case</h3><span class="price">$125</span></div>
+      <div class="row"><h3>Advocacy Case</h3><span class="price">$${money(CASE_PRICE_CENTS)}</span></div>
       <p class="muted small">
         <strong style="color:var(--ink)">${localLong.format(when)}</strong> (your time)<br>
         ${mtFmt.format(when)} MST my time<br>
@@ -353,23 +361,24 @@ function renderReview() {
     <label class="choice addon" id="addon-box">
       <span class="addon-head">
         <span class="addon-title"><input type="checkbox" id="addon"> Add a follow-up discussion</span>
-        <span class="addon-price">+$50</span>
+        <span class="addon-price">+$${money(ADDON_PRICE_CENTS)}</span>
       </span>
-      <span class="addon-why">A second full discussion on this same case, booked any time after your report lands — use it within one month. A follow-up bought later is a fresh $125 case instead.</span>
+      <span class="addon-why">A second full discussion on this same case, booked any time after your report lands — use it within one month. A follow-up bought later is a fresh $${money(CASE_PRICE_CENTS)} case instead.</span>
       <span class="addon-once">Offered here only</span>
     </label>
     <p class="muted small">${isRequest ? 'Requested times are not held' : 'Your time slot is held'} while you complete payment. You'll be taken to Stripe's secure checkout — card details never touch this site. Case fees are non-refundable once your slot is booked.</p>
     <p class="error" id="pay-error" hidden></p>
     <p>
       <button class="btn quiet" id="back">Back</button>
-      <button class="btn" id="pay">Pay $<span id="total">150</span> &amp; book</button>
+      <button class="btn" id="pay">Pay $<span id="total">${money(CASE_PRICE_CENTS)}</span> &amp; book</button>
     </p>`);
 
   const addon = el.querySelector('#addon');
   addon.addEventListener('change', () => {
     state.addOnFollowUp = addon.checked;
     el.querySelector('#addon-box').classList.toggle('selected', addon.checked);
-    el.querySelector('#total').textContent = addon.checked ? '200' : '150';
+    el.querySelector('#total').textContent =
+      money(CASE_PRICE_CENTS + (addon.checked ? ADDON_PRICE_CENTS : 0));
   });
   el.querySelector('#back').addEventListener('click', back);
 

@@ -23,6 +23,11 @@ import {
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 
+// These build the real Stripe line items. Three browser files mirror them for
+// display — public/js/book.js, public/js/subscribe.js, public/js/admin-case.js
+// — and every price shown there is derived, never typed. Change a rate here and
+// change it in those three, or the page quotes one number and the card is
+// charged another (which is exactly what happened after the $150 experiment).
 const CASE_PRICE_CENTS = 12500;
 const ADDON_PRICE_CENTS = 5000;
 const SUB_PRICE_CENTS = 2499;
@@ -90,7 +95,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-admin-rebook-anywhere';
+const BUILD_TAG = 'v2026-08-19-checkout-price-fix-case-help';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database

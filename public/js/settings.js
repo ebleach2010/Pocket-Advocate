@@ -1,6 +1,6 @@
-// The settings cog (client + admin): notifications on/off and the color-scheme
-// picker. Injected into the top nav for any signed-in user.
-import { setTheme, currentTheme, THEMES } from './theme.js';
+// The settings cog (client + admin): notifications on/off. Injected into the
+// top nav for any signed-in user. There is deliberately no theme picker — the
+// site is neon, one look, everywhere.
 import { enablePush } from './push.js';
 import { db, doc, getDoc, setDoc } from './firebase.js';
 
@@ -21,7 +21,6 @@ export function initSettings(user) {
 function openPanel(user) {
   const existing = document.getElementById('pa-settings');
   if (existing) { existing.remove(); return; }
-  const cur = currentTheme();
   const notifOn = 'Notification' in window && Notification.permission === 'granted';
 
   const overlay = document.createElement('div');
@@ -34,20 +33,11 @@ function openPanel(user) {
         <span><strong>Notifications</strong><br><span class="dim small">Alerts for new messages &amp; updates</span></span>
         <button class="switch ${notifOn ? 'on' : ''}" data-notif aria-pressed="${notifOn}" aria-label="Toggle notifications"></button>
       </div>
-      <p style="margin:.9rem 0 .3rem;"><strong>Appearance</strong></p>
-      <div class="seg">
-        ${THEMES.map((t) => `<button data-theme-pick="${t.id}" class="${t.id === cur ? 'on' : ''}">${t.label}</button>`).join('')}
-      </div>
     </div>`;
   document.body.appendChild(overlay);
 
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   overlay.querySelector('[data-close]').addEventListener('click', () => overlay.remove());
-  overlay.querySelectorAll('[data-theme-pick]').forEach((b) =>
-    b.addEventListener('click', () => {
-      setTheme(b.dataset.themePick);
-      overlay.querySelectorAll('[data-theme-pick]').forEach((x) => x.classList.toggle('on', x === b));
-    }));
 
   const notifBtn = overlay.querySelector('[data-notif]');
   notifBtn.addEventListener('click', async () => {

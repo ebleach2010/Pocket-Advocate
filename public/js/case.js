@@ -9,6 +9,7 @@ import {
 import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence } from './chat.js';
 import { initSetupGuide } from './onboarding.js';
+import { HELP_BUTTON, wireCaseHelp, openCaseHelp } from './case-help.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -96,8 +97,21 @@ async function boot() {
     return;
   }
   cases.sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
-  currentId = currentId && cases.some((c) => c.id === currentId) ? currentId : cases[0].id;
+  // ?id= comes from the post-checkout redirect and from emailed links — open
+  // that case, not merely the newest one.
+  const params = new URLSearchParams(location.search);
+  const wanted = currentId || params.get('id');
+  currentId = wanted && cases.some((c) => c.id === wanted) ? wanted : cases[0].id;
   render();
+
+  // First arrival straight from checkout: open the explainer unprompted. It's
+  // the one moment a client has no idea what they just bought access to.
+  // Unless the first-run intro is already up — it covers the same ground, and
+  // two stacked overlays is nobody's idea of a welcome.
+  if (params.get('welcome') === '1') {
+    history.replaceState(null, '', `/case.html?id=${currentId}`);
+    if (!document.getElementById('pa-intro')) openCaseHelp();
+  }
 }
 
 function render() {
@@ -117,7 +131,7 @@ function render() {
           </button>`).join('')}
       </div>` : ''}
     <div class="row">
-      <h2 style="margin:0;">Advocacy Case</h2>
+      <h2 style="margin:0;">Advocacy Case ${HELP_BUTTON}</h2>
       <span class="status-pill ${c.status === 'closed' ? 'closed' : ''}">${STATUS_LABEL[c.status] || c.status}</span>
     </div>
     <nav class="subtabs" role="tablist">
@@ -127,6 +141,7 @@ function render() {
     </nav>
     <section id="tab-body"></section>`;
 
+  wireCaseHelp(container);
   container.querySelectorAll('[data-case]').forEach((b) =>
     b.addEventListener('click', () => { currentId = b.dataset.case; render(); }));
   container.querySelectorAll('[data-tab]').forEach((b) =>

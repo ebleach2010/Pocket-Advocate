@@ -30,10 +30,14 @@ points at it, or browsers will serve the old file.
 - Prices live as cents constants at the top of `worker/index.js`
   (`CASE_PRICE_CENTS`, `ADDON_PRICE_CENTS`, `SUB_PRICE_CENTS`). Stripe uses
   inline `price_data` — there are no Product or Price objects in the Stripe
-  dashboard — so what the page says and what the card is charged can never
-  drift apart. `CASE_PRICE_CENTS` is mirrored in `public/js/admin-case.js` for
-  the custom-rate percentages; change both together. Current: $125 case,
-  $50 follow-up add-on, $24.99/mo subscription.
+  dashboard — so the Worker is the single source of what actually gets charged.
+  Three browser files mirror those constants for display: `public/js/book.js`,
+  `public/js/subscribe.js` and `public/js/admin-case.js`. Change a rate in all
+  four. Never type a price into markup — derive it from the constant, because
+  a hardcoded "$150" in the pay button survived a rate change and quoted the
+  wrong total at checkout for weeks. Current: $125 case, $50 follow-up add-on,
+  $24.99/mo subscription. Plain-English prices also appear in `public/index.html`,
+  `public/about.html` and `public/js/waivers.js` — grep for the figure.
 - All times are Mountain Standard, anchored as a fixed UTC-7 via the IANA zone
   `Etc/GMT+7` (the sign is inverted on purpose — that's not a bug). There is no
   daylight-saving handling anywhere and that's deliberate.
@@ -53,8 +57,9 @@ points at it, or browsers will serve the old file.
 
 **Voice and look.** Client-facing copy is first person — "chat with me," "I
 typically reply within a few days" — never third-person "Eric." The site is
-neon on near-black (`--bg: #07090F`); there is no theme picker and I don't want
-one back.
+neon on near-black (`--bg: #07090F`). There is exactly one look: the theme
+picker, the alternate stylesheets and the `pa-theme` localStorage key were all
+deleted on purpose. Don't reintroduce them.
 
 **How I work.** I'm not a developer. I do everything through Claude sessions —
 no local checkout, no terminal, no editor. So: don't tell me to run commands,
