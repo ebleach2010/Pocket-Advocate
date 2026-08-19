@@ -19,6 +19,7 @@
   --glow-m: 0 0 18px rgba(255, 79, 216, .30);
   --glow-g: 0 0 16px rgba(62, 224, 138, .30);
   --glow-b: 0 0 16px rgba(108, 158, 255, .30);
+  --glow-au: 0 0 16px rgba(255, 204, 85, .32);
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -250,6 +251,7 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
 }
 .tag.c { color: var(--green); border: 1px solid var(--green); box-shadow: var(--glow-g); }
 .tag.m { color: var(--magenta); border: 1px solid var(--magenta); box-shadow: var(--glow-m); }
+.tag.g { color: var(--gold); border: 1px solid var(--gold); box-shadow: var(--glow-au); }
 .fine { font-size: .9rem; color: var(--dim); margin: 0; line-height: 1.5; }
 .fine strong { color: var(--ink); }
 @media (max-height: 700px) {

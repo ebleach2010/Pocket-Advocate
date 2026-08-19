@@ -5,7 +5,7 @@
   --ink: #FFF; --dim: #EDEDED; --soft: #FFF; --line: #FFF;
   --cyan: #FFD400; --cyan-dim: #FFE873; --magenta: #5CE1FF;
   --green: #6EF08A; --blue: #9CC3FF; --danger: #FF7A6E;
-  --glow-c: none; --glow-m: none; --glow-g: none; --glow-b: none;
+  --glow-c: none; --glow-m: none; --glow-g: none; --glow-b: none; --glow-au: none;
 }
 html, body { font-size: 18.5px; }
 body { background-image: none; }
