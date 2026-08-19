@@ -70,6 +70,8 @@ export default {
         return await handleNotify(request, env);
       if (url.pathname === '/api/chat/react' && request.method === 'POST')
         return await handleChatReact(request, env);
+      if (url.pathname === '/api/chat/edit' && request.method === 'POST')
+        return await handleChatEdit(request, env);
       if (url.pathname === '/api/push/test' && request.method === 'POST')
         return await handlePushTest(request, env);
       if (url.pathname === '/api/admin/pin' && request.method === 'POST')
@@ -100,7 +102,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-chat-status-reactions';
+const BUILD_TAG = 'v2026-08-19-emoji-reactions-edit-composer';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -800,7 +802,7 @@ async function handleNotify(request, env) {
  * deliberately different for each one so the phone says something specific
  * rather than a generic "new activity". Neither ever quotes message content.
  *
- * Keep in sync with REACTIONS in public/js/reactions.js.
+ * Keep in sync with STATUS_REACTIONS in public/js/msg-actions.js.
  */
 const CHAT_REACTIONS = {
   seen: { label: 'Eric has seen your message', push: 'Eric has seen your message.' },
@@ -812,64 +814,159 @@ const CHAT_REACTIONS = {
 };
 
 /**
- * POST /api/chat/react  Body: { kind: 'case'|'sub', id, msgId, reaction|null }
- * Admin only. Chat messages are immutable to the browser (firestore.rules:
- * `allow update: if false`), so the reaction is written here with the service
- * account — which also puts the notification on the one path that can't be
- * skipped by a client that never calls it.
+ * The ordinary emoji anyone can use, either direction. Clients get these and
+ * only these — the status reactions above are mine to give, and a client
+ * announcing "Eric is reviewing your labs" would be nonsense at best.
+ *
+ * Keep in sync with EMOJI_REACTIONS in public/js/msg-actions.js.
  */
-async function handleChatReact(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'Sign in required' }, 401);
-  const profile = await getDoc(env, `users/${user.uid}`);
-  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+const EMOJI_REACTIONS = {
+  love: '❤️',
+  haha: '😆',
+  wow: '😮',
+  sad: '😢',
+  angry: '😡',
+  like: '👍',
+};
 
-  const body = await request.json().catch(() => null);
-  const kind = body?.kind;
-  const id = typeof body?.id === 'string' ? body.id : '';
-  const msgId = typeof body?.msgId === 'string' ? body.msgId : '';
-  const reaction = body?.reaction ?? null;
+/** How long a message stays editable by its author. */
+const EDIT_WINDOW_MS = 3 * 60 * 1000;
+
+/**
+ * Resolve a chat thread and check the caller belongs in it. Returns
+ * { clientUid, link, path, isAdmin } or { error, code }.
+ */
+async function chatContext(env, user, kind, id, msgId) {
   if ((kind !== 'case' && kind !== 'sub') || !/^[\w-]{1,64}$/.test(id) || !/^[\w-]{1,64}$/.test(msgId))
-    return json({ error: 'Bad request' }, 400);
-  if (reaction !== null && !CHAT_REACTIONS[reaction])
-    return json({ error: 'Unknown reaction' }, 400);
+    return { error: 'Bad request', code: 400 };
+
+  const profile = await getDoc(env, `users/${user.uid}`);
+  const isAdmin = profile?.data.role === 'admin';
 
   let clientUid;
   let link;
   if (kind === 'case') {
     const doc = await getDoc(env, `cases/${id}`);
-    if (!doc) return json({ error: 'Not found' }, 404);
+    if (!doc) return { error: 'Not found', code: 404 };
     clientUid = doc.data.clientUid;
     link = `/case.html?id=${id}`;
   } else {
     const sub = await getDoc(env, `subscriptions/${id}`);
-    if (!sub) return json({ error: 'Not found' }, 404);
+    if (!sub) return { error: 'Not found', code: 404 };
     clientUid = id;
     link = '/subscription.html';
   }
+  // Membership, not merely authentication: being signed in is not permission
+  // to touch a stranger's thread.
+  if (!isAdmin && user.uid !== clientUid) return { error: 'Not your thread', code: 403 };
 
-  const parent = kind === 'case' ? 'cases' : 'subscriptions';
-  const path = `${parent}/${id}/chat/${msgId}`;
-  const msg = await getDoc(env, path);
+  return { clientUid, link, isAdmin, path: `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/chat/${msgId}` };
+}
+
+/**
+ * POST /api/chat/react  Body: { kind: 'case'|'sub', id, msgId, reaction|null }
+ *
+ * Chat messages are immutable to the browser (firestore.rules: `allow update:
+ * if false`), so reactions are written here with the service account — which
+ * also puts the notification on a path a client can't skip.
+ *
+ * Both sides may react, but not with the same vocabulary: clients are limited
+ * to the plain emoji, while the "Eric is reading…" statuses are admin-only.
+ * Nobody reacts to their own message.
+ */
+async function handleChatReact(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+
+  const body = await request.json().catch(() => null);
+  const ctx = await chatContext(env, user, body?.kind, String(body?.id || ''), String(body?.msgId || ''));
+  if (ctx.error) return json({ error: ctx.error }, ctx.code);
+
+  const reaction = body?.reaction ?? null;
+  const isEmoji = reaction !== null && Object.hasOwn(EMOJI_REACTIONS, reaction);
+  const isStatus = reaction !== null && Object.hasOwn(CHAT_REACTIONS, reaction);
+  if (reaction !== null && !isEmoji && !isStatus)
+    return json({ error: 'Unknown reaction' }, 400);
+  if (isStatus && !ctx.isAdmin)
+    return json({ error: 'That reaction is not available.' }, 403);
+
+  const msg = await getDoc(env, ctx.path);
   if (!msg) return json({ error: 'No such message' }, 404);
+  if (msg.data.from === user.uid)
+    return json({ error: 'You can only react to the other person\'s messages.' }, 403);
 
   if (!reaction) {
-    await patchDoc(env, path, { reaction: null }, { mask: ['reaction'] });
+    await patchDoc(env, ctx.path, { reaction: null }, { mask: ['reaction'] });
     return json({ ok: true, reaction: null });
   }
 
-  const r = CHAT_REACTIONS[reaction];
   const already = msg.data.reaction?.id === reaction;
-  await patchDoc(env, path, {
-    reaction: { id: reaction, label: r.label, at: new Date() },
-  }, { mask: ['reaction'] });
+  const record = isEmoji
+    ? { id: reaction, emoji: EMOJI_REACTIONS[reaction], kind: 'emoji', by: user.uid, at: new Date() }
+    : { id: reaction, label: CHAT_REACTIONS[reaction].label, kind: 'status', by: user.uid, at: new Date() };
+  await patchDoc(env, ctx.path, { reaction: record }, { mask: ['reaction'] });
 
-  // Re-applying the same reaction is a no-op for the client's phone — it
-  // already said this. Changing it is real news, so that one notifies.
-  if (!already && clientUid) {
-    await notifyUser(env, clientUid, { title: 'Pocket Advocate', body: r.push, link });
+  // Re-applying the same reaction is not news — their phone already said it.
+  // Changing it is, so that one notifies. Notify whoever wrote the message.
+  const target = msg.data.from;
+  if (!already && target && target !== user.uid) {
+    const push = isEmoji
+      ? `${ctx.isAdmin ? 'Eric' : 'Your client'} reacted ${EMOJI_REACTIONS[reaction]} to your message.`
+      : CHAT_REACTIONS[reaction].push;
+    await notifyUser(env, target, { title: 'Pocket Advocate', body: push, link: ctx.link });
   }
   return json({ ok: true, reaction, notified: !already });
+}
+
+/**
+ * POST /api/chat/edit  Body: { kind: 'case'|'sub', id, msgId, text }
+ * Your own message, within three minutes of sending it. Same reason this is
+ * server-side as reactions: messages are browser-immutable by rule, and the
+ * clock has to be one nobody can set.
+ */
+async function handleChatEdit(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+
+  const body = await request.json().catch(() => null);
+  const ctx = await chatContext(env, user, body?.kind, String(body?.id || ''), String(body?.msgId || ''));
+  if (ctx.error) return json({ error: ctx.error }, ctx.code);
+
+  const text = typeof body?.text === 'string' ? body.text.trim() : '';
+  if (!text || text.length > 2000) return json({ error: 'Message must be 1–2000 characters.' }, 400);
+
+  const msg = await getDoc(env, ctx.path);
+  if (!msg) return json({ error: 'No such message' }, 404);
+  if (msg.data.from !== user.uid) return json({ error: 'That is not your message.' }, 403);
+  // An attachment-only message has nothing to edit; editing the caption of one
+  // that also has text is fine.
+  if (!msg.data.text) return json({ error: 'That message has no text to edit.' }, 400);
+
+  const sent = new Date(msg.data.ts || 0).getTime();
+  if (!sent || Date.now() - sent > EDIT_WINDOW_MS)
+    return json({ error: 'Messages can only be edited for 3 minutes after sending.' }, 409);
+
+  const previous = msg.data.text;
+  await patchDoc(env, ctx.path, { text, editedAt: new Date() }, { mask: ['text', 'editedAt'] });
+
+  // Keep the admin inbox and the email digest honest: if this was still the
+  // newest message in the thread, its preview is now wrong.
+  const parentPath = ctx.path.replace(/\/chat\/[^/]+$/, '');
+  const parent = await getDoc(env, parentPath);
+  const last = parent?.data.lastMessage;
+  if (last && last.from === user.uid && last.text === previous.slice(0, 120)) {
+    await patchDoc(env, parentPath, {
+      lastMessage: {
+        ...last,
+        text: text.slice(0, 120),
+        // Reading decodes timestamps to ISO strings; handing one straight back
+        // would silently retype the field from timestamp to string.
+        ts: last.ts ? new Date(last.ts) : new Date(),
+      },
+    }, { mask: ['lastMessage'] });
+  }
+
+  return json({ ok: true, text });
 }
 
 // POST /api/push/test — send a notification to the caller's OWN devices.
