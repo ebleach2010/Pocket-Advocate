@@ -9,7 +9,7 @@ import {
 import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence } from './chat.js';
 import { initSetupGuide } from './onboarding.js';
-import { HELP_BUTTON, wireCaseHelp, openCaseHelp } from './case-help.js';
+import { HELP_BUTTON, wireHelp, openCaseHelp } from './help.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -141,7 +141,7 @@ function render() {
     </nav>
     <section id="tab-body"></section>`;
 
-  wireCaseHelp(container);
+  wireHelp(container);
   container.querySelectorAll('[data-case]').forEach((b) =>
     b.addEventListener('click', () => { currentId = b.dataset.case; render(); }));
   container.querySelectorAll('[data-tab]').forEach((b) =>
@@ -151,6 +151,59 @@ function render() {
   if (currentTab === 'progress') renderProgress(body, c);
   else if (currentTab === 'chat') renderChat(body, c);
   else renderDocs(body, c);
+
+  enableSwipe(body);
+}
+
+const TABS = ['progress', 'chat', 'docs'];
+
+/**
+ * Swipe left/right between the three tabs. Deliberately fussy about what
+ * counts: a gesture must be mostly horizontal, long enough to be intentional,
+ * and must not start on something the user is trying to scroll sideways (the
+ * chat's file strip) or type into. Otherwise scrolling a long document list
+ * would keep flinging people into Chat.
+ */
+function enableSwipe(el) {
+  const MIN_X = 60;      // px of horizontal travel before it counts
+  const MAX_OFF = 45;    // px of vertical drift tolerated
+  let x0 = 0;
+  let y0 = 0;
+  let live = false;
+
+  el.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { live = false; return; }
+    const t = e.touches[0];
+    // Don't hijack a gesture that belongs to something else on the page.
+    if (t.target.closest('input, textarea, select, button, a, [contenteditable]')) { live = false; return; }
+    if (scrollableX(t.target, el)) { live = false; return; }
+    // Leave the screen edges to Safari's back/forward gesture.
+    if (t.clientX < 24 || t.clientX > window.innerWidth - 24) { live = false; return; }
+    x0 = t.clientX;
+    y0 = t.clientY;
+    live = true;
+  }, { passive: true });
+
+  el.addEventListener('touchend', (e) => {
+    if (!live) return;
+    live = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - x0;
+    const dy = t.clientY - y0;
+    if (Math.abs(dx) < MIN_X || Math.abs(dy) > MAX_OFF || Math.abs(dy) > Math.abs(dx)) return;
+    const next = TABS.indexOf(currentTab) + (dx < 0 ? 1 : -1);
+    if (next < 0 || next >= TABS.length) return;
+    currentTab = TABS[next];
+    render();
+  }, { passive: true });
+}
+
+/** True if the touch began inside something that scrolls horizontally itself. */
+function scrollableX(node, stopAt) {
+  for (let n = node; n && n !== stopAt; n = n.parentElement) {
+    if (n.scrollWidth > n.clientWidth + 4) return true;
+  }
+  return false;
 }
 
 // ---- Progress tab ----

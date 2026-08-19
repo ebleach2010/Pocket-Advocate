@@ -61,6 +61,18 @@ neon on near-black (`--bg: #07090F`). There is exactly one look: the theme
 picker, the alternate stylesheets and the `pa-theme` localStorage key were all
 deleted on purpose. Don't reintroduce them.
 
+- Admin sign-in is a PIN typed into the **email field** on `/signin.html`. A
+  purely-numeric entry posts to `/api/admin/pin`, which checks it against the
+  `ADMIN_PIN` Worker secret and mints a Firebase custom token for `ADMIN_UID`.
+  Wrong PINs return the same "Enter a valid email address" as a bad email, so
+  the page gives nothing away, and attempts are throttled per-IP. Don't add a
+  visible admin login — the disguise is the point.
+- Notifications are native Web Push (RFC 8291), not FCM — FCM's token flow
+  fails inside iOS Home-Screen apps. `VAPID_PUBLIC_KEY` appears in both
+  `wrangler.jsonc` and `public/js/firebase-config.js` and the two must match;
+  the private half is the `VAPID_PRIVATE_JWK` secret. `/api/push/test` sends
+  the caller a notification so delivery can be proven on demand.
+
 **How I work.** I'm not a developer. I do everything through Claude sessions —
 no local checkout, no terminal, no editor. So: don't tell me to run commands,
 don't ask me to paste API tokens or secrets into chat (those go in Cloudflare's

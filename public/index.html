@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
 <meta name="theme-color" content="#07090F">
 <title>Pocket Advocate</title>
-<link rel="stylesheet" href="/css/site.css?v=stat12">
+<link rel="stylesheet" href="/css/site.css?v=stat13">
 </head>
 <body>
 <header class="bar">
@@ -31,6 +31,8 @@
       <h1>Walk into your next appointment armed.</h1>
       <p class="hero-sub">Your labs, scans, and story — turned into real questions, next steps, and a plan you keep.</p>
     </div>
+
+    <p class="webapp-note" id="webapp-note">This is a web app</p>
 
     <a class="pack rec-c" href="/book.html">
       <span class="tag c">COMPREHENSIVE</span>
@@ -56,7 +58,14 @@
 <script type="module">
   import { hydrateNav, currentUser } from '/js/auth.js';
   import { initSetupGuide } from '/js/onboarding.js';
+  import { helpButton, wireHelp } from '/js/help.js';
   hydrateNav();
+
+  // "This is a web app ?" above the tiers — the install/notifications/sign-in
+  // explainer, reachable before anyone has paid a cent.
+  const note = document.getElementById('webapp-note');
+  note.insertAdjacentHTML('beforeend', ' ' + helpButton('app', 'What a web app means, and how to add it to your Home Screen'));
+  wireHelp(note);
   // Offer the Home Screen install once, before booking rather than after
   // paying — signed-in only, once per device, and skippable. Never a gate:
   // the Book button stays live behind it.
