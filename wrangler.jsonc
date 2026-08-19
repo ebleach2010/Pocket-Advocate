@@ -7,6 +7,11 @@
   "name": "pocket-advocate",
   "main": "worker/index.js",
   "compatibility_date": "2025-09-01",
+  // The Anthropic SDK (advisor) imports node:path / node:fs on its
+  // credential-file code path. We always pass an explicit apiKey so that path
+  // never runs, but the imports still have to resolve or the Worker fails to
+  // load at all — which would take the whole site down, not just the advisor.
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "public",
     "binding": "ASSETS"
@@ -38,4 +43,6 @@
   //   STRIPE_WEBHOOK_SECRET      whsec_...
   //   FIREBASE_SERVICE_ACCOUNT   full service-account JSON, one line
   //   RESEND_API_KEY             re_...
+  //   ANTHROPIC_API_KEY          sk-ant-...  (the 👨‍⚕️ Advisor; without it the
+  //                              advisor panel shows an error and nothing else breaks)
 }

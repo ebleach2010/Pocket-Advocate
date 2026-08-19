@@ -90,3 +90,27 @@ There's also `ebleach2010/Pocket-Webhooks` — a Node.js + TypeScript service th
 receives signed webhooks from Pockey (heypocketai.com) and turns dictated
 appointments into Google Calendar events. It's unrelated to Pocket Advocate;
 open a separate session for it rather than mixing the two.
+
+## The 👨‍⚕️ Advisor
+
+An Opus-backed private advisor sits beside the client chat on `admin-case.html`.
+It is **admin-only by security rule**, not by hidden UI: `firestore.rules` gates
+the whole `advisor` subtree on `isAdmin()`, so a client cannot read Eric's
+assessment of their own case even with a crafted request.
+
+- `worker/advisor.js` — the Messages API calls (`claude-opus-5`, adaptive
+  thinking, effort `max` for analysis / `high` for drafts, streamed).
+  Deliberately **not** Managed Agents: there is no sandbox work to do, and a
+  long-lived agent session is the wrong shape inside a Worker request.
+- `POST /api/advisor` — actions `analyze`, `ask`, `draft`, `pause`, `resume`,
+  `clear-draft`. Model calls run in `ctx.waitUntil` and land in Firestore at
+  `cases/{id}/advisor/state`; the panel watches the doc, so a long Opus turn
+  never holds a request open.
+- Analysis re-runs automatically when a **client** writes (hooked into
+  `handleNotify`), unless paused, at most once a minute.
+- Requires the `ANTHROPIC_API_KEY` Worker secret. Without it the panel shows an
+  error and nothing else is affected.
+- `nodejs_compat` is on in `wrangler.jsonc` because the Anthropic SDK imports
+  `node:path`/`node:fs` on a code path we never take — the imports still have to
+  resolve or the Worker won't load at all. Re-check `wrangler deploy --dry-run`
+  after any SDK bump.

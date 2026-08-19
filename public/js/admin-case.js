@@ -8,6 +8,7 @@ import {
 } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { mountChat } from './chat.js';
+import { mountAdvisor } from './advisor.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
@@ -96,9 +97,12 @@ function render(el) {
       <p class="error" id="err" hidden></p>
     </div>
 
-    <div class="panel">
-      <h3>Chat with the client</h3>
-      <div id="chat"></div>
+    <div class="chat-with-advisor">
+      <div class="panel">
+        <h3>Chat with the client</h3>
+        <div id="chat"></div>
+      </div>
+      <div class="panel advisor-panel" id="advisor"></div>
     </div>
 
     <div class="panel">
@@ -153,7 +157,7 @@ function render(el) {
   el.querySelector('#up-report').addEventListener('change', (e) =>
     upload(e.target.files[0], 'report', 'report-uploaded'));
 
-  mountChat({
+  const chat = mountChat({
     container: el.querySelector('#chat'),
     parentPath: ['cases', caseId],
     user,
@@ -161,6 +165,17 @@ function render(el) {
     saveUid: c.clientUid,
     disabled: c.status === 'closed',
     notice: 'Chat ended when this case closed.',
+  });
+
+  // Admin-only, and admin-only by rule — see the `advisor` match in
+  // firestore.rules. An approved draft goes out through the same send path as
+  // anything I type, so it lands as an ordinary message from me.
+  mountAdvisor({
+    container: el.querySelector('#advisor'),
+    kind: 'case',
+    id: caseId,
+    user,
+    onSend: (text) => chat.send(text),
   });
 }
 

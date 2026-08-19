@@ -560,6 +560,42 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
   font: inherit; font-size: .95rem;
 }
 
+/* ---- 👨‍⚕️ Advisor: my private panel, side by side with the client chat ---- */
+.chat-with-advisor { display: grid; grid-template-columns: 1fr; gap: .9rem; }
+@media (min-width: 62rem) {
+  .chat-with-advisor { grid-template-columns: minmax(0, 1fr) minmax(0, 22rem); align-items: start; }
+}
+.advisor-panel { border-color: var(--magenta); box-shadow: var(--glow-m); }
+.advisor-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
+.advisor-head h3 { margin: 0; color: var(--magenta); }
+.advisor-controls { display: flex; align-items: center; gap: .35rem; }
+.btn.tiny { font-size: .7rem; padding: .3rem .55rem; }
+.btn.tiny.on { border-color: var(--magenta); color: var(--magenta); }
+.advisor-status { font-size: .7rem; color: var(--dim); }
+.advisor-status.live { color: var(--magenta); animation: advisor-pulse 1.4s ease-in-out infinite; }
+@keyframes advisor-pulse { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+.advisor-sub { margin: .1rem 0 .5rem; font-size: .72rem; }
+.advisor-body { max-height: 30rem; overflow-y: auto; }
+.advisor-sec { border-top: 1px solid var(--line); padding-top: .5rem; margin-top: .5rem; }
+.advisor-sec:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+.advisor-sec h4 { margin: 0 0 .3rem; font-size: .82rem; letter-spacing: .02em; color: var(--cyan); }
+.advisor-sec p, .advisor-body p { margin: .3rem 0; font-size: .85rem; line-height: 1.5; color: var(--soft); }
+.advisor-sec ul, .advisor-body ul { margin: .3rem 0 .3rem 1.05rem; padding: 0; }
+.advisor-sec li, .advisor-body li { font-size: .85rem; line-height: 1.5; color: var(--soft); margin-bottom: .25rem; }
+.advisor-sec h5 { margin: .5rem 0 .2rem; font-size: .8rem; color: var(--ink); }
+.advisor-qa { margin-top: .6rem; max-height: 18rem; overflow-y: auto; }
+.advisor-turn { border-top: 1px solid var(--line); padding-top: .5rem; margin-top: .5rem; }
+.advisor-q { margin: 0 0 .3rem; font-size: .82rem; color: var(--ink); font-weight: 600; }
+.advisor-a p, .advisor-a li { font-size: .84rem; color: var(--soft); }
+.advisor-foot { margin-top: .7rem; border-top: 1px solid var(--line); padding-top: .7rem; }
+.advisor-foot .btn { width: 100%; }
+.advisor-ask { display: flex; gap: .4rem; margin-top: .5rem; align-items: flex-end; }
+.advisor-ask textarea {
+  flex: 1; resize: none; overflow-y: auto; font: inherit; font-size: .85rem;
+  line-height: 1.4; min-height: 2.4rem; max-height: 7rem; padding: .45rem .6rem;
+}
+.advisor-ask .btn { flex: none; align-self: flex-end; }
+
 .chat-form { display: flex; gap: .5rem; margin-top: .4rem; align-items: flex-end; }
 /* A composer you can actually read what you typed in: it grows to five-ish
    lines before it starts scrolling, instead of marching the words off the left. */
