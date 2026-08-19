@@ -35,9 +35,9 @@ and in the report footer):
 
 | Product | Price | What you get |
 |---|---|---|
-| **Advocacy Case** | **$125** one-time | A live video discussion with Eric going over your symptoms, labs, and medical journey; a private case file with uploads, the call recording, and live chat; and within **one week** of the call, a comprehensive written report/flow chart covering what was discussed, next steps, and anything Eric found since the conversation. |
-| **Follow-up add-on** | **+$50**, offered **only at checkout** | A second schedulable discussion on the same case, bookable any time after your report lands. If you skip it and want a follow-up later, that's a fresh $125 case with the same full benefits — there is no discounted retro add-on. |
-| **24/7 Priority Chat** | **$24.99/month** subscription | Round-the-clock access to the chat with Eric, with his live online status. **Eric replies on his own time, when he's available — response timing is never guaranteed, and that trade-off is stated plainly in the terms the subscriber accepts.** Entirely separate from cases; cancel anytime (access runs to the end of the paid period). |
+| **Advocacy Case** | **$100** one-time | A live video discussion with Eric going over your symptoms, labs, and medical journey; a private case file with uploads, the call recording, and live chat; and within **one week** of the call, a comprehensive written report/flow chart covering what was discussed, next steps, and anything Eric found since the conversation. |
+| **Follow-up add-on** | **+$50**, offered **only at checkout** | A second schedulable discussion on the same case, bookable any time after your report lands. If you skip it and want a follow-up later, that's a fresh $100 case with the same full benefits — there is no discounted retro add-on. |
+| **24/7 Priority Chat** | **$20/month** subscription | Round-the-clock access to the chat with Eric, with his live online status. **Eric replies on his own time, when he's available — response timing is never guaranteed, and that trade-off is stated plainly in the terms the subscriber accepts.** Entirely separate from cases; cancel anytime (access runs to the end of the paid period). |
 
 ### The public/private choice
 
@@ -122,7 +122,7 @@ flowchart TD
     METHOD -->|Preferred| DIS[Discord voice channel]
     METHOD --> ZOOM[Zoom call]
     METHOD --> PHONE[Phone call]
-    DIS --> PAY[Stripe Checkout: $125\n+ optional $50 follow-up add-on\nslot held during checkout]
+    DIS --> PAY[Stripe Checkout: $100\n+ optional $50 follow-up add-on\nslot held during checkout]
     ZOOM --> PAY
     PHONE --> PAY
     PAY --> HOOK[Webhook confirms payment]
@@ -134,7 +134,7 @@ flowchart TD
     REC --> RPT[Within 7 days: Eric uploads the report\nclient is pinged]
     RPT --> FU{Bought the $50 add-on?}
     FU -->|Yes| FUCALL[Book the follow-up discussion\nany time after the report]
-    FU -->|No| OFFER[Case page offers a follow-up\nas a fresh $125 case]
+    FU -->|No| OFFER[Case page offers a follow-up\nas a fresh $100 case]
     FUCALL --> CLOSE
     OFFER --> CLOSE[Eric marks the case CLOSED\nchat terminates\nfile stays accessible forever\nevery document downloadable / printable]
 ```
@@ -162,7 +162,7 @@ flowchart TD
 ### 24/7 Priority Chat flow (parallel product)
 
 Account → subscription terms (form 5, with the no-guarantee clause up front) → Stripe
-subscription Checkout ($24.99/mo) → chat unlocks immediately, showing Eric's live online
+subscription Checkout ($20/mo) → chat unlocks immediately, showing Eric's live online
 status. Renewal, failed payment, and cancellation all flow through Stripe webhooks:
 access ends at the end of the last paid period. Independent of any case.
 
@@ -278,8 +278,8 @@ requires a Home-Screen install (iOS 16.4+); wire it in a later phase, not v1.
 
 | Item | Cost |
 |---|---|
-| Stripe, $125 case | 2.9% + 30¢ ≈ **$3.93** (+$1.45 on the $50 add-on) |
-| Stripe, $24.99/mo subscription | ≈ $1.02 + Stripe Billing's small % per cycle |
+| Stripe, $100 case | 2.9% + 30¢ ≈ **$3.20** (+$1.45 on the $50 add-on) |
+| Stripe, $20/mo subscription | ≈ 88¢ + Stripe Billing's small % per cycle |
 | Firebase | Free tier comfortably covers launch volume; storage of recordings is the first thing that would ever cost real money (~$0.026/GB/mo) |
 | Cloudflare | Free tier |
 | Discord / Zoom | Free (Discord) / existing account (Zoom) |
@@ -315,9 +315,9 @@ replies within a few days") and subscriptions can be paused from his side.
 ## H. Open questions for Eric
 
 1. **Refund/cancel + no-show policies** — the §C proposals need a yes/no.
-   ✅ **Partially decided (2026-07-13): the $125 case fee (and $50 add-on) is
+   ✅ **Partially decided (2026-07-13): the $100 case fee (and $50 add-on) is
    non-refundable once the slot is booked** — stated in waiver 1's Payment
-   section and at checkout. The $24.99/mo subscription cancels anytime via the
+   section and at checkout. The $20/mo subscription cancels anytime via the
    Stripe customer portal (access runs to period end). No-show policy still open.
 2. **Slot length** (60 min? 90?) and how far ahead the calendar opens (2 weeks? 4?).
    ✅ **Partially decided (2026-07-13): the booking horizon is 1.5 weeks (252h),
@@ -327,7 +327,7 @@ replies within a few days") and subscriptions can be paused from his side.
    surface to clients as they come inside the horizon. Slot length still open.
 3. **Domain / public brand name** — "TheBroScientist Neuro Advocacy" with Pocket
    Advocate as the subscription's name?
-   ✅ **Decided (2026-07-11): the web app is called "Pocket Advocate."** The $24.99/mo
+   ✅ **Decided (2026-07-11): the web app is called "Pocket Advocate."** The $20/mo
    product is presented as "24/7 Priority Chat." Public sessions still
    broadcast on the TheBroScientist YouTube channel. Domain still open.
    ✅ **Decided (2026-07-12): the domain is thepocketadvocates.com.**
@@ -338,7 +338,7 @@ replies within a few days") and subscriptions can be paused from his side.
    day countdown; the cron emails the client one warning a week before expiry.
    Admin can honor an expired follow-up via the charge-at-0% scheduling mode.
    Eric also gained full scheduling powers per case: reschedule, book the paid
-   follow-up, or charge a custom rate (0–150% of $125 in 25% steps) with an
+   follow-up, or charge a custom rate (0–150% of $100 in 25% steps) with an
    invoice tagline — paid sessions confirm through Stripe Checkout with a 24h
    slot hold. Summary-or-not for follow-ups still open.
 5. **Discord logistics** — one persistent lobby channel vs. a fresh private channel per

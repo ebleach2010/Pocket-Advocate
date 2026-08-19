@@ -2,7 +2,7 @@
 //   POST   /api/checkout           hold a slot, create a Stripe Checkout Session
 //   GET    /api/case-for-session   poll after checkout: has the webhook made my case?
 //   POST   /api/make-private       revoke a public election (allowed until call time)
-//   POST   /api/subscribe          24/7 Priority Chat subscription Checkout ($24.99/mo)
+//   POST   /api/subscribe          24/7 Priority Chat subscription Checkout ($20/mo)
 //   POST   /api/portal             Stripe customer portal (manage/cancel)
 //   POST   /api/stripe/webhook     payments + subscription lifecycle -> Firestore
 //   POST   /api/admin/slots        open availability slots (admin)
@@ -19,14 +19,14 @@ import { slotTimingProblem, windowProblem, HOLD_MINUTES } from './schedule.js';
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 
-const CASE_PRICE_CENTS = 12500;
+const CASE_PRICE_CENTS = 10000;
 const ADDON_PRICE_CENTS = 5000;
-const SUB_PRICE_CENTS = 2499;
+const SUB_PRICE_CENTS = 2000;
 // Follow-up add-ons expire one month after the first discussion (Eric,
 // 2026-07-13); clients get one warning email a week before the deadline.
 const FOLLOWUP_EXPIRY_DAYS = 30;
 const FOLLOWUP_WARN_DAYS = 7;
-// Admin-priced sessions: percentage of the $125 case rate, 25% steps.
+// Admin-priced sessions: percentage of the $100 case rate, 25% steps.
 const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
 const METHODS = ['discord', 'zoom', 'phone'];
 const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording', 'election'];
@@ -997,7 +997,7 @@ async function handleAdminSchedule(request, env) {
     return json({ ok: true, scheduled: when });
   }
 
-  // mode === 'charge' — a custom-priced session (percentage of the $125 rate).
+  // mode === 'charge' — a custom-priced session (percentage of the $100 rate).
   if (!CHARGE_PCTS.includes(pct)) return json({ error: 'Pick a rate (0–150% in 25% steps).' }, 400);
   const label =
     typeof tagline === 'string' && tagline.trim()
