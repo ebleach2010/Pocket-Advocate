@@ -211,7 +211,8 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
 .ok { color: var(--cyan); font-size: .95rem; margin: .6rem 0; }
 
 /* forms */
-input[type=email], input[type=tel], input[type=text], input[type=date], input[type=url], select {
+input[type=email], input[type=tel], input[type=text], input[type=date], input[type=url],
+input[type=datetime-local], select, textarea {
   width: 100%; padding: .6rem .75rem; border: 1px solid var(--line); border-radius: 10px;
   background: var(--panel-2); color: var(--ink); font: inherit;
 }
@@ -493,29 +494,81 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 .msg .msg-meta { display: block; font-size: .66rem; color: var(--dim); margin-top: .15rem; }
 .msg.me { align-self: flex-end; background: rgba(45,226,255,.12); border: 1px solid var(--cyan-dim); border-bottom-right-radius: 4px; }
 .msg.them { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+/* Message text keeps the line breaks it was typed with. */
+.msg-text { white-space: pre-wrap; }
+.msg { position: relative; }
 /* Status reaction sitting under a message ("Eric is reading…"). */
 .msg-react {
   display: inline-flex; align-items: center; gap: .3rem; margin-top: .35rem;
   padding: .18rem .5rem; border-radius: 999px; font-size: .7rem; line-height: 1.3;
   border: 1px solid var(--cyan-dim); background: rgba(45,226,255,.1); color: var(--cyan);
 }
-/* Only messages I can react to suppress the long-press callout and selection,
-   so a held press opens the picker instead of iOS's Copy/Look Up menu. Client
-   views are untouched — they keep normal text selection. */
-.msg.react-target { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
-.react-card { max-width: 27rem; }
-.react-list { display: flex; flex-direction: column; gap: .4rem; }
-.react-opt {
-  display: flex; align-items: center; gap: .6rem; width: 100%; text-align: left;
-  padding: .6rem .75rem; border-radius: 12px; cursor: pointer; font-size: .92rem;
-  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+/* A plain emoji rides the bottom corner of the bubble, the way every other
+   chat app does it, rather than taking a line of its own. */
+.msg-emoji-react {
+  position: absolute; bottom: -.55rem; font-size: .85rem; line-height: 1;
+  padding: .12rem .25rem; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--line);
 }
-.react-opt:hover, .react-opt:focus-visible { border-color: var(--cyan); outline: none; }
-.react-opt.on { border-color: var(--cyan); color: var(--cyan); box-shadow: var(--glow-c); }
-.react-emoji { font-size: 1.05rem; line-height: 1; }
+.msg.them .msg-emoji-react { right: -.3rem; }
+.msg.me .msg-emoji-react { left: -.3rem; }
+/* Long-pressable messages suppress the iOS callout and selection so a held
+   press opens the menu instead of Copy/Look Up. "Copy text" in the menu gives
+   that back. */
+.msg.react-target { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 
-.chat-form { display: flex; gap: .5rem; margin-top: .4rem; }
-.chat-form input { flex: 1; }
+/* ---- long-press message menu (Messenger-style: emoji bar, then a sheet) ---- */
+.msg-menu-overlay {
+  position: fixed; inset: 0; z-index: 70; display: flex;
+  align-items: center; justify-content: center; padding: 1.1rem;
+  background: rgba(4,6,10,.72); backdrop-filter: blur(5px);
+}
+.msg-menu { width: 100%; max-width: 26rem; }
+.react-bar {
+  display: flex; justify-content: space-between; gap: .2rem; margin: 0 auto .7rem;
+  padding: .45rem .6rem; border-radius: 999px; width: fit-content; max-width: 100%;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: 0 8px 26px rgba(0,0,0,.45);
+}
+.react-emoji-btn {
+  border: 0; background: none; cursor: pointer; padding: .15rem .3rem;
+  font-size: 1.75rem; line-height: 1; border-radius: 50%;
+  transition: transform .12s ease;
+}
+.react-emoji-btn:hover, .react-emoji-btn:focus-visible { transform: scale(1.25); outline: none; }
+.react-emoji-btn.on { transform: scale(1.2); background: rgba(45,226,255,.16); }
+.msg-menu-sheet {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  padding: .5rem; box-shadow: 0 8px 26px rgba(0,0,0,.45);
+  max-height: min(60vh, 30rem); overflow-y: auto;
+}
+.msg-menu-head { margin: .4rem .55rem .35rem; font-size: .72rem; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--dim); }
+.msg-menu-note { margin: .4rem .55rem .2rem; font-size: .72rem; color: var(--dim); }
+.msg-menu-row {
+  display: flex; align-items: center; gap: .65rem; width: 100%; text-align: left;
+  padding: .62rem .6rem; border-radius: 11px; cursor: pointer; font-size: .92rem;
+  border: 0; background: none; color: var(--ink);
+}
+.msg-menu-row:hover, .msg-menu-row:focus-visible { background: var(--panel-2); outline: none; }
+.msg-menu-row.on { color: var(--cyan); }
+.msg-menu-row.cancel { justify-content: center; color: var(--dim); margin-top: .2rem;
+  border-top: 1px solid var(--line); border-radius: 0 0 11px 11px; }
+.react-emoji { font-size: 1.05rem; line-height: 1; width: 1.3rem; text-align: center; }
+.edit-card { max-width: 28rem; }
+.edit-box {
+  width: 100%; resize: vertical; min-height: 6rem; line-height: 1.5;
+  font: inherit; font-size: .95rem;
+}
+
+.chat-form { display: flex; gap: .5rem; margin-top: .4rem; align-items: flex-end; }
+/* A composer you can actually read what you typed in: it grows to five-ish
+   lines before it starts scrolling, instead of marching the words off the left. */
+.chat-form textarea {
+  flex: 1; resize: none; overflow-y: auto; font: inherit; font-size: .95rem;
+  line-height: 1.45; min-height: 2.9rem; max-height: 9rem; padding: .6rem .7rem;
+}
+/* Both buttons sit level with the bottom of the growing box. */
+.chat-form .attach-btn, .chat-form .btn { flex: none; align-self: flex-end; height: 2.9rem; }
 .chat-notice { border-top: 1px solid var(--line); padding-top: .6rem; }
 .p-dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; background: var(--line); margin-right: .3rem; }
 .p-dot.on { background: var(--cyan); box-shadow: var(--glow-c); }

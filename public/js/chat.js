@@ -13,7 +13,9 @@ import {
   query, orderBy, limit, serverTimestamp, rtdbRef, onValue,
   ref, uploadBytesResumable, getDownloadURL,
 } from './firebase.js';
-import { byId, pickReaction } from './reactions.js';
+import {
+  emojiById, statusById, openMessageMenu, openEditor, EDIT_WINDOW_MS,
+} from './msg-actions.js';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const LONG_PRESS_MS = 550;
@@ -48,7 +50,8 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       : `<form class="chat-form" data-form>
            <label class="attach-btn" title="Attach a file">📎<input type="file" hidden data-attach
              accept=".pdf,.jpg,.jpeg,.png,.heic,.gif,.webp,.dcm,.dicom,.zip,.mp4,.mov,.doc,.docx,.txt"></label>
-           <input type="text" data-input maxlength="2000" placeholder="Write a message…" autocomplete="off">
+           <textarea data-input maxlength="2000" rows="1" placeholder="Write a message…"
+             autocomplete="off" autocapitalize="sentences"></textarea>
            <button class="btn" type="submit">Send</button>
          </form>
          <progress data-progress max="100" value="0" hidden></progress>
@@ -89,36 +92,59 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         hasAttachment = true;
         div.appendChild(renderAttachment(data.attachment, saveUid));
       }
+      const sentAt = data.ts?.toDate ? data.ts.toDate() : null;
       const meta = document.createElement('span');
       meta.className = 'msg-meta';
-      meta.textContent = data.ts?.toDate ? fmt.format(data.ts.toDate()) : 'sending…';
+      meta.textContent = (sentAt ? fmt.format(sentAt) : 'sending…') + (data.editedAt ? ' · edited' : '');
       div.appendChild(meta);
 
-      // A status reaction, visible to both sides.
+      // The reaction, visible to both sides. A plain emoji rides the corner of
+      // the bubble the way it does everywhere else; a status reaction is a
+      // sentence, so it gets a chip of its own.
       if (data.reaction?.id) {
-        const r = byId(data.reaction.id);
+        const em = emojiById(data.reaction.id);
         const chip = document.createElement('span');
-        chip.className = 'msg-react';
-        chip.textContent = `${r ? r.emoji + ' ' : ''}${data.reaction.label || r?.label || ''}`;
+        if (em) {
+          chip.className = 'msg-emoji-react';
+          chip.textContent = em.emoji;
+        } else {
+          const st = statusById(data.reaction.id);
+          chip.className = 'msg-react';
+          chip.textContent = `${st ? st.emoji + ' ' : ''}${data.reaction.label || st?.label || ''}`;
+        }
         div.appendChild(chip);
       }
 
-      // Only I react, and only to what the client wrote — reacting to my own
-      // message would just be talking to myself.
-      if (myRole === 'admin' && !mine) reactLongPress(div, m.id, data.reaction?.id || null);
+      // Long-press opens the menu. What's in it depends on whose message it is:
+      // reactions on theirs, editing on your own inside the 3-minute window.
+      const editable = mine && !!data.text && sentAt &&
+        Date.now() - sentAt.getTime() < EDIT_WINDOW_MS;
+      if (!mine || editable || data.text) {
+        messageLongPress(div, {
+          msgId: m.id,
+          canReact: !mine,
+          canUseStatus: !mine && myRole === 'admin',
+          canEdit: !!editable,
+          hasReaction: !!data.reaction?.id,
+          hasText: !!data.text,
+          current: data.reaction?.id || null,
+          text: data.text || '',
+          deadline: sentAt ? sentAt.getTime() + EDIT_WINDOW_MS : 0,
+        });
+      }
 
       log.appendChild(div);
     });
     const hint = container.querySelector('[data-hint]');
     if (hint) {
-      if (myRole === 'admin') {
-        hint.textContent = hasAttachment
-          ? 'Press and hold a message to tell them what you\'re doing; hold a file to save it to their Documents.'
-          : 'Press and hold their message to tell them what you\'re doing — they get a notification.';
-        hint.hidden = false;
-      } else {
-        hint.hidden = !hasAttachment;
-      }
+      hint.textContent = myRole === 'admin'
+        ? (hasAttachment
+          ? 'Press and hold a message to react or tell them what you\'re doing; hold a file to save it to their Documents.'
+          : 'Press and hold their message to react or tell them what you\'re doing — they get a notification.')
+        : (hasAttachment
+          ? 'Press and hold a message to react or edit it; hold a shared file to save it to Documents.'
+          : 'Press and hold a message to react to it, or to edit your own within 3 minutes.');
+      hint.hidden = false;
     }
     log.scrollTop = log.scrollHeight;
   }, (err) => {
@@ -139,15 +165,15 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   }
 
   /**
-   * Long-press (or right-click) a client message to set a status reaction.
-   * Skips touches that started on an attachment — that gesture already means
-   * "save this file" and stealing it would be worse than not having this.
+   * Long-press (or right-click) any message to open its menu. Skips touches
+   * that started on an attachment — that gesture already means "save this
+   * file" and stealing it would be worse than not having this.
    */
-  function reactLongPress(el, msgId, current) {
+  function messageLongPress(el, opts) {
     el.classList.add('react-target');
     let timer = null;
     const onAttachment = (e) => !!e.target.closest?.('.msg-img, .file-chip');
-    const open = () => applyReaction(msgId, current);
+    const open = () => runMenu(opts);
     const start = (e) => {
       if (onAttachment(e)) return;
       timer = setTimeout(() => { timer = null; open(); }, LONG_PRESS_MS);
@@ -164,21 +190,44 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     });
   }
 
-  async function applyReaction(msgId, current) {
-    const choice = await pickReaction(current);
-    if (choice === undefined) return; // dismissed — leave it alone
+  const kindOf = () => (parentPath[0] === 'subscriptions' ? 'sub' : 'case');
+
+  async function runMenu(o) {
+    const choice = await openMessageMenu(o);
+    if (!choice) return; // dismissed — leave everything alone
+    if (choice.action === 'copy') {
+      try { await navigator.clipboard.writeText(o.text); }
+      catch { alert('Copying is blocked on this device.'); }
+      return;
+    }
+    if (choice.action === 'edit') return editMessage(o);
+    await post('/api/chat/react', {
+      kind: kindOf(), id: parentPath[1], msgId: o.msgId,
+      reaction: choice.action === 'clear' ? null : choice.id,
+    }, "Couldn't set that");
+  }
+
+  async function editMessage(o) {
+    const text = await openEditor(o.text, o.deadline);
+    if (text === undefined || text === o.text) return;
+    await post('/api/chat/edit',
+      { kind: kindOf(), id: parentPath[1], msgId: o.msgId, text },
+      "Couldn't save the edit");
+  }
+
+  // The onSnapshot listener repaints whatever changed, so there's nothing to
+  // do on success but stay out of the way.
+  async function post(url, payload, failMsg) {
     try {
-      const kind = parentPath[0] === 'subscriptions' ? 'sub' : 'case';
       const token = await user.getIdToken();
-      const res = await fetch('/api/chat/react', {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ kind, id: parentPath[1], msgId, reaction: choice }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error((await res.json()).error || `Failed (${res.status})`);
-      // The onSnapshot listener repaints the chip; nothing to do here.
     } catch (err) {
-      alert(`Couldn't set that: ${err.message}`);
+      alert(`${failMsg}: ${err.message}`);
     }
   }
 
@@ -197,12 +246,34 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   }
 
   const form = container.querySelector('[data-form]');
+  const input = container.querySelector('[data-input]');
+
+  // Grow with the message instead of scrolling it out of sight, up to the cap
+  // in .chat-form textarea, after which it scrolls internally.
+  const autoGrow = () => {
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = `${input.scrollHeight}px`;
+  };
+  input?.addEventListener('input', autoGrow);
+
+  // Enter sends on a real keyboard; on a phone it types a newline and the Send
+  // button does the sending, because an on-screen Return that fires messages
+  // half-written is its own kind of hell.
+  const hasKeyboard = window.matchMedia?.('(pointer: fine)').matches;
+  input?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && hasKeyboard) {
+      e.preventDefault();
+      form?.requestSubmit();
+    }
+  });
+
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const input = container.querySelector('[data-input]');
     const text = input.value.trim();
     if (!text) return;
     input.value = '';
+    autoGrow();
     errEl.hidden = true;
     try {
       await send({ text });
@@ -210,6 +281,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       errEl.textContent = `Couldn't send: ${err.message}`;
       errEl.hidden = false;
       input.value = text;
+      autoGrow();
     }
   });
 
