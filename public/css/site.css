@@ -15,10 +15,12 @@
   --blue: #6C9EFF;
   --danger: #FF6B6B;
   --gold: #FFCC55;
+  --orange: #FFA23E;
   --glow-c: 0 0 18px rgba(45, 226, 255, .35);
   --glow-m: 0 0 18px rgba(255, 79, 216, .30);
   --glow-g: 0 0 16px rgba(62, 224, 138, .30);
   --glow-b: 0 0 16px rgba(108, 158, 255, .30);
+  --glow-o: 0 0 16px rgba(255, 162, 62, .35);
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -229,6 +231,11 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
 }
 .tag.c { color: var(--green); border: 1px solid var(--green); box-shadow: var(--glow-g); }
 .tag.m { color: var(--magenta); border: 1px solid var(--magenta); box-shadow: var(--glow-m); }
+/* "Speedy" orange: italic with a slight forward lean, like it's already moving. */
+.tag.o {
+  color: var(--orange); border: 1px solid var(--orange); box-shadow: var(--glow-o);
+  font-style: italic; transform: skewX(-8deg); letter-spacing: .2em;
+}
 .fine { font-size: .82rem; color: var(--dim); margin: 0; line-height: 1.45; }
 .fine strong { color: var(--ink); }
 @media (max-height: 700px) {
