@@ -43,8 +43,15 @@ function client(env) {
   return new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 }
 
-/** Ask Claude once and hand back the text. Streamed: these turns run long. */
-async function ask(env, { system, messages, effort, maxTokens = 16000 }) {
+/**
+ * Ask Claude once and hand back the text. Streamed: these turns run long.
+ * maxTokens is shared between adaptive thinking and the visible text — at
+ * effort max the thinking share is large, and 16k proved too small in
+ * production (the first live analysis lost its final section mid-word).
+ * Streaming makes big ceilings free, so set them where truncation can't
+ * realistically happen.
+ */
+async function ask(env, { system, messages, effort, maxTokens = 64000 }) {
   const stream = client(env).messages.stream({
     model: MODEL,
     max_tokens: maxTokens,
@@ -57,6 +64,8 @@ async function ask(env, { system, messages, effort, maxTokens = 16000 }) {
   const final = await stream.finalMessage();
   if (final.stop_reason === 'refusal')
     throw new Error('The model declined this request.');
+  if (final.stop_reason === 'max_tokens')
+    console.warn('advisor: response truncated at max_tokens', maxTokens);
   return final.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
 }
 
@@ -242,7 +251,8 @@ export async function runDraft(env, kind, id, instruction) {
     const voice = myVoice(rows);
     const draft = await ask(env, {
       effort: DRAFT_EFFORT,
-      maxTokens: 4000,
+      // The visible draft is short, but thinking spends from the same budget.
+      maxTokens: 16000,
       system: [{ type: 'text', text: `${VOICE}
 
 Write the next message for Eric to send to this client, as Eric, in his voice.
