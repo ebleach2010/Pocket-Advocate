@@ -3,7 +3,6 @@
 // Shows once per device; after that, a small reminder appears only if setup
 // isn't finished yet.
 import { enablePush, pushInstalled, pushSupported } from './push.js';
-import { setTheme, currentTheme, THEMES } from './theme.js';
 
 const DONE_KEY = 'pa-intro-done';
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -31,20 +30,6 @@ function runIntro(user, mount, fullySet) {
       title: 'Welcome to Pocket Advocate 👋',
       body: `<p>You're in. This is your private space — your case, your documents, and a direct line to me. Just a couple of quick things to set up first.</p>`,
       cta: 'Get started',
-    },
-    {
-      title: 'Pick your look',
-      body: `<p>Choose a color scheme — you can change it any time from the ⚙ settings.</p>
-        <div class="seg" data-theme-seg>${THEMES.map((t) =>
-          `<button data-theme-pick="${t.id}" class="${t.id === currentTheme() ? 'on' : ''}">${t.label}</button>`).join('')}</div>`,
-      cta: 'Next',
-      onPaint: (root) => {
-        root.querySelectorAll('[data-theme-pick]').forEach((b) =>
-          b.addEventListener('click', () => {
-            setTheme(b.dataset.themePick);
-            root.querySelectorAll('[data-theme-pick]').forEach((x) => x.classList.toggle('on', x === b));
-          }));
-      },
     },
   ];
 

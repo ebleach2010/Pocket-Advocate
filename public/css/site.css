@@ -132,12 +132,6 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
 }
 .switch.on { background: var(--cyan); box-shadow: var(--glow-c); }
 .switch.on::after { left: calc(100% - 1.35rem); background: var(--panel); }
-.seg { display: flex; flex-wrap: wrap; gap: .45rem; }
-.seg button {
-  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
-  border-radius: 999px; padding: .42rem .85rem; font-weight: 600; font-size: .85rem; cursor: pointer;
-}
-.seg button.on { border-color: var(--cyan); color: var(--cyan); box-shadow: var(--glow-c); }
 
 /* Gentle first-run intro overlay. */
 .intro-overlay {
