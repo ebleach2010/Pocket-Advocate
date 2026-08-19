@@ -15,7 +15,7 @@
 
 import { requireUser } from './firebase-auth.js';
 import { mintCustomToken, getAccessToken } from './google-auth.js';
-import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate } from './firestore.js';
+import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, listDocs } from './firestore.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import {
   slotTimingProblem, windowProblem, HOLD_MINUTES,
@@ -76,6 +76,8 @@ export default {
         return await handleChatEdit(request, env);
       if (url.pathname === '/api/advisor' && request.method === 'POST')
         return await handleAdvisor(request, env, ctx);
+      if (url.pathname === '/api/advisor/state' && request.method === 'GET')
+        return await handleAdvisorState(request, env, url);
       if (url.pathname === '/api/push/test' && request.method === 'POST')
         return await handlePushTest(request, env);
       if (url.pathname === '/api/admin/pin' && request.method === 'POST')
@@ -106,7 +108,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-advisor-opus';
+const BUILD_TAG = 'v2026-08-19-advisor-opus-2';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -973,6 +975,35 @@ async function handleChatEdit(request, env) {
   }
 
   return json({ ok: true, text });
+}
+
+/**
+ * GET /api/advisor/state?kind=case&id=…
+ *
+ * The panel reads its state through here rather than straight from Firestore.
+ * Firestore rules ship by CLI, which this project's owner has no way to run, so
+ * a browser read of the advisor subtree fails until rules are next published —
+ * and the advisor would look broken through no fault of its own. Reading via
+ * the Worker also means the admin check lives in one place. (The rules in
+ * firestore.rules still lock the subtree down for whenever they are published;
+ * until then default-deny already keeps clients out of it entirely.)
+ */
+async function handleAdvisorState(request, env, url) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const profile = await getDoc(env, `users/${user.uid}`);
+  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+
+  const kind = url.searchParams.get('kind') === 'sub' ? 'sub' : 'case';
+  const id = url.searchParams.get('id') || '';
+  if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad id' }, 400);
+
+  const parent = kind === 'case' ? 'cases' : 'subscriptions';
+  const [state, qa] = await Promise.all([
+    getDoc(env, `${parent}/${id}/advisor/state`),
+    listDocs(env, `${parent}/${id}/advisor/qa`, { pageSize: 20, orderBy: 'at' }).catch(() => []),
+  ]);
+  return json({ state: state?.data || {}, qa: qa.map((r) => r.data) });
 }
 
 /**
