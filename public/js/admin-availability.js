@@ -7,6 +7,9 @@ import { requireAdmin, hydrateNav } from './auth.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7'; // MST = fixed UTC-7 (IANA sign is inverted)
 const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]; // last 60-min slot ends 6pm
+// Keep in sync with LEAD_TIME_HOURS in worker/schedule.js — slots inside the
+// booking lead window are unbookable, so we neither create nor display them.
+const LEAD_TIME_HOURS = 72;
 
 hydrateNav();
 const user = await requireAdmin();
@@ -36,20 +39,34 @@ async function createSlots() {
     return;
   }
 
-  // MST is fixed UTC-7: wall-clock hour h == UTC hour h+7.
+  if (from > to) {
+    errEl.textContent = `The start date (${fmtDay(from)}) is after the end date (${fmtDay(to)}).`;
+    errEl.hidden = false;
+    return;
+  }
+
+  // MST is fixed UTC-7: wall-clock hour h == UTC hour h+7. Track WHY each
+  // candidate time is dropped so a zero-slot outcome can say the reason
+  // instead of a generic shrug.
   const starts = [];
+  const dropped = { weekend: 0, past: 0, lead: 0 };
   for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
     for (const h of hours) {
       const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h + 7));
       if (weekdaysOnly) {
         const wd = new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, weekday: 'short' }).format(start);
-        if (wd === 'Sat' || wd === 'Sun') continue;
+        if (wd === 'Sat' || wd === 'Sun') { dropped.weekend++; continue; }
       }
-      if (start.getTime() > Date.now()) starts.push(start.toISOString());
+      const leadMs = start.getTime() - Date.now();
+      if (leadMs <= 0) { dropped.past++; continue; }
+      // Inside the booking lead window = clients can never book it. Don't
+      // create dead inventory; count it so the error can explain.
+      if (leadMs < LEAD_TIME_HOURS * 3600_000) { dropped.lead++; continue; }
+      starts.push(start.toISOString());
     }
   }
   if (!starts.length) {
-    errEl.textContent = 'That range produces no future slots.';
+    errEl.textContent = zeroSlotReason(dropped, from, to);
     errEl.hidden = false;
     return;
   }
@@ -72,6 +89,34 @@ async function createSlots() {
   }
 }
 
+/** "Aug 1" / "Aug 1 – Aug 2" for the yyyy-mm-dd inputs, read as MST days. */
+function fmtDay(ymd) {
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' })
+    .format(new Date(`${ymd}T12:00:00Z`));
+}
+
+/** Explain WHY a range produced zero slots — never the generic shrug. */
+function zeroSlotReason(dropped, from, to) {
+  const range = from === to ? fmtDay(from) : `${fmtDay(from)}–${fmtDay(to)}`;
+  const reasons = [];
+  if (dropped.weekend)
+    reasons.push(`${range} falls on a weekend and “Weekdays only” is checked`);
+  if (dropped.past)
+    reasons.push(`${dropped.past} of the times are already in the past`);
+  if (dropped.lead)
+    reasons.push(`${dropped.lead} of the times are inside the ${LEAD_TIME_HOURS}-hour booking lead window, so clients could never book them`);
+  if (!reasons.length) return 'That range produces no slots — check the dates and start times.';
+  if (reasons.length === 1) {
+    // Single cause: make it read as one clean sentence.
+    if (dropped.weekend && !dropped.past && !dropped.lead)
+      return `No slots opened: ${range} falls on a weekend and “Weekdays only” is checked. Uncheck it, or pick weekdays.`;
+    if (dropped.past && !dropped.weekend && !dropped.lead)
+      return `No slots opened: every time in ${range} is already in the past.`;
+    return `No slots opened: every time in ${range} is inside the ${LEAD_TIME_HOURS}-hour booking lead window — clients can't book with less than ${LEAD_TIME_HOURS} hours' notice. Pick dates at least ${Math.ceil(LEAD_TIME_HOURS / 24)} days out.`;
+  }
+  return `No slots opened: ${reasons.join('; ')}.`;
+}
+
 async function loadCalendar() {
   const el = document.getElementById('calendar');
   let slots = [];
@@ -82,9 +127,14 @@ async function loadCalendar() {
     el.innerHTML = `<p class="error">Couldn't load: ${err.message}</p>`;
     return;
   }
+  // Open slots that are past or inside the booking lead window are unbookable
+  // — hide them here (the Worker cron deletes them from the database within
+  // 15 minutes). Booked and held appointments stay visible.
+  const unbookableBefore = Date.now() + LEAD_TIME_HOURS * 3600_000;
   slots = slots
     .map((s) => ({ ...s, startDate: s.start?.toDate ? s.start.toDate() : new Date(s.start) }))
     .filter((s) => s.startDate.getTime() > Date.now() - 86_400_000)
+    .filter((s) => s.state !== 'open' || s.startDate.getTime() >= unbookableBefore)
     .sort((a, b) => a.startDate - b.startDate);
   if (!slots.length) {
     el.innerHTML = '<p class="dim">No upcoming slots. Open some above.</p>';

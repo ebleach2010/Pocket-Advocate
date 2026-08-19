@@ -292,7 +292,14 @@ summary.btn::-webkit-details-marker { display: none; }
 .crumbs li.done { border-color: var(--cyan-dim); color: var(--cyan-dim); }
 
 .waiver-body {
-  max-height: 40vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px;
+  /* Sized so heading + box + hint + the acknowledge button all fit one screen:
+     the ONLY scrolling on an agreement page happens inside this box. 100dvh
+     tracks the real visible height on phones (Safari's shrinking chrome);
+     ~19rem covers the header, title, explainer, hint, and button. The 40vh
+     line is the fallback for browsers without dvh. */
+  max-height: 40vh;
+  max-height: clamp(9rem, calc(100dvh - 19rem), 34rem);
+  overflow-y: auto; border: 1px solid var(--line); border-radius: 12px;
   padding: 1rem 1.1rem; background: var(--panel); font-size: .96rem;
 }
 .waiver-body h3 { color: var(--cyan); font-size: .88rem; letter-spacing: .06em; text-transform: uppercase; margin-top: .9rem; }

@@ -6,6 +6,8 @@ import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
+// Keep in sync with LEAD_TIME_HOURS in worker/schedule.js.
+const LEAD_TIME_HOURS = 72;
 
 hydrateNav();
 const user = await requireAdmin();
@@ -22,9 +24,15 @@ async function init() {
       getDocs(collection(db, 'availability')),
       getDocs(collection(db, 'cases')),
     ]);
+    // Open slots that are past or inside the booking lead window are
+    // unbookable — never show them (the Worker cron deletes them from the
+    // database within 15 minutes). Booked and held appointments stay.
+    const unbookableBefore = Date.now() + LEAD_TIME_HOURS * 3600_000;
     slotSnap.forEach((d) => {
       const s = d.data();
-      slots.push({ id: d.id, start: toDate(s.start), state: s.state || 'open', caseId: s.caseId || null });
+      const slot = { id: d.id, start: toDate(s.start), state: s.state || 'open', caseId: s.caseId || null };
+      if (slot.state === 'open' && slot.start.getTime() < unbookableBefore) return;
+      slots.push(slot);
     });
     caseSnap.forEach((d) => {
       const c = d.data();
