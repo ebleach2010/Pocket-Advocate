@@ -206,7 +206,11 @@ of padding it.` }],
 
 /** Eric asked the advisor something directly. */
 export async function runQuestion(env, kind, id, qaId, question) {
-  const path = `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/qa/${qaId}`;
+  // Nested under the state DOC, not beside it: Firestore paths alternate
+  // collection/document, so `…/advisor/qa/{qaId}` is not a valid document path
+  // (it broke in production with an instant 400). `…/advisor/state/qa/{qaId}`
+  // is valid and stays inside the advisor rules fence.
+  const path = `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state/qa/${qaId}`;
   try {
     const [rows, state] = await Promise.all([
       recentMessages(env, kind, id),
