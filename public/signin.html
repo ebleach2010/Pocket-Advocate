@@ -57,7 +57,7 @@
 </main>
 <script type="module">
   import { auth, isSignInWithEmailLink, signInWithEmailLink, signInWithCustomToken } from '/js/firebase.js';
-  import { recallEmail, hydrateNav } from '/js/auth.js';
+  import { recallEmail, rememberEmail, hydrateNav } from '/js/auth.js';
 
   hydrateNav();
   const params = new URLSearchParams(location.search);
@@ -65,6 +65,12 @@
   const errEl = document.getElementById('error');
   const codeErr = document.getElementById('code-error');
   let pendingEmail = '';
+
+  const emailInput = document.getElementById('email');
+  const known = recallEmail();
+  // Prefill only. The residency box stays unticked on purpose: an
+  // attestation the app ticks for you is not an attestation.
+  if (known) emailInput.value = known;
 
   // Complete any legacy magic-link that's still floating around in an inbox.
   if (isSignInWithEmailLink(auth, location.href)) {
@@ -122,6 +128,7 @@
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Try again.');
       pendingEmail = email;
+      rememberEmail(email);
       document.getElementById('code-to').textContent = email;
       document.getElementById('email-form').hidden = true;
       document.getElementById('code-form').hidden = false;
