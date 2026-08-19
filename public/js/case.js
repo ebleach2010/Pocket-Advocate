@@ -149,12 +149,18 @@ function renderProgress(el, c) {
   const localFmt = new Intl.DateTimeFormat('en-US', {
     weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
   });
+  const requested = !!c.appointment?.requested;
   const method = c.appointment?.method;
   const methodLine = method === 'phone'
     ? `Phone — I call you at <strong>${esc(c.appointment.phone || 'your number')}</strong>`
     : c.appointment?.joinLink
       ? `Video call — <a href="${esc(c.appointment.joinLink)}" rel="noopener">join link</a>`
       : 'Video call — your join link appears here before the call';
+  const requestedNote = requested
+    ? `<p class="small" style="margin:.4rem 0 0; color:var(--orange);">
+         <strong>Awaiting confirmation.</strong> You asked for this time and it wasn't on my
+         calendar — I'll confirm it, or offer you the nearest time that works, before the date.</p>`
+    : '';
   const election = c.publicElection || { choice: 'private' };
   const revocable = election.choice === 'public' && !closed &&
     (!election.revocableUntil || toDate(election.revocableUntil) > new Date());
@@ -166,6 +172,7 @@ function renderProgress(el, c) {
         <span class="dim small">${localFmt.format(start)} your time</span>
         <a href="#" class="small" data-ics>+ calendar</a></p>` : ''}
       <p class="dim small">${methodLine}</p>
+      ${requestedNote}
       <ul class="timeline">
         ${STEPS.map(([, label], i) => `
           <li class="${i + 1 < rank ? 'done' : i + 1 === rank ? (closed ? 'done' : 'now') : ''}">

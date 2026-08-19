@@ -52,6 +52,17 @@ function render(el) {
       <span class="status-pill">${(c.status || '?').replace('_', ' ').toUpperCase()}</span>
     </div>
     ${infoBar(c, mtFmt, start, due)}
+    ${c.appointment?.requested ? `
+    <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
+      <h3 style="margin:0 0 .3rem; color:var(--orange);">Booking request — not on your calendar</h3>
+      <p class="small" style="margin:0 0 .2rem;">They asked for
+        <strong>${start ? esc(mtFmt.format(start)) : 'an unknown time'} MST</strong>, paid in full.
+        Nothing is reserved until you confirm.</p>
+      <p class="dim small" style="margin:0 0 .7rem;">Declining keeps the case and the payment;
+        it just flags the case so you can offer another time below.</p>
+      <button class="btn" data-action="confirm-request">Confirm this time</button>
+      <button class="btn quiet" data-action="deny-request">Can't make it</button>
+    </div>` : ''}
     ${c.status !== 'closed' ? `
     <div style="margin:0 0 1rem;">
       <button class="btn danger" data-action="close" style="width:100%; padding:.8rem; font-size:1rem;">

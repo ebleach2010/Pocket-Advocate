@@ -81,8 +81,35 @@ export default {
   },
 };
 
+/** Stripe line items for a case, with the optional follow-up add-on. */
+function caseLineItems(addOnFollowUp) {
+  const items = [
+    {
+      quantity: 1,
+      price_data: {
+        currency: 'usd',
+        unit_amount: CASE_PRICE_CENTS,
+        product_data: { name: 'Advocacy Case', description: 'Live discussion + written report' },
+      },
+    },
+  ];
+  if (addOnFollowUp)
+    items.push({
+      quantity: 1,
+      price_data: {
+        currency: 'usd',
+        unit_amount: ADDON_PRICE_CENTS,
+        product_data: { name: 'Follow-up add-on', description: 'Second discussion on this case' },
+      },
+    });
+  return items;
+}
+
 // ---- POST /api/checkout ----
-// Body: { slotId, method, phone?, addOnFollowUp, acks: {form: msSinceEpoch} }
+// Body: { slotId | requestedStart, method, phone?, addOnFollowUp, acks: {form: ms} }
+// requestedStart is a time the client asked for that isn't on the calendar. It
+// takes payment like any booking, but the case is flagged pending until the
+// admin confirms or declines it.
 async function handleCheckout(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in to book.' }, 401);
@@ -91,7 +118,7 @@ async function handleCheckout(request, env) {
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
-  const { slotId, method, phone, addOnFollowUp, acks } = body;
+  const { slotId, requestedStart, method, phone, addOnFollowUp, acks } = body;
   const clientTz = validTz(body.tz);
 
   if (!METHODS.includes(method)) return json({ error: 'Choose a meeting method.' }, 400);
@@ -100,6 +127,12 @@ async function handleCheckout(request, env) {
   for (const form of REQUIRED_ACKS)
     if (!acks || typeof acks[form] !== 'number')
       return json({ error: 'All acknowledgment forms must be completed first.' }, 400);
+
+  // Two paths: an open slot off the calendar, or a time the client requested.
+  const isRequest = !slotId && typeof requestedStart === 'string';
+  if (isRequest) return await checkoutRequestedTime(env, {
+    user, identity, requestedStart, method, phone, addOnFollowUp, acks, clientTz,
+  });
 
   // Load and validate the slot.
   if (typeof slotId !== 'string' || !/^[\w-]{1,64}$/.test(slotId))
@@ -127,25 +160,7 @@ async function handleCheckout(request, env) {
   );
   if (!held) return json({ error: 'Someone just grabbed that time. Pick another slot.' }, 409);
 
-  const lineItems = [
-    {
-      quantity: 1,
-      price_data: {
-        currency: 'usd',
-        unit_amount: CASE_PRICE_CENTS,
-        product_data: { name: 'Advocacy Case', description: 'Live discussion + written report' },
-      },
-    },
-  ];
-  if (addOnFollowUp)
-    lineItems.push({
-      quantity: 1,
-      price_data: {
-        currency: 'usd',
-        unit_amount: ADDON_PRICE_CENTS,
-        product_data: { name: 'Follow-up add-on', description: 'Second discussion on this case' },
-      },
-    });
+  const lineItems = caseLineItems(addOnFollowUp);
 
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
@@ -173,6 +188,48 @@ async function handleCheckout(request, env) {
     mask: ['heldBySession'],
   });
 
+  return json({ url: session.url });
+}
+
+/**
+ * Checkout for a time the client asked for that isn't on the calendar. There
+ * is no availability doc to hold — nothing is reserved — so the case is created
+ * flagged `appointment.requested`, and the admin confirms or declines it.
+ */
+async function checkoutRequestedTime(env, o) {
+  const { user, identity, requestedStart, method, phone, addOnFollowUp, acks, clientTz } = o;
+  const start = new Date(requestedStart);
+  if (Number.isNaN(start.getTime())) return json({ error: 'Pick a valid date and time.' }, 400);
+
+  // Same lead time and horizon the calendar enforces, so a request can never
+  // buy a slot the normal flow would refuse.
+  const timingProblem = slotTimingProblem(start.toISOString(), 60);
+  if (timingProblem) return json({ error: timingProblem }, 409);
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + HOLD_MINUTES * 60_000);
+  const lineItems = caseLineItems(addOnFollowUp);
+  const session = await stripePost(env, '/checkout/sessions', {
+    mode: 'payment',
+    customer_email: user.email || undefined,
+    line_items: lineItems,
+    success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${env.PUBLIC_BASE_URL}/book.html?canceled=1`,
+    expires_at: Math.floor(expiresAt.getTime() / 1000),
+    metadata: {
+      uid: user.uid,
+      email: user.email || '',
+      name: identity.name,
+      dob: identity.dob,
+      tz: clientTz || '',
+      slotId: '',
+      requestedStart: start.toISOString(),
+      method,
+      phone: method === 'phone' ? phone : '',
+      addOnFollowUp: addOnFollowUp ? '1' : '0',
+      acks: JSON.stringify(acks),
+    },
+  });
   return json({ url: session.url });
 }
 
@@ -421,7 +478,7 @@ export async function runChatDigest(env, now = Date.now()) {
 /** The ONLY place a case is ever created. */
 async function createCaseFromSession(env, session) {
   const m = session.metadata || {};
-  if (!m.uid || !m.slotId) return;
+  if (!m.uid || (!m.slotId && !m.requestedStart)) return;
 
   // Idempotency: Stripe retries webhooks; don't create the case twice.
   const existing = await queryDocs(env, 'cases', [
@@ -429,11 +486,12 @@ async function createCaseFromSession(env, session) {
   ], 1);
   if (existing.length) return;
 
-  const slot = await getDoc(env, `availability/${m.slotId}`);
+  const slot = m.slotId ? await getDoc(env, `availability/${m.slotId}`) : null;
   const acks = safeJson(m.acks) || {};
   const now = new Date();
   const allFormsDone = REQUIRED_ACKS.every((f) => typeof acks[f] === 'number');
-  const start = slot ? new Date(slot.data.start) : null;
+  const isRequest = !m.slotId && !!m.requestedStart;
+  const start = isRequest ? new Date(m.requestedStart) : slot ? new Date(slot.data.start) : null;
   const caseId = crypto.randomUUID();
 
   await patchDoc(
@@ -453,6 +511,9 @@ async function createCaseFromSession(env, session) {
         method: m.method,
         phone: m.phone || null,
         joinLink: null,
+        // A time the client asked for, not one off the calendar. Nothing is
+        // reserved until the admin confirms it.
+        requested: isRequest,
       },
       // Always private — the election screen is gone. Field retained so
       // existing cases and the case page keep rendering.
@@ -471,6 +532,31 @@ async function createCaseFromSession(env, session) {
     },
     { mustNotExist: true }
   );
+
+  if (isRequest && start) {
+    const mt = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Etc/GMT+7', weekday: 'long', month: 'long', day: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+    }).format(start);
+    if (env.ADMIN_EMAIL) {
+      await sendEmail(env, {
+        to: env.ADMIN_EMAIL,
+        subject: 'A client requested a time that is not on your calendar',
+        html: `<p><strong>${escHtml(m.name || 'A client')}</strong> paid for a case and asked for:</p>
+          <p><strong>${mt} MST</strong></p>
+          <p>This time was not open on your calendar and nothing is reserved. Confirm it or
+          offer another time from the case page.</p>
+          <p><a href="${env.PUBLIC_BASE_URL}/admin-case.html?id=${caseId}">Review the request</a></p>`,
+      });
+    }
+    for (const a of await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5)) {
+      await notifyUser(env, a.id, {
+        title: 'Booking request',
+        body: `${m.name || 'A client'} requested ${mt} MST.`,
+        link: `/admin-case.html?id=${caseId}`,
+      });
+    }
+  }
 
   const clientEmail = m.email || session.customer_email;
   if (clientEmail && start) {
@@ -882,6 +968,45 @@ async function handleCaseUpdate(request, env) {
         <p>Take a day to read it over — if anything raises a question, ask me
         in your case chat before the case wraps up.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+    });
+  } else if (action === 'confirm-request') {
+    const appt = doc.data.appointment || {};
+    if (!appt.requested) return json({ error: 'This appointment is not a pending request.' }, 409);
+    await patchDoc(env, `cases/${caseId}`, {
+      appointment: { ...appt, requested: false },
+    }, { mask: ['appointment'] });
+    await sendEmail(env, {
+      to: doc.data.clientEmail,
+      subject: 'Your requested time is confirmed',
+      html: `<p>Good news — the time you asked for works. Your discussion is booked for:</p>
+        ${whenHtml(new Date(appt.start), doc.data.clientTz)}
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+    });
+    await notifyUser(env, doc.data.clientUid, {
+      title: 'Pocket Advocate',
+      body: 'Your requested time is confirmed.',
+      link: '/case.html',
+    });
+  } else if (action === 'deny-request') {
+    const appt = doc.data.appointment || {};
+    if (!appt.requested) return json({ error: 'This appointment is not a pending request.' }, 409);
+    await patchDoc(env, `cases/${caseId}`, {
+      appointment: { ...appt, requested: false },
+      needsReschedule: true,
+    }, { mask: ['appointment', 'needsReschedule'] });
+    await sendEmail(env, {
+      to: doc.data.clientEmail,
+      subject: 'That time did not work — let us find another',
+      html: `<p>I'm sorry — the time you asked for isn't one I can make. Nothing is lost:
+        your case is open and paid, and I'll offer you another time shortly.</p>
+        <p>If a particular window suits you better, message me in your case chat and
+        I'll work around it.</p>
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+    });
+    await notifyUser(env, doc.data.clientUid, {
+      title: 'Pocket Advocate',
+      body: 'Your requested time needs changing — open your case.',
+      link: '/case.html',
     });
   } else if (action === 'close') {
     await patchDoc(env, `cases/${caseId}`, { status: 'closed', closedAt: now }, {

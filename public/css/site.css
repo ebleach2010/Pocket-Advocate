@@ -207,13 +207,22 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
 }
 .pack h3 { margin: 0; font-size: 1.2rem; }
 .pack .desc { grid-column: 1 / -1; color: var(--soft); font-size: 1rem; margin: 0; line-height: 1.5; }
-/* The follow-up add-on: its own line inside the case card, not a trailing clause. */
-.pack .addon-note {
-  grid-column: 1 / -1; margin: .55rem 0 0; padding: .6rem .75rem;
+/* The follow-up add-on: its own line inside the case card, not a trailing clause.
+   Also used standalone on the review screen, so it is not scoped to .pack. */
+.addon-note {
+  margin: .55rem 0 0; padding: .6rem .75rem;
   border: 1px dashed var(--magenta); border-radius: 10px;
   background: rgba(255,79,216,.06); color: var(--soft); font-size: .95rem; line-height: 1.45;
 }
-.pack .addon-note strong { color: var(--magenta); }
+.pack .addon-note { grid-column: 1 / -1; }
+.addon-note strong { color: var(--magenta); }
+/* A pending booking request is orange, not magenta — it is a status, not an offer. */
+.addon-note.pending { border-style: solid; border-color: var(--orange); background: rgba(255,162,62,.07); }
+.addon-note.pending strong { color: var(--orange); }
+
+/* <summary> styled as a button: strip the marker and keep it inline. */
+summary.btn { list-style: none; display: inline-block; }
+summary.btn::-webkit-details-marker { display: none; }
 @media (max-width: 600px) {
   .pack { grid-template-columns: 1fr; gap: .25rem; }
   .pack .price { justify-self: start; }

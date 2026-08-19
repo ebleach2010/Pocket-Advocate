@@ -19,6 +19,7 @@ const MAX_LEAD_MS = 252 * 3600 * 1000;
 const state = {
   acks: {}, // formId -> ms timestamp
   slot: null, // { id, start: Date, durationMin }
+  requestedStart: null, // Date — a time asked for that isn't on the calendar
   method: 'phone',
   phone: '',
   addOnFollowUp: false,
@@ -121,6 +122,21 @@ async function renderSchedule() {
     <p class="muted small">All times are shown in <strong>your</strong> time zone (${zone.replace(/_/g, ' ')}), with my MST time underneath. Appointments must be at least 72 hours out.</p>
     <div id="days"><p class="muted">Loading available times…</p></div>
 
+    <details id="request-box" style="margin-top:1rem;">
+      <summary class="btn quiet" style="cursor:pointer;">
+        None of these work? Request a time →
+      </summary>
+      <div class="card" style="margin-top:.7rem;">
+        <p class="muted small" style="margin-top:0;">Pick any date and time that suits you. I'll review it and confirm — you'll hear back before the date. Times are in your own time zone.</p>
+        <label for="req-date">Date</label>
+        <input type="date" id="req-date">
+        <label for="req-time" style="margin-top:.6rem;">Time</label>
+        <input type="time" id="req-time" step="900">
+        <p class="muted small" id="req-mst" style="margin:.6rem 0 0;">Choose a date and time to see it in my time zone.</p>
+        <p class="error" id="req-error" hidden></p>
+      </div>
+    </details>
+
     <h3 style="margin:1.4rem 0 .5rem;">How should we talk?</h3>
     <div id="chips">
       <label class="chip-label ${state.method === 'phone' ? 'selected' : ''}">
@@ -213,9 +229,45 @@ async function renderSchedule() {
       daysEl.querySelectorAll('.slot').forEach((b) => b.classList.remove('selected'));
       btn.classList.add('selected');
       state.slot = slots.find((s) => s.id === btn.dataset.id);
+      state.requestedStart = null;
+      const rb = el.querySelector('#request-box');
+      if (rb) rb.open = false;
       el.querySelector('#continue').disabled = false;
     })
   );
+  // ---- request a time that isn't on the calendar ----
+  const reqDate = el.querySelector('#req-date');
+  const reqTime = el.querySelector('#req-time');
+  const reqMst = el.querySelector('#req-mst');
+  const reqBox = el.querySelector('#request-box');
+  const mstLong = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+  });
+  // Earliest selectable date is the lead time, in the client's own zone.
+  reqDate.min = new Date(Date.now() + LEAD_TIME_MS).toISOString().slice(0, 10);
+
+  const syncRequest = () => {
+    state.requestedStart = null;
+    if (!reqDate.value || !reqTime.value) {
+      reqMst.textContent = 'Choose a date and time to see it in my time zone.';
+      return;
+    }
+    // A bare "YYYY-MM-DDTHH:MM" is parsed in the client's local zone, which is
+    // exactly the zone they picked it in.
+    const when = new Date(`${reqDate.value}T${reqTime.value}`);
+    if (Number.isNaN(when.getTime())) return;
+    state.requestedStart = when;
+    reqMst.innerHTML = `That's <strong style="color:var(--ink)">${mstLong.format(when)} MST</strong> my time.`;
+    // Choosing a request clears any calendar slot, and vice versa.
+    state.slot = null;
+    el.querySelectorAll('.slot').forEach((b) => b.classList.remove('selected'));
+    el.querySelector('#continue').disabled = false;
+  };
+  reqDate.addEventListener('change', syncRequest);
+  reqTime.addEventListener('change', syncRequest);
+  reqBox.addEventListener('toggle', () => { if (!reqBox.open) { state.requestedStart = null; syncRequest(); } });
+
   el.querySelectorAll('input[name=method]').forEach((input) =>
     input.addEventListener('change', () => {
       state.method = input.value;
@@ -227,9 +279,18 @@ async function renderSchedule() {
   );
 
   el.querySelector('#continue').addEventListener('click', () => {
-    if (!state.slot) return;
+    if (!state.slot && !state.requestedStart) return;
     const err = el.querySelector('#method-error');
     err.hidden = true;
+    if (state.requestedStart) {
+      const reqErr = el.querySelector('#req-error');
+      reqErr.hidden = true;
+      if (state.requestedStart.getTime() < Date.now() + LEAD_TIME_MS) {
+        reqErr.textContent = 'Please pick a time at least 72 hours from now.';
+        reqErr.hidden = false;
+        return;
+      }
+    }
     if (state.method === 'phone') {
       state.phone = el.querySelector('#phone').value.trim();
       if (!/^\+?[\d\s().-]{7,20}$/.test(state.phone)) {
@@ -254,22 +315,33 @@ function renderReview() {
     hour: 'numeric', minute: '2-digit',
   });
   const methodLabel = state.method === 'phone' ? `Phone call to ${state.phone}` : 'Video call (I\'ll send the link)';
+  const when = state.slot ? state.slot.start : state.requestedStart;
+  const isRequest = !state.slot && !!state.requestedStart;
 
   const el = mount(`
     <h2>Lock it in</h2>
     <div class="card">
       <div class="row"><h3>Advocacy Case</h3><span class="price">$150</span></div>
       <p class="muted small">
-        <strong style="color:var(--ink)">${localLong.format(state.slot.start)}</strong> (your time)<br>
-        ${mtFmt.format(state.slot.start)} MST my time<br>
-        ${methodLabel} · Private session
+        <strong style="color:var(--ink)">${localLong.format(when)}</strong> (your time)<br>
+        ${mtFmt.format(when)} MST my time<br>
+        ${methodLabel} · Private session${isRequest ? ' · <span style="color:var(--orange)">Requested — awaiting my confirmation</span>' : ''}
       </p>
     </div>
-    <label class="choice" id="addon-box">
-      <input type="checkbox" id="addon"> <strong>Add a follow-up discussion — +$50</strong><br>
-      <span class="muted small">A second schedulable discussion on this case, bookable any time after your report lands. Use it within one month of your first discussion — after that it expires. Only available right now, at checkout — a follow-up later is a fresh $150 case.</span>
+    ${isRequest ? `<p class="addon-note pending">
+      <strong>This time is a request.</strong> It isn't on my calendar yet. Your case opens and
+      your payment is taken as normal, and I'll confirm this time — or offer you the nearest one
+      that works — before the date. Nothing is lost either way.
+    </p>` : ''}
+    <label class="choice addon" id="addon-box">
+      <span class="addon-head">
+        <span class="addon-title"><input type="checkbox" id="addon"> Add a follow-up discussion</span>
+        <span class="addon-price">+$50</span>
+      </span>
+      <span class="addon-why">A second full discussion on this same case, booked any time after your report lands — use it within one month. A follow-up bought later is a fresh $150 case instead.</span>
+      <span class="addon-once">Offered here only</span>
     </label>
-    <p class="muted small">Your time slot is held while you complete payment. You'll be taken to Stripe's secure checkout — card details never touch this site. Case fees are non-refundable once your slot is booked.</p>
+    <p class="muted small">${isRequest ? 'Requested times are not held' : 'Your time slot is held'} while you complete payment. You'll be taken to Stripe's secure checkout — card details never touch this site. Case fees are non-refundable once your slot is booked.</p>
     <p class="error" id="pay-error" hidden></p>
     <p>
       <button class="btn quiet" id="back">Back</button>
@@ -295,7 +367,8 @@ function renderReview() {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
-          slotId: state.slot.id,
+          slotId: state.slot ? state.slot.id : undefined,
+          requestedStart: state.requestedStart ? state.requestedStart.toISOString() : undefined,
           method: state.method,
           phone: state.phone,
           addOnFollowUp: state.addOnFollowUp,
