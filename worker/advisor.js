@@ -36,7 +36,13 @@ about to cross that line — do not caveat every paragraph.
 
 If anything in the transcript looks genuinely urgent — stroke signs, status
 epilepticus, rapid neurological decline, sepsis, suicidality — lead with it in
-plain words. That outranks everything else.`;
+plain words. That outranks everything else.
+
+HOW TO WRITE, always: short bits, never essays. Five short lines beat twenty
+long ones. The first time any medical term or abbreviation appears, follow it
+with a plain-words gloss in parentheses — e.g. "paresthesia (pins and
+needles)" — because Eric is learning the territory as he goes, not copying
+your words. Never repeat a gloss.`;
 
 function client(env) {
   if (!env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set on the Worker.');
@@ -51,7 +57,7 @@ function client(env) {
  * Streaming makes big ceilings free, so set them where truncation can't
  * realistically happen.
  */
-async function ask(env, { system, messages, effort, maxTokens = 64000 }) {
+async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat }) {
   const stream = client(env).messages.stream({
     model: MODEL,
     max_tokens: maxTokens,
@@ -61,6 +67,16 @@ async function ask(env, { system, messages, effort, maxTokens = 64000 }) {
     system,
     messages,
   });
+  // Heartbeat: every SSE event proves the model is alive (thinking included,
+  // which streams no visible text for minutes). The panel uses it to tell a
+  // long think from a dead run.
+  if (onBeat) {
+    let last = 0;
+    stream.on('streamEvent', () => {
+      const now = Date.now();
+      if (now - last > 8000) { last = now; onBeat(); }
+    });
+  }
   const final = await stream.finalMessage();
   if (final.stop_reason === 'refusal')
     throw new Error('The model declined this request.');
@@ -164,26 +180,32 @@ export async function runAnalysis(env, kind, id) {
 
     const analysis = await ask(env, {
       effort: ANALYSIS_EFFORT,
+      onBeat: () => setState(env, kind, id, { progressAt: new Date() }).catch(() => {}),
       system: [{ type: 'text', text: `${VOICE}
 
-Write Eric's working assessment of this client. Use exactly these headings,
-in this order, as markdown \`##\` headings:
+Write Eric's working assessment of this client. He reads it on a phone beside
+a live chat — it must scan in thirty seconds. Hard cap: 300 words total.
 
-## Where things stand
+Use exactly these headings, in this order, as markdown \`##\` headings:
+
+## Right now
 ## What this could be
 ## Worth chasing
 ## Ask next
 ## For you
 
-Under "What this could be", rank the possibilities and say what would raise or
-lower each one. Under "Worth chasing", name specific labs, imaging, or records
-and say what each would rule in or out. Under "Ask next", give questions
-verbatim, ready to paste. Under "For you", give advocacy strategy — who to
-push, what to expect, where this is likely to stall.
+"Right now": 2–4 short sentences, plain language — your current read and the
+single most useful next move. This is the part he reads mid-conversation.
+"What this could be": at most 4 bullets, one line each — possibility, then the
+one thing that would raise or lower it.
+"Worth chasing": at most 4 bullets — a specific lab, image, or record, and what
+it rules in or out.
+"Ask next": at most 3 questions, verbatim, ready to paste.
+"For you": at most 3 bullets of advocacy strategy — who to push, where this
+stalls.
 
-Be specific or say nothing. "Consider further workup" is worthless to him.
-If the transcript is too thin to support a section, say what you'd need instead
-of padding it.` }],
+Be specific or say nothing. "Consider further workup" is worthless. If the
+transcript is too thin for a section, one line saying what you'd need.` }],
       messages: [{
         role: 'user',
         content: prior
@@ -194,7 +216,7 @@ of padding it.` }],
 
     await setState(env, kind, id, {
       analysis, status: 'idle', error: null, updatedAt: new Date(),
-      pendingAt: null, startedAt: null,
+      pendingAt: null, startedAt: null, progressAt: null,
     });
     await deleteDoc(env, queuePath(kind, id));
   } catch (err) {
@@ -221,8 +243,9 @@ export async function runQuestion(env, kind, id, qaId, question) {
       effort: ANALYSIS_EFFORT,
       system: [{ type: 'text', text: `${VOICE}
 
-Eric is asking you a direct question about this client. Answer it. Don't
-re-summarise the case at him — he has the transcript in front of him.` }],
+Eric is asking you a direct question about this client. Answer it and stop —
+under 120 words unless the question itself demands more. Don't re-summarise
+the case at him; he has the transcript in front of him.` }],
       messages: [{
         role: 'user',
         content: `<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${
@@ -267,6 +290,10 @@ shows, whether he uses lists. If his messages are short, yours is short.
 
 Output the message text and nothing else — no preamble, no "here's a draft",
 no quotation marks around it, no sign-off he doesn't actually use.
+
+Length: this chat rejects messages over 2000 characters, and a wall of text
+reads as canned anyway. Stay under 900 characters unless Eric's instruction
+genuinely requires more; never exceed 1900.
 
 He is not a doctor. Never put a diagnosis in his mouth. He can say what he'd
 want asked, what a result might mean, and what he'll chase down.` }],

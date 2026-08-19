@@ -109,7 +109,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-advisor-qa-path';
+const BUILD_TAG = 'v2026-08-19-advisor-live';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -791,6 +791,9 @@ async function handleNotify(request, env, ctx) {
       });
     }
   } else if (isAdmin) {
+    // Eric wrote — the advisor should fold his side in too, so its read stays
+    // current through the whole exchange, not just the client's half.
+    refreshAdvisor(env, ctx, kind, id);
     await notifyUser(env, clientUid, {
       title: 'Pocket Advocate',
       body: 'You have a new message from me.',

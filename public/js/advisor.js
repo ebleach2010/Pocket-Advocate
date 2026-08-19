@@ -11,6 +11,7 @@
 // Worker owns the admin check either way.
 
 const SECTION_ICON = {
+  'Right now': '⚡',
   'Where things stand': '🧭',
   'What this could be': '🔬',
   'Worth chasing': '🧪',
@@ -86,12 +87,19 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
     pauseBtn.textContent = paused ? 'Resume' : 'Pause';
     pauseBtn.classList.toggle('on', paused);
 
-    // A "running" older than 15 minutes is a run that died (connection lost
-    // mid-analysis) — treat it as not running so the panel never wedges.
-    const running = d.status === 'running' &&
-      (!d.startedAt || Date.now() - toDate(d.startedAt).getTime() < 15 * 60_000);
-    statusEl.textContent = running ? '● thinking' : paused ? '‖ paused' : '';
-    statusEl.className = `advisor-status${running ? ' live' : ''}`;
+    // The worker heartbeats progressAt every ~8s while the model streams
+    // (thinking included). No beat for 2 minutes = the run is dead — say so
+    // instead of showing "thinking" forever.
+    const started = d.startedAt ? toDate(d.startedAt).getTime() : 0;
+    const beat = Math.max(started, d.progressAt ? toDate(d.progressAt).getTime() : 0);
+    const alive = d.status === 'running' && started && Date.now() - beat < 120_000;
+    const stalled = d.status === 'running' && started && !alive;
+    const mins = started ? Math.floor((Date.now() - started) / 60_000) : 0;
+    statusEl.textContent = alive
+      ? `● thinking${mins ? ` · ${mins}m` : ''}`
+      : stalled ? '⚠ stalled — tap Update' : paused ? '‖ paused' : '';
+    statusEl.className = `advisor-status${alive ? ' live' : ''}`;
+    const running = alive;
 
     if (d.status === 'error' && d.error) {
       errEl.textContent = `Analysis failed: ${d.error}`;
@@ -130,7 +138,9 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
     // run the analysis from here. This open panel is what holds the connection
     // alive through a long Opus turn; the cron only covers the panel being
     // closed. Fire once per pending flag, not once per poll.
-    if (d.pendingAt && !running && !paused && firedFor !== d.pendingAt) {
+    // Never auto-fire into a standing error (credits out, etc.) — that loops.
+    // The error shows above; a manual Update or the cron retries it.
+    if (d.pendingAt && !running && !paused && d.status !== 'error' && firedFor !== d.pendingAt) {
       firedFor = d.pendingAt;
       post({ action: 'analyze' });
     }
@@ -195,24 +205,53 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
           <button class="btn quiet" data-close>Close</button></div>
         <p class="dim small" style="margin:.2rem 0 .5rem;">Written to sound like you, from how you write in this thread. Edit freely — nothing sends until you press Send.</p>
         <textarea class="edit-box" data-draft rows="9"></textarea>
+        <p class="dim small" style="margin:.3rem 0 0; display:flex; justify-content:space-between;">
+          <span class="error" data-derr hidden style="margin:0;"></span>
+          <span data-count style="margin-left:auto;"></span>
+        </p>
         <div class="actions" style="margin-top:.7rem;">
           <button class="btn quiet" data-keep>Save as draft</button>
           <button class="btn" data-send>Send as me</button>
         </div>
       </div>`;
     const box = overlay.querySelector('[data-draft]');
+    const count = overlay.querySelector('[data-count]');
+    const derr = overlay.querySelector('[data-derr]');
+    const sendBtn = overlay.querySelector('[data-send]');
     box.value = text;
+    // The chat's own rules reject messages over 2000 characters — a draft that
+    // long once closed this dialog and silently sent nothing. Count it down
+    // and refuse to send over the line instead.
+    const MAXLEN = 2000;
+    const tally = () => {
+      const n = box.value.length;
+      count.textContent = `${n.toLocaleString()} / ${MAXLEN.toLocaleString()}`;
+      count.classList.toggle('over', n > MAXLEN);
+      sendBtn.disabled = n === 0 || n > MAXLEN;
+    };
+    box.addEventListener('input', tally);
+    tally();
     const close = () => overlay.remove();
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     overlay.querySelector('[data-close]').addEventListener('click', close);
     overlay.querySelector('[data-keep]').addEventListener('click', close);
-    overlay.querySelector('[data-send]').addEventListener('click', async () => {
+    sendBtn.addEventListener('click', async () => {
       const body = box.value.trim();
-      if (!body) return;
-      close();
-      await onSend(body);
-      await post({ action: 'clear-draft' });
-      draftShown = null;
+      if (!body || body.length > MAXLEN) return;
+      // Send FIRST, close on success — closing first is how a failed send
+      // vanished without a trace.
+      sendBtn.disabled = true;
+      derr.hidden = true;
+      try {
+        await onSend(body);
+        close();
+        await post({ action: 'clear-draft' });
+        draftShown = null;
+      } catch (err) {
+        derr.textContent = `Didn't send: ${err.message}`;
+        derr.hidden = false;
+        sendBtn.disabled = false;
+      }
     });
     document.body.appendChild(overlay);
     box.focus();
@@ -223,14 +262,17 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
 function renderAnalysis(text) {
   const parts = String(text).split(/^##\s+/m).filter(Boolean);
   if (parts.length < 2) return md(text);
-  return parts.map((part) => {
+  return parts.map((part, i) => {
     const nl = part.indexOf('\n');
     const title = (nl === -1 ? part : part.slice(0, nl)).trim();
     const rest = nl === -1 ? '' : part.slice(nl + 1);
-    return `<section class="advisor-sec">
-      <h4>${SECTION_ICON[title] || '•'} ${esc(title)}</h4>
+    // Bits at a time: "Right now" reads immediately; everything else folds
+    // away behind its heading until tapped.
+    const open = i === 0 || title === 'Right now';
+    return `<details class="advisor-sec"${open ? ' open' : ''}>
+      <summary><h4>${SECTION_ICON[title] || '•'} ${esc(title)}</h4></summary>
       ${md(rest)}
-    </section>`;
+    </details>`;
   }).join('');
 }
 

@@ -578,7 +578,12 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 .advisor-body { max-height: 30rem; overflow-y: auto; }
 .advisor-sec { border-top: 1px solid var(--line); padding-top: .5rem; margin-top: .5rem; }
 .advisor-sec:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
-.advisor-sec h4 { margin: 0 0 .3rem; font-size: .82rem; letter-spacing: .02em; color: var(--cyan); }
+.advisor-sec h4 { display: inline; margin: 0; font-size: .82rem; letter-spacing: .02em; color: var(--cyan); }
+.advisor-sec summary { cursor: pointer; list-style: none; padding: .1rem 0; }
+.advisor-sec summary::-webkit-details-marker { display: none; }
+.advisor-sec summary::after { content: " ▸"; color: var(--dim); font-size: .75rem; }
+.advisor-sec[open] summary::after { content: " ▾"; }
+[data-count].over { color: var(--orange); font-weight: 700; }
 .advisor-sec p, .advisor-body p { margin: .3rem 0; font-size: .85rem; line-height: 1.5; color: var(--soft); }
 .advisor-sec ul, .advisor-body ul { margin: .3rem 0 .3rem 1.05rem; padding: 0; }
 .advisor-sec li, .advisor-body li { font-size: .85rem; line-height: 1.5; color: var(--soft); margin-bottom: .25rem; }
