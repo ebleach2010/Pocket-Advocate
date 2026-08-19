@@ -109,7 +109,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-advisor-fullbudget';
+const BUILD_TAG = 'v2026-08-19-advisor-qa-path';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -1032,7 +1032,7 @@ async function handleAdvisorState(request, env, url) {
   const parent = kind === 'case' ? 'cases' : 'subscriptions';
   const [state, qa] = await Promise.all([
     getDoc(env, `${parent}/${id}/advisor/state`),
-    listDocs(env, `${parent}/${id}/advisor/qa`, { pageSize: 20, orderBy: 'at' }).catch(() => []),
+    listDocs(env, `${parent}/${id}/advisor/state/qa`, { pageSize: 20, orderBy: 'at' }).catch(() => []),
   ]);
   // keyConfigured: admin-only visibility into whether the ANTHROPIC_API_KEY
   // secret is actually bound to the running version — "saved in the dashboard"
@@ -1101,7 +1101,7 @@ async function handleAdvisor(request, env, ctx) {
     const question = typeof body?.question === 'string' ? body.question.trim() : '';
     if (!question || question.length > 2000) return json({ error: 'Ask something (1–2000 chars).' }, 400);
     const qaId = crypto.randomUUID();
-    await patchDoc(env, `${parent}/${id}/advisor/qa/${qaId}`, {
+    await patchDoc(env, `${parent}/${id}/advisor/state/qa/${qaId}`, {
       question, answer: null, status: 'running', at: new Date(),
     });
     return keepaliveRun(ctx, runQuestion(env, kind, id, qaId, question));
