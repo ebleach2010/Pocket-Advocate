@@ -4,7 +4,7 @@
 import { enablePush } from './push.js';
 import { db, doc, getDoc, setDoc } from './firebase.js';
 
-export function initSettings(user) {
+export function initSettings(user, isAdmin = false) {
   if (!user) return;
   const nav = document.querySelector('.tabs');
   if (!nav || nav.querySelector('.cog-btn')) return;
@@ -15,10 +15,10 @@ export function initSettings(user) {
   cog.setAttribute('aria-label', 'Settings');
   cog.textContent = '⚙';
   nav.appendChild(cog);
-  cog.addEventListener('click', () => openPanel(user));
+  cog.addEventListener('click', () => openPanel(user, isAdmin));
 }
 
-function openPanel(user) {
+function openPanel(user, isAdmin = false) {
   const existing = document.getElementById('pa-settings');
   if (existing) { existing.remove(); return; }
   const notifOn = 'Notification' in window && Notification.permission === 'granted';
@@ -46,6 +46,12 @@ function openPanel(user) {
         <button class="btn quiet" data-test-notif>Send a test notification</button>
       </div>
       <p class="dim small" id="pa-notif-result" hidden style="margin:.5rem 0 0;"></p>
+      ${isAdmin ? `
+      <div class="toggle-row" style="margin-top:1rem;">
+        <span><strong>Open to my dashboard</strong><br><span class="dim small">This device skips the booking page and lands on Admin. Turn off to test the client view.</span></span>
+        <button class="switch ${localStorage.getItem('pa-open-admin') !== '0' ? 'on' : ''}" data-open-admin
+          aria-pressed="${localStorage.getItem('pa-open-admin') !== '0'}" aria-label="Open to my dashboard"></button>
+      </div>` : ''}
     </div>`;
   document.body.appendChild(overlay);
 
@@ -73,6 +79,14 @@ function openPanel(user) {
       resultEl.textContent = err.message;
     }
     testBtn.disabled = false;
+  });
+
+  overlay.querySelector('[data-open-admin]')?.addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    const on = !btn.classList.contains('on');
+    localStorage.setItem('pa-open-admin', on ? '1' : '0');
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', String(on));
   });
 
   const notifBtn = overlay.querySelector('[data-notif]');

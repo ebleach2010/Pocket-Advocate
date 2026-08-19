@@ -84,9 +84,15 @@ export async function requireAdmin() {
   const user = await requireUser();
   if (!user) return null;
   if (!(await isAdmin(user))) {
+    // Clear the open-to-admin hint BEFORE bouncing to '/', or a stale hint on
+    // a non-admin device would bounce '/' right back here, forever.
+    localStorage.removeItem('pa-admin-device');
     location.href = '/';
     return null;
   }
+  // Mark this device as the admin's so the landing page can redirect to the
+  // dashboard instantly, without waiting for Firebase to wake up.
+  localStorage.setItem('pa-admin-device', '1');
   startPresence();
   return user;
 }
@@ -112,6 +118,7 @@ export async function hydrateNav() {
     const admin = await isAdmin(user);
     const path = location.pathname;
     if (admin) {
+      localStorage.setItem('pa-admin-device', '1');
       el.innerHTML =
         `<a href="/admin.html">Admin</a> <a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
     } else {
@@ -125,11 +132,12 @@ export async function hydrateNav() {
       // Untrust this device too, or the sign-in page would silently sign them
       // straight back in and "Sign out" would mean nothing on a shared phone.
       localStorage.removeItem('pa-device-token');
+      localStorage.removeItem('pa-admin-device');
       await signOut(auth);
       location.href = '/';
     });
     markUnread(user, admin).catch(() => {});
-    import('./settings.js').then((m) => m.initSettings(user)).catch(() => {});
+    import('./settings.js').then((m) => m.initSettings(user, admin)).catch(() => {});
   } else {
     el.innerHTML = `<a href="/signin.html">Sign in</a>`;
   }
