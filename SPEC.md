@@ -170,6 +170,12 @@ access ends at the end of the last paid period. Independent of any case.
 
 - **Refund/cancel by client**: proposed — full refund if canceled ≥72h before the slot;
   inside 72h, reschedule once free, no cash refund. *(Proposal, not decided.)*
+- **Advocate-initiated reschedule**: ✅ **decided (2026-08-19)** — Eric may reschedule,
+  and the client is offered a new slot at no cost. **A second Eric-initiated reschedule
+  on the same case entitles the client to a full refund on request**, overriding the
+  non-refundable rule. Client-requested changes don't count toward the tally. Stated in
+  waiver 1 under "If I need to reschedule"; the refund itself is issued manually in
+  Stripe — there is no automated counter yet.
 - **No-show**: proposed — client no-show forfeits after 15 minutes but gets one free
   reschedule; Eric-side no-show always full refund or priority reschedule, client's choice.
 - **Public-consent revoked before broadcast**: session proceeds privately; nothing else
