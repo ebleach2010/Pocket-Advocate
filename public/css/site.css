@@ -493,6 +493,27 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 .msg .msg-meta { display: block; font-size: .66rem; color: var(--dim); margin-top: .15rem; }
 .msg.me { align-self: flex-end; background: rgba(45,226,255,.12); border: 1px solid var(--cyan-dim); border-bottom-right-radius: 4px; }
 .msg.them { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+/* Status reaction sitting under a message ("Eric is reading…"). */
+.msg-react {
+  display: inline-flex; align-items: center; gap: .3rem; margin-top: .35rem;
+  padding: .18rem .5rem; border-radius: 999px; font-size: .7rem; line-height: 1.3;
+  border: 1px solid var(--cyan-dim); background: rgba(45,226,255,.1); color: var(--cyan);
+}
+/* Only messages I can react to suppress the long-press callout and selection,
+   so a held press opens the picker instead of iOS's Copy/Look Up menu. Client
+   views are untouched — they keep normal text selection. */
+.msg.react-target { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.react-card { max-width: 27rem; }
+.react-list { display: flex; flex-direction: column; gap: .4rem; }
+.react-opt {
+  display: flex; align-items: center; gap: .6rem; width: 100%; text-align: left;
+  padding: .6rem .75rem; border-radius: 12px; cursor: pointer; font-size: .92rem;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+}
+.react-opt:hover, .react-opt:focus-visible { border-color: var(--cyan); outline: none; }
+.react-opt.on { border-color: var(--cyan); color: var(--cyan); box-shadow: var(--glow-c); }
+.react-emoji { font-size: 1.05rem; line-height: 1; }
+
 .chat-form { display: flex; gap: .5rem; margin-top: .4rem; }
 .chat-form input { flex: 1; }
 .chat-notice { border-top: 1px solid var(--line); padding-top: .6rem; }

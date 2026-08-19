@@ -13,6 +13,7 @@ import {
   query, orderBy, limit, serverTimestamp, rtdbRef, onValue,
   ref, uploadBytesResumable, getDownloadURL,
 } from './firebase.js';
+import { byId, pickReaction } from './reactions.js';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const LONG_PRESS_MS = 550;
@@ -92,10 +93,33 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       meta.className = 'msg-meta';
       meta.textContent = data.ts?.toDate ? fmt.format(data.ts.toDate()) : 'sending…';
       div.appendChild(meta);
+
+      // A status reaction, visible to both sides.
+      if (data.reaction?.id) {
+        const r = byId(data.reaction.id);
+        const chip = document.createElement('span');
+        chip.className = 'msg-react';
+        chip.textContent = `${r ? r.emoji + ' ' : ''}${data.reaction.label || r?.label || ''}`;
+        div.appendChild(chip);
+      }
+
+      // Only I react, and only to what the client wrote — reacting to my own
+      // message would just be talking to myself.
+      if (myRole === 'admin' && !mine) reactLongPress(div, m.id, data.reaction?.id || null);
+
       log.appendChild(div);
     });
     const hint = container.querySelector('[data-hint]');
-    if (hint) hint.hidden = !hasAttachment;
+    if (hint) {
+      if (myRole === 'admin') {
+        hint.textContent = hasAttachment
+          ? 'Press and hold a message to tell them what you\'re doing; hold a file to save it to their Documents.'
+          : 'Press and hold their message to tell them what you\'re doing — they get a notification.';
+        hint.hidden = false;
+      } else {
+        hint.hidden = !hasAttachment;
+      }
+    }
     log.scrollTop = log.scrollHeight;
   }, (err) => {
     log.innerHTML = `<p class="error">Couldn't load messages: ${esc(err.message)}</p>`;
@@ -112,6 +136,50 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       },
     });
     nudgeOtherSide();
+  }
+
+  /**
+   * Long-press (or right-click) a client message to set a status reaction.
+   * Skips touches that started on an attachment — that gesture already means
+   * "save this file" and stealing it would be worse than not having this.
+   */
+  function reactLongPress(el, msgId, current) {
+    el.classList.add('react-target');
+    let timer = null;
+    const onAttachment = (e) => !!e.target.closest?.('.msg-img, .file-chip');
+    const open = () => applyReaction(msgId, current);
+    const start = (e) => {
+      if (onAttachment(e)) return;
+      timer = setTimeout(() => { timer = null; open(); }, LONG_PRESS_MS);
+    };
+    const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    el.addEventListener('pointerdown', start);
+    ['pointerup', 'pointerleave', 'pointercancel', 'pointermove'].forEach((ev) =>
+      el.addEventListener(ev, cancel));
+    el.addEventListener('contextmenu', (e) => {
+      if (onAttachment(e)) return;
+      e.preventDefault();
+      cancel();
+      open();
+    });
+  }
+
+  async function applyReaction(msgId, current) {
+    const choice = await pickReaction(current);
+    if (choice === undefined) return; // dismissed — leave it alone
+    try {
+      const kind = parentPath[0] === 'subscriptions' ? 'sub' : 'case';
+      const token = await user.getIdToken();
+      const res = await fetch('/api/chat/react', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ kind, id: parentPath[1], msgId, reaction: choice }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || `Failed (${res.status})`);
+      // The onSnapshot listener repaints the chip; nothing to do here.
+    } catch (err) {
+      alert(`Couldn't set that: ${err.message}`);
+    }
   }
 
   // Fire-and-forget web push to the other participant. Failure is invisible —
