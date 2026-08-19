@@ -3,7 +3,6 @@
 // Shows once per device; after that, a small reminder appears only if setup
 // isn't finished yet.
 import { enablePush, pushInstalled, pushSupported } from './push.js';
-import { setTheme, currentTheme, THEMES } from './theme.js';
 
 const DONE_KEY = 'pa-intro-done';
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -33,9 +32,7 @@ function runIntro(user, mount, fullySet) {
       cta: 'Get started',
     },
     {
-      // Home Screen instructions and the colour picker share one card: two
-      // small optional choices on one screen beats two screens to get through.
-      title: pushInstalled() ? 'Make it yours' : 'Keep it one tap away',
+      title: 'Keep it one tap away',
       body: `
         ${pushInstalled()
           ? `<p>Pocket Advocate is on your Home Screen. ✓</p>`
@@ -48,18 +45,8 @@ function runIntro(user, mount, fullySet) {
                <ol class="intro-steps"><li>Tap the <strong>⋮</strong> menu in Chrome</li>
                <li>Tap <strong>Add to Home screen</strong></li>
                <li>Confirm, then open it from the new icon</li></ol>`}
-        <p style="margin-top:1rem;">Pick a colour scheme — change it any time from the ⚙ settings.</p>
-        <div class="seg" data-theme-seg>${THEMES.map((t) =>
-          `<button data-theme-pick="${t.id}" class="${t.id === currentTheme() ? 'on' : ''}">${t.label}</button>`).join('')}</div>
-        <p class="dim small" style="margin-top:.9rem;">Nothing here is required — you can skip it and carry on.</p>`,
+        <p class="dim small" style="margin-top:.9rem;">Nothing here is required — you can skip it and carry on. The <strong>?</strong> beside your case title explains all of this again any time.</p>`,
       cta: pushInstalled() ? 'Next' : 'Done — take me in',
-      onPaint: (root) => {
-        root.querySelectorAll('[data-theme-pick]').forEach((b) =>
-          b.addEventListener('click', () => {
-            setTheme(b.dataset.themePick);
-            root.querySelectorAll('[data-theme-pick]').forEach((x) => x.classList.toggle('on', x === b));
-          }));
-      },
     },
   ];
 

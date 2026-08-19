@@ -10,8 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
 <meta name="theme-color" content="#07090F">
 <title>Payment complete — Pocket Advocate</title>
-<link rel="stylesheet" href="/css/site.css?v=stat11">
-<script>(function(){try{var t=localStorage.getItem('pa-theme')||'neon';document.documentElement.setAttribute('data-theme',t);var m={earth:'/css/theme-earth.css?v=e8',dark:'/css/theme-dark.css?v=d1',contrast:'/css/theme-contrast.css?v=c1'};if(m[t])document.write('<link rel="stylesheet" href="'+m[t]+'" data-theme-css="1">');}catch(e){}})();</script>
+<link rel="stylesheet" href="/css/site.css?v=stat12">
 </head>
 <body>
 <header class="bar">
@@ -52,9 +51,14 @@
         const data = await res.json();
         if (data.ready) {
           title.textContent = 'Your case is open';
-          msg.textContent = 'Your appointment is booked and your case file is ready. You can upload labs and imaging any time before the call.';
-          document.getElementById('case-link').href = `/case.html?id=${data.caseId}`;
+          msg.textContent = 'Taking you to your case file now…';
+          const href = `/case.html?id=${data.caseId}&welcome=1`;
+          document.getElementById('case-link').href = href;
           document.getElementById('actions').hidden = false;
+          // Straight into the case file — nobody should have to tap a button to
+          // reach the thing they just paid for. `replace` keeps this page out of
+          // history, so Back from the case doesn't land on a spent checkout.
+          location.replace(href);
           return;
         }
       } catch { /* transient — keep polling */ }
