@@ -29,7 +29,7 @@ async function load() {
   if (!sub) {
     page.innerHTML = `
       <h1>No subscription yet</h1>
-      <p class="dim">24/7 Priority Chat, $24.99/mo: chat, case files, photos, and labs all in one on-the-go priority chat. Cancel anytime.</p>
+      <p class="dim">24/7 Priority Chat, $20/mo: chat, case files, photos, and labs all in one on-the-go priority chat. Cancel anytime.</p>
       <div class="actions"><a class="btn mag" href="/subscribe.html">Get 24/7 Priority Chat →</a></div>`;
     return;
   }
