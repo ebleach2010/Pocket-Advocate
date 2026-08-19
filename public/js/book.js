@@ -307,7 +307,7 @@ function renderReview() {
   const el = mount(`
     <h2>Lock it in</h2>
     <div class="card">
-      <div class="row"><h3>Advocacy Case</h3><span class="price">$100</span></div>
+      <div class="row"><h3>Advocacy Case</h3><span class="price">$150</span></div>
       <p class="muted small">
         <strong style="color:var(--ink)">${localLong.format(state.slot.start)}</strong> (your time)<br>
         ${mtFmt.format(state.slot.start)} MST my time<br>
@@ -316,7 +316,7 @@ function renderReview() {
     </div>
     <label class="choice" id="addon-box">
       <input type="checkbox" id="addon"> <strong>Add a follow-up discussion — +$50</strong><br>
-      <span class="muted small">A second schedulable discussion on this case, bookable any time after your report lands. Use it within one month of your first discussion — after that it expires. Only available right now, at checkout — a follow-up later is a fresh $100 case.</span>
+      <span class="muted small">A second schedulable discussion on this case, bookable any time after your report lands. Use it within one month of your first discussion — after that it expires. Only available right now, at checkout — a follow-up later is a fresh $150 case.</span>
     </label>
     <p class="muted small">Your time slot is held while you complete payment. You'll be taken to Stripe's secure checkout — card details never touch this site. Case fees are non-refundable once your slot is booked.</p>
     <p class="error" id="pay-error" hidden></p>
