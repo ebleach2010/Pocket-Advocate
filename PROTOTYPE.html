@@ -157,6 +157,11 @@
   }
   .tag.c { color: #3EE08A; border: 1px solid #3EE08A; box-shadow: 0 0 16px rgba(62,224,138,.30); }
   .tag.m { color: var(--magenta); border: 1px solid var(--magenta); box-shadow: var(--glow-m); }
+  /* "Speedy" orange: italic with a slight forward lean, like it's already moving. */
+  .tag.o {
+    color: #FFA23E; border: 1px solid #FFA23E; box-shadow: 0 0 16px rgba(255,162,62,.35);
+    font-style: italic; transform: skewX(-8deg); letter-spacing: .2em;
+  }
   .fine {
     font-size: .82rem; color: var(--dim); margin: 0; line-height: 1.45;
   }
@@ -456,12 +461,13 @@
   </div>
 
   <label class="pack rec-c" for="scr-signin" tabindex="0">
-    <span class="tag c">RECOMMENDED</span>
+    <span class="tag c">COMPREHENSIVE</span>
     <h3>Advocacy Case</h3><span class="price">$150</span>
     <p class="desc">One live deep-dive with me + your written report within 7 days. Optional $50 follow-up session offered at checkout.</p>
   </label>
 
   <label class="pack rec-m" for="scr-subterms" tabindex="0">
+    <span class="tag o">ON THE GO</span>
     <h3>24/7 Priority Chat</h3><span class="price">$19.99/mo</span>
     <p class="desc">Chat, case files, photos, and labs all in one on-the-go priority chat. Cancel anytime.</p>
   </label>
