@@ -109,7 +109,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-advisor-live';
+const BUILD_TAG = 'v2026-08-19-advisor-pages';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -1075,6 +1075,17 @@ async function handleAdvisor(request, env, ctx) {
   if (action === 'pause' || action === 'resume') {
     await patchDoc(env, statePath, { paused: action === 'pause' }, { mask: ['paused'] });
     return json({ ok: true, paused: action === 'pause' });
+  }
+
+  if (action === 'reset') {
+    // Wipe everything the advisor holds on this thread — assessment, Q&A,
+    // draft, queue — so it starts clean. Qa docs first: deleting a parent doc
+    // does not delete its subcollection in Firestore.
+    const qa = await listDocs(env, `${parent}/${id}/advisor/state/qa`, { pageSize: 50 }).catch(() => []);
+    for (const q of qa) await deleteDoc(env, `${parent}/${id}/advisor/state/qa/${q.id}`);
+    await deleteDoc(env, `${parent}/${id}/advisor/state`);
+    await deleteDoc(env, `advisorQueue/${kind}_${id}`);
+    return json({ ok: true, cleared: true });
   }
 
   if (action === 'clear-draft') {

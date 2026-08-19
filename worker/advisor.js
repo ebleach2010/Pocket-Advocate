@@ -44,6 +44,16 @@ with a plain-words gloss in parentheses — e.g. "paresthesia (pins and
 needles)" — because Eric is learning the territory as he goes, not copying
 your words. Never repeat a gloss.`;
 
+/** Raw API errors are unreadable on a phone; store plain words instead. */
+function friendly(err) {
+  const m = String(err?.message || err);
+  if (/credit balance is too low/i.test(m))
+    return 'Your Anthropic account is out of credits — top up at console.anthropic.com → Plans & Billing, then tap Update.';
+  if (/rate.?limit/i.test(m)) return 'Rate limited by the API — wait a minute and tap Update.';
+  if (/overloaded/i.test(m)) return 'The model is overloaded right now — try again in a minute.';
+  return m.length > 200 ? m.slice(0, 200) + '…' : m;
+}
+
 function client(env) {
   if (!env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set on the Worker.');
   return new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
@@ -194,8 +204,10 @@ Use exactly these headings, in this order, as markdown \`##\` headings:
 ## Ask next
 ## For you
 
-"Right now": 2–4 short sentences, plain language — your current read and the
-single most useful next move. This is the part he reads mid-conversation.
+"Right now": 2–4 short sentences, plain language. If you have a previous
+assessment, open with what CHANGED since it — new message, new signal, a shift
+in your read — then the single most useful next move. This is a running
+commentary he reads mid-conversation, not a report.
 "What this could be": at most 4 bullets, one line each — possibility, then the
 one thing that would raise or lower it.
 "Worth chasing": at most 4 bullets — a specific lab, image, or record, and what
@@ -221,7 +233,7 @@ transcript is too thin for a section, one line saying what you'd need.` }],
     await deleteDoc(env, queuePath(kind, id));
   } catch (err) {
     console.error('advisor analysis:', err.stack || err);
-    await setState(env, kind, id, { status: 'error', error: String(err.message || err) })
+    await setState(env, kind, id, { status: 'error', error: friendly(err) })
       .catch(() => {});
   }
 }
@@ -257,7 +269,7 @@ the case at him; he has the transcript in front of him.` }],
   } catch (err) {
     console.error('advisor question:', err.stack || err);
     await patchDoc(env, path, {
-      answer: `Couldn't answer: ${err.message || err}`, status: 'error',
+      answer: `Couldn't answer: ${friendly(err)}`, status: 'error',
     }, { mask: ['answer', 'status'] }).catch(() => {});
   }
 }
@@ -283,6 +295,10 @@ export async function runDraft(env, kind, id, instruction) {
       system: [{ type: 'text', text: `${VOICE}
 
 Write the next message for Eric to send to this client, as Eric, in his voice.
+
+Answer the client's MOST RECENT messages — everything they've sent since Eric
+last wrote. That's what the reply is for. The rest of the thread and your
+assessment are context to keep the reply consistent, not material to re-answer.
 
 You are given his own past messages. Match them: sentence length, how formal he
 is, whether he uses contractions, how he opens and closes, how much warmth he
@@ -310,7 +326,7 @@ want asked, what a result might mean, and what he'll chase down.` }],
   } catch (err) {
     console.error('advisor draft:', err.stack || err);
     await setState(env, kind, id, {
-      draftStatus: 'error', draftError: String(err.message || err),
+      draftStatus: 'error', draftError: friendly(err),
     }).catch(() => {});
   }
 }

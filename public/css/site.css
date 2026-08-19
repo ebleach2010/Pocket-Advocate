@@ -562,6 +562,12 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 
 /* ---- 👨‍⚕️ Advisor: my private panel, side by side with the client chat ---- */
 .chat-with-advisor { display: grid; grid-template-columns: 1fr; gap: .9rem; }
+/* Grid items default to min-width auto, so one unbreakable token (a raw JSON
+   error, a long URL) widens the panel past the phone screen with no way to
+   scroll to it. Let them shrink, clip the panel, and break the tokens. */
+.chat-with-advisor > * { min-width: 0; }
+.advisor-panel { overflow-x: hidden; }
+.advisor-q, .advisor-a p, .advisor-a li { overflow-wrap: anywhere; }
 @media (min-width: 62rem) {
   .chat-with-advisor { grid-template-columns: minmax(0, 1fr) minmax(0, 22rem); align-items: start; }
 }
@@ -576,18 +582,22 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 @keyframes advisor-pulse { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
 .advisor-sub { margin: .1rem 0 .5rem; font-size: .72rem; }
 .advisor-body { max-height: 30rem; overflow-y: auto; }
-.advisor-sec { border-top: 1px solid var(--line); padding-top: .5rem; margin-top: .5rem; }
-.advisor-sec:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
-.advisor-sec h4 { display: inline; margin: 0; font-size: .82rem; letter-spacing: .02em; color: var(--cyan); }
-.advisor-sec summary { cursor: pointer; list-style: none; padding: .1rem 0; }
-.advisor-sec summary::-webkit-details-marker { display: none; }
-.advisor-sec summary::after { content: " ▸"; color: var(--dim); font-size: .75rem; }
-.advisor-sec[open] summary::after { content: " ▾"; }
+/* Flippable note pages: one section at a time, ‹ › or swipe. */
+.advisor-page-head { display: flex; align-items: center; gap: .45rem; }
+.advisor-page-head h4 { flex: 1; margin: 0; font-size: .84rem; letter-spacing: .02em; color: var(--cyan); min-width: 0; overflow-wrap: anywhere; }
+.pg-btn {
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+  border-radius: 8px; width: 1.7rem; height: 1.7rem; min-width: 1.7rem;
+  font-size: 1rem; line-height: 1; cursor: pointer;
+}
+.pg-btn:disabled { opacity: .3; cursor: default; }
+.pg-count { font-size: .68rem; color: var(--dim); white-space: nowrap; }
+.advisor-page-body { margin-top: .35rem; }
 [data-count].over { color: var(--orange); font-weight: 700; }
-.advisor-sec p, .advisor-body p { margin: .3rem 0; font-size: .85rem; line-height: 1.5; color: var(--soft); }
-.advisor-sec ul, .advisor-body ul { margin: .3rem 0 .3rem 1.05rem; padding: 0; }
-.advisor-sec li, .advisor-body li { font-size: .85rem; line-height: 1.5; color: var(--soft); margin-bottom: .25rem; }
-.advisor-sec h5 { margin: .5rem 0 .2rem; font-size: .8rem; color: var(--ink); }
+.advisor-body p { margin: .3rem 0; font-size: .85rem; line-height: 1.5; color: var(--soft); overflow-wrap: anywhere; }
+.advisor-body ul { margin: .3rem 0 .3rem 1.05rem; padding: 0; }
+.advisor-body li { font-size: .85rem; line-height: 1.5; color: var(--soft); margin-bottom: .25rem; overflow-wrap: anywhere; }
+.advisor-body h5 { margin: .5rem 0 .2rem; font-size: .8rem; color: var(--ink); }
 .advisor-qa { margin-top: .6rem; max-height: 18rem; overflow-y: auto; }
 .advisor-turn { border-top: 1px solid var(--line); padding-top: .5rem; margin-top: .5rem; }
 .advisor-q { margin: 0 0 .3rem; font-size: .82rem; color: var(--ink); font-weight: 600; }
