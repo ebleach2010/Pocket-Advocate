@@ -82,6 +82,12 @@ service cloud.firestore {
       }
     }
 
+    // Advisor work queue — Worker-only in both directions; nothing in the
+    // browser has any business here.
+    match /advisorQueue/{jobId} {
+      allow read, write: if false;
+    }
+
     match /availability/{slotId} {
       // World-readable so the picker works pre-payment; Worker-writable only.
       allow read: if true;

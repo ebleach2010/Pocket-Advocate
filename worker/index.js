@@ -23,7 +23,7 @@ import {
 } from './schedule.js';
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
-import { runAnalysis, runQuestion, runDraft } from './advisor.js';
+import { runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses } from './advisor.js';
 
 // These build the real Stripe line items. Three browser files mirror them for
 // display — public/js/book.js, public/js/subscribe.js, public/js/admin-case.js
@@ -103,12 +103,13 @@ export default {
     ctx.waitUntil(runFollowUpWarnings(env));
     ctx.waitUntil(cleanupStaleSlots(env));
     ctx.waitUntil(repairMissingCaseEmails(env));
+    ctx.waitUntil(runQueuedAnalyses(env));
   },
 };
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-advisor-opus-4';
+const BUILD_TAG = 'v2026-08-19-advisor-keepalive';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -978,6 +979,36 @@ async function handleChatEdit(request, env) {
 }
 
 /**
+ * Run long model work while holding the HTTP connection open. Workers kill
+ * background work ~30 seconds after the response completes — learned live: a
+ * ten-minute Opus analysis started via ctx.waitUntil died silently every time,
+ * leaving status stuck on "running" — but an open connection has no wall-clock
+ * limit. So the response streams one byte of whitespace every 10 seconds until
+ * the work lands, then closes with JSON. Whitespace is legal JSON padding, so
+ * the panel's res.json() parses the whole body unchanged.
+ */
+function keepaliveRun(ctx, work) {
+  const enc = new TextEncoder();
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  ctx.waitUntil((async () => {
+    const tick = setInterval(() => { writer.write(enc.encode(' ')).catch(() => {}); }, 10_000);
+    let body = '{"ok":true}';
+    try {
+      await work;
+    } catch (err) {
+      body = JSON.stringify({ ok: false, error: String(err.message || err) });
+    }
+    clearInterval(tick);
+    try {
+      await writer.write(enc.encode('\n' + body));
+      await writer.close();
+    } catch { /* client gone — the cron queue covers an interrupted analysis */ }
+  })());
+  return new Response(readable, { headers: { 'content-type': 'application/json' } });
+}
+
+/**
  * GET /api/advisor/state?kind=case&id=…
  *
  * The panel reads its state through here rather than straight from Firestore.
@@ -1051,14 +1082,19 @@ async function handleAdvisor(request, env, ctx) {
   }
 
   if (action === 'analyze') {
-    ctx.waitUntil(runAnalysis(env, kind, id));
-    return json({ ok: true, started: true });
+    // Don't stack a second Opus run on top of a live one.
+    const state = await getDoc(env, `${parent}/${id}/advisor/state`);
+    const startedAt = state?.data.startedAt ? new Date(state.data.startedAt).getTime() : 0;
+    if (state?.data.status === 'running' && Date.now() - startedAt < 12 * 60_000)
+      return json({ ok: true, already: true });
+    // Queue first: if this connection drops mid-run, the cron retries it.
+    await markPending(env, kind, id);
+    return keepaliveRun(ctx, runAnalysis(env, kind, id));
   }
 
   if (action === 'draft') {
     const instruction = typeof body?.instruction === 'string' ? body.instruction.slice(0, 1000) : '';
-    ctx.waitUntil(runDraft(env, kind, id, instruction));
-    return json({ ok: true, started: true });
+    return keepaliveRun(ctx, runDraft(env, kind, id, instruction));
   }
 
   if (action === 'ask') {
@@ -1068,8 +1104,7 @@ async function handleAdvisor(request, env, ctx) {
     await patchDoc(env, `${parent}/${id}/advisor/qa/${qaId}`, {
       question, answer: null, status: 'running', at: new Date(),
     });
-    ctx.waitUntil(runQuestion(env, kind, id, qaId, question));
-    return json({ ok: true, qaId });
+    return keepaliveRun(ctx, runQuestion(env, kind, id, qaId, question));
   }
 
   return json({ error: 'Unknown action' }, 400);
@@ -1086,11 +1121,11 @@ function refreshAdvisor(env, ctx, kind, id) {
       const parent = kind === 'case' ? 'cases' : 'subscriptions';
       const state = await getDoc(env, `${parent}/${id}/advisor/state`);
       if (state?.data.paused) return;
-      // One re-read a minute at most. A client firing off six short messages
-      // shouldn't trigger six Opus analyses, and the next one picks them all up.
-      const last = state?.data.updatedAt ? new Date(state.data.updatedAt).getTime() : 0;
-      if (Date.now() - last < 60_000) return;
-      await runAnalysis(env, kind, id);
+      // Only FLAG the work here — never run it. This executes in the ~30s of
+      // background grace after the client's request completes, which is not
+      // enough for an Opus turn; the actual analysis runs from Eric's open
+      // panel (which holds a connection) or the cron (15-minute budget).
+      await markPending(env, kind, id);
     } catch (err) {
       console.warn('advisor refresh:', err.message || err);
     }
