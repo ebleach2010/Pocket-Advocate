@@ -122,6 +122,9 @@ export async function hydrateNav() {
     }
     el.querySelector('[data-signout]').addEventListener('click', async (e) => {
       e.preventDefault();
+      // Untrust this device too, or the sign-in page would silently sign them
+      // straight back in and "Sign out" would mean nothing on a shared phone.
+      localStorage.removeItem('pa-device-token');
       await signOut(auth);
       location.href = '/';
     });

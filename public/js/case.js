@@ -65,7 +65,7 @@ function DEMO_CASE() {
     createdAt: new Date(Date.now() - 2 * 86_400_000),
     clientName: 'Jane Sample',
     clientEmail: 'jane@example.com',
-    appointment: { start, durationMin: 60, method: 'zoom', joinLink: null, phone: null },
+    appointment: { start, durationMin: 60, method: 'video', joinLink: null, phone: null },
     publicElection: { choice: 'private', revocableUntil: start },
     addOnFollowUp: true,
   };
@@ -153,8 +153,8 @@ function renderProgress(el, c) {
   const methodLine = method === 'phone'
     ? `Phone — I call you at <strong>${esc(c.appointment.phone || 'your number')}</strong>`
     : c.appointment?.joinLink
-      ? `${method === 'zoom' ? 'Zoom' : 'Discord'} — <a href="${esc(c.appointment.joinLink)}" rel="noopener">join link</a>`
-      : `${method === 'zoom' ? 'Zoom' : 'Discord'} — your join link appears here before the call`;
+      ? `Video call — <a href="${esc(c.appointment.joinLink)}" rel="noopener">join link</a>`
+      : 'Video call — your join link appears here before the call';
   const election = c.publicElection || { choice: 'private' };
   const revocable = election.choice === 'public' && !closed &&
     (!election.revocableUntil || toDate(election.revocableUntil) > new Date());

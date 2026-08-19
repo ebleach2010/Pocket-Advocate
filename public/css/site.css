@@ -314,15 +314,32 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
   font-style: italic; font-size: .97rem;
 }
 
-.day { margin-bottom: .8rem; }
-.day h3 { font: 600 .76rem/1 ui-monospace, monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-bottom: .45rem; }
-.slots { display: flex; flex-wrap: wrap; gap: .45rem; }
+/* Each day is its own card. Runs of times used to blur into one another,
+   so the day is now a labelled container rather than a faint heading. */
+.day {
+  margin-bottom: .9rem; padding: .8rem .85rem .85rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+}
+.day h3 {
+  display: flex; align-items: center; gap: .5rem;
+  font: 700 .95rem/1.2 inherit; letter-spacing: .01em; text-transform: none;
+  color: var(--cyan); margin: 0 0 .6rem; padding-bottom: .5rem;
+  border-bottom: 1px solid var(--line);
+}
+.day h3::before {
+  content: ''; width: .3rem; height: 1.05rem; border-radius: 999px;
+  background: var(--cyan); box-shadow: var(--glow-c); flex: none;
+}
+.day h3 .count { margin-left: auto; font-weight: 600; font-size: .8rem; color: var(--dim); }
+.slots { display: flex; flex-wrap: wrap; gap: .5rem; }
 .slot {
   display: inline-block; border: 1px solid var(--line); border-radius: 10px;
-  background: var(--panel); color: var(--ink); font: inherit; font-size: .92rem;
-  padding: .4rem .65rem; cursor: pointer; text-align: left; font-variant-numeric: tabular-nums;
+  background: var(--panel-2); color: var(--ink); font: inherit; font-size: 1rem;
+  font-weight: 600; padding: .55rem .8rem; cursor: pointer; text-align: left;
+  font-variant-numeric: tabular-nums;
 }
-.slot .local { display: block; font-size: .8rem; color: var(--dim); }
+.slot:hover { border-color: var(--cyan); }
+.slot .local { display: block; font-size: .78rem; font-weight: 400; color: var(--dim); margin-top: .15rem; }
 .slot.selected { border-color: var(--cyan); box-shadow: var(--glow-c); }
 .slot.booked { opacity: .45; cursor: default; border-style: dashed; }
 

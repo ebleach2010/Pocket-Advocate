@@ -27,6 +27,9 @@
 </header>
 <main>
   <h1>Sign in</h1>
+  <div class="card" id="resuming" hidden>
+    <p class="muted" style="margin:0;">Signing you in…</p>
+  </div>
   <p class="muted">Enter your email and we'll send you a 6-digit code. No password to remember.</p>
 
   <div class="card" id="email-form">
@@ -38,7 +41,7 @@
     <p class="error" id="error" hidden></p>
     <p style="margin-top:1rem;">
       <a class="btn quiet" href="/">← Back</a>
-      <button class="btn" id="send">Email me a code</button>
+      <button class="btn" id="send">Continue</button>
     </p>
   </div>
 
@@ -71,6 +74,31 @@
   // Prefill only. The residency box stays unticked on purpose: an
   // attestation the app ticks for you is not an attestation.
   if (known) emailInput.value = known;
+
+  // A device that has already proven a code signs in on the email alone.
+  const DEVICE_KEY = 'pa-device-token';
+  const deviceToken = localStorage.getItem(DEVICE_KEY) || '';
+  if (known && deviceToken) {
+    const emailForm = document.getElementById('email-form');
+    const resuming = document.getElementById('resuming');
+    emailForm.hidden = true;
+    resuming.hidden = false;
+    try {
+      const res = await fetch('/api/auth/device-signin', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: known, deviceToken }),
+      });
+      if (!res.ok) throw new Error('needs a code');
+      const { token } = await res.json();
+      await signInWithCustomToken(auth, token);
+      location.href = returnTo;
+    } catch {
+      // Expired or revoked — fall back to the code, quietly.
+      localStorage.removeItem(DEVICE_KEY);
+      resuming.hidden = true;
+      emailForm.hidden = false;
+    }
+  }
 
   // Complete any legacy magic-link that's still floating around in an inbox.
   if (isSignInWithEmailLink(auth, location.href)) {
@@ -153,7 +181,9 @@
         body: JSON.stringify({ email: pendingEmail, code }),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Invalid code.');
-      const { token } = await res.json();
+      const { token, deviceToken: issued } = await res.json();
+      // One code entry trusts this device: the next sign-in needs only the email.
+      if (issued) localStorage.setItem('pa-device-token', issued);
       await signInWithCustomToken(auth, token);
       location.href = returnTo;
     } catch (err) {

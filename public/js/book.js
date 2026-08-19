@@ -1,13 +1,13 @@
 // The book-and-pay wizard (SPEC §C/§D): waivers 1–3 (one per screen,
-// scroll-to-end + explicit acknowledge) → public/private election (its own
-// screen, private pre-selected) → slot picker (Mountain + local time) →
-// meeting method (Discord badged Preferred) → review, optional $50 add-on,
-// Stripe Checkout. The Worker re-validates everything; this UI is not trusted.
+// scroll-to-end + explicit acknowledge) → one screen that takes both the
+// slot and the meeting method → review, optional $50 add-on, Stripe
+// Checkout. Sessions are always private, so there is no election screen.
+// The Worker re-validates everything; this UI is not trusted.
 
 import { db, collection, getDocs, query, where } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
 import { ensureFullProfile } from './profile.js';
-import { WAIVERS, ELECTION_QUOTE } from './waivers.js';
+import { WAIVERS } from './waivers.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -18,18 +18,15 @@ const MAX_LEAD_MS = 252 * 3600 * 1000;
 
 const state = {
   acks: {}, // formId -> ms timestamp
-  election: 'private',
   slot: null, // { id, start: Date, durationMin }
-  method: 'discord',
+  method: 'phone',
   phone: '',
   addOnFollowUp: false,
 };
 
 const STEPS = [
   ...WAIVERS.map((w) => ({ label: w.title.split(' ')[0], render: () => renderWaiver(w) })),
-  { label: 'Public/private', render: renderElection },
   { label: 'Time', render: renderSchedule },
-  { label: 'Method', render: renderMethod },
   { label: 'Pay', render: renderReview },
 ];
 
@@ -114,40 +111,6 @@ function renderWaiver(waiver) {
   el.querySelector('#back')?.addEventListener('click', back);
 }
 
-// ---- Public/private election (form 4, its own screen) ----
-
-function renderElection(preselected = state.election) {
-  const el = mount(`
-    <h2>Public or private?</h2>
-    <blockquote class="consent-quote">"${ELECTION_QUOTE}"</blockquote>
-    <label class="choice ${preselected === 'private' ? 'selected' : ''}" id="c-private">
-      <input type="radio" name="election" value="private" ${preselected === 'private' ? 'checked' : ''}>
-      <strong>Private session</strong><br>
-      <span class="muted small">The discussion happens only between you and me. The recording lives only in your case file. Same price, every benefit included.</span>
-    </label>
-    <label class="choice ${preselected === 'public' ? 'selected' : ''}" id="c-public">
-      <input type="radio" name="election" value="public" ${preselected === 'public' ? 'checked' : ''}>
-      <strong>Public session</strong><br>
-      <span class="muted small">The live discussion is broadcast on the TheBroScientist YouTube channel so other patients can learn from it. You can change your mind and make it private any time before the broadcast starts.</span>
-    </label>
-    <p>
-      <button class="btn quiet" id="back">Back</button>
-      <button class="btn" id="continue">Continue</button>
-    </p>`);
-
-  el.querySelectorAll('input[name=election]').forEach((input) =>
-    input.addEventListener('change', () => {
-      el.querySelector('#c-private').classList.toggle('selected', input.value === 'private' && input.checked);
-      el.querySelector('#c-public').classList.toggle('selected', input.value === 'public' && input.checked);
-      state.election = input.value;
-    })
-  );
-  el.querySelector('#continue').addEventListener('click', () => {
-    state.acks.election = Date.now();
-    next();
-  });
-  el.querySelector('#back').addEventListener('click', back);
-}
 
 // ---- Slot picker ----
 
@@ -157,6 +120,26 @@ async function renderSchedule() {
     <h2>Pick a time</h2>
     <p class="muted small">All times are shown in <strong>your</strong> time zone (${zone.replace(/_/g, ' ')}), with my MST time underneath. Appointments must be at least 72 hours out.</p>
     <div id="days"><p class="muted">Loading available times…</p></div>
+
+    <h3 style="margin:1.4rem 0 .5rem;">How should we talk?</h3>
+    <div id="chips">
+      <label class="chip-label ${state.method === 'phone' ? 'selected' : ''}">
+        <input type="radio" name="method" value="phone" hidden ${state.method === 'phone' ? 'checked' : ''}>
+        Phone call
+      </label>
+      <label class="chip-label ${state.method === 'video' ? 'selected' : ''}">
+        <input type="radio" name="method" value="video" hidden ${state.method === 'video' ? 'checked' : ''}>
+        Video call
+      </label>
+    </div>
+    <div id="phone-row" ${state.method === 'phone' ? '' : 'hidden'} style="margin-top:.7rem;">
+      <label for="phone">Your phone number — I'll call you</label>
+      <input type="tel" id="phone" placeholder="+1 555 555 5555" value="${state.phone}">
+    </div>
+    <p class="muted small" id="video-note" ${state.method === 'video' ? '' : 'hidden'} style="margin-top:.7rem;">
+      I'll send you a join link before the call — it appears on your case page too. Nothing to install.
+    </p>
+    <p class="error" id="method-error" hidden></p>
     <p>
       <button class="btn quiet" id="back">Back</button>
       <button class="btn" id="continue" disabled>Continue</button>
@@ -212,7 +195,7 @@ async function renderSchedule() {
   daysEl.innerHTML = [...byDay.entries()]
     .map(
       ([day, daySlots]) => `
-      <div class="day"><h3>${day}</h3><div class="slots">
+      <div class="day"><h3>${day}<span class="count">${daySlots.length} time${daySlots.length === 1 ? '' : 's'}</span></h3><div class="slots">
         ${daySlots
           .map(
             (s) => `<button class="slot" data-id="${s.id}">
@@ -233,55 +216,23 @@ async function renderSchedule() {
       el.querySelector('#continue').disabled = false;
     })
   );
-  el.querySelector('#continue').addEventListener('click', () => {
-    if (state.slot) next();
-  });
-}
-
-// ---- Meeting method ----
-
-function renderMethod() {
-  const el = mount(`
-    <h2>How should the call happen?</h2>
-    <div id="chips">
-      <label class="chip-label ${state.method === 'discord' ? 'selected' : ''}">
-        <input type="radio" name="method" value="discord" hidden ${state.method === 'discord' ? 'checked' : ''}>
-        Discord voice channel <span class="pref-badge">Preferred</span>
-      </label>
-      <label class="chip-label ${state.method === 'zoom' ? 'selected' : ''}">
-        <input type="radio" name="method" value="zoom" hidden ${state.method === 'zoom' ? 'checked' : ''}>
-        Zoom call
-      </label>
-      <label class="chip-label ${state.method === 'phone' ? 'selected' : ''}">
-        <input type="radio" name="method" value="phone" hidden ${state.method === 'phone' ? 'checked' : ''}>
-        Phone call
-      </label>
-    </div>
-    <p class="muted small">Discord is preferred — you can stream your own camera there, so it works like any video meeting. Your case page will show the join link (or the number to expect) before the call.</p>
-    <div id="phone-row" ${state.method === 'phone' ? '' : 'hidden'}>
-      <label for="phone">Your phone number (we'll call you)</label>
-      <input type="tel" id="phone" placeholder="+1 555 555 5555" value="${state.phone}">
-    </div>
-    <p class="error" id="method-error" hidden></p>
-    <p style="margin-top:1rem;">
-      <button class="btn quiet" id="back">Back</button>
-      <button class="btn" id="continue">Continue</button>
-    </p>`);
-
   el.querySelectorAll('input[name=method]').forEach((input) =>
     input.addEventListener('change', () => {
       state.method = input.value;
       el.querySelectorAll('.chip-label').forEach((c) => c.classList.remove('selected'));
       input.closest('.chip-label').classList.add('selected');
       el.querySelector('#phone-row').hidden = input.value !== 'phone';
+      el.querySelector('#video-note').hidden = input.value !== 'video';
     })
   );
-  el.querySelector('#back').addEventListener('click', back);
+
   el.querySelector('#continue').addEventListener('click', () => {
+    if (!state.slot) return;
+    const err = el.querySelector('#method-error');
+    err.hidden = true;
     if (state.method === 'phone') {
       state.phone = el.querySelector('#phone').value.trim();
       if (!/^\+?[\d\s().-]{7,20}$/.test(state.phone)) {
-        const err = el.querySelector('#method-error');
         err.textContent = 'Enter a valid phone number so I can call you.';
         err.hidden = false;
         return;
@@ -302,7 +253,7 @@ function renderReview() {
     timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric',
     hour: 'numeric', minute: '2-digit',
   });
-  const methodLabel = { discord: 'Discord voice channel', zoom: 'Zoom call', phone: `Phone call to ${state.phone}` }[state.method];
+  const methodLabel = state.method === 'phone' ? `Phone call to ${state.phone}` : 'Video call (I\'ll send the link)';
 
   const el = mount(`
     <h2>Lock it in</h2>
@@ -311,7 +262,7 @@ function renderReview() {
       <p class="muted small">
         <strong style="color:var(--ink)">${localLong.format(state.slot.start)}</strong> (your time)<br>
         ${mtFmt.format(state.slot.start)} MST my time<br>
-        ${methodLabel} · ${state.election === 'public' ? 'Public session (broadcast live; revocable until the broadcast starts)' : 'Private session'}
+        ${methodLabel} · Private session
       </p>
     </div>
     <label class="choice" id="addon-box">
@@ -322,14 +273,14 @@ function renderReview() {
     <p class="error" id="pay-error" hidden></p>
     <p>
       <button class="btn quiet" id="back">Back</button>
-      <button class="btn" id="pay">Pay $<span id="total">125</span> &amp; book</button>
+      <button class="btn" id="pay">Pay $<span id="total">150</span> &amp; book</button>
     </p>`);
 
   const addon = el.querySelector('#addon');
   addon.addEventListener('change', () => {
     state.addOnFollowUp = addon.checked;
     el.querySelector('#addon-box').classList.toggle('selected', addon.checked);
-    el.querySelector('#total').textContent = addon.checked ? '175' : '125';
+    el.querySelector('#total').textContent = addon.checked ? '200' : '150';
   });
   el.querySelector('#back').addEventListener('click', back);
 
@@ -348,7 +299,6 @@ function renderReview() {
           method: state.method,
           phone: state.phone,
           addOnFollowUp: state.addOnFollowUp,
-          election: state.election,
           acks: state.acks,
           // So emails can speak the client's local time (Eric, 2026-07-15).
           tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,

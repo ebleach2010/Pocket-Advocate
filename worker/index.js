@@ -28,8 +28,8 @@ const FOLLOWUP_EXPIRY_DAYS = 30;
 const FOLLOWUP_WARN_DAYS = 7;
 // Admin-priced sessions: percentage of the $150 case rate, 25% steps.
 const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
-const METHODS = ['discord', 'zoom', 'phone'];
-const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording', 'election'];
+const METHODS = ['phone', 'video'];
+const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording'];
 // A chat message this old with no in-app read gets an email nudge (spec: batched).
 const DIGEST_MIN_AGE_MS = 10 * 60_000;
 
@@ -65,6 +65,8 @@ export default {
         return await handleRequestCode(request, env);
       if (url.pathname === '/api/auth/verify-code' && request.method === 'POST')
         return await handleVerifyCode(request, env);
+      if (url.pathname === '/api/auth/device-signin' && request.method === 'POST')
+        return await handleDeviceSignin(request, env);
       if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
     } catch (err) {
       console.error(`${url.pathname}:`, err.stack || err);
@@ -80,7 +82,7 @@ export default {
 };
 
 // ---- POST /api/checkout ----
-// Body: { slotId, method, phone?, addOnFollowUp, election, acks: {form: msSinceEpoch} }
+// Body: { slotId, method, phone?, addOnFollowUp, acks: {form: msSinceEpoch} }
 async function handleCheckout(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in to book.' }, 401);
@@ -89,14 +91,12 @@ async function handleCheckout(request, env) {
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
-  const { slotId, method, phone, addOnFollowUp, election, acks } = body;
+  const { slotId, method, phone, addOnFollowUp, acks } = body;
   const clientTz = validTz(body.tz);
 
   if (!METHODS.includes(method)) return json({ error: 'Choose a meeting method.' }, 400);
   if (method === 'phone' && !/^\+?[\d\s().-]{7,20}$/.test(phone || ''))
     return json({ error: 'A valid phone number is required for a phone call.' }, 400);
-  if (election !== 'private' && election !== 'public')
-    return json({ error: 'Choose public or private.' }, 400);
   for (const form of REQUIRED_ACKS)
     if (!acks || typeof acks[form] !== 'number')
       return json({ error: 'All acknowledgment forms must be completed first.' }, 400);
@@ -164,7 +164,6 @@ async function handleCheckout(request, env) {
       method,
       phone: method === 'phone' ? phone : '',
       addOnFollowUp: addOnFollowUp ? '1' : '0',
-      election,
       acks: JSON.stringify(acks),
     },
   });
@@ -455,11 +454,9 @@ async function createCaseFromSession(env, session) {
         phone: m.phone || null,
         joinLink: null,
       },
-      publicElection: {
-        choice: m.election === 'public' ? 'public' : 'private',
-        history: [{ choice: m.election, at: now }],
-        revocableUntil: start,
-      },
+      // Always private — the election screen is gone. Field retained so
+      // existing cases and the case page keep rendering.
+      publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] },
       addOnFollowUp: m.addOnFollowUp === '1',
       forms: Object.fromEntries(
         REQUIRED_ACKS.map((f) => [f, typeof acks[f] === 'number' ? new Date(acks[f]) : null])
@@ -691,6 +688,53 @@ async function handleVerifyCode(request, env) {
   // Guarantee the app always has their email (custom-token accounts carry none).
   await patchDoc(env, `users/${uid}`, { email }, { mask: ['email'] });
   const token = await mintCustomToken(env, uid);
+  // One code entry earns this device a token, so the next sign-in on it needs
+  // only the email. The token is the second factor that keeps a known address
+  // from being a credential on its own.
+  const deviceToken = await issueDeviceToken(env, uid, email);
+  return json({ token, deviceToken });
+}
+
+// A trusted device lasts six months of disuse; every sign-in renews it.
+const DEVICE_TOKEN_TTL_DAYS = 180;
+
+async function issueDeviceToken(env, uid, email) {
+  const raw = [...crypto.getRandomValues(new Uint8Array(32))]
+    .map((b) => b.toString(16).padStart(2, '0')).join('');
+  const expiresAt = new Date(Date.now() + DEVICE_TOKEN_TTL_DAYS * 86_400_000);
+  await patchDoc(env, `trustedDevices/${await sha256hex(raw)}`, {
+    uid, email, createdAt: new Date(), lastUsedAt: new Date(), expiresAt,
+  });
+  return raw;
+}
+
+// ---- POST /api/auth/device-signin ----
+// Body: { email, deviceToken }. Signs in without a code on a device that has
+// already proven one. Only the hash is stored, and the token is bound to the
+// email it was issued for, so it can never be replayed against another account.
+async function handleDeviceSignin(request, env) {
+  const body = await request.json().catch(() => null);
+  const email = (body?.email || '').trim().toLowerCase();
+  const deviceToken = (body?.deviceToken || '').trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !/^[0-9a-f]{64}$/.test(deviceToken))
+    return json({ error: 'This device needs a code.' }, 401);
+
+  const key = await sha256hex(deviceToken);
+  const doc = await getDoc(env, `trustedDevices/${key}`);
+  if (!doc) return json({ error: 'This device needs a code.' }, 401);
+  const d = doc.data;
+  if (d.email !== email) return json({ error: 'This device needs a code.' }, 401);
+  if (d.expiresAt && new Date(d.expiresAt).getTime() < Date.now()) {
+    await deleteDoc(env, `trustedDevices/${key}`);
+    return json({ error: 'This device needs a code.' }, 401);
+  }
+
+  await patchDoc(env, `trustedDevices/${key}`, {
+    ...d,
+    lastUsedAt: new Date(),
+    expiresAt: new Date(Date.now() + DEVICE_TOKEN_TTL_DAYS * 86_400_000),
+  });
+  const token = await mintCustomToken(env, d.uid);
   return json({ token });
 }
 

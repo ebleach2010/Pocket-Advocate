@@ -63,7 +63,7 @@ function render(el) {
       <h3>Meeting link / phone note</h3>
       <p class="dim small">${c.appointment?.method === 'phone'
         ? `Client expects a call at <strong>${esc(c.appointment.phone || '?')}</strong>. Post the number you'll call from:`
-        : 'Paste the Discord voice-channel or Zoom link the client should join:'}</p>
+        : 'Paste the video-call link the client should join:'}</p>
       <input type="url" id="joinlink" placeholder="${c.appointment?.method === 'phone' ? 'Calling from +1 …' : 'https://…'}"
         value="${esc(c.appointment?.joinLink || '')}">
       <div class="actions"><button class="btn secondary" id="save-link">Save</button></div>
