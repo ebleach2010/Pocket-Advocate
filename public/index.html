@@ -11,6 +11,21 @@
 <meta name="theme-color" content="#07090F">
 <title>Pocket Advocate</title>
 <link rel="stylesheet" href="/css/site.css?v=stat20">
+<script>
+// The admin's device opens straight to the dashboard — he never books a case.
+// Inline in <head> so there's no flash of the booking page first. The hint is
+// set on admin sign-in, cleared on sign-out or a failed admin check, and the
+// "Open to my dashboard" switch in Settings turns the behavior off for testing
+// the client view.
+(function () {
+  try {
+    if (localStorage.getItem('pa-admin-device') === '1' &&
+        localStorage.getItem('pa-open-admin') !== '0') {
+      location.replace('/admin.html');
+    }
+  } catch (e) { /* storage blocked — land normally */ }
+})();
+</script>
 </head>
 <body>
 <header class="bar">
