@@ -157,6 +157,11 @@
   }
   .tag.c { color: #3EE08A; border: 1px solid #3EE08A; box-shadow: 0 0 16px rgba(62,224,138,.30); }
   .tag.m { color: var(--magenta); border: 1px solid var(--magenta); box-shadow: var(--glow-m); }
+  /* "Speedy" orange: italic with a slight forward lean, like it's already moving. */
+  .tag.o {
+    color: #FFA23E; border: 1px solid #FFA23E; box-shadow: 0 0 16px rgba(255,162,62,.35);
+    font-style: italic; transform: skewX(-8deg); letter-spacing: .2em;
+  }
   .fine {
     font-size: .82rem; color: var(--dim); margin: 0; line-height: 1.45;
   }
@@ -408,7 +413,7 @@
   <hr class="title-rule">
   <h2>The mission</h2>
   <div class="mission">
-    <p class="dim">Pocket Advocate is dedicated to empowering patients with neurological conditions throughout Canada and the United States. I'm a professional patient advocate and an autoimmune encephalitis survivor, so I understand firsthand the immense challenges of navigating the medical system. I'm deeply committed to my clients' well-being, and I bring my support and expertise to help you navigate your health journey. Pocket Advocate stands firmly on the side of the patient, offering guidance and insight grounded in lived experience to help you achieve better health outcomes.</p>
+    <p class="dim">I work with patients fighting neurological conditions across the US and Canada. I'm a professional patient advocate and an autoimmune encephalitis survivor — I've been the patient nobody could figure out, so I know how long that takes and what it costs you. I'm on your side of the table. Not the hospital's, not the insurance company's. Yours.</p>
   </div>
 
   <h2>From me</h2>
@@ -424,7 +429,7 @@
     <li><strong>Sign in with your email</strong>No passwords. A link lands in your inbox, you tap it, you're in.</li>
     <li><strong>Three short reads</strong>The disclaimer, the privacy terms, and recording consent — one screen each, so you know exactly what you're buying and exactly who sees your data (you and me; that's the list).</li>
     <li><strong>Always private</strong>Every session is just you and me. It's recorded only so the recording lives in your private case file for you to keep — never shared, never public.</li>
-    <li><strong>Pick a time, pick how you talk, pay</strong>Slots run 8am–8pm MST, at least 24 hours out. A phone call (simplest) or a Zoom meeting. $125 through Stripe — the slot is only yours when the payment lands, and the case file opens itself the moment it does.</li>
+    <li><strong>Pick a time, pick how you talk, pay</strong>Slots run 8am–8pm MST, at least 24 hours out. A phone call (simplest) or a Zoom meeting. $150 through Stripe — the slot is only yours when the payment lands, and the case file opens itself the moment it does.</li>
     <li><strong>Load your ammunition</strong>Labs, imaging, records — upload anything you want me to see before the call.</li>
     <li><strong>Live chat while your case is open</strong>From the moment your case opens, you have a direct chat line to me — questions, updates, new documents, anything. It stays open through your call and your report.</li>
     <li><strong>The discussion</strong>A real conversation about your symptoms, your history, your dead ends. Recorded, and the recording is yours.</li>
@@ -437,7 +442,7 @@
   <p class="dim small">A second set of eyes that has seen this movie before. Questions your doctor has to answer instead of deflect. A single organized file of your whole story — instead of a shoebox of PDFs. And a written plan you can put in front of any specialist, anywhere, forever.</p>
 
   <h2>The subscription</h2>
-  <p class="dim small">24/7 Priority Chat, $24.99/month: a direct priority chat with me. Documents, photos, labs, and your chat log all in one place. You get an always-open chat line with my live online status — I answer when I'm available, response time is never guaranteed, and the terms say so in plain words. That's the honest trade for $24.99. Completely separate from cases; cancel anytime.</p>
+  <p class="dim small">24/7 Priority Chat, $19.99/month: chat, case files, photos, and labs all in one on-the-go priority chat. You get an always-open chat line with my live online status — I answer when I'm available, response time is never guaranteed, and the terms say so in plain words. That's the honest trade for $19.99. Completely separate from cases; cancel anytime.</p>
 
   <h2>The honest legal picture</h2>
   <p class="dim small">This is advocacy, not medicine — no diagnosis, no treatment, no prescriptions, no doctor-patient relationship, no emergency care (call 911). Your data is encrypted, stored in the US, visible to exactly two people, and deletable on request.</p>
@@ -456,16 +461,15 @@
   </div>
 
   <label class="pack rec-c" for="scr-signin" tabindex="0">
-    <span class="tag c">RECOMMENDED</span>
-    <h3>Advocacy Case</h3><span class="price">$125</span>
-    <p class="desc">One live deep-dive with me + your written report within 7 days.</p>
-    <p class="addon-note"><strong>Optional add-on — $50:</strong> a second discussion on the same case. Offered at checkout only.</p>
+    <span class="tag c">COMPREHENSIVE</span>
+    <h3>Advocacy Case</h3><span class="price">$150</span>
+    <p class="desc">One live deep-dive with me + your written report within 7 days. Optional $50 follow-up session offered at checkout.</p>
   </label>
 
   <label class="pack rec-m" for="scr-subterms" tabindex="0">
-    <span class="tag g"><span>ON THE GO</span></span>
-    <h3>24/7 Priority Chat</h3><span class="price">$24.99/mo</span>
-    <p class="desc">A direct priority chat with me. Documents, photos, labs, and chat log all in one place. Cancel anytime.</p>
+    <span class="tag o">ON THE GO</span>
+    <h3>24/7 Priority Chat</h3><span class="price">$19.99/mo</span>
+    <p class="desc">Chat, case files, photos, and labs all in one on-the-go priority chat. Cancel anytime.</p>
   </label>
 
   <div class="actions" style="margin-top:.2rem;">
@@ -620,19 +624,19 @@
   <h2>Lock it in</h2>
   <div class="panel" style="margin-bottom:.8rem;">
     <div style="display:flex; justify-content:space-between; align-items:baseline; gap:1rem;">
-      <h3 style="margin:0;">Advocacy Case</h3><span class="mono" style="color:var(--cyan); font-weight:700;">$125</span>
+      <h3 style="margin:0;">Advocacy Case</h3><span class="mono" style="color:var(--cyan); font-weight:700;">$150</span>
     </div>
     <p class="dim small" style="margin:.3rem 0 0;">Tue Jul 21 · 1:00 PM MST · Phone · Private</p>
   </div>
   <input type="checkbox" class="vh" id="addon">
   <label class="choice" for="addon">
     <strong>+ Follow-up session · $50</strong><br>
-    <span class="dim small">Second discussion on this case, bookable any time after your report lands. This offer exists right now and never again — later follow-ups are a fresh $125 case.</span>
+    <span class="dim small">Second discussion on this case, bookable any time after your report lands. This offer exists right now and never again — later follow-ups are a fresh $150 case.</span>
   </label>
   <p class="dim small">Your slot is held while you pay. Stripe handles the card — it never touches this site.</p>
   <div class="actions">
     <label class="btn mute" for="scr-method" tabindex="0">Back</label>
-    <label class="btn mag" for="scr-stripe" tabindex="0"><span class="t-base">Pay $125 →</span><span class="t-addon">Pay $175 →</span></label>
+    <label class="btn mag" for="scr-stripe" tabindex="0"><span class="t-base">Pay $150 →</span><span class="t-addon">Pay $200 →</span></label>
   </div>
 </section>
 
@@ -640,9 +644,9 @@
 <section id="s-stripe">
   <div class="stripe-sim">
     <div class="s-head"><span class="s-brand">Checkout — Pocket Advocate</span><span class="sim-tag">SIMULATED</span></div>
-    <div class="s-line"><span>Advocacy Case</span><span>$125.00</span></div>
+    <div class="s-line"><span>Advocacy Case</span><span>$150.00</span></div>
     <div class="s-line"><span>Follow-up add-on (if selected)</span><span>$50.00</span></div>
-    <div class="s-line total"><span>Total due</span><span>$125–$175</span></div>
+    <div class="s-line total"><span>Total due</span><span>$150–$200</span></div>
     <div class="s-field">you@example.com</div>
     <div class="s-field">Card number · MM/YY · CVC (disabled in prototype)</div>
     <label class="s-pay" for="scr-return" tabindex="0">Pay &amp; book</label>
@@ -729,7 +733,7 @@
     <h1 style="margin:0;">Jordan Mills</h1>
     <span class="mono small" style="color:var(--cyan);">CONFIRMED</span>
   </div>
-  <p class="dim small" style="margin:.2rem 0 0;">jordan.m@example.com · Private session · Phone · paid $175 (incl. follow-up add-on)</p>
+  <p class="dim small" style="margin:.2rem 0 0;">jordan.m@example.com · Private session · Phone · paid $200 (incl. follow-up add-on)</p>
 
   <input type="radio" class="vh" name="atab" id="at-over" checked>
   <input type="radio" class="vh" name="atab" id="at-chat">
@@ -787,14 +791,14 @@
 <!-- ================= SUBSCRIPTION TERMS (form 5) ================= -->
 <section id="s-subterms">
   <h1>24/7 Priority Chat</h1>
-  <p class="dim small">A direct priority chat with me for <span class="mono" style="color:var(--magenta); font-weight:700;">$24.99/mo</span>. One read before you pay — the no-guarantee clause is the whole deal.</p>
+  <p class="dim small">A direct priority chat with me for <span class="mono" style="color:var(--magenta); font-weight:700;">$19.99/mo</span>. One read before you pay — the no-guarantee clause is the whole deal.</p>
   <div class="reader">
     <h3>The honest deal, up front</h3>
     <p><strong>Response timing is never guaranteed.</strong> Your subscription buys an always-open chat line to your advocate, with his live online status visible. He replies on his own time, when he is available. Sometimes that is minutes; sometimes it is days. That trade-off is the deal, and by subscribing you accept it.</p>
     <h3>Still not medical advice</h3>
     <p>Nothing written in chat is a diagnosis, a treatment plan, or medical advice. Chat is for understanding your situation and preparing for your care team. Emergencies: call 911.</p>
     <h3>Billing &amp; cancellation</h3>
-    <p>$24.99/month through Stripe, renewed automatically. Cancel anytime — access runs to the end of the period you paid for, and your message history stays visible to you.</p>
+    <p>$19.99/month through Stripe, renewed automatically. Cancel anytime — access runs to the end of the period you paid for, and your message history stays visible to you.</p>
     <h3>Separate from cases</h3>
     <p>Case chats live in their case file and close with the case; this chat lives with your subscription.</p>  </div>
   <input type="checkbox" class="vh ackbox" id="ack-sub">
@@ -809,8 +813,8 @@
 <section id="s-substripe">
   <div class="stripe-sim">
     <div class="s-head"><span class="s-brand">Checkout — Pocket Advocate</span><span class="sim-tag">SIMULATED</span></div>
-    <div class="s-line"><span>24/7 Priority Chat</span><span>$24.99 / month</span></div>
-    <div class="s-line total"><span>Due today</span><span>$24.99</span></div>
+    <div class="s-line"><span>24/7 Priority Chat</span><span>$19.99 / month</span></div>
+    <div class="s-line total"><span>Due today</span><span>$19.99</span></div>
     <div class="s-field">you@example.com</div>
     <div class="s-field">Card number · MM/YY · CVC (disabled in prototype)</div>
     <label class="s-pay" for="scr-subchat" tabindex="0">Subscribe</label>

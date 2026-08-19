@@ -40,8 +40,8 @@ One-time wiring to take the Phase 1 code live. Everything here is config, not co
    `checkout.session.completed`, `checkout.session.expired`,
    `customer.subscription.updated`, `customer.subscription.deleted`, and
    `invoice.payment_failed`. Copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
-3. No products need to be created — prices are defined inline ($125 case,
-   $50 add-on, $24.99/mo 24/7 Priority Chat subscription) in `worker/index.js`.
+3. No products need to be created — prices are defined inline ($150 case,
+   $50 add-on, $19.99/mo 24/7 Priority Chat subscription) in `worker/index.js`.
    Enable the **customer portal** (Settings → Billing → Customer portal) so
    subscribers can cancel themselves.
 4. Local testing: `stripe listen --forward-to localhost:8787/api/stripe/webhook`.
