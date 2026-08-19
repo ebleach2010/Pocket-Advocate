@@ -6,7 +6,9 @@
 // Every model call runs in the Worker and lands in Firestore; this panel just
 // watches the document. That's why a long Opus turn never blocks the page.
 
-import { db, doc, collection, query, orderBy, onSnapshot } from './firebase.js';
+// State comes from the Worker, not a Firestore listener: rules ship by CLI and
+// the advisor subtree isn't published yet, so a direct browser read fails. The
+// Worker owns the admin check either way.
 
 const SECTION_ICON = {
   'Where things stand': '🧭',
@@ -67,6 +69,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       });
       const out = await res.json();
       if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      setTimeout(refresh, 400);
       return out;
     } catch (err) {
       errEl.textContent = err.message;
@@ -75,11 +78,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
     }
   };
 
-  const parentPath = kind === 'case' ? ['cases', id] : ['subscriptions', id];
-  const stateRef = doc(db, ...parentPath, 'advisor', 'state');
-
-  onSnapshot(stateRef, (snap) => {
-    const d = snap.exists() ? snap.data() : {};
+  function apply(d, qa) {
     paused = !!d.paused;
     pauseBtn.textContent = paused ? 'Resume' : 'Pause';
     pauseBtn.classList.toggle('on', paused);
@@ -112,23 +111,39 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       errEl.textContent = `Draft failed: ${d.draftError}`;
       errEl.hidden = false;
     }
-  }, (err) => {
-    errEl.textContent = `Advisor unavailable: ${err.message}`;
-    errEl.hidden = false;
-  });
 
-  const qaRef = query(collection(db, ...parentPath, 'advisor', 'qa'), orderBy('at', 'asc'));
-  onSnapshot(qaRef, (snap) => {
-    const items = [];
-    snap.forEach((d) => items.push(d.data()));
-    qaEl.innerHTML = items.slice(-8).map((q) => `
+    qaEl.innerHTML = (qa || []).slice(-8).map((q) => `
       <div class="advisor-turn">
         <p class="advisor-q">${esc(q.question)}</p>
         <div class="advisor-a">${q.status === 'running'
           ? '<span class="dim small">thinking…</span>'
           : md(q.answer || '')}</div>
       </div>`).join('');
-  }, () => {});
+    return d;
+  }
+
+  // Poll fast while something is running, slowly when it isn't — an assessment
+  // that takes two minutes shouldn't cost a request a second for the rest of
+  // the day.
+  let timer = null;
+  async function refresh() {
+    clearTimeout(timer);
+    let busy = false;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/advisor/state?kind=${kind}&id=${encodeURIComponent(id)}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const out = await res.json();
+        const d = apply(out.state || {}, out.qa || []);
+        busy = d.status === 'running' || d.draftStatus === 'running' ||
+          (out.qa || []).some((q) => q.status === 'running');
+      }
+    } catch { /* transient — the next tick tries again */ }
+    timer = setTimeout(refresh, busy ? 2500 : 12000);
+  }
+  refresh();
 
   el('[data-refresh]').addEventListener('click', () => post({ action: 'analyze' }));
   pauseBtn.addEventListener('click', () => post({ action: paused ? 'resume' : 'pause' }));
