@@ -68,6 +68,8 @@ export default {
         return await handleAdminSchedule(request, env);
       if (url.pathname === '/api/notify' && request.method === 'POST')
         return await handleNotify(request, env);
+      if (url.pathname === '/api/chat/react' && request.method === 'POST')
+        return await handleChatReact(request, env);
       if (url.pathname === '/api/push/test' && request.method === 'POST')
         return await handlePushTest(request, env);
       if (url.pathname === '/api/admin/pin' && request.method === 'POST')
@@ -98,7 +100,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-client-email-repair-confirm-banner';
+const BUILD_TAG = 'v2026-08-19-chat-status-reactions';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -790,6 +792,86 @@ async function handleNotify(request, env) {
 }
 
 // ---- POST /api/admin/pin ----
+/**
+ * Status reactions I can put on a client's message.
+ *
+ * The point is that nobody sits there wondering whether they've been left on
+ * read. `label` is what shows on the message; `push` is the notification,
+ * deliberately different for each one so the phone says something specific
+ * rather than a generic "new activity". Neither ever quotes message content.
+ *
+ * Keep in sync with REACTIONS in public/js/reactions.js.
+ */
+const CHAT_REACTIONS = {
+  seen: { label: 'Eric has seen your message', push: 'Eric has seen your message.' },
+  reading: { label: 'Eric is reading…', push: 'Eric is reading your message.' },
+  research: { label: 'Eric is doing research…', push: 'Eric is doing research on your question.' },
+  thinking: { label: 'Eric is thinking about your situation…', push: 'Eric is thinking about your situation.' },
+  history: { label: 'Eric is reviewing your history…', push: 'Eric is reviewing your history.' },
+  labs: { label: 'Eric is reviewing your labs / chart notes', push: 'Eric is reviewing your labs and chart notes.' },
+};
+
+/**
+ * POST /api/chat/react  Body: { kind: 'case'|'sub', id, msgId, reaction|null }
+ * Admin only. Chat messages are immutable to the browser (firestore.rules:
+ * `allow update: if false`), so the reaction is written here with the service
+ * account — which also puts the notification on the one path that can't be
+ * skipped by a client that never calls it.
+ */
+async function handleChatReact(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const profile = await getDoc(env, `users/${user.uid}`);
+  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+
+  const body = await request.json().catch(() => null);
+  const kind = body?.kind;
+  const id = typeof body?.id === 'string' ? body.id : '';
+  const msgId = typeof body?.msgId === 'string' ? body.msgId : '';
+  const reaction = body?.reaction ?? null;
+  if ((kind !== 'case' && kind !== 'sub') || !/^[\w-]{1,64}$/.test(id) || !/^[\w-]{1,64}$/.test(msgId))
+    return json({ error: 'Bad request' }, 400);
+  if (reaction !== null && !CHAT_REACTIONS[reaction])
+    return json({ error: 'Unknown reaction' }, 400);
+
+  let clientUid;
+  let link;
+  if (kind === 'case') {
+    const doc = await getDoc(env, `cases/${id}`);
+    if (!doc) return json({ error: 'Not found' }, 404);
+    clientUid = doc.data.clientUid;
+    link = `/case.html?id=${id}`;
+  } else {
+    const sub = await getDoc(env, `subscriptions/${id}`);
+    if (!sub) return json({ error: 'Not found' }, 404);
+    clientUid = id;
+    link = '/subscription.html';
+  }
+
+  const parent = kind === 'case' ? 'cases' : 'subscriptions';
+  const path = `${parent}/${id}/chat/${msgId}`;
+  const msg = await getDoc(env, path);
+  if (!msg) return json({ error: 'No such message' }, 404);
+
+  if (!reaction) {
+    await patchDoc(env, path, { reaction: null }, { mask: ['reaction'] });
+    return json({ ok: true, reaction: null });
+  }
+
+  const r = CHAT_REACTIONS[reaction];
+  const already = msg.data.reaction?.id === reaction;
+  await patchDoc(env, path, {
+    reaction: { id: reaction, label: r.label, at: new Date() },
+  }, { mask: ['reaction'] });
+
+  // Re-applying the same reaction is a no-op for the client's phone — it
+  // already said this. Changing it is real news, so that one notifies.
+  if (!already && clientUid) {
+    await notifyUser(env, clientUid, { title: 'Pocket Advocate', body: r.push, link });
+  }
+  return json({ ok: true, reaction, notified: !already });
+}
+
 // POST /api/push/test — send a notification to the caller's OWN devices.
 // "Are notifications actually working?" is otherwise unanswerable without
 // waiting for a real event, and a silent failure looks identical to nothing
