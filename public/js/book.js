@@ -314,9 +314,13 @@ function renderReview() {
         ${methodLabel} · ${state.election === 'public' ? 'Public session (broadcast live; revocable until the broadcast starts)' : 'Private session'}
       </p>
     </div>
-    <label class="choice" id="addon-box">
-      <input type="checkbox" id="addon"> <strong>Add a follow-up discussion — +$50</strong><br>
-      <span class="muted small">A second schedulable discussion on this case, bookable any time after your report lands. Use it within one month of your first discussion — after that it expires. Only available right now, at checkout — a follow-up later is a fresh $125 case.</span>
+    <label class="choice addon" id="addon-box">
+      <span class="addon-head">
+        <span class="addon-title"><input type="checkbox" id="addon"> Add a follow-up discussion</span>
+        <span class="addon-price">+$50</span>
+      </span>
+      <span class="addon-why">A second full discussion on this same case, booked any time after your report lands — use it within one month. A follow-up bought later is a fresh $125 case instead.</span>
+      <span class="addon-once">Offered here only</span>
     </label>
     <p class="muted small">Your time slot is held while you complete payment. You'll be taken to Stripe's secure checkout — card details never touch this site. Case fees are non-refundable once your slot is booked.</p>
     <p class="error" id="pay-error" hidden></p>

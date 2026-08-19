@@ -19,8 +19,21 @@ export function signinCodeEmail(code, baseUrl) {
     <p style="font-size:34px; font-weight:800; letter-spacing:8px; text-align:center;
        background:#f5f7fa; border-radius:10px; padding:16px 0; margin:0 0 6px;">${code}</p>
     <p style="margin:0 0 4px; color:#888; font-size:13px;">Didn't request this? You can ignore this email.</p>
-    <div style="background:#f5f7fa; border-radius:10px; padding:12px 14px; margin-top:18px;">
-      <p style="margin:0;">⭐ <strong>First time?</strong> When you open Pocket Advocate, it'll walk you through a quick two-step setup — adding it to your Home Screen and turning on notifications — so you never miss a message, document, or update. <span style="color:#666;">(On iPhone: Share ⬆️ → Add to Home Screen.)</span></p>
+    <div style="background:#f5f7fa; border-radius:10px; padding:14px 16px; margin-top:18px; font-size:16px; line-height:1.6;">
+      <p style="margin:0 0 8px;"><strong>First time here?</strong> Add Pocket Advocate to your Home Screen first, then type the code above into it. It takes about a minute.</p>
+      <p style="margin:0 0 6px;"><strong>On iPhone or iPad:</strong></p>
+      <ol style="margin:0 0 10px; padding-left:22px;">
+        <li>Open this site in <strong>Safari</strong></li>
+        <li>Tap the <strong>Share</strong> button — the square with an arrow pointing up</li>
+        <li>Scroll down and tap <strong>Add to Home Screen</strong>, then <strong>Add</strong></li>
+      </ol>
+      <p style="margin:0 0 6px;"><strong>On Android:</strong></p>
+      <ol style="margin:0 0 10px; padding-left:22px;">
+        <li>Open this site in <strong>Chrome</strong></li>
+        <li>Tap the <strong>⋮</strong> menu at the top right</li>
+        <li>Tap <strong>Add to Home screen</strong>, then <strong>Add</strong></li>
+      </ol>
+      <p style="margin:0; color:#555;">You can skip this and sign in right here instead — it will still work.</p>
     </div>
   </div>`;
 }
@@ -33,21 +46,23 @@ export function signinCodeEmail(code, baseUrl) {
 export function homeScreenTips(baseUrl) {
   const host = baseUrl.replace(/^https?:\/\//, '');
   return `
-  <div style="background:#f5f7fa; border-radius:10px; padding:14px 16px; margin-top:20px;">
-    <p style="margin:0 0 8px; font-size:15px;"><strong>⚠️ IMPORTANT: ADD POCKET ADVOCATE TO YOUR HOME SCREEN.</strong></p>
-    <p style="margin:0 0 10px;">This is the <strong>only way you'll receive notifications</strong> for all reminders, links, information, uploaded documents, and chat messages. Without it, you'll have to manually check the app for new information. It takes under a minute — the site becomes an app icon and you stay signed in:</p>
-    <p style="margin:0 0 4px;"><strong>iPhone / iPad:</strong></p>
-    <ol style="margin:0 0 10px; padding-left:20px;">
+  <div style="background:#f5f7fa; border-radius:10px; padding:16px 18px; margin-top:20px; font-size:16px; line-height:1.6;">
+    <p style="margin:0 0 10px; font-size:17px;"><strong>Please add Pocket Advocate to your Home Screen.</strong></p>
+    <p style="margin:0 0 12px;">This is the only way your phone can notify you about replies, documents, appointment reminders, and your report. Without it you'd have to keep checking back yourself. It takes under a minute, and afterwards the site opens like an app and keeps you signed in.</p>
+    <p style="margin:0 0 6px;"><strong>On iPhone or iPad:</strong></p>
+    <ol style="margin:0 0 12px; padding-left:22px;">
       <li>Open <a href="${baseUrl}">${host}</a> in <strong>Safari</strong></li>
-      <li>Tap the <strong>Share</strong> button (the square with the arrow)</li>
-      <li>Scroll down, tap <strong>Add to Home Screen</strong>, then <strong>Add</strong></li>
+      <li>Tap the <strong>Share</strong> button — the square with an arrow pointing up</li>
+      <li>Scroll down and tap <strong>Add to Home Screen</strong></li>
+      <li>Tap <strong>Add</strong>, then open Pocket Advocate from the new icon</li>
     </ol>
-    <p style="margin:0 0 4px;"><strong>Android:</strong></p>
-    <ol style="margin:0; padding-left:20px;">
+    <p style="margin:0 0 6px;"><strong>On Android:</strong></p>
+    <ol style="margin:0 0 12px; padding-left:22px;">
       <li>Open <a href="${baseUrl}">${host}</a> in <strong>Chrome</strong></li>
-      <li>Tap the <strong>⋮</strong> menu (top right)</li>
+      <li>Tap the <strong>⋮</strong> menu at the top right</li>
       <li>Tap <strong>Add to Home screen</strong>, then <strong>Add</strong></li>
     </ol>
+    <p style="margin:0; color:#555;">If you get stuck, just reply to this email and I'll walk you through it.</p>
   </div>`;
 }
 

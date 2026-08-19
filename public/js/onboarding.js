@@ -33,11 +33,26 @@ function runIntro(user, mount, fullySet) {
       cta: 'Get started',
     },
     {
-      title: 'Pick your look',
-      body: `<p>Choose a color scheme — you can change it any time from the ⚙ settings.</p>
+      // Home Screen instructions and the colour picker share one card: two
+      // small optional choices on one screen beats two screens to get through.
+      title: pushInstalled() ? 'Make it yours' : 'Keep it one tap away',
+      body: `
+        ${pushInstalled()
+          ? `<p>Pocket Advocate is on your Home Screen. ✓</p>`
+          : isIOS()
+            ? `<p>Add Pocket Advocate to your Home Screen so it opens like an app, keeps you signed in, and can send you notifications:</p>
+               <ol class="intro-steps"><li>Tap the <strong>Share</strong> button ⬆️ at the bottom of Safari</li>
+               <li>Scroll down and tap <strong>Add to Home Screen</strong></li>
+               <li>Tap <strong>Add</strong>, then open Pocket Advocate from the new icon</li></ol>`
+            : `<p>Add Pocket Advocate to your Home Screen so it opens like an app and can send you notifications:</p>
+               <ol class="intro-steps"><li>Tap the <strong>⋮</strong> menu in Chrome</li>
+               <li>Tap <strong>Add to Home screen</strong></li>
+               <li>Confirm, then open it from the new icon</li></ol>`}
+        <p style="margin-top:1rem;">Pick a colour scheme — change it any time from the ⚙ settings.</p>
         <div class="seg" data-theme-seg>${THEMES.map((t) =>
-          `<button data-theme-pick="${t.id}" class="${t.id === currentTheme() ? 'on' : ''}">${t.label}</button>`).join('')}</div>`,
-      cta: 'Next',
+          `<button data-theme-pick="${t.id}" class="${t.id === currentTheme() ? 'on' : ''}">${t.label}</button>`).join('')}</div>
+        <p class="dim small" style="margin-top:.9rem;">Nothing here is required — you can skip it and carry on.</p>`,
+      cta: pushInstalled() ? 'Next' : 'Done — take me in',
       onPaint: (root) => {
         root.querySelectorAll('[data-theme-pick]').forEach((b) =>
           b.addEventListener('click', () => {
@@ -48,22 +63,7 @@ function runIntro(user, mount, fullySet) {
     },
   ];
 
-  if (!pushInstalled()) {
-    steps.push({
-      title: 'Keep it one tap away',
-      body: isIOS()
-        ? `<p>Add Pocket Advocate to your Home Screen so it opens like an app and you stay signed in:</p>
-           <ol class="intro-steps"><li>Tap the <strong>Share</strong> button ⬆️ at the bottom of Safari</li>
-           <li>Scroll down, tap <strong>Add to Home Screen</strong></li>
-           <li>Tap <strong>Add</strong> — then open Pocket Advocate from the new icon</li></ol>
-           <p class="dim small">This is also how notifications work on iPhone.</p>`
-        : `<p>Add Pocket Advocate to your Home Screen so it opens like an app:</p>
-           <ol class="intro-steps"><li>Tap the <strong>⋮</strong> menu in Chrome</li>
-           <li>Tap <strong>Add to Home screen</strong></li>
-           <li>Confirm — then open it from the new icon</li></ol>`,
-      cta: 'Done — take me in',
-    });
-  } else if (!notifOn()) {
+  if (pushInstalled() && !notifOn()) {
     steps.push({
       title: 'Turn on notifications',
       body: `<p>Get a gentle alert when there's a new message, document, or update — so you never have to keep checking back. No message content is ever shown.</p>`,
@@ -92,8 +92,8 @@ function runIntro(user, mount, fullySet) {
         <h2>${s.title}</h2>
         ${s.body}
         <div class="intro-actions">
-          ${last ? '' : '<button class="btn quiet" data-skip>Skip</button>'}
-          <button class="btn" data-next>${last ? 'Enter my dashboard →' : s.cta || 'Next'}</button>
+          <button class="btn quiet" data-skip>${last ? 'Not now' : 'Skip'}</button>
+          <button class="btn" data-next>${last ? 'Done' : s.cta || 'Next'}</button>
         </div>
       </div>`;
     overlay.querySelector('[data-skip]')?.addEventListener('click', finish);

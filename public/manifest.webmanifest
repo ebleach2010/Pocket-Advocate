@@ -2,7 +2,7 @@
   "name": "Pocket Advocate",
   "short_name": "Pocket Advocate",
   "description": "Independent patient advocacy \u2014 your case, your documents, your chat with me.",
-  "start_url": "/case.html",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#07090F",

@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
-<meta name="theme-color" content="#EBDFCE">
+<meta name="theme-color" content="#07090F">
 <title>Pocket Advocate</title>
 <link rel="stylesheet" href="/css/site.css?v=stat9">
 <script>(function(){try{var t=localStorage.getItem('pa-theme')||'neon';document.documentElement.setAttribute('data-theme',t);var m={earth:'/css/theme-earth.css?v=e8',dark:'/css/theme-dark.css?v=d1',contrast:'/css/theme-contrast.css?v=c1'};if(m[t])document.write('<link rel="stylesheet" href="'+m[t]+'" data-theme-css="1">');}catch(e){}})();</script>
@@ -36,7 +36,8 @@
     <a class="pack rec-c" href="/book.html">
       <span class="tag c">RECOMMENDED</span>
       <h3>Advocacy Case</h3><span class="price">$125</span>
-      <p class="desc">One live deep-dive with me + your written report within 7 days. Optional $50 follow-up session offered at checkout.</p>
+      <p class="desc">One live deep-dive with me + your written report within 7 days.</p>
+      <p class="addon-note"><strong>Optional add-on — $50:</strong> a second discussion on the same case. Offered at checkout only.</p>
     </a>
 
     <a class="pack rec-m" href="/subscribe.html">
@@ -53,8 +54,14 @@
   </section>
 </main>
 <script type="module">
-  import { hydrateNav } from '/js/auth.js';
+  import { hydrateNav, currentUser } from '/js/auth.js';
+  import { initSetupGuide } from '/js/onboarding.js';
   hydrateNav();
+  // Offer the Home Screen install once, before booking rather than after
+  // paying — signed-in only, once per device, and skippable. Never a gate:
+  // the Book button stays live behind it.
+  const u = await currentUser();
+  if (u) initSetupGuide(u, document.querySelector('main'));
 </script>
 </body>
 </html>
