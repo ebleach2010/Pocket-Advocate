@@ -2,7 +2,7 @@
 //   POST   /api/checkout           hold a slot, create a Stripe Checkout Session
 //   GET    /api/case-for-session   poll after checkout: has the webhook made my case?
 //   POST   /api/make-private       revoke a public election (allowed until call time)
-//   POST   /api/subscribe          Pocket Advocate subscription Checkout ($50/mo)
+//   POST   /api/subscribe          24/7 Priority Chat subscription Checkout ($24.99/mo)
 //   POST   /api/portal             Stripe customer portal (manage/cancel)
 //   POST   /api/stripe/webhook     payments + subscription lifecycle -> Firestore
 //   POST   /api/admin/slots        open availability slots (admin)
@@ -19,14 +19,14 @@ import { slotTimingProblem, windowProblem, HOLD_MINUTES } from './schedule.js';
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 
-const CASE_PRICE_CENTS = 10000;
+const CASE_PRICE_CENTS = 12500;
 const ADDON_PRICE_CENTS = 5000;
-const SUB_PRICE_CENTS = 5000;
+const SUB_PRICE_CENTS = 2499;
 // Follow-up add-ons expire one month after the first discussion (Eric,
 // 2026-07-13); clients get one warning email a week before the deadline.
 const FOLLOWUP_EXPIRY_DAYS = 30;
 const FOLLOWUP_WARN_DAYS = 7;
-// Admin-priced sessions: percentage of the $100 case rate, 25% steps.
+// Admin-priced sessions: percentage of the $125 case rate, 25% steps.
 const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
 const METHODS = ['discord', 'zoom', 'phone'];
 const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording', 'election'];
@@ -241,8 +241,8 @@ async function handleSubscribe(request, env) {
           unit_amount: SUB_PRICE_CENTS,
           recurring: { interval: 'month' },
           product_data: {
-            name: 'Pocket Advocate subscription',
-            description: 'Anytime chat with your advocate',
+            name: '24/7 Priority Chat',
+            description: 'Anytime chat with me, your advocate',
           },
         },
       },
@@ -318,8 +318,8 @@ async function activateSubscription(env, session) {
   const email = session.customer_email || session.customer_details?.email;
   await sendEmail(env, {
     to: email,
-    subject: 'Your Pocket Advocate subscription is live',
-    html: `<p>Your chat line to Eric is open. He replies when he's available — response
+    subject: 'Your 24/7 Priority Chat is live',
+    html: `<p>Your chat line to me is open. I reply when I'm available — response
       timing is never guaranteed, exactly as the terms you accepted say.</p>
       <p><a href="${env.PUBLIC_BASE_URL}/subscription.html">Open your chat</a></p>
       ${homeScreenTips(env.PUBLIC_BASE_URL)}`,
@@ -338,7 +338,7 @@ async function syncSubscription(env, sub) {
     const doc = await getDoc(env, `subscriptions/${uid}`);
     await sendEmail(env, {
       to: doc?.data.email,
-      subject: 'Your Pocket Advocate subscription has ended',
+      subject: 'Your 24/7 Priority Chat has ended',
       html: `<p>Your subscription is canceled. Chat access runs to the end of the period
         you already paid for, and your message history stays visible to you.</p>`,
     });
@@ -581,7 +581,7 @@ async function handleNotify(request, env) {
   } else if (isAdmin) {
     await notifyUser(env, clientUid, {
       title: 'Pocket Advocate',
-      body: 'Eric sent you a new message.',
+      body: 'You have a new message from me.',
       link: clientLink,
     });
   } else {
@@ -816,7 +816,7 @@ async function handleCaseUpdate(request, env) {
         subject: 'Great meeting — your report is on the way',
         html: `<p>It was great talking with you today. Your discussion is done,
           and the recording will be in your case file for you to revisit anytime.</p>
-          <p>Eric is now putting together your written report. Expect it within
+          <p>I'm now putting together your written report. Expect it within
           <strong>7 business days</strong> — some reports take slightly longer
           depending on complexity, and yours will be worth the care.</p>
           <p>When the report lands, you'll have a day to look it over and ask
@@ -835,7 +835,7 @@ async function handleCaseUpdate(request, env) {
       subject: 'Your Pocket Advocate report is ready',
       html: `<p>Your written report is in your case file — yours to download,
         print, and keep forever. Share it with your care team.</p>
-        <p>Take a day to read it over — if anything raises a question, ask Eric
+        <p>Take a day to read it over — if anything raises a question, ask me
         in your case chat before the case wraps up.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
     });
@@ -899,7 +899,7 @@ function whenHtml(start, tz) {
   }).format(start);
   if (local.replace(/\s/g, '') === `${MT_FMT.format(start)}`.replace(/\s/g, '')) return `<p><strong>${mst}</strong></p>`;
   return `<p><strong>${local}</strong> (your time)<br>
-    <span style="color:#666;">${mst} for Eric</span></p>`;
+    <span style="color:#666;">${mst} my time</span></p>`;
 }
 
 function followUpExpiry(c) {
@@ -967,7 +967,7 @@ async function handleAdminSchedule(request, env) {
     await sendEmail(env, {
       to: c.clientEmail,
       subject: 'Your Pocket Advocate appointment moved',
-      html: `<p>Your discussion with Eric is now scheduled for:</p>
+      html: `<p>Your discussion with me is now scheduled for:</p>
         ${whenHtml(start, c.clientTz)}
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
     });
@@ -990,20 +990,20 @@ async function handleAdminSchedule(request, env) {
     await sendEmail(env, {
       to: c.clientEmail,
       subject: 'Your follow-up session is booked',
-      html: `<p>Your paid follow-up discussion with Eric is scheduled:</p>
+      html: `<p>Your paid follow-up discussion with me is scheduled:</p>
         ${whenHtml(start, c.clientTz)}
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
     });
     return json({ ok: true, scheduled: when });
   }
 
-  // mode === 'charge' — a custom-priced session (percentage of the $100 rate).
+  // mode === 'charge' — a custom-priced session (percentage of the $125 rate).
   if (!CHARGE_PCTS.includes(pct)) return json({ error: 'Pick a rate (0–150% in 25% steps).' }, 400);
   const label =
     typeof tagline === 'string' && tagline.trim()
       ? tagline.trim().slice(0, 120)
       : 'Advocacy Session';
-  const amountCents = pct * 100; // pct% of $100
+  const amountCents = Math.round((pct * CASE_PRICE_CENTS) / 100); // pct% of the case rate
 
   if (amountCents === 0) {
     await bookSlot();
@@ -1015,7 +1015,7 @@ async function handleAdminSchedule(request, env) {
     }, { mask: ['followUp'] });
     await sendEmail(env, {
       to: c.clientEmail,
-      subject: 'A session with Eric is booked',
+      subject: 'A session with me is booked',
       html: `<p>${escHtml(label)} — no charge.</p>
         ${whenHtml(start, c.clientTz)}
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
@@ -1042,7 +1042,7 @@ async function handleAdminSchedule(request, env) {
         price_data: {
           currency: 'usd',
           unit_amount: amountCents,
-          product_data: { name: label, description: `${when} with Eric` },
+          product_data: { name: label, description: `${when} with me` },
         },
       },
     ],
@@ -1062,7 +1062,7 @@ async function handleAdminSchedule(request, env) {
   }, { mask: ['pendingExtra'] });
   await sendEmail(env, {
     to: c.clientEmail,
-    subject: 'Eric scheduled a session — payment needed to confirm',
+    subject: 'I scheduled a session for you — payment needed to confirm',
     html: `<p>${escHtml(label)} — $${(amountCents / 100).toFixed(2)}.</p>
       ${whenHtml(start, c.clientTz)}
       <p>The time is held for 24 hours. <a href="${session.url}">Pay to confirm</a>,
@@ -1133,7 +1133,7 @@ export async function runFollowUpWarnings(env, now = Date.now()) {
         html: `<p>Your case included a paid follow-up discussion, and it expires one month
           after your first discussion:</p>
           ${whenHtml(new Date(expires), c.clientTz)}
-          <p>To use it, message Eric in your case chat and he'll get it scheduled.</p>
+          <p>To use it, message me in your case chat and I'll get it scheduled.</p>
           <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
       });
     }

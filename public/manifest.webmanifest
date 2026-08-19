@@ -1,7 +1,7 @@
 {
   "name": "Pocket Advocate",
   "short_name": "Pocket Advocate",
-  "description": "Independent patient advocacy \u2014 your case, your documents, your chat with Eric.",
+  "description": "Independent patient advocacy \u2014 your case, your documents, your chat with me.",
   "start_url": "/case.html",
   "scope": "/",
   "display": "standalone",

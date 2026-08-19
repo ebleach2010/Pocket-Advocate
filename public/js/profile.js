@@ -35,7 +35,7 @@ export async function ensureFullProfile(user, container) {
     const today = new Date().toISOString().slice(0, 10);
     container.innerHTML = `
       <h2>First — who are we talking with?</h2>
-      <p class="muted small">Eric works with real people, by name. This stays between you and him, like everything else here.</p>
+      <p class="muted small">I work with real people, by name. This stays between you and me, like everything else here.</p>
       <div class="card">
         <label for="pf-first">First name</label>
         <input type="text" id="pf-first" autocomplete="given-name" value="${esc(existing.firstName || '')}">
@@ -56,7 +56,7 @@ export async function ensureFullProfile(user, container) {
       const dob = container.querySelector('#pf-dob').value;
       err.hidden = true;
       if (!firstName || !lastName) {
-        err.textContent = 'First and last name, please — Eric needs to know who he\'s working with.';
+        err.textContent = 'First and last name, please — I need to know who I\'m working with.';
         err.hidden = false;
         return;
       }
@@ -71,7 +71,7 @@ export async function ensureFullProfile(user, container) {
           <h2>We need a guardian for this one</h2>
           <p class="muted">Pocket Advocate doesn't open cases for anyone under 18 without a parent or guardian's
           consent — that's a hard rule, for your protection. Have your parent or guardian get in touch
-          (the call button on the <a href="/about.html">About page</a> works), and Eric will take it from there.</p>`;
+          (the call button on the <a href="/about.html">About page</a> works), and I'll take it from there.</p>`;
         return;
       }
       try {

@@ -29,7 +29,7 @@ function runIntro(user, mount, fullySet) {
   const steps = [
     {
       title: 'Welcome to Pocket Advocate 👋',
-      body: `<p>You're in. This is your private space — your case, your documents, and a direct line to Eric. Just a couple of quick things to set up first.</p>`,
+      body: `<p>You're in. This is your private space — your case, your documents, and a direct line to me. Just a couple of quick things to set up first.</p>`,
       cta: 'Get started',
     },
     {

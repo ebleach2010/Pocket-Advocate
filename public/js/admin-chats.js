@@ -85,7 +85,7 @@ async function loadInbox() {
     <div class="panel">
       <h3>Subscriber expectation line</h3>
       <p class="dim small">Shown in every subscriber chat. Your shield for your time.</p>
-      <input type="text" id="expectation" maxlength="120" placeholder="Eric typically replies within a few days.">
+      <input type="text" id="expectation" maxlength="120" placeholder="I typically reply within a few days.">
       <div class="actions"><button class="btn secondary" id="save-exp">Save</button><span class="ok" id="exp-ok" hidden>Saved.</span></div>
     </div>
     <div id="threads">

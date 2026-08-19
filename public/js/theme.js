@@ -1,11 +1,12 @@
-// Visual theme system — four modes, choice persists per device. The initial
-// theme is applied by a tiny inline <head> script (no flash); this module does
-// live switching from the settings panel and the intro.
+// Visual theme system — four modes, choice persists per device. Neon (the base
+// site.css, no override) is the default. The initial theme is applied by a tiny
+// inline <head> script (no flash); this module does live switching from the
+// settings panel and the intro.
 const KEY = 'pa-theme';
 
 export const THEMES = [
-  { id: 'earth', label: 'Earth' },
   { id: 'neon', label: 'Neon' },
+  { id: 'earth', label: 'Earth' },
   { id: 'dark', label: 'Dark' },
   { id: 'contrast', label: 'High contrast' },
 ];
@@ -19,7 +20,7 @@ const CSS = {
 };
 
 export function currentTheme() {
-  return localStorage.getItem(KEY) || 'earth';
+  return localStorage.getItem(KEY) || 'neon';
 }
 
 export function applyTheme(name) {

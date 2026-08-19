@@ -1,6 +1,6 @@
-/* EARTH THEME — the approved look (Eric, 2026-07-21: "Much easier on the
-   eyes."). Loaded after site.css and overrides its neon tokens; the neon
-   system remains underneath as fallback history. Palette is Eric's five
+/* EARTH THEME — a softer alternative (Eric, 2026-07-21: "Much easier on the
+   eyes."). Neon is the default; this is loaded after site.css and overrides
+   its neon tokens when a client picks Earth. Palette is Eric's five
    swatches:
      Sage #B2BDA3 · Sand #EBDFCE · Pearl #F4E5D9 · Peach #F8D3BB · Stone #978671
    Mapping logic:

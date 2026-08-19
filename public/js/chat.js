@@ -17,13 +17,13 @@ import {
 const MAX_BYTES = 25 * 1024 * 1024;
 const LONG_PRESS_MS = 550;
 
-/** Shows Eric's live status in `el` (any element with a .p-dot child). */
+/** Shows the advocate's live status in `el` (any element with a .p-dot child). */
 export function watchPresence(el) {
   onValue(rtdbRef(rtdb, 'presence/eric'), (snap) => {
     const online = snap.val() === true;
     el.querySelector('.p-dot')?.classList.toggle('on', online);
     const label = el.querySelector('.p-label');
-    if (label) label.textContent = online ? 'Eric is online' : 'Eric is away';
+    if (label) label.textContent = online ? "I'm online" : "I'm away";
   });
 }
 
@@ -158,7 +158,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         rows.push([
           when ? when.toLocaleDateString('en-CA') : '',   // YYYY-MM-DD
           when ? when.toLocaleTimeString('en-US') : '',
-          d.role === 'admin' ? 'Eric' : 'Client',
+          d.role === 'admin' ? 'Advocate' : 'Client',
           d.text || '',
           d.attachment?.name || '',
           d.attachment?.url || '',

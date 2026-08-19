@@ -46,7 +46,7 @@ async function load() {
 
   if (!threads.length) {
     chatEl.innerHTML = `<p class="dim">No conversations yet.</p>
-      <p><a class="btn" href="/book.html">Book an Advocacy Case →</a> to start chatting with Eric.</p>`;
+      <p><a class="btn" href="/book.html">Book an Advocacy Case →</a> to start chatting with me.</p>`;
     return;
   }
 
@@ -77,7 +77,7 @@ async function load() {
       saveUid: user.uid,
       disabled: t.closed,
       notice: t.closed
-        ? 'This conversation is closed. Your history stays here; book again or subscribe to reach Eric.'
+        ? 'This conversation is closed. Your history stays here; book again or subscribe to reach me.'
         : '',
     });
   }

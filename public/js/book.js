@@ -123,7 +123,7 @@ function renderElection(preselected = state.election) {
     <label class="choice ${preselected === 'private' ? 'selected' : ''}" id="c-private">
       <input type="radio" name="election" value="private" ${preselected === 'private' ? 'checked' : ''}>
       <strong>Private session</strong><br>
-      <span class="muted small">The discussion happens only between you and Eric. The recording lives only in your case file. Same price, every benefit included.</span>
+      <span class="muted small">The discussion happens only between you and me. The recording lives only in your case file. Same price, every benefit included.</span>
     </label>
     <label class="choice ${preselected === 'public' ? 'selected' : ''}" id="c-public">
       <input type="radio" name="election" value="public" ${preselected === 'public' ? 'checked' : ''}>
@@ -155,7 +155,7 @@ async function renderSchedule() {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
   const el = mount(`
     <h2>Pick a time</h2>
-    <p class="muted small">All times are shown in <strong>your</strong> time zone (${zone.replace(/_/g, ' ')}), with Eric's MST time underneath. Appointments must be at least 72 hours out.</p>
+    <p class="muted small">All times are shown in <strong>your</strong> time zone (${zone.replace(/_/g, ' ')}), with my MST time underneath. Appointments must be at least 72 hours out.</p>
     <div id="days"><p class="muted">Loading available times…</p></div>
     <p>
       <button class="btn quiet" id="back">Back</button>
@@ -217,7 +217,7 @@ async function renderSchedule() {
           .map(
             (s) => `<button class="slot" data-id="${s.id}">
               ${localFmt.format(s.start)}
-              <span class="local">${mtFmt.format(s.start)} MST for Eric</span>
+              <span class="local">${mtFmt.format(s.start)} MST my time</span>
             </button>`
           )
           .join('')}
@@ -282,7 +282,7 @@ function renderMethod() {
       state.phone = el.querySelector('#phone').value.trim();
       if (!/^\+?[\d\s().-]{7,20}$/.test(state.phone)) {
         const err = el.querySelector('#method-error');
-        err.textContent = 'Enter a valid phone number so Eric can call you.';
+        err.textContent = 'Enter a valid phone number so I can call you.';
         err.hidden = false;
         return;
       }
@@ -307,29 +307,29 @@ function renderReview() {
   const el = mount(`
     <h2>Lock it in</h2>
     <div class="card">
-      <div class="row"><h3>Advocacy Case</h3><span class="price">$100</span></div>
+      <div class="row"><h3>Advocacy Case</h3><span class="price">$125</span></div>
       <p class="muted small">
         <strong style="color:var(--ink)">${localLong.format(state.slot.start)}</strong> (your time)<br>
-        ${mtFmt.format(state.slot.start)} MST for Eric<br>
+        ${mtFmt.format(state.slot.start)} MST my time<br>
         ${methodLabel} · ${state.election === 'public' ? 'Public session (broadcast live; revocable until the broadcast starts)' : 'Private session'}
       </p>
     </div>
     <label class="choice" id="addon-box">
       <input type="checkbox" id="addon"> <strong>Add a follow-up discussion — +$50</strong><br>
-      <span class="muted small">A second schedulable discussion on this case, bookable any time after your report lands. Use it within one month of your first discussion — after that it expires. Only available right now, at checkout — a follow-up later is a fresh $100 case.</span>
+      <span class="muted small">A second schedulable discussion on this case, bookable any time after your report lands. Use it within one month of your first discussion — after that it expires. Only available right now, at checkout — a follow-up later is a fresh $125 case.</span>
     </label>
     <p class="muted small">Your time slot is held while you complete payment. You'll be taken to Stripe's secure checkout — card details never touch this site. Case fees are non-refundable once your slot is booked.</p>
     <p class="error" id="pay-error" hidden></p>
     <p>
       <button class="btn quiet" id="back">Back</button>
-      <button class="btn" id="pay">Pay $<span id="total">100</span> & book</button>
+      <button class="btn" id="pay">Pay $<span id="total">125</span> &amp; book</button>
     </p>`);
 
   const addon = el.querySelector('#addon');
   addon.addEventListener('change', () => {
     state.addOnFollowUp = addon.checked;
     el.querySelector('#addon-box').classList.toggle('selected', addon.checked);
-    el.querySelector('#total').textContent = addon.checked ? '150' : '100';
+    el.querySelector('#total').textContent = addon.checked ? '175' : '125';
   });
   el.querySelector('#back').addEventListener('click', back);
 

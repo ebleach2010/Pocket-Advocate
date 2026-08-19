@@ -151,7 +151,7 @@ function renderProgress(el, c) {
   });
   const method = c.appointment?.method;
   const methodLine = method === 'phone'
-    ? `Phone — Eric calls you at <strong>${esc(c.appointment.phone || 'your number')}</strong>`
+    ? `Phone — I call you at <strong>${esc(c.appointment.phone || 'your number')}</strong>`
     : c.appointment?.joinLink
       ? `${method === 'zoom' ? 'Zoom' : 'Discord'} — <a href="${esc(c.appointment.joinLink)}" rel="noopener">join link</a>`
       : `${method === 'zoom' ? 'Zoom' : 'Discord'} — your join link appears here before the call`;
@@ -200,7 +200,7 @@ function renderProgress(el, c) {
       return `<div style="border:1px solid var(--magenta); border-radius:10px; padding:.6rem .8rem; margin-top:.6rem;">
         <p class="small" style="margin:0 0 .4rem;"><strong>${esc(c.pendingExtra.label)}</strong> —
           ${mt.format(s)} MST · $${(c.pendingExtra.amountCents / 100).toLocaleString()}</p>
-        <p class="dim small" style="margin:0 0 .5rem;">Eric scheduled this for you. The time is held for 24 hours — pay to confirm it.</p>
+        <p class="dim small" style="margin:0 0 .5rem;">I scheduled this for you. The time is held for 24 hours — pay to confirm it.</p>
         <a class="btn" href="${esc(c.pendingExtra.url)}">Pay & confirm</a>
       </div>`;
     }
@@ -209,7 +209,7 @@ function renderProgress(el, c) {
       const expires = base ? base + 30 * 86_400_000 : null;
       const lapsed = expires && Date.now() > expires;
       if (lapsed) return '';
-      return `<p class="dim small">Follow-up add-on included — message Eric in chat to schedule your second session.${
+      return `<p class="dim small">Follow-up add-on included — message me in chat to schedule your second session.${
         expires && Date.now() > base
           ? ` Use it by <strong style="color:var(--ink)">${mt.format(new Date(expires))} MST</strong> (one month after your discussion).`
           : ' It must be used within one month of your first discussion.'
@@ -245,7 +245,7 @@ function renderDemoChat(el) {
     { role: 'admin', text: 'Perfect, I see them. I already have a couple of questions ready for your neurologist. See you Thursday.', d: '10:20 AM' },
   ];
   el.innerHTML = `
-    <p style="margin:.2rem 0 .3rem;"><span class="p-dot on"></span><span class="p-label">Eric is online</span></p>
+    <p style="margin:.2rem 0 .3rem;"><span class="p-dot on"></span><span class="p-label">I'm online</span></p>
     <div class="panel">
       <div class="chat-log">
         ${msgs.map((m) => `

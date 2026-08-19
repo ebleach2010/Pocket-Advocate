@@ -1,5 +1,6 @@
-// The subscriber home: live chat with Eric, his presence + the expectation
-// line he controls, subscription status, and the Stripe customer portal.
+// The subscriber home (24/7 Priority Chat): live subscriber chat, the advocate's
+// presence + the admin-controlled expectation line, subscription status, and
+// the Stripe customer portal.
 
 import { db, doc, getDoc } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
@@ -28,8 +29,8 @@ async function load() {
   if (!sub) {
     page.innerHTML = `
       <h1>No subscription yet</h1>
-      <p class="dim">The Pocket Advocate subscription is an always-open chat line to Eric for $50/mo.</p>
-      <div class="actions"><a class="btn mag" href="/subscribe.html">Get Pocket Advocate →</a></div>`;
+      <p class="dim">24/7 Priority Chat, $24.99/mo: a direct priority chat with me. No more waiting in line on Reddit. Cancel anytime.</p>
+      <div class="actions"><a class="btn mag" href="/subscribe.html">Get 24/7 Priority Chat →</a></div>`;
     return;
   }
 
@@ -37,7 +38,7 @@ async function load() {
   const active = end > new Date();
   const endFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
-  let expectation = 'Eric typically replies within a few days.';
+  let expectation = 'I typically reply within a few days.';
   try {
     const snapshot = await getDoc(doc(db, 'settings', 'subscriberChat'));
     if (snapshot.exists() && snapshot.data().expectationLine) expectation = snapshot.data().expectationLine;
@@ -45,7 +46,7 @@ async function load() {
 
   page.innerHTML = `
     <div class="row">
-      <h1 style="margin:0;">Your chat with Eric</h1>
+      <h1 style="margin:0;">Your chat with me</h1>
       <span class="status-pill ${active ? '' : 'closed'}">${active ? 'ACTIVE' : 'ENDED'}</span>
     </div>
     <p style="margin-top:.4rem;"><span class="p-dot"></span><span class="p-label">Checking…</span>

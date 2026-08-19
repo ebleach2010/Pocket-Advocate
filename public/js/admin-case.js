@@ -10,6 +10,10 @@ import { requireAdmin, hydrateNav } from './auth.js';
 import { mountChat } from './chat.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
+// Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
+// percentages below are a share of the standard Advocacy Case fee.
+const CASE_PRICE_CENTS = 12500;
+const dollars = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 const caseId = new URLSearchParams(location.search).get('id');
 
 hydrateNav();
@@ -97,7 +101,7 @@ function render(el) {
         <div id="sched-charge" style="margin:.35rem 0 0 1.4rem;" hidden>
           <select id="sched-pct">
             ${[0, 25, 50, 75, 100, 125, 150].map((p) =>
-              `<option value="${p}" ${p === 50 ? 'selected' : ''}>${p}% — ${p === 0 ? 'no charge' : '$' + p}</option>`).join('')}
+              `<option value="${p}" ${p === 50 ? 'selected' : ''}>${p}% — ${p === 0 ? 'no charge' : '$' + dollars((p * CASE_PRICE_CENTS) / 100)}</option>`).join('')}
           </select>
           <input type="text" id="sched-tag" maxlength="120" placeholder="Invoice line (optional) — e.g. Records deep-dive session" style="margin-top:.35rem;">
           <p class="dim small" style="margin:.3rem 0 0;">The client pays through Stripe to confirm; the slot holds for 24 hours. Your tagline is the line item on their receipt.</p>
