@@ -206,6 +206,29 @@ function scrollableX(node, stopAt) {
   return false;
 }
 
+/**
+ * "Did it actually go through?" answered before anything else on the page.
+ * A paying client who lands here and sees only a status timeline has no plain
+ * statement that their money arrived and their slot is theirs — one asked for
+ * exactly that on day one. Closed cases don't need it.
+ */
+function confirmationBanner(c, start, localFmt) {
+  if (c.status === 'closed' || !start) return '';
+  const cents = c.stripe?.amountTotal;
+  const paid = typeof cents === 'number'
+    ? ` — $${(cents / 100).toFixed(2).replace(/\.00$/, '')} received`
+    : '';
+  const requested = !!c.appointment?.requested;
+  return `
+    <div class="panel confirm-banner">
+      <p style="margin:0;"><strong>Payment confirmed${paid}.</strong>
+        ${requested
+          ? 'Your case file is open. The time you asked for still needs my confirmation — see below.'
+          : `You're booked for <strong>${localFmt.format(start)}</strong>.`}</p>
+      <p class="dim small" style="margin:.35rem 0 0;">A copy is in your email. Nothing else is needed from you before the call — though labs and imaging help if you have them.</p>
+    </div>`;
+}
+
 // ---- Progress tab ----
 function renderProgress(el, c) {
   const start = c.appointment && toDate(c.appointment.start);
@@ -234,6 +257,7 @@ function renderProgress(el, c) {
     (!election.revocableUntil || toDate(election.revocableUntil) > new Date());
 
   el.innerHTML = `
+    ${confirmationBanner(c, start, localFmt)}
     <div class="panel">
       ${start ? `
         <p style="margin:0 0 .3rem;"><strong>${mtFmt.format(start)} MST</strong><br>

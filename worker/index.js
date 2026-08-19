@@ -92,12 +92,13 @@ export default {
     ctx.waitUntil(runChatDigest(env));
     ctx.waitUntil(runFollowUpWarnings(env));
     ctx.waitUntil(cleanupStaleSlots(env));
+    ctx.waitUntil(repairMissingCaseEmails(env));
   },
 };
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-webapp-help-push-test-swipe';
+const BUILD_TAG = 'v2026-08-19-client-email-repair-confirm-banner';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -116,6 +117,54 @@ async function cleanupStaleSlots(env) {
     if (stale.length) console.log(`slot cleanup: deleted ${stale.length} unbookable open slots`);
   } catch (err) {
     console.warn('slot cleanup failed:', err.message || err);
+  }
+}
+
+/**
+ * Repair cases that were created without a client email, and send the booking
+ * confirmation those clients never got.
+ *
+ * A case with no `clientEmail` is a client who paid and heard nothing, and who
+ * can never be emailed again — every sendEmail() to them silently no-ops. This
+ * happened for real: checkout read `user.email`, which is always null on
+ * custom-token accounts, and the webhook's only fallback was Stripe's
+ * `customer_email` (which is just what we passed in, i.e. also nothing).
+ * The address is on `users/{uid}` the whole time, so fill it in and follow
+ * through. `bookingEmailSentAt` makes the send exactly-once.
+ */
+async function repairMissingCaseEmails(env) {
+  try {
+    const rows = await queryDocs(env, 'cases', [['clientEmail', 'EQUAL', null]], 25);
+    for (const row of rows) {
+      const c = row.data;
+      if (!c.clientUid) continue;
+      const profile = await getDoc(env, `users/${c.clientUid}`);
+      const email = profile?.data.email;
+      if (!email) continue;
+
+      const now = new Date();
+      await patchDoc(env, `cases/${row.id}`, {
+        clientEmail: email,
+        bookingEmailSentAt: now,
+      }, { mask: ['clientEmail', 'bookingEmailSentAt'] });
+      console.log(`case ${row.id}: backfilled client email`);
+
+      if (c.bookingEmailSentAt) continue; // already told them somehow
+      const start = c.appointment?.start ? new Date(c.appointment.start) : null;
+      if (!start) continue;
+      await sendEmail(env, {
+        to: email,
+        subject: 'Your Pocket Advocate case is open',
+        html: `<p>Payment confirmed — your case file is live.</p>
+          ${whenHtml(start, c.clientTz)}
+          <p>Meeting method: ${escHtml(c.appointment?.method || 'video')}.</p>
+          <p>Upload labs, imaging, or records any time before the call.</p>
+          <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>
+          ${homeScreenTips(env.PUBLIC_BASE_URL)}`,
+      });
+    }
+  } catch (err) {
+    console.warn('case email repair failed:', err.message || err);
   }
 }
 
@@ -202,14 +251,14 @@ async function handleCheckout(request, env) {
 
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
-    customer_email: user.email || undefined,
+    customer_email: identity.email || user.email || undefined,
     line_items: lineItems,
     success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.PUBLIC_BASE_URL}/book.html?canceled=1`,
     expires_at: Math.floor(holdExpiresAt.getTime() / 1000),
     metadata: {
       uid: user.uid,
-      email: user.email || '',
+      email: identity.email || user.email || '',
       name: identity.name,
       dob: identity.dob,
       tz: clientTz || '',
@@ -254,14 +303,14 @@ async function checkoutRequestedTime(env, o) {
   const lineItems = caseLineItems(addOnFollowUp);
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
-    customer_email: user.email || undefined,
+    customer_email: identity.email || user.email || undefined,
     line_items: lineItems,
     success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.PUBLIC_BASE_URL}/book.html?canceled=1`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),
     metadata: {
       uid: user.uid,
-      email: user.email || '',
+      email: identity.email || user.email || '',
       name: identity.name,
       dob: identity.dob,
       tz: clientTz || '',
@@ -331,7 +380,7 @@ async function handleSubscribe(request, env) {
 
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'subscription',
-    customer_email: user.email || undefined,
+    customer_email: identity.email || user.email || undefined,
     line_items: [
       {
         quantity: 1,
@@ -348,7 +397,7 @@ async function handleSubscribe(request, env) {
     ],
     success_url: `${env.PUBLIC_BASE_URL}/subscription.html?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.PUBLIC_BASE_URL}/subscribe.html?canceled=1`,
-    metadata: { uid: user.uid, termsAckAt: String(termsAckAt) },
+    metadata: { uid: user.uid, email: identity.email || user.email || '', termsAckAt: String(termsAckAt) },
     subscription_data: { metadata: { uid: user.uid } },
   });
   return json({ url: session.url });
@@ -402,11 +451,12 @@ async function activateSubscription(env, session) {
   const uid = session.metadata && session.metadata.uid;
   if (!uid) return;
   const now = new Date();
+  const email = await resolveClientEmail(env, uid, session.metadata.email, session);
   await patchDoc(env, `subscriptions/${uid}`, {
     stripeCustomerId: session.customer || null,
     subscriptionId: session.subscription || null,
     status: 'active',
-    email: session.customer_email || session.customer_details?.email || null,
+    email,
     termsAckAt: session.metadata.termsAckAt
       ? new Date(Number(session.metadata.termsAckAt))
       : now,
@@ -414,7 +464,6 @@ async function activateSubscription(env, session) {
     // Provisional; the customer.subscription.updated event corrects it.
     currentPeriodEnd: new Date(now.getTime() + 32 * 86_400_000),
   });
-  const email = session.customer_email || session.customer_details?.email;
   await sendEmail(env, {
     to: email,
     subject: 'Your 24/7 Priority Chat is live',
@@ -519,6 +568,21 @@ export async function runChatDigest(env, now = Date.now()) {
 }
 
 /** The ONLY place a case is ever created. */
+/**
+ * The client's email address, from whichever source actually has it.
+ * `users/{uid}.email` is authoritative — sign-in writes it on every code
+ * verification — and it's the only one that survives the fact that
+ * custom-token accounts carry no email claim, so `user.email` is always null.
+ */
+async function resolveClientEmail(env, uid, metadataEmail, session) {
+  if (metadataEmail) return metadataEmail;
+  if (uid) {
+    const profile = await getDoc(env, `users/${uid}`);
+    if (profile?.data.email) return profile.data.email;
+  }
+  return session?.customer_details?.email || session?.customer_email || null;
+}
+
 async function createCaseFromSession(env, session) {
   const m = session.metadata || {};
   if (!m.uid || (!m.slotId && !m.requestedStart)) return;
@@ -530,6 +594,12 @@ async function createCaseFromSession(env, session) {
   if (existing.length) return;
 
   const slot = m.slotId ? await getDoc(env, `availability/${m.slotId}`) : null;
+  // Every way of learning this client's address, in order of trust. Getting
+  // this wrong is expensive and silent: a case with no email sends no booking
+  // confirmation and can never be emailed again, so the client pays and hears
+  // nothing. `customer_email` is only ever what WE passed in — the address a
+  // customer types at Stripe Checkout comes back on `customer_details`.
+  const email = await resolveClientEmail(env, m.uid, m.email, session);
   const acks = safeJson(m.acks) || {};
   const now = new Date();
   const allFormsDone = REQUIRED_ACKS.every((f) => typeof acks[f] === 'number');
@@ -542,7 +612,7 @@ async function createCaseFromSession(env, session) {
     `cases/${caseId}`,
     {
       clientUid: m.uid,
-      clientEmail: m.email || session.customer_email || null,
+      clientEmail: email,
       clientName: m.name || null,
       clientDob: m.dob || null,
       clientTz: m.tz || null,
@@ -601,7 +671,7 @@ async function createCaseFromSession(env, session) {
     }
   }
 
-  const clientEmail = m.email || session.customer_email;
+  const clientEmail = email;
   if (clientEmail && start) {
     const mtFmt = new Intl.DateTimeFormat('en-US', {
       timeZone: 'Etc/GMT+7', weekday: 'long', month: 'long', day: 'numeric',
@@ -659,7 +729,10 @@ async function requireAdultProfile(env, uid) {
   if (m < 0 || (m === 0 && now.getUTCDate() < dob.getUTCDate())) age--;
   if (age < 18)
     return { error: 'Pocket Advocate serves adults — a parent or guardian needs to reach out first.', code: 403 };
-  return { name: `${p.firstName} ${p.lastName}`.slice(0, 120), dob: p.dob };
+  // The profile email is the authoritative one: sign-in writes it on every
+  // code verification. The Firebase user object has none — custom-token
+  // accounts carry no email claim — so anything reading `user.email` gets null.
+  return { name: `${p.firstName} ${p.lastName}`.slice(0, 120), dob: p.dob, email: p.email || null };
 }
 
 // ---- POST /api/notify ----

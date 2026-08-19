@@ -96,9 +96,13 @@ export async function queryDocs(env, collectionId, filters, limit = 20) {
     where: {
       compositeFilter: {
         op: 'AND',
-        filters: filters.map(([field, op, value]) => ({
-          fieldFilter: { field: { fieldPath: field }, op, value: toValue(value) },
-        })),
+        // Firestore rejects EQUAL/NOT_EQUAL against null on a fieldFilter —
+        // null comparisons have to go through unaryFilter instead.
+        filters: filters.map(([field, op, value]) => (
+          value === null
+            ? { unaryFilter: { field: { fieldPath: field }, op: op === 'NOT_EQUAL' ? 'IS_NOT_NULL' : 'IS_NULL' } }
+            : { fieldFilter: { field: { fieldPath: field }, op, value: toValue(value) } }
+        )),
       },
     },
     limit,
