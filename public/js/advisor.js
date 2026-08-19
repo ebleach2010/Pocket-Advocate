@@ -59,6 +59,8 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
   let paused = false;
   let draftShown = null;
   let firedFor = null; // pendingAt value we already launched an analysis for
+  let pageIdx = 0;      // which note page is showing
+  let pagesKey = '';    // updatedAt of the analysis the pager was built for
 
   const post = async (payload) => {
     errEl.hidden = true;
@@ -107,7 +109,11 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
     }
 
     if (d.analysis) {
-      bodyEl.innerHTML = renderAnalysis(d.analysis);
+      const pages = splitPages(d.analysis);
+      // A fresh assessment snaps back to page one — "Right now".
+      if ((d.updatedAt || '') !== pagesKey) { pagesKey = d.updatedAt || ''; pageIdx = 0; }
+      pageIdx = Math.max(0, Math.min(pageIdx, pages.length - 1));
+      renderPager(pages);
       updatedEl.textContent = d.updatedAt
         ? `Updated ${timeAgo(toDate(d.updatedAt))}${paused ? ' · analysis paused' : ''}`
         : '';
@@ -126,7 +132,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       errEl.hidden = false;
     }
 
-    qaEl.innerHTML = (qa || []).slice(-8).map((q) => `
+    qaEl.innerHTML = (qa || []).slice(-3).map((q) => `
       <div class="advisor-turn">
         <p class="advisor-q">${esc(q.question)}</p>
         <div class="advisor-a">${q.status === 'running'
@@ -145,6 +151,44 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       post({ action: 'analyze' });
     }
     return { ...d, running };
+  }
+
+  /** One note page at a time, flipped with ‹ › or a sideways swipe. */
+  function renderPager(pages) {
+    const i = pageIdx;
+    const pg = pages[i];
+    bodyEl.innerHTML = `
+      <div class="advisor-page">
+        <div class="advisor-page-head">
+          <button class="pg-btn" data-pg="-1" ${i === 0 ? 'disabled' : ''} aria-label="Previous note">‹</button>
+          <h4>${SECTION_ICON[pg.title] || '•'} ${esc(pg.title)}</h4>
+          <span class="pg-count">${i + 1}/${pages.length}</span>
+          <button class="pg-btn" data-pg="1" ${i === pages.length - 1 ? 'disabled' : ''} aria-label="Next note">›</button>
+        </div>
+        <div class="advisor-page-body">${md(pg.body)}</div>
+      </div>`;
+    bodyEl.querySelectorAll('[data-pg]').forEach((b) =>
+      b.addEventListener('click', () => { pageIdx += Number(b.dataset.pg); renderPager(pages); }));
+
+    // Swipe to flip. Same discipline as the case tabs: mostly horizontal,
+    // long enough to be deliberate, never off a button.
+    const body = bodyEl.querySelector('.advisor-page-body');
+    let x0 = 0, y0 = 0, live = false;
+    body.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) { live = false; return; }
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; live = true;
+    }, { passive: true });
+    body.addEventListener('touchend', (e) => {
+      if (!live) return;
+      live = false;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - x0, dy = t.clientY - y0;
+      if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx)) return;
+      const next = pageIdx + (dx < 0 ? 1 : -1);
+      if (next < 0 || next >= pages.length) return;
+      pageIdx = next;
+      renderPager(pages);
+    }, { passive: true });
   }
 
   // Poll fast while something is running, slowly when it isn't — an assessment
@@ -258,22 +302,17 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
   }
 }
 
-/** Split the assessment on its `##` headings so each section gets a card. */
-function renderAnalysis(text) {
-  const parts = String(text).split(/^##\s+/m).filter(Boolean);
-  if (parts.length < 2) return md(text);
-  return parts.map((part, i) => {
+/** Split the assessment on its `##` headings into flippable pages. */
+function splitPages(text) {
+  const parts = String(text).split(/^##\s+/m).filter((p) => p.trim());
+  if (parts.length < 2) return [{ title: 'Notes', body: String(text) }];
+  return parts.map((part) => {
     const nl = part.indexOf('\n');
-    const title = (nl === -1 ? part : part.slice(0, nl)).trim();
-    const rest = nl === -1 ? '' : part.slice(nl + 1);
-    // Bits at a time: "Right now" reads immediately; everything else folds
-    // away behind its heading until tapped.
-    const open = i === 0 || title === 'Right now';
-    return `<details class="advisor-sec"${open ? ' open' : ''}>
-      <summary><h4>${SECTION_ICON[title] || '•'} ${esc(title)}</h4></summary>
-      ${md(rest)}
-    </details>`;
-  }).join('');
+    return {
+      title: (nl === -1 ? part : part.slice(0, nl)).trim(),
+      body: nl === -1 ? '' : part.slice(nl + 1),
+    };
+  });
 }
 
 /** Just enough markdown for what the model actually emits. */
