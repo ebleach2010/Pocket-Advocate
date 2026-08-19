@@ -244,8 +244,14 @@ async function renderSchedule() {
     timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric',
     hour: 'numeric', minute: '2-digit',
   });
-  // Earliest selectable date is the lead time, in the client's own zone.
-  reqDate.min = new Date(Date.now() + LEAD_TIME_MS).toISOString().slice(0, 10);
+  // Fence the picker to the same range the Worker accepts, in the client's own
+  // zone, so an out-of-range date is impossible rather than rejected at payment.
+  const localDay = (ms) => {
+    const d = new Date(ms);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  };
+  reqDate.min = localDay(Date.now() + LEAD_TIME_MS);
+  reqDate.max = localDay(Date.now() + MAX_LEAD_MS);
 
   const syncRequest = () => {
     state.requestedStart = null;
@@ -266,7 +272,12 @@ async function renderSchedule() {
   };
   reqDate.addEventListener('change', syncRequest);
   reqTime.addEventListener('change', syncRequest);
-  reqBox.addEventListener('toggle', () => { if (!reqBox.open) { state.requestedStart = null; syncRequest(); } });
+  reqBox.addEventListener('toggle', () => {
+    if (reqBox.open) return;
+    state.requestedStart = null;
+    reqMst.textContent = 'Choose a date and time to see it in my time zone.';
+    el.querySelector('#continue').disabled = !state.slot;
+  });
 
   el.querySelectorAll('input[name=method]').forEach((input) =>
     input.addEventListener('change', () => {
@@ -285,8 +296,14 @@ async function renderSchedule() {
     if (state.requestedStart) {
       const reqErr = el.querySelector('#req-error');
       reqErr.hidden = true;
-      if (state.requestedStart.getTime() < Date.now() + LEAD_TIME_MS) {
+      const lead = state.requestedStart.getTime() - Date.now();
+      if (lead < LEAD_TIME_MS) {
         reqErr.textContent = 'Please pick a time at least 72 hours from now.';
+        reqErr.hidden = false;
+        return;
+      }
+      if (lead > MAX_LEAD_MS) {
+        reqErr.textContent = 'Please pick a time within the next week and a half.';
         reqErr.hidden = false;
         return;
       }

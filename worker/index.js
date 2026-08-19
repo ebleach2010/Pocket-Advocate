@@ -15,7 +15,10 @@ import { requireUser } from './firebase-auth.js';
 import { mintCustomToken, getAccessToken } from './google-auth.js';
 import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate } from './firestore.js';
 import { stripePost, verifyWebhook } from './stripe.js';
-import { slotTimingProblem, windowProblem, HOLD_MINUTES } from './schedule.js';
+import {
+  slotTimingProblem, windowProblem, HOLD_MINUTES,
+  LEAD_TIME_HOURS, MAX_LEAD_TIME_HOURS,
+} from './schedule.js';
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 
@@ -201,10 +204,15 @@ async function checkoutRequestedTime(env, o) {
   const start = new Date(requestedStart);
   if (Number.isNaN(start.getTime())) return json({ error: 'Pick a valid date and time.' }, 400);
 
-  // Same lead time and horizon the calendar enforces, so a request can never
-  // buy a slot the normal flow would refuse.
-  const timingProblem = slotTimingProblem(start.toISOString(), 60);
-  if (timingProblem) return json({ error: timingProblem }, 409);
+  // Lead time and horizon still apply, but NOT the 8am-6pm MST window: a time
+  // outside my usual hours is the single most likely thing to be requested,
+  // and every request is confirmed by hand anyway. Running the full
+  // slotTimingProblem() here would reject exactly the cases this exists for.
+  const leadMs = start.getTime() - Date.now();
+  if (leadMs < LEAD_TIME_HOURS * 3600_000)
+    return json({ error: `Please pick a time at least ${LEAD_TIME_HOURS} hours from now.` }, 409);
+  if (leadMs > MAX_LEAD_TIME_HOURS * 3600_000)
+    return json({ error: 'Please pick a time within the next week and a half.' }, 409);
 
   const now = new Date();
   const expiresAt = new Date(now.getTime() + HOLD_MINUTES * 60_000);
