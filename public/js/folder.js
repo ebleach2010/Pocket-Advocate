@@ -63,7 +63,7 @@ export function mountPages({ container, pages, storageKey = '' } = {}) {
     return `
       <a class="ftab" role="tab" href="#${esc(p.el.id)}" id="${uid}-tab-${i}"
          aria-controls="${esc(p.el.id)}" aria-selected="false" tabindex="-1"
-         data-page="${esc(p.id)}">${p.icon ? `<span class="ftab-ic" aria-hidden="true">${esc(p.icon)}</span>` : ''}<span class="ftab-t">${esc(p.label || p.id)}</span></a>`;
+         data-page="${esc(p.id)}">${p.icon ? `<span class="ftab-ic" aria-hidden="true">${esc(p.icon)}</span>` : ''}<span class="ftab-t">${esc(p.label || p.id)}</span><span class="ftab-dot" data-dot hidden></span></a>`;
   }).join('');
   container.prepend(nav);
 
@@ -259,6 +259,17 @@ export function mountPages({ container, pages, storageKey = '' } = {}) {
   }
   show(openTo);
 
+  /**
+   * Put a dot on a tab, or take it off. The shelf shows WHICH page changed as
+   * an emoji; inside the folder the tab strip only has to say "this one", so a
+   * dot is enough and it does not crowd the label. The page he is on never
+   * carries one: he is looking at it.
+   */
+  function mark(id, on) {
+    const dot = tabs.get(id)?.querySelector('[data-dot]');
+    if (dot) dot.hidden = !on || id === curId;
+  }
+
   container.__paPages = {
     destroy() {
       abort.abort();
@@ -268,7 +279,7 @@ export function mountPages({ container, pages, storageKey = '' } = {}) {
     },
   };
 
-  return { show: go, current: () => curId };
+  return { show: go, current: () => curId, mark };
 }
 
 /**
@@ -277,15 +288,18 @@ export function mountPages({ container, pages, storageKey = '' } = {}) {
  * handle with `el(id)` so the caller can reach into a page later (mounting the
  * chat, repainting the differential) without ever rebuilding it.
  *
- * mountFolder({ container, pages, storageKey, initial })
+ * mountFolder({ container, pages, storageKey, initial, onShow })
  *   pages: [{ id, title, icon, render(pane), onShow?(pane), fade? }]
  *          `fade` marks a page whose transform would break something inside it
  *          (full-screen chat is position:fixed and dies inside a transformed
  *          ancestor), so it cross-fades instead of flipping.
  *   initial: page to open when nothing is remembered yet.
- * Returns { el(id), show(id), current() }.
+ *   onShow(id, pane): fires whenever a page comes forward, BEFORE that page's
+ *          own onShow. This is where a caller marks a page seen, so a page
+ *          added later cannot forget to.
+ * Returns { el(id), show(id), current(), mark(id, on) }.
  */
-export function mountFolder({ container, pages = [], storageKey = '', initial = '' } = {}) {
+export function mountFolder({ container, pages = [], storageKey = '', initial = '', onShow = null } = {}) {
   if (!container) return { el: () => null, show() {}, current: () => null };
 
   container.innerHTML = '';
@@ -305,7 +319,9 @@ export function mountFolder({ container, pages = [], storageKey = '', initial = 
       icon: p.icon || '',
       el: pane,
       noTransform: !!p.fade,
-      onShow: p.onShow,
+      // The folder-level hook runs first and always: it is how a page marks
+      // itself seen, and a page added later must not be able to forget to.
+      onShow: (el) => { onShow?.(p.id, el); p.onShow?.(el); },
     });
   }
   if (!list.length) return { el: () => null, show() {}, current: () => null };
@@ -338,6 +354,7 @@ export function mountFolder({ container, pages = [], storageKey = '', initial = 
     el: (id) => panes.get(id) || null,
     show: pager.show,
     current: pager.current,
+    mark: pager.mark,
   };
 }
 

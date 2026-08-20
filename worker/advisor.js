@@ -465,6 +465,17 @@ function stanceNote({ stances }) {
 }
 
 /**
+ * Did the ranking actually move? A differential that came back identical is
+ * not news, and a badge that lights on every pass is a badge he stops reading.
+ */
+function sameDifferential(before, after) {
+  const flat = (rows) => (Array.isArray(rows) ? rows : [])
+    .map((r) => `${(r?.name || '').toLowerCase().trim()}:${Math.round(Number(r?.pct) || 0)}`)
+    .join('|');
+  return flat(before) === flat(after);
+}
+
+/**
  * Eric's override. He can argue with the advisor and the advisor can push
  * back, which is the point of having one. But when he writes "override" the
  * argument is finished: his position is correct, and it has to STAY correct on
@@ -1085,7 +1096,17 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
     const cover = harvestWorkingLine(await harvestKeyTerms(env, analysis));
     const dx = harvestDifferential(cover.text);
     const corr = harvestCorrections(dx.text, rows, state?.data.corrections);
+    // Stamps for the shelf badges. A differential that came back identical is
+    // not news, so its stamp holds rather than moving; a badge that lights on
+    // every pass is a badge he stops reading. fileAt moves when this pass
+    // actually read something new, which is the moment the Uploads page has
+    // something in it he has not seen.
+    const now = new Date();
+    const diffAt = sameDifferential(state?.data.differential, dx.differential)
+      ? (state?.data.diffAt || null) : now;
+    const fileAt = media.included.length ? now : (state?.data.fileAt || null);
     await setState(env, kind, id, {
+      diffAt, fileAt,
       analysis: corr.text, status: 'idle', error: null, updatedAt: new Date(),
       pendingAt: null, startedAt: null, progressAt: null,
       workingDx: cover.workingDx,
@@ -1113,13 +1134,22 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
     if (kind === 'case') {
       const raw = state?.data.dxOverride;
       const override = typeof raw === 'string' ? raw.trim() : '';
+      // The shelf needs to know what changed, not just what it says, or every
+      // folder on the dashboard would need its own advisor-state read to paint
+      // a badge. These four stamps are all it takes, and they ride the mirror
+      // that was already happening for the cover.
       await patchDoc(env, `caseMeta/${id}`, {
         workingDx: {
           text: override || cover.workingDx,
           by: override ? 'eric' : 'advisor',
-          at: new Date(),
+          at: now,
         },
-      }, { mask: ['workingDx'] }).catch((err) => console.warn('caseMeta mirror:', err.message || err));
+        advisorAt: now,
+        diffAt,
+        fileAt,
+        draftAt: state?.data.draftStatus === 'ready' ? (state?.data.draftAt || now) : null,
+      }, { mask: ['workingDx', 'advisorAt', 'diffAt', 'fileAt', 'draftAt'] })
+        .catch((err) => console.warn('caseMeta mirror:', err.message || err));
     }
     await deleteDoc(env, queuePath(kind, id));
     // Files left over means the job is not finished. Re-queue so the cron

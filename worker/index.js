@@ -812,6 +812,22 @@ async function handleNotify(request, env, ctx) {
     // Client wrote — nudge every admin device, and let the advisor re-read the
     // case so Eric's panel is current before he even opens it.
     refreshAdvisor(env, ctx, kind, id);
+    // The 💬 on the folder, and the dot on the Chat tab, both come from this.
+    // It goes on BOTH docs deliberately: the shelf reads caseMeta for every
+    // case in one call, and the open case reads its own advisor state on a
+    // poll, so neither surface needs an extra request to know a client wrote.
+    // Only this branch stamps it. refreshAdvisor runs for Eric's messages too,
+    // and a badge that lights on his own writing is a badge he learns to
+    // ignore.
+    ctx.waitUntil((async () => {
+      const now = new Date();
+      const parent = kind === 'case' ? 'cases' : 'subscriptions';
+      await patchDoc(env, `${parent}/${id}/advisor/state`, { clientMsgAt: now },
+        { mask: ['clientMsgAt'] }).catch(() => {});
+      if (kind === 'case')
+        await patchDoc(env, `caseMeta/${id}`, { clientMsgAt: now },
+          { mask: ['clientMsgAt'] }).catch(() => {});
+    })());
     const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5);
     for (const a of admins) {
       await notifyUser(env, a.id, {
@@ -1227,7 +1243,19 @@ async function handleAdvisorCovers(request, env) {
   const covers = {};
   for (const r of rows) {
     const dx = r.data.workingDx;
-    if (dx?.text) covers[r.id] = { text: dx.text, by: dx.by || 'advisor' };
+    covers[r.id] = {
+      text: dx?.text || '',
+      by: dx?.by || 'advisor',
+      // What changed, and when. The shelf compares these against what Eric has
+      // already looked at to decide which emoji a folder carries.
+      at: {
+        advisor: r.data.advisorAt || null,
+        diff: r.data.diffAt || null,
+        draft: r.data.draftAt || null,
+        chat: r.data.clientMsgAt || null,
+        files: r.data.fileAt || null,
+      },
+    };
   }
   return json({ covers });
 }
@@ -1571,7 +1599,7 @@ function refreshAdvisor(env, ctx, kind, id) {
       // Only FLAG the work here — never run it. This executes in the ~30s of
       // background grace after the client's request completes, which is not
       // enough for an Opus turn; the actual analysis runs from Eric's open
-      // panel (which holds a connection) or the cron (15-minute budget).
+      // panel (which holds a connection) or the cron.
       await markPending(env, kind, id);
     } catch (err) {
       console.warn('advisor refresh:', err.message || err);

@@ -515,6 +515,12 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           // the panel stays the single place that talks to the state route.
           glossary: out.glossary || [],
           about: out.about || null,
+          // Activity stamps, for the dots on the tabs. The same moments the
+          // shelf paints its emoji from, so both surfaces agree on what is new.
+          advisorAt: out.state?.updatedAt || null,
+          diffAt: out.state?.diffAt || null,
+          draftAt: out.state?.draftStatus === 'ready' ? (out.state?.draftAt || null) : null,
+          fileAt: out.state?.fileAt || null,
         };
         renderDiff(detail);
         renderRead(out.mediaReport, out.queuedFiles, d.running, mediaSel.size);

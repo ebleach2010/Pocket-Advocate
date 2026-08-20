@@ -12,6 +12,7 @@ import { requireAdmin, hydrateNav } from './auth.js';
 import { mountChat, openLightbox } from './chat.js';
 import { mountAdvisor } from './advisor.js';
 import { mountNotes } from './notes.js';
+import { markSeen, isUnseen, PAGE_BADGES } from './seen.js';
 import { mountFolder } from './folder.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -79,6 +80,9 @@ function render(el) {
     container: el.querySelector('[data-folder]'),
     storageKey: `case-${caseId}`,
     initial: 'overview',
+    // Landing on a page IS having seen it. The badge clears here rather than
+    // on some later save, so it never outlives the thing it was pointing at.
+    onShow: (id) => { markSeen(caseId, id); folder?.mark(id, false); },
     pages: [
       {
         id: 'overview', title: 'Overview', icon: '⚡',
@@ -322,6 +326,16 @@ document.addEventListener('pa-advisor-state', (e) => {
   if (typeof d.notes === 'string') {
     notesHtml = d.notes;
     notes?.setHtml(d.notes);
+  }
+  // A dot on any tab holding something he has not looked at. The shelf says
+  // WHICH page changed, as an emoji; in here the strip only has to say "this
+  // one", and the page he is on never carries one.
+  const stamps = {
+    chat: d.clientMsgAt, advisor: d.advisorAt, dx: d.diffAt,
+    drafts: d.draftAt, files: d.fileAt,
+  };
+  for (const { page } of PAGE_BADGES) {
+    if (page in stamps) folder?.mark(page, isUnseen(caseId, page, stamps[page]));
   }
   if (Array.isArray(d.glossary)) paintEducation(folder?.el('education'), d.glossary);
   if (d.about) paintAbout(folder?.el('about'), d.about);

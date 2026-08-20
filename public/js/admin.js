@@ -4,6 +4,8 @@
 import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { initPushPrompt } from './push.js';
+import { folderCardHtml, wireFolderOpen, wireDxLongPress } from './folder.js';
+import { unseenBadges } from './seen.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 const OPEN_ORDER = { awaiting_report: 0, confirmed: 1, forms: 2, paid: 3, delivered: 4, closed: 5 };
@@ -11,6 +13,37 @@ const OPEN_ORDER = { awaiting_report: 0, confirmed: 1, forms: 2, paid: 3, delive
 hydrateNav();
 const user = await requireAdmin();
 if (user) load();
+
+/**
+ * The covers, in one call. caseMeta is Worker-only by rule: a case doc is
+ * client-readable and a working diagnosis is Eric's private material, never
+ * something a patient should find on their own record.
+ */
+async function loadCovers() {
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/advisor/covers', { headers: { authorization: `Bearer ${token}` } });
+    if (!res.ok) return {};
+    return (await res.json()).covers || {};
+  } catch { return {}; }   // a shelf with no covers is still a usable shelf
+}
+
+/** Eric's own read of a case, typed onto the front of the folder. */
+async function overrideDx(id, current) {
+  const next = prompt('Your read of this case. Leave it empty to hand the cover back to the advisor.', current || '');
+  if (next === null) return;
+  const text = next.trim().slice(0, 120);
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/advisor', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'case', id, action: 'dx', text }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Failed (${res.status})`);
+    load();
+  } catch (err) { alert(err.message); }
+}
 
 async function load() {
   const listEl = document.getElementById('list');
@@ -48,6 +81,7 @@ async function load() {
   // Money at a glance: every case is created by a confirmed Stripe payment,
   // so the sum of amountTotal IS confirmed case revenue. Subscriptions renew
   // monthly inside Stripe — the dashboard there is the source of truth.
+  const covers = await loadCovers();
   const cents = cases.reduce((sum, c) =>
     sum + (c.stripe?.amountTotal || 0) +
     (Array.isArray(c.extraPayments) ? c.extraPayments.reduce((x, p) => x + (p.amountCents || 0), 0) : 0), 0);
@@ -58,17 +92,31 @@ async function load() {
       <p class="dim small" style="margin:.3rem 0 0;">${cases.length} case${cases.length === 1 ? '' : 's'}, every one backed by a confirmed payment.
         Subscriptions and refunds live in the <a href="https://dashboard.stripe.com" target="_blank" rel="noopener">Stripe dashboard</a>.</p>
     </div>`;
-  const rowFor = (c, detail) => `
-    <a class="panel" style="display:block; text-decoration:none; color:inherit;" href="/admin-case.html?id=${c.id}">
-      <div class="row">
-        <strong>${esc(c.clientName || c.clientEmail || c.clientUid)}</strong>
-        <span class="status-pill ${c.status === 'closed' ? 'closed' : ''} ${dueSoon(c) ? 'due' : ''}">${badge(c)}</span>
-      </div>
-      <p class="dim small" style="margin:.3rem 0 0;">${detail}
-        ${c.needsReschedule ? '· <strong style="color:var(--danger)">NEEDS RESCHEDULE</strong>' : ''}</p>
-    </a>`;
+  // A folder on the shelf. detail and the follow-up flag are markup the
+  // caller built, so they ride in as `flags`; everything else is escaped by
+  // folderCardHtml.
+  const rowFor = (c, detail) => {
+    const cover = covers[c.id] || {};
+    const badges = unseenBadges(c.id, cover.at, {
+      // The overview flag is not an activity stamp, it is a state: a case that
+      // needs rescheduling wants his attention whether or not anything moved.
+      overview: c.needsReschedule || dueSoon(c),
+    });
+    return folderCardHtml({
+      id: c.id,
+      href: `/admin-case.html?id=${c.id}`,
+      name: c.clientName || c.clientEmail || c.clientUid,
+      dx: cover.text || '',
+      dxIsMine: cover.by === 'eric',
+      badge: badge(c),
+      badgeClass: `${c.status === 'closed' ? 'closed' : ''} ${dueSoon(c) ? 'due' : ''}`.trim(),
+      flags: `<span class="folder-note">${detail}${
+        c.needsReschedule ? '· <strong style="color:var(--danger)">NEEDS RESCHEDULE</strong>' : ''
+      }</span>${badges ? `<span class="folder-badges" title="Not looked at yet">${badges}</span>` : ''}`,
+    });
+  };
   const section = (title, color, rows) => rows.length
-    ? `<h2 style="font-size:.78rem; letter-spacing:.16em; color:${color}; font-family:ui-monospace,monospace; margin:1.4rem 0 .6rem;">${title}</h2>${rows.join('')}`
+    ? `<h2 style="font-size:.78rem; letter-spacing:.16em; color:${color}; font-family:ui-monospace,monospace; margin:1.4rem 0 .6rem;">${title}</h2><div class="drawer">${rows.join('')}</div>`
     : '';
 
   listEl.innerHTML = summary +
@@ -80,6 +128,11 @@ async function load() {
        ${followUpFlag(c)}`))) +
     section('FORMER CLIENTS — CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
       `closed <strong style="color:var(--ink)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : '—'}</strong>`)));
+
+  // Tap a folder and it opens in the hand before the case page loads; press
+  // and hold the diagnosis line to write your own over the advisor's.
+  wireFolderOpen(listEl);
+  wireDxLongPress(listEl, overrideDx);
 }
 
 function badge(c) {

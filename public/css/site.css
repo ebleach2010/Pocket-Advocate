@@ -1363,13 +1363,32 @@ body.lightbox-open { overflow: hidden; }
    retinted --manila-ink carries through every line of it. */
 .folder-dx.empty { font-weight: 500; font-style: italic; opacity: .72; }
 .folder-dx.mine { font-weight: 700; }
-.dx-pen { flex: none; font-size: .8rem; opacity: .8; }
+/* The mark that says this line is his, not the advisor's. align-self:start
+   rather than the row's center, so on a two-line diagnosis it sits beside the
+   FIRST line where it reads as a margin mark, not floating in the middle. */
+.dx-pen { flex: none; align-self: flex-start; margin-top: .18rem; font-size: .82rem; opacity: .85; }
 
 .folder-meta { grid-column: 1; font-size: .82rem; color: var(--manila-ink); opacity: .74; }
 .folder-flags {
   grid-column: 1 / -1;
   display: flex; flex-wrap: wrap; align-items: center; gap: .3rem;
   font-size: .74rem; color: var(--manila-ink); opacity: .78;
+}
+.folder-note { flex: 1 1 10rem; min-width: 0; }
+/* The unseen run. One emoji per page holding something he has not looked at,
+   stacked side by side: a new message and a fresh read together read as 💬👨‍🔬.
+   It sits on its own dark chip so the emoji do not disappear into card stock. */
+.folder-badges {
+  flex: none; align-self: flex-start;
+  padding: .12rem .35rem; border-radius: 999px;
+  font-size: .92rem; line-height: 1.15; letter-spacing: .04em;
+  background: rgba(8, 11, 19, .9);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .35);
+  animation: badge-in 260ms cubic-bezier(.2, .8, .3, 1) both;
+}
+@keyframes badge-in {
+  from { opacity: 0; transform: translate3d(0, -3px, 0) scale(.9); }
+  to { opacity: 1; transform: none; }
 }
 /* A dark chip on card stock: the pill keeps its own neon border and text, and
    stops fighting the manila underneath it. */
@@ -1474,6 +1493,14 @@ body.lightbox-open { overflow: hidden; }
 .folder-tabs > a:focus-visible { outline: 2px solid var(--magenta); outline-offset: -3px; }
 .ftab-ic { font-size: .95rem; line-height: 1; }
 .ftab-t { line-height: 1; }
+/* Inside the folder the strip only has to say "this one": the shelf already
+   said which kind of thing changed. The tab he is on never carries a dot. */
+.ftab-dot {
+  width: 7px; height: 7px; margin-left: .1rem; flex: none;
+  border-radius: 50%; background: var(--cyan);
+  box-shadow: 0 0 6px rgba(45, 226, 255, .85);
+}
+.ftab-dot[hidden] { display: none; }
 /* Only the label recedes on the tabs behind the front one: fading the tab
    itself would fade its card stock into the dark page behind it. */
 .folder-tabs > a .ftab-ic, .folder-tabs > a .ftab-t { opacity: .82; }
