@@ -165,6 +165,8 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
           canUseStatus: !mine && myRole === 'admin',
           canEdit: !!editable,
           canRecap: mine && myRole === 'admin' && !!data.text,
+          canPass: !mine && !!data.text && !data.pass,
+          passedByMe: data.pass?.by === user.uid,
           hasReaction: !!data.reaction?.id,
           hasText: !!data.text,
           current: data.reaction?.id || null,
@@ -177,7 +179,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     });
     const hint = container.querySelector('[data-hint]');
     if (hint) {
-      const passNote = 'If a question is asked that you\'d rather not answer, tap ⚐ pass under it: it turns red, marks it PASS, and we simply move on — no explanation needed.';
+      const passNote = 'Long hold the message and press the flag to pass on a question or subject. No questions asked, no judgement; we\'ll move forward like it was never said.';
       const hintText = ((myRole === 'admin'
         ? (hasAttachment
           ? 'Press and hold a shared file to save it to their Documents. '
@@ -278,6 +280,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       return;
     }
     if (choice.action === 'edit') return editMessage(o);
+    if (choice.action === 'pass' || choice.action === 'unpass') {
+      return post('/api/chat/pass',
+        { kind: kindOf(), id: parentPath[1], msgId: o.msgId, pass: choice.action === 'pass' },
+        "Couldn't set that");
+    }
     if (choice.action === 'recap') {
       // Force a plain-words recap of the latest unanswered run, right now.
       return post('/api/chat/recap', { kind: kindOf(), id: parentPath[1], force: true },
