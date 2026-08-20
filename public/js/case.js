@@ -513,7 +513,7 @@ function renderReview(el, c) {
         <button class="btn glow" data-review-send disabled>Submit</button>
       </div>
       <p class="error" data-review-error hidden></p>
-      ${c.addOnFollowUp && !c.followUp ? `
+      ${c.addOnFollowUp && !c.followUp && !justBoughtFollowUp() ? `
         <p class="dim small follow-note">Your follow-up case review is still on the books. If it's still not scheduled, Eric will promptly discuss with you the best time to follow up with a second review.</p>` : ''}
       <p class="dim small"><em>Note: You can export this as a PDF for your records and can hand select which sections you want to export.</em></p>
       <div class="actions">
@@ -662,7 +662,22 @@ function printExport(c, want) {
  * the follow-up machinery works unchanged from here: Eric's scheduler, the
  * expiry warning, the line above.
  */
+// The fallback only. What a follow-up costs THIS client is the price they
+// were quoted when they booked, which the case carries as addonRateCents.
+// Everyone booked before that field existed falls back to this, and since the
+// rate only moves upward that errs in their favour.
 const FOLLOWUP_PRICE_CENTS = 7500;
+const followUpPrice = (c) =>
+  (Number(c?.addonRateCents) > 0 ? Number(c.addonRateCents) : FOLLOWUP_PRICE_CENTS) / 100;
+
+/**
+ * True on the one page load that comes straight back from Stripe. The offer
+ * card is already saying the follow-up is reserved; the review card below it
+ * saying the same thing in different words reads as a glitch.
+ */
+function justBoughtFollowUp() {
+  return new URLSearchParams(location.search).get('followup') === '1';
+}
 
 function followUpOffer(c) {
   if (DEMO) return '';
@@ -670,26 +685,31 @@ function followUpOffer(c) {
   // thank you from the URL rather than from a flag that might still be false
   // for another second.
   if (new URLSearchParams(location.search).get('followup') === '1' && !c.followUp)
+    // The same card, resolved. Not a second, louder box shouting at somebody
+    // who has just paid: a small tick and the two things they need to know.
     return `
-      <div class=followup-thanks>
-        <p><strong>Your follow-up session is paid for.</strong> I'll message you
-          in chat to find a time. Use it within a month.</p>
+      <div class="followup-offer is-done">
+        <h3><span class="fu-tick" aria-hidden="true">✓</span> Your follow-up is reserved.</h3>
+        <p>I'll message you in chat to schedule it. Use your session anytime
+          within the next 30 days.</p>
       </div>`;
   if (c.addOnFollowUp || c.followUp || c.pendingExtra) return '';
   if (!['awaiting_report', 'delivered', 'closed'].includes(c.status)) return '';
-  const price = (FOLLOWUP_PRICE_CENTS / 100).toFixed(0);
+  const price = followUpPrice(c).toFixed(0);
+  // Copy is Eric's, word for word (2026-08-20). Do not paraphrase it.
   return `
     <div class="followup-offer">
       <h3>Want to go deeper?</h3>
-      <p>A second full discussion on this same case, once you have had time to
-        read your report and see what it raises. Same me, same file, nothing to
-        explain from scratch.</p>
-      <div class="row">
-        <span class="price">$${price}</span>
+      <p>Once you've had time to read your report, come back for a full
+        follow-up session to dig into what it raised, what's changed, and where
+        to go next.</p>
+      <p class="fu-emphasis">Same case. Same file. No starting over.</p>
+      <div class="fu-buy">
+        <span class="price">${price}</span>
         <button class="btn glow" data-buy-followup>Book a follow-up</button>
       </div>
-      <p class="dim small">Use it within a month of buying it. I will message you
-        in chat to find a time.</p>
+      <p class="fu-fine">Use your follow-up within 30 days of purchase. I'll
+        message you in chat to find a time.</p>
       <p class="error" data-followup-error hidden></p>
     </div>`;
 }

@@ -995,30 +995,89 @@ body.lightbox-open { overflow: hidden; }
    deciding whether to trust him at all. Quieter than the review card on
    purpose: this one is asking for money. */
 .followup-offer {
-  margin: 1rem 0 0; padding: 1rem 1.1rem 1.1rem;
-  border: 1px solid var(--line); border-radius: 14px;
+  margin: 1rem 0 0;
+  padding: 1.15rem 1.15rem 1.1rem;
+  /* Lighter border and a softer glow: the card should read as an offer, not
+     as an alert. */
+  border: 1px solid var(--line);
+  border-radius: 14px;
   background: var(--panel-2);
 }
-.followup-offer h3 { margin: 0 0 .4rem; }
-.followup-offer p { font-size: .93rem; }
-.followup-offer .row {
-  display: flex; align-items: center; gap: .9rem; flex-wrap: wrap;
-  margin: .8rem 0 .6rem;
+.followup-offer h3 {
+  margin: 0 0 .45rem;
+  font-size: 1.12rem;
+  line-height: 1.3;
+  /* "Your follow-up is reserved." broke at the hyphen and left one word on the
+     second line. Balanced wrapping keeps a short heading looking deliberate. */
+  text-wrap: balance;
+}
+.followup-offer p {
+  margin: 0 0 .55rem;
+  font-size: .93rem;
+  /* Body text was set tight for a card this wide. */
+  line-height: 1.62;
+  color: var(--soft);
+}
+/* "Same case. Same file. No starting over." Understated, not a second
+   heading: it carries weight by sitting apart, not by shouting. */
+.followup-offer .fu-emphasis {
+  margin: 0 0 .2rem;
+  font-size: .89rem;
+  color: var(--soft);
+  font-weight: 600;
+  letter-spacing: .015em;
+}
+/* Price and button are one decision, so they are one row. */
+.followup-offer .fu-buy {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: .95rem 0 .7rem;
+  padding-top: .95rem;
+  border-top: 1px solid var(--line);
 }
 .followup-offer .price {
-  font-size: 1.6rem; font-weight: 800; color: var(--magenta);
+  font-size: 1.65rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--magenta);
   font-variant-numeric: tabular-nums;
 }
 .followup-offer .btn { flex: 0 1 auto; }
+/* One step dimmer than the body, so the terms sit under the offer rather
+   than competing with it. */
+.followup-offer .fu-fine {
+  margin: 0;
+  font-size: .82rem;
+  line-height: 1.55;
+  color: var(--dim);
+}
 .followup-offer p:last-of-type { margin-bottom: 0; }
 
-/* Coming back from Stripe, before the webhook has necessarily landed. */
-.followup-thanks {
-  margin: 1rem 0 0; padding: .9rem 1rem;
-  border: 1px solid var(--green); border-radius: 12px;
-  background: rgba(62, 224, 138, .07);
+/* Coming back from Stripe, before the webhook has necessarily landed. The
+   same card resolved, not a bright new box: nothing is wrong, and a green
+   outlined alert says something is. */
+.followup-offer.is-done { border-color: var(--line); }
+.followup-offer .fu-tick {
+  margin-right: .4rem;
+  font-size: .95rem;
+  color: var(--green);
 }
-.followup-thanks p { margin: 0; font-size: .95rem; }
+
+/* On a narrow phone the price and the button will not sit side by side without
+   squeezing both. Stacking them is the better answer than a cramped row, and a
+   full-width button is an easier target for someone who is unwell. It stays
+   one decision because it stays inside one bordered block. */
+@media (max-width: 380px) {
+  .followup-offer .fu-buy {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .65rem;
+  }
+  .followup-offer .fu-buy .price { line-height: 1; }
+  .followup-offer .fu-buy .btn { width: 100%; }
+}
 
 /* ---------------------------------------------------------------- the review
    Opens under the documents once the report has landed. Five stars, a few
