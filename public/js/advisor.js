@@ -37,6 +37,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       </div>
       <p class="dim small advisor-sub" data-updated>Reading the case…</p>
       <div class="advisor-body" data-analysis></div>
+      <div class="advisor-draft" data-draft-card hidden></div>
       <div class="advisor-qa" data-qa></div>
       <div class="advisor-foot">
         <button class="btn" data-prep>✍️ Prepare a response</button>
@@ -52,14 +53,16 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
   const statusEl = el('[data-status]');
   const updatedEl = el('[data-updated]');
   const bodyEl = el('[data-analysis]');
+  const draftCard = el('[data-draft-card]');
   const qaEl = el('[data-qa]');
   const errEl = el('[data-err]');
   const pauseBtn = el('[data-pause]');
+  const refreshBtn = el('[data-refresh]');
   const prepBtn = el('[data-prep]');
   const qBox = el('[data-q]');
 
   let paused = false;
-  let draftShown = null;
+  let draftRendered = null; // the server draft the card was last built from
   let firedFor = null; // pendingAt value we already launched an analysis for
   let pageIdx = 0;      // which note page is showing
   let pagesKey = '';    // updatedAt of the analysis the pager was built for
@@ -131,10 +134,16 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       updatedEl.textContent = '';
     }
 
-    // A finished draft opens the editor once, not on every snapshot.
-    if (d.draftStatus === 'ready' && d.draft && draftShown !== d.draft) {
-      draftShown = d.draft;
-      openDraft(d.draft);
+    // The draft lives in its own box in the panel for as long as it exists:
+    // copy it, edit it in place, ask for a revision, or send it as you. (It
+    // used to pop an overlay and a "saved" draft had no visible home; the box
+    // is that home.)
+    if (d.draftStatus === 'ready' && d.draft) {
+      renderDraftCard(d.draft);
+    } else if (d.draftStatus !== 'ready') {
+      draftRendered = null;
+      draftCard.hidden = true;
+      draftCard.innerHTML = '';
     }
     if (d.draftStatus === 'error' && d.draftError) {
       errEl.textContent = `Draft failed: ${d.draftError}`;
@@ -259,7 +268,40 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
   }
   refresh();
 
-  el('[data-refresh]').addEventListener('click', () => post({ action: 'analyze' }));
+  // ---- files staged for the next analysis (👨‍⚕️ badges in chat + file list) ----
+  // Eric picks exactly which images and documents get read; nothing is read
+  // until he presses Analyze. The Map is exposed on window so the chat log and
+  // the file list (separate modules, re-rendered on their own schedules) can
+  // paint their badges from the same source of truth.
+  const mediaSel = new Map(); // url -> { name, url, contentType, size }
+  window.__paMediaSel = mediaSel;
+  function syncAnalyzeBtn() {
+    refreshBtn.textContent = mediaSel.size
+      ? `🩺 Analyze ${mediaSel.size} file${mediaSel.size === 1 ? '' : 's'}`
+      : 'Update';
+    refreshBtn.title = mediaSel.size
+      ? 'Re-read the conversation and the selected files together'
+      : 'Re-read the conversation now';
+  }
+  document.addEventListener('pa-advisor-toggle', (e) => {
+    const a = e.detail?.attachment;
+    if (!a?.url) return;
+    if (mediaSel.has(a.url)) mediaSel.delete(a.url);
+    else mediaSel.set(a.url, { name: a.name || 'file', url: a.url, contentType: a.contentType || '', size: a.size || 0 });
+    syncAnalyzeBtn();
+    document.dispatchEvent(new CustomEvent('pa-advisor-selection'));
+  });
+
+  refreshBtn.addEventListener('click', () => {
+    const media = mediaSel.size ? [...mediaSel.values()] : undefined;
+    if (media) {
+      // The selection is consumed by this analysis; badges clear with it.
+      mediaSel.clear();
+      syncAnalyzeBtn();
+      document.dispatchEvent(new CustomEvent('pa-advisor-selection'));
+    }
+    post({ action: 'analyze', ...(media ? { media } : {}) });
+  });
   pauseBtn.addEventListener('click', () => post({ action: paused ? 'resume' : 'pause' }));
   // window.prompt() silently does nothing in iOS Home-Screen apps — a real
   // overlay or the button reads as broken.
@@ -282,7 +324,6 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
     overlay.querySelector('[data-go]').addEventListener('click', async () => {
       const instruction = overlay.querySelector('[data-inst]').value.trim();
       close();
-      draftShown = null;
       // Instant feedback; from here the state poll owns the button, so an
       // interrupted run can't leave it stuck saying "Drafting…" forever.
       prepBtn.disabled = true;
@@ -364,58 +405,114 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
     container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 
-  /** The draft editor: edit, keep as a draft, or send it as me. */
-  function openDraft(text) {
-    if (document.getElementById('pa-draft')) return;
-    const overlay = document.createElement('div');
-    overlay.id = 'pa-draft';
-    overlay.className = 'settings-overlay';
-    overlay.innerHTML = `
-      <div class="settings-card edit-card" role="dialog" aria-modal="true" aria-label="Prepared response">
-        <div class="row"><h3 style="margin:0;">✍️ Prepared response</h3>
-          <button class="btn quiet" data-close>Close</button></div>
-        <p class="dim small" style="margin:.2rem 0 .5rem;">Written to sound like you, from how you write in this thread. Edit freely — nothing sends until you press Send, and whatever you change teaches me your voice and your calls for next time.</p>
-        <textarea class="edit-box" data-draft rows="9"></textarea>
-        <p class="dim small" style="margin:.3rem 0 0; display:flex; justify-content:space-between;">
-          <span class="error" data-derr hidden style="margin:0;"></span>
-          <span data-count style="margin-left:auto;"></span>
-        </p>
-        <div class="actions" style="margin-top:.7rem;">
-          <button class="btn quiet" data-keep>Save as draft</button>
-          <button class="btn" data-send>Send as me</button>
-        </div>
-      </div>`;
-    const box = overlay.querySelector('[data-draft]');
-    const count = overlay.querySelector('[data-count]');
-    const derr = overlay.querySelector('[data-derr]');
-    const sendBtn = overlay.querySelector('[data-send]');
+  /**
+   * The draft's home: a code-box card in the panel. Edit the text in place,
+   * copy it, ask for a revision, discard it, or send it as Eric. It stays
+   * visible for as long as the draft exists server-side, so "where did my
+   * saved draft go" has one answer: right here.
+   */
+  function renderDraftCard(text) {
+    // Same server draft as last render: leave the card alone, protecting any
+    // in-place edits from being clobbered by the poll. A NEW server draft
+    // (fresh run or revision) rebuilds the box.
+    if (draftRendered === text && !draftCard.hidden) return;
+    draftRendered = text;
+    draftCard.hidden = false;
+    draftCard.innerHTML = `
+      <div class="row" style="align-items:center;">
+        <p class="advisor-draft-label">✍️ Draft reply</p>
+        <button class="btn quiet tiny" data-dcopy>📋 Copy</button>
+      </div>
+      <textarea class="draft-box" data-dtext></textarea>
+      <p class="dim small" style="margin:.25rem 0 0; display:flex; justify-content:space-between; gap:.5rem;">
+        <span class="error" data-derr hidden style="margin:0;"></span>
+        <span data-dcount style="margin-left:auto;"></span>
+      </p>
+      <div class="advisor-draft-actions">
+        <button class="btn quiet tiny" data-drevise>🔁 Revise…</button>
+        <button class="btn quiet tiny" data-ddiscard>Discard</button>
+        <button class="btn tiny" data-dsend>Send as me</button>
+      </div>
+      <p class="dim small" style="margin:.35rem 0 0;">Edit freely, or ask about it in the box below. Nothing sends until you press Send, and what you change before sending teaches me your voice.</p>`;
+
+    const box = draftCard.querySelector('[data-dtext]');
+    const count = draftCard.querySelector('[data-dcount]');
+    const derr = draftCard.querySelector('[data-derr]');
+    const sendBtn = draftCard.querySelector('[data-dsend]');
+    const copyBtn = draftCard.querySelector('[data-dcopy]');
     box.value = text;
-    // The chat's own rules reject messages over 2000 characters — a draft that
-    // long once closed this dialog and silently sent nothing. Count it down
-    // and refuse to send over the line instead.
+
+    // The chat's own rules reject messages over 2000 characters — a draft
+    // that long once silently sent nothing. Count it down and refuse to send
+    // over the line instead.
     const MAXLEN = 2000;
+    const grow = () => { box.style.height = 'auto'; box.style.height = `${box.scrollHeight + 2}px`; };
     const tally = () => {
       const n = box.value.length;
       count.textContent = `${n.toLocaleString()} / ${MAXLEN.toLocaleString()}`;
       count.classList.toggle('over', n > MAXLEN);
       sendBtn.disabled = n === 0 || n > MAXLEN;
     };
-    box.addEventListener('input', tally);
+    box.addEventListener('input', () => { grow(); tally(); });
     tally();
-    const close = () => overlay.remove();
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-    overlay.querySelector('[data-close]').addEventListener('click', close);
-    overlay.querySelector('[data-keep]').addEventListener('click', close);
+    requestAnimationFrame(grow);
+
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(box.value);
+        copyBtn.textContent = '✓ Copied';
+        setTimeout(() => { copyBtn.textContent = '📋 Copy'; }, 1600);
+      } catch {
+        derr.textContent = 'Copying is blocked on this device.';
+        derr.hidden = false;
+      }
+    });
+
+    draftCard.querySelector('[data-ddiscard]').addEventListener('click', async () => {
+      draftCard.hidden = true;
+      await post({ action: 'clear-draft' });
+    });
+
+    // "Suggest edits": say what should change and the advisor rewrites the
+    // draft. The box's CURRENT text goes along as the base, so revisions
+    // build on any edits already made by hand.
+    draftCard.querySelector('[data-drevise]').addEventListener('click', () => {
+      if (document.getElementById('pa-revise')) return;
+      const overlay = document.createElement('div');
+      overlay.id = 'pa-revise';
+      overlay.className = 'settings-overlay';
+      overlay.innerHTML = `
+        <div class="settings-card" role="dialog" aria-modal="true" aria-label="Revise the draft">
+          <div class="row"><h3 style="margin:0;">🔁 Revise the draft</h3>
+            <button class="btn quiet" data-x>Cancel</button></div>
+          <p class="dim small" style="margin:.2rem 0 .5rem;">What should change? Shorter, warmer, add something, drop something — say it plainly.</p>
+          <textarea class="edit-box" data-inst rows="3" maxlength="1000" style="min-height:4rem;"></textarea>
+          <div class="actions" style="margin-top:.7rem;"><button class="btn" data-go>Revise it</button></div>
+        </div>`;
+      const closeOv = () => overlay.remove();
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) closeOv(); });
+      overlay.querySelector('[data-x]').addEventListener('click', closeOv);
+      overlay.querySelector('[data-go]').addEventListener('click', async () => {
+        const instruction = overlay.querySelector('[data-inst]').value.trim();
+        if (!instruction) return;
+        closeOv();
+        prepBtn.disabled = true;
+        prepBtn.textContent = '✍️ Drafting…';
+        await post({ action: 'draft', instruction, revise: true, base: box.value });
+      });
+      document.body.appendChild(overlay);
+      overlay.querySelector('[data-inst]').focus();
+    });
+
     sendBtn.addEventListener('click', async () => {
       const body = box.value.trim();
       if (!body || body.length > MAXLEN) return;
-      // Send FIRST, close on success — closing first is how a failed send
-      // vanished without a trace.
       sendBtn.disabled = true;
       derr.hidden = true;
       try {
         await onSend(body);
-        close();
+        draftCard.hidden = true;
+        draftRendered = null;
         // Stores (draft vs sent) as a style lesson AND clears the served
         // draft; when they differ the worker distills the profile behind
         // this request, so the next draft writes with the lesson.
@@ -435,7 +532,6 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
             });
           } catch (err) { console.warn('draft feedback:', err); }
         })();
-        draftShown = null;
         setTimeout(refresh, 1500);
       } catch (err) {
         derr.textContent = `Didn't send: ${err.message}`;
@@ -443,8 +539,6 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
         sendBtn.disabled = false;
       }
     });
-    document.body.appendChild(overlay);
-    box.focus();
   }
 }
 

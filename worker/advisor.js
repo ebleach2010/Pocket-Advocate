@@ -223,20 +223,18 @@ async function attachmentBlock(att, kind, id) {
 }
 
 /**
- * The newest readable files from the chat as content blocks, oldest first so
- * they read in thread order. Budgeted hard: at most MAX_MEDIA_FILES files and
- * MAX_TOTAL_MEDIA_BYTES, skipping quietly past anything unreadable — the
- * transcript marker still names every file either way.
+ * The files Eric explicitly selected (the 👨‍⚕️ badges), as content blocks in
+ * selection order. Nothing is read implicitly: an analysis carries exactly
+ * the files he staged, or none. Budgeted hard: at most MAX_MEDIA_FILES files
+ * and MAX_TOTAL_MEDIA_BYTES, skipping quietly past anything unreadable — the
+ * transcript marker still names every shared file either way.
  */
-async function chatMediaBlocks(rows, kind, id) {
-  const withMedia = rows.filter((r) => r.data.attachment?.url && mediaKind(r.data.attachment));
-  const newest = withMedia.slice(-MAX_MEDIA_FILES);
+async function selectedMediaBlocks(list, kind, id) {
   const blocks = [];
   const included = [];
   const skipped = [];
   let budget = MAX_TOTAL_MEDIA_BYTES;
-  for (const r of newest) {
-    const att = r.data.attachment;
+  for (const att of (list || []).slice(0, MAX_MEDIA_FILES)) {
     if ((att.size || 0) > budget) { skipped.push(`${att.name} (over the size budget this pass)`); continue; }
     try {
       const out = await attachmentBlock(att, kind, id);
@@ -256,9 +254,9 @@ async function chatMediaBlocks(rows, kind, id) {
 function mediaNote({ blocks, included, skipped }) {
   let note = '';
   if (blocks.length)
-    note += `\n\nThe newest files shared in this chat are attached after this message, in order: ${included.join('; ')}. Read them directly and fold what you actually see into your answer; cite specific values, findings, and page details.`;
+    note += `\n\nEric selected these files for this analysis; they are attached after this message, in order: ${included.join('; ')}. Read them directly and fold what you actually see into your answer; cite specific values, findings, and page details.`;
   if (skipped.length)
-    note += `\nFiles you cannot see this pass: ${skipped.join('; ')}. Never guess at their contents.`;
+    note += `\nSelected files you cannot see this pass: ${skipped.join('; ')}. Never guess at their contents.`;
   return note;
 }
 
@@ -599,7 +597,7 @@ export async function runQueuedAnalyses(env) {
  * purpose: the previous analysis goes back in as memory, so each pass refines
  * rather than restarting, and the picture compounds over the life of the case.
  */
-export async function runAnalysis(env, kind, id) {
+export async function runAnalysis(env, kind, id, mediaList = null) {
   try {
     await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date() });
     const [rows, state, knowledge, style] = await Promise.all([
@@ -614,9 +612,9 @@ export async function runAnalysis(env, kind, id) {
       return;
     }
     const prior = state?.data.analysis;
-    // Shared images and PDFs ride along as real content blocks: labs, imaging
-    // report pages, photos. The advisor reads the files, not just the chat.
-    const media = await chatMediaBlocks(rows, kind, id);
+    // Only the files Eric staged with the 👨‍⚕️ badges ride along; an analysis
+    // without a selection reads no files, so it is always clear what was read.
+    const media = await selectedMediaBlocks(mediaList, kind, id);
 
     const analysis = await ask(env, {
       effort: ANALYSIS_EFFORT,
@@ -739,6 +737,8 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
             type: 'text',
             text: `<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${
               state?.data.analysis ? `\n<your_current_assessment>\n${state.data.analysis}\n</your_current_assessment>\n` : ''
+            }${
+              state?.data.draft ? `\n<your_current_draft>\nA reply you drafted for Eric to send, not yet sent. He may be asking about it.\n${state.data.draft}\n</your_current_draft>\n` : ''
             }${fileNote}\nEric asks: ${question}`,
           },
           ...fileBlocks,
@@ -763,7 +763,7 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
  * him, so his own past messages go in as the style reference rather than any
  * description of a tone.
  */
-export async function runDraft(env, kind, id, instruction) {
+export async function runDraft(env, kind, id, instruction, revise = false, base = '') {
   try {
     await setState(env, kind, id, {
       draftStatus: 'running', draftError: null, draftStartedAt: new Date(), draftProgressAt: null,
@@ -775,6 +775,9 @@ export async function runDraft(env, kind, id, instruction) {
     ]);
     const chat = transcript(rows);
     const voice = myVoice(rows);
+    // Revision base: the draft box's current text (Eric's in-place edits
+    // included), falling back to the stored draft. Empty = fresh draft.
+    const baseDraft = revise ? (base || state?.data.draft || '') : '';
     // The freshest edits, shown as before/after: the strongest instruction
     // there is for "sound like Eric, hold Eric's positions".
     const lessons = style.examples
@@ -818,7 +821,9 @@ want asked, what a result might mean, and what he'll chase down.` }],
           lessons ? `\nHow he edited your recent drafts before sending (each difference is an instruction):\n\n<his_edits>\n${lessons}\n</his_edits>\n` : ''
         }\nThe conversation so far:\n\n<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${
           state?.data.analysis ? `\nYour current assessment of the case:\n\n<assessment>\n${state.data.analysis}\n</assessment>\n` : ''
-        }${instruction ? `\nEric wants this message to: ${instruction}` : '\nWrite the natural next thing for him to say.'}`,
+        }${baseDraft
+          ? `\nYour current draft:\n\n<current_draft>\n${baseDraft}\n</current_draft>\n\nEric wants it revised: ${instruction || 'improve it'}. Rewrite the whole message with that change made, keeping everything that already works. Output only the revised message.`
+          : instruction ? `\nEric wants this message to: ${instruction}` : '\nWrite the natural next thing for him to say.'}`,
       }],
     });
     await setState(env, kind, id, {

@@ -807,3 +807,27 @@ body.lightbox-open { overflow: hidden; }
   font-size: .8rem; padding: .12rem .45rem; margin-left: .4rem;
   vertical-align: middle; line-height: 1.2;
 }
+
+/* 👨‍⚕️ badge: stage a file for the advisor's next analysis (admin only). */
+.dr-badge {
+  align-self: flex-start; margin-top: .3rem; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel-2); border-radius: 999px;
+  padding: .12rem .5rem; font-size: .95rem; line-height: 1.3;
+}
+.dr-badge.on, .file-review.on {
+  border-color: var(--cyan); background: rgba(45, 226, 255, .14); box-shadow: var(--glow-c);
+}
+
+/* The draft's home: a code-box the reply lives in until it's sent. */
+.advisor-draft {
+  border: 1px solid var(--magenta); border-radius: 12px;
+  padding: .55rem .7rem .65rem; margin: .6rem 0; background: var(--bg);
+}
+.advisor-draft-label { margin: 0; font-weight: 700; color: var(--magenta); font-size: .85rem; }
+.draft-box {
+  width: 100%; min-height: 5.5rem; margin-top: .4rem; resize: vertical;
+  font: 400 .88rem/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--panel-2); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 8px; padding: .55rem .65rem;
+}
+.advisor-draft-actions { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .45rem; }
