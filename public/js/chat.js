@@ -117,6 +117,16 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         div.appendChild(chip);
       }
 
+      // A plain-words recap the model wrote after Eric's messages sat
+      // unanswered — a re-orientation aid for clients with brain fog. Both
+      // sides see the same text.
+      if (data.recap?.text) {
+        const rc = document.createElement('div');
+        rc.className = 'msg-recap';
+        rc.textContent = `💡 In short: ${data.recap.text}`;
+        div.appendChild(rc);
+      }
+
       // The pass flag. A question or request from the other person carries an
       // outline flag; tapping it fills red as PASS — "not answering that one,
       // please don't ask why" — visible to both sides. Only whoever passed can
@@ -187,9 +197,35 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       hint.hidden = false;
     }
     log.scrollTop = log.scrollHeight;
+    if (myRole === 'client') scheduleRecap(snap);
   }, (err) => {
     log.innerHTML = `<p class="error">Couldn't load messages: ${esc(err.message)}</p>`;
   });
+
+  // When Eric's latest messages have sat unanswered for 5 minutes and the
+  // client is looking at the chat, ask the Worker for a short plain-words
+  // recap. The Worker re-checks every condition, so this is only a nudge; the
+  // timer covers the case where the 5-minute mark passes while the chat is
+  // already open (no new snapshot would fire).
+  let recapTimer = null;
+  let recapAskedFor = null;
+  function scheduleRecap(snap) {
+    clearTimeout(recapTimer);
+    const docs = snap.docs;
+    if (!docs.length) return;
+    const lastDoc = docs[docs.length - 1];
+    const lastData = lastDoc.data();
+    if (lastData.role !== 'admin' || lastData.recap) return;
+    if (recapAskedFor === lastDoc.id) return;
+    const sentAt = lastData.ts?.toDate ? lastData.ts.toDate().getTime() : 0;
+    if (!sentAt) return;
+    const due = sentAt + 5 * 60_000 - Date.now();
+    recapTimer = setTimeout(() => {
+      recapAskedFor = lastDoc.id;
+      post('/api/chat/recap', { kind: kindOf(), id: parentPath[1] }, '')
+        .catch(() => {});
+    }, Math.max(0, due) + 1500);
+  }
 
   async function send({ text = '', attachment = null }) {
     const message = { from: user.uid, role: myRole, text, ts: serverTimestamp() };
@@ -267,7 +303,8 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       });
       if (!res.ok) throw new Error((await res.json()).error || `Failed (${res.status})`);
     } catch (err) {
-      alert(`${failMsg}: ${err.message}`);
+      // An empty failMsg means fire-and-forget: fail silently.
+      if (failMsg) alert(`${failMsg}: ${err.message}`);
     }
   }
 

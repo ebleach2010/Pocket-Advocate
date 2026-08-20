@@ -516,6 +516,13 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 .hint-gold { color: #F5C84C !important; text-shadow: 0 0 10px rgba(255, 208, 80, .25); }
 .hint-gold .hint-update { color: #FFD700; letter-spacing: .06em; font-size: .72rem; }
 
+/* "In short:" recap under an unanswered run of Eric's messages. */
+.msg-recap {
+  margin-top: .45rem; padding: .4rem .55rem; border-radius: 9px;
+  border: 1px solid var(--line); background: rgba(45,226,255,.06);
+  font-size: .78rem; line-height: 1.5; color: var(--soft); overflow-wrap: anywhere;
+}
+
 /* Pass flag: an outline until tapped, then filled red and unmistakable. */
 .pass-flag {
   display: inline-flex; align-items: center; gap: .25rem; margin-top: .35rem;
