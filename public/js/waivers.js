@@ -7,7 +7,12 @@
 // (also flagged in the PR description). Nothing else in this file changed.
 // Rates confirmed by Eric on 2026-08-20: $275 case, $75 follow-up bought
 // separately (NOT included in the case fee), $50/mo chat.
-//   (a) Disclaimer, Payment section: the follow-up add-on is named as its own
+//   (a) Disclaimer, Payment section: the follow-up is named as its own $75
+//       product, and its month now runs from PURCHASE rather than from the
+//       first discussion - it is bought from the case after the report lands
+//       (Eric, 2026-08-20), so the old wording described a product that no
+//       longer exists. Original text otherwise byte-identical.
+//   (a-old) The follow-up add-on is named as its own
 //       $75 session rather than a bundled inclusion. Same one-month expiry,
 //       same non-refundable terms as before.
 //   (b) SUBSCRIPTION_TERMS, Billing & cancellation: "$24.99 per month through
@@ -30,7 +35,7 @@ export const WAIVERS = [
 <h3>Assumption of responsibility & limitation of liability</h3>
 <p>You acknowledge that the service provides information, organization, and preparation — not medical judgment. To the maximum extent permitted by law, the service's total liability for any claim arising out of an Advocacy Case is limited to the amount you paid for that case.</p>
 <h3>Payment</h3>
-<p>The Advocacy Case fee (and the optional $75 follow-up session) is <strong>non-refundable</strong> once your time slot is booked. A follow-up session must be used within <strong>one month of your first discussion</strong>; unused follow-ups expire (you'll get a reminder a week before). 24/7 Priority Chat is separate: cancel it anytime, and access simply runs to the end of the period you already paid for.</p>
+<p>The Advocacy Case fee (and the optional $75 follow-up session) is <strong>non-refundable</strong> once your time slot is booked. A follow-up session must be used within <strong>one month of purchase</strong>; your case page shows the exact date, and unused follow-ups expire (you'll get a reminder a week before). 24/7 Priority Chat is separate: cancel it anytime, and access simply runs to the end of the period you already paid for.</p>
 <h3>If I need to reschedule</h3>
 <p>I reserve the right to reschedule your discussion. Occasionally something unavoidable comes up on my end, and I would rather move a session than turn up to it without my full attention on you. If that happens you will be offered a new time at no extra cost.</p>
 <p><strong>If I reschedule your discussion more than once, you are entitled to a full refund on request</strong> — that overrides the non-refundable terms above. This covers reschedules I initiate; a change you ask for yourself does not count toward it.</p>`,

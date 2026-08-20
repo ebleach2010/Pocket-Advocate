@@ -368,16 +368,16 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
 .pack .desc { grid-column: 1 / -1; color: var(--soft); font-size: 1rem; margin: 0; line-height: 1.5; }
 /* The follow-up add-on: its own line inside the case card, not a trailing clause.
    Also used standalone on the review screen, so it is not scoped to .pack. */
-.addon-note {
+.notice-box {
   margin: .55rem 0 0; padding: .6rem .75rem;
   border: 1px dashed var(--magenta); border-radius: 10px;
   background: rgba(255,79,216,.06); color: var(--soft); font-size: .95rem; line-height: 1.45;
 }
-.pack .addon-note { grid-column: 1 / -1; }
-.addon-note strong { color: var(--magenta); }
+.pack .notice-box { grid-column: 1 / -1; }
+.notice-box strong { color: var(--magenta); }
 /* A pending booking request is orange, not magenta — it is a status, not an offer. */
-.addon-note.pending { border-style: solid; border-color: var(--orange); background: rgba(255,162,62,.07); }
-.addon-note.pending strong { color: var(--orange); }
+.notice-box.pending { border-style: solid; border-color: var(--orange); background: rgba(255,162,62,.07); }
+.notice-box.pending strong { color: var(--orange); }
 
 /* <summary> styled as a button: strip the marker and keep it inline. */
 summary.btn { list-style: none; display: inline-block; }
@@ -385,7 +385,7 @@ summary.btn::-webkit-details-marker { display: none; }
 @media (max-width: 600px) {
   .pack { grid-template-columns: 1fr; gap: .25rem; }
   .pack .price { justify-self: start; }
-  .pack .desc, .pack .addon-note { margin-top: .35rem; }
+  .pack .desc, .pack .notice-box { margin-top: .35rem; }
 }
 .pack .price { font-size: 1.5rem; font-weight: 700; white-space: nowrap; }
 .pack.rec-c {
@@ -470,17 +470,6 @@ summary.btn::-webkit-details-marker { display: none; }
 .choice.selected { border-color: var(--cyan); box-shadow: var(--glow-c); }
 /* The optional follow-up at checkout — offered once, never again, so it gets
    its own colour and weight instead of reading as fine print. */
-.choice.addon { border: 2px solid var(--magenta); background: rgba(255,79,216,.05); padding: 1rem 1.1rem; }
-.choice.addon.selected { box-shadow: var(--glow-m); }
-.addon-head { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; }
-.addon-head .addon-title { font-size: 1.08rem; font-weight: 700; color: var(--ink); }
-.addon-head .addon-price { font-size: 1.35rem; font-weight: 800; color: var(--magenta); white-space: nowrap; }
-.choice.addon .addon-why { display: block; margin: .5rem 0 0; color: var(--soft); font-size: .95rem; line-height: 1.5; }
-.choice.addon .addon-once {
-  display: inline-block; margin-top: .55rem; padding: .2rem .55rem; border-radius: 999px;
-  background: rgba(255,79,216,.14); color: var(--magenta);
-  font-size: .8rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-}
 .consent-quote {
   margin: .9rem 0; padding: .85rem 1rem; border-left: 2px solid var(--magenta);
   background: rgba(255,79,216,.05); border-radius: 0 10px 10px 0;
@@ -1208,6 +1197,37 @@ body.lightbox-open { overflow: hidden; }
   color: var(--ink); background: var(--panel-2);
   border: 1px solid var(--line); border-radius: 10px; resize: vertical;
 }
+
+/* ------------------------------------------------------------- the follow-up
+   Offered from the case rather than at checkout, so it reaches somebody who has
+   read their report and knows whether they want more - not somebody still
+   deciding whether to trust him at all. Quieter than the review card on
+   purpose: this one is asking for money. */
+.followup-offer {
+  margin: 1rem 0 0; padding: 1rem 1.1rem 1.1rem;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: var(--panel-2);
+}
+.followup-offer h3 { margin: 0 0 .4rem; }
+.followup-offer p { font-size: .93rem; }
+.followup-offer .row {
+  display: flex; align-items: center; gap: .9rem; flex-wrap: wrap;
+  margin: .8rem 0 .6rem;
+}
+.followup-offer .price {
+  font-size: 1.6rem; font-weight: 800; color: var(--magenta);
+  font-variant-numeric: tabular-nums;
+}
+.followup-offer .btn { flex: 0 1 auto; }
+.followup-offer p:last-of-type { margin-bottom: 0; }
+
+/* Coming back from Stripe, before the webhook has necessarily landed. */
+.followup-thanks {
+  margin: 1rem 0 0; padding: .9rem 1rem;
+  border: 1px solid var(--green); border-radius: 12px;
+  background: rgba(62, 224, 138, .07);
+}
+.followup-thanks p { margin: 0; font-size: .95rem; }
 
 /* ---------------------------------------------------------------- the review
    Opens under the documents once the report has landed. Five stars, a few

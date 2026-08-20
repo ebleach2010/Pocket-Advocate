@@ -13,13 +13,15 @@ import { ensureSignedIn } from './inline-auth.js';
 import { ageFromDob, MIN_AGE } from './profile.js';
 import { WAIVERS } from './waivers.js';
 
-// Keep in sync with CASE_PRICE_CENTS / ADDON_PRICE_CENTS in worker/index.js.
-// Every price on this screen is derived from these - the Worker builds the real
-// Stripe line items from its own copies, and a hardcoded number here silently
-// lied about the total for weeks after the case rate changed. The follow-up is
-// a separate session at its own price, never included in the case fee.
+// Keep in sync with CASE_PRICE_CENTS in worker/index.js. Every price on this
+// screen is derived from it - the Worker builds the real Stripe line items from
+// its own copy, and a hardcoded number here silently lied about the total for
+// weeks after the case rate changed.
+//
+// Booking buys one thing (Eric, 2026-08-20). The follow-up used to be a
+// checkbox on this screen; it is sold from the case after the report lands
+// instead, so this step is a single price and a single decision.
 const CASE_PRICE_CENTS = 27500;
-const ADDON_PRICE_CENTS = 7500;
 const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
@@ -485,7 +487,7 @@ function renderPayment() {
         ${methodLabel} · Private session${isRequest ? ' · <span style="color:var(--orange)">Requested — awaiting my confirmation</span>' : ''}
       </p>
     </div>
-    ${isRequest ? `<p class="addon-note pending">
+    ${isRequest ? `<p class="notice-box pending">
       <strong>This time is a request.</strong> It isn't on my calendar yet. Your case opens and
       your payment is taken as normal, and I'll confirm this time — or offer you the nearest one
       that works — before the date. Nothing is lost either way.
@@ -494,32 +496,12 @@ function renderPayment() {
       <span class="price">$${money(CASE_PRICE_CENTS)}</span>
       <span class="included">That covers our call and your written report within 7 days.</span>
     </div>
-    <label class="choice addon" id="addon-box">
-      <span class="addon-head">
-        <span class="addon-title"><input type="checkbox" id="addon" ${state.addOnFollowUp ? 'checked' : ''}> Add a follow-up session</span>
-        <span class="addon-price">+$${money(ADDON_PRICE_CENTS)}</span>
-      </span>
-      <span class="addon-why">A second full discussion on this same case, booked any time after your report lands. Use it within one month of our first discussion. Bought later, a follow-up is a fresh $${money(CASE_PRICE_CENTS)} case instead.</span>
-      <span class="addon-once">Offered here only</span>
-    </label>
     <p class="muted small">${isRequest ? 'Requested times are not held while you complete payment.' : 'Your time slot is held while you complete payment.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once your slot is booked. If I reschedule you more than once, you're entitled to a full refund on request.</p>
     <p class="error" id="pay-error" hidden></p>
     <p>
       <button class="btn quiet" id="back">Back</button>
-      <button class="btn glow" id="pay">Pay $<span id="total">${money(CASE_PRICE_CENTS + (state.addOnFollowUp ? ADDON_PRICE_CENTS : 0))}</span> and book</button>
+      <button class="btn glow" id="pay">Pay $${money(CASE_PRICE_CENTS)} and book</button>
     </p>`);
-
-  // The follow-up is the client's call, and the button always shows exactly
-  // what the card will be charged.
-  const addon = el.querySelector('#addon');
-  const addonBox = el.querySelector('#addon-box');
-  addonBox.classList.toggle('selected', addon.checked);
-  addon.addEventListener('change', () => {
-    state.addOnFollowUp = addon.checked;
-    addonBox.classList.toggle('selected', addon.checked);
-    el.querySelector('#total').textContent =
-      money(CASE_PRICE_CENTS + (addon.checked ? ADDON_PRICE_CENTS : 0));
-  });
 
   el.querySelector('#back').addEventListener('click', back);
 
@@ -538,7 +520,6 @@ function renderPayment() {
           requestedStart: state.requestedStart ? state.requestedStart.toISOString() : undefined,
           method: state.method,
           phone: state.phone,
-          addOnFollowUp: !!state.addOnFollowUp,
           acks: state.acks,
           // So emails can speak the client's local time (Eric, 2026-07-15).
           tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,

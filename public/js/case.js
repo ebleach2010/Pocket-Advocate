@@ -320,14 +320,16 @@ function renderProgress(el, c) {
       </div>`;
     }
     if (c.addOnFollowUp) {
-      const base = c.appointment?.start ? toDate(c.appointment.start).getTime() : null;
+      const base = c.addOnFollowUpAt
+        ? toDate(c.addOnFollowUpAt).getTime()
+        : (c.appointment?.start ? toDate(c.appointment.start).getTime() : null);
       const expires = base ? base + 30 * 86_400_000 : null;
       const lapsed = expires && Date.now() > expires;
       if (lapsed) return '';
       return `<p class="dim small">Your follow-up session is paid for: message me in chat to schedule it.${
         expires && Date.now() > base
-          ? ` Use it by <strong style="color:var(--ink)">${mt.format(new Date(expires))} MST</strong> (one month after your discussion).`
-          : ' It must be used within one month of your first discussion.'
+          ? ` Use it by <strong style="color:var(--ink)">${mt.format(new Date(expires))} MST</strong>.`
+          : ' It must be used within one month.'
       }</p>`;
     }
     return '';
@@ -396,11 +398,17 @@ function renderDocs(el, c) {
          <progress data-progress max="100" value="0" hidden></progress>
          <p class="error" data-upload-error hidden></p>`}
     <ul class="filelist" data-files><li class="dim small">Loading files…</li></ul>
-    <div data-review hidden></div>`;
+    <div data-review hidden></div>
+    <div data-followup></div>`;
   const input = el.querySelector('[data-file-input]');
   input?.addEventListener('change', () => uploadFiles(c, el, [...input.files]));
   refreshFiles(c, el);
   renderReview(el, c);
+  const offer = el.querySelector('[data-followup]');
+  if (offer) {
+    offer.innerHTML = followUpOffer(c);
+    wireFollowUpOffer(offer, c);
+  }
   // Chat saves refresh this list via the permanent pa-saved-file listener at the top.
 }
 
@@ -643,6 +651,74 @@ function printExport(c, want) {
   win.document.close();
   // Give the new document a beat to lay out before the print sheet opens over it.
   setTimeout(() => win.print(), 350);
+}
+
+/**
+ * The follow-up, offered from the case rather than at checkout (Eric,
+ * 2026-08-20). It appears once there is something to follow up ON - after the
+ * discussion has happened - and disappears the moment one is bought.
+ *
+ * Buying it sets the same flag a checkout add-on used to set, so every part of
+ * the follow-up machinery works unchanged from here: Eric's scheduler, the
+ * expiry warning, the line above.
+ */
+const FOLLOWUP_PRICE_CENTS = 7500;
+
+function followUpOffer(c) {
+  if (DEMO) return '';
+  // Straight back from Stripe. The webhook may not have landed yet, so say
+  // thank you from the URL rather than from a flag that might still be false
+  // for another second.
+  if (new URLSearchParams(location.search).get('followup') === '1' && !c.followUp)
+    return `
+      <div class=followup-thanks>
+        <p><strong>Your follow-up session is paid for.</strong> I'll message you
+          in chat to find a time. Use it within a month.</p>
+      </div>`;
+  if (c.addOnFollowUp || c.followUp || c.pendingExtra) return '';
+  if (!['awaiting_report', 'delivered', 'closed'].includes(c.status)) return '';
+  const price = (FOLLOWUP_PRICE_CENTS / 100).toFixed(0);
+  return `
+    <div class="followup-offer">
+      <h3>Want to go deeper?</h3>
+      <p>A second full discussion on this same case, once you have had time to
+        read your report and see what it raises. Same me, same file, nothing to
+        explain from scratch.</p>
+      <div class="row">
+        <span class="price">$${price}</span>
+        <button class="btn glow" data-buy-followup>Book a follow-up</button>
+      </div>
+      <p class="dim small">Use it within a month of buying it. I will message you
+        in chat to find a time.</p>
+      <p class="error" data-followup-error hidden></p>
+    </div>`;
+}
+
+function wireFollowUpOffer(el, c) {
+  const btn = el.querySelector('[data-buy-followup]');
+  if (!btn) return;
+  const errEl = el.querySelector('[data-followup-error]');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    errEl.hidden = true;
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/followup', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ caseId: c.id }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.url) throw new Error(out.error || `Couldn't start that (${res.status})`);
+      // Stripe, in this tab: coming back is a normal page load, and the case
+      // reads the flag the webhook set.
+      location.assign(out.url);
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+      btn.disabled = false;
+    }
+  });
 }
 
 /** "Thank you for your input", which fades in and then drifts away on its own. */

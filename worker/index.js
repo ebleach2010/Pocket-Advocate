@@ -106,6 +106,8 @@ export default {
         return await handleReviewSubmit(request, env);
       if (url.pathname === '/api/reviews' && request.method === 'GET')
         return await handleReviewsPublic(env);
+      if (url.pathname === '/api/followup' && request.method === 'POST')
+        return await handleFollowUpCheckout(request, env);
       if (url.pathname === '/api/changelog' && request.method === 'GET')
         return await handleChangelog(request, env);
       if (url.pathname === '/api/reviews/admin')
@@ -261,13 +263,13 @@ async function repairMissingCaseEmails(env) {
 }
 
 /**
- * Stripe line items for a case, plus the follow-up session when the client
- * bought one at checkout. Two separate lines on purpose: the receipt should
- * show exactly what was paid for, and the follow-up is its own product at its
- * own price, never a discount folded into the case fee.
+ * Stripe line items for a case. One line, one product: booking buys the case
+ * and nothing else (Eric, 2026-08-20). The follow-up is sold from the case
+ * after the report lands, rather than as a second decision put in front of
+ * somebody still deciding whether to trust him at all.
  */
-function caseLineItems(addOnFollowUp) {
-  const items = [
+function caseLineItems() {
+  return [
     {
       quantity: 1,
       price_data: {
@@ -277,8 +279,12 @@ function caseLineItems(addOnFollowUp) {
       },
     },
   ];
-  if (addOnFollowUp)
-    items.push({
+}
+
+/** The follow-up, bought on its own from an existing case. */
+function followUpLineItems() {
+  return [
+    {
       quantity: 1,
       price_data: {
         currency: 'usd',
@@ -288,8 +294,8 @@ function caseLineItems(addOnFollowUp) {
           description: 'A second discussion on this same case',
         },
       },
-    });
-  return items;
+    },
+  ];
 }
 
 // ---- POST /api/checkout ----
@@ -305,7 +311,7 @@ async function handleCheckout(request, env) {
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
-  const { slotId, requestedStart, method, phone, addOnFollowUp, acks } = body;
+  const { slotId, requestedStart, method, phone, acks } = body;
   const clientTz = validTz(body.tz);
 
   if (!METHODS.includes(method)) return json({ error: 'Choose a meeting method.' }, 400);
@@ -318,7 +324,7 @@ async function handleCheckout(request, env) {
   // Two paths: an open slot off the calendar, or a time the client requested.
   const isRequest = !slotId && typeof requestedStart === 'string';
   if (isRequest) return await checkoutRequestedTime(env, {
-    user, identity, requestedStart, method, phone, addOnFollowUp, acks, clientTz,
+    user, identity, requestedStart, method, phone, acks, clientTz,
   });
 
   // Load and validate the slot.
@@ -347,7 +353,7 @@ async function handleCheckout(request, env) {
   );
   if (!held) return json({ error: 'Someone just grabbed that time. Pick another slot.' }, 409);
 
-  const lineItems = caseLineItems(addOnFollowUp);
+  const lineItems = caseLineItems();
 
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
@@ -365,7 +371,6 @@ async function handleCheckout(request, env) {
       slotId,
       method,
       phone: method === 'phone' ? phone : '',
-      addOnFollowUp: addOnFollowUp ? '1' : '0',
       acks: JSON.stringify(acks),
     },
   });
@@ -384,7 +389,7 @@ async function handleCheckout(request, env) {
  * flagged `appointment.requested`, and the admin confirms or declines it.
  */
 async function checkoutRequestedTime(env, o) {
-  const { user, identity, requestedStart, method, phone, addOnFollowUp, acks, clientTz } = o;
+  const { user, identity, requestedStart, method, phone, acks, clientTz } = o;
   const start = new Date(requestedStart);
   if (Number.isNaN(start.getTime())) return json({ error: 'Pick a valid date and time.' }, 400);
 
@@ -400,7 +405,7 @@ async function checkoutRequestedTime(env, o) {
 
   const now = new Date();
   const expiresAt = new Date(now.getTime() + HOLD_MINUTES * 60_000);
-  const lineItems = caseLineItems(addOnFollowUp);
+  const lineItems = caseLineItems();
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: identity.email || user.email || undefined,
@@ -418,7 +423,6 @@ async function checkoutRequestedTime(env, o) {
       requestedStart: start.toISOString(),
       method,
       phone: method === 'phone' ? phone : '',
-      addOnFollowUp: addOnFollowUp ? '1' : '0',
       acks: JSON.stringify(acks),
     },
   });
@@ -531,6 +535,7 @@ async function handleWebhook(request, env) {
   if (event.type === 'checkout.session.completed') {
     if (obj.mode === 'subscription') await activateSubscription(env, obj);
     else if (obj.metadata?.kind === 'extra') await confirmExtraSession(env, obj);
+    else if (obj.metadata?.kind === 'followup') await confirmFollowUpPurchase(env, obj);
     else await createCaseFromSession(env, obj);
   } else if (event.type === 'checkout.session.expired') {
     await releaseHold(env, obj);
@@ -731,7 +736,9 @@ async function createCaseFromSession(env, session) {
       // Always private — the election screen is gone. Field retained so
       // existing cases and the case page keep rendering.
       publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] },
-      addOnFollowUp: m.addOnFollowUp === '1',
+      // Nothing sold at checkout carries a follow-up any more; it is bought
+      // later, from the case, and that purchase sets this flag.
+      addOnFollowUp: false,
       forms: Object.fromEntries(
         REQUIRED_ACKS.map((f) => [f, typeof acks[f] === 'number' ? new Date(acks[f]) : null])
       ),
@@ -1319,6 +1326,90 @@ async function handleChangelog(request, env) {
   const profile = await getDoc(env, `users/${user.uid}`);
   if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
   return json({ admin: ADMIN_NOTES });
+}
+
+/**
+ * POST /api/followup — the client buys a follow-up session on their own case,
+ * after the report has landed.
+ *
+ * Buying it only sets `addOnFollowUp`, which is the flag every part of the
+ * follow-up machinery already keys off: Eric's scheduler, the expiry warning
+ * cron, the line on their case page. So there is no second scheduling path to
+ * build and no second way for the two to disagree. He books it exactly as he
+ * books one that was bought at checkout.
+ */
+async function handleFollowUpCheckout(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c || c.data.clientUid !== user.uid) return json({ error: 'Not found' }, 404);
+  if (c.data.addOnFollowUp)
+    return json({ error: 'You already have a follow-up session on this case.' }, 409);
+  // Offered once there is something to follow up ON. Before the discussion has
+  // happened, a second discussion is not a thing anyone can want yet.
+  if (!['awaiting_report', 'delivered', 'closed'].includes(c.data.status))
+    return json({ error: 'Your first discussion has to happen first.' }, 409);
+  // A live checkout still in play: hand back the same link rather than opening
+  // a second one they could pay twice.
+  const pending = c.data.pendingFollowUp;
+  if (pending?.url && new Date(pending.expiresAt || 0).getTime() > Date.now())
+    return json({ ok: true, url: pending.url });
+
+  const expiresAt = new Date(Date.now() + 23 * 3600_000);
+  const session = await stripePost(env, '/checkout/sessions', {
+    mode: 'payment',
+    customer_email: c.data.clientEmail || undefined,
+    line_items: followUpLineItems(),
+    success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&followup=1`,
+    cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
+    expires_at: Math.floor(expiresAt.getTime() / 1000),
+    metadata: { kind: 'followup', caseId, uid: c.data.clientUid },
+  });
+  await patchDoc(env, `cases/${caseId}`, {
+    pendingFollowUp: { sessionId: session.id, url: session.url, createdAt: new Date(), expiresAt },
+  }, { mask: ['pendingFollowUp'] });
+  return json({ ok: true, url: session.url });
+}
+
+/** Paid. Set the flag the rest of the system already understands. */
+async function confirmFollowUpPurchase(env, session) {
+  const caseId = session.metadata?.caseId;
+  if (!caseId) return;
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c || c.data.addOnFollowUp) return;   // already applied, or gone
+  const now = new Date();
+  const payments = Array.isArray(c.data.extraPayments) ? c.data.extraPayments : [];
+  payments.push({
+    kind: 'followup', amountCents: session.amount_total || ADDON_PRICE_CENTS,
+    sessionId: session.id, at: now,
+  });
+  await patchDoc(env, `cases/${caseId}`, {
+    addOnFollowUp: true,
+    // The month runs from here, not from a call that may be weeks behind them.
+    addOnFollowUpAt: now,
+    pendingFollowUp: null,
+    extraPayments: payments,
+  }, { mask: ['addOnFollowUp', 'addOnFollowUpAt', 'pendingFollowUp', 'extraPayments'] });
+  await sendEmail(env, {
+    to: c.data.clientEmail,
+    subject: 'Your follow-up session is paid for',
+    html: `<p>That's booked in principle — I'll be in touch in your case chat to
+      find a time that works.</p>
+      <p>It's yours to use within a month from today.</p>
+      <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
+  }).catch(() => { /* the purchase still stands if the mail fails */ });
+  const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  for (const a of admins) {
+    await notifyUser(env, a.id, {
+      title: 'Pocket Advocate',
+      body: `${c.data.clientName || 'A client'} bought a follow-up session.`,
+      link: `/admin-case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
 }
 
 /** How long a case chat stays open after the report lands. */
@@ -2227,6 +2318,14 @@ async function releaseHold(env, session) {
         heldBySession: null,
       }, { mask: ['state', 'holdExpiresAt', 'heldByUid', 'heldBySession'] });
   }
+  // A follow-up the client started buying and walked away from.
+  if (session.metadata?.kind === 'followup' && session.metadata.caseId) {
+    const caseDoc = await getDoc(env, `cases/${session.metadata.caseId}`);
+    if (caseDoc?.data.pendingFollowUp?.sessionId === session.id)
+      await patchDoc(env, `cases/${session.metadata.caseId}`, { pendingFollowUp: null }, {
+        mask: ['pendingFollowUp'],
+      });
+  }
   // An admin-priced session that was never paid: clear the client's pay prompt.
   if (session.metadata?.kind === 'extra' && session.metadata.caseId) {
     const caseDoc = await getDoc(env, `cases/${session.metadata.caseId}`);
@@ -2268,8 +2367,21 @@ function whenHtml(start, tz) {
     <span style="color:#666;">${mst} my time</span></p>`;
 }
 
+/**
+ * When a bought follow-up stops being redeemable.
+ *
+ * The month runs from the purchase when there is one, and from the first
+ * discussion otherwise. A follow-up bought three weeks after the call would
+ * otherwise arrive with nine days on it, which is not what anyone just paid
+ * $75 for.
+ */
+function followUpBase(c) {
+  if (c.addOnFollowUpAt) return new Date(c.addOnFollowUpAt);
+  return c.appointment?.start ? new Date(c.appointment.start) : null;
+}
+
 function followUpExpiry(c) {
-  const base = c.appointment?.start ? new Date(c.appointment.start) : null;
+  const base = followUpBase(c);
   return base ? new Date(base.getTime() + FOLLOWUP_EXPIRY_DAYS * 86_400_000) : null;
 }
 
