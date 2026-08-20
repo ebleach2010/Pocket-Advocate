@@ -82,6 +82,8 @@ export default {
         return await handleAdvisor(request, env, ctx);
       if (url.pathname === '/api/advisor/state' && request.method === 'GET')
         return await handleAdvisorState(request, env, url);
+      if (url.pathname === '/api/advisor/dictionary')
+        return await handleDictionary(request, env);
       if (url.pathname === '/api/push/test' && request.method === 'POST')
         return await handlePushTest(request, env);
       if (url.pathname === '/api/admin/pin' && request.method === 'POST')
@@ -115,7 +117,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-20-pass-copy';
+const BUILD_TAG = 'v2026-08-20-dictionary';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -1131,9 +1133,46 @@ async function handleAdvisorState(request, env, url) {
     state: state?.data || {},
     qa: qa.map((r) => r.data),
     glossary: knowledge.map((r) => ({
-      id: r.id, term: r.data.term, definition: r.data.definition, learned: !!r.data.learnedAt,
+      id: r.id, term: r.data.term, definition: r.data.definition,
+      category: r.data.category || 'General', learned: !!r.data.learnedAt,
     })),
     keyConfigured: Boolean(env.ANTHROPIC_API_KEY),
+  });
+}
+
+/**
+ * GET/POST /api/advisor/dictionary — Eric's full medical dictionary.
+ * GET returns every term with category and learned state; POST { termId,
+ * learned } flips a checkbox. Global, not per-case: his vocabulary is his,
+ * wherever it was learned. Admin only.
+ */
+async function handleDictionary(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const profile = await getDoc(env, `users/${user.uid}`);
+  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => null);
+    const termId = typeof body?.termId === 'string' ? body.termId : '';
+    if (!/^[a-z0-9-]{1,60}$/.test(termId)) return json({ error: 'Bad term' }, 400);
+    await patchDoc(env, `advisorKnowledge/${termId}`, {
+      learnedAt: body?.learned ? new Date() : null,
+      learnedVia: body?.learned ? 'checked' : null,
+    }, { mask: ['learnedAt', 'learnedVia'] });
+    return json({ ok: true });
+  }
+
+  const rows = await listDocs(env, 'advisorKnowledge', { pageSize: 300 }).catch(() => []);
+  return json({
+    terms: rows.map((r) => ({
+      id: r.id,
+      term: r.data.term,
+      definition: r.data.definition,
+      category: r.data.category || 'General',
+      learned: !!r.data.learnedAt,
+      learnedVia: r.data.learnedVia || null,
+    })),
   });
 }
 

@@ -523,6 +523,9 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
   font-size: .78rem; line-height: 1.5; color: var(--soft); overflow-wrap: anywhere;
 }
 
+/* 📚 Dictionary page: category headers. */
+.dict-cat { color: var(--cyan); font-size: .9rem; letter-spacing: .04em; margin-bottom: .6rem; }
+
 /* Pass flag: an outline until tapped, then filled red and unmistakable. */
 .pass-flag {
   display: inline-flex; align-items: center; gap: .25rem; margin-top: .35rem;

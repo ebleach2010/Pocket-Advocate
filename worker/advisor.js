@@ -171,21 +171,46 @@ function knowledgeNote({ learned, pending }) {
  * panel renders the glossary as its own page with an "I understand" checkbox
  * per term.
  */
-async function harvestKeyTerms(env, analysis) {
-  const m = analysis.match(/^## Key terms\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
-  if (!m) return analysis;
+const TERM_CATEGORIES = ['Condition', 'Symptom', 'Test or lab', 'Medication', 'Anatomy', 'Procedure', 'Concept'];
+
+async function harvestKeyTerms(env, text) {
+  const m = text.match(/^## Key terms\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  if (!m) return text;
   for (const line of m[1].split('\n')) {
-    const t = line.match(/^\s*[-*]\s*\**([^:*]+?)\**\s*:\s*(.+)$/);
+    // "- Term [Category]: definition" — category optional, defaults to General.
+    const t = line.match(/^\s*[-*]\s*\**([^:*\[]+?)\**\s*(?:\[([^\]]+)\]\s*)?:\s*(.+)$/);
     if (!t) continue;
     const term = t[1].trim();
-    const definition = t[2].trim();
+    const category = (t[2] || 'General').trim();
+    const definition = t[3].trim();
     if (!term || !definition || /^none$/i.test(term)) continue;
     // Create-only: an existing entry (learned or not) is never overwritten.
     await patchDoc(env, `advisorKnowledge/${termSlug(term)}`, {
-      term, definition, learnedAt: null, addedAt: new Date(),
+      term, category, definition, learnedAt: null, addedAt: new Date(),
     }, { mustNotExist: true }).catch(() => {});
   }
-  return analysis.replace(m[0], '').trim();
+  return text.replace(m[0], '').trim();
+}
+
+/**
+ * "## Mastered" lines out of a Q&A answer: terms Eric's own question proved he
+ * understands. His fluency is the evidence; the checkbox just catches up.
+ */
+async function applyMastered(env, text) {
+  const m = text.match(/^## Mastered\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  if (!m) return text;
+  for (const line of m[1].split('\n')) {
+    const t = line.match(/^\s*[-*]\s*(.+?)\s*$/);
+    if (!t || /^none$/i.test(t[1])) continue;
+    const slug = termSlug(t[1]);
+    const doc = await getDoc(env, `advisorKnowledge/${slug}`).catch(() => null);
+    if (doc && !doc.data.learnedAt) {
+      await patchDoc(env, `advisorKnowledge/${slug}`, {
+        learnedAt: new Date(), learnedVia: 'used-in-question',
+      }, { mask: ['learnedAt', 'learnedVia'] }).catch(() => {});
+    }
+  }
+  return text.replace(m[0], '').trim();
 }
 
 /**
@@ -352,8 +377,10 @@ it rules in or out.
 stalls.
 "Key terms": Eric is learning the territory as he goes. Up to 5 medical terms
 or diagnoses central to THIS assessment that he has not yet learned, each on
-its own line as \`- Term: plain-words definition in one sentence, plus what it
-means for his next step if that matters\`. Never include a term from his
+its own line as \`- Term [Category]: plain-words definition in one sentence, plus
+what it means for his next step if that matters\`, where Category is one of
+Condition, Symptom, Test or lab, Medication, Anatomy, Procedure, Concept.
+Never include a term from his
 mastered list, never repeat one already in his glossary. If nothing new, write
 "- none".
 
@@ -402,6 +429,17 @@ export async function runQuestion(env, kind, id, qaId, question) {
 Eric is asking you a direct question about this client. Answer it and stop —
 under 120 words unless the question itself demands more. Don't re-summarise
 the case at him; he has the transcript in front of him.
+
+After the answer, two optional machine-read sections (they are stripped before
+he sees the answer):
+\`## Key terms\` — any medical term central to your answer that is not in his
+glossary, one per line as \`- Term [Category]: plain-words definition\`
+(Category: Condition, Symptom, Test or lab, Medication, Anatomy, Procedure,
+Concept). Skip the section if there are none.
+\`## Mastered\` — any not-yet-mastered glossary term his QUESTION shows he
+already understands: he used it correctly and fluently, not asking what it
+means. One term per line as \`- Term\`. Asking about a term is the opposite of
+mastering it. Skip the section if none.
 ${knowledgeNote(knowledge)}` }],
       messages: [{
         role: 'user',
@@ -410,7 +448,11 @@ ${knowledgeNote(knowledge)}` }],
         }\nEric asks: ${question}`,
       }],
     });
-    await patchDoc(env, path, { answer, status: 'done' }, { mask: ['answer', 'status'] });
+    // Same learning protocol as assessments: new jargon lands in the
+    // dictionary, and fluent use in his question counts as mastery.
+    let cleaned = await harvestKeyTerms(env, answer);
+    cleaned = await applyMastered(env, cleaned);
+    await patchDoc(env, path, { answer: cleaned, status: 'done' }, { mask: ['answer', 'status'] });
   } catch (err) {
     console.error('advisor question:', err.stack || err);
     await patchDoc(env, path, {
