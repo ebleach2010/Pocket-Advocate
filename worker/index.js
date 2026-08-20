@@ -23,7 +23,7 @@ import {
 } from './schedule.js';
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
-import { runAnalysis, runQuestion, runDraft, runRecap, markPending, runQueuedAnalyses, runStyleDistill } from './advisor.js';
+import { runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses, runStyleDistill } from './advisor.js';
 
 // These build the real Stripe line items. Three browser files mirror them for
 // display — public/js/book.js, public/js/subscribe.js, public/js/admin-case.js
@@ -47,6 +47,79 @@ const METHODS = ['phone', 'video'];
 const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording'];
 // A chat message this old with no in-app read gets an email nudge (spec: batched).
 const DIGEST_MIN_AGE_MS = 10 * 60_000;
+
+/**
+ * Files that only ever render on an admin screen. Everything else in public/
+ * is fair game for anyone who visits the site, comments included, because
+ * there is no build step and no minifier between the repo and the browser.
+ *
+ * A miss here is silent: the file simply keeps being downloadable. When a new
+ * admin-only module is added, it goes in this list in the same commit.
+ */
+// The .html is optional because Cloudflare's asset handling serves
+// /admin.html at /admin as well, and a gate that only knows one spelling is
+// not a gate. Trailing slash likewise.
+const ADMIN_ASSET =
+  /^\/(admin[\w-]*(\.html)?\/?|js\/(admin[\w-]*|advisor|notes|duty|prep|drawer|seen)\.js|css\/admin\.css)$/;
+
+// A <script src> and a <link rel=stylesheet> cannot carry an Authorization
+// header, so the gate reads a cookie instead of a bearer token. Signed with a
+// key derived from the service account: no new secret to configure, and it
+// rotates if that ever does.
+const ADMIN_COOKIE = 'pa_adm';
+const ADMIN_COOKIE_DAYS = 14;
+
+let adminKeyPromise = null;
+function adminKey(env) {
+  if (!adminKeyPromise) {
+    adminKeyPromise = crypto.subtle
+      .digest('SHA-256', new TextEncoder().encode(`asset-gate:${env.FIREBASE_SERVICE_ACCOUNT || ''}`))
+      .then((raw) => crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']));
+  }
+  return adminKeyPromise;
+}
+
+async function signAdminCookie(env, uid) {
+  const exp = Date.now() + ADMIN_COOKIE_DAYS * 86_400_000;
+  const body = `${uid}.${exp}`;
+  const key = await adminKey(env);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body));
+  const hex = [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${body}.${hex}`;
+}
+
+/** The uid this cookie vouches for, or null. Never throws on junk input. */
+async function adminCookieUid(request, env) {
+  const raw = request.headers.get('cookie') || '';
+  const m = raw.match(new RegExp(`(?:^|;\\s*)${ADMIN_COOKIE}=([^;]+)`));
+  if (!m) return null;
+  const parts = m[1].split('.');
+  if (parts.length !== 3) return null;
+  const [uid, exp, hex] = parts;
+  if (!/^\d+$/.test(exp) || Number(exp) < Date.now()) return null;
+  if (!env.ADMIN_UID || uid !== env.ADMIN_UID) return null;
+  // Re-sign the exp that came in, and compare. Signing a fresh one would only
+  // ever match a cookie minted this millisecond.
+  const key = await adminKey(env);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${uid}.${exp}`));
+  const want = [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return timingSafeEqual(hex, want) ? uid : null;
+}
+
+async function adminCookieHeader(env, uid) {
+  const value = await signAdminCookie(env, uid);
+  return `${ADMIN_COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ADMIN_COOKIE_DAYS * 86_400}`;
+}
+
+const ADMIN_COOKIE_CLEAR = `${ADMIN_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+
+/** Attach a fresh admin cookie to a JSON response, if this uid is the admin. */
+async function withAdminCookie(env, res, uid) {
+  if (!env.ADMIN_UID || uid !== env.ADMIN_UID) return res;
+  const out = new Response(res.body, res);
+  out.headers.append('set-cookie', await adminCookieHeader(env, uid));
+  return out;
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -80,8 +153,6 @@ export default {
         return await handleChatEdit(request, env);
       if (url.pathname === '/api/chat/pass' && request.method === 'POST')
         return await handleChatPass(request, env);
-      if (url.pathname === '/api/chat/recap' && request.method === 'POST')
-        return await handleChatRecap(request, env, ctx);
       if (url.pathname === '/api/advisor' && request.method === 'POST')
         return await handleAdvisor(request, env, ctx);
       if (url.pathname === '/api/advisor/state' && request.method === 'GET')
@@ -114,10 +185,39 @@ export default {
         return await handleReviewsAdmin(request, env);
       if (url.pathname === '/api/version' && request.method === 'GET')
         return json({ tag: BUILD_TAG, version: VERSION });
+      if (url.pathname === '/api/admin/session')
+        return await handleAdminSession(request, env);
       if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
     } catch (err) {
       console.error(`${url.pathname}:`, err.stack || err);
       return json({ error: 'Internal error' }, 500);
+    }
+
+    // The admin half of the site. A stranger gets the same 404 they would get
+    // for a path that does not exist, so this does not confirm what is here.
+    if (ADMIN_ASSET.test(url.pathname)) {
+      // A page gets sent to sign in; a module or stylesheet just is not there.
+      const isPage = /^\/admin[\w-]*(\.html)?\/?$/.test(url.pathname);
+      const uid = await adminCookieUid(request, env).catch(() => null);
+      if (!uid) {
+        if (isPage) {
+          const to = new URL('/signin.html', url);
+          to.searchParams.set('to', url.pathname);
+          return Response.redirect(to.toString(), 302);
+        }
+        return new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain' } });
+      }
+      // _headers puts `public, max-age=3600` on /css/*, which would let a
+      // shared cache keep admin.css and hand it to the next person who asks.
+      // Anything behind this gate is per-person and never stored.
+      const res = await env.ASSETS.fetch(request);
+      const out = new Response(res.body, res);
+      out.headers.set('cache-control', 'private, no-store');
+      out.headers.set('vary', 'Cookie');
+      // Serving an admin page renews the cookie, so an open tab never expires
+      // out from under the modules it is about to ask for.
+      if (isPage) out.headers.append('set-cookie', await adminCookieHeader(env, uid));
+      return out;
     }
     return env.ASSETS.fetch(request);
   },
@@ -135,6 +235,7 @@ export default {
       ctx.waitUntil(cleanupStaleSlots(env));
       ctx.waitUntil(repairMissingCaseEmails(env));
       ctx.waitUntil(closeDeliveredCases(env));
+      ctx.waitUntil(purgeRecaps(env));
     }
     ctx.waitUntil(runQueuedAnalyses(env));
   },
@@ -672,6 +773,59 @@ export async function runChatDigest(env, now = Date.now()) {
   }
 }
 
+/**
+ * One-off: clear the `recap` field off every chat message that already has
+ * one. Those fields hold model-written text on a document the client can read,
+ * which is the whole reason the feature was pulled. Removing the code stops new
+ * ones; this removes the ones already there.
+ *
+ * Self-terminating. It flags itself done in config/maintenance and after that
+ * costs one document read per quarter hour, which is why it can live in the
+ * cron instead of needing Eric to run anything. Safe to delete this function
+ * and its call a release or two from now.
+ *
+ * Idempotent by construction: a message with no recap field is skipped, so a
+ * run that hits the write cap simply finishes on the next tick.
+ */
+const PURGE_WRITE_CAP = 300;
+
+export async function purgeRecaps(env) {
+  try {
+    const flag = await getDoc(env, 'config/maintenance');
+    if (flag?.data.recapPurgeDone) return;
+
+    let writes = 0;
+    let complete = true;
+    for (const coll of ['cases', 'subscriptions']) {
+      const parents = await listDocs(env, coll, { pageSize: 300 });
+      for (const p of parents) {
+        const msgs = await listDocs(env, `${coll}/${p.id}/chat`, { pageSize: 300 });
+        for (const m of msgs) {
+          if (!m.data.recap) continue;
+          if (writes >= PURGE_WRITE_CAP) { complete = false; break; }
+          // An empty body with the field in the update mask is how Firestore
+          // deletes a field rather than setting it to null.
+          await patchDoc(env, `${coll}/${p.id}/chat/${m.id}`, {}, { mask: ['recap'] });
+          writes++;
+        }
+        if (!complete) break;
+      }
+      if (!complete) break;
+    }
+
+    if (writes) console.log(`recap purge: cleared ${writes}`);
+    if (complete) {
+      await patchDoc(env, 'config/maintenance', {
+        recapPurgeDone: true, recapPurgeAt: new Date(),
+      }, { mask: ['recapPurgeDone', 'recapPurgeAt'] });
+      console.log('recap purge: complete');
+    }
+  } catch (err) {
+    // Never let a maintenance sweep take the cron down with it.
+    console.error('recap purge failed:', err);
+  }
+}
+
 /** The ONLY place a case is ever created. */
 /**
  * The client's email address, from whichever source actually has it.
@@ -1048,35 +1202,6 @@ async function handleChatReact(request, env) {
 }
 
 /**
- * POST /api/chat/recap  Body: { kind: 'case'|'sub', id }
- * Either participant may ask for the recap; the client's open chat is what
- * normally triggers it. All the real conditions (5 minutes unanswered, long
- * enough to need one, not already done) are enforced in runRecap, so a caller
- * can't spend money by hammering this.
- */
-async function handleChatRecap(request, env, ctx) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'Sign in required' }, 401);
-  const body = await request.json().catch(() => null);
-  const kind = body?.kind === 'sub' ? 'sub' : 'case';
-  const id = typeof body?.id === 'string' ? body.id : '';
-  if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad id' }, 400);
-
-  const parent = kind === 'case' ? 'cases' : 'subscriptions';
-  const doc = await getDoc(env, `${parent}/${id}`);
-  if (!doc) return json({ error: 'Not found' }, 404);
-  const clientUid = kind === 'case' ? doc.data.clientUid : id;
-  const profile = await getDoc(env, `users/${user.uid}`);
-  const isAdmin = profile?.data.role === 'admin';
-  if (!isAdmin && user.uid !== clientUid)
-    return json({ error: 'Not your thread' }, 403);
-
-  // force: Eric's "recap for them, now" — skips the 5-minute wait and the
-  // length threshold, and regenerates over an existing recap. Admin only.
-  return keepaliveRun(ctx, runRecap(env, kind, id, { force: !!body?.force && isAdmin }));
-}
-
-/**
  * POST /api/chat/pass  Body: { kind: 'case'|'sub', id, msgId, pass: bool }
  *
  * Passing on a question. Either side can flag a message from the other person
@@ -1189,7 +1314,7 @@ async function handleChatEdit(request, env) {
  * the work lands, then closes with JSON. Whitespace is legal JSON padding, so
  * the panel's res.json() parses the whole body unchanged.
  */
-function keepaliveRun(ctx, work) {
+function keepaliveRun(ctx, work, { raw = false } = {}) {
   const enc = new TextEncoder();
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
@@ -1199,7 +1324,14 @@ function keepaliveRun(ctx, work) {
     try {
       await work;
     } catch (err) {
-      body = JSON.stringify({ ok: false, error: String(err.message || err) });
+      // The message can name an API key, a billing state or a provider. That
+      // is fine for Eric's own panel and is a leak anywhere else, so callers
+      // ask for it by name and the default says nothing.
+      console.error('keepaliveRun failed:', err);
+      body = JSON.stringify({
+        ok: false,
+        error: raw ? String(err.message || err) : 'That did not go through. Try again.',
+      });
     }
     clearInterval(tick);
     try {
@@ -1249,9 +1381,9 @@ async function handleAdvisorState(request, env, url) {
   // readFiles and pendingMedia are bookkeeping: up to 500 storage paths that
   // would ride on every poll for no reason. The report built from them is what
   // the panel actually draws.
-  const { readFiles, pendingMedia, ...publicState } = state?.data || {};
+  const { readFiles, pendingMedia, ...panelState } = state?.data || {};
   return json({
-    state: publicState,
+    state: panelState,
     qa: qa.map((r) => r.data),
     glossary: knowledge.map((r) => ({
       id: r.id, term: r.data.term, definition: r.data.definition,
@@ -1794,7 +1926,7 @@ async function handleAdvisor(request, env, ctx) {
       mask: ['draft', 'draftStatus'],
     });
     if (!changed) return json({ ok: true, learned: false });
-    return keepaliveRun(ctx, runStyleDistill(env, kind, id));
+    return keepaliveRun(ctx, runStyleDistill(env, kind, id), { raw: true });
   }
 
   if (action === 'analyze') {
@@ -1834,7 +1966,7 @@ async function handleAdvisor(request, env, ctx) {
     // (a cron retry runs without the selected files; the selection belongs
     // to the tap that made it).
     await markPending(env, kind, id);
-    return keepaliveRun(ctx, runAnalysis(env, kind, id, media));
+    return keepaliveRun(ctx, runAnalysis(env, kind, id, media), { raw: true });
   }
 
   if (action === 'draft') {
@@ -1844,7 +1976,7 @@ async function handleAdvisor(request, env, ctx) {
     // revision builds on Eric's in-place edits.
     const revise = body?.revise === true;
     const base = revise && typeof body?.base === 'string' ? body.base.slice(0, 4000) : '';
-    return keepaliveRun(ctx, runDraft(env, kind, id, instruction, revise, base));
+    return keepaliveRun(ctx, runDraft(env, kind, id, instruction, revise, base), { raw: true });
   }
 
   if (action === 'ask') {
@@ -1868,7 +2000,7 @@ async function handleAdvisor(request, env, ctx) {
       question, answer: null, status: 'running', at: new Date(),
       ...(attachment ? { file: attachment.name } : {}),
     });
-    return keepaliveRun(ctx, runQuestion(env, kind, id, qaId, question, attachment));
+    return keepaliveRun(ctx, runQuestion(env, kind, id, qaId, question, attachment), { raw: true });
   }
 
   return json({ error: 'Unknown action' }, 400);
@@ -1951,7 +2083,9 @@ async function handleAdminLogin(request, env) {
   await cache.delete(rlKey);
   const token = await mintCustomToken(env, adminUid);
   const deviceToken = await issueDeviceToken(env, adminUid, email);
-  return json({ token, deviceToken });
+  // The asset gate rides along with the sign-in that earned it, so the first
+  // navigation to an admin page works without a second round trip.
+  return withAdminCookie(env, json({ token, deviceToken }), adminUid);
 }
 
 // Body: { pin }. A private shortcut: the correct PIN mints a real admin
@@ -1985,7 +2119,7 @@ async function handlePinLogin(request, env) {
 
   await cache.delete(rlKey);
   const token = await mintCustomToken(env, adminUid);
-  return json({ token });
+  return withAdminCookie(env, json({ token }), adminUid);
 }
 
 // ---- POST /api/auth/request-code + /api/auth/verify-code ----
@@ -2064,7 +2198,33 @@ async function handleVerifyCode(request, env) {
   // only the email. The token is the second factor that keeps a known address
   // from being a credential on its own.
   const deviceToken = await issueDeviceToken(env, uid, email);
-  return json({ token, deviceToken });
+  return withAdminCookie(env, json({ token, deviceToken }), uid);
+}
+
+/**
+ * POST /api/admin/session — mint the asset-gate cookie for a caller who has
+ * already signed in and proved they are the admin. DELETE clears it.
+ *
+ * Needed because the browser can hold a live Firebase session with no cookie:
+ * a returning device, or one whose cookie aged out. auth.js calls this the
+ * moment it recognises an admin, so the next navigation to an admin page
+ * already has what the gate wants.
+ */
+async function handleAdminSession(request, env) {
+  if (request.method === 'DELETE') {
+    return new Response(JSON.stringify({ ok: true }), {
+      headers: { 'content-type': 'application/json', 'set-cookie': ADMIN_COOKIE_CLEAR },
+    });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Admin only' }, 403);
+  return new Response(JSON.stringify({ ok: true }), {
+    headers: {
+      'content-type': 'application/json',
+      'set-cookie': await adminCookieHeader(env, admin.uid),
+    },
+  });
 }
 
 // A trusted device lasts six months of disuse; every sign-in renews it.
@@ -2107,7 +2267,7 @@ async function handleDeviceSignin(request, env) {
     expiresAt: new Date(Date.now() + DEVICE_TOKEN_TTL_DAYS * 86_400_000),
   });
   const token = await mintCustomToken(env, d.uid);
-  return json({ token });
+  return withAdminCookie(env, json({ token }), d.uid);
 }
 
 async function lookupUidByEmail(env, email) {

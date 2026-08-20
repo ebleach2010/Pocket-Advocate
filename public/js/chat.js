@@ -20,14 +20,12 @@ import {
 const MAX_BYTES = 25 * 1024 * 1024;
 const LONG_PRESS_MS = 550;
 
-// Corrections the advisor flagged on Eric's own messages: msgId → { wrong,
-// fixed }. Filled from the advisor panel's 'pa-advisor-state' events, which
-// only ever fire on admin pages — and belt-and-braces, only once an admin
-// chat has actually mounted (adminChat below). Clients never see any of this;
-// an applied fix lands as an ordinary edited message.
+// Per-message notes the admin panel pushes in: msgId → { wrong, fixed }.
+// Populated only by 'pa-panel-state', which no client page ever fires, and
+// read only once an admin thread has mounted (adminChat below).
 let adminChat = false;
 window.__paCorrections = window.__paCorrections || new Map();
-document.addEventListener('pa-advisor-state', (e) => {
+document.addEventListener('pa-panel-state', (e) => {
   if (!adminChat) return;
   const map = window.__paCorrections;
   map.clear();
@@ -107,18 +105,18 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         span.textContent = data.text;
         div.appendChild(span);
       }
-      // Images and PDFs can be staged for the advisor to read — admin only,
-      // and only where the advisor is actually mounted on the page.
+      // Images and PDFs can be selected on admin threads, and only where the
+      // panel that consumes the selection is actually mounted.
       const att = data.attachment;
       const attCt = (att?.contentType || '').toLowerCase();
       const attReadable = !!att?.url && !/heic|heif/.test(attCt) &&
         (attCt.startsWith('image/') || attCt === 'application/pdf' || /\.pdf$/i.test(att?.name || ''));
       const canStage = attReadable && myRole === 'admin' &&
-        document.body.dataset.advisor === '1';
+        document.body.dataset.panel === '1';
       if (att && att.url) {
         hasAttachment = true;
         div.appendChild(renderAttachment(att, saveUid));
-        if (canStage) div.appendChild(advisorBadge(att));
+        if (canStage) div.appendChild(selectBadge(att));
       }
       const sentAt = data.ts?.toDate ? data.ts.toDate() : null;
       const meta = document.createElement('span');
@@ -141,16 +139,6 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
           chip.textContent = `${st ? st.emoji + ' ' : ''}${data.reaction.label || st?.label || ''}`;
         }
         div.appendChild(chip);
-      }
-
-      // A plain-words recap the model wrote after Eric's messages sat
-      // unanswered — a re-orientation aid for clients with brain fog. Both
-      // sides see the same text.
-      if (data.recap?.text) {
-        const rc = document.createElement('div');
-        rc.className = 'msg-recap';
-        rc.textContent = `💡 In short: ${data.recap.text}`;
-        div.appendChild(rc);
       }
 
       // The pass flag. A question or request from the other person carries an
@@ -190,7 +178,6 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
           canReact: !mine,
           canUseStatus: !mine && myRole === 'admin',
           canEdit: !!editable,
-          canRecap: mine && myRole === 'admin' && !!data.text,
           canPass: !mine && !!data.text && !data.pass,
           canStage,
           attachment: canStage ? att : null,
@@ -222,48 +209,22 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       hint.hidden = false;
     }
     log.scrollTop = log.scrollHeight;
-    if (myRole === 'client') scheduleRecap(snap);
   }, (err) => {
     log.innerHTML = `<p class="error">Couldn't load messages: ${esc(err.message)}</p>`;
   });
 
-  // When the advisor panel consumes or changes the staged-file selection,
-  // repaint the badges to match (they also re-derive on every snapshot).
+  // Repaint the selection badges whenever the panel changes the selection
+  // (they also re-derive on every snapshot).
   if (myRole === 'admin') {
     // The gate on the correction map above. It was declared and read but never
     // set, so corrections applied to nobody - not to clients, which was the
     // point, but not to Eric either, which was not. Set from the mounted role,
     // never from a caller-supplied flag: a caller cannot talk its way past it.
     adminChat = true;
-    document.addEventListener('pa-advisor-selection', () => {
+    document.addEventListener('pa-panel-select', () => {
       container.querySelectorAll('.dr-badge').forEach((b) =>
         b.classList.toggle('on', !!window.__paMediaSel?.has(b.dataset.url)));
     });
-  }
-
-  // When Eric's latest messages have sat unanswered for 5 minutes and the
-  // client is looking at the chat, ask the Worker for a short plain-words
-  // recap. The Worker re-checks every condition, so this is only a nudge; the
-  // timer covers the case where the 5-minute mark passes while the chat is
-  // already open (no new snapshot would fire).
-  let recapTimer = null;
-  let recapAskedFor = null;
-  function scheduleRecap(snap) {
-    clearTimeout(recapTimer);
-    const docs = snap.docs;
-    if (!docs.length) return;
-    const lastDoc = docs[docs.length - 1];
-    const lastData = lastDoc.data();
-    if (lastData.role !== 'admin' || lastData.recap) return;
-    if (recapAskedFor === lastDoc.id) return;
-    const sentAt = lastData.ts?.toDate ? lastData.ts.toDate().getTime() : 0;
-    if (!sentAt) return;
-    const due = sentAt + 5 * 60_000 - Date.now();
-    recapTimer = setTimeout(() => {
-      recapAskedFor = lastDoc.id;
-      post('/api/chat/recap', { kind: kindOf(), id: parentPath[1] }, '')
-        .catch(() => {});
-    }, Math.max(0, due) + 1500);
   }
 
   async function send({ text = '', attachment = null }) {
@@ -321,15 +282,10 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         { kind: kindOf(), id: parentPath[1], msgId: o.msgId, pass: choice.action === 'pass' },
         "Couldn't set that");
     }
-    if (choice.action === 'recap') {
-      // Force a plain-words recap of the latest unanswered run, right now.
-      return post('/api/chat/recap', { kind: kindOf(), id: parentPath[1], force: true },
-        "Couldn't recap");
-    }
     if (choice.action === 'stage') {
-      // The advisor panel (mounted on the admin case page) owns the actual
-      // request; the chat just hands the file over.
-      document.dispatchEvent(new CustomEvent('pa-advisor-review', {
+      // The panel on the admin case page owns the actual request; the chat
+      // just hands the file over.
+      document.dispatchEvent(new CustomEvent('pa-panel-review', {
         detail: { attachment: o.attachment },
       }));
       return;
@@ -492,26 +448,26 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     bar.hidden = true;
   });
 
-  // Handed back so the advisor panel can post an approved draft as me.
+  // Handed back so the admin panel can post an approved message as me.
   return { send: (text) => send({ text }) };
 }
 
 /**
- * The 👨‍⚕️ badge beside a readable attachment (admin side only): tap to stage
- * the file for the advisor's next analysis, tap again to unstage. Highlighted
- * while staged; the advisor panel's Update button becomes "Analyze N files".
+ * A 👨‍⚕️ badge under an image or PDF in an admin thread. Tap once to select
+ * the file, tap again to deselect. Highlighted while selected; the panel's
+ * Update button counts what is selected.
  */
-function advisorBadge(att) {
+function selectBadge(att) {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'dr-badge';
   b.dataset.url = att.url;
   b.textContent = '👨‍⚕️';
-  b.title = 'Select for the advisor to read, then press Analyze in the advisor panel';
+  b.title = 'Select this file, then press Analyze in the panel';
   if (window.__paMediaSel?.has(att.url)) b.classList.add('on');
   b.addEventListener('click', () => {
     b.classList.toggle('on');
-    document.dispatchEvent(new CustomEvent('pa-advisor-toggle', {
+    document.dispatchEvent(new CustomEvent('pa-panel-toggle', {
       detail: { attachment: { name: att.name || 'file', url: att.url, contentType: att.contentType || '', size: att.size || 0 } },
     }));
   });

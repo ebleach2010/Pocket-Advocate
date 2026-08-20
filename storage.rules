@@ -20,8 +20,17 @@ service firebase.storage {
       return request.auth != null && caseData(caseId).clientUid == request.auth.uid;
     }
 
+    // Named folders, not a recursive wildcard. The wildcard meant that anything
+    // ever placed under cases/{id}/ was instantly client-readable — one manual
+    // upload of working notes or a prep sheet into that prefix and it would be
+    // on their screen. These four are the folders a client is entitled to.
+    match /cases/{caseId}/{folder}/{fileName} {
+      allow read: if (folder in ['report', 'recording', 'uploads', 'chat-files']) &&
+        (isCaseClient(caseId) || isAdmin());
+    }
+
     match /cases/{caseId}/{allPaths=**} {
-      allow read: if isCaseClient(caseId) || isAdmin();
+      allow read: if isAdmin();
       allow write: if isAdmin();
     }
 

@@ -3,9 +3,9 @@
 //
 // The rule the rest of this file hangs off: pages are built by the caller and
 // mounted ONCE. This engine only shows and hides them. The chat page carries a
-// live onSnapshot listener and whatever is half-typed in the composer; the
-// advisor page carries a poll loop. Rebuilding either throws all of that away,
-// so nothing here ever writes into a page's DOM.
+// live onSnapshot listener and whatever is half-typed in the composer, and
+// other pages carry poll loops. Rebuilding one throws all of that away, so
+// nothing here ever writes into a page's DOM.
 //
 // The other rule, the one that bites: `.chat-root.chat-full` is position:fixed,
 // and a transformed ancestor would pin it to that ancestor's box instead of the
@@ -32,7 +32,7 @@ let seq = 0;
  *
  * Most callers want mountFolder() below instead: it builds the panes for you.
  */
-export function mountPages({ container, pages, storageKey = '' } = {}) {
+export function mountPages({ container, pages, storageKey = '', noFlip = [] } = {}) {
   const list = (pages || []).filter((p) => p && p.id && p.el);
   if (!container || !list.length) return { show() {}, current: () => null };
 
@@ -162,9 +162,12 @@ export function mountPages({ container, pages, storageKey = '' } = {}) {
    * bubbles and dead space, and the notes sheet, where a tap places a cursor)
    * are left alone and keep swipe and the tab strip.
    */
-  const NO_FLIP = 'a,button,input,textarea,select,label,summary,details,' +
-    '[contenteditable],[role="button"],[role="tab"],.msg,.adv-chip,.chip-label,' +
-    '.folder-tabs,.notes-root,.chat-root,.diff-row,.gloss-item';
+  // Anything interactive, plus whatever the caller says is not paper. The
+  // caller's half matters: a page can hold its own tappable furniture, and
+  // naming it here would put every page's internals in every page's bundle.
+  const NO_FLIP = ['a', 'button', 'input', 'textarea', 'select', 'label', 'summary',
+    'details', '[contenteditable]', '[role="button"]', '[role="tab"]',
+    '.msg', '.chip-label', '.folder-tabs', '.chat-root', ...noFlip].join(',');
 
   container.addEventListener('click', (e) => {
     const page = byId.get(curId);
@@ -280,21 +283,22 @@ export function mountPages({ container, pages, storageKey = '' } = {}) {
 /**
  * The folder, built for you. Where mountPages takes elements that already
  * exist, this creates a pane per page, renders into it once, and hands back a
- * handle with `el(id)` so the caller can reach into a page later (mounting the
- * chat, repainting the differential) without ever rebuilding it.
+ * handle with `el(id)` so the caller can reach into a page later (mounting
+ * the chat, repainting a page in place) without ever rebuilding it.
  *
- * mountFolder({ container, pages, storageKey, initial, onShow })
+ * mountFolder({ container, pages, storageKey, initial, onShow, noFlip })
  *   pages: [{ id, title, icon, render(pane), onShow?(pane), fade? }]
  *          `fade` marks a page whose transform would break something inside it
  *          (full-screen chat is position:fixed and dies inside a transformed
  *          ancestor), so it cross-fades instead of flipping.
+ *   noFlip: extra selectors that must not turn the page when tapped.
  *   initial: page to open when nothing is remembered yet.
  *   onShow(id, pane): fires whenever a page comes forward, BEFORE that page's
  *          own onShow. This is where a caller marks a page seen, so a page
  *          added later cannot forget to.
  * Returns { el(id), show(id), current(), mark(id, on) }.
  */
-export function mountFolder({ container, pages = [], storageKey = '', initial = '', onShow = null } = {}) {
+export function mountFolder({ container, pages = [], storageKey = '', initial = '', onShow = null, noFlip = [] } = {}) {
   if (!container) return { el: () => null, show() {}, current: () => null };
 
   container.innerHTML = '';
@@ -322,8 +326,8 @@ export function mountFolder({ container, pages = [], storageKey = '', initial = 
   if (!list.length) return { el: () => null, show() {}, current: () => null };
 
   // Render every page up front. They are cheap, and a page that only builds
-  // itself on first view cannot be reached by the code that mounts the chat
-  // or repaints the differential before it has ever been opened.
+  // itself on first view cannot be reached by the code that mounts the chat or
+  // repaints a page before it has ever been opened.
   for (const p of (pages || [])) {
     const pane = panes.get(p.id);
     if (!pane || typeof p.render !== 'function') continue;
@@ -333,9 +337,9 @@ export function mountFolder({ container, pages = [], storageKey = '', initial = 
     }
   }
 
-  const pager = mountPages({ container, pages: list, storageKey });
+  const pager = mountPages({ container, pages: list, storageKey, noFlip });
 
-  // `initial` is a default, not an override: a remembered page wins, because
+  // `initial` is a default, not a command: a remembered page wins, because
   // coming back to where you were beats being sent to the front every time.
   if (initial && panes.has(initial)) {
     let remembered = '';

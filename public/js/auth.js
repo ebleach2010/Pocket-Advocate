@@ -93,6 +93,29 @@ async function ensureProfile(user) {
   }
 }
 
+/**
+ * Admin pages, modules and stylesheet are served behind a signed cookie the
+ * Worker sets, because a <script src> cannot carry a bearer token. Sign-in
+ * mints it, but a browser can hold a live session with no cookie: a device
+ * that was already signed in before this shipped, or one whose cookie aged
+ * out. Asking for one here means the next navigation to an admin page already
+ * has what the gate wants.
+ *
+ * Once per page load, and failure is not fatal: worst case the gate bounces
+ * him to sign in, which is exactly what it should do.
+ */
+let adminSessionAsked = false;
+async function ensureAdminSession(user) {
+  if (adminSessionAsked) return;
+  adminSessionAsked = true;
+  try {
+    await fetch('/api/admin/session', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${await user.getIdToken()}` },
+    });
+  } catch { /* offline, or already holding a good cookie */ }
+}
+
 /** True when the signed-in user is the admin (Eric). */
 export async function isAdmin(user) {
   try {
@@ -114,6 +137,7 @@ export async function requireAdmin() {
     location.href = '/';
     return null;
   }
+  await ensureAdminSession(user);
   // Weekly re-login, Eric's own rule: an admin session older than 7 days is
   // signed out everywhere on this device, trusted-device token included, so
   // getting back in takes the password again.
@@ -125,6 +149,7 @@ export async function requireAdmin() {
     localStorage.removeItem('pa-admin-since');
     localStorage.removeItem('pa-device-token');
     localStorage.removeItem('pa-admin-device');
+    try { await fetch('/api/admin/session', { method: 'DELETE' }); } catch { /* offline */ }
     await signOut(auth);
     location.href = `/signin.html?to=${encodeURIComponent(location.pathname + location.search)}`;
     return null;
@@ -158,6 +183,7 @@ export async function hydrateNav() {
     const path = location.pathname;
     if (admin) {
       localStorage.setItem('pa-admin-device', '1');
+      ensureAdminSession(user);
       el.innerHTML =
         `<a href="/admin.html">Admin</a> <a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
     } else {
@@ -172,6 +198,7 @@ export async function hydrateNav() {
       // straight back in and "Sign out" would mean nothing on a shared phone.
       localStorage.removeItem('pa-device-token');
       localStorage.removeItem('pa-admin-device');
+      try { await fetch('/api/admin/session', { method: 'DELETE' }); } catch { /* offline */ }
       await signOut(auth);
       location.href = '/';
     });

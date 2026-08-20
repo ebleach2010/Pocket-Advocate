@@ -32,13 +32,13 @@ export const statusById = (id) => STATUS_REACTIONS.find((r) => r.id === id);
 
 /**
  * Open the menu for one message.
- * opts: { canReact, canUseStatus, canEdit, canRecap, canPass, canStage,
+ * opts: { canReact, canUseStatus, canEdit, canPass, canStage,
  *         passedByMe, hasReaction, hasText, current }
  * Resolves to { action: 'react', id } | { action: 'clear' } | { action: 'edit' }
  * | { action: 'copy' } | { action: 'stage' }, or undefined if dismissed.
  */
 export function openMessageMenu(opts) {
-  const { canReact, canUseStatus, canEdit, canRecap, canPass, canStage, passedByMe, hasReaction, hasText, current } = opts;
+  const { canReact, canUseStatus, canEdit, canPass, canStage, passedByMe, hasReaction, hasText, current } = opts;
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'msg-menu-overlay';
@@ -61,7 +61,6 @@ export function openMessageMenu(opts) {
           ${canStage ? '<button class="msg-menu-row" data-act="stage"><span class="react-emoji">👨‍⚕️</span><span>Stage this file for review</span></button>' : ''}
           ${hasReaction ? '<button class="msg-menu-row" data-act="clear"><span class="react-emoji">✕</span><span>Remove reaction</span></button>' : ''}
           ${canEdit ? '<button class="msg-menu-row" data-act="edit"><span class="react-emoji">✏️</span><span>Edit message</span></button>' : ''}
-          ${canRecap ? '<button class="msg-menu-row" data-act="recap"><span class="react-emoji">💡</span><span>Recap for them now</span></button>' : ''}
           ${canPass ? '<button class="msg-menu-row" data-act="pass"><span class="react-emoji">⚐</span><span>Pass on this — no questions asked</span></button>' : ''}
           ${passedByMe ? '<button class="msg-menu-row" data-act="unpass"><span class="react-emoji">⚑</span><span>Take back the pass</span></button>' : ''}
           ${hasText ? '<button class="msg-menu-row" data-act="copy"><span class="react-emoji">📋</span><span>Copy text</span></button>' : ''}

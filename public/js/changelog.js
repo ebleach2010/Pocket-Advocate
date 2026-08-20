@@ -6,9 +6,9 @@
 //
 // Two rules that keep this honest rather than noisy:
 //
-//   Only client-visible changes appear in the client's list. They do not need
-//   to hear that the advisor gained a chart note; they need to hear that their
-//   documents now show as thumbnails and where those thumbnails are.
+//   Only client-visible changes appear in the client's list. Work that never
+//   reaches their screen is not news to them; what they need is that their
+//   documents now show as thumbnails, and where those thumbnails are.
 //
 //   Every entry says what changed AND where to find it if the UI moved. "The
 //   chat and your files are easier to move between" is half a sentence; "tap
@@ -21,10 +21,9 @@ export const VERSION = '2.2';
  * Newest first, and CLIENT NOTES ONLY.
  *
  * This file is loaded by every page, so anything in it is readable by anyone
- * who opens devtools. Eric's half of the release notes names the advisor, the
- * working diagnosis and the duty-of-care draft, and a client is meant to be
- * blind to all three, so his half is served by an admin-gated Worker route
- * instead and never exists in a static file.
+ * who opens devtools. Eric's half of the release notes is not, and must not
+ * be: it is served by an admin-gated Worker route and never exists in a static
+ * file.
  *
  * A version with an empty list never shows a card at all, which is the right
  * outcome for a release that only moved things on the advocate's side.

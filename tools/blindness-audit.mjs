@@ -1,0 +1,221 @@
+// The blindness audit: proves a client cannot learn that the advisor exists.
+//
+// Not in public/, so it is never served. Run it against a local Worker:
+//
+//   npx wrangler dev --port 8788 --local     # in one shell
+//   node tools/blindness-audit.mjs           # in another
+//
+// or against a deployed preview:
+//
+//   node tools/blindness-audit.mjs https://<hash>-pocket-advocate.workers.dev
+//
+// WHY IT LOOKS LIKE THIS. The previous version passed while a client could
+// read 57 mentions of the advisor in the stylesheet. It was wrong four ways,
+// and each one is a rule here now:
+//
+//   it stripped comments before searching  →  there is no build step. The
+//                                             comments ARE the served bytes.
+//   it exempted chat.js and msg-actions.js →  chat.js held 19 of the leaks. A
+//                                             runtime gate does not stop
+//                                             devtools.
+//   it never opened a .css file            →  one stylesheet served both roles.
+//   it read the source tree                →  /js/advisor.js was a public URL
+//                                             returning 200.
+//
+// So: fetch real URLs, as an anonymous visitor with no cookie, and search
+// exactly what comes back.
+
+const ORIGIN = (process.argv[2] || 'http://127.0.0.1:8788').replace(/\/$/, '');
+
+// Terms that give the game away wherever they appear, including in a comment.
+const HARD = [
+  /advisor/i,
+  /differential/i,
+  /working diagnos/i,
+  /dxOverride/i,
+  /workingDx/i,
+  /\bAI\b/,
+  /artificial intelligence/i,
+  /\bLLM\b/i,
+  /language model/i,
+  /\bClaude\b/i,
+  /Anthropic/i,
+  /\bOpus\b/i,
+  /\bGPT\b/i,
+  /chatbot/i,
+  /system prompt/i,
+  /machine.generated/i,
+  /auto.generated/i,
+  /\bthe model\b/i,
+];
+
+// Internal identifiers. None of these belong in a file a client downloads, and
+// unlike the words above they never appear in copy, so they can be matched
+// bare without drowning the run in false positives.
+//
+// Note what is NOT here: a plain "diagnosis". Eric's own disclaimers say "not
+// diagnosis, not treatment" and his help text says "an advocacy record, not a
+// diagnosis" — sentences a client is meant to read. The leak was never the
+// word on its own, it was "working diagnosis" and "differential", which are
+// both matched above.
+const CODE_ONLY = [
+  /working diagnosis/i,
+  /advisorStyle/,
+  /runAnalysis|runDraft|runQuestion|runStyleDistill/,
+  /pendingMedia|readFiles/,
+  /\bqueueAnalysis\b/,
+];
+
+// Client pages, by the URL a browser actually lands on. Cloudflare's asset
+// handling serves /about.html at /about and redirects the .html spelling, so
+// these are the canonical forms.
+const CLIENT_PAGES = [
+  '/', '/about', '/book', '/case', '/chat', '/signin', '/subscribe',
+  '/subscription', '/return', '/reviews',
+];
+
+// Reachable without any page linking to them.
+const EXTRA = [
+  '/manifest.webmanifest', '/push-sw.js', '/firebase-messaging-sw.js',
+  '/_headers', '/_redirects', '/css/site.css',
+];
+
+// Must not be reachable without the admin cookie. Pages redirect to sign-in;
+// modules and the stylesheet 404, which is what a path that does not exist
+// returns, so the gate does not confirm what is behind it.
+const ADMIN_PAGES = [
+  '/admin', '/admin.html', '/admin-case', '/admin-chats', '/admin-calendar',
+  '/admin-availability', '/admin-dictionary',
+];
+const ADMIN_ASSETS = [
+  '/js/admin.js', '/js/admin-case.js', '/js/admin-chats.js', '/js/admin-calendar.js',
+  '/js/admin-availability.js', '/js/admin-dictionary.js',
+  '/js/advisor.js', '/js/notes.js', '/js/duty.js', '/js/prep.js',
+  '/js/drawer.js', '/js/seen.js', '/css/admin.css',
+];
+
+let failures = 0;
+const fail = (m) => { failures++; console.log(`  FAIL  ${m}`); };
+const cache = new Map();
+
+async function get(path) {
+  if (cache.has(path)) return cache.get(path);
+  const res = await fetch(new URL(path, ORIGIN));
+  const type = res.headers.get('content-type') || '';
+  // Only text is searchable. A PNG will match /\bAI\b/ by accident and mean
+  // nothing by it.
+  const textual = /text\/|javascript|json|xml|\+text/.test(type) || /\.(js|css|html|json|webmanifest)$/.test(path)
+    || path === '/_headers' || path === '/_redirects';
+  const rec = {
+    status: res.status,
+    url: res.url,
+    type,
+    body: res.ok && textual ? await res.text() : '',
+    textual,
+  };
+  cache.set(path, rec);
+  return rec;
+}
+
+function scan(path, rec) {
+  const isCode = /\.(js|css)$/.test(new URL(rec.url || path, ORIGIN).pathname);
+  const terms = isCode ? [...HARD, ...CODE_ONLY] : HARD;
+  const lines = rec.body.split('\n');
+  const hits = [];
+  for (const re of terms) {
+    for (let i = 0; i < lines.length; i++) {
+      if (re.test(lines[i])) hits.push({ re: String(re), n: i + 1, text: lines[i].trim().slice(0, 120) });
+    }
+  }
+  if (hits.length) {
+    fail(`${path} — ${hits.length} forbidden ${hits.length === 1 ? 'match' : 'matches'}`);
+    for (const h of hits.slice(0, 8)) console.log(`        ${h.re} @${h.n}: ${h.text}`);
+    if (hits.length > 8) console.log(`        …and ${hits.length - 8} more`);
+  }
+  return hits.length;
+}
+
+/** Static imports and tag references inside one file. */
+function referencesIn(text, isHtml) {
+  const out = new Set();
+  if (isHtml) for (const m of text.matchAll(/(?:src|href)="([^"]+)"/g)) out.add(m[1]);
+  else {
+    for (const m of text.matchAll(/from\s+['"]([^'"]+)['"]/g)) out.add(m[1]);
+    for (const m of text.matchAll(/import\(\s*['"]([^'"]+)['"]/g)) out.add(m[1]);
+  }
+  return [...out];
+}
+
+function resolve(ref, fromUrl) {
+  if (/^(https?:)?\/\//.test(ref) || /^(data|mailto|tel|blob):/.test(ref) || ref.startsWith('#')) return null;
+  try {
+    const u = new URL(ref, fromUrl);
+    if (u.origin !== new URL(ORIGIN).origin) return null;
+    return u.pathname;                     // cache-busts are the same file
+  } catch { return null; }
+}
+
+console.log(`blindness audit — ${ORIGIN}\n`);
+
+// ---- 1. every byte a client's browser downloads --------------------------
+console.log('1. everything reachable from a client page');
+const queue = [...CLIENT_PAGES, ...EXTRA];
+const visited = new Set();
+let files = 0;
+let hits = 0;
+
+while (queue.length) {
+  const path = queue.shift();
+  if (visited.has(path)) continue;
+  visited.add(path);
+  const rec = await get(path);
+  if (rec.status !== 200) {
+    if (CLIENT_PAGES.includes(path)) fail(`${path} — ${rec.status}, a client page must be reachable`);
+    continue;
+  }
+  if (!rec.textual) continue;
+  files++;
+  hits += scan(path, rec);
+  const isHtml = /html/.test(rec.type);
+  for (const ref of referencesIn(rec.body, isHtml)) {
+    const p = resolve(ref, rec.url || new URL(path, ORIGIN).href);
+    if (p && !visited.has(p)) queue.push(p);
+  }
+}
+console.log(`  ${files} text files scanned, ${hits} forbidden ${hits === 1 ? 'match' : 'matches'}`);
+
+// ---- 2. the admin half, with no cookie -----------------------------------
+console.log('\n2. the admin half, as a stranger');
+for (const path of ADMIN_PAGES) {
+  const res = await fetch(new URL(path, ORIGIN), { redirect: 'manual' });
+  if (res.status !== 302) fail(`${path} — ${res.status}, expected a 302 to sign-in`);
+  else if (!/signin/.test(res.headers.get('location') || '')) fail(`${path} — redirects to ${res.headers.get('location')}`);
+}
+for (const path of ADMIN_ASSETS) {
+  const res = await fetch(new URL(path, ORIGIN), { redirect: 'manual' });
+  if (res.status !== 404) fail(`${path} — ${res.status}, expected 404`);
+  else {
+    const body = await res.text();
+    if (/advisor|differential/i.test(body)) fail(`${path} — 404 body leaks`);
+  }
+}
+console.log(`  ${ADMIN_PAGES.length} pages redirect, ${ADMIN_ASSETS.length} assets 404`);
+
+// A gate that bounces you onto a page that leaks is not a gate.
+{
+  const rec = await get('/signin');
+  if (rec.status === 200) hits += scan('/signin (the redirect target)', rec);
+}
+
+// ---- 3. no model-derived field lands on a client-readable document -------
+console.log('\n3. model-derived fields on documents a client can read');
+{
+  // The chat message document is the only shared one. `recap` was the breach.
+  const chat = await get('/js/chat.js');
+  if (chat.status !== 200) fail('/js/chat.js unreachable');
+  else if (/recap/i.test(chat.body)) fail('/js/chat.js still renders a recap');
+  else console.log('  chat.js renders nothing model-derived');
+}
+
+console.log(`\n${failures ? `${failures} FAILURE${failures === 1 ? '' : 'S'}` : 'ALL CLEAR'}`);
+process.exit(failures ? 1 : 0);

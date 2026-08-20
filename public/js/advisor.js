@@ -118,7 +118,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
 
   // Tells the chat (and the admin file list) that "send to the advisor for
   // review" has somewhere to land on this page.
-  document.body.dataset.advisor = '1';
+  document.body.dataset.panel = '1';
 
   const post = async (payload) => {
     errEl.hidden = true;
@@ -528,7 +528,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         };
         renderDiff(detail);
         renderRead(out.mediaReport, out.queuedFiles, d.running, mediaSel.size);
-        document.dispatchEvent(new CustomEvent('pa-advisor-state', { detail }));
+        document.dispatchEvent(new CustomEvent('pa-panel-state', { detail }));
       }
     } catch { /* transient — the next tick tries again */ }
     timer = setTimeout(refresh, busy ? 2500 : 12000);
@@ -568,7 +568,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       b.addEventListener('click', () => {
         mediaSel.delete(b.dataset.unstage);
         syncStaged();
-        document.dispatchEvent(new CustomEvent('pa-advisor-selection'));
+        document.dispatchEvent(new CustomEvent('pa-panel-select'));
       }));
     chipsEl.querySelector('[data-upfile]').addEventListener('change', async (e) => {
       const file = e.target.files[0];
@@ -605,13 +605,13 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     });
   }
   syncStaged();
-  document.addEventListener('pa-advisor-toggle', (e) => {
+  document.addEventListener('pa-panel-toggle', (e) => {
     const a = e.detail?.attachment;
     if (!a?.url) return;
     if (mediaSel.has(a.url)) mediaSel.delete(a.url);
     else mediaSel.set(a.url, { name: a.name || 'file', url: a.url, contentType: a.contentType || '', size: a.size || 0 });
     syncStaged();
-    document.dispatchEvent(new CustomEvent('pa-advisor-selection'));
+    document.dispatchEvent(new CustomEvent('pa-panel-select'));
   });
 
   refreshBtn.addEventListener('click', () => {
@@ -625,7 +625,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       // The selection is consumed by this analysis; badges clear with it.
       mediaSel.clear();
       syncStaged();
-      document.dispatchEvent(new CustomEvent('pa-advisor-selection'));
+      document.dispatchEvent(new CustomEvent('pa-panel-select'));
     }
     post({ action: 'analyze', ...(media ? { media } : {}) });
   });
@@ -717,7 +717,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   // "Send to the advisor for review" — dispatched by the chat's long-press
   // menu and the file list. The file rides the ask flow as an attachment; the
   // Worker fetches and actually reads it (images and PDFs).
-  document.addEventListener('pa-advisor-review', (e) => {
+  document.addEventListener('pa-panel-review', (e) => {
     const att = e.detail?.attachment;
     if (!att?.url) return;
     submitAsk(

@@ -94,6 +94,9 @@ function render(el) {
     <div data-folder></div>`;
 
   folder = mountFolder({
+    // Tappable furniture that must not turn the page. These selectors used to
+    // live inside folder.js, which every client downloads.
+    noFlip: ['.adv-chip', '.notes-root', '.diff-row', '.gloss-item', '.dr-badge'],
     container: el.querySelector('[data-folder]'),
     storageKey: `case-${caseId}`,
     initial: 'overview',
@@ -434,7 +437,7 @@ function refreshHeader() {
 
 // The working line under the client's name, kept current by the advisor's
 // state poll. Eric's override wins and carries his ✎ mark.
-document.addEventListener('pa-advisor-state', (e) => {
+document.addEventListener('pa-panel-state', (e) => {
   const d = e.detail || {};
   if (d.id && d.id !== caseId) return;
 
@@ -792,7 +795,7 @@ async function refreshFiles() {
     if (window.__paMediaSel?.has(r.url)) b.classList.add('on');
     b.addEventListener('click', () => {
       b.classList.toggle('on');
-      document.dispatchEvent(new CustomEvent('pa-advisor-toggle', {
+      document.dispatchEvent(new CustomEvent('pa-panel-toggle', {
         detail: { attachment: { name: r.name, url: r.url, contentType: r.contentType, size: r.size || 0 } },
       }));
     });
@@ -800,7 +803,7 @@ async function refreshFiles() {
 }
 
 // Repaint the file badges when the advisor panel consumes the selection.
-document.addEventListener('pa-advisor-selection', () => {
+document.addEventListener('pa-panel-select', () => {
   document.querySelectorAll('#files [data-review]').forEach((b) =>
     b.classList.toggle('on', !!window.__paMediaSel?.has(b.dataset.url)));
 });
