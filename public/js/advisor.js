@@ -343,7 +343,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       <div class="settings-card edit-card" role="dialog" aria-modal="true" aria-label="Prepared response">
         <div class="row"><h3 style="margin:0;">✍️ Prepared response</h3>
           <button class="btn quiet" data-close>Close</button></div>
-        <p class="dim small" style="margin:.2rem 0 .5rem;">Written to sound like you, from how you write in this thread. Edit freely — nothing sends until you press Send.</p>
+        <p class="dim small" style="margin:.2rem 0 .5rem;">Written to sound like you, from how you write in this thread. Edit freely — nothing sends until you press Send, and whatever you change teaches me your voice and your calls for next time.</p>
         <textarea class="edit-box" data-draft rows="9"></textarea>
         <p class="dim small" style="margin:.3rem 0 0; display:flex; justify-content:space-between;">
           <span class="error" data-derr hidden style="margin:0;"></span>
@@ -385,8 +385,27 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       try {
         await onSend(body);
         close();
-        await post({ action: 'clear-draft' });
+        // Stores (draft vs sent) as a style lesson AND clears the served
+        // draft; when they differ the worker distills the profile behind
+        // this request, so the next draft writes with the lesson.
+        // Deliberately not awaited and deliberately quiet: the writes land
+        // server-side in about a second, but the distill streams on for tens
+        // of seconds, and its outcome never concerns this screen. A phone
+        // locked mid-distill just means the next edit retries with the same
+        // stored pair. post() would block on the stream and paint its
+        // disconnect as a scary error after a perfectly successful send.
+        (async () => {
+          try {
+            const token = await user.getIdToken();
+            await fetch('/api/advisor', {
+              method: 'POST',
+              headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+              body: JSON.stringify({ kind, id, action: 'draft-feedback', draft: text, sent: body }),
+            });
+          } catch (err) { console.warn('draft feedback:', err); }
+        })();
         draftShown = null;
+        setTimeout(refresh, 1500);
       } catch (err) {
         derr.textContent = `Didn't send: ${err.message}`;
         derr.hidden = false;

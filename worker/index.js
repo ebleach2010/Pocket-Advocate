@@ -23,7 +23,7 @@ import {
 } from './schedule.js';
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
-import { runAnalysis, runQuestion, runDraft, runRecap, markPending, runQueuedAnalyses } from './advisor.js';
+import { runAnalysis, runQuestion, runDraft, runRecap, markPending, runQueuedAnalyses, runStyleDistill } from './advisor.js';
 
 // These build the real Stripe line items. Three browser files mirror them for
 // display — public/js/book.js, public/js/subscribe.js, public/js/admin-case.js
@@ -120,7 +120,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-20-pr69';
+const BUILD_TAG = 'v2026-08-20-pr69-2';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -1189,8 +1189,8 @@ async function handleDictionary(request, env) {
 }
 
 /**
- * POST /api/advisor  Body: { kind: 'case'|'sub', id, action, question?, instruction? }
- * action: 'analyze' | 'ask' | 'draft' | 'pause' | 'resume' | 'clear-draft'
+ * POST /api/advisor  Body: { kind: 'case'|'sub', id, action, question?, instruction?, draft?, sent? }
+ * action: 'analyze' | 'ask' | 'draft' | 'draft-feedback' | 'pause' | 'resume' | 'clear-draft'
  *
  * Admin only, and invisible to clients by rule — see the `advisor` match in
  * firestore.rules. The model calls run in ctx.waitUntil and land in Firestore,
@@ -1244,6 +1244,31 @@ async function handleAdvisor(request, env, ctx) {
       mask: ['draft', 'draftStatus'],
     });
     return json({ ok: true });
+  }
+
+  if (action === 'draft-feedback') {
+    // Eric just sent a prepared draft: `draft` is what the advisor wrote,
+    // `sent` is what actually went out after his edits. A real edit is stored
+    // as a style lesson and triggers an immediate profile distill, so the
+    // very next draft writes with it. An unchanged send stores NOTHING: a
+    // failed feedback call can reopen the editor with the already-sent
+    // original, and recording that re-send as "the draft was already right"
+    // would poison the evidence against his actual edit. Either way the
+    // served draft is cleared (the send itself already happened).
+    const draft = typeof body?.draft === 'string' ? body.draft.slice(0, 4000) : '';
+    const sent = typeof body?.sent === 'string' ? body.sent.slice(0, 2200) : '';
+    if (!draft || !sent) return json({ error: 'Bad feedback' }, 400);
+    const changed = draft.trim() !== sent.trim();
+    if (changed) {
+      await patchDoc(env, `advisorStyle/profile/edits/${crypto.randomUUID()}`, {
+        draft, sent, changed, kind, id, at: new Date(),
+      });
+    }
+    await patchDoc(env, statePath, { draft: null, draftStatus: null }, {
+      mask: ['draft', 'draftStatus'],
+    });
+    if (!changed) return json({ ok: true, learned: false });
+    return keepaliveRun(ctx, runStyleDistill(env, kind, id));
   }
 
   if (action === 'analyze') {
