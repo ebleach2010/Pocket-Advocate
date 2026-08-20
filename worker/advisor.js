@@ -40,6 +40,12 @@ to ask safety questions, never suggest crisis resources, and never lead the
 assessment with any of that. If a client message carries a safety signal, Eric
 has already seen it. Stay on the medical pattern and the advocacy strategy.
 
+Have a spine. When Eric makes a good point that changes your read, concede it
+plainly and update your read: name what changes. When he states something
+factually wrong, to you or to the client, say so directly and give the reason.
+Never soften a correction into agreement, and never restate your old position
+as if he had not spoken.
+
 HOW TO WRITE, always: never use an em dash or en dash (the long "—" or "–")
 anywhere, in anything. Use a comma, a period, or parentheses instead. A plain
 hyphen inside a range like 3-5 days is fine. Short bits, never essays. Five short lines beat twenty
@@ -127,11 +133,16 @@ async function recentMessages(env, kind, id) {
   return rows.reverse().filter((r) => r.data.text || r.data.attachment);
 }
 
-/** The thread as plain labelled lines; shared files show up as markers. */
+/**
+ * The thread as plain labelled lines; shared files show up as markers.
+ * Eric's lines carry their message id so a "## Corrections" row can name the
+ * exact message it repairs. Client lines carry none: the advisor never
+ * corrects the client, so an id there is noise the model could misfire on.
+ */
 function transcript(rows) {
   return rows
     .map((r) => {
-      const who = r.data.role === 'admin' ? 'ERIC' : 'CLIENT';
+      const who = r.data.role === 'admin' ? `ERIC [id=${r.id}]` : 'CLIENT';
       const parts = [];
       if (r.data.text) parts.push(r.data.text);
       const att = r.data.attachment;
@@ -496,6 +507,100 @@ async function applyMastered(env, text) {
 }
 
 /**
+ * "## Working line": the one short read printed on the front of the folder.
+ * Same protocol as Key terms (match, act, strip), except the value comes back
+ * to runAnalysis rather than going straight to Firestore: it belongs in the
+ * same state write as the assessment, and on the shelf as well.
+ * Returns { text, workingDx }.
+ */
+function harvestWorkingLine(text) {
+  const m = text.match(/^## Working line\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  if (!m) return { text, workingDx: '' };
+  const first = m[1].split('\n').map((l) => l.trim()).find(Boolean) || '';
+  let line = first.replace(/^[-*]\s*/, '').replace(/[*`]/g, '').replace(/[.,;:]+\s*$/, '').trim();
+  // A cover is a label, not a sentence: an over-long one is cut at a word
+  // boundary, because a label ending mid-word reads as broken.
+  if (line.length > 60) {
+    const cut = line.slice(0, 60);
+    const space = cut.lastIndexOf(' ');
+    line = (space > 30 ? cut.slice(0, space) : cut).trim();
+  }
+  // "Still forming" is the advisor saying it has nothing yet, which the folder
+  // paints as "No read yet" rather than printing the words on the cover.
+  if (/^(still forming|none|none yet|unclear)$/i.test(line)) line = '';
+  return { text: text.replace(m[0], '').trim(), workingDx: line };
+}
+
+/**
+ * "## Differential": `- Name [NN%]: why it fits | what would raise or lower
+ * it` rows, most likely first. Returns { text, differential }.
+ */
+function harvestDifferential(text) {
+  const m = text.match(/^## Differential\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  if (!m) return { text, differential: [] };
+  const differential = [];
+  for (const line of m[1].split('\n')) {
+    const t = line.match(/^\s*[-*]\s*\**(.+?)\**\s*\[\s*(\d{1,3})\s*%\s*\]\s*:\s*(.+)$/);
+    if (!t) continue;
+    const name = t[1].trim();
+    if (!name || /^none( yet)?$/i.test(name)) continue;
+    const pct = Math.max(0, Math.min(100, parseInt(t[2], 10)));
+    const [why, ...moves] = t[3].split('|');
+    differential.push({
+      name: name.slice(0, 120),
+      pct,
+      why: why.trim().slice(0, 400),
+      moves: moves.join('|').trim().slice(0, 400),
+    });
+    if (differential.length >= 5) break;
+  }
+  return { text: text.replace(m[0], '').trim(), differential };
+}
+
+/**
+ * "## Corrections": `- <msgId> | what is wrong | the repaired message`, one
+ * row per message of Eric's that got a fact wrong. Rows are resolved against
+ * his real messages (a correction that cannot point at one is noise) and
+ * merged with what the state already holds, so a fix he dismissed stays
+ * dismissed and one whose message has fallen out of the transcript window
+ * disappears with it. None of this ever touches the chat document itself:
+ * the client can read those, and this is Eric's to act on or ignore.
+ * Returns { text, corrections }.
+ */
+function harvestCorrections(text, rows, prior) {
+  const m = text.match(/^## Corrections\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  if (!m) return { text, corrections: [] };
+  const was = Array.isArray(prior) ? prior : [];
+  const mine = rows.filter((r) => r.data.role === 'admin');
+  const corrections = [];
+  for (const line of m[1].split('\n')) {
+    const parts = line.replace(/^\s*[-*]\s*/, '').split('|');
+    if (parts.length < 3) continue;
+    // Tolerant on the id: bare, <wrapped>, or [id=…] all name the same message.
+    const token = (parts[0].match(/[A-Za-z0-9_-]{3,64}/g) || []).pop() || '';
+    const row = mine.find((r) => r.id === token)
+      || (token.length >= 6 ? mine.find((r) => r.id.endsWith(token)) : null);
+    if (!row) continue;
+    const issue = parts[1].trim().slice(0, 400);
+    const fixed = parts.slice(2).join('|').trim().slice(0, 2000);
+    if (!issue || !fixed) continue;
+    if (corrections.some((c) => c.msgId === row.id)) continue;
+    const before = was.find((c) => c?.msgId === row.id);
+    corrections.push({
+      msgId: row.id,
+      issue,
+      fixed,
+      // Reading decodes timestamps to ISO strings, so a carried-over date has
+      // to be retyped or the field silently becomes a string.
+      at: before?.at ? new Date(before.at) : new Date(),
+      dismissed: !!before?.dismissed,
+    });
+    if (corrections.length >= 10) break;
+  }
+  return { text: text.replace(m[0], '').trim(), corrections };
+}
+
+/**
  * A tiny plain-words recap of Eric's latest unanswered messages, written for
  * clients with brain fog or fatigue: two short sentences at most, saying what
  * he said and what he's asking, so nobody has to re-read a wall to re-orient.
@@ -649,6 +754,9 @@ Use exactly these headings, in this order, as markdown \`##\` headings:
 ## Ask next
 ## For you
 ## Key terms
+## Working line
+## Differential
+## Corrections
 
 "Right now": 2–4 short sentences, plain language. If you have a previous
 assessment, open with what CHANGED since it — new message, new signal, a shift
@@ -670,6 +778,33 @@ Never include a term from his
 mastered list, never repeat one already in his glossary. If nothing new, write
 "- none".
 
+The last three sections are machine-read and stripped before Eric sees the
+assessment (same as Key terms); they do not count toward the word cap.
+
+"## Working line": exactly one line, 60 characters or fewer, plain words: the
+single most likely explanation right now. It gets printed on the front of a
+physical case folder, so write a label, not a sentence. No hedging, no
+percentage, no trailing punctuation. If the thread cannot support one yet,
+write exactly: Still forming.
+
+"## Differential": up to 5 lines, most likely first, each exactly
+\`- Name [NN%]: why it fits | what would raise or lower it\`
+NN is YOUR confidence as a whole number, and the numbers must not add up to
+more than 100: whatever is left over is "not enough information", which early
+on is most of it. Only possibilities this thread actually supports. Whenever a
+dangerous but treatable possibility is plausible at all, give it a row at its
+real low percentage, because that is the one worth chasing even at long odds.
+If you have nothing yet, write "- none yet".
+
+"## Corrections": OPTIONAL. Only when one of ERIC's own recent messages
+contains a factual error worth repairing. Each line exactly
+\`- <id> | what is wrong, one sentence | the full repaired message\`
+where <id> is the id on his line in the transcript (ERIC [id=...]). The
+repaired message keeps his wording, his length and his tone, changing ONLY what
+was factually wrong: it is his message with the error fixed, not your rewrite
+of it. Facts only, never style or phrasing. Write "- none" or leave the
+section out when there is nothing to fix.
+
 Be specific or say nothing. "Consider further workup" is worthless. If the
 transcript is too thin for a section, one line saying what you'd need.
 ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
@@ -687,11 +822,34 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
       }],
     });
 
-    const cleaned = await harvestKeyTerms(env, analysis);
+    // Each machine-read section is pulled out and stripped in turn, so none of
+    // it reaches the assessment Eric actually reads.
+    const cover = harvestWorkingLine(await harvestKeyTerms(env, analysis));
+    const dx = harvestDifferential(cover.text);
+    const corr = harvestCorrections(dx.text, rows, state?.data.corrections);
     await setState(env, kind, id, {
-      analysis: cleaned, status: 'idle', error: null, updatedAt: new Date(),
+      analysis: corr.text, status: 'idle', error: null, updatedAt: new Date(),
       pendingAt: null, startedAt: null, progressAt: null,
+      workingDx: cover.workingDx,
+      differential: dx.differential,
+      corrections: corr.corrections,
     });
+    // Mirror the cover so the dashboard shelf paints every folder from one
+    // read instead of a request per case. It lands on caseMeta, which is
+    // Worker-only by rule, NOT on the case doc: a case doc is client-readable,
+    // and a working diagnosis is Eric's private material, never something a
+    // patient should find on their own record. Eric's override always wins.
+    if (kind === 'case') {
+      const raw = state?.data.dxOverride;
+      const override = typeof raw === 'string' ? raw.trim() : '';
+      await patchDoc(env, `caseMeta/${id}`, {
+        workingDx: {
+          text: override || cover.workingDx,
+          by: override ? 'eric' : 'advisor',
+          at: new Date(),
+        },
+      }, { mask: ['workingDx'] }).catch((err) => console.warn('caseMeta mirror:', err.message || err));
+    }
     await deleteDoc(env, queuePath(kind, id));
   } catch (err) {
     console.error('advisor analysis:', err.stack || err);

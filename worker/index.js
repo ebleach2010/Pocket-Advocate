@@ -2,7 +2,7 @@
 //   POST   /api/checkout           hold a slot, create a Stripe Checkout Session
 //   GET    /api/case-for-session   poll after checkout: has the webhook made my case?
 //   POST   /api/make-private       revoke a public election (allowed until call time)
-//   POST   /api/subscribe          24/7 Priority Chat subscription Checkout ($29.99/mo)
+//   POST   /api/subscribe          24/7 Priority Chat subscription Checkout ($50/mo)
 //   POST   /api/portal             Stripe customer portal (manage/cancel)
 //   POST   /api/stripe/webhook     payments + subscription lifecycle -> Firestore
 //   POST   /api/admin/slots        open availability slots (admin)
@@ -27,15 +27,16 @@ import { runAnalysis, runQuestion, runDraft, runRecap, markPending, runQueuedAna
 
 // These build the real Stripe line items. Three browser files mirror them for
 // display — public/js/book.js, public/js/subscribe.js, public/js/admin-case.js
-// — and every price shown there is derived, never typed. Current rates: $275
-// per case (one follow-up session included) and $29.99/mo chat. Change a rate
-// here and change it in those three, or the page quotes one number and the card
-// is charged another (which is exactly what happened after the $150 experiment).
+// — and every price shown there is derived, never typed. Current rates (Eric,
+// 2026-08-20): $275 per case, a $75 follow-up session bought separately, and
+// $50/mo chat. Change a rate here and change it in those three, or the page
+// quotes one number and the card is charged another (which is exactly what
+// happened after the $150 experiment).
 const CASE_PRICE_CENTS = 27500;
-// Legacy only: the $50 follow-up add-on is gone from the UI (the follow-up is
-// included in the case price now). Kept so old code paths still resolve.
-const ADDON_PRICE_CENTS = 5000;
-const SUB_PRICE_CENTS = 2999;
+// The follow-up is a real add-on: a second discussion on the same case, offered
+// at checkout and priced on its own. It is NOT included in the case fee.
+const ADDON_PRICE_CENTS = 7500;
+const SUB_PRICE_CENTS = 5000;
 // Follow-up sessions expire one month after the first discussion (Eric,
 // 2026-07-13); clients get one warning email a week before the deadline.
 const FOLLOWUP_EXPIRY_DAYS = 30;
@@ -85,6 +86,8 @@ export default {
         return await handleAdvisor(request, env, ctx);
       if (url.pathname === '/api/advisor/state' && request.method === 'GET')
         return await handleAdvisorState(request, env, url);
+      if (url.pathname === '/api/advisor/covers' && request.method === 'GET')
+        return await handleAdvisorCovers(request, env);
       if (url.pathname === '/api/advisor/dictionary')
         return await handleDictionary(request, env);
       if (url.pathname === '/api/push/test' && request.method === 'POST')
@@ -120,7 +123,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-20-pr69-4';
+const BUILD_TAG = 'v2026-08-20-folder';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -191,27 +194,13 @@ async function repairMissingCaseEmails(env) {
 }
 
 /**
- * Stripe line items for a case. New checkouts always send addOnFollowUp: true
- * and get ONE line item with the follow-up session included in the case price.
- * The false branch is legacy only (never sent by the current UI); the separate
- * $50 add-on line item is never emitted again.
+ * Stripe line items for a case, plus the follow-up session when the client
+ * bought one at checkout. Two separate lines on purpose: the receipt should
+ * show exactly what was paid for, and the follow-up is its own product at its
+ * own price, never a discount folded into the case fee.
  */
 function caseLineItems(addOnFollowUp) {
-  if (addOnFollowUp)
-    return [
-      {
-        quantity: 1,
-        price_data: {
-          currency: 'usd',
-          unit_amount: CASE_PRICE_CENTS,
-          product_data: {
-            name: 'Advocacy Case (includes one follow-up session)',
-            description: 'Live discussion + written report + one follow-up',
-          },
-        },
-      },
-    ];
-  return [
+  const items = [
     {
       quantity: 1,
       price_data: {
@@ -221,6 +210,19 @@ function caseLineItems(addOnFollowUp) {
       },
     },
   ];
+  if (addOnFollowUp)
+    items.push({
+      quantity: 1,
+      price_data: {
+        currency: 'usd',
+        unit_amount: ADDON_PRICE_CENTS,
+        product_data: {
+          name: 'Follow-up session',
+          description: 'A second discussion on this same case',
+        },
+      },
+    });
+  return items;
 }
 
 // ---- POST /api/checkout ----
@@ -1033,7 +1035,9 @@ async function handleChatPass(request, env) {
  * POST /api/chat/edit  Body: { kind: 'case'|'sub', id, msgId, text }
  * Your own message, within three minutes of sending it. Same reason this is
  * server-side as reactions: messages are browser-immutable by rule, and the
- * clock has to be one nobody can set.
+ * clock has to be one nobody can set. One exception to the clock: the admin
+ * editing his OWN messages has no window, so an advisor-flagged factual slip
+ * can be fixed days later. Client rules are unchanged.
  */
 async function handleChatEdit(request, env) {
   const user = await requireUser(request, env);
@@ -1054,7 +1058,8 @@ async function handleChatEdit(request, env) {
   if (!msg.data.text) return json({ error: 'That message has no text to edit.' }, 400);
 
   const sent = new Date(msg.data.ts || 0).getTime();
-  if (!sent || Date.now() - sent > EDIT_WINDOW_MS)
+  const adminOwn = ctx.isAdmin && msg.data.role === 'admin';
+  if (!adminOwn && (!sent || Date.now() - sent > EDIT_WINDOW_MS))
     return json({ error: 'Messages can only be edited for 3 minutes after sending.' }, 409);
 
   const previous = msg.data.text;
@@ -1132,10 +1137,14 @@ async function handleAdvisorState(request, env, url) {
   if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad id' }, 400);
 
   const parent = kind === 'case' ? 'cases' : 'subscriptions';
-  const [state, qa, knowledge] = await Promise.all([
-    getDoc(env, `${parent}/${id}/advisor/state`),
+  // One round of reads for the whole panel. Every one of them degrades to
+  // empty: a case with no advisor state, no notes and no glossary is the
+  // normal first-visit state, not an error.
+  const [state, qa, knowledge, notesDoc] = await Promise.all([
+    getDoc(env, `${parent}/${id}/advisor/state`).catch(() => null),
     listDocs(env, `${parent}/${id}/advisor/state/qa`, { pageSize: 20, orderBy: 'at' }).catch(() => []),
     listDocs(env, 'advisorKnowledge', { pageSize: 200 }).catch(() => []),
+    getDoc(env, `${parent}/${id}/private/notes`).catch(() => null),
   ]);
   // keyConfigured: admin-only visibility into whether the ANTHROPIC_API_KEY
   // secret is actually bound to the running version — "saved in the dashboard"
@@ -1149,7 +1158,43 @@ async function handleAdvisorState(request, env, url) {
       category: r.data.category || 'General', learned: !!r.data.learnedAt,
     })),
     keyConfigured: Boolean(env.ANTHROPIC_API_KEY),
+    // The folder surfaces. All of this is Eric's private working material;
+    // nothing here is ever readable by a client (this route is admin-gated,
+    // the docs themselves are browser-denied by rule).
+    notes: notesDoc?.data.html || '',
+    notesUpdatedAt: notesDoc?.data.updatedAt || null,
+    dx: {
+      working: state?.data.workingDx || '',
+      override: typeof state?.data.dxOverride === 'string' ? state.data.dxOverride : null,
+    },
+    differential: Array.isArray(state?.data.differential) ? state.data.differential : [],
+    // Dismissed corrections stay on the doc, so the next analysis knows not to
+    // raise them again, but they never come back out here: dismissed means the
+    // chat stops marking that message.
+    corrections: (Array.isArray(state?.data.corrections) ? state.data.corrections : [])
+      .filter((c) => c && !c.dismissed),
   });
+}
+
+/**
+ * GET /api/advisor/covers — the dashboard shelf's folder covers in one call:
+ * { covers: { [caseId]: { text, by } } }. caseMeta is Worker-only by rule
+ * (a case doc is client-readable, so the working line can never live there);
+ * the shelf paints "No read yet" for any case without a cover.
+ */
+async function handleAdvisorCovers(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const profile = await getDoc(env, `users/${user.uid}`);
+  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+
+  const rows = await listDocs(env, 'caseMeta', { pageSize: 200 }).catch(() => []);
+  const covers = {};
+  for (const r of rows) {
+    const dx = r.data.workingDx;
+    if (dx?.text) covers[r.id] = { text: dx.text, by: dx.by || 'advisor' };
+  }
+  return json({ covers });
 }
 
 /**
@@ -1188,9 +1233,73 @@ async function handleDictionary(request, env) {
   });
 }
 
+// The only tags the notes paper may keep. Everything else is dropped, and
+// every kept tag is rebuilt bare, so no attribute, no on* handler and no
+// javascript: url can survive the trip through here.
+const NOTE_TAGS = new Set([
+  'b', 'strong', 'i', 'em', 'u', 'h1', 'h2', 'h3', 'p', 'br', 'div', 'span',
+  'ul', 'ol', 'li', 'blockquote', 'font', 'sup', 'sub',
+]);
+// Tags whose CONTENT is as dangerous as the tag: dropping `<script>` while
+// keeping what is between the tags just moves the payload into the text.
+// `embed` is deliberately not here — it is void, so it has nothing to take
+// with it, and waiting for a close tag that never comes would swallow the rest
+// of a pasted note. It is dropped as an unlisted tag like any other.
+const NOTE_KILL = new Set(['script', 'style', 'iframe', 'object']);
+
+/** The one attribute the notes toolbar needs back: document.execCommand still
+ * writes sizes as `<font size=N>`. A digit 1-7 can carry nothing executable. */
+function fontAttr(attrs) {
+  const m = attrs.match(/(?:^|\s)size\s*=\s*["']?\s*([1-7])(?=["'\s/]|$)/i);
+  return m ? ` size="${m[1]}"` : '';
+}
+
+/**
+ * Allowlist sanitizer for the notes editor's HTML. The Worker is the trust
+ * boundary, so the sanitizing happens here and not in the page that typed it:
+ * the browser sends contenteditable output, which is attacker-shaped by
+ * definition, and the result is stored and re-rendered later. Admin-authored
+ * and admin-read is not a reason to skip it.
+ *
+ * Text passes through as-is (contenteditable entity-encodes typed angle
+ * brackets), unknown tags vanish while their text stays, script/style/iframe/
+ * object take their contents with them, and an unterminated tag fragment takes
+ * the rest of the string with it.
+ */
+function sanitizeNotes(html) {
+  let out = '';
+  let i = 0;
+  let killing = '';
+  let depth = 0;
+  while (i < html.length) {
+    const lt = html.indexOf('<', i);
+    if (lt === -1) { if (!killing) out += html.slice(i); break; }
+    if (!killing) out += html.slice(i, lt);
+    const gt = html.indexOf('>', lt);
+    if (gt === -1) break;
+    const m = html.slice(lt, gt + 1).match(/^<\s*(\/?)\s*([a-zA-Z][a-zA-Z0-9]*)(?=[\s/>])([^>]*)>$/);
+    if (m) {
+      const closing = m[1] === '/';
+      const name = m[2].toLowerCase();
+      const selfClosing = /\/\s*$/.test(m[3]);
+      if (killing) {
+        if (name === killing) depth += closing ? -1 : (selfClosing ? 0 : 1);
+        if (depth <= 0) { killing = ''; depth = 0; }
+      } else if (NOTE_KILL.has(name)) {
+        if (!closing && !selfClosing) { killing = name; depth = 1; }
+      } else if (NOTE_TAGS.has(name)) {
+        out += closing ? `</${name}>` : `<${name}${name === 'font' ? fontAttr(m[3]) : ''}>`;
+      }
+    }
+    i = gt + 1;
+  }
+  return out;
+}
+
 /**
  * POST /api/advisor  Body: { kind: 'case'|'sub', id, action, question?, instruction?, draft?, sent? }
  * action: 'analyze' | 'ask' | 'draft' | 'draft-feedback' | 'pause' | 'resume' | 'clear-draft'
+ *       | 'dx' (folder-cover override) | 'note' (private notes) | 'correction-dismiss'
  *
  * Admin only, and invisible to clients by rule — see the `advisor` match in
  * firestore.rules. The model calls run in ctx.waitUntil and land in Firestore,
@@ -1225,6 +1334,71 @@ async function handleAdvisor(request, env, ctx) {
     await patchDoc(env, `advisorKnowledge/${termId}`, {
       learnedAt: body?.learned ? new Date() : null,
     }, { mask: ['learnedAt'] });
+    return json({ ok: true });
+  }
+
+  // The three folder writes below are single small patches, so they answer
+  // straight away: keepaliveRun exists for the minutes-long model turns, and
+  // holding a connection open for a one-field write only slows the page down.
+
+  if (action === 'dx') {
+    // Eric's own read for the folder cover. Text overrides the advisor's
+    // working line; null or empty hands the cover back to the advisor. It sits
+    // beside the advisor's line on the Worker-only state doc, not on the case
+    // doc a client can read.
+    const raw = body?.text ?? '';
+    if (typeof raw !== 'string') return json({ error: 'Bad working line' }, 400);
+    const text = raw.trim();
+    if (text.length > 120)
+      return json({ error: 'Keep the working line to 120 characters.' }, 400);
+    const now = new Date();
+    // Only a clear needs the advisor's own line back for the shelf.
+    const state = text ? null : await getDoc(env, statePath);
+    await patchDoc(env, statePath, {
+      dxOverride: text || null, dxOverrideAt: text ? now : null,
+    }, { mask: ['dxOverride', 'dxOverrideAt'] });
+    if (kind === 'case')
+      await patchDoc(env, `caseMeta/${id}`, {
+        workingDx: {
+          text: text || state?.data.workingDx || '',
+          by: text ? 'eric' : 'advisor',
+          at: now,
+        },
+      }, { mask: ['workingDx'] });
+    return json({ ok: true });
+  }
+
+  if (action === 'note') {
+    // Eric's private notes page. Sanitized here because the Worker is the
+    // trust boundary, and stored under `private/`, which is browser-denied by
+    // rule in both directions: only this admin-gated route reads it back.
+    if (typeof body?.html !== 'string') return json({ error: 'Bad note' }, 400);
+    if (body.html.length > 200_000)
+      return json({ error: 'That note is too long to save.' }, 400);
+    const now = new Date();
+    await patchDoc(env, `${parent}/${id}/private/notes`, {
+      html: sanitizeNotes(body.html), updatedAt: now,
+    }, { mask: ['html', 'updatedAt'] });
+    return json({ ok: true, savedAt: now.toISOString() });
+  }
+
+  if (action === 'correction-dismiss') {
+    // A flagged slip was applied (or waved off): stop offering the fix. The
+    // flag rides on the correction itself, so the next analysis merges it
+    // forward instead of raising the same repair again.
+    const msgId = typeof body?.msgId === 'string' ? body.msgId : '';
+    if (!/^[\w-]{1,64}$/.test(msgId)) return json({ error: 'Bad message id' }, 400);
+    const state = await getDoc(env, statePath);
+    const corrections = (Array.isArray(state?.data.corrections) ? state.data.corrections : [])
+      .filter((c) => c && c.msgId)
+      // Reading decodes timestamps to ISO strings; writing the array back
+      // untouched would retype every `at` from timestamp to string.
+      .map((c) => ({
+        ...c,
+        at: c.at ? new Date(c.at) : new Date(),
+        dismissed: c.msgId === msgId ? true : !!c.dismissed,
+      }));
+    await patchDoc(env, statePath, { corrections }, { mask: ['corrections'] });
     return json({ ok: true });
   }
 
@@ -1934,7 +2108,7 @@ async function handleAdminSchedule(request, env) {
   }
 
   if (mode === 'followup') {
-    if (!c.addOnFollowUp) return json({ error: 'This case has no follow-up included.' }, 409);
+    if (!c.addOnFollowUp) return json({ error: 'This case has no follow-up session on it.' }, 409);
     if (c.followUp) return json({ error: 'The follow-up is already scheduled.' }, 409);
     const expiry = followUpExpiry(c);
     if (expiry && now > expiry)
@@ -2072,7 +2246,7 @@ async function confirmExtraSession(env, session) {
 }
 
 /**
- * Cron: warn clients one week before an unscheduled included follow-up expires
+ * Cron: warn clients one week before an unscheduled follow-up session expires
  * (30 days after the first discussion). One email, ever, per case.
  */
 export async function runFollowUpWarnings(env, now = Date.now()) {
@@ -2089,7 +2263,7 @@ export async function runFollowUpWarnings(env, now = Date.now()) {
       await sendEmail(env, {
         to: c.clientEmail,
         subject: 'Your follow-up session expires in one week',
-        html: `<p>Your case includes a follow-up discussion, and it expires one month
+        html: `<p>You bought a follow-up discussion on your case, and it expires one month
           after your first discussion:</p>
           ${whenHtml(new Date(expires), c.clientTz)}
           <p>To use it, message me in your case chat and I'll get it scheduled.</p>

@@ -21,12 +21,13 @@ const SECTION_ICON = {
 };
 
 /**
- * opts: { container, kind: 'case'|'sub', id, user, onSend(text), draftContainer? }
+ * opts: { container, kind: 'case'|'sub', id, user, onSend(text), draftContainer?, diffContainer? }
  * `onSend` puts an approved draft into the real chat as Eric.
  * `draftContainer` (optional): an element OUTSIDE the panel that the draft
  * card renders into, so drafts live in their own section of the page.
+ * `diffContainer` (optional): an element the differential page renders into.
  */
-export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null }) {
+export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null, diffContainer = null }) {
   container.innerHTML = `
     <div class="advisor">
       <div class="advisor-head">
@@ -250,6 +251,38 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     }, { passive: true });
   }
 
+  // ---- the 🧬 Differential page ----
+  // Renders into its own folder page when the host provides one. Rebuilt only
+  // when the data actually changes, so the confidence bars settle once per
+  // new read instead of twitching on every poll.
+  let diffKey = null;
+  function renderDiff(d) {
+    if (!diffContainer) return;
+    const key = JSON.stringify([d.workingLine, d.dxOverride, d.differential]);
+    if (key === diffKey) return;
+    diffKey = key;
+    const line = (d.dxOverride && d.dxOverride.text) || d.workingLine || '';
+    const rows = (d.differential || []).map((r, i) => {
+      const pct = Math.max(0, Math.min(100, Math.round(Number(r.pct) || 0)));
+      return `
+        <div class="diff-row${i === 0 ? ' diff-top' : ''}">
+          <span class="diff-name">${esc(r.name || '')}</span>
+          <span class="diff-pct">${pct}%</span>
+          <div class="diff-bar"><div class="diff-fill" style="width:${pct}%"></div></div>
+          <p class="diff-note">${esc(r.note || '')}</p>
+        </div>`;
+    });
+    diffContainer.innerHTML = `
+      ${line ? `
+        <div class="diff-head">
+          <h3 class="diff-line">${esc(line)}${d.dxOverride ? ' <span class="dim small">(your call)</span>' : ''}</h3>
+        </div>` : ''}
+      ${rows.length
+        ? `<div class="diff-list">${rows.join('')}</div>`
+        : '<p class="dim small">No differential yet. Run an analysis with some conversation to read.</p>'}
+      <p class="diff-disclaimer">These are my confidence levels, not clinical probabilities. Orientation for advocacy, not a diagnosis.</p>`;
+  }
+
   // Poll fast while something is running, slowly when it isn't — an assessment
   // that takes two minutes shouldn't cost a request a second for the rest of
   // the day.
@@ -267,6 +300,21 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         const d = apply(out.state || {}, out.qa || [], out.glossary || []);
         busy = d.running || d.draftAlive ||
           (out.qa || []).some((q) => q.status === 'running');
+        // The folder pages (differential, notes, the header line) and the
+        // chat's correction marks all feed off this one poll. This panel only
+        // ever mounts on admin pages, so the event stays admin-side.
+        const detail = {
+          kind,
+          id,
+          notes: out.notes || '',
+          notesUpdatedAt: out.notesUpdatedAt || null,
+          corrections: out.corrections || [],
+          differential: out.differential || [],
+          workingLine: out.workingLine || '',
+          dxOverride: out.dxOverride || null,
+        };
+        renderDiff(detail);
+        document.dispatchEvent(new CustomEvent('pa-advisor-state', { detail }));
       }
     } catch { /* transient — the next tick tries again */ }
     timer = setTimeout(refresh, busy ? 2500 : 12000);
@@ -470,6 +518,14 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       }
     );
     container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+
+  // The chat applied a correction: tell the worker so the fix mark clears
+  // and the same correction never rides back in on the next analysis.
+  document.addEventListener('pa-correction-applied', (e) => {
+    const msgId = e.detail?.msgId;
+    if (!msgId) return;
+    post({ action: 'correction-dismiss', msgId });
   });
 
   /**

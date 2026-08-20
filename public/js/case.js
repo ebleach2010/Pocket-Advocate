@@ -327,7 +327,7 @@ function renderProgress(el, c) {
   el.querySelector('[data-private]')?.addEventListener('click', (e) => makePrivate(c.id, e.target));
   return;
 
-  /** Second-session state: scheduled follow-up, a pay-to-confirm prompt, or the unused included follow-up with its deadline. */
+  /** Second-session state: scheduled follow-up, a pay-to-confirm prompt, or a purchased-but-unused follow-up with its deadline. */
   function followUpSection(c) {
     const mt = new Intl.DateTimeFormat('en-US', {
       timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -352,7 +352,7 @@ function renderProgress(el, c) {
       const expires = base ? base + 30 * 86_400_000 : null;
       const lapsed = expires && Date.now() > expires;
       if (lapsed) return '';
-      return `<p class="dim small">Follow-up session included: message me in chat to schedule your second session.${
+      return `<p class="dim small">Your follow-up session is paid for: message me in chat to schedule it.${
         expires && Date.now() > base
           ? ` Use it by <strong style="color:var(--ink)">${mt.format(new Date(expires))} MST</strong> (one month after your discussion).`
           : ' It must be used within one month of your first discussion.'

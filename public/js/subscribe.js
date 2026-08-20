@@ -13,7 +13,7 @@ import { SUBSCRIPTION_TERMS } from './waivers.js';
 // Keep in sync with SUB_PRICE_CENTS in worker/index.js. The Worker builds the
 // real Stripe line item from its own copy, so a hardcoded figure here can only
 // ever be a lie waiting to happen.
-const SUB_PRICE_CENTS = 2999;
+const SUB_PRICE_CENTS = 5000;
 const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 
 hydrateNav();

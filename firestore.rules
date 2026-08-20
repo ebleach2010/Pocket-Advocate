@@ -68,6 +68,13 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Eric's private notes on the case — Worker-only in both directions
+      // (served back through the admin-gated advisor state endpoint). The
+      // case doc itself is client-readable, so nothing private sits on it.
+      match /private/{document=**} {
+        allow read, write: if false;
+      }
+
       // Case chat: dies with the case (SPEC §H-6 — separate from subscriber chat).
       match /chat/{msgId} {
         allow read: if signedIn() &&
@@ -99,6 +106,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Folder covers for the admin dashboard (the advisor's working line, or
+    // Eric's override). Worker-only: the case doc is client-readable, so the
+    // working read lives here instead, served via GET /api/advisor/covers.
+    match /caseMeta/{caseId} {
+      allow read, write: if false;
+    }
+
     match /availability/{slotId} {
       // World-readable so the picker works pre-payment; Worker-writable only.
       allow read: if true;
@@ -122,6 +136,12 @@ service cloud.firestore {
       match /advisor/{document=**} {
         allow read: if signedIn() && isAdmin();
         allow write: if false;
+      }
+
+      // Eric's private notes on the subscriber — Worker-only in both
+      // directions, same reasoning as the case-side private subtree.
+      match /private/{document=**} {
+        allow read, write: if false;
       }
 
       match /chat/{msgId} {

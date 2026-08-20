@@ -1,14 +1,18 @@
-// Admin case detail: everything the client sees, plus the levers — post the
-// join link / phone note, view + download uploads, upload the recording and
-// report (which advances the status and pings the client in-app), close case.
+// Admin case workspace: the case folder. Everything the client sees, plus the
+// levers, rehoused into flip pages: Overview, Chat, Advisor, Differential,
+// Files, Notes, Drafts. Chat and advisor mount ONCE per case; refresh paths
+// only repaint the Overview and Files contents in place, so the chat's live
+// onSnapshot and the advisor's poll survive every action on this page.
 
 import {
   db, storage, doc, getDoc, collection, getDocs, query, where,
   ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata,
 } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
-import { mountChat } from './chat.js';
+import { mountChat, openLightbox } from './chat.js';
 import { mountAdvisor } from './advisor.js';
+import { mountNotes } from './notes.js';
+import { mountFolder } from './folder.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
@@ -25,6 +29,14 @@ const user = await requireAdmin();
 if (user && caseId) load();
 
 let data = null;
+// Case id the folder shell (and its one chat + advisor mount) was built for.
+// Refresh paths must never rebuild the chat's or the advisor's DOM.
+let renderedFor = null;
+let folder = null;
+// The notes sheet and the last html the server gave us. The sheet is built
+// with whatever we already hold, then kept current by the state poll.
+let notes = null;
+let notesHtml = '';
 
 async function load() {
   const el = document.getElementById('case');
@@ -34,133 +46,104 @@ async function load() {
     data = snapshot.data();
   } catch (err) {
     el.innerHTML = `<p class="error">${err.message}</p>`;
+    renderedFor = null;
+    folder = null;
     return;
   }
-  render(el);
+  // Re-loads for the same case (after a milestone, an upload, a scheduling
+  // run) refresh the header, Overview, and Files in place. The chat and the
+  // advisor mount once and are never touched again.
+  if (renderedFor === caseId && folder) {
+    refreshHeader();
+    refreshOverview();
+  } else {
+    render(el);
+  }
   refreshFiles();
 }
 
 function render(el) {
   const c = data;
-  const start = c.appointment && toDate(c.appointment.start);
-  const mtFmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
-  });
-  const due = c.reportDueAt
-    ? Math.ceil((toDate(c.reportDueAt) - Date.now()) / 86_400_000)
-    : null;
 
   el.innerHTML = `
-    <div class="row">
-      <h1 style="margin:0;">${esc(c.clientName || c.clientEmail || c.clientUid)}</h1>
-      <span class="status-pill">${(c.status || '?').replace('_', ' ').toUpperCase()}</span>
-    </div>
-    ${infoBar(c, mtFmt, start, due)}
-    ${c.appointment?.requested ? `
-    <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
-      <h3 style="margin:0 0 .3rem; color:var(--orange);">Booking request — not on your calendar</h3>
-      <p class="small" style="margin:0 0 .2rem;">They asked for
-        <strong>${start ? esc(mtFmt.format(start)) : 'an unknown time'} MST</strong>, paid in full.
-        Nothing is reserved until you confirm.</p>
-      <p class="dim small" style="margin:0 0 .7rem;">Declining keeps the case and the payment;
-        it just flags the case so you can offer another time below.</p>
-      <button class="btn" data-action="confirm-request">Confirm this time</button>
-      <button class="btn quiet" data-action="deny-request">Can't make it</button>
-    </div>` : ''}
-    ${c.status !== 'closed' ? `
-    <div style="margin:0 0 1rem;">
-      <button class="btn danger" data-action="close" style="width:100%; padding:.8rem; font-size:1rem;">
-        Close case
-      </button>
-    </div>` : ''}
-
-    <div class="panel">
-      <h3>Meeting link / phone note</h3>
-      <p class="dim small">${c.appointment?.method === 'phone'
-        ? `Client expects a call at <strong>${esc(c.appointment.phone || '?')}</strong>. Post the number you'll call from:`
-        : 'Paste the video-call link the client should join:'}</p>
-      <input type="url" id="joinlink" placeholder="${c.appointment?.method === 'phone' ? 'Calling from +1 …' : 'https://…'}"
-        value="${esc(c.appointment?.joinLink || '')}">
-      <div class="actions"><button class="btn secondary" id="save-link">Save</button></div>
-    </div>
-
-    <div class="panel">
-      <h3>Files</h3>
-      <ul class="filelist" id="files"><li class="dim small">Loading…</li></ul>
-      <label class="small" style="margin-top:.7rem;">Upload the recording
-        <input type="file" id="up-recording" accept="video/*,audio/*,.mp4,.m4a,.mp3,.mkv,.webm">
-      </label>
-      <label class="small" style="margin-top:.5rem;">Upload the report <span class="dim">(advances the case + pings the client)</span>
-        <input type="file" id="up-report" accept=".pdf,.html,.md,.doc,.docx,.jpg,.jpeg,.png,.heic">
-      </label>
-      <progress id="bar" max="100" value="0" hidden></progress>
-      <p class="error" id="err" hidden></p>
-    </div>
-
-    <div class="chat-with-advisor">
-      <div class="panel">
-        <h3>Chat with the client</h3>
-        <div id="chat"></div>
+    <div class="case-head">
+      <div class="row">
+        <h1 style="margin:0;" data-client>${esc(c.clientName || c.clientEmail || c.clientUid)}</h1>
+        <span class="status-pill" data-status>${(c.status || '?').replace('_', ' ').toUpperCase()}</span>
       </div>
-      <div class="panel advisor-panel" id="advisor"></div>
+      <p class="dim small working-line" data-working hidden style="margin:.2rem 0 0;"></p>
     </div>
+    <div data-folder></div>`;
 
-    <div class="panel draft-panel advisor-draft" id="draft-panel" hidden></div>
-
-    <div class="panel">
-      <h3>Schedule a session</h3>
-      <p class="dim small">Book this client at any time at all — pick an open slot, or type a time that isn't on the calendar. Lead time, booking horizon and business hours don't apply to you.</p>
-      <select id="sched-slot"><option value="">Loading open slots…</option></select>
-      <div id="sched-custom" style="margin-top:.5rem;" hidden>
-        <input type="datetime-local" id="sched-when">
-        <select id="sched-dur" style="margin-top:.35rem;">
-          ${[30, 45, 60, 90, 120].map((m) =>
-            `<option value="${m}" ${m === 60 ? 'selected' : ''}>${m} minutes</option>`).join('')}
-        </select>
-        <p class="dim small" style="margin:.3rem 0 0;">Times are MST. Evenings, weekends and tomorrow are all fair game — the slot is created for this client only and never shows up on the public picker.</p>
-      </div>
-      <div id="sched-modes" style="margin-top:.6rem;">
-        <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="reschedule" checked>
-          Reschedule the main appointment <span class="dim">(no charge)</span></label>
-        <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="followup" ${followUpAvailable(c) ? '' : 'disabled'}>
-          Book their paid follow-up ${followUpAvailable(c) ? '' : `<span class="dim">(${followUpUnavailableReason(c)})</span>`}</label>
-        <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="charge">
-          Charge for a session:</label>
-        <div id="sched-charge" style="margin:.35rem 0 0 1.4rem;" hidden>
-          <select id="sched-pct">
-            ${[0, 25, 50, 75, 100, 125, 150].map((p) =>
-              `<option value="${p}" ${p === 50 ? 'selected' : ''}>${p}% — ${p === 0 ? 'no charge' : '$' + dollars((p * CASE_PRICE_CENTS) / 100)}</option>`).join('')}
-          </select>
-          <input type="text" id="sched-tag" maxlength="120" placeholder="Invoice line (optional) — e.g. Records deep-dive session" style="margin-top:.35rem;">
-          <p class="dim small" style="margin:.3rem 0 0;">The client pays through Stripe to confirm; the slot holds for 24 hours. Your tagline is the line item on their receipt.</p>
-        </div>
-      </div>
-      <p class="error" id="sched-err" hidden></p>
-      <div id="sched-result" class="dim small" style="margin-top:.4rem;"></div>
-      <div class="actions"><button class="btn secondary" id="sched-go">Schedule</button></div>
-    </div>
-
-    <div class="panel">
-      <h3>Milestones</h3>
-      <div class="actions" style="margin-top:.3rem;">
-        <button class="btn secondary" data-action="recording-uploaded">Call done — start 7-day report clock</button>
-        <button class="btn secondary" data-action="report-uploaded">Report delivered</button>
-        ${c.status === 'closed' ? '<span class="dim small">Case closed.</span>' : ''}
-      </div>
-      <p class="dim small" style="margin-top:.6rem;">Uploading a recording or report triggers its milestone automatically; the buttons cover manual corrections.</p>
-    </div>`;
-
-  el.querySelector('#save-link').addEventListener('click', saveLink);
-  wireScheduler(el);
-  el.querySelectorAll('[data-action]').forEach((b) =>
-    b.addEventListener('click', () => milestone(b.dataset.action, b)));
-  el.querySelector('#up-recording').addEventListener('change', (e) =>
-    upload(e.target.files[0], 'recording', 'recording-uploaded'));
-  el.querySelector('#up-report').addEventListener('change', (e) =>
-    upload(e.target.files[0], 'report', 'report-uploaded'));
+  folder = mountFolder({
+    container: el.querySelector('[data-folder]'),
+    storageKey: `case-${caseId}`,
+    initial: 'overview',
+    pages: [
+      {
+        id: 'overview', title: 'Overview', icon: '⚡',
+        render: (pane) => paintOverview(pane),
+      },
+      {
+        id: 'chat', title: 'Chat', icon: '💬', fade: true,
+        render: (pane) => {
+          pane.innerHTML = `
+            <div class="panel">
+              <h3>Chat with the client</h3>
+              <div id="chat"></div>
+            </div>`;
+        },
+        onShow: (pane) => {
+          const log = pane.querySelector('[data-log]');
+          if (log) log.scrollTop = log.scrollHeight;
+        },
+      },
+      {
+        id: 'advisor', title: 'Advisor', icon: '👨‍⚕️',
+        render: (pane) => { pane.innerHTML = '<div class="panel advisor-panel" id="advisor"></div>'; },
+      },
+      {
+        id: 'dx', title: 'Differential', icon: '🧬',
+        // The advisor owns this page and repaints it on every state poll.
+        render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
+      },
+      {
+        id: 'files', title: 'Files', icon: '📁',
+        render: (pane) => paintFiles(pane),
+      },
+      {
+        id: 'notes', title: 'Notes', icon: '📝',
+        render: (pane) => {
+          // Private to Eric: stored under `private/`, which is browser-denied
+          // in both directions, so it only ever moves through the admin-gated
+          // Worker route. The saved html arrives with the advisor state poll
+          // and lands via setHtml, which refuses to clobber live typing.
+          notes = mountNotes({
+            container: pane,
+            initialHtml: notesHtml,
+            onSave: async (html) => {
+              const token = await user.getIdToken();
+              const res = await fetch('/api/advisor', {
+                method: 'POST',
+                headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+                body: JSON.stringify({ kind: 'case', id: caseId, action: 'note', html }),
+              });
+              if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Save failed (${res.status})`);
+            },
+          });
+        },
+      },
+      {
+        id: 'drafts', title: 'Drafts', icon: '✍️',
+        // Today's draft panel, relocated. The advisor renders into it and
+        // owns its heading and its hidden state.
+        render: (pane) => { pane.innerHTML = '<div class="panel draft-panel advisor-draft" id="draft-panel" hidden></div>'; },
+      },
+    ],
+  });
 
   const chat = mountChat({
-    container: el.querySelector('#chat'),
+    container: folder.el('chat').querySelector('#chat'),
     parentPath: ['cases', caseId],
     user,
     myRole: 'admin',
@@ -173,15 +156,183 @@ function render(el) {
   // firestore.rules. An approved draft goes out through the same send path as
   // anything I type, so it lands as an ordinary message from me.
   mountAdvisor({
-    container: el.querySelector('#advisor'),
+    container: folder.el('advisor').querySelector('#advisor'),
     kind: 'case',
     id: caseId,
     user,
     onSend: (text) => chat.send(text),
-    // Drafts live in their own section below the chat/advisor pair, not
-    // buried inside the panel.
-    draftContainer: el.querySelector('#draft-panel'),
+    // Drafts live on their own page, not buried inside the panel.
+    draftContainer: folder.el('drafts').querySelector('#draft-panel'),
+    // The differential renders onto its own page too.
+    diffContainer: folder.el('dx'),
   });
+
+  renderedFor = caseId;
+}
+
+/** The always-visible bit above the tabs: name and status pill. */
+function refreshHeader() {
+  const c = data;
+  const name = document.querySelector('[data-client]');
+  const pill = document.querySelector('[data-status]');
+  if (name) name.textContent = c.clientName || c.clientEmail || c.clientUid;
+  if (pill) pill.textContent = (c.status || '?').replace('_', ' ').toUpperCase();
+}
+
+// The working line under the client's name, kept current by the advisor's
+// state poll. Eric's override wins and carries his ✎ mark.
+document.addEventListener('pa-advisor-state', (e) => {
+  const d = e.detail || {};
+  if (d.id && d.id !== caseId) return;
+
+  // The saved notes ride the same poll. setHtml refuses to overwrite work in
+  // progress, so this is safe to call on every tick.
+  if (typeof d.notes === 'string') {
+    notesHtml = d.notes;
+    notes?.setHtml(d.notes);
+  }
+
+  const wl = document.querySelector('[data-working]');
+  if (!wl) return;
+  const over = d.dxOverride && d.dxOverride.text;
+  const text = over || d.workingLine || '';
+  wl.textContent = text ? text + (over ? ' ✎' : '') : '';
+  wl.hidden = !text;
+});
+
+/**
+ * The Overview page: the info bar, the booking-request panel when one is
+ * waiting, then the management levers folded into tight rows.
+ */
+function paintOverview(pane) {
+  const c = data;
+  const start = c.appointment && toDate(c.appointment.start);
+  const mtFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+  const due = c.reportDueAt
+    ? Math.ceil((toDate(c.reportDueAt) - Date.now()) / 86_400_000)
+    : null;
+
+  pane.innerHTML = `
+    ${infoBar(c, mtFmt, start, due)}
+    ${c.appointment?.requested ? `
+    <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
+      <h3 style="margin:0 0 .3rem; color:var(--orange);">Booking request — not on your calendar</h3>
+      <p class="small" style="margin:0 0 .2rem;">They asked for
+        <strong>${start ? esc(mtFmt.format(start)) : 'an unknown time'} MST</strong>, paid in full.
+        Nothing is reserved until you confirm.</p>
+      <p class="dim small" style="margin:0 0 .7rem;">Declining keeps the case and the payment;
+        it just flags the case so you can offer another time below.</p>
+      <button class="btn" data-action="confirm-request">Confirm this time</button>
+      <button class="btn quiet" data-action="deny-request">Can't make it</button>
+    </div>` : ''}
+
+    <details class="mgmt" data-k="sched">
+      <summary>📅 Schedule a session</summary>
+      <div class="mgmt-body">
+        <p class="dim small">Book this client at any time at all — pick an open slot, or type a time that isn't on the calendar. Lead time, booking horizon and business hours don't apply to you.</p>
+        <select id="sched-slot"><option value="">Loading open slots…</option></select>
+        <div id="sched-custom" style="margin-top:.5rem;" hidden>
+          <input type="datetime-local" id="sched-when">
+          <select id="sched-dur" style="margin-top:.35rem;">
+            ${[30, 45, 60, 90, 120].map((m) =>
+              `<option value="${m}" ${m === 60 ? 'selected' : ''}>${m} minutes</option>`).join('')}
+          </select>
+          <p class="dim small" style="margin:.3rem 0 0;">Times are MST. Evenings, weekends and tomorrow are all fair game — the slot is created for this client only and never shows up on the public picker.</p>
+        </div>
+        <div id="sched-modes" style="margin-top:.6rem;">
+          <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="reschedule" checked>
+            Reschedule the main appointment <span class="dim">(no charge)</span></label>
+          <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="followup" ${followUpAvailable(c) ? '' : 'disabled'}>
+            Book their paid follow-up ${followUpAvailable(c) ? '' : `<span class="dim">(${followUpUnavailableReason(c)})</span>`}</label>
+          <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="charge">
+            Charge for a session:</label>
+          <div id="sched-charge" style="margin:.35rem 0 0 1.4rem;" hidden>
+            <select id="sched-pct">
+              ${[0, 25, 50, 75, 100, 125, 150].map((p) =>
+                `<option value="${p}" ${p === 50 ? 'selected' : ''}>${p}% — ${p === 0 ? 'no charge' : '$' + dollars((p * CASE_PRICE_CENTS) / 100)}</option>`).join('')}
+            </select>
+            <input type="text" id="sched-tag" maxlength="120" placeholder="Invoice line (optional) — e.g. Records deep-dive session" style="margin-top:.35rem;">
+            <p class="dim small" style="margin:.3rem 0 0;">The client pays through Stripe to confirm; the slot holds for 24 hours. Your tagline is the line item on their receipt.</p>
+          </div>
+        </div>
+        <p class="error" id="sched-err" hidden></p>
+        <div id="sched-result" class="dim small" style="margin-top:.4rem;"></div>
+        <div class="actions"><button class="btn secondary" id="sched-go">Schedule</button></div>
+      </div>
+    </details>
+
+    <details class="mgmt" data-k="link">
+      <summary>🔗 ${c.appointment?.method === 'phone' ? 'Phone note' : 'Meeting link'}</summary>
+      <div class="mgmt-body">
+        <p class="dim small">${c.appointment?.method === 'phone'
+          ? `Client expects a call at <strong>${esc(c.appointment.phone || '?')}</strong>. Post the number you'll call from:`
+          : 'Paste the video-call link the client should join:'}</p>
+        <input type="url" id="joinlink" placeholder="${c.appointment?.method === 'phone' ? 'Calling from +1 …' : 'https://…'}"
+          value="${esc(c.appointment?.joinLink || '')}">
+        <div class="actions"><button class="btn secondary" id="save-link">Save</button></div>
+      </div>
+    </details>
+
+    <details class="mgmt" data-k="miles">
+      <summary>✓ Milestones</summary>
+      <div class="mgmt-body">
+        <div class="actions" style="margin-top:.3rem;">
+          <button class="btn secondary" data-action="recording-uploaded">Call done — start 7-day report clock</button>
+          <button class="btn secondary" data-action="report-uploaded">Report delivered</button>
+          ${c.status === 'closed' ? '<span class="dim small">Case closed.</span>' : ''}
+        </div>
+        <p class="dim small" style="margin-top:.6rem;">Uploading a recording or report triggers its milestone automatically; the buttons cover manual corrections.</p>
+      </div>
+    </details>
+
+    ${c.status !== 'closed' ? `
+    <details class="mgmt" data-k="close">
+      <summary>⛔ Close case</summary>
+      <div class="mgmt-body">
+        <button class="btn danger" data-action="close">Close case</button>
+      </div>
+    </details>` : ''}`;
+
+  pane.querySelector('#save-link').addEventListener('click', saveLink);
+  wireScheduler(pane);
+  pane.querySelectorAll('[data-action]').forEach((b) =>
+    b.addEventListener('click', () => milestone(b.dataset.action, b)));
+}
+
+/** Repaint Overview in place, keeping whichever rows Eric had open. */
+function refreshOverview() {
+  const pane = folder?.el('overview');
+  if (!pane) return;
+  const open = new Set(
+    [...pane.querySelectorAll('details[data-k][open]')].map((d) => d.dataset.k));
+  paintOverview(pane);
+  open.forEach((k) => {
+    const d = pane.querySelector(`details[data-k="${k}"]`);
+    if (d) d.open = true;
+  });
+}
+
+/** The Files page shell. Painted once; refreshFiles fills the list. */
+function paintFiles(pane) {
+  pane.innerHTML = `
+    <div class="panel">
+      <h3>Files</h3>
+      <ul class="filelist" id="files"><li class="dim small">Loading…</li></ul>
+      <label class="small" style="margin-top:.7rem;">Upload the recording
+        <input type="file" id="up-recording" accept="video/*,audio/*,.mp4,.m4a,.mp3,.mkv,.webm">
+      </label>
+      <label class="small" style="margin-top:.5rem;">Upload the report <span class="dim">(advances the case + pings the client)</span>
+        <input type="file" id="up-report" accept=".pdf,.html,.md,.doc,.docx,.jpg,.jpeg,.png,.heic">
+      </label>
+      <progress id="bar" max="100" value="0" hidden></progress>
+      <p class="error" id="err" hidden></p>
+    </div>`;
+  pane.querySelector('#up-recording').addEventListener('change', (e) =>
+    upload(e.target.files[0], 'recording', 'recording-uploaded'));
+  pane.querySelector('#up-report').addEventListener('change', (e) =>
+    upload(e.target.files[0], 'report', 'report-uploaded'));
 }
 
 async function api(body) {
@@ -241,6 +392,7 @@ async function upload(file, kind, milestoneAction) {
 
 async function refreshFiles() {
   const listEl = document.getElementById('files');
+  if (!listEl) return;
   const rows = [];
   for (const [kind, path] of [
     ['report', `cases/${caseId}/report`],
@@ -272,16 +424,27 @@ async function refreshFiles() {
     return (r.kind === 'upload' || r.kind === 'report') && !/heic|heif/.test(ct) &&
       (ct.startsWith('image/') || ct === 'application/pdf' || /\.pdf$/i.test(r.name));
   };
+  // Image rows get a real thumbnail; tapping it opens the same lightbox the
+  // chat uses. HEIC won't render in an <img>, so it stays a plain link.
+  const thumbable = (r) => {
+    const ct = (r.contentType || '').toLowerCase();
+    return ct.startsWith('image/') && !/heic|heif/.test(ct);
+  };
   const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
   listEl.innerHTML = rows.map((r, i) => `
     <li>
       <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
+        ${thumbable(r) ? `<img class="thumb" src="${r.url}" alt="" loading="lazy" data-thumb="${i}">` : ''}
         <a href="${r.url}" target="_blank" rel="noopener">${esc(r.name)}</a>${
           reviewable(r)
             ? `<button class="btn quiet file-review" data-review="${i}" title="Select for the advisor to read, then press Analyze in the advisor panel">👨‍⚕️</button>`
             : ''}</span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
     </li>`).join('');
+  listEl.querySelectorAll('[data-thumb]').forEach((img) => {
+    const r = rows[Number(img.dataset.thumb)];
+    img.addEventListener('click', () => openLightbox({ name: r.name, url: r.url }));
+  });
   // Toggle to stage the file for the advisor's next analysis; highlighted
   // while staged. The advisor panel owns the selection and the Analyze run.
   listEl.querySelectorAll('[data-review]').forEach((b) => {

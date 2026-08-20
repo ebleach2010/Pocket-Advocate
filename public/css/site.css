@@ -1070,3 +1070,556 @@ body.lightbox-open { overflow: hidden; }
 
 /* The draft's own section on the admin case page. */
 .draft-panel { border-color: var(--magenta); box-shadow: var(--glow-m); }
+
+/* ============================================================================
+   The case folder - card stock in a neon room.
+
+   Owned by folder.js (public/js/folder.js). Merge target: public/css/site.css.
+
+   Manila lives on the CHROME only: the folder card on the shelf, the cut tabs,
+   the rim and the crease of the open folder. The pages inside stay the app's
+   own dark panels, so a case reads as paper resting on the desk rather than a
+   cream slab dropped into the dark.
+
+   The five variables below are the whole manila palette. Retint them and every
+   piece of folder chrome follows.
+   ========================================================================= */
+:root {
+  --manila: #DEC791;        /* the card stock */
+  --manila-2: #F0DFB0;      /* the lit top edge of a fold */
+  --manila-ink: #2A2113;    /* type printed on the stock */
+  --manila-edge: #A98F5F;   /* cut edges, rims, the back cover */
+  --manila-fold: rgba(10, 7, 2, .7); /* the crease where a flap meets a body */
+}
+
+/* ---------------------------------------------------------------- the shelf */
+.drawer { display: grid; gap: .75rem; margin: .6rem 0 1.2rem; }
+
+.folder {
+  /* Local layout constants. --fld-tab keeps the tab band and the paper edges
+     peeking behind it in sync; --fld-open matches OPEN_MS in folder.js. */
+  --fld-tab: 1.68rem;
+  --fld-open: 450ms;
+  position: relative; display: block; isolation: isolate;
+  /* perspective gives the flap real depth on open. Safe here and only here:
+     the shelf never holds the chat, which is position:fixed in full screen. */
+  perspective: 900px;
+  padding: 0 3px 5px; margin: 0;
+  text-decoration: none; color: var(--manila-ink);
+  border-radius: 12px 14px 14px 14px;
+  background: var(--manila-edge);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .25) inset, 0 6px 16px rgba(0, 0, 0, .45);
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.folder:hover, .folder:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .25) inset, 0 10px 22px rgba(0, 0, 0, .5),
+              0 0 0 1px var(--cyan-dim), var(--glow-c);
+}
+.folder:focus-visible { outline: 2px solid var(--magenta); outline-offset: 3px; }
+
+/* Sheets inside the folder, peeking above the flap next to the tab. */
+.folder::before, .folder::after {
+  content: ''; position: absolute; z-index: 0; pointer-events: none;
+  top: calc(var(--fld-tab) - .5rem); height: 1rem; right: .7rem; width: 42%;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, rgba(250, 247, 238, .95), rgba(226, 219, 200, .8));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+}
+.folder::after { right: 1.3rem; width: 32%; top: calc(var(--fld-tab) - .34rem); opacity: .8; }
+
+/* The cut tab. Symmetric slant so it reads as tab wherever the stagger puts it,
+   and above the sheets so a long name never gets a paper edge drawn across it. */
+.folder-tab {
+  position: relative; z-index: 1;
+  display: inline-flex; align-items: center; max-width: 74%;
+  min-height: var(--fld-tab); padding: .2rem .9rem .3rem;
+  background: linear-gradient(180deg, var(--manila-2), var(--manila));
+  clip-path: polygon(.45rem 0, calc(100% - .45rem) 0, 100% 100%, 0 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55);
+}
+/* Consecutive folders cut their tabs at different positions, the way a drawer
+   of real files does, so a shelf never reads as one striped block. */
+.drawer .folder:nth-child(3n+2) .folder-tab { margin-left: 12%; }
+.drawer .folder:nth-child(3n+3) .folder-tab { margin-left: 24%; }
+
+/* Longhands, not the `font: 700 .88rem/1.2 inherit` shorthand used elsewhere in
+   the sheet: `inherit` is not a valid family name, so that shorthand is a
+   dropped declaration by the grammar. These inherit the family by saying
+   nothing about it. */
+.folder-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 700; font-size: .88rem; line-height: 1.2; letter-spacing: .01em;
+  color: var(--manila-ink);
+}
+
+/* The front flap: the face of the card, and the piece that swings open. */
+.folder-body {
+  position: relative; z-index: 1; margin-top: -1px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: .3rem .7rem; align-items: center;
+  padding: .6rem .85rem .7rem;
+  border: 1px solid var(--manila-edge); border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .45), rgba(255, 255, 255, 0) 40%),
+    linear-gradient(180deg, var(--manila-2), var(--manila) 80%);
+  /* The fold: a dark crease along the top where the flap meets the back cover. */
+  box-shadow: 0 -3px 7px -4px var(--manila-fold), 0 2px 7px rgba(0, 0, 0, .32);
+  transform-origin: bottom center;
+}
+
+/* The working diagnosis. Also the long-press target for an override, hence the
+   44px floor and the suppressed iOS selection callout. */
+.folder-dx {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: .35rem; min-height: 44px;
+  font-size: .96rem; font-weight: 600; line-height: 1.35; color: var(--manila-ink);
+  overflow-wrap: anywhere;
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+}
+/* Quiet type on card stock is done with opacity, never a baked-in brown, so a
+   retinted --manila-ink carries through every line of it. */
+.folder-dx.empty { font-weight: 500; font-style: italic; opacity: .72; }
+.folder-dx.mine { font-weight: 700; }
+.dx-pen { flex: none; font-size: .8rem; opacity: .8; }
+
+.folder-meta { grid-column: 1; font-size: .82rem; color: var(--manila-ink); opacity: .74; }
+.folder-flags {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; align-items: center; gap: .3rem;
+  font-size: .74rem; color: var(--manila-ink); opacity: .78;
+}
+/* A dark chip on card stock: the pill keeps its own neon border and text, and
+   stops fighting the manila underneath it. */
+.folder .status-pill {
+  grid-column: 2; justify-self: end;
+  background: rgba(8, 11, 19, .88); box-shadow: 0 1px 3px rgba(0, 0, 0, .35);
+}
+
+/* The open: the flap swings up on its bottom edge, the sheets lift and fan,
+   the whole card comes toward you. Then folder.js navigates. */
+.folder.opening { z-index: 3; pointer-events: none; animation: fld-lift var(--fld-open) cubic-bezier(.2, .85, .3, 1) both; }
+.folder.opening .folder-body { animation: fld-flap var(--fld-open) cubic-bezier(.3, .8, .35, 1) both; }
+.folder.opening .folder-tab { animation: fld-tab var(--fld-open) ease-out both; }
+.folder.opening::before { animation: fld-sheet-a var(--fld-open) cubic-bezier(.2, .8, .3, 1) both; }
+.folder.opening::after { animation: fld-sheet-b var(--fld-open) cubic-bezier(.2, .8, .3, 1) both; }
+
+@keyframes fld-lift {
+  0% { transform: none; }
+  55% { transform: scale(1.03) translateY(-4px); }
+  100% { transform: scale(1.07) translateY(-11px); }
+}
+@keyframes fld-flap {
+  0% { transform: rotateX(0deg); }
+  100% { transform: rotateX(-54deg) translateY(-2px); }
+}
+@keyframes fld-tab {
+  0% { transform: none; }
+  100% { transform: translateY(-3px) rotate(-.6deg); }
+}
+@keyframes fld-sheet-a {
+  0% { transform: none; }
+  100% { transform: translateY(-15px) rotate(-2.6deg); }
+}
+@keyframes fld-sheet-b {
+  0% { transform: none; }
+  100% { transform: translateY(-9px) rotate(3.2deg); }
+}
+
+/* ------------------------------------------------------- the open workspace */
+/* Never give .case-folder transform, filter, backdrop-filter, contain, or
+   will-change: transform. The full-screen chat is position:fixed and lives in
+   one of its pages, and any of those would pin it to this box instead of the
+   screen. position:relative is fine and is all this needs. */
+.case-folder {
+  position: relative;
+  padding: .1rem .4rem .55rem;
+  border: 1px solid var(--manila-edge); border-top: none;
+  border-radius: 0 0 14px 14px;
+  box-shadow: inset 0 7px 13px -9px var(--manila-fold);
+}
+/* Two sheet edges showing under the closed bottom of the folder. */
+.case-folder::after {
+  content: ''; position: absolute; pointer-events: none;
+  left: 1.5rem; right: 1.5rem; bottom: -5px; height: 5px;
+  border-radius: 0 0 9px 9px;
+  background: var(--manila); opacity: .5;
+  box-shadow: 0 4px 0 -1px var(--manila-edge);
+}
+
+/* The tab strip. z-index 4: under the header at 5, per the budget. */
+.folder-tabs {
+  position: sticky; top: 3rem; z-index: 4;
+  display: flex; align-items: flex-end; gap: .22rem;
+  min-height: calc(44px + .75rem);
+  margin: 0 -.4rem .7rem; padding: .4rem .5rem 0;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  background: rgba(7, 9, 15, .9); backdrop-filter: blur(8px);
+  border-bottom: 2px solid var(--manila-edge);
+}
+.folder-tabs::-webkit-scrollbar { display: none; }
+.folder-tabs > a {
+  position: relative; flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: .34rem;
+  min-height: 44px; padding: .5rem .9rem;
+  white-space: nowrap; text-decoration: none;
+  font-weight: 700; font-size: .82rem; line-height: 1; letter-spacing: .01em;
+  color: var(--manila-ink);
+  /* Flat stock behind the label, the darker cut only along the base: a tab that
+     recedes without dropping its label onto a shadow. */
+  background: linear-gradient(180deg, var(--manila) 0 78%, var(--manila-edge));
+  /* The cut: a trapezoid a touch wider at the base, sliced from card stock. */
+  clip-path: polygon(.5rem 0, calc(100% - .5rem) 0, 100% 100%, 0 100%);
+}
+/* Staggered cuts: the tabs behind the front one sit lower, so the strip has the
+   ragged top edge of a real set of files. */
+.folder-tabs > a:nth-child(3n+2) { margin-top: .3rem; }
+.folder-tabs > a:nth-child(3n+3) { margin-top: .15rem; }
+/* The front-most tab: full height, lit stock, and pushed 2px over the rim so it
+   joins the page body below instead of sitting on a shelf above it. */
+.folder-tabs > a.on {
+  margin-top: 0; margin-bottom: -2px; padding-bottom: calc(.5rem + 2px);
+  background: linear-gradient(180deg, var(--manila-2), var(--manila));
+  /* drop-shadow, not box-shadow: the glow has to follow the cut, and box-shadow
+     is clipped away by clip-path. */
+  filter: drop-shadow(0 -1px 6px var(--cyan-dim));
+}
+.folder-tabs > a.on::after {
+  content: ''; position: absolute; top: 0; left: .5rem; right: .5rem; height: 2px;
+  border-radius: 2px; background: var(--cyan);
+}
+/* Inset so the clip-path can't shave the focus ring off. */
+.folder-tabs > a:focus-visible { outline: 2px solid var(--magenta); outline-offset: -3px; }
+.ftab-ic { font-size: .95rem; line-height: 1; }
+.ftab-t { line-height: 1; }
+/* Only the label recedes on the tabs behind the front one: fading the tab
+   itself would fade its card stock into the dark page behind it. */
+.folder-tabs > a .ftab-ic, .folder-tabs > a .ftab-t { opacity: .82; }
+.folder-tabs > a.on .ftab-ic, .folder-tabs > a.on .ftab-t { opacity: 1; }
+
+/* The client's copy of the same engine: same tabs, same flips, no manila. The
+   folder is the advocate's working object, not something a client should have to
+   read as a metaphor. Add `plain` to the container (`el.classList.add('plain')`
+   any time after mountPages) and the chrome drops away, leaving the app's own
+   pill tabs. Nothing in folder.js changes. */
+.case-folder.plain { padding: 0; border: none; border-radius: 0; box-shadow: none; }
+.case-folder.plain::after { content: none; }
+.case-folder.plain .folder-tabs {
+  align-items: center; gap: .4rem; min-height: 0;
+  margin: 0 0 1rem; padding: .5rem .1rem .55rem;
+  border-bottom: none;
+}
+.case-folder.plain .folder-tabs > a {
+  margin: 0; padding: .3rem 1rem;
+  font-weight: 600; font-size: .85rem;
+  color: var(--dim); background: none; filter: none;
+  border: 1px solid var(--line); border-radius: 999px; clip-path: none;
+}
+.case-folder.plain .folder-tabs > a.on {
+  color: var(--cyan); background: none;
+  border-color: var(--cyan); box-shadow: var(--glow-c);
+}
+.case-folder.plain .folder-tabs > a.on::after { content: none; }
+.case-folder.plain .folder-tabs > a .ftab-ic,
+.case-folder.plain .folder-tabs > a .ftab-t { opacity: 1; }
+
+/* ------------------------------------------------------------- flip a page */
+.fpage[hidden] { display: none !important; }
+.fpage.f-in-r { animation: fpage-in-r 220ms cubic-bezier(.2, .7, .3, 1) both; }
+.fpage.f-in-l { animation: fpage-in-l 220ms cubic-bezier(.2, .7, .3, 1) both; }
+.fpage.f-fade { animation: fpage-fade 190ms ease-out both; }
+
+/* The hard guard. folder.js marks any page holding the full-screen chat, and
+   these rules make a transform impossible on it even if a future flip class
+   says otherwise. */
+.fpage.no-transform, .case-folder.no-transform { transform: none !important; }
+.fpage.no-transform.f-in-l,
+.fpage.no-transform.f-in-r,
+.fpage.no-transform.enter,
+.case-folder.no-transform.enter { animation-name: fpage-fade !important; }
+
+/* The workspace settling, as if the folder had just been set down. */
+.case-folder.enter, .fpage.enter { animation: fld-settle 380ms cubic-bezier(.2, .8, .3, 1) both; }
+
+@keyframes fpage-in-r {
+  from { opacity: 0; transform: translate3d(18px, 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fpage-in-l {
+  from { opacity: 0; transform: translate3d(-18px, 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fpage-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fld-settle {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .folder { transition: none; }
+  .folder:hover, .folder:focus-visible { transform: none; }
+  .folder.opening,
+  .folder.opening .folder-body,
+  .folder.opening .folder-tab,
+  .folder.opening::before,
+  .folder.opening::after { animation: none; }
+  .fpage.f-in-l, .fpage.f-in-r, .fpage.f-fade,
+  .case-folder.enter, .fpage.enter { animation: none; }
+  .folder-tabs { scroll-behavior: auto; }
+}
+
+/* Phones: the drawer tabs give back their stagger before the name has to
+   truncate, and the strip tightens up. */
+@media (max-width: 420px) {
+  .drawer .folder:nth-child(3n+2) .folder-tab { margin-left: 8%; }
+  .drawer .folder:nth-child(3n+3) .folder-tab { margin-left: 16%; }
+  .folder-tab { max-width: 84%; }
+  .folder-tabs { gap: .16rem; padding-left: .35rem; padding-right: .35rem; }
+  .folder-tabs > a { padding: .5rem .75rem; font-size: .8rem; }
+}
+
+/* ============================================================================
+   The private notebook - a sheet of lined paper on a dark desk.
+
+   Owned by notes.js (public/js/notes.js). Merge target: public/css/site.css.
+
+   The paper is genuinely light in a dark app on purpose: it is a sheet of
+   paper lying on the desk, not a panel, so it carries its own ink colour
+   rather than borrowing the room's. The four variables below are the whole
+   sheet. Retint them and the paper follows.
+   ========================================================================= */
+:root {
+  --paper: #F6EEDC;                 /* the stock */
+  --paper-ink: #1E1A14;             /* what he writes with */
+  --paper-rule: rgba(93, 143, 178, .55);  /* the printed blue ruling */
+  --paper-margin: rgba(196, 106, 106, .7); /* the red margin rule */
+}
+
+/* ---------------------------------------------------------------- the sheet */
+
+.notes-root { display: block; margin: .2rem 0 1.2rem; }
+
+.notes-paper {
+  /* The one number the sheet is ruled by. It is the ruling period, it is the
+     editor's line-height, and it is the top padding that drops the first line
+     onto a line instead of floating above it. Change it and the paper re-rules
+     itself correctly; change any of the three separately and the text walks off
+     the lines a rule at a time down the page. */
+  --nt-rule: 1.9rem;
+  /* Where the red margin rule stands, and therefore where the text starts. */
+  --nt-gutter: 2.9rem;
+  /* line-height EXACTLY one rule: this is what makes the ruling line up. It has
+     to stay a LENGTH, never a unitless number - a number is re-resolved against
+     each child's own font-size, so a heading or a <font size> would quietly get
+     its own leading and slide everything under it off the lines. */
+  line-height: var(--nt-rule);
+  /* One blank rule at the top, so line one sits on the second printed line
+     rather than above the first. The bottom keeps two rules of clean paper
+     under the last sentence, the way a hand stops before the edge. */
+  padding: var(--nt-rule) 1.05rem calc(var(--nt-rule) * 2) var(--nt-gutter);
+  min-height: calc(var(--nt-rule) * 12);
+  /* A serif because this is the one page in the app that is pretending to be
+     paper and not a screen. */
+  font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+  font-size: 1rem;
+  color: var(--paper-ink);
+  caret-color: var(--paper-ink);
+  background-color: var(--paper);
+  background-image:
+    /* the red margin rule, standing on its own layer so it can be one hairline
+       wide regardless of the ruling underneath it */
+    linear-gradient(var(--paper-margin), var(--paper-margin)),
+    /* the ruling: a hairline at the BOTTOM of every rule, which is where the
+       feet of the text in that rule land */
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent calc(var(--nt-rule) - 1px),
+      var(--paper-rule) calc(var(--nt-rule) - 1px),
+      var(--paper-rule) var(--nt-rule));
+  background-size: 1px 100%, auto;
+  background-position: calc(var(--nt-gutter) - .8rem) 0, 0 0;
+  background-repeat: no-repeat, repeat;
+  /* If the sheet ever ends up inside a scroller, the ruling scrolls with the
+     words instead of sitting still behind them. */
+  background-attachment: local;
+  border: 1px solid var(--line); border-top: 0;
+  border-radius: 0 0 12px 12px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .45);
+  /* A pasted URL is one unbreakable token, and it must not widen the sheet
+     past the phone. */
+  overflow-wrap: anywhere;
+  outline: none;
+}
+.notes-paper:focus-visible {
+  box-shadow: 0 0 0 2px var(--cyan), 0 10px 24px rgba(0, 0, 0, .45);
+}
+.notes-paper::selection, .notes-paper ::selection {
+  background: rgba(45, 226, 255, .3); color: var(--paper-ink);
+}
+
+/* Every vertical margin inside the sheet is zero or a whole rule. A stray
+   .5rem paragraph gap - which is what the app's base styles hand out - slides
+   every line below it off the ruling, and the drift compounds down the page.
+   Blocks are separated by the ruling itself, exactly as they are on paper. */
+.notes-paper > :first-child { margin-top: 0; }
+.notes-paper p, .notes-paper div, .notes-paper ul, .notes-paper ol,
+.notes-paper li, .notes-paper blockquote, .notes-paper h1,
+.notes-paper h2, .notes-paper h3 { margin: 0; }
+
+/* Headings take exactly two rules, so a heading still lands on a line and the
+   body under it stays in step. Their font sizes stay under the two-rule box on
+   purpose: a heading that outgrows its line box is a heading that pushes the
+   ruling apart. */
+.notes-paper h1, .notes-paper h2 { line-height: calc(var(--nt-rule) * 2); }
+.notes-paper h1 { font-size: 1.5rem; letter-spacing: -.01em; }
+.notes-paper h2 { font-size: 1.22rem; letter-spacing: -.01em; }
+/* h3 only ever arrives by paste - the toolbar does not offer it - so it takes
+   a single rule at a size that fits one. */
+.notes-paper h3 { font-size: 1.02rem; line-height: var(--nt-rule); }
+.notes-paper h1, .notes-paper h2, .notes-paper h3 {
+  font-weight: 700; color: var(--paper-ink); text-wrap: balance;
+}
+
+.notes-paper ul, .notes-paper ol { padding-left: 1.5rem; }
+.notes-paper blockquote {
+  padding-left: .8rem;
+  border-left: 2px solid var(--paper-margin);
+  font-style: italic;
+}
+/* <font size> is what the size buttons write, and the worker keeps it. The
+   line-height stays inherited from the sheet, so big text changes the letters
+   without moving the ruling. */
+.notes-paper font { line-height: inherit; }
+
+/* The empty sheet says what it is. Generated content, never inserted text:
+   real placeholder text is how people end up saving the word "placeholder". */
+.notes-paper:empty::before {
+  content: 'Start writing. Only you ever see this page.';
+  color: var(--paper-ink); opacity: .38;
+  pointer-events: none;
+}
+
+/* -------------------------------------------------------------- the toolbar */
+
+.notes-toolbar {
+  /* Sticky in the page, never fixed to the viewport: a fixed bar and the iOS
+     keyboard fight over the same strip of screen and the keyboard wins, which
+     leaves the buttons stranded under it. Sticky keeps the bar sitting on top
+     of the paper wherever he has scrolled to.
+     The offset is the header (3rem) plus the folder tab strip under it; z-index
+     3 keeps it below that strip at 4, per the budget. */
+  position: sticky; top: calc(3rem + 3.3rem); z-index: 3;
+  display: flex; flex-wrap: wrap; align-items: center; gap: .3rem;
+  padding: .4rem .45rem;
+  background: rgba(7, 9, 15, .93); backdrop-filter: blur(8px);
+  border: 1px solid var(--line); border-radius: 12px 12px 0 0;
+}
+
+.notes-tool {
+  /* 44px in both directions, on every screen size. A formatting button that
+     needs aiming gets used once. */
+  min-width: 44px; min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 .5rem;
+  background: var(--panel-2); color: var(--soft);
+  border: 1px solid var(--line); border-radius: 10px;
+  font: inherit; font-size: .95rem; line-height: 1;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.notes-tool:hover { border-color: var(--cyan-dim); }
+.notes-tool:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
+.notes-tool.on {
+  background: var(--cyan); border-color: var(--cyan); color: #041018;
+  box-shadow: var(--glow-c);
+}
+/* Each button wears the thing it does. */
+.notes-tool.t-b { font-weight: 800; }
+.notes-tool.t-i { font-family: Georgia, serif; font-style: italic; }
+.notes-tool.t-u { text-decoration: underline; text-underline-offset: 3px; }
+.notes-tool.t-h1, .notes-tool.t-h2 { font-weight: 700; font-size: .88rem; }
+.notes-tool.t-p { font-size: .82rem; }
+.notes-tool.t-sz { font-family: Georgia, serif; }
+.notes-tool.t-sz-s { font-size: .78rem; }
+.notes-tool.t-sz-m { font-size: 1rem; }
+.notes-tool.t-sz-l { font-size: 1.3rem; }
+
+.notes-sep {
+  flex: 0 0 auto; width: 1px; align-self: stretch;
+  margin: .35rem .15rem; background: var(--line);
+}
+
+/* The width is fixed whether it is speaking or not, so a save landing while he
+   types never reflows the bar and nudges the paper down a line. */
+.notes-saved {
+  flex: 0 0 auto; margin-left: auto; min-width: 5.2rem;
+  text-align: right; font-size: .78rem; line-height: 1.25;
+  color: var(--green); opacity: 0; pointer-events: none;
+  transition: opacity 320ms ease;
+}
+.notes-saved.show { opacity: 1; }
+.notes-saved.warn { color: var(--gold); }
+
+@media (prefers-reduced-motion: reduce) {
+  .notes-tool, .notes-saved { transition: none; }
+}
+
+/* Nine 44px targets need about 27rem of bar, which no phone has. Below that the
+   bar goes to two rows on purpose - B/I/U and the block tools, then the three
+   sizes with the saved line beside them - because the alternative, a sideways
+   scrolling strip, hides half the formatting behind a swipe. The break is
+   forced at the marked separator so it never falls mid-group. */
+@media (max-width: 27rem) {
+  .notes-brk {
+    flex-basis: 100%; width: auto; height: 0;
+    margin: 0; background: none;
+  }
+  .notes-saved { min-width: 0; flex: 1 1 4rem; }
+}
+
+/* Phones: a slightly tighter rule and gutter. The touch targets do not move. */
+@media (max-width: 420px) {
+  .notes-paper { --nt-rule: 1.8rem; --nt-gutter: 2.5rem; padding-right: .8rem; }
+  .notes-toolbar { top: calc(3rem + 3.1rem); gap: .25rem; padding: .35rem .3rem; }
+  .notes-tool { padding: 0 .35rem; }
+}
+
+/* ---- Differential page: ranked possibilities with confidence bars ----
+   The percentage is the advisor's confidence, never a clinical probability,
+   which is why the disclaimer sits in the markup and not only in the prompt. */
+.diff-head { margin: 0 0 .8rem; }
+.diff-line {
+  margin: 0; font-size: 1.05rem; line-height: 1.35; color: var(--ink);
+}
+.diff-list { display: flex; flex-direction: column; gap: .9rem; }
+.diff-row {
+  display: grid; grid-template-columns: 1fr auto; gap: .15rem .6rem;
+  align-items: baseline;
+}
+.diff-name { font-weight: 700; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.diff-pct {
+  font: 700 .95rem/1 ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--cyan-dim); font-variant-numeric: tabular-nums;
+}
+.diff-bar {
+  grid-column: 1 / -1; height: 6px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--line); overflow: hidden;
+}
+.diff-fill {
+  height: 100%; border-radius: 999px; background: var(--cyan-dim);
+  transition: width .45s cubic-bezier(.2, .8, .3, 1);
+}
+/* The leading possibility is the one printed on the folder cover, so it reads
+   brighter here too. */
+.diff-row.diff-top .diff-pct { color: var(--cyan); }
+.diff-row.diff-top .diff-fill { background: var(--cyan); box-shadow: var(--glow-c); }
+.diff-note {
+  grid-column: 1 / -1; margin: .1rem 0 0;
+  color: var(--soft); font-size: .92rem; line-height: 1.5;
+}
+.diff-disclaimer {
+  margin: 1rem 0 0; padding-top: .7rem; border-top: 1px solid var(--line);
+  color: var(--dim); font-size: .84rem; line-height: 1.5;
+}
+@media (prefers-reduced-motion: reduce) { .diff-fill { transition: none; } }

@@ -20,6 +20,22 @@ import {
 const MAX_BYTES = 25 * 1024 * 1024;
 const LONG_PRESS_MS = 550;
 
+// Corrections the advisor flagged on Eric's own messages: msgId → { wrong,
+// fixed }. Filled from the advisor panel's 'pa-advisor-state' events, which
+// only ever fire on admin pages — and belt-and-braces, only once an admin
+// chat has actually mounted (adminChat below). Clients never see any of this;
+// an applied fix lands as an ordinary edited message.
+let adminChat = false;
+window.__paCorrections = window.__paCorrections || new Map();
+document.addEventListener('pa-advisor-state', (e) => {
+  if (!adminChat) return;
+  const map = window.__paCorrections;
+  map.clear();
+  for (const c of e.detail?.corrections || []) {
+    if (c?.msgId) map.set(c.msgId, { wrong: c.wrong || '', fixed: c.fixed || '' });
+  }
+});
+
 /** Shows the advocate's live status in `el` (any element with a .p-dot child). */
 export function watchPresence(el) {
   onValue(rtdbRef(rtdb, 'presence/eric'), (snap) => {
@@ -84,6 +100,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       const mine = data.from === user.uid;
       const div = document.createElement('div');
       div.className = `msg ${mine ? 'me' : 'them'}`;
+      div.dataset.mid = m.id;
       if (data.text) {
         const span = document.createElement('span');
         span.className = 'msg-text';
@@ -554,7 +571,7 @@ function attachLongPress(el, att, saveUid) {
  * 75) so it works from either view. URLs are assigned as properties, never
  * interpolated into HTML — attachment fields are user-written data.
  */
-function openLightbox(att) {
+export function openLightbox(att) {
   if (document.querySelector('.lightbox')) return;
   const overlay = document.createElement('div');
   overlay.className = 'lightbox';
