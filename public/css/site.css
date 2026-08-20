@@ -512,6 +512,18 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 }
 .msg.them .msg-emoji-react { right: -.3rem; }
 .msg.me .msg-emoji-react { left: -.3rem; }
+/* Pass flag: an outline until tapped, then filled red and unmistakable. */
+.pass-flag {
+  display: inline-flex; align-items: center; gap: .25rem; margin-top: .35rem;
+  padding: .14rem .5rem; border-radius: 999px; font-size: .66rem; letter-spacing: .04em;
+  border: 1px dashed var(--dim); background: none; color: var(--dim); cursor: pointer;
+}
+.pass-flag.on {
+  border: 1px solid #FF5D5D; background: #B3261E; color: #fff; font-weight: 700;
+}
+.pass-flag:disabled { cursor: default; opacity: .95; }
+.msg .pass-flag { margin-left: .35rem; }
+
 /* Long-pressable messages suppress the iOS callout and selection so a held
    press opens the menu instead of Copy/Look Up. "Copy text" in the menu gives
    that back. */

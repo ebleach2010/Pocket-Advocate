@@ -117,6 +117,33 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         div.appendChild(chip);
       }
 
+      // The pass flag. A question or request from the other person carries an
+      // outline flag; tapping it fills red as PASS — "not answering that one,
+      // please don't ask why" — visible to both sides. Only whoever passed can
+      // take it back.
+      const askish = data.text && /\?|(^|\s)(please|can you|could you|would you|will you|do you|did you|have you|are you|send|upload|share|let me know)\b/i.test(data.text);
+      if (data.pass || (!mine && askish && data.text)) {
+        const flag = document.createElement('button');
+        flag.type = 'button';
+        flag.className = `pass-flag${data.pass ? ' on' : ''}`;
+        flag.textContent = data.pass ? '⚑ PASS' : '⚐ pass';
+        flag.title = data.pass
+          ? (data.pass.by === user.uid ? 'Passed — tap to take it back' : 'They passed on this — moving on')
+          : "Pass on this question — it's marked PASS and we move on, no explanation needed";
+        const canToggle = data.pass ? data.pass.by === user.uid : !mine;
+        if (canToggle) {
+          flag.addEventListener('click', async () => {
+            flag.disabled = true;
+            await post('/api/chat/pass',
+              { kind: kindOf(), id: parentPath[1], msgId: m.id, pass: !data.pass },
+              "Couldn't set that");
+          });
+        } else {
+          flag.disabled = true;
+        }
+        div.appendChild(flag);
+      }
+
       // Long-press opens the menu. What's in it depends on whose message it is:
       // reactions on theirs, editing on your own inside the 3-minute window.
       const editable = mine && !!data.text && sentAt &&
@@ -139,13 +166,14 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     });
     const hint = container.querySelector('[data-hint]');
     if (hint) {
-      hint.textContent = myRole === 'admin'
+      const passNote = ' If a question is asked that you\'d rather not answer, tap ⚐ pass under it: it turns red, marks it PASS, and we simply move on — no explanation needed.';
+      hint.textContent = (myRole === 'admin'
         ? (hasAttachment
           ? 'Press and hold a message to react or tell them what you\'re doing; hold a file to save it to their Documents.'
           : 'Press and hold their message to react or tell them what you\'re doing — they get a notification.')
         : (hasAttachment
           ? 'Press and hold a message to react or edit it; hold a shared file to save it to Documents.'
-          : 'Press and hold a message to react to it, or to edit your own within 3 minutes.');
+          : 'Press and hold a message to react to it, or to edit your own within 3 minutes.')) + passNote;
       hint.hidden = false;
     }
     log.scrollTop = log.scrollHeight;
