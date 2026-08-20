@@ -512,6 +512,10 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 }
 .msg.them .msg-emoji-react { right: -.3rem; }
 .msg.me .msg-emoji-react { left: -.3rem; }
+/* Update-announcement hint: gold for the launch window, then back to dim. */
+.hint-gold { color: #F5C84C !important; text-shadow: 0 0 10px rgba(255, 208, 80, .25); }
+.hint-gold .hint-update { color: #FFD700; letter-spacing: .06em; font-size: .72rem; }
+
 /* Pass flag: an outline until tapped, then filled red and unmistakable. */
 .pass-flag {
   display: inline-flex; align-items: center; gap: .25rem; margin-top: .35rem;
