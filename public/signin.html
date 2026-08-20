@@ -57,6 +57,17 @@
     <p class="muted small" style="margin-top:.6rem;">Didn't get it? Check <strong>Spam</strong> or <strong>Promotions</strong>. <a href="#" id="resend">Send a new code</a></p>
     <p class="muted small">This device stays signed in afterwards. If you later add Pocket Advocate to your Home Screen it asks for one more code — your phone treats the installed app as a separate place from your browser. That happens once, then it's done.</p>
   </div>
+
+  <div class="card" id="pass-form" hidden>
+    <h3>Enter your password</h3>
+    <label for="password">Password</label>
+    <input type="password" id="password" autocomplete="current-password">
+    <p class="error" id="pass-error" hidden></p>
+    <p style="margin-top:1rem;">
+      <button class="btn quiet" id="pass-back">← Back</button>
+      <button class="btn" id="pass-go">Sign in</button>
+    </p>
+  </div>
 </main>
 <script type="module">
   import { auth, isSignInWithEmailLink, signInWithEmailLink, signInWithCustomToken } from '/js/firebase.js';
@@ -125,6 +136,7 @@
         });
         if (res.ok) {
           const { token } = await res.json();
+          localStorage.setItem('pa-admin-since', String(Date.now()));
           await signInWithCustomToken(auth, token);
           location.href = '/admin.html';
           return;
@@ -140,7 +152,10 @@
       errEl.hidden = false;
       return;
     }
-    if (!document.getElementById('us-attest').checked) {
+    // The residency attestation gates clients booking care. A device already
+    // known to be the admin's skips it; a brand-new admin device ticks it once.
+    if (!document.getElementById('us-attest').checked &&
+        localStorage.getItem('pa-admin-device') !== '1') {
       errEl.textContent = 'This service is available to US and Canadian residents only.';
       errEl.hidden = false;
       return;
@@ -154,11 +169,18 @@
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-      if (!res.ok) throw new Error((await res.json()).error || 'Try again.');
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || 'Try again.');
       pendingEmail = email;
       rememberEmail(email);
-      document.getElementById('code-to').textContent = email;
       document.getElementById('email-form').hidden = true;
+      if (out.mode === 'password') {
+        // This address signs in with a password, not an emailed code.
+        document.getElementById('pass-form').hidden = false;
+        document.getElementById('password').focus();
+        return;
+      }
+      document.getElementById('code-to').textContent = email;
       document.getElementById('code-form').hidden = false;
       document.getElementById('code').focus();
     } catch (err) {
@@ -166,6 +188,36 @@
       errEl.hidden = false;
     }
   }
+
+  document.getElementById('pass-back').addEventListener('click', () => {
+    document.getElementById('pass-form').hidden = true;
+    document.getElementById('email-form').hidden = false;
+  });
+  document.getElementById('pass-go').addEventListener('click', async () => {
+    const passErr = document.getElementById('pass-error');
+    passErr.hidden = true;
+    const password = document.getElementById('password').value;
+    if (!password) return;
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: pendingEmail, password }),
+      });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      if (out.deviceToken) localStorage.setItem(DEVICE_KEY, out.deviceToken);
+      // Starts the weekly re-login clock (enforced in auth.js).
+      localStorage.setItem('pa-admin-since', String(Date.now()));
+      await signInWithCustomToken(auth, out.token);
+      location.href = '/admin.html';
+    } catch (err) {
+      passErr.textContent = err.message;
+      passErr.hidden = false;
+    }
+  });
+  document.getElementById('password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('pass-go').click(); }
+  });
 
   document.getElementById('verify').addEventListener('click', async () => {
     const code = document.getElementById('code').value.trim();

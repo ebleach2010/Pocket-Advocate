@@ -82,6 +82,8 @@ export default {
         return await handlePushTest(request, env);
       if (url.pathname === '/api/admin/pin' && request.method === 'POST')
         return await handlePinLogin(request, env);
+      if (url.pathname === '/api/admin/login' && request.method === 'POST')
+        return await handleAdminLogin(request, env);
       if (url.pathname === '/api/auth/request-code' && request.method === 'POST')
         return await handleRequestCode(request, env);
       if (url.pathname === '/api/auth/verify-code' && request.method === 'POST')
@@ -109,7 +111,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-19-admin-home';
+const BUILD_TAG = 'v2026-08-20-admin-password-weekly';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -1166,6 +1168,44 @@ async function handlePushTest(request, env) {
   return json({ ok: true, devices: subs.length });
 }
 
+/**
+ * POST /api/admin/login  Body: { email, password }
+ * Eric's front door: his email plus a password (the ADMIN_PIN secret), checked
+ * timing-safe and throttled per-IP exactly like the PIN path. Success mints an
+ * admin session AND a trusted-device token, so the device stays signed in
+ * between logins; the browser enforces a weekly re-login on top (auth.js).
+ */
+async function handleAdminLogin(request, env) {
+  const cache = caches.default;
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+  const rlKey = new Request(`https://pin-throttle.internal/${encodeURIComponent(ip)}`);
+  const prior = await cache.match(rlKey);
+  const fails = prior ? parseInt(await prior.text(), 10) || 0 : 0;
+  if (fails >= 5) return json({ error: 'Too many attempts. Try again later.' }, 429);
+
+  const body = await request.json().catch(() => null);
+  const email = (body?.email || '').trim().toLowerCase();
+  const password = typeof body?.password === 'string' ? body.password : '';
+  const expected = env.ADMIN_PIN || '';
+  const adminUid = env.ADMIN_UID || '';
+
+  await new Promise((r) => setTimeout(r, 400));
+
+  const emailOk = env.ADMIN_EMAIL && email === env.ADMIN_EMAIL.toLowerCase();
+  if (!expected || !adminUid || !emailOk || !timingSafeEqual(password, expected)) {
+    await cache.put(
+      rlKey,
+      new Response(String(fails + 1), { headers: { 'cache-control': 'max-age=900' } })
+    );
+    return json({ error: 'Wrong email or password.' }, 401);
+  }
+
+  await cache.delete(rlKey);
+  const token = await mintCustomToken(env, adminUid);
+  const deviceToken = await issueDeviceToken(env, adminUid, email);
+  return json({ token, deviceToken });
+}
+
 // Body: { pin }. A private shortcut: the correct PIN mints a real admin
 // session (custom token) so Eric can skip the email link. The PIN itself is a
 // Worker secret (ADMIN_PIN) — never shipped to the browser. Failed attempts are
@@ -1211,6 +1251,12 @@ async function handleRequestCode(request, env) {
   const body = await request.json().catch(() => null);
   const email = (body?.email || '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: 'Enter a valid email address.' }, 400);
+
+  // Eric signs in with his email and a password, not an emailed code. The
+  // page shows a password box when the server says so; nothing about WHY is
+  // revealed beyond that, and the password is still throttled server-side.
+  if (env.ADMIN_EMAIL && email === env.ADMIN_EMAIL.toLowerCase())
+    return json({ ok: true, mode: 'password' });
 
   const key = await sha256hex(email);
   const now = Date.now();
