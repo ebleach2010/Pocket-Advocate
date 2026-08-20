@@ -56,16 +56,28 @@ export function watchPresence(el) {
  *   notice       — text shown instead of the composer when disabled
  * }
  */
-export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '' }) {
+/**
+ * composerButton: an optional { icon, title, onClick } the caller can put in
+ * the composer row, left of the text box. The caller owns what it means; this
+ * file only knows where it goes.
+ */
+export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null }) {
   container.classList.add('chat-root');
   container.innerHTML = `
-    <button class="chat-expand" data-expand type="button" title="Full screen" aria-label="Full screen">⤢</button>
+    ${disabled
+      ? '<button class="chat-expand" data-expand type="button" title="Full screen" aria-label="Full screen">⤢</button>'
+      : ''}
     <div class="chat-log" data-log><p class="dim small">Loading messages…</p></div>
     ${disabled
       ? `<p class="dim small chat-notice">${esc(notice)}</p>`
       : `<form class="chat-form" data-form>
+           <button type="button" class="attach-btn" data-expand title="Full screen"
+             aria-label="Full screen">⤢</button>
            <label class="attach-btn" title="Attach a file">📎<input type="file" hidden data-attach
              accept=".pdf,.jpg,.jpeg,.png,.heic,.gif,.webp,.dcm,.dicom,.zip,.mp4,.mov,.doc,.docx,.txt"></label>
+           ${composerButton ? `<button type="button" class="attach-btn" data-extra
+             title="${esc(composerButton.title || '')}" aria-label="${esc(composerButton.title || '')}"
+             >${esc(composerButton.icon || '')}</button>` : ''}
            <textarea data-input maxlength="2000" rows="1" placeholder="Write a message…"
              autocomplete="off" autocapitalize="sentences"></textarea>
            <button class="btn" type="submit">Send</button>
@@ -393,6 +405,13 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     const log = container.querySelector('[data-log]');
     if (log) log.scrollTop = log.scrollHeight;
   });
+
+  if (composerButton?.onClick) {
+    container.querySelector('[data-extra]')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      composerButton.onClick();
+    });
+  }
 
   const form = container.querySelector('[data-form]');
   const input = container.querySelector('[data-input]');

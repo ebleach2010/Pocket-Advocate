@@ -169,10 +169,10 @@ function render() {
       render();
     }));
 
-  // Same engine as Eric's side: three pages, flipped by tapping a half of the
-  // page, by swiping, or by the tab strip. Without the manila - the folder is
-  // the advocate's working object, and a client should not have to read it as
-  // a metaphor - so the container gets `plain` and the card stock drops away.
+  // Same engine as Eric's side, and now the same manila. He looked at the
+  // plain version and said the client side was still one long scroll; the card
+  // stock is what makes it read as a folder with pages rather than a page with
+  // headings, and it is the thing that was doing the work on his side.
   folder = mountFolder({
     container: container.querySelector('[data-folder]'),
     storageKey: `client-case-${currentId}`,
@@ -196,9 +196,33 @@ function render() {
       { id: 'docs', title: 'Docs', icon: '📄', render: (pane) => renderDocs(pane, c) },
     ],
   });
-  folder.el('progress')?.parentElement?.classList.add('plain');
+  showNavHint(container.querySelector('[data-folder]'));
   folderEnter(container.querySelector('[data-folder]'));
   renderedFor = currentId;
+}
+
+/**
+ * How to move around, said once and then never again.
+ *
+ * The tabs are a real interface and nobody arrives knowing that tapping the
+ * paper turns the page. Dismissed permanently the same way the version card
+ * is, because a hint that comes back is not a hint.
+ */
+const NAV_HINT_KEY = 'pa-seen-nav-hint';
+
+function showNavHint(folderEl) {
+  if (!folderEl) return;
+  try { if (localStorage.getItem(NAV_HINT_KEY)) return; } catch { return; }
+  const note = document.createElement('p');
+  note.className = 'nav-hint';
+  note.innerHTML = 'Your case has tabs. Tap one to switch pages, or tap the '
+    + 'right side of the page to turn to the next one. '
+    + '<button type="button" class="btn ghost" data-hint-ok>Got it</button>';
+  folderEl.parentElement?.insertBefore(note, folderEl);
+  note.querySelector('[data-hint-ok]').addEventListener('click', () => {
+    try { localStorage.setItem(NAV_HINT_KEY, '1'); } catch { /* blocked */ }
+    note.remove();
+  });
 }
 
 /**
@@ -286,11 +310,16 @@ function renderProgress(el, c) {
           <li class="${i + 1 < rank ? 'done' : i + 1 === rank ? (closed ? 'done' : 'now') : ''}">
             <span class="t-dot"></span>${label}</li>`).join('')}
       </ul>
-      <p class="dim small">Session: <strong style="color:${election.choice === 'public' ? 'var(--magenta)' : 'var(--cyan)'};">
-        ${election.choice === 'public' ? 'PUBLIC — streams live on YouTube' : 'PRIVATE'}</strong></p>
-      ${revocable ? `<p><button class="btn ghost" data-private>Make it private</button></p>` : ''}
-      ${followUpSection(c)}
-    </div>`;
+    </div>
+    <details class="faq" data-more>
+      <summary>Session details</summary>
+      <div class="faq-a">
+        <p class="dim small">Session: <strong style="color:${election.choice === 'public' ? 'var(--magenta)' : 'var(--cyan)'};">
+          ${election.choice === 'public' ? 'PUBLIC — streams live on YouTube' : 'PRIVATE'}</strong></p>
+        ${revocable ? `<p><button class="btn ghost" data-private>Make it private</button></p>` : ''}
+        ${followUpSection(c)}
+      </div>
+    </details>`;
 
   el.querySelector('[data-ics]')?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -329,7 +358,7 @@ function renderProgress(el, c) {
       return `<p class="dim small">Your follow-up session is paid for: message me in chat to schedule it.${
         expires && Date.now() > base
           ? ` Use it by <strong style="color:var(--ink)">${mt.format(new Date(expires))} MST</strong>.`
-          : ' It must be used within one month.'
+          : ' It must be used within 30 days.'
       }</p>`;
     }
     return '';

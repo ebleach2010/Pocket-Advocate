@@ -100,6 +100,18 @@ function render(el) {
     container: el.querySelector('[data-folder]'),
     storageKey: `case-${caseId}`,
     initial: 'overview',
+    // Eleven pages in one strip meant scrolling sideways to reach half of
+    // them. Three groups of four: the group row never changes, the page row
+    // shows one group, and everything is two taps away.
+    //
+    // Four per group is the constraint, not a coincidence. Four tabs fit
+    // across a 320px screen with their labels whole; five do not.
+    groups: [
+      { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files'] },
+      { id: 'read', label: 'Advisor', icon: '👨‍⚕️', pages: ['advisor', 'dx', 'education'] },
+      { id: 'track', label: 'Track', icon: '🗒', pages: ['summary', 'unanswered', 'about'] },
+      { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'drafts', 'saved'] },
+    ],
     // Landing on a page IS having seen it. The badge clears here rather than
     // on some later save, so it never outlives the thing it was pointing at.
     onShow: (id) => { markSeen(caseId, id); folder?.mark(id, false); },
@@ -178,10 +190,15 @@ function render(el) {
           pane.innerHTML = [
             '<div class="panel draft-panel advisor-draft" id="draft-panel" hidden></div>',
             '<div class="panel">',
-            '  <h3>Tools</h3>',
+            '  <h3>Before a call</h3>',
             '  <p class="dim small">Nothing here decides anything for you.</p>',
             '  <button class="btn" data-prep-sheet>🎬 Video prep sheet</button>',
-            '  <button class="btn quiet" data-duty>⚕️ Duty of care draft</button>',
+            '</div>',
+            '<div class="panel">',
+            '  <h3>Duty of care</h3>',
+            '  <p class="dim small">A draft you can edit before it goes anywhere. Also on the',
+            '    composer in Chat, so it is one tap away when you want it.</p>',
+            '  <button class="btn" data-duty>⚕️ Draft it</button>',
             '</div>',
           ].join('');
           // Always present, never suggested. It says nothing about this client
@@ -223,6 +240,18 @@ function render(el) {
     saveUid: c.clientUid,
     disabled: c.status === 'closed',
     notice: 'Chat ended when this case closed.',
+    // Always there, on every case, saying nothing about anyone. The point is
+    // that it is one tap from the conversation rather than four taps away on
+    // the last page, because the moment he wants it is not a moment for
+    // navigating.
+    composerButton: {
+      icon: '⚕️',
+      title: 'Duty of care draft',
+      onClick: () => openDutyDraft({
+        tz: data.clientTz || '',
+        onSend: (text) => chatSend?.(text),
+      }),
+    },
   });
 
   chatSend = (text) => chat.send(text);

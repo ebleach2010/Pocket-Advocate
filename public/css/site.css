@@ -689,6 +689,11 @@ button:focus-visible,
 }
 .chat-expand:hover,
 .chat-expand:focus-visible { border-color: var(--cyan); box-shadow: var(--glow-c); outline: none; }
+/* Inside a folder page the tab strip sits directly above, and top:-.4rem put
+   this button on top of a tab. Two controls in the same place on a phone is a
+   mis-tap, so within a page the chat starts a little lower and the button
+   stays inside its own box. */
+
 .chat-root.chat-full {
   position: fixed; inset: 0; z-index: 75; margin: 0; border-radius: 0;
   height: 100vh; height: 100dvh;
@@ -701,7 +706,9 @@ button:focus-visible,
   top: calc(env(safe-area-inset-top, 0px) + .6rem); right: .8rem;
   color: var(--ink); font-size: .95rem;
 }
-.chat-root.chat-full .chat-log { max-height: none; flex: 1; margin-top: 2.2rem; }
+/* The in-composer control becomes the way out, and says so. */
+.chat-root.chat-full .chat-form [data-expand] { color: var(--cyan); }
+.chat-root.chat-full .chat-log { max-height: none; flex: 1; margin-top: .2rem; }
 /* Full screen means FULL: bubbles stretch nearly wall to wall so far more
    text fits per line, and the hint + export chrome get out of the way — the
    screen belongs to the messages and the composer. */
@@ -1314,6 +1321,11 @@ body.lightbox-open { overflow: hidden; }
   border-bottom: 2px solid var(--manila-edge);
 }
 .folder-tabs::-webkit-scrollbar { display: none; }
+/* An author `display` rule beats the UA stylesheet's [hidden] { display:none },
+   so the tabs of a closed group stayed in the layout: twelve tabs sharing a
+   320px row instead of four. This is the rule that makes the second tier
+   actually a second tier. */
+.folder-tabs > a[hidden] { display: none; }
 .folder-tabs > a {
   position: relative; flex: 0 0 auto;
   display: inline-flex; align-items: center; gap: .34rem;
@@ -1362,6 +1374,102 @@ body.lightbox-open { overflow: hidden; }
 .folder-tabs > a .ftab-t { opacity: .82; }
 .folder-tabs > a.on .ftab-ic,
 .folder-tabs > a.on .ftab-t { opacity: 1; }
+
+/* Said once, on the first case a client ever opens. Tabs are a real interface
+   and nobody arrives knowing that tapping the paper turns the page. */
+.nav-hint {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  margin: 0 0 .7rem; padding: .6rem .75rem;
+  font-size: .85rem; line-height: 1.5; color: var(--soft);
+  background: var(--panel-2);
+  border: 1px solid var(--line); border-left: 3px solid var(--cyan); border-radius: 10px;
+}
+.nav-hint .btn { padding: .28rem .7rem; font-size: .78rem; }
+
+/* A caller-supplied button in the composer row, sized and shaped exactly like
+   the paperclip beside it so the row stays one row. */
+button.attach-btn {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------- two tiers
+   Eric asked for grouping that kills side scroll and left-to-right travel and
+   keeps every page two taps away. So: a group row that never changes, and a
+   page row showing only the open group.
+
+   The rule that makes it work is that a group holds at most four pages, so the
+   page row always fits across a 320px screen without scrolling and without a
+   single label being cut short. */
+.folder-groups {
+  position: sticky; top: 3rem; z-index: 5;
+  display: flex; gap: .3rem;
+  margin: 0 -.4rem .1rem; padding: .45rem .5rem .35rem;
+  background: var(--bar); backdrop-filter: blur(8px);
+}
+.fgrp {
+  position: relative; flex: 1 1 0; min-width: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: .35rem;
+  min-height: 40px; padding: .4rem .5rem;
+  font: inherit; font-weight: 700; font-size: .78rem; line-height: 1.15;
+  letter-spacing: .02em; text-align: center;
+  color: var(--dim); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 10px;
+  cursor: pointer;
+}
+.fgrp-ic { font-size: 1rem; line-height: 1; flex: none; }
+ /* Never mid-word: "Advis / or" is not a label. If a group name will not fit
+    it gets a shorter name, not a hyphenless break. */
+.fgrp-t { min-width: 0; overflow-wrap: normal; }
+.fgrp.on {
+  color: var(--ink); background: var(--panel);
+  border-color: var(--cyan-dim); box-shadow: inset 0 -2px 0 var(--cyan);
+}
+.fgrp:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
+/* A page dot inside a closed group cannot be seen, so it surfaces here. */
+.fgrp-dot {
+  width: 7px; height: 7px; flex: none;
+  border-radius: 50%; background: var(--cyan);
+  box-shadow: 0 0 6px rgba(45, 226, 255, .85);
+}
+.fgrp-dot[hidden] { display: none; }
+
+/* The page row sits under the group row, not under the header. */
+.case-folder.two-tier .folder-tabs { top: calc(3rem + 52px); }
+
+/* Four tabs across a narrow phone: share the width evenly and stack the label
+   under the icon so the word still fits whole. Truncating a label is not an
+   option - a tab reading "Unansw..." is worse than no tab at all. */
+.folder-tabs.tight { gap: .18rem; overflow-x: visible; padding-left: .35rem; padding-right: .35rem; }
+.folder-tabs.tight > a {
+  flex: 1 1 0; min-width: 0;
+  flex-direction: column; gap: .2rem;
+  /* Four tabs across 320px leaves 64px of tab. Measured: "Overview" and
+     "Summary" are 75-76px at the full size, so the label needs both a smaller
+     size and its padding back. */
+  padding: .42rem .18rem;
+  font-size: .72rem;
+  text-align: center;
+  /* The trapezoid cut eats half a rem from each side, which at this width is
+     most of the difference between a label that fits and one that does not. */
+  clip-path: polygon(.25rem 0, calc(100% - .25rem) 0, 100% 100%, 0 100%);
+}
+.folder-tabs.tight > a .ftab-t {
+  white-space: normal; line-height: 1.15; overflow-wrap: break-word;
+}
+.folder-tabs.tight .ftab-dot {
+  position: absolute; top: .3rem; right: .3rem; margin: 0;
+}
+/* A 320px screen is a small screen and something has to give. It gives here,
+   in a step down of type size, rather than in a truncated label or a row that
+   scrolls sideways. */
+@media (max-width: 360px) {
+  .folder-tabs.tight > a { font-size: .64rem; padding: .42rem .12rem; }
+  .fgrp { font-size: .7rem; padding: .4rem .3rem; }
+}
+/* Four groups across a phone: the label goes under the icon here too. */
+.folder-groups.many .fgrp { flex-direction: column; gap: .15rem; padding: .35rem .25rem; }
 
 /* The client's copy of the same engine: same tabs, same flips, no manila. The
    folder is the advocate's working object, not something a client should have to
