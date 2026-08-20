@@ -860,31 +860,76 @@ export async function runAnalysis(env, kind, id, mediaList = null) {
       system: [{ type: 'text', text: `${VOICE}
 
 Write Eric's working assessment of this client. He reads it on a phone beside
-a live chat — it must scan in thirty seconds. Hard cap: 300 words total.
+a live chat, one section at a time, flipping between them.
 
 Use exactly these headings, in this order, as markdown \`##\` headings:
 
 ## Right now
+## Plain English
 ## What this could be
-## Worth chasing
-## Ask next
+## Worth investigating
+## Worth asking
+## What we know so far
+## What's missing
+## Ruled out
 ## For you
 ## Key terms
 ## Working line
 ## Differential
 ## Corrections
 
-"Right now": 2–4 short sentences, plain language. If you have a previous
-assessment, open with what CHANGED since it — new message, new signal, a shift
-in your read — then the single most useful next move. This is a running
-commentary he reads mid-conversation, not a report.
+"Right now": 2–4 short sentences, under 120 words, plain language. If you have
+a previous assessment, open with what CHANGED since it — new message, new
+signal, a shift in your read — then the single most useful next move. This is a
+running commentary he reads mid-conversation, not a report.
+
+"Plain English": the same read as "Right now", said the way you would say it to
+a smart person who is not a clinician. Under 150 words. Eric's cognition is
+often poor and he should never have to come back and ask what something meant.
+Wrap every medical term he has not yet mastered in DOUBLE SQUARE BRACKETS the
+first time it appears, in "Right now" and here both, like [[myasthenia gravis]]
+or [[ganglionic AChR antibody]]. His panel paints each bracketed term a colour
+and paints its explanation here the same colour, so his eye pairs them without
+reading. So: name the term in "Right now", explain it here, bracket it in both.
+Never bracket a term from his mastered list. Never bracket the same term twice
+in one section.
+
 "What this could be": at most 4 bullets, one line each — possibility, then the
 one thing that would raise or lower it.
-"Worth chasing": at most 4 bullets — a specific lab, image, or record, and what
-it rules in or out.
-"Ask next": at most 3 questions, verbatim, ready to paste.
+
+"Worth investigating": at most 5 bullets — a specific lab, image, record or
+referral, and what the result would settle either way. Order by what moves the
+case most, not by what is easiest.
+
+"Worth asking": at most 4 questions for the CLIENT, verbatim, each on its own
+bullet, in Eric's plain register and ready to send as they stand. He sends them
+straight from this list with one press, so never write a preamble, a heading or
+a parenthetical inside a bullet — just the question.
+
+"What we know so far": the chart note, the thing Eric can hand a specialist.
+This is a REFERENCE section and the only one with no length limit; completeness
+beats brevity here. Use \`###\` sub-headings, only the ones the thread supports:
+Demographics, History, Medications, Normal results, Abnormal results, Imaging,
+Procedures. Facts from the thread and the documents only, each with its date
+where you have one. Never infer, never round, never fill a gap with a typical
+value. If a section has nothing, leave it out.
+
+"What's missing": at most 5 bullets. Not strictly required, but would sharpen
+the picture — a record nobody has pulled, a date nobody has pinned down, a
+symptom nobody has characterised. Each written as a QUESTION Eric could send to
+the client as it stands, because he sends these with one press too.
+
+"Ruled out": what was genuinely on the list and is now off it, at most 5
+bullets, each \`- Name — the one fact that killed it\`. Only things a specific
+result or a specific statement actually closed. Never move a possibility here
+because it became unfashionable in your own thinking, and never re-litigate
+something already on this list in a later section. Write "- Nothing is closed
+yet." when nothing has been.
+
 "For you": at most 3 bullets of advocacy strategy — who to push, where this
-stalls.
+stalls, and how to engage THIS patient if that matters (fewer questions and
+more prompting for someone exhausted, more structure for someone scattered).
+
 "Key terms": Eric is learning the territory as he goes. Up to 5 medical terms
 or diagnoses central to THIS assessment that he has not yet learned, each on
 its own line as \`- Term [Category]: plain-words definition in one sentence, plus
@@ -895,7 +940,7 @@ mastered list, never repeat one already in his glossary. If nothing new, write
 "- none".
 
 The last three sections are machine-read and stripped before Eric sees the
-assessment (same as Key terms); they do not count toward the word cap.
+assessment (same as Key terms). Eric never sees them as text.
 
 "## Working line": exactly one line, 60 characters or fewer, plain words: the
 single most likely explanation right now. It gets printed on the front of a
@@ -923,6 +968,11 @@ section out when there is nothing to fix.
 
 Be specific or say nothing. "Consider further workup" is worthless. If the
 transcript is too thin for a section, one line saying what you'd need.
+
+Carry forward what still holds. "What we know so far" and "Ruled out"
+especially are cumulative records, not a fresh take each pass: reproduce what
+your previous assessment had, add what is new, and only remove something when
+the thread has actually contradicted it.
 ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
       messages: [{
         role: 'user',

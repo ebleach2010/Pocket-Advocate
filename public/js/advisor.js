@@ -12,13 +12,46 @@
 
 const SECTION_ICON = {
   'Right now': '⚡',
-  'Key terms': '📚',
-  'Where things stand': '🧭',
+  'Plain English': '💬',
   'What this could be': '🔬',
+  'Worth investigating': '🧪',
+  'Worth asking': '❓',
+  'What we know so far': '🗂',
+  "What's missing": '🕳',
+  'Ruled out': '🚫',
+  'For you': '🎯',
+  'Key terms': '📚',
+  // Older assessments used these headings; keep the icons so a case that has
+  // not been re-read since still paints correctly.
+  'Where things stand': '🧭',
   'Worth chasing': '🧪',
   'Ask next': '❓',
-  'For you': '🎯',
 };
+
+// Sections whose bullets Eric sends to the client with one long press. Both
+// are written by the advisor as ready-to-send questions in his own register,
+// which is the only reason a one-press send is safe here.
+const SENDABLE = new Set(['Worth asking', "What's missing", 'Ask next']);
+
+// Ten colours for the term coding. A term is painted the same colour wherever
+// it appears - in the read and in its own explanation below the divider - so
+// Eric's eye pairs them without reading. Ten because past that they stop being
+// distinguishable at a glance, and a term index wraps rather than running out.
+const TERM_COLORS = 10;
+
+/**
+ * Pull [[bracketed terms]] out of an assessment and give each distinct one a
+ * colour index, in order of first appearance. Deterministic for a given
+ * assessment, so the colours do not reshuffle on a poll.
+ */
+function termPalette(text) {
+  const map = new Map();
+  for (const m of String(text || '').matchAll(/\[\[([^\]]{1,80})\]\]/g)) {
+    const key = m[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    if (key && !map.has(key)) map.set(key, map.size % TERM_COLORS);
+  }
+  return map;
+}
 
 /**
  * opts: { container, kind: 'case'|'sub', id, user, onSend(text), draftContainer?, diffContainer? }
@@ -40,8 +73,8 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       </div>
       <p class="dim small advisor-sub" data-updated>Reading the case…</p>
       <div class="advisor-files" data-fchips></div>
-      <div class="advisor-read" data-read hidden></div>
       <div class="advisor-body" data-analysis></div>
+      <div class="advisor-read" data-read hidden></div>
       <div class="advisor-draft" data-draft-card hidden></div>
       <div class="advisor-qa" data-qa></div>
       <div class="advisor-foot">
@@ -141,7 +174,15 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       // A fresh assessment snaps back to page one — "Right now".
       if ((d.updatedAt || '') !== pagesKey) { pagesKey = d.updatedAt || ''; pageIdx = 0; }
       pageIdx = Math.max(0, Math.min(pageIdx, pages.length - 1));
-      renderPager(pages);
+      // Terms Eric has already marked learned are not painted and not
+      // explained: the worker filters them out of the prompt, and this drops
+      // any that slipped through from an assessment written before he ticked
+      // them.
+      const learned = new Set(glossary.filter((g) => g.learned)
+        .map((g) => g.term.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()));
+      const terms = termPalette(d.analysis);
+      for (const k of learned) terms.delete(k);
+      renderPager(pages, terms);
       updatedEl.textContent = d.updatedAt
         ? `Updated ${timeAgo(toDate(d.updatedAt))}${paused ? ' · analysis paused' : ''}`
         : '';
@@ -218,7 +259,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   }
 
   /** One note page at a time, flipped with ‹ › or a sideways swipe. */
-  function renderPager(pages) {
+  function renderPager(pages, terms = null) {
     const i = pageIdx;
     const pg = pages[i];
     bodyEl.innerHTML = `
@@ -229,10 +270,19 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           <span class="pg-count">${i + 1}/${pages.length}</span>
           <button class="pg-btn" data-pg="1" ${i === pages.length - 1 ? 'disabled' : ''} aria-label="Next note">›</button>
         </div>
-        <div class="advisor-page-body">${pg.glossary ? glossaryHtml(pg.glossary) : md(pg.body)}</div>
+        <div class="advisor-page-body">${pg.glossary ? glossaryHtml(pg.glossary) : `
+          ${md(pg.body, terms)}
+          ${pg.plain ? `
+            <hr class="title-rule plain-rule">
+            <div class="plain-english">
+              <span class="plain-tag">💬 In plain words</span>
+              ${md(pg.plain, terms)}
+            </div>` : ''}`}</div>
+        ${SENDABLE.has(pg.title) ? '<p class="dim small pg-hint">Press and hold any line to send it to the client.</p>' : ''}
       </div>`;
     bodyEl.querySelectorAll('[data-pg]').forEach((b) =>
-      b.addEventListener('click', () => { pageIdx += Number(b.dataset.pg); renderPager(pages); }));
+      b.addEventListener('click', () => { pageIdx += Number(b.dataset.pg); renderPager(pages, terms); }));
+    if (SENDABLE.has(pg.title)) wireSendable(bodyEl, pg.title);
     bodyEl.querySelectorAll('[data-term]').forEach((cb) =>
       cb.addEventListener('change', async () => {
         cb.disabled = true;
@@ -257,8 +307,84 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       const next = pageIdx + (dx < 0 ? 1 : -1);
       if (next < 0 || next >= pages.length) return;
       pageIdx = next;
-      renderPager(pages);
+      renderPager(pages, terms);
     }, { passive: true });
+  }
+
+  /**
+   * Press and hold a question and send it to the client as an ordinary message
+   * from Eric. Only "Worth asking" and "What's missing" get this, because only
+   * those two are written as questions ready to send as they stand.
+   *
+   * It always opens a sheet with the text in it first. A long press that fired
+   * a message straight into the chat would be one slip away from sending the
+   * client something Eric never read.
+   */
+  function wireSendable(root, title) {
+    root.querySelectorAll('.advisor-page-body li').forEach((li) => {
+      li.classList.add('askable');
+      let t = null;
+      const cancel = () => { clearTimeout(t); t = null; li.classList.remove('held'); };
+      const start = () => {
+        cancel();
+        li.classList.add('held');
+        t = setTimeout(() => {
+          li.classList.remove('held');
+          openSendSheet(li.textContent.trim(), title);
+        }, 550);
+      };
+      li.addEventListener('touchstart', start, { passive: true });
+      li.addEventListener('touchend', cancel, { passive: true });
+      li.addEventListener('touchmove', cancel, { passive: true });
+      li.addEventListener('touchcancel', cancel, { passive: true });
+      li.addEventListener('mousedown', start);
+      li.addEventListener('mouseup', cancel);
+      li.addEventListener('mouseleave', cancel);
+      // A keyboard has no long press; a plain Enter on a focused line does.
+      li.tabIndex = 0;
+      li.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); openSendSheet(li.textContent.trim(), title); }
+      });
+    });
+  }
+
+  function openSendSheet(text, title) {
+    if (!text) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'msg-menu-overlay';
+    overlay.innerHTML = `
+      <div class="msg-menu" role="dialog" aria-modal="true" aria-label="Send to the client">
+        <div class="msg-menu-sheet">
+          <p class="msg-menu-head">Send this to the client, as you</p>
+          <textarea class="send-draft" rows="4" maxlength="2000"></textarea>
+          <button class="msg-menu-row" data-act="send"><span class="react-emoji">📤</span><span>Send it</span></button>
+          <button class="msg-menu-row" data-act="copy"><span class="react-emoji">📋</span><span>Copy instead</span></button>
+          <button class="msg-menu-row cancel" data-act="cancel"><span>Cancel</span></button>
+        </div>
+      </div>`;
+    // Text as a value, never as markup: this line came out of a model.
+    const box = overlay.querySelector('.send-draft');
+    box.value = text;
+    const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelectorAll('[data-act]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const act = b.dataset.act;
+        const out = box.value.trim();
+        close();
+        if (act === 'copy' && out) await navigator.clipboard?.writeText(out).catch(() => {});
+        if (act === 'send' && out) {
+          try { await onSend?.(out); } catch (err) {
+            errEl.textContent = `Couldn't send that: ${err.message}`;
+            errEl.hidden = false;
+          }
+        }
+      }));
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+    setTimeout(() => box.focus(), 0);
+    void title;
   }
 
   // ---- the 🧬 Differential page ----
@@ -753,21 +879,33 @@ function glossaryHtml(glossary) {
     <p class="small" style="margin:.6rem 0 0;"><a href="/admin-dictionary.html">📚 Full dictionary, by type and A to Z →</a></p>`;
 }
 
-/** Split the assessment on its \`##\` headings into flippable pages. */
+/**
+ * Split the assessment on its \`##\` headings into flippable pages.
+ *
+ * "Plain English" is the one section that does NOT get a page of its own. Eric
+ * asked for the comprehensive read and then, under a divider that fades at the
+ * edges, the same thing in plain words - and the colour pairing only works if
+ * both are on the screen at once. So it rides under the section before it.
+ */
 function splitPages(text) {
   const parts = String(text).split(/^##\s+/m).filter((p) => p.trim());
   if (parts.length < 2) return [{ title: 'Notes', body: String(text) }];
-  return parts.map((part) => {
+  const pages = [];
+  for (const part of parts) {
     const nl = part.indexOf('\n');
-    return {
-      title: (nl === -1 ? part : part.slice(0, nl)).trim(),
-      body: nl === -1 ? '' : part.slice(nl + 1),
-    };
-  });
+    const title = (nl === -1 ? part : part.slice(0, nl)).trim();
+    const body = nl === -1 ? '' : part.slice(nl + 1);
+    if (title === 'Plain English' && pages.length) {
+      pages[pages.length - 1].plain = body;
+      continue;
+    }
+    pages.push({ title, body });
+  }
+  return pages;
 }
 
 /** Just enough markdown for what the model actually emits. */
-function md(text) {
+function md(text, terms = null) {
   const lines = String(text).trim().split('\n');
   let html = '';
   let inList = false;
@@ -777,23 +915,35 @@ function md(text) {
     const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
     if (bullet || numbered) {
       if (!inList) { html += '<ul>'; inList = true; }
-      html += `<li>${inline(bullet ? bullet[1] : numbered[1])}</li>`;
+      html += `<li>${inline(bullet ? bullet[1] : numbered[1], terms)}</li>`;
       continue;
     }
     if (inList) { html += '</ul>'; inList = false; }
     if (!line.trim()) continue;
-    if (/^###\s+/.test(line)) html += `<h5>${inline(line.replace(/^###\s+/, ''))}</h5>`;
-    else html += `<p>${inline(line)}</p>`;
+    if (/^###\s+/.test(line)) html += `<h5>${inline(line.replace(/^###\s+/, ''), terms)}</h5>`;
+    else html += `<p>${inline(line, terms)}</p>`;
   }
   if (inList) html += '</ul>';
   return html;
 }
 
-function inline(s) {
-  return esc(s)
+function inline(s, terms = null) {
+  let out = esc(s)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[\s(])\*([^*]+)\*/g, '$1<em>$2</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>');
+  // [[Myasthenia gravis]] becomes a painted term. The brackets are stripped
+  // either way: a term Eric has since marked learned has no colour left, but
+  // it must never show as raw punctuation on his screen.
+  out = out.replace(/\[\[([^\]]{1,80})\]\]/g, (_, raw) => {
+    const label = raw.trim();
+    const key = label.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const i = terms?.get(key);
+    return i === undefined
+      ? label
+      : `<mark class="tm tm-${i}" data-tm="${esc(key)}">${label}</mark>`;
+  });
+  return out;
 }
 
 function toDate(v) { return v?.toDate ? v.toDate() : new Date(v || 0); }

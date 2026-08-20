@@ -1068,6 +1068,55 @@ body.lightbox-open { overflow: hidden; }
 .adv-chip.adv-add { border-style: dashed; border-color: var(--line); color: var(--dim); cursor: pointer; }
 .adv-chip.adv-add:hover { border-color: var(--cyan-dim); color: var(--soft); }
 
+/* ------------------------------------------------- plain English, colour-coded
+   The comprehensive read, then a divider that fades at both edges, then the
+   same thing in plain words. Every term Eric has not marked learned is painted
+   one of ten colours in the read AND on its explanation below, so his eye pairs
+   them without having to read for the match. */
+.plain-rule { margin: 1.1rem 0 .9rem; }
+.plain-english { font-size: .95rem; }
+.plain-tag {
+  display: inline-block; margin-bottom: .3rem;
+  font-size: .72rem; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* The ten. Each is a tinted ground with a matching underline, rather than a
+   block of colour: a highlighter over a dark page loses the text. */
+.tm {
+  background: none; color: inherit;
+  padding: 0 .1em; border-radius: 3px;
+  box-shadow: inset 0 -.34em 0 rgba(255, 255, 255, .05);
+  border-bottom: 2px solid currentColor;
+}
+.tm-0 { color: #6FE3FF; } .tm-1 { color: #FF8FE0; } .tm-2 { color: #7BE8A8; }
+.tm-3 { color: #FFC978; } .tm-4 { color: #B9A6FF; } .tm-5 { color: #6FF0DC; }
+.tm-6 { color: #FF9E8A; } .tm-7 { color: #C6E36F; } .tm-8 { color: #8FB8FF; }
+.tm-9 { color: #FFA7C4; }
+.tm-0, .tm-1, .tm-2, .tm-3, .tm-4,
+.tm-5, .tm-6, .tm-7, .tm-8, .tm-9 { font-weight: 600; }
+
+/* Press and hold a question to send it. The hold has to be visible or the
+   gesture is a rumour: the line lifts and tints the moment the timer starts. */
+.advisor-page-body li.askable { cursor: pointer; border-radius: 6px; padding: .05rem .3rem; margin-left: -.3rem; }
+.advisor-page-body li.askable:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+.advisor-page-body li.askable.held {
+  background: rgba(45, 226, 255, .1);
+  transform: scale(.985);
+  transition: transform .25s ease-out, background .25s ease-out;
+}
+.pg-hint { margin: .5rem 0 0; }
+.send-draft {
+  width: 100%; margin: 0 0 .5rem;
+  padding: .55rem .6rem; font: inherit; font-size: .9rem;
+  color: var(--soft); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 8px; resize: vertical;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .advisor-page-body li.askable.held { transform: none; transition: none; }
+}
+
 /* ------------------------------------------ what the advisor read, and did not
    Eric shared eight documents once and the advisor discussed three, with
    nothing on screen to say why. This is the answer to "did he see my photos",
