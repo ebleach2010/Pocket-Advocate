@@ -88,6 +88,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Eric's medical vocabulary (Key terms + learned flags) — Worker-only.
+    match /advisorKnowledge/{termId} {
+      allow read, write: if false;
+    }
+
     match /availability/{slotId} {
       // World-readable so the picker works pre-payment; Worker-writable only.
       allow read: if true;

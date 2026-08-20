@@ -12,6 +12,7 @@
 
 const SECTION_ICON = {
   'Right now': '⚡',
+  'Key terms': '📚',
   'Where things stand': '🧭',
   'What this could be': '🔬',
   'Worth chasing': '🧪',
@@ -85,7 +86,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
     }
   };
 
-  function apply(d, qa) {
+  function apply(d, qa, glossary = []) {
     paused = !!d.paused;
     pauseBtn.textContent = paused ? 'Resume' : 'Pause';
     pauseBtn.classList.toggle('on', paused);
@@ -111,6 +112,9 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
 
     if (d.analysis) {
       const pages = splitPages(d.analysis);
+      // 📚 Key terms rides as the last page: new words from the assessments,
+      // each with an "I understand" checkbox. Checked = never explained again.
+      if (glossary.length) pages.push({ title: 'Key terms', glossary });
       // A fresh assessment snaps back to page one — "Right now".
       if ((d.updatedAt || '') !== pagesKey) { pagesKey = d.updatedAt || ''; pageIdx = 0; }
       pageIdx = Math.max(0, Math.min(pageIdx, pages.length - 1));
@@ -196,10 +200,16 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
           <span class="pg-count">${i + 1}/${pages.length}</span>
           <button class="pg-btn" data-pg="1" ${i === pages.length - 1 ? 'disabled' : ''} aria-label="Next note">›</button>
         </div>
-        <div class="advisor-page-body">${md(pg.body)}</div>
+        <div class="advisor-page-body">${pg.glossary ? glossaryHtml(pg.glossary) : md(pg.body)}</div>
       </div>`;
     bodyEl.querySelectorAll('[data-pg]').forEach((b) =>
       b.addEventListener('click', () => { pageIdx += Number(b.dataset.pg); renderPager(pages); }));
+    bodyEl.querySelectorAll('[data-term]').forEach((cb) =>
+      cb.addEventListener('change', async () => {
+        cb.disabled = true;
+        await post({ action: 'term', termId: cb.dataset.term, learned: cb.checked });
+        cb.disabled = false;
+      }));
 
     // Swipe to flip. Same discipline as the case tabs: mostly horizontal,
     // long enough to be deliberate, never off a button.
@@ -236,7 +246,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       });
       if (res.ok) {
         const out = await res.json();
-        const d = apply(out.state || {}, out.qa || []);
+        const d = apply(out.state || {}, out.qa || [], out.glossary || []);
         busy = d.running || d.draftAlive ||
           (out.qa || []).some((q) => q.status === 'running');
       }
@@ -388,7 +398,22 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
   }
 }
 
-/** Split the assessment on its `##` headings into flippable pages. */
+/** The Key terms page: tick a box when a term is yours, untick to review it. */
+function glossaryHtml(glossary) {
+  const item = (g) => `
+    <label class="gloss-item">
+      <input type="checkbox" data-term="${esc(g.id)}" ${g.learned ? 'checked' : ''}>
+      <span class="gloss-text"><strong>${esc(g.term)}</strong>: ${esc(g.definition)}</span>
+    </label>`;
+  const fresh = glossary.filter((g) => !g.learned);
+  const known = glossary.filter((g) => g.learned);
+  return `
+    <p class="dim small" style="margin:.1rem 0 .6rem;">Tick a term once you own it — it's never explained to you again, and the advisor pitches future notes to what you know.</p>
+    ${fresh.length ? fresh.map(item).join('') : '<p class="dim small">Nothing new to learn right now.</p>'}
+    ${known.length ? `<details class="gloss-known"><summary>✓ ${known.length} term${known.length === 1 ? '' : 's'} you know</summary>${known.map(item).join('')}</details>` : ''}`;
+}
+
+/** Split the assessment on its \`##\` headings into flippable pages. */
 function splitPages(text) {
   const parts = String(text).split(/^##\s+/m).filter((p) => p.trim());
   if (parts.length < 2) return [{ title: 'Notes', body: String(text) }];

@@ -139,6 +139,55 @@ function myVoice(rows) {
     .map((r) => r.data.text).slice(-40).join('\n---\n');
 }
 
+/**
+ * Eric's personal medical vocabulary, global across every case. Each doc:
+ * { term, definition, learnedAt: date|null }. The advisor adds new terms from
+ * each assessment, never re-defines one already here, and treats the learned
+ * ones as words Eric owns — that list is how it knows what level to pitch at.
+ */
+const termSlug = (term) =>
+  term.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+
+async function loadKnowledge(env) {
+  const rows = await listDocs(env, 'advisorKnowledge', { pageSize: 200 }).catch(() => []);
+  return {
+    learned: rows.filter((r) => r.data.learnedAt).map((r) => r.data.term),
+    pending: rows.filter((r) => !r.data.learnedAt).map((r) => r.data.term),
+  };
+}
+
+function knowledgeNote({ learned, pending }) {
+  let note = '';
+  if (learned.length)
+    note += `\nEric has mastered these terms, use them freely and never define or gloss them: ${learned.join('; ')}.`;
+  if (pending.length)
+    note += `\nThese terms are in his glossary but not yet mastered, do not re-define them under Key terms, and keep the language around them simple: ${pending.join('; ')}.`;
+  return note;
+}
+
+/**
+ * Pull the "## Key terms" section out of an assessment: store each new term in
+ * the knowledge base and strip the section from the saved text, because the
+ * panel renders the glossary as its own page with an "I understand" checkbox
+ * per term.
+ */
+async function harvestKeyTerms(env, analysis) {
+  const m = analysis.match(/^## Key terms\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  if (!m) return analysis;
+  for (const line of m[1].split('\n')) {
+    const t = line.match(/^\s*[-*]\s*\**([^:*]+?)\**\s*:\s*(.+)$/);
+    if (!t) continue;
+    const term = t[1].trim();
+    const definition = t[2].trim();
+    if (!term || !definition || /^none$/i.test(term)) continue;
+    // Create-only: an existing entry (learned or not) is never overwritten.
+    await patchDoc(env, `advisorKnowledge/${termSlug(term)}`, {
+      term, definition, learnedAt: null, addedAt: new Date(),
+    }, { mustNotExist: true }).catch(() => {});
+  }
+  return analysis.replace(m[0], '').trim();
+}
+
 const statePath = (kind, id) =>
   `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state`;
 // Top-level queue of cases waiting on an analysis. Top-level on purpose:
@@ -195,9 +244,10 @@ export async function runQueuedAnalyses(env) {
 export async function runAnalysis(env, kind, id) {
   try {
     await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date() });
-    const [rows, state] = await Promise.all([
+    const [rows, state, knowledge] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
+      loadKnowledge(env),
     ]);
     const chat = transcript(rows);
     if (!chat) {
@@ -221,6 +271,7 @@ Use exactly these headings, in this order, as markdown \`##\` headings:
 ## Worth chasing
 ## Ask next
 ## For you
+## Key terms
 
 "Right now": 2–4 short sentences, plain language. If you have a previous
 assessment, open with what CHANGED since it — new message, new signal, a shift
@@ -233,9 +284,16 @@ it rules in or out.
 "Ask next": at most 3 questions, verbatim, ready to paste.
 "For you": at most 3 bullets of advocacy strategy — who to push, where this
 stalls.
+"Key terms": Eric is learning the territory as he goes. Up to 5 medical terms
+or diagnoses central to THIS assessment that he has not yet learned, each on
+its own line as \`- Term: plain-words definition in one sentence, plus what it
+means for his next step if that matters\`. Never include a term from his
+mastered list, never repeat one already in his glossary. If nothing new, write
+"- none".
 
 Be specific or say nothing. "Consider further workup" is worthless. If the
-transcript is too thin for a section, one line saying what you'd need.` }],
+transcript is too thin for a section, one line saying what you'd need.
+${knowledgeNote(knowledge)}` }],
       messages: [{
         role: 'user',
         content: prior
@@ -244,8 +302,9 @@ transcript is too thin for a section, one line saying what you'd need.` }],
       }],
     });
 
+    const cleaned = await harvestKeyTerms(env, analysis);
     await setState(env, kind, id, {
-      analysis, status: 'idle', error: null, updatedAt: new Date(),
+      analysis: cleaned, status: 'idle', error: null, updatedAt: new Date(),
       pendingAt: null, startedAt: null, progressAt: null,
     });
     await deleteDoc(env, queuePath(kind, id));
@@ -264,9 +323,10 @@ export async function runQuestion(env, kind, id, qaId, question) {
   // is valid and stays inside the advisor rules fence.
   const path = `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state/qa/${qaId}`;
   try {
-    const [rows, state] = await Promise.all([
+    const [rows, state, knowledge] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
+      loadKnowledge(env),
     ]);
     const chat = transcript(rows);
     const answer = await ask(env, {
@@ -275,7 +335,8 @@ export async function runQuestion(env, kind, id, qaId, question) {
 
 Eric is asking you a direct question about this client. Answer it and stop —
 under 120 words unless the question itself demands more. Don't re-summarise
-the case at him; he has the transcript in front of him.` }],
+the case at him; he has the transcript in front of him.
+${knowledgeNote(knowledge)}` }],
       messages: [{
         role: 'user',
         content: `<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${

@@ -111,7 +111,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-20-fullscreen-chat';
+const BUILD_TAG = 'v2026-08-20-key-terms';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -1035,9 +1035,10 @@ async function handleAdvisorState(request, env, url) {
   if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad id' }, 400);
 
   const parent = kind === 'case' ? 'cases' : 'subscriptions';
-  const [state, qa] = await Promise.all([
+  const [state, qa, knowledge] = await Promise.all([
     getDoc(env, `${parent}/${id}/advisor/state`),
     listDocs(env, `${parent}/${id}/advisor/state/qa`, { pageSize: 20, orderBy: 'at' }).catch(() => []),
+    listDocs(env, 'advisorKnowledge', { pageSize: 200 }).catch(() => []),
   ]);
   // keyConfigured: admin-only visibility into whether the ANTHROPIC_API_KEY
   // secret is actually bound to the running version — "saved in the dashboard"
@@ -1046,6 +1047,9 @@ async function handleAdvisorState(request, env, url) {
   return json({
     state: state?.data || {},
     qa: qa.map((r) => r.data),
+    glossary: knowledge.map((r) => ({
+      id: r.id, term: r.data.term, definition: r.data.definition, learned: !!r.data.learnedAt,
+    })),
     keyConfigured: Boolean(env.ANTHROPIC_API_KEY),
   });
 }
@@ -1077,6 +1081,17 @@ async function handleAdvisor(request, env, ctx) {
   if (action === 'pause' || action === 'resume') {
     await patchDoc(env, statePath, { paused: action === 'pause' }, { mask: ['paused'] });
     return json({ ok: true, paused: action === 'pause' });
+  }
+
+  if (action === 'term') {
+    // "I understand this now." Checked terms are never explained again and
+    // become part of how the advisor gauges what level to pitch at.
+    const termId = typeof body?.termId === 'string' ? body.termId : '';
+    if (!/^[a-z0-9-]{1,60}$/.test(termId)) return json({ error: 'Bad term' }, 400);
+    await patchDoc(env, `advisorKnowledge/${termId}`, {
+      learnedAt: body?.learned ? new Date() : null,
+    }, { mask: ['learnedAt'] });
+    return json({ ok: true });
   }
 
   if (action === 'reset') {
