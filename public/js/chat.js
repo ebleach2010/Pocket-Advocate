@@ -14,7 +14,7 @@ import {
   ref, uploadBytesResumable, getDownloadURL,
 } from './firebase.js';
 import {
-  emojiById, statusById, openMessageMenu, openEditor, EDIT_WINDOW_MS,
+  emojiById, statusById, openMessageMenu, openEditor, openCorrection, EDIT_WINDOW_MS,
 } from './msg-actions.js';
 
 const MAX_BYTES = 25 * 1024 * 1024;
@@ -30,7 +30,7 @@ document.addEventListener('pa-panel-state', (e) => {
   const map = window.__paCorrections;
   map.clear();
   for (const c of e.detail?.corrections || []) {
-    if (c?.msgId) map.set(c.msgId, { wrong: c.wrong || '', fixed: c.fixed || '' });
+    if (c?.msgId) map.set(c.msgId, { issue: c.issue || '', fixed: c.fixed || '' });
   }
 });
 
@@ -170,8 +170,12 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
 
       // Long-press opens the menu. What's in it depends on whose message it is:
       // reactions on theirs, editing on your own inside the 3-minute window.
-      const editable = mine && !!data.text && sentAt &&
-        Date.now() - sentAt.getTime() < EDIT_WINDOW_MS;
+      // The Worker lets an admin edit their own message at any age; the
+      // three-minute window is for everyone else. The UI used to apply it to
+      // both, which quietly made a repaired wording unusable on anything
+      // older than three minutes.
+      const editable = mine && !!data.text &&
+        (myRole === 'admin' || (sentAt && Date.now() - sentAt.getTime() < EDIT_WINDOW_MS));
       if (!mine || editable || data.text || canStage) {
         messageLongPress(div, {
           msgId: m.id,
@@ -209,6 +213,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       hint.hidden = false;
     }
     log.scrollTop = log.scrollHeight;
+    paintCorrections();
   }, (err) => {
     log.innerHTML = `<p class="error">Couldn't load messages: ${esc(err.message)}</p>`;
   });
@@ -221,6 +226,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     // point, but not to Eric either, which was not. Set from the mounted role,
     // never from a caller-supplied flag: a caller cannot talk its way past it.
     adminChat = true;
+    document.addEventListener('pa-panel-state', () => paintCorrections());
     document.addEventListener('pa-panel-select', () => {
       container.querySelectorAll('.dr-badge').forEach((b) =>
         b.classList.toggle('on', !!window.__paMediaSel?.has(b.dataset.url)));
@@ -294,6 +300,46 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       kind: kindOf(), id: parentPath[1], msgId: o.msgId,
       reaction: choice.action === 'clear' ? null : choice.id,
     }, "Couldn't set that");
+  }
+
+  /**
+   * A quiet mark on one of his own messages that the last read flagged. Only
+   * ever on an admin thread: the map is only ever filled there, and this is
+   * gated again on the mounted role.
+   */
+  function paintCorrections() {
+    if (myRole !== 'admin') return;
+    const map = window.__paCorrections;
+    for (const el of log.querySelectorAll('.msg.me[data-mid]')) {
+      const c = map.get(el.dataset.mid);
+      const existing = el.querySelector('.msg-fix');
+      if (!c || (!c.issue && !c.fixed)) { existing?.remove(); continue; }
+      if (existing) continue;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'msg-fix';
+      chip.textContent = '⚠ Worth a second look';
+      chip.title = c.issue;
+      chip.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const choice = await openCorrection(c.issue, c.fixed);
+        if (!choice) return;
+        if (choice === 'fix') {
+          const text = await openEditor(c.fixed, Date.now() + EDIT_WINDOW_MS);
+          if (text === undefined) return;
+          await post('/api/chat/edit',
+            { kind: kindOf(), id: parentPath[1], msgId: el.dataset.mid, text },
+            "Couldn't save the edit");
+        }
+        // Fixed or waved away, it stops being raised either way.
+        window.__paCorrections.delete(el.dataset.mid);
+        chip.remove();
+        document.dispatchEvent(new CustomEvent('pa-correction-applied', {
+          detail: { msgId: el.dataset.mid },
+        }));
+      });
+      el.appendChild(chip);
+    }
   }
 
   async function editMessage(o) {

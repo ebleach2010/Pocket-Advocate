@@ -9,6 +9,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { getDoc, patchDoc, listDocs, deleteDoc } from './firestore.js';
+import { listIntake, mediaFetch } from './storage.js';
 
 const MODEL = 'claude-opus-5';
 // "Opus max" — deepest reasoning. Streaming keeps the socket warm through the
@@ -214,12 +215,26 @@ function safeAttachmentUrl(att, kind, id) {
 function fileKey(att, kind, id) {
   const name = String(att?.name || 'file').slice(0, 200);
   if (att?.data) return `inline:${name}:${att.size || att.data.length}`;
+  if (att?.path && !att?.url) return storageKey(att, kind, id) || `unreadable:${name}`;
   const url = safeAttachmentUrl(att, kind, id);
   if (!url) return `unreadable:${name}`;
   try {
     const m = new URL(url).pathname.match(/^\/v0\/b\/[^/]+\/o\/(.+)$/);
     return m ? decodeURIComponent(m[1]) : `unreadable:${name}`;
   } catch { return `unreadable:${name}`; }
+}
+
+/**
+ * A file discovered by listing Storage rather than by riding on a chat
+ * message. It has an object path and no download URL, so the identity is the
+ * path itself — the same string a tokened URL reduces to, which is what makes
+ * a document shared in chat and the same document sitting in uploads/ count
+ * as one file rather than two.
+ */
+function storageKey(att, kind, id) {
+  const parent = kind === 'case' ? 'cases' : 'subscriptions';
+  const p = String(att.path || '');
+  return p.startsWith(`${parent}/${id}/`) ? p : null;
 }
 
 function b64(buf) {
@@ -236,7 +251,7 @@ function b64(buf) {
  * or { skip: reason }. The tokened download URL on the message does the
  * authorizing; no service-account storage access involved.
  */
-async function attachmentBlock(att, kind, id) {
+async function attachmentBlock(env, att, kind, id) {
   const mk = mediaKind(att);
   if (!mk) return { skip: 'a format the advisor cannot read (send JPEG, PNG, or PDF)' };
   // Inline uploads (from Eric's own device, base64 in the request body) have
@@ -256,11 +271,22 @@ async function attachmentBlock(att, kind, id) {
       block: { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: att.data } },
     };
   }
-  const url = safeAttachmentUrl(att, kind, id);
-  if (!url) return { skip: 'not a file from this case' };
+  // Two ways in. A file shared in chat carries a tokened download URL that
+  // does its own authorizing. A file found by listing the bucket has only its
+  // object path, and is fetched with the service account.
+  let res;
   const cap = mk === 'image' ? MAX_IMAGE_BYTES : MAX_PDF_BYTES;
-  if (att.size && att.size > cap) return { skip: 'too large to read' };
-  const res = await fetch(url);
+  if (att.path && !att.url) {
+    const path = storageKey(att, kind, id);
+    if (!path) return { skip: 'not a file from this case' };
+    if (att.size && att.size > cap) return { skip: 'too large to read' };
+    res = await mediaFetch(env, path);
+  } else {
+    const url = safeAttachmentUrl(att, kind, id);
+    if (!url) return { skip: 'not a file from this case' };
+    if (att.size && att.size > cap) return { skip: 'too large to read' };
+    res = await fetch(url);
+  }
   if (!res.ok) return { skip: `could not be fetched (HTTP ${res.status})` };
   const buf = await res.arrayBuffer();
   if (buf.byteLength > cap) return { skip: 'too large to read' };
@@ -293,6 +319,40 @@ async function attachmentBlock(att, kind, id) {
  * "upload screenshots for sleep-study-9-8-25.pdf" instead of silence.
  */
 const AUTO_READ_SETTLE_MS = 4 * 60_000;
+
+/**
+ * Files sitting in the case's intake folders that no pass has read.
+ *
+ * This is the half that fixes the reported bug. autoReadableFiles below walks
+ * chat messages, and the client's Documents page never writes one: it uploads
+ * to Storage from the browser and stops. So the page labelled "Tap to add
+ * labs, imaging, or records" — the primary intake — produced files the advisor
+ * could not see.
+ *
+ * Listing beats being told. A file is found because it is in the bucket, which
+ * means everything uploaded before any of this existed is picked up too.
+ * Failure is not fatal: a listing that errors leaves the chat-attachment path
+ * exactly as it was.
+ */
+async function storageReadableFiles(env, alreadyRead, kind, id) {
+  const seen = new Set(alreadyRead);
+  const cutoff = Date.now() - AUTO_READ_SETTLE_MS;
+  try {
+    const files = await listIntake(env, kind, id);
+    const out = [];
+    for (const f of files) {
+      if (f.at && f.at > cutoff) continue;    // still landing, read it next pass
+      const key = fileKey(f, kind, id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ name: f.name, path: f.path, contentType: f.contentType, size: f.size });
+    }
+    return out;
+  } catch (err) {
+    console.warn('storage listing:', err.message || err);
+    return [];
+  }
+}
 
 function autoReadableFiles(rows, alreadyRead, kind, id) {
   const seen = new Set(alreadyRead);
@@ -330,7 +390,7 @@ function autoReadableFiles(rows, alreadyRead, kind, id) {
  *
  * Nothing is dropped. Nothing is silent.
  */
-async function selectedMediaBlocks(list, kind, id, alreadyRead = []) {
+async function selectedMediaBlocks(env, list, kind, id, alreadyRead = []) {
   const seen = new Set(alreadyRead);
   const blocks = [];
   const included = [];
@@ -361,7 +421,7 @@ async function selectedMediaBlocks(list, kind, id, alreadyRead = []) {
       continue;
     }
     try {
-      const out = await attachmentBlock(att, kind, id);
+      const out = await attachmentBlock(env, att, kind, id);
       if (out.block) {
         budget -= out.bytes;
         blocks.push(out.block);
@@ -530,6 +590,28 @@ async function fileOverride(env, text) {
 }
 
 /**
+ * Put back any of Eric's overrides that a new distill lost.
+ *
+ * An override line is stamped "(Eric's override, YYYY-MM-DD)" by fileOverride.
+ * Matching is on the stance text with punctuation and case flattened, so a
+ * pass that reworded the line still counts as having kept it and does not
+ * produce a duplicate — but one that dropped it entirely gets his own wording
+ * back, at the top, where the list is actually read.
+ */
+function keepOverrides(priorStances, nextStances) {
+  const marks = (priorStances || '').split('\n').filter((l) => /\(Eric's override,/i.test(l));
+  if (!marks.length) return nextStances;
+  const flat = (v) => v.toLowerCase().replace(/\(eric's override[^)]*\)/gi, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const have = flat(nextStances);
+  const missing = marks.filter((line) => {
+    const core = flat(line);
+    return core.length > 8 && !have.includes(core);
+  });
+  if (!missing.length) return nextStances;
+  return `${missing.join('\n')}${nextStances ? `\n${nextStances}` : ''}`.slice(0, 2000);
+}
+
+/**
  * One `## Heading` section out of a two-section reply. Tolerant on purpose:
  * case-insensitive, and heading decorations like `**## Voice**` or `### Voice`
  * still match, because a low-effort reply doesn't always follow the format.
@@ -546,6 +628,24 @@ function sectionOf(text, name) {
  * lesson. Cheap on purpose (low effort, small ceiling): this is distillation,
  * not analysis. Failures stay quiet; the next edit retries.
  */
+/**
+ * Run a distill only if the profile is missing or has gone stale. Called after
+ * an analysis, so About-you fills in on its own for an advocate who never uses
+ * the draft flow, without paying for a distill on every single pass.
+ */
+const DISTILL_STALE_MS = 3 * 86_400_000;
+
+export async function maybeDistill(env, kind, id) {
+  try {
+    const profile = await getDoc(env, STYLE_PATH).catch(() => null);
+    const at = profile?.data.updatedAt ? new Date(profile.data.updatedAt).getTime() : 0;
+    if (at && Date.now() - at < DISTILL_STALE_MS) return;
+    await runStyleDistill(env, kind, id);
+  } catch (err) {
+    console.warn('maybe distill:', err.message || err);
+  }
+}
+
 export async function runStyleDistill(env, kind, id) {
   try {
     const [profile, edits, rows] = await Promise.all([
@@ -557,12 +657,18 @@ export async function runStyleDistill(env, kind, id) {
       recentMessages(env, kind, id).catch(() => []),
     ]);
     const pairs = edits.filter((r) => r.data.draft && r.data.sent);
-    if (!pairs.length) return;
-
-    const pairBlock = pairs
-      .map((r, i) => `PAIR ${i + 1}\nDRAFT (the advisor wrote):\n${r.data.draft.slice(0, 1500)}\nSENT (Eric actually sent):\n${r.data.sent.slice(0, 1500)}`)
-      .join('\n\n');
     const organic = myVoice(rows).slice(-6000);
+    // Edit pairs are the best evidence and used to be the ONLY evidence, which
+    // meant an advocate who never presses "Prepare a response" had a blank
+    // About-you page forever. His own messages are weaker evidence but they
+    // are real evidence, and enough of them is enough to start.
+    if (!pairs.length && organic.length < 600) return;
+
+    const pairBlock = pairs.length
+      ? pairs
+        .map((r, i) => `PAIR ${i + 1}\nDRAFT (the advisor wrote):\n${r.data.draft.slice(0, 1500)}\nSENT (Eric actually sent):\n${r.data.sent.slice(0, 1500)}`)
+        .join('\n\n')
+      : '(no edit pairs yet — go on his own messages alone)';
     const prior = profile?.data || {};
 
     const text = await ask(env, {
@@ -580,7 +686,7 @@ Evidence, strongest first:
 3. The previous profile: carry forward what still holds, drop what newer edits
    contradict, merge duplicates. Newer evidence beats older.
 
-Write exactly two markdown sections and nothing else:
+Write exactly three markdown sections and nothing else:
 
 ## Voice
 How he writes. Sentence shape and length, openings and closings, warmth,
@@ -635,6 +741,13 @@ no closing note.` }],
       stances = '';
     }
     if (!voice && !stances) return;
+
+    // The prompt asks for overrides to be carried forward verbatim. Asking is
+    // not enough: a low-effort pass that paraphrases one, or drops it for
+    // space, silently reverses a call Eric made on purpose. So any override
+    // line missing from the new text goes back on top, in his words.
+    stances = keepOverrides(prior.stances || '', stances);
+
     await patchDoc(env, STYLE_PATH, {
       voice: voice.slice(0, 2000), stances: stances.slice(0, 2000),
       coaching: coaching.slice(0, 2000),
@@ -673,13 +786,34 @@ async function harvestKeyTerms(env, text) {
       return hit ? hit.slice(hit.indexOf(':') + 1).trim().slice(0, 400) : '';
     };
     if (!term || !definition || /^none$/i.test(term)) continue;
-    // Create-only: an existing entry (learned or not) is never overwritten.
-    await patchDoc(env, `advisorKnowledge/${termSlug(term)}`, {
-      term, category, definition, learnedAt: null, addedAt: new Date(),
+    const slug = termSlug(term);
+    const facts = {
       mechanism: field('Mechanism'),
       treatment: field('Treatment'),
       outcome: field('Outlook') || field('Outcome'),
-    }, { mustNotExist: true }).catch(() => {});
+    };
+    // Create-only: an existing entry keeps its definition, its category and
+    // whether he has marked it learned. None of that should be rewritten by a
+    // later pass.
+    const created = await patchDoc(env, `advisorKnowledge/${slug}`, {
+      term, category, definition, learnedAt: null, addedAt: new Date(), ...facts,
+    }, { mustNotExist: true }).catch(() => false);
+
+    // But create-only used to mean a disease first met in a Q&A answer — where
+    // the three fields are usually absent — could never gain them, however
+    // many analyses discussed it afterwards. Empty fields are not a decision,
+    // so they get filled the first time something has an answer for them.
+    if (!created) {
+      const have = await getDoc(env, `advisorKnowledge/${slug}`).catch(() => null);
+      if (have) {
+        const fill = {};
+        for (const [k, v] of Object.entries(facts)) if (v && !have.data[k]) fill[k] = v;
+        if (Object.keys(fill).length) {
+          await patchDoc(env, `advisorKnowledge/${slug}`, fill, { mask: Object.keys(fill) })
+            .catch(() => {});
+        }
+      }
+    }
   }
   return text.replace(m[0], '').trim();
 }
@@ -878,12 +1012,17 @@ export async function runAnalysis(env, kind, id, mediaList = null) {
     // so nothing starves; then whatever Eric staged by hand, because that is an
     // explicit request; then anything shared in the thread that has never been
     // read, which is the part that runs without him asking.
+    // Chat attachments first, then anything else in the bucket: a file
+    // shared in conversation has context attached to it, one dropped on the
+    // Documents page does not. Both dedupe on the object path, so the same
+    // file reached both ways is one file.
     const queue = [
       ...carried,
       ...(mediaList || []),
       ...autoReadableFiles(rows, alreadyRead, kind, id),
+      ...(await storageReadableFiles(env, alreadyRead, kind, id)),
     ];
-    const media = await selectedMediaBlocks(queue, kind, id, alreadyRead);
+    const media = await selectedMediaBlocks(env, queue, kind, id, alreadyRead);
 
     const analysis = await ask(env, {
       effort: ANALYSIS_EFFORT,
@@ -1090,6 +1229,10 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
     // picks up the next batch on its own, rather than waiting for Eric to
     // notice and tap Analyze again.
     if (media.carry.length) await markPending(env, kind, id).catch(() => {});
+    // Keep the About-you page alive for an advocate who never uses the draft
+    // flow. Returns immediately unless the profile is missing or has gone
+    // stale, so this is not a distill on every pass.
+    await maybeDistill(env, kind, id).catch(() => {});
   } catch (err) {
     console.error('advisor analysis:', err.stack || err);
     await setState(env, kind, id, { status: 'error', error: friendly(err) })
@@ -1120,7 +1263,7 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
     let fileBlocks = [];
     let fileNote = '';
     if (attachment) {
-      const out = await attachmentBlock(attachment, kind, id)
+      const out = await attachmentBlock(env, attachment, kind, id)
         .catch((err) => ({ skip: `fetch failed (${String(err.message || err).slice(0, 120)})` }));
       if (!out.block) throw new Error(`Couldn't read "${attachment.name}": ${out.skip}.`);
       fileBlocks = [out.block];

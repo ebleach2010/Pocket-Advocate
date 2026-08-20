@@ -736,6 +736,7 @@ async function uploadFiles(c, el, files) {
   const err = el.querySelector('[data-upload-error]');
   const zone = el.querySelector('[data-drop]');
   err.hidden = true;
+  let uploaded = 0;
   for (const file of files) {
     if (file.size > MAX_BYTES) {
       err.textContent = `${file.name} is over 25 MB. Compress it or split it up.`;
@@ -752,6 +753,7 @@ async function uploadFiles(c, el, files) {
           (snap) => { bar.value = (snap.bytesTransferred / snap.totalBytes) * 100; },
           reject, resolve);
       });
+      uploaded++;
     } catch (e) {
       err.textContent = `Upload of ${file.name} failed: ${e.message}`;
       err.hidden = false;
@@ -761,6 +763,22 @@ async function uploadFiles(c, el, files) {
   bar.hidden = true;
   el.querySelector('[data-file-input]').value = '';
   refreshFiles(c, el);
+
+  // Tell the Worker a file landed. This page uploads straight to Storage and
+  // otherwise leaves no trace on the server at all, so without this nothing
+  // knows to go and look until the next time the case is opened on the other
+  // side. Fire and forget: the upload has already succeeded, and a failed
+  // nudge only costs a delay.
+  if (uploaded) {
+    try {
+      const idToken = await user.getIdToken();
+      await fetch('/api/uploaded', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ kind: 'case', id: c.id }),
+      });
+    } catch { /* it will be found on the next pass regardless */ }
+  }
 }
 
 // ---- actions ----

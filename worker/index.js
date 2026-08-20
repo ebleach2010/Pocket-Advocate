@@ -185,6 +185,8 @@ export default {
         return await handleReviewsAdmin(request, env);
       if (url.pathname === '/api/version' && request.method === 'GET')
         return json({ tag: BUILD_TAG, version: VERSION });
+      if (url.pathname === '/api/uploaded' && request.method === 'POST')
+        return await handleUploaded(request, env);
       if (url.pathname === '/api/admin/session')
         return await handleAdminSession(request, env);
       if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
@@ -1202,6 +1204,35 @@ async function handleChatReact(request, env) {
 }
 
 /**
+ * POST /api/uploaded  Body: { kind: 'case'|'sub', id }
+ *
+ * "A file just landed." Sent by the Documents page, which uploads straight to
+ * Storage and otherwise leaves no trace anywhere the Worker can see. No file
+ * details are taken from the caller: the advisor lists the bucket itself, so
+ * this is only a nudge to look, and the worst a bad caller can do is ask for a
+ * read of a case they are already a party to.
+ */
+async function handleUploaded(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = await request.json().catch(() => null);
+  const kind = body?.kind === 'sub' ? 'sub' : 'case';
+  const id = typeof body?.id === 'string' ? body.id : '';
+  if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad id' }, 400);
+
+  const parent = kind === 'case' ? 'cases' : 'subscriptions';
+  const doc = await getDoc(env, `${parent}/${id}`);
+  if (!doc) return json({ error: 'Not found' }, 404);
+  const clientUid = kind === 'case' ? doc.data.clientUid : id;
+  const profile = await getDoc(env, `users/${user.uid}`);
+  const isAdmin = profile?.data.role === 'admin';
+  if (!isAdmin && user.uid !== clientUid) return json({ error: 'Not your case' }, 403);
+
+  await markPending(env, kind, id);
+  return json({ ok: true });
+}
+
+/**
  * POST /api/chat/pass  Body: { kind: 'case'|'sub', id, msgId, pass: bool }
  *
  * Passing on a question. Either side can flag a message from the other person
@@ -1400,10 +1431,15 @@ async function handleAdvisorState(request, env, url) {
     // the docs themselves are browser-denied by rule).
     notes: notesDoc?.data.html || '',
     notesUpdatedAt: notesDoc?.data.updatedAt || null,
-    dx: {
-      working: state?.data.workingDx || '',
-      override: typeof state?.data.dxOverride === 'string' ? state.data.dxOverride : null,
-    },
+    // The panel and the case header both read `workingLine` and expect
+    // `dxOverride` to carry its own text and timestamp. This used to send
+    // `dx: { working, override }`, which nothing has ever read: the working
+    // line was blank on two of the three surfaces that show it, and only the
+    // shelf worked because it reads workingDx off the case doc directly.
+    workingLine: state?.data.workingDx || '',
+    dxOverride: typeof state?.data.dxOverride === 'string' && state.data.dxOverride
+      ? { text: state.data.dxOverride, at: state.data.dxOverrideAt || null }
+      : null,
     differential: Array.isArray(state?.data.differential) ? state.data.differential : [],
     // Dismissed corrections stay on the doc, so the next analysis knows not to
     // raise them again, but they never come back out here: dismissed means the

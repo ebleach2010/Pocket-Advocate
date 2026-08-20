@@ -4,7 +4,7 @@
 import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { initPushPrompt } from './push.js';
-import { folderCardHtml, wireFolderOpen, wireDxLongPress } from './drawer.js';
+import { folderCardHtml, wireFolderOpen, wireDxLongPress, openDxSheet } from './drawer.js';
 import { unseenBadges } from './seen.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -30,9 +30,9 @@ async function loadCovers() {
 
 /** Eric's own read of a case, typed onto the front of the folder. */
 async function overrideDx(id, current) {
-  const next = prompt('Your read of this case. Leave it empty to hand the cover back to the advisor.', current || '');
-  if (next === null) return;
-  const text = next.trim().slice(0, 120);
+  const next = await openDxSheet(current);
+  if (next === undefined) return;      // backed out; '' means hand it back
+  const text = next.slice(0, 120);
   try {
     const token = await user.getIdToken();
     const res = await fetch('/api/advisor', {

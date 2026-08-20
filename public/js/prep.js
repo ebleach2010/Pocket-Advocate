@@ -16,8 +16,16 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (ch) =>
 
 /** One `## Section` out of the assessment. */
 function section(analysis, name) {
-  const m = String(analysis || '').match(
-    new RegExp(`^## ${name}\\s*\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))`, 'm'));
+  // Tolerant on the heading, for the same reason advisor.js is: a model does
+  // not type the same apostrophe every time, and an exact match on
+  // "What's missing" silently dropped the whole section when it typed a curly
+  // one. Accepts either apostrophe, ## or ###, and bold decoration.
+  const pattern = name
+    .replace(/[.*+?^${}()|[\]\\]/g, (c) => `\\${c}`)
+    .replace(/'/g, "['\u2018\u2019]");
+  const m = String(analysis || '').match(new RegExp(
+    `^\\s*\\**#{2,3}\\s*\\**\\s*${pattern}\\s*\\**\\s*\\n([\\s\\S]*?)(?=^\\s*\\**#{2,3}\\s|$(?![\\s\\S]))`,
+    'im'));
   return m ? m[1].trim() : '';
 }
 
@@ -139,7 +147,9 @@ export function openPrepSheet({ name = '', when = '', analysis = '', differentia
       .lead { font-size: 1.02rem; }
       .none { color: #8A8272; font-style: italic; }
       .dx { display: flex; align-items: baseline; gap: .5rem; margin: 0 0 .35rem; }
-      .dx b { min-width: 3.2rem; }
+      .dx-why { margin: .1rem 0 0 3.2rem; font-size: 10.5pt; }
+    .dx-moves { margin: .1rem 0 .5rem 3.2rem; font-size: 10pt; color: #444; }
+    .dx b { min-width: 3.2rem; }
       .bar { flex: 1; height: 7px; background: #EDE7D8; border-radius: 4px; overflow: hidden; }
       .bar i { display: block; height: 100%; background: #8A7B5C; }
       .chart { margin: .6rem 0 0; }
@@ -164,8 +174,14 @@ export function openPrepSheet({ name = '', when = '', analysis = '', differentia
     ${differential.length
       ? differential.map((r) => {
         const pct = Math.max(0, Math.min(100, Math.round(Number(r.pct) || 0)));
+        // The reasoning is the point of the sheet: a bare percentage tells
+        // him nothing he can say out loud on a call.
+        const why = r.why || r.note || '';
+        const moves = r.moves || '';
         return `<div class="dx"><b>${pct}%</b><span>${esc(r.name || '')}</span>
-          <span class="bar"><i style="width:${pct}%"></i></span></div>`;
+          <span class="bar"><i style="width:${pct}%"></i></span></div>
+          ${why ? `<p class="dx-why">${esc(why)}</p>` : ''}
+          ${moves ? `<p class="dx-moves"><b>Moves on:</b> ${esc(moves)}</p>` : ''}`;
       }).join('')
       : '<p class="none">No differential yet.</p>'}
 

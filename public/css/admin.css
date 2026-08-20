@@ -634,6 +634,14 @@
 }
 .diff-row.diff-top .diff-pct { color: var(--cyan); }
 .diff-row.diff-top .diff-fill { background: var(--cyan); box-shadow: var(--glow-c); }
+.diff-moves {
+  grid-column: 1 / -1;
+  margin: .15rem 0 0;
+  font-size: .8rem;
+  line-height: 1.45;
+  color: var(--dim);
+}
+.diff-moves span { color: var(--ink); font-weight: 600; }
 .diff-note {
   grid-column: 1 / -1; margin: .1rem 0 0;
   color: var(--soft); font-size: .92rem; line-height: 1.5;
@@ -645,3 +653,32 @@
 @media (prefers-reduced-motion: reduce) {
 .diff-fill { transition: none; }
 }
+
+.msg-fix {
+  display: block;
+  margin: .35rem 0 0;
+  padding: .2rem .5rem;
+  border: 1px solid var(--orange);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--orange);
+  font: inherit;
+  font-size: .72rem;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.msg-fix:active { opacity: .6; }
+.fix-issue { margin: .6rem 0 .5rem; color: var(--dim); font-size: .9rem; line-height: 1.5; }
+.fix-text {
+  padding: .6rem .7rem;
+  border: 1px solid var(--line);
+  border-radius: .6rem;
+  background: var(--panel-2);
+  white-space: pre-wrap;
+  font-size: .92rem;
+  line-height: 1.55;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.dx-card .edit-box { min-height: 3.4rem; }

@@ -10,7 +10,24 @@
 // the advisor subtree isn't published yet, so a direct browser read fails. The
 // Worker owns the admin check either way.
 
-const SECTION_ICON = {
+/**
+ * Headings are matched by name in three places, and a model does not type the
+ * same apostrophe every time. Curly quotes, stray decoration and casing all
+ * collapse to one key here, so "What's missing", "What’s missing" and
+ * "WHAT'S MISSING" are one section rather than three, two of which are
+ * invisible.
+ */
+export function normTitle(s) {
+  return String(s || '')
+    .replace(/[‘’ʼ]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[*_`#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+const SECTION_ICON_RAW = {
   'Right now': '⚡',
   'Plain English': '💬',
   'What this could be': '🔬',
@@ -27,11 +44,13 @@ const SECTION_ICON = {
   'Worth chasing': '🧪',
   'Ask next': '❓',
 };
+const SECTION_ICON = new Map(
+  Object.entries(SECTION_ICON_RAW).map(([k, v]) => [normTitle(k), v]));
 
 // Sections whose bullets Eric sends to the client with one long press. Both
 // are written by the advisor as ready-to-send questions in his own register,
 // which is the only reason a one-press send is safe here.
-const SENDABLE = new Set(['Worth asking', "What's missing", 'Ask next']);
+const SENDABLE = new Set(['Worth asking', "What's missing", 'Ask next'].map(normTitle));
 
 // Ten colours for the term coding. A term is painted the same colour wherever
 // it appears - in the read and in its own explanation below the divider - so
@@ -108,6 +127,10 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   // before that code runs. Key (url or inline id) -> { name, url?, data?,
   // contentType, size }.
   const mediaSel = new Map();
+  // How many files THIS run was handed. The selection is cleared the moment
+  // Analyze is pressed, so reading it back during the run always saw zero and
+  // the progress bar could never show. Cleared when the run stops.
+  let readingCount = 0;
   window.__paMediaSel = mediaSel;
 
   let paused = false;
@@ -266,7 +289,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       <div class="advisor-page">
         <div class="advisor-page-head">
           <button class="pg-btn" data-pg="-1" ${i === 0 ? 'disabled' : ''} aria-label="Previous note">‹</button>
-          <h4>${SECTION_ICON[pg.title] || '•'} ${esc(pg.title)}</h4>
+          <h4>${SECTION_ICON.get(normTitle(pg.title)) || '•'} ${esc(pg.title)}</h4>
           <span class="pg-count">${i + 1}/${pages.length}</span>
           <button class="pg-btn" data-pg="1" ${i === pages.length - 1 ? 'disabled' : ''} aria-label="Next note">›</button>
         </div>
@@ -278,11 +301,11 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
               <span class="plain-tag">💬 In plain words</span>
               ${md(pg.plain, terms)}
             </div>` : ''}`}</div>
-        ${SENDABLE.has(pg.title) ? '<p class="dim small pg-hint">Press and hold any line to send it to the client.</p>' : ''}
+        ${SENDABLE.has(normTitle(pg.title)) ? '<p class="dim small pg-hint">Press and hold any line to send it to the client.</p>' : ''}
       </div>`;
     bodyEl.querySelectorAll('[data-pg]').forEach((b) =>
       b.addEventListener('click', () => { pageIdx += Number(b.dataset.pg); renderPager(pages, terms); }));
-    if (SENDABLE.has(pg.title)) wireSendable(bodyEl, pg.title);
+    if (SENDABLE.has(normTitle(pg.title))) wireSendable(bodyEl, pg.title);
     bodyEl.querySelectorAll('[data-term]').forEach((cb) =>
       cb.addEventListener('change', async () => {
         cb.disabled = true;
@@ -405,7 +428,8 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           <span class="diff-name">${esc(r.name || '')}</span>
           <span class="diff-pct">${pct}%</span>
           <div class="diff-bar"><div class="diff-fill" style="width:${pct}%"></div></div>
-          <p class="diff-note">${esc(r.note || '')}</p>
+          <p class="diff-note">${esc(r.why || r.note || '')}</p>
+          ${r.moves ? `<p class="diff-moves"><span>Moves on:</span> ${esc(r.moves)}</p>` : ''}
         </div>`;
     });
     diffContainer.innerHTML = `
@@ -525,9 +549,13 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           diffAt: out.state?.diffAt || null,
           draftAt: out.state?.draftStatus === 'ready' ? (out.state?.draftAt || null) : null,
           fileAt: out.state?.fileAt || null,
+          // The Chat tab's dot reads this. It was never sent, so the one dot
+          // that says "they wrote back" never lit inside a case.
+          clientMsgAt: out.state?.clientMsgAt || null,
         };
         renderDiff(detail);
-        renderRead(out.mediaReport, out.queuedFiles, d.running, mediaSel.size);
+        if (!d.running) readingCount = 0;
+        renderRead(out.mediaReport, out.queuedFiles, d.running, readingCount);
         document.dispatchEvent(new CustomEvent('pa-panel-state', { detail }));
       }
     } catch { /* transient — the next tick tries again */ }
@@ -558,7 +586,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           <button type="button" data-unstage="${esc(k)}" aria-label="Remove">✕</button>
         </span>`).join('')}
       <label class="adv-chip adv-add">＋ Add a file
-        <input type="file" hidden data-upfile accept="image/png,image/jpeg,image/webp,image/gif,application/pdf">
+        <input type="file" hidden multiple data-upfile accept="image/png,image/jpeg,image/webp,image/gif,application/pdf">
       </label>
       ${mediaSel.size ? '<span class="dim small" style="align-self:center;">read on Analyze, only by the advisor</span>' : ''}`;
     // Names as text, never markup — file names are user data.
@@ -623,6 +651,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       : undefined;
     if (media) {
       // The selection is consumed by this analysis; badges clear with it.
+      readingCount = media.length;
       mediaSel.clear();
       syncStaged();
       document.dispatchEvent(new CustomEvent('pa-panel-select'));
@@ -909,7 +938,7 @@ function splitPages(text) {
     const nl = part.indexOf('\n');
     const title = (nl === -1 ? part : part.slice(0, nl)).trim();
     const body = nl === -1 ? '' : part.slice(nl + 1);
-    if (title === 'Plain English' && pages.length) {
+    if (normTitle(title) === 'plain english' && pages.length) {
       pages[pages.length - 1].plain = body;
       continue;
     }

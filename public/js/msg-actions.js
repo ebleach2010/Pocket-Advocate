@@ -94,6 +94,52 @@ export function openMessageMenu(opts) {
  * in-place editor mid-sentence if the other person wrote while you were typing.
  * Resolves to the new text, or undefined if cancelled.
  */
+/**
+ * The sheet behind a flagged message. Shows what is wrong and the repaired
+ * wording, and returns 'fix', 'leave', or undefined if he backs out.
+ *
+ * Deliberately not a confirm(): this needs to show two blocks of text, and
+ * the codebase has already been bitten once by a native dialog that does
+ * nothing at all inside an iOS home-screen app.
+ */
+export function openCorrection(issue, fixed) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'settings-overlay';
+    overlay.innerHTML = `
+      <div class="settings-card fix-card" role="dialog" aria-modal="true" aria-label="Worth a second look">
+        <div class="row"><h3 style="margin:0;">Worth a second look</h3>
+          <button class="btn quiet" data-cancel>Close</button></div>
+        <p class="fix-issue"></p>
+        <div class="fix-text"></div>
+        <div class="actions" style="margin-top:.7rem;">
+          <button class="btn" data-fix>Use this wording</button>
+          <button class="btn quiet" data-leave>Leave it as is</button>
+        </div>
+      </div>`;
+    // textContent, not innerHTML: both strings come back from a model.
+    overlay.querySelector('.fix-issue').textContent = issue || '';
+    overlay.querySelector('.fix-text').textContent = fixed || '';
+
+    let settled = false;
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    function onKey(e) { if (e.key === 'Escape') done(undefined); }
+
+    overlay.querySelector('[data-cancel]').addEventListener('click', () => done(undefined));
+    overlay.querySelector('[data-fix]').addEventListener('click', () => done('fix'));
+    overlay.querySelector('[data-leave]').addEventListener('click', () => done('leave'));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(undefined); });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+  });
+}
+
 export function openEditor(currentText, deadline) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
