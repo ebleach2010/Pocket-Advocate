@@ -535,14 +535,20 @@ summary.btn::-webkit-details-marker { display: none; }
 
 .filelist { list-style: none; margin: .5rem 0 0; padding: 0; }
 .filelist li {
-  display: flex; justify-content: space-between; align-items: center; gap: .8rem;
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+  gap: .15rem .8rem;
   padding: .55rem 0; border-bottom: 1px solid var(--line); font-size: .94rem;
 }
 .filelist li:last-child { border-bottom: none; }
 .filelist .fname { min-width: 0; display: flex; align-items: center; gap: .5rem; }
+/* The file name wraps rather than ellipsing. On a phone the old clamp cut
+   "sleep-study-9-8-25.pdf" down to "sl...", which is the one thing in the row
+   anybody needs to read. The row wraps with it, so the date and size drop to a
+   second line rather than squeezing the name off the screen. */
+.filelist .fname { flex: 1 1 12rem; }
 .filelist .fname a {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  min-width: 0; max-width: 16rem;
+  min-width: 0; max-width: none;
+  overflow-wrap: anywhere; white-space: normal;
 }
 .filelist .fmeta { color: var(--dim); font-size: .82rem; white-space: nowrap; }
 .kind-pill {
@@ -1185,6 +1191,59 @@ body.lightbox-open { overflow: hidden; }
 .adv-chip button { border: 0; background: none; color: var(--dim); cursor: pointer; padding: 0; font-size: .8rem; }
 .adv-chip.adv-add { border-style: dashed; border-color: var(--line); color: var(--dim); cursor: pointer; }
 .adv-chip.adv-add:hover { border-color: var(--cyan-dim); color: var(--soft); }
+
+/* ---------------------------------------------------------------- the review
+   Opens under the documents once the report has landed. Five stars, a few
+   words, and a thank-you that fades away on its own rather than sitting there
+   waiting to be dismissed. */
+.delivered-tick { flex: none; font-size: .95rem; }
+.review-card {
+  margin: 1rem 0 0; padding: 1rem 1rem 1.1rem;
+  border: 1px solid var(--cyan-dim); border-radius: 14px;
+  background: var(--panel-2); box-shadow: var(--glow-c);
+}
+.review-card h3 { margin: 0 0 .5rem; }
+.review-card p { font-size: .93rem; }
+.review-card .follow-note {
+  margin: .7rem 0 0; padding: .55rem .7rem;
+  border-left: 3px solid var(--magenta); border-radius: 0 8px 8px 0;
+  background: var(--panel);
+}
+.review-card textarea {
+  width: 100%; margin: .2rem 0 .6rem;
+  padding: .6rem .7rem; font: inherit; font-size: .95rem;
+  color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; resize: vertical;
+}
+
+.stars { display: flex; gap: .15rem; margin: .5rem 0 .7rem; }
+.star {
+  padding: .1rem .2rem; font-size: 2rem; line-height: 1;
+  color: var(--line); background: none; border: 0; cursor: pointer;
+  transition: color .15s ease-out, transform .15s cubic-bezier(.2, .8, .3, 1);
+}
+.star:hover { transform: scale(1.12); }
+.star.on { color: var(--gold); text-shadow: 0 0 12px rgba(255, 204, 85, .5); }
+.star:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 4px; }
+
+/* Fades in, holds long enough to read, then drifts up and away. Nothing to
+   dismiss: they are finished, and a button would say otherwise. */
+.thanks {
+  margin: 1.4rem 0; text-align: center;
+  font-size: 1.15rem; font-weight: 700; color: var(--cyan);
+  animation: thanks 4s ease-in-out forwards;
+}
+@keyframes thanks {
+  0% { opacity: 0; transform: translate3d(0, 6px, 0); }
+  12% { opacity: 1; transform: none; }
+  70% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translate3d(0, -10px, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .star, .star:hover { transition: none; transform: none; }
+  .thanks { animation: none; }
+}
 
 /* --------------------------------------------------------- appearance picker
    Each swatch is painted from that scheme's OWN tokens, applied to the swatch

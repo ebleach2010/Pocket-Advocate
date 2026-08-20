@@ -28,7 +28,7 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat41">
+<link rel="stylesheet" href="/css/site.css?v=stat42">
 </head>
 <body>
 <header class="bar">
@@ -56,7 +56,7 @@
   </footer>
 </main>
 <script type="module">
-  import { GOOGLE_REVIEWS_URL, BUSINESS_PHONE, REVIEWS } from '/js/reviews-config.js';
+  import { GOOGLE_REVIEWS_URL, BUSINESS_PHONE, REVIEWS, loadReviews } from '/js/reviews-config.js';
   import { enhanceReviewsStrip } from '/js/reviews-strip.js';
   // Nav auth state rides the Firebase CDN — load it soft so the reviews
   // themselves never depend on it.
@@ -71,19 +71,26 @@
       ${r.text ? `<span class="rv-text">${esc(r.text)}</span>` : ''}
       <span class="rv-name">${esc(r.name)}</span>
     </${GOOGLE_REVIEWS_URL ? 'a' : 'div'}>`;
-  const cards = REVIEWS.map(card).join('');
-  document.getElementById('reviews-track').innerHTML = cards + cards;
-  enhanceReviewsStrip(document.querySelector('.reviews-strip'));
+  const paint = (list) => {
+    const cards = list.map(card).join('');
+    document.getElementById('reviews-track').innerHTML = cards + cards;
+    // enhanceReviewsStrip tears its previous self down, so painting twice is
+    // safe: the Google baseline shows immediately and the fuller list swaps in
+    // when it lands, rather than the page sitting empty on a network call.
+    enhanceReviewsStrip(document.querySelector('.reviews-strip'));
 
-  // the full, uncropped reviews
-  document.getElementById('reviews-full').innerHTML = REVIEWS.map((r) => `
-    <div class="panel review-full">
-      <div class="row">
-        <strong>${esc(r.name)}</strong>
-        <span class="stars">${'★'.repeat(r.stars)}</span>
-      </div>
-      ${r.text ? `<p class="rv-full-text">${esc(r.text)}</p>` : '<p class="dim small" style="margin:.3rem 0 0;">Rated 5 stars.</p>'}
-    </div>`).join('');
+    // the full, uncropped reviews
+    document.getElementById('reviews-full').innerHTML = list.map((r) => `
+      <div class="panel review-full">
+        <div class="row">
+          <strong>${esc(r.name)}</strong>
+          <span class="stars">${'★'.repeat(r.stars)}</span>
+        </div>
+        ${r.text ? `<p class="rv-full-text">${esc(r.text)}</p>` : '<p class="dim small" style="margin:.3rem 0 0;">Rated 5 stars.</p>'}
+      </div>`).join('');
+  };
+  paint(REVIEWS);
+  loadReviews().then((all) => { if (all.length !== REVIEWS.length) paint(all); });
 
   document.getElementById('google-link-slot').innerHTML = (GOOGLE_REVIEWS_URL
     ? `<a href="${GOOGLE_REVIEWS_URL}" target="_blank" rel="noopener">Read all reviews on Google →</a>`

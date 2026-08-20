@@ -21,6 +21,13 @@ export function enhanceReviewsStrip(strip) {
   const track = strip?.querySelector('.reviews-track');
   if (!track || track.children.length < 2) return;
 
+  // Re-entrant: the cards get replaced once published client reviews land, and
+  // enhancing the same strip twice would leave the first set of listeners and
+  // the first animation loop running against stale geometry.
+  strip.__paStrip?.();
+  const abort = new AbortController();
+  const on = { signal: abort.signal };
+
   let x = 0;
   let v = 0;
   let auto = !matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -40,7 +47,7 @@ export function enhanceReviewsStrip(strip) {
     per = n >= 1 && kids[n] ? kids[n].offsetLeft - kids[0].offsetLeft : 0;
     return per;
   }
-  addEventListener('resize', () => { per = 0; });
+  addEventListener('resize', () => { per = 0; }, on);
 
   const wrap = (val) => {
     const p = period();
@@ -97,7 +104,7 @@ export function enhanceReviewsStrip(strip) {
     lastPX = e.clientX;
     samples = [{ t: performance.now(), x: e.clientX }];
     strip.setPointerCapture(e.pointerId);
-  });
+  }, on);
 
   strip.addEventListener('pointermove', (e) => {
     if (!dragging) return;
@@ -109,7 +116,7 @@ export function enhanceReviewsStrip(strip) {
     const now = performance.now();
     samples.push({ t: now, x: e.clientX });
     while (samples.length > 2 && now - samples[0].t > 100) samples.shift();
-  });
+  }, on);
 
   function release() {
     if (!dragging) return;
@@ -124,8 +131,8 @@ export function enhanceReviewsStrip(strip) {
     if (Math.abs(v) < 0.05) v = 0;
     if (v !== 0) ensureLoop();
   }
-  strip.addEventListener('pointerup', release);
-  strip.addEventListener('pointercancel', release);
+  strip.addEventListener('pointerup', release, on);
+  strip.addEventListener('pointercancel', release, on);
 
   // a real drag shouldn't fire the card's link on release
   strip.addEventListener('click', (e) => {
@@ -133,5 +140,12 @@ export function enhanceReviewsStrip(strip) {
       e.preventDefault();
       e.stopPropagation();
     }
-  }, true);
+  }, { capture: true, ...on });
+
+  strip.__paStrip = () => {
+    abort.abort();
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+    delete strip.__paStrip;
+  };
 }

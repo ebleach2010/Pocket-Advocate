@@ -395,10 +395,12 @@ function renderDocs(el, c) {
          </label>
          <progress data-progress max="100" value="0" hidden></progress>
          <p class="error" data-upload-error hidden></p>`}
-    <ul class="filelist" data-files><li class="dim small">Loading files…</li></ul>`;
+    <ul class="filelist" data-files><li class="dim small">Loading files…</li></ul>
+    <div data-review hidden></div>`;
   const input = el.querySelector('[data-file-input]');
   input?.addEventListener('change', () => uploadFiles(c, el, [...input.files]));
   refreshFiles(c, el);
+  renderReview(el, c);
   // Chat saves refresh this list via the permanent pa-saved-file listener at the top.
 }
 
@@ -449,12 +451,208 @@ async function refreshFiles(c, el) {
   const order = { report: 0, recording: 1, upload: 2, saved: 3 };
   rows.sort((a, b) => order[a.kind] - order[b.kind] || b.ts - a.ts);
   const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+  // The report gets a ✅ the moment the case is delivered. It is the one file
+  // they have been waiting for, and "is this the final one" should not be a
+  // question they have to work out from the filename.
+  const delivered = c.status === 'delivered' || c.status === 'closed';
   listEl.innerHTML = rows.map((r) => `
     <li>
       <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
+        ${r.kind === 'report' && delivered ? '<span class="delivered-tick" title="Delivered" role="img" aria-label="Delivered">✅</span>' : ''}
         <a href="${r.url}" target="_blank" rel="noopener">${esc(r.name)}</a></span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
     </li>`).join('');
+}
+
+/**
+ * The review card, under the documents, once the report has landed.
+ *
+ * The copy is Eric's, near enough word for word, with one change he asked for
+ * afterwards: the line offering a free week of priority chat for leaving a
+ * review is gone. Paying for reviews is the kind of thing that makes the
+ * honest ones worth less, and it would have meant a disclosure on the reviews
+ * page for the rest of time. What is left of that sentence is the fact it
+ * carried: the chat closes 48 hours after the report lands.
+ */
+const REVIEW_PROMPT = [
+  'Please leave feedback for me. This helps better improve the patient experience, app development, and future cases.',
+  'The chat closes 48hrs after you receive your advocacy case review.',
+  'Thank You!',
+];
+
+function renderReview(el, c) {
+  if (DEMO) return;
+  const delivered = c.status === 'delivered' || c.status === 'closed';
+  const host = el.querySelector('[data-review]');
+  if (!host) return;
+  if (!delivered) { host.hidden = true; host.innerHTML = ''; return; }
+  host.hidden = false;
+  if (host.dataset.done === c.id) return;   // never rebuild a card mid-typing
+
+  host.dataset.done = c.id;
+  host.innerHTML = `
+    <div class="review-card">
+      <h3>How did it go?</h3>
+      ${REVIEW_PROMPT.map((t) => `<p>${esc(t)}</p>`).join('')}
+      <p class="dim small"><em>You still keep all chat logs and documents for your case, untouched.</em></p>
+      <div class="stars" data-stars role="radiogroup" aria-label="Rating out of five">
+        ${[1, 2, 3, 4, 5].map((n) => `
+          <button type="button" class="star" data-star="${n}" role="radio" aria-checked="false"
+            aria-label="${n} star${n === 1 ? '' : 's'}">★</button>`).join('')}
+      </div>
+      <textarea data-review-text rows="4" maxlength="1000" placeholder="A few words, if you have them"></textarea>
+      <div class="actions">
+        <button class="btn glow" data-review-send disabled>Submit</button>
+      </div>
+      <p class="error" data-review-error hidden></p>
+      ${c.addOnFollowUp && !c.followUp ? `
+        <p class="dim small follow-note">Your follow-up case review is still on the books. If it's still not scheduled, Eric will promptly discuss with you the best time to follow up with a second review.</p>` : ''}
+      <p class="dim small"><em>Note: You can export this as a PDF for your records and can hand select which sections you want to export.</em></p>
+      <div class="actions">
+        <button class="btn quiet" data-export>Export as PDF</button>
+      </div>
+    </div>`;
+
+  let stars = 0;
+  const sendBtn = host.querySelector('[data-review-send]');
+  const errEl = host.querySelector('[data-review-error]');
+  host.querySelectorAll('[data-star]').forEach((b) =>
+    b.addEventListener('click', () => {
+      stars = Number(b.dataset.star);
+      host.querySelectorAll('[data-star]').forEach((x) => {
+        const on = Number(x.dataset.star) <= stars;
+        x.classList.toggle('on', on);
+        x.setAttribute('aria-checked', String(Number(x.dataset.star) === stars));
+      });
+      sendBtn.disabled = false;
+    }));
+
+  host.querySelector('[data-export]').addEventListener('click', () => openExport(c));
+
+  sendBtn.addEventListener('click', async () => {
+    if (!stars) return;
+    sendBtn.disabled = true;
+    errEl.hidden = true;
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/review', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          caseId: c.id, stars,
+          text: host.querySelector('[data-review-text]').value.trim(),
+        }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Couldn't send that (${res.status})`);
+      thankYou(host);
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+      sendBtn.disabled = false;
+    }
+  });
+}
+
+/**
+ * "You can export this as a PDF for your records and can hand select which
+ * sections you want to export." So: a picker, then a print window holding only
+ * the chosen sections, and Share > Print > Save to Files gives them a PDF on
+ * their phone. No library, no upload, and nothing leaves the device.
+ */
+const EXPORT_SECTIONS = [
+  { id: 'summary', label: 'Case summary', blurb: 'Dates, status, what was bought' },
+  { id: 'chat', label: 'Chat log', blurb: 'Every message, in order' },
+  { id: 'docs', label: 'Documents list', blurb: 'What is in the file, with dates' },
+];
+
+function openExport(c) {
+  const overlay = document.createElement('div');
+  overlay.className = 'settings-overlay';
+  overlay.innerHTML = `
+    <div class="settings-card">
+      <div class="row"><h3 style="margin:0;">Export as PDF</h3><button class="btn quiet" data-close>Cancel</button></div>
+      <p class="dim small">Pick what to include. Your phone's Share menu turns the print view into a PDF you can save.</p>
+      ${EXPORT_SECTIONS.map((x) => `
+        <label class="toggle-row">
+          <span><strong>${esc(x.label)}</strong><br><span class="dim small">${esc(x.blurb)}</span></span>
+          <input type="checkbox" data-sec="${esc(x.id)}" checked>
+        </label>`).join('')}
+      <div class="actions" style="margin-top:.6rem;">
+        <button class="btn glow" data-go>Open the print view</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('[data-close]').addEventListener('click', close);
+  overlay.querySelector('[data-go]').addEventListener('click', () => {
+    const want = new Set([...overlay.querySelectorAll('[data-sec]:checked')].map((x) => x.dataset.sec));
+    close();
+    printExport(c, want);
+  });
+}
+
+function printExport(c, want) {
+  const mtFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+  // The chat log comes off the DOM that is already on screen rather than a
+  // fresh read: it is the same messages, and a second query would need rules
+  // this page does not have open.
+  const msgs = [...document.querySelectorAll('.msg')].map((m) => ({
+    mine: m.classList.contains('mine'),
+    text: (m.querySelector('.msg-text')?.textContent || m.textContent || '').trim(),
+    when: m.querySelector('time')?.textContent?.trim() || '',
+  })).filter((m) => m.text);
+  const files = [...document.querySelectorAll('[data-files] li')]
+    .map((li) => li.textContent.replace(/\s+/g, ' ').trim())
+    .filter((t) => t && !/^Loading|^Nothing here/.test(t));
+
+  const win = window.open('', '_blank');
+  if (!win) { alert("Your browser blocked the print window. Allow pop-ups for this site and try again."); return; }
+  const sec = (id, title, inner) => (want.has(id) ? `<h2>${title}</h2>${inner}` : '');
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
+    <title>Pocket Advocate — case record</title>
+    <style>
+      body { font: 15px/1.55 -apple-system, system-ui, sans-serif; color: #111; margin: 2rem 1.4rem; }
+      h1 { font-size: 1.5rem; margin: 0 0 .2rem; }
+      h2 { font-size: 1.05rem; margin: 1.6rem 0 .4rem; border-bottom: 1px solid #ccc; padding-bottom: .2rem; }
+      .meta { color: #555; font-size: .9rem; margin: 0 0 1rem; }
+      .m { margin: 0 0 .55rem; padding-left: .7rem; border-left: 3px solid #ddd; }
+      .m.mine { border-left-color: #0E6E86; }
+      .who { font-size: .78rem; color: #666; }
+      ul { padding-left: 1.1rem; } li { margin: 0 0 .25rem; }
+      @page { margin: 14mm; }
+    </style></head><body>
+    <h1>Advocacy Case</h1>
+    <p class="meta">Pocket Advocate · exported ${new Date().toLocaleDateString()}</p>
+    ${sec('summary', 'Case summary', `<ul>
+      <li>Status: ${esc(STATUS_LABEL[c.status] || c.status)}</li>
+      ${c.appointment?.start ? `<li>Discussion: ${esc(mtFmt.format(toDate(c.appointment.start)))} MST</li>` : ''}
+      ${c.reportDeliveredAt ? `<li>Report delivered: ${esc(toDate(c.reportDeliveredAt).toLocaleDateString())}</li>` : ''}
+      ${c.addOnFollowUp ? '<li>Follow-up session: purchased</li>' : ''}
+    </ul>`)}
+    ${sec('chat', 'Chat log', msgs.length
+      ? msgs.map((m) => `<p class="m ${m.mine ? 'mine' : ''}"><span class="who">${m.mine ? 'You' : 'Eric'}${m.when ? ' · ' + esc(m.when) : ''}</span><br>${esc(m.text)}</p>`).join('')
+      : '<p>No messages.</p>')}
+    ${sec('docs', 'Documents', files.length
+      ? `<ul>${files.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
+      : '<p>No documents.</p>')}
+    </body></html>`);
+  win.document.close();
+  // Give the new document a beat to lay out before the print sheet opens over it.
+  setTimeout(() => win.print(), 350);
+}
+
+/** "Thank you for your input", which fades in and then drifts away on its own. */
+function thankYou(host) {
+  host.innerHTML = '<p class="thanks" role="status">Thank you for your input</p>';
+  const el = host.querySelector('.thanks');
+  // The class drives a CSS animation that ends at opacity 0; removing the node
+  // afterwards keeps an invisible paragraph from holding the layout open.
+  setTimeout(() => { host.innerHTML = ''; host.hidden = true; }, 4200);
+  void el;
 }
 
 async function uploadFiles(c, el, files) {

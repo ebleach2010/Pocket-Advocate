@@ -188,6 +188,68 @@ function render(el) {
 }
 
 /**
+ * The client's review of this case, and the decision to publish it or not.
+ *
+ * Publishing a client's words under their own name is not a decision that
+ * belongs to a checkbox they ticked while still upset or still grateful, so
+ * nothing reaches the reviews page until Eric says so, and he can take it back
+ * afterwards.
+ */
+let reviewKey = null;
+async function paintCaseReview(pane) {
+  const host = pane?.querySelector('[data-case-review]');
+  if (!host) return;
+  let review = null;
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/reviews/admin', { headers: { authorization: `Bearer ${token}` } });
+    if (res.ok) review = ((await res.json()).reviews || []).find((r) => r.caseId === caseId) || null;
+  } catch { /* the overview is still usable without it */ }
+
+  const key = JSON.stringify(review);
+  if (key === reviewKey) return;
+  reviewKey = key;
+
+  if (!review) {
+    host.innerHTML = '<p class="dim small">No review yet. The card opens on their side once the report is delivered.</p>';
+    return;
+  }
+  host.innerHTML = `
+    <div class="row">
+      <span class="review-stars" role="img" aria-label="${review.stars} out of 5">${'★'.repeat(review.stars)}${'☆'.repeat(5 - review.stars)}</span>
+      <span class="status-pill ${review.published ? '' : 'closed'}">${review.published ? 'PUBLISHED' : 'PRIVATE'}</span>
+    </div>
+    ${review.text ? `<blockquote class="review-quote"></blockquote>` : '<p class="dim small">Stars only, no words.</p>'}
+    <div class="actions">
+      <button class="btn ${review.published ? 'quiet' : 'glow'}" data-publish="${review.published ? '0' : '1'}">
+        ${review.published ? 'Take it off the reviews page' : 'Publish to the reviews page'}
+      </button>
+    </div>`;
+  // Their words as text, never as markup.
+  const quote = host.querySelector('.review-quote');
+  if (quote) quote.textContent = review.text;
+
+  host.querySelector('[data-publish]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/reviews/admin', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ id: review.id, publish: btn.dataset.publish === '1' }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Failed (${res.status})`);
+      reviewKey = null;
+      paintCaseReview(pane);
+    } catch (err) {
+      btn.disabled = false;
+      alert(err.message);
+    }
+  });
+}
+
+/**
  * 📚 Education. Every term and disease the advisor has raised, grouped by what
  * kind of thing it is. Ticking one stops it being highlighted and stops it
  * being explained again anywhere, and tells the advisor where his knowledge
@@ -435,6 +497,13 @@ function paintOverview(pane) {
       </div>
     </details>
 
+    <details class="mgmt" data-k="review">
+      <summary>⭐ Their review</summary>
+      <div class="mgmt-body" data-case-review>
+        <p class="dim small">Loading…</p>
+      </div>
+    </details>
+
     ${c.status !== 'closed' ? `
     <details class="mgmt" data-k="close">
       <summary>⛔ Close case</summary>
@@ -443,6 +512,7 @@ function paintOverview(pane) {
       </div>
     </details>` : ''}`;
 
+  paintCaseReview(pane);
   pane.querySelector('#save-link').addEventListener('click', saveLink);
   wireScheduler(pane);
   pane.querySelectorAll('[data-action]').forEach((b) =>

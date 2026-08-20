@@ -28,7 +28,7 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat41">
+<link rel="stylesheet" href="/css/site.css?v=stat42">
 <script>
 // The admin's device opens straight to the dashboard — he never books a case.
 // Inline in <head> so there's no flash of the booking page first. The hint is
@@ -170,7 +170,7 @@
   // Reviews strip: the same embed as reviews.html (same imports, container,
   // and init call). Kept in its own module with no Firebase dependency, so
   // the reviews render even if the auth module fails to load.
-  import { GOOGLE_REVIEWS_URL, BUSINESS_PHONE, REVIEWS } from '/js/reviews-config.js';
+  import { GOOGLE_REVIEWS_URL, BUSINESS_PHONE, REVIEWS, loadReviews } from '/js/reviews-config.js';
   import { enhanceReviewsStrip } from '/js/reviews-strip.js';
 
   const esc = (s) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -182,9 +182,16 @@
       ${r.text ? `<span class="rv-text">${esc(r.text)}</span>` : ''}
       <span class="rv-name">${esc(r.name)}</span>
     </${GOOGLE_REVIEWS_URL ? 'a' : 'div'}>`;
-  const cards = REVIEWS.map(card).join('');
-  document.getElementById('reviews-track').innerHTML = cards + cards;
-  enhanceReviewsStrip(document.querySelector('.reviews-strip'));
+  const paint = (list) => {
+    const cards = list.map(card).join('');
+    document.getElementById('reviews-track').innerHTML = cards + cards;
+    // enhanceReviewsStrip tears its previous self down, so painting twice is
+    // safe: the Google baseline shows immediately and the fuller list swaps in
+    // when it lands, rather than the strip sitting empty on a network call.
+    enhanceReviewsStrip(document.querySelector('.reviews-strip'));
+  };
+  paint(REVIEWS);
+  loadReviews().then((all) => { if (all.length !== REVIEWS.length) paint(all); });
 
   // Footer call button, same guard as about.html: only when a number is set.
   if (BUSINESS_PHONE)

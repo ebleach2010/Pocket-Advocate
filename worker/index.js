@@ -102,6 +102,12 @@ export default {
         return await handleVerifyCode(request, env);
       if (url.pathname === '/api/auth/device-signin' && request.method === 'POST')
         return await handleDeviceSignin(request, env);
+      if (url.pathname === '/api/review' && request.method === 'POST')
+        return await handleReviewSubmit(request, env);
+      if (url.pathname === '/api/reviews' && request.method === 'GET')
+        return await handleReviewsPublic(env);
+      if (url.pathname === '/api/reviews/admin')
+        return await handleReviewsAdmin(request, env);
       if (url.pathname === '/api/version' && request.method === 'GET')
         return json({ tag: BUILD_TAG });
       if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
@@ -124,6 +130,7 @@ export default {
       ctx.waitUntil(runFollowUpWarnings(env));
       ctx.waitUntil(cleanupStaleSlots(env));
       ctx.waitUntil(repairMissingCaseEmails(env));
+      ctx.waitUntil(closeDeliveredCases(env));
     }
     ctx.waitUntil(runQueuedAnalyses(env));
   },
@@ -132,6 +139,51 @@ export default {
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
 const BUILD_TAG = 'v2026-08-20-folder';
+
+/**
+ * The 48 hours the review card promises. "The chat closes 48hrs after you
+ * receive your advocacy case review" is a sentence a client reads on their own
+ * screen, so it has to be true without Eric remembering to make it true.
+ *
+ * Closing ends the chat and nothing else. The file, the report, the recording
+ * and every message stay theirs forever, which is what the card says two lines
+ * further down and what the close mail repeats.
+ */
+async function closeDeliveredCases(env) {
+  try {
+    const rows = await queryDocs(env, 'cases', [['status', 'EQUAL', 'delivered']], 40);
+    const cutoff = Date.now() - REVIEW_WINDOW_MS;
+    for (const row of rows) {
+      const at = row.data.reportDeliveredAt ? new Date(row.data.reportDeliveredAt).getTime() : 0;
+      // No delivery stamp means an older case that predates the field. Leave
+      // it alone rather than closing a chat on a guess.
+      if (!at || at > cutoff) continue;
+      await patchDoc(env, `cases/${row.id}`, {
+        status: 'closed', closedAt: new Date(), closedBy: 'review-window',
+      }, { mask: ['status', 'closedAt', 'closedBy'] });
+      await sendEmail(env, {
+        to: row.data.clientEmail,
+        subject: 'Your case file is yours to keep',
+        html: `<p>It has been a couple of days since your report landed, so the
+          case chat is now closed.</p>
+          <p>Everything else stays exactly where it is. Your report, your
+          recording, your documents and the whole chat log remain in your file
+          for as long as you want them, and you can download or print any of it
+          at any time.</p>
+          <p>If something new comes up, you can book another case whenever you
+          need one.</p>
+          <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+      }).catch(() => { /* the close still stands if the mail fails */ });
+      await notifyUser(env, row.data.clientUid, {
+        title: 'Pocket Advocate',
+        body: 'Your case chat has closed. Your file stays yours.',
+        link: '/case.html',
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('close delivered:', err.message || err);
+  }
+}
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -1227,6 +1279,105 @@ async function handleAdvisorState(request, env, url) {
   });
 }
 
+/** How long a case chat stays open after the report lands. */
+const REVIEW_WINDOW_MS = 48 * 3600_000;
+
+/**
+ * POST /api/review — the client's five stars and a few words, on their own
+ * delivered case. One review per case: a second submission edits the first
+ * rather than stacking, because a review is a verdict on a case and a case has
+ * one of those.
+ *
+ * Nothing is published by this route. Every review lands unpublished and Eric
+ * decides, which is why the copy the client reads promises them nothing about
+ * where it appears.
+ */
+async function handleReviewSubmit(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+
+  const stars = Math.round(Number(body?.stars));
+  if (!(stars >= 1 && stars <= 5)) return json({ error: 'Pick one to five stars.' }, 400);
+  const text = typeof body?.text === 'string' ? body.text.trim().slice(0, 1000) : '';
+
+  // Their OWN case, and only once it has actually been delivered. A review of
+  // something that has not happened is not a review.
+  const doc = await getDoc(env, `cases/${caseId}`);
+  if (!doc || doc.data.clientUid !== user.uid) return json({ error: 'Not found' }, 404);
+  if (!['delivered', 'closed'].includes(doc.data.status))
+    return json({ error: 'This case has not been delivered yet.' }, 409);
+
+  const prior = await getDoc(env, `reviews/${caseId}`).catch(() => null);
+  await patchDoc(env, `reviews/${caseId}`, {
+    caseId,
+    clientUid: user.uid,
+    // The name shown on the reviews page if Eric publishes it. It comes off
+    // the case rather than from the request: a review must never be able to
+    // sign itself as somebody else.
+    name: doc.data.clientName || 'A client',
+    stars, text,
+    at: new Date(),
+    // An edit never re-publishes itself. Eric approved the words he read.
+    published: false,
+    publishedAt: null,
+  }, { mask: ['caseId', 'clientUid', 'name', 'stars', 'text', 'at', 'published', 'publishedAt'] });
+
+  return json({ ok: true, edited: !!prior });
+}
+
+/** GET /api/reviews — published reviews only. Public, no auth. */
+async function handleReviewsPublic(env) {
+  const rows = await queryDocs(env, 'reviews', [['published', 'EQUAL', true]], 50).catch(() => []);
+  const reviews = rows
+    .map((r) => ({
+      name: r.data.name || 'A client',
+      stars: Math.max(1, Math.min(5, Math.round(Number(r.data.stars) || 5))),
+      text: String(r.data.text || ''),
+      at: r.data.publishedAt || r.data.at || null,
+    }))
+    .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+  return json({ reviews });
+}
+
+/**
+ * The approval queue. GET lists every review with its state; POST publishes or
+ * unpublishes one. Admin only, because publishing a client's words under their
+ * own name is not a decision that belongs anywhere else.
+ */
+async function handleReviewsAdmin(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const profile = await getDoc(env, `users/${user.uid}`);
+  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+
+  if (request.method === 'GET') {
+    const rows = await listDocs(env, 'reviews', { pageSize: 200 }).catch(() => []);
+    return json({
+      reviews: rows.map((r) => ({
+        id: r.id, caseId: r.data.caseId || r.id, name: r.data.name || '',
+        stars: Number(r.data.stars) || 0, text: String(r.data.text || ''),
+        at: r.data.at || null, published: !!r.data.published,
+      })).sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0)),
+    });
+  }
+
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const id = typeof body?.id === 'string' ? body.id : '';
+    if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad review' }, 400);
+    const publish = body?.publish === true;
+    await patchDoc(env, `reviews/${id}`, {
+      published: publish, publishedAt: publish ? new Date() : null,
+    }, { mask: ['published', 'publishedAt'] });
+    return json({ ok: true, published: publish });
+  }
+
+  return json({ error: 'Method not allowed' }, 405);
+}
+
 /**
  * GET /api/advisor/covers — the dashboard shelf's folder covers in one call:
  * { covers: { [caseId]: { text, by } } }. caseMeta is Worker-only by rule
@@ -1949,7 +2100,7 @@ async function handleCaseUpdate(request, env) {
           <p>I'm now putting together your written report. Expect it within
           <strong>7 business days</strong> — some reports take slightly longer
           depending on complexity, and yours will be worth the care.</p>
-          <p>When the report lands, you'll have a day to look it over and ask
+          <p>When the report lands, you'll have 48 hours to look it over and ask
           any questions in your case chat before the case wraps up. Your file —
           report, recording, everything — stays yours forever either way.</p>
           <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
@@ -1965,8 +2116,8 @@ async function handleCaseUpdate(request, env) {
       subject: 'Your Pocket Advocate report is ready',
       html: `<p>Your written report is in your case file — yours to download,
         print, and keep forever. Share it with your care team.</p>
-        <p>Take a day to read it over — if anything raises a question, ask me
-        in your case chat before the case wraps up.</p>
+        <p>Take a couple of days to read it over — the case chat stays open for
+        48 hours, so ask me anything it raises while it's fresh.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
     });
   } else if (action === 'confirm-request') {
