@@ -164,6 +164,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
           canReact: !mine,
           canUseStatus: !mine && myRole === 'admin',
           canEdit: !!editable,
+          canRecap: mine && myRole === 'admin' && !!data.text,
           hasReaction: !!data.reaction?.id,
           hasText: !!data.text,
           current: data.reaction?.id || null,
@@ -277,6 +278,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       return;
     }
     if (choice.action === 'edit') return editMessage(o);
+    if (choice.action === 'recap') {
+      // Force a plain-words recap of the latest unanswered run, right now.
+      return post('/api/chat/recap', { kind: kindOf(), id: parentPath[1], force: true },
+        "Couldn't recap");
+    }
     await post('/api/chat/react', {
       kind: kindOf(), id: parentPath[1], msgId: o.msgId,
       reaction: choice.action === 'clear' ? null : choice.id,

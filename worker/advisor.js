@@ -195,7 +195,7 @@ async function harvestKeyTerms(env, analysis) {
  * Runs once per message run, only when the run has sat unanswered 5+ minutes,
  * and lands on the last message of the run for both sides to see.
  */
-export async function runRecap(env, kind, id) {
+export async function runRecap(env, kind, id, { force = false } = {}) {
   const parent = kind === 'case' ? 'cases' : 'subscriptions';
   const rows = await recentMessages(env, kind, id);
 
@@ -205,15 +205,25 @@ export async function runRecap(env, kind, id) {
     if (rows[i].data.role === 'admin') run.unshift(rows[i]);
     else break;
   }
-  if (!run.length) return { ok: false, reason: 'nothing to recap' };
+  // Forced runs (Eric, from the long-press menu) speak their failures; the
+  // automatic path stays silent — a client's chat shouldn't alert about a
+  // recap that simply wasn't needed.
+  if (!run.length) {
+    if (force) throw new Error('The client has replied since — nothing is waiting on a recap.');
+    return { ok: false, reason: 'nothing to recap' };
+  }
   const last = run[run.length - 1];
-  if (last.data.recap) return { ok: true, already: true };
-  if (Date.now() - new Date(last.data.ts || 0).getTime() < 5 * 60_000)
-    return { ok: false, reason: 'too soon' };
   const text = run.map((r) => r.data.text).filter(Boolean).join('\n\n');
-  // One short message doesn't need a recap of itself.
-  if (!text || (text.length < 240 && run.length < 2))
-    return { ok: false, reason: 'too short to need one' };
+  if (force) {
+    if (!text) throw new Error('These messages have no text to recap.');
+  } else {
+    if (last.data.recap) return { ok: true, already: true };
+    if (Date.now() - new Date(last.data.ts || 0).getTime() < 5 * 60_000)
+      return { ok: false, reason: 'too soon' };
+    // One short message doesn't need a recap of itself.
+    if (!text || (text.length < 240 && run.length < 2))
+      return { ok: false, reason: 'too short to need one' };
+  }
 
   const recap = await ask(env, {
     effort: 'low',

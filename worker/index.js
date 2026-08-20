@@ -115,7 +115,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-20-recap';
+const BUILD_TAG = 'v2026-08-20-recap-force';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -956,10 +956,13 @@ async function handleChatRecap(request, env, ctx) {
   if (!doc) return json({ error: 'Not found' }, 404);
   const clientUid = kind === 'case' ? doc.data.clientUid : id;
   const profile = await getDoc(env, `users/${user.uid}`);
-  if (profile?.data.role !== 'admin' && user.uid !== clientUid)
+  const isAdmin = profile?.data.role === 'admin';
+  if (!isAdmin && user.uid !== clientUid)
     return json({ error: 'Not your thread' }, 403);
 
-  return keepaliveRun(ctx, runRecap(env, kind, id));
+  // force: Eric's "recap for them, now" — skips the 5-minute wait and the
+  // length threshold, and regenerates over an existing recap. Admin only.
+  return keepaliveRun(ctx, runRecap(env, kind, id, { force: !!body?.force && isAdmin }));
 }
 
 /**
