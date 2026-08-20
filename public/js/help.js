@@ -115,6 +115,7 @@ export function openCaseHelp() {
     <ul class="help-list">
       <li><strong>Progress</strong> — where your case stands, your appointment time, and how to join the call.</li>
       <li><strong>Chat</strong> — every message between you and me, kept permanently. Photos and files sent in chat can be saved straight into your documents.</li>
+      <li><strong>Passing on a question</strong> — if I ask something you'd rather not answer, tap the little ⚐ flag under that question. It fills in red and marks it <strong>PASS</strong>: I won't ask again, I won't ask why, we just move on. You never owe me an explanation.</li>
       <li><strong>Documents</strong> — labs, imaging, records and letters. Upload from either end, any time before or after the call. PDFs, photos, HEIC, DICOM and ZIPs up to 25&nbsp;MB each.</li>
       <li><strong>The recording</strong> of our discussion, once it lands in your file.</li>
       <li><strong>Your written report</strong>, within 7 days of the call.</li>

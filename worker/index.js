@@ -74,6 +74,8 @@ export default {
         return await handleChatReact(request, env);
       if (url.pathname === '/api/chat/edit' && request.method === 'POST')
         return await handleChatEdit(request, env);
+      if (url.pathname === '/api/chat/pass' && request.method === 'POST')
+        return await handleChatPass(request, env);
       if (url.pathname === '/api/advisor' && request.method === 'POST')
         return await handleAdvisor(request, env, ctx);
       if (url.pathname === '/api/advisor/state' && request.method === 'GET')
@@ -111,7 +113,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-20-key-terms';
+const BUILD_TAG = 'v2026-08-20-pass-flag';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -930,6 +932,56 @@ async function handleChatReact(request, env) {
     await notifyUser(env, target, { title: 'Pocket Advocate', body: push, link: ctx.link });
   }
   return json({ ok: true, reaction, notified: !already });
+}
+
+/**
+ * POST /api/chat/pass  Body: { kind: 'case'|'sub', id, msgId, pass: bool }
+ *
+ * Passing on a question. Either side can flag a message from the other person
+ * as PASS: "not answering that one, please don't ask why." The mark is visible
+ * to both, the asker gets one quiet notification, and nobody owes anybody an
+ * explanation. Only whoever set the flag can take it back. Worker-written for
+ * the same reason as reactions and edits: chat messages are browser-immutable
+ * by rule.
+ */
+async function handleChatPass(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+
+  const body = await request.json().catch(() => null);
+  const ctx = await chatContext(env, user, body?.kind, String(body?.id || ''), String(body?.msgId || ''));
+  if (ctx.error) return json({ error: ctx.error }, ctx.code);
+
+  const msg = await getDoc(env, ctx.path);
+  if (!msg) return json({ error: 'No such message' }, 404);
+
+  if (body?.pass) {
+    if (msg.data.from === user.uid)
+      return json({ error: "You can only pass on the other person's message." }, 403);
+    const already = !!msg.data.pass;
+    await patchDoc(env, ctx.path, { pass: { by: user.uid, at: new Date() } }, { mask: ['pass'] });
+    const author = msg.data.from;
+    if (!already && author && author !== user.uid) {
+      const kind = body.kind === 'sub' ? 'sub' : 'case';
+      const id = String(body.id);
+      // Send the asker back to the right side of the thread.
+      const authorIsAdmin = msg.data.role === 'admin';
+      const link = authorIsAdmin
+        ? (kind === 'case' ? `/admin-case.html?id=${id}` : '/admin-chats.html')
+        : ctx.link;
+      await notifyUser(env, author, {
+        title: 'Pocket Advocate',
+        body: `${ctx.isAdmin ? 'Eric' : 'Your client'} passed on your question. Moving on.`,
+        link,
+      });
+    }
+    return json({ ok: true, pass: true });
+  }
+
+  if (msg.data.pass?.by !== user.uid)
+    return json({ error: 'Only whoever passed can take it back.' }, 403);
+  await patchDoc(env, ctx.path, { pass: null }, { mask: ['pass'] });
+  return json({ ok: true, pass: false });
 }
 
 /**
