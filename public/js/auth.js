@@ -181,7 +181,7 @@ export async function hydrateNav() {
     // nothing on the page depends on it, and a changelog that fails to load is
     // not a reason for anything else to break. Nobody is shown a changelog on
     // a first-ever visit - they need the app, not its history.
-    import('./changelog.js').then((m) => m.showVersionCard(admin)).catch(() => {});
+    import('./changelog.js').then((m) => m.showVersionCard(admin, user)).catch(() => {});
   } else {
     el.innerHTML = `<a href="/signin.html">Sign in</a>`;
   }

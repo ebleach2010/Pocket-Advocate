@@ -18,10 +18,16 @@
 export const VERSION = '2.2';
 
 /**
- * Newest first. `client` is what a patient reads; `admin` is what Eric reads on
- * top of it. A version with an empty `client` array never shows a card to a
- * client at all, which is the right outcome for a release that only moved
- * things on the advocate's side.
+ * Newest first, and CLIENT NOTES ONLY.
+ *
+ * This file is loaded by every page, so anything in it is readable by anyone
+ * who opens devtools. Eric's half of the release notes names the advisor, the
+ * working diagnosis and the duty-of-care draft, and a client is meant to be
+ * blind to all three, so his half is served by an admin-gated Worker route
+ * instead and never exists in a static file.
+ *
+ * A version with an empty list never shows a card at all, which is the right
+ * outcome for a release that only moved things on the advocate's side.
  */
 export const CHANGELOG = [
   {
@@ -34,18 +40,6 @@ export const CHANGELOG = [
       'You can export your case as a PDF and pick which sections to include. It is in the feedback card, under Docs.',
       'Four looks to choose from, including a light one and a high-contrast one. Tap the ⚙ in the top bar.',
     ],
-    admin: [
-      'The dashboard is a shelf of case folders with the working diagnosis on the front. Press and hold that line to write your own over it.',
-      'Folders carry an emoji for anything you have not looked at yet, and they stack: 💬👨‍🔬.',
-      'The case opens as a folder. Tap the right half of a page to send it to the back of the pile, the left half to bring one forward. It loops.',
-      'The advisor stops losing documents. Everything you hand it is read, queued for the next pass, or named with the reason it could not be read.',
-      'It also picks up new files on its own, about five minutes after they land, and never re-reads one.',
-      'Ten sections now, including plain English with colour-coded terms, a chart note, what is missing, and what is genuinely ruled out.',
-      'Say "override" and the advisor stops arguing and files your position permanently.',
-      'Education and About you are their own tabs.',
-      'Reviews land in the case Overview for you to publish or keep private.',
-      'A duty-of-care draft lives under Drafts, in your words, with live crisis numbers for the US and Canada.',
-    ],
   },
   {
     version: '2.1',
@@ -53,7 +47,6 @@ export const CHANGELOG = [
       'Press and hold a message to react to it, or to edit your own within three minutes.',
       'Press and hold a file shared in chat to save it to your Documents.',
     ],
-    admin: [],
   },
 ];
 
@@ -77,14 +70,16 @@ export function markVersionSeen(v = VERSION) {
  * visit gets nothing: somebody who has never used the app does not need a
  * changelog, they need the app.
  */
-export function unseenVersions(isAdmin = false) {
+export function unseenVersions(extra = {}) {
   const seen = seenVersion();
   if (!seen) return [];
   return CHANGELOG
     .filter((v) => rank(v.version) > rank(seen))
     .map((v) => ({
       version: v.version,
-      notes: isAdmin ? [...v.client, ...v.admin] : v.client,
+      // `extra` is Eric's half, fetched from the admin route. A client never
+      // has one, and never has a way to ask for one.
+      notes: [...v.client, ...(extra[v.version] || [])],
     }))
     .filter((v) => v.notes.length);
 }
@@ -94,8 +89,19 @@ export function unseenVersions(isAdmin = false) {
  * version is marked seen, so a reload does not bring it round again even if
  * they never tapped anything.
  */
-export function showVersionCard(isAdmin = false) {
-  const versions = unseenVersions(isAdmin);
+export async function showVersionCard(isAdmin = false, user = null) {
+  // Eric's half comes from a route that checks his role server-side. A client
+  // calling it gets a 403 and an empty object, which is also what a network
+  // failure gives, so the card degrades to the client notes either way.
+  let extra = {};
+  if (isAdmin && user) {
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/changelog', { headers: { authorization: `Bearer ${token}` } });
+      if (res.ok) extra = (await res.json()).admin || {};
+    } catch { /* the client half still shows */ }
+  }
+  const versions = unseenVersions(extra);
   markVersionSeen();
   if (!versions.length) return false;
 

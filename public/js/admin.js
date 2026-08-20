@@ -4,7 +4,7 @@
 import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { initPushPrompt } from './push.js';
-import { folderCardHtml, wireFolderOpen, wireDxLongPress } from './folder.js';
+import { folderCardHtml, wireFolderOpen, wireDxLongPress } from './drawer.js';
 import { unseenBadges } from './seen.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';

@@ -113,12 +113,12 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       const attCt = (att?.contentType || '').toLowerCase();
       const attReadable = !!att?.url && !/heic|heif/.test(attCt) &&
         (attCt.startsWith('image/') || attCt === 'application/pdf' || /\.pdf$/i.test(att?.name || ''));
-      const canAdvisor = attReadable && myRole === 'admin' &&
+      const canStage = attReadable && myRole === 'admin' &&
         document.body.dataset.advisor === '1';
       if (att && att.url) {
         hasAttachment = true;
         div.appendChild(renderAttachment(att, saveUid));
-        if (canAdvisor) div.appendChild(advisorBadge(att));
+        if (canStage) div.appendChild(advisorBadge(att));
       }
       const sentAt = data.ts?.toDate ? data.ts.toDate() : null;
       const meta = document.createElement('span');
@@ -184,7 +184,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       // reactions on theirs, editing on your own inside the 3-minute window.
       const editable = mine && !!data.text && sentAt &&
         Date.now() - sentAt.getTime() < EDIT_WINDOW_MS;
-      if (!mine || editable || data.text || canAdvisor) {
+      if (!mine || editable || data.text || canStage) {
         messageLongPress(div, {
           msgId: m.id,
           canReact: !mine,
@@ -192,8 +192,8 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
           canEdit: !!editable,
           canRecap: mine && myRole === 'admin' && !!data.text,
           canPass: !mine && !!data.text && !data.pass,
-          canAdvisor,
-          attachment: canAdvisor ? att : null,
+          canStage,
+          attachment: canStage ? att : null,
           passedByMe: data.pass?.by === user.uid,
           hasReaction: !!data.reaction?.id,
           hasText: !!data.text,
@@ -230,6 +230,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   // When the advisor panel consumes or changes the staged-file selection,
   // repaint the badges to match (they also re-derive on every snapshot).
   if (myRole === 'admin') {
+    // The gate on the correction map above. It was declared and read but never
+    // set, so corrections applied to nobody - not to clients, which was the
+    // point, but not to Eric either, which was not. Set from the mounted role,
+    // never from a caller-supplied flag: a caller cannot talk its way past it.
+    adminChat = true;
     document.addEventListener('pa-advisor-selection', () => {
       container.querySelectorAll('.dr-badge').forEach((b) =>
         b.classList.toggle('on', !!window.__paMediaSel?.has(b.dataset.url)));
@@ -321,7 +326,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       return post('/api/chat/recap', { kind: kindOf(), id: parentPath[1], force: true },
         "Couldn't recap");
     }
-    if (choice.action === 'advisor') {
+    if (choice.action === 'stage') {
       // The advisor panel (mounted on the admin case page) owns the actual
       // request; the chat just hands the file over.
       document.dispatchEvent(new CustomEvent('pa-advisor-review', {

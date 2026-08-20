@@ -106,6 +106,8 @@ export default {
         return await handleReviewSubmit(request, env);
       if (url.pathname === '/api/reviews' && request.method === 'GET')
         return await handleReviewsPublic(env);
+      if (url.pathname === '/api/changelog' && request.method === 'GET')
+        return await handleChangelog(request, env);
       if (url.pathname === '/api/reviews/admin')
         return await handleReviewsAdmin(request, env);
       if (url.pathname === '/api/version' && request.method === 'GET')
@@ -1282,6 +1284,41 @@ async function handleAdvisorState(request, env, url) {
       updatedAt: style?.data.updatedAt || null,
     },
   });
+}
+
+/**
+ * Eric's half of the release notes.
+ *
+ * It lives here rather than in public/js/changelog.js because that file is
+ * loaded by every page: anything in it can be read by anyone who opens
+ * devtools, and these lines name the advisor, the working diagnosis and the
+ * duty-of-care draft. A client is meant to be blind to all three, and "blind"
+ * has to mean blind to somebody curious, not only to somebody who never looks.
+ *
+ * The client's half stays in the static file, where it belongs: it is what
+ * every reader is supposed to see.
+ */
+const ADMIN_NOTES = {
+  '2.2': [
+    'The dashboard is a shelf of case folders with the working diagnosis on the front. Press and hold that line to write your own over it.',
+    'Folders carry an emoji for anything you have not looked at yet, and they stack: 💬👨‍🔬.',
+    'The case opens as a folder. Tap the right half of a page to send it to the back of the pile, the left half to bring one forward. It loops.',
+    'The advisor stops losing documents. Everything you hand it is read, queued for the next pass, or named with the reason it could not be read.',
+    'It also picks up new files on its own, about five minutes after they land, and never re-reads one.',
+    'Ten sections now, including plain English with colour-coded terms, a chart note, what is missing, and what is genuinely ruled out.',
+    'Say "override" and the advisor stops arguing and files your position permanently.',
+    'Education and About you are their own tabs.',
+    'Reviews land in the case Overview for you to publish or keep private.',
+    'A duty-of-care draft and a printable video prep sheet live under Drafts.',
+  ],
+};
+
+async function handleChangelog(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const profile = await getDoc(env, `users/${user.uid}`);
+  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+  return json({ admin: ADMIN_NOTES });
 }
 
 /** How long a case chat stays open after the report lands. */
