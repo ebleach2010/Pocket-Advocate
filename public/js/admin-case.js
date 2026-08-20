@@ -13,6 +13,8 @@ import { mountChat, openLightbox } from './chat.js';
 import { mountAdvisor } from './advisor.js';
 import { mountNotes } from './notes.js';
 import { markSeen, isUnseen, PAGE_BADGES } from './seen.js';
+import { openDutyDraft } from './duty.js';
+import { openPrepSheet } from './prep.js';
 import { mountFolder } from './folder.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -37,6 +39,12 @@ let folder = null;
 // The notes sheet and the last html the server gave us. The sheet is built
 // with whatever we already hold, then kept current by the state poll.
 let notes = null;
+// The advisor's latest read, kept for the prep sheet: it is assembled from
+// these rather than from a second model call.
+let lastAnalysis = '';
+let lastDifferential = [];
+// Set once the chat mounts; the Drafts page tools send through it.
+let chatSend = null;
 let notesHtml = '';
 
 async function load() {
@@ -154,7 +162,43 @@ function render(el) {
         id: 'drafts', title: 'Drafts', icon: '✍️',
         // Today's draft panel, relocated. The advisor renders into it and
         // owns its heading and its hidden state.
-        render: (pane) => { pane.innerHTML = '<div class="panel draft-panel advisor-draft" id="draft-panel" hidden></div>'; },
+        render: (pane) => {
+          pane.innerHTML = [
+            '<div class="panel draft-panel advisor-draft" id="draft-panel" hidden></div>',
+            '<div class="panel">',
+            '  <h3>Tools</h3>',
+            '  <p class="dim small">Nothing here decides anything for you.</p>',
+            '  <button class="btn" data-prep-sheet>🎬 Video prep sheet</button>',
+            '  <button class="btn quiet" data-duty>⚕️ Duty of care draft</button>',
+            '</div>',
+          ].join('');
+          // Always present, never suggested. It says nothing about this client
+          // and looks identical on every case; Eric decides when he is
+          // obligated, and this only saves him writing the same thing under
+          // pressure at the moment he is least able to.
+          // Built from the advisor's own sections rather than a fresh model
+          // call: that read already exists and is already the one he trusts,
+          // and asking twice would produce a second version to reconcile.
+          pane.querySelector('[data-prep-sheet]').addEventListener('click', () => {
+            const c = data;
+            const start = c.appointment?.start ? toDate(c.appointment.start) : null;
+            openPrepSheet({
+              name: c.clientName || c.clientEmail || 'Call prep',
+              when: start
+                ? new Intl.DateTimeFormat('en-US', {
+                  timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric',
+                  hour: 'numeric', minute: '2-digit',
+                }).format(start) + ' MST'
+                : '',
+              analysis: lastAnalysis,
+              differential: lastDifferential,
+            });
+          });
+          pane.querySelector('[data-duty]').addEventListener('click', () => openDutyDraft({
+            tz: data.clientTz || '',
+            onSend: (text) => chatSend?.(text),
+          }));
+        },
       },
     ],
   });
@@ -168,6 +212,8 @@ function render(el) {
     disabled: c.status === 'closed',
     notice: 'Chat ended when this case closed.',
   });
+
+  chatSend = (text) => chat.send(text);
 
   // Admin-only, and admin-only by rule — see the `advisor` match in
   // firestore.rules. An approved draft goes out through the same send path as
@@ -399,6 +445,8 @@ document.addEventListener('pa-advisor-state', (e) => {
   for (const { page } of PAGE_BADGES) {
     if (page in stamps) folder?.mark(page, isUnseen(caseId, page, stamps[page]));
   }
+  if (typeof d.analysis === 'string') lastAnalysis = d.analysis;
+  if (Array.isArray(d.differential)) lastDifferential = d.differential;
   if (Array.isArray(d.glossary)) paintEducation(folder?.el('education'), d.glossary);
   if (d.about) paintAbout(folder?.el('about'), d.about);
 

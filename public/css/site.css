@@ -645,8 +645,6 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 .msg.them .msg-emoji-react { right: -.3rem; }
 .msg.me .msg-emoji-react { left: -.3rem; }
 /* Update-announcement hint: gold for the launch window, then back to dim. */
-.hint-gold { color: #F5C84C !important; text-shadow: 0 0 10px rgba(255, 208, 80, .25); }
-.hint-gold .hint-update { color: #FFD700; letter-spacing: .06em; font-size: .72rem; }
 
 /* "In short:" recap under an unanswered run of Eric's messages. */
 .msg-recap {
@@ -1191,6 +1189,25 @@ body.lightbox-open { overflow: hidden; }
 .adv-chip button { border: 0; background: none; color: var(--dim); cursor: pointer; padding: 0; font-size: .8rem; }
 .adv-chip.adv-add { border-style: dashed; border-color: var(--line); color: var(--dim); cursor: pointer; }
 .adv-chip.adv-add:hover { border-color: var(--cyan-dim); color: var(--soft); }
+
+/* ------------------------------------------------------------- what's new
+   App Store style: the version, then a short list of what actually changed
+   for whoever is reading it. Dismissible, and it never comes back. */
+.whats-new h3 { margin: .2rem 0 .1rem; }
+.whats-new h3 + ul { margin-top: .35rem; }
+.whats-new-list { margin: 0 0 1rem; padding-left: 1.15rem; }
+.whats-new-list li { margin: 0 0 .45rem; font-size: .93rem; line-height: 1.45; }
+
+/* The duty-of-care draft. Deliberately plain: nothing about this moment wants
+   a glow on it. */
+.duty-card { max-width: 34rem; }
+.duty-where { display: flex; gap: .4rem; margin: .1rem 0 .6rem; }
+.duty-text {
+  width: 100%; padding: .7rem .75rem;
+  font: inherit; font-size: .93rem; line-height: 1.5;
+  color: var(--ink); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 10px; resize: vertical;
+}
 
 /* ---------------------------------------------------------------- the review
    Opens under the documents once the report has landed. Five stars, a few

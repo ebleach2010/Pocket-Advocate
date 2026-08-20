@@ -515,6 +515,10 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           // the panel stays the single place that talks to the state route.
           glossary: out.glossary || [],
           about: out.about || null,
+          // The prep sheet is assembled from this rather than from a second
+          // model call: it is the read Eric already trusts, and asking twice
+          // would give him two versions to reconcile.
+          analysis: out.state?.analysis || '',
           // Activity stamps, for the dots on the tabs. The same moments the
           // shelf paints its emoji from, so both surfaces agree on what is new.
           advisorAt: out.state?.updatedAt || null,

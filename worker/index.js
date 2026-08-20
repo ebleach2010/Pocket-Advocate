@@ -109,7 +109,7 @@ export default {
       if (url.pathname === '/api/reviews/admin')
         return await handleReviewsAdmin(request, env);
       if (url.pathname === '/api/version' && request.method === 'GET')
-        return json({ tag: BUILD_TAG });
+        return json({ tag: BUILD_TAG, version: VERSION });
       if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
     } catch (err) {
       console.error(`${url.pathname}:`, err.stack || err);
@@ -139,6 +139,11 @@ export default {
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
 const BUILD_TAG = 'v2026-08-20-folder';
+// Every merge to main is a version. The notes themselves live in
+// public/js/changelog.js, next to the code that draws the card; this constant
+// is here so /api/version can say which release is live without the caller
+// having to load a client module to find out.
+const VERSION = '2.2';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

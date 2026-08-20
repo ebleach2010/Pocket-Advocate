@@ -215,16 +215,10 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         : (hasAttachment
           ? 'Press and hold a message to react or edit it; hold a shared file to save it to Documents. '
           : 'Press and hold a message to react to it, or to edit your own within 3 minutes. ')) + passNote).trim();
-      // Update 2.1 launch: the hint runs in gold under its label for 48 hours
-      // (until 2026-08-22 ~01:00 UTC), then reverts to the normal dim style on
-      // its own — the deadline is baked in, no second deploy needed.
-      if (Date.now() < Date.parse('2026-08-22T01:00:00Z')) {
-        hint.classList.add('hint-gold');
-        hint.innerHTML = `<strong class="hint-update">✨ Update 2.1</strong><br>${esc(hintText)}`;
-      } else {
-        hint.classList.remove('hint-gold');
-        hint.textContent = hintText;
-      }
+      // The one-off gold "Update 2.1" banner that used to run here has retired.
+      // changelog.js does this job now, for every release rather than one, and
+      // it says what changed instead of only that something did.
+      hint.textContent = hintText;
       hint.hidden = false;
     }
     log.scrollTop = log.scrollHeight;
