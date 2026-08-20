@@ -117,7 +117,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-20-draft-box';
+const BUILD_TAG = 'v2026-08-20-advisor-upload';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -1265,17 +1265,20 @@ async function handleAdvisor(request, env, ctx) {
     const startedAt = state?.data.startedAt ? new Date(state.data.startedAt).getTime() : 0;
     if (state?.data.status === 'running' && Date.now() - startedAt < 12 * 60_000)
       return json({ ok: true, already: true });
-    // Files Eric explicitly selected (the 👨‍⚕️ badges) ride along; nothing
-    // is ever read implicitly. Shape-checked here, URL fence-checked in the
-    // advisor before any fetch.
+    // Files Eric explicitly selected (the 👨‍⚕️ badges), plus files he
+    // uploaded straight to the advisor from his own device: those arrive
+    // inline as base64 `data` and never exist anywhere a client could see.
+    // Shape-checked here; URLs are fence-checked in the advisor before any
+    // fetch, and inline data is size-capped there before use.
     let media = null;
     if (Array.isArray(body?.media) && body.media.length) {
       media = body.media.slice(0, 8).map((m) => ({
         name: String(m?.name || 'file').slice(0, 200),
         url: typeof m?.url === 'string' ? m.url.slice(0, 2048) : '',
+        data: typeof m?.data === 'string' && m.data.length <= 20_000_000 ? m.data : '',
         contentType: String(m?.contentType || '').slice(0, 100),
         size: typeof m?.size === 'number' ? m.size : 0,
-      })).filter((m) => m.url);
+      })).filter((m) => m.url || m.data);
       if (!media.length) media = null;
     }
     // Queue first: if this connection drops mid-run, the cron retries it
