@@ -21,7 +21,7 @@ import { WAIVERS } from './waivers.js';
 // Booking buys one thing (Eric, 2026-08-20). The follow-up used to be a
 // checkbox on this screen; it is sold from the case after the report lands
 // instead, so this step is a single price and a single decision.
-const CASE_PRICE_CENTS = 27500;
+const CASE_PRICE_CENTS = 26500;
 const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).

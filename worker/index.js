@@ -28,20 +28,20 @@ import { runAnalysis, runQuestion, runDraft, runRecap, markPending, runQueuedAna
 // These build the real Stripe line items. Three browser files mirror them for
 // display — public/js/book.js, public/js/subscribe.js, public/js/admin-case.js
 // — and every price shown there is derived, never typed. Current rates (Eric,
-// 2026-08-20): $275 per case, a $75 follow-up session bought separately, and
+// 2026-08-20): $265 per case, a $75 follow-up session bought separately, and
 // $50/mo chat. Change a rate here and change it in those three, or the page
 // quotes one number and the card is charged another (which is exactly what
 // happened after the $150 experiment).
-const CASE_PRICE_CENTS = 27500;
-// The follow-up is a real add-on: a second discussion on the same case, offered
-// at checkout and priced on its own. It is NOT included in the case fee.
+const CASE_PRICE_CENTS = 26500;
+// The follow-up is a second discussion on the same case, sold from the case
+// after the report lands rather than at checkout. It is NOT included.
 const ADDON_PRICE_CENTS = 7500;
 const SUB_PRICE_CENTS = 5000;
 // Follow-up sessions expire one month after the first discussion (Eric,
 // 2026-07-13); clients get one warning email a week before the deadline.
 const FOLLOWUP_EXPIRY_DAYS = 30;
 const FOLLOWUP_WARN_DAYS = 7;
-// Admin-priced sessions: percentage of the $275 case rate, 25% steps.
+// Admin-priced sessions: a percentage of THAT CLIENT'S case rate, 25% steps.
 const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
 const METHODS = ['phone', 'video'];
 const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording'];
@@ -744,6 +744,11 @@ async function createCaseFromSession(env, session) {
       ),
       files: [],
       reportDueAt: null, // set when the call ends (Phase 2)
+      // The rate this client was sold at. A percentage charge later is a share
+      // of THIS number, not of whatever the rate happens to be by then: a
+      // client who paid $275 is not re-based onto a rate that moved after they
+      // bought (Eric, "current client gets grandfathered in", 2026-08-20).
+      caseRateCents: CASE_PRICE_CENTS,
       stripe: {
         sessionId: session.id,
         paymentIntentId: session.payment_intent || null,
@@ -2509,13 +2514,16 @@ async function handleAdminSchedule(request, env) {
     return json({ ok: true, scheduled: when });
   }
 
-  // mode === 'charge' — a custom-priced session (percentage of the $275 rate).
+  // mode === 'charge' — a custom-priced session (a percentage of their rate).
   if (!CHARGE_PCTS.includes(pct)) return json({ error: 'Pick a rate (0–150% in 25% steps).' }, 400);
   const label =
     typeof tagline === 'string' && tagline.trim()
       ? tagline.trim().slice(0, 120)
       : 'Advocacy Session';
-  const amountCents = Math.round((pct * CASE_PRICE_CENTS) / 100); // pct% of the case rate
+  // A share of what THEY paid. A case from before this field existed falls
+  // back to the current rate, which since rates have only come down errs in the
+  // client's favour rather than against them.
+  const amountCents = Math.round((pct * (c.caseRateCents || CASE_PRICE_CENTS)) / 100);
 
   if (amountCents === 0) {
     await bookSlot();

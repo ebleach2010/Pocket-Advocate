@@ -5,7 +5,7 @@
 //
 // 2026-08-20 (PR 69): EXACTLY TWO repricing-only edits, pending Eric's sign-off
 // (also flagged in the PR description). Nothing else in this file changed.
-// Rates confirmed by Eric on 2026-08-20: $275 case, $75 follow-up bought
+// Rates confirmed by Eric on 2026-08-20: $265 case, $75 follow-up bought
 // separately (NOT included in the case fee), $50/mo chat.
 //   (a) Disclaimer, Payment section: the follow-up is named as its own $75
 //       product, and its month now runs from PURCHASE rather than from the

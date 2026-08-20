@@ -20,7 +20,16 @@ import { mountFolder } from './folder.js';
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
 // percentages below are a share of the standard Advocacy Case fee.
-const CASE_PRICE_CENTS = 27500;
+const CASE_PRICE_CENTS = 26500;
+
+/**
+ * The rate a given client booked at. Recorded on the case at checkout, so a
+ * percentage charge later is a share of what they actually paid rather than of
+ * whatever the rate has moved to since (Eric: "current client gets
+ * grandfathered in", 2026-08-20). Cases from before the field existed fall back
+ * to today's rate, which since rates have only come down errs in their favour.
+ */
+const caseRate = (c) => (c && c.caseRateCents) || CASE_PRICE_CENTS;
 const dollars = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 const caseId = new URLSearchParams(location.search).get('id');
 // Sentinel value for "a time that isn't on the calendar" in the slot dropdown.
@@ -509,10 +518,10 @@ function paintOverview(pane) {
           <div id="sched-charge" style="margin:.35rem 0 0 1.4rem;" hidden>
             <select id="sched-pct">
               ${[0, 25, 50, 75, 100, 125, 150].map((p) =>
-                `<option value="${p}" ${p === 50 ? 'selected' : ''}>${p}% — ${p === 0 ? 'no charge' : '$' + dollars((p * CASE_PRICE_CENTS) / 100)}</option>`).join('')}
+                `<option value="${p}" ${p === 50 ? 'selected' : ''}>${p}% — ${p === 0 ? 'no charge' : '$' + dollars((p * caseRate(c)) / 100)}</option>`).join('')}
             </select>
             <input type="text" id="sched-tag" maxlength="120" placeholder="Invoice line (optional) — e.g. Records deep-dive session" style="margin-top:.35rem;">
-            <p class="dim small" style="margin:.3rem 0 0;">The client pays through Stripe to confirm; the slot holds for 24 hours. Your tagline is the line item on their receipt.</p>
+            <p class="dim small" style="margin:.3rem 0 0;">A share of <strong>$${dollars(caseRate(c))}</strong>, the rate this client booked at. They pay through Stripe to confirm; the slot holds for 24 hours. Your tagline is the line item on their receipt.</p>
           </div>
         </div>
         <p class="error" id="sched-err" hidden></p>
