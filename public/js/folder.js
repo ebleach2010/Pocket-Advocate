@@ -118,7 +118,15 @@ export function mountPages({ container, pages, storageKey = '' } = {}) {
     // going in and coming back feel like the same gesture.
     const fade = flat(page) || flat(from);
     el.classList.add(fade ? 'f-fade' : dir < 0 ? 'f-in-l' : 'f-in-r');
-    const done = () => clearFlip(el);
+    // The sheet edges under the folder give a little as a page is pulled off
+    // the pile. Restarted, not queued: re-adding the class on the next tap has
+    // to replay the animation, and it only does that after a reflow.
+    if (!fade) {
+      container.classList.remove('shuffling');
+      void container.offsetWidth;
+      container.classList.add('shuffling');
+    }
+    const done = () => { clearFlip(el); container.classList.remove('shuffling'); };
     el.addEventListener('animationend', done, { once: true });
     // animationend never arrives if the tab is backgrounded mid-flip.
     setTimeout(done, 420);
@@ -131,13 +139,57 @@ export function mountPages({ container, pages, storageKey = '' } = {}) {
     show(id, to < from ? -1 : 1);
   }
 
-  function step(delta, focusTab) {
+  /**
+   * Move one page. `wrap` makes the pile a loop: past the last page is the
+   * first one again, so shuffling forward never dead-ends and he never has to
+   * tap all the way back. Arrow keys deliberately do NOT wrap, because a
+   * keyboard user expects the strip to have ends.
+   */
+  function step(delta, focusTab, wrap = false) {
     const i = list.findIndex((p) => p.id === curId);
-    const n = i + delta;
-    if (n < 0 || n >= list.length) return;
+    let n = i + delta;
+    if (n < 0 || n >= list.length) {
+      if (!wrap) return;
+      n = (n + list.length) % list.length;
+    }
     show(list[n].id, delta);
     if (focusTab) tabs.get(list[n].id)?.focus();
   }
+
+  /**
+   * Tap the right half of the paper to send it to the back of the pile, the
+   * left half to pull the back page forward.
+   *
+   * The rule that keeps this livable: controls win. A tap that lands on
+   * anything interactive does what that control does and never flips, or every
+   * button on the right of a page would fight the page turn. Pages that opt
+   * out entirely (`fade`/noTransform pages like the chat, which is mostly
+   * bubbles and dead space, and the notes sheet, where a tap places a cursor)
+   * are left alone and keep swipe and the tab strip.
+   */
+  const NO_FLIP = 'a,button,input,textarea,select,label,summary,details,' +
+    '[contenteditable],[role="button"],[role="tab"],.msg,.adv-chip,.chip-label,' +
+    '.folder-tabs,.notes-root,.chat-root,.diff-row,.gloss-item';
+
+  container.addEventListener('click', (e) => {
+    const page = byId.get(curId);
+    if (!page) return;
+    if (!page.el.contains(e.target)) return;    // not this page's paper
+    // Pages that opt out (the chat, thick with bubbles and dead space he taps
+    // around in; the notes sheet, where a tap places a cursor) only flip from
+    // the bare margin of the page itself. Without that they would be a trap:
+    // you could tap your way in and never tap your way out.
+    if (page.noTransform) {
+      if (e.target !== page.el) return;
+    } else if (e.target.closest?.(NO_FLIP)) {
+      return;                                   // a control, not the paper
+    }
+    // He was selecting text, not turning a page.
+    if (window.getSelection && String(window.getSelection())) return;
+    const box = page.el.getBoundingClientRect();
+    if (!box.width) return;
+    step(e.clientX - box.left > box.width / 2 ? 1 : -1, false, true);
+  }, { signal: abort.signal });
 
   /** Keep the open tab in the strip without ever scrolling the page itself. */
   function reveal(tab) {
@@ -190,7 +242,8 @@ export function mountPages({ container, pages, storageKey = '' } = {}) {
     const dx = t.clientX - x0;
     const dy = t.clientY - y0;
     if (Math.abs(dx) < SWIPE_MIN_X || Math.abs(dy) >= Math.abs(dx)) return;
-    step(dx < 0 ? 1 : -1, false);
+    // Swipe loops for the same reason tapping does: the pile has no end.
+    step(dx < 0 ? 1 : -1, false, true);
   }, { passive: true, signal: abort.signal });
   container.addEventListener('touchcancel', () => { live = false; },
     { passive: true, signal: abort.signal });

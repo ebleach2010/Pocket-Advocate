@@ -112,7 +112,9 @@ function render(el) {
         render: (pane) => paintFiles(pane),
       },
       {
-        id: 'notes', title: 'Notes', icon: '📝',
+        // fade, and so opted out of tap-to-flip: on the notes sheet a tap has
+        // to place the cursor, never turn the page.
+        id: 'notes', title: 'Notes', icon: '📝', fade: true,
         render: (pane) => {
           // Private to Eric: stored under `private/`, which is browser-denied
           // in both directions, so it only ever moves through the admin-gated

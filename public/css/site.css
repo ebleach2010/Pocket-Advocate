@@ -1325,9 +1325,16 @@ body.lightbox-open { overflow: hidden; }
 
 /* ------------------------------------------------------------- flip a page */
 .fpage[hidden] { display: none !important; }
-.fpage.f-in-r { animation: fpage-in-r 220ms cubic-bezier(.2, .7, .3, 1) both; }
-.fpage.f-in-l { animation: fpage-in-l 220ms cubic-bezier(.2, .7, .3, 1) both; }
+/* The shuffle. Tapping the right half sends the page he was on to the back of
+   the pile and brings the next sheet up from under it, so it arrives slightly
+   small, tilted, and low, then straightens as it lands on top. 280ms: long
+   enough to read as paper moving, short enough that eight fast taps land eight
+   flips instead of queueing behind an animation. */
+.fpage.f-in-r { animation: fpage-shuffle-r 280ms cubic-bezier(.22, .72, .24, 1) both; }
+.fpage.f-in-l { animation: fpage-shuffle-l 280ms cubic-bezier(.22, .72, .24, 1) both; }
 .fpage.f-fade { animation: fpage-fade 190ms ease-out both; }
+/* The pile itself gives a little as a sheet is pulled off it. */
+.case-folder.shuffling::after { animation: fld-pile 280ms ease-out both; }
 
 /* The hard guard. folder.js marks any page holding the full-screen chat, and
    these rules make a transform impossible on it even if a future flip class
@@ -1341,13 +1348,21 @@ body.lightbox-open { overflow: hidden; }
 /* The workspace settling, as if the folder had just been set down. */
 .case-folder.enter, .fpage.enter { animation: fld-settle 380ms cubic-bezier(.2, .8, .3, 1) both; }
 
-@keyframes fpage-in-r {
-  from { opacity: 0; transform: translate3d(18px, 0, 0); }
-  to { opacity: 1; transform: none; }
+@keyframes fpage-shuffle-r {
+  0% { opacity: 0; transform: translate3d(26px, 9px, 0) scale(.966) rotate(1.1deg); }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: none; }
 }
-@keyframes fpage-in-l {
-  from { opacity: 0; transform: translate3d(-18px, 0, 0); }
-  to { opacity: 1; transform: none; }
+@keyframes fpage-shuffle-l {
+  0% { opacity: 0; transform: translate3d(-26px, 9px, 0) scale(.966) rotate(-1.1deg); }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: none; }
+}
+/* Only the two sheet edges under the folder move, never .case-folder itself:
+   it holds the position:fixed chat and must stay untransformed. */
+@keyframes fld-pile {
+  0% { transform: translate3d(0, -3px, 0); opacity: .28; }
+  100% { transform: none; opacity: .5; }
 }
 @keyframes fpage-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes fld-settle {
@@ -1364,6 +1379,7 @@ body.lightbox-open { overflow: hidden; }
   .folder.opening::before,
   .folder.opening::after { animation: none; }
   .fpage.f-in-l, .fpage.f-in-r, .fpage.f-fade,
+  .case-folder.shuffling::after,
   .case-folder.enter, .fpage.enter { animation: none; }
   .folder-tabs { scroll-behavior: auto; }
 }
