@@ -54,6 +54,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
   const qaEl = el('[data-qa]');
   const errEl = el('[data-err]');
   const pauseBtn = el('[data-pause]');
+  const prepBtn = el('[data-prep]');
   const qBox = el('[data-q]');
 
   let paused = false;
@@ -132,6 +133,21 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       errEl.hidden = false;
     }
 
+    // Drafts die silently when the connection that carries them drops (screen
+    // lock, app switch, 45-90s is a long time on a phone). The worker
+    // heartbeats draftProgressAt while it writes; no beat for 2 minutes means
+    // the run is dead, so say so instead of leaving a spinner nobody sees.
+    const dStarted = d.draftStartedAt ? toDate(d.draftStartedAt).getTime() : 0;
+    const dBeat = Math.max(dStarted, d.draftProgressAt ? toDate(d.draftProgressAt).getTime() : 0);
+    const draftAlive = d.draftStatus === 'running' && dStarted && Date.now() - dBeat < 120_000;
+    const draftStalled = d.draftStatus === 'running' && dStarted && !draftAlive;
+    prepBtn.disabled = draftAlive;
+    prepBtn.textContent = draftAlive ? '✍️ Drafting…' : '✍️ Prepare a response';
+    if (draftStalled) {
+      errEl.textContent = 'The draft was interrupted — keep the app open while it writes, and tap ✍️ Prepare a response to try again.';
+      errEl.hidden = false;
+    }
+
     lastQa = qa || [];
     renderQa(lastQa);
 
@@ -145,7 +161,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       firedFor = d.pendingAt;
       post({ action: 'analyze' });
     }
-    return { ...d, running };
+    return { ...d, running, draftAlive };
   }
 
   let lastQa = [];
@@ -221,7 +237,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       if (res.ok) {
         const out = await res.json();
         const d = apply(out.state || {}, out.qa || []);
-        busy = d.running || d.draftStatus === 'running' ||
+        busy = d.running || d.draftAlive ||
           (out.qa || []).some((q) => q.status === 'running');
       }
     } catch { /* transient — the next tick tries again */ }
@@ -233,7 +249,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
   pauseBtn.addEventListener('click', () => post({ action: paused ? 'resume' : 'pause' }));
   // window.prompt() silently does nothing in iOS Home-Screen apps — a real
   // overlay or the button reads as broken.
-  el('[data-prep]').addEventListener('click', () => {
+  prepBtn.addEventListener('click', () => {
     if (document.getElementById('pa-prep')) return;
     const overlay = document.createElement('div');
     overlay.id = 'pa-prep';
@@ -253,12 +269,11 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       const instruction = overlay.querySelector('[data-inst]').value.trim();
       close();
       draftShown = null;
-      const prep = el('[data-prep]');
-      prep.disabled = true;
-      prep.textContent = '✍️ Drafting…';
+      // Instant feedback; from here the state poll owns the button, so an
+      // interrupted run can't leave it stuck saying "Drafting…" forever.
+      prepBtn.disabled = true;
+      prepBtn.textContent = '✍️ Drafting…';
       await post({ action: 'draft', instruction });
-      prep.disabled = false;
-      prep.textContent = '✍️ Prepare a response';
     });
     document.body.appendChild(overlay);
     overlay.querySelector('[data-inst]').focus();

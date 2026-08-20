@@ -611,6 +611,32 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 }
 .advisor-ask .btn { flex: none; align-self: flex-end; }
 
+/* Full-screen chat. The ⤢/✕ button sits in the top-right corner of the
+   thread; full mode takes the real visible viewport (dvh survives the iOS
+   toolbars) and locks the page behind it. */
+.chat-root { position: relative; padding-top: .2rem; }
+.chat-expand {
+  position: absolute; top: -.4rem; right: 0; z-index: 6;
+  width: 1.9rem; height: 1.9rem; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--dim);
+  font-size: 1rem; line-height: 1;
+}
+.chat-expand:hover, .chat-expand:focus-visible { color: var(--cyan); border-color: var(--cyan); outline: none; }
+.chat-root.chat-full {
+  position: fixed; inset: 0; z-index: 75; margin: 0; border-radius: 0;
+  height: 100vh; height: 100dvh;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  padding: calc(env(safe-area-inset-top, 0px) + .6rem) .8rem
+           calc(env(safe-area-inset-bottom, 0px) + .6rem);
+}
+.chat-root.chat-full .chat-expand {
+  top: calc(env(safe-area-inset-top, 0px) + .6rem); right: .8rem;
+  color: var(--ink); font-size: .95rem;
+}
+.chat-root.chat-full .chat-log { max-height: none; flex: 1; margin-top: 1.9rem; }
+body.chat-full-open { overflow: hidden; }
+
 .chat-form { display: flex; gap: .5rem; margin-top: .4rem; align-items: flex-end; }
 /* A composer you can actually read what you typed in: it grows to five-ish
    lines before it starts scrolling, instead of marching the words off the left. */

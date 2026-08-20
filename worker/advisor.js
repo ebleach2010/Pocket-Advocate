@@ -299,7 +299,9 @@ the case at him; he has the transcript in front of him.` }],
  */
 export async function runDraft(env, kind, id, instruction) {
   try {
-    await setState(env, kind, id, { draftStatus: 'running', draftError: null });
+    await setState(env, kind, id, {
+      draftStatus: 'running', draftError: null, draftStartedAt: new Date(), draftProgressAt: null,
+    });
     const [rows, state] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
@@ -308,6 +310,7 @@ export async function runDraft(env, kind, id, instruction) {
     const voice = myVoice(rows);
     const draft = await ask(env, {
       effort: DRAFT_EFFORT,
+      onBeat: () => setState(env, kind, id, { draftProgressAt: new Date() }).catch(() => {}),
       // The visible draft is short, but thinking spends from the same budget.
       maxTokens: 16000,
       system: [{ type: 'text', text: `${VOICE}
@@ -340,6 +343,7 @@ want asked, what a result might mean, and what he'll chase down.` }],
     });
     await setState(env, kind, id, {
       draft, draftStatus: 'ready', draftError: null, draftAt: new Date(),
+      draftStartedAt: null, draftProgressAt: null,
     });
   } catch (err) {
     console.error('advisor draft:', err.stack || err);
