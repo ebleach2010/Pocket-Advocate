@@ -12,6 +12,7 @@ import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence } from './chat.js';
 import { initSetupGuide } from './onboarding.js';
 import { HELP_BUTTON, wireHelp, openCaseHelp } from './help.js';
+import { mountFolder, folderEnter } from './folder.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -46,15 +47,14 @@ let currentId = null;
 // Refresh paths (makePrivate -> boot) must never rebuild the chat's DOM.
 let renderedFor = null;
 // Declared before the top-level DEMO branch below: that path calls render()
-// synchronously during module evaluation, and wireJumpChips reads these.
-let chipsObserver = null;
-let chipsScroll = null;
+// synchronously during module evaluation, and the refresh path reads this.
+let folder = null;
 
 // A file saved from chat lands in Documents. The listener is permanent (the
-// sections never unmount), so every save refreshes the list, not just the first.
+// pages never unmount), so every save refreshes the list, not just the first.
 document.addEventListener('pa-saved-file', () => {
   if (DEMO) return;
-  const el = document.getElementById('sec-docs');
+  const el = folder?.el('docs');
   const c = cases.find((x) => x.id === currentId);
   if (el && c) refreshFiles(c, el);
 });
@@ -123,7 +123,7 @@ async function boot() {
   currentId = wanted && cases.some((c) => c.id === wanted) ? wanted : cases[0].id;
   // Re-boots for the same case (e.g. after makePrivate) refresh Progress and
   // Documents in place; the chat mounts once per case and stays untouched.
-  if (renderedFor === currentId && document.getElementById('sec-chat')) {
+  if (renderedFor === currentId && folder?.el('chat')) {
     refreshSections();
   } else {
     render();
@@ -159,14 +159,7 @@ function render() {
       <h2 style="margin:0;">Advocacy Case ${HELP_BUTTON}</h2>
       <span class="status-pill ${c.status === 'closed' ? 'closed' : ''}" data-status-pill>${STATUS_LABEL[c.status] || c.status}</span>
     </div>
-    <nav class="jump-chips">
-      <a href="#sec-progress" class="on">Progress</a>
-      <a href="#sec-chat">Chat</a>
-      <a href="#sec-docs">Documents</a>
-    </nav>
-    <section class="case-section" id="sec-progress"></section>
-    <section class="case-section" id="sec-chat"></section>
-    <section class="case-section" id="sec-docs"></section>`;
+    <div data-folder></div>`;
 
   wireHelp(container);
   container.querySelectorAll('[data-case]').forEach((b) =>
@@ -175,11 +168,36 @@ function render() {
       currentId = b.dataset.case;
       render();
     }));
-  wireJumpChips(container);
 
-  renderProgress(container.querySelector('#sec-progress'), c);
-  renderChat(container.querySelector('#sec-chat'), c);
-  renderDocs(container.querySelector('#sec-docs'), c);
+  // Same engine as Eric's side: three pages, flipped by tapping a half of the
+  // page, by swiping, or by the tab strip. Without the manila - the folder is
+  // the advocate's working object, and a client should not have to read it as
+  // a metaphor - so the container gets `plain` and the card stock drops away.
+  folder = mountFolder({
+    container: container.querySelector('[data-folder]'),
+    storageKey: `client-case-${currentId}`,
+    initial: 'progress',
+    pages: [
+      { id: 'progress', title: 'Progress', icon: '📍', render: (pane) => renderProgress(pane, c) },
+      {
+        // fade, and opted out of tap-to-flip: the chat is mostly bubbles and
+        // dead space you tap around in, and it is position:fixed when full
+        // screen, which no transformed ancestor may touch.
+        id: 'chat', title: 'Chat', icon: '💬', fade: true,
+        render: (pane) => renderChat(pane, c),
+        onShow: (pane) => {
+          const log = pane.querySelector('[data-log]');
+          if (log) log.scrollTop = log.scrollHeight;
+        },
+      },
+      // 'Docs', not 'Documents': three pills have to fit across a 390px phone,
+      // and a tab hanging half off the edge reads as a broken page rather than
+      // as more to scroll to. The 📄 carries the rest of the word.
+      { id: 'docs', title: 'Docs', icon: '📄', render: (pane) => renderDocs(pane, c) },
+    ],
+  });
+  folder.el('progress')?.parentElement?.classList.add('plain');
+  folderEnter(container.querySelector('[data-folder]'));
   renderedFor = currentId;
 }
 
@@ -197,56 +215,10 @@ function refreshSections() {
     pill.className = `status-pill ${c.status === 'closed' ? 'closed' : ''}`;
     pill.textContent = STATUS_LABEL[c.status] || c.status;
   }
-  renderProgress(container.querySelector('#sec-progress'), c);
-  renderDocs(container.querySelector('#sec-docs'), c);
-}
-
-/**
- * The sticky jump chips: click scrolls smoothly to the section; an
- * IntersectionObserver keeps the chip for the section in view highlighted
- * (.on). Geometry is recomputed on each intersection change, with the
- * activation line sitting just below the sticky chip bar itself.
- */
-function wireJumpChips(container) {
-  const nav = container.querySelector('.jump-chips');
-  if (!nav) return;
-  const links = [...nav.querySelectorAll('a[href^="#"]')];
-  const sections = links
-    .map((a) => container.querySelector(a.getAttribute('href')))
-    .filter(Boolean);
-
-  links.forEach((a) => a.addEventListener('click', (e) => {
-    e.preventDefault();
-    container.querySelector(a.getAttribute('href'))?.scrollIntoView({ behavior: 'smooth' });
-  }));
-
-  const setActive = () => {
-    let active = sections[0];
-    // At max scroll the last section may be too short for its top to ever
-    // cross the activation line — without this clamp the Documents chip
-    // could never light up on a phone.
-    const atBottom =
-      window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
-    if (atBottom) {
-      active = sections[sections.length - 1];
-    } else {
-      const line = nav.getBoundingClientRect().bottom + 40;
-      for (const s of sections) {
-        if (s.getBoundingClientRect().top <= line) active = s;
-      }
-    }
-    links.forEach((a) =>
-      a.classList.toggle('on', !!active && a.getAttribute('href') === `#${active.id}`));
-  };
-  chipsObserver?.disconnect();
-  chipsObserver = new IntersectionObserver(setActive, { threshold: [0, 0.25, 0.5, 0.75, 1] });
-  sections.forEach((s) => chipsObserver.observe(s));
-  // The observer only fires on threshold crossings; the bottom clamp needs to
-  // see the final scroll position too.
-  if (chipsScroll) removeEventListener('scroll', chipsScroll);
-  chipsScroll = () => requestAnimationFrame(setActive);
-  addEventListener('scroll', chipsScroll, { passive: true });
-  setActive();
+  const progress = folder?.el('progress');
+  const docs = folder?.el('docs');
+  if (progress) renderProgress(progress, c);
+  if (docs) renderDocs(docs, c);
 }
 
 /**

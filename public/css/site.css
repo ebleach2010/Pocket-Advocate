@@ -1519,8 +1519,11 @@ body.lightbox-open { overflow: hidden; }
   border-bottom: none;
 }
 .case-folder.plain .folder-tabs > a {
-  margin: 0; padding: .3rem 1rem;
-  font-weight: 600; font-size: .85rem;
+  /* Tight enough that the client's three pills all fit at 390px. They scroll
+     if they ever do not, but a tab half off the edge reads as a broken page
+     rather than as more to scroll to. */
+  margin: 0; padding: .3rem .7rem; gap: .3rem;
+  font-weight: 600; font-size: .82rem;
   color: var(--dim); background: none; filter: none;
   border: 1px solid var(--line); border-radius: 999px; clip-path: none;
 }
