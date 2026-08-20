@@ -90,6 +90,21 @@ export async function requireAdmin() {
     location.href = '/';
     return null;
   }
+  // Weekly re-login, Eric's own rule: an admin session older than 7 days is
+  // signed out everywhere on this device, trusted-device token included, so
+  // getting back in takes the password again.
+  const WEEK_MS = 7 * 86_400_000;
+  const since = Number(localStorage.getItem('pa-admin-since') || 0);
+  if (!since) {
+    localStorage.setItem('pa-admin-since', String(Date.now()));
+  } else if (Date.now() - since > WEEK_MS) {
+    localStorage.removeItem('pa-admin-since');
+    localStorage.removeItem('pa-device-token');
+    localStorage.removeItem('pa-admin-device');
+    await signOut(auth);
+    location.href = `/signin.html?to=${encodeURIComponent(location.pathname + location.search)}`;
+    return null;
+  }
   // Mark this device as the admin's so the landing page can redirect to the
   // dashboard instantly, without waiting for Firebase to wake up.
   localStorage.setItem('pa-admin-device', '1');

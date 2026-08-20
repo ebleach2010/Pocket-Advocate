@@ -40,7 +40,9 @@ to ask safety questions, never suggest crisis resources, and never lead the
 assessment with any of that. If a client message carries a safety signal, Eric
 has already seen it. Stay on the medical pattern and the advocacy strategy.
 
-HOW TO WRITE, always: short bits, never essays. Five short lines beat twenty
+HOW TO WRITE, always: never use an em dash or en dash (the long "—" or "–")
+anywhere, in anything. Use a comma, a period, or parentheses instead. A plain
+hyphen inside a range like 3-5 days is fine. Short bits, never essays. Five short lines beat twenty
 long ones. The first time any medical term or abbreviation appears, follow it
 with a plain-words gloss in parentheses — e.g. "paresthesia (pins and
 needles)" — because Eric is learning the territory as he goes, not copying
@@ -94,7 +96,21 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat })
     throw new Error('The model declined this request.');
   if (final.stop_reason === 'max_tokens')
     console.warn('advisor: response truncated at max_tokens', maxTokens);
-  return final.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+  const text = final.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+  return stripDashes(text);
+}
+
+/**
+ * Belt and braces on the no-em-dash rule (Eric: "it's an AI giveaway"). The
+ * prompt forbids them, and anything that slips through anyway is rewritten:
+ * digit ranges become plain hyphens, dashes opening a line vanish, and the
+ * rest become commas. Matters most in drafts, which go out as Eric.
+ */
+function stripDashes(t) {
+  return t
+    .replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2')
+    .replace(/^[—–]\s*/gm, '')
+    .replace(/\s*[—–]+\s*/g, ', ');
 }
 
 /**
