@@ -1148,11 +1148,12 @@ async function handleAdvisorState(request, env, url) {
   // One round of reads for the whole panel. Every one of them degrades to
   // empty: a case with no advisor state, no notes and no glossary is the
   // normal first-visit state, not an error.
-  const [state, qa, knowledge, notesDoc] = await Promise.all([
+  const [state, qa, knowledge, notesDoc, style] = await Promise.all([
     getDoc(env, `${parent}/${id}/advisor/state`).catch(() => null),
     listDocs(env, `${parent}/${id}/advisor/state/qa`, { pageSize: 20, orderBy: 'at' }).catch(() => []),
     listDocs(env, 'advisorKnowledge', { pageSize: 200 }).catch(() => []),
     getDoc(env, `${parent}/${id}/private/notes`).catch(() => null),
+    getDoc(env, 'advisorStyle/profile').catch(() => null),
   ]);
   // keyConfigured: admin-only visibility into whether the ANTHROPIC_API_KEY
   // secret is actually bound to the running version — "saved in the dashboard"
@@ -1168,6 +1169,11 @@ async function handleAdvisorState(request, env, url) {
     glossary: knowledge.map((r) => ({
       id: r.id, term: r.data.term, definition: r.data.definition,
       category: r.data.category || 'General', learned: !!r.data.learnedAt,
+      // Conditions and syndromes carry the three things Eric asked to see
+      // beside the definition. Terms that are just terms carry none of them.
+      mechanism: r.data.mechanism || '', treatment: r.data.treatment || '',
+      outcome: r.data.outcome || '',
+      addedAt: r.data.addedAt || null,
     })),
     keyConfigured: Boolean(env.ANTHROPIC_API_KEY),
     // The folder surfaces. All of this is Eric's private working material;
@@ -1191,6 +1197,17 @@ async function handleAdvisorState(request, env, url) {
     // is the surface that makes that visible instead of guessable.
     mediaReport: state?.data.mediaReport || null,
     queuedFiles: Array.isArray(pendingMedia) ? pendingMedia.map((m) => m.name) : [],
+    // What the advisor has worked out about Eric himself: how he writes, the
+    // positions he holds (including anything he settled with "override"), and
+    // an honest read on what he does well with clients and what he could work
+    // on. Global rather than per-case, and never client-visible: this route is
+    // admin-gated and advisorStyle is Worker-only.
+    about: {
+      voice: style?.data.voice || '',
+      stances: style?.data.stances || '',
+      coaching: style?.data.coaching || '',
+      updatedAt: style?.data.updatedAt || null,
+    },
   });
 }
 

@@ -435,6 +435,7 @@ async function loadStyle(env) {
   return {
     voice: profile?.data.voice || '',
     stances: profile?.data.stances || '',
+    coaching: profile?.data.coaching || '',
     // The freshest real edits ride along as worked examples for the draft
     // writer; drafts he sent unchanged teach nothing new there.
     examples: edits
@@ -461,6 +462,60 @@ function styleNote({ voice, stances }) {
 function stanceNote({ stances }) {
   if (!stances) return '';
   return `\nEric's standing positions, learned from what he actually sends (he sometimes departs from general guidance on purpose):\n${stances}\nAdvise with these in mind instead of re-arguing them. If the evidence in THIS case directly contradicts one in a way that matters for this client, say so once, briefly, and move on.`;
+}
+
+/**
+ * Eric's override. He can argue with the advisor and the advisor can push
+ * back, which is the point of having one. But when he writes "override" the
+ * argument is finished: his position is correct, and it has to STAY correct on
+ * every future read rather than being re-argued next time the subject comes up.
+ *
+ * Deliberately narrow. The word has to stand as a command - on its own, or
+ * opening the message - so that "I'd override that if I were you" stays a
+ * sentence rather than an instruction.
+ */
+function isOverride(question) {
+  return /^\s*\**\s*override\b/i.test(String(question || ''));
+}
+
+const OVERRIDE_NOTE = `
+
+ERIC HAS SAID OVERRIDE. That word is a command, and it ends the argument.
+
+Treat his position in this message as correct. Do not hedge it, do not
+re-argue it, do not add "though it is worth noting". If it changes your read of
+the case, change your read. If you were wrong, say so in one plain sentence and
+move on; he does not need an apology and he does not need his own reasoning
+recited back at him.
+
+Then add one final machine-read section, stripped before he sees the answer:
+\`## Stance\` - a single line stating the position you are now holding as his,
+written so it still makes sense months from now with no memory of this
+conversation. It is filed permanently.`;
+
+/**
+ * Take the stance out of an override reply and file it, so the next read
+ * starts from his position instead of relitigating it. It lands on the style
+ * profile, which is already what carries his standing calls into every prompt.
+ */
+async function fileOverride(env, text) {
+  const m = text.match(/^## Stance\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  if (!m) return text;
+  const stance = m[1].replace(/^\s*[-*]\s*/, '').trim().replace(/\s+/g, ' ').slice(0, 300);
+  const cleaned = text.replace(m[0], '').trim();
+  if (!stance) return cleaned;
+  const profile = await getDoc(env, STYLE_PATH).catch(() => null);
+  const prior = profile?.data.stances || '';
+  const flat = (v) => v.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  // An override repeated is one stance, not two.
+  if (flat(prior).includes(flat(stance))) return cleaned;
+  const line = `- ${stance} (Eric's override, ${new Date().toISOString().slice(0, 10)})`;
+  await patchDoc(env, STYLE_PATH, {
+    // Newest first: when this list is long, the top of it is what gets read.
+    stances: `${line}${prior ? `\n${prior}` : ''}`.slice(0, 2000),
+    updatedAt: new Date(),
+  }, { mask: ['stances', 'updatedAt'] }).catch((err) => console.warn('override:', err.message || err));
+  return cleaned;
 }
 
 /**
@@ -528,6 +583,21 @@ position, with the evidence in parentheses. Only what his own words support:
 never invent a stance, never promote a one-off phrasing tweak into an opinion.
 180 words max. If nothing is evidenced yet, write "- none yet".
 
+Any stance already marked as his override is settled. Carry it forward
+verbatim, never soften it, and never let newer evidence quietly reverse it.
+
+## Coaching
+What he is actually good at with clients, and what he could work on. He asked
+for this and he wants it honest, so write it honest: two or three bullets of
+real strength and two or three of real weak spots, each pointing at something
+in the evidence rather than a generality. "Explains a lab result without
+talking down" is worth writing; "communicates well" is not. Weak spots are
+things like burying the ask at the end of a long message, or answering a
+question the client did not ask. Never guess at motives, never comment on his
+health, and never pad it to look balanced: if there is only one honest thing
+in a column, write one. 160 words max. If the evidence is too thin, write
+"- not enough to say yet".
+
 Plain text under each heading. Never use an em dash or en dash. No preamble,
 no closing note.` }],
       messages: [{
@@ -539,12 +609,15 @@ no closing note.` }],
     const rawVoice = sectionOf(text, 'Voice');
     let rawStances = sectionOf(text, 'Stances');
     if (/^-?\s*none yet\.?$/i.test(rawStances)) rawStances = '';
+    let rawCoaching = sectionOf(text, 'Coaching');
+    if (/^-?\s*not enough to say yet\.?$/i.test(rawCoaching)) rawCoaching = '';
     // A section the reply failed to produce keeps its prior value. A
     // truncated or heading-less reply must never erase weeks of learning:
     // with a prior profile in hand, a reply that ignored the format entirely
     // is discarded; only a first-ever run salvages it as voice.
     let voice = rawVoice || prior.voice || '';
     let stances = rawStances || prior.stances || '';
+    const coaching = rawCoaching || prior.coaching || '';
     if (!rawVoice && !rawStances) {
       if (prior.voice || prior.stances) return;
       voice = text.trim().slice(0, 1600);
@@ -553,8 +626,9 @@ no closing note.` }],
     if (!voice && !stances) return;
     await patchDoc(env, STYLE_PATH, {
       voice: voice.slice(0, 2000), stances: stances.slice(0, 2000),
+      coaching: coaching.slice(0, 2000),
       updatedAt: new Date(), lastLesson: { kind, id, at: new Date() },
-    }, { mask: ['voice', 'stances', 'updatedAt', 'lastLesson'] });
+    }, { mask: ['voice', 'stances', 'coaching', 'updatedAt', 'lastLesson'] });
   } catch (err) {
     console.error('advisor style distill:', err.stack || err);
   }
@@ -577,11 +651,23 @@ async function harvestKeyTerms(env, text) {
     if (!t) continue;
     const term = t[1].trim();
     const category = (t[2] || 'General').trim();
-    const definition = t[3].trim();
+    // A disease or syndrome carries three more fields after the definition,
+    // pipe separated. A term that is only a term carries none of them, and the
+    // whole tail is simply absent. Eric asked to see how a thing works, what is
+    // done about it, and how it usually goes; a definition alone does not say.
+    const tail = t[3].split('|').map((x) => x.trim());
+    const definition = (tail.shift() || '').trim();
+    const field = (label) => {
+      const hit = tail.find((x) => new RegExp(`^${label}\\s*:`, 'i').test(x));
+      return hit ? hit.slice(hit.indexOf(':') + 1).trim().slice(0, 400) : '';
+    };
     if (!term || !definition || /^none$/i.test(term)) continue;
     // Create-only: an existing entry (learned or not) is never overwritten.
     await patchDoc(env, `advisorKnowledge/${termSlug(term)}`, {
       term, category, definition, learnedAt: null, addedAt: new Date(),
+      mechanism: field('Mechanism'),
+      treatment: field('Treatment'),
+      outcome: field('Outlook') || field('Outcome'),
     }, { mustNotExist: true }).catch(() => {});
   }
   return text.replace(m[0], '').trim();
@@ -935,6 +1021,12 @@ or diagnoses central to THIS assessment that he has not yet learned, each on
 its own line as \`- Term [Category]: plain-words definition in one sentence, plus
 what it means for his next step if that matters\`, where Category is one of
 Condition, Symptom, Test or lab, Medication, Anatomy, Procedure, Concept.
+A Condition gets three more fields on the same line, pipe separated, because a
+definition alone does not tell him how to argue with a specialist about it:
+\`- Name [Condition]: definition | Mechanism: what is physically going wrong |
+Treatment: what is actually done about it | Outlook: how it usually goes\`
+One sentence each, plain words, no hedging filler. Everything else gets the
+definition alone and no pipes.
 Never include a term from his
 mastered list, never repeat one already in his glossary. If nothing new, write
 "- none".
@@ -1052,6 +1144,7 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
   // (it broke in production with an instant 400). `…/advisor/state/qa/{qaId}`
   // is valid and stays inside the advisor rules fence.
   const path = `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state/qa/${qaId}`;
+  const override = isOverride(question);
   try {
     const [rows, state, knowledge, style] = await Promise.all([
       recentMessages(env, kind, id),
@@ -1087,7 +1180,13 @@ Concept). Skip the section if there are none.
 already understands: he used it correctly and fluently, not asking what it
 means. One term per line as \`- Term\`. Asking about a term is the opposite of
 mastering it. Skip the section if none.
-${knowledgeNote(knowledge)}${stanceNote(style)}` }],
+
+He is allowed to be right. When he makes a point that actually breaks your
+reasoning, concede it plainly and say what it changes; do not concede as a
+courtesy and then carry on as before. When he says something outright wrong,
+correct it just as plainly, once, without softening it into a maybe. Both of
+those are the job.
+${knowledgeNote(knowledge)}${stanceNote(style)}${override ? OVERRIDE_NOTE : ''}` }],
       messages: [{
         role: 'user',
         content: [
@@ -1107,7 +1206,10 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
     // dictionary, and fluent use in his question counts as mastery.
     let cleaned = await harvestKeyTerms(env, answer);
     cleaned = await applyMastered(env, cleaned);
-    await patchDoc(env, path, { answer: cleaned, status: 'done' }, { mask: ['answer', 'status'] });
+    if (override) cleaned = await fileOverride(env, cleaned);
+    await patchDoc(env, path, {
+      answer: cleaned, status: 'done', override,
+    }, { mask: ['answer', 'status', 'override'] });
   } catch (err) {
     console.error('advisor question:', err.stack || err);
     await patchDoc(env, path, {

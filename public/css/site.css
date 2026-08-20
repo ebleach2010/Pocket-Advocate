@@ -1068,6 +1068,43 @@ body.lightbox-open { overflow: hidden; }
 .adv-chip.adv-add { border-style: dashed; border-color: var(--line); color: var(--dim); cursor: pointer; }
 .adv-chip.adv-add:hover { border-color: var(--cyan-dim); color: var(--soft); }
 
+/* ------------------------------------------------ education, and about you
+   Every term the advisor has raised, grouped by what kind of thing it is. A
+   disease carries how it works, what is done about it, and how it usually
+   goes, because a definition alone does not help him argue with a specialist. */
+.edu-cat {
+  display: flex; align-items: baseline; gap: .45rem;
+  margin: 1.1rem 0 .35rem; font-size: .78rem;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--cyan);
+}
+.edu-cat:first-of-type { margin-top: .6rem; }
+.edu-n {
+  padding: 0 .4rem; border-radius: 999px;
+  font-size: .7rem; letter-spacing: 0; color: var(--dim);
+  border: 1px solid var(--line);
+}
+.edu-item {
+  margin: 0 0 .55rem; padding: .1rem 0 .55rem;
+  border-bottom: 1px solid var(--line);
+}
+.edu-item:last-child { border-bottom: none; }
+.edu-line { margin: .28rem 0 0 1.75rem; font-size: .82rem; color: var(--dim); }
+.edu-k {
+  display: inline-block; min-width: 6.2rem;
+  font-size: .7rem; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--soft); opacity: .75;
+}
+
+.about-h {
+  margin: 1.2rem 0 .3rem; font-size: .9rem; color: var(--soft);
+}
+.about-h:first-of-type { margin-top: .7rem; }
+
+@media (max-width: 420px) {
+  .edu-line { margin-left: 0; }
+  .edu-k { display: block; min-width: 0; }
+}
+
 /* ------------------------------------------------- plain English, colour-coded
    The comprehensive read, then a divider that fades at both edges, then the
    same thing in plain words. Every term Eric has not marked learned is painted

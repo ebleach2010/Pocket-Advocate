@@ -511,6 +511,10 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           differential: out.differential || [],
           workingLine: out.workingLine || '',
           dxOverride: out.dxOverride || null,
+          // The Education and About-you folder pages ride this same poll, so
+          // the panel stays the single place that talks to the state route.
+          glossary: out.glossary || [],
+          about: out.about || null,
         };
         renderDiff(detail);
         renderRead(out.mediaReport, out.queuedFiles, d.running, mediaSel.size);

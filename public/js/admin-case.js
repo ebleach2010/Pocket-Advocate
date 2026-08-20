@@ -112,6 +112,15 @@ function render(el) {
         render: (pane) => paintFiles(pane),
       },
       {
+        id: 'education', title: 'Education', icon: '📚',
+        // Painted from the advisor's state poll, same as the differential.
+        render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
+      },
+      {
+        id: 'about', title: 'About you', icon: '🪞',
+        render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
+      },
+      {
         // fade, and so opted out of tap-to-flip: on the notes sheet a tap has
         // to place the cursor, never turn the page.
         id: 'notes', title: 'Notes', icon: '📝', fade: true,
@@ -172,6 +181,125 @@ function render(el) {
   renderedFor = caseId;
 }
 
+/**
+ * 📚 Education. Every term and disease the advisor has raised, grouped by what
+ * kind of thing it is. Ticking one stops it being highlighted and stops it
+ * being explained again anywhere, and tells the advisor where his knowledge
+ * actually is. Diseases carry mechanism, treatment and outlook, because a
+ * definition alone does not help him argue with a specialist.
+ */
+const CATEGORY_ORDER = ['Condition', 'Symptom', 'Test or lab', 'Medication', 'Procedure', 'Anatomy', 'Concept', 'General'];
+
+let eduKey = null;
+function paintEducation(pane, glossary) {
+  if (!pane) return;
+  const key = JSON.stringify(glossary);
+  if (key === eduKey) return;   // a poll that changed nothing must not steal a tap
+  eduKey = key;
+
+  const fresh = glossary.filter((g) => !g.learned);
+  const known = glossary.filter((g) => g.learned);
+  const byCat = new Map();
+  for (const g of fresh) {
+    const cat = CATEGORY_ORDER.includes(g.category) ? g.category : 'General';
+    if (!byCat.has(cat)) byCat.set(cat, []);
+    byCat.get(cat).push(g);
+  }
+
+  const detail = (label, value) => (value
+    ? `<p class="edu-line"><span class="edu-k">${label}</span> ${esc(value)}</p>` : '');
+  const entry = (g) => `
+    <div class="edu-item">
+      <label class="gloss-item">
+        <input type="checkbox" data-term="${esc(g.id)}" ${g.learned ? 'checked' : ''}>
+        <span class="gloss-text"><strong>${esc(g.term)}</strong>: ${esc(g.definition)}</span>
+      </label>
+      ${detail('How it works', g.mechanism)}
+      ${detail('Treatment', g.treatment)}
+      ${detail('Outlook', g.outcome)}
+    </div>`;
+
+  pane.innerHTML = `
+    <div class="panel">
+      <h3>📚 Education</h3>
+      <p class="dim small">Tick a term once you own it. It stops being highlighted, it is never explained to you again, and the advisor pitches everything after that to what you actually know.</p>
+      ${byCat.size
+        ? [...byCat.entries()]
+            .sort((a, b) => CATEGORY_ORDER.indexOf(a[0]) - CATEGORY_ORDER.indexOf(b[0]))
+            .map(([cat, items]) => `
+              <h4 class="edu-cat">${esc(cat)}<span class="edu-n">${items.length}</span></h4>
+              ${items.map(entry).join('')}`).join('')
+        : '<p class="dim small">Nothing new to learn right now. The advisor adds terms here as they come up in a case.</p>'}
+      ${known.length ? `
+        <details class="gloss-known">
+          <summary>✓ ${known.length} term${known.length === 1 ? '' : 's'} you know</summary>
+          ${known.map(entry).join('')}
+        </details>` : ''}
+      <p class="small" style="margin:.8rem 0 0;"><a href="/admin-dictionary.html">📚 Full dictionary, by type and A to Z →</a></p>
+    </div>`;
+
+  pane.querySelectorAll('[data-term]').forEach((cb) =>
+    cb.addEventListener('change', async () => {
+      cb.disabled = true;
+      try {
+        const token = await user.getIdToken();
+        await fetch('/api/advisor', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ kind: 'case', id: caseId, action: 'term', termId: cb.dataset.term, learned: cb.checked }),
+        });
+        // Let the next poll repaint rather than rebuilding here: the checkbox
+        // already shows the new state, and a rebuild mid-tap loses the scroll.
+        eduKey = null;
+      } finally { cb.disabled = false; }
+    }));
+}
+
+/**
+ * 🪞 About you. What the advisor has worked out about Eric from months of
+ * watching him edit its drafts: how he writes, the calls he has made, and an
+ * honest read on what he does well with clients and what he could work on. He
+ * asked for the last part and he asked for it honest.
+ */
+let aboutKey = null;
+function paintAbout(pane, about) {
+  if (!pane) return;
+  const a = about || {};
+  const key = JSON.stringify(a);
+  if (key === aboutKey) return;
+  aboutKey = key;
+  const block = (icon, title, body, empty) => `
+    <h4 class="about-h">${icon} ${title}</h4>
+    ${body ? mdList(body) : `<p class="dim small">${empty}</p>`}`;
+  pane.innerHTML = `
+    <div class="panel">
+      <h3>🪞 What the advisor has learned about you</h3>
+      <p class="dim small">Built from the difference between what it drafts and what you actually send. Nobody else can see this.</p>
+      ${block('✍️', 'How you write', a.voice, 'Not enough edits yet. Change a draft before you send it and it starts learning.')}
+      ${block('⚖️', 'Where you stand', a.stances, 'No standing positions yet. Say "override" to the advisor to settle one permanently.')}
+      ${block('🎯', 'Strong suits, and things to work on', a.coaching, 'Not enough to say yet.')}
+      ${a.updatedAt ? `<p class="dim small" style="margin-top:.8rem;">Last updated ${esc(new Date(a.updatedAt).toLocaleDateString())}.</p>` : ''}
+    </div>`;
+}
+
+/** Bullets as bullets, everything else as a line. Nothing here is markup. */
+function mdList(text) {
+  const lines = String(text).split('\n').map((l) => l.trim()).filter(Boolean);
+  let html = '';
+  let open = false;
+  for (const line of lines) {
+    const b = line.match(/^[-*]\s+(.*)$/);
+    if (b) {
+      if (!open) { html += '<ul>'; open = true; }
+      html += `<li>${esc(b[1])}</li>`;
+    } else {
+      if (open) { html += '</ul>'; open = false; }
+      html += `<p>${esc(line)}</p>`;
+    }
+  }
+  return html + (open ? '</ul>' : '');
+}
+
 /** The always-visible bit above the tabs: name and status pill. */
 function refreshHeader() {
   const c = data;
@@ -193,6 +321,8 @@ document.addEventListener('pa-advisor-state', (e) => {
     notesHtml = d.notes;
     notes?.setHtml(d.notes);
   }
+  if (Array.isArray(d.glossary)) paintEducation(folder?.el('education'), d.glossary);
+  if (d.about) paintAbout(folder?.el('about'), d.about);
 
   const wl = document.querySelector('[data-working]');
   if (!wl) return;
