@@ -21,7 +21,126 @@
   --glow-g: 0 0 16px rgba(62, 224, 138, .30);
   --glow-b: 0 0 16px rgba(108, 158, 255, .30);
   --glow-o: 0 0 16px rgba(255, 162, 62, .35);
+  /* The translucent ground under every sticky bar. A scheme cannot reach a
+     baked rgba, and a bar that stays near-black under a pale scheme takes the
+     whole top of the app with it. */
+  --bar: rgba(7, 9, 15, .85);
+  /* The ink that sits ON an accent fill (a cyan button, a booked calendar
+     day). It is not --bg and it is not --ink: it has to contrast with the
+     accent, which is dark on some schemes and bright on others. */
+  --on-accent: #041018;
 }
+
+/* ---------------------------------------------------------------- schemes
+   Neon is the default and is the bare :root above. The other three retint the
+   same tokens and nothing else: no rule anywhere in this sheet names a colour
+   directly, so a scheme is a palette swap and every component follows.
+   theme.js stamps data-scheme on <html>; a head snippet does it before first
+   paint so a scheme never flashes neon on the way in. */
+
+/* Calm: the same room with the lights down. Same hues, lower saturation and a
+   softer glow, for reading in bed at 2am with a headache, which is when a lot
+   of this gets read. */
+:root[data-scheme="calm"] {
+  --bg: #0B0E14;
+  --panel: #121722;
+  --panel-2: #171E2C;
+  --ink: #E4E9F2;
+  --dim: #98A1B4;
+  --soft: #BFC7D6;
+  --line: #232C3F;
+  --cyan: #6FC7D8;
+  --cyan-dim: #3D7C8A;
+  --magenta: #D98BC4;
+  --green: #6FC49A;
+  --blue: #8AA8DC;
+  --danger: #E08585;
+  --gold: #DCBB78;
+  --orange: #DDA470;
+  --glow-c: 0 0 12px rgba(111, 199, 216, .18);
+  --glow-m: 0 0 12px rgba(217, 139, 196, .16);
+  --glow-g: 0 0 12px rgba(111, 196, 154, .16);
+  --glow-b: 0 0 12px rgba(138, 168, 220, .16);
+  --glow-o: 0 0 12px rgba(221, 164, 112, .18);
+  --bar: rgba(11, 14, 20, .88);
+  --on-accent: #06131A;
+}
+
+/* Paper: light, warm, like the folder itself. The one scheme where ink is dark
+   on a pale ground, so every token inverts rather than dims. */
+:root[data-scheme="paper"] {
+  --bg: #F3EEE3;
+  --panel: #FBF8F2;
+  --panel-2: #F0EADC;
+  --ink: #23201A;
+  --dim: #5B5548;
+  --soft: #3E392F;
+  --line: #DDD4C2;
+  --cyan: #0A5163;
+  --cyan-dim: #5C9AA8;
+  --magenta: #8A2868;
+  --green: #16613D;
+  --blue: #22488A;
+  --danger: #9A2C25;
+  --gold: #6D5310;
+  --orange: #834910;
+  --glow-c: 0 0 0 1px rgba(14, 110, 134, .18);
+  --glow-m: 0 0 0 1px rgba(168, 54, 127, .18);
+  --glow-g: 0 0 0 1px rgba(30, 122, 77, .18);
+  --glow-b: 0 0 0 1px rgba(43, 91, 168, .18);
+  --glow-o: 0 0 0 1px rgba(162, 90, 21, .18);
+  --bar: rgba(243, 238, 227, .92);
+  /* Pale ink on a dark accent, which is the way round this scheme needs. */
+  --on-accent: #FBF8F2;
+}
+
+/* High contrast: black ground, pure hues, no glow to blur an edge. For a bad
+   vision day, or bright sun on a phone in a hospital car park. */
+:root[data-scheme="contrast"] {
+  --bg: #000000;
+  --panel: #0A0A0A;
+  --panel-2: #141414;
+  --ink: #FFFFFF;
+  --dim: #D6D6D6;
+  --soft: #EFEFEF;
+  --line: #6A6A6A;
+  --cyan: #4FE9FF;
+  --cyan-dim: #2AA8C0;
+  --magenta: #FF77E0;
+  --green: #4BF39A;
+  --blue: #8FB6FF;
+  --danger: #FF8A8A;
+  --gold: #FFD86B;
+  --orange: #FFB259;
+  --glow-c: none; --glow-m: none; --glow-g: none; --glow-b: none; --glow-o: none;
+  --bar: rgba(0, 0, 0, .95);
+  --on-accent: #000000;
+}
+
+/* The body's two corner washes are baked rgba, not tokens, and on a pale or
+   pure-black ground they read as smudges. Drop them for those two. */
+:root[data-scheme="paper"] body,
+:root[data-scheme="contrast"] body { background-image: none; }
+
+/* Manila on a paper ground would be card stock on card stock, so the folder
+   chrome cools and darkens its edges to stay a separate object on the desk.
+   On high contrast it goes plain and hard-edged - the whole point of that
+   scheme is that nothing is subtle. */
+:root[data-scheme="paper"] {
+  --manila: #E3D3AE;
+  --manila-2: #EFE2C6;
+  --manila-ink: #2A2113;
+  --manila-edge: #9C8551;
+  --manila-fold: rgba(60, 45, 15, .45);
+}
+:root[data-scheme="contrast"] {
+  --manila: #F2E3B8;
+  --manila-2: #FFF4D2;
+  --manila-ink: #000000;
+  --manila-edge: #000000;
+  --manila-fold: rgba(0, 0, 0, .8);
+}
+
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 /* Base type scale. Clients are often unwell or reading on a phone in a
@@ -50,7 +169,7 @@ a { color: var(--cyan); }
 /* header */
 header.bar {
   position: sticky; top: 0; z-index: 5;
-  background: rgba(7,9,15,.85); backdrop-filter: blur(8px);
+  background: var(--bar); backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line);
 }
 .bar-inner {
@@ -94,7 +213,7 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
   color: var(--ink); background: var(--panel-2);
 }
 .btn:hover { border-color: var(--cyan-dim); }
-.btn.glow { background: var(--cyan); border-color: var(--cyan); color: #041018; box-shadow: var(--glow-c); }
+.btn.glow { background: var(--cyan); border-color: var(--cyan); color: var(--on-accent); box-shadow: var(--glow-c); }
 .btn:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
 .btn.secondary, .btn.ghost { background: transparent; color: var(--cyan); border-color: var(--cyan); box-shadow: none; }
 .btn.quiet, .btn.mute { background: transparent; color: var(--dim); border-color: var(--line); box-shadow: none; }
@@ -769,7 +888,7 @@ body.chat-full-open { overflow: hidden; }
   font-size: .58rem; line-height: 1.5; border-radius: 4px; padding: 0 .25rem;
   margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.cal-mark.booked { background: var(--cyan); color: #041018; box-shadow: 0 0 9px rgba(45,226,255,.75); }
+.cal-mark.booked { background: var(--cyan); color: var(--on-accent); box-shadow: 0 0 9px rgba(45,226,255,.75); }
 .cal-mark.open { background: var(--green); color: #04180D; box-shadow: 0 0 9px rgba(62,224,138,.7); }
 .cal-mark.held { background: var(--magenta); color: #1A0413; box-shadow: 0 0 9px rgba(255,79,216,.75); }
 .cal-key { display: inline-block; width: .8rem; height: .8rem; border-radius: 3px; vertical-align: -2px; }
@@ -971,7 +1090,7 @@ body.chat-full-open { overflow: hidden; }
      settings/menu/chat-full overlays at 60/70/75. */
   position: sticky; top: 3rem; z-index: 7;
   display: flex; gap: .4rem; margin: 0 0 1rem; padding: .5rem .1rem .55rem;
-  background: rgba(7,9,15,.88); backdrop-filter: blur(8px);
+  background: var(--bar); backdrop-filter: blur(8px);
   overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
 }
 .jump-chips::-webkit-scrollbar { display: none; }
@@ -1066,6 +1185,42 @@ body.lightbox-open { overflow: hidden; }
 .adv-chip button { border: 0; background: none; color: var(--dim); cursor: pointer; padding: 0; font-size: .8rem; }
 .adv-chip.adv-add { border-style: dashed; border-color: var(--line); color: var(--dim); cursor: pointer; }
 .adv-chip.adv-add:hover { border-color: var(--cyan-dim); color: var(--soft); }
+
+/* --------------------------------------------------------- appearance picker
+   Each swatch is painted from that scheme's OWN tokens, applied to the swatch
+   rather than to the page, so a swatch can never drift out of sync with what
+   picking it actually does. */
+.scheme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.scheme-swatch {
+  display: grid; gap: .18rem; padding: .6rem .65rem; text-align: left;
+  color: var(--ink); background: var(--panel-2); cursor: pointer;
+  border: 1px solid var(--line); border-radius: 10px; font: inherit;
+}
+.scheme-swatch.on { border-color: var(--cyan); box-shadow: var(--glow-c); }
+.scheme-name { font-weight: 700; font-size: .9rem; }
+.scheme-blurb { line-height: 1.3; }
+.scheme-chip {
+  display: flex; gap: 3px; align-items: center;
+  height: 22px; margin-bottom: .15rem; padding: 4px 5px;
+  border-radius: 6px; border: 1px solid var(--line);
+}
+.scheme-chip i { flex: 1; height: 100%; border-radius: 2px; }
+.sc-neon { background: #07090F; border-color: #1C2542; }
+.sc-neon i:nth-child(1) { background: #2DE2FF; }
+.sc-neon i:nth-child(2) { background: #FF4FD8; }
+.sc-neon i:nth-child(3) { background: #EAF0FF; }
+.sc-calm { background: #0B0E14; border-color: #232C3F; }
+.sc-calm i:nth-child(1) { background: #6FC7D8; }
+.sc-calm i:nth-child(2) { background: #D98BC4; }
+.sc-calm i:nth-child(3) { background: #E4E9F2; }
+.sc-paper { background: #F3EEE3; border-color: #DDD4C2; }
+.sc-paper i:nth-child(1) { background: #0E6E86; }
+.sc-paper i:nth-child(2) { background: #A8367F; }
+.sc-paper i:nth-child(3) { background: #23201A; }
+.sc-contrast { background: #000; border-color: #6A6A6A; }
+.sc-contrast i:nth-child(1) { background: #4FE9FF; }
+.sc-contrast i:nth-child(2) { background: #FF77E0; }
+.sc-contrast i:nth-child(3) { background: #FFF; }
 
 /* ------------------------------------------------------------------ uploads
    Everything shared on the case, newest day first, grouped inside a day by
@@ -1455,7 +1610,7 @@ body.lightbox-open { overflow: hidden; }
   min-height: calc(44px + .75rem);
   margin: 0 -.4rem .7rem; padding: .4rem .5rem 0;
   overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
-  background: rgba(7, 9, 15, .9); backdrop-filter: blur(8px);
+  background: var(--bar); backdrop-filter: blur(8px);
   border-bottom: 2px solid var(--manila-edge);
 }
 .folder-tabs::-webkit-scrollbar { display: none; }
@@ -1740,7 +1895,7 @@ body.lightbox-open { overflow: hidden; }
   position: sticky; top: calc(3rem + 3.3rem); z-index: 3;
   display: flex; flex-wrap: wrap; align-items: center; gap: .3rem;
   padding: .4rem .45rem;
-  background: rgba(7, 9, 15, .93); backdrop-filter: blur(8px);
+  background: var(--bar); backdrop-filter: blur(8px);
   border: 1px solid var(--line); border-radius: 12px 12px 0 0;
 }
 
@@ -1759,7 +1914,7 @@ body.lightbox-open { overflow: hidden; }
 .notes-tool:hover { border-color: var(--cyan-dim); }
 .notes-tool:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
 .notes-tool.on {
-  background: var(--cyan); border-color: var(--cyan); color: #041018;
+  background: var(--cyan); border-color: var(--cyan); color: var(--on-accent);
   box-shadow: var(--glow-c);
 }
 /* Each button wears the thing it does. */

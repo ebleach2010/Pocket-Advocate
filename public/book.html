@@ -10,7 +10,25 @@
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
 <meta name="theme-color" content="#07090F">
 <title>Book an Advocacy Case — Pocket Advocate</title>
-<link rel="stylesheet" href="/css/site.css?v=stat40">
+<script>
+// Paint in the stored colour scheme before the stylesheet lands, so a scheme
+// never flashes neon on the way in. Mirrors theme.js, which owns the choosing
+// and persisting; this only applies what is already stored. Eric's admin
+// device keeps Neon by default, everyone else gets Calm, and a stored choice
+// always wins.
+(function () {
+  try {
+    var s = localStorage.getItem('pa-scheme');
+    if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
+      s = localStorage.getItem('pa-admin-device') === '1' ? 'neon' : 'calm';
+    if (s !== 'neon') document.documentElement.dataset.scheme = s;
+    var c = { neon: '#07090F', calm: '#0B0E14', paper: '#F3EEE3', contrast: '#000000' }[s];
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m && c) m.setAttribute('content', c);
+  } catch (e) { /* storage blocked: neon is the default and is already correct */ }
+})();
+</script>
+<link rel="stylesheet" href="/css/site.css?v=stat41">
 </head>
 <body>
 <header class="bar">
