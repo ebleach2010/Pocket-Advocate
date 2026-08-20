@@ -410,7 +410,8 @@ function glossaryHtml(glossary) {
   return `
     <p class="dim small" style="margin:.1rem 0 .6rem;">Tick a term once you own it — it's never explained to you again, and the advisor pitches future notes to what you know.</p>
     ${fresh.length ? fresh.map(item).join('') : '<p class="dim small">Nothing new to learn right now.</p>'}
-    ${known.length ? `<details class="gloss-known"><summary>✓ ${known.length} term${known.length === 1 ? '' : 's'} you know</summary>${known.map(item).join('')}</details>` : ''}`;
+    ${known.length ? `<details class="gloss-known"><summary>✓ ${known.length} term${known.length === 1 ? '' : 's'} you know</summary>${known.map(item).join('')}</details>` : ''}
+    <p class="small" style="margin:.6rem 0 0;"><a href="/admin-dictionary.html">📚 Full dictionary, by type and A to Z →</a></p>`;
 }
 
 /** Split the assessment on its \`##\` headings into flippable pages. */

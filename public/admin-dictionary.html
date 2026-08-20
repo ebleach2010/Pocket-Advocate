@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
 <meta name="theme-color" content="#07090F">
-<title>Your subscription — Pocket Advocate</title>
+<title>Dictionary — Pocket Advocate</title>
 <link rel="stylesheet" href="/css/site.css?v=stat27">
 </head>
 <body>
@@ -17,19 +17,20 @@
   <div class="bar-inner">
     <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
     <nav class="tabs">
-      <a href="/">Book</a>
-      <a href="/about.html">About</a>
-      <a href="/reviews.html">Reviews</a>
+      <a href="/admin.html">Clients</a>
+      <a href="/admin-calendar.html">Calendar</a>
+      <a href="/admin-chats.html">Chats</a>
+      <a href="/admin-availability.html">Availability</a>
+      <a href="/admin-dictionary.html" class="active">📚 Terms</a>
       <span data-nav-auth></span>
     </nav>
   </div>
 </header>
 <main>
-  <div id="page"><p class="dim">Loading…</p></div>
-  <footer class="footer-disclaimer">
-    Chat is advocacy, not medicine — nothing here is a diagnosis, treatment, or medical advice. Share what you learn with your care team. If this is an emergency, call 911.
-  </footer>
+  <h1>📚 Dictionary</h1>
+  <p class="dim small">Every term the advisor has taught you, by type and A to Z. Tick a box when a term is yours: it's never explained to you again and the advisor pitches future notes to what you know. Untick to put it back into review. It also learns from your questions — use a term fluently and it gets checked for you.</p>
+  <div id="dict"><p class="dim">Loading…</p></div>
 </main>
-<script type="module" src="/js/subscription.js"></script>
+<script type="module" src="/js/admin-dictionary.js"></script>
 </body>
 </html>
