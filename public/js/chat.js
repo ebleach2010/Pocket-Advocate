@@ -90,9 +90,18 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         span.textContent = data.text;
         div.appendChild(span);
       }
-      if (data.attachment && data.attachment.url) {
+      // Images and PDFs can be staged for the advisor to read — admin only,
+      // and only where the advisor is actually mounted on the page.
+      const att = data.attachment;
+      const attCt = (att?.contentType || '').toLowerCase();
+      const attReadable = !!att?.url && !/heic|heif/.test(attCt) &&
+        (attCt.startsWith('image/') || attCt === 'application/pdf' || /\.pdf$/i.test(att?.name || ''));
+      const canAdvisor = attReadable && myRole === 'admin' &&
+        document.body.dataset.advisor === '1';
+      if (att && att.url) {
         hasAttachment = true;
-        div.appendChild(renderAttachment(data.attachment, saveUid));
+        div.appendChild(renderAttachment(att, saveUid));
+        if (canAdvisor) div.appendChild(advisorBadge(att));
       }
       const sentAt = data.ts?.toDate ? data.ts.toDate() : null;
       const meta = document.createElement('span');
@@ -158,14 +167,6 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       // reactions on theirs, editing on your own inside the 3-minute window.
       const editable = mine && !!data.text && sentAt &&
         Date.now() - sentAt.getTime() < EDIT_WINDOW_MS;
-      // Images and PDFs can go to the advisor for a real read — admin only,
-      // and only where the advisor is actually mounted on the page.
-      const att = data.attachment;
-      const attCt = (att?.contentType || '').toLowerCase();
-      const attReadable = !!att?.url && !/heic|heif/.test(attCt) &&
-        (attCt.startsWith('image/') || attCt === 'application/pdf' || /\.pdf$/i.test(att?.name || ''));
-      const canAdvisor = attReadable && myRole === 'admin' &&
-        document.body.dataset.advisor === '1';
       if (!mine || editable || data.text || canAdvisor) {
         messageLongPress(div, {
           msgId: m.id,
@@ -215,6 +216,15 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     log.innerHTML = `<p class="error">Couldn't load messages: ${esc(err.message)}</p>`;
   });
 
+  // When the advisor panel consumes or changes the staged-file selection,
+  // repaint the badges to match (they also re-derive on every snapshot).
+  if (myRole === 'admin') {
+    document.addEventListener('pa-advisor-selection', () => {
+      container.querySelectorAll('.dr-badge').forEach((b) =>
+        b.classList.toggle('on', !!window.__paMediaSel?.has(b.dataset.url)));
+    });
+  }
+
   // When Eric's latest messages have sat unanswered for 5 minutes and the
   // client is looking at the chat, ask the Worker for a short plain-words
   // recap. The Worker re-checks every condition, so this is only a nudge; the
@@ -261,7 +271,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   function messageLongPress(el, opts) {
     el.classList.add('react-target');
     let timer = null;
-    const onAttachment = (e) => !!e.target.closest?.('.msg-img, .file-chip');
+    const onAttachment = (e) => !!e.target.closest?.('.msg-img, .file-chip, .dr-badge');
     const open = () => runMenu(opts);
     const start = (e) => {
       if (onAttachment(e)) return;
@@ -468,6 +478,28 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
 
   // Handed back so the advisor panel can post an approved draft as me.
   return { send: (text) => send({ text }) };
+}
+
+/**
+ * The 👨‍⚕️ badge beside a readable attachment (admin side only): tap to stage
+ * the file for the advisor's next analysis, tap again to unstage. Highlighted
+ * while staged; the advisor panel's Update button becomes "Analyze N files".
+ */
+function advisorBadge(att) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'dr-badge';
+  b.dataset.url = att.url;
+  b.textContent = '👨‍⚕️';
+  b.title = 'Select for the advisor to read, then press Analyze in the advisor panel';
+  if (window.__paMediaSel?.has(att.url)) b.classList.add('on');
+  b.addEventListener('click', () => {
+    b.classList.toggle('on');
+    document.dispatchEvent(new CustomEvent('pa-advisor-toggle', {
+      detail: { attachment: { name: att.name || 'file', url: att.url, contentType: att.contentType || '', size: att.size || 0 } },
+    }));
+  });
+  return b;
 }
 
 // ---- attachment rendering + long-press save ----

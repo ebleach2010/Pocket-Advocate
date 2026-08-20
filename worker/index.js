@@ -120,7 +120,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-20-pr69-3';
+const BUILD_TAG = 'v2026-08-20-pr69-4';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -1277,14 +1277,37 @@ async function handleAdvisor(request, env, ctx) {
     const startedAt = state?.data.startedAt ? new Date(state.data.startedAt).getTime() : 0;
     if (state?.data.status === 'running' && Date.now() - startedAt < 12 * 60_000)
       return json({ ok: true, already: true });
-    // Queue first: if this connection drops mid-run, the cron retries it.
+    // Files Eric explicitly selected (the 👨‍⚕️ badges), plus files he
+    // uploaded straight to the advisor from his own device: those arrive
+    // inline as base64 `data` and never exist anywhere a client could see.
+    // Shape-checked here; URLs are fence-checked in the advisor before any
+    // fetch, and inline data is size-capped there before use.
+    let media = null;
+    if (Array.isArray(body?.media) && body.media.length) {
+      media = body.media.slice(0, 8).map((m) => ({
+        name: String(m?.name || 'file').slice(0, 200),
+        url: typeof m?.url === 'string' ? m.url.slice(0, 2048) : '',
+        data: typeof m?.data === 'string' && m.data.length <= 20_000_000 ? m.data : '',
+        contentType: String(m?.contentType || '').slice(0, 100),
+        size: typeof m?.size === 'number' ? m.size : 0,
+      })).filter((m) => m.url || m.data);
+      if (!media.length) media = null;
+    }
+    // Queue first: if this connection drops mid-run, the cron retries it
+    // (a cron retry runs without the selected files; the selection belongs
+    // to the tap that made it).
     await markPending(env, kind, id);
-    return keepaliveRun(ctx, runAnalysis(env, kind, id));
+    return keepaliveRun(ctx, runAnalysis(env, kind, id, media));
   }
 
   if (action === 'draft') {
     const instruction = typeof body?.instruction === 'string' ? body.instruction.slice(0, 1000) : '';
-    return keepaliveRun(ctx, runDraft(env, kind, id, instruction));
+    // revise: rewrite the existing draft per the instruction instead of
+    // starting fresh; `base` carries the draft box's current text so a
+    // revision builds on Eric's in-place edits.
+    const revise = body?.revise === true;
+    const base = revise && typeof body?.base === 'string' ? body.base.slice(0, 4000) : '';
+    return keepaliveRun(ctx, runDraft(env, kind, id, instruction, revise, base));
   }
 
   if (action === 'ask') {
