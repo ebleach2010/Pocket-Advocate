@@ -645,11 +645,11 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 .chat-root { position: relative; padding-top: .2rem; }
 .chat-expand {
   position: absolute; top: -.4rem; right: 0; z-index: 6;
-  width: 1.9rem; height: 1.9rem; border-radius: 8px; cursor: pointer;
-  border: 1px solid var(--line); background: var(--panel-2); color: var(--dim);
-  font-size: 1rem; line-height: 1;
+  width: 2.4rem; height: 2.4rem; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--cyan-dim); background: var(--panel-2); color: var(--cyan);
+  font-size: 1.3rem; font-weight: 700; line-height: 1;
 }
-.chat-expand:hover, .chat-expand:focus-visible { color: var(--cyan); border-color: var(--cyan); outline: none; }
+.chat-expand:hover, .chat-expand:focus-visible { border-color: var(--cyan); box-shadow: var(--glow-c); outline: none; }
 .chat-root.chat-full {
   position: fixed; inset: 0; z-index: 75; margin: 0; border-radius: 0;
   height: 100vh; height: 100dvh;
@@ -662,7 +662,13 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
   top: calc(env(safe-area-inset-top, 0px) + .6rem); right: .8rem;
   color: var(--ink); font-size: .95rem;
 }
-.chat-root.chat-full .chat-log { max-height: none; flex: 1; margin-top: 1.9rem; }
+.chat-root.chat-full .chat-log { max-height: none; flex: 1; margin-top: 2.2rem; }
+/* Full screen means FULL: bubbles stretch nearly wall to wall so far more
+   text fits per line, and the hint + export chrome get out of the way — the
+   screen belongs to the messages and the composer. */
+.chat-root.chat-full .msg { max-width: 96%; }
+.chat-root.chat-full [data-hint],
+.chat-root.chat-full p:has(> [data-export]) { display: none; }
 body.chat-full-open { overflow: hidden; }
 
 .chat-form { display: flex; gap: .5rem; margin-top: .4rem; align-items: flex-end; }
