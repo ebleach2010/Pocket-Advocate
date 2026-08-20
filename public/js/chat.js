@@ -158,7 +158,15 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       // reactions on theirs, editing on your own inside the 3-minute window.
       const editable = mine && !!data.text && sentAt &&
         Date.now() - sentAt.getTime() < EDIT_WINDOW_MS;
-      if (!mine || editable || data.text) {
+      // Images and PDFs can go to the advisor for a real read — admin only,
+      // and only where the advisor is actually mounted on the page.
+      const att = data.attachment;
+      const attCt = (att?.contentType || '').toLowerCase();
+      const attReadable = !!att?.url && !/heic|heif/.test(attCt) &&
+        (attCt.startsWith('image/') || attCt === 'application/pdf' || /\.pdf$/i.test(att?.name || ''));
+      const canAdvisor = attReadable && myRole === 'admin' &&
+        document.body.dataset.advisor === '1';
+      if (!mine || editable || data.text || canAdvisor) {
         messageLongPress(div, {
           msgId: m.id,
           canReact: !mine,
@@ -166,6 +174,8 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
           canEdit: !!editable,
           canRecap: mine && myRole === 'admin' && !!data.text,
           canPass: !mine && !!data.text && !data.pass,
+          canAdvisor,
+          attachment: canAdvisor ? att : null,
           passedByMe: data.pass?.by === user.uid,
           hasReaction: !!data.reaction?.id,
           hasText: !!data.text,
@@ -289,6 +299,14 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       // Force a plain-words recap of the latest unanswered run, right now.
       return post('/api/chat/recap', { kind: kindOf(), id: parentPath[1], force: true },
         "Couldn't recap");
+    }
+    if (choice.action === 'advisor') {
+      // The advisor panel (mounted on the admin case page) owns the actual
+      // request; the chat just hands the file over.
+      document.dispatchEvent(new CustomEvent('pa-advisor-review', {
+        detail: { attachment: o.attachment },
+      }));
+      return;
     }
     await post('/api/chat/react', {
       kind: kindOf(), id: parentPath[1], msgId: o.msgId,
@@ -462,6 +480,12 @@ function renderAttachment(att, saveUid) {
     el.src = att.url;
     el.alt = att.name;
     el.loading = 'lazy';
+    // Tap to expand. A long-press that already fired the save prompt marks
+    // the element so the trailing click doesn't also pop the lightbox.
+    el.addEventListener('click', () => {
+      if (el.dataset.lp) { delete el.dataset.lp; return; }
+      openLightbox(att);
+    });
   } else {
     el = document.createElement('a');
     el.className = 'file-chip';
@@ -476,12 +500,53 @@ function renderAttachment(att, saveUid) {
 
 function attachLongPress(el, att, saveUid) {
   let timer = null;
-  const start = () => { timer = setTimeout(() => { timer = null; promptSave(att, saveUid); }, LONG_PRESS_MS); };
+  const start = () => {
+    delete el.dataset.lp;
+    timer = setTimeout(() => { timer = null; el.dataset.lp = '1'; promptSave(att, saveUid); }, LONG_PRESS_MS);
+  };
   const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
   el.addEventListener('pointerdown', start);
   ['pointerup', 'pointerleave', 'pointercancel', 'pointermove'].forEach((ev) =>
     el.addEventListener(ev, cancel));
-  el.addEventListener('contextmenu', (e) => { e.preventDefault(); cancel(); promptSave(att, saveUid); });
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    cancel();
+    el.dataset.lp = '1';
+    promptSave(att, saveUid);
+  });
+}
+
+/**
+ * Full-screen image viewer: tap a chat image to expand it, tap anywhere
+ * outside (or ✕, or Escape) to close. Sits above full-screen chat (z 80 vs
+ * 75) so it works from either view. URLs are assigned as properties, never
+ * interpolated into HTML — attachment fields are user-written data.
+ */
+function openLightbox(att) {
+  if (document.querySelector('.lightbox')) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'lightbox';
+  overlay.innerHTML = `
+    <button class="lightbox-x" type="button" aria-label="Close">✕</button>
+    <img alt="">
+    <p class="lightbox-bar"><span></span><a target="_blank" rel="noopener">Open original</a></p>`;
+  const img = overlay.querySelector('img');
+  img.src = att.url;
+  img.alt = att.name || '';
+  overlay.querySelector('.lightbox-bar span').textContent = att.name || '';
+  overlay.querySelector('.lightbox-bar a').href = att.url;
+  const close = () => {
+    overlay.remove();
+    document.body.classList.remove('lightbox-open');
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay || e.target.classList.contains('lightbox-x')) close();
+  });
+  document.addEventListener('keydown', onKey);
+  document.body.classList.add('lightbox-open');
+  document.body.appendChild(overlay);
 }
 
 async function promptSave(att, saveUid) {

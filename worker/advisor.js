@@ -116,27 +116,150 @@ function stripDashes(t) {
 /**
  * The most recent MAX_MESSAGES of the thread, back in chronological order.
  * Newest-first then reversed, so a long case keeps its live end rather than
- * its opening pleasantries.
+ * its opening pleasantries. Attachment-only messages count: a shared lab
+ * photo IS a message, and the advisor can now read the file itself.
  */
 async function recentMessages(env, kind, id) {
   const parent = kind === 'case' ? 'cases' : 'subscriptions';
   const rows = await listDocs(env, `${parent}/${id}/chat`, {
     pageSize: MAX_MESSAGES, orderBy: 'ts desc',
   });
-  return rows.reverse().filter((r) => r.data.text);
+  return rows.reverse().filter((r) => r.data.text || r.data.attachment);
 }
 
-/** The thread as plain labelled lines. */
+/** The thread as plain labelled lines; shared files show up as markers. */
 function transcript(rows) {
   return rows
-    .map((r) => `${r.data.role === 'admin' ? 'ERIC' : 'CLIENT'}: ${r.data.text}`)
+    .map((r) => {
+      const who = r.data.role === 'admin' ? 'ERIC' : 'CLIENT';
+      const parts = [];
+      if (r.data.text) parts.push(r.data.text);
+      const att = r.data.attachment;
+      if (att?.name)
+        parts.push(`[shared a file: ${att.name}${mediaKind(att) ? '' : ' (a format you cannot read directly)'}]`);
+      return `${who}: ${parts.join('\n')}`;
+    })
     .join('\n\n');
 }
 
 /** Only Eric's lines — the sample the draft writer imitates. */
 function myVoice(rows) {
-  return rows.filter((r) => r.data.role === 'admin')
+  return rows.filter((r) => r.data.role === 'admin' && r.data.text)
     .map((r) => r.data.text).slice(-40).join('\n---\n');
+}
+
+// ---- Files the advisor can read (images + PDFs shared in the chat) ----
+
+// The model reads these natively as content blocks. HEIC (the iPhone camera
+// default) is not among them; unreadable formats still get a transcript
+// marker so the advisor can ask for a JPEG or a screenshot instead.
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const MAX_IMAGE_BYTES = Math.floor(4.5 * 1024 * 1024); // API cap is 5MB per image
+const MAX_PDF_BYTES = 12 * 1024 * 1024;
+const MAX_TOTAL_MEDIA_BYTES = 20 * 1024 * 1024;
+const MAX_MEDIA_FILES = 6;
+
+function mediaKind(att) {
+  const ct = (att?.contentType || '').toLowerCase();
+  if (/heic|heif/.test(ct)) return null;
+  if (IMAGE_TYPES.includes(ct)) return 'image';
+  if (ct === 'application/pdf' || /\.pdf$/i.test(att?.name || '')) return 'pdf';
+  return null; // dicom, zip, video, word docs — not directly readable
+}
+
+/**
+ * Only fetch attachment URLs that are Firebase Storage download links inside
+ * THIS thread's own folder. The attachment field is browser-written, so the
+ * URL is untrusted input, never simply ours.
+ */
+function safeAttachmentUrl(att, kind, id) {
+  try {
+    const u = new URL(att.url);
+    if (u.protocol !== 'https:' || u.hostname !== 'firebasestorage.googleapis.com') return null;
+    const m = u.pathname.match(/^\/v0\/b\/[^/]+\/o\/(.+)$/);
+    if (!m) return null;
+    const objectPath = decodeURIComponent(m[1]);
+    const parent = kind === 'case' ? 'cases' : 'subscriptions';
+    if (!objectPath.startsWith(`${parent}/${id}/`)) return null;
+    return u.toString();
+  } catch { return null; }
+}
+
+function b64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK)
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  return btoa(bin);
+}
+
+/**
+ * Fetch one readable attachment as a content block. Returns { bytes, block }
+ * or { skip: reason }. The tokened download URL on the message does the
+ * authorizing; no service-account storage access involved.
+ */
+async function attachmentBlock(att, kind, id) {
+  const mk = mediaKind(att);
+  if (!mk) return { skip: 'a format the advisor cannot read (send JPEG, PNG, or PDF)' };
+  const url = safeAttachmentUrl(att, kind, id);
+  if (!url) return { skip: 'not a file from this case' };
+  const cap = mk === 'image' ? MAX_IMAGE_BYTES : MAX_PDF_BYTES;
+  if (att.size && att.size > cap) return { skip: 'too large to read' };
+  const res = await fetch(url);
+  if (!res.ok) return { skip: `could not be fetched (HTTP ${res.status})` };
+  const buf = await res.arrayBuffer();
+  if (buf.byteLength > cap) return { skip: 'too large to read' };
+  const data = b64(buf);
+  if (mk === 'image')
+    return {
+      bytes: buf.byteLength,
+      block: { type: 'image', source: { type: 'base64', media_type: (att.contentType || '').toLowerCase(), data } },
+    };
+  return {
+    bytes: buf.byteLength,
+    block: { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } },
+  };
+}
+
+/**
+ * The newest readable files from the chat as content blocks, oldest first so
+ * they read in thread order. Budgeted hard: at most MAX_MEDIA_FILES files and
+ * MAX_TOTAL_MEDIA_BYTES, skipping quietly past anything unreadable — the
+ * transcript marker still names every file either way.
+ */
+async function chatMediaBlocks(rows, kind, id) {
+  const withMedia = rows.filter((r) => r.data.attachment?.url && mediaKind(r.data.attachment));
+  const newest = withMedia.slice(-MAX_MEDIA_FILES);
+  const blocks = [];
+  const included = [];
+  const skipped = [];
+  let budget = MAX_TOTAL_MEDIA_BYTES;
+  for (const r of newest) {
+    const att = r.data.attachment;
+    if ((att.size || 0) > budget) { skipped.push(`${att.name} (over the size budget this pass)`); continue; }
+    try {
+      const out = await attachmentBlock(att, kind, id);
+      if (out.block) {
+        budget -= out.bytes;
+        blocks.push(out.block);
+        included.push(att.name);
+      } else skipped.push(`${att.name} (${out.skip})`);
+    } catch {
+      skipped.push(`${att.name} (fetch failed)`);
+    }
+  }
+  return { blocks, included, skipped };
+}
+
+/** One line telling the model what files follow, and which it cannot see. */
+function mediaNote({ blocks, included, skipped }) {
+  let note = '';
+  if (blocks.length)
+    note += `\n\nThe newest files shared in this chat are attached after this message, in order: ${included.join('; ')}. Read them directly and fold what you actually see into your answer; cite specific values, findings, and page details.`;
+  if (skipped.length)
+    note += `\nFiles you cannot see this pass: ${skipped.join('; ')}. Never guess at their contents.`;
+  return note;
 }
 
 /**
@@ -491,6 +614,9 @@ export async function runAnalysis(env, kind, id) {
       return;
     }
     const prior = state?.data.analysis;
+    // Shared images and PDFs ride along as real content blocks: labs, imaging
+    // report pages, photos. The advisor reads the files, not just the chat.
+    const media = await chatMediaBlocks(rows, kind, id);
 
     const analysis = await ask(env, {
       effort: ANALYSIS_EFFORT,
@@ -534,9 +660,15 @@ transcript is too thin for a section, one line saying what you'd need.
 ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
       messages: [{
         role: 'user',
-        content: prior
-          ? `Here is your previous assessment of this client:\n\n<previous>\n${prior}\n</previous>\n\nHere is the full conversation as it now stands:\n\n<transcript>\n${chat}\n</transcript>\n\nUpdate the assessment. Carry forward what still holds, revise what the new messages change, and say explicitly if something new contradicts an earlier read.`
-          : `Here is the conversation so far:\n\n<transcript>\n${chat}\n</transcript>\n\nWrite the first assessment.`,
+        content: [
+          {
+            type: 'text',
+            text: (prior
+              ? `Here is your previous assessment of this client:\n\n<previous>\n${prior}\n</previous>\n\nHere is the full conversation as it now stands:\n\n<transcript>\n${chat}\n</transcript>\n\nUpdate the assessment. Carry forward what still holds, revise what the new messages change, and say explicitly if something new contradicts an earlier read.`
+              : `Here is the conversation so far:\n\n<transcript>\n${chat}\n</transcript>\n\nWrite the first assessment.`) + mediaNote(media),
+          },
+          ...media.blocks,
+        ],
       }],
     });
 
@@ -553,8 +685,12 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
   }
 }
 
-/** Eric asked the advisor something directly. */
-export async function runQuestion(env, kind, id, qaId, question) {
+/**
+ * Eric asked the advisor something directly. With `attachment` set (the
+ * "review this file" flow), the file itself rides along as a content block;
+ * an unreadable file surfaces as the answer, in plain words, via the catch.
+ */
+export async function runQuestion(env, kind, id, qaId, question, attachment = null) {
   // Nested under the state DOC, not beside it: Firestore paths alternate
   // collection/document, so `…/advisor/qa/{qaId}` is not a valid document path
   // (it broke in production with an instant 400). `…/advisor/state/qa/{qaId}`
@@ -568,6 +704,15 @@ export async function runQuestion(env, kind, id, qaId, question) {
       loadStyle(env),
     ]);
     const chat = transcript(rows);
+    let fileBlocks = [];
+    let fileNote = '';
+    if (attachment) {
+      const out = await attachmentBlock(attachment, kind, id)
+        .catch((err) => ({ skip: `fetch failed (${String(err.message || err).slice(0, 120)})` }));
+      if (!out.block) throw new Error(`Couldn't read "${attachment.name}": ${out.skip}.`);
+      fileBlocks = [out.block];
+      fileNote = `\nEric attached the file "${attachment.name}" for review; it follows this message. Read it directly and answer from what you actually see.`;
+    }
     const answer = await ask(env, {
       effort: ANALYSIS_EFFORT,
       system: [{ type: 'text', text: `${VOICE}
@@ -589,9 +734,15 @@ mastering it. Skip the section if none.
 ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
       messages: [{
         role: 'user',
-        content: `<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${
-          state?.data.analysis ? `\n<your_current_assessment>\n${state.data.analysis}\n</your_current_assessment>\n` : ''
-        }\nEric asks: ${question}`,
+        content: [
+          {
+            type: 'text',
+            text: `<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${
+              state?.data.analysis ? `\n<your_current_assessment>\n${state.data.analysis}\n</your_current_assessment>\n` : ''
+            }${fileNote}\nEric asks: ${question}`,
+          },
+          ...fileBlocks,
+        ],
       }],
     });
     // Same learning protocol as assessments: new jargon lands in the

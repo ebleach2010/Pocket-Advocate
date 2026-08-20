@@ -776,3 +776,34 @@ body.chat-full-open { overflow: hidden; }
     border-radius: 999px; max-width: 100%;
   }
 }
+
+/* ---- image lightbox: tap a chat image to expand it ---- */
+.lightbox {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: .6rem;
+  padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+  background: rgba(4, 6, 10, .93); backdrop-filter: blur(6px);
+}
+.lightbox img {
+  max-width: 100%; max-height: 82vh; max-height: 82dvh; object-fit: contain;
+  border-radius: 10px; border: 1px solid var(--line);
+}
+.lightbox-x {
+  position: absolute; top: max(.6rem, env(safe-area-inset-top)); right: .8rem;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+  border-radius: 50%; width: 2.4rem; height: 2.4rem; font-size: 1rem; cursor: pointer;
+}
+.lightbox-bar {
+  margin: 0; display: flex; gap: .9rem; align-items: center; max-width: 100%;
+  color: var(--dim); font-size: .85rem;
+}
+.lightbox-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60vw; }
+body.lightbox-open { overflow: hidden; }
+.msg-img { cursor: zoom-in; }
+
+/* Tiny per-file "have the advisor read this" button in the admin file list. */
+.file-review {
+  font-size: .8rem; padding: .12rem .45rem; margin-left: .4rem;
+  vertical-align: middle; line-height: 1.2;
+}

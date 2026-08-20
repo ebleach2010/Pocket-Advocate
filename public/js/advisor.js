@@ -64,6 +64,10 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
   let pageIdx = 0;      // which note page is showing
   let pagesKey = '';    // updatedAt of the analysis the pager was built for
 
+  // Tells the chat (and the admin file list) that "send to the advisor for
+  // review" has somewhere to land on this page.
+  document.body.dataset.advisor = '1';
+
   const post = async (payload) => {
     errEl.hidden = true;
     try {
@@ -302,6 +306,28 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
   // immediately as a pending row, and a failure puts the text back.
   let asking = false;
   let localQ = null;
+  /** One path for both typed questions and file reviews. Returns success. */
+  async function submitAsk(question, attachment = null) {
+    if (asking) return false;
+    asking = true;
+    askBtn.disabled = true;
+    askBtn.textContent = 'Asking…';
+    localQ = question;
+    renderQa(lastQa);
+    const out = await post({
+      action: 'ask', question,
+      ...(attachment ? { attachment } : {}),
+    });
+    asking = false;
+    askBtn.disabled = false;
+    askBtn.textContent = 'Ask';
+    if (!out) {
+      // post() already showed the error; drop the pending row.
+      localQ = null;
+      renderQa(lastQa);
+    }
+    return !!out;
+  }
   async function doAsk() {
     if (asking) return;
     const question = qBox.value.trim();
@@ -311,27 +337,32 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       qBox.focus();
       return;
     }
-    asking = true;
-    askBtn.disabled = true;
-    askBtn.textContent = 'Asking…';
-    localQ = question;
     qBox.value = '';
     qBox.style.height = 'auto';
-    renderQa(lastQa);
-    const out = await post({ action: 'ask', question });
-    asking = false;
-    askBtn.disabled = false;
-    askBtn.textContent = 'Ask';
-    if (!out) {
-      // post() already showed the error; give the question back.
-      localQ = null;
-      qBox.value = question;
-      renderQa(lastQa);
-    }
+    const ok = await submitAsk(question);
+    if (!ok) qBox.value = question; // give the question back
   }
   askBtn.type = 'button';
   askBtn.addEventListener('click', doAsk);
   askForm.addEventListener('submit', (e) => { e.preventDefault(); doAsk(); });
+
+  // "Send to the advisor for review" — dispatched by the chat's long-press
+  // menu and the file list. The file rides the ask flow as an attachment; the
+  // Worker fetches and actually reads it (images and PDFs).
+  document.addEventListener('pa-advisor-review', (e) => {
+    const att = e.detail?.attachment;
+    if (!att?.url) return;
+    submitAsk(
+      `Review the file "${att.name}". What do you see, what matters for this case, and what should I do with it?`,
+      {
+        name: att.name || 'file',
+        url: att.url,
+        contentType: att.contentType || '',
+        size: att.size || 0,
+      }
+    );
+    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
 
   /** The draft editor: edit, keep as a draft, or send it as me. */
   function openDraft(text) {
