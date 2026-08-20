@@ -232,15 +232,24 @@ export async function runRecap(env, kind, id, { force = false } = {}) {
 patient advocate, just said in his latest chat messages to his client. The
 client may have brain fog, fatigue, or trouble concentrating.
 
-One or two short sentences, sixth-grade reading level, addressed to the client:
+Three short sentences at the very most, even when he wrote a lot — pick what
+matters. Sixth-grade reading level, addressed to the client:
 "Eric asked you...", "Eric wants...". If he asked something, say plainly what
 he is asking. No medical jargon without plain words right next to it. Never use
 an em dash or en dash. Output the recap text only, nothing else.` }],
     messages: [{ role: 'user', content: `Eric's messages, oldest first:\n\n${text}` }],
   });
 
+  // Cap length at a sentence boundary — a recap clipped mid-sentence reads
+  // as broken (learned live on the first forced run).
+  let out = recap;
+  if (out.length > 600) {
+    const head = out.slice(0, 600);
+    const cut = Math.max(head.lastIndexOf('.'), head.lastIndexOf('?'), head.lastIndexOf('!'));
+    out = cut > 200 ? head.slice(0, cut + 1) : head;
+  }
   await patchDoc(env, `${parent}/${id}/chat/${last.id}`, {
-    recap: { text: recap.slice(0, 500), at: new Date() },
+    recap: { text: out, at: new Date() },
   }, { mask: ['recap'] });
   return { ok: true };
 }
