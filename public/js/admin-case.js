@@ -108,7 +108,9 @@ function render(el) {
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
       {
-        id: 'files', title: 'Files', icon: '📁',
+        // The page id stays 'files' so a remembered tab still resolves; the
+        // page itself is now everything shared on the case, from either side.
+        id: 'files', title: 'Uploads', icon: '📎',
         render: (pane) => paintFiles(pane),
       },
       {
@@ -446,12 +448,13 @@ function refreshOverview() {
   });
 }
 
-/** The Files page shell. Painted once; refreshFiles fills the list. */
+/** The Uploads page shell. Painted once; refreshFiles fills the list. */
 function paintFiles(pane) {
   pane.innerHTML = `
     <div class="panel">
-      <h3>Files</h3>
-      <ul class="filelist" id="files"><li class="dim small">Loading…</li></ul>
+      <h3>📎 Uploads</h3>
+      <p class="dim small">Everything shared on this case, newest day first. Tap 👨‍⚕️ on a file to stage it, then Analyze in the advisor.</p>
+      <div class="uploads" id="files"><p class="dim small">Loading…</p></div>
       <label class="small" style="margin-top:.7rem;">Upload the recording
         <input type="file" id="up-recording" accept="video/*,audio/*,.mp4,.m4a,.mp3,.mkv,.webm">
       </label>
@@ -522,6 +525,38 @@ async function upload(file, kind, milestoneAction) {
   bar.hidden = true;
 }
 
+// Uploads are grouped by day and then by what kind of thing they are. The
+// order inside a day is deliberate: the report is the deliverable, documents
+// are what the advisor reads, images are usually screenshots of documents, and
+// a recording is an hour of video nobody scrubs through on a phone.
+const FILE_GROUPS = ['Reports', 'Documents', 'Images', 'Recordings', 'Other'];
+
+function fileGroup(r) {
+  if (r.kind === 'report') return 'Reports';
+  if (r.kind === 'recording') return 'Recordings';
+  const ct = (r.contentType || '').toLowerCase();
+  const name = (r.name || '').toLowerCase();
+  if (ct.startsWith('image/') || /\.(jpe?g|png|gif|webp|heic|heif)$/.test(name)) return 'Images';
+  if (ct.startsWith('video/') || ct.startsWith('audio/')) return 'Recordings';
+  if (ct === 'application/pdf' || /\.(pdf|docx?|txt|md|rtf|csv|xlsx?)$/.test(name)) return 'Documents';
+  return 'Other';
+}
+
+/** "Today", "Yesterday", then the date itself. Grouping needs a stable key. */
+function dayKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function dayLabel(d) {
+  const today = new Date();
+  const y = new Date(today.getTime() - 86_400_000);
+  if (dayKey(d) === dayKey(today)) return 'Today';
+  if (dayKey(d) === dayKey(y)) return 'Yesterday';
+  return d.toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric',
+    year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric',
+  });
+}
+
 async function refreshFiles() {
   const listEl = document.getElementById('files');
   if (!listEl) return;
@@ -530,6 +565,10 @@ async function refreshFiles() {
     ['report', `cases/${caseId}/report`],
     ['recording', `cases/${caseId}/recording`],
     ['upload', `cases/${caseId}/uploads`],
+    // Files shared in the chat, which until now appeared nowhere in this list
+    // at all - the second half of the same blind spot that lost Eric's
+    // documents. They live under the case, so they belong on the case's page.
+    ['chat', `cases/${caseId}/chat-files`],
     ['saved', `profiles/${data.clientUid}/saved`],
   ]) {
     try {
@@ -544,16 +583,14 @@ async function refreshFiles() {
     } catch { /* empty */ }
   }
   if (!rows.length) {
-    listEl.innerHTML = '<li class="dim small">No files yet.</li>';
+    listEl.innerHTML = '<p class="dim small">No files yet.</p>';
     return;
   }
-  // Images and PDFs can go straight to the advisor for a real read. Only
-  // files that live under this case (uploads/reports) — chat files have the
-  // same button in the chat's long-press menu, and "saved" copies live on
-  // the client's profile shelf, outside the advisor's fence.
+  // Images and PDFs can go straight to the advisor for a real read. "Saved"
+  // copies are the client's own profile shelf, outside the advisor's fence.
   const reviewable = (r) => {
     const ct = (r.contentType || '').toLowerCase();
-    return (r.kind === 'upload' || r.kind === 'report') && !/heic|heif/.test(ct) &&
+    return r.kind !== 'saved' && !/heic|heif/.test(ct) &&
       (ct.startsWith('image/') || ct === 'application/pdf' || /\.pdf$/i.test(r.name));
   };
   // Image rows get a real thumbnail; tapping it opens the same lightbox the
@@ -562,17 +599,46 @@ async function refreshFiles() {
     const ct = (r.contentType || '').toLowerCase();
     return ct.startsWith('image/') && !/heic|heif/.test(ct);
   };
-  const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
-  listEl.innerHTML = rows.map((r, i) => `
+  const label = (kind) => (kind === 'saved' ? 'SAVED' : kind === 'chat' ? 'CHAT' : kind.toUpperCase());
+
+  // Newest day first; inside a day, newest file first within its group.
+  rows.sort((a, b) => b.ts - a.ts);
+  const days = new Map();
+  for (const r of rows) {
+    const k = dayKey(r.ts);
+    if (!days.has(k)) days.set(k, { label: dayLabel(r.ts), groups: new Map() });
+    const g = fileGroup(r);
+    const groups = days.get(k).groups;
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(r);
+  }
+
+  const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' });
+  // Three columns rather than one wrapping line: the thumbnail, then the name
+  // and its meta, then the badge. On a phone a single flex row pushed the file
+  // name down to "sl..." and then spread an image row over three lines.
+  const row = (r) => {
+    const i = rows.indexOf(r);
+    return `
     <li>
-      <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
-        ${thumbable(r) ? `<img class="thumb" src="${r.url}" alt="" loading="lazy" data-thumb="${i}">` : ''}
-        <a href="${r.url}" target="_blank" rel="noopener">${esc(r.name)}</a>${
-          reviewable(r)
-            ? `<button class="btn quiet file-review" data-review="${i}" title="Select for the advisor to read, then press Analyze in the advisor panel">👨‍⚕️</button>`
-            : ''}</span>
-      <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
-    </li>`).join('');
+      ${thumbable(r) ? `<img class="thumb" src="${r.url}" alt="" loading="lazy" data-thumb="${i}">` : ''}
+      <span class="up-text">
+        <span class="fname"><span class="kind-pill ${r.kind}">${label(r.kind)}</span><a href="${r.url}" target="_blank" rel="noopener">${esc(r.name)}</a></span>
+        <span class="fmeta">${time.format(r.ts)} · ${prettySize(r.size)}</span>
+      </span>
+      ${reviewable(r)
+        ? `<button class="btn quiet file-review" data-review="${i}" title="Select for the advisor to read, then press Analyze in the advisor panel">👨‍⚕️</button>`
+        : ''}
+    </li>`;
+  };
+
+  listEl.innerHTML = [...days.values()].map((day) => `
+    <section class="up-day">
+      <h4 class="up-date">${esc(day.label)}</h4>
+      ${FILE_GROUPS.filter((g) => day.groups.has(g)).map((g) => `
+        <h5 class="up-kind">${esc(g)}<span class="up-n">${day.groups.get(g).length}</span></h5>
+        <ul class="filelist">${day.groups.get(g).map(row).join('')}</ul>`).join('')}
+    </section>`).join('');
   listEl.querySelectorAll('[data-thumb]').forEach((img) => {
     const r = rows[Number(img.dataset.thumb)];
     img.addEventListener('click', () => openLightbox({ name: r.name, url: r.url }));
