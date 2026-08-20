@@ -603,13 +603,25 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 .advisor-q { margin: 0 0 .3rem; font-size: .82rem; color: var(--ink); font-weight: 600; }
 .advisor-a p, .advisor-a li { font-size: .84rem; color: var(--soft); }
 .advisor-foot { margin-top: .7rem; border-top: 1px solid var(--line); padding-top: .7rem; }
-.advisor-foot .btn { width: 100%; }
+/* Only the direct-child Prepare button spans the row. The Ask button lives
+   inside the form; width:100% on it crushed the textarea to one character. */
+.advisor-foot > .btn { width: 100%; }
+.advisor-ask .btn { width: auto; }
 .advisor-ask { display: flex; gap: .4rem; margin-top: .5rem; align-items: flex-end; }
 .advisor-ask textarea {
   flex: 1; resize: none; overflow-y: auto; font: inherit; font-size: .85rem;
   line-height: 1.4; min-height: 2.4rem; max-height: 7rem; padding: .45rem .6rem;
 }
 .advisor-ask .btn { flex: none; align-self: flex-end; }
+
+/* 📚 Key terms page: checkbox per term; checked = never explained again. */
+.gloss-item { display: flex; gap: .55rem; align-items: flex-start; margin: 0 0 .55rem; }
+.gloss-item input[type=checkbox] { width: 1.05rem; height: 1.05rem; margin-top: .15rem; flex: none; accent-color: var(--cyan); }
+.gloss-item .gloss-text { font-size: .85rem; line-height: 1.5; color: var(--soft); overflow-wrap: anywhere; }
+.gloss-item .gloss-text strong { color: var(--ink); }
+.gloss-known summary { cursor: pointer; list-style: none; font-size: .78rem; color: var(--dim); padding: .3rem 0; }
+.gloss-known summary::-webkit-details-marker { display: none; }
+.gloss-known[open] summary { color: var(--cyan); }
 
 /* Full-screen chat. The ⤢/✕ button sits in the top-right corner of the
    thread; full mode takes the real visible viewport (dvh survives the iOS
