@@ -188,6 +188,53 @@ async function harvestKeyTerms(env, analysis) {
   return analysis.replace(m[0], '').trim();
 }
 
+/**
+ * A tiny plain-words recap of Eric's latest unanswered messages, written for
+ * clients with brain fog or fatigue: two short sentences at most, saying what
+ * he said and what he's asking, so nobody has to re-read a wall to re-orient.
+ * Runs once per message run, only when the run has sat unanswered 5+ minutes,
+ * and lands on the last message of the run for both sides to see.
+ */
+export async function runRecap(env, kind, id) {
+  const parent = kind === 'case' ? 'cases' : 'subscriptions';
+  const rows = await recentMessages(env, kind, id);
+
+  // The trailing run of Eric's messages — ends the moment the client replies.
+  const run = [];
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].data.role === 'admin') run.unshift(rows[i]);
+    else break;
+  }
+  if (!run.length) return { ok: false, reason: 'nothing to recap' };
+  const last = run[run.length - 1];
+  if (last.data.recap) return { ok: true, already: true };
+  if (Date.now() - new Date(last.data.ts || 0).getTime() < 5 * 60_000)
+    return { ok: false, reason: 'too soon' };
+  const text = run.map((r) => r.data.text).filter(Boolean).join('\n\n');
+  // One short message doesn't need a recap of itself.
+  if (!text || (text.length < 240 && run.length < 2))
+    return { ok: false, reason: 'too short to need one' };
+
+  const recap = await ask(env, {
+    effort: 'low',
+    maxTokens: 8000,
+    system: [{ type: 'text', text: `You write one tiny recap of what Eric, a
+patient advocate, just said in his latest chat messages to his client. The
+client may have brain fog, fatigue, or trouble concentrating.
+
+One or two short sentences, sixth-grade reading level, addressed to the client:
+"Eric asked you...", "Eric wants...". If he asked something, say plainly what
+he is asking. No medical jargon without plain words right next to it. Never use
+an em dash or en dash. Output the recap text only, nothing else.` }],
+    messages: [{ role: 'user', content: `Eric's messages, oldest first:\n\n${text}` }],
+  });
+
+  await patchDoc(env, `${parent}/${id}/chat/${last.id}`, {
+    recap: { text: recap.slice(0, 500), at: new Date() },
+  }, { mask: ['recap'] });
+  return { ok: true };
+}
+
 const statePath = (kind, id) =>
   `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state`;
 // Top-level queue of cases waiting on an analysis. Top-level on purpose:

@@ -23,7 +23,7 @@ import {
 } from './schedule.js';
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
-import { runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses } from './advisor.js';
+import { runAnalysis, runQuestion, runDraft, runRecap, markPending, runQueuedAnalyses } from './advisor.js';
 
 // These build the real Stripe line items. Three browser files mirror them for
 // display — public/js/book.js, public/js/subscribe.js, public/js/admin-case.js
@@ -76,6 +76,8 @@ export default {
         return await handleChatEdit(request, env);
       if (url.pathname === '/api/chat/pass' && request.method === 'POST')
         return await handleChatPass(request, env);
+      if (url.pathname === '/api/chat/recap' && request.method === 'POST')
+        return await handleChatRecap(request, env, ctx);
       if (url.pathname === '/api/advisor' && request.method === 'POST')
         return await handleAdvisor(request, env, ctx);
       if (url.pathname === '/api/advisor/state' && request.method === 'GET')
@@ -113,7 +115,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-20-fullscreen-density';
+const BUILD_TAG = 'v2026-08-20-recap';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -932,6 +934,32 @@ async function handleChatReact(request, env) {
     await notifyUser(env, target, { title: 'Pocket Advocate', body: push, link: ctx.link });
   }
   return json({ ok: true, reaction, notified: !already });
+}
+
+/**
+ * POST /api/chat/recap  Body: { kind: 'case'|'sub', id }
+ * Either participant may ask for the recap; the client's open chat is what
+ * normally triggers it. All the real conditions (5 minutes unanswered, long
+ * enough to need one, not already done) are enforced in runRecap, so a caller
+ * can't spend money by hammering this.
+ */
+async function handleChatRecap(request, env, ctx) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = await request.json().catch(() => null);
+  const kind = body?.kind === 'sub' ? 'sub' : 'case';
+  const id = typeof body?.id === 'string' ? body.id : '';
+  if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad id' }, 400);
+
+  const parent = kind === 'case' ? 'cases' : 'subscriptions';
+  const doc = await getDoc(env, `${parent}/${id}`);
+  if (!doc) return json({ error: 'Not found' }, 404);
+  const clientUid = kind === 'case' ? doc.data.clientUid : id;
+  const profile = await getDoc(env, `users/${user.uid}`);
+  if (profile?.data.role !== 'admin' && user.uid !== clientUid)
+    return json({ error: 'Not your thread' }, 403);
+
+  return keepaliveRun(ctx, runRecap(env, kind, id));
 }
 
 /**
