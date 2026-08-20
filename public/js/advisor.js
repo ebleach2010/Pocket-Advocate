@@ -132,13 +132,8 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       errEl.hidden = false;
     }
 
-    qaEl.innerHTML = (qa || []).slice(-3).map((q) => `
-      <div class="advisor-turn">
-        <p class="advisor-q">${esc(q.question)}</p>
-        <div class="advisor-a">${q.status === 'running'
-          ? '<span class="dim small">thinking…</span>'
-          : md(q.answer || '')}</div>
-      </div>`).join('');
+    lastQa = qa || [];
+    renderQa(lastQa);
 
     // The thread changed since the last assessment and nothing is on it yet —
     // run the analysis from here. This open panel is what holds the connection
@@ -151,6 +146,26 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
       post({ action: 'analyze' });
     }
     return { ...d, running };
+  }
+
+  let lastQa = [];
+  function renderQa(qa) {
+    // Once the server row for the just-asked question exists, drop the local
+    // pending copy.
+    if (localQ && qa.some((q) => q.question === localQ)) localQ = null;
+    const rows = qa.slice(-3).map((q) => `
+      <div class="advisor-turn">
+        <p class="advisor-q">${esc(q.question)}</p>
+        <div class="advisor-a">${q.status === 'running'
+          ? '<span class="dim small">thinking…</span>'
+          : md(q.answer || '')}</div>
+      </div>`);
+    if (localQ) rows.push(`
+      <div class="advisor-turn">
+        <p class="advisor-q">${esc(localQ)}</p>
+        <div class="advisor-a"><span class="dim small">thinking…</span></div>
+      </div>`);
+    qaEl.innerHTML = rows.join('');
   }
 
   /** One note page at a time, flipped with ‹ › or a sideways swipe. */
@@ -216,26 +231,82 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
 
   el('[data-refresh]').addEventListener('click', () => post({ action: 'analyze' }));
   pauseBtn.addEventListener('click', () => post({ action: paused ? 'resume' : 'pause' }));
-  el('[data-prep]').addEventListener('click', async () => {
-    const instruction = prompt('Anything this reply must do? (optional — leave blank for the natural next message)') ?? null;
-    if (instruction === null) return;
-    draftShown = null;
-    await post({ action: 'draft', instruction });
+  // window.prompt() silently does nothing in iOS Home-Screen apps — a real
+  // overlay or the button reads as broken.
+  el('[data-prep]').addEventListener('click', () => {
+    if (document.getElementById('pa-prep')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'pa-prep';
+    overlay.className = 'settings-overlay';
+    overlay.innerHTML = `
+      <div class="settings-card" role="dialog" aria-modal="true" aria-label="Prepare a response">
+        <div class="row"><h3 style="margin:0;">✍️ Prepare a response</h3>
+          <button class="btn quiet" data-x>Cancel</button></div>
+        <p class="dim small" style="margin:.2rem 0 .5rem;">Anything this reply must do? Optional — leave blank for the natural next message.</p>
+        <textarea class="edit-box" data-inst rows="3" maxlength="1000" style="min-height:4rem;"></textarea>
+        <div class="actions" style="margin-top:.7rem;"><button class="btn" data-go>Draft it</button></div>
+      </div>`;
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('[data-x]').addEventListener('click', close);
+    overlay.querySelector('[data-go]').addEventListener('click', async () => {
+      const instruction = overlay.querySelector('[data-inst]').value.trim();
+      close();
+      draftShown = null;
+      const prep = el('[data-prep]');
+      prep.disabled = true;
+      prep.textContent = '✍️ Drafting…';
+      await post({ action: 'draft', instruction });
+      prep.disabled = false;
+      prep.textContent = '✍️ Prepare a response';
+    });
+    document.body.appendChild(overlay);
+    overlay.querySelector('[data-inst]').focus();
   });
 
   const askForm = el('[data-ask]');
+  const askBtn = askForm.querySelector('button');
   qBox.addEventListener('input', () => {
     qBox.style.height = 'auto';
     qBox.style.height = `${qBox.scrollHeight}px`;
   });
-  askForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
+
+  // The original wiring relied on the form's submit event and returned
+  // silently on an empty box — on a phone that reads as a dead button. Now the
+  // button drives directly, an empty tap says so, the question appears
+  // immediately as a pending row, and a failure puts the text back.
+  let asking = false;
+  let localQ = null;
+  async function doAsk() {
+    if (asking) return;
     const question = qBox.value.trim();
-    if (!question) return;
+    if (!question) {
+      errEl.textContent = 'Type a question first.';
+      errEl.hidden = false;
+      qBox.focus();
+      return;
+    }
+    asking = true;
+    askBtn.disabled = true;
+    askBtn.textContent = 'Asking…';
+    localQ = question;
     qBox.value = '';
     qBox.style.height = 'auto';
-    await post({ action: 'ask', question });
-  });
+    renderQa(lastQa);
+    const out = await post({ action: 'ask', question });
+    asking = false;
+    askBtn.disabled = false;
+    askBtn.textContent = 'Ask';
+    if (!out) {
+      // post() already showed the error; give the question back.
+      localQ = null;
+      qBox.value = question;
+      renderQa(lastQa);
+    }
+  }
+  askBtn.type = 'button';
+  askBtn.addEventListener('click', doAsk);
+  askForm.addEventListener('submit', (e) => { e.preventDefault(); doAsk(); });
 
   /** The draft editor: edit, keep as a draft, or send it as me. */
   function openDraft(text) {
