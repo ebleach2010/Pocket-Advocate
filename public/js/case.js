@@ -1,6 +1,8 @@
-// The client case dashboard (Phases 2–3): after booking, the case lives in
-// three tabs — Progress (timeline + appointment), Chat (live, with file
-// sharing), and Documents (uploads from both ends + files saved from chat).
+// The client case dashboard (Phases 2-3): after booking, the case lives on
+// one scrolling page in three stacked sections - Progress (timeline +
+// appointment), Chat (live, with file sharing), and Documents (uploads from
+// both ends + files saved from chat) - with a sticky jump-chip nav that
+// scrolls to each section and highlights the one in view.
 
 import {
   db, storage, collection, getDocs, query, where,
@@ -40,7 +42,22 @@ hydrateNav();
 let user = null;
 let cases = [];
 let currentId = null;
-let currentTab = 'progress';
+// Case id the current page shell (and its one chat mount) was built for.
+// Refresh paths (makePrivate -> boot) must never rebuild the chat's DOM.
+let renderedFor = null;
+// Declared before the top-level DEMO branch below: that path calls render()
+// synchronously during module evaluation, and wireJumpChips reads these.
+let chipsObserver = null;
+let chipsScroll = null;
+
+// A file saved from chat lands in Documents. The listener is permanent (the
+// sections never unmount), so every save refreshes the list, not just the first.
+document.addEventListener('pa-saved-file', () => {
+  if (DEMO) return;
+  const el = document.getElementById('sec-docs');
+  const c = cases.find((x) => x.id === currentId);
+  if (el && c) refreshFiles(c, el);
+});
 
 if (DEMO) {
   user = { uid: 'demo', getIdToken: async () => '' };
@@ -89,11 +106,13 @@ async function boot() {
     snapshot.forEach((d) => cases.push({ id: d.id, ...d.data() }));
   } catch (err) {
     container.innerHTML = `<p class="error">Couldn't load your cases: ${err.message}</p>`;
+    renderedFor = null;
     return;
   }
   if (!cases.length) {
     container.innerHTML =
       '<p class="dim">No cases yet.</p><p><a class="btn" href="/book.html">Book an Advocacy Case →</a></p>';
+    renderedFor = null;
     return;
   }
   cases.sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
@@ -102,7 +121,13 @@ async function boot() {
   const params = new URLSearchParams(location.search);
   const wanted = currentId || params.get('id');
   currentId = wanted && cases.some((c) => c.id === wanted) ? wanted : cases[0].id;
-  render();
+  // Re-boots for the same case (e.g. after makePrivate) refresh Progress and
+  // Documents in place; the chat mounts once per case and stays untouched.
+  if (renderedFor === currentId && document.getElementById('sec-chat')) {
+    refreshSections();
+  } else {
+    render();
+  }
 
   // First arrival straight from checkout: open the explainer unprompted. It's
   // the one moment a client has no idea what they just bought access to.
@@ -132,78 +157,96 @@ function render() {
       </div>` : ''}
     <div class="row">
       <h2 style="margin:0;">Advocacy Case ${HELP_BUTTON}</h2>
-      <span class="status-pill ${c.status === 'closed' ? 'closed' : ''}">${STATUS_LABEL[c.status] || c.status}</span>
+      <span class="status-pill ${c.status === 'closed' ? 'closed' : ''}" data-status-pill>${STATUS_LABEL[c.status] || c.status}</span>
     </div>
-    <nav class="subtabs" role="tablist">
-      <button data-tab="progress" class="${currentTab === 'progress' ? 'active' : ''}">Progress</button>
-      <button data-tab="chat" class="${currentTab === 'chat' ? 'active' : ''}">Chat</button>
-      <button data-tab="docs" class="${currentTab === 'docs' ? 'active' : ''}">Documents</button>
+    <nav class="jump-chips">
+      <a href="#sec-progress" class="on">Progress</a>
+      <a href="#sec-chat">Chat</a>
+      <a href="#sec-docs">Documents</a>
     </nav>
-    <section id="tab-body"></section>`;
+    <section class="case-section" id="sec-progress"></section>
+    <section class="case-section" id="sec-chat"></section>
+    <section class="case-section" id="sec-docs"></section>`;
 
   wireHelp(container);
   container.querySelectorAll('[data-case]').forEach((b) =>
-    b.addEventListener('click', () => { currentId = b.dataset.case; render(); }));
-  container.querySelectorAll('[data-tab]').forEach((b) =>
-    b.addEventListener('click', () => { currentTab = b.dataset.tab; render(); }));
+    b.addEventListener('click', () => {
+      if (b.dataset.case === currentId) return;
+      currentId = b.dataset.case;
+      render();
+    }));
+  wireJumpChips(container);
 
-  const body = container.querySelector('#tab-body');
-  if (currentTab === 'progress') renderProgress(body, c);
-  else if (currentTab === 'chat') renderChat(body, c);
-  else renderDocs(body, c);
-
-  enableSwipe(body);
+  renderProgress(container.querySelector('#sec-progress'), c);
+  renderChat(container.querySelector('#sec-chat'), c);
+  renderDocs(container.querySelector('#sec-docs'), c);
+  renderedFor = currentId;
 }
-
-const TABS = ['progress', 'chat', 'docs'];
 
 /**
- * Swipe left/right between the three tabs. Deliberately fussy about what
- * counts: a gesture must be mostly horizontal, long enough to be intentional,
- * and must not start on something the user is trying to scroll sideways (the
- * chat's file strip) or type into. Otherwise scrolling a long document list
- * would keep flinging people into Chat.
+ * Refresh path: update Progress and Documents in place, plus the status pill.
+ * The chat section's DOM is never touched here - rebuilding it would orphan
+ * its live onSnapshot listener and wipe a half-typed message.
  */
-function enableSwipe(el) {
-  const MIN_X = 60;      // px of horizontal travel before it counts
-  const MAX_OFF = 45;    // px of vertical drift tolerated
-  let x0 = 0;
-  let y0 = 0;
-  let live = false;
-
-  el.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) { live = false; return; }
-    const t = e.touches[0];
-    // Don't hijack a gesture that belongs to something else on the page.
-    if (t.target.closest('input, textarea, select, button, a, [contenteditable]')) { live = false; return; }
-    if (scrollableX(t.target, el)) { live = false; return; }
-    // Leave the screen edges to Safari's back/forward gesture.
-    if (t.clientX < 24 || t.clientX > window.innerWidth - 24) { live = false; return; }
-    x0 = t.clientX;
-    y0 = t.clientY;
-    live = true;
-  }, { passive: true });
-
-  el.addEventListener('touchend', (e) => {
-    if (!live) return;
-    live = false;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - x0;
-    const dy = t.clientY - y0;
-    if (Math.abs(dx) < MIN_X || Math.abs(dy) > MAX_OFF || Math.abs(dy) > Math.abs(dx)) return;
-    const next = TABS.indexOf(currentTab) + (dx < 0 ? 1 : -1);
-    if (next < 0 || next >= TABS.length) return;
-    currentTab = TABS[next];
-    render();
-  }, { passive: true });
+function refreshSections() {
+  const container = document.getElementById('cases');
+  const c = cases.find((x) => x.id === currentId);
+  if (!c) return render();
+  const pill = container.querySelector('[data-status-pill]');
+  if (pill) {
+    pill.className = `status-pill ${c.status === 'closed' ? 'closed' : ''}`;
+    pill.textContent = STATUS_LABEL[c.status] || c.status;
+  }
+  renderProgress(container.querySelector('#sec-progress'), c);
+  renderDocs(container.querySelector('#sec-docs'), c);
 }
 
-/** True if the touch began inside something that scrolls horizontally itself. */
-function scrollableX(node, stopAt) {
-  for (let n = node; n && n !== stopAt; n = n.parentElement) {
-    if (n.scrollWidth > n.clientWidth + 4) return true;
-  }
-  return false;
+/**
+ * The sticky jump chips: click scrolls smoothly to the section; an
+ * IntersectionObserver keeps the chip for the section in view highlighted
+ * (.on). Geometry is recomputed on each intersection change, with the
+ * activation line sitting just below the sticky chip bar itself.
+ */
+function wireJumpChips(container) {
+  const nav = container.querySelector('.jump-chips');
+  if (!nav) return;
+  const links = [...nav.querySelectorAll('a[href^="#"]')];
+  const sections = links
+    .map((a) => container.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+
+  links.forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault();
+    container.querySelector(a.getAttribute('href'))?.scrollIntoView({ behavior: 'smooth' });
+  }));
+
+  const setActive = () => {
+    let active = sections[0];
+    // At max scroll the last section may be too short for its top to ever
+    // cross the activation line — without this clamp the Documents chip
+    // could never light up on a phone.
+    const atBottom =
+      window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+    if (atBottom) {
+      active = sections[sections.length - 1];
+    } else {
+      const line = nav.getBoundingClientRect().bottom + 40;
+      for (const s of sections) {
+        if (s.getBoundingClientRect().top <= line) active = s;
+      }
+    }
+    links.forEach((a) =>
+      a.classList.toggle('on', !!active && a.getAttribute('href') === `#${active.id}`));
+  };
+  chipsObserver?.disconnect();
+  chipsObserver = new IntersectionObserver(setActive, { threshold: [0, 0.25, 0.5, 0.75, 1] });
+  sections.forEach((s) => chipsObserver.observe(s));
+  // The observer only fires on threshold crossings; the bottom clamp needs to
+  // see the final scroll position too.
+  if (chipsScroll) removeEventListener('scroll', chipsScroll);
+  chipsScroll = () => requestAnimationFrame(setActive);
+  addEventListener('scroll', chipsScroll, { passive: true });
+  setActive();
 }
 
 /**
@@ -229,7 +272,7 @@ function confirmationBanner(c, start, localFmt) {
     </div>`;
 }
 
-// ---- Progress tab ----
+// ---- Progress section ----
 function renderProgress(el, c) {
   const start = c.appointment && toDate(c.appointment.start);
   const closed = c.status === 'closed';
@@ -258,6 +301,7 @@ function renderProgress(el, c) {
 
   el.innerHTML = `
     ${confirmationBanner(c, start, localFmt)}
+    <h2 class="case-sec-h">Progress</h2>
     <div class="panel">
       ${start ? `
         <p style="margin:0 0 .3rem;"><strong>${mtFmt.format(start)} MST</strong><br>
@@ -283,7 +327,7 @@ function renderProgress(el, c) {
   el.querySelector('[data-private]')?.addEventListener('click', (e) => makePrivate(c.id, e.target));
   return;
 
-  /** Second-session state: scheduled follow-up, a pay-to-confirm prompt, or the unused add-on with its deadline. */
+  /** Second-session state: scheduled follow-up, a pay-to-confirm prompt, or the unused included follow-up with its deadline. */
   function followUpSection(c) {
     const mt = new Intl.DateTimeFormat('en-US', {
       timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -308,7 +352,7 @@ function renderProgress(el, c) {
       const expires = base ? base + 30 * 86_400_000 : null;
       const lapsed = expires && Date.now() > expires;
       if (lapsed) return '';
-      return `<p class="dim small">Follow-up add-on included — message me in chat to schedule your second session.${
+      return `<p class="dim small">Follow-up session included: message me in chat to schedule your second session.${
         expires && Date.now() > base
           ? ` Use it by <strong style="color:var(--ink)">${mt.format(new Date(expires))} MST</strong> (one month after your discussion).`
           : ' It must be used within one month of your first discussion.'
@@ -318,11 +362,12 @@ function renderProgress(el, c) {
   }
 }
 
-// ---- Chat tab ----
+// ---- Chat section (mounted once per case id; never re-rendered by refresh paths) ----
 function renderChat(el, c) {
   if (DEMO) return renderDemoChat(el);
   const closed = c.status === 'closed';
   el.innerHTML = `
+    <h2 class="case-sec-h">Chat</h2>
     <p style="margin:.2rem 0 .3rem;"><span class="p-dot"></span><span class="p-label">Checking…</span></p>
     <div class="panel" data-chat></div>`;
   watchPresence(el);
@@ -344,6 +389,7 @@ function renderDemoChat(el) {
     { role: 'admin', text: 'Perfect, I see them. I already have a couple of questions ready for your neurologist. See you Thursday.', d: '10:20 AM' },
   ];
   el.innerHTML = `
+    <h2 class="case-sec-h">Chat</h2>
     <p style="margin:.2rem 0 .3rem;"><span class="p-dot on"></span><span class="p-label">I'm online</span></p>
     <div class="panel">
       <div class="chat-log">
@@ -362,11 +408,12 @@ function renderDemoChat(el) {
     </div>`;
 }
 
-// ---- Documents tab ----
+// ---- Documents section ----
 function renderDocs(el, c) {
   if (DEMO) return renderDemoDocs(el);
   const closed = c.status === 'closed';
   el.innerHTML = `
+    <h2 class="case-sec-h">Documents</h2>
     ${closed
       ? '<p class="dim small">This case is closed. Your documents stay here forever — download or print any of them.</p>'
       : `<label class="dropzone" data-drop>
@@ -380,7 +427,7 @@ function renderDocs(el, c) {
   const input = el.querySelector('[data-file-input]');
   input?.addEventListener('change', () => uploadFiles(c, el, [...input.files]));
   refreshFiles(c, el);
-  document.addEventListener('pa-saved-file', () => refreshFiles(c, el), { once: true });
+  // Chat saves refresh this list via the permanent pa-saved-file listener at the top.
 }
 
 function renderDemoDocs(el) {
@@ -390,6 +437,7 @@ function renderDemoDocs(el) {
     { kind: 'saved', name: 'referral_letter.jpg', meta: 'Jun 4 · 1.1 MB' },
   ];
   el.innerHTML = `
+    <h2 class="case-sec-h">Documents</h2>
     <label class="dropzone">Tap to add labs, imaging, or records<br>
       <span class="small">PDF · JPEG · PNG · HEIC · DICOM · ZIP — 25 MB max each</span></label>
     <ul class="filelist">

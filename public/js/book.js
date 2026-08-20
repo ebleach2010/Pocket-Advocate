@@ -1,20 +1,24 @@
-// The book-and-pay wizard (SPEC §C/§D): waivers 1–3 (one per screen,
-// scroll-to-end + explicit acknowledge) → one screen that takes both the
-// slot and the meeting method → review, optional $50 add-on, Stripe
-// Checkout. Sessions are always private, so there is no election screen.
-// The Worker re-validates everything; this UI is not trusted.
+// The booking flow (PR 69): three visible steps under a persistent step
+// rail. Step 1 takes the time, the meeting method, and (when missing) the
+// client's name and date of birth; step 2 is the one agreement in three
+// scroll-to-end parts; step 3 takes payment. Sign-in folds into the page
+// via inline-auth.js instead of bouncing new visitors to /signin.html.
+// The follow-up session is included in the case price now; the paid add-on
+// is gone from the UI. The Worker re-validates everything; this UI is not
+// trusted.
 
-import { db, collection, getDocs, query, where } from './firebase.js';
-import { requireUser, hydrateNav } from './auth.js';
-import { ensureFullProfile } from './profile.js';
+import { db, doc, getDoc, setDoc, collection, getDocs, query, where } from './firebase.js';
+import { currentUser, hydrateNav } from './auth.js';
+import { ensureSignedIn } from './inline-auth.js';
+import { ageFromDob, MIN_AGE } from './profile.js';
 import { WAIVERS } from './waivers.js';
 
-// Keep in sync with CASE_PRICE_CENTS / ADDON_PRICE_CENTS in worker/index.js.
-// Every price on this screen is derived from these two — the Worker builds the
-// real Stripe line items from its own copies, and a hardcoded number here
-// silently lied about the total for weeks after the case rate changed.
-const CASE_PRICE_CENTS = 12500;
-const ADDON_PRICE_CENTS = 5000;
+// Keep in sync with CASE_PRICE_CENTS in worker/index.js. Every price on this
+// screen is derived from it - the Worker builds the real Stripe line items
+// from its own copy, and a hardcoded number here silently lied about the
+// total for weeks after the case rate changed. The follow-up session is
+// included at this rate; there is no separate add-on price anymore.
+const CASE_PRICE_CENTS = 27500;
 const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
@@ -24,44 +28,68 @@ const LEAD_TIME_MS = 72 * 3600 * 1000;
 // The Worker enforces the same cap server-side.
 const MAX_LEAD_MS = 252 * 3600 * 1000;
 
+// Plain-language line under each agreement title (copy deck, PR 69).
+const AGREEMENT_PLAIN = {
+  disclaimer: "What this is, what it is not, and what you're agreeing to.",
+  privacy: "What I store, where it lives, and who can see it. You and me. That's the list.",
+  recording: 'Our discussion is recorded, and the recording goes in your case file for you to keep.',
+};
+
 const state = {
-  acks: {}, // formId -> ms timestamp
+  acks: {}, // formId -> ms timestamp, captured the moment the box is ticked
+  read: {}, // formId -> true once a body has been opened and read to the end
   slot: null, // { id, start: Date, durationMin }
   requestedStart: null, // Date — a time asked for that isn't on the calendar
   method: 'phone',
   phone: '',
-  addOnFollowUp: false,
 };
 
 const STEPS = [
-  ...WAIVERS.map((w) => ({ label: w.title.split(' ')[0], render: () => renderWaiver(w) })),
-  { label: 'Time', render: renderSchedule },
-  { label: 'Pay', render: renderReview },
+  { label: 'Your time', render: renderTime },
+  { label: 'One agreement', render: renderAgreement },
+  { label: 'Payment', render: renderPayment },
 ];
 
 let stepIndex = 0;
 let user = null;
+let profile = {}; // users/{uid} data: read at init, updated by the inline save
 
 init();
 
 async function init() {
   hydrateNav();
-  user = await requireUser();
-  if (!user) return;
-  // Name + DOB before anything else; blocks under-18s (Worker re-checks).
-  await ensureFullProfile(user, document.getElementById('step'));
+  drawRail(); // step 1 shows active even while the sign-in card is up
   if (new URLSearchParams(location.search).get('canceled')) {
     showError('Checkout was canceled. Your slot was released — pick a time to try again.');
+  }
+  user = await currentUser();
+  if (!user) {
+    // Signed-out visitors sign in right here, inside step 1.
+    user = await ensureSignedIn(document.getElementById('step'), { returnTo: '/book.html' });
+  }
+  // requireUser used to create users/{uid} on first sign-in; currentUser +
+  // ensureSignedIn do not, so replicate auth.js's ensureProfile here. The
+  // same read also prefills the inline step-1 profile fields.
+  const ref = doc(db, 'users', user.uid);
+  try {
+    const snapshot = await getDoc(ref);
+    if (snapshot.exists()) profile = snapshot.data();
+    else await setDoc(ref, { email: user.email, name: '', role: 'client' });
+  } catch (err) {
+    console.warn('profile check failed', err);
   }
   render();
 }
 
-function render() {
-  const crumbs = document.getElementById('crumbs');
-  crumbs.innerHTML = STEPS.map(
+function drawRail() {
+  document.getElementById('crumbs').innerHTML = STEPS.map(
     (s, i) =>
-      `<li class="${i < stepIndex ? 'done' : i === stepIndex ? 'now' : ''}">${s.label}</li>`
+      `<li class="${i < stepIndex ? 'done' : i === stepIndex ? 'now' : ''}"><span class="n">${i + 1}</span><span class="t">${s.label}</span></li>`
   ).join('');
+}
+
+function render() {
+  drawRail();
   document.getElementById('step').innerHTML = '';
   STEPS[stepIndex].render();
 }
@@ -88,45 +116,15 @@ function mount(html) {
   return document.getElementById('step');
 }
 
-// ---- Waiver screens (forms 1–3) ----
+const needsProfile = () => !(profile.firstName && profile.lastName && profile.dob);
 
-function renderWaiver(waiver) {
-  const el = mount(`
-    <h2>The unskippable part — ${waiver.title}</h2>
-    <p class="muted small">Know exactly what you're buying. The acknowledge button unlocks when you've scrolled to the end.</p>
-    <div class="waiver-body" id="wbody">${waiver.body}</div>
-    <p class="scroll-hint" id="hint">Scroll to the end to continue…</p>
-    <p>
-      ${stepIndex > 0 ? '<button class="btn quiet" id="back">Back</button>' : '<a class="btn quiet" href="/">← Back</a>'}
-      <button class="btn" id="ack" disabled>I have read and acknowledge this</button>
-    </p>`);
+// ---- Step 1: Your time ----
 
-  const body = el.querySelector('#wbody');
-  const ack = el.querySelector('#ack');
-  const hint = el.querySelector('#hint');
-  const checkScrolled = () => {
-    if (body.scrollTop + body.clientHeight >= body.scrollHeight - 8) {
-      ack.disabled = false;
-      hint.hidden = true;
-    }
-  };
-  body.addEventListener('scroll', checkScrolled);
-  checkScrolled(); // short viewports may not need to scroll
-
-  ack.addEventListener('click', () => {
-    state.acks[waiver.id] = Date.now();
-    next();
-  });
-  el.querySelector('#back')?.addEventListener('click', back);
-}
-
-
-// ---- Slot picker ----
-
-async function renderSchedule() {
+async function renderTime() {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
+  const today = new Date().toISOString().slice(0, 10);
   const el = mount(`
-    <h2>Pick a time</h2>
+    <h2>When should we talk?</h2>
     <p class="muted small">All times are shown in <strong>your</strong> time zone (${zone.replace(/_/g, ' ')}), with my MST time underneath. Appointments must be at least 72 hours out.</p>
     <div id="days"><p class="muted">Loading available times…</p></div>
 
@@ -164,11 +162,24 @@ async function renderSchedule() {
       I'll send you a join link before the call — it appears on your case page too. Nothing to install.
     </p>
     <p class="error" id="method-error" hidden></p>
+    ${needsProfile() ? `
+    <div class="card" id="profile-block">
+      <h3>Who am I working with?</h3>
+      <p class="muted small">I work with real people, by name. This stays between you and me, like everything else here.</p>
+      <label for="pf-first">First name</label>
+      <input type="text" id="pf-first" autocomplete="given-name" value="${esc(profile.firstName || '')}">
+      <label for="pf-last" style="margin-top:.6rem;">Last name</label>
+      <input type="text" id="pf-last" autocomplete="family-name" value="${esc(profile.lastName || '')}">
+      <label for="pf-dob" style="margin-top:.6rem;">Date of birth</label>
+      <input type="date" id="pf-dob" max="${today}" value="${esc(profile.dob || '')}">
+      <p class="muted small" style="margin-top:.6rem;">Pocket Advocate serves adults. Under 18? A parent or guardian
+        needs to reach out first — message through the site or the About page's call button.</p>
+      <p class="error" id="pf-err" hidden></p>
+    </div>` : ''}
     <p>
-      <button class="btn quiet" id="back">Back</button>
-      <button class="btn" id="continue" disabled>Continue</button>
+      <a class="btn quiet" href="/">← Back</a>
+      <button class="btn glow" id="continue" disabled>Continue</button>
     </p>`);
-  el.querySelector('#back').addEventListener('click', back);
 
   let slots = [];
   try {
@@ -243,6 +254,16 @@ async function renderSchedule() {
       el.querySelector('#continue').disabled = false;
     })
   );
+  // Coming back from a later step: re-mark the slot they already picked.
+  if (state.slot) {
+    const picked = daysEl.querySelector(`.slot[data-id="${state.slot.id}"]`);
+    if (picked) {
+      picked.classList.add('selected');
+      el.querySelector('#continue').disabled = false;
+    } else {
+      state.slot = null; // it vanished while they were away
+    }
+  }
   // ---- request a time that isn't on the calendar ----
   const reqDate = el.querySelector('#req-date');
   const reqTime = el.querySelector('#req-time');
@@ -286,6 +307,15 @@ async function renderSchedule() {
     reqMst.textContent = 'Choose a date and time to see it in my time zone.';
     el.querySelector('#continue').disabled = !state.slot;
   });
+  // Coming back from a later step: re-fill the time they already requested.
+  if (state.requestedStart) {
+    const d = state.requestedStart;
+    const pad = (n) => String(n).padStart(2, '0');
+    reqDate.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    reqTime.value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    reqBox.open = true;
+    syncRequest();
+  }
 
   el.querySelectorAll('input[name=method]').forEach((input) =>
     input.addEventListener('change', () => {
@@ -297,7 +327,7 @@ async function renderSchedule() {
     })
   );
 
-  el.querySelector('#continue').addEventListener('click', () => {
+  el.querySelector('#continue').addEventListener('click', async () => {
     if (!state.slot && !state.requestedStart) return;
     const err = el.querySelector('#method-error');
     err.hidden = true;
@@ -324,13 +354,114 @@ async function renderSchedule() {
         return;
       }
     }
+    // Name + DOB before money moves. The save must land before the pay call
+    // because the Worker re-checks the profile at checkout. Same strings and
+    // setDoc shape as profile.js's ensureFullProfile.
+    if (needsProfile()) {
+      const pfErr = el.querySelector('#pf-err');
+      const firstName = el.querySelector('#pf-first').value.trim();
+      const lastName = el.querySelector('#pf-last').value.trim();
+      const dob = el.querySelector('#pf-dob').value;
+      pfErr.hidden = true;
+      if (!firstName || !lastName) {
+        pfErr.textContent = 'First and last name, please — I need to know who I\'m working with.';
+        pfErr.hidden = false;
+        return;
+      }
+      const age = ageFromDob(dob);
+      if (age === null) {
+        pfErr.textContent = 'Enter your date of birth.';
+        pfErr.hidden = false;
+        return;
+      }
+      if (age < MIN_AGE) {
+        mount(`
+          <h2>We need a guardian for this one</h2>
+          <p class="muted">Pocket Advocate doesn't open cases for anyone under 18 without a parent or guardian's
+          consent — that's a hard rule, for your protection. Have your parent or guardian get in touch
+          (the call button on the <a href="/about.html">About page</a> works), and I'll take it from there.</p>`);
+        return;
+      }
+      try {
+        await setDoc(doc(db, 'users', user.uid), {
+          firstName, lastName, dob,
+          name: `${firstName} ${lastName}`,
+          email: user.email || profile.email || null,
+          role: profile.role || 'client',
+        }, { merge: true });
+        profile = { ...profile, firstName, lastName, dob };
+      } catch (e) {
+        pfErr.textContent = `Couldn't save: ${e.message}`;
+        pfErr.hidden = false;
+        return;
+      }
+    }
     next();
   });
 }
 
-// ---- Review & pay ----
+// ---- Step 2: One agreement ----
 
-function renderReview() {
+function renderAgreement() {
+  const el = mount(`
+    <h2>One agreement, three short parts</h2>
+    <p class="muted small">Open each part and read to the end. Plain words, no traps. The box unlocks when you've seen it all.</p>
+    ${WAIVERS.map(
+      (w) => `
+      <details class="agreement" data-id="${w.id}">
+        <summary>
+          <span class="agreement-title">${esc(w.title)}</span>
+          <span class="agreement-plain">${AGREEMENT_PLAIN[w.id] || ''}</span>
+        </summary>
+        <div class="agreement-body">${w.body}</div>
+        <label class="agreement-check"><input type="checkbox" ${state.acks[w.id] ? 'checked' : ''} ${state.acks[w.id] || state.read[w.id] ? '' : 'disabled'}> I have read and acknowledge this</label>
+      </details>`
+    ).join('')}
+    <p>
+      <button class="btn quiet" id="back">Back</button>
+      <button class="btn glow" id="continue" ${WAIVERS.every((w) => state.acks[w.id]) ? '' : 'disabled'}>Continue</button>
+    </p>`);
+
+  const continueBtn = el.querySelector('#continue');
+  const syncContinue = () => {
+    continueBtn.disabled = !WAIVERS.every((w) => state.acks[w.id]);
+  };
+
+  el.querySelectorAll('details.agreement').forEach((d) => {
+    const id = d.dataset.id;
+    const body = d.querySelector('.agreement-body');
+    const box = d.querySelector('.agreement-check input');
+    // Proof of exposure: the box unlocks only after this part has been opened
+    // AND its body scrolled to the end. Checked once on open too, because a
+    // short body may not need to scroll at all. Never measure while closed:
+    // a hidden body reads 0/0 and would unlock for free.
+    const checkScrolled = () => {
+      if (!d.open) return;
+      if (body.scrollTop + body.clientHeight >= body.scrollHeight - 8) {
+        state.read[id] = true;
+        box.disabled = false;
+      }
+    };
+    body.addEventListener('scroll', checkScrolled);
+    d.addEventListener('toggle', () => {
+      if (d.open) requestAnimationFrame(checkScrolled);
+    });
+    box.addEventListener('change', () => {
+      // The ack timestamp is the moment the box is ticked (the Worker stores
+      // these). Unticking withdraws it.
+      if (box.checked) state.acks[id] = Date.now();
+      else delete state.acks[id];
+      syncContinue();
+    });
+  });
+
+  el.querySelector('#back').addEventListener('click', back);
+  continueBtn.addEventListener('click', next);
+}
+
+// ---- Step 3: Payment ----
+
+function renderPayment() {
   const localLong = new Intl.DateTimeFormat('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
     hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
@@ -346,7 +477,7 @@ function renderReview() {
   const el = mount(`
     <h2>Lock it in</h2>
     <div class="card">
-      <div class="row"><h3>Advocacy Case</h3><span class="price">$${money(CASE_PRICE_CENTS)}</span></div>
+      <div class="row"><h3>Advocacy Case</h3></div>
       <p class="muted small">
         <strong style="color:var(--ink)">${localLong.format(when)}</strong> (your time)<br>
         ${mtFmt.format(when)} MST my time<br>
@@ -358,28 +489,17 @@ function renderReview() {
       your payment is taken as normal, and I'll confirm this time — or offer you the nearest one
       that works — before the date. Nothing is lost either way.
     </p>` : ''}
-    <label class="choice addon" id="addon-box">
-      <span class="addon-head">
-        <span class="addon-title"><input type="checkbox" id="addon"> Add a follow-up discussion</span>
-        <span class="addon-price">+$${money(ADDON_PRICE_CENTS)}</span>
-      </span>
-      <span class="addon-why">A second full discussion on this same case, booked any time after your report lands — use it within one month. A follow-up bought later is a fresh $${money(CASE_PRICE_CENTS)} case instead.</span>
-      <span class="addon-once">Offered here only</span>
-    </label>
-    <p class="muted small">${isRequest ? 'Requested times are not held' : 'Your time slot is held'} while you complete payment. You'll be taken to Stripe's secure checkout — card details never touch this site. Case fees are non-refundable once your slot is booked.</p>
+    <div class="price-line">
+      <span class="price">$${money(CASE_PRICE_CENTS)}</span>
+      <span class="included">That includes our call, your written report within 7 days, and one follow-up session on this same case.</span>
+    </div>
+    <p class="muted small">${isRequest ? 'Requested times are not held while you complete payment.' : 'Your time slot is held while you complete payment.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once your slot is booked. If I reschedule you more than once, you're entitled to a full refund on request.</p>
     <p class="error" id="pay-error" hidden></p>
     <p>
       <button class="btn quiet" id="back">Back</button>
-      <button class="btn" id="pay">Pay $<span id="total">${money(CASE_PRICE_CENTS)}</span> &amp; book</button>
+      <button class="btn glow" id="pay">Pay $${money(CASE_PRICE_CENTS)} and book</button>
     </p>`);
 
-  const addon = el.querySelector('#addon');
-  addon.addEventListener('change', () => {
-    state.addOnFollowUp = addon.checked;
-    el.querySelector('#addon-box').classList.toggle('selected', addon.checked);
-    el.querySelector('#total').textContent =
-      money(CASE_PRICE_CENTS + (addon.checked ? ADDON_PRICE_CENTS : 0));
-  });
   el.querySelector('#back').addEventListener('click', back);
 
   el.querySelector('#pay').addEventListener('click', async () => {
@@ -397,7 +517,8 @@ function renderReview() {
           requestedStart: state.requestedStart ? state.requestedStart.toISOString() : undefined,
           method: state.method,
           phone: state.phone,
-          addOnFollowUp: state.addOnFollowUp,
+          // The follow-up session is always included at this rate (PR 69).
+          addOnFollowUp: true,
           acks: state.acks,
           // So emails can speak the client's local time (Eric, 2026-07-15).
           tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
@@ -412,4 +533,9 @@ function renderReview() {
       payBtn.disabled = false;
     }
   });
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (ch) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }

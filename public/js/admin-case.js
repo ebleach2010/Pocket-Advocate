@@ -13,7 +13,7 @@ import { mountAdvisor } from './advisor.js';
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
 // percentages below are a share of the standard Advocacy Case fee.
-const CASE_PRICE_CENTS = 12500;
+const CASE_PRICE_CENTS = 27500;
 const dollars = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 const caseId = new URLSearchParams(location.search).get('id');
 // Sentinel value for "a time that isn't on the calendar" in the slot dropdown.

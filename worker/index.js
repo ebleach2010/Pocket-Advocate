@@ -2,7 +2,7 @@
 //   POST   /api/checkout           hold a slot, create a Stripe Checkout Session
 //   GET    /api/case-for-session   poll after checkout: has the webhook made my case?
 //   POST   /api/make-private       revoke a public election (allowed until call time)
-//   POST   /api/subscribe          24/7 Priority Chat subscription Checkout ($24.99/mo)
+//   POST   /api/subscribe          24/7 Priority Chat subscription Checkout ($29.99/mo)
 //   POST   /api/portal             Stripe customer portal (manage/cancel)
 //   POST   /api/stripe/webhook     payments + subscription lifecycle -> Firestore
 //   POST   /api/admin/slots        open availability slots (admin)
@@ -27,17 +27,20 @@ import { runAnalysis, runQuestion, runDraft, runRecap, markPending, runQueuedAna
 
 // These build the real Stripe line items. Three browser files mirror them for
 // display — public/js/book.js, public/js/subscribe.js, public/js/admin-case.js
-// — and every price shown there is derived, never typed. Change a rate here and
-// change it in those three, or the page quotes one number and the card is
-// charged another (which is exactly what happened after the $150 experiment).
-const CASE_PRICE_CENTS = 12500;
+// — and every price shown there is derived, never typed. Current rates: $275
+// per case (one follow-up session included) and $29.99/mo chat. Change a rate
+// here and change it in those three, or the page quotes one number and the card
+// is charged another (which is exactly what happened after the $150 experiment).
+const CASE_PRICE_CENTS = 27500;
+// Legacy only: the $50 follow-up add-on is gone from the UI (the follow-up is
+// included in the case price now). Kept so old code paths still resolve.
 const ADDON_PRICE_CENTS = 5000;
-const SUB_PRICE_CENTS = 2499;
-// Follow-up add-ons expire one month after the first discussion (Eric,
+const SUB_PRICE_CENTS = 2999;
+// Follow-up sessions expire one month after the first discussion (Eric,
 // 2026-07-13); clients get one warning email a week before the deadline.
 const FOLLOWUP_EXPIRY_DAYS = 30;
 const FOLLOWUP_WARN_DAYS = 7;
-// Admin-priced sessions: percentage of the $125 case rate, 25% steps.
+// Admin-priced sessions: percentage of the $275 case rate, 25% steps.
 const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
 const METHODS = ['phone', 'video'];
 const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording'];
@@ -117,7 +120,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-20-dictionary';
+const BUILD_TAG = 'v2026-08-20-pr69';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -187,9 +190,28 @@ async function repairMissingCaseEmails(env) {
   }
 }
 
-/** Stripe line items for a case, with the optional follow-up add-on. */
+/**
+ * Stripe line items for a case. New checkouts always send addOnFollowUp: true
+ * and get ONE line item with the follow-up session included in the case price.
+ * The false branch is legacy only (never sent by the current UI); the separate
+ * $50 add-on line item is never emitted again.
+ */
 function caseLineItems(addOnFollowUp) {
-  const items = [
+  if (addOnFollowUp)
+    return [
+      {
+        quantity: 1,
+        price_data: {
+          currency: 'usd',
+          unit_amount: CASE_PRICE_CENTS,
+          product_data: {
+            name: 'Advocacy Case (includes one follow-up session)',
+            description: 'Live discussion + written report + one follow-up',
+          },
+        },
+      },
+    ];
+  return [
     {
       quantity: 1,
       price_data: {
@@ -199,16 +221,6 @@ function caseLineItems(addOnFollowUp) {
       },
     },
   ];
-  if (addOnFollowUp)
-    items.push({
-      quantity: 1,
-      price_data: {
-        currency: 'usd',
-        unit_amount: ADDON_PRICE_CENTS,
-        product_data: { name: 'Follow-up add-on', description: 'Second discussion on this case' },
-      },
-    });
-  return items;
 }
 
 // ---- POST /api/checkout ----
@@ -1860,7 +1872,7 @@ async function handleAdminSchedule(request, env) {
   }
 
   if (mode === 'followup') {
-    if (!c.addOnFollowUp) return json({ error: 'This case has no paid follow-up add-on.' }, 409);
+    if (!c.addOnFollowUp) return json({ error: 'This case has no follow-up included.' }, 409);
     if (c.followUp) return json({ error: 'The follow-up is already scheduled.' }, 409);
     const expiry = followUpExpiry(c);
     if (expiry && now > expiry)
@@ -1875,14 +1887,14 @@ async function handleAdminSchedule(request, env) {
     await sendEmail(env, {
       to: c.clientEmail,
       subject: 'Your follow-up session is booked',
-      html: `<p>Your paid follow-up discussion with me is scheduled:</p>
+      html: `<p>Your follow-up discussion with me is scheduled:</p>
         ${whenHtml(start, c.clientTz)}
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
     });
     return json({ ok: true, scheduled: when });
   }
 
-  // mode === 'charge' — a custom-priced session (percentage of the $125 rate).
+  // mode === 'charge' — a custom-priced session (percentage of the $275 rate).
   if (!CHARGE_PCTS.includes(pct)) return json({ error: 'Pick a rate (0–150% in 25% steps).' }, 400);
   const label =
     typeof tagline === 'string' && tagline.trim()
@@ -1998,7 +2010,7 @@ async function confirmExtraSession(env, session) {
 }
 
 /**
- * Cron: warn clients one week before an unscheduled follow-up add-on expires
+ * Cron: warn clients one week before an unscheduled included follow-up expires
  * (30 days after the first discussion). One email, ever, per case.
  */
 export async function runFollowUpWarnings(env, now = Date.now()) {
@@ -2015,7 +2027,7 @@ export async function runFollowUpWarnings(env, now = Date.now()) {
       await sendEmail(env, {
         to: c.clientEmail,
         subject: 'Your follow-up session expires in one week',
-        html: `<p>Your case included a paid follow-up discussion, and it expires one month
+        html: `<p>Your case includes a follow-up discussion, and it expires one month
           after your first discussion:</p>
           ${whenHtml(new Date(expires), c.clientTz)}
           <p>To use it, message me in your case chat and I'll get it scheduled.</p>
