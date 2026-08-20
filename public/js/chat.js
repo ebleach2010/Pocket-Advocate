@@ -43,7 +43,9 @@ export function watchPresence(el) {
  * }
  */
 export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '' }) {
+  container.classList.add('chat-root');
   container.innerHTML = `
+    <button class="chat-expand" data-expand type="button" title="Full screen" aria-label="Full screen">⤢</button>
     <div class="chat-log" data-log><p class="dim small">Loading messages…</p></div>
     ${disabled
       ? `<p class="dim small chat-notice">${esc(notice)}</p>`
@@ -244,6 +246,19 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       }).catch(() => {});
     } catch { /* best-effort only */ }
   }
+
+  // Full-screen chat: the whole thread takes the viewport so long messages
+  // read comfortably; ✕ puts it back. Same control both sides of the chat.
+  const expandBtn = container.querySelector('[data-expand]');
+  expandBtn.addEventListener('click', () => {
+    const full = container.classList.toggle('chat-full');
+    expandBtn.textContent = full ? '✕' : '⤢';
+    expandBtn.title = full ? 'Close full screen' : 'Full screen';
+    expandBtn.setAttribute('aria-label', expandBtn.title);
+    document.body.classList.toggle('chat-full-open', full);
+    const log = container.querySelector('[data-log]');
+    if (log) log.scrollTop = log.scrollHeight;
+  });
 
   const form = container.querySelector('[data-form]');
   const input = container.querySelector('[data-input]');

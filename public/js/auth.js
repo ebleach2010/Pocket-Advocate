@@ -20,6 +20,30 @@ import {
 
 const EMAIL_KEY = 'pa-signin-email';
 
+// Pages inside an installed app can stay suspended for days; nobody should
+// have to force-close to pick up a deploy, and nobody is ever logged out by
+// one (sessions live in storage, not in the code). On resume, compare the
+// server's build tag to the one this page loaded under and reload when they
+// differ — unless someone is mid-sentence in a text box.
+let loadedTag = null;
+async function checkVersion() {
+  try {
+    const res = await fetch('/api/version');
+    const { tag } = await res.json();
+    if (!tag) return;
+    if (!loadedTag) { loadedTag = tag; return; }
+    if (tag === loadedTag) return;
+    const a = document.activeElement;
+    const typing = a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT') && a.value;
+    if (!typing) location.reload();
+  } catch { /* offline — never reload on a failed check */ }
+}
+checkVersion();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') checkVersion();
+});
+setInterval(checkVersion, 30 * 60_000);
+
 export function rememberEmail(email) {
   localStorage.setItem(EMAIL_KEY, email);
 }
