@@ -120,7 +120,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-20-pr69-2';
+const BUILD_TAG = 'v2026-08-20-pr69-3';
 
 // Open, unbooked slots whose start is already past — or inside the booking
 // lead window — can never be booked. The cron sweeps them out of the database
@@ -1290,11 +1290,25 @@ async function handleAdvisor(request, env, ctx) {
   if (action === 'ask') {
     const question = typeof body?.question === 'string' ? body.question.trim() : '';
     if (!question || question.length > 2000) return json({ error: 'Ask something (1–2000 chars).' }, 400);
+    // Optional file to review ("send to the advisor"). Only the shape is
+    // checked here; the URL itself is fence-checked in the advisor (Firebase
+    // Storage host, this thread's own folder) before anything is fetched.
+    let attachment = null;
+    if (body?.attachment && typeof body.attachment === 'object') {
+      attachment = {
+        name: String(body.attachment.name || 'file').slice(0, 200),
+        url: typeof body.attachment.url === 'string' ? body.attachment.url.slice(0, 2048) : '',
+        contentType: String(body.attachment.contentType || '').slice(0, 100),
+        size: typeof body.attachment.size === 'number' ? body.attachment.size : 0,
+      };
+      if (!attachment.url) return json({ error: 'Bad file reference' }, 400);
+    }
     const qaId = crypto.randomUUID();
     await patchDoc(env, `${parent}/${id}/advisor/state/qa/${qaId}`, {
       question, answer: null, status: 'running', at: new Date(),
+      ...(attachment ? { file: attachment.name } : {}),
     });
-    return keepaliveRun(ctx, runQuestion(env, kind, id, qaId, question));
+    return keepaliveRun(ctx, runQuestion(env, kind, id, qaId, question, attachment));
   }
 
   return json({ error: 'Unknown action' }, 400);

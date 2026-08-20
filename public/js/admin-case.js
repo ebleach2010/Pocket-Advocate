@@ -247,7 +247,10 @@ async function refreshFiles() {
       const res = await listAll(ref(storage, path));
       for (const item of res.items) {
         const [url, meta] = await Promise.all([getDownloadURL(item), getMetadata(item)]);
-        rows.push({ kind, name: item.name, url, ts: new Date(meta.timeCreated), size: meta.size });
+        rows.push({
+          kind, name: item.name, url, ts: new Date(meta.timeCreated),
+          size: meta.size, contentType: meta.contentType || '',
+        });
       }
     } catch { /* empty */ }
   }
@@ -255,13 +258,32 @@ async function refreshFiles() {
     listEl.innerHTML = '<li class="dim small">No files yet.</li>';
     return;
   }
+  // Images and PDFs can go straight to the advisor for a real read. Only
+  // files that live under this case (uploads/reports) — chat files have the
+  // same button in the chat's long-press menu, and "saved" copies live on
+  // the client's profile shelf, outside the advisor's fence.
+  const reviewable = (r) => {
+    const ct = (r.contentType || '').toLowerCase();
+    return (r.kind === 'upload' || r.kind === 'report') && !/heic|heif/.test(ct) &&
+      (ct.startsWith('image/') || ct === 'application/pdf' || /\.pdf$/i.test(r.name));
+  };
   const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
-  listEl.innerHTML = rows.map((r) => `
+  listEl.innerHTML = rows.map((r, i) => `
     <li>
       <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
-        <a href="${r.url}" target="_blank" rel="noopener">${esc(r.name)}</a></span>
+        <a href="${r.url}" target="_blank" rel="noopener">${esc(r.name)}</a>${
+          reviewable(r)
+            ? `<button class="btn quiet file-review" data-review="${i}" title="Have the advisor read this file">👨‍⚕️</button>`
+            : ''}</span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
     </li>`).join('');
+  listEl.querySelectorAll('[data-review]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const r = rows[Number(b.dataset.review)];
+      document.dispatchEvent(new CustomEvent('pa-advisor-review', {
+        detail: { attachment: { name: r.name, url: r.url, contentType: r.contentType, size: r.size || 0 } },
+      }));
+    }));
 }
 
 // ---- follow-up status + the scheduling panel ----
