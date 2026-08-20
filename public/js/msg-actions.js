@@ -32,12 +32,13 @@ export const statusById = (id) => STATUS_REACTIONS.find((r) => r.id === id);
 
 /**
  * Open the menu for one message.
- * opts: { canReact, canUseStatus, canEdit, canRecap, canPass, passedByMe, hasReaction, hasText, current }
+ * opts: { canReact, canUseStatus, canEdit, canRecap, canPass, canAdvisor,
+ *         passedByMe, hasReaction, hasText, current }
  * Resolves to { action: 'react', id } | { action: 'clear' } | { action: 'edit' }
- * | { action: 'copy' }, or undefined if dismissed.
+ * | { action: 'copy' } | { action: 'advisor' }, or undefined if dismissed.
  */
 export function openMessageMenu(opts) {
-  const { canReact, canUseStatus, canEdit, canRecap, canPass, passedByMe, hasReaction, hasText, current } = opts;
+  const { canReact, canUseStatus, canEdit, canRecap, canPass, canAdvisor, passedByMe, hasReaction, hasText, current } = opts;
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'msg-menu-overlay';
@@ -57,6 +58,7 @@ export function openMessageMenu(opts) {
                 <span class="react-emoji">${r.emoji}</span><span>${r.label}</span>
               </button>`).join('')}
             <p class="msg-menu-note">They get a notification saying exactly this. Nothing from the message itself is included.</p>` : ''}
+          ${canAdvisor ? '<button class="msg-menu-row" data-act="advisor"><span class="react-emoji">👨‍⚕️</span><span>Send to the advisor for review</span></button>' : ''}
           ${hasReaction ? '<button class="msg-menu-row" data-act="clear"><span class="react-emoji">✕</span><span>Remove reaction</span></button>' : ''}
           ${canEdit ? '<button class="msg-menu-row" data-act="edit"><span class="react-emoji">✏️</span><span>Edit message</span></button>' : ''}
           ${canRecap ? '<button class="msg-menu-row" data-act="recap"><span class="react-emoji">💡</span><span>Recap for them now</span></button>' : ''}
