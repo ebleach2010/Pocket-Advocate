@@ -167,8 +167,17 @@ function myVoice(rows) {
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const MAX_IMAGE_BYTES = Math.floor(4.5 * 1024 * 1024); // API cap is 5MB per image
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
-const MAX_TOTAL_MEDIA_BYTES = 20 * 1024 * 1024;
-const MAX_MEDIA_FILES = 6;
+// What one pass can carry, not what an analysis can cover. base64 inflates a
+// file by a third and the Messages API takes a 32MB request, so 18MB of raw
+// file is about 24MB on the wire with the transcript still to fit. Anything
+// past either ceiling is read on the NEXT pass. Nothing is ever dropped.
+const MAX_TOTAL_MEDIA_BYTES = 18 * 1024 * 1024;
+const MAX_MEDIA_FILES = 8;
+// How many read files we remember per thread, and how many unread ones we
+// carry forward. Both are generous: a case that outgrows them is one where the
+// oldest reads have long since been folded into the running assessment.
+const MAX_READ_MEMORY = 500;
+const MAX_CARRY_FILES = 40;
 
 function mediaKind(att) {
   const ct = (att?.contentType || '').toLowerCase();
@@ -194,6 +203,23 @@ function safeAttachmentUrl(att, kind, id) {
     if (!objectPath.startsWith(`${parent}/${id}/`)) return null;
     return u.toString();
   } catch { return null; }
+}
+
+/**
+ * The identity of a file, stable across passes. Storage-backed files key on
+ * their object path, which is what the URL is really pointing at once the
+ * access token is stripped off it. Files Eric uploaded inline from his own
+ * device never touch Storage and have only their name and size to go on.
+ */
+function fileKey(att, kind, id) {
+  const name = String(att?.name || 'file').slice(0, 200);
+  if (att?.data) return `inline:${name}:${att.size || att.data.length}`;
+  const url = safeAttachmentUrl(att, kind, id);
+  if (!url) return `unreadable:${name}`;
+  try {
+    const m = new URL(url).pathname.match(/^\/v0\/b\/[^/]+\/o\/(.+)$/);
+    return m ? decodeURIComponent(m[1]) : `unreadable:${name}`;
+  } catch { return `unreadable:${name}`; }
 }
 
 function b64(buf) {
@@ -251,40 +277,78 @@ async function attachmentBlock(att, kind, id) {
 }
 
 /**
- * The files Eric explicitly selected (the 👨‍⚕️ badges), as content blocks in
- * selection order. Nothing is read implicitly: an analysis carries exactly
- * the files he staged, or none. Budgeted hard: at most MAX_MEDIA_FILES files
- * and MAX_TOTAL_MEDIA_BYTES, skipping quietly past anything unreadable — the
- * transcript marker still names every shared file either way.
+ * The files Eric selected (the 👨‍⚕️ badges) plus anything an earlier pass could
+ * not fit, as content blocks in order. Nothing is read implicitly.
+ *
+ * This function used to take the first six files and throw the rest away
+ * without saying so, which is why Eric shared eight documents and the advisor
+ * discussed three. Every file now lands in exactly one of four buckets and
+ * every bucket is named out loud:
+ *
+ *   included  read on this pass
+ *   known     read on an EARLIER pass, so not re-sent and not re-billed
+ *   queued    did not fit this pass, attached to the next one
+ *   skipped   cannot be read at all, with the reason
+ *
+ * Nothing is dropped. Nothing is silent.
  */
-async function selectedMediaBlocks(list, kind, id) {
+async function selectedMediaBlocks(list, kind, id, alreadyRead = []) {
+  const seen = new Set(alreadyRead);
   const blocks = [];
   const included = [];
+  const known = [];
+  const queued = [];
   const skipped = [];
+  const readKeys = [];
+  const carry = [];
   let budget = MAX_TOTAL_MEDIA_BYTES;
-  for (const att of (list || []).slice(0, MAX_MEDIA_FILES)) {
-    if ((att.size || 0) > budget) { skipped.push(`${att.name} (over the size budget this pass)`); continue; }
+  for (const att of (list || [])) {
+    const name = String(att?.name || 'file').slice(0, 200);
+    const key = fileKey(att, kind, id);
+    if (seen.has(key)) { known.push(name); continue; }
+    seen.add(key); // the same file staged twice in one pass is still one read
+    // Out of room. Carry it rather than lose it: storage-backed files can ride
+    // on the state doc as a URL, but a file Eric uploaded inline from his own
+    // device is base64 in this request and nowhere else, so all we can do is
+    // tell him it needs another tap.
+    const overCount = included.length >= MAX_MEDIA_FILES;
+    const overBytes = budget <= 0 || (att.size || 0) > budget;
+    if (overCount || overBytes) {
+      if (att.url && !att.data && carry.length < MAX_CARRY_FILES) {
+        carry.push({ name, url: att.url, contentType: att.contentType || '', size: att.size || 0 });
+        queued.push(name);
+      } else {
+        skipped.push(`${name} (did not fit this pass, send it again on its own)`);
+      }
+      continue;
+    }
     try {
       const out = await attachmentBlock(att, kind, id);
       if (out.block) {
         budget -= out.bytes;
         blocks.push(out.block);
-        included.push(att.name);
-      } else skipped.push(`${att.name} (${out.skip})`);
-    } catch {
-      skipped.push(`${att.name} (fetch failed)`);
+        included.push(name);
+        readKeys.push(key);
+      } else skipped.push(`${name} (${out.skip})`);
+    } catch (err) {
+      skipped.push(`${name} (fetch failed: ${String(err?.message || err).slice(0, 80)})`);
     }
   }
-  return { blocks, included, skipped };
+  return { blocks, included, known, queued, skipped, readKeys, carry };
 }
 
-/** One line telling the model what files follow, and which it cannot see. */
-function mediaNote({ blocks, included, skipped }) {
+/** Tell the model exactly which files it has, which it already read, and which
+ *  it has not seen — so it can never quietly answer as if it saw everything. */
+function mediaNote({ blocks, included, known, queued, skipped }) {
   let note = '';
   if (blocks.length)
     note += `\n\nEric selected these files for this analysis; they are attached after this message, in order: ${included.join('; ')}. Read them directly and fold what you actually see into your answer; cite specific values, findings, and page details.`;
+  if (known?.length)
+    note += `\nYou already read these on an earlier pass and what you found is in your previous assessment, so they are deliberately not attached again: ${known.join('; ')}. Treat them as read, never as missing.`;
+  if (queued?.length)
+    note += `\nThese did not fit in this pass and are attached to the next one: ${queued.join('; ')}. Say plainly that you have not read them yet, and do not characterise their contents.`;
   if (skipped.length)
-    note += `\nSelected files you cannot see this pass: ${skipped.join('; ')}. Never guess at their contents.`;
+    note += `\nThese you cannot read: ${skipped.join('; ')}. Never guess at their contents. Ask Eric, by file name, to upload screenshots of each one.`;
   return note;
 }
 
@@ -736,7 +800,13 @@ export async function runAnalysis(env, kind, id, mediaList = null) {
     const prior = state?.data.analysis;
     // Only the files Eric staged with the 👨‍⚕️ badges ride along; an analysis
     // without a selection reads no files, so it is always clear what was read.
-    const media = await selectedMediaBlocks(mediaList, kind, id);
+    // Anything a previous pass could not fit goes FIRST, so a batch of
+    // documents finishes itself across consecutive runs and the oldest unread
+    // file never starves behind whatever he staged most recently.
+    const carried = Array.isArray(state?.data.pendingMedia) ? state.data.pendingMedia : [];
+    const alreadyRead = Array.isArray(state?.data.readFiles) ? state.data.readFiles : [];
+    const queue = [...carried, ...(mediaList || [])];
+    const media = await selectedMediaBlocks(queue, kind, id, alreadyRead);
 
     const analysis = await ask(env, {
       effort: ANALYSIS_EFFORT,
@@ -833,6 +903,19 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
       workingDx: cover.workingDx,
       differential: dx.differential,
       corrections: corr.corrections,
+      // What this pass did with every file it was handed. The panel prints it
+      // verbatim, so "did he see my photos" has an answer on screen instead of
+      // being something Eric has to infer from whether the assessment mentions
+      // them.
+      readFiles: [...alreadyRead, ...media.readKeys].slice(-MAX_READ_MEMORY),
+      pendingMedia: media.carry,
+      mediaReport: {
+        read: media.included,
+        known: media.known,
+        queued: media.queued,
+        unreadable: media.skipped,
+        at: new Date(),
+      },
     });
     // Mirror the cover so the dashboard shelf paints every folder from one
     // read instead of a request per case. It lands on caseMeta, which is
@@ -851,6 +934,10 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
       }, { mask: ['workingDx'] }).catch((err) => console.warn('caseMeta mirror:', err.message || err));
     }
     await deleteDoc(env, queuePath(kind, id));
+    // Files left over means the job is not finished. Re-queue so the cron
+    // picks up the next batch on its own, rather than waiting for Eric to
+    // notice and tap Analyze again.
+    if (media.carry.length) await markPending(env, kind, id).catch(() => {});
   } catch (err) {
     console.error('advisor analysis:', err.stack || err);
     await setState(env, kind, id, { status: 'error', error: friendly(err) })

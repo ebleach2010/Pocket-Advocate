@@ -40,6 +40,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       </div>
       <p class="dim small advisor-sub" data-updated>Reading the case…</p>
       <div class="advisor-files" data-fchips></div>
+      <div class="advisor-read" data-read hidden></div>
       <div class="advisor-body" data-analysis></div>
       <div class="advisor-draft" data-draft-card hidden></div>
       <div class="advisor-qa" data-qa></div>
@@ -60,12 +61,21 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   // Drafts render into their own page section when the host provides one.
   const draftCard = draftContainer || el('[data-draft-card]');
   const chipsEl = el('[data-fchips]');
+  const readEl = el('[data-read]');
   const qaEl = el('[data-qa]');
   const errEl = el('[data-err]');
   const pauseBtn = el('[data-pause]');
   const refreshBtn = el('[data-refresh]');
   const prepBtn = el('[data-prep]');
   const qBox = el('[data-q]');
+
+  // The files staged for the next analysis: the 👨‍⚕️ badges on chat files and
+  // the case file list, plus anything added from Eric's own device. Declared
+  // here rather than beside its wiring below because the first poll can land
+  // before that code runs. Key (url or inline id) -> { name, url?, data?,
+  // contentType, size }.
+  const mediaSel = new Map();
+  window.__paMediaSel = mediaSel;
 
   let paused = false;
   let draftRendered = null; // the server draft the card was last built from
@@ -283,6 +293,69 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       <p class="diff-disclaimer">These are my confidence levels, not clinical probabilities. Orientation for advocacy, not a diagnosis.</p>`;
   }
 
+  /**
+   * What the advisor did with every file it was handed. Eric shared eight
+   * documents once and the advisor discussed three, with nothing on screen to
+   * say why, so this panel exists to make that unmissable: read, already read,
+   * queued for the next pass, or unreadable with the reason and a request for
+   * screenshots.
+   *
+   * The bar while a run is live is deliberately indeterminate. The model reads
+   * every file inside one turn, so there is no honest per-file percentage to
+   * show, and inventing one would be the same lie in a nicer shape.
+   */
+  function renderRead(report, queuedNames, running, stagedCount) {
+    const groups = [];
+    const rd = report || {};
+    const list = (names, cls, label) => {
+      if (!names?.length) return;
+      groups.push(`<div class="rd-group ${cls}">
+        <span class="rd-label">${esc(label)}</span>
+        <ul>${names.map((n) => `<li>${esc(String(n))}</li>`).join('')}</ul>
+      </div>`);
+    };
+
+    if (running && stagedCount) {
+      readEl.hidden = false;
+      readEl.innerHTML = `
+        <div class="rd-head"><strong>Reading ${stagedCount} file${stagedCount === 1 ? '' : 's'}</strong></div>
+        <div class="rd-bar rd-busy"><i></i></div>`;
+      return;
+    }
+
+    const read = rd.read || [];
+    const known = rd.known || [];
+    const queued = rd.queued?.length ? rd.queued : (queuedNames || []);
+    const bad = rd.unreadable || [];
+    const total = read.length + known.length + queued.length + bad.length;
+    if (!total) { readEl.hidden = true; readEl.innerHTML = ''; return; }
+
+    const done = read.length + known.length;
+    list(read, 'rd-ok', `Read this pass (${read.length})`);
+    list(known, 'rd-known', `Already read (${known.length})`);
+    list(queued, 'rd-queued', `Queued for the next pass (${queued.length})`);
+    list(bad, 'rd-bad', `Couldn't read (${bad.length})`);
+
+    // Open when something needs him: a file waiting on the next pass, or one
+    // that needs screenshots. When every file was read there is nothing to act
+    // on, so it collapses to the one line that answers the question.
+    const needsHim = queued.length || bad.length;
+    readEl.hidden = false;
+    readEl.innerHTML = `
+      <details class="rd" ${needsHim ? 'open' : ''}>
+        <summary>
+          <span class="rd-head">
+            <strong>Files: ${done} of ${total} read</strong>
+            ${rd.at ? `<span class="dim small">${esc(timeAgo(toDate(rd.at)))}</span>` : ''}
+          </span>
+          <span class="rd-bar"><i style="width:${total ? Math.round((done / total) * 100) : 0}%"></i></span>
+        </summary>
+        ${groups.join('')}
+        ${queued.length ? '<p class="dim small">These are attached to the next analysis on their own. Nothing was dropped.</p>' : ''}
+        ${bad.length ? '<p class="dim small">Tap ＋ Add a file to send screenshots of these.</p>' : ''}
+      </details>`;
+  }
+
   // Poll fast while something is running, slowly when it isn't — an assessment
   // that takes two minutes shouldn't cost a request a second for the rest of
   // the day.
@@ -314,6 +387,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           dxOverride: out.dxOverride || null,
         };
         renderDiff(detail);
+        renderRead(out.mediaReport, out.queuedFiles, d.running, mediaSel.size);
         document.dispatchEvent(new CustomEvent('pa-advisor-state', { detail }));
       }
     } catch { /* transient — the next tick tries again */ }
@@ -330,8 +404,6 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   // will be. The Map is exposed on window so the chat log and the file list
   // (separate modules, re-rendered on their own schedules) can paint their
   // badges from the same source of truth.
-  const mediaSel = new Map(); // key (url or inline id) -> { name, url?, data?, contentType, size }
-  window.__paMediaSel = mediaSel;
   let inlineSeq = 0;
   function syncStaged() {
     refreshBtn.textContent = mediaSel.size

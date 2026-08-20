@@ -1068,6 +1068,54 @@ body.lightbox-open { overflow: hidden; }
 .adv-chip.adv-add { border-style: dashed; border-color: var(--line); color: var(--dim); cursor: pointer; }
 .adv-chip.adv-add:hover { border-color: var(--cyan-dim); color: var(--soft); }
 
+/* ------------------------------------------ what the advisor read, and did not
+   Eric shared eight documents once and the advisor discussed three, with
+   nothing on screen to say why. This is the answer to "did he see my photos",
+   printed rather than inferred. */
+.advisor-read {
+  margin: .1rem 0 .6rem; padding: .5rem .6rem .55rem;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2); font-size: .78rem;
+}
+/* Collapsed when every file was read - the headline answers the question on
+   its own - and open whenever something is still waiting on him. */
+.advisor-read summary { cursor: pointer; list-style: none; }
+.advisor-read summary::-webkit-details-marker { display: none; }
+.rd-head { display: flex; align-items: baseline; gap: .5rem; justify-content: space-between; }
+.rd-bar {
+  display: block; position: relative; overflow: hidden;
+  height: 6px; margin: .4rem 0 .5rem;
+  border-radius: 999px; background: rgba(255, 255, 255, .07);
+}
+.rd-bar > i {
+  display: block; height: 100%; border-radius: 999px;
+  background: var(--cyan); box-shadow: var(--glow-c);
+  transition: width .5s cubic-bezier(.2, .8, .3, 1);
+}
+/* Live run: the model reads every file inside one turn, so there is no honest
+   per-file percentage. An indeterminate sweep says "working" without claiming
+   a number nobody measured. */
+.rd-bar.rd-busy > i { width: 38%; animation: rd-sweep 1.25s ease-in-out infinite; }
+@keyframes rd-sweep {
+  0% { transform: translate3d(-110%, 0, 0); }
+  100% { transform: translate3d(300%, 0, 0); }
+}
+.rd-group { margin-top: .35rem; }
+.rd-label { display: block; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
+.rd-group ul { margin: .12rem 0 0; padding-left: 1.05rem; }
+.rd-group li { color: var(--soft); overflow-wrap: anywhere; }
+.rd-ok .rd-label { color: var(--green); }
+.rd-known .rd-label { color: var(--dim); }
+.rd-known li { color: var(--dim); }
+.rd-queued .rd-label { color: var(--gold); }
+.rd-bad .rd-label { color: var(--magenta); }
+.advisor-read p { margin: .4rem 0 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rd-bar.rd-busy > i { animation: none; width: 100%; opacity: .5; }
+  .rd-bar > i { transition: none; }
+}
+
 /* The draft's own section on the admin case page. */
 .draft-panel { border-color: var(--magenta); box-shadow: var(--glow-m); }
 

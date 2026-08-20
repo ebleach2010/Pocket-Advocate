@@ -1150,8 +1150,12 @@ async function handleAdvisorState(request, env, url) {
   // secret is actually bound to the running version — "saved in the dashboard"
   // and "attached to the deployment" are different states in Cloudflare, and
   // the difference is invisible from outside without this.
+  // readFiles and pendingMedia are bookkeeping: up to 500 storage paths that
+  // would ride on every poll for no reason. The report built from them is what
+  // the panel actually draws.
+  const { readFiles, pendingMedia, ...publicState } = state?.data || {};
   return json({
-    state: state?.data || {},
+    state: publicState,
     qa: qa.map((r) => r.data),
     glossary: knowledge.map((r) => ({
       id: r.id, term: r.data.term, definition: r.data.definition,
@@ -1173,6 +1177,12 @@ async function handleAdvisorState(request, env, url) {
     // chat stops marking that message.
     corrections: (Array.isArray(state?.data.corrections) ? state.data.corrections : [])
       .filter((c) => c && !c.dismissed),
+    // Exactly what the last analysis did with every file it was handed: read,
+    // already read, queued for the next pass, or unreadable with the reason.
+    // Eric shared eight documents once and the advisor discussed three; this
+    // is the surface that makes that visible instead of guessable.
+    mediaReport: state?.data.mediaReport || null,
+    queuedFiles: Array.isArray(pendingMedia) ? pendingMedia.map((m) => m.name) : [],
   });
 }
 
@@ -1456,15 +1466,26 @@ async function handleAdvisor(request, env, ctx) {
     // inline as base64 `data` and never exist anywhere a client could see.
     // Shape-checked here; URLs are fence-checked in the advisor before any
     // fetch, and inline data is size-capped there before use.
+    // Take every file he staged. The advisor batches what will not fit into
+    // the next pass rather than truncating here, so a cap at this layer would
+    // just be the same silent drop one level up. The only ceiling left is on
+    // inline base64 - that is real bytes in this request, and 24MB of it is
+    // already more than one pass can carry.
     let media = null;
     if (Array.isArray(body?.media) && body.media.length) {
-      media = body.media.slice(0, 8).map((m) => ({
-        name: String(m?.name || 'file').slice(0, 200),
-        url: typeof m?.url === 'string' ? m.url.slice(0, 2048) : '',
-        data: typeof m?.data === 'string' && m.data.length <= 20_000_000 ? m.data : '',
-        contentType: String(m?.contentType || '').slice(0, 100),
-        size: typeof m?.size === 'number' ? m.size : 0,
-      })).filter((m) => m.url || m.data);
+      let inlineBudget = 24_000_000;
+      media = body.media.slice(0, 60).map((m) => {
+        const data = typeof m?.data === 'string' && m.data.length <= 20_000_000 ? m.data : '';
+        const fits = data && data.length <= inlineBudget;
+        if (fits) inlineBudget -= data.length;
+        return {
+          name: String(m?.name || 'file').slice(0, 200),
+          url: typeof m?.url === 'string' ? m.url.slice(0, 2048) : '',
+          data: fits ? data : '',
+          contentType: String(m?.contentType || '').slice(0, 100),
+          size: typeof m?.size === 'number' ? m.size : 0,
+        };
+      }).filter((m) => m.url || m.data);
       if (!media.length) media = null;
     }
     // Queue first: if this connection drops mid-run, the cron retries it
