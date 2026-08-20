@@ -273,18 +273,30 @@ async function refreshFiles() {
       <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
         <a href="${r.url}" target="_blank" rel="noopener">${esc(r.name)}</a>${
           reviewable(r)
-            ? `<button class="btn quiet file-review" data-review="${i}" title="Have the advisor read this file">👨‍⚕️</button>`
+            ? `<button class="btn quiet file-review" data-review="${i}" title="Select for the advisor to read, then press Analyze in the advisor panel">👨‍⚕️</button>`
             : ''}</span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
     </li>`).join('');
-  listEl.querySelectorAll('[data-review]').forEach((b) =>
+  // Toggle to stage the file for the advisor's next analysis; highlighted
+  // while staged. The advisor panel owns the selection and the Analyze run.
+  listEl.querySelectorAll('[data-review]').forEach((b) => {
+    const r = rows[Number(b.dataset.review)];
+    b.dataset.url = r.url;
+    if (window.__paMediaSel?.has(r.url)) b.classList.add('on');
     b.addEventListener('click', () => {
-      const r = rows[Number(b.dataset.review)];
-      document.dispatchEvent(new CustomEvent('pa-advisor-review', {
+      b.classList.toggle('on');
+      document.dispatchEvent(new CustomEvent('pa-advisor-toggle', {
         detail: { attachment: { name: r.name, url: r.url, contentType: r.contentType, size: r.size || 0 } },
       }));
-    }));
+    });
+  });
 }
+
+// Repaint the file badges when the advisor panel consumes the selection.
+document.addEventListener('pa-advisor-selection', () => {
+  document.querySelectorAll('#files [data-review]').forEach((b) =>
+    b.classList.toggle('on', !!window.__paMediaSel?.has(b.dataset.url)));
+});
 
 // ---- follow-up status + the scheduling panel ----
 
