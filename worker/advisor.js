@@ -277,6 +277,44 @@ async function attachmentBlock(att, kind, id) {
 }
 
 /**
+ * Files the client (or Eric) shared in the thread that the advisor has never
+ * read. Eric asked for these to be picked up on their own: he uploaded photos
+ * for the advisor to look at and nothing happened, because until now an
+ * analysis only ever read what he had explicitly staged.
+ *
+ * The settle window matters. Eight photos go up one at a time over a minute or
+ * two, and firing on the first one would read one photo and call the batch
+ * done. So a file is only eligible once its message has sat for four minutes.
+ * The queue cron runs every five, which puts the usual read about five minutes
+ * after the upload - the number Eric asked for - and never sooner than four.
+ *
+ * Files in a format the advisor cannot read are picked up too, deliberately.
+ * They land in the "couldn't read" bucket by name, which is what turns into
+ * "upload screenshots for sleep-study-9-8-25.pdf" instead of silence.
+ */
+const AUTO_READ_SETTLE_MS = 4 * 60_000;
+
+function autoReadableFiles(rows, alreadyRead, kind, id) {
+  const seen = new Set(alreadyRead);
+  const cutoff = Date.now() - AUTO_READ_SETTLE_MS;
+  const out = [];
+  for (const r of (rows || [])) {
+    const att = r.data?.attachment;
+    if (!att?.url || !att.name) continue;
+    const at = r.data.ts ? new Date(r.data.ts.toDate ? r.data.ts.toDate() : r.data.ts).getTime() : 0;
+    if (at && at > cutoff) continue;         // still landing, read it next pass
+    const key = fileKey(att, kind, id);
+    if (seen.has(key)) continue;             // read on an earlier pass
+    seen.add(key);
+    out.push({
+      name: att.name, url: att.url,
+      contentType: att.contentType || '', size: att.size || 0,
+    });
+  }
+  return out;
+}
+
+/**
  * The files Eric selected (the 👨‍⚕️ badges) plus anything an earlier pass could
  * not fit, as content blocks in order. Nothing is read implicitly.
  *
@@ -805,7 +843,15 @@ export async function runAnalysis(env, kind, id, mediaList = null) {
     // file never starves behind whatever he staged most recently.
     const carried = Array.isArray(state?.data.pendingMedia) ? state.data.pendingMedia : [];
     const alreadyRead = Array.isArray(state?.data.readFiles) ? state.data.readFiles : [];
-    const queue = [...carried, ...(mediaList || [])];
+    // Order is a priority order. Files a previous pass could not fit go first
+    // so nothing starves; then whatever Eric staged by hand, because that is an
+    // explicit request; then anything shared in the thread that has never been
+    // read, which is the part that runs without him asking.
+    const queue = [
+      ...carried,
+      ...(mediaList || []),
+      ...autoReadableFiles(rows, alreadyRead, kind, id),
+    ];
     const media = await selectedMediaBlocks(queue, kind, id, alreadyRead);
 
     const analysis = await ask(env, {

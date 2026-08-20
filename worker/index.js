@@ -113,10 +113,18 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runChatDigest(env));
-    ctx.waitUntil(runFollowUpWarnings(env));
-    ctx.waitUntil(cleanupStaleSlots(env));
-    ctx.waitUntil(repairMissingCaseEmails(env));
+    // The cron fires every five minutes, because Eric asked for a read within
+    // five minutes of a message or a document landing. Only the advisor queue
+    // wants that cadence: the digests and sweeps are quarter-hourly work and
+    // running them three times as often would be three times the Firestore
+    // reads for the same outcome, so they still only run on the quarter hour.
+    const minute = new Date(event.scheduledTime || Date.now()).getUTCMinutes();
+    if (minute % 15 === 0) {
+      ctx.waitUntil(runChatDigest(env));
+      ctx.waitUntil(runFollowUpWarnings(env));
+      ctx.waitUntil(cleanupStaleSlots(env));
+      ctx.waitUntil(repairMissingCaseEmails(env));
+    }
     ctx.waitUntil(runQueuedAnalyses(env));
   },
 };

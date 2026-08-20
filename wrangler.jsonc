@@ -18,7 +18,7 @@
   },
   "triggers": {
     // Chat digest: email a nudge for unread messages (spec: batched email).
-    "crons": ["*/15 * * * *"]
+    "crons": ["*/5 * * * *"]
   },
   "vars": {
     // Non-secret config. Replace after creating the Firebase project (docs/SETUP.md).
