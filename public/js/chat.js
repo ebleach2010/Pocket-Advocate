@@ -177,14 +177,14 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     });
     const hint = container.querySelector('[data-hint]');
     if (hint) {
-      const passNote = ' If a question is asked that you\'d rather not answer, tap ⚐ pass under it: it turns red, marks it PASS, and we simply move on — no explanation needed.';
-      const hintText = (myRole === 'admin'
+      const passNote = 'If a question is asked that you\'d rather not answer, tap ⚐ pass under it: it turns red, marks it PASS, and we simply move on — no explanation needed.';
+      const hintText = ((myRole === 'admin'
         ? (hasAttachment
-          ? 'Press and hold a message to react or tell them what you\'re doing; hold a file to save it to their Documents.'
-          : 'Press and hold their message to react or tell them what you\'re doing — they get a notification.')
+          ? 'Press and hold a shared file to save it to their Documents. '
+          : '')
         : (hasAttachment
-          ? 'Press and hold a message to react or edit it; hold a shared file to save it to Documents.'
-          : 'Press and hold a message to react to it, or to edit your own within 3 minutes.')) + passNote;
+          ? 'Press and hold a message to react or edit it; hold a shared file to save it to Documents. '
+          : 'Press and hold a message to react to it, or to edit your own within 3 minutes. ')) + passNote).trim();
       // Update 2.1 launch: the hint runs in gold under its label for 48 hours
       // (until 2026-08-22 ~01:00 UTC), then reverts to the normal dim style on
       // its own — the deadline is baked in, no second deploy needed.
