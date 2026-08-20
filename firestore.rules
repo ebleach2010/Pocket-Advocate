@@ -93,6 +93,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // How Eric edits the advisor's drafts, and the style profile distilled
+    // from those edits — Worker-only in both directions.
+    match /advisorStyle/{document=**} {
+      allow read, write: if false;
+    }
+
     match /availability/{slotId} {
       // World-readable so the picker works pre-payment; Worker-writable only.
       allow read: if true;

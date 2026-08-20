@@ -166,6 +166,150 @@ function knowledgeNote({ learned, pending }) {
 }
 
 /**
+ * Eric's style profile, global like the knowledge base. Built from the
+ * strongest evidence there is: pairs of (what the advisor drafted) vs (what
+ * Eric actually sent after editing). The diff is the lesson — his wording, his
+ * warmth, and his positions, including the places he knowingly departs from
+ * general guidance. Layout:
+ *   advisorStyle/profile            { voice, stances, updatedAt, lastLesson }
+ *   advisorStyle/profile/edits/{id} { draft, sent, changed, kind, id, at }
+ */
+const STYLE_PATH = 'advisorStyle/profile';
+
+async function loadStyle(env) {
+  const [profile, edits] = await Promise.all([
+    getDoc(env, STYLE_PATH).catch(() => null),
+    listDocs(env, `${STYLE_PATH}/edits`, { pageSize: 8, orderBy: 'at desc' }).catch(() => []),
+  ]);
+  return {
+    voice: profile?.data.voice || '',
+    stances: profile?.data.stances || '',
+    // The freshest real edits ride along as worked examples for the draft
+    // writer; drafts he sent unchanged teach nothing new there.
+    examples: edits
+      .filter((r) => r.data.changed && r.data.draft && r.data.sent)
+      .slice(0, 3)
+      .map((r) => ({ draft: r.data.draft, sent: r.data.sent })),
+  };
+}
+
+/** Voice + stances for the draft writer's system prompt. */
+function styleNote({ voice, stances }) {
+  let note = '';
+  if (voice)
+    note += `\n\nA learned profile of how Eric writes, built from his own messages and from how he edited your past drafts. Where this profile and your instinct disagree, the profile wins:\n${voice}`;
+  if (stances)
+    note += `\n\nEric's own positions, learned from what he actually sends. Write them as HIS calls, at full strength. Never water them down into generic guidance:\n${stances}`;
+  return note;
+}
+
+/**
+ * Stances only, for analyses and Q&A: the advisor stays honest with Eric, but
+ * it stops re-recommending what he has already overruled.
+ */
+function stanceNote({ stances }) {
+  if (!stances) return '';
+  return `\nEric's standing positions, learned from what he actually sends (he sometimes departs from general guidance on purpose):\n${stances}\nAdvise with these in mind instead of re-arguing them. If the evidence in THIS case directly contradicts one in a way that matters for this client, say so once, briefly, and move on.`;
+}
+
+/**
+ * One `## Heading` section out of a two-section reply. Tolerant on purpose:
+ * case-insensitive, and heading decorations like `**## Voice**` or `### Voice`
+ * still match, because a low-effort reply doesn't always follow the format.
+ */
+function sectionOf(text, name) {
+  const m = text.match(new RegExp(
+    `^\\s*\\**#{2,3}\\s*\\**\\s*${name}\\s*\\**\\s*\\n([\\s\\S]*?)(?=^\\s*\\**#{2,3}\\s|$(?![\\s\\S]))`, 'im'));
+  return m ? m[1].trim() : '';
+}
+
+/**
+ * Rebuild the style profile from the accumulated edits. Runs right after Eric
+ * sends an edited draft, so the very next draft already writes with the
+ * lesson. Cheap on purpose (low effort, small ceiling): this is distillation,
+ * not analysis. Failures stay quiet; the next edit retries.
+ */
+export async function runStyleDistill(env, kind, id) {
+  try {
+    const [profile, edits, rows] = await Promise.all([
+      getDoc(env, STYLE_PATH).catch(() => null),
+      // A dozen pairs is plenty of evidence per pass, and keeping the input
+      // small keeps the reply well inside the token ceiling: a truncated
+      // reply is the one thing this run must not produce.
+      listDocs(env, `${STYLE_PATH}/edits`, { pageSize: 12, orderBy: 'at desc' }).catch(() => []),
+      recentMessages(env, kind, id).catch(() => []),
+    ]);
+    const pairs = edits.filter((r) => r.data.draft && r.data.sent);
+    if (!pairs.length) return;
+
+    const pairBlock = pairs
+      .map((r, i) => `PAIR ${i + 1}\nDRAFT (the advisor wrote):\n${r.data.draft.slice(0, 1500)}\nSENT (Eric actually sent):\n${r.data.sent.slice(0, 1500)}`)
+      .join('\n\n');
+    const organic = myVoice(rows).slice(-6000);
+    const prior = profile?.data || {};
+
+    const text = await ask(env, {
+      effort: 'low',
+      maxTokens: 10000,
+      system: [{ type: 'text', text: `You maintain a compact profile of Eric, a patient advocate, so another model
+can write chat drafts that sound like him and carry his positions.
+
+Evidence, strongest first:
+1. Edit pairs: DRAFT is what the other model wrote, SENT is what Eric actually
+   sent after editing. The difference is the lesson: what he cut, added, or
+   rephrased, where he softened or sharpened, and anywhere he overruled
+   standard-guidance wording with his own call.
+2. His own organic messages.
+3. The previous profile: carry forward what still holds, drop what newer edits
+   contradict, merge duplicates. Newer evidence beats older.
+
+Write exactly two markdown sections and nothing else:
+
+## Voice
+How he writes. Sentence shape and length, openings and closings, warmth,
+contractions, phrases he reaches for, things he strips out of drafts. One
+observation per line. 180 words max.
+
+## Stances
+His opinions and standing calls, especially where he knowingly departs from
+general clinical guidance or textbook advice. One line each, stated as his
+position, with the evidence in parentheses. Only what his own words support:
+never invent a stance, never promote a one-off phrasing tweak into an opinion.
+180 words max. If nothing is evidenced yet, write "- none yet".
+
+Plain text under each heading. Never use an em dash or en dash. No preamble,
+no closing note.` }],
+      messages: [{
+        role: 'user',
+        content: `${prior.voice || prior.stances ? `The previous profile:\n\n## Voice\n${prior.voice || '- none yet'}\n\n## Stances\n${prior.stances || '- none yet'}\n\n` : ''}The edit pairs, newest first:\n\n${pairBlock}\n\nEric's own recent messages in the thread he just edited a draft for:\n\n${organic || '(none)'}`,
+      }],
+    });
+
+    const rawVoice = sectionOf(text, 'Voice');
+    let rawStances = sectionOf(text, 'Stances');
+    if (/^-?\s*none yet\.?$/i.test(rawStances)) rawStances = '';
+    // A section the reply failed to produce keeps its prior value. A
+    // truncated or heading-less reply must never erase weeks of learning:
+    // with a prior profile in hand, a reply that ignored the format entirely
+    // is discarded; only a first-ever run salvages it as voice.
+    let voice = rawVoice || prior.voice || '';
+    let stances = rawStances || prior.stances || '';
+    if (!rawVoice && !rawStances) {
+      if (prior.voice || prior.stances) return;
+      voice = text.trim().slice(0, 1600);
+      stances = '';
+    }
+    if (!voice && !stances) return;
+    await patchDoc(env, STYLE_PATH, {
+      voice: voice.slice(0, 2000), stances: stances.slice(0, 2000),
+      updatedAt: new Date(), lastLesson: { kind, id, at: new Date() },
+    }, { mask: ['voice', 'stances', 'updatedAt', 'lastLesson'] });
+  } catch (err) {
+    console.error('advisor style distill:', err.stack || err);
+  }
+}
+
+/**
  * Pull the "## Key terms" section out of an assessment: store each new term in
  * the knowledge base and strip the section from the saved text, because the
  * panel renders the glossary as its own page with an "I understand" checkbox
@@ -335,10 +479,11 @@ export async function runQueuedAnalyses(env) {
 export async function runAnalysis(env, kind, id) {
   try {
     await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date() });
-    const [rows, state, knowledge] = await Promise.all([
+    const [rows, state, knowledge, style] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
       loadKnowledge(env),
+      loadStyle(env),
     ]);
     const chat = transcript(rows);
     if (!chat) {
@@ -386,7 +531,7 @@ mastered list, never repeat one already in his glossary. If nothing new, write
 
 Be specific or say nothing. "Consider further workup" is worthless. If the
 transcript is too thin for a section, one line saying what you'd need.
-${knowledgeNote(knowledge)}` }],
+${knowledgeNote(knowledge)}${stanceNote(style)}` }],
       messages: [{
         role: 'user',
         content: prior
@@ -416,10 +561,11 @@ export async function runQuestion(env, kind, id, qaId, question) {
   // is valid and stays inside the advisor rules fence.
   const path = `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state/qa/${qaId}`;
   try {
-    const [rows, state, knowledge] = await Promise.all([
+    const [rows, state, knowledge, style] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
       loadKnowledge(env),
+      loadStyle(env),
     ]);
     const chat = transcript(rows);
     const answer = await ask(env, {
@@ -440,7 +586,7 @@ Concept). Skip the section if there are none.
 already understands: he used it correctly and fluently, not asking what it
 means. One term per line as \`- Term\`. Asking about a term is the opposite of
 mastering it. Skip the section if none.
-${knowledgeNote(knowledge)}` }],
+${knowledgeNote(knowledge)}${stanceNote(style)}` }],
       messages: [{
         role: 'user',
         content: `<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${
@@ -471,12 +617,18 @@ export async function runDraft(env, kind, id, instruction) {
     await setState(env, kind, id, {
       draftStatus: 'running', draftError: null, draftStartedAt: new Date(), draftProgressAt: null,
     });
-    const [rows, state] = await Promise.all([
+    const [rows, state, style] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
+      loadStyle(env),
     ]);
     const chat = transcript(rows);
     const voice = myVoice(rows);
+    // The freshest edits, shown as before/after: the strongest instruction
+    // there is for "sound like Eric, hold Eric's positions".
+    const lessons = style.examples
+      .map((e, i) => `EXAMPLE ${i + 1}\nYOUR DRAFT:\n${e.draft.slice(0, 1200)}\nERIC ACTUALLY SENT:\n${e.sent.slice(0, 1200)}`)
+      .join('\n\n');
     const draft = await ask(env, {
       effort: DRAFT_EFFORT,
       onBeat: () => setState(env, kind, id, { draftProgressAt: new Date() }).catch(() => {}),
@@ -494,6 +646,12 @@ You are given his own past messages. Match them: sentence length, how formal he
 is, whether he uses contractions, how he opens and closes, how much warmth he
 shows, whether he uses lists. If his messages are short, yours is short.
 
+You may also be given his learned profile and recent before/after examples of
+how he edited your past drafts. Those edits are him correcting you: treat every
+difference as an instruction. His opinions go in as HIS calls, at full
+strength, even where they differ from general guidance. Never sand his
+positions down into textbook language he has already edited out.${styleNote(style)}
+
 Output the message text and nothing else — no preamble, no "here's a draft",
 no quotation marks around it, no sign-off he doesn't actually use.
 
@@ -505,7 +663,9 @@ He is not a doctor. Never put a diagnosis in his mouth. He can say what he'd
 want asked, what a result might mean, and what he'll chase down.` }],
       messages: [{
         role: 'user',
-        content: `Here is how Eric writes, in his own messages to this client:\n\n<his_voice>\n${voice || '(none yet — keep it plain, warm and brief)'}\n</his_voice>\n\nThe conversation so far:\n\n<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${
+        content: `Here is how Eric writes, in his own messages to this client:\n\n<his_voice>\n${voice || '(none yet — keep it plain, warm and brief)'}\n</his_voice>\n${
+          lessons ? `\nHow he edited your recent drafts before sending (each difference is an instruction):\n\n<his_edits>\n${lessons}\n</his_edits>\n` : ''
+        }\nThe conversation so far:\n\n<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${
           state?.data.analysis ? `\nYour current assessment of the case:\n\n<assessment>\n${state.data.analysis}\n</assessment>\n` : ''
         }${instruction ? `\nEric wants this message to: ${instruction}` : '\nWrite the natural next thing for him to say.'}`,
       }],
