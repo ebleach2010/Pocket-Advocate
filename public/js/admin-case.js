@@ -105,6 +105,8 @@ function render(el) {
       <div class="panel advisor-panel" id="advisor"></div>
     </div>
 
+    <div class="panel draft-panel advisor-draft" id="draft-panel" hidden></div>
+
     <div class="panel">
       <h3>Schedule a session</h3>
       <p class="dim small">Book this client at any time at all — pick an open slot, or type a time that isn't on the calendar. Lead time, booking horizon and business hours don't apply to you.</p>
@@ -176,6 +178,9 @@ function render(el) {
     id: caseId,
     user,
     onSend: (text) => chat.send(text),
+    // Drafts live in their own section below the chat/advisor pair, not
+    // buried inside the panel.
+    draftContainer: el.querySelector('#draft-panel'),
   });
 }
 

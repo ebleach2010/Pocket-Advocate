@@ -202,6 +202,23 @@ function b64(buf) {
 async function attachmentBlock(att, kind, id) {
   const mk = mediaKind(att);
   if (!mk) return { skip: 'a format the advisor cannot read (send JPEG, PNG, or PDF)' };
+  // Inline uploads (from Eric's own device, base64 in the request body) have
+  // nothing to fetch and never touch Storage; the route is admin-only, so the
+  // only checks that matter are format and size.
+  if (att.data) {
+    const bytes = Math.floor((att.data.length * 3) / 4);
+    const cap = mk === 'image' ? MAX_IMAGE_BYTES : MAX_PDF_BYTES;
+    if (bytes > cap) return { skip: 'too large to read' };
+    if (mk === 'image')
+      return {
+        bytes,
+        block: { type: 'image', source: { type: 'base64', media_type: (att.contentType || '').toLowerCase(), data: att.data } },
+      };
+    return {
+      bytes,
+      block: { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: att.data } },
+    };
+  }
   const url = safeAttachmentUrl(att, kind, id);
   if (!url) return { skip: 'not a file from this case' };
   const cap = mk === 'image' ? MAX_IMAGE_BYTES : MAX_PDF_BYTES;

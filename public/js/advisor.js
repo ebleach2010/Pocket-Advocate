@@ -21,10 +21,12 @@ const SECTION_ICON = {
 };
 
 /**
- * opts: { container, kind: 'case'|'sub', id, user, onSend(text) }
+ * opts: { container, kind: 'case'|'sub', id, user, onSend(text), draftContainer? }
  * `onSend` puts an approved draft into the real chat as Eric.
+ * `draftContainer` (optional): an element OUTSIDE the panel that the draft
+ * card renders into, so drafts live in their own section of the page.
  */
-export function mountAdvisor({ container, kind, id, user, onSend }) {
+export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null }) {
   container.innerHTML = `
     <div class="advisor">
       <div class="advisor-head">
@@ -36,6 +38,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
         </div>
       </div>
       <p class="dim small advisor-sub" data-updated>Reading the case…</p>
+      <div class="advisor-files" data-fchips></div>
       <div class="advisor-body" data-analysis></div>
       <div class="advisor-draft" data-draft-card hidden></div>
       <div class="advisor-qa" data-qa></div>
@@ -53,7 +56,9 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
   const statusEl = el('[data-status]');
   const updatedEl = el('[data-updated]');
   const bodyEl = el('[data-analysis]');
-  const draftCard = el('[data-draft-card]');
+  // Drafts render into their own page section when the host provides one.
+  const draftCard = draftContainer || el('[data-draft-card]');
+  const chipsEl = el('[data-fchips]');
   const qaEl = el('[data-qa]');
   const errEl = el('[data-err]');
   const pauseBtn = el('[data-pause]');
@@ -268,36 +273,98 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
   }
   refresh();
 
-  // ---- files staged for the next analysis (👨‍⚕️ badges in chat + file list) ----
-  // Eric picks exactly which images and documents get read; nothing is read
-  // until he presses Analyze. The Map is exposed on window so the chat log and
-  // the file list (separate modules, re-rendered on their own schedules) can
-  // paint their badges from the same source of truth.
-  const mediaSel = new Map(); // url -> { name, url, contentType, size }
+  // ---- files staged for the next analysis ----
+  // Two ways in: the 👨‍⚕️ badges on chat files and the case file list, and
+  // "Add a file" right here, which reads an image or PDF from Eric's own
+  // device and sends it inline with the analysis. Inline files never touch
+  // the chat or the case documents, so the client can never see them.
+  // Nothing is read until Analyze is pressed; the chips show exactly what
+  // will be. The Map is exposed on window so the chat log and the file list
+  // (separate modules, re-rendered on their own schedules) can paint their
+  // badges from the same source of truth.
+  const mediaSel = new Map(); // key (url or inline id) -> { name, url?, data?, contentType, size }
   window.__paMediaSel = mediaSel;
-  function syncAnalyzeBtn() {
+  let inlineSeq = 0;
+  function syncStaged() {
     refreshBtn.textContent = mediaSel.size
       ? `🩺 Analyze ${mediaSel.size} file${mediaSel.size === 1 ? '' : 's'}`
       : 'Update';
     refreshBtn.title = mediaSel.size
-      ? 'Re-read the conversation and the selected files together'
+      ? 'Re-read the conversation and the staged files together'
       : 'Re-read the conversation now';
+    chipsEl.innerHTML = `
+      ${[...mediaSel.entries()].map(([k, m]) => `
+        <span class="adv-chip">${m.url ? '👨‍⚕️' : '🖼'} <span class="adv-chip-name"></span>
+          <button type="button" data-unstage="${esc(k)}" aria-label="Remove">✕</button>
+        </span>`).join('')}
+      <label class="adv-chip adv-add">＋ Add a file
+        <input type="file" hidden data-upfile accept="image/png,image/jpeg,image/webp,image/gif,application/pdf">
+      </label>
+      ${mediaSel.size ? '<span class="dim small" style="align-self:center;">read on Analyze, only by the advisor</span>' : ''}`;
+    // Names as text, never markup — file names are user data.
+    const names = chipsEl.querySelectorAll('.adv-chip-name');
+    [...mediaSel.values()].forEach((m, i) => { if (names[i]) names[i].textContent = m.name; });
+    chipsEl.querySelectorAll('[data-unstage]').forEach((b) =>
+      b.addEventListener('click', () => {
+        mediaSel.delete(b.dataset.unstage);
+        syncStaged();
+        document.dispatchEvent(new CustomEvent('pa-advisor-selection'));
+      }));
+    chipsEl.querySelector('[data-upfile]').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      errEl.hidden = true;
+      const isPdf = file.type === 'application/pdf';
+      const cap = isPdf ? 12 * 1024 * 1024 : Math.floor(4.5 * 1024 * 1024);
+      if (!isPdf && !/^image\/(png|jpeg|webp|gif)$/.test(file.type)) {
+        errEl.textContent = `${file.name}: the advisor reads JPEG, PNG, WebP, GIF, and PDF.`;
+        errEl.hidden = false;
+        return;
+      }
+      if (file.size > cap) {
+        errEl.textContent = `${file.name} is too big to read (${isPdf ? '12' : '4.5'} MB max).`;
+        errEl.hidden = false;
+        return;
+      }
+      const data = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(',')[1] || '');
+        r.onerror = () => reject(new Error('read failed'));
+        r.readAsDataURL(file);
+      }).catch(() => '');
+      if (!data) {
+        errEl.textContent = `Couldn't read ${file.name} from this device.`;
+        errEl.hidden = false;
+        return;
+      }
+      mediaSel.set(`inline:${++inlineSeq}`, {
+        name: file.name, data, contentType: file.type, size: file.size,
+      });
+      syncStaged();
+    });
   }
+  syncStaged();
   document.addEventListener('pa-advisor-toggle', (e) => {
     const a = e.detail?.attachment;
     if (!a?.url) return;
     if (mediaSel.has(a.url)) mediaSel.delete(a.url);
     else mediaSel.set(a.url, { name: a.name || 'file', url: a.url, contentType: a.contentType || '', size: a.size || 0 });
-    syncAnalyzeBtn();
+    syncStaged();
     document.dispatchEvent(new CustomEvent('pa-advisor-selection'));
   });
 
   refreshBtn.addEventListener('click', () => {
-    const media = mediaSel.size ? [...mediaSel.values()] : undefined;
+    const media = mediaSel.size
+      ? [...mediaSel.values()].map((m) => ({
+          name: m.name, contentType: m.contentType, size: m.size,
+          ...(m.url ? { url: m.url } : {}), ...(m.data ? { data: m.data } : {}),
+        }))
+      : undefined;
     if (media) {
       // The selection is consumed by this analysis; badges clear with it.
       mediaSel.clear();
-      syncAnalyzeBtn();
+      syncStaged();
       document.dispatchEvent(new CustomEvent('pa-advisor-selection'));
     }
     post({ action: 'analyze', ...(media ? { media } : {}) });
@@ -420,7 +487,7 @@ export function mountAdvisor({ container, kind, id, user, onSend }) {
     draftCard.hidden = false;
     draftCard.innerHTML = `
       <div class="row" style="align-items:center;">
-        <p class="advisor-draft-label">✍️ Draft reply</p>
+        <p class="advisor-draft-label">✍️ Draft for the client</p>
         <button class="btn quiet tiny" data-dcopy>📋 Copy</button>
       </div>
       <textarea class="draft-box" data-dtext></textarea>
