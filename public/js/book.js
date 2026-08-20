@@ -12,16 +12,21 @@ import { currentUser, hydrateNav } from './auth.js';
 import { ensureSignedIn } from './inline-auth.js';
 import { ageFromDob, MIN_AGE } from './profile.js';
 import { WAIVERS } from './waivers.js';
+import { rates } from './rates.js';
 
-// Keep in sync with CASE_PRICE_CENTS in worker/index.js. Every price on this
-// screen is derived from it - the Worker builds the real Stripe line items from
-// its own copy, and a hardcoded number here silently lied about the total for
-// weeks after the case rate changed.
+// The fallback price, and only the fallback. The real one lives in the Worker
+// and moves on its own: every completed booking lifts it, so a number compiled
+// into this file is wrong the moment somebody else books. It is still here
+// because a rate fetch that fails should show a real price rather than a
+// blank, and at deploy time this IS the price.
 //
 // Booking buys one thing (Eric, 2026-08-20). The follow-up used to be a
 // checkbox on this screen; it is sold from the case after the report lands
 // instead, so this step is a single price and a single decision.
 const CASE_PRICE_CENTS = 26500;
+// Filled from /api/rates before the payment step renders, and again if the
+// Worker refuses a stale quote.
+let caseCents = CASE_PRICE_CENTS;
 const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
@@ -61,6 +66,12 @@ init();
 
 async function init() {
   hydrateNav();
+  // The live rate, before anything quotes a number. A failed fetch leaves the
+  // compiled-in fallback in place, which is the right price at deploy time and
+  // is re-checked by the Worker before a card is ever charged.
+  rates().then((r) => {
+    if (r && Number(r.caseCents) > 0) caseCents = Number(r.caseCents);
+  }).catch(() => {});
   drawRail(); // step 1 shows active even while the sign-in card is up
   if (new URLSearchParams(location.search).get('canceled')) {
     showError('Checkout was canceled. Your slot was released — pick a time to try again.');
@@ -493,14 +504,14 @@ function renderPayment() {
       that works — before the date. Nothing is lost either way.
     </p>` : ''}
     <div class="price-line">
-      <span class="price">$${money(CASE_PRICE_CENTS)}</span>
+      <span class="price" data-price>$${money(caseCents)}</span>
       <span class="included">That covers our call and your written report within 7 days.</span>
     </div>
     <p class="muted small">${isRequest ? 'Requested times are not held while you complete payment.' : 'Your time slot is held while you complete payment.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once your slot is booked. If I reschedule you more than once, you're entitled to a full refund on request.</p>
     <p class="error" id="pay-error" hidden></p>
     <p>
       <button class="btn quiet" id="back">Back</button>
-      <button class="btn glow" id="pay">Pay $${money(CASE_PRICE_CENTS)} and book</button>
+      <button class="btn glow" id="pay">Pay $${money(caseCents)} and book</button>
     </p>`);
 
   el.querySelector('#back').addEventListener('click', back);
@@ -521,11 +532,25 @@ function renderPayment() {
           method: state.method,
           phone: state.phone,
           acks: state.acks,
+          // What this screen is showing. If the rate moved between the page
+          // loading and this button being pressed, the Worker refuses rather
+          // than charging a number nobody agreed to.
+          quotedCents: caseCents,
           // So emails can speak the client's local time (Eric, 2026-07-15).
           tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
         }),
       });
       const data = await res.json();
+      if (res.status === 409 && data.error === 'rate-changed' && Number(data.caseCents) > 0) {
+        // Update the number and hand the button back. No explanation: the
+        // price is what it is, and why it changed is nobody's business.
+        caseCents = Number(data.caseCents);
+        const priceEl = el.querySelector('[data-price]');
+        if (priceEl) priceEl.textContent = `$${money(caseCents)}`;
+        payBtn.textContent = `Pay $${money(caseCents)} and book`;
+        payBtn.disabled = false;
+        return;
+      }
       if (!res.ok) throw new Error(data.error || `Checkout failed (${res.status})`);
       location.href = data.url;
     } catch (err) {

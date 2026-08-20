@@ -77,8 +77,8 @@
         <p>Plain words on what this is, what it is not, and who sees your data. You and me. That's the list.</p>
       </li>
       <li>
-        <h3>Pay $265.</h3>
-        <p>That covers our call and your written report within 7 days. A follow-up session is $75 if you want one.</p>
+        <h3>Pay <span data-rate="case">$265</span>.</h3>
+        <p>That covers our call and your written report within 7 days. A follow-up session is <span data-rate="addon">$75</span> if you want one.</p>
       </li>
     </ol>
     <h3>What happens after you book</h3>
@@ -86,7 +86,7 @@
       <li>Upload anything you want me to see: labs, imaging, records. Only what you choose.</li>
       <li>We talk. A real conversation about your symptoms, your history, and your dead ends. Recorded, and the recording is yours.</li>
       <li>Your report lands within 7 days. A written battle plan you can put in front of any specialist, anywhere.</li>
-      <li>Want a second discussion on the same case? A follow-up session is $75, bought from your case page after your report lands and used within a month.</li>
+      <li>Want a second discussion on the same case? A follow-up session is <span data-rate="addon">$75</span>, bought from your case page after your report lands and used within a month.</li>
       <li>Live chat the whole time your case is open. Questions, updates, new documents, anything.</li>
     </ul>
   </section>
@@ -111,6 +111,11 @@
   <footer class="legal">Pocket Advocate is a patient-advocacy service, offered to residents of the United States and Canada. It does not provide diagnosis, treatment, prescriptions, or medical advice, and does not create a doctor-patient relationship. If this is an emergency, call 911.</footer>
 </main>
 <script type="module">
+  // The case and follow-up prices move on their own, so nothing on this page
+  // quotes a number that is only true at deploy time. Loaded soft: a failed
+  // fetch leaves the shipped prices, which are real.
+  import('/js/rates.js').catch(() => {});
+
   import { BUSINESS_PHONE } from '/js/reviews-config.js';
   // Nav auth state rides the Firebase CDN — load it soft so the call button
   // never depends on it.

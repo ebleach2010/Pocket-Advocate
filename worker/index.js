@@ -37,6 +37,103 @@ const CASE_PRICE_CENTS = 26500;
 // after the report lands rather than at checkout. It is NOT included.
 const ADDON_PRICE_CENTS = 7500;
 const SUB_PRICE_CENTS = 5000;
+
+// Every completed booking lifts the case and the follow-up by this much. No
+// ceiling, and nothing anywhere says it is happening.
+const RATE_STEP_CENTS = 1000;
+// Sanity rails on the manual setter, not on the ratchet. A typo that sets the
+// case rate to $5 or $50,000 should bounce rather than take a booking.
+const RATE_MIN_CENTS = 5000;
+const RATE_MAX_CENTS = 500000;
+const RATES_PATH = 'config/rates';
+
+/**
+ * The live rate. Seeded from the constants above the first time it is asked
+ * for, so a fresh deploy has no chicken-and-egg and the constants stay the
+ * meaningful default rather than becoming dead code.
+ *
+ * Returns { caseCents, addonCents, bookings, updateTime } — updateTime is
+ * Firestore's, and is what makes the raise a compare-and-swap.
+ */
+async function readRates(env) {
+  const doc = await getDoc(env, RATES_PATH).catch(() => null);
+  const d = doc?.data || {};
+  return {
+    caseCents: Number(d.caseCents) > 0 ? Number(d.caseCents) : CASE_PRICE_CENTS,
+    addonCents: Number(d.addonCents) > 0 ? Number(d.addonCents) : ADDON_PRICE_CENTS,
+    bookings: Number(d.bookings) || 0,
+    updateTime: doc?.updateTime || null,
+    seeded: !!doc,
+  };
+}
+
+/**
+ * Lift both rates one step, exactly once per real booking.
+ *
+ * Two ways this goes wrong and both are guarded. Stripe replays webhooks, so
+ * the caller only reaches here when a case was genuinely created (patchDoc
+ * returns falsy when mustNotExist fails, which is how a replay is detected).
+ * And two people can pay in the same second, so the write is conditional on
+ * the document not having changed since it was read; a lost race retries with
+ * fresh numbers rather than overwriting, so two bookings raise it twice.
+ */
+async function raiseRates(env, attempt = 0) {
+  if (attempt > 4) {
+    console.warn('rate raise: gave up after 5 attempts');
+    return null;
+  }
+  const now = await readRates(env);
+  const next = {
+    caseCents: Math.min(RATE_MAX_CENTS, now.caseCents + RATE_STEP_CENTS),
+    addonCents: Math.min(RATE_MAX_CENTS, now.addonCents + RATE_STEP_CENTS),
+    bookings: now.bookings + 1,
+    updatedAt: new Date(),
+  };
+  const opts = now.seeded
+    ? { mask: ['caseCents', 'addonCents', 'bookings', 'updatedAt'], ifUpdateTime: now.updateTime }
+    : { mustNotExist: true };
+  const won = await patchDoc(env, RATES_PATH, next, opts).catch(() => false);
+  if (won === false) return raiseRates(env, attempt + 1);
+  return next;
+}
+
+/**
+ * GET /api/rates — public, because the landing page and the booking page both
+ * quote it before anyone has signed in.
+ */
+/**
+ * POST /api/admin/rates — read the rate, or set it by hand.
+ *
+ * Not asked for, but without it the only way to change the number is a
+ * redeploy, and the whole point of moving it out of the source was that it
+ * changes on its own. Body { caseCents, addonCents } sets; an empty body
+ * reads.
+ */
+async function handleSetRates(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Admin only' }, 403);
+  const body = await request.json().catch(() => ({}));
+  const now = await readRates(env);
+  const want = {
+    caseCents: body?.caseCents === undefined ? now.caseCents : Number(body.caseCents),
+    addonCents: body?.addonCents === undefined ? now.addonCents : Number(body.addonCents),
+  };
+  for (const [k, v] of Object.entries(want)) {
+    if (!Number.isInteger(v) || v < RATE_MIN_CENTS || v > RATE_MAX_CENTS)
+      return json({ error: `${k} has to be a whole number of cents between ${RATE_MIN_CENTS} and ${RATE_MAX_CENTS}.` }, 400);
+  }
+  const changed = want.caseCents !== now.caseCents || want.addonCents !== now.addonCents;
+  if (changed) {
+    await patchDoc(env, RATES_PATH, { ...want, updatedAt: new Date(), setByHand: true },
+      { mask: ['caseCents', 'addonCents', 'updatedAt', 'setByHand'] });
+  }
+  return json({ ...want, bookings: now.bookings, changed });
+}
+
+async function handleRates(env) {
+  const r = await readRates(env);
+  return json({ caseCents: r.caseCents, addonCents: r.addonCents });
+}
 // Follow-up sessions expire one month after the first discussion (Eric,
 // 2026-07-13); clients get one warning email a week before the deadline.
 const FOLLOWUP_EXPIRY_DAYS = 30;
@@ -183,6 +280,10 @@ export default {
         return await handleChangelog(request, env);
       if (url.pathname === '/api/reviews/admin')
         return await handleReviewsAdmin(request, env);
+      if (url.pathname === '/api/rates' && request.method === 'GET')
+        return await handleRates(env);
+      if (url.pathname === '/api/admin/rates' && request.method === 'POST')
+        return await handleSetRates(request, env);
       if (url.pathname === '/api/version' && request.method === 'GET')
         return json({ tag: BUILD_TAG, version: VERSION });
       if (url.pathname === '/api/uploaded' && request.method === 'POST')
@@ -371,13 +472,13 @@ async function repairMissingCaseEmails(env) {
  * after the report lands, rather than as a second decision put in front of
  * somebody still deciding whether to trust him at all.
  */
-function caseLineItems() {
+function caseLineItems(cents) {
   return [
     {
       quantity: 1,
       price_data: {
         currency: 'usd',
-        unit_amount: CASE_PRICE_CENTS,
+        unit_amount: cents,
         product_data: { name: 'Advocacy Case', description: 'Live discussion + written report' },
       },
     },
@@ -385,13 +486,13 @@ function caseLineItems() {
 }
 
 /** The follow-up, bought on its own from an existing case. */
-function followUpLineItems() {
+function followUpLineItems(cents) {
   return [
     {
       quantity: 1,
       price_data: {
         currency: 'usd',
-        unit_amount: ADDON_PRICE_CENTS,
+        unit_amount: cents,
         product_data: {
           name: 'Follow-up session',
           description: 'A second discussion on this same case',
@@ -456,7 +557,22 @@ async function handleCheckout(request, env) {
   );
   if (!held) return json({ error: 'Someone just grabbed that time. Pick another slot.' }, 409);
 
-  const lineItems = caseLineItems();
+  // Between the page quoting a number and this button being pressed, someone
+  // else can have booked and moved the rate. The browser sends what it
+  // displayed; a mismatch comes back as a 409 carrying the real figure, and
+  // the page updates the number and re-enables the button. Honest about what
+  // it costs, silent about why it changed.
+  const live = await readRates(env);
+  const quoted = Number(body?.quotedCents) || 0;
+  if (quoted && quoted !== live.caseCents) {
+    // The slot was held a few lines up. Give it back rather than parking it
+    // for 30 minutes on a checkout that is not going to happen.
+    await patchDoc(env, `availability/${slotId}`,
+      { state: 'open', holdExpiresAt: null, heldByUid: null },
+      { mask: ['state', 'holdExpiresAt', 'heldByUid'] }).catch(() => {});
+    return json({ error: 'rate-changed', caseCents: live.caseCents, addonCents: live.addonCents }, 409);
+  }
+  const lineItems = caseLineItems(live.caseCents);
 
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
@@ -868,7 +984,12 @@ async function createCaseFromSession(env, session) {
   const start = isRequest ? new Date(m.requestedStart) : slot ? new Date(slot.data.start) : null;
   const caseId = crypto.randomUUID();
 
-  await patchDoc(
+  // The rate as it stands at the moment this case is created. Read once and
+  // used twice: written onto the case as what this client bought at, and, one
+  // booking later, what the next client is quoted.
+  const rateAtBooking = await readRates(env);
+
+  const created = await patchDoc(
     env,
     `cases/${caseId}`,
     {
@@ -904,7 +1025,12 @@ async function createCaseFromSession(env, session) {
       // of THIS number, not of whatever the rate happens to be by then: a
       // client who paid $275 is not re-based onto a rate that moved after they
       // bought (Eric, "current client gets grandfathered in", 2026-08-20).
-      caseRateCents: CASE_PRICE_CENTS,
+      caseRateCents: rateAtBooking.caseCents,
+      // The follow-up price he was told at booking time. Eric: "The person who
+      // books gets the add-on at the price they were originally told." Without
+      // this, a client who booked at $265 would be quoted whatever the add-on
+      // had drifted to by the time their report landed.
+      addonRateCents: rateAtBooking.addonCents,
       stripe: {
         sessionId: session.id,
         paymentIntentId: session.payment_intent || null,
@@ -913,6 +1039,11 @@ async function createCaseFromSession(env, session) {
     },
     { mustNotExist: true }
   );
+
+  // mustNotExist returns falsy when the document already existed, which is how
+  // a replayed Stripe webhook shows up. Raising here and only here means a
+  // replay cannot bump the rate a second time.
+  if (created) await raiseRates(env).catch((err) => console.warn('rate raise:', err.message || err));
 
   if (isRequest && start) {
     const mt = new Intl.DateTimeFormat('en-US', {
@@ -1536,7 +1667,7 @@ async function handleFollowUpCheckout(request, env) {
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: c.data.clientEmail || undefined,
-    line_items: followUpLineItems(),
+    line_items: followUpLineItems(followUpCents(c.data)),
     success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&followup=1`,
     cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),
@@ -1548,6 +1679,16 @@ async function handleFollowUpCheckout(request, env) {
   return json({ ok: true, url: session.url });
 }
 
+/**
+ * What a follow-up costs THIS client: the price they were told when they
+ * booked, not the one new clients see now. A case from before the field
+ * existed falls back to the constant, which since it only moves upward errs in
+ * the client's favour.
+ */
+function followUpCents(c) {
+  return Number(c?.addonRateCents) > 0 ? Number(c.addonRateCents) : ADDON_PRICE_CENTS;
+}
+
 /** Paid. Set the flag the rest of the system already understands. */
 async function confirmFollowUpPurchase(env, session) {
   const caseId = session.metadata?.caseId;
@@ -1557,7 +1698,7 @@ async function confirmFollowUpPurchase(env, session) {
   const now = new Date();
   const payments = Array.isArray(c.data.extraPayments) ? c.data.extraPayments : [];
   payments.push({
-    kind: 'followup', amountCents: session.amount_total || ADDON_PRICE_CENTS,
+    kind: 'followup', amountCents: session.amount_total || followUpCents(c.data),
     sessionId: session.id, at: now,
   });
   await patchDoc(env, `cases/${caseId}`, {

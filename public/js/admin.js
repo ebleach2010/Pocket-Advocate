@@ -85,6 +85,42 @@ async function load() {
   const cents = cases.reduce((sum, c) =>
     sum + (c.stripe?.amountTotal || 0) +
     (Array.isArray(c.extraPayments) ? c.extraPayments.reduce((x, p) => x + (p.amountCents || 0), 0) : 0), 0);
+  // What a case costs right now. It rises by $10 on every completed booking,
+  // silently, so this is the only place the current number is stated.
+  let rate = null;
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/admin/rates', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    if (res.ok) rate = await res.json();
+  } catch { /* the shelf is still a shelf without it */ }
+  const dollars = (c) => (c % 100 ? (c / 100).toFixed(2) : String(c / 100));
+  const rateBlock = rate ? `
+    <details class="panel" style="margin-bottom:1rem;">
+      <summary class="row" style="cursor:pointer;">
+        <strong>Today's rate</strong>
+        <span class="price" style="color:var(--magenta);">${dollars(rate.caseCents)}</span>
+      </summary>
+      <p class="dim small" style="margin:.5rem 0 .6rem;">Follow-up
+        <strong style="color:var(--ink)">${dollars(rate.addonCents)}</strong>.
+        Both rise $10 on every booking, and ${rate.bookings} booking${rate.bookings === 1 ? ' has' : 's have'}
+        counted so far. Everyone already booked keeps what they were quoted.
+        Priority Chat does not move.</p>
+      <div class="row" style="gap:.5rem; flex-wrap:wrap;">
+        <label class="dim small">Case $
+          <input type="number" id="rate-case" min="50" step="1" value="${(rate.caseCents / 100)}"
+            style="width:6rem;"></label>
+        <label class="dim small">Follow-up $
+          <input type="number" id="rate-addon" min="50" step="1" value="${(rate.addonCents / 100)}"
+            style="width:6rem;"></label>
+        <button class="btn quiet" id="rate-save">Set</button>
+      </div>
+      <p class="dim small" id="rate-said" style="margin:.4rem 0 0;" hidden></p>
+    </details>` : '';
+
   const summary = `
     <div class="panel" style="margin-bottom:1rem;">
       <div class="row"><strong>Case revenue (paid via Stripe)</strong>
@@ -119,7 +155,7 @@ async function load() {
     ? `<h2 style="font-size:.78rem; letter-spacing:.16em; color:${color}; font-family:ui-monospace,monospace; margin:1.4rem 0 .6rem;">${title}</h2><div class="drawer">${rows.join('')}</div>`
     : '';
 
-  listEl.innerHTML = summary +
+  listEl.innerHTML = rateBlock + summary +
     section('CURRENT CLIENTS — REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
       `${c.reportDueAt ? `report due <strong style="color:var(--ink)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
        ${followUpFlag(c)}`))) +
@@ -128,6 +164,35 @@ async function load() {
        ${followUpFlag(c)}`))) +
     section('FORMER CLIENTS — CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
       `closed <strong style="color:var(--ink)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : '—'}</strong>`)));
+
+  const saveRate = listEl.querySelector('#rate-save');
+  if (saveRate) {
+    saveRate.addEventListener('click', async () => {
+      const said = listEl.querySelector('#rate-said');
+      saveRate.disabled = true;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/admin/rates', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            caseCents: Math.round(Number(listEl.querySelector('#rate-case').value) * 100),
+            addonCents: Math.round(Number(listEl.querySelector('#rate-addon').value) * 100),
+          }),
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || `Failed (${res.status})`);
+        said.textContent = d.changed
+          ? `Set. A case is ${dollars(d.caseCents)}, a follow-up ${dollars(d.addonCents)}.`
+          : 'Already those numbers.';
+        said.hidden = false;
+      } catch (err) {
+        said.textContent = err.message;
+        said.hidden = false;
+      }
+      saveRate.disabled = false;
+    });
+  }
 
   // Tap a folder and it opens in the hand before the case page loads; press
   // and hold the diagnosis line to write your own over the advisor's.
