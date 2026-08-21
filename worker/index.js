@@ -583,7 +583,7 @@ export default {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-21-tap';
+const BUILD_TAG = 'v2026-08-21-signin';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2815,7 +2815,21 @@ async function handlePinLogin(request, env) {
 
   await cache.delete(rlKey);
   const token = await mintCustomToken(env, adminUid);
-  return withAdminCookie(env, json({ token }), adminUid);
+  // Trust this device, exactly as the password door already did.
+  //
+  // (Eric, 2026-08-21: "Give me easier logins jfc.")
+  //
+  // This door handed back a session and nothing else, so the browser had
+  // nothing to come back with. The PIN is how he actually gets in, and it was
+  // the only way in that asked again on every single visit, while the password
+  // door - the one nobody uses - was trusted for six months.
+  //
+  // The email goes back with it because device-signin binds a token to the
+  // address it was issued for and the browser has no way to know his. It only
+  // ever reaches a caller that has already proved the PIN.
+  const email = (env.ADMIN_EMAIL || '').trim().toLowerCase();
+  const deviceToken = email ? await issueDeviceToken(env, adminUid, email) : '';
+  return withAdminCookie(env, json({ token, deviceToken, email }), adminUid);
 }
 
 // ---- POST /api/auth/request-code + /api/auth/verify-code ----

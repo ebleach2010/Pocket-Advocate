@@ -132,15 +132,19 @@ export async function requireAdmin() {
   if (!user) return null;
   if (!(await isAdmin(user))) {
     // Clear the open-to-admin hint BEFORE bouncing to '/', or a stale hint on
-    // a non-admin device would bounce '/' right back here, forever.
+    // a non-admin device would bounce '/' right back here, forever. The PIN
+    // pad goes with it: this is not his phone.
     localStorage.removeItem('pa-admin-device');
+    localStorage.removeItem('pa-admin-door');
     location.href = '/';
     return null;
   }
   await ensureAdminSession(user);
   // Weekly re-login, Eric's own rule: an admin session older than 7 days is
   // signed out everywhere on this device, trusted-device token included, so
-  // getting back in takes the password again.
+  // getting back in takes the PIN again. Once a week, on a number pad — the
+  // rest of the week the trusted device carries him straight in. `pa-admin-door`
+  // survives this on purpose, so the PIN pad is still there waiting for him.
   const WEEK_MS = 7 * 86_400_000;
   const since = Number(localStorage.getItem('pa-admin-since') || 0);
   if (!since) {
@@ -199,8 +203,12 @@ export async function hydrateNav() {
       e.preventDefault();
       // Untrust this device too, or the sign-in page would silently sign them
       // straight back in and "Sign out" would mean nothing on a shared phone.
+      // Signing out on purpose also takes the PIN pad away; the weekly clock
+      // in requireAdmin deliberately does not, because a weekly re-login is
+      // not the phone changing hands.
       localStorage.removeItem('pa-device-token');
       localStorage.removeItem('pa-admin-device');
+      localStorage.removeItem('pa-admin-door');
       try { await fetch('/api/admin/session', { method: 'DELETE' }); } catch { /* offline */ }
       await signOut(auth);
       location.href = '/';

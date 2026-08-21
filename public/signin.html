@@ -28,7 +28,7 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat57">
+<link rel="stylesheet" href="/css/site.css?v=stat58">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
@@ -48,7 +48,34 @@
   <div class="card" id="resuming" hidden>
     <p class="muted" style="margin:0;">Signing you in…</p>
   </div>
-  <p class="muted">Enter your email and I'll send you a 6-digit sign-in code. No password to remember.</p>
+  <p class="muted" id="email-intro">Enter your email and I'll send you a 6-digit sign-in code. No password to remember.</p>
+
+  <!--
+    Eric's own door, and only ever on Eric's own phone.
+
+    It appears when this device has signed in with the PIN before. Everywhere
+    else the page looks exactly as it always has, so it still gives nothing away
+    about what a number typed into the email box does.
+
+    It exists for one reason: his PIN is digits and the email box raises a
+    letter keyboard, so entering it meant changing keyboards on a phone every
+    single time. This is a password field with a number pad. Someone holding
+    his unlocked phone learns that a PIN box exists and still has no PIN.
+  -->
+  <div class="card" id="pin-form" hidden>
+    <h3 style="margin-top:0;">Welcome back</h3>
+    <label for="pin">Your PIN</label>
+    <input type="password" id="pin" inputmode="numeric" autocomplete="current-password"
+      maxlength="12" placeholder="••••••"
+      style="letter-spacing:6px; font-size:1.4rem; text-align:center;">
+    <p class="error" id="pin-error" hidden></p>
+    <p style="margin-top:1rem;">
+      <button class="btn glow" id="pin-go">Sign in</button>
+    </p>
+    <p class="muted small" style="margin-top:.6rem;">
+      <a href="#" id="pin-other">Use an email address instead</a>
+    </p>
+  </div>
 
   <div class="card" id="email-form">
     <label for="email">Email address</label>
@@ -62,6 +89,21 @@
       <button class="btn glow" id="send">Continue</button>
     </p>
   </div>
+
+  <script>
+  // Pick the door before paint. The module at the bottom owns this properly,
+  // but a module is deferred, and on a slow phone that meant the email box
+  // appeared and then vanished out from under his thumb. If this script never
+  // runs, the email box is already what the markup shows, which is the right
+  // thing to fall back to.
+  try {
+    if (localStorage.getItem('pa-admin-door') === '1') {
+      document.getElementById('pin-form').hidden = false;
+      document.getElementById('email-intro').hidden = true;
+      document.getElementById('email-form').hidden = true;
+    }
+  } catch (e) { /* storage blocked: the email box is already correct */ }
+  </script>
 
   <div class="card" id="code-form" hidden>
     <h3>Enter your code</h3>
@@ -105,13 +147,29 @@
   // attestation the app ticks for you is not an attestation.
   if (known) emailInput.value = known;
 
+  // Which card a person sees when nothing signed them in on its own: Eric's
+  // PIN pad if this device has used it before, the email box for everybody
+  // else. `pa-admin-door` deliberately outlives the weekly sign-out below, or
+  // the one morning a week he has to type the PIN would also be the morning
+  // the number pad vanished.
+  const DOOR_KEY = 'pa-admin-door';
+  function showFirstCard() {
+    const wantsPin = localStorage.getItem(DOOR_KEY) === '1';
+    document.getElementById('pin-form').hidden = !wantsPin;
+    document.getElementById('email-form').hidden = wantsPin;
+    document.getElementById('email-intro').hidden = wantsPin;
+    if (wantsPin && window.innerHeight >= 700) document.getElementById('pin').focus();
+  }
+  showFirstCard();
+
   // A device that has already proven a code signs in on the email alone.
   const DEVICE_KEY = 'pa-device-token';
   const deviceToken = localStorage.getItem(DEVICE_KEY) || '';
   if (known && deviceToken) {
-    const emailForm = document.getElementById('email-form');
     const resuming = document.getElementById('resuming');
-    emailForm.hidden = true;
+    document.getElementById('email-form').hidden = true;
+    document.getElementById('email-intro').hidden = true;
+    document.getElementById('pin-form').hidden = true;
     resuming.hidden = false;
     try {
       const res = await fetch('/api/auth/device-signin', {
@@ -123,12 +181,68 @@
       await signInWithCustomToken(auth, token);
       location.href = returnTo;
     } catch {
-      // Expired or revoked — fall back to the code, quietly.
+      // Expired or revoked — fall back to whichever door this device uses.
       localStorage.removeItem(DEVICE_KEY);
       resuming.hidden = true;
-      emailForm.hidden = false;
+      showFirstCard();
     }
   }
+
+  /**
+   * The admin door. Shared by the PIN card and by a numeric entry typed into
+   * the email box, so both remember this device the same way.
+   *
+   * Resolves true once it has navigated, false to let the caller say its own
+   * piece — the email box has to keep claiming a number is a bad email.
+   */
+  async function pinLogin(pin) {
+    try {
+      const res = await fetch('/api/admin/pin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      });
+      if (!res.ok) return false;
+      const out = await res.json();
+      // Remember the device, the same as every other way in does. Without
+      // these three lines the PIN asked again on every single visit.
+      if (out.deviceToken) localStorage.setItem(DEVICE_KEY, out.deviceToken);
+      if (out.email) rememberEmail(out.email);
+      localStorage.setItem(DOOR_KEY, '1');
+      // Starts the weekly re-login clock (enforced in auth.js).
+      localStorage.setItem('pa-admin-since', String(Date.now()));
+      await signInWithCustomToken(auth, out.token);
+      location.href = '/admin.html';
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  const pinErr = document.getElementById('pin-error');
+  const pinGo = document.getElementById('pin-go');
+  pinGo.addEventListener('click', async () => {
+    const pin = document.getElementById('pin').value.trim();
+    pinErr.hidden = true;
+    if (!pin) return;
+    pinGo.disabled = true;
+    if (!(await pinLogin(pin))) {
+      pinErr.textContent = 'That PIN did not work. Try again.';
+      pinErr.hidden = false;
+      document.getElementById('pin').select();
+    }
+    pinGo.disabled = false;
+  });
+  document.getElementById('pin').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); pinGo.click(); }
+  });
+  // A way out, in case the phone changes hands or he wants the client side.
+  document.getElementById('pin-other').addEventListener('click', (e) => {
+    e.preventDefault();
+    localStorage.removeItem(DOOR_KEY);
+    showFirstCard();
+    document.getElementById('email').focus();
+  });
 
   // Complete any legacy magic-link that's still floating around in an inbox.
   if (isSignInWithEmailLink(auth, location.href)) {
@@ -147,20 +261,7 @@
     // on any failure it falls through to the same generic email error, so the
     // page never reveals that a number does anything.
     if (/^\d{4,12}$/.test(email)) {
-      try {
-        const res = await fetch('/api/admin/pin', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ pin: email }),
-        });
-        if (res.ok) {
-          const { token } = await res.json();
-          localStorage.setItem('pa-admin-since', String(Date.now()));
-          await signInWithCustomToken(auth, token);
-          location.href = '/admin.html';
-          return;
-        }
-      } catch { /* fall through */ }
+      if (await pinLogin(email)) return;
       errEl.textContent = 'Enter a valid email address.';
       errEl.hidden = false;
       return;
