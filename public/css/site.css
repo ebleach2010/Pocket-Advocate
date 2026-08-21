@@ -1462,7 +1462,11 @@ body.lightbox-open { overflow: hidden; }
      demo strip when there is one, so the strip's height has to be in the sum
      as well: measuring only the bar's own height docked the tabs 62px behind
      it at 320. Both numbers are published by the code that owns them. */
-  position: sticky; top: calc(var(--demo-bar-h, 0px) + var(--bar-h, 3rem)); z-index: 4;
+  /* Eric, 2026-08-21: "Tabs should not travel. They should stay at the top."
+     Sticky meant they rode down the page, clipped against the bar, and left
+     a band of chrome over the content. They sit at the top of the folder and
+     scroll away with it. */
+  position: static; z-index: 4;
   display: flex; align-items: flex-end; gap: .22rem;
   min-height: calc(44px + .75rem);
   margin: 0 -.4rem .7rem; padding: .4rem .5rem 0;
@@ -1752,14 +1756,14 @@ body.has-demo-bar .bar { top: var(--demo-bar-h, 2.4rem); }
    read as a metaphor. Add `plain` to the container (`el.classList.add('plain')`
    any time after mountPages) and the chrome drops away, leaving the app's own
    pill tabs. Nothing in folder.js changes. */
-.case-folder.plain { padding: 0; border: none; border-radius: 0; box-shadow: none; }
-.case-folder.plain::after { content: none; }
-.case-folder.plain .folder-tabs {
+.case-folder { padding: 0; border: none; border-radius: 0; box-shadow: none; }
+.case-folder::after { content: none; }
+.case-folder .folder-tabs {
   align-items: center; gap: .4rem; min-height: 0;
   margin: 0 0 1rem; padding: .5rem .1rem .55rem;
   border-bottom: none;
 }
-.case-folder.plain .folder-tabs > a {
+.case-folder .folder-tabs > a {
   /* Tight enough that the client's three pills all fit at 390px. They scroll
      if they ever do not, but a tab half off the edge reads as a broken page
      rather than as more to scroll to. */
@@ -1768,13 +1772,13 @@ body.has-demo-bar .bar { top: var(--demo-bar-h, 2.4rem); }
   color: var(--dim); background: none; filter: none;
   border: 1px solid var(--line); border-radius: 999px; clip-path: none;
 }
-.case-folder.plain .folder-tabs > a.on {
+.case-folder .folder-tabs > a.on {
   color: var(--cyan); background: none;
   border-color: var(--cyan); box-shadow: var(--glow-c);
 }
-.case-folder.plain .folder-tabs > a.on::after { content: none; }
-.case-folder.plain .folder-tabs > a .ftab-ic,
-.case-folder.plain .folder-tabs > a .ftab-t { opacity: 1; }
+.case-folder .folder-tabs > a.on::after { content: none; }
+.case-folder .folder-tabs > a .ftab-ic,
+.case-folder .folder-tabs > a .ftab-t { opacity: 1; }
 
 /* ------------------------------------------------------------- flip a page */
 .fpage[hidden] { display: none !important; }
