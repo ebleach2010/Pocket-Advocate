@@ -36,6 +36,12 @@ export const VERSION = '2.3';
  * admin alike), but no update card and no tour ever open for it. A loud
  * release omits `quiet` and may carry a `tour`; only Eric calls for one of
  * those.
+ *
+ * His two commands (verbatim, 2026-08-21): "push as full update" = a loud
+ * entry, existing clients get the update card with bullet points. "push as
+ * silent update" = a quiet entry, footer only, and anything NEW clients
+ * need to know goes into the onboarding tutorial instead, replacing old
+ * copy there if necessary. An unspecified push is silent.
  */
 export const CHANGELOG = [
   {
