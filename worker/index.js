@@ -668,7 +668,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-learn';
+const BUILD_TAG = 'v2026-08-22-names';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1422,7 +1422,7 @@ async function createCaseFromSession(env, session) {
     for (const a of await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5)) {
       await notifyUser(env, a.id, {
         title: 'Booking request',
-        body: `${m.name || 'A client'} requested ${mt} MST.`,
+        body: `${firstName(m.name) || 'A client'} requested ${mt} MST.`,
         link: `/admin-case.html?id=${caseId}`,
       });
     }
@@ -1496,6 +1496,18 @@ async function requireAdultProfile(env, uid) {
 // Body: { kind: 'case'|'sub', id }. Called fire-and-forget after a chat send;
 // pushes a content-free nudge to the *other* side of the thread. Titles and
 // bodies never include message text — same privacy policy as the email digest.
+/**
+ * First name only, for notification bodies. Eric, 2026-08-22: "Whenever I
+ * get a notification, please specify the first name of whoever did it."
+ * Never the surname (a lock screen is a public place), never empty.
+ */
+function firstName(v) {
+  const first = String(v || '').trim().split(/\s+/)[0] || '';
+  // An email address is not a name; use the part before the @ instead of
+  // printing a whole address on a lock screen.
+  return first.includes('@') ? first.split('@')[0] : first;
+}
+
 async function handleNotify(request, env, ctx) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in required' }, 401);
@@ -1510,16 +1522,19 @@ async function handleNotify(request, env, ctx) {
   let clientUid; // the non-admin side of the thread
   let adminLink;
   let clientLink;
+  let threadClientName = '';
   if (kind === 'case') {
     const doc = await getDoc(env, `cases/${id}`);
     if (!doc) return json({ error: 'Not found' }, 404);
     clientUid = doc.data.clientUid;
+    threadClientName = doc.data.clientName || '';
     adminLink = `/admin-case.html?id=${id}`;
     clientLink = `/case.html?id=${id}`;
   } else {
     const sub = await getDoc(env, `subscriptions/${id}`);
     if (!sub) return json({ error: 'Not found' }, 404);
     clientUid = id;
+    threadClientName = sub.data.name || sub.data.clientName || '';
     adminLink = `/admin-chats.html?sub=${id}`;
     clientLink = '/subscription.html';
   }
@@ -1544,11 +1559,17 @@ async function handleNotify(request, env, ctx) {
         await patchDoc(env, `caseMeta/${id}`, { clientMsgAt: now },
           { mask: ['clientMsgAt'] }).catch(() => {});
     })());
+    // Named, not "a client": with several open threads the name IS the
+    // information. The sender is the caller, so their own profile name wins,
+    // then whatever the thread knows them as.
+    const senderName = firstName(profile?.data.name)
+      || firstName(threadClientName)
+      || 'A client';
     const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5);
     for (const a of admins) {
       await notifyUser(env, a.id, {
         title: 'Pocket Advocate',
-        body: 'New message from a client.',
+        body: `${senderName} sent you a message.`,
         link: adminLink,
       });
     }
@@ -1558,7 +1579,7 @@ async function handleNotify(request, env, ctx) {
     refreshAdvisor(env, ctx, kind, id);
     await notifyUser(env, clientUid, {
       title: 'Pocket Advocate',
-      body: 'You have a new message from me.',
+      body: `${firstName(profile?.data.name) || 'Your advocate'} sent you a message.`,
       link: clientLink,
     });
   } else {
@@ -1686,7 +1707,11 @@ async function chatContext(env, user, kind, id, msgId) {
   // to touch a stranger's thread.
   if (!isAdmin && user.uid !== clientUid) return { error: 'Not your thread', code: 403 };
 
-  return { clientUid, link, isAdmin, path: `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/chat/${msgId}` };
+  return {
+    clientUid, link, isAdmin,
+    callerName: firstName(profile?.data.name) || '',
+    path: `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/chat/${msgId}`,
+  };
 }
 
 /**
@@ -1789,7 +1814,7 @@ async function handleChatReact(request, env) {
     // a second wording drifting alongside the first is how that stops being
     // true without anyone noticing.
     const push = isEmoji
-      ? `${ctx.isAdmin ? 'Eric' : 'Your client'} reacted ${EMOJI_REACTIONS[reaction]} to your message.`
+      ? `${ctx.callerName || (ctx.isAdmin ? 'Eric' : 'Your client')} reacted ${EMOJI_REACTIONS[reaction]} to your message.`
       : CHAT_REACTIONS[reaction].label;
     await notifyUser(env, target, { title: 'Pocket Advocate', body: push, link: ctx.link });
   }
@@ -1832,8 +1857,8 @@ async function handleUploaded(request, env) {
     const names = Array.isArray(body?.names)
       ? body.names.filter((n) => typeof n === 'string').map((n) => n.slice(0, 80)).slice(0, 10)
       : [];
-    const who = (kind === 'case' ? doc.data.clientName : doc.data.name)
-      || doc.data.clientEmail || doc.data.email || 'A client';
+    const who = firstName((kind === 'case' ? doc.data.clientName : doc.data.name)
+      || doc.data.clientEmail || doc.data.email) || 'A client';
     const what = names.length === 1
       ? names[0]
       : names.length > 1
@@ -2144,7 +2169,7 @@ async function handleChatPass(request, env) {
         : ctx.link;
       await notifyUser(env, author, {
         title: 'Pocket Advocate',
-        body: `${ctx.isAdmin ? 'Eric' : 'Your client'} passed on your question. Moving on.`,
+        body: `${ctx.callerName || (ctx.isAdmin ? 'Eric' : 'Your client')} passed on your question. Moving on.`,
         link,
       });
     }
@@ -2485,7 +2510,7 @@ async function confirmFollowUpPurchase(env, session) {
     for (const a of admins) {
       await notifyUser(env, a.id, {
         title: 'Pocket Advocate',
-        body: `${c.data.clientName || 'A client'} paid for a follow-up their case already has. Refund it from Stripe.`,
+        body: `${firstName(c.data.clientName) || 'A client'} paid for a follow-up their case already has. Refund it from Stripe.`,
         link: `/admin-case.html?id=${caseId}`,
       }).catch(() => {});
     }
@@ -2518,7 +2543,7 @@ async function confirmFollowUpPurchase(env, session) {
   for (const a of admins) {
     await notifyUser(env, a.id, {
       title: 'Pocket Advocate',
-      body: `${c.data.clientName || 'A client'} bought a follow-up session.`,
+      body: `${firstName(c.data.clientName) || 'A client'} bought a follow-up session.`,
       link: `/admin-case.html?id=${caseId}`,
     }).catch(() => {});
   }
@@ -2601,7 +2626,7 @@ async function confirmTip(env, session) {
   for (const a of admins) {
     await notifyUser(env, a.id, {
       title: 'Pocket Advocate',
-      body: `${c.data.clientName || 'A client'} left a $${((session.amount_total || 0) / 100).toFixed(2)} tip.`,
+      body: `${firstName(c.data.clientName) || 'A client'} left a $${((session.amount_total || 0) / 100).toFixed(2)} tip.`,
       link: `/admin-case.html?id=${caseId}`,
     }).catch(() => {});
   }
