@@ -28,23 +28,21 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat71">
+<link rel="stylesheet" href="/css/site.css?v=stat72">
 <script>
-// The admin's device opens straight to the dashboard — he never books a case.
-// Inline in <head> so there's no flash of the booking page first. The hint is
-// set on admin sign-in, cleared on sign-out or a failed admin check, and the
-// "Open to my dashboard" switch in Settings turns the behavior off for testing
-// the client view.
+// A returning account holder skips the booking page. Inline in <head> so there
+// is no flash of it first; the marker is set at sign-in and cleared at
+// sign-out, and the switch in Settings turns this off.
 (function () {
   try {
-    // Never while the test suite is running. His own phone carries the admin
-    // hint, so asking for the CLIENT side of the demo landed him on the
-    // advocate dashboard instead — the one place he was not trying to go.
+    // Never while the demo is running.
     var q = new URLSearchParams(location.search).get('demo');
     if (q !== '0' && (q || sessionStorage.getItem('pa-demo'))) return;
     if (localStorage.getItem('pa-admin-device') === '1' &&
         localStorage.getItem('pa-open-admin') !== '0') {
-      location.replace('/admin.html');
+      // Via sign-in, which resumes a trusted device without a keystroke and
+      // forwards. Going direct would 404 on a device whose cookie aged out.
+      location.replace('/signin.html?to=%2Fadmin.html');
     }
   } catch (e) { /* storage blocked — land normally */ }
 })();

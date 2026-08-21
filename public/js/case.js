@@ -266,11 +266,20 @@ function renderProgress(el, c) {
   });
   const requested = !!c.appointment?.requested;
   const method = c.appointment?.method;
+  // The two things a person actually does from this card - get it on their
+  // calendar, get into the call - used to be a tiny "+ calendar" tacked onto
+  // the date line and a "join link" buried mid-sentence in dim small print.
+  // (Eric, 2026-08-21: "make the hyperlink section text larger... line it
+  // up.") They are two matching buttons on one row now; what stays a sentence
+  // is only what is not tappable.
   const methodLine = method === 'phone'
-    ? `Phone. I call you at <strong>${esc(c.appointment.phone || 'your number')}</strong>`
+    ? `Phone. I call you at <strong>${esc(c.appointment.phone || 'your number')}</strong>.`
     : c.appointment?.joinLink
-      ? `Video call: <a href="${esc(c.appointment.joinLink)}" rel="noopener">join link</a>`
-      : 'Video call. Your join link appears here before the call';
+      ? ''
+      : 'Video call. Your join link appears here before the call.';
+  const joinBtn = method !== 'phone' && c.appointment?.joinLink
+    ? `<a class="btn ghost" style="text-align:center;" href="${esc(c.appointment.joinLink)}" rel="noopener">🎥 Join the video call</a>`
+    : '';
   const requestedNote = requested
     ? `<p class="small" style="margin:.4rem 0 0; color:var(--orange);">
          <strong>Awaiting confirmation.</strong> You asked for this time and it wasn't on my
@@ -286,9 +295,13 @@ function renderProgress(el, c) {
     <div class="panel">
       ${start ? `
         <p style="margin:0 0 .3rem;"><strong>${mtFmt.format(start)} MST</strong><br>
-        <span class="dim small">${localFmt.format(start)} your time</span>
-        <a href="#" class="small" data-ics>+ calendar</a></p>` : ''}
-      <p class="dim small">${methodLine}</p>
+        <span class="dim small">${localFmt.format(start)} your time</span></p>` : ''}
+      ${methodLine ? `<p class="dim" style="margin:.2rem 0 0;">${methodLine}</p>` : ''}
+      ${start || joinBtn ? `
+        <p class="actions" style="margin:.7rem 0 .2rem; flex-direction:column; align-items:stretch; gap:.5rem; max-width:22rem;">
+          ${joinBtn}
+          ${start ? '<a href="#" class="btn ghost" style="text-align:center;" data-ics>📅 Add to calendar</a>' : ''}
+        </p>` : ''}
       ${requestedNote}
       <ul class="timeline">
         ${STEPS.map(([, label], i) => `

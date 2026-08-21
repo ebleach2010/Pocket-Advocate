@@ -5,6 +5,16 @@
 import { enablePush, pushInstalled, pushSupported } from './push.js';
 
 const DONE_KEY = 'pa-intro-done';
+
+// Read at module load, BEFORE the changelog module can stamp the current
+// version on this same page load. showVersionCard marks the version seen even
+// on a first-ever visit (deliberately - it starts the update clock), and
+// reading the marker later raced that stamp: a genuinely new client could be
+// mistaken for a returning one and never welcomed at all.
+// (Post-2.2 audit, 2026-08-21.)
+const KNOWN_AT_LOAD = (() => {
+  try { return !!localStorage.getItem('pa-seen-version'); } catch { return false; }
+})();
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 const notifOn = () => 'Notification' in window && Notification.permission === 'granted';
 
@@ -33,10 +43,10 @@ export function initSetupGuide(user, mount, { welcome = true } = {}) {
   // it is a modal, the update card is a modal, and two of those stacked on the
   // morning of a release is worse than either. The quiet reminder still runs if
   // notifications are not set up.
-  let known = false;
-  try { known = !!localStorage.getItem('pa-seen-version'); } catch { /* blocked */ }
+  let done = false;
+  try { done = !!localStorage.getItem(DONE_KEY); } catch { /* blocked */ }
 
-  if (known || localStorage.getItem(DONE_KEY)) {
+  if (KNOWN_AT_LOAD || done) {
     if (!fullySet) reminder(user, mount);
     return;
   }
@@ -44,7 +54,10 @@ export function initSetupGuide(user, mount, { welcome = true } = {}) {
 }
 
 function finish() {
-  localStorage.setItem(DONE_KEY, '1');
+  // The remove() must run even when storage is blocked or full: every dismiss
+  // path routes through here, and a throw would leave the modal welded over
+  // the page with no way past it.
+  try { localStorage.setItem(DONE_KEY, '1'); } catch { /* blocked */ }
   document.getElementById('pa-intro')?.remove();
 }
 

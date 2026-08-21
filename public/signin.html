@@ -28,7 +28,7 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat71">
+<link rel="stylesheet" href="/css/site.css?v=stat72">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
@@ -50,18 +50,8 @@
   </div>
   <p class="muted" id="email-intro">Enter your email and I'll send you a 6-digit sign-in code. No password to remember.</p>
 
-  <!--
-    Eric's own door, and only ever on Eric's own phone.
-
-    It appears when this device has signed in with the PIN before. Everywhere
-    else the page looks exactly as it always has, so it still gives nothing away
-    about what a number typed into the email box does.
-
-    It exists for one reason: his PIN is digits and the email box raises a
-    letter keyboard, so entering it meant changing keyboards on a phone every
-    single time. This is a password field with a number pad. Someone holding
-    his unlocked phone learns that a PIN box exists and still has no PIN.
-  -->
+  <!-- Shown only on a device that has used this door before; everyone else
+       sees exactly the page below. -->
   <div class="card" id="pin-form" hidden>
     <h3 style="margin-top:0;">Welcome back</h3>
     <label for="pin">Your PIN</label>
@@ -90,13 +80,7 @@
     </p>
   </div>
 
-  <div id="demo-hint" hidden style="margin-top:1rem;">
-    <p class="muted small" style="margin:0 0 .4rem;">Test suite — no email needed:</p>
-    <p style="display:flex; gap:.5rem; flex-wrap:wrap; margin:0;">
-      <button type="button" class="btn glow" onclick="location.href='/case.html?demo=1&tour=1'">Client suite</button>
-      <button type="button" class="btn quiet" onclick="location.href='/admin.html?demo=admin&tour=1'">Admin suite</button>
-    </p>
-  </div>
+
 
   <script>
   // Pick the door before paint. The module at the bottom owns this properly,
@@ -112,56 +96,11 @@
     }
   } catch (e) { /* storage blocked: the email box is already correct */ }
 
-  // The test suite's own front door.
-  //
-  // (Eric, 2026-08-21: "Login 1234 for client 2345 for admin.")
-  //
-  // Two questions, in order. First, is this a place a test suite can exist at
-  // all? That test mirrors DEMO_HOST in worker/index.js exactly: a versioned
-  // preview build, or a dev server. Never thepocketadvocates.com. The Worker is
-  // the real gate — it refuses to serve a single demo file anywhere else — so
-  // on the live site none of the below is wired, the hint never appears, and
-  // 1234 is nothing but a wrong PIN, told so in the usual words.
-  //
-  // Second, it is wired HERE rather than in the module at the bottom, because
-  // this is pure navigation and it has no business needing Firebase to load
-  // first. The test suite has to open even on the day the real app cannot.
-  //
-  // Capture phase on the document, so it runs ahead of the sign-in handlers
-  // and a code never reaches the PIN endpoint.
+  // Extras that exist only where a demo can: a versioned preview build or a
+  // dev server. On the live site this import answers 404 and nothing loads.
   if (/^(?:[0-9a-f]{6,}-[\w-]+\.[\w-]+\.workers\.dev|localhost|127\.0\.0\.1|\[::1\])$/i
       .test(location.hostname)) {
-    document.documentElement.dataset.demoHost = '1';
-    document.getElementById('demo-hint').hidden = false;
-
-    // 1234 lands IN the case, not on the sales page. He asked for the client
-    // who is already in as a case, and that is a person whose app opens on
-    // their own case file, update card included. The booking side is one tap
-    // away on the brand for anyone who wants it.
-    var DEMO_CODES = { 1234: '/case.html?demo=1&tour=1', 2345: '/admin.html?demo=admin&tour=1' };
-    var codeTyped = function () {
-      var ids = ['email', 'pin'];
-      for (var i = 0; i < ids.length; i++) {
-        var el = document.getElementById(ids[i]);
-        var to = el && DEMO_CODES[(el.value || '').trim()];
-        if (to) return to;
-      }
-      return '';
-    };
-    var jump = function (e) {
-      var to = codeTyped();
-      if (!to) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      location.href = to;
-    };
-    document.addEventListener('click', function (e) {
-      if (e.target && e.target.closest && e.target.closest('#send, #pin-go')) jump(e);
-    }, true);
-    document.addEventListener('keydown', function (e) {
-      if (e.key !== 'Enter') return;
-      if (e.target && e.target.closest && e.target.closest('#email, #pin')) jump(e);
-    }, true);
+    import('/js/demo/suite.js').then(function (m) { m.mount('signin'); }).catch(function () {});
   }
   </script>
 
@@ -317,9 +256,8 @@
     const email = document.getElementById('email').value.trim();
     errEl.hidden = true;
 
-    // A purely-numeric entry is treated as an admin PIN. Verified server-side;
-    // on any failure it falls through to the same generic email error, so the
-    // page never reveals that a number does anything.
+    // Verified server-side; on any failure this falls through to the same
+    // generic email error.
     if (/^\d{4,12}$/.test(email)) {
       if (await pinLogin(email)) return;
       errEl.textContent = 'Enter a valid email address.';

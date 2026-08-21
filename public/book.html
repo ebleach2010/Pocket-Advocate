@@ -28,7 +28,7 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat71">
+<link rel="stylesheet" href="/css/site.css?v=stat72">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
@@ -49,22 +49,12 @@
   <p class="error" id="page-error" hidden></p>
   <div id="step"></div>
 
-  <!-- The test suite's buttons. A classic script gated on the same host
-       allowlist as DEMO_HOST in worker/index.js: preview builds and dev
-       servers only, never thepocketadvocates.com — a client never sees this.
-       Static and Firebase-free on purpose, so the suite opens even on a day
-       the app cannot. -->
-  <div id="suite-buttons" hidden style="margin-top:1rem;">
-    <p class="muted small" style="margin:0 0 .4rem;">Test suite — no email needed:</p>
-    <p style="display:flex; gap:.5rem; flex-wrap:wrap; margin:0;">
-      <button type="button" class="btn glow" onclick="location.href='/case.html?demo=1&tour=1'">Client suite</button>
-      <button type="button" class="btn quiet" onclick="location.href='/admin.html?demo=admin&tour=1'">Admin suite</button>
-    </p>
-  </div>
   <script>
+  // Extras that exist only where a demo can: a versioned preview build or a
+  // dev server. On the live site this import answers 404 and nothing loads.
   if (/^(?:[0-9a-f]{6,}-[\w-]+\.[\w-]+\.workers\.dev|localhost|127\.0\.0\.1|\[::1\])$/i
       .test(location.hostname)) {
-    document.getElementById('suite-buttons').hidden = false;
+    import('/js/demo/suite.js').then(function (m) { m.mount('book'); }).catch(function () {});
   }
   </script>
 

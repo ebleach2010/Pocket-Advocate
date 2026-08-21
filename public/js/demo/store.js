@@ -72,7 +72,6 @@ const KEY = 'pa-demo-store';
 const NOT_FOR_CLIENTS = [/\/advisor\//, /^advisorStyle\//, /^advisorKnowledge\//,
   /^caseMeta\//, /^advisorQueue\//, /\/private\//];
 let clientSide = false;
-const withheld = (path) => clientSide && NOT_FOR_CLIENTS.some((re) => re.test(path));
 
 // ---------------------------------------------------------------- the store
 
@@ -82,15 +81,30 @@ let docs = new Map();
 let files = new Map();
 const listeners = new Set();
 
+// The advocate-only half lives under its OWN key, which a client-side tab
+// never writes and never reads. One shared key filtered at write time was a
+// trap: the client link's first persist() rewrote the shared blob WITHOUT the
+// advisor docs, so opening the client suite first (or just having both tabs
+// open) gutted the admin demo - advisor panel, glossary, notes, all blank.
+// (Post-2.2 audit, 2026-08-21.) Split, the client tab can only ever touch the
+// client-safe half, and what it cannot see it cannot destroy.
+const KEY_ADMIN = KEY + '-advocate';
+const ADMIN_ONLY = (path) => NOT_FOR_CLIENTS.some((re) => re.test(path));
+
 function persist() {
   try {
     localStorage.setItem(KEY, JSON.stringify({
-      docs: [...docs.entries()].filter(([path]) => !withheld(path)),
+      docs: [...docs.entries()].filter(([path]) => !ADMIN_ONLY(path)),
       // Object URLs do not survive a reload, so only the metadata is kept and
       // a reloaded page shows the file without a preview. Honest, and better
       // than a broken image.
       files: [...files.entries()].map(([k, v]) => [k, { ...v, url: v.persisted ? v.url : '' }]),
     }));
+    if (!clientSide) {
+      localStorage.setItem(KEY_ADMIN, JSON.stringify({
+        docs: [...docs.entries()].filter(([path]) => ADMIN_ONLY(path)),
+      }));
+    }
   } catch { /* quota or private mode: the demo still works for this tab */ }
 }
 
@@ -100,6 +114,10 @@ function load() {
     if (!raw?.docs) return false;
     docs = new Map(raw.docs);
     files = new Map(raw.files || []);
+    if (!clientSide) {
+      const adm = JSON.parse(localStorage.getItem(KEY_ADMIN) || 'null');
+      for (const [k, v] of adm?.docs || []) docs.set(k, v);
+    }
     return true;
   } catch { return false; }
 }
@@ -142,6 +160,14 @@ export function reset() {
   files = new Map();
   seed({ set: (p, v) => docs.set(p, v), file: (p, v) => files.set(p, v) });
   persist();
+  // Seeding is fixture data, not anything a client produced, so the advocate
+  // half is written here even from a client tab - otherwise entering through
+  // the client suite first left the admin suite empty.
+  try {
+    localStorage.setItem(KEY_ADMIN, JSON.stringify({
+      docs: [...docs.entries()].filter(([path]) => ADMIN_ONLY(path)),
+    }));
+  } catch { /* quota or private mode */ }
   fire('');
 }
 
@@ -467,7 +493,7 @@ export function mountDemo(role) {
   // Another tab wrote: repaint. This is what makes the two links one system
   // rather than two demos.
   window.addEventListener('storage', (e) => {
-    if (e.key !== KEY) return;
+    if (e.key !== KEY && e.key !== KEY_ADMIN) return;
     if (load()) for (const l of listeners) { try { l(''); } catch { /* ignore */ } }
   });
 

@@ -482,6 +482,18 @@ export default {
     // rather than the spelling in the request line.
     const assetPath = canonicalPath(url.pathname);
 
+    // The suite's front door is the one demo file served by HOST alone: the
+    // pages import it to OFFER the demo, before any demo cookie exists. On the
+    // live site it gets the same 404 as a missing path, and with it every
+    // admin-naming string it carries stays out of the live site's bytes.
+    if (assetPath === '/js/demo/suite.js') {
+      if (!DEMO_HOST.test(url.hostname)) return notFound(env, request, url);
+      const res = await env.ASSETS.fetch(request);
+      const out = new Response(res.body, res);
+      out.headers.set('cache-control', 'no-store');
+      return out;
+    }
+
     // The demo's own files carry advisor fixtures, so they are gated exactly
     // like the admin ones: a browser that never asked for the demo gets the
     // same 404 it would get for a path that is not there. On the production
@@ -522,15 +534,18 @@ export default {
     // The admin half of the site. A stranger gets a real miss from the asset
     // server, byte for byte, so this does not confirm what is here.
     if (ADMIN_ASSET.test(assetPath)) {
-      // A page gets sent to sign in; a module or stylesheet just is not there.
       const isPage = /^\/admin[\w-]*(\.html)?\/?$/.test(assetPath);
       const uid = await adminCookieUid(request, env).catch(() => null);
       if (!uid) {
-        if (isPage) {
-          const to = new URL('/signin.html', url);
-          to.searchParams.set('to', url.pathname);
-          return Response.redirect(to.toString(), 302);
-        }
+        // Pages too, not only modules. The old branch bounced a signed-out
+        // request for an admin PAGE to /signin.html?to=<the admin path> while
+        // every other missing path got the 404 - one curl told a stranger the
+        // admin area exists and where its door is, which is exactly the
+        // oracle the byte-identical 404 exists to close. Eric never needed
+        // the bounce: every path of his goes through the sign-in page - the
+        // landing redirect points there, the weekly sign-out lands there, and
+        // signing in mints the cookie this gate wants. (Post-2.2 audit,
+        // 2026-08-21.)
         return notFound(env, request, url);
       }
       // _headers puts `public, max-age=3600` on /css/*, which would let a
@@ -603,8 +618,21 @@ export default {
  */
 async function grandfatherFollowUps(env) {
   const MARKER = 'migrations/followUpGrandfather';
-  if (await getDoc(env, MARKER)) return;
-  const claimed = await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  // Done means FINISHED, not merely started. Gating on the marker's existence
+  // meant one thrown write mid-loop - a Firestore blip, nothing more - froze
+  // the migration half-done forever: the marker existed, so every later fire
+  // returned at the door, and whoever was after the failure never got the
+  // follow-up they had paid for. A claim older than ten minutes with no
+  // finishedAt is a corpse, and the next fire takes over from it; the
+  // per-case grant is idempotent (addOnFollowUp already set = skipped), so a
+  // takeover re-covers the survivors and finishes the rest.
+  // (Post-2.2 audit, 2026-08-21.)
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
   if (!claimed) return;   // another fire got there first
 
   const cases = await listDocs(env, 'cases', { all: true });
@@ -619,8 +647,10 @@ async function grandfatherFollowUps(env) {
       // them - the same rule confirmFollowUpPurchase uses.
       addOnFollowUpAt: new Date(),
       grandfathered: true,
-      pendingFollowUp: null,
-    }, { mask: ['addOnFollowUp', 'addOnFollowUpAt', 'grandfathered', 'pendingFollowUp'] });
+      // pendingFollowUp is left alone on purpose: a checkout opened before the
+      // migration stays payable for hours, and wiping the record here is what
+      // made that payment vanish from the ledger when it completed.
+    }, { mask: ['addOnFollowUp', 'addOnFollowUpAt', 'grandfathered'] });
     granted.push(c.id);
   }
   await patchDoc(env, MARKER, {
@@ -630,7 +660,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-21-sweep';
+const BUILD_TAG = 'v2026-08-21-audit';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -812,7 +842,7 @@ async function handleCheckout(request, env) {
   // Two paths: an open slot off the calendar, or a time the client requested.
   const isRequest = !slotId && typeof requestedStart === 'string';
   if (isRequest) return await checkoutRequestedTime(env, {
-    user, identity, requestedStart, method, phone, acks, clientTz,
+    user, identity, requestedStart, method, phone, acks, clientTz, body,
   });
 
   // Load and validate the slot.
@@ -906,9 +936,19 @@ async function checkoutRequestedTime(env, o) {
   if (leadMs > MAX_LEAD_TIME_HOURS * 3600_000)
     return json({ error: 'Please pick a time within the next week and a half.' }, 409);
 
+  // The live rate, and the same honesty check the slot path runs. This built
+  // its line items with NO amount at all - caseLineItems() with nothing in it
+  // - so Stripe rejected every single requested-time checkout since the
+  // ratchet landed: the one path made for people whose time is not on the
+  // calendar could not take their money. (Post-2.2 audit, 2026-08-21.)
+  const live = await readRates(env);
+  const quoted = Number(o.body?.quotedCents) || 0;
+  if (quoted && quoted !== live.caseCents)
+    return json({ error: 'rate-changed', caseCents: live.caseCents, addonCents: live.addonCents }, 409);
+
   const now = new Date();
   const expiresAt = new Date(now.getTime() + HOLD_MINUTES * 60_000);
-  const lineItems = caseLineItems();
+  const lineItems = caseLineItems(live.caseCents);
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: identity.email || user.email || undefined,
@@ -1035,11 +1075,26 @@ async function handleWebhook(request, env) {
   if (!event) return json({ error: 'Invalid signature' }, 400);
   const obj = event.data.object;
 
-  if (event.type === 'checkout.session.completed') {
-    if (obj.mode === 'subscription') await activateSubscription(env, obj);
-    else if (obj.metadata?.kind === 'extra') await confirmExtraSession(env, obj);
+  if (event.type === 'checkout.session.completed' ||
+      event.type === 'checkout.session.async_payment_succeeded') {
+    // For one-off payments, "completed" is not "paid": delayed methods (ACH
+    // and friends, a dashboard setting, not a code one) complete the session
+    // with payment_status 'unpaid' and settle later. Granting on completion
+    // would hand out a case or a follow-up before the money moved, and a
+    // later payment failure would leave the grant standing. Unpaid sessions
+    // wait for async_payment_succeeded, which runs this same dispatch.
+    // Subscriptions are invoice-driven and keep their own path.
+    // (Post-2.2 audit, 2026-08-21.)
+    if (obj.mode === 'subscription') {
+      if (event.type === 'checkout.session.completed') await activateSubscription(env, obj);
+    } else if (obj.payment_status && obj.payment_status !== 'paid') {
+      // Not settled yet; the success event will come back through here.
+    } else if (obj.metadata?.kind === 'extra') await confirmExtraSession(env, obj);
     else if (obj.metadata?.kind === 'followup') await confirmFollowUpPurchase(env, obj);
     else await createCaseFromSession(env, obj);
+  } else if (event.type === 'checkout.session.async_payment_failed') {
+    // The money never arrived: give the slot back, exactly as an expiry does.
+    await releaseHold(env, obj);
   } else if (event.type === 'checkout.session.expired') {
     await releaseHold(env, obj);
   } else if (
@@ -2255,8 +2310,32 @@ async function confirmFollowUpPurchase(env, session) {
   const caseId = session.metadata?.caseId;
   if (!caseId) return;
   const c = await getDoc(env, `cases/${caseId}`);
-  if (!c || c.data.addOnFollowUp) return;   // already applied, or gone
+  if (!c) return;
   const now = new Date();
+  if (c.data.addOnFollowUp) {
+    // The flag is already set - the grandfather migration, or a second
+    // checkout that raced this one - but MONEY MOVED, and the old bare return
+    // recorded it nowhere: no ledger entry, no email, nobody told, nothing to
+    // refund from. The payment is written down and Eric is pinged to refund
+    // it; the one session already recorded is the only repeat this skips.
+    // (Post-2.2 audit, 2026-08-21.)
+    const prior = Array.isArray(c.data.extraPayments) ? c.data.extraPayments : [];
+    if (prior.some((x) => x.sessionId === session.id)) return;
+    prior.push({
+      kind: 'followup', amountCents: session.amount_total || followUpCents(c.data),
+      sessionId: session.id, at: now, duplicate: true,
+    });
+    await patchDoc(env, `cases/${caseId}`, { extraPayments: prior }, { mask: ['extraPayments'] });
+    const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+    for (const a of admins) {
+      await notifyUser(env, a.id, {
+        title: 'Pocket Advocate',
+        body: `${c.data.clientName || 'A client'} paid for a follow-up their case already has. Refund it from Stripe.`,
+        link: `/admin-case.html?id=${caseId}`,
+      }).catch(() => {});
+    }
+    return;
+  }
   const payments = Array.isArray(c.data.extraPayments) ? c.data.extraPayments : [];
   payments.push({
     kind: 'followup', amountCents: session.amount_total || followUpCents(c.data),
@@ -2274,7 +2353,7 @@ async function confirmFollowUpPurchase(env, session) {
     subject: 'Your follow-up session is paid for',
     html: `<p>That's booked in principle — I'll be in touch in your case chat to
       find a time that works.</p>
-      <p>It's yours to use within a month from today.</p>
+      <p>It's yours to use within 30 days from today.</p>
       <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
   }).catch(() => { /* the purchase still stands if the mail fails */ });
   const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
@@ -3618,17 +3697,26 @@ export async function runFollowUpWarnings(env, now = Date.now()) {
   for (const row of rows) {
     const c = row.data;
     if (c.followUp || c.pendingExtra || c.followUpExpiryWarned) continue;
-    const base = c.appointment?.start ? new Date(c.appointment.start).getTime() : null;
-    if (!base || now < base) continue; // first discussion hasn't happened yet
-    const expires = base + FOLLOWUP_EXPIRY_DAYS * 86_400_000;
+    // The SAME clock the scheduler enforces (followUpExpiry: purchase date
+    // when there is one, first discussion otherwise). This used to count from
+    // the appointment alone, so a follow-up bought late was never warned at
+    // all - the cron thought it had already lapsed while the scheduler would
+    // happily book it - and one bought early was warned with a date weeks
+    // ahead of the real one. A deadline email with the wrong deadline is
+    // worse than none. (Post-2.2 audit, 2026-08-21.)
+    const expiry = followUpExpiry(c);
+    if (!expiry) continue;
+    const expires = expiry.getTime();
     if (now >= expires) continue; // already lapsed — no email after the fact
     if (expires - now > FOLLOWUP_WARN_DAYS * 86_400_000) continue; // not yet warning time
     if (c.clientEmail) {
       await sendEmail(env, {
         to: c.clientEmail,
+        // A grandfathered case never bought anything, so the email does not
+        // say they did. What both kinds share is the part that matters: it is
+        // theirs, and it has a date on it.
         subject: 'Your follow-up session expires in one week',
-        html: `<p>You bought a follow-up discussion on your case, and it expires one month
-          after your first discussion:</p>
+        html: `<p>Your case includes a follow-up discussion, and it expires:</p>
           ${whenHtml(new Date(expires), c.clientTz)}
           <p>To use it, message me in your case chat and I'll get it scheduled.</p>
           <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,

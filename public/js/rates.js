@@ -1,16 +1,6 @@
-// What a case and a follow-up cost right now.
-//
-// The rate is not a constant any more. Every completed booking lifts the case
-// and the follow-up by $10, so a number typed into a page is wrong the moment
-// somebody else books. The Worker owns the real figure; this fetches it and
-// corrects whatever the page shipped with.
-//
-// The chat subscription is not in here. It does not move.
-//
-// Nothing about this is announced. A page that quietly says a different number
-// than it did last week is the whole design: no banner, no "prices are rising",
-// no urgency. Someone who booked keeps the rate they were quoted, which the
-// case records at the moment it is created.
+// What a case and a follow-up cost right now. The Worker owns the figures;
+// this fetches them and corrects whatever the page shipped with. The chat
+// subscription is not in here.
 
 const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 
