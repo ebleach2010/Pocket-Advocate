@@ -630,7 +630,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-21-unreact';
+const BUILD_TAG = 'v2026-08-21-unstall';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1546,6 +1546,14 @@ const EMOJI_REACTIONS = {
   angry: '😡',
   like: '👍',
 };
+
+/**
+ * A run with no heartbeat for this long is dead and may be replaced. The panel
+ * uses the same number to decide when to say "stalled" (public/js/advisor.js),
+ * and the two MUST agree: a window where the screen says dead and the Worker
+ * says alive is a button that does nothing.
+ */
+const ADVISOR_ALIVE_MS = 120_000;
 
 /** How long a message stays editable by its author. */
 const EDIT_WINDOW_MS = 3 * 60 * 1000;
@@ -2690,10 +2698,23 @@ async function handleAdvisor(request, env, ctx) {
   }
 
   if (action === 'analyze') {
-    // Don't stack a second Opus run on top of a live one.
+    // Don't stack a second Opus run on top of a LIVE one - but a dead one must
+    // never block the button that exists to revive it.
+    //
+    // (Eric, 2026-08-21: "Update stalled. Tapping update afterwards did
+    // nothing.")
+    //
+    // This held the lock for twelve minutes from startedAt, while the panel
+    // declares a run dead after two minutes without a heartbeat. For the ten
+    // minutes in between, the screen said "stalled - tap Update" and every tap
+    // was answered ok:true and thrown away. The two ends now judge liveness
+    // the same way and by the same clock: the heartbeat the run itself writes,
+    // and the same two minutes. If the panel says stalled, a new run starts.
     const state = await getDoc(env, `${parent}/${id}/advisor/state`);
     const startedAt = state?.data.startedAt ? new Date(state.data.startedAt).getTime() : 0;
-    if (state?.data.status === 'running' && Date.now() - startedAt < 12 * 60_000)
+    const progressAt = state?.data.progressAt ? new Date(state.data.progressAt).getTime() : 0;
+    const lastBeat = Math.max(startedAt, progressAt);
+    if (state?.data.status === 'running' && lastBeat && Date.now() - lastBeat < ADVISOR_ALIVE_MS)
       return json({ ok: true, already: true });
     // Files Eric explicitly selected (the 👨‍⚕️ badges), plus files he
     // uploaded straight to the advisor from his own device: those arrive

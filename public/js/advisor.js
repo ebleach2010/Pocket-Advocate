@@ -199,10 +199,29 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     const alive = d.status === 'running' && started && Date.now() - beat < 120_000;
     const stalled = d.status === 'running' && started && !alive;
     const mins = started ? Math.floor((Date.now() - started) / 60_000) : 0;
-    statusEl.textContent = alive
-      ? `● thinking${mins ? ` · ${mins}m` : ''}`
-      : stalled ? '⚠ stalled — tap Update' : paused ? '‖ paused' : '';
+    // The one failure that looks like every other failure.
+    //
+    // (Eric, 2026-08-21: "Update stalled. Tapping update afterwards did
+    // nothing. Are we missing a fucking api key?")
+    //
+    // The Worker has always sent keyConfigured on this payload and nothing
+    // read it. With no key the advisor cannot start, so it sits at "stalled",
+    // Update does nothing visible, and there is no way to tell a missing
+    // secret from a dead run - which is exactly the wrong guess to have to
+    // make. Say it plainly, and say it above everything else.
+    const noKey = d.keyConfigured === false;
+    statusEl.textContent = noKey
+      ? '⚠ no API key on the Worker'
+      : alive
+        ? `● thinking${mins ? ` · ${mins}m` : ''}`
+        : stalled ? '⚠ stalled — tap Update' : paused ? '‖ paused' : '';
     statusEl.className = `advisor-status${alive ? ' live' : ''}`;
+    if (noKey) {
+      errEl.textContent = 'ANTHROPIC_API_KEY is not set on the Worker, so the '
+        + 'advisor cannot run at all. Set it with: npx wrangler secret put '
+        + 'ANTHROPIC_API_KEY. Nothing else in the app is affected.';
+      errEl.hidden = false;
+    }
     const running = alive;
 
     if (d.status === 'error' && d.error) {
