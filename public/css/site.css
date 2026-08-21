@@ -1,3 +1,8 @@
+/* Pocket Advocate — the stylesheet every page loads.
+ * Anything that only ever renders on an admin screen lives in admin.css, which
+ * is served behind a role check. Keep it that way: a selector added here is
+ * downloadable by anyone who visits the site, comments included.
+ */
 /* Pocket Advocate neon system — single-theme by design (approved 2026-07-11).
    Same tokens as PROTOTYPE.html so the shipped app matches the prototype. */
 :root {
@@ -21,16 +26,142 @@
   --glow-g: 0 0 16px rgba(62, 224, 138, .30);
   --glow-b: 0 0 16px rgba(108, 158, 255, .30);
   --glow-o: 0 0 16px rgba(255, 162, 62, .35);
+  /* The translucent ground under every sticky bar. A scheme cannot reach a
+     baked rgba, and a bar that stays near-black under a pale scheme takes the
+     whole top of the app with it. */
+  --bar: rgba(7, 9, 15, .85);
+  /* The ink that sits ON an accent fill (a cyan button, a booked calendar
+     day). It is not --bg and it is not --ink: it has to contrast with the
+     accent, which is dark on some schemes and bright on others. */
+  --on-accent: #041018;
 }
+
+/* ---------------------------------------------------------------- schemes
+   Neon is the default and is the bare :root above. The other three retint the
+   same tokens and nothing else: no rule anywhere in this sheet names a colour
+   directly, so a scheme is a palette swap and every component follows.
+   theme.js stamps data-scheme on <html>; a head snippet does it before first
+   paint so a scheme never flashes neon on the way in. */
+/* Calm: the same room with the lights down. Same hues, lower saturation and a
+   softer glow, for reading in bed at 2am with a headache, which is when a lot
+   of this gets read. */
+:root[data-scheme="calm"] {
+  --bg: #0B0E14;
+  --panel: #121722;
+  --panel-2: #171E2C;
+  --ink: #E4E9F2;
+  --dim: #98A1B4;
+  --soft: #BFC7D6;
+  --line: #232C3F;
+  --cyan: #6FC7D8;
+  --cyan-dim: #3D7C8A;
+  --magenta: #D98BC4;
+  --green: #6FC49A;
+  --blue: #8AA8DC;
+  --danger: #E08585;
+  --gold: #DCBB78;
+  --orange: #DDA470;
+  --glow-c: 0 0 12px rgba(111, 199, 216, .18);
+  --glow-m: 0 0 12px rgba(217, 139, 196, .16);
+  --glow-g: 0 0 12px rgba(111, 196, 154, .16);
+  --glow-b: 0 0 12px rgba(138, 168, 220, .16);
+  --glow-o: 0 0 12px rgba(221, 164, 112, .18);
+  --bar: rgba(11, 14, 20, .88);
+  --on-accent: #06131A;
+}
+
+/* Paper: light, warm, like the folder itself. The one scheme where ink is dark
+   on a pale ground, so every token inverts rather than dims. */
+:root[data-scheme="paper"] {
+  --bg: #F3EEE3;
+  --panel: #FBF8F2;
+  --panel-2: #F0EADC;
+  --ink: #23201A;
+  --dim: #5B5548;
+  --soft: #3E392F;
+  --line: #DDD4C2;
+  --cyan: #0A5163;
+  --cyan-dim: #5C9AA8;
+  --magenta: #8A2868;
+  --green: #16613D;
+  --blue: #22488A;
+  --danger: #9A2C25;
+  --gold: #6D5310;
+  --orange: #834910;
+  --glow-c: 0 0 0 1px rgba(14, 110, 134, .18);
+  --glow-m: 0 0 0 1px rgba(168, 54, 127, .18);
+  --glow-g: 0 0 0 1px rgba(30, 122, 77, .18);
+  --glow-b: 0 0 0 1px rgba(43, 91, 168, .18);
+  --glow-o: 0 0 0 1px rgba(162, 90, 21, .18);
+  --bar: rgba(243, 238, 227, .92);
+  /* Pale ink on a dark accent, which is the way round this scheme needs. */
+  --on-accent: #FBF8F2;
+}
+
+/* High contrast: black ground, pure hues, no glow to blur an edge. For a bad
+   vision day, or bright sun on a phone in a hospital car park. */
+:root[data-scheme="contrast"] {
+  --bg: #000000;
+  --panel: #0A0A0A;
+  --panel-2: #141414;
+  --ink: #FFFFFF;
+  --dim: #D6D6D6;
+  --soft: #EFEFEF;
+  --line: #6A6A6A;
+  --cyan: #4FE9FF;
+  --cyan-dim: #2AA8C0;
+  --magenta: #FF77E0;
+  --green: #4BF39A;
+  --blue: #8FB6FF;
+  --danger: #FF8A8A;
+  --gold: #FFD86B;
+  --orange: #FFB259;
+  --glow-c: none; --glow-m: none; --glow-g: none; --glow-b: none; --glow-o: none;
+  --bar: rgba(0, 0, 0, .95);
+  --on-accent: #000000;
+}
+
+/* The body's two corner washes are baked rgba, not tokens, and on a pale or
+   pure-black ground they read as smudges. Drop them for those two. */
+:root[data-scheme="paper"] body,
+:root[data-scheme="contrast"] body { background-image: none; }
+
+/* Manila on a paper ground would be card stock on card stock, so the folder
+   chrome cools and darkens its edges to stay a separate object on the desk.
+   On high contrast it goes plain and hard-edged - the whole point of that
+   scheme is that nothing is subtle. */
+:root[data-scheme="paper"] {
+  --manila: #E3D3AE;
+  --manila-2: #EFE2C6;
+  --manila-ink: #2A2113;
+  --manila-edge: #9C8551;
+  --manila-fold: rgba(60, 45, 15, .45);
+}
+:root[data-scheme="contrast"] {
+  --manila: #F2E3B8;
+  --manila-2: #FFF4D2;
+  --manila-ink: #000000;
+  --manila-edge: #000000;
+  --manila-fold: rgba(0, 0, 0, .8);
+}
+
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+/* min-height, not height. `height: 100%` pins the body BOX to the viewport, and
+   a sticky child can only travel inside its parent's box - so the header stuck
+   for exactly one screenful and then scrolled away. On a 3000px booking page
+   that meant the menu and the settings cog did not exist below y=1200, which
+   is the part of the form where somebody is typing their date of birth. */
+html,
+body { min-height: 100%; }
 /* Base type scale. Clients are often unwell or reading on a phone in a
    waiting room — everything below is sized in rem off this root. */
 html { font-size: 17.5px; }
 /* The page never scrolls sideways — anything wider than the screen scrolls
    inside its own box (nav tabs, calendar), not by dragging the whole page. */
-html, body { overflow-x: hidden; overflow-x: clip; }
-img, video { max-width: 100%; }
+html,
+body { overflow-x: hidden; overflow-x: clip; }
+img,
+video { max-width: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font-family: "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -39,18 +170,22 @@ body {
     radial-gradient(1200px 500px at 85% -10%, rgba(45,226,255,.07), transparent 60%),
     radial-gradient(900px 500px at 0% 110%, rgba(255,79,216,.06), transparent 60%);
 }
-h1, h2, h3 { margin: 0 0 .5rem; line-height: 1.15; letter-spacing: -.02em; font-weight: 800; text-wrap: balance; }
-h1 { font-size: 1.8rem; } h2 { font-size: 1.35rem; } h3 { font-size: 1.06rem; }
+h1,
+h2,
+h3 { margin: 0 0 .5rem; line-height: 1.15; letter-spacing: -.02em; font-weight: 800; text-wrap: balance; }
+h1 { font-size: clamp(1.9rem, 6vw, 2.6rem); }
+h2 { font-size: 1.35rem; }
+h3 { font-size: 1.06rem; }
 p { margin: 0 0 .8rem; }
 a { color: var(--cyan); }
-.muted, .dim { color: var(--dim); }
+.muted,
+.dim { color: var(--dim); }
 .small { font-size: .95rem; }
-.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 
 /* header */
 header.bar {
   position: sticky; top: 0; z-index: 5;
-  background: rgba(7,9,15,.85); backdrop-filter: blur(8px);
+  background: var(--bar); backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line);
 }
 .bar-inner {
@@ -62,13 +197,15 @@ header.bar {
   color: var(--ink); text-decoration: none;
 }
 .brand .spark { color: var(--cyan); text-shadow: var(--glow-c); }
-/* The signed-in nav holds up to 5 links — on phones it scrolls sideways
-   instead of shoving Admin/Sign out off the screen. */
+/* The signed-in nav holds up to six links. It used to scroll sideways with the
+   scrollbar hidden, which on a phone put two thirds of it - including the
+   settings cog the onboarding tells people to tap - past the right edge with
+   nothing to say so. It does not scroll now: when the links stop fitting,
+   nav-menu.js collapses them into the menu below. */
 .tabs {
   display: flex; gap: .3rem; align-items: center; min-width: 0;
-  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  overflow: hidden;
 }
-.tabs::-webkit-scrollbar { display: none; }
 .tabs a {
   font: 600 .82rem/1 inherit; color: var(--dim); cursor: pointer; text-decoration: none;
   padding: .45rem .85rem; border-radius: 999px; border: 1px solid transparent;
@@ -76,30 +213,72 @@ header.bar {
 }
 [data-nav-auth] { display: contents; }
 @media (max-width: 480px) {
-  .bar-inner { gap: .5rem; padding-left: .8rem; padding-right: .8rem; }
-  .tabs a { padding: .45rem .45rem; font-size: .8rem; }
+.bar-inner { gap: .5rem; padding-left: .8rem; padding-right: .8rem; }
+.bar-inner:not(.collapsed) .tabs a { padding: .45rem .45rem; font-size: .8rem; }
 }
 .tabs a.active { color: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c); }
+
+/* The end of the bar that is always on screen: the menu button and the cog. */
+.bar-acts { display: flex; align-items: center; gap: .4rem; flex: none; }
+.nav-toggle {
+  display: none;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+  width: 2.5rem; height: 2.5rem; min-width: 2.5rem; border-radius: 12px;
+  font-size: 1.05rem; line-height: 1; place-items: center; cursor: pointer; padding: 0;
+}
+.bar-inner.collapsed .nav-toggle { display: grid; }
+/* Collapsed, the same links become a panel under the button. Same elements,
+   restyled - not copies - so every listener on them still works. */
+.bar-inner.collapsed .tabs {
+  position: absolute; top: 100%; right: .8rem; left: auto; z-index: 70;
+  display: none; flex-direction: column; align-items: stretch; gap: .15rem;
+  min-width: 12rem; padding: .4rem; margin-top: .3rem;
+  background: var(--panel); border: 1px solid var(--cyan); border-radius: 14px;
+  box-shadow: var(--glow-c), 0 12px 30px rgba(0, 0, 0, .45);
+  max-height: calc(100dvh - 5rem); overflow-y: auto;
+}
+.bar-inner.collapsed .tabs.open { display: flex; }
+/* Full-width rows, tall enough to hit. */
+.bar-inner.collapsed .tabs a { padding: .7rem .9rem; border-radius: 10px; font-size: .92rem; }
+.bar-inner { position: relative; }
 .who { color: var(--dim); font-size: .82rem; }
 
 main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
-
-/* buttons */
-.btn {
-  display: inline-block; cursor: pointer; border-radius: 10px; border: 1px solid var(--cyan);
-  font: 700 .92rem/1.2 inherit; letter-spacing: .01em;
-  padding: .65rem 1.2rem; text-decoration: none;
-  color: #041018; background: var(--cyan); box-shadow: var(--glow-c);
+/* A phone on its side has under 400px of height, and the case header alone -
+   back link, title, subtitle, two tab rows - used almost all of it. */
+@media (orientation: landscape) and (max-height: 460px) {
+main { padding-top: .5rem; padding-bottom: 1.2rem; }
+.case-head { margin-bottom: .2rem; }
+.case-head h1, .case-head h2 { font-size: 1rem; margin-bottom: 0; }
+/* The working line stays. It is the one thing in this header worth its
+   pixels; everything around it gets tighter instead. */
+.case-head .working-line { font-size: .74rem; margin-top: .05rem; }
+.bar-inner { padding-top: .35rem; padding-bottom: .35rem; }
 }
+
+/* buttons - calm by default (PR 69 calm-neon pass). The ONE primary action
+   on a screen adds .glow and carries the neon; every other button reads as a
+   quiet control so the glow means "this is the thing to press". */
+.btn {
+  display: inline-block; cursor: pointer; border-radius: 10px; border: 1px solid var(--line);
+  font: 700 .92rem/1.2 inherit; letter-spacing: .01em;
+  padding: .72rem 1.2rem; text-decoration: none; min-height: 44px;
+  color: var(--ink); background: var(--panel-2);
+}
+.btn:hover { border-color: var(--cyan-dim); }
+.btn.glow { background: var(--cyan); border-color: var(--cyan); color: var(--on-accent); box-shadow: var(--glow-c); }
 .btn:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
-.btn.secondary, .btn.ghost { background: transparent; color: var(--cyan); box-shadow: none; }
-.btn.quiet, .btn.mute { background: transparent; color: var(--dim); border-color: var(--line); box-shadow: none; }
-.btn.mag { background: var(--magenta); border-color: var(--magenta); color: #1A0413; box-shadow: var(--glow-m); }
-.btn.danger { background: transparent; color: var(--danger); border-color: var(--danger); box-shadow: none; }
+.btn.ghost { background: transparent; color: var(--cyan); border-color: var(--cyan); box-shadow: none; }
+.btn.quiet,
+.btn.mute { background: transparent; color: var(--dim); border-color: var(--line); box-shadow: none; }
+.btn.mag { background: transparent; border-color: var(--magenta); color: var(--magenta); box-shadow: none; }
+.btn.mag.glow { background: var(--magenta); border-color: var(--magenta); color: #1A0413; box-shadow: var(--glow-m); }
+.btn.mag.glow:disabled { box-shadow: none; }
 .actions { margin-top: 1.1rem; display: flex; gap: .55rem; flex-wrap: wrap; align-items: center; }
 
 /* Setup guide + notifications prompt stand out from ordinary panels. */
-.setup-guide, .push-prompt { border-color: var(--cyan); box-shadow: var(--glow-c); }
+.setup-guide,
+.push-prompt { border-color: var(--cyan); box-shadow: var(--glow-c); }
 
 /* Glowing golden diamond — unread-chat marker on the Chat tab. */
 .diamond {
@@ -111,21 +290,40 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
   0%, 100% { opacity: .7; }
   50% { opacity: 1; text-shadow: 0 0 11px rgba(255,204,85,1), 0 0 20px rgba(255,204,85,.7); }
 }
+@media (prefers-reduced-motion: reduce) {
+.diamond { animation: none; }
+}
 
 /* Settings cog + panel. */
 .cog-btn {
   border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
-  width: 1.9rem; height: 1.9rem; min-width: 1.9rem; border-radius: 50%; font-size: 1rem;
+  width: 2.5rem; height: 2.5rem; min-width: 2.5rem; border-radius: 50%; font-size: 1.05rem;
   display: grid; place-items: center; cursor: pointer; padding: 0; flex-shrink: 0;
 }
+/* The card is taller than a phone. It did not scroll, so its bottom sat off
+   the screen with no way to reach it - and what was cut off was "Open to my
+   dashboard", the switch for looking at the client's side. */
 .settings-overlay {
   position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center;
   padding: 3.5rem 1.1rem 1.1rem; background: rgba(4,6,10,.6); backdrop-filter: blur(4px);
+  overflow-y: auto; overscroll-behavior: contain;
 }
 .settings-card {
   background: var(--panel); border: 1px solid var(--cyan); box-shadow: var(--glow-c);
   border-radius: 16px; padding: 1.1rem 1.2rem; max-width: 26rem; width: 100%;
+  margin-bottom: 1.1rem;
 }
+/* Radios and checkboxes in a form are 13px by default, which is smaller than
+   anything else you are asked to press. */
+input[type="radio"], input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--cyan); }
+/* Bare radio and checkbox rows only. :has() takes its argument's specificity,
+   so without the :not() this outranked .chip-label and stripped the booking
+   call-method pills of their padding and their 44px. */
+label:has(> input[type="radio"]):not([class]),
+label:has(> input[type="checkbox"]):not([class]) {
+  display: flex; align-items: flex-start; gap: .5rem; padding: .35rem 0; min-height: 2.2rem;
+}
+
 .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .6rem; }
 .switch {
   width: 2.7rem; height: 1.55rem; min-width: 2.7rem; border-radius: 999px; border: 1px solid var(--line);
@@ -137,11 +335,6 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
 }
 .switch.on { background: var(--cyan); box-shadow: var(--glow-c); }
 .switch.on::after { left: calc(100% - 1.35rem); background: var(--panel); }
-.seg { display: flex; flex-wrap: wrap; gap: .45rem; }
-.seg button {
-  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
-  border-radius: 999px; padding: .5rem .95rem; font-weight: 600; font-size: .92rem; cursor: pointer;
-}
 .seg button.on { border-color: var(--cyan); color: var(--cyan); box-shadow: var(--glow-c); }
 
 /* Gentle first-run intro overlay. */
@@ -180,7 +373,28 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
   border: 1px solid var(--cyan); background: transparent; color: var(--cyan);
   font: 700 .88rem/1 inherit;
 }
-.help-dot:hover, .help-dot:focus-visible { box-shadow: var(--glow-c); outline: none; }
+/* Focus keeps the outline every other control has. It used to be cancelled and
+   replaced with an 18%-opacity glow on a button that already has a cyan ring -
+   focused and unfocused were indistinguishable, on the control the onboarding
+   explicitly tells people to press. */
+.help-dot:hover { box-shadow: var(--glow-c); }
+/* A thumb-sized target. It is a "?" that opens the explanation of the whole
+   page, not a decoration. */
+.help-dot { width: 2.5rem; height: 2.5rem; min-width: 2.5rem; font-size: 1.05rem; }
+/* The naming sheet. Capped and scrollable for the same reason everything else
+   on a phone is: with a keyboard up there are two hundred usable pixels, and a
+   card that overflows puts both of its buttons somewhere unreachable. */
+/* The overlay reserves 3.5rem above the card for the page behind it. With a
+   keyboard up there is not 3.5rem to spare, so this one sheet takes it back:
+   the card starts near the top and gets the whole screen minus its own margin,
+   which is what puts both buttons inside the viewport. */
+.settings-overlay:has(> .rename-card) { padding-top: 1.1rem; align-items: flex-start; }
+.rename-card { max-height: calc(100dvh - 2.2rem); overflow-y: auto; }
+.rename-card .actions {
+  position: sticky; bottom: -1.1rem; padding: .6rem 0 .2rem; margin-bottom: -.2rem;
+  background: var(--panel); box-shadow: 0 -14px 16px -6px var(--panel);
+}
+
 /* Long-form content: cap the height and scroll inside the card so the close
    button never leaves the screen on a short phone. */
 .help-card { max-width: 30rem; max-height: calc(100dvh - 5rem); overflow-y: auto; }
@@ -193,16 +407,15 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
 .help-os { margin: .8rem 0 .2rem !important; color: var(--ink) !important; }
 
 /* surfaces */
-.card, .panel {
+.card,
+.panel {
   background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
   padding: .95rem 1.05rem; margin-bottom: .9rem;
 }
-.notbox {
-  border-left: 2px solid var(--danger); padding: .15rem 0 .15rem .9rem;
-  color: var(--dim); font-size: .95rem; margin: 1rem 0;
-}
-.notbox strong { color: var(--ink); }
-.row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+/* Wraps. A row that cannot wrap pushes its last child off the right edge on a
+   narrow phone: the CASE / DELIVERED pill was sliced by the screen edge on the
+   chats list, and the calendar's Today button sat entirely off it. */
+.row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .price {
   font: 700 1.05rem/1.3 ui-monospace, "SF Mono", Menlo, monospace;
   color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums;
@@ -211,8 +424,14 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
 .ok { color: var(--cyan); font-size: .95rem; margin: .6rem 0; }
 
 /* forms */
-input[type=email], input[type=tel], input[type=text], input[type=date], input[type=url],
-input[type=datetime-local], select, textarea {
+input[type=email],
+input[type=tel],
+input[type=text],
+input[type=date],
+input[type=url],
+input[type=datetime-local],
+select,
+textarea {
   width: 100%; padding: .6rem .75rem; border: 1px solid var(--line); border-radius: 10px;
   background: var(--panel-2); color: var(--ink); font: inherit;
 }
@@ -240,40 +459,39 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
 .pack .desc { grid-column: 1 / -1; color: var(--soft); font-size: 1rem; margin: 0; line-height: 1.5; }
 /* The follow-up add-on: its own line inside the case card, not a trailing clause.
    Also used standalone on the review screen, so it is not scoped to .pack. */
-.addon-note {
+.notice-box {
   margin: .55rem 0 0; padding: .6rem .75rem;
   border: 1px dashed var(--magenta); border-radius: 10px;
   background: rgba(255,79,216,.06); color: var(--soft); font-size: .95rem; line-height: 1.45;
 }
-.pack .addon-note { grid-column: 1 / -1; }
-.addon-note strong { color: var(--magenta); }
+.pack .notice-box { grid-column: 1 / -1; }
+.notice-box strong { color: var(--magenta); }
 /* A pending booking request is orange, not magenta — it is a status, not an offer. */
-.addon-note.pending { border-style: solid; border-color: var(--orange); background: rgba(255,162,62,.07); }
-.addon-note.pending strong { color: var(--orange); }
+.notice-box.pending { border-style: solid; border-color: var(--orange); background: rgba(255,162,62,.07); }
+.notice-box.pending strong { color: var(--orange); }
 
 /* <summary> styled as a button: strip the marker and keep it inline. */
 summary.btn { list-style: none; display: inline-block; }
 summary.btn::-webkit-details-marker { display: none; }
 @media (max-width: 600px) {
-  .pack { grid-template-columns: 1fr; gap: .25rem; }
-  .pack .price { justify-self: start; }
-  .pack .desc, .pack .addon-note { margin-top: .35rem; }
+.pack { grid-template-columns: 1fr; gap: .25rem; }
+.pack .price { justify-self: start; }
+.pack .desc,
+.pack .notice-box { margin-top: .35rem; }
 }
 .pack .price { font-size: 1.5rem; font-weight: 700; white-space: nowrap; }
 .pack.rec-c {
   border-color: var(--cyan);
   box-shadow: var(--glow-c), inset 0 0 30px rgba(45,226,255,.05);
-  animation: neon-breathe-c 3.6s ease-in-out infinite;
 }
 .pack.rec-c .price { color: var(--cyan); }
 .pack.rec-m {
   border-color: var(--blue);
   box-shadow: var(--glow-b), inset 0 0 30px rgba(108,158,255,.05);
-  animation: neon-breathe-b 3.6s ease-in-out 1.8s infinite;
 }
 .pack.rec-m .price { color: var(--blue); }
-/* Real neon doesn't sit still — the borders breathe, offset so the two
-   cards never pulse in sync. */
+/* PR 69 calm pass: the breathe animations are retired. The cards hold a
+   steady inset glow instead; keyframes kept below for reference only. */
 @keyframes neon-breathe-c {
   0%, 100% { box-shadow: 0 0 12px rgba(45,226,255,.27), inset 0 0 34px rgba(45,226,255,.05); }
   50%      { box-shadow: 0 0 29px rgba(45,226,255,.66), inset 0 0 40px rgba(45,226,255,.11); }
@@ -283,7 +501,8 @@ summary.btn::-webkit-details-marker { display: none; }
   50%      { box-shadow: 0 0 29px rgba(108,158,255,.62), inset 0 0 40px rgba(108,158,255,.11); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pack.rec-c, .pack.rec-m { animation: none; }
+.pack.rec-c,
+.pack.rec-m { animation: none; }
 }
 .tag {
   position: absolute; top: -.6rem; left: .9rem;
@@ -302,14 +521,14 @@ summary.btn::-webkit-details-marker { display: none; }
 .fine { font-size: .9rem; color: var(--dim); margin: 0; line-height: 1.5; }
 .fine strong { color: var(--ink); }
 @media (max-height: 700px) {
-  .landing { gap: .85rem; }
-  .landing h1 { font-size: 1.45rem; }
-  .hero-sub { font-size: .98rem; }
-  .pack { padding: .7rem .9rem; }
-  .pack h3 { font-size: 1.08rem; }
-  .pack .desc { font-size: .92rem; }
-  .btn { padding: .6rem 1rem; font-size: .92rem; }
-  .fine { font-size: .84rem; }
+.landing { gap: .85rem; }
+.landing h1 { font-size: 1.45rem; }
+.hero-sub { font-size: .98rem; }
+.pack { padding: .7rem .9rem; }
+.pack h3 { font-size: 1.08rem; }
+.pack .desc { font-size: .92rem; }
+.btn { padding: .6rem 1rem; font-size: .92rem; }
+.fine { font-size: .84rem; }
 }
 
 /* wizard */
@@ -322,44 +541,11 @@ summary.btn::-webkit-details-marker { display: none; }
 .crumbs li.now { border-color: var(--cyan); color: var(--cyan); box-shadow: var(--glow-c); }
 .crumbs li.done { border-color: var(--cyan-dim); color: var(--cyan-dim); }
 
-.waiver-body {
-  /* Sized so heading + box + hint + the acknowledge button all fit one screen:
-     the ONLY scrolling on an agreement page happens inside this box. 100dvh
-     tracks the real visible height on phones (Safari's shrinking chrome);
-     ~19rem covers the header, title, explainer, hint, and button. The 40vh
-     line is the fallback for browsers without dvh. */
-  max-height: 40vh;
-  max-height: clamp(9rem, calc(100dvh - 19rem), 34rem);
-  overflow-y: auto; border: 1px solid var(--line); border-radius: 12px;
-  padding: 1rem 1.1rem; background: var(--panel); font-size: .96rem;
-}
-.waiver-body h3 { color: var(--cyan); font-size: .88rem; letter-spacing: .06em; text-transform: uppercase; margin-top: .9rem; }
-.waiver-body h3:first-child { margin-top: 0; }
-.scroll-hint { font-size: .88rem; color: var(--magenta); margin: .5rem 0; }
-
 .choice {
   display: block; border: 1px solid var(--line); border-radius: 12px;
   padding: .85rem 1rem; margin-bottom: .7rem; cursor: pointer; background: var(--panel);
 }
 .choice.selected { border-color: var(--cyan); box-shadow: var(--glow-c); }
-/* The optional follow-up at checkout — offered once, never again, so it gets
-   its own colour and weight instead of reading as fine print. */
-.choice.addon { border: 2px solid var(--magenta); background: rgba(255,79,216,.05); padding: 1rem 1.1rem; }
-.choice.addon.selected { box-shadow: var(--glow-m); }
-.addon-head { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; }
-.addon-head .addon-title { font-size: 1.08rem; font-weight: 700; color: var(--ink); }
-.addon-head .addon-price { font-size: 1.35rem; font-weight: 800; color: var(--magenta); white-space: nowrap; }
-.choice.addon .addon-why { display: block; margin: .5rem 0 0; color: var(--soft); font-size: .95rem; line-height: 1.5; }
-.choice.addon .addon-once {
-  display: inline-block; margin-top: .55rem; padding: .2rem .55rem; border-radius: 999px;
-  background: rgba(255,79,216,.14); color: var(--magenta);
-  font-size: .8rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-}
-.consent-quote {
-  margin: .9rem 0; padding: .85rem 1rem; border-left: 2px solid var(--magenta);
-  background: rgba(255,79,216,.05); border-radius: 0 10px 10px 0;
-  font-style: italic; font-size: .97rem;
-}
 
 /* Each day is its own card. Runs of times used to blur into one another,
    so the day is now a labelled container rather than a faint heading. */
@@ -379,11 +565,14 @@ summary.btn::-webkit-details-marker { display: none; }
 }
 .day h3 .count { margin-left: auto; font-weight: 600; font-size: .8rem; color: var(--dim); }
 .slots { display: flex; flex-wrap: wrap; gap: .5rem; }
+/* Full width, like the call-method chips above them on the same page. As an
+   inline-block a slot was 180px inside a 282px card, so two thirds of every
+   row looked like a target and was not. */
 .slot {
-  display: inline-block; border: 1px solid var(--line); border-radius: 10px;
+  display: block; width: 100%; border: 1px solid var(--line); border-radius: 10px;
   background: var(--panel-2); color: var(--ink); font: inherit; font-size: 1rem;
   font-weight: 600; padding: .55rem .8rem; cursor: pointer; text-align: left;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums; min-height: 44px;
 }
 .slot:hover { border-color: var(--cyan); }
 .slot .local { display: block; font-size: .78rem; font-weight: 400; color: var(--dim); margin-top: .15rem; }
@@ -393,10 +582,9 @@ summary.btn::-webkit-details-marker { display: none; }
 .chip-label {
   display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--line);
   border-radius: 999px; padding: .38rem .85rem; margin: 0 .35rem .45rem 0; cursor: pointer;
-  background: var(--panel); font-size: .94rem; color: var(--ink);
+  background: var(--panel); font-size: .94rem; color: var(--ink); min-height: 44px;
 }
 .chip-label.selected { border-color: var(--cyan); color: var(--cyan); box-shadow: var(--glow-c); }
-.pref-badge { font: 700 .6rem/1 ui-monospace, monospace; letter-spacing: .1em; color: var(--magenta); border: 1px solid var(--magenta); border-radius: 999px; padding: .15rem .4rem; }
 
 /* case dashboard */
 .timeline { list-style: none; margin: .8rem 0; padding: 0; }
@@ -409,14 +597,20 @@ summary.btn::-webkit-details-marker { display: none; }
 
 .filelist { list-style: none; margin: .5rem 0 0; padding: 0; }
 .filelist li {
-  display: flex; justify-content: space-between; align-items: center; gap: .8rem;
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+  gap: .15rem .8rem;
   padding: .55rem 0; border-bottom: 1px solid var(--line); font-size: .94rem;
 }
 .filelist li:last-child { border-bottom: none; }
 .filelist .fname { min-width: 0; display: flex; align-items: center; gap: .5rem; }
+/* The file name wraps rather than ellipsing. On a phone the old clamp cut
+   "sleep-study-9-8-25.pdf" down to "sl...", which is the one thing in the row
+   anybody needs to read. The row wraps with it, so the date and size drop to a
+   second line rather than squeezing the name off the screen. */
+.filelist .fname { flex: 1 1 12rem; }
 .filelist .fname a {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  min-width: 0; max-width: 16rem;
+  min-width: 0; max-width: none;
+  overflow-wrap: anywhere; white-space: normal;
 }
 .filelist .fmeta { color: var(--dim); font-size: .82rem; white-space: nowrap; }
 .kind-pill {
@@ -433,7 +627,6 @@ summary.btn::-webkit-details-marker { display: none; }
   text-transform: uppercase; white-space: nowrap;
 }
 .status-pill.closed { border-color: var(--dim); color: var(--dim); }
-.status-pill.due { border-color: var(--magenta); color: var(--magenta); box-shadow: var(--glow-m); }
 
 .dropzone {
   border: 1px dashed var(--line); border-radius: 12px; padding: 1rem; text-align: center;
@@ -441,23 +634,7 @@ summary.btn::-webkit-details-marker { display: none; }
 }
 .dropzone.busy { opacity: .5; }
 progress { width: 100%; accent-color: var(--cyan); }
-
-/* about page */
-.steps-list { list-style: none; margin: .8rem 0 0; padding: 0; counter-reset: step; }
-.steps-list li {
-  counter-increment: step; position: relative; padding: 0 0 1rem 2.4rem;
-  border-left: 1px solid var(--line); margin-left: .85rem; font-size: .96rem; color: var(--dim);
-}
-.steps-list li strong { color: var(--ink); display: block; font-size: .94rem; }
-.steps-list li::before {
-  content: counter(step); position: absolute; left: -.95rem; top: -.1rem;
-  width: 1.8rem; height: 1.8rem; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font: 700 .78rem/1 ui-monospace, monospace; color: var(--cyan);
-  background: var(--bg); border: 1px solid var(--cyan); box-shadow: var(--glow-c);
-}
-.steps-list li:last-child { border-left-color: transparent; }
-.about h2 { color: var(--cyan); font-size: 1.05rem; margin-top: 1.8rem; }
+.about h2 { color: var(--cyan); font-size: 1.05rem; margin-top: 2.4rem; }
 /* Fading rule under the page title — a soft element break that dissolves at
    both edges, brightest in the middle. */
 .title-rule {
@@ -475,13 +652,19 @@ progress { width: 100%; accent-color: var(--cyan); }
 }
 .mission p { margin: 0; }
 
-.footer-disclaimer, footer.legal {
+.footer-disclaimer,
+footer.legal {
   margin-top: 2.2rem; padding-top: 1rem; border-top: 1px solid var(--line);
   font-size: .74rem; color: var(--dim);
 }
 
-a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-visible,
-.chip-label:focus-visible, .tabs a:focus-visible, .pack:focus-visible {
+a.btn:focus-visible,
+button:focus-visible,
+.slot:focus-visible,
+.choice:focus-visible,
+.chip-label:focus-visible,
+.tabs a:focus-visible,
+.pack:focus-visible {
   outline: 2px solid var(--magenta); outline-offset: 2px;
 }
 
@@ -512,19 +695,6 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 }
 .msg.them .msg-emoji-react { right: -.3rem; }
 .msg.me .msg-emoji-react { left: -.3rem; }
-/* Update-announcement hint: gold for the launch window, then back to dim. */
-.hint-gold { color: #F5C84C !important; text-shadow: 0 0 10px rgba(255, 208, 80, .25); }
-.hint-gold .hint-update { color: #FFD700; letter-spacing: .06em; font-size: .72rem; }
-
-/* "In short:" recap under an unanswered run of Eric's messages. */
-.msg-recap {
-  margin-top: .45rem; padding: .4rem .55rem; border-radius: 9px;
-  border: 1px solid var(--line); background: rgba(45,226,255,.06);
-  font-size: .78rem; line-height: 1.5; color: var(--soft); overflow-wrap: anywhere;
-}
-
-/* 📚 Dictionary page: category headers. */
-.dict-cat { color: var(--cyan); font-size: .9rem; letter-spacing: .04em; margin-bottom: .6rem; }
 
 /* Pass flag: an outline until tapped, then filled red and unmistakable. */
 .pass-flag {
@@ -544,38 +714,62 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 .msg.react-target { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 
 /* ---- long-press message menu (Messenger-style: emoji bar, then a sheet) ---- */
+/* margin:auto on the child rather than align-items:center on the box: centred
+   flex content that is taller than its container overflows BOTH ends, and the
+   top one cannot be scrolled back to. */
 .msg-menu-overlay {
   position: fixed; inset: 0; z-index: 70; display: flex;
-  align-items: center; justify-content: center; padding: 1.1rem;
+  justify-content: center; padding: 1.1rem; overflow-y: auto;
   background: rgba(4,6,10,.72); backdrop-filter: blur(5px);
 }
+.msg-menu { margin: auto; }
 .msg-menu { width: 100%; max-width: 26rem; }
 .react-bar {
   display: flex; justify-content: space-between; gap: .2rem; margin: 0 auto .7rem;
   padding: .45rem .6rem; border-radius: 999px; width: fit-content; max-width: 100%;
   background: var(--panel); border: 1px solid var(--line); box-shadow: 0 8px 26px rgba(0,0,0,.45);
 }
+/* Six of these at 2.6rem need 311px of a 320px screen, and a flex child cannot
+   shrink below its own min-width, so the last one hung outside the pill on the
+   dimmed backdrop. The row gets to shrink now, down to a size still worth
+   aiming a thumb at. */
 .react-emoji-btn {
-  border: 0; background: none; cursor: pointer; padding: .15rem .3rem;
+  border: 0; background: none; cursor: pointer; padding: .15rem .2rem;
   font-size: 1.75rem; line-height: 1; border-radius: 50%;
+  flex: 0 1 auto; min-width: 2.4rem; min-height: 2.6rem;
   transition: transform .12s ease;
 }
-.react-emoji-btn:hover, .react-emoji-btn:focus-visible { transform: scale(1.25); outline: none; }
+@media (max-width: 360px) {
+  .react-bar { gap: 0; padding: .45rem .35rem; }
+  .react-emoji-btn { min-width: 2rem; font-size: 1.5rem; }
+}
+.react-emoji-btn:hover,
+.react-emoji-btn:focus-visible { transform: scale(1.25); outline: none; }
 .react-emoji-btn.on { transform: scale(1.2); background: rgba(45,226,255,.16); }
 .msg-menu-sheet {
   background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
   padding: .5rem; box-shadow: 0 8px 26px rgba(0,0,0,.45);
-  max-height: min(60vh, 30rem); overflow-y: auto;
+  /* Taller than it was. On a 667px phone the status list runs to about 510px
+     of rows, and at 60vh the last three - Save, Copy text and Cancel - all sat
+     below the fold of a box with nothing to say it scrolled. */
+  max-height: min(72dvh, 34rem); overflow-y: auto;
+}
+/* Cancel never scrolls away. It is the way out of a sheet that opened without
+   being asked for, so it is the one row that has to be on screen. */
+.msg-menu-sheet .msg-menu-row.cancel {
+  position: sticky; bottom: -.5rem; margin-top: .15rem;
+  background: var(--panel); box-shadow: 0 -10px 12px -6px var(--panel);
 }
 .msg-menu-head { margin: .4rem .55rem .35rem; font-size: .72rem; letter-spacing: .04em;
   text-transform: uppercase; color: var(--dim); }
 .msg-menu-note { margin: .4rem .55rem .2rem; font-size: .72rem; color: var(--dim); }
 .msg-menu-row {
   display: flex; align-items: center; gap: .65rem; width: 100%; text-align: left;
-  padding: .62rem .6rem; border-radius: 11px; cursor: pointer; font-size: .92rem;
+  padding: .62rem .6rem; min-height: 2.6rem; border-radius: 11px; cursor: pointer; font-size: .92rem;
   border: 0; background: none; color: var(--ink);
 }
-.msg-menu-row:hover, .msg-menu-row:focus-visible { background: var(--panel-2); outline: none; }
+.msg-menu-row:hover,
+.msg-menu-row:focus-visible { background: var(--panel-2); outline: none; }
 .msg-menu-row.on { color: var(--cyan); }
 .msg-menu-row.cancel { justify-content: center; color: var(--dim); margin-top: .2rem;
   border-top: 1px solid var(--line); border-radius: 0 0 11px 11px; }
@@ -585,69 +779,9 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
   width: 100%; resize: vertical; min-height: 6rem; line-height: 1.5;
   font: inherit; font-size: .95rem;
 }
-
-/* ---- 👨‍⚕️ Advisor: my private panel, side by side with the client chat ---- */
-.chat-with-advisor { display: grid; grid-template-columns: 1fr; gap: .9rem; }
-/* Grid items default to min-width auto, so one unbreakable token (a raw JSON
-   error, a long URL) widens the panel past the phone screen with no way to
-   scroll to it. Let them shrink, clip the panel, and break the tokens. */
-.chat-with-advisor > * { min-width: 0; }
-.advisor-panel { overflow-x: hidden; }
-.advisor-q, .advisor-a p, .advisor-a li { overflow-wrap: anywhere; }
-@media (min-width: 62rem) {
-  .chat-with-advisor { grid-template-columns: minmax(0, 1fr) minmax(0, 22rem); align-items: start; }
-}
-.advisor-panel { border-color: var(--magenta); box-shadow: var(--glow-m); }
-.advisor-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
-.advisor-head h3 { margin: 0; color: var(--magenta); }
-.advisor-controls { display: flex; align-items: center; gap: .35rem; }
-.btn.tiny { font-size: .7rem; padding: .3rem .55rem; }
+.btn.tiny { font-size: .7rem; padding: .6rem .75rem; min-height: 44px; }
 .btn.tiny.on { border-color: var(--magenta); color: var(--magenta); }
-.advisor-status { font-size: .7rem; color: var(--dim); }
-.advisor-status.live { color: var(--magenta); animation: advisor-pulse 1.4s ease-in-out infinite; }
-@keyframes advisor-pulse { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
-.advisor-sub { margin: .1rem 0 .5rem; font-size: .72rem; }
-.advisor-body { max-height: 30rem; overflow-y: auto; }
-/* Flippable note pages: one section at a time, ‹ › or swipe. */
-.advisor-page-head { display: flex; align-items: center; gap: .45rem; }
-.advisor-page-head h4 { flex: 1; margin: 0; font-size: .84rem; letter-spacing: .02em; color: var(--cyan); min-width: 0; overflow-wrap: anywhere; }
-.pg-btn {
-  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
-  border-radius: 8px; width: 1.7rem; height: 1.7rem; min-width: 1.7rem;
-  font-size: 1rem; line-height: 1; cursor: pointer;
-}
-.pg-btn:disabled { opacity: .3; cursor: default; }
-.pg-count { font-size: .68rem; color: var(--dim); white-space: nowrap; }
-.advisor-page-body { margin-top: .35rem; }
 [data-count].over { color: var(--orange); font-weight: 700; }
-.advisor-body p { margin: .3rem 0; font-size: .85rem; line-height: 1.5; color: var(--soft); overflow-wrap: anywhere; }
-.advisor-body ul { margin: .3rem 0 .3rem 1.05rem; padding: 0; }
-.advisor-body li { font-size: .85rem; line-height: 1.5; color: var(--soft); margin-bottom: .25rem; overflow-wrap: anywhere; }
-.advisor-body h5 { margin: .5rem 0 .2rem; font-size: .8rem; color: var(--ink); }
-.advisor-qa { margin-top: .6rem; max-height: 18rem; overflow-y: auto; }
-.advisor-turn { border-top: 1px solid var(--line); padding-top: .5rem; margin-top: .5rem; }
-.advisor-q { margin: 0 0 .3rem; font-size: .82rem; color: var(--ink); font-weight: 600; }
-.advisor-a p, .advisor-a li { font-size: .84rem; color: var(--soft); }
-.advisor-foot { margin-top: .7rem; border-top: 1px solid var(--line); padding-top: .7rem; }
-/* Only the direct-child Prepare button spans the row. The Ask button lives
-   inside the form; width:100% on it crushed the textarea to one character. */
-.advisor-foot > .btn { width: 100%; }
-.advisor-ask .btn { width: auto; }
-.advisor-ask { display: flex; gap: .4rem; margin-top: .5rem; align-items: flex-end; }
-.advisor-ask textarea {
-  flex: 1; resize: none; overflow-y: auto; font: inherit; font-size: .85rem;
-  line-height: 1.4; min-height: 2.4rem; max-height: 7rem; padding: .45rem .6rem;
-}
-.advisor-ask .btn { flex: none; align-self: flex-end; }
-
-/* 📚 Key terms page: checkbox per term; checked = never explained again. */
-.gloss-item { display: flex; gap: .55rem; align-items: flex-start; margin: 0 0 .55rem; }
-.gloss-item input[type=checkbox] { width: 1.05rem; height: 1.05rem; margin-top: .15rem; flex: none; accent-color: var(--cyan); }
-.gloss-item .gloss-text { font-size: .85rem; line-height: 1.5; color: var(--soft); overflow-wrap: anywhere; }
-.gloss-item .gloss-text strong { color: var(--ink); }
-.gloss-known summary { cursor: pointer; list-style: none; font-size: .78rem; color: var(--dim); padding: .3rem 0; }
-.gloss-known summary::-webkit-details-marker { display: none; }
-.gloss-known[open] summary { color: var(--cyan); }
 
 /* Full-screen chat. The ⤢/✕ button sits in the top-right corner of the
    thread; full mode takes the real visible viewport (dvh survives the iOS
@@ -659,7 +793,13 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
   border: 1px solid var(--cyan-dim); background: var(--panel-2); color: var(--cyan);
   font-size: 1.3rem; font-weight: 700; line-height: 1;
 }
-.chat-expand:hover, .chat-expand:focus-visible { border-color: var(--cyan); box-shadow: var(--glow-c); outline: none; }
+.chat-expand:hover,
+.chat-expand:focus-visible { border-color: var(--cyan); box-shadow: var(--glow-c); outline: none; }
+/* Inside a folder page the tab strip sits directly above, and top:-.4rem put
+   this button on top of a tab. Two controls in the same place on a phone is a
+   mis-tap, so within a page the chat starts a little lower and the button
+   stays inside its own box. */
+
 .chat-root.chat-full {
   position: fixed; inset: 0; z-index: 75; margin: 0; border-radius: 0;
   height: 100vh; height: 100dvh;
@@ -672,7 +812,9 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
   top: calc(env(safe-area-inset-top, 0px) + .6rem); right: .8rem;
   color: var(--ink); font-size: .95rem;
 }
-.chat-root.chat-full .chat-log { max-height: none; flex: 1; margin-top: 2.2rem; }
+/* The in-composer control becomes the way out, and says so. */
+.chat-root.chat-full .chat-form [data-expand] { color: var(--cyan); }
+.chat-root.chat-full .chat-log { max-height: none; flex: 1; margin-top: .2rem; }
 /* Full screen means FULL: bubbles stretch nearly wall to wall so far more
    text fits per line, and the hint + export chrome get out of the way — the
    screen belongs to the messages and the composer. */
@@ -681,31 +823,53 @@ a.btn:focus-visible, button:focus-visible, .slot:focus-visible, .choice:focus-vi
 .chat-root.chat-full p:has(> [data-export]) { display: none; }
 body.chat-full-open { overflow: hidden; }
 
-.chat-form { display: flex; gap: .5rem; margin-top: .4rem; align-items: flex-end; }
+/* The message box gets its own row, and the controls sit under it.
+   They all used to share one line. Once the row held four controls the box
+   itself was down to fifty pixels on a phone and twenty-seven at 320 - two
+   characters a line, a tower of them, unusable for the one thing the screen is
+   for. Nothing was cut; the row was. */
+.chat-form {
+  display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .4rem; align-items: flex-end;
+}
 /* A composer you can actually read what you typed in: it grows to five-ish
    lines before it starts scrolling, instead of marching the words off the left. */
 .chat-form textarea {
-  flex: 1; resize: none; overflow-y: auto; font: inherit; font-size: .95rem;
+  order: -1; flex: 1 1 100%; min-width: 0;
+  resize: none; overflow-y: auto; font: inherit; font-size: .95rem;
   line-height: 1.45; min-height: 2.9rem; max-height: 9rem; padding: .6rem .7rem;
 }
 /* Both buttons sit level with the bottom of the growing box. */
-.chat-form .attach-btn, .chat-form .btn { flex: none; align-self: flex-end; height: 2.9rem; }
+.chat-form .attach-btn,
+.chat-form .btn { flex: none; align-self: flex-end; height: 2.9rem; }
+/* Send to the far end of the control row, away from the icons, so the one
+   button that is not undoable is not the one your thumb brushes. */
+.chat-form .btn[type="submit"] { margin-left: auto; }
+/* Wide enough for one line and everything still fits on it. */
+@media (min-width: 560px) {
+.chat-form textarea { order: 0; flex: 1 1 12rem; }
+}
 .chat-notice { border-top: 1px solid var(--line); padding-top: .6rem; }
+/* Small confirmations. A native alert() for "saved" is an unstyled system
+   dialog on an iOS home-screen app, and it needs dismissing before anything
+   else can happen - a modal interruption to say a thing went well. */
+.pa-toast {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 1.2rem);
+  transform: translateX(-50%); z-index: 90; max-width: min(26rem, calc(100vw - 2rem));
+  padding: .65rem 1rem; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--cyan); box-shadow: var(--glow-c);
+  color: var(--ink); font-size: .88rem; text-align: center;
+  animation: pa-toast-in .18s ease-out;
+}
+.pa-toast.bad { border-color: var(--magenta); box-shadow: var(--glow-m); }
+@keyframes pa-toast-in { from { opacity: 0; transform: translate(-50%, .5rem); } }
+@media (prefers-reduced-motion: reduce) { .pa-toast { animation: none; } }
+
 .p-dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; background: var(--line); margin-right: .3rem; }
 .p-dot.on { background: var(--cyan); box-shadow: var(--glow-c); }
 .p-label { font-size: .8rem; color: var(--dim); }
 .expectation { font-size: .85rem; color: var(--dim); font-style: italic; }
-.unread-hint { font: 700 .6rem/1 ui-monospace, monospace; letter-spacing: .12em; color: var(--magenta); border: 1px solid var(--magenta); border-radius: 999px; padding: .18rem .45rem; }
-
-/* sub-tabs (case dashboard) */
-.subtabs { display: flex; gap: .35rem; margin: .8rem 0 1rem; }
-.subtabs button {
-  font: 600 .85rem/1 inherit; color: var(--dim); background: var(--panel);
-  border: 1px solid var(--line); border-radius: 999px; padding: .5rem 1rem; cursor: pointer;
-}
 .subtabs button.active { color: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c); }
 .case-picker { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .8rem; }
-.kind-pill.saved { border-color: var(--magenta); color: var(--magenta); }
 
 /* chat attachments */
 .attach-btn {
@@ -727,8 +891,8 @@ body.chat-full-open { overflow: hidden; }
 .reviews-track { display: flex; gap: .6rem; width: max-content; animation: rv-scroll 40s linear infinite; user-select: none; -webkit-user-select: none; will-change: transform; }
 @keyframes rv-scroll { to { transform: translateX(-50%); } }
 @media (prefers-reduced-motion: reduce) {
-  .reviews-track { animation: none; }
-  .reviews-strip { overflow-x: auto; }
+.reviews-track { animation: none; }
+.reviews-strip { overflow-x: auto; }
 }
 .review {
   flex: 0 0 15rem; background: var(--panel); border: 1px solid var(--line);
@@ -743,38 +907,212 @@ body.chat-full-open { overflow: hidden; }
 .review-full .stars { color: var(--magenta); font-size: .8rem; letter-spacing: .12em; }
 .review-full .rv-full-text { color: var(--soft); font-size: .95rem; line-height: 1.55; margin: .4rem 0 0; }
 
-/* ---- admin month calendar ---- */
-.cal-nav { display: flex; align-items: center; gap: .5rem; margin: .8rem 0; }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-.cal-dow { text-align: center; font: 600 .62rem/1.6 ui-monospace, monospace; color: var(--dim); letter-spacing: .1em; }
-.cal-cell {
-  min-height: 4.6rem; background: var(--panel); border: 1px solid var(--line);
-  border-radius: 8px; padding: .25rem .3rem; overflow: hidden;
+/* ================================================================
+   PR 69 components (calm-neon pass). Landing sections, the booking
+   step rail, agreement expanders, FAQ, folded-in sign-in, and the
+   case page's sticky jump chips. Additive only: nothing above moves.
+   ================================================================ */
+/* Smooth in-page jumps (case page chips, hash links). Guarded so
+   reduced-motion users get instant jumps. */
+@media (prefers-reduced-motion: no-preference) {
+html { scroll-behavior: smooth; }
 }
-.cal-cell.empty { background: transparent; border-color: transparent; }
-.cal-cell.today { border-color: var(--cyan); box-shadow: var(--glow-c); }
-.cal-cell.has-events { cursor: pointer; }
-.cal-date { font-size: .7rem; color: var(--dim); }
-.cal-cell.today .cal-date { color: var(--cyan); font-weight: 700; }
-.cal-mark {
-  font-size: .58rem; line-height: 1.5; border-radius: 4px; padding: 0 .25rem;
-  margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+/* Every in-page jump on this site landed underneath the sticky header, which
+   is the header's own height of the thing you jumped to, gone. The demo strip
+   stacks on top of that and publishes its own measured height. */
+html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
+
+/* ---- landing / about ---- */
+/* Consistent vertical rhythm between landing and about sections. */
+.land-sec { margin-top: 2.8rem; }
+.land-sec > h2 { color: var(--cyan); font-size: 1.2rem; margin-bottom: .9rem; }
+
+.hero { padding: .9rem 0 .3rem; }
+.hero h1 { font-size: clamp(1.9rem, 6vw, 2.6rem); line-height: 1.15; margin: 0 0 .7rem; }
+.hero .hero-sub { font-size: 1.12rem; }
+.hero .actions { margin-top: 1.25rem; }
+/* Credential block: same visual language as .mission on the about page. */
+.hero-cred {
+  margin: 1.1rem 0 0; padding: .65rem .95rem;
+  border-left: 3px solid var(--cyan); border-radius: 3px;
+  background: linear-gradient(90deg, rgba(45,226,255,.07), transparent 70%);
+  color: var(--soft); font-size: .95rem; line-height: 1.55;
 }
-.cal-mark.booked { background: var(--cyan); color: #041018; box-shadow: 0 0 9px rgba(45,226,255,.75); }
-.cal-mark.open { background: var(--green); color: #04180D; box-shadow: 0 0 9px rgba(62,224,138,.7); }
-.cal-mark.held { background: var(--magenta); color: #1A0413; box-shadow: 0 0 9px rgba(255,79,216,.75); }
-.cal-key { display: inline-block; width: .8rem; height: .8rem; border-radius: 3px; vertical-align: -2px; }
-.cal-key.booked { background: var(--cyan); box-shadow: 0 0 7px rgba(45,226,255,.7); }
-.cal-key.open { background: var(--green); box-shadow: 0 0 7px rgba(62,224,138,.65); }
-.cal-key.held { background: var(--magenta); box-shadow: 0 0 7px rgba(255,79,216,.7); }
-/* Phones: day cells are ~50px wide — text won't fit, so marks collapse to
-   iOS-style colored bars; tap the day for the full list below. */
-@media (max-width: 600px) {
-  .cal-cell { min-height: 3.2rem; padding: .2rem .25rem; }
-  .cal-mark {
-    font-size: 0; height: 5px; padding: 0; margin-top: 3px;
-    border-radius: 999px; max-width: 100%;
-  }
+.hero-cred p { margin: 0; }
+
+/* "How it works": numbered circles on a rail, like .steps-list but sized
+   for the landing page's three big steps. */
+.hiw { list-style: none; margin: 1rem 0 0; padding: 0; counter-reset: hiw; }
+.hiw li {
+  counter-increment: hiw; position: relative; padding: 0 0 1.4rem 2.8rem;
+  border-left: 1px solid var(--line); margin-left: .9rem;
+}
+.hiw li:last-child { border-left-color: transparent; padding-bottom: .2rem; }
+.hiw li::before {
+  content: counter(hiw); position: absolute; left: -.95rem; top: -.05rem;
+  width: 1.8rem; height: 1.8rem; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font: 700 .8rem/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--cyan);
+  background: var(--bg); border: 1px solid var(--cyan); box-shadow: var(--glow-c);
+}
+.hiw h3 { margin: 0 0 .25rem; font-size: 1.06rem; }
+.hiw p { margin: 0; color: var(--soft); font-size: .98rem; line-height: 1.6; }
+
+/* "What happens after you book": a plain list, cyan markers. */
+.after-list { margin: .6rem 0 0; padding-left: 1.15rem; color: var(--soft); }
+.after-list li { margin-bottom: .55rem; font-size: .98rem; line-height: 1.6; }
+.after-list li::marker { color: var(--cyan); }
+
+/* Pricing card call-to-action: a span styled like a calm outline button
+   inside the .pack anchor (the whole card is the link). */
+.pack .pack-cta { grid-column: 1 / -1; justify-self: start; }
+.pack-cta {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; margin-top: .55rem; padding: .55rem 1.2rem;
+  border: 1px solid var(--cyan); border-radius: 10px;
+  color: var(--cyan); font: 700 .92rem/1.2 inherit; letter-spacing: .01em;
+}
+.pack:hover .pack-cta,
+.pack:focus-visible .pack-cta { background: rgba(45,226,255,.1); }
+
+/* FAQ expanders ("Straight answers"). */
+/* FAQ expanders ("Straight answers"). */
+.faq { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin-bottom: .6rem; }
+.faq > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+  cursor: pointer; list-style: none; padding: .8rem 1.05rem; min-height: 44px;
+  font-weight: 700; color: var(--ink);
+}
+.faq > summary::-webkit-details-marker { display: none; }
+.faq > summary::after { content: '\25B8'; color: var(--cyan); flex: none; font-size: .8rem; }
+.faq[open] > summary { color: var(--cyan); }
+.faq[open] > summary::after { content: '\25BE'; }
+.faq-a { padding: 0 1.05rem .85rem; color: var(--soft); font-size: .96rem; line-height: 1.6; }
+.faq-a p { margin: 0 0 .5rem; }
+.faq-a p:last-child { margin-bottom: 0; }
+
+/* ---- booking ---- */
+/* Step rail: three numbered stops, always visible above the current step. */
+.step-rail { display: flex; gap: .35rem; margin: .2rem 0 1.5rem; padding: 0; list-style: none; }
+.step-rail li {
+  flex: 1; display: flex; align-items: center; gap: .5rem; min-width: 0;
+  padding: .45rem .3rem .55rem; border-bottom: 2px solid var(--line); color: var(--dim);
+}
+.step-rail .n {
+  display: flex; align-items: center; justify-content: center; flex: none;
+  width: 1.7rem; height: 1.7rem; border-radius: 50%;
+  font: 700 .78rem/1 ui-monospace, "SF Mono", Menlo, monospace;
+  border: 1px solid var(--line); background: var(--panel); color: var(--dim);
+}
+.step-rail .t {
+  font-size: .8rem; font-weight: 600; letter-spacing: .02em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.step-rail li.now { color: var(--cyan); border-bottom-color: var(--cyan); }
+.step-rail li.now .n { border-color: var(--cyan); color: var(--cyan); background: var(--bg); box-shadow: var(--glow-c); }
+.step-rail li.done { color: var(--cyan-dim); border-bottom-color: var(--cyan-dim); }
+.step-rail li.done .n { border-color: var(--cyan-dim); color: var(--cyan-dim); }
+@media (max-width: 480px) {
+/* Phones: wrap the labels instead of ellipsizing them — "One agree…" is
+     exactly the kind of truncation this flow exists to avoid. */
+.step-rail .t { font-size: .74rem; letter-spacing: 0; white-space: normal; line-height: 1.15; overflow: visible; text-overflow: clip; }
+}
+/* Narrow phones: the badge goes above the label rather than beside it. Beside
+   it, the label had about fifty pixels for the word "agreement" and, with
+   nothing to clip it, simply printed across the next step's number - the rail
+   read "2 One agreeme③ Payme". */
+@media (max-width: 400px) {
+.step-rail li { flex-direction: column; align-items: center; gap: .25rem; text-align: center; }
+.step-rail .t { min-width: 0; overflow-wrap: anywhere; }
+}
+
+/* Agreement expander: title + plain-words line in the summary, the verbatim
+   legal body in a scroll box (same look as .waiver-body, shorter), and a
+   checkbox row that the JS enables after open + scroll-to-end. */
+.agreement {
+  border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
+  margin-bottom: .8rem;
+}
+.agreement > summary {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: .6rem;
+  cursor: pointer; list-style: none; padding: .8rem 1.05rem; min-height: 44px;
+}
+.agreement > summary::-webkit-details-marker { display: none; }
+.agreement > summary::after {
+  content: '\25B8'; grid-column: 2; grid-row: 1;
+  color: var(--cyan); font-size: .8rem;
+}
+.agreement[open] > summary::after { content: '\25BE'; }
+.agreement[open] > summary { border-bottom: 1px solid var(--line); }
+.agreement-title { grid-column: 1; grid-row: 1; font-weight: 700; color: var(--ink); }
+.agreement-plain { grid-column: 1; grid-row: 2; font-size: .88rem; font-weight: 400; color: var(--dim); line-height: 1.45; }
+/* Was 14rem: a six-line window onto about twelve screens of legal text, inside
+   a page that also scrolls. Nothing is added below it and nothing overlays it,
+   because the JS unlocks the acknowledgement from this box's own scrollHeight. */
+.agreement-body {
+  max-height: min(58dvh, 30rem); overflow-y: auto; margin: .75rem 1.05rem 0;
+  border: 1px solid var(--line); border-radius: 12px;
+  padding: 1rem 1.1rem; background: var(--bg); font-size: .96rem;
+}
+.agreement-body h3 { color: var(--cyan); font-size: .88rem; letter-spacing: .06em; text-transform: uppercase; margin-top: .9rem; }
+.agreement-body h3:first-child { margin-top: 0; }
+.agreement-check {
+  display: flex; align-items: center; gap: .6rem;
+  margin: .5rem .55rem .55rem; padding: .45rem .5rem; min-height: 44px;
+  border-radius: 10px; cursor: pointer; font-size: .95rem; color: var(--dim);
+}
+.agreement-check input[type=checkbox] {
+  width: 1.3rem; height: 1.3rem; min-width: 1.3rem; margin: 0; accent-color: var(--cyan);
+}
+.agreement-check:has(input:disabled) { cursor: not-allowed; opacity: .75; }
+.agreement-check:has(input:checked) { color: var(--cyan); background: rgba(45,226,255,.07); }
+
+/* Step 3 price block: the number is the headline, the included line under it. */
+.price-line {
+  margin: 1rem 0; padding: .95rem 1.1rem;
+  border: 1px solid var(--cyan-dim); border-radius: 14px;
+  background: rgba(45,226,255,.05);
+  color: var(--soft); font-size: .98rem; line-height: 1.55;
+}
+.price-line .price,
+.price-line .amount,
+.price-line strong:first-child {
+  display: block; font: 800 1.75rem/1.15 inherit; color: var(--cyan);
+  font-variant-numeric: tabular-nums; white-space: nowrap; margin: 0 0 .2rem;
+}
+
+/* ---- shared form rows / folded-in sign-in ---- */
+/* Touch-friendly checkbox row: the whole bordered row is the hit area. */
+.check-row {
+  display: flex; align-items: flex-start; gap: .6rem;
+  margin: .4rem 0; padding: .6rem .7rem; min-height: 44px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2);
+  cursor: pointer; font-size: .92rem; line-height: 1.5; color: var(--soft);
+}
+.check-row input[type=checkbox] {
+  width: 1.25rem; height: 1.25rem; min-width: 1.25rem; margin: .15rem 0 0;
+  accent-color: var(--cyan);
+}
+.check-row:has(input:checked) { border-color: var(--cyan-dim); color: var(--ink); }
+
+/* The sign-in card folded into booking and subscribe (js/inline-auth.js). */
+.auth-inline { border-color: var(--cyan-dim); }
+.auth-inline h3 { margin-bottom: .35rem; }
+.auth-inline input[type=email],
+.auth-inline input[type=text] { min-height: 44px; }
+.jump-chips a.on { color: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c); }
+/* Each section is labeled in the scroll itself — the chips alone shouldn't
+   be the only way to know which block you're looking at. */
+.case-sec-h { color: var(--cyan); font-size: 1.02rem; letter-spacing: .04em; margin: 0 0 .55rem; }
+
+/* Keyboard focus for the new interactive rows (same magenta as the rest). */
+.agreement > summary:focus-visible,
+.faq > summary:focus-visible {
+  outline: 2px solid var(--magenta); outline-offset: 2px;
+}
+.check-row:focus-within,
+.agreement-check:focus-within {
+  outline: 2px solid var(--magenta); outline-offset: 2px;
 }
 
 /* ---- image lightbox: tap a chat image to expand it ---- */
@@ -802,50 +1140,729 @@ body.chat-full-open { overflow: hidden; }
 body.lightbox-open { overflow: hidden; }
 .msg-img { cursor: zoom-in; }
 
-/* Tiny per-file "have the advisor read this" button in the admin file list. */
-.file-review {
-  font-size: .8rem; padding: .12rem .45rem; margin-left: .4rem;
-  vertical-align: middle; line-height: 1.2;
+/* ------------------------------------------------------------- what's new
+   App Store style: the version, then a short list of what actually changed
+   for whoever is reading it. Dismissible, and it never comes back. */
+.whats-new h3 { margin: .2rem 0 .1rem; }
+.whats-new h3 + ul { margin-top: .35rem; }
+.whats-new-list { margin: 0 0 1rem; padding-left: 1.15rem; }
+.whats-new-list li { margin: 0 0 .45rem; font-size: .93rem; line-height: 1.45; }
+
+/* ------------------------------------------------------------- the follow-up
+   Offered from the case rather than at checkout, so it reaches somebody who has
+   read their report and knows whether they want more - not somebody still
+   deciding whether to trust him at all. Quieter than the review card on
+   purpose: this one is asking for money. */
+.followup-offer {
+  margin: 1rem 0 0;
+  padding: 1.15rem 1.15rem 1.1rem;
+  /* Lighter border and a softer glow: the card should read as an offer, not
+     as an alert. */
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+.followup-offer h3 {
+  margin: 0 0 .45rem;
+  font-size: 1.12rem;
+  line-height: 1.3;
+  /* "Your follow-up is reserved." broke at the hyphen and left one word on the
+     second line. Balanced wrapping keeps a short heading looking deliberate. */
+  text-wrap: balance;
+}
+.followup-offer p {
+  margin: 0 0 .55rem;
+  font-size: .93rem;
+  /* Body text was set tight for a card this wide. */
+  line-height: 1.62;
+  color: var(--soft);
+}
+/* "Same case. Same file. No starting over." Understated, not a second
+   heading: it carries weight by sitting apart, not by shouting. */
+.followup-offer .fu-emphasis {
+  margin: 0 0 .2rem;
+  font-size: .89rem;
+  color: var(--soft);
+  font-weight: 600;
+  letter-spacing: .015em;
+}
+/* Price and button are one decision, so they are one row. */
+.followup-offer .fu-buy {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: .95rem 0 .7rem;
+  padding-top: .95rem;
+  border-top: 1px solid var(--line);
+}
+.followup-offer .price {
+  font-size: 1.65rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--magenta);
+  font-variant-numeric: tabular-nums;
+}
+.followup-offer .btn { flex: 0 1 auto; }
+/* One step dimmer than the body, so the terms sit under the offer rather
+   than competing with it. */
+.followup-offer .fu-fine {
+  margin: 0;
+  font-size: .82rem;
+  line-height: 1.55;
+  color: var(--dim);
+}
+.followup-offer p:last-of-type { margin-bottom: 0; }
+
+/* Coming back from Stripe, before the webhook has necessarily landed. The
+   same card resolved, not a bright new box: nothing is wrong, and a green
+   outlined alert says something is. */
+.followup-offer.is-done { border-color: var(--line); }
+.followup-offer .fu-tick {
+  margin-right: .4rem;
+  font-size: .95rem;
+  color: var(--green);
 }
 
-/* 👨‍⚕️ badge: stage a file for the advisor's next analysis (admin only). */
-.dr-badge {
-  align-self: flex-start; margin-top: .3rem; cursor: pointer;
-  border: 1px solid var(--line); background: var(--panel-2); border-radius: 999px;
-  padding: .12rem .5rem; font-size: .95rem; line-height: 1.3;
-}
-.dr-badge.on, .file-review.on {
-  border-color: var(--cyan); background: rgba(45, 226, 255, .14); box-shadow: var(--glow-c);
+/* On a narrow phone the price and the button will not sit side by side without
+   squeezing both. Stacking them is the better answer than a cramped row, and a
+   full-width button is an easier target for someone who is unwell. It stays
+   one decision because it stays inside one bordered block. */
+@media (max-width: 380px) {
+  .followup-offer .fu-buy {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .65rem;
+  }
+  .followup-offer .fu-buy .price { line-height: 1; }
+  .followup-offer .fu-buy .btn { width: 100%; }
 }
 
-/* The draft's home: a code-box the reply lives in until it's sent. */
-.advisor-draft {
-  border: 1px solid var(--magenta); border-radius: 12px;
-  padding: .55rem .7rem .65rem; margin: .6rem 0; background: var(--bg);
+/* ---------------------------------------------------------------- the review
+   Opens under the documents once the report has landed. Five stars, a few
+   words, and a thank-you that fades away on its own rather than sitting there
+   waiting to be dismissed. */
+.delivered-tick { flex: none; font-size: .95rem; }
+.review-card {
+  margin: 1rem 0 0; padding: 1rem 1rem 1.1rem;
+  border: 1px solid var(--cyan-dim); border-radius: 14px;
+  background: var(--panel-2); box-shadow: var(--glow-c);
 }
-.advisor-draft-label { margin: 0; font-weight: 700; color: var(--magenta); font-size: .85rem; }
-.draft-box {
-  width: 100%; min-height: 5.5rem; margin-top: .4rem; resize: vertical;
-  font: 400 .88rem/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  background: var(--panel-2); color: var(--ink);
-  border: 1px solid var(--line); border-radius: 8px; padding: .55rem .65rem;
+.review-card h3 { margin: 0 0 .5rem; }
+.review-card p { font-size: .93rem; }
+.review-card .follow-note {
+  margin: .7rem 0 0; padding: .55rem .7rem;
+  border-left: 3px solid var(--magenta); border-radius: 0 8px 8px 0;
+  background: var(--panel);
 }
-.advisor-draft-actions { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .45rem; }
+.review-card textarea {
+  width: 100%; margin: .2rem 0 .6rem;
+  padding: .6rem .7rem; font: inherit; font-size: .95rem;
+  color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; resize: vertical;
+}
 
-/* Staged-files row in the advisor panel: chips for what the next Analyze
-   will read, plus the "Add a file" control (inline upload, admin device
-   only, never visible to the client). */
-.advisor-files { display: flex; flex-wrap: wrap; gap: .35rem; margin: .1rem 0 .45rem; }
-.adv-chip {
-  display: inline-flex; align-items: center; gap: .35rem;
-  border: 1px solid var(--cyan-dim); border-radius: 999px;
-  padding: .14rem .55rem; font-size: .76rem; color: var(--soft);
-  max-width: 100%;
+.stars { display: flex; gap: .15rem; margin: .5rem 0 .7rem; }
+.star {
+  padding: .1rem .2rem; font-size: 2rem; line-height: 1;
+  color: var(--line); background: none; border: 0; cursor: pointer;
+  transition: color .15s ease-out, transform .15s cubic-bezier(.2, .8, .3, 1);
 }
-.adv-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 9rem; }
-.adv-chip button { border: 0; background: none; color: var(--dim); cursor: pointer; padding: 0; font-size: .8rem; }
-.adv-chip.adv-add { border-style: dashed; border-color: var(--line); color: var(--dim); cursor: pointer; }
-.adv-chip.adv-add:hover { border-color: var(--cyan-dim); color: var(--soft); }
+.star:hover { transform: scale(1.12); }
+.star.on { color: var(--gold); text-shadow: 0 0 12px rgba(255, 204, 85, .5); }
+.star:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 4px; }
 
-/* The draft's own section on the admin case page. */
-.draft-panel { border-color: var(--magenta); box-shadow: var(--glow-m); }
+/* Fades in, holds long enough to read, then drifts up and away. Nothing to
+   dismiss: they are finished, and a button would say otherwise. */
+.thanks {
+  margin: 1.4rem 0; text-align: center;
+  font-size: 1.15rem; font-weight: 700; color: var(--cyan);
+  animation: thanks 4s ease-in-out forwards;
+}
+@keyframes thanks {
+  0% { opacity: 0; transform: translate3d(0, 6px, 0); }
+  12% { opacity: 1; transform: none; }
+  70% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translate3d(0, -10px, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+.star,
+.star:hover { transition: none; transform: none; }
+.thanks { animation: none; }
+}
+
+/* --------------------------------------------------------- appearance picker
+   Each swatch is painted from that scheme's OWN tokens, applied to the swatch
+   rather than to the page, so a swatch can never drift out of sync with what
+   picking it actually does. */
+.scheme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.scheme-swatch {
+  display: grid; gap: .18rem; padding: .6rem .65rem; text-align: left;
+  color: var(--ink); background: var(--panel-2); cursor: pointer;
+  border: 1px solid var(--line); border-radius: 10px; font: inherit;
+}
+.scheme-swatch.on { border-color: var(--cyan); box-shadow: var(--glow-c); }
+.scheme-name { font-weight: 700; font-size: .9rem; }
+.scheme-blurb { line-height: 1.3; }
+.scheme-chip {
+  display: flex; gap: 3px; align-items: center;
+  height: 22px; margin-bottom: .15rem; padding: 4px 5px;
+  border-radius: 6px; border: 1px solid var(--line);
+}
+.scheme-chip i { flex: 1; height: 100%; border-radius: 2px; }
+.sc-neon { background: #07090F; border-color: #1C2542; }
+.sc-neon i:nth-child(1) { background: #2DE2FF; }
+.sc-neon i:nth-child(2) { background: #FF4FD8; }
+.sc-neon i:nth-child(3) { background: #EAF0FF; }
+.sc-calm { background: #0B0E14; border-color: #232C3F; }
+.sc-calm i:nth-child(1) { background: #6FC7D8; }
+.sc-calm i:nth-child(2) { background: #D98BC4; }
+.sc-calm i:nth-child(3) { background: #E4E9F2; }
+.sc-paper { background: #F3EEE3; border-color: #DDD4C2; }
+.sc-paper i:nth-child(1) { background: #0E6E86; }
+.sc-paper i:nth-child(2) { background: #A8367F; }
+.sc-paper i:nth-child(3) { background: #23201A; }
+.sc-contrast { background: #000; border-color: #6A6A6A; }
+.sc-contrast i:nth-child(1) { background: #4FE9FF; }
+.sc-contrast i:nth-child(2) { background: #FF77E0; }
+.sc-contrast i:nth-child(3) { background: #FFF; }
+.uploads .filelist { margin: 0; }
+.uploads .filelist li {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: .6rem; padding: .5rem 0;
+}
+.uploads .filelist .fname { display: block; }
+/* The name gets the whole column. "sl..." is not a file name. */
+.uploads .filelist .fname a {
+  max-width: none; white-space: normal; overflow-wrap: anywhere;
+  overflow: visible; text-overflow: clip;
+}
+.uploads .filelist .fmeta { padding-left: .1rem; }
+/* Five sources, five colours: report, recording, upload, chat, saved. */
+.kind-pill.chat { color: var(--green); border-color: var(--green); }
+.kind-pill.saved { color: var(--gold); border-color: var(--gold); }
+@keyframes rd-sweep {
+  0% { transform: translate3d(-110%, 0, 0); }
+  100% { transform: translate3d(300%, 0, 0); }
+}
+
+/* ============================================================================
+   The case folder - card stock in a neon room.
+
+   Owned by folder.js (public/js/folder.js). Merge target: public/css/site.css.
+
+   Manila lives on the CHROME only: the folder card on the shelf, the cut tabs,
+   the rim and the crease of the open folder. The pages inside stay the app's
+   own dark panels, so a case reads as paper resting on the desk rather than a
+   cream slab dropped into the dark.
+
+   The five variables below are the whole manila palette. Retint them and every
+   piece of folder chrome follows.
+   ========================================================================= */
+:root {
+  --manila: #DEC791;        /* the card stock */
+  --manila-2: #F0DFB0;      /* the lit top edge of a fold */
+  --manila-ink: #2A2113;    /* type printed on the stock */
+  --manila-edge: #A98F5F;   /* cut edges, rims, the back cover */
+  --manila-fold: rgba(10, 7, 2, .7); /* the crease where a flap meets a body */
+}
+
+.folder {
+  /* --fld-tab keeps the tab band and the paper edges peeking behind it in sync. */
+  --fld-tab: 1.68rem;
+  position: relative; display: block; isolation: isolate;
+  /* perspective gives the flap real depth on open. Safe here and only here:
+     the shelf never holds the chat, which is position:fixed in full screen. */
+  perspective: 900px;
+  padding: 0 3px 5px; margin: 0;
+  text-decoration: none; color: var(--manila-ink);
+  border-radius: 12px 14px 14px 14px;
+  background: var(--manila-edge);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .25) inset, 0 6px 16px rgba(0, 0, 0, .45);
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.folder:hover,
+.folder:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .25) inset, 0 10px 22px rgba(0, 0, 0, .5),
+              0 0 0 1px var(--cyan-dim), var(--glow-c);
+}
+.folder:focus-visible { outline: 2px solid var(--magenta); outline-offset: 3px; }
+
+/* Sheets inside the folder, peeking above the flap next to the tab. */
+.folder::before,
+.folder::after {
+  content: ''; position: absolute; z-index: 0; pointer-events: none;
+  top: calc(var(--fld-tab) - .5rem); height: 1rem; right: .7rem; width: 42%;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, rgba(250, 247, 238, .95), rgba(226, 219, 200, .8));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+}
+.folder::after { right: 1.3rem; width: 32%; top: calc(var(--fld-tab) - .34rem); opacity: .8; }
+@keyframes badge-in {
+  from { opacity: 0; transform: translate3d(0, -3px, 0) scale(.9); }
+  to { opacity: 1; transform: none; }
+}
+/* A dark chip on card stock: the pill keeps its own neon border and text, and
+   stops fighting the manila underneath it. */
+.folder .status-pill {
+  grid-column: 2; justify-self: end;
+  background: rgba(8, 11, 19, .88); box-shadow: 0 1px 3px rgba(0, 0, 0, .35);
+}
+
+/* The open: the flap swings up on its bottom edge, the sheets lift and fan,
+   the whole card comes toward you. Then folder.js navigates. */
+/* The folder-opening animation is gone (Eric, 2026-08-21). It set
+   pointer-events: none for the length of the animation and then navigated, and
+   the class was never taken off - so coming back to the shelf restored a page
+   whose folders could no longer be tapped at all. A folder opens on the first
+   tap now, with nothing in between. */
+
+  100% { transform: scale(1.07) translateY(-11px); }
+}
+@keyframes fld-flap {
+  0% { transform: rotateX(0deg); }
+  100% { transform: rotateX(-54deg) translateY(-2px); }
+}
+@keyframes fld-tab {
+  0% { transform: none; }
+  100% { transform: translateY(-3px) rotate(-.6deg); }
+}
+}
+}
+
+/* ------------------------------------------------------- the open workspace */
+/* Never give .case-folder transform, filter, backdrop-filter, contain, or
+   will-change: transform. The full-screen chat is position:fixed and lives in
+   one of its pages, and any of those would pin it to this box instead of the
+   screen. position:relative is fine and is all this needs. */
+.case-folder {
+  position: relative;
+  padding: .1rem .4rem .55rem;
+  border: 1px solid var(--manila-edge); border-top: none;
+  border-radius: 0 0 14px 14px;
+  box-shadow: inset 0 7px 13px -9px var(--manila-fold);
+}
+/* Two sheet edges showing under the closed bottom of the folder. */
+.case-folder::after {
+  content: ''; position: absolute; pointer-events: none;
+  left: 1.5rem; right: 1.5rem; bottom: -5px; height: 5px;
+  border-radius: 0 0 9px 9px;
+  background: var(--manila); opacity: .5;
+  box-shadow: 0 4px 0 -1px var(--manila-edge);
+}
+
+/* The tab strip. z-index 4: under the header at 5, per the budget.
+   The offset is the header's real height, measured and published by nav-menu.js,
+   so the strip docks against the bar instead of floating with a transparent
+   band above it that page content slid through. */
+.folder-tabs {
+  /* Below the bar's BOTTOM, not its height. The bar itself sticks under the
+     demo strip when there is one, so the strip's height has to be in the sum
+     as well: measuring only the bar's own height docked the tabs 62px behind
+     it at 320. Both numbers are published by the code that owns them. */
+  /* Eric, 2026-08-21: "Tabs should not travel. They should stay at the top."
+     Sticky meant they rode down the page, clipped against the bar, and left
+     a band of chrome over the content. They sit at the top of the folder and
+     scroll away with it. */
+  position: static; z-index: 4;
+  display: flex; align-items: flex-end; gap: .22rem;
+  min-height: calc(44px + .75rem);
+  margin: 0 -.4rem .7rem; padding: .4rem .5rem 0;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  background: var(--bar); backdrop-filter: blur(8px);
+  border-bottom: 2px solid var(--manila-edge);
+}
+.folder-tabs::-webkit-scrollbar { display: none; }
+/* An author `display` rule beats the UA stylesheet's [hidden] { display:none },
+   so the tabs of a closed group stayed in the layout: twelve tabs sharing a
+   320px row instead of four. This is the rule that makes the second tier
+   actually a second tier. */
+.folder-tabs > a[hidden] { display: none; }
+.folder-tabs > a {
+  position: relative; flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: .34rem;
+  min-height: 44px; padding: .5rem .9rem;
+  white-space: nowrap; text-decoration: none;
+  font-weight: 700; font-size: .82rem; line-height: 1; letter-spacing: .01em;
+  color: var(--manila-ink);
+  /* Flat stock behind the label, the darker cut only along the base: a tab that
+     recedes without dropping its label onto a shadow. */
+  background: linear-gradient(180deg, var(--manila) 0 78%, var(--manila-edge));
+  /* The cut: a trapezoid a touch wider at the base, sliced from card stock. */
+  clip-path: polygon(.5rem 0, calc(100% - .5rem) 0, 100% 100%, 0 100%);
+}
+/* Staggered cuts: the tabs behind the front one sit lower, so the strip has the
+   ragged top edge of a real set of files. */
+.folder-tabs > a:nth-child(3n+2) { margin-top: .3rem; }
+.folder-tabs > a:nth-child(3n+3) { margin-top: .15rem; }
+/* The front-most tab: full height, lit stock, and pushed 2px over the rim so it
+   joins the page body below instead of sitting on a shelf above it. */
+.folder-tabs > a.on {
+  margin-top: 0; margin-bottom: -2px; padding-bottom: calc(.5rem + 2px);
+  background: linear-gradient(180deg, var(--manila-2), var(--manila));
+  /* drop-shadow, not box-shadow: the glow has to follow the cut, and box-shadow
+     is clipped away by clip-path. */
+  filter: drop-shadow(0 -1px 6px var(--cyan-dim));
+}
+.folder-tabs > a.on::after {
+  content: ''; position: absolute; top: 0; left: .5rem; right: .5rem; height: 2px;
+  border-radius: 2px; background: var(--cyan);
+}
+/* Inset so the clip-path can't shave the focus ring off. */
+.folder-tabs > a:focus-visible { outline: 2px solid var(--magenta); outline-offset: -3px; }
+.ftab-ic { font-size: .95rem; line-height: 1; }
+.ftab-t { line-height: 1; }
+/* Inside the folder the strip only has to say "this one": the shelf already
+   said which kind of thing changed. The tab he is on never carries a dot. */
+.ftab-dot {
+  width: 7px; height: 7px; margin-left: .1rem; flex: none;
+  border-radius: 50%; background: var(--cyan);
+  box-shadow: 0 0 6px rgba(45, 226, 255, .85);
+}
+.ftab-dot[hidden] { display: none; }
+/* Only the label recedes on the tabs behind the front one: fading the tab
+   itself would fade its card stock into the dark page behind it. */
+.folder-tabs > a .ftab-ic,
+.folder-tabs > a .ftab-t { opacity: .82; }
+.folder-tabs > a.on .ftab-ic,
+.folder-tabs > a.on .ftab-t { opacity: 1; }
+
+/* Said once, on the first case a client ever opens. Tabs are a real interface
+   and nobody arrives knowing that tapping the paper turns the page. */
+.nav-hint {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  margin: 0 0 .7rem; padding: .6rem .75rem;
+  font-size: .85rem; line-height: 1.5; color: var(--soft);
+  background: var(--panel-2);
+  border: 1px solid var(--line); border-left: 3px solid var(--cyan); border-radius: 10px;
+}
+.nav-hint .btn { padding: .28rem .7rem; font-size: .78rem; }
+
+/* A caller-supplied button in the composer row, sized and shaped exactly like
+   the paperclip beside it so the row stays one row. */
+button.attach-btn {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* The update card is a guided tour now: one page of their case per card, in
+   tab order, paged through with Next. A wall of text about how to stop
+   scrolling is the wrong shape for the thing it is explaining. */
+.whats-new .wn-step {
+  margin: 0 0 .3rem; font-size: .72rem; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.whats-new .wn-body { margin: .4rem 0 0; font-size: .95rem; line-height: 1.65; color: var(--soft); }
+.whats-new .wn-dots { display: flex; gap: .3rem; margin: .9rem 0 0; }
+.whats-new .wn-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--line);
+}
+.whats-new .wn-dots span.on { background: var(--cyan); box-shadow: var(--glow-c); }
+.whats-new .actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+
+/* ---------------------------------------------------------------- the demo
+   Loud on purpose. A demo that looks exactly like the product is the point and
+   also the risk: nobody should get a paragraph into reading a case before
+   working out that none of it happened. */
+.demo-bar {
+  /* Above the page header (5), below every dialog. It used to sit at 90, over
+     the settings panel, the naming sheet and the guided tour, so a modal's
+     heading opened underneath a banner. A strip that says "this is a demo" is
+     not more important than the thing you just opened. */
+  position: sticky; top: 0; z-index: 40;
+  /* flex-start, not center: the text wraps to three lines on a phone and a
+     centred dot floats in the middle of them. */
+  display: flex; align-items: flex-start; gap: .6rem; flex-wrap: wrap;
+  padding: .5rem .8rem;
+  font-size: .8rem; line-height: 1.45;
+  color: #07090F; background: var(--gold);
+}
+.demo-bar .demo-what { flex: 1 1 14rem; min-width: 0; }
+.demo-dot {
+  width: 8px; height: 8px; flex: none; margin-top: .38rem; border-radius: 50%;
+  background: #07090F;
+}
+.demo-acts { display: flex; gap: .4rem; flex: none; }
+.demo-bar .btn {
+  padding: .22rem .6rem; font-size: .75rem;
+  color: #07090F; border-color: rgba(7, 9, 15, .45); background: rgba(255, 255, 255, .35);
+}
+.demo-bar .btn:hover { background: rgba(255, 255, 255, .6); }
+/* Scrolled: the sentence goes and the word, the dot and the buttons close up
+   onto one row. Same strip, a third of the height. */
+.demo-bar.slim { align-items: center; }
+.demo-bar.slim .demo-more { display: none; }
+.demo-bar.slim .demo-what { flex: 0 0 auto; }
+.demo-bar.slim .demo-dot { margin-top: 0; }
+/* The sticky header sits under the strip rather than over it. The height comes
+   from the strip itself, measured after it wraps: a fixed value was short by
+   about ninety pixels on a phone, so the header slid underneath and disappeared
+   as soon as anything scrolled. */
+body.has-demo-bar .bar { top: var(--demo-bar-h, 2.4rem); }
+
+/* --------------------------------------------------------- saved messages
+   Both sides get this, and on both sides it is private: the bookmark lives in
+   a subtree the browser cannot read, and nothing is written back to the
+   message, so saving one tells the other person nothing.
+
+   Prefixed sv- throughout. Never a bare .saved: that is already a file-kind
+   pill on the Documents list. */
+.sv-list { list-style: none; margin: .8rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .7rem; }
+.sv-item {
+  position: relative;
+  padding: .7rem .8rem .8rem;
+  background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 12px;
+}
+.sv-head { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .4rem; }
+.sv-who { font-weight: 700; font-size: .8rem; color: var(--ink); }
+.sv-when { font-size: .75rem; color: var(--dim); }
+.sv-drop {
+  margin-left: auto; flex: none;
+  width: 1.9rem; height: 1.9rem; padding: 0;
+  font: inherit; font-size: .85rem; line-height: 1; cursor: pointer;
+  color: var(--dim); background: none;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.sv-drop:hover, .sv-drop:focus-visible { color: var(--danger); border-color: var(--danger); outline: none; }
+.sv-text {
+  margin: 0 0 .55rem; padding: .5rem .65rem;
+  border-left: 3px solid var(--cyan-dim); border-radius: 0 8px 8px 0;
+  background: var(--panel);
+  font-size: .9rem; line-height: 1.55; color: var(--soft);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.sv-note-label { display: block; font-size: .75rem; color: var(--dim); }
+.sv-note {
+  display: block; width: 100%; margin-top: .25rem;
+  padding: .5rem .6rem; font: inherit; font-size: .9rem; line-height: 1.5;
+  color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 9px; resize: vertical;
+}
+.sv-note:focus-visible { border-color: var(--cyan); outline: none; }
+/* Where the save got to. Absent when there is nothing to say. */
+.sv-pill {
+  position: absolute; right: .8rem; bottom: .35rem;
+  font-size: .7rem; color: var(--dim);
+}
+.sv-pill.ok { color: var(--green); }
+.sv-pill.bad { color: var(--danger); }
+.sv-pill[hidden] { display: none; }
+/* The bookmark on a message in the chat. Only the person who saved it has it
+   in their list, so only they ever see this. */
+.sv-mark { margin-left: .35rem; font-size: .72rem; opacity: .75; }
+
+/* ---------------------------------------------------------------- two tiers
+   Eric asked for grouping that kills side scroll and left-to-right travel and
+   keeps every page two taps away. So: a group row that never changes, and a
+   page row showing only the open group.
+
+   The rule that makes it work is that a group holds at most four pages, so the
+   page row always fits across a 320px screen without scrolling and without a
+   single label being cut short. */
+.folder-groups {
+  position: sticky; top: 3rem; z-index: 5;
+  display: flex; gap: .3rem;
+  margin: 0 -.4rem .1rem; padding: .45rem .5rem .35rem;
+  background: var(--bar); backdrop-filter: blur(8px);
+}
+.fgrp {
+  position: relative; flex: 1 1 0; min-width: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: .35rem;
+  min-height: 40px; padding: .4rem .5rem;
+  font: inherit; font-weight: 700; font-size: .78rem; line-height: 1.15;
+  letter-spacing: .02em; text-align: center;
+  color: var(--dim); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 10px;
+  cursor: pointer;
+}
+.fgrp-ic { font-size: 1rem; line-height: 1; flex: none; }
+ /* Never mid-word: "Advis / or" is not a label. If a group name will not fit
+    it gets a shorter name, not a hyphenless break. */
+.fgrp-t { min-width: 0; overflow-wrap: normal; }
+.fgrp.on {
+  color: var(--ink); background: var(--panel);
+  border-color: var(--cyan-dim); box-shadow: inset 0 -2px 0 var(--cyan);
+}
+.fgrp:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
+/* A page dot inside a closed group cannot be seen, so it surfaces here. */
+.fgrp-dot {
+  width: 7px; height: 7px; flex: none;
+  border-radius: 50%; background: var(--cyan);
+  box-shadow: 0 0 6px rgba(45, 226, 255, .85);
+}
+.fgrp-dot[hidden] { display: none; }
+
+/* The page row sits under the group row, not under the header. */
+.case-folder.two-tier .folder-tabs { top: calc(3rem + 52px); }
+
+/* Four tabs across a narrow phone: share the width evenly and stack the label
+   under the icon so the word still fits whole. Truncating a label is not an
+   option - a tab reading "Unansw..." is worse than no tab at all. */
+.folder-tabs.tight { gap: .18rem; overflow-x: visible; padding-left: .35rem; padding-right: .35rem; }
+.folder-tabs.tight > a {
+  /* Basis is the label's own width, not zero. On an equal-shares row every tab
+     got the same 64px whether it said "Chat" or "Unanswered", so the long ones
+     overflowed while the short ones sat half empty. Growing from content means
+     a row that fits gives each label at least what it needs, and a row that
+     does not shrinks the wide ones first. */
+  flex: 1 1 auto; min-width: 0;
+  flex-direction: column; gap: .2rem;
+  /* Four tabs across 320px leaves 64px of tab. Measured: "Overview" and
+     "Summary" are 75-76px at the full size, so the label needs both a smaller
+     size and its padding back. */
+  padding: .42rem .18rem;
+  font-size: .72rem;
+  text-align: center;
+  /* The trapezoid cut eats half a rem from each side, which at this width is
+     most of the difference between a label that fits and one that does not. */
+  clip-path: polygon(.25rem 0, calc(100% - .25rem) 0, 100% 100%, 0 100%);
+}
+.folder-tabs.tight > a .ftab-t {
+  white-space: normal; line-height: 1.15; overflow-wrap: break-word;
+}
+.folder-tabs.tight .ftab-dot {
+  position: absolute; top: .3rem; right: .3rem; margin: 0;
+}
+/* A 320px screen is a small screen and something has to give. It gives here,
+   in a step down of type size, rather than in a truncated label or a row that
+   scrolls sideways. */
+@media (max-width: 360px) {
+  /* The icon goes, and the label gets what it paid for: readable type and
+     enough side padding to clear the trapezoid's slanted corners. It was
+     11.2px with two pixels of padding, which reads as clipped even where it
+     is not. The group row above keeps its icons - that is the row where the
+     icon is doing the work. */
+  /* The icon goes, and what it was using goes to the label: readable type and
+     enough side padding to clear the trapezoid's slanted corners, which taper
+     to about four pixels by the height the label sits at. It was 11.2px with
+     three pixels of padding, which reads as clipped even where it is not. The
+     group row above keeps its icons - that is the row where the icon is doing
+     the work. */
+  .folder-tabs.tight > a { font-size: .68rem; padding: .42rem .32rem; gap: 0; }
+  .folder-tabs.tight > a .ftab-ic { display: none; }
+  .fgrp { font-size: .7rem; padding: .4rem .3rem; }
+}
+/* Four groups across a phone: the label goes under the icon here too. */
+.folder-groups.many .fgrp { flex-direction: column; gap: .15rem; padding: .35rem .25rem; }
+
+/* The client's copy of the same engine: same tabs, same flips, no manila. The
+   folder is the advocate's working object, not something a client should have to
+   read as a metaphor. Add `plain` to the container (`el.classList.add('plain')`
+   any time after mountPages) and the chrome drops away, leaving the app's own
+   pill tabs. Nothing in folder.js changes. */
+.case-folder { padding: 0; border: none; border-radius: 0; box-shadow: none; }
+.case-folder::after { content: none; }
+.case-folder .folder-tabs {
+  align-items: center; gap: .4rem; min-height: 0;
+  margin: 0 0 1rem; padding: .5rem .1rem .55rem;
+  border-bottom: none;
+}
+.case-folder .folder-tabs > a {
+  /* Tight enough that the client's three pills all fit at 390px. They scroll
+     if they ever do not, but a tab half off the edge reads as a broken page
+     rather than as more to scroll to. */
+  margin: 0; padding: .3rem .7rem; gap: .3rem;
+  font-weight: 600; font-size: .82rem;
+  color: var(--dim); background: none; filter: none;
+  border: 1px solid var(--line); border-radius: 999px; clip-path: none;
+}
+.case-folder .folder-tabs > a.on {
+  color: var(--cyan); background: none;
+  border-color: var(--cyan); box-shadow: var(--glow-c);
+}
+.case-folder .folder-tabs > a.on::after { content: none; }
+.case-folder .folder-tabs > a .ftab-ic,
+.case-folder .folder-tabs > a .ftab-t { opacity: 1; }
+
+/* ------------------------------------------------------------- flip a page */
+.fpage[hidden] { display: none !important; }
+/* The shuffle. Tapping the right half sends the page he was on to the back of
+   the pile and brings the next sheet up from under it, so it arrives slightly
+   small, tilted, and low, then straightens as it lands on top. 280ms: long
+   enough to read as paper moving, short enough that eight fast taps land eight
+   flips instead of queueing behind an animation. */
+.fpage.f-in-r { animation: fpage-shuffle-r 280ms cubic-bezier(.22, .72, .24, 1) both; }
+.fpage.f-in-l { animation: fpage-shuffle-l 280ms cubic-bezier(.22, .72, .24, 1) both; }
+.fpage.f-fade { animation: fpage-fade 190ms ease-out both; }
+/* The pile itself gives a little as a sheet is pulled off it. */
+.case-folder.shuffling::after { animation: fld-pile 280ms ease-out both; }
+
+/* The hard guard. folder.js marks any page holding the full-screen chat, and
+   these rules make a transform impossible on it even if a future flip class
+   says otherwise. */
+.fpage.no-transform,
+.case-folder.no-transform { transform: none !important; }
+.fpage.no-transform.f-in-l,
+.fpage.no-transform.f-in-r,
+.fpage.no-transform.enter,
+.case-folder.no-transform.enter { animation-name: fpage-fade !important; }
+
+/* The workspace settling, as if the folder had just been set down. */
+.case-folder.enter,
+.fpage.enter { animation: fld-settle 380ms cubic-bezier(.2, .8, .3, 1) both; }
+
+@keyframes fpage-shuffle-r {
+  0% { opacity: 0; transform: translate3d(26px, 9px, 0) scale(.966) rotate(1.1deg); }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes fpage-shuffle-l {
+  0% { opacity: 0; transform: translate3d(-26px, 9px, 0) scale(.966) rotate(-1.1deg); }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: none; }
+}
+/* Only the two sheet edges under the folder move, never .case-folder itself:
+   it holds the position:fixed chat and must stay untransformed. */
+@keyframes fld-pile {
+  0% { transform: translate3d(0, -3px, 0); opacity: .28; }
+  100% { transform: none; opacity: .5; }
+}
+@keyframes fpage-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fld-settle {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+.folder { transition: none; }
+.folder:hover,
+.folder:focus-visible { transform: none; }
+
+.fpage.f-in-l,
+.fpage.f-in-r,
+.fpage.f-fade,
+.case-folder.shuffling::after,
+.case-folder.enter,
+.fpage.enter { animation: none; }
+.folder-tabs { scroll-behavior: auto; }
+}
+
+/* Phones: the drawer tabs give back their stagger before the name has to
+   truncate, and the strip tightens up. */
+@media (max-width: 420px) {
+.folder-tabs { gap: .16rem; padding-left: .35rem; padding-right: .35rem; }
+.folder-tabs > a { padding: .5rem .75rem; font-size: .8rem; }
+}
+
+/* ============================================================================
+   The private notebook - a sheet of lined paper on a dark desk.
+
+   Owned by notes.js (public/js/notes.js). Merge target: public/css/site.css.
+
+   The paper is genuinely light in a dark app on purpose: it is a sheet of
+   paper lying on the desk, not a panel, so it carries its own ink colour
+   rather than borrowing the room's. The four variables below are the whole
+   sheet. Retint them and the paper follows.
+   ========================================================================= */
+:root {
+  --paper: #F6EEDC;                 /* the stock */
+  --paper-ink: #1E1A14;             /* what he writes with */
+  --paper-rule: rgba(93, 143, 178, .55);  /* the printed blue ruling */
+  --paper-margin: rgba(196, 106, 106, .7); /* the red margin rule */
+}

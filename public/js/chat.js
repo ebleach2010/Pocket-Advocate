@@ -14,11 +14,21 @@ import {
   ref, uploadBytesResumable, getDownloadURL,
 } from './firebase.js';
 import {
-  emojiById, statusById, openMessageMenu, openEditor, EDIT_WINDOW_MS,
+  emojiById, statusById, openMessageMenu, openEditor, openNote, EDIT_WINDOW_MS,
 } from './msg-actions.js';
+import { askName, safeName } from './rename.js';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const LONG_PRESS_MS = 550;
+
+// Everything that only happens on an admin thread lives in its own module,
+// which is not served to a client at all. Loaded on demand when one mounts;
+// null otherwise, and every use of it is optional-chained.
+//
+// It used to live here. It was gated at runtime and never rendered for a
+// client, but this file downloads on every case, chat and subscription page,
+// and a runtime gate does not stop devtools.
+let bridge = null;
 
 /** Shows the advocate's live status in `el` (any element with a .p-dot child). */
 export function watchPresence(el) {
@@ -42,16 +52,28 @@ export function watchPresence(el) {
  *   notice       — text shown instead of the composer when disabled
  * }
  */
-export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '' }) {
+/**
+ * composerButton: an optional { icon, title, onClick } the caller can put in
+ * the composer row, left of the text box. The caller owns what it means; this
+ * file only knows where it goes.
+ */
+export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null }) {
   container.classList.add('chat-root');
   container.innerHTML = `
-    <button class="chat-expand" data-expand type="button" title="Full screen" aria-label="Full screen">⤢</button>
+    ${disabled
+      ? '<button class="chat-expand" data-expand type="button" title="Full screen" aria-label="Full screen">⤢</button>'
+      : ''}
     <div class="chat-log" data-log><p class="dim small">Loading messages…</p></div>
     ${disabled
       ? `<p class="dim small chat-notice">${esc(notice)}</p>`
       : `<form class="chat-form" data-form>
+           <button type="button" class="attach-btn" data-expand title="Full screen"
+             aria-label="Full screen">⤢</button>
            <label class="attach-btn" title="Attach a file">📎<input type="file" hidden data-attach
              accept=".pdf,.jpg,.jpeg,.png,.heic,.gif,.webp,.dcm,.dicom,.zip,.mp4,.mov,.doc,.docx,.txt"></label>
+           ${composerButton ? `<button type="button" class="attach-btn" data-extra
+             title="${esc(composerButton.title || '')}" aria-label="${esc(composerButton.title || '')}"
+             >${esc(composerButton.icon || '')}</button>` : ''}
            <textarea data-input maxlength="2000" rows="1" placeholder="Write a message…"
              autocomplete="off" autocapitalize="sentences"></textarea>
            <button class="btn" type="submit">Send</button>
@@ -66,6 +88,10 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   `;
   const log = container.querySelector('[data-log]');
   const errEl = container.querySelector('[data-err]');
+  // Set by send(), cleared by the repaint that draws the result: your own
+  // message takes you to the bottom even if you were reading back through the
+  // history, because you asked for it. Nobody else's does.
+  let followNext = false;
   const parentRef = doc(db, ...parentPath);
   const messagesRef = collection(db, ...parentPath, 'chat');
 
@@ -77,6 +103,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     const fmt = new Intl.DateTimeFormat('en-US', {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
     });
+    // Measured before the rebuild, because emptying the log sets scrollTop to
+    // 0 and the answer would always be yes.
+    const wasAtBottom = followNext
+      || log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+    followNext = false;
     log.innerHTML = '';
     let hasAttachment = false;
     snap.forEach((m) => {
@@ -84,24 +115,25 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       const mine = data.from === user.uid;
       const div = document.createElement('div');
       div.className = `msg ${mine ? 'me' : 'them'}`;
+      div.dataset.mid = m.id;
       if (data.text) {
         const span = document.createElement('span');
         span.className = 'msg-text';
         span.textContent = data.text;
         div.appendChild(span);
       }
-      // Images and PDFs can be staged for the advisor to read — admin only,
-      // and only where the advisor is actually mounted on the page.
+      // Images and PDFs can be selected on admin threads, and only where the
+      // module that consumes the selection has actually loaded.
       const att = data.attachment;
       const attCt = (att?.contentType || '').toLowerCase();
       const attReadable = !!att?.url && !/heic|heif/.test(attCt) &&
         (attCt.startsWith('image/') || attCt === 'application/pdf' || /\.pdf$/i.test(att?.name || ''));
-      const canAdvisor = attReadable && myRole === 'admin' &&
-        document.body.dataset.advisor === '1';
+      const canStage = attReadable && myRole === 'admin' &&
+        document.body.dataset.panel === '1';
       if (att && att.url) {
         hasAttachment = true;
         div.appendChild(renderAttachment(att, saveUid));
-        if (canAdvisor) div.appendChild(advisorBadge(att));
+        if (canStage && bridge) div.appendChild(bridge.selectBadge(att));
       }
       const sentAt = data.ts?.toDate ? data.ts.toDate() : null;
       const meta = document.createElement('span');
@@ -126,30 +158,25 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         div.appendChild(chip);
       }
 
-      // A plain-words recap the model wrote after Eric's messages sat
-      // unanswered — a re-orientation aid for clients with brain fog. Both
-      // sides see the same text.
-      if (data.recap?.text) {
-        const rc = document.createElement('div');
-        rc.className = 'msg-recap';
-        rc.textContent = `💡 In short: ${data.recap.text}`;
-        div.appendChild(rc);
-      }
-
-      // The pass flag. A question or request from the other person carries an
-      // outline flag; tapping it fills red as PASS — "not answering that one,
-      // please don't ask why" — visible to both sides. Only whoever passed can
-      // take it back.
+      // The pass flag. A question or request carries an outline flag; tapping
+      // it fills red as PASS — "not answering that one, please don't ask why"
+      // — visible to both sides. Only whoever passed can take it back.
+      //
+      // Offered to CLIENTS only (Eric, 2026-08-20: "I can't pass on messages.
+      // Only they should be able to"). He still sees a pass a client set,
+      // because that is how he knows to stop asking, and anything he passed
+      // before this shipped stays his to take back.
+      const canOfferPass = myRole === 'client';
       const askish = data.text && /\?|(^|\s)(please|can you|could you|would you|will you|do you|did you|have you|are you|send|upload|share|let me know)\b/i.test(data.text);
-      if (data.pass || (!mine && askish && data.text)) {
+      if (data.pass || (canOfferPass && !mine && askish && data.text)) {
         const flag = document.createElement('button');
         flag.type = 'button';
         flag.className = `pass-flag${data.pass ? ' on' : ''}`;
         flag.textContent = data.pass ? '⚑ PASS' : '⚐ pass';
         flag.title = data.pass
-          ? (data.pass.by === user.uid ? 'Passed — tap to take it back' : 'They passed on this — moving on')
-          : "Pass on this question — it's marked PASS and we move on, no explanation needed";
-        const canToggle = data.pass ? data.pass.by === user.uid : !mine;
+          ? (data.pass.by === user.uid ? 'Passed. Tap to take it back' : 'They passed on this, so we are moving on')
+          : "Pass on this question. It is marked PASS and we move on, no explanation needed";
+        const canToggle = data.pass ? data.pass.by === user.uid : (canOfferPass && !mine);
         if (canToggle) {
           flag.addEventListener('click', async () => {
             flag.disabled = true;
@@ -165,18 +192,25 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
 
       // Long-press opens the menu. What's in it depends on whose message it is:
       // reactions on theirs, editing on your own inside the 3-minute window.
-      const editable = mine && !!data.text && sentAt &&
-        Date.now() - sentAt.getTime() < EDIT_WINDOW_MS;
-      if (!mine || editable || data.text || canAdvisor) {
+      // The Worker lets an admin edit their own message at any age; the
+      // three-minute window is for everyone else. The UI used to apply it to
+      // both, which quietly made a repaired wording unusable on anything
+      // older than three minutes.
+      const editable = mine && !!data.text &&
+        (myRole === 'admin' || (sentAt && Date.now() - sentAt.getTime() < EDIT_WINDOW_MS));
+      if (!mine || editable || data.text || canStage) {
         messageLongPress(div, {
           msgId: m.id,
           canReact: !mine,
           canUseStatus: !mine && myRole === 'admin',
           canEdit: !!editable,
-          canRecap: mine && myRole === 'admin' && !!data.text,
-          canPass: !mine && !!data.text && !data.pass,
-          canAdvisor,
-          attachment: canAdvisor ? att : null,
+          canPass: myRole === 'client' && !mine && !!data.text && !data.pass,
+          // Either side, either person's message. Saving is private and tells
+          // nobody, so there is nothing to gate.
+          canSave: !!(data.text || att),
+          savedAlready: savedIds.has(m.id),
+          extraRows: bridge ? bridge.extraMenuRows({ canStage }) : [],
+          attachment: canStage ? att : null,
           passedByMe: data.pass?.by === user.uid,
           hasReaction: !!data.reaction?.id,
           hasText: !!data.text,
@@ -190,7 +224,10 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     });
     const hint = container.querySelector('[data-hint]');
     if (hint) {
-      const passNote = 'Long hold the message and press the flag to pass on a question or subject. No questions asked, no judgement; we\'ll move forward like it was never said.';
+      // Passing is the client's to do, so only the client is told about it.
+      const passNote = myRole === 'client'
+        ? 'Long hold the message and press the flag to pass on a question or subject. No questions asked, no judgement; we\'ll move forward like it was never said.'
+        : '';
       const hintText = ((myRole === 'admin'
         ? (hasAttachment
           ? 'Press and hold a shared file to save it to their Documents. '
@@ -198,59 +235,37 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         : (hasAttachment
           ? 'Press and hold a message to react or edit it; hold a shared file to save it to Documents. '
           : 'Press and hold a message to react to it, or to edit your own within 3 minutes. ')) + passNote).trim();
-      // Update 2.1 launch: the hint runs in gold under its label for 48 hours
-      // (until 2026-08-22 ~01:00 UTC), then reverts to the normal dim style on
-      // its own — the deadline is baked in, no second deploy needed.
-      if (Date.now() < Date.parse('2026-08-22T01:00:00Z')) {
-        hint.classList.add('hint-gold');
-        hint.innerHTML = `<strong class="hint-update">✨ Update 2.1</strong><br>${esc(hintText)}`;
-      } else {
-        hint.classList.remove('hint-gold');
-        hint.textContent = hintText;
-      }
-      hint.hidden = false;
+      // The one-off gold "Update 2.1" banner that used to run here has retired.
+      // changelog.js does this job now, for every release rather than one, and
+      // it says what changed instead of only that something did.
+      hint.textContent = hintText;
+      hint.hidden = !hintText;
     }
-    log.scrollTop = log.scrollHeight;
-    if (myRole === 'client') scheduleRecap(snap);
+    // Only chase the bottom if that is where they already were. Any write to
+    // any message in the thread rebuilds this list, and scrolling
+    // unconditionally would throw someone reading back through the history
+    // down to the end for no reason they could see.
+    if (wasAtBottom) log.scrollTop = log.scrollHeight;
+    repaintFlags();
+    paintSaved();
   }, (err) => {
     log.innerHTML = `<p class="error">Couldn't load messages: ${esc(err.message)}</p>`;
   });
 
-  // When the advisor panel consumes or changes the staged-file selection,
-  // repaint the badges to match (they also re-derive on every snapshot).
+  // The admin-only half, fetched only on an admin thread. A client's browser
+  // never asks for this file and would be refused if it did. The role comes
+  // from the mount, never from a caller-supplied flag.
   if (myRole === 'admin') {
-    document.addEventListener('pa-advisor-selection', () => {
-      container.querySelectorAll('.dr-badge').forEach((b) =>
-        b.classList.toggle('on', !!window.__paMediaSel?.has(b.dataset.url)));
-    });
-  }
-
-  // When Eric's latest messages have sat unanswered for 5 minutes and the
-  // client is looking at the chat, ask the Worker for a short plain-words
-  // recap. The Worker re-checks every condition, so this is only a nudge; the
-  // timer covers the case where the 5-minute mark passes while the chat is
-  // already open (no new snapshot would fire).
-  let recapTimer = null;
-  let recapAskedFor = null;
-  function scheduleRecap(snap) {
-    clearTimeout(recapTimer);
-    const docs = snap.docs;
-    if (!docs.length) return;
-    const lastDoc = docs[docs.length - 1];
-    const lastData = lastDoc.data();
-    if (lastData.role !== 'admin' || lastData.recap) return;
-    if (recapAskedFor === lastDoc.id) return;
-    const sentAt = lastData.ts?.toDate ? lastData.ts.toDate().getTime() : 0;
-    if (!sentAt) return;
-    const due = sentAt + 5 * 60_000 - Date.now();
-    recapTimer = setTimeout(() => {
-      recapAskedFor = lastDoc.id;
-      post('/api/chat/recap', { kind: kindOf(), id: parentPath[1] }, '')
-        .catch(() => {});
-    }, Math.max(0, due) + 1500);
+    import('./panel-bridge.js').then((m) => {
+      bridge = m;
+      m.watchSelection(container);
+      m.onPanelState(repaintFlags);
+      repaintFlags();
+    }).catch(() => { /* the chat is a chat without it */ });
   }
 
   async function send({ text = '', attachment = null }) {
+    followNext = true;
     const message = { from: user.uid, role: myRole, text, ts: serverTimestamp() };
     if (attachment) message.attachment = attachment;
     await addDoc(messagesRef, message);
@@ -271,7 +286,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   function messageLongPress(el, opts) {
     el.classList.add('react-target');
     let timer = null;
-    const onAttachment = (e) => !!e.target.closest?.('.msg-img, .file-chip, .dr-badge');
+    // The last selector is furniture only an admin thread adds, and naming it
+    // here would put it in a file every client downloads. The module that adds
+    // it says what to skip.
+    const skip = ['.msg-img', '.file-chip', ...(bridge?.noLongPress || [])].join(', ');
+    const onAttachment = (e) => !!e.target.closest?.(skip);
     const open = () => runMenu(opts);
     const start = (e) => {
       if (onAttachment(e)) return;
@@ -305,23 +324,43 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         { kind: kindOf(), id: parentPath[1], msgId: o.msgId, pass: choice.action === 'pass' },
         "Couldn't set that");
     }
-    if (choice.action === 'recap') {
-      // Force a plain-words recap of the latest unanswered run, right now.
-      return post('/api/chat/recap', { kind: kindOf(), id: parentPath[1], force: true },
-        "Couldn't recap");
-    }
-    if (choice.action === 'advisor') {
-      // The advisor panel (mounted on the admin case page) owns the actual
-      // request; the chat just hands the file over.
-      document.dispatchEvent(new CustomEvent('pa-advisor-review', {
-        detail: { attachment: o.attachment },
+    if (choice.action === 'save') {
+      // A note can be added here or on the Saved page; offering it at the
+      // moment of saving is the difference between a bookmark and a record.
+      const note = await openNote(savedIds.get(o.msgId) || '');
+      if (note === undefined) return;
+      await post('/api/saved',
+        { kind: kindOf(), id: parentPath[1], msgId: o.msgId, note },
+        "Couldn't save that");
+      savedIds.set(o.msgId, note);
+      paintSaved();
+      document.dispatchEvent(new CustomEvent('pa-saved-changed', {
+        detail: { kind: kindOf(), id: parentPath[1] },
       }));
+      return;
+    }
+    if (choice.action === 'stage') {
+      // The page that owns the request is on the other side of this; the chat
+      // just hands the file over.
+      bridge?.stageFile(o.attachment);
       return;
     }
     await post('/api/chat/react', {
       kind: kindOf(), id: parentPath[1], msgId: o.msgId,
       reaction: choice.action === 'clear' ? null : choice.id,
     }, "Couldn't set that");
+  }
+
+  /** Anything the optional module above wants drawn on the thread. */
+  function repaintFlags() {
+    bridge?.paint(log, {
+      openEditor,
+      editWindowMs: EDIT_WINDOW_MS,
+      edit: (msgId, text) => post('/api/chat/edit',
+        { kind: kindOf(), id: parentPath[1], msgId, text }, "Couldn't save the edit"),
+      done: (msgId) => document.dispatchEvent(
+        new CustomEvent('pa-mark-done', { detail: { msgId } })),
+    });
   }
 
   async function editMessage(o) {
@@ -375,6 +414,43 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     const log = container.querySelector('[data-log]');
     if (log) log.scrollTop = log.scrollHeight;
   });
+
+  if (composerButton?.onClick) {
+    container.querySelector('[data-extra]')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      composerButton.onClick();
+    });
+  }
+
+  // The ids this person has bookmarked on this thread. Loaded once and kept
+  // in step by hand: it only ever changes from actions taken right here.
+  const savedIds = new Map();   // msgId -> the note, so "update" starts where it left off
+  (async () => {
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/saved?kind=${kindOf()}&id=${encodeURIComponent(parentPath[1])}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      for (const r of (await res.json()).saved || []) savedIds.set(r.msgId, r.note || '');
+      paintSaved();
+    } catch { /* the mark is a nicety, not the feature */ }
+  })();
+
+  /** A small bookmark on a message this person saved. Only they ever see it. */
+  function paintSaved() {
+    for (const el of log.querySelectorAll('.msg[data-mid]')) {
+      const on = savedIds.has(el.dataset.mid);
+      const had = el.querySelector('.sv-mark');
+      if (on && !had) {
+        const mark = document.createElement('span');
+        mark.className = 'sv-mark';
+        mark.textContent = '🔖';
+        mark.title = 'Saved to your saved messages';
+        el.appendChild(mark);
+      } else if (!on && had) had.remove();
+    }
+  }
 
   const form = container.querySelector('[data-form]');
   const input = container.querySelector('[data-input]');
@@ -447,15 +523,21 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     if (!file) return;
     errEl.hidden = true;
     if (file.size > MAX_BYTES) {
-      errEl.textContent = `${file.name} is over 25 MB.`;
+      // Same words as the Documents page, which already told people what to do
+      // about it rather than only what was wrong.
+      errEl.textContent = `${file.name} is over 25 MB. Compress it or split it up.`;
       errEl.hidden = false;
       return;
     }
+    // Ask a client what it is before it goes anywhere. Not Eric: he is the one
+    // who wanted the descriptions, and being asked to describe his own report
+    // every time he sends one would be a tax on the person who set the rule.
+    const named = myRole === 'client' ? await askName(file) : file.name;
     const bar = container.querySelector('[data-progress]');
     bar.hidden = false;
     try {
-      const safe = file.name.replace(/[^\w.\- ]+/g, '_');
-      const storageRef = ref(storage, `${parentPath.join('/')}/chat-files/${Date.now()}-${safe}`);
+      const storageRef = ref(storage,
+        `${parentPath.join('/')}/chat-files/${Date.now()}-${safeName(named)}`);
       const task = uploadBytesResumable(storageRef, file);
       await new Promise((resolve, reject) => {
         task.on('state_changed',
@@ -465,10 +547,14 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       const url = await getDownloadURL(storageRef);
       await send({
         attachment: {
-          name: file.name, url, path: storageRef.fullPath,
+          name: named, url, path: storageRef.fullPath,
           size: file.size, contentType: file.type || 'application/octet-stream',
         },
       });
+      // Documents lists chat-files now, so a file shared here belongs in that
+      // list the moment it lands rather than after a reload. Same event the
+      // long-press save already fires.
+      document.dispatchEvent(new CustomEvent('pa-saved-file'));
     } catch (err) {
       errEl.textContent = `Upload failed: ${err.message}`;
       errEl.hidden = false;
@@ -476,30 +562,8 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     bar.hidden = true;
   });
 
-  // Handed back so the advisor panel can post an approved draft as me.
+  // Handed back so the admin panel can post an approved message as me.
   return { send: (text) => send({ text }) };
-}
-
-/**
- * The 👨‍⚕️ badge beside a readable attachment (admin side only): tap to stage
- * the file for the advisor's next analysis, tap again to unstage. Highlighted
- * while staged; the advisor panel's Update button becomes "Analyze N files".
- */
-function advisorBadge(att) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'dr-badge';
-  b.dataset.url = att.url;
-  b.textContent = '👨‍⚕️';
-  b.title = 'Select for the advisor to read, then press Analyze in the advisor panel';
-  if (window.__paMediaSel?.has(att.url)) b.classList.add('on');
-  b.addEventListener('click', () => {
-    b.classList.toggle('on');
-    document.dispatchEvent(new CustomEvent('pa-advisor-toggle', {
-      detail: { attachment: { name: att.name || 'file', url: att.url, contentType: att.contentType || '', size: att.size || 0 } },
-    }));
-  });
-  return b;
 }
 
 // ---- attachment rendering + long-press save ----
@@ -554,7 +618,7 @@ function attachLongPress(el, att, saveUid) {
  * 75) so it works from either view. URLs are assigned as properties, never
  * interpolated into HTML — attachment fields are user-written data.
  */
-function openLightbox(att) {
+export function openLightbox(att) {
   if (document.querySelector('.lightbox')) return;
   const overlay = document.createElement('div');
   overlay.className = 'lightbox';
@@ -581,6 +645,17 @@ function openLightbox(att) {
   document.body.appendChild(overlay);
 }
 
+/** A confirmation that does not have to be dismissed before life continues. */
+function toast(text, bad = false) {
+  document.querySelector('.pa-toast')?.remove();
+  const el = document.createElement('div');
+  el.className = `pa-toast${bad ? ' bad' : ''}`;
+  el.setAttribute('role', 'status');
+  el.textContent = text;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
 async function promptSave(att, saveUid) {
   if (!confirm(`Save "${att.name}" to Documents?`)) return;
   try {
@@ -588,7 +663,7 @@ async function promptSave(att, saveUid) {
     const dest = ref(storage, `profiles/${saveUid}/saved/${Date.now()}-${att.name.replace(/[^\w.\- ]+/g, '_')}`);
     const task = uploadBytesResumable(dest, blob, { contentType: att.contentType });
     await new Promise((resolve, reject) => task.on('state_changed', null, reject, resolve));
-    alert(`Saved "${att.name}" to Documents.`);
+    toast(`Saved "${att.name}" to Documents.`);
     document.dispatchEvent(new CustomEvent('pa-saved-file'));
   } catch (err) {
     alert(`Couldn't save: ${err.message}`);

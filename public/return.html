@@ -9,8 +9,27 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
 <meta name="theme-color" content="#07090F">
-<title>Payment complete — Pocket Advocate</title>
-<link rel="stylesheet" href="/css/site.css?v=stat27">
+<title>Payment complete · Pocket Advocate</title>
+<script>
+// Paint in the stored colour scheme before the stylesheet lands, so a scheme
+// never flashes neon on the way in. Mirrors theme.js, which owns the choosing
+// and persisting; this only applies what is already stored. Eric's admin
+// device keeps Neon by default, everyone else gets Calm, and a stored choice
+// always wins.
+(function () {
+  try {
+    var s = localStorage.getItem('pa-scheme');
+    if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
+      s = localStorage.getItem('pa-admin-device') === '1' ? 'neon' : 'calm';
+    if (s !== 'neon') document.documentElement.dataset.scheme = s;
+    var c = { neon: '#07090F', calm: '#0B0E14', paper: '#F3EEE3', contrast: '#000000' }[s];
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m && c) m.setAttribute('content', c);
+  } catch (e) { /* storage blocked: neon is the default and is already correct */ }
+})();
+</script>
+<link rel="stylesheet" href="/css/site.css?v=stat66">
+<script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
 <header class="bar">
@@ -26,8 +45,9 @@
 </header>
 <main>
   <h1 id="title">Finishing up…</h1>
-  <p class="muted" id="msg">Payment received — opening your case now. This usually takes a few seconds.</p>
-  <p id="actions" hidden><a class="btn" id="case-link" href="/case.html">Go to my case</a></p>
+  <p class="muted" id="msg">Payment received. I am opening your case now; this usually takes a few seconds.</p>
+  <p id="actions" hidden><a class="btn glow" id="case-link" href="/case.html">Go to my case</a></p>
+  <p class="muted small" id="reassure" hidden>Nothing is lost, and you will not be charged twice.</p>
 </main>
 <script type="module">
   import { requireUser, hydrateNav } from '/js/auth.js';
@@ -62,11 +82,22 @@
           return;
         }
       } catch { /* transient — keep polling */ }
-      if (Date.now() - started < 90_000) {
+      const waited = Date.now() - started;
+      // Ninety seconds of "this usually takes a few seconds" is how someone who
+      // has just paid decides it did not work and pays again. At ten seconds the
+      // page stops claiming it is nearly done and gives them a way out; it goes
+      // on polling behind that, so if the case lands they are still taken to it.
+      if (waited > 10_000 && document.getElementById('actions').hidden) {
+        title.textContent = 'Still working';
+        msg.textContent = 'Your payment went through and your case is being set up. This can take a minute. You can wait here, or open My cases whenever you like; it will be there.';
+        document.getElementById('actions').hidden = false;
+        document.getElementById('reassure').hidden = false;
+      }
+      if (waited < 90_000) {
         setTimeout(poll, 2500);
       } else {
         title.textContent = 'Almost there';
-        msg.textContent = 'Your payment went through, but your case is taking longer than usual to open. Check "My cases" in a minute — it will be there.';
+        msg.textContent = 'Your payment went through, but your case is taking longer than usual to open. Check "My cases" in a minute; it will be there.';
         document.getElementById('actions').hidden = false;
       }
     };

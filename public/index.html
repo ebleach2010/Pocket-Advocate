@@ -10,7 +10,25 @@
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
 <meta name="theme-color" content="#07090F">
 <title>Pocket Advocate</title>
-<link rel="stylesheet" href="/css/site.css?v=stat27">
+<script>
+// Paint in the stored colour scheme before the stylesheet lands, so a scheme
+// never flashes neon on the way in. Mirrors theme.js, which owns the choosing
+// and persisting; this only applies what is already stored. Eric's admin
+// device keeps Neon by default, everyone else gets Calm, and a stored choice
+// always wins.
+(function () {
+  try {
+    var s = localStorage.getItem('pa-scheme');
+    if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
+      s = localStorage.getItem('pa-admin-device') === '1' ? 'neon' : 'calm';
+    if (s !== 'neon') document.documentElement.dataset.scheme = s;
+    var c = { neon: '#07090F', calm: '#0B0E14', paper: '#F3EEE3', contrast: '#000000' }[s];
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m && c) m.setAttribute('content', c);
+  } catch (e) { /* storage blocked: neon is the default and is already correct */ }
+})();
+</script>
+<link rel="stylesheet" href="/css/site.css?v=stat66">
 <script>
 // The admin's device opens straight to the dashboard — he never books a case.
 // Inline in <head> so there's no flash of the booking page first. The hint is
@@ -19,6 +37,11 @@
 // the client view.
 (function () {
   try {
+    // Never while the test suite is running. His own phone carries the admin
+    // hint, so asking for the CLIENT side of the demo landed him on the
+    // advocate dashboard instead — the one place he was not trying to go.
+    var q = new URLSearchParams(location.search).get('demo');
+    if (q !== '0' && (q || sessionStorage.getItem('pa-demo'))) return;
     if (localStorage.getItem('pa-admin-device') === '1' &&
         localStorage.getItem('pa-open-admin') !== '0') {
       location.replace('/admin.html');
@@ -26,6 +49,7 @@
   } catch (e) { /* storage blocked — land normally */ }
 })();
 </script>
+<script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
 <header class="bar">
@@ -40,52 +64,170 @@
   </div>
 </header>
 <main>
-  <section class="landing">
-    <div>
-      <div class="hero-eyebrow">PATIENT ADVOCACY</div>
-      <h1>Walk into your next appointment armed.</h1>
-      <p class="hero-sub">Your labs, scans, and story — turned into real questions, next steps, and a plan you keep.</p>
+  <section class="land-sec hero">
+    <div class="hero-eyebrow">PATIENT ADVOCACY</div>
+    <h1>Go into your next appointment with a plan.</h1>
+    <p class="hero-sub">I review your labs, imaging, records, and history, then help you sort out what deserves attention, what questions to ask next, and how to present the case clearly to your care team.</p>
+    <p class="hero-cred">I'm a professional patient advocate and an autoimmune encephalitis survivor. I know what it is like to have a complicated case that does not fit neatly into a box. Board certification (BCPA) is in progress.</p>
+    <div class="actions">
+      <!-- Eric, 2026-08-21: two solid buttons, equal weight, neither one
+           fading into the page. Same fill treatment, different accent, so
+           they read as two ways to work with him rather than a headline act
+           and an also-ran. Outlines on a near-black page disappeared. -->
+      <a class="btn glow" href="/book.html">Book a case, <span data-rate="case">$265</span></a>
+      <a class="btn mag glow" href="/subscribe.html">24/7 Priority Chat, $50/mo</a>
     </div>
-
     <p class="webapp-note" id="webapp-note">This is a web app</p>
+  </section>
 
+  <section class="land-sec">
+    <h2>How it works</h2>
+    <ol class="hiw">
+      <li>
+        <p>Choose a time for a phone or video call and give me the basics about your case. Booking takes about two minutes.</p>
+      </li>
+      <li>
+        <p>Review one agreement covering the service, privacy, and recording. It is written to be read, not buried in legal language.</p>
+      </li>
+      <li>
+        <p>Pay <span data-rate="case">$265</span>. Your case includes our call, review of the records you share, and a written report within 7 days. A follow-up session is <span data-rate="addon">$75</span> if you need one.</p>
+      </li>
+    </ol>
+    <h3>What happens after you book</h3>
+    <ul class="after-list">
+      <li>Upload the records you want me to review, including labs, imaging, visit notes, or anything else that helps me understand the case.</li>
+      <li>We go through your history together, including what has been tried, what has helped, what has not, and where you are stuck. The call is recorded and saved in your case file for you.</li>
+      <li>Within 7 days, I send you a written case report that organizes the history, the open questions, and the next steps worth discussing with your care team.</li>
+      <li>If you want to go back over the same case after the report is delivered, you can add a <span data-rate="addon">$75</span> follow-up session from your case page and use it within 30 days.</li>
+    </ul>
+  </section>
+
+  <section class="land-sec">
+    <h2>Who you're hiring</h2>
+    <div class="mission">
+      <p class="dim">I work with patients facing complicated neurological conditions across the US and Canada. I came to advocacy after living through autoimmune encephalitis myself and learning how hard it is to make a complicated medical story understandable to the people treating you. My role is to stay on your side of the table and help you make the strongest use of the care you already have.</p>
+    </div>
+    <div class="mission">
+      <p class="dim">I've spoken to hundreds of patients struggling in the medical system, and I have firsthand experience of how debilitating these diseases are, and how disheartening the process can be. My mission statement is simply this: <strong>earlier diagnosis and treatment leads to better outcome.</strong> My one job is to get you to the finish line faster, so you suffer less and have a better and more robust recovery.</p>
+    </div>
+  </section>
+
+  <section class="land-sec">
+    <h2>Pricing</h2>
+    <p class="dim">There are two ways to work with me. No hidden fees.</p>
     <a class="pack rec-c" href="/book.html">
       <span class="tag c">COMPREHENSIVE</span>
-      <h3>Advocacy Case</h3><span class="price">$125</span>
-      <p class="desc">One live deep-dive with me + your written report within 7 days.</p>
-      <p class="addon-note"><strong>Optional add-on — $50:</strong> a second discussion on the same case. Offered at checkout only.</p>
+      <h3>Advocacy Case</h3><span class="price" data-rate="case">$265</span>
+      <p class="desc">A full case review includes one live discussion and a written report within 7 days. A follow-up discussion on the same case is <span data-rate="addon">$75</span>.</p>
+      <span class="pack-cta">Book a case</span>
     </a>
-
     <a class="pack rec-m" href="/subscribe.html">
       <span class="tag o"><span>ON THE GO</span></span>
-      <h3>24/7 Priority Chat</h3><span class="price">$24.99/mo</span>
-      <p class="desc">Chat, case files, photos, and labs all in one on-the-go priority chat. Cancel anytime.</p>
+      <h3>24/7 Priority Chat</h3><span class="price">$50/mo</span>
+      <p class="desc">A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime; your message history stays available to you.</p>
+      <span class="pack-cta">Start chatting</span>
     </a>
+  </section>
 
-    <div class="actions" style="margin-top:.2rem;">
-      <a class="btn" href="/book.html">Book a case →</a>
-      <a class="btn ghost" href="/about.html">How it works</a>
+  <section class="land-sec">
+    <h2>Straight answers</h2>
+    <details class="faq">
+      <summary>Is this medical advice?</summary>
+      <div class="faq-a"><p>No. I do not diagnose, treat, or prescribe. I help you understand the information already in front of you, organize the case, and prepare for conversations with the clinicians who are treating you. If this is an emergency, call 911.</p></div>
+    </details>
+    <details class="faq">
+      <summary>What happens on the first call?</summary>
+      <div class="faq-a"><p>You walk me through the case in your own words. I ask questions, take notes, and start building the structure of your report. The call is recorded and saved in your private case file for you to keep.</p></div>
+    </details>
+    <details class="faq">
+      <summary>What if you ask me something I don't want to answer?</summary>
+      <div class="faq-a"><p>You can skip it. In chat, long-press a message and tap the flag if you do not want to answer. No explanation is required; we just move on.</p></div>
+    </details>
+    <details class="faq">
+      <summary>What do you need from me?</summary>
+      <div class="faq-a"><p>An email address to sign in, plus your name and date of birth so I know whose case I am reviewing. Labs, records, imaging, and other documents are optional and only shared if you choose.</p></div>
+    </details>
+    <details class="faq">
+      <summary>Can I stop?</summary>
+      <div class="faq-a"><p>Priority Chat can be canceled anytime, with access continuing through the period you already paid for. Advocacy Case fees are non-refundable once your time is booked, except if I reschedule you more than once; in that situation, you can request a full refund.</p></div>
+    </details>
+    <details class="faq">
+      <summary>Is my information private?</summary>
+      <div class="faq-a"><p>Yes. Your data is encrypted, stored in the United States, and accessible only to you and me through the app. Sessions are private, and you can request deletion of your account and case data at any time.</p></div>
+    </details>
+  </section>
+
+  <section class="land-sec">
+    <h2>What clients say</h2>
+    <p class="reviews-label">★ GOOGLE REVIEWS</p>
+    <div class="reviews-strip"><div class="reviews-track" id="reviews-track"></div></div>
+    <p class="dim small"><a href="/reviews.html">Read all reviews</a></p>
+  </section>
+
+  <section class="land-sec">
+    <h2>Ready when you are.</h2>
+    <div class="actions">
+      <a class="btn" href="/book.html">Book a case, <span data-rate="case">$265</span></a>
+      <span id="call-slot"></span>
     </div>
-
-    <p class="fine"><strong>Advocacy, not medicine.</strong> No diagnosis, no treatment, no prescriptions, not a substitute for your care team. Emergency? Call 911. Pocket Advocate currently only serves patients in the United States and Canada.</p>
+    <p class="fine"><strong>Pocket Advocate provides patient advocacy, not medical care.</strong> I do not diagnose, treat, or prescribe, and this service does not replace your care team. If you are having a medical emergency, call 911. Pocket Advocate currently serves clients in the United States and Canada.</p>
   </section>
 </main>
+<script type="module">
+  // The case and follow-up prices move on their own, so nothing on this page
+  // quotes a number that is only true at deploy time. Loaded soft: a failed
+  // fetch leaves the shipped prices, which are real.
+  import('/js/rates.js').catch(() => {});
+
+  // Reviews strip: the same embed as reviews.html (same imports, container,
+  // and init call). Kept in its own module with no Firebase dependency, so
+  // the reviews render even if the auth module fails to load.
+  import { GOOGLE_REVIEWS_URL, BUSINESS_PHONE, REVIEWS, loadReviews } from '/js/reviews-config.js';
+  import { enhanceReviewsStrip } from '/js/reviews-strip.js';
+
+  const esc = (s) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+  // the draggable strip (clamped teasers)
+  const card = (r) => `
+    <${GOOGLE_REVIEWS_URL ? `a href="${GOOGLE_REVIEWS_URL}" target="_blank" rel="noopener"` : 'div'} class="review">
+      <span class="stars">${'★'.repeat(r.stars)}</span>
+      ${r.text ? `<span class="rv-text">${esc(r.text)}</span>` : ''}
+      <span class="rv-name">${esc(r.name)}</span>
+    </${GOOGLE_REVIEWS_URL ? 'a' : 'div'}>`;
+  const paint = (list) => {
+    const cards = list.map(card).join('');
+    document.getElementById('reviews-track').innerHTML = cards + cards;
+    // enhanceReviewsStrip tears its previous self down, so painting twice is
+    // safe: the Google baseline shows immediately and the fuller list swaps in
+    // when it lands, rather than the strip sitting empty on a network call.
+    enhanceReviewsStrip(document.querySelector('.reviews-strip'));
+  };
+  paint(REVIEWS);
+  loadReviews().then((all) => { if (all.length !== REVIEWS.length) paint(all); });
+
+  // Footer call button, same guard as about.html: only when a number is set.
+  if (BUSINESS_PHONE)
+    document.getElementById('call-slot').outerHTML =
+      `<a class="btn quiet" href="tel:${BUSINESS_PHONE}">📞 Call me</a>`;
+</script>
 <script type="module">
   import { hydrateNav, currentUser } from '/js/auth.js';
   import { initSetupGuide } from '/js/onboarding.js';
   import { helpButton, wireHelp } from '/js/help.js';
   hydrateNav();
 
-  // "This is a web app ?" above the tiers — the install/notifications/sign-in
-  // explainer, reachable before anyone has paid a cent.
+  // The "This is a web app ?" note in the hero: the install/notifications/
+  // sign-in explainer, reachable before anyone has paid a cent.
   const note = document.getElementById('webapp-note');
   note.insertAdjacentHTML('beforeend', ' ' + helpButton('app', 'What a web app means, and how to add it to your Home Screen'));
   wireHelp(note);
   // Offer the Home Screen install once, before booking rather than after
-  // paying — signed-in only, once per device, and skippable. Never a gate:
+  // paying. Signed-in only, once per device, and skippable. Never a gate:
   // the Book button stays live behind it.
   const u = await currentUser();
-  if (u) initSetupGuide(u, document.querySelector('main'));
+  // No welcome card here: this is the booking page, and "you're in, this is
+  // your case" is not true of anyone reading it.
+  if (u) initSetupGuide(u, document.querySelector('main'), { welcome: false });
 </script>
 </body>
 </html>

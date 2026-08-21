@@ -1,12 +1,16 @@
-// The settings cog (client + admin): notifications on/off. Injected into the
-// top nav for any signed-in user. There is deliberately no theme picker — the
-// site is neon, one look, everywhere.
+// The settings cog (client + admin): notifications, and how the app looks.
+// Injected into the top nav for any signed-in user.
 import { enablePush } from './push.js';
 import { db, doc, getDoc, setDoc } from './firebase.js';
+import { SCHEMES, currentScheme, applyScheme } from './theme.js';
+import { barActs } from './nav-menu.js';
 
 export function initSettings(user, isAdmin = false) {
   if (!user) return;
-  const nav = document.querySelector('.tabs');
+  // The right-hand end of the bar, never the link strip: inside the strip the
+  // cog was the last thing on a row wider than the screen, so the one control
+  // the onboarding tells people to tap was the one always off it.
+  const nav = barActs();
   if (!nav || nav.querySelector('.cog-btn')) return;
   const cog = document.createElement('button');
   cog.className = 'cog-btn';
@@ -29,6 +33,7 @@ function openPanel(user, isAdmin = false) {
     window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
   const needsInstall = isIOS && !standalone;
 
+  const scheme = currentScheme();
   const overlay = document.createElement('div');
   overlay.id = 'pa-settings';
   overlay.className = 'settings-overlay';
@@ -40,12 +45,24 @@ function openPanel(user, isAdmin = false) {
         <button class="switch ${notifOn ? 'on' : ''}" data-notif aria-pressed="${notifOn}" aria-label="Toggle notifications"></button>
       </div>
       <p class="dim small" style="margin:.5rem 0 0;">${needsInstall
-        ? 'On iPhone these only arrive once Pocket Advocate is on your Home Screen — Safari tabs can\'t receive them.'
+        ? 'On iPhone these only arrive once Pocket Advocate is on your Home Screen. Safari tabs can\'t receive them.'
         : 'Sends a real notification so you can confirm they arrive.'}</p>
       <div class="actions" style="margin-top:.6rem;">
         <button class="btn quiet" data-test-notif>Send a test notification</button>
       </div>
       <p class="dim small" id="pa-notif-result" hidden style="margin:.5rem 0 0;"></p>
+
+      <h4 style="margin:1.2rem 0 .1rem;">Appearance</h4>
+      <p class="dim small" style="margin:0 0 .5rem;">Applies on this device, right away.</p>
+      <div class="scheme-grid" data-schemes>
+        ${SCHEMES.map((x) => `
+          <button class="scheme-swatch${x.id === scheme ? ' on' : ''}" data-scheme="${x.id}"
+            aria-pressed="${x.id === scheme}">
+            <span class="scheme-chip sc-${x.id}" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="scheme-name">${x.label}</span>
+            <span class="scheme-blurb dim small">${x.blurb}</span>
+          </button>`).join('')}
+      </div>
       ${isAdmin ? `
       <div class="toggle-row" style="margin-top:1rem;">
         <span><strong>Open to my dashboard</strong><br><span class="dim small">This device skips the booking page and lands on Admin. Turn off to test the client view.</span></span>
@@ -55,8 +72,13 @@ function openPanel(user, isAdmin = false) {
     </div>`;
   document.body.appendChild(overlay);
 
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-  overlay.querySelector('[data-close]').addEventListener('click', () => overlay.remove());
+  // Escape, the backdrop and Done all close it. It was the only overlay in the
+  // app that ignored Escape.
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('[data-close]').addEventListener('click', close);
 
   // A silent push failure is indistinguishable from "nothing has happened yet",
   // so give both of us a way to prove delivery on demand.
@@ -80,6 +102,19 @@ function openPanel(user, isAdmin = false) {
     }
     testBtn.disabled = false;
   });
+
+  // Applies immediately, so he sees the change rather than imagining it. The
+  // swatches are painted from real scheme tokens, so a swatch cannot drift out
+  // of sync with what the scheme actually looks like.
+  overlay.querySelectorAll('[data-scheme]').forEach((b) =>
+    b.addEventListener('click', () => {
+      applyScheme(b.dataset.scheme);
+      overlay.querySelectorAll('[data-scheme]').forEach((x) => {
+        const on = x === b;
+        x.classList.toggle('on', on);
+        x.setAttribute('aria-pressed', String(on));
+      });
+    }));
 
   overlay.querySelector('[data-open-admin]')?.addEventListener('click', (e) => {
     const btn = e.currentTarget;

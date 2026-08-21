@@ -3,6 +3,13 @@
 // Bodies stay deliberately content-free about health specifics — an email
 // says "something happened, open the app," never what was discussed.
 
+// The business line is NOT in this file, and must not go back in.
+// (Eric, 2026-08-21: "CLIENTS CASE PAGE SHOULD NOT ADVERTISE BUSINESS
+// NUMBER. THEY'LL SPAM IT. THEY ALREADY HAVE CHAT.")
+// Every email here lands in a client's inbox, so the same rule applies. The
+// number belongs on the public pages, where somebody who has not bought yet
+// needs a way to reach him: public/js/reviews-config.js.
+
 const FOOTER = `
   <p style="color:#888; font-size:12px; border-top:1px solid #ddd; padding-top:12px; margin-top:24px;">
     Pocket Advocate is a patient-advocacy service, offered to residents of the United States and Canada.

@@ -14,11 +14,17 @@
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "public",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // Static assets are normally served WITHOUT invoking the Worker at all,
+    // which is why the admin asset gate in worker/index.js never ran: a
+    // request for /js/advisor.js matched a file and was answered before any
+    // of our code saw it. Running the Worker first is what makes the gate a
+    // gate. Everything it does not claim still falls through to ASSETS.
+    "run_worker_first": true
   },
   "triggers": {
     // Chat digest: email a nudge for unread messages (spec: batched email).
-    "crons": ["*/15 * * * *"]
+    "crons": ["*/5 * * * *"]
   },
   "vars": {
     // Non-secret config. Replace after creating the Firebase project (docs/SETUP.md).

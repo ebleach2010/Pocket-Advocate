@@ -10,23 +10,86 @@
 // the advisor subtree isn't published yet, so a direct browser read fails. The
 // Worker owns the admin check either way.
 
-const SECTION_ICON = {
+/**
+ * Headings are matched by name in three places, and a model does not type the
+ * same apostrophe every time. Curly quotes, stray decoration and casing all
+ * collapse to one key here, so "What's missing", "What’s missing" and
+ * "WHAT'S MISSING" are one section rather than three, two of which are
+ * invisible.
+ */
+export function normTitle(s) {
+  return String(s || '')
+    .replace(/[‘’ʼ]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[*_`#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+const SECTION_ICON_RAW = {
   'Right now': '⚡',
-  'Key terms': '📚',
-  'Where things stand': '🧭',
+  'Plain English': '💬',
   'What this could be': '🔬',
+  'Worth investigating': '🧪',
+  'Worth asking': '❓',
+  'What we know so far': '🗂',
+  "What's missing": '🕳',
+  'Ruled out': '🚫',
+  'For you': '🎯',
+  'Key terms': '📚',
+  // Older assessments used these headings; keep the icons so a case that has
+  // not been re-read since still paints correctly.
+  'Where things stand': '🧭',
   'Worth chasing': '🧪',
   'Ask next': '❓',
-  'For you': '🎯',
 };
+const SECTION_ICON = new Map(
+  Object.entries(SECTION_ICON_RAW).map(([k, v]) => [normTitle(k), v]));
+
+// Sections whose bullets Eric sends to the client with one long press. Both
+// are written by the advisor as ready-to-send questions in his own register,
+// which is the only reason a one-press send is safe here.
+const SENDABLE = new Set(['Worth asking', "What's missing", 'Ask next'].map(normTitle));
+
+// Ten colours for the term coding. A term is painted the same colour wherever
+// it appears - in the read and in its own explanation below the divider - so
+// Eric's eye pairs them without reading. Ten because past that they stop being
+// distinguishable at a glance, and a term index wraps rather than running out.
+const TERM_COLORS = 10;
 
 /**
- * opts: { container, kind: 'case'|'sub', id, user, onSend(text), draftContainer? }
+ * Pull [[bracketed terms]] out of an assessment and give each distinct one a
+ * colour index, in order of first appearance. Deterministic for a given
+ * assessment, so the colours do not reshuffle on a poll.
+ */
+function termPalette(text) {
+  const map = new Map();
+  for (const m of String(text || '').matchAll(/\[\[([^\]]{1,80})\]\]/g)) {
+    const key = m[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    if (key && !map.has(key)) map.set(key, map.size % TERM_COLORS);
+  }
+  return map;
+}
+
+/**
+ * opts: { container, kind: 'case'|'sub', id, user, onSend(text), draftContainer?, diffContainer? }
  * `onSend` puts an approved draft into the real chat as Eric.
  * `draftContainer` (optional): an element OUTSIDE the panel that the draft
  * card renders into, so drafts live in their own section of the page.
+ * `diffContainer` (optional): an element the differential page renders into.
  */
-export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null }) {
+/**
+ * The panel's "send this to the client, as you" sheet, published so another
+ * page can offer the same thing. The Unanswered page uses it for "ask again",
+ * and a second implementation of the same sheet would be a second thing to
+ * keep in step.
+ *
+ * Null until a panel mounts, which on the case page is always.
+ */
+export let sendToClient = null;
+
+export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null, diffContainer = null }) {
   container.innerHTML = `
     <div class="advisor">
       <div class="advisor-head">
@@ -40,6 +103,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       <p class="dim small advisor-sub" data-updated>Reading the case…</p>
       <div class="advisor-files" data-fchips></div>
       <div class="advisor-body" data-analysis></div>
+      <div class="advisor-read" data-read hidden></div>
       <div class="advisor-draft" data-draft-card hidden></div>
       <div class="advisor-qa" data-qa></div>
       <div class="advisor-foot">
@@ -59,6 +123,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   // Drafts render into their own page section when the host provides one.
   const draftCard = draftContainer || el('[data-draft-card]');
   const chipsEl = el('[data-fchips]');
+  const readEl = el('[data-read]');
   const qaEl = el('[data-qa]');
   const errEl = el('[data-err]');
   const pauseBtn = el('[data-pause]');
@@ -66,15 +131,38 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   const prepBtn = el('[data-prep]');
   const qBox = el('[data-q]');
 
+  // The files staged for the next analysis: the 👨‍⚕️ badges on chat files and
+  // the case file list, plus anything added from Eric's own device. Declared
+  // here rather than beside its wiring below because the first poll can land
+  // before that code runs. Key (url or inline id) -> { name, url?, data?,
+  // contentType, size }.
+  const mediaSel = new Map();
+  // How many files THIS run was handed. The selection is cleared the moment
+  // Analyze is pressed, so reading it back during the run always saw zero and
+  // the progress bar could never show. Cleared when the run stops.
+  let readingCount = 0;
+  window.__paMediaSel = mediaSel;
+
   let paused = false;
   let draftRendered = null; // the server draft the card was last built from
   let firedFor = null; // pendingAt value we already launched an analysis for
-  let pageIdx = 0;      // which note page is showing
+  // Which page he is on, and it survives leaving the tab and coming back. A
+  // closure variable reset him to 1 of 9 every time he looked at the chat.
+  const PAGE_KEY = `pa-read-page-${kind}-${id}`;
+  let pageIdx = (() => {
+    try { return Math.max(0, Number(sessionStorage.getItem(PAGE_KEY)) || 0); } catch { return 0; }
+  })();
   let pagesKey = '';    // updatedAt of the analysis the pager was built for
+  // What the pager last drew. The poll runs every twelve seconds and used to
+  // rebuild the page unconditionally, so a selection went, the scroll jumped
+  // to the top, and the sentence he was reading moved, four or five times a
+  // minute. Every other repaint in this file already guards on a key like
+  // this; the one he reads longest did not.
+  let drawnKey = '';
 
   // Tells the chat (and the admin file list) that "send to the advisor for
   // review" has somewhere to land on this page.
-  document.body.dataset.advisor = '1';
+  document.body.dataset.panel = '1';
 
   const post = async (payload) => {
     errEl.hidden = true;
@@ -127,10 +215,27 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       // 📚 Key terms rides as the last page: new words from the assessments,
       // each with an "I understand" checkbox. Checked = never explained again.
       if (glossary.length) pages.push({ title: 'Key terms', glossary });
-      // A fresh assessment snaps back to page one — "Right now".
-      if ((d.updatedAt || '') !== pagesKey) { pagesKey = d.updatedAt || ''; pageIdx = 0; }
+      // A fresh assessment used to snap him back to page one mid-sentence.
+      // Now it stays where he is and the header says something changed; the
+      // pager only jumps if the page he was on no longer exists.
+      const fresh = (d.updatedAt || '') !== pagesKey;
+      if (fresh) pagesKey = d.updatedAt || '';
       pageIdx = Math.max(0, Math.min(pageIdx, pages.length - 1));
-      renderPager(pages);
+      // Terms Eric has already marked learned are not painted and not
+      // explained: the worker filters them out of the prompt, and this drops
+      // any that slipped through from an assessment written before he ticked
+      // them.
+      const learned = new Set(glossary.filter((g) => g.learned)
+        .map((g) => g.term.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()));
+      const terms = termPalette(d.analysis);
+      for (const k of learned) terms.delete(k);
+      // Only redraw when the content or the page actually changed. A poll that
+      // changed nothing must not take his place away.
+      const key = `${pagesKey}|${pageIdx}|${pages.length}|${learned.size}`;
+      if (key !== drawnKey) {
+        drawnKey = key;
+        renderPager(pages, terms);
+      }
       updatedEl.textContent = d.updatedAt
         ? `Updated ${timeAgo(toDate(d.updatedAt))}${paused ? ' · analysis paused' : ''}`
         : '';
@@ -187,14 +292,31 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   }
 
   let lastQa = [];
+  /**
+   * A question that has been "thinking" for four minutes is not thinking.
+   *
+   * Unlike the analysis and the draft, the Q&A path writes no heartbeat and
+   * has no cron backstop, so a Worker that died mid-answer left a spinner on
+   * screen with nothing to say otherwise, forever.
+   */
+  const QA_STALL_MS = 4 * 60_000;
+  const qaStalled = (q) => {
+    const at = q.at ? toDate(q.at)?.getTime() : 0;
+    return !!at && Date.now() - at > QA_STALL_MS;
+  };
+
   function renderQa(qa) {
     // Once the server row for the just-asked question exists, drop the local
     // pending copy.
     if (localQ && qa.some((q) => q.question === localQ)) localQ = null;
-    const rows = qa.slice(-3).map((q) => `
+    // The route hands these back newest first now, so the three to show are the
+    // first three, put back into the order a conversation reads in.
+    const rows = qa.slice(0, 3).slice().reverse().map((q) => `
       <div class="advisor-turn">
         <p class="advisor-q">${esc(q.question)}</p>
-        <div class="advisor-a">${q.status === 'running'
+        <div class="advisor-a">${q.status === 'running' && qaStalled(q)
+          ? '<span class="dim">No answer came back. Ask it again.</span>'
+          : q.status === 'running'
           ? '<span class="dim small">thinking…</span>'
           : md(q.answer || '')}</div>
       </div>`);
@@ -207,21 +329,35 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   }
 
   /** One note page at a time, flipped with ‹ › or a sideways swipe. */
-  function renderPager(pages) {
+  function renderPager(pages, terms = null) {
     const i = pageIdx;
     const pg = pages[i];
     bodyEl.innerHTML = `
       <div class="advisor-page">
         <div class="advisor-page-head">
           <button class="pg-btn" data-pg="-1" ${i === 0 ? 'disabled' : ''} aria-label="Previous note">‹</button>
-          <h4>${SECTION_ICON[pg.title] || '•'} ${esc(pg.title)}</h4>
+          <h4>${SECTION_ICON.get(normTitle(pg.title)) || '•'} ${esc(pg.title)}</h4>
           <span class="pg-count">${i + 1}/${pages.length}</span>
           <button class="pg-btn" data-pg="1" ${i === pages.length - 1 ? 'disabled' : ''} aria-label="Next note">›</button>
         </div>
-        <div class="advisor-page-body">${pg.glossary ? glossaryHtml(pg.glossary) : md(pg.body)}</div>
+        <div class="advisor-page-body">${pg.glossary ? glossaryHtml(pg.glossary) : `
+          ${md(pg.body, terms)}
+          ${pg.plain ? `
+            <hr class="title-rule plain-rule">
+            <div class="plain-english">
+              <span class="plain-tag">💬 In plain words</span>
+              ${md(pg.plain, terms)}
+            </div>` : ''}`}</div>
+        ${SENDABLE.has(normTitle(pg.title)) ? '<p class="dim small pg-hint">Press and hold any line to send it to the client.</p>' : ''}
       </div>`;
     bodyEl.querySelectorAll('[data-pg]').forEach((b) =>
-      b.addEventListener('click', () => { pageIdx += Number(b.dataset.pg); renderPager(pages); }));
+      b.addEventListener('click', () => {
+        pageIdx = Math.max(0, Math.min(pageIdx + Number(b.dataset.pg), pages.length - 1));
+        try { sessionStorage.setItem(PAGE_KEY, String(pageIdx)); } catch { /* blocked */ }
+        drawnKey = '';               // a tap always redraws
+        renderPager(pages, terms);
+      }));
+    if (SENDABLE.has(normTitle(pg.title))) wireSendable(bodyEl, pg.title);
     bodyEl.querySelectorAll('[data-term]').forEach((cb) =>
       cb.addEventListener('change', async () => {
         cb.disabled = true;
@@ -246,8 +382,184 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       const next = pageIdx + (dx < 0 ? 1 : -1);
       if (next < 0 || next >= pages.length) return;
       pageIdx = next;
-      renderPager(pages);
+      try { sessionStorage.setItem(PAGE_KEY, String(pageIdx)); } catch { /* blocked */ }
+      drawnKey = '';
+      renderPager(pages, terms);
     }, { passive: true });
+  }
+
+  /**
+   * Press and hold a question and send it to the client as an ordinary message
+   * from Eric. Only "Worth asking" and "What's missing" get this, because only
+   * those two are written as questions ready to send as they stand.
+   *
+   * It always opens a sheet with the text in it first. A long press that fired
+   * a message straight into the chat would be one slip away from sending the
+   * client something Eric never read.
+   */
+  function wireSendable(root, title) {
+    root.querySelectorAll('.advisor-page-body li').forEach((li) => {
+      li.classList.add('askable');
+      let t = null;
+      const cancel = () => { clearTimeout(t); t = null; li.classList.remove('held'); };
+      const start = () => {
+        cancel();
+        li.classList.add('held');
+        t = setTimeout(() => {
+          li.classList.remove('held');
+          openSendSheet(li.textContent.trim(), title);
+        }, 550);
+      };
+      li.addEventListener('touchstart', start, { passive: true });
+      li.addEventListener('touchend', cancel, { passive: true });
+      li.addEventListener('touchmove', cancel, { passive: true });
+      li.addEventListener('touchcancel', cancel, { passive: true });
+      li.addEventListener('mousedown', start);
+      li.addEventListener('mouseup', cancel);
+      li.addEventListener('mouseleave', cancel);
+      // A keyboard has no long press; a plain Enter on a focused line does.
+      li.tabIndex = 0;
+      li.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); openSendSheet(li.textContent.trim(), title); }
+      });
+    });
+  }
+
+  sendToClient = openSendSheet;
+
+  function openSendSheet(text, title) {
+    if (!text) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'msg-menu-overlay';
+    overlay.innerHTML = `
+      <div class="msg-menu" role="dialog" aria-modal="true" aria-label="Send to the client">
+        <div class="msg-menu-sheet">
+          <p class="msg-menu-head">Send this to the client, as you</p>
+          <textarea class="send-draft" rows="4" maxlength="2000"></textarea>
+          <button class="msg-menu-row" data-act="send"><span class="react-emoji">📤</span><span>Send it</span></button>
+          <button class="msg-menu-row" data-act="copy"><span class="react-emoji">📋</span><span>Copy instead</span></button>
+          <button class="msg-menu-row cancel" data-act="cancel"><span>Cancel</span></button>
+        </div>
+      </div>`;
+    // Text as a value, never as markup: this line came out of a model.
+    const box = overlay.querySelector('.send-draft');
+    box.value = text;
+    const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelectorAll('[data-act]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const act = b.dataset.act;
+        const out = box.value.trim();
+        close();
+        if (act === 'copy' && out) await navigator.clipboard?.writeText(out).catch(() => {});
+        if (act === 'send' && out) {
+          try { await onSend?.(out); } catch (err) {
+            errEl.textContent = `Couldn't send that: ${err.message}`;
+            errEl.hidden = false;
+          }
+        }
+      }));
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+    setTimeout(() => box.focus(), 0);
+    void title;
+  }
+
+  // ---- the 🧬 Differential page ----
+  // Renders into its own folder page when the host provides one. Rebuilt only
+  // when the data actually changes, so the confidence bars settle once per
+  // new read instead of twitching on every poll.
+  let diffKey = null;
+  function renderDiff(d) {
+    if (!diffContainer) return;
+    const key = JSON.stringify([d.workingLine, d.dxOverride, d.differential]);
+    if (key === diffKey) return;
+    diffKey = key;
+    const line = (d.dxOverride && d.dxOverride.text) || d.workingLine || '';
+    const rows = (d.differential || []).map((r, i) => {
+      const pct = Math.max(0, Math.min(100, Math.round(Number(r.pct) || 0)));
+      return `
+        <div class="diff-row${i === 0 ? ' diff-top' : ''}">
+          <span class="diff-name">${esc(r.name || '')}</span>
+          <span class="diff-pct">${pct}%</span>
+          <div class="diff-bar"><div class="diff-fill" style="width:${pct}%"></div></div>
+          <p class="diff-note">${esc(r.why || r.note || '')}</p>
+          ${r.moves ? `<p class="diff-moves"><span>Moves on:</span> ${esc(r.moves)}</p>` : ''}
+        </div>`;
+    });
+    diffContainer.innerHTML = `
+      ${line ? `
+        <div class="diff-head">
+          <h3 class="diff-line">${esc(line)}${d.dxOverride ? ' <span class="dim small">(your call)</span>' : ''}</h3>
+        </div>` : ''}
+      ${rows.length
+        ? `<div class="diff-list">${rows.join('')}</div>`
+        : '<p class="dim small">No differential yet. Run an analysis with some conversation to read.</p>'}
+      <p class="diff-disclaimer">These are my confidence levels, not clinical probabilities. Orientation for advocacy, not a diagnosis.</p>`;
+  }
+
+  /**
+   * What the advisor did with every file it was handed. Eric shared eight
+   * documents once and the advisor discussed three, with nothing on screen to
+   * say why, so this panel exists to make that unmissable: read, already read,
+   * queued for the next pass, or unreadable with the reason and a request for
+   * screenshots.
+   *
+   * The bar while a run is live is deliberately indeterminate. The model reads
+   * every file inside one turn, so there is no honest per-file percentage to
+   * show, and inventing one would be the same lie in a nicer shape.
+   */
+  function renderRead(report, queuedNames, running, stagedCount) {
+    const groups = [];
+    const rd = report || {};
+    const list = (names, cls, label) => {
+      if (!names?.length) return;
+      groups.push(`<div class="rd-group ${cls}">
+        <span class="rd-label">${esc(label)}</span>
+        <ul>${names.map((n) => `<li>${esc(String(n))}</li>`).join('')}</ul>
+      </div>`);
+    };
+
+    if (running && stagedCount) {
+      readEl.hidden = false;
+      readEl.innerHTML = `
+        <div class="rd-head"><strong>Reading ${stagedCount} file${stagedCount === 1 ? '' : 's'}</strong></div>
+        <div class="rd-bar rd-busy"><i></i></div>`;
+      return;
+    }
+
+    const read = rd.read || [];
+    const known = rd.known || [];
+    const queued = rd.queued?.length ? rd.queued : (queuedNames || []);
+    const bad = rd.unreadable || [];
+    const total = read.length + known.length + queued.length + bad.length;
+    if (!total) { readEl.hidden = true; readEl.innerHTML = ''; return; }
+
+    const done = read.length + known.length;
+    list(read, 'rd-ok', `Read this pass (${read.length})`);
+    list(known, 'rd-known', `Already read (${known.length})`);
+    list(queued, 'rd-queued', `Queued for the next pass (${queued.length})`);
+    list(bad, 'rd-bad', `Couldn't read (${bad.length})`);
+
+    // Open when something needs him: a file waiting on the next pass, or one
+    // that needs screenshots. When every file was read there is nothing to act
+    // on, so it collapses to the one line that answers the question.
+    const needsHim = queued.length || bad.length;
+    readEl.hidden = false;
+    readEl.innerHTML = `
+      <details class="rd" ${needsHim ? 'open' : ''}>
+        <summary>
+          <span class="rd-head">
+            <strong>Files: ${done} of ${total} read</strong>
+            ${rd.at ? `<span class="dim small">${esc(timeAgo(toDate(rd.at)))}</span>` : ''}
+          </span>
+          <span class="rd-bar"><i style="width:${total ? Math.round((done / total) * 100) : 0}%"></i></span>
+        </summary>
+        ${groups.join('')}
+        ${queued.length ? '<p class="dim small">These are attached to the next analysis on their own. Nothing was dropped.</p>' : ''}
+        ${bad.length ? '<p class="dim small">Tap ＋ Add a file to send screenshots of these.</p>' : ''}
+      </details>`;
   }
 
   // Poll fast while something is running, slowly when it isn't — an assessment
@@ -267,6 +579,41 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         const d = apply(out.state || {}, out.qa || [], out.glossary || []);
         busy = d.running || d.draftAlive ||
           (out.qa || []).some((q) => q.status === 'running');
+        // The folder pages (differential, notes, the header line) and the
+        // chat's correction marks all feed off this one poll. This panel only
+        // ever mounts on admin pages, so the event stays admin-side.
+        const detail = {
+          kind,
+          id,
+          notes: out.notes || '',
+          notesUpdatedAt: out.notesUpdatedAt || null,
+          corrections: out.corrections || [],
+          unanswered: out.unanswered || [],
+          differential: out.differential || [],
+          workingLine: out.workingLine || '',
+          dxOverride: out.dxOverride || null,
+          // The Education and About-you folder pages ride this same poll, so
+          // the panel stays the single place that talks to the state route.
+          glossary: out.glossary || [],
+          about: out.about || null,
+          // The prep sheet is assembled from this rather than from a second
+          // model call: it is the read Eric already trusts, and asking twice
+          // would give him two versions to reconcile.
+          analysis: out.state?.analysis || '',
+          // Activity stamps, for the dots on the tabs. The same moments the
+          // shelf paints its emoji from, so both surfaces agree on what is new.
+          advisorAt: out.state?.updatedAt || null,
+          diffAt: out.state?.diffAt || null,
+          draftAt: out.state?.draftStatus === 'ready' ? (out.state?.draftAt || null) : null,
+          fileAt: out.state?.fileAt || null,
+          // The Chat tab's dot reads this. It was never sent, so the one dot
+          // that says "they wrote back" never lit inside a case.
+          clientMsgAt: out.state?.clientMsgAt || null,
+        };
+        renderDiff(detail);
+        if (!d.running) readingCount = 0;
+        renderRead(out.mediaReport, out.queuedFiles, d.running, readingCount);
+        document.dispatchEvent(new CustomEvent('pa-panel-state', { detail }));
       }
     } catch { /* transient — the next tick tries again */ }
     timer = setTimeout(refresh, busy ? 2500 : 12000);
@@ -282,8 +629,6 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   // will be. The Map is exposed on window so the chat log and the file list
   // (separate modules, re-rendered on their own schedules) can paint their
   // badges from the same source of truth.
-  const mediaSel = new Map(); // key (url or inline id) -> { name, url?, data?, contentType, size }
-  window.__paMediaSel = mediaSel;
   let inlineSeq = 0;
   function syncStaged() {
     refreshBtn.textContent = mediaSel.size
@@ -298,7 +643,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           <button type="button" data-unstage="${esc(k)}" aria-label="Remove">✕</button>
         </span>`).join('')}
       <label class="adv-chip adv-add">＋ Add a file
-        <input type="file" hidden data-upfile accept="image/png,image/jpeg,image/webp,image/gif,application/pdf">
+        <input type="file" hidden multiple data-upfile accept="image/png,image/jpeg,image/webp,image/gif,application/pdf">
       </label>
       ${mediaSel.size ? '<span class="dim small" style="align-self:center;">read on Analyze, only by the advisor</span>' : ''}`;
     // Names as text, never markup — file names are user data.
@@ -308,7 +653,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       b.addEventListener('click', () => {
         mediaSel.delete(b.dataset.unstage);
         syncStaged();
-        document.dispatchEvent(new CustomEvent('pa-advisor-selection'));
+        document.dispatchEvent(new CustomEvent('pa-panel-select'));
       }));
     chipsEl.querySelector('[data-upfile]').addEventListener('change', async (e) => {
       const file = e.target.files[0];
@@ -345,13 +690,13 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     });
   }
   syncStaged();
-  document.addEventListener('pa-advisor-toggle', (e) => {
+  document.addEventListener('pa-panel-toggle', (e) => {
     const a = e.detail?.attachment;
     if (!a?.url) return;
     if (mediaSel.has(a.url)) mediaSel.delete(a.url);
     else mediaSel.set(a.url, { name: a.name || 'file', url: a.url, contentType: a.contentType || '', size: a.size || 0 });
     syncStaged();
-    document.dispatchEvent(new CustomEvent('pa-advisor-selection'));
+    document.dispatchEvent(new CustomEvent('pa-panel-select'));
   });
 
   refreshBtn.addEventListener('click', () => {
@@ -363,9 +708,10 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       : undefined;
     if (media) {
       // The selection is consumed by this analysis; badges clear with it.
+      readingCount = media.length;
       mediaSel.clear();
       syncStaged();
-      document.dispatchEvent(new CustomEvent('pa-advisor-selection'));
+      document.dispatchEvent(new CustomEvent('pa-panel-select'));
     }
     post({ action: 'analyze', ...(media ? { media } : {}) });
   });
@@ -457,7 +803,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   // "Send to the advisor for review" — dispatched by the chat's long-press
   // menu and the file list. The file rides the ask flow as an attachment; the
   // Worker fetches and actually reads it (images and PDFs).
-  document.addEventListener('pa-advisor-review', (e) => {
+  document.addEventListener('pa-panel-review', (e) => {
     const att = e.detail?.attachment;
     if (!att?.url) return;
     submitAsk(
@@ -470,6 +816,14 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       }
     );
     container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+
+  // The chat applied a correction: tell the worker so the fix mark clears
+  // and the same correction never rides back in on the next analysis.
+  document.addEventListener('pa-mark-done', (e) => {
+    const msgId = e.detail?.msgId;
+    if (!msgId) return;
+    post({ action: 'correction-dismiss', msgId });
   });
 
   /**
@@ -625,47 +979,100 @@ function glossaryHtml(glossary) {
     <p class="small" style="margin:.6rem 0 0;"><a href="/admin-dictionary.html">📚 Full dictionary, by type and A to Z →</a></p>`;
 }
 
-/** Split the assessment on its \`##\` headings into flippable pages. */
+/**
+ * Split the assessment on its \`##\` headings into flippable pages.
+ *
+ * "Plain English" is the one section that does NOT get a page of its own. Eric
+ * asked for the comprehensive read and then, under a divider that fades at the
+ * edges, the same thing in plain words - and the colour pairing only works if
+ * both are on the screen at once. So it rides under the section before it.
+ */
 function splitPages(text) {
   const parts = String(text).split(/^##\s+/m).filter((p) => p.trim());
   if (parts.length < 2) return [{ title: 'Notes', body: String(text) }];
-  return parts.map((part) => {
+  const pages = [];
+  for (const part of parts) {
     const nl = part.indexOf('\n');
-    return {
-      title: (nl === -1 ? part : part.slice(0, nl)).trim(),
-      body: nl === -1 ? '' : part.slice(nl + 1),
-    };
-  });
+    const title = (nl === -1 ? part : part.slice(0, nl)).trim();
+    const body = nl === -1 ? '' : part.slice(nl + 1);
+    if (normTitle(title) === 'plain english' && pages.length) {
+      pages[pages.length - 1].plain = body;
+      continue;
+    }
+    pages.push({ title, body });
+  }
+  return pages;
 }
 
-/** Just enough markdown for what the model actually emits. */
-function md(text) {
+/**
+ * Just enough markdown for what the model actually emits.
+ *
+ * A paragraph is a run of lines with a blank line at each end, not one line.
+ * This used to wrap every single line in its own <p>, so hard-wrapped prose -
+ * which is most of what comes back - was served as a column of sentence
+ * fragments with a paragraph gap between them. That is the page he reads to
+ * think with.
+ */
+function md(text, terms = null) {
   const lines = String(text).trim().split('\n');
   let html = '';
   let inList = false;
+  let para = [];
+  const flush = () => {
+    if (!para.length) return;
+    html += `<p>${inline(para.join(' '), terms)}</p>`;
+    para = [];
+  };
   for (const raw of lines) {
     const line = raw.trimEnd();
     const bullet = line.match(/^\s*[-*]\s+(.*)$/);
     const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
     if (bullet || numbered) {
+      flush();
       if (!inList) { html += '<ul>'; inList = true; }
-      html += `<li>${inline(bullet ? bullet[1] : numbered[1])}</li>`;
+      html += `<li>${inline(bullet ? bullet[1] : numbered[1], terms)}</li>`;
       continue;
     }
     if (inList) { html += '</ul>'; inList = false; }
-    if (!line.trim()) continue;
-    if (/^###\s+/.test(line)) html += `<h5>${inline(line.replace(/^###\s+/, ''))}</h5>`;
-    else html += `<p>${inline(line)}</p>`;
+    if (!line.trim()) { flush(); continue; }
+    if (/^#{1,6}\s+/.test(line)) {
+      flush();
+      html += `<h5>${inline(line.replace(/^#{1,6}\s+/, ''), terms)}</h5>`;
+      continue;
+    }
+    // Lines that are structure, not prose, and must not be folded into a
+    // paragraph with their neighbours: a table row, a fence, a quote, a rule.
+    // Joining a table gave "| Test | Value | | --- | --- | | CRP | 44 |", and
+    // joining two fences paired them as inline code across the seam.
+    if (/^\s*(\||```|~~~|>|-{3,}$|\*{3,}$)/.test(line)) {
+      flush();
+      html += `<p class="md-raw">${inline(line.trim(), terms)}</p>`;
+      continue;
+    }
+    para.push(line.trim());
   }
+  flush();
   if (inList) html += '</ul>';
   return html;
 }
 
-function inline(s) {
-  return esc(s)
+function inline(s, terms = null) {
+  let out = esc(s)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[\s(])\*([^*]+)\*/g, '$1<em>$2</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>');
+  // [[Myasthenia gravis]] becomes a painted term. The brackets are stripped
+  // either way: a term Eric has since marked learned has no colour left, but
+  // it must never show as raw punctuation on his screen.
+  out = out.replace(/\[\[([^\]]{1,80})\]\]/g, (_, raw) => {
+    const label = raw.trim();
+    const key = label.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const i = terms?.get(key);
+    return i === undefined
+      ? label
+      : `<mark class="tm tm-${i}" data-tm="${esc(key)}">${label}</mark>`;
+  });
+  return out;
 }
 
 function toDate(v) { return v?.toDate ? v.toDate() : new Date(v || 0); }

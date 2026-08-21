@@ -9,8 +9,27 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
 <meta name="theme-color" content="#07090F">
-<title>Sign in — Pocket Advocate</title>
-<link rel="stylesheet" href="/css/site.css?v=stat27">
+<title>Sign in · Pocket Advocate</title>
+<script>
+// Paint in the stored colour scheme before the stylesheet lands, so a scheme
+// never flashes neon on the way in. Mirrors theme.js, which owns the choosing
+// and persisting; this only applies what is already stored. Eric's admin
+// device keeps Neon by default, everyone else gets Calm, and a stored choice
+// always wins.
+(function () {
+  try {
+    var s = localStorage.getItem('pa-scheme');
+    if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
+      s = localStorage.getItem('pa-admin-device') === '1' ? 'neon' : 'calm';
+    if (s !== 'neon') document.documentElement.dataset.scheme = s;
+    var c = { neon: '#07090F', calm: '#0B0E14', paper: '#F3EEE3', contrast: '#000000' }[s];
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m && c) m.setAttribute('content', c);
+  } catch (e) { /* storage blocked: neon is the default and is already correct */ }
+})();
+</script>
+<link rel="stylesheet" href="/css/site.css?v=stat66">
+<script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
 <header class="bar">
@@ -29,7 +48,34 @@
   <div class="card" id="resuming" hidden>
     <p class="muted" style="margin:0;">Signing you in…</p>
   </div>
-  <p class="muted">Enter your email and we'll send you a 6-digit code. No password to remember.</p>
+  <p class="muted" id="email-intro">Enter your email and I'll send you a 6-digit sign-in code. No password to remember.</p>
+
+  <!--
+    Eric's own door, and only ever on Eric's own phone.
+
+    It appears when this device has signed in with the PIN before. Everywhere
+    else the page looks exactly as it always has, so it still gives nothing away
+    about what a number typed into the email box does.
+
+    It exists for one reason: his PIN is digits and the email box raises a
+    letter keyboard, so entering it meant changing keyboards on a phone every
+    single time. This is a password field with a number pad. Someone holding
+    his unlocked phone learns that a PIN box exists and still has no PIN.
+  -->
+  <div class="card" id="pin-form" hidden>
+    <h3 style="margin-top:0;">Welcome back</h3>
+    <label for="pin">Your PIN</label>
+    <input type="password" id="pin" inputmode="numeric" autocomplete="current-password"
+      maxlength="12" placeholder="••••••"
+      style="letter-spacing:6px; font-size:1.4rem; text-align:center;">
+    <p class="error" id="pin-error" hidden></p>
+    <p style="margin-top:1rem;">
+      <button class="btn glow" id="pin-go">Sign in</button>
+    </p>
+    <p class="muted small" style="margin-top:.6rem;">
+      <a href="#" id="pin-other">Use an email address instead</a>
+    </p>
+  </div>
 
   <div class="card" id="email-form">
     <label for="email">Email address</label>
@@ -40,22 +86,97 @@
     <p class="error" id="error" hidden></p>
     <p style="margin-top:1rem;">
       <a class="btn quiet" href="/">← Back</a>
-      <button class="btn" id="send">Continue</button>
+      <button class="btn glow" id="send">Continue</button>
     </p>
   </div>
 
+  <div id="demo-hint" hidden style="margin-top:1rem;">
+    <p class="muted small" style="margin:0 0 .4rem;">Test suite — no email needed:</p>
+    <p style="display:flex; gap:.5rem; flex-wrap:wrap; margin:0;">
+      <button type="button" class="btn glow" onclick="location.href='/case.html?demo=1&tour=1'">Client suite</button>
+      <button type="button" class="btn quiet" onclick="location.href='/admin.html?demo=admin&tour=1'">Admin suite</button>
+    </p>
+  </div>
+
+  <script>
+  // Pick the door before paint. The module at the bottom owns this properly,
+  // but a module is deferred, and on a slow phone that meant the email box
+  // appeared and then vanished out from under his thumb. If this script never
+  // runs, the email box is already what the markup shows, which is the right
+  // thing to fall back to.
+  try {
+    if (localStorage.getItem('pa-admin-door') === '1') {
+      document.getElementById('pin-form').hidden = false;
+      document.getElementById('email-intro').hidden = true;
+      document.getElementById('email-form').hidden = true;
+    }
+  } catch (e) { /* storage blocked: the email box is already correct */ }
+
+  // The test suite's own front door.
+  //
+  // (Eric, 2026-08-21: "Login 1234 for client 2345 for admin.")
+  //
+  // Two questions, in order. First, is this a place a test suite can exist at
+  // all? That test mirrors DEMO_HOST in worker/index.js exactly: a versioned
+  // preview build, or a dev server. Never thepocketadvocates.com. The Worker is
+  // the real gate — it refuses to serve a single demo file anywhere else — so
+  // on the live site none of the below is wired, the hint never appears, and
+  // 1234 is nothing but a wrong PIN, told so in the usual words.
+  //
+  // Second, it is wired HERE rather than in the module at the bottom, because
+  // this is pure navigation and it has no business needing Firebase to load
+  // first. The test suite has to open even on the day the real app cannot.
+  //
+  // Capture phase on the document, so it runs ahead of the sign-in handlers
+  // and a code never reaches the PIN endpoint.
+  if (/^(?:[0-9a-f]{6,}-[\w-]+\.[\w-]+\.workers\.dev|localhost|127\.0\.0\.1|\[::1\])$/i
+      .test(location.hostname)) {
+    document.documentElement.dataset.demoHost = '1';
+    document.getElementById('demo-hint').hidden = false;
+
+    // 1234 lands IN the case, not on the sales page. He asked for the client
+    // who is already in as a case, and that is a person whose app opens on
+    // their own case file, update card included. The booking side is one tap
+    // away on the brand for anyone who wants it.
+    var DEMO_CODES = { 1234: '/case.html?demo=1&tour=1', 2345: '/admin.html?demo=admin&tour=1' };
+    var codeTyped = function () {
+      var ids = ['email', 'pin'];
+      for (var i = 0; i < ids.length; i++) {
+        var el = document.getElementById(ids[i]);
+        var to = el && DEMO_CODES[(el.value || '').trim()];
+        if (to) return to;
+      }
+      return '';
+    };
+    var jump = function (e) {
+      var to = codeTyped();
+      if (!to) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      location.href = to;
+    };
+    document.addEventListener('click', function (e) {
+      if (e.target && e.target.closest && e.target.closest('#send, #pin-go')) jump(e);
+    }, true);
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      if (e.target && e.target.closest && e.target.closest('#email, #pin')) jump(e);
+    }, true);
+  }
+  </script>
+
   <div class="card" id="code-form" hidden>
     <h3>Enter your code</h3>
-    <p class="muted">We sent a 6-digit code to <strong id="code-to"></strong>. It arrives in a few seconds and expires in 10 minutes.</p>
+    <p class="muted">I sent a 6-digit code to <strong id="code-to"></strong>. It should arrive shortly and expires in 10 minutes.</p>
     <label for="code">6-digit code</label>
     <input type="text" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="letter-spacing:6px; font-size:1.4rem; text-align:center;">
     <p class="error" id="code-error" hidden></p>
     <p style="margin-top:1rem;">
       <button class="btn quiet" id="code-back">← Back</button>
-      <button class="btn" id="verify">Sign in</button>
+      <button class="btn glow" id="verify">Sign in</button>
     </p>
-    <p class="muted small" style="margin-top:.6rem;">Didn't get it? Check <strong>Spam</strong> or <strong>Promotions</strong>. <a href="#" id="resend">Send a new code</a></p>
-    <p class="muted small">This device stays signed in afterwards. If you later add Pocket Advocate to your Home Screen it asks for one more code — your phone treats the installed app as a separate place from your browser. That happens once, then it's done.</p>
+    <p class="muted small" style="margin-top:.6rem;">Didn't get it? Check <strong>Spam</strong> or <strong>Promotions</strong>, or <a href="#" id="resend">send a new code</a>.</p>
+    <p class="muted small">This device will stay signed in. If you later add Pocket Advocate to your Home Screen, your phone may ask for one more code because it treats the installed app separately from the browser. After that, you should stay signed in there too.</p>
   </div>
 
   <div class="card" id="pass-form" hidden>
@@ -65,7 +186,7 @@
     <p class="error" id="pass-error" hidden></p>
     <p style="margin-top:1rem;">
       <button class="btn quiet" id="pass-back">← Back</button>
-      <button class="btn" id="pass-go">Sign in</button>
+      <button class="btn glow" id="pass-go">Sign in</button>
     </p>
   </div>
 </main>
@@ -86,13 +207,29 @@
   // attestation the app ticks for you is not an attestation.
   if (known) emailInput.value = known;
 
+  // Which card a person sees when nothing signed them in on its own: Eric's
+  // PIN pad if this device has used it before, the email box for everybody
+  // else. `pa-admin-door` deliberately outlives the weekly sign-out below, or
+  // the one morning a week he has to type the PIN would also be the morning
+  // the number pad vanished.
+  const DOOR_KEY = 'pa-admin-door';
+  function showFirstCard() {
+    const wantsPin = localStorage.getItem(DOOR_KEY) === '1';
+    document.getElementById('pin-form').hidden = !wantsPin;
+    document.getElementById('email-form').hidden = wantsPin;
+    document.getElementById('email-intro').hidden = wantsPin;
+    if (wantsPin && window.innerHeight >= 700) document.getElementById('pin').focus();
+  }
+  showFirstCard();
+
   // A device that has already proven a code signs in on the email alone.
   const DEVICE_KEY = 'pa-device-token';
   const deviceToken = localStorage.getItem(DEVICE_KEY) || '';
   if (known && deviceToken) {
-    const emailForm = document.getElementById('email-form');
     const resuming = document.getElementById('resuming');
-    emailForm.hidden = true;
+    document.getElementById('email-form').hidden = true;
+    document.getElementById('email-intro').hidden = true;
+    document.getElementById('pin-form').hidden = true;
     resuming.hidden = false;
     try {
       const res = await fetch('/api/auth/device-signin', {
@@ -104,12 +241,68 @@
       await signInWithCustomToken(auth, token);
       location.href = returnTo;
     } catch {
-      // Expired or revoked — fall back to the code, quietly.
+      // Expired or revoked — fall back to whichever door this device uses.
       localStorage.removeItem(DEVICE_KEY);
       resuming.hidden = true;
-      emailForm.hidden = false;
+      showFirstCard();
     }
   }
+
+  /**
+   * The admin door. Shared by the PIN card and by a numeric entry typed into
+   * the email box, so both remember this device the same way.
+   *
+   * Resolves true once it has navigated, false to let the caller say its own
+   * piece — the email box has to keep claiming a number is a bad email.
+   */
+  async function pinLogin(pin) {
+    try {
+      const res = await fetch('/api/admin/pin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      });
+      if (!res.ok) return false;
+      const out = await res.json();
+      // Remember the device, the same as every other way in does. Without
+      // these three lines the PIN asked again on every single visit.
+      if (out.deviceToken) localStorage.setItem(DEVICE_KEY, out.deviceToken);
+      if (out.email) rememberEmail(out.email);
+      localStorage.setItem(DOOR_KEY, '1');
+      // Starts the weekly re-login clock (enforced in auth.js).
+      localStorage.setItem('pa-admin-since', String(Date.now()));
+      await signInWithCustomToken(auth, out.token);
+      location.href = '/admin.html';
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  const pinErr = document.getElementById('pin-error');
+  const pinGo = document.getElementById('pin-go');
+  pinGo.addEventListener('click', async () => {
+    const pin = document.getElementById('pin').value.trim();
+    pinErr.hidden = true;
+    if (!pin) return;
+    pinGo.disabled = true;
+    if (!(await pinLogin(pin))) {
+      pinErr.textContent = 'That PIN did not work. Try again.';
+      pinErr.hidden = false;
+      document.getElementById('pin').select();
+    }
+    pinGo.disabled = false;
+  });
+  document.getElementById('pin').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); pinGo.click(); }
+  });
+  // A way out, in case the phone changes hands or he wants the client side.
+  document.getElementById('pin-other').addEventListener('click', (e) => {
+    e.preventDefault();
+    localStorage.removeItem(DOOR_KEY);
+    showFirstCard();
+    document.getElementById('email').focus();
+  });
 
   // Complete any legacy magic-link that's still floating around in an inbox.
   if (isSignInWithEmailLink(auth, location.href)) {
@@ -128,20 +321,7 @@
     // on any failure it falls through to the same generic email error, so the
     // page never reveals that a number does anything.
     if (/^\d{4,12}$/.test(email)) {
-      try {
-        const res = await fetch('/api/admin/pin', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ pin: email }),
-        });
-        if (res.ok) {
-          const { token } = await res.json();
-          localStorage.setItem('pa-admin-since', String(Date.now()));
-          await signInWithCustomToken(auth, token);
-          location.href = '/admin.html';
-          return;
-        }
-      } catch { /* fall through */ }
+      if (await pinLogin(email)) return;
       errEl.textContent = 'Enter a valid email address.';
       errEl.hidden = false;
       return;

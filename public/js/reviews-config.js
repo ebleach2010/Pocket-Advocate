@@ -11,6 +11,8 @@ export const GOOGLE_REVIEWS_URL = null;
 // The Google Business voice number belongs to another business, so the app
 // deliberately uses this one. About and Reviews render call buttons from it.
 export const BUSINESS_PHONE = '+12086708608';
+// The same number, formatted for a person to read.
+export const BUSINESS_PHONE_TEXT = '(208) 670-8608';
 
 export const REVIEWS = [
   {
@@ -29,3 +31,28 @@ export const REVIEWS = [
     text: '',
   },
 ];
+
+/**
+ * Every review a page should show: the reviews Eric has published from real
+ * cases, newest first, then the transcribed Google ones.
+ *
+ * Best effort by design. A reviews page that goes blank because an endpoint
+ * hiccuped is worse than one showing only the Google list, so a failure here
+ * is silent and the baseline stands.
+ */
+export async function loadReviews() {
+  try {
+    const res = await fetch('/api/reviews');
+    if (!res.ok) return REVIEWS;
+    const mine = ((await res.json()).reviews || [])
+      .filter((r) => r && r.stars)
+      .map((r) => ({
+        name: String(r.name || 'A client'),
+        stars: Math.max(1, Math.min(5, Math.round(Number(r.stars)) || 5)),
+        text: String(r.text || ''),
+      }));
+    return mine.length ? [...mine, ...REVIEWS] : REVIEWS;
+  } catch {
+    return REVIEWS;
+  }
+}

@@ -93,6 +93,29 @@ async function ensureProfile(user) {
   }
 }
 
+/**
+ * Admin pages, modules and stylesheet are served behind a signed cookie the
+ * Worker sets, because a <script src> cannot carry a bearer token. Sign-in
+ * mints it, but a browser can hold a live session with no cookie: a device
+ * that was already signed in before this shipped, or one whose cookie aged
+ * out. Asking for one here means the next navigation to an admin page already
+ * has what the gate wants.
+ *
+ * Once per page load, and failure is not fatal: worst case the gate bounces
+ * him to sign in, which is exactly what it should do.
+ */
+let adminSessionAsked = false;
+async function ensureAdminSession(user) {
+  if (adminSessionAsked) return;
+  adminSessionAsked = true;
+  try {
+    await fetch('/api/admin/session', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${await user.getIdToken()}` },
+    });
+  } catch { /* offline, or already holding a good cookie */ }
+}
+
 /** True when the signed-in user is the admin (Eric). */
 export async function isAdmin(user) {
   try {
@@ -109,14 +132,19 @@ export async function requireAdmin() {
   if (!user) return null;
   if (!(await isAdmin(user))) {
     // Clear the open-to-admin hint BEFORE bouncing to '/', or a stale hint on
-    // a non-admin device would bounce '/' right back here, forever.
+    // a non-admin device would bounce '/' right back here, forever. The PIN
+    // pad goes with it: this is not his phone.
     localStorage.removeItem('pa-admin-device');
+    localStorage.removeItem('pa-admin-door');
     location.href = '/';
     return null;
   }
+  await ensureAdminSession(user);
   // Weekly re-login, Eric's own rule: an admin session older than 7 days is
   // signed out everywhere on this device, trusted-device token included, so
-  // getting back in takes the password again.
+  // getting back in takes the PIN again. Once a week, on a number pad — the
+  // rest of the week the trusted device carries him straight in. `pa-admin-door`
+  // survives this on purpose, so the PIN pad is still there waiting for him.
   const WEEK_MS = 7 * 86_400_000;
   const since = Number(localStorage.getItem('pa-admin-since') || 0);
   if (!since) {
@@ -125,6 +153,7 @@ export async function requireAdmin() {
     localStorage.removeItem('pa-admin-since');
     localStorage.removeItem('pa-device-token');
     localStorage.removeItem('pa-admin-device');
+    try { await fetch('/api/admin/session', { method: 'DELETE' }); } catch { /* offline */ }
     await signOut(auth);
     location.href = `/signin.html?to=${encodeURIComponent(location.pathname + location.search)}`;
     return null;
@@ -158,8 +187,12 @@ export async function hydrateNav() {
     const path = location.pathname;
     if (admin) {
       localStorage.setItem('pa-admin-device', '1');
+      ensureAdminSession(user);
       el.innerHTML =
-        `<a href="/admin.html">Admin</a> <a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
+        // No "Admin" link: every admin page already carries "Clients", which
+        // goes to the same place. Two names for one door in a seven-item menu
+        // is one item of pure noise.
+        `<a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
     } else {
       el.innerHTML =
         `<a href="/case.html" class="${path === '/case.html' ? 'active' : ''}">My cases</a>` +
@@ -170,13 +203,23 @@ export async function hydrateNav() {
       e.preventDefault();
       // Untrust this device too, or the sign-in page would silently sign them
       // straight back in and "Sign out" would mean nothing on a shared phone.
+      // Signing out on purpose also takes the PIN pad away; the weekly clock
+      // in requireAdmin deliberately does not, because a weekly re-login is
+      // not the phone changing hands.
       localStorage.removeItem('pa-device-token');
       localStorage.removeItem('pa-admin-device');
+      localStorage.removeItem('pa-admin-door');
+      try { await fetch('/api/admin/session', { method: 'DELETE' }); } catch { /* offline */ }
       await signOut(auth);
       location.href = '/';
     });
     markUnread(user, admin).catch(() => {});
     import('./settings.js').then((m) => m.initSettings(user, admin)).catch(() => {});
+    // What changed since they last opened the app. Loaded soft and shown once:
+    // nothing on the page depends on it, and a changelog that fails to load is
+    // not a reason for anything else to break. Nobody is shown a changelog on
+    // a first-ever visit - they need the app, not its history.
+    import('./changelog.js').then((m) => m.showVersionCard(admin, user)).catch(() => {});
   } else {
     el.innerHTML = `<a href="/signin.html">Sign in</a>`;
   }

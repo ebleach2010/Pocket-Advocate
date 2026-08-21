@@ -1,21 +1,33 @@
-# Deploys the real app (Worker + the public/ assets it serves) to Cloudflare on
-# every push to main, so "merged" and "live" mean the same thing.
+# A MANUAL fallback. Nothing about the normal path runs through here.
 #
-# Note the sibling workflow pages.yml publishes only PROTOTYPE.html to the
-# GitHub Pages review build — that is NOT the production site. This one is.
+# Cloudflare's own Git integration (Workers Builds) is connected to this
+# repository and is what actually ships the app. It builds every push: a push
+# to main is deployed to thepocketadvocates.com, and a push to any other branch
+# is uploaded as a version and gets its own preview hostname, which the
+# Cloudflare bot posts as a comment on the pull request. That is where the
+# preview links come from.
 #
-# Requires two repository secrets (Settings → Secrets and variables → Actions):
-#   CLOUDFLARE_API_TOKEN   an API token with the "Edit Cloudflare Workers" template
-#   CLOUDFLARE_ACCOUNT_ID  the account ID from the Cloudflare dashboard
+# This workflow used to also run on every push to main. It has failed on every
+# one of those since run 18, because the two secrets below were never added —
+# while Cloudflare deployed the same commit successfully a minute later. A red
+# cross that means nothing is worse than no check at all, so it now runs only
+# when someone asks for it: a way back in if the Git integration is ever
+# disconnected. It still needs the secrets to do anything.
+#
+#   CLOUDFLARE_API_TOKEN   an API token from the "Edit Cloudflare Workers" template
+#   CLOUDFLARE_ACCOUNT_ID  the account ID on the Cloudflare dashboard sidebar
+#
+# (Settings → Secrets and variables → Actions.)
 #
 # Worker secrets (STRIPE_SECRET_KEY, FIREBASE_SERVICE_ACCOUNT, RESEND_API_KEY,
 # STRIPE_WEBHOOK_SECRET) are stored in Cloudflare and survive deploys — they do
 # not belong here and do not need to be re-uploaded.
-name: Deploy to Cloudflare
+#
+# The sibling workflow pages.yml publishes only PROTOTYPE.html to the GitHub
+# Pages review build. That is not the production site either.
+name: Deploy to Cloudflare (manual fallback)
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 # Never cancel a deploy mid-flight; queue instead.
