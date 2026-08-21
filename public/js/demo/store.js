@@ -150,7 +150,11 @@ function fire(path) {
  */
 function seedLastSeenVersion() {
   try {
-    const previous = CHANGELOG.find((v) => v.version !== VERSION);
+    // Relative to the newest LOUD version, not the newest version: quiet
+    // versions (footer-only, no card) sit at the top of CHANGELOG and never
+    // show a card, so seeding just below one of those would show nothing.
+    const loud = CHANGELOG.findIndex((v) => !v.quiet);
+    const previous = loud >= 0 ? CHANGELOG[loud + 1] : null;
     localStorage.setItem('pa-seen-version', previous ? previous.version : '0.1');
   } catch { /* storage blocked: the card simply does not show */ }
 }
