@@ -12,6 +12,7 @@ import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence } from './chat.js';
 import { mountSaved } from './saved.js';
 import { initSetupGuide } from './onboarding.js';
+import { askName, safeName } from './rename.js';
 import { HELP_BUTTON, wireHelp, openCaseHelp } from './help.js';
 import { mountFolder, folderEnter } from './folder.js';
 
@@ -391,10 +392,14 @@ function renderDocs(el, c) {
 async function refreshFiles(c, el) {
   const listEl = el.querySelector('[data-files]');
   if (!listEl) return;
+  // Anything shared in the chat lands here as well as in the thread. It is
+  // the same document either way, and having to remember which of two places
+  // you put something is not a filing system.
   const kinds = [
     ['report', `cases/${c.id}/report`],
     ['recording', `cases/${c.id}/recording`],
     ['upload', `cases/${c.id}/uploads`],
+    ['chat', `cases/${c.id}/chat-files`],
     ['saved', `profiles/${user.uid}/saved`],
   ];
   const rows = [];
@@ -415,7 +420,15 @@ async function refreshFiles(c, el) {
   // thing cannot collide. That is a storage detail, and printing it put a
   // thirteen-digit number in front of every filename a client reads.
   const shownName = (n) => String(n).replace(/^\d{10,}-/, '');
-  const order = { report: 0, recording: 1, upload: 2, saved: 3 };
+  // A file long-pressed out of the chat exists twice: once where it was
+  // shared and once in their own saved folder. One row, not two.
+  const seen = new Set(rows.filter((r) => r.kind === 'chat')
+    .map((r) => `${shownName(r.name)}|${r.size}`));
+  const deduped = rows.filter((r) => !(r.kind === 'saved' && seen.has(`${shownName(r.name)}|${r.size}`)));
+  rows.length = 0;
+  rows.push(...deduped);
+
+  const order = { report: 0, recording: 1, upload: 2, chat: 3, saved: 4 };
   rows.sort((a, b) => order[a.kind] - order[b.kind] || b.ts - a.ts);
   const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
   // The report gets a ✅ the moment the case is delivered. It is the one file
@@ -424,7 +437,7 @@ async function refreshFiles(c, el) {
   const delivered = c.status === 'delivered' || c.status === 'closed';
   listEl.innerHTML = rows.map((r) => `
     <li>
-      <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
+      <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' || r.kind === 'chat' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
         ${r.kind === 'report' && delivered ? '<span class="delivered-tick" title="Delivered" role="img" aria-label="Delivered">✅</span>' : ''}
         <a href="${r.url}" target="_blank" rel="noopener">${esc(shownName(r.name))}</a></span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
@@ -717,16 +730,21 @@ async function uploadFiles(c, el, files) {
   const zone = el.querySelector('[data-drop]');
   err.hidden = true;
   let uploaded = 0;
+  const names = [];
   for (const file of files) {
     if (file.size > MAX_BYTES) {
       err.textContent = `${file.name} is over 25 MB. Compress it or split it up.`;
       err.hidden = false;
       continue;
     }
+    // Their words, asked for once, while they still remember what it is.
+    // Skipping keeps the original name; the upload never depends on this.
+    const named = await askName(file);
+    names.push(named);
     zone.classList.add('busy');
     bar.hidden = false;
-    const safe = file.name.replace(/[^\w.\- ]+/g, '_');
-    const task = uploadBytesResumable(ref(storage, `cases/${c.id}/uploads/${Date.now()}-${safe}`), file);
+    const task = uploadBytesResumable(
+      ref(storage, `cases/${c.id}/uploads/${Date.now()}-${safeName(named)}`), file);
     try {
       await new Promise((resolve, reject) => {
         task.on('state_changed',
@@ -755,7 +773,7 @@ async function uploadFiles(c, el, files) {
       await fetch('/api/uploaded', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ kind: 'case', id: c.id }),
+        body: JSON.stringify({ kind: 'case', id: c.id, names: names.slice(0, 10) }),
       });
     } catch { /* it will be found on the next pass regardless */ }
   }

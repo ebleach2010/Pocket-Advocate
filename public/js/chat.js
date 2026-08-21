@@ -16,6 +16,7 @@ import {
 import {
   emojiById, statusById, openMessageMenu, openEditor, openNote, EDIT_WINDOW_MS,
 } from './msg-actions.js';
+import { askName, safeName } from './rename.js';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const LONG_PRESS_MS = 550;
@@ -528,11 +529,15 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       errEl.hidden = false;
       return;
     }
+    // Ask a client what it is before it goes anywhere. Not Eric: he is the one
+    // who wanted the descriptions, and being asked to describe his own report
+    // every time he sends one would be a tax on the person who set the rule.
+    const named = myRole === 'client' ? await askName(file) : file.name;
     const bar = container.querySelector('[data-progress]');
     bar.hidden = false;
     try {
-      const safe = file.name.replace(/[^\w.\- ]+/g, '_');
-      const storageRef = ref(storage, `${parentPath.join('/')}/chat-files/${Date.now()}-${safe}`);
+      const storageRef = ref(storage,
+        `${parentPath.join('/')}/chat-files/${Date.now()}-${safeName(named)}`);
       const task = uploadBytesResumable(storageRef, file);
       await new Promise((resolve, reject) => {
         task.on('state_changed',
@@ -542,10 +547,14 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       const url = await getDownloadURL(storageRef);
       await send({
         attachment: {
-          name: file.name, url, path: storageRef.fullPath,
+          name: named, url, path: storageRef.fullPath,
           size: file.size, contentType: file.type || 'application/octet-stream',
         },
       });
+      // Documents lists chat-files now, so a file shared here belongs in that
+      // list the moment it lands rather than after a reload. Same event the
+      // long-press save already fires.
+      document.dispatchEvent(new CustomEvent('pa-saved-file'));
     } catch (err) {
       errEl.textContent = `Upload failed: ${err.message}`;
       errEl.hidden = false;

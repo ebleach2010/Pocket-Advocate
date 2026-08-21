@@ -401,7 +401,10 @@ async function selectedMediaBlocks(env, list, kind, id, alreadyRead = []) {
   const carry = [];
   let budget = MAX_TOTAL_MEDIA_BYTES;
   for (const att of (list || [])) {
-    const name = String(att?.name || 'file').slice(0, 200);
+    // Storage names carry a collision-proof timestamp in front. The model does
+    // not need it, and since the rest of the name is now the client's own
+    // description of what the file is, that description is the useful part.
+    const name = String(att?.name || 'file').replace(/^\d{10,}-/, '').slice(0, 200);
     const key = fileKey(att, kind, id);
     if (seen.has(key)) { known.push(name); continue; }
     seen.add(key); // the same file staged twice in one pass is still one read
@@ -628,23 +631,342 @@ function sectionOf(text, name) {
  * lesson. Cheap on purpose (low effort, small ceiling): this is distillation,
  * not analysis. Failures stay quiet; the next edit retries.
  */
-/**
- * Run a distill only if the profile is missing or has gone stale. Called after
- * an analysis, so About-you fills in on its own for an advocate who never uses
- * the draft flow, without paying for a distill on every single pass.
- */
-const DISTILL_STALE_MS = 3 * 86_400_000;
+// ---- The voice study: three readers, one merge, once a day ----------------
+//
+// Eric, 2026-08-21: "the advisor learns how I speak across time from how I
+// edit its drafts to how I message clients. This improves its draft creation
+// to sound more naturally like me. This analysis should be run every 24 hours
+// using 3 agents that look for cadence, rhythm, style, verbiage, and belief
+// systems. They then merge information into the advisor knowledge. That runs
+// every 24hrs until I say stop."
+//
+// It writes the SAME document runStyleDistill writes, in the same three
+// sections, so every consumer of the profile - the draft writer, every
+// analysis and Q&A through stanceNote, and the About-you page - keeps working
+// untouched and simply gets a better-fed profile.
+//
+// This does not replace the distill that runs the moment he edits a draft.
+// That one is the fast path: it exists so the VERY NEXT draft carries the
+// lesson. This is the slow wide pass over everything he wrote today.
 
-export async function maybeDistill(env, kind, id) {
+const VOICE_LOOP_HOUR = 21;                       // 9pm, his time (his choice)
+const VOICE_LOOP_TZ = 'Etc/GMT+7';                // MST, a fixed offset: no DST
+const VOICE_LOOP_MIN_GAP_MS = 23 * 3_600_000;
+const VOICE_CORPUS_CHARS = 40_000;
+const VOICE_THREAD_MESSAGES = 60;
+const VOICE_THREADS = { cases: 40, subscriptions: 20 };
+const VOICE_PAIRS = 40;
+
+/** The local hour in a zone. Same shape as the digest's, kept local to here. */
+function hourIn(now, tz) {
   try {
-    const profile = await getDoc(env, STYLE_PATH).catch(() => null);
-    const at = profile?.data.updatedAt ? new Date(profile.data.updatedAt).getTime() : 0;
-    if (at && Date.now() - at < DISTILL_STALE_MS) return;
-    await runStyleDistill(env, kind, id);
-  } catch (err) {
-    console.warn('maybe distill:', err.message || err);
+    return Number(new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hour: '2-digit', hourCycle: 'h23',
+    }).format(new Date(now)));
+  } catch {
+    return -1;
   }
 }
+
+/**
+ * Everything Eric has written to a client lately, across every thread.
+ *
+ * The on-edit distill reads one thread: the one that happened to trigger it.
+ * "How I message clients" is plural, and a profile built from a single case is
+ * a profile of how he writes to that one person.
+ *
+ * Walks threads with listDocs rather than a chat collection-group query. The
+ * query would be cheaper and needs a collection-group index, which is exactly
+ * the kind of thing he cannot deploy.
+ */
+export async function voiceCorpus(env) {
+  const out = [];
+  let chars = 0;
+  for (const [coll, cap] of Object.entries(VOICE_THREADS)) {
+    // Newest threads first where the collection supports it; an ordering a
+    // collection does not have is not a reason to read nothing.
+    const threads = await listDocs(env, coll, { pageSize: cap, orderBy: 'createdAt desc' })
+      .catch(() => listDocs(env, coll, { pageSize: cap }).catch(() => []));
+    for (const t of threads) {
+      if (chars >= VOICE_CORPUS_CHARS) break;
+      const rows = await listDocs(env, `${coll}/${t.id}/chat`, {
+        pageSize: VOICE_THREAD_MESSAGES, orderBy: 'ts desc',
+      }).catch(() => []);
+      // His side only. A client's words must never end up in the profile of
+      // how ERIC writes, which is what this whole document is.
+      const mine = rows.filter((r) => r.data.role === 'admin' && r.data.text)
+        .map((r) => String(r.data.text).trim())
+        .filter(Boolean);
+      for (const m of mine) {
+        if (chars >= VOICE_CORPUS_CHARS) break;
+        out.push(m);
+        chars += m.length + 5;
+      }
+    }
+  }
+  return out.join('\n---\n');
+}
+
+/** One reader. Its own question, the same corpus. */
+const READERS = [
+  {
+    id: 'cadence',
+    what: 'cadence and rhythm',
+    ask: `Read this writing for CADENCE AND RHYTHM only. Not what he says: how it moves.
+
+Sentence length and how it varies. Where he puts the short one. How he opens a
+message and how he closes it. Paragraph length. Whether he front-loads the point
+or builds to it. Punctuation habits, including the ones he clearly avoids. How
+he paces a long message so it stays readable, and where his pacing slips.
+
+One observation per line, each one specific enough that another writer could
+follow it. "Opens with what the person did, not with a greeting" is worth
+writing. "Writes clearly" is not.`,
+  },
+  {
+    id: 'verbiage',
+    what: 'style and verbiage',
+    ask: `Read this writing for STYLE AND VERBIAGE only. The words themselves.
+
+Word choice and register. Phrases he reaches for again and again. Words he
+plainly will not use. Contractions. When he goes formal and when he does not.
+Whether he uses lists, bold, questions. How he handles a technical term the
+first time it appears. In the edit pairs: what he STRIKES OUT of a draft is the
+loudest signal here, so read the deletions as carefully as the additions.
+
+One observation per line, each with a real example of his wording where you
+have one.`,
+  },
+  {
+    id: 'beliefs',
+    what: 'belief systems',
+    ask: `Read this writing for BELIEF SYSTEMS only. What he holds to be true.
+
+His standing positions. What he pushes for every single time. What he refuses
+to do. Where he knowingly departs from general clinical guidance or textbook
+advice, and what he puts in its place. What he thinks the client's job is and
+what he thinks his own job is.
+
+One line each, stated as HIS position, with the evidence in parentheses. Only
+what his own words support: never invent a position, and never promote a
+one-off phrasing tweak into a belief. If the evidence is too thin, say so
+rather than filling the space.`,
+  },
+];
+
+const READER_RULES = `
+You are reading the writing of Eric, a patient advocate, so that another model
+can write chat drafts in his voice and hold his positions.
+
+You are given two kinds of evidence:
+1. EDIT PAIRS. DRAFT is what a model wrote for him; SENT is what he actually
+   sent after editing it. The difference between them is him correcting the
+   model, which makes it the strongest evidence there is.
+2. His own messages to clients, across all his cases.
+
+Write a plain list under a single heading of your own choosing. No preamble, no
+closing note, no summary of your method. 200 words at most.
+
+Never use an em dash or an en dash, anywhere, in anything.`;
+
+/**
+ * The daily pass. Three readers in parallel, then a merge into the profile.
+ *
+ * A reader that fails is dropped and the rest still merge: three of three is
+ * not a requirement for a useful pass, and a study that refuses to run because
+ * one call timed out is a study that stops running.
+ */
+export async function runVoiceStudy(env) {
+  const [profile, edits, organic] = await Promise.all([
+    getDoc(env, STYLE_PATH).catch(() => null),
+    listDocs(env, `${STYLE_PATH}/edits`, { pageSize: VOICE_PAIRS, orderBy: 'at desc' }).catch(() => []),
+    voiceCorpus(env).catch(() => ''),
+  ]);
+  const pairs = edits.filter((r) => r.data.draft && r.data.sent);
+  if (!pairs.length && organic.length < 600) return { ran: false, reason: 'not enough to read' };
+
+  const pairBlock = pairs.length
+    ? pairs.map((r, i) =>
+      `PAIR ${i + 1}\nDRAFT (a model wrote):\n${r.data.draft.slice(0, 1500)}\nSENT (Eric actually sent):\n${r.data.sent.slice(0, 1500)}`)
+      .join('\n\n')
+    : '(no edit pairs yet, go on his own messages alone)';
+  const evidence = `EDIT PAIRS, newest first:\n\n${pairBlock}\n\nHIS OWN MESSAGES TO CLIENTS, newest first:\n\n${organic || '(none)'}`;
+
+  const reports = await Promise.all(READERS.map((r) =>
+    ask(env, {
+      effort: 'low',
+      maxTokens: 8000,
+      system: [{ type: 'text', text: `${READER_RULES}\n\n${r.ask}` }],
+      messages: [{ role: 'user', content: evidence }],
+    }).then((text) => ({ id: r.id, what: r.what, text: String(text || '').trim() }))
+      .catch((err) => {
+        console.warn(`voice reader ${r.id}:`, err.message || err);
+        return null;
+      })));
+
+  const got = reports.filter((r) => r && r.text);
+  if (!got.length) return { ran: false, reason: 'every reader failed' };
+
+  const prior = profile?.data || {};
+  const merged = await mergeVoice(env, got, prior);
+  return { ran: true, readers: got.map((r) => r.id), ...merged };
+}
+
+/**
+ * Fold the readers into the three sections the profile already stores, so
+ * nothing downstream has to know this changed.
+ *
+ * Cadence and verbiage become Voice; beliefs become Stances; Coaching is
+ * refreshed from the same evidence, because he asked for it and reads it.
+ */
+async function mergeVoice(env, reports, prior) {
+  const body = reports
+    .map((r) => `FINDINGS ON ${r.what.toUpperCase()}:\n${r.text}`)
+    .join('\n\n');
+
+  const text = await ask(env, {
+    effort: 'low',
+    maxTokens: 10000,
+    system: [{ type: 'text', text: `Three readers each studied Eric's writing for one thing. Fold their findings,
+and the profile already on file, into one profile another model will use to
+write chat drafts as him.
+
+Carry forward what still holds. Drop what newer evidence contradicts. Merge
+duplicates rather than listing them twice. Newer evidence beats older.
+
+Write exactly three markdown sections and nothing else:
+
+## Voice
+How he writes: everything the cadence and the verbiage readers found, as one
+list rather than two. Sentence shape and length, openings and closings, warmth,
+contractions, phrases he reaches for, what he strips out of drafts. One
+observation per line. 220 words max.
+
+## Stances
+His positions and standing calls, especially where he knowingly departs from
+general clinical guidance. One line each, stated as his position, with the
+evidence in parentheses. Only what the evidence supports: never invent a
+stance, never promote a one-off phrasing tweak into an opinion. 200 words max.
+If nothing is evidenced yet, write "- none yet".
+
+Any stance already marked as his override is settled. Carry it forward
+verbatim, never soften it, and never let newer evidence quietly reverse it.
+
+## Coaching
+What he is actually good at with clients, and what he could work on. He asked
+for this and he wants it honest, so write it honest: two or three bullets of
+real strength and two or three of real weak spots, each pointing at something
+in the evidence rather than a generality. Never guess at motives, never comment
+on his health, and never pad it to look balanced. 160 words max. If the
+evidence is too thin, write "- not enough to say yet".
+
+Plain text under each heading. Never use an em dash or en dash. No preamble.` }],
+    messages: [{
+      role: 'user',
+      content: `${prior.voice || prior.stances ? `The profile on file:\n\n## Voice\n${prior.voice || '- none yet'}\n\n## Stances\n${prior.stances || '- none yet'}\n\n## Coaching\n${prior.coaching || '- none yet'}\n\n` : ''}${body}`,
+    }],
+  });
+
+  const rawVoice = sectionOf(text, 'Voice');
+  let rawStances = sectionOf(text, 'Stances');
+  if (/^-?\s*none yet\.?$/i.test(rawStances)) rawStances = '';
+  let rawCoaching = sectionOf(text, 'Coaching');
+  if (/^-?\s*not enough to say yet\.?$/i.test(rawCoaching)) rawCoaching = '';
+
+  // A section the merge failed to produce keeps what it had. A truncated reply
+  // must never erase weeks of learning, and on a daily loop this gets 365
+  // chances a year to do exactly that.
+  const voice = rawVoice || prior.voice || '';
+  let stances = rawStances || prior.stances || '';
+  const coaching = rawCoaching || prior.coaching || '';
+  if (!rawVoice && !rawStances && !rawCoaching) return { wrote: false, reason: 'merge produced no sections' };
+  if (!voice && !stances) return { wrote: false, reason: 'nothing to write' };
+
+  // The prompt asks for overrides to be carried forward. Asking is not enough:
+  // a pass that paraphrases one, or drops it for space, silently reverses a
+  // call he made on purpose.
+  stances = keepOverrides(prior.stances || '', stances);
+
+  await patchDoc(env, STYLE_PATH, {
+    voice: voice.slice(0, 2000),
+    stances: stances.slice(0, 2000),
+    coaching: coaching.slice(0, 2000),
+    updatedAt: new Date(),
+    lastLesson: { kind: 'voice-study', id: '', at: new Date() },
+  }, { mask: ['voice', 'stances', 'coaching', 'updatedAt', 'lastLesson'] });
+  return { wrote: true };
+}
+
+/**
+ * The clock, and the stop.
+ *
+ * Called from the five-minute cron. Returns immediately unless it is his
+ * evening, a day has passed, and he has not switched it off.
+ *
+ * lastRunAt is stamped BEFORE the model calls, with a compare-and-swap on the
+ * document's update time: two cron fires in the same minute, or a restart
+ * mid-run, must not buy four model turns twice.
+ */
+export async function maybeVoiceStudy(env, now = Date.now()) {
+  try {
+    if (hourIn(now, VOICE_LOOP_TZ) !== VOICE_LOOP_HOUR) return { ran: false, reason: 'not his evening' };
+    const profile = await getDoc(env, STYLE_PATH).catch(() => null);
+    const loop = profile?.data.voiceLoop || {};
+    // Absent means on. He asked for it to run; only an explicit off stops it.
+    if (loop.enabled === false) return { ran: false, reason: 'switched off' };
+    const last = loop.lastRunAt ? new Date(loop.lastRunAt).getTime() : 0;
+    if (last && now - last < VOICE_LOOP_MIN_GAP_MS) return { ran: false, reason: 'already ran today' };
+
+    const claimed = await patchDoc(env, STYLE_PATH, {
+      voiceLoop: { ...loop, enabled: loop.enabled !== false, lastRunAt: new Date(now), lastError: null },
+    }, {
+      mask: ['voiceLoop'],
+      ...(profile ? { ifUpdateTime: profile.updateTime } : {}),
+    });
+    // Someone else claimed this run between the read and the write.
+    if (!claimed) return { ran: false, reason: 'another run claimed it' };
+
+    const out = await runVoiceStudy(env);
+    await patchDoc(env, STYLE_PATH, {
+      voiceLoop: {
+        enabled: true,
+        lastRunAt: new Date(now),
+        runs: Number(loop.runs || 0) + 1,
+        lastError: out.ran === false ? String(out.reason || '') : null,
+      },
+    }, { mask: ['voiceLoop'] }).catch(() => {});
+    return out;
+  } catch (err) {
+    console.error('voice study:', err.stack || err);
+    // The failure is recorded where he can see it, so a loop that quietly
+    // stopped working looks different from one that has nothing to say.
+    await patchDoc(env, STYLE_PATH, {
+      voiceLoop: { lastError: String(err.message || err).slice(0, 300) },
+    }, { mask: ['voiceLoop.lastError'] }).catch(() => {});
+    return { ran: false, reason: 'threw' };
+  }
+}
+
+/** On or off, and what happened last time. For his dashboard only. */
+export async function voiceLoopState(env) {
+  const profile = await getDoc(env, STYLE_PATH).catch(() => null);
+  const loop = profile?.data.voiceLoop || {};
+  return {
+    enabled: loop.enabled !== false,
+    lastRunAt: loop.lastRunAt || null,
+    runs: Number(loop.runs || 0) || 0,
+    lastError: loop.lastError || null,
+    hour: VOICE_LOOP_HOUR,
+  };
+}
+
+export async function setVoiceLoop(env, enabled) {
+  await patchDoc(env, STYLE_PATH, { voiceLoop: { enabled: !!enabled } }, {
+    mask: ['voiceLoop.enabled'],
+  });
+  return voiceLoopState(env);
+}
+
 
 export async function runStyleDistill(env, kind, id) {
   try {
@@ -1357,10 +1679,10 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
     // picks up the next batch on its own, rather than waiting for Eric to
     // notice and tap Analyze again.
     if (media.carry.length) await markPending(env, kind, id).catch(() => {});
-    // Keep the About-you page alive for an advocate who never uses the draft
-    // flow. Returns immediately unless the profile is missing or has gone
-    // stale, so this is not a distill on every pass.
-    await maybeDistill(env, kind, id).catch(() => {});
+    // The stale-profile top-up that used to hang off an analysis is gone. The
+    // nightly voice study covers it, from every thread rather than this one,
+    // and two schedules writing the same profile is how it gets rebuilt twice
+    // in an evening for no gain.
   } catch (err) {
     console.error('advisor analysis:', err.stack || err);
     await setState(env, kind, id, { status: 'error', error: friendly(err) })

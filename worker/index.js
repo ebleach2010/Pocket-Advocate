@@ -23,7 +23,10 @@ import {
 } from './schedule.js';
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
-import { runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses, runStyleDistill, runDaySummary } from './advisor.js';
+import {
+  runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses, runStyleDistill,
+  runDaySummary, maybeVoiceStudy, runVoiceStudy, voiceLoopState, setVoiceLoop,
+} from './advisor.js';
 
 // These build the real Stripe line items. Three browser files mirror them for
 // display — public/js/book.js, public/js/subscribe.js, public/js/admin-case.js
@@ -103,12 +106,37 @@ async function raiseRates(env, attempt = 0) {
  */
 /**
  * POST /api/admin/rates — read the rate, or set it by hand.
+ * POST /api/admin/voice — the nightly voice study: read it, stop it, start it.
  *
  * Not asked for, but without it the only way to change the number is a
  * redeploy, and the whole point of moving it out of the source was that it
  * changes on its own. Body { caseCents, addonCents } sets; an empty body
  * reads.
  */
+/**
+ * The nightly voice study, from his dashboard.
+ *
+ * GET-shaped read on POST (everything admin here is POST), plus two verbs:
+ * `enabled` turns the loop on or off, and `run` forces one now rather than
+ * waiting for the evening.
+ *
+ * "That runs every 24hrs until I say stop" (Eric, 2026-08-21). Stopping it is
+ * a switch he can reach at three in the morning, not a redeploy he has to ask
+ * for.
+ */
+async function handleVoiceLoop(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Admin only' }, 403);
+  if (request.method !== 'POST') return json(await voiceLoopState(env));
+  const body = await request.json().catch(() => ({}));
+  if (typeof body?.enabled === 'boolean') return json(await setVoiceLoop(env, body.enabled));
+  if (body?.run === true) {
+    const out = await runVoiceStudy(env).catch((err) => ({ ran: false, reason: String(err.message || err) }));
+    return json({ ...(await voiceLoopState(env)), lastRun: out });
+  }
+  return json(await voiceLoopState(env));
+}
+
 async function handleSetRates(request, env) {
   const admin = await requireAdmin(request, env);
   if (!admin) return json({ error: 'Admin only' }, 403);
@@ -363,6 +391,8 @@ export default {
         return await handleRates(env);
       if (url.pathname === '/api/admin/rates' && request.method === 'POST')
         return await handleSetRates(request, env);
+      if (url.pathname === '/api/admin/voice')
+        return await handleVoiceLoop(request, env);
       if (url.pathname === '/api/version' && request.method === 'GET')
         return json({ tag: BUILD_TAG, version: VERSION });
       if (url.pathname === '/api/summary' && request.method === 'POST')
@@ -463,6 +493,9 @@ export default {
       ctx.waitUntil(purgeRecaps(env));
     }
     ctx.waitUntil(runQueuedAnalyses(env));
+    // The nightly voice study. Returns immediately on every fire but one: it
+    // wants his evening, a day since the last run, and no explicit off switch.
+    ctx.waitUntil(maybeVoiceStudy(env));
   },
 };
 
@@ -1522,6 +1555,33 @@ async function handleUploaded(request, env) {
   if (!isAdmin && user.uid !== clientUid) return json({ error: 'Not your case' }, 403);
 
   await markPending(env, kind, id);
+
+  // Tell him what landed and what they called it. He asked for the name in the
+  // notification, and the name is now their own description of the thing
+  // rather than IMG_4127, which is the entire reason for asking.
+  //
+  // Client uploads only: his own file landing on his own case is not news.
+  if (!isAdmin) {
+    const names = Array.isArray(body?.names)
+      ? body.names.filter((n) => typeof n === 'string').map((n) => n.slice(0, 80)).slice(0, 10)
+      : [];
+    const who = (kind === 'case' ? doc.data.clientName : doc.data.name)
+      || doc.data.clientEmail || doc.data.email || 'A client';
+    const what = names.length === 1
+      ? names[0]
+      : names.length > 1
+        ? `${names.length} files: ${names.join(', ').slice(0, 120)}`
+        : 'a file';
+    const link = kind === 'case' ? `/admin-case.html?id=${id}` : `/admin-chats.html?id=${id}`;
+    const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5);
+    for (const a of admins) {
+      await notifyUser(env, a.id, {
+        title: 'Pocket Advocate',
+        body: `${who} uploaded ${what}`,
+        link,
+      }).catch(() => { /* the file is up either way */ });
+    }
+  }
   return json({ ok: true });
 }
 

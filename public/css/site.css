@@ -1531,7 +1531,11 @@ button.attach-btn {
    also the risk: nobody should get a paragraph into reading a case before
    working out that none of it happened. */
 .demo-bar {
-  position: sticky; top: 0; z-index: 90;
+  /* Above the page header (5), below every dialog. It used to sit at 90, over
+     the settings panel, the naming sheet and the guided tour, so a modal's
+     heading opened underneath a banner. A strip that says "this is a demo" is
+     not more important than the thing you just opened. */
+  position: sticky; top: 0; z-index: 40;
   /* flex-start, not center: the text wraps to three lines on a phone and a
      centred dot floats in the middle of them. */
   display: flex; align-items: flex-start; gap: .6rem; flex-wrap: wrap;

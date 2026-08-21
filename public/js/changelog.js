@@ -94,6 +94,7 @@ export const CHANGELOG = [
       'Your case is now a folder with tabs instead of one long scroll. Tap a tab, or swipe left and right to move between pages.',
       'A new Saved tab: press and hold any message to bookmark it with a note of your own.',
       'Files shared in chat now show up in your Documents, where they always should have.',
+      'When you add a photo or a document, you can name it in your own words. IMG_4127 tells nobody anything; "rash on my left hand" tells us both.',
       'Long file names are readable again instead of being cut off mid-word.',
       'When your report is delivered it is marked with a ✅, and a short feedback card opens under it.',
       'You can export your case as a PDF and pick which sections to include. It is in the feedback card, under Docs.',

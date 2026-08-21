@@ -47,6 +47,15 @@ potentially forgot to or have not provided. Helpful, but optional.
 Waiting on paperwork she has to prise out of a practice that does not answer
 the phone. The referral question is the one that changes the shape of the case.`;
 
+// What the study looks like after a few nights. Demo only.
+const demoVoice = {
+  enabled: true,
+  lastRunAt: new Date(Date.now() - 13 * 3_600_000).toISOString(),
+  runs: 6,
+  lastError: null,
+  hour: 21,
+};
+
 export function demoApi(role, store) {
   const real = window.fetch.bind(window);
 
@@ -72,6 +81,17 @@ export function demoApi(role, store) {
     // ---- money, without any -----------------------------------------------
     if (path === '/api/rates') return ok({ caseCents: 26500, addonCents: 7500 });
     if (path === '/api/admin/rates') return ok({ caseCents: 26500, addonCents: 7500, bookings: 0, changed: false });
+    // The nightly study, with a plausible history so the card on the dashboard
+    // shows what it shows on a real night.
+    if (path === '/api/admin/voice') {
+      if (typeof body.enabled === 'boolean') demoVoice.enabled = body.enabled;
+      if (body.run === true) {
+        demoVoice.runs += 1;
+        demoVoice.lastRunAt = new Date().toISOString();
+        return ok({ ...demoVoice, lastRun: { ran: true, wrote: true, readers: ['cadence', 'verbiage', 'beliefs'] } });
+      }
+      return ok({ ...demoVoice });
+    }
     if (path === '/api/checkout' || path === '/api/subscribe' || path === '/api/followup') {
       await beat(600);
       // Straight past Stripe to where paying would have landed him.

@@ -97,15 +97,28 @@ async function load() {
     });
     if (res.ok) rate = await res.json();
   } catch { /* the shelf is still a shelf without it */ }
+
+  // The nightly voice study. It runs on its own; this is the switch and the
+  // proof it is still running.
+  let voice = null;
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/admin/voice', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    if (res.ok) voice = await res.json();
+  } catch { /* same */ }
   const dollars = (c) => (c % 100 ? (c / 100).toFixed(2) : String(c / 100));
   const rateBlock = rate ? `
     <details class="panel" style="margin-bottom:1rem;">
       <summary class="row" style="cursor:pointer;">
         <strong>Today's rate</strong>
-        <span class="price" style="color:var(--magenta);">${dollars(rate.caseCents)}</span>
+        <span class="price" style="color:var(--magenta);">$${dollars(rate.caseCents)}</span>
       </summary>
       <p class="dim small" style="margin:.5rem 0 .6rem;">Follow-up
-        <strong style="color:var(--ink)">${dollars(rate.addonCents)}</strong>.
+        <strong style="color:var(--ink)">$${dollars(rate.addonCents)}</strong>.
         Both rise $10 on every booking, and ${rate.bookings} booking${rate.bookings === 1 ? ' has' : 's have'}
         counted so far. Everyone already booked keeps what they were quoted.
         Priority Chat does not move.</p>
@@ -119,6 +132,32 @@ async function load() {
         <button class="btn quiet" id="rate-save">Set</button>
       </div>
       <p class="dim small" id="rate-said" style="margin:.4rem 0 0;" hidden></p>
+    </details>` : '';
+
+  const ago = (iso) => {
+    if (!iso) return 'never';
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 36) return `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
+    return `${Math.round(hrs / 24)} days ago`;
+  };
+  const voiceBlock = voice ? `
+    <details class="panel" style="margin-bottom:1rem;">
+      <summary class="row" style="cursor:pointer;">
+        <strong>Voice study</strong>
+        <span class="dim small">${voice.enabled ? `ran ${ago(voice.lastRunAt)}` : 'off'}</span>
+      </summary>
+      <p class="dim small" style="margin:.5rem 0 .6rem;">Every night at
+        ${voice.hour > 12 ? voice.hour - 12 : voice.hour}pm your time, three passes read how
+        you edit drafts and how you write to clients, and fold what they find into
+        About&nbsp;you. ${voice.runs} run${voice.runs === 1 ? '' : 's'} so far.
+        ${voice.lastError ? `<span style="color:var(--magenta);">Last one said: ${esc(voice.lastError)}</span>` : ''}</p>
+      <div class="row" style="gap:.5rem; flex-wrap:wrap;">
+        <button class="btn quiet" id="voice-toggle">${voice.enabled ? 'Stop it' : 'Start it again'}</button>
+        <button class="btn quiet" id="voice-now">Run one now</button>
+      </div>
+      <p class="dim small" id="voice-said" style="margin:.4rem 0 0;" hidden></p>
     </details>` : '';
 
   const summary = `
@@ -155,7 +194,7 @@ async function load() {
     ? `<h2 style="font-size:.78rem; letter-spacing:.16em; color:${color}; font-family:ui-monospace,monospace; margin:1.4rem 0 .6rem;">${title}</h2><div class="drawer">${rows.join('')}</div>`
     : '';
 
-  listEl.innerHTML = rateBlock + summary +
+  listEl.innerHTML = rateBlock + voiceBlock + summary +
     section('CURRENT CLIENTS — REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
       `${c.reportDueAt ? `report due <strong style="color:var(--ink)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
        ${followUpFlag(c)}`))) +
@@ -164,6 +203,43 @@ async function load() {
        ${followUpFlag(c)}`))) +
     section('FORMER CLIENTS — CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
       `closed <strong style="color:var(--ink)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : '—'}</strong>`)));
+
+  const voiceSay = listEl.querySelector('#voice-said');
+  const voicePost = async (btn, body, done) => {
+    btn.disabled = true;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/voice', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || `Failed (${res.status})`);
+      voiceSay.textContent = done(d);
+    } catch (err) {
+      voiceSay.textContent = err.message;
+    }
+    voiceSay.hidden = false;
+    btn.disabled = false;
+  };
+  const toggleVoice = listEl.querySelector('#voice-toggle');
+  if (toggleVoice) {
+    toggleVoice.addEventListener('click', () => voicePost(toggleVoice, { enabled: !voice.enabled }, (d) => {
+      voice = d;
+      toggleVoice.textContent = d.enabled ? 'Stop it' : 'Start it again';
+      return d.enabled ? 'Back on. Next one tonight.' : 'Stopped. Nothing runs until you start it again.';
+    }));
+  }
+  const voiceNow = listEl.querySelector('#voice-now');
+  if (voiceNow) {
+    voiceNow.addEventListener('click', () => voicePost(voiceNow, { run: true }, (d) => {
+      const r = d.lastRun || {};
+      if (r.ran && r.wrote) return `Done. ${(r.readers || []).length} passes read, About you is updated.`;
+      if (r.ran) return `Read it, but wrote nothing: ${r.reason || 'no change worth making'}.`;
+      return `Nothing to do: ${r.reason || 'not enough to read yet'}.`;
+    }));
+  }
 
   const saveRate = listEl.querySelector('#rate-save');
   if (saveRate) {
@@ -183,7 +259,7 @@ async function load() {
         const d = await res.json();
         if (!res.ok) throw new Error(d.error || `Failed (${res.status})`);
         said.textContent = d.changed
-          ? `Set. A case is ${dollars(d.caseCents)}, a follow-up ${dollars(d.addonCents)}.`
+          ? `Set. A case is $${dollars(d.caseCents)}, a follow-up $${dollars(d.addonCents)}.`
           : 'Already those numbers.';
         said.hidden = false;
       } catch (err) {
