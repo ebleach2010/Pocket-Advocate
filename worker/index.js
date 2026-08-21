@@ -25,7 +25,7 @@ import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 import {
   runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses, runStyleDistill,
-  runDaySummary, maybeVoiceStudy, runVoiceStudy, voiceLoopState, setVoiceLoop,
+  runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop,
 } from './advisor.js';
 
 // These build the real Stripe line items. Three browser files mirror them for
@@ -124,22 +124,39 @@ async function raiseRates(env, attempt = 0) {
  * a switch he can reach at three in the morning, not a redeploy he has to ask
  * for.
  */
-async function handleVoiceLoop(request, env) {
+async function handleVoiceLoop(request, env, ctx) {
   const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Admin only' }, 403);
+  // 404, not 403. A route that refuses you is a route that exists, and the
+  // name of this one describes something a client must not know is happening.
+  if (!admin) return json({ error: 'Not found' }, 404);
   if (request.method !== 'POST') return json(await voiceLoopState(env));
   const body = await request.json().catch(() => ({}));
   if (typeof body?.enabled === 'boolean') return json(await setVoiceLoop(env, body.enabled));
   if (body?.run === true) {
-    const out = await runVoiceStudy(env).catch((err) => ({ ran: false, reason: String(err.message || err) }));
-    return json({ ...(await voiceLoopState(env)), lastRun: out });
+    // Through the same gate the cron uses, so a manual run cannot race the
+    // scheduled one, cannot run after he pressed Stop, and stamps lastRunAt
+    // like any other run. `force` skips only the clock, not the switch and not
+    // the claim.
+    //
+    // And through keepaliveRun, because three readers plus a merge will not
+    // return inside a browser request: this codebase learned that once already.
+    return keepaliveRun(ctx, maybeVoiceStudy(env, Date.now(), { force: true }), { raw: true });
   }
   return json(await voiceLoopState(env));
 }
 
 async function handleSetRates(request, env) {
   const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Admin only' }, 403);
+  // 404 rather than 403, here and on every admin route.
+  //
+  // A 403 says "this exists and you may not have it". For most of these that
+  // is harmless, and for one of them it is not, and the difference is a
+  // judgement about a route name that somebody has to remember to make again
+  // every time a route is added. Answering 404 everywhere removes the
+  // judgement: an admin route is indistinguishable from a path that is not
+  // there, whatever it is called. Nothing is lost - the only caller that ever
+  // sees these is his own browser, with a valid token.
+  if (!admin) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => ({}));
   const now = await readRates(env);
   const want = {
@@ -197,6 +214,45 @@ const ADMIN_ASSET =
  * this is the second of two independent gates rather than the only one.
  */
 const DEMO_ASSET = /^\/js\/demo\//;
+
+/**
+ * The path the ASSET SERVER will resolve, not the one in the request line.
+ *
+ * The gate used to test url.pathname as written. The asset server normalises
+ * first and then resolves, and it answers a non-canonical spelling of a file
+ * that EXISTS with a 307 to the canonical one, while a spelling of a file that
+ * does not exist gets a 404. So `/js//advisor.js` and `/js/%61dvisor.js` both
+ * slipped past the regex, fell through to the asset server, and came back with
+ * a redirect that said, in effect, yes, that file is here.
+ *
+ * No content was ever served. But the whole point of the byte-identical 404 is
+ * that a stranger cannot tell one path from another, and an existence oracle
+ * one percent-encoded character away undoes all of it.
+ *
+ * Decode, collapse repeated slashes, drop "." segments, resolve "..", and drop
+ * the trailing dots and spaces some filesystems fold away. Then match.
+ */
+function canonicalPath(pathname) {
+  let p = pathname;
+  // Decode repeatedly: %2561 is %61 is "a". Bounded, and a malformed escape
+  // just stays as written rather than throwing the request away.
+  for (let i = 0; i < 3; i++) {
+    let next;
+    try { next = decodeURIComponent(p); } catch { break; }
+    if (next === p) break;
+    p = next;
+  }
+  p = p.replace(/\\/g, '/').replace(/\/{2,}/g, '/');
+  const out = [];
+  for (const seg of p.split('/')) {
+    const t = seg.replace(/[.\s]+$/, '') || seg;   // "admin.html." -> "admin.html"
+    if (t === '.' || t === '') continue;
+    if (t === '..') { out.pop(); continue; }
+    out.push(t);
+  }
+  const trailing = /\/$/.test(p) ? '/' : '';
+  return `/${out.join('/')}${out.length ? trailing : ''}`;
+}
 
 /**
  * The 404 a gated path returns.
@@ -392,7 +448,7 @@ export default {
       if (url.pathname === '/api/admin/rates' && request.method === 'POST')
         return await handleSetRates(request, env);
       if (url.pathname === '/api/admin/voice')
-        return await handleVoiceLoop(request, env);
+        return await handleVoiceLoop(request, env, ctx);
       if (url.pathname === '/api/version' && request.method === 'GET')
         return json({ tag: BUILD_TAG, version: VERSION });
       if (url.pathname === '/api/summary' && request.method === 'POST')
@@ -403,30 +459,56 @@ export default {
         return await handleUploaded(request, env);
       if (url.pathname === '/api/admin/session')
         return await handleAdminSession(request, env);
-      if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
+      if (url.pathname.startsWith('/api/')) {
+        // The same token check every real route does, and then the same 404.
+        //
+        // The advisor routes answer 404 so a client cannot tell them from a
+        // path that is not there. That worked on the body and the status and
+        // failed on the clock: a gated route verified a token and read a
+        // profile before saying "not found", so it took fifty times longer
+        // than an unknown one, and the Network tab showed which was which.
+        // Doing the work here evens them out. It costs a real client nothing:
+        // they never ask for a route that does not exist.
+        await requireUser(request, env).catch(() => null);
+        return json({ error: 'Not found' }, 404);
+      }
     } catch (err) {
       console.error(`${url.pathname}:`, err.stack || err);
       return json({ error: 'Internal error' }, 500);
     }
 
     const demo = demoRole(request, url);
+    // What the asset server will actually resolve. Every gate below tests this
+    // rather than the spelling in the request line.
+    const assetPath = canonicalPath(url.pathname);
 
     // The demo's own files carry advisor fixtures, so they are gated exactly
     // like the admin ones: a browser that never asked for the demo gets the
     // same 404 it would get for a path that is not there. On the production
     // host demoRole is always '', so they are simply not served at all.
-    if (DEMO_ASSET.test(url.pathname) && !demo) return notFound(env, request, url);
+    if (DEMO_ASSET.test(assetPath) && !demo) return notFound(env, request, url);
 
     // A browser that asked for the admin demo gets the admin half of it, on a
     // preview host only. The cookie is set here so the pages the demo
     // navigates to keep working once the query string is gone.
-    if ((ADMIN_ASSET.test(url.pathname) || DEMO_ASSET.test(url.pathname)) && demo) {
-      const wantsAdmin = ADMIN_ASSET.test(url.pathname);
+    if ((ADMIN_ASSET.test(assetPath) || DEMO_ASSET.test(assetPath)) && demo) {
+      const wantsAdmin = ADMIN_ASSET.test(assetPath);
       if (wantsAdmin && demo !== 'admin') {
-        // Asked for the client demo and navigated to an admin page: that is
-        // the gate doing its job, not the demo.
+        // Asked for the client demo and reached for the admin half. A PAGE is
+        // sent to sign in, because that is a person who navigated somewhere.
+        // A module or a stylesheet is a fetch, and it gets the same 404 a path
+        // that is not there gets.
+        //
+        // This branch used to redirect both, so inside the client demo every
+        // real admin module answered with a redirect naming the file, and
+        // every made-up one answered 404. That is the existence oracle the
+        // non-demo gate twenty lines below was written to remove, reopened for
+        // exactly the people the demo gets shown to.
+        if (!/^\/admin[\w-]*(\.html)?\/?$/.test(assetPath)) {
+          return notFound(env, request, url);
+        }
         const to = new URL('/signin.html', url);
-        to.searchParams.set('to', url.pathname);
+        to.searchParams.set('to', '/');
         return Response.redirect(to.toString(), 302);
       }
       const res = await env.ASSETS.fetch(request);
@@ -439,9 +521,9 @@ export default {
 
     // The admin half of the site. A stranger gets a real miss from the asset
     // server, byte for byte, so this does not confirm what is here.
-    if (ADMIN_ASSET.test(url.pathname)) {
+    if (ADMIN_ASSET.test(assetPath)) {
       // A page gets sent to sign in; a module or stylesheet just is not there.
-      const isPage = /^\/admin[\w-]*(\.html)?\/?$/.test(url.pathname);
+      const isPage = /^\/admin[\w-]*(\.html)?\/?$/.test(assetPath);
       const uid = await adminCookieUid(request, env).catch(() => null);
       if (!uid) {
         if (isPage) {
@@ -1382,13 +1464,24 @@ async function handleNotify(request, env, ctx) {
  *
  * Keep in sync with STATUS_REACTIONS in public/js/msg-actions.js.
  */
+/**
+ * What he can tell a client he is doing. Admin only, one per message.
+ *
+ * The label IS the notification. There used to be a second, slightly different
+ * wording for the push - "labs and chart notes" against "labs / chart notes" -
+ * and two strings meaning one thing is two strings that drift. The sheet he
+ * picks from promises "they get a notification saying exactly this", so it
+ * says exactly this.
+ *
+ * Keep in sync with STATUS_REACTIONS in public/js/msg-actions.js.
+ */
 const CHAT_REACTIONS = {
-  seen: { label: 'Eric has seen your message', push: 'Eric has seen your message.' },
-  reading: { label: 'Eric is reading…', push: 'Eric is reading your message.' },
-  research: { label: 'Eric is doing research…', push: 'Eric is doing research on your question.' },
-  thinking: { label: 'Eric is thinking about your situation…', push: 'Eric is thinking about your situation.' },
-  history: { label: 'Eric is reviewing your history…', push: 'Eric is reviewing your history.' },
-  labs: { label: 'Eric is reviewing your labs / chart notes', push: 'Eric is reviewing your labs and chart notes.' },
+  seen: { label: 'Eric has seen your message' },
+  reading: { label: 'Eric is reading…' },
+  research: { label: 'Eric is doing research…' },
+  thinking: { label: 'Eric is thinking about your situation…' },
+  history: { label: 'Eric is reviewing your history…' },
+  labs: { label: 'Eric is reviewing your labs / chart notes' },
 };
 
 /**
@@ -1520,13 +1613,23 @@ async function handleChatReact(request, env) {
   // Re-applying the same reaction is not news — their phone already said it.
   // Changing it is, so that one notifies. Notify whoever wrote the message.
   const target = msg.data.from;
-  if (!already && target && target !== user.uid) {
+  // A client gets told what Eric is DOING, and nothing else. An emoji on their
+  // message is a small kindness on a screen, not a thing worth buzzing a
+  // phone for (Eric, 2026-08-21: "send clients a notification of my reactions.
+  // Not emojis"). His own phone still gets theirs: he asked to keep push.
+  const toClient = target === ctx.clientUid;
+  const worthSending = isEmoji ? !toClient : true;
+  if (!already && target && target !== user.uid && worthSending) {
+    // The exact words of the reaction, not a paraphrase of them. The sheet he
+    // picks from promises "they get a notification saying exactly this", and
+    // a second wording drifting alongside the first is how that stops being
+    // true without anyone noticing.
     const push = isEmoji
       ? `${ctx.isAdmin ? 'Eric' : 'Your client'} reacted ${EMOJI_REACTIONS[reaction]} to your message.`
-      : CHAT_REACTIONS[reaction].push;
+      : CHAT_REACTIONS[reaction].label;
     await notifyUser(env, target, { title: 'Pocket Advocate', body: push, link: ctx.link });
   }
-  return json({ ok: true, reaction, notified: !already });
+  return json({ ok: true, reaction, notified: !already && worthSending });
 }
 
 /**
@@ -1871,6 +1974,10 @@ function keepaliveRun(ctx, work, { raw = false } = {}) {
 async function handleAdvisorState(request, env, url) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Not found' }, 404);
+  // The uid check first, because it needs no round trip. A caller who is not
+  // him is refused in the same time an unknown route takes, instead of being
+  // told, by the clock, that this route does real work before it refuses.
+  if (env.ADMIN_UID && user.uid !== env.ADMIN_UID) return json({ error: 'Not found' }, 404);
   const profile = await getDoc(env, `users/${user.uid}`);
   if (profile?.data.role !== 'admin') return json({ error: 'Not found' }, 404);
 
@@ -1884,7 +1991,10 @@ async function handleAdvisorState(request, env, url) {
   // normal first-visit state, not an error.
   const [state, qa, knowledge, notesDoc, style] = await Promise.all([
     getDoc(env, `${parent}/${id}/advisor/state`).catch(() => null),
-    listDocs(env, `${parent}/${id}/advisor/state/qa`, { pageSize: 20, orderBy: 'at' }).catch(() => []),
+    // Newest first. Ascending returned the twenty OLDEST, so past twenty
+    // questions on one thread a new answer was never in the page: the panel
+    // kept showing "thinking..." while the real answer sat in Firestore.
+    listDocs(env, `${parent}/${id}/advisor/state/qa`, { pageSize: 20, orderBy: 'at desc' }).catch(() => []),
     listDocs(env, 'advisorKnowledge', { pageSize: 200 }).catch(() => []),
     getDoc(env, `${parent}/${id}/private/notes`).catch(() => null),
     getDoc(env, 'advisorStyle/profile').catch(() => null),
@@ -1994,9 +2104,11 @@ const ADMIN_NOTES = {
 
 async function handleChangelog(request, env) {
   const user = await requireUser(request, env);
-  if (!user) return json({ error: 'Sign in required' }, 401);
+  // 404 for a signed-out caller too. A 401 here says the route is real and
+  // you are merely not logged in, which is the same oracle the 403 was.
+  if (!user) return json({ error: 'Not found' }, 404);
   const profile = await getDoc(env, `users/${user.uid}`);
-  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+  if (profile?.data.role !== 'admin') return json({ error: 'Not found' }, 404);
   return json({ admin: ADMIN_NOTES });
 }
 
@@ -2164,9 +2276,11 @@ async function handleReviewsPublic(env) {
  */
 async function handleReviewsAdmin(request, env) {
   const user = await requireUser(request, env);
-  if (!user) return json({ error: 'Sign in required' }, 401);
+  // 404 for a signed-out caller too. A 401 here says the route is real and
+  // you are merely not logged in, which is the same oracle the 403 was.
+  if (!user) return json({ error: 'Not found' }, 404);
   const profile = await getDoc(env, `users/${user.uid}`);
-  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+  if (profile?.data.role !== 'admin') return json({ error: 'Not found' }, 404);
 
   if (request.method === 'GET') {
     const rows = await listDocs(env, 'reviews', { pageSize: 200 }).catch(() => []);
@@ -2202,6 +2316,10 @@ async function handleReviewsAdmin(request, env) {
 async function handleAdvisorCovers(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Not found' }, 404);
+  // The uid check first, because it needs no round trip. A caller who is not
+  // him is refused in the same time an unknown route takes, instead of being
+  // told, by the clock, that this route does real work before it refuses.
+  if (env.ADMIN_UID && user.uid !== env.ADMIN_UID) return json({ error: 'Not found' }, 404);
   const profile = await getDoc(env, `users/${user.uid}`);
   if (profile?.data.role !== 'admin') return json({ error: 'Not found' }, 404);
 
@@ -2235,6 +2353,10 @@ async function handleAdvisorCovers(request, env) {
 async function handleDictionary(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Not found' }, 404);
+  // The uid check first, because it needs no round trip. A caller who is not
+  // him is refused in the same time an unknown route takes, instead of being
+  // told, by the clock, that this route does real work before it refuses.
+  if (env.ADMIN_UID && user.uid !== env.ADMIN_UID) return json({ error: 'Not found' }, 404);
   const profile = await getDoc(env, `users/${user.uid}`);
   if (profile?.data.role !== 'admin') return json({ error: 'Not found' }, 404);
 
@@ -2342,6 +2464,10 @@ async function handleAdvisor(request, env, ctx) {
   // was never reachable; the status code was the leak.
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Not found' }, 404);
+  // The uid check first, because it needs no round trip. A caller who is not
+  // him is refused in the same time an unknown route takes, instead of being
+  // told, by the clock, that this route does real work before it refuses.
+  if (env.ADMIN_UID && user.uid !== env.ADMIN_UID) return json({ error: 'Not found' }, 404);
   const profile = await getDoc(env, `users/${user.uid}`);
   if (profile?.data.role !== 'admin') return json({ error: 'Not found' }, 404);
 
@@ -2788,7 +2914,7 @@ async function handleAdminSession(request, env) {
   }
   if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
   const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Admin only' }, 403);
+  if (!admin) return json({ error: 'Not found' }, 404);
   return new Response(JSON.stringify({ ok: true }), {
     headers: {
       'content-type': 'application/json',
@@ -2874,6 +3000,9 @@ function timingSafeEqual(a, b) {
 async function requireAdmin(request, env) {
   const user = await requireUser(request, env);
   if (!user) return null;
+  // No round trip for a caller who cannot be him. Same reason as above: the
+  // time a refusal takes is itself an answer.
+  if (env.ADMIN_UID && user.uid !== env.ADMIN_UID) return null;
   const profile = await getDoc(env, `users/${user.uid}`);
   if (!profile || profile.data.role !== 'admin') return null;
   return user;
@@ -2887,7 +3016,7 @@ function slotIdFor(start) {
 // POST /api/admin/slots  Body: { starts: [iso...], durationMin }
 async function handleCreateSlots(request, env) {
   const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Admin only' }, 403);
+  if (!admin) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => null);
   const starts = body && Array.isArray(body.starts) ? body.starts : null;
   const durationMin = body && Number(body.durationMin) > 0 ? Number(body.durationMin) : 60;
@@ -2918,7 +3047,7 @@ async function handleCreateSlots(request, env) {
 // DELETE /api/admin/slots/:id — only slots nobody holds or has booked
 async function handleDeleteSlot(request, env, url) {
   const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Admin only' }, 403);
+  if (!admin) return json({ error: 'Not found' }, 404);
   const slotId = url.pathname.split('/').pop();
   if (!/^[\w-]{1,64}$/.test(slotId)) return json({ error: 'Bad slot id' }, 400);
   const slot = await getDoc(env, `availability/${slotId}`);
@@ -2936,7 +3065,7 @@ async function handleDeleteSlot(request, env, url) {
 // POST /api/admin/case-update  Body: { caseId, action, joinLink? }
 async function handleCaseUpdate(request, env) {
   const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Admin only' }, 403);
+  if (!admin) return json({ error: 'Not found' }, 404);
   const { caseId, action, joinLink } = await request.json().catch(() => ({}));
   if (typeof caseId !== 'string' || !/^[\w-]{1,64}$/.test(caseId))
     return json({ error: 'Bad case id' }, 400);
@@ -3134,7 +3263,7 @@ function followUpExpiry(c) {
  */
 async function handleAdminSchedule(request, env) {
   const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Admin only' }, 403);
+  if (!admin) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
   const { caseId, customStart, customDurationMin, mode, pct, tagline } = body;

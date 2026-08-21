@@ -18,15 +18,13 @@
 export const VERSION = '2.2';
 
 /**
- * Newest first, and CLIENT NOTES ONLY.
+ * Newest first.
  *
- * This file is loaded by every page, so anything in it is readable by anyone
- * who opens devtools. Eric's half of the release notes is not, and must not
- * be: it is served by an admin-gated Worker route and never exists in a static
- * file.
+ * This file is loaded by every page, so anything written here is readable by
+ * anyone who opens devtools. Nothing goes in it that is not meant for the
+ * person reading it.
  *
- * A version with an empty list never shows a card at all, which is the right
- * outcome for a release that only moved things on the advocate's side.
+ * A version with an empty list never shows a card at all.
  */
 export const CHANGELOG = [
   {
@@ -151,9 +149,8 @@ export function unseenVersions(extra = {}) {
  * they never tapped anything.
  */
 export async function showVersionCard(isAdmin = false, user = null) {
-  // Eric's half comes from a route that checks his role server-side. A client
-  // calling it gets a 403 and an empty object, which is also what a network
-  // failure gives, so the card degrades to the client notes either way.
+  // Anything extra is fetched, and the fetch is allowed to fail: an empty
+  // object is a perfectly good answer and the card is drawn from what is here.
   let extra = {};
   if (isAdmin && user) {
     try {

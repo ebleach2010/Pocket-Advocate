@@ -18,7 +18,7 @@ async function load() {
   let sub = await fetchSub();
   if (!sub && sessionId) {
     // Payment just finished; the webhook is opening the subscription.
-    page.innerHTML = '<h1>Finishing up…</h1><p class="dim">Payment received — unlocking your chat now. A few seconds, usually.</p>';
+    page.innerHTML = '<h1>Finishing up…</h1><p class="dim">Payment received. I am unlocking your chat now; this usually takes a few seconds.</p>';
     const started = Date.now();
     while (!sub && Date.now() - started < 90_000) {
       await new Promise((r) => setTimeout(r, 2500));
@@ -54,7 +54,7 @@ async function load() {
     <div class="panel" id="chat"></div>
     <p class="dim small">
       ${active
-        ? `Renews ${sub.status === 'canceled' ? '— canceled; access ends' : ''} ${endFmt.format(end)}.`
+        ? `Renews ${sub.status === 'canceled' ? '(canceled) access ends' : ''} ${endFmt.format(end)}.`
         : 'Your subscription has ended. Your message history stays visible to you.'}
       <a href="#" id="portal">Manage subscription</a>
     </p>`;
@@ -68,7 +68,7 @@ async function load() {
     myRole: 'client',
     saveUid: user.uid,
     disabled: !active,
-    notice: 'Chat is paused — your subscription has ended. Resubscribe any time; your history stays.',
+    notice: 'Chat is paused. Your subscription has ended. Resubscribe any time; your history stays.',
   });
 
   document.getElementById('portal').addEventListener('click', async (e) => {

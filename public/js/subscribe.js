@@ -21,8 +21,8 @@ hydrateNav();
 // The pitch is visible before sign-in; every displayed price derives from the
 // mirror above.
 document.getElementById('pitch').innerHTML = `
-  <p class="price-line"><strong>$${money(SUB_PRICE_CENTS)}</strong> a month. Cancel anytime and keep your history.</p>
-  <p><strong>The honest deal:</strong> I answer when I'm available. Sometimes that's minutes, sometimes it's days. The terms below say exactly that.</p>`;
+  <p class="price-line"><strong>$${money(SUB_PRICE_CENTS)}</strong> a month. Cancel anytime; your chat history stays available.</p>
+  <p><strong>The honest deal:</strong> I answer as I am available. Sometimes that is within minutes; other times it may take longer. Response time is not guaranteed.</p>`;
 
 const flow = document.getElementById('flow');
 
@@ -61,7 +61,7 @@ async function init() {
 
   if (new URLSearchParams(location.search).get('canceled')) {
     const err = document.getElementById('page-error');
-    err.textContent = 'Checkout was canceled — nothing was charged. Subscribe below whenever you like.';
+    err.textContent = 'Checkout was canceled and nothing was charged. You can subscribe whenever you are ready.';
     err.hidden = false;
   }
   await ensureFullProfile(user, flow);
@@ -73,7 +73,7 @@ function renderTerms() {
     <details class="agreement" data-id="${SUBSCRIPTION_TERMS.id}">
       <summary>
         <span class="agreement-title">The terms, in plain words</span>
-        <span class="agreement-plain">The no-guarantee clause is the whole deal. Know it before you pay.</span>
+        <span class="agreement-plain">The important part: response time is not guaranteed. Please read the terms before you subscribe.</span>
       </summary>
       <div class="agreement-body">${SUBSCRIPTION_TERMS.body}</div>
       <label class="agreement-check"><input type="checkbox" id="terms-ok" disabled> I have read and accept these terms</label>
@@ -81,7 +81,7 @@ function renderTerms() {
     <div class="actions">
       <button class="btn glow" id="go" disabled>Subscribe, $${money(SUB_PRICE_CENTS)}/mo</button>
     </div>
-    <p class="dim small" style="margin-top:.6rem;">You'll be taken to Stripe's secure checkout, so card details never touch this site.</p>`;
+    <p class="dim small" style="margin-top:.6rem;">You'll complete payment through Stripe's secure checkout, so your card details never pass through Pocket Advocate.</p>`;
 
   const agreement = flow.querySelector('.agreement');
   const body = agreement.querySelector('.agreement-body');

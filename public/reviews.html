@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
 <meta name="theme-color" content="#07090F">
-<title>Reviews — Pocket Advocate</title>
+<title>Reviews · Pocket Advocate</title>
 <script>
 // Paint in the stored colour scheme before the stylesheet lands, so a scheme
 // never flashes neon on the way in. Mirrors theme.js, which owns the choosing
@@ -28,7 +28,7 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat54">
+<link rel="stylesheet" href="/css/site.css?v=stat55">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
@@ -95,7 +95,7 @@
 
   document.getElementById('google-link-slot').innerHTML = (GOOGLE_REVIEWS_URL
     ? `<a href="${GOOGLE_REVIEWS_URL}" target="_blank" rel="noopener">Read all reviews on Google →</a>`
-    : 'These reviews are from our Google listing — the live Google link lands here once the business profile is up.')
+    : 'These reviews are from our Google listing. The live Google link lands here once the business profile is up.')
     + (BUSINESS_PHONE ? ` · <a href="tel:${BUSINESS_PHONE}">📞 Call us</a>` : '');
 </script>
 </body>

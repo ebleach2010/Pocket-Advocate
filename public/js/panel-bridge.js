@@ -118,10 +118,15 @@ export function extraMenuRows({ canStage }) {
  * A quiet mark on one of his own messages that the last read flagged, and the
  * whole apply-or-dismiss loop behind it.
  *
- * `edit(msgId, text)` saves a repaired wording; `applied(msgId)` tells the
- * panel to stop raising it.
+ * `edit(msgId, text)` saves a repaired wording; `done(msgId)` tells the panel
+ * to stop raising it.
+ *
+ * Named `paint` rather than anything descriptive, and the event it fires is
+ * `pa-mark-done`, because chat.js has to spell both of them out and chat.js is
+ * served to every client. The words for what this actually is live on this
+ * side of the gate.
  */
-export function paintCorrections(log, { edit, applied, openEditor, editWindowMs }) {
+export function paint(log, { edit, done, openEditor, editWindowMs }) {
   wire();
   for (const el of log.querySelectorAll('.msg.me[data-mid]')) {
     const c = corrections.get(el.dataset.mid);
@@ -145,7 +150,7 @@ export function paintCorrections(log, { edit, applied, openEditor, editWindowMs 
       // Fixed or waved away, it stops being raised either way.
       corrections.delete(el.dataset.mid);
       chip.remove();
-      applied(el.dataset.mid);
+      done(el.dataset.mid);
     });
     el.appendChild(chip);
   }

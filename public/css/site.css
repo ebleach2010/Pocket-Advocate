@@ -787,10 +787,10 @@ button:focus-visible,
 body.chat-full-open { overflow: hidden; }
 
 /* The message box gets its own row, and the controls sit under it.
-   They all used to share one line. By the time the row held full screen, attach,
-   duty of care and Send, the box itself was down to fifty pixels on a phone and
-   twenty-seven at 320 - two characters a line, a tower of them, unusable for
-   the one thing the screen is for. Nothing was cut; the row was. */
+   They all used to share one line. Once the row held four controls the box
+   itself was down to fifty pixels on a phone and twenty-seven at 320 - two
+   characters a line, a tower of them, unusable for the one thing the screen is
+   for. Nothing was cut; the row was. */
 .chat-form {
   display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .4rem; align-items: flex-end;
 }

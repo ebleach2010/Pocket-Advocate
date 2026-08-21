@@ -67,7 +67,7 @@ export function openMessageMenu(opts) {
           ${extraRows.map((r) => `<button class="msg-menu-row" data-act="${esc(r.act)}"><span class="react-emoji">${esc(r.emoji || '')}</span><span>${esc(r.label)}</span></button>`).join('')}
           ${hasReaction ? '<button class="msg-menu-row" data-act="clear"><span class="react-emoji">✕</span><span>Remove reaction</span></button>' : ''}
           ${canEdit ? '<button class="msg-menu-row" data-act="edit"><span class="react-emoji">✏️</span><span>Edit message</span></button>' : ''}
-          ${canPass ? '<button class="msg-menu-row" data-act="pass"><span class="react-emoji">⚐</span><span>Pass on this — no questions asked</span></button>' : ''}
+          ${canPass ? '<button class="msg-menu-row" data-act="pass"><span class="react-emoji">⚐</span><span>Pass on this, no questions asked</span></button>' : ''}
           ${passedByMe ? '<button class="msg-menu-row" data-act="unpass"><span class="react-emoji">⚑</span><span>Take back the pass</span></button>' : ''}
           ${canSave ? `<button class="msg-menu-row" data-act="save"><span class="react-emoji">🔖</span><span>${savedAlready ? 'Update your note on this' : 'Save this message'}</span></button>` : ''}
           ${hasText ? '<button class="msg-menu-row" data-act="copy"><span class="react-emoji">📋</span><span>Copy text</span></button>' : ''}

@@ -174,8 +174,8 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         flag.className = `pass-flag${data.pass ? ' on' : ''}`;
         flag.textContent = data.pass ? '⚑ PASS' : '⚐ pass';
         flag.title = data.pass
-          ? (data.pass.by === user.uid ? 'Passed — tap to take it back' : 'They passed on this — moving on')
-          : "Pass on this question — it's marked PASS and we move on, no explanation needed";
+          ? (data.pass.by === user.uid ? 'Passed. Tap to take it back' : 'They passed on this, so we are moving on')
+          : "Pass on this question. It is marked PASS and we move on, no explanation needed";
         const canToggle = data.pass ? data.pass.by === user.uid : (canOfferPass && !mine);
         if (canToggle) {
           flag.addEventListener('click', async () => {
@@ -351,15 +351,15 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     }, "Couldn't set that");
   }
 
-  /** Marks that only exist on an admin thread, drawn by the admin module. */
+  /** Anything the optional module above wants drawn on the thread. */
   function repaintFlags() {
-    bridge?.paintCorrections(log, {
+    bridge?.paint(log, {
       openEditor,
       editWindowMs: EDIT_WINDOW_MS,
       edit: (msgId, text) => post('/api/chat/edit',
         { kind: kindOf(), id: parentPath[1], msgId, text }, "Couldn't save the edit"),
-      applied: (msgId) => document.dispatchEvent(
-        new CustomEvent('pa-correction-applied', { detail: { msgId } })),
+      done: (msgId) => document.dispatchEvent(
+        new CustomEvent('pa-mark-done', { detail: { msgId } })),
     });
   }
 

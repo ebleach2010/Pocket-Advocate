@@ -40,7 +40,7 @@ const MAX_LEAD_MS = 252 * 3600 * 1000;
 const AGREEMENT_PLAIN = {
   disclaimer: "What this is, what it is not, and what you're agreeing to.",
   privacy: "What I store, where it lives, and who can see it. You and me. That's the list.",
-  recording: 'Our discussion is recorded, and the recording goes in your case file for you to keep.',
+  recording: 'Our call is recorded so you can revisit it later. The recording is saved in your private case file.',
 };
 
 const state = {
@@ -74,7 +74,7 @@ async function init() {
   }).catch(() => {});
   drawRail(); // step 1 shows active even while the sign-in card is up
   if (new URLSearchParams(location.search).get('canceled')) {
-    showError('Checkout was canceled. Your slot was released — pick a time to try again.');
+    showError('Checkout was canceled, so the time you selected is no longer being held. Choose a time to try again.');
   }
   user = await currentUser();
   if (!user) {
@@ -147,12 +147,12 @@ async function renderTime() {
         None of these work? Request a time →
       </summary>
       <div class="card" style="margin-top:.7rem;">
-        <p class="muted small" style="margin-top:0;">Pick any date and time that suits you. I'll review it and confirm — you'll hear back before the date. Times are in your own time zone.</p>
+        <p class="muted small" style="margin-top:0;">Choose any date and time that works for you. I will review the request and confirm it before the appointment. Times are shown in your time zone.</p>
         <label for="req-date">Date</label>
         <input type="date" id="req-date">
         <label for="req-time" style="margin-top:.6rem;">Time</label>
         <input type="time" id="req-time" step="900">
-        <p class="muted small" id="req-mst" style="margin:.6rem 0 0;">Choose a date and time to see it in my time zone.</p>
+        <p class="muted small" id="req-mst" style="margin:.6rem 0 0;">Choose a date and time below; the app will handle the time-zone conversion.</p>
         <p class="error" id="req-error" hidden></p>
       </div>
     </details>
@@ -169,25 +169,25 @@ async function renderTime() {
       </label>
     </div>
     <div id="phone-row" ${state.method === 'phone' ? '' : 'hidden'} style="margin-top:.7rem;">
-      <label for="phone">Your phone number — I'll call you</label>
+      <label for="phone">Best phone number for the call</label>
       <input type="tel" id="phone" placeholder="+1 555 555 5555" value="${state.phone}">
     </div>
     <p class="muted small" id="video-note" ${state.method === 'video' ? '' : 'hidden'} style="margin-top:.7rem;">
-      I'll send you a join link before the call — it appears on your case page too. Nothing to install.
+      I'll send you a join link before the call, and it appears on your case page too. Nothing to install.
     </p>
     <p class="error" id="method-error" hidden></p>
     ${needsProfile() ? `
     <div class="card" id="profile-block">
       <h3>Who am I working with?</h3>
-      <p class="muted small">I work with real people, by name. This stays between you and me, like everything else here.</p>
+      <p class="muted small">Please use your real name so I know whose case I am reviewing. Your information stays private, like the rest of your case file.</p>
       <label for="pf-first">First name</label>
       <input type="text" id="pf-first" autocomplete="given-name" value="${esc(profile.firstName || '')}">
       <label for="pf-last" style="margin-top:.6rem;">Last name</label>
       <input type="text" id="pf-last" autocomplete="family-name" value="${esc(profile.lastName || '')}">
       <label for="pf-dob" style="margin-top:.6rem;">Date of birth</label>
       <input type="date" id="pf-dob" max="${today}" value="${esc(profile.dob || '')}">
-      <p class="muted small" style="margin-top:.6rem;">Pocket Advocate serves adults. Under 18? A parent or guardian
-        needs to reach out first — message through the site or the About page's call button.</p>
+      <p class="muted small" style="margin-top:.6rem;">Pocket Advocate serves adults. If the client is under 18,
+        a parent or guardian needs to reach out first, through the site or the About page's call button.</p>
       <p class="error" id="pf-err" hidden></p>
     </div>` : ''}
     <p>
@@ -218,7 +218,7 @@ async function renderTime() {
   const daysEl = el.querySelector('#days');
   if (!slots.length) {
     daysEl.innerHTML =
-      '<p class="muted">No open times right now — check back soon, new slots are added regularly.</p>';
+      '<p class="muted">No appointments are open right now. I add new availability regularly, so check back soon.</p>';
     return;
   }
 
@@ -350,12 +350,12 @@ async function renderTime() {
       reqErr.hidden = true;
       const lead = state.requestedStart.getTime() - Date.now();
       if (lead < LEAD_TIME_MS) {
-        reqErr.textContent = 'Please pick a time at least 72 hours from now.';
+        reqErr.textContent = 'Please choose a time at least 72 hours from now.';
         reqErr.hidden = false;
         return;
       }
       if (lead > MAX_LEAD_MS) {
-        reqErr.textContent = 'Please pick a time within the next week and a half.';
+        reqErr.textContent = 'Please choose a time within the next 10 days.';
         reqErr.hidden = false;
         return;
       }
@@ -363,7 +363,7 @@ async function renderTime() {
     if (state.method === 'phone') {
       state.phone = el.querySelector('#phone').value.trim();
       if (!/^\+?[\d\s().-]{7,20}$/.test(state.phone)) {
-        err.textContent = 'Enter a valid phone number so I can call you.';
+        err.textContent = 'Enter a valid phone number so I can reach you for the call.';
         err.hidden = false;
         return;
       }
@@ -378,7 +378,7 @@ async function renderTime() {
       const dob = el.querySelector('#pf-dob').value;
       pfErr.hidden = true;
       if (!firstName || !lastName) {
-        pfErr.textContent = 'First and last name, please — I need to know who I\'m working with.';
+        pfErr.textContent = 'First and last name, please, so I know whose case I am reviewing.';
         pfErr.hidden = false;
         return;
       }
@@ -390,10 +390,10 @@ async function renderTime() {
       }
       if (age < MIN_AGE) {
         mount(`
-          <h2>We need a guardian for this one</h2>
-          <p class="muted">Pocket Advocate doesn't open cases for anyone under 18 without a parent or guardian's
-          consent — that's a hard rule, for your protection. Have your parent or guardian get in touch
-          (the call button on the <a href="/about.html">About page</a> works), and I'll take it from there.</p>`);
+          <h2>A parent or guardian needs to contact me first</h2>
+          <p class="muted">If you are trying to book for someone under 18, have a parent or guardian reach out
+          through the site first (the call button on the <a href="/about.html">About page</a> works).
+          I will take it from there.</p>`);
         return;
       }
       try {
@@ -419,7 +419,7 @@ async function renderTime() {
 function renderAgreement() {
   const el = mount(`
     <h2>One agreement, three short parts</h2>
-    <p class="muted small">Open each part and read to the end. Plain words, no traps. The box unlocks when you've seen it all.</p>
+    <p class="muted small">Open each part and read it through. Once you have reached the end of all three, you can acknowledge the agreement.</p>
     ${WAIVERS.map(
       (w) => `
       <details class="agreement" data-id="${w.id}">
@@ -495,19 +495,19 @@ function renderPayment() {
       <p class="muted small">
         <strong style="color:var(--ink)">${localLong.format(when)}</strong> (your time)<br>
         ${mtFmt.format(when)} MST my time<br>
-        ${methodLabel} · Private session${isRequest ? ' · <span style="color:var(--orange)">Requested — awaiting my confirmation</span>' : ''}
+        ${methodLabel} · Private session${isRequest ? ' · <span style="color:var(--orange)">Time requested. Awaiting confirmation.</span>' : ''}
       </p>
     </div>
     ${isRequest ? `<p class="notice-box pending">
       <strong>This time is a request.</strong> It isn't on my calendar yet. Your case opens and
-      your payment is taken as normal, and I'll confirm this time — or offer you the nearest one
-      that works — before the date. Nothing is lost either way.
+      your payment is taken as normal, and I'll confirm this time, or offer you the nearest one
+      that works, before the date. Nothing is lost either way.
     </p>` : ''}
     <div class="price-line">
       <span class="price" data-price>$${money(caseCents)}</span>
-      <span class="included">That covers our call and your written report within 7 days.</span>
+      <span class="included">This includes our call and your written report within 7 days.</span>
     </div>
-    <p class="muted small">${isRequest ? 'Requested times are not held while you complete payment.' : 'Your time slot is held while you complete payment.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once your slot is booked. If I reschedule you more than once, you're entitled to a full refund on request.</p>
+    <p class="muted small">${isRequest ? 'Requested times are not held while you complete payment.' : 'Your selected time is held while you complete payment.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once your slot is booked. If I reschedule you more than once, you're entitled to a full refund on request.</p>
     <p class="error" id="pay-error" hidden></p>
     <p>
       <button class="btn quiet" id="back">Back</button>

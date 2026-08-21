@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
 <meta name="theme-color" content="#07090F">
-<title>Payment complete — Pocket Advocate</title>
+<title>Payment complete · Pocket Advocate</title>
 <script>
 // Paint in the stored colour scheme before the stylesheet lands, so a scheme
 // never flashes neon on the way in. Mirrors theme.js, which owns the choosing
@@ -28,7 +28,7 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat54">
+<link rel="stylesheet" href="/css/site.css?v=stat55">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
@@ -45,7 +45,7 @@
 </header>
 <main>
   <h1 id="title">Finishing up…</h1>
-  <p class="muted" id="msg">Payment received — opening your case now. This usually takes a few seconds.</p>
+  <p class="muted" id="msg">Payment received. I am opening your case now; this usually takes a few seconds.</p>
   <p id="actions" hidden><a class="btn glow" id="case-link" href="/case.html">Go to my case</a></p>
   <p class="muted small" id="reassure" hidden>Nothing is lost, and you will not be charged twice.</p>
 </main>
@@ -89,7 +89,7 @@
       // on polling behind that, so if the case lands they are still taken to it.
       if (waited > 10_000 && document.getElementById('actions').hidden) {
         title.textContent = 'Still working';
-        msg.textContent = 'Your payment went through and your case is being set up. This can take a minute. You can wait here, or open My cases whenever you like — it will be there.';
+        msg.textContent = 'Your payment went through and your case is being set up. This can take a minute. You can wait here, or open My cases whenever you like; it will be there.';
         document.getElementById('actions').hidden = false;
         document.getElementById('reassure').hidden = false;
       }
@@ -97,7 +97,7 @@
         setTimeout(poll, 2500);
       } else {
         title.textContent = 'Almost there';
-        msg.textContent = 'Your payment went through, but your case is taking longer than usual to open. Check "My cases" in a minute — it will be there.';
+        msg.textContent = 'Your payment went through, but your case is taking longer than usual to open. Check "My cases" in a minute; it will be there.';
         document.getElementById('actions').hidden = false;
       }
     };

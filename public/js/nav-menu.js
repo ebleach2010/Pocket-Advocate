@@ -1,12 +1,10 @@
 // The top bar, when the links do not fit.
 //
-// The signed-in nav held up to six links plus a cog inside a strip that was
-// allowed to scroll sideways with its scrollbar hidden. On a phone that meant
-// roughly 200 visible pixels of a 590 pixel row: Eric lost Calendar, Chats,
-// Availability, Terms, Admin, Sign out and the settings cog, a client lost My
-// cases, Chat, Sign out and the cog, and nothing on screen suggested any of it
-// was there. The guided tour meanwhile tells people to tap a cog that was not
-// on the screen.
+// The nav held more links than fit, inside a strip that was allowed to scroll
+// sideways with its scrollbar hidden. On a phone that meant roughly 200 visible
+// pixels of a 590 pixel row, with everything past it off the screen and nothing
+// on screen suggesting it was there. The settings cog was one of the casualties,
+// and the guided tour tells people to tap it.
 //
 // So: the strip stops scrolling. When the links do not fit on the row, they
 // move into a menu behind a button that does fit, and the cog moves out of the

@@ -146,8 +146,19 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   let paused = false;
   let draftRendered = null; // the server draft the card was last built from
   let firedFor = null; // pendingAt value we already launched an analysis for
-  let pageIdx = 0;      // which note page is showing
+  // Which page he is on, and it survives leaving the tab and coming back. A
+  // closure variable reset him to 1 of 9 every time he looked at the chat.
+  const PAGE_KEY = `pa-read-page-${kind}-${id}`;
+  let pageIdx = (() => {
+    try { return Math.max(0, Number(sessionStorage.getItem(PAGE_KEY)) || 0); } catch { return 0; }
+  })();
   let pagesKey = '';    // updatedAt of the analysis the pager was built for
+  // What the pager last drew. The poll runs every twelve seconds and used to
+  // rebuild the page unconditionally, so a selection went, the scroll jumped
+  // to the top, and the sentence he was reading moved, four or five times a
+  // minute. Every other repaint in this file already guards on a key like
+  // this; the one he reads longest did not.
+  let drawnKey = '';
 
   // Tells the chat (and the admin file list) that "send to the advisor for
   // review" has somewhere to land on this page.
@@ -204,8 +215,11 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       // 📚 Key terms rides as the last page: new words from the assessments,
       // each with an "I understand" checkbox. Checked = never explained again.
       if (glossary.length) pages.push({ title: 'Key terms', glossary });
-      // A fresh assessment snaps back to page one — "Right now".
-      if ((d.updatedAt || '') !== pagesKey) { pagesKey = d.updatedAt || ''; pageIdx = 0; }
+      // A fresh assessment used to snap him back to page one mid-sentence.
+      // Now it stays where he is and the header says something changed; the
+      // pager only jumps if the page he was on no longer exists.
+      const fresh = (d.updatedAt || '') !== pagesKey;
+      if (fresh) pagesKey = d.updatedAt || '';
       pageIdx = Math.max(0, Math.min(pageIdx, pages.length - 1));
       // Terms Eric has already marked learned are not painted and not
       // explained: the worker filters them out of the prompt, and this drops
@@ -215,7 +229,13 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         .map((g) => g.term.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()));
       const terms = termPalette(d.analysis);
       for (const k of learned) terms.delete(k);
-      renderPager(pages, terms);
+      // Only redraw when the content or the page actually changed. A poll that
+      // changed nothing must not take his place away.
+      const key = `${pagesKey}|${pageIdx}|${pages.length}|${learned.size}`;
+      if (key !== drawnKey) {
+        drawnKey = key;
+        renderPager(pages, terms);
+      }
       updatedEl.textContent = d.updatedAt
         ? `Updated ${timeAgo(toDate(d.updatedAt))}${paused ? ' · analysis paused' : ''}`
         : '';
@@ -272,14 +292,31 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   }
 
   let lastQa = [];
+  /**
+   * A question that has been "thinking" for four minutes is not thinking.
+   *
+   * Unlike the analysis and the draft, the Q&A path writes no heartbeat and
+   * has no cron backstop, so a Worker that died mid-answer left a spinner on
+   * screen with nothing to say otherwise, forever.
+   */
+  const QA_STALL_MS = 4 * 60_000;
+  const qaStalled = (q) => {
+    const at = q.at ? toDate(q.at)?.getTime() : 0;
+    return !!at && Date.now() - at > QA_STALL_MS;
+  };
+
   function renderQa(qa) {
     // Once the server row for the just-asked question exists, drop the local
     // pending copy.
     if (localQ && qa.some((q) => q.question === localQ)) localQ = null;
-    const rows = qa.slice(-3).map((q) => `
+    // The route hands these back newest first now, so the three to show are the
+    // first three, put back into the order a conversation reads in.
+    const rows = qa.slice(0, 3).slice().reverse().map((q) => `
       <div class="advisor-turn">
         <p class="advisor-q">${esc(q.question)}</p>
-        <div class="advisor-a">${q.status === 'running'
+        <div class="advisor-a">${q.status === 'running' && qaStalled(q)
+          ? '<span class="dim">No answer came back. Ask it again.</span>'
+          : q.status === 'running'
           ? '<span class="dim small">thinking…</span>'
           : md(q.answer || '')}</div>
       </div>`);
@@ -314,7 +351,12 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         ${SENDABLE.has(normTitle(pg.title)) ? '<p class="dim small pg-hint">Press and hold any line to send it to the client.</p>' : ''}
       </div>`;
     bodyEl.querySelectorAll('[data-pg]').forEach((b) =>
-      b.addEventListener('click', () => { pageIdx += Number(b.dataset.pg); renderPager(pages, terms); }));
+      b.addEventListener('click', () => {
+        pageIdx = Math.max(0, Math.min(pageIdx + Number(b.dataset.pg), pages.length - 1));
+        try { sessionStorage.setItem(PAGE_KEY, String(pageIdx)); } catch { /* blocked */ }
+        drawnKey = '';               // a tap always redraws
+        renderPager(pages, terms);
+      }));
     if (SENDABLE.has(normTitle(pg.title))) wireSendable(bodyEl, pg.title);
     bodyEl.querySelectorAll('[data-term]').forEach((cb) =>
       cb.addEventListener('change', async () => {
@@ -340,6 +382,8 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       const next = pageIdx + (dx < 0 ? 1 : -1);
       if (next < 0 || next >= pages.length) return;
       pageIdx = next;
+      try { sessionStorage.setItem(PAGE_KEY, String(pageIdx)); } catch { /* blocked */ }
+      drawnKey = '';
       renderPager(pages, terms);
     }, { passive: true });
   }
@@ -776,7 +820,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
 
   // The chat applied a correction: tell the worker so the fix mark clears
   // and the same correction never rides back in on the next analysis.
-  document.addEventListener('pa-correction-applied', (e) => {
+  document.addEventListener('pa-mark-done', (e) => {
     const msgId = e.detail?.msgId;
     if (!msgId) return;
     post({ action: 'correction-dismiss', msgId });
@@ -991,9 +1035,18 @@ function md(text, terms = null) {
     }
     if (inList) { html += '</ul>'; inList = false; }
     if (!line.trim()) { flush(); continue; }
-    if (/^###\s+/.test(line)) {
+    if (/^#{1,6}\s+/.test(line)) {
       flush();
-      html += `<h5>${inline(line.replace(/^###\s+/, ''), terms)}</h5>`;
+      html += `<h5>${inline(line.replace(/^#{1,6}\s+/, ''), terms)}</h5>`;
+      continue;
+    }
+    // Lines that are structure, not prose, and must not be folded into a
+    // paragraph with their neighbours: a table row, a fence, a quote, a rule.
+    // Joining a table gave "| Test | Value | | --- | --- | | CRP | 44 |", and
+    // joining two fences paired them as inline code across the seam.
+    if (/^\s*(\||```|~~~|>|-{3,}$|\*{3,}$)/.test(line)) {
+      flush();
+      html += `<p class="md-raw">${inline(line.trim(), terms)}</p>`;
       continue;
     }
     para.push(line.trim());

@@ -45,7 +45,7 @@ function openPanel(user, isAdmin = false) {
         <button class="switch ${notifOn ? 'on' : ''}" data-notif aria-pressed="${notifOn}" aria-label="Toggle notifications"></button>
       </div>
       <p class="dim small" style="margin:.5rem 0 0;">${needsInstall
-        ? 'On iPhone these only arrive once Pocket Advocate is on your Home Screen — Safari tabs can\'t receive them.'
+        ? 'On iPhone these only arrive once Pocket Advocate is on your Home Screen. Safari tabs can\'t receive them.'
         : 'Sends a real notification so you can confirm they arrive.'}</p>
       <div class="actions" style="margin-top:.6rem;">
         <button class="btn quiet" data-test-notif>Send a test notification</button>

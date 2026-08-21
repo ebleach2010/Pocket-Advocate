@@ -24,11 +24,11 @@ const MAX_BYTES = 25 * 1024 * 1024;
 const STEPS = [
   ['paid', 'Paid'],
   ['forms', 'Forms acknowledged'],
-  ['confirmed', 'Confirmed — upload labs & imaging before the call'],
+  ['confirmed', 'Confirmed. Upload labs and imaging before the call'],
   ['call', 'The discussion'],
   ['awaiting_report', 'Recording lands in your file'],
-  ['delivered', 'Report — within 7 days of the call'],
-  ['closed', 'Closed — the file is yours forever'],
+  ['delivered', 'Report, within 7 days of the call'],
+  ['closed', 'Closed. The file is yours forever'],
 ];
 const STATUS_RANK = { paid: 1, forms: 1, confirmed: 2, awaiting_report: 4, delivered: 6, closed: 7 };
 const STATUS_LABEL = {
@@ -231,16 +231,16 @@ function confirmationBanner(c, start, localFmt) {
   if (c.status === 'closed' || !start) return '';
   const cents = c.stripe?.amountTotal;
   const paid = typeof cents === 'number'
-    ? ` — $${(cents / 100).toFixed(2).replace(/\.00$/, '')} received`
+    ? `, $${(cents / 100).toFixed(2).replace(/\.00$/, '')} received`
     : '';
   const requested = !!c.appointment?.requested;
   return `
     <div class="panel confirm-banner">
       <p style="margin:0;"><strong>Payment confirmed${paid}.</strong>
         ${requested
-          ? 'Your case file is open. The time you asked for still needs my confirmation — see below.'
+          ? 'Your case file is open. The time you asked for still needs my confirmation. See below.'
           : `You're booked for <strong>${localFmt.format(start)}</strong>.`}</p>
-      <p class="dim small" style="margin:.35rem 0 0;">A copy is in your email. Nothing else is needed from you before the call — though labs and imaging help if you have them.</p>
+      <p class="dim small" style="margin:.35rem 0 0;">A copy is in your email. Nothing else is needed from you before the call, though labs and imaging help if you have them.</p>
     </div>`;
 }
 
@@ -258,14 +258,14 @@ function renderProgress(el, c) {
   const requested = !!c.appointment?.requested;
   const method = c.appointment?.method;
   const methodLine = method === 'phone'
-    ? `Phone — I call you at <strong>${esc(c.appointment.phone || 'your number')}</strong>`
+    ? `Phone. I call you at <strong>${esc(c.appointment.phone || 'your number')}</strong>`
     : c.appointment?.joinLink
-      ? `Video call — <a href="${esc(c.appointment.joinLink)}" rel="noopener">join link</a>`
-      : 'Video call — your join link appears here before the call';
+      ? `Video call: <a href="${esc(c.appointment.joinLink)}" rel="noopener">join link</a>`
+      : 'Video call. Your join link appears here before the call';
   const requestedNote = requested
     ? `<p class="small" style="margin:.4rem 0 0; color:var(--orange);">
          <strong>Awaiting confirmation.</strong> You asked for this time and it wasn't on my
-         calendar — I'll confirm it, or offer you the nearest time that works, before the date.</p>`
+         calendar. I'll confirm it, or offer you the nearest time that works, before the date.</p>`
     : '';
   const election = c.publicElection || { choice: 'private' };
   const revocable = election.choice === 'public' && !closed &&
@@ -291,7 +291,7 @@ function renderProgress(el, c) {
       <summary>Session details</summary>
       <div class="faq-a">
         <p class="dim small">Session: <strong style="color:${election.choice === 'public' ? 'var(--magenta)' : 'var(--cyan)'};">
-          ${election.choice === 'public' ? 'PUBLIC — streams live on YouTube' : 'PRIVATE'}</strong></p>
+          ${election.choice === 'public' ? 'PUBLIC, streams live on YouTube' : 'PRIVATE'}</strong></p>
         ${revocable ? `<p><button class="btn ghost" data-private>Make it private</button></p>` : ''}
         ${followUpSection(c)}
       </div>
@@ -320,7 +320,7 @@ function renderProgress(el, c) {
       return `<div style="border:1px solid var(--magenta); border-radius:10px; padding:.6rem .8rem; margin-top:.6rem;">
         <p class="small" style="margin:0 0 .4rem;"><strong>${esc(c.pendingExtra.label)}</strong> —
           ${mt.format(s)} MST · $${(c.pendingExtra.amountCents / 100).toLocaleString()}</p>
-        <p class="dim small" style="margin:0 0 .5rem;">I scheduled this for you. The time is held for 24 hours — pay to confirm it.</p>
+        <p class="dim small" style="margin:0 0 .5rem;">I scheduled this for you. The time is held for 24 hours. Pay to confirm it.</p>
         <a class="btn" href="${esc(c.pendingExtra.url)}">Pay & confirm</a>
       </div>`;
     }
@@ -366,10 +366,10 @@ function renderDocs(el, c) {
   el.innerHTML = `
     <h2 class="case-sec-h">Documents</h2>
     ${closed
-      ? '<p class="dim small">This case is closed. Your documents stay here forever — download or print any of them.</p>'
+      ? '<p class="dim small">This case is closed. Your documents stay here forever. Download or print any of them.</p>'
       : `<label class="dropzone" data-drop>
            Tap to add labs, imaging, or records<br>
-           <span class="small">PDF · JPEG · PNG · HEIC · DICOM · ZIP — 25 MB max each</span>
+           <span class="small">PDF · JPEG · PNG · HEIC · DICOM · ZIP, 25 MB max each</span>
            <input type="file" accept="${ACCEPT}" multiple hidden data-file-input>
          </label>
          <progress data-progress max="100" value="0" hidden></progress>
@@ -592,7 +592,7 @@ function printExport(c, want) {
   if (!win) { alert("Your browser blocked the print window. Allow pop-ups for this site and try again."); return; }
   const sec = (id, title, inner) => (want.has(id) ? `<h2>${title}</h2>${inner}` : '');
   win.document.write(`<!doctype html><html><head><meta charset="utf-8">
-    <title>Pocket Advocate — case record</title>
+    <title>Pocket Advocate case record</title>
     <style>
       body { font: 15px/1.55 -apple-system, system-ui, sans-serif; color: #111; margin: 2rem 1.4rem; }
       h1 { font-size: 1.5rem; margin: 0 0 .2rem; }
@@ -809,7 +809,7 @@ function downloadIcs(c, start) {
     `DTSTAMP:${stamp(new Date())}`,
     `DTSTART:${stamp(start)}`,
     `DTEND:${stamp(end)}`,
-    'SUMMARY:Pocket Advocate — your advocacy discussion',
+    'SUMMARY:Pocket Advocate: your advocacy discussion',
     `DESCRIPTION:Method: ${c.appointment.method}. Details on your case page.`,
     'END:VEVENT', 'END:VCALENDAR',
   ].join('\r\n');

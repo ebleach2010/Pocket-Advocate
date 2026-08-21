@@ -36,7 +36,7 @@ function runIntro(user, mount, fullySet, welcome = true) {
   const steps = [
     ...(welcome ? [{
       title: 'Welcome to Pocket Advocate 👋',
-      body: `<p>You're in. This is your private space — your case, your documents, and a direct line to me. Just a couple of quick things to set up first.</p>`,
+      body: `<p>You're in. This is your private space: your case, your documents, and a direct line to me. Just a couple of quick things to set up first.</p>`,
       cta: 'Get started',
     }] : []),
     {
@@ -53,15 +53,15 @@ function runIntro(user, mount, fullySet, welcome = true) {
                <ol class="intro-steps"><li>Tap the <strong>⋮</strong> menu in Chrome</li>
                <li>Tap <strong>Add to Home screen</strong></li>
                <li>Confirm, then open it from the new icon</li></ol>`}
-        <p class="dim small" style="margin-top:.9rem;">Nothing here is required — you can skip it and carry on. The <strong>?</strong> beside your case title explains all of this again any time.</p>`,
-      cta: pushInstalled() ? 'Next' : 'Done — take me in',
+        <p class="dim small" style="margin-top:.9rem;">Nothing here is required. You can skip it and carry on. The <strong>?</strong> beside your case title explains all of this again any time.</p>`,
+      cta: pushInstalled() ? 'Next' : 'Done, take me in',
     },
   ];
 
   if (pushInstalled() && !notifOn()) {
     steps.push({
       title: 'Turn on notifications',
-      body: `<p>Get a gentle alert when there's a new message, document, or update — so you never have to keep checking back. No message content is ever shown.</p>`,
+      body: `<p>Get a gentle alert when there's a new message, document, or update, so you never have to keep checking back. No message content is ever shown.</p>`,
       cta: 'Turn on notifications',
       action: async (btn) => {
         btn.disabled = true;

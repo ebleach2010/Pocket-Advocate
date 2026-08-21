@@ -24,6 +24,24 @@ import { demoApi } from './api.js';
 
 const KEY = 'pa-demo-store';
 
+/**
+ * What a CLIENT's browser is not allowed to keep on disk.
+ *
+ * The store persists the whole fake database under one key so both links share
+ * a world. On the client link that put the advisor's assessment, the learned
+ * profile, the corrections and Eric's private notes into localStorage on a
+ * page pretending to be a client's - a JSON blob anyone curious opens first.
+ * The real product denies every one of these paths in the Firestore rules;
+ * the demo has no rule layer, so it needs its own.
+ *
+ * The client half runs perfectly without them: nothing on a client page reads
+ * any of these. The advocate half keeps everything, because that is his side.
+ */
+const NOT_FOR_CLIENTS = [/\/advisor\//, /^advisorStyle\//, /^advisorKnowledge\//,
+  /^caseMeta\//, /^advisorQueue\//, /\/private\//];
+let clientSide = false;
+const withheld = (path) => clientSide && NOT_FOR_CLIENTS.some((re) => re.test(path));
+
 // ---------------------------------------------------------------- the store
 
 /** Everything, as path -> plain object. Paths are Firestore paths. */
@@ -35,7 +53,7 @@ const listeners = new Set();
 function persist() {
   try {
     localStorage.setItem(KEY, JSON.stringify({
-      docs: [...docs.entries()],
+      docs: [...docs.entries()].filter(([path]) => !withheld(path)),
       // Object URLs do not survive a reload, so only the metadata is kept and
       // a reloaded page shows the file without a preview. Honest, and better
       // than a broken image.
@@ -383,6 +401,8 @@ function makeAuth(role) {
 
 export function mountDemo(role) {
   const admin = role === 'admin';
+  // Set before anything reads or writes, so the first persist already filters.
+  clientSide = !admin;
   if (!load()) reset();
   // Another tab wrote: repaint. This is what makes the two links one system
   // rather than two demos.

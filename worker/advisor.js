@@ -16,6 +16,11 @@ const MODEL = 'claude-opus-5';
 // long turns this produces; drop to 'high' if analyses feel too slow.
 const ANALYSIS_EFFORT = 'max';
 const DRAFT_EFFORT = 'high';
+// The Q&A prompt says "answer it and stop, under 120 words". It was running at
+// max effort with a 64k ceiling, which is the most expensive setting in the
+// product spent on its cheapest job, several times a day.
+const QUESTION_EFFORT = 'high';
+const QUESTION_TOKENS = 12000;
 // Enough history to reason over without pushing a whole case into one request.
 const MAX_MESSAGES = 150;
 
@@ -67,7 +72,12 @@ function friendly(err) {
 
 function client(env) {
   if (!env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set on the Worker.');
-  return new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  // Fifteen minutes, because a scheduled event has fifteen and a max-effort
+  // turn over a large document set can pass ten. No SDK retries: on a timeout
+  // the model has usually already done the work, and retrying bills the same
+  // expensive turn again for an answer that is thrown away. The queue is the
+  // retry mechanism, and it is the one that knows how many times it has tried.
+  return new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, timeout: 900_000, maxRetries: 0 });
 }
 
 /**
@@ -79,13 +89,22 @@ function client(env) {
  * realistically happen.
  */
 async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat }) {
+  // The cache breakpoint goes on the SYSTEM block, not at the top level. At the
+  // top level it lands after the last cacheable content in the request, which
+  // is the transcript and the attached files: the part that changes every
+  // single pass. So every call was paying the write premium and never reading
+  // a hit. On the system block it caches the long standing instructions, which
+  // are identical from one call to the next.
+  const cached = Array.isArray(system)
+    ? system.map((b, i) => (i === system.length - 1
+      ? { ...b, cache_control: { type: 'ephemeral' } } : b))
+    : system;
   const stream = client(env).messages.stream({
     model: MODEL,
     max_tokens: maxTokens,
     thinking: { type: 'adaptive' },
     output_config: { effort },
-    cache_control: { type: 'ephemeral' },
-    system,
+    system: cached,
     messages,
   });
   // Heartbeat: every SSE event proves the model is alive (thinking included,
@@ -117,7 +136,10 @@ function stripDashes(t) {
   return t
     .replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2')
     .replace(/^[—–]\s*/gm, '')
-    .replace(/\s*[—–]+\s*/g, ', ');
+    // A full stop, not a comma. A dash between two clauses is doing the work of
+    // a period, and replacing it with a comma leaves a comma splice, which
+    // reads MORE machine-written than the dash it was hiding.
+    .replace(/\s*[—–]+\s*/g, '. ');
 }
 
 /**
@@ -178,6 +200,17 @@ const MAX_MEDIA_FILES = 8;
 // carry forward. Both are generous: a case that outgrows them is one where the
 // oldest reads have long since been folded into the running assessment.
 const MAX_READ_MEMORY = 500;
+/** Three goes at one analysis. A fourth is a loop, not a retry. */
+const ANALYSIS_MAX_TRIES = 3;
+/**
+ * How close together two flags on the same thread can buy two analyses.
+ *
+ * markPending is called from a client's browser on every message and every
+ * upload, and the cron turns a flagged thread into one max-effort turn. With
+ * no floor, a script sending a message every few seconds buys an analysis
+ * every five minutes, all day, on Eric's own API key.
+ */
+const PENDING_FLOOR_MS = 12 * 60_000;
 const MAX_CARRY_FILES = 40;
 
 function mediaKind(att) {
@@ -334,8 +367,7 @@ const AUTO_READ_SETTLE_MS = 4 * 60_000;
  * Failure is not fatal: a listing that errors leaves the chat-attachment path
  * exactly as it was.
  */
-async function storageReadableFiles(env, alreadyRead, kind, id) {
-  const seen = new Set(alreadyRead);
+async function storageReadableFiles(env, alreadyRead, kind, id, seen = new Set(alreadyRead)) {
   const cutoff = Date.now() - AUTO_READ_SETTLE_MS;
   try {
     const files = await listIntake(env, kind, id);
@@ -354,8 +386,7 @@ async function storageReadableFiles(env, alreadyRead, kind, id) {
   }
 }
 
-function autoReadableFiles(rows, alreadyRead, kind, id) {
-  const seen = new Set(alreadyRead);
+function autoReadableFiles(rows, alreadyRead, kind, id, seen = new Set(alreadyRead)) {
   const cutoff = Date.now() - AUTO_READ_SETTLE_MS;
   const out = [];
   for (const r of (rows || [])) {
@@ -414,12 +445,24 @@ async function selectedMediaBlocks(env, list, kind, id, alreadyRead = []) {
     // tell him it needs another tap.
     const overCount = included.length >= MAX_MEDIA_FILES;
     const overBytes = budget <= 0 || (att.size || 0) > budget;
+    // Bigger than a whole pass, so no pass will ever hold it. Carrying it means
+    // carrying it forever: every carry re-queues the case, and the queue buys
+    // another max-effort turn five minutes later, for a file that is refused
+    // again on arrival. Say so once and stop.
+    if ((att.size || 0) > MAX_TOTAL_MEDIA_BYTES) {
+      skipped.push(`${name} (too large to read: ${Math.round((att.size || 0) / 1048576)} MB, the limit for one read is ${Math.round(MAX_TOTAL_MEDIA_BYTES / 1048576)} MB. Ask for it split up, or as screenshots)`);
+      readKeys.push(key);   // remembered as handled, so it is not re-offered
+      continue;
+    }
     if (overCount || overBytes) {
-      if (att.url && !att.data && carry.length < MAX_CARRY_FILES) {
-        carry.push({ name, url: att.url, contentType: att.contentType || '', size: att.size || 0 });
+      // A file discovered in Storage is as re-fetchable as one with a URL: it
+      // has a path. Only a file uploaded inline from his own device is base64
+      // in this request and nowhere else.
+      if ((att.url || att.path) && !att.data && carry.length < MAX_CARRY_FILES) {
+        carry.push({ name, url: att.url || '', path: att.path || '', contentType: att.contentType || '', size: att.size || 0 });
         queued.push(name);
       } else {
-        skipped.push(`${name} (did not fit this pass, send it again on its own)`);
+        skipped.push(`${name} (queued for the next pass)`);
       }
       continue;
     }
@@ -443,7 +486,7 @@ async function selectedMediaBlocks(env, list, kind, id, alreadyRead = []) {
 function mediaNote({ blocks, included, known, queued, skipped }) {
   let note = '';
   if (blocks.length)
-    note += `\n\nEric selected these files for this analysis; they are attached after this message, in order: ${included.join('; ')}. Read them directly and fold what you actually see into your answer; cite specific values, findings, and page details.`;
+    note += `\n\nEric selected these files for this analysis; they are attached after this message, in order: ${included.join('; ')}. Read them directly and fold what you actually see into your answer; cite specific values, findings, and page details.\nIf a value is not legible with certainty - a photo at an angle, a faxed page, a smudged column - write that it is unreadable and name the file. Never write a number you are not sure of. A misread value here is copied forward into every later pass as an established fact and ends up on the sheet he reads out to a specialist, and nothing in the thread will ever contradict it, because the thread never contained it.`;
   if (known?.length)
     note += `\nYou already read these on an earlier pass and what you found is in your previous assessment, so they are deliberately not attached again: ${known.join('; ')}. Treat them as read, never as missing.`;
   if (queued?.length)
@@ -513,8 +556,14 @@ function styleNote({ voice, stances }) {
   let note = '';
   if (voice)
     note += `\n\nA learned profile of how Eric writes, built from his own messages and from how he edited your past drafts. Where this profile and your instinct disagree, the profile wins:\n${voice}`;
+  // His positions shape the REGISTER of a draft, not its clinical content. They
+  // are mined automatically from chat by a low-effort pass, and "write them at
+  // full strength" in a message addressed to a patient is how an inferred
+  // stance about a steroid taper becomes an instruction to a sick person.
+  // Analyses get them at full strength (stanceNote); drafts get them as
+  // something to ask about.
   if (stances)
-    note += `\n\nEric's own positions, learned from what he actually sends. Write them as HIS calls, at full strength. Never water them down into generic guidance:\n${stances}`;
+    note += `\n\nEric's own positions, learned from what he actually sends:\n${stances}\nThese tell you what he cares about and what he chases. They are NOT instructions to pass to the client. Where one bears on this message, it becomes a question he wants asked or a record he wants chased, never a recommendation about treatment.`;
   return note;
 }
 
@@ -573,7 +622,10 @@ conversation. It is filed permanently.`;
  * profile, which is already what carries his standing calls into every prompt.
  */
 async function fileOverride(env, text) {
-  const m = text.match(/^## Stance\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  // Tolerant, not exact: any case, two hashes or three, and the decoration a
+  // low-effort reply sometimes puts round a heading. An exact match failed
+  // silently here and emptied a whole page, or printed raw ids into his read.
+  const m = sectionMatch(text, 'Stance');
   if (!m) return text;
   const stance = m[1].replace(/^\s*[-*]\s*/, '').trim().replace(/\s+/g, ' ').slice(0, 300);
   const cleaned = text.replace(m[0], '').trim();
@@ -605,10 +657,30 @@ function keepOverrides(priorStances, nextStances) {
   const marks = (priorStances || '').split('\n').filter((l) => /\(Eric's override,/i.test(l));
   if (!marks.length) return nextStances;
   const flat = (v) => v.toLowerCase().replace(/\(eric's override[^)]*\)/gi, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  // Words that carry the meaning. Substring matching alone called a reworded
+  // line missing and put it back, so "asks for the raw imaging report rather
+  // than the summary" and "ask for the raw imaging report, not the summary"
+  // became two stances that say one thing, and compounded every night.
+  const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'not', 'for', 'to', 'of', 'in', 'on',
+    'is', 'it', 'that', 'than', 'rather', 'always', 'never', 'his', 'her', 'their',
+    'eric', 'eric s', 'asks', 'ask', 'asking', 'wants', 'want', 'prefers', 'prefer',
+    'pushes', 'push', 'before', 'after', 'with', 'this', 'they', 'them']);
+  const key = (v) => new Set(flat(v).split(' ').filter((w) => w.length > 2 && !STOP.has(w)));
+  const nextLines = (nextStances || '').split('\n').filter((l) => l.trim());
+  const nextKeys = nextLines.map(key);
   const have = flat(nextStances);
   const missing = marks.filter((line) => {
     const core = flat(line);
-    return core.length > 8 && !have.includes(core);
+    if (core.length <= 8) return false;
+    if (have.includes(core)) return false;             // kept verbatim
+    const k = key(line);
+    if (!k.size) return false;
+    // Kept in other words: most of what it is ABOUT is still on some line.
+    return !nextKeys.some((nk) => {
+      let hit = 0;
+      for (const w of k) if (nk.has(w)) hit++;
+      return hit / k.size >= 0.6;
+    });
   });
   if (!missing.length) return nextStances;
   return `${missing.join('\n')}${nextStances ? `\n${nextStances}` : ''}`.slice(0, 2000);
@@ -619,9 +691,13 @@ function keepOverrides(priorStances, nextStances) {
  * case-insensitive, and heading decorations like `**## Voice**` or `### Voice`
  * still match, because a low-effort reply doesn't always follow the format.
  */
-function sectionOf(text, name) {
-  const m = text.match(new RegExp(
+function sectionMatch(text, name) {
+  return String(text).match(new RegExp(
     `^\\s*\\**#{2,3}\\s*\\**\\s*${name}\\s*\\**\\s*\\n([\\s\\S]*?)(?=^\\s*\\**#{2,3}\\s|$(?![\\s\\S]))`, 'im'));
+}
+
+function sectionOf(text, name) {
+  const m = sectionMatch(text, name);
   return m ? m[1].trim() : '';
 }
 
@@ -654,7 +730,10 @@ const VOICE_LOOP_TZ = 'Etc/GMT+7';                // MST, a fixed offset: no DST
 const VOICE_LOOP_MIN_GAP_MS = 23 * 3_600_000;
 const VOICE_CORPUS_CHARS = 40_000;
 const VOICE_THREAD_MESSAGES = 60;
-const VOICE_THREADS = { cases: 40, subscriptions: 20 };
+const VOICE_THREADS = {
+  cases: { cap: 40, order: 'createdAt desc' },
+  subscriptions: { cap: 20, order: 'startedAt desc' },
+};
 const VOICE_PAIRS = 40;
 
 /** The local hour in a zone. Same shape as the digest's, kept local to here. */
@@ -682,13 +761,19 @@ function hourIn(now, tz) {
 export async function voiceCorpus(env) {
   const out = [];
   let chars = 0;
-  for (const [coll, cap] of Object.entries(VOICE_THREADS)) {
-    // Newest threads first where the collection supports it; an ordering a
-    // collection does not have is not a reason to read nothing.
-    const threads = await listDocs(env, coll, { pageSize: cap, orderBy: 'createdAt desc' })
-      .catch(() => listDocs(env, coll, { pageSize: cap }).catch(() => []));
+  // Half the budget each, so a busy month of cases cannot starve the chat
+  // subscription - which is where he writes most, day to day.
+  const share = Math.floor(VOICE_CORPUS_CHARS / Object.keys(VOICE_THREADS).length);
+  for (const [coll, spec] of Object.entries(VOICE_THREADS)) {
+    let used = 0;
+    // Newest first, ordered on a field the collection actually HAS. A subscription
+    // has no createdAt, and Firestore silently omits documents missing the
+    // ordering field, so ordering these by createdAt returned an empty list and
+    // a 200: the fallback never fired and the whole collection was invisible.
+    const threads = await listDocs(env, coll, { pageSize: spec.cap, orderBy: spec.order })
+      .catch(() => listDocs(env, coll, { pageSize: spec.cap }).catch(() => []));
     for (const t of threads) {
-      if (chars >= VOICE_CORPUS_CHARS) break;
+      if (used >= share || chars >= VOICE_CORPUS_CHARS) break;
       const rows = await listDocs(env, `${coll}/${t.id}/chat`, {
         pageSize: VOICE_THREAD_MESSAGES, orderBy: 'ts desc',
       }).catch(() => []);
@@ -698,9 +783,10 @@ export async function voiceCorpus(env) {
         .map((r) => String(r.data.text).trim())
         .filter(Boolean);
       for (const m of mine) {
-        if (chars >= VOICE_CORPUS_CHARS) break;
+        if (used >= share || chars >= VOICE_CORPUS_CHARS) break;
         out.push(m);
         chars += m.length + 5;
+        used += m.length + 5;
       }
     }
   }
@@ -767,6 +853,14 @@ You are given two kinds of evidence:
 Write a plain list under a single heading of your own choosing. No preamble, no
 closing note, no summary of your method. 200 words at most.
 
+CONFIDENTIALITY. This evidence spans every client he has. You are describing
+HABITS, not content. Never quote a sentence that carries a clinical detail, a
+name, a place, a date or anything else specific to one person's case. Where you
+need an example, write the shape of it: "opens by naming what the person did"
+rather than the words he used to one of them. What you write is injected into
+messages to OTHER clients, and a phrase from somebody else's case surfacing in
+theirs is a breach, not a style note.
+
 Never use an em dash or an en dash, anywhere, in anything.`;
 
 /**
@@ -808,7 +902,7 @@ export async function runVoiceStudy(env) {
   if (!got.length) return { ran: false, reason: 'every reader failed' };
 
   const prior = profile?.data || {};
-  const merged = await mergeVoice(env, got, prior);
+  const merged = await mergeVoice(env, got, prior, evidence);
   return { ran: true, readers: got.map((r) => r.id), ...merged };
 }
 
@@ -819,7 +913,7 @@ export async function runVoiceStudy(env) {
  * Cadence and verbiage become Voice; beliefs become Stances; Coaching is
  * refreshed from the same evidence, because he asked for it and reads it.
  */
-async function mergeVoice(env, reports, prior) {
+async function mergeVoice(env, reports, prior, evidence = '') {
   const body = reports
     .map((r) => `FINDINGS ON ${r.what.toUpperCase()}:\n${r.text}`)
     .join('\n\n');
@@ -863,7 +957,12 @@ evidence is too thin, write "- not enough to say yet".
 Plain text under each heading. Never use an em dash or en dash. No preamble.` }],
     messages: [{
       role: 'user',
-      content: `${prior.voice || prior.stances ? `The profile on file:\n\n## Voice\n${prior.voice || '- none yet'}\n\n## Stances\n${prior.stances || '- none yet'}\n\n## Coaching\n${prior.coaching || '- none yet'}\n\n` : ''}${body}`,
+      // The evidence rides along as well as the three reports. Coaching is
+      // asked to point at something real, and none of the three readers was
+      // asked about coaching, so without this the merge was being told to
+      // ground a section in material it had never seen: it either wrote
+      // "not enough to say yet" forever, or made it up.
+      content: `${prior.voice || prior.stances ? `The profile on file:\n\n## Voice\n${prior.voice || '- none yet'}\n\n## Stances\n${prior.stances || '- none yet'}\n\n## Coaching\n${prior.coaching || '- none yet'}\n\n` : ''}${body}${evidence ? `\n\nTHE EVIDENCE THE READERS WORKED FROM, for the Coaching section:\n\n${evidence.slice(0, 24000)}` : ''}`,
     }],
   });
 
@@ -882,10 +981,15 @@ Plain text under each heading. Never use an em dash or en dash. No preamble.` }]
   if (!rawVoice && !rawStances && !rawCoaching) return { wrote: false, reason: 'merge produced no sections' };
   if (!voice && !stances) return { wrote: false, reason: 'nothing to write' };
 
-  // The prompt asks for overrides to be carried forward. Asking is not enough:
-  // a pass that paraphrases one, or drops it for space, silently reverses a
-  // call he made on purpose.
-  stances = keepOverrides(prior.stances || '', stances);
+  // Re-read RIGHT BEFORE the write, and merge against that rather than against
+  // the snapshot this run started from. Four model calls take minutes, and the
+  // most likely thing to happen in those minutes is Eric filing an override:
+  // it is nine in the evening, which is when he is working. Merging against
+  // the stale copy erased it, and keepOverrides could not put it back because
+  // it had never seen it. "It is filed permanently" has to be true.
+  const fresh = await getDoc(env, STYLE_PATH).catch(() => null);
+  const current = fresh?.data || prior;
+  stances = keepOverrides(current.stances || '', stances);
 
   await patchDoc(env, STYLE_PATH, {
     voice: voice.slice(0, 2000),
@@ -907,34 +1011,55 @@ Plain text under each heading. Never use an em dash or en dash. No preamble.` }]
  * document's update time: two cron fires in the same minute, or a restart
  * mid-run, must not buy four model turns twice.
  */
-export async function maybeVoiceStudy(env, now = Date.now()) {
+export async function maybeVoiceStudy(env, now = Date.now(), { force = false } = {}) {
   try {
-    if (hourIn(now, VOICE_LOOP_TZ) !== VOICE_LOOP_HOUR) return { ran: false, reason: 'not his evening' };
-    const profile = await getDoc(env, STYLE_PATH).catch(() => null);
+    if (!force && hourIn(now, VOICE_LOOP_TZ) !== VOICE_LOOP_HOUR) return { ran: false, reason: 'not his evening' };
+    let profile;
+    try {
+      profile = await getDoc(env, STYLE_PATH);
+    } catch (readErr) {
+      // A failed read used to leave `loop` empty, which skipped BOTH the
+      // once-a-day check and the compare-and-swap, so a blip could buy a
+      // second full study in the same hour. Not knowing is a reason to do
+      // nothing, not a reason to proceed unguarded.
+      console.warn('voice study: could not read the profile:', readErr.message || readErr);
+      return { ran: false, reason: 'could not read the profile' };
+    }
     const loop = profile?.data.voiceLoop || {};
     // Absent means on. He asked for it to run; only an explicit off stops it.
     if (loop.enabled === false) return { ran: false, reason: 'switched off' };
     const last = loop.lastRunAt ? new Date(loop.lastRunAt).getTime() : 0;
-    if (last && now - last < VOICE_LOOP_MIN_GAP_MS) return { ran: false, reason: 'already ran today' };
+    // `force` is him pressing "Run one now", which skips the clock. It does not
+    // skip the switch above, and it does not skip the claim below.
+    if (!force && last && now - last < VOICE_LOOP_MIN_GAP_MS) return { ran: false, reason: 'already ran today' };
 
+    // The claim, with a real precondition in BOTH cases. On the first ever
+    // night the document does not exist yet, and an ifUpdateTime that is simply
+    // omitted is not a precondition at all: every concurrent fire would claim.
     const claimed = await patchDoc(env, STYLE_PATH, {
       voiceLoop: { ...loop, enabled: loop.enabled !== false, lastRunAt: new Date(now), lastError: null },
-    }, {
-      mask: ['voiceLoop'],
-      ...(profile ? { ifUpdateTime: profile.updateTime } : {}),
-    });
+    }, profile
+      ? { mask: ['voiceLoop'], ifUpdateTime: profile.updateTime }
+      : { mask: ['voiceLoop'], mustNotExist: true });
     // Someone else claimed this run between the read and the write.
     if (!claimed) return { ran: false, reason: 'another run claimed it' };
 
     const out = await runVoiceStudy(env);
+    // Dotted masks, so this touches only the fields it means to. A whole-map
+    // write here turned "Stop it", pressed while the study was running, back
+    // on again, and reset the run count with it.
+    //
+    // And a study that read everything and then wrote nothing is not a clean
+    // run. Reporting it as one is exactly the failure the dashboard line
+    // exists to make visible.
+    const failed = out.ran === false || out.wrote === false;
     await patchDoc(env, STYLE_PATH, {
       voiceLoop: {
-        enabled: true,
         lastRunAt: new Date(now),
         runs: Number(loop.runs || 0) + 1,
-        lastError: out.ran === false ? String(out.reason || '') : null,
+        lastError: failed ? String(out.reason || 'wrote nothing') : null,
       },
-    }, { mask: ['voiceLoop'] }).catch(() => {});
+    }, { mask: ['voiceLoop.lastRunAt', 'voiceLoop.runs', 'voiceLoop.lastError'] }).catch(() => {});
     return out;
   } catch (err) {
     console.error('voice study:', err.stack || err);
@@ -1089,7 +1214,10 @@ no closing note.` }],
 const TERM_CATEGORIES = ['Condition', 'Symptom', 'Test or lab', 'Medication', 'Anatomy', 'Procedure', 'Concept'];
 
 async function harvestKeyTerms(env, text) {
-  const m = text.match(/^## Key terms\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  // Tolerant, not exact: any case, two hashes or three, and the decoration a
+  // low-effort reply sometimes puts round a heading. An exact match failed
+  // silently here and emptied a whole page, or printed raw ids into his read.
+  const m = sectionMatch(text, 'Key terms');
   if (!m) return text;
   for (const line of m[1].split('\n')) {
     // "- Term [Category]: definition" — category optional, defaults to General.
@@ -1145,7 +1273,10 @@ async function harvestKeyTerms(env, text) {
  * understands. His fluency is the evidence; the checkbox just catches up.
  */
 async function applyMastered(env, text) {
-  const m = text.match(/^## Mastered\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  // Tolerant, not exact: any case, two hashes or three, and the decoration a
+  // low-effort reply sometimes puts round a heading. An exact match failed
+  // silently here and emptied a whole page, or printed raw ids into his read.
+  const m = sectionMatch(text, 'Mastered');
   if (!m) return text;
   for (const line of m[1].split('\n')) {
     const t = line.match(/^\s*[-*]\s*(.+?)\s*$/);
@@ -1169,7 +1300,10 @@ async function applyMastered(env, text) {
  * Returns { text, workingDx }.
  */
 function harvestWorkingLine(text) {
-  const m = text.match(/^## Working line\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  // Tolerant, not exact: any case, two hashes or three, and the decoration a
+  // low-effort reply sometimes puts round a heading. An exact match failed
+  // silently here and emptied a whole page, or printed raw ids into his read.
+  const m = sectionMatch(text, 'Working line');
   if (!m) return { text, workingDx: '' };
   const first = m[1].split('\n').map((l) => l.trim()).find(Boolean) || '';
   let line = first.replace(/^[-*]\s*/, '').replace(/[*`]/g, '').replace(/[.,;:]+\s*$/, '').trim();
@@ -1191,7 +1325,10 @@ function harvestWorkingLine(text) {
  * it` rows, most likely first. Returns { text, differential }.
  */
 function harvestDifferential(text) {
-  const m = text.match(/^## Differential\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  // Tolerant, not exact: any case, two hashes or three, and the decoration a
+  // low-effort reply sometimes puts round a heading. An exact match failed
+  // silently here and emptied a whole page, or printed raw ids into his read.
+  const m = sectionMatch(text, 'Differential');
   if (!m) return { text, differential: [] };
   const differential = [];
   for (const line of m[1].split('\n')) {
@@ -1224,7 +1361,10 @@ function harvestDifferential(text) {
  * and one he asked again keeps the date he first asked.
  */
 function harvestUnanswered(text, prior) {
-  const m = text.match(/^## Not answered\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  // Tolerant, not exact: any case, two hashes or three, and the decoration a
+  // low-effort reply sometimes puts round a heading. An exact match failed
+  // silently here and emptied a whole page, or printed raw ids into his read.
+  const m = sectionMatch(text, 'Not answered');
   if (!m) return { text, unanswered: Array.isArray(prior) ? prior : [] };
   const was = Array.isArray(prior) ? prior : [];
   const out = [];
@@ -1268,7 +1408,10 @@ function harvestUnanswered(text, prior) {
  * Returns { text, corrections }.
  */
 function harvestCorrections(text, rows, prior) {
-  const m = text.match(/^## Corrections\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  // Tolerant, not exact: any case, two hashes or three, and the decoration a
+  // low-effort reply sometimes puts round a heading. An exact match failed
+  // silently here and emptied a whole page, or printed raw ids into his read.
+  const m = sectionMatch(text, 'Corrections');
   if (!m) return { text, corrections: [] };
   const was = Array.isArray(prior) ? prior : [];
   const mine = rows.filter((r) => r.data.role === 'admin');
@@ -1354,7 +1497,7 @@ What moved. If nothing moved, say so in one line rather than padding it.
 Anything he asked for that did not come back, and anything the client said they
 would send and did not. Bullets, at most six. End this section with this line
 exactly, on its own:
-potentially forgot to or have not provided. Helpful, but optional.
+Things they potentially forgot to or have not provided. Helpful, but optional.
 
 ## Where it stands
 Two sentences at most, on what the case is waiting on.
@@ -1364,7 +1507,7 @@ dash or en dash.` }],
     messages: [{ role: 'user', content: `${day}\n\n${transcript}` }],
   });
 
-  await patchDoc(env, path, {
+  if (finished) await patchDoc(env, path, {
     text: text.slice(0, 8000), day, at: new Date(), messages: mine.length,
   });
   return { day, text, cached: false };
@@ -1387,10 +1530,20 @@ async function setState(env, kind, id, fields) {
  * after answering a request, which is exactly where a real analysis dies.
  * Whoever runs next (Eric's open panel, or the cron) picks it up.
  */
-export async function markPending(env, kind, id) {
+export async function markPending(env, kind, id, { force = false } = {}) {
   const now = new Date();
   await setState(env, kind, id, { pendingAt: now });
-  await patchDoc(env, queuePath(kind, id), { kind, id, at: now });
+  // Already waiting to be read? Then it is already going to be read, and
+  // re-stamping it only resets the clock. Eric asking by hand always goes
+  // through; a client typing does not.
+  if (!force) {
+    const q = await getDoc(env, queuePath(kind, id)).catch(() => null);
+    if (q) return;
+    const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+    const last = st?.data.updatedAt ? new Date(st.data.updatedAt).getTime() : 0;
+    if (last && Date.now() - last < PENDING_FLOOR_MS) return;
+  }
+  await patchDoc(env, queuePath(kind, id), { kind, id, at: now, tries: 0 });
 }
 
 /**
@@ -1453,11 +1606,16 @@ export async function runAnalysis(env, kind, id, mediaList = null) {
     // shared in conversation has context attached to it, one dropped on the
     // Documents page does not. Both dedupe on the object path, so the same
     // file reached both ways is one file.
+    // One seen set across both walks. A file shared in chat lives in a folder
+    // the Storage walk also visits, and with a set each it came back twice:
+    // once as "read this now" and once as "you already read this, treat it as
+    // read", about the same file, on the first pass that read it.
+    const found = new Set(alreadyRead);
     const queue = [
       ...carried,
       ...(mediaList || []),
-      ...autoReadableFiles(rows, alreadyRead, kind, id),
-      ...(await storageReadableFiles(env, alreadyRead, kind, id)),
+      ...autoReadableFiles(rows, alreadyRead, kind, id, found),
+      ...(await storageReadableFiles(env, alreadyRead, kind, id, found)),
     ];
     const media = await selectedMediaBlocks(env, queue, kind, id, alreadyRead);
 
@@ -1595,7 +1753,10 @@ Carry forward what still holds. "What we know so far" and "Ruled out"
 especially are cumulative records, not a fresh take each pass: reproduce what
 your previous assessment had, add what is new, and only remove something when
 the thread has actually contradicted it.
-${knowledgeNote(knowledge)}${stanceNote(style)}` }],
+${knowledgeNote(knowledge)}${stanceNote(style)}${style.voice ? `
+
+Two of your sections leave this page as messages FROM ERIC: "Worth asking" and "What's missing". He presses one line and it goes to the client as it stands. Write those two in his voice, from this profile of how he writes:
+${style.voice}` : ''}` }],
       messages: [{
         role: 'user',
         content: [
@@ -1687,6 +1848,24 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
     console.error('advisor analysis:', err.stack || err);
     await setState(env, kind, id, { status: 'error', error: friendly(err) })
       .catch(() => {});
+    // Count the failure on the queue entry, and give up after three. The delete
+    // used to sit only on the success path, so anything that threw AFTER the
+    // model turn - a Firestore blip on the state write, a bad field - left the
+    // job queued and the cron bought the identical max-effort turn again every
+    // five minutes, indefinitely, throwing every answer away.
+    try {
+      const q = await getDoc(env, queuePath(kind, id));
+      const tries = Number(q?.data.tries || 0) + 1;
+      if (tries >= ANALYSIS_MAX_TRIES) {
+        await deleteDoc(env, queuePath(kind, id));
+        console.warn(`advisor: giving up on ${kind}/${id} after ${tries} tries`);
+      } else {
+        await patchDoc(env, queuePath(kind, id), { tries }, { mask: ['tries'] });
+      }
+    } catch (e2) {
+      // Cannot even record the failure: drop the job rather than loop on it.
+      await deleteDoc(env, queuePath(kind, id)).catch(() => {});
+    }
   }
 }
 
@@ -1720,7 +1899,13 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
       fileNote = `\nEric attached the file "${attachment.name}" for review; it follows this message. Read it directly and answer from what you actually see.`;
     }
     const answer = await ask(env, {
-      effort: ANALYSIS_EFFORT,
+      effort: QUESTION_EFFORT,
+      maxTokens: QUESTION_TOKENS,
+      // The same heartbeat the analysis and the draft write. Without it a
+      // question that died mid-answer was indistinguishable from one still
+      // being thought about, and the panel had nothing to go on.
+      onBeat: () => patchDoc(env, `${statePath(kind, id)}/qa/${qaId}`,
+        { progressAt: new Date() }, { mask: ['progressAt'] }).catch(() => {}),
       system: [{ type: 'text', text: `${VOICE}
 
 Eric is asking you a direct question about this client. Answer it and stop —
@@ -1830,8 +2015,24 @@ Length: this chat rejects messages over 2000 characters, and a wall of text
 reads as canned anyway. Stay under 900 characters unless Eric's instruction
 genuinely requires more; never exceed 1900.
 
-He is not a doctor. Never put a diagnosis in his mouth. He can say what he'd
-want asked, what a result might mean, and what he'll chase down.` }],
+THIS MESSAGE GOES TO THE PATIENT. Every instruction above about how to talk to
+Eric is about talking to ERIC. It does not apply here. Warmth over bluntness.
+Never correct the client the way you would correct him. Never gloss a term for
+his benefit; explain it for theirs, or leave it out. Never include anything
+about distress, safety or crisis resources: that is Eric's own to handle,
+through a control he presses himself, and it must never arrive inside a draft.
+
+He is not a doctor. Never put a diagnosis in his mouth.
+
+And never put a treatment decision there either. Do not tell the client to
+start, stop, change, delay or increase any medication or treatment. Do not tell
+them to refuse or postpone anything their care team has arranged. Where Eric
+disagrees with a treating clinician, the message says what he wants ASKED at
+the next appointment, never what to do instead. If his learned positions point
+at a treatment call, convert it into a question for the doctor.
+
+What he CAN say: what he would want asked, what a result might mean, what he
+will chase down, and what to bring to the next appointment.` }],
       messages: [{
         role: 'user',
         content: `Here is how Eric writes, in his own messages to this client:\n\n<his_voice>\n${voice || '(none yet — keep it plain, warm and brief)'}\n</his_voice>\n${
