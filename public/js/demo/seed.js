@@ -129,7 +129,14 @@ export function seed({ set, file }) {
     }
   }
 
-  set(`users/${CLIENT}`, { email: 'jordan@example.demo', name: 'Jordan Avery', role: 'client' });
+  // A complete profile, so nothing in the demo ever asks him to make an
+  // account (Eric, 2026-08-21: "Skip me having to create an account for God's
+  // sake. I don't want to have to put in my email on a test suite."). Booking
+  // only asks for a name and a date of birth when it does not have them.
+  set(`users/${CLIENT}`, {
+    email: 'jordan@example.demo', name: 'Jordan Avery', role: 'client',
+    firstName: 'Jordan', lastName: 'Avery', dob: '1988-03-14',
+  });
   set(`users/${ADMIN}`, { email: 'you@pocketadvocate.demo', name: 'Eric', role: 'admin' });
 
   set(`cases/${CASE_ID}`, {

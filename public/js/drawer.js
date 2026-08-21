@@ -10,10 +10,6 @@
 
 // Same press length as chat.js, so one long press feels like every other.
 const LONG_PRESS_MS = 550;
-// The folder-open beat before navigation. Long enough to read as a folder
-// opening, short enough that nobody taps twice.
-const OPEN_MS = 450;
-
 const REDUCED = () =>
   !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
@@ -58,10 +54,17 @@ export function wireFolderOpen(root) {
     const card = e.target.closest?.('.folder');
     if (!card || !root.contains(card)) return;
 
-    // The working-diagnosis line is the long-press target for an override, and
-    // the click that trails a fired press is not a request to open anything.
+    // A long press on the working-diagnosis line opens the override editor, and
+    // the click that trails that fired press is not a request to open the case
+    // as well. That mark is the whole test.
+    //
+    // It used to also swallow every click whose target was the diagnosis line,
+    // pressed or not. That line is the middle third of the card and the largest
+    // text on it, so the natural place to put a thumb was the one place that
+    // did nothing: three taps in the middle, no response, and only a tap that
+    // happened to land on the name or the date below it opened anything.
     const pressed = card.dataset.lp === '1' || !!card.querySelector('[data-lp="1"]');
-    if (pressed || e.target.closest('.folder-dx')) {
+    if (pressed) {
       e.preventDefault();
       delete card.dataset.lp;
       card.querySelectorAll('[data-lp]').forEach((n) => { delete n.dataset.lp; });
@@ -71,10 +74,18 @@ export function wireFolderOpen(root) {
     const href = card.getAttribute('href');
     if (!href || href === '#') return;
     e.preventDefault();
-    if (card.classList.contains('opening')) return; // one open per tap
-    if (REDUCED()) { location.assign(href); return; }
-    card.classList.add('opening');
-    setTimeout(() => location.assign(href), OPEN_MS);
+    // Open it. No animation, no delay, no class.
+    //
+    // (Eric, 2026-08-21: "Scrap the folder opening animation it's fucking it
+    // up. Not opening until like 6 taps.")
+    //
+    // It added `.opening`, which carries pointer-events: none, waited out the
+    // animation and then navigated. The class was never removed. Come back to
+    // the shelf with the back gesture and the browser restores the page from
+    // its cache with the class still on the card, so that folder is dead to
+    // the touch from then on. Every folder he had opened stopped working, and
+    // the only thing that revived one was a full reload.
+    location.assign(href);
   });
 }
 

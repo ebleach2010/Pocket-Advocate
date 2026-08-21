@@ -1369,10 +1369,8 @@ body.lightbox-open { overflow: hidden; }
 }
 
 .folder {
-  /* Local layout constants. --fld-tab keeps the tab band and the paper edges
-     peeking behind it in sync; --fld-open matches OPEN_MS in folder.js. */
+  /* --fld-tab keeps the tab band and the paper edges peeking behind it in sync. */
   --fld-tab: 1.68rem;
-  --fld-open: 450ms;
   position: relative; display: block; isolation: isolate;
   /* perspective gives the flap real depth on open. Safe here and only here:
      the shelf never holds the chat, which is position:fixed in full screen. */
@@ -1415,13 +1413,12 @@ body.lightbox-open { overflow: hidden; }
 
 /* The open: the flap swings up on its bottom edge, the sheets lift and fan,
    the whole card comes toward you. Then folder.js navigates. */
-.folder.opening { z-index: 3; pointer-events: none; animation: fld-lift var(--fld-open) cubic-bezier(.2, .85, .3, 1) both; }
-.folder.opening::before { animation: fld-sheet-a var(--fld-open) cubic-bezier(.2, .8, .3, 1) both; }
-.folder.opening::after { animation: fld-sheet-b var(--fld-open) cubic-bezier(.2, .8, .3, 1) both; }
+/* The folder-opening animation is gone (Eric, 2026-08-21). It set
+   pointer-events: none for the length of the animation and then navigated, and
+   the class was never taken off - so coming back to the shelf restored a page
+   whose folders could no longer be tapped at all. A folder opens on the first
+   tap now, with nothing in between. */
 
-@keyframes fld-lift {
-  0% { transform: none; }
-  55% { transform: scale(1.03) translateY(-4px); }
   100% { transform: scale(1.07) translateY(-11px); }
 }
 @keyframes fld-flap {
@@ -1432,13 +1429,7 @@ body.lightbox-open { overflow: hidden; }
   0% { transform: none; }
   100% { transform: translateY(-3px) rotate(-.6deg); }
 }
-@keyframes fld-sheet-a {
-  0% { transform: none; }
-  100% { transform: translateY(-15px) rotate(-2.6deg); }
 }
-@keyframes fld-sheet-b {
-  0% { transform: none; }
-  100% { transform: translateY(-9px) rotate(3.2deg); }
 }
 
 /* ------------------------------------------------------- the open workspace */
@@ -1838,9 +1829,7 @@ body.has-demo-bar .bar { top: var(--demo-bar-h, 2.4rem); }
 .folder { transition: none; }
 .folder:hover,
 .folder:focus-visible { transform: none; }
-.folder.opening,
-.folder.opening::before,
-.folder.opening::after { animation: none; }
+
 .fpage.f-in-l,
 .fpage.f-in-r,
 .fpage.f-fade,

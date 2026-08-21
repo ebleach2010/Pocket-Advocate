@@ -414,7 +414,13 @@ export function mountDemo(role) {
   const auth = makeAuth(admin ? 'admin' : 'client');
   // users/{uid} has to exist, and with the right role, because auth.js reads
   // it to decide which half of the app to show.
+  //
+  // Merged onto whatever the seed put there, not written over it. Replacing it
+  // wholesale threw away the seeded first name, last name and date of birth,
+  // so the booking page thought the profile was incomplete and asked him to
+  // fill it in - which is the account step he does not want in a demo.
   docs.set(`users/${auth.user.uid}`, {
+    ...(docs.get(`users/${auth.user.uid}`) || {}),
     email: auth.user.email,
     name: auth.user.displayName,
     role: admin ? 'admin' : 'client',
