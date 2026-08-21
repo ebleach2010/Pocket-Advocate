@@ -67,8 +67,21 @@ function jsCopy(file, { min = 25 } = {}) {
   const out = [];
   ls.forEach((l, i) => {
     // Text between > and < inside a template literal, i.e. rendered copy.
+    //
+    // The naive version of this printed code at him. `if (a.getTime() >= cutoff
+    // && b.getTime() <= horizon)` has a > and a <, so it captured
+    // "= cutoff && start.getTime()" and put it in the deck as client-facing
+    // copy to review. He reasonably wrote "REMOVE FROM CLIENT UI" beside it.
+    // Nobody ever saw it; this file did.
     for (const m of l.matchAll(/>([^<>{}`$]{25,})</g)) {
       const t = m[1].replace(/\s+/g, ' ').trim();
+      // The > that opened this has to be closing a tag, not half of >= or =>.
+      const before = l[m.index - 1] || '';
+      if ('=<>!-+*/%&|'.includes(before)) continue;
+      // And what came out has to read like a sentence, not like an expression.
+      if (/^[=|&.,)\]]/.test(t)) continue;
+      if (/&&|\|\||=>|===|!==|;\s|\(\)|\.\w+\(/.test(t)) continue;
+      if (t.split(/\s+/).filter((w) => /[a-z]{2}/i.test(w)).length < 4) continue;
       if (t.length >= min && /[a-z]{3}/i.test(t)) out.push({ text: t, where: `${file}:${i + 1}` });
     }
     // Whole-line quoted strings that read as sentences.

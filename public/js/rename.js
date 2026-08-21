@@ -34,15 +34,21 @@ function looksAutomatic(stem) {
  */
 export function askName(file) {
   return new Promise((resolve) => {
-    const { stem, ext } = split(file?.name);
+    const { stem } = split(file?.name);
     const original = String(file?.name || 'file');
-    const isImage = /^image\//.test(file?.type || '');
+    // A browser reports an empty type for .HEIC, which is what an iPhone
+    // camera produces and the whole reason this sheet exists. Going on the
+    // type alone called an iPhone photo a "file" and offered it a blood-test
+    // example to copy.
+    const ext = (split(file?.name).ext || '').toLowerCase();
+    const isImage = /^image\//.test(file?.type || '')
+      || ['.heic', '.heif', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif'].includes(ext);
     const suggestion = looksAutomatic(stem) ? '' : stem;
 
     const overlay = document.createElement('div');
     overlay.className = 'settings-overlay';
     overlay.innerHTML = `
-      <div class="settings-card" role="dialog" aria-modal="true" aria-label="Name this file">
+      <div class="settings-card rename-card" role="dialog" aria-modal="true" aria-label="Name this file">
         <div class="row"><h3 style="margin:0;">Name this ${isImage ? 'photo' : 'file'}</h3></div>
         <p class="dim small" style="margin:.5rem 0 .7rem;">In your own words, what is it? A few words is plenty.
           It makes this far easier to find later, and it tells me what I am looking at.</p>
@@ -51,7 +57,7 @@ export function askName(file) {
           style="width:100%;">
         <p class="dim small" data-was style="margin:.45rem 0 0;"></p>
         <div class="actions" style="margin-top:.8rem; display:flex; gap:.5rem; flex-wrap:wrap;">
-          <button class="btn glow" data-save>Use this name</button>
+          <button class="btn glow" data-save disabled>Use this name</button>
           <button class="btn quiet" data-skip>Keep the original</button>
         </div>
       </div>`;
@@ -60,6 +66,13 @@ export function askName(file) {
     overlay.querySelector('[data-was]').textContent = `Right now it is called ${original}.`;
     const input = overlay.querySelector('[data-name]');
     input.value = suggestion;
+    // The filled button is the loudest thing on the sheet and it starts with an
+    // empty box, because a camera name is never offered back. Tapping it did
+    // exactly what skipping does, with no error and no sign anything happened.
+    const saveBtn = overlay.querySelector('[data-save]');
+    const syncSave = () => { saveBtn.disabled = !input.value.trim(); };
+    syncSave();
+    input.addEventListener('input', syncSave);
 
     let settled = false;
     const done = (v) => {
@@ -75,8 +88,18 @@ export function askName(file) {
       done(typed ? `${typed}${ext}` : original);
     };
     function onKey(e) {
-      if (e.key === 'Escape') done(original);
-      if (e.key === 'Enter' && document.activeElement === input) { e.preventDefault(); save(); }
+      if (e.key === 'Escape') { done(original); return; }
+      if (e.key === 'Enter' && document.activeElement === input) { e.preventDefault(); save(); return; }
+      if (e.key !== 'Tab') return;
+      // It claims aria-modal, so Tab has to stay inside it.
+      const can = [...overlay.querySelectorAll('button, input, [href]')]
+        .filter((el) => !el.disabled && el.offsetParent !== null);
+      if (!can.length) return;
+      const first = can[0];
+      const last = can[can.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      else if (!overlay.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
     }
 
     overlay.querySelector('[data-save]').addEventListener('click', save);
@@ -84,7 +107,11 @@ export function askName(file) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) done(original); });
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
-    input.focus();
+    // Do not raise the keyboard on a short screen. It covers the two buttons,
+    // and on iOS the layout viewport does not shrink, so the overlay has
+    // nothing to scroll and there is no way to reach them at all. They can
+    // tap the box themselves when they want to type.
+    if (window.innerHeight >= 700) input.focus();
   });
 }
 

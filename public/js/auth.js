@@ -185,7 +185,10 @@ export async function hydrateNav() {
       localStorage.setItem('pa-admin-device', '1');
       ensureAdminSession(user);
       el.innerHTML =
-        `<a href="/admin.html">Admin</a> <a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
+        // No "Admin" link: every admin page already carries "Clients", which
+        // goes to the same place. Two names for one door in a seven-item menu
+        // is one item of pure noise.
+        `<a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
     } else {
       el.innerHTML =
         `<a href="/case.html" class="${path === '/case.html' ? 'active' : ''}">My cases</a>` +

@@ -146,8 +146,13 @@
 }
 
 * { box-sizing: border-box; }
+/* min-height, not height. `height: 100%` pins the body BOX to the viewport, and
+   a sticky child can only travel inside its parent's box - so the header stuck
+   for exactly one screenful and then scrolled away. On a 3000px booking page
+   that meant the menu and the settings cog did not exist below y=1200, which
+   is the part of the form where somebody is typing their date of birth. */
 html,
-body { height: 100%; }
+body { min-height: 100%; }
 /* Base type scale. Clients are often unwell or reading on a phone in a
    waiting room — everything below is sized in rem off this root. */
 html { font-size: 17.5px; }
@@ -311,7 +316,11 @@ main { padding-top: .5rem; padding-bottom: 1.2rem; }
 /* Radios and checkboxes in a form are 13px by default, which is smaller than
    anything else you are asked to press. */
 input[type="radio"], input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--cyan); }
-label:has(> input[type="radio"]), label:has(> input[type="checkbox"]) {
+/* Bare radio and checkbox rows only. :has() takes its argument's specificity,
+   so without the :not() this outranked .chip-label and stripped the booking
+   call-method pills of their padding and their 44px. */
+label:has(> input[type="radio"]):not([class]),
+label:has(> input[type="checkbox"]):not([class]) {
   display: flex; align-items: flex-start; gap: .5rem; padding: .35rem 0; min-height: 2.2rem;
 }
 
@@ -371,7 +380,21 @@ label:has(> input[type="radio"]), label:has(> input[type="checkbox"]) {
 .help-dot:hover { box-shadow: var(--glow-c); }
 /* A thumb-sized target. It is a "?" that opens the explanation of the whole
    page, not a decoration. */
-.help-dot { width: 1.9rem; height: 1.9rem; min-width: 1.9rem; font-size: 1rem; }
+.help-dot { width: 2.5rem; height: 2.5rem; min-width: 2.5rem; font-size: 1.05rem; }
+/* The naming sheet. Capped and scrollable for the same reason everything else
+   on a phone is: with a keyboard up there are two hundred usable pixels, and a
+   card that overflows puts both of its buttons somewhere unreachable. */
+/* The overlay reserves 3.5rem above the card for the page behind it. With a
+   keyboard up there is not 3.5rem to spare, so this one sheet takes it back:
+   the card starts near the top and gets the whole screen minus its own margin,
+   which is what puts both buttons inside the viewport. */
+.settings-overlay:has(> .rename-card) { padding-top: 1.1rem; align-items: flex-start; }
+.rename-card { max-height: calc(100dvh - 2.2rem); overflow-y: auto; }
+.rename-card .actions {
+  position: sticky; bottom: -1.1rem; padding: .6rem 0 .2rem; margin-bottom: -.2rem;
+  background: var(--panel); box-shadow: 0 -14px 16px -6px var(--panel);
+}
+
 /* Long-form content: cap the height and scroll inside the card so the close
    button never leaves the screen on a short phone. */
 .help-card { max-width: 30rem; max-height: calc(100dvh - 5rem); overflow-y: auto; }
@@ -389,7 +412,10 @@ label:has(> input[type="radio"]), label:has(> input[type="checkbox"]) {
   background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
   padding: .95rem 1.05rem; margin-bottom: .9rem;
 }
-.row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+/* Wraps. A row that cannot wrap pushes its last child off the right edge on a
+   narrow phone: the CASE / DELIVERED pill was sliced by the screen edge on the
+   chats list, and the calendar's Today button sat entirely off it. */
+.row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .price {
   font: 700 1.05rem/1.3 ui-monospace, "SF Mono", Menlo, monospace;
   color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums;
@@ -539,8 +565,11 @@ summary.btn::-webkit-details-marker { display: none; }
 }
 .day h3 .count { margin-left: auto; font-weight: 600; font-size: .8rem; color: var(--dim); }
 .slots { display: flex; flex-wrap: wrap; gap: .5rem; }
+/* Full width, like the call-method chips above them on the same page. As an
+   inline-block a slot was 180px inside a 282px card, so two thirds of every
+   row looked like a target and was not. */
 .slot {
-  display: inline-block; border: 1px solid var(--line); border-radius: 10px;
+  display: block; width: 100%; border: 1px solid var(--line); border-radius: 10px;
   background: var(--panel-2); color: var(--ink); font: inherit; font-size: 1rem;
   font-weight: 600; padding: .55rem .8rem; cursor: pointer; text-align: left;
   font-variant-numeric: tabular-nums; min-height: 44px;
@@ -700,11 +729,19 @@ button:focus-visible,
   padding: .45rem .6rem; border-radius: 999px; width: fit-content; max-width: 100%;
   background: var(--panel); border: 1px solid var(--line); box-shadow: 0 8px 26px rgba(0,0,0,.45);
 }
+/* Six of these at 2.6rem need 311px of a 320px screen, and a flex child cannot
+   shrink below its own min-width, so the last one hung outside the pill on the
+   dimmed backdrop. The row gets to shrink now, down to a size still worth
+   aiming a thumb at. */
 .react-emoji-btn {
-  border: 0; background: none; cursor: pointer; padding: .15rem .3rem;
+  border: 0; background: none; cursor: pointer; padding: .15rem .2rem;
   font-size: 1.75rem; line-height: 1; border-radius: 50%;
-  min-width: 2.6rem; min-height: 2.6rem;
+  flex: 0 1 auto; min-width: 2.4rem; min-height: 2.6rem;
   transition: transform .12s ease;
+}
+@media (max-width: 360px) {
+  .react-bar { gap: 0; padding: .45rem .35rem; }
+  .react-emoji-btn { min-width: 2rem; font-size: 1.5rem; }
 }
 .react-emoji-btn:hover,
 .react-emoji-btn:focus-visible { transform: scale(1.25); outline: none; }
@@ -742,7 +779,7 @@ button:focus-visible,
   width: 100%; resize: vertical; min-height: 6rem; line-height: 1.5;
   font: inherit; font-size: .95rem;
 }
-.btn.tiny { font-size: .7rem; padding: .55rem .7rem; min-height: 2.4rem; }
+.btn.tiny { font-size: .7rem; padding: .6rem .75rem; min-height: 44px; }
 .btn.tiny.on { border-color: var(--magenta); color: var(--magenta); }
 [data-count].over { color: var(--orange); font-weight: 700; }
 
@@ -1425,9 +1462,16 @@ body.lightbox-open { overflow: hidden; }
   box-shadow: 0 4px 0 -1px var(--manila-edge);
 }
 
-/* The tab strip. z-index 4: under the header at 5, per the budget. */
+/* The tab strip. z-index 4: under the header at 5, per the budget.
+   The offset is the header's real height, measured and published by nav-menu.js,
+   so the strip docks against the bar instead of floating with a transparent
+   band above it that page content slid through. */
 .folder-tabs {
-  position: sticky; top: 3rem; z-index: 4;
+  /* Below the bar's BOTTOM, not its height. The bar itself sticks under the
+     demo strip when there is one, so the strip's height has to be in the sum
+     as well: measuring only the bar's own height docked the tabs 62px behind
+     it at 320. Both numbers are published by the code that owns them. */
+  position: sticky; top: calc(var(--demo-bar-h, 0px) + var(--bar-h, 3rem)); z-index: 4;
   display: flex; align-items: flex-end; gap: .22rem;
   min-height: calc(44px + .75rem);
   margin: 0 -.4rem .7rem; padding: .4rem .5rem 0;

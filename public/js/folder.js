@@ -189,6 +189,21 @@ export function mountPages({ container, pages, storageKey = '', noFlip = [], gro
     if (from) { clearFlip(from.el); from.el.hidden = true; }
     next.el.hidden = false;
     flipIn(next, from, dir);
+    // Bring the tab strip up to the top of the screen, so the page that just
+    // opened is the thing you are looking at. Without this, on a narrow phone,
+    // tapping a tab changed nothing above the fold: the header, the title and
+    // the hint stayed put and only the highlight moved, at the bottom edge.
+    // Only when the strip has actually scrolled out of its resting place, so a
+    // tap at the top of a short page does not yank anything.
+    try {
+      const strip = nav;
+      const barH = parseInt(getComputedStyle(document.documentElement)
+        .getPropertyValue('--bar-h'), 10) || 52;
+      if (strip && strip.getBoundingClientRect().top > barH + 4) {
+        const y = window.scrollY + strip.getBoundingClientRect().top - barH;
+        window.scrollTo({ top: Math.max(0, y), behavior: REDUCED() ? 'auto' : 'smooth' });
+      }
+    } catch { /* scrolling is a nicety, never a requirement */ }
     // Landing on a page is the moment for anything that needs real layout:
     // pinning a chat log to its newest message, clearing an unseen badge.
     try { next.onShow?.(next.el); } catch (err) { console.warn('page onShow:', err); }

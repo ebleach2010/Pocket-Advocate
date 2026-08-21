@@ -104,6 +104,18 @@ export function mountNav() {
     tabs.addEventListener('click', (e) => { if (e.target.closest('a')) closeMenu(); });
   }
 
+  // The tab strip inside a case docks under this bar, and it was offsetting by
+  // a guessed 3rem. Publish the real height so the strip sits against the bar
+  // instead of floating with a transparent band above it that page content
+  // slid through.
+  const publishHeight = () => {
+    const bar = barInner.closest('.bar') || barInner;
+    document.documentElement.style.setProperty(
+      '--bar-h', `${Math.round(bar.getBoundingClientRect().height)}px`);
+  };
+  publishHeight();
+  if (window.ResizeObserver) new ResizeObserver(publishHeight).observe(barInner);
+
   fit();
   // Anything added to the bar later - the cog, a nav link once the sign-in
   // resolves - changes the answer, so re-ask instead of relying on call order.
