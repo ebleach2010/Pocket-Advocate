@@ -465,9 +465,9 @@ function paintSummary(pane) {
 }
 
 let unKey = null;
-function paintUnanswered(pane, rows) {
+function paintUnanswered(pane, rows, readAt) {
   if (!pane) return;
-  const key = JSON.stringify(rows);
+  const key = JSON.stringify([rows, readAt || null]);
   if (key === unKey) return;    // a poll that changed nothing must not steal a tap
   unKey = key;
 
@@ -504,7 +504,10 @@ function paintUnanswered(pane, rows) {
         </ul>
         <p class="dim small un-limit">Read off the transcript, not a ledger.
           Check it before you lean on it.</p>`
-        : '<p class="dim small">Nothing outstanding. Anything you asked for and did not get would be here.</p>'}
+        : readAt
+          ? `<p class="dim small">Nothing outstanding as of the last read, ${esc(new Date(readAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}.
+             This list is rebuilt each time the advisor reads the thread; if you have asked for things since, run an Update on the Advisor tab and check back.</p>`
+          : `<p class="dim small">No completed read yet, so there is nothing to show. Run an Update on the Advisor tab; this list is built from it.</p>`}
     </div>`;
 
   pane.querySelectorAll('[data-again]').forEach((b) => {
@@ -675,7 +678,7 @@ document.addEventListener('pa-panel-state', (e) => {
   if (Array.isArray(d.differential)) lastDifferential = d.differential;
   if (Array.isArray(d.glossary)) paintEducation(folder?.el('education'), d.glossary);
   if (d.about) paintAbout(folder?.el('about'), d.about);
-  if (Array.isArray(d.unanswered)) paintUnanswered(folder?.el('unanswered'), d.unanswered);
+  if (Array.isArray(d.unanswered)) paintUnanswered(folder?.el('unanswered'), d.unanswered, d.updatedAt);
 
   const wl = document.querySelector('[data-working]');
   if (!wl) return;
