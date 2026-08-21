@@ -28,7 +28,7 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat58">
+<link rel="stylesheet" href="/css/site.css?v=stat59">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
@@ -90,6 +90,10 @@
     </p>
   </div>
 
+  <p class="muted small" id="demo-hint" hidden style="margin-top:1rem;">
+    Test suite: <strong>1234</strong> opens the client side, <strong>2345</strong> the advocate side.
+  </p>
+
   <script>
   // Pick the door before paint. The module at the bottom owns this properly,
   // but a module is deferred, and on a slow phone that meant the email box
@@ -103,6 +107,54 @@
       document.getElementById('email-form').hidden = true;
     }
   } catch (e) { /* storage blocked: the email box is already correct */ }
+
+  // The test suite's own front door.
+  //
+  // (Eric, 2026-08-21: "Login 1234 for client 2345 for admin.")
+  //
+  // Two questions, in order. First, is this a place a test suite can exist at
+  // all? That test mirrors DEMO_HOST in worker/index.js exactly: a versioned
+  // preview build, or a dev server. Never thepocketadvocates.com. The Worker is
+  // the real gate — it refuses to serve a single demo file anywhere else — so
+  // on the live site none of the below is wired, the hint never appears, and
+  // 1234 is nothing but a wrong PIN, told so in the usual words.
+  //
+  // Second, it is wired HERE rather than in the module at the bottom, because
+  // this is pure navigation and it has no business needing Firebase to load
+  // first. The test suite has to open even on the day the real app cannot.
+  //
+  // Capture phase on the document, so it runs ahead of the sign-in handlers
+  // and a code never reaches the PIN endpoint.
+  if (/^(?:[0-9a-f]{6,}-[\w-]+\.[\w-]+\.workers\.dev|localhost|127\.0\.0\.1|\[::1\])$/i
+      .test(location.hostname)) {
+    document.documentElement.dataset.demoHost = '1';
+    document.getElementById('demo-hint').hidden = false;
+
+    var DEMO_CODES = { 1234: '/?demo=1', 2345: '/admin.html?demo=admin' };
+    var codeTyped = function () {
+      var ids = ['email', 'pin'];
+      for (var i = 0; i < ids.length; i++) {
+        var el = document.getElementById(ids[i]);
+        var to = el && DEMO_CODES[(el.value || '').trim()];
+        if (to) return to;
+      }
+      return '';
+    };
+    var jump = function (e) {
+      var to = codeTyped();
+      if (!to) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      location.href = to;
+    };
+    document.addEventListener('click', function (e) {
+      if (e.target && e.target.closest && e.target.closest('#send, #pin-go')) jump(e);
+    }, true);
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      if (e.target && e.target.closest && e.target.closest('#email, #pin')) jump(e);
+    }, true);
+  }
   </script>
 
   <div class="card" id="code-form" hidden>

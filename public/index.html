@@ -28,7 +28,7 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat58">
+<link rel="stylesheet" href="/css/site.css?v=stat59">
 <script>
 // The admin's device opens straight to the dashboard — he never books a case.
 // Inline in <head> so there's no flash of the booking page first. The hint is
@@ -37,6 +37,11 @@
 // the client view.
 (function () {
   try {
+    // Never while the test suite is running. His own phone carries the admin
+    // hint, so asking for the CLIENT side of the demo landed him on the
+    // advocate dashboard instead — the one place he was not trying to go.
+    var q = new URLSearchParams(location.search).get('demo');
+    if (q !== '0' && (q || sessionStorage.getItem('pa-demo'))) return;
     if (localStorage.getItem('pa-admin-device') === '1' &&
         localStorage.getItem('pa-open-admin') !== '0') {
       location.replace('/admin.html');
