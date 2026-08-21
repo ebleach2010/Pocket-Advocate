@@ -433,6 +433,8 @@ export default {
         return await handleVerifyCode(request, env);
       if (url.pathname === '/api/auth/device-signin' && request.method === 'POST')
         return await handleDeviceSignin(request, env);
+      if (url.pathname === '/api/tip' && request.method === 'POST')
+        return await handleTip(request, env);
       if (url.pathname === '/api/review' && request.method === 'POST')
         return await handleReviewSubmit(request, env);
       if (url.pathname === '/api/reviews' && request.method === 'GET')
@@ -660,7 +662,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-21-audit';
+const BUILD_TAG = 'v2026-08-21-tipjar';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1089,7 +1091,8 @@ async function handleWebhook(request, env) {
       if (event.type === 'checkout.session.completed') await activateSubscription(env, obj);
     } else if (obj.payment_status && obj.payment_status !== 'paid') {
       // Not settled yet; the success event will come back through here.
-    } else if (obj.metadata?.kind === 'extra') await confirmExtraSession(env, obj);
+    } else if (obj.metadata?.kind === 'tip') await confirmTip(env, obj);
+    else if (obj.metadata?.kind === 'extra') await confirmExtraSession(env, obj);
     else if (obj.metadata?.kind === 'followup') await confirmFollowUpPurchase(env, obj);
     else await createCaseFromSession(env, obj);
   } else if (event.type === 'checkout.session.async_payment_failed') {
@@ -2379,6 +2382,67 @@ const REVIEW_WINDOW_MS = 48 * 3600_000;
  * decides, which is why the copy the client reads promises them nothing about
  * where it appears.
  */
+/**
+ * POST /api/tip  Body: { caseId, amountCents }
+ *
+ * The tip jar. Entirely optional, never gates anything, and grants nothing:
+ * the only record is a ledger entry and a note to Eric. The amount is chosen
+ * on the page (a percentage of what they paid, or their own number); this
+ * only checks it is a sane amount on their own case, then hands them to
+ * Stripe. Charged immediately - it is a checkout, not a saved card.
+ */
+async function handleTip(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+  const amountCents = Math.round(Number(body?.amountCents));
+  if (!(amountCents >= 100 && amountCents <= 500000))
+    return json({ error: 'Pick an amount between $1 and $5,000.' }, 400);
+  const doc = await getDoc(env, `cases/${caseId}`);
+  if (!doc || doc.data.clientUid !== user.uid) return json({ error: 'Not found' }, 404);
+
+  const session = await stripePost(env, '/checkout/sessions', {
+    mode: 'payment',
+    customer_email: doc.data.clientEmail || user.email || undefined,
+    line_items: [{
+      quantity: 1,
+      price_data: {
+        currency: 'usd',
+        unit_amount: amountCents,
+        product_data: { name: 'Tip', description: 'Optional contribution — The Pocket Advocate' },
+      },
+    }],
+    success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&tipped=1`,
+    cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
+    metadata: { kind: 'tip', caseId, uid: user.uid },
+  });
+  return json({ url: session.url });
+}
+
+/** Paid. A ledger entry and a thank-you to nobody but Eric. */
+async function confirmTip(env, session) {
+  const caseId = session.metadata?.caseId;
+  if (!caseId) return;
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c) return;
+  const payments = Array.isArray(c.data.extraPayments) ? c.data.extraPayments : [];
+  if (payments.some((x) => x.sessionId === session.id)) return;
+  payments.push({
+    kind: 'tip', amountCents: session.amount_total || 0, sessionId: session.id, at: new Date(),
+  });
+  await patchDoc(env, `cases/${caseId}`, { extraPayments: payments }, { mask: ['extraPayments'] });
+  const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  for (const a of admins) {
+    await notifyUser(env, a.id, {
+      title: 'Pocket Advocate',
+      body: `${c.data.clientName || 'A client'} left a $${((session.amount_total || 0) / 100).toFixed(2)} tip.`,
+      link: `/admin-case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
+}
+
 async function handleReviewSubmit(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in required' }, 401);
@@ -2394,8 +2458,9 @@ async function handleReviewSubmit(request, env) {
   // something that has not happened is not a review.
   const doc = await getDoc(env, `cases/${caseId}`);
   if (!doc || doc.data.clientUid !== user.uid) return json({ error: 'Not found' }, 404);
-  if (!['delivered', 'closed'].includes(doc.data.status))
-    return json({ error: 'This case has not been delivered yet.' }, 409);
+  // Any time, not only after delivery. (Eric, 2026-08-21: "you're welcome to
+  // leave a review at any point along the way. You don't need to wait until
+  // your case is finished.") Own-case is still the gate that matters.
 
   const prior = await getDoc(env, `reviews/${caseId}`).catch(() => null);
   await patchDoc(env, `reviews/${caseId}`, {

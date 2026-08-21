@@ -104,6 +104,7 @@ export function demoApi(role, store) {
     // it the demo sat on "opening your case now" until it gave up.
     if (path === '/api/case-for-session') return ok({ ready: true, caseId: DEMO_CASE_ID });
     if (path === '/api/portal') return ok({ url: `/subscription.html?demo=${role}` });
+    if (path === '/api/tip') return ok({ url: `/case.html?demo=1&tipped=1` });
 
     // ---- the advisor, from a fixture -------------------------------------
     if (path === '/api/advisor/state') {

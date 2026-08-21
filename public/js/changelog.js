@@ -172,6 +172,11 @@ export async function showVersionCard(isAdmin = false, user = null) {
   // Eric, 2026-08-21: "They should get update notes and then take the tour."
   // step -1 is the notes page. The tour follows it, not the other way round.
   const tour = versions.flatMap((v) => v.tour || []);
+  // If the page carries the tip jar (the client case page does), the flow
+  // ends on a copy of it - "if they haven't viewed the new update this gets
+  // wrapped in with it". The copy works because the jar's buttons are handled
+  // at the document level, not on the original element.
+  const jarSrc = document.querySelector('[data-tip-jar]');
   let step = -1;
 
   const overlay = document.createElement('div');
@@ -190,8 +195,8 @@ export async function showVersionCard(isAdmin = false, user = null) {
       bodyEl.innerHTML = versions.map((v) => `
         <h3>Pocket Advocate ${esc(v.version)}</h3>
         <ul class="whats-new-list">${v.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`).join('');
-      actsEl.innerHTML = tour.length
-        ? `<button class="btn glow" data-next>Take the tour</button>
+      actsEl.innerHTML = (tour.length || jarSrc)
+        ? `<button class="btn glow" data-next>${tour.length ? 'Take the tour' : 'One more thing'}</button>
            <button class="btn ghost" data-close>Not now</button>`
         : '<button class="btn glow" data-close>Got it</button>';
       actsEl.querySelector('[data-next]')?.addEventListener('click', () => { step = 0; draw(); });
@@ -203,14 +208,22 @@ export async function showVersionCard(isAdmin = false, user = null) {
         <p class="wn-body">${esc(t.body)}</p>
         <div class="wn-dots" aria-hidden="true">${tour.map((_, i) =>
           `<span class="${i === step ? 'on' : ''}"></span>`).join('')}</div>`;
+      const lastTour = step === tour.length - 1 && !jarSrc;
       actsEl.innerHTML = `
         <button class="btn quiet" data-back>Back</button>
-        ${step === tour.length - 1
+        ${lastTour
           ? '<button class="btn glow" data-close>Done</button>'
           : '<button class="btn glow" data-next>Next</button>'}
-        ${step === tour.length - 1 ? '' : '<button class="btn ghost" data-close>Skip</button>'}`;
+        ${lastTour ? '' : '<button class="btn ghost" data-close>Skip</button>'}`;
       actsEl.querySelector('[data-back]')?.addEventListener('click', () => { step--; draw(); });
       actsEl.querySelector('[data-next]')?.addEventListener('click', () => { step++; draw(); });
+    } else if (jarSrc) {
+      // The jar itself, word for word, buttons live.
+      bodyEl.innerHTML = jarSrc.outerHTML;
+      actsEl.innerHTML = `
+        <button class="btn quiet" data-back>Back</button>
+        <button class="btn glow" data-close>Done</button>`;
+      actsEl.querySelector('[data-back]')?.addEventListener('click', () => { step--; draw(); });
     }
     actsEl.querySelector('[data-close]').addEventListener('click', close);
   }

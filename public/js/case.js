@@ -122,7 +122,8 @@ function render() {
       <h2 style="margin:0;">Advocacy Case ${HELP_BUTTON}</h2>
       <span class="status-pill ${c.status === 'closed' ? 'closed' : ''}" data-status-pill>${STATUS_LABEL[c.status] || c.status}</span>
     </div>
-    <div data-folder></div>`;
+    <div data-folder></div>
+    <div data-page-footer></div>`;
 
   wireHelp(container);
   container.querySelectorAll('[data-case]').forEach((b) =>
@@ -179,6 +180,7 @@ function render() {
   });
   showNavHint(container.querySelector('[data-folder]'));
   folderEnter(container.querySelector('[data-folder]'));
+  renderPageFooter(container.querySelector('[data-page-footer]'), c);
   renderedFor = currentId;
 }
 
@@ -486,16 +488,22 @@ function renderReview(el, c) {
   const delivered = c.status === 'delivered' || c.status === 'closed';
   const host = el.querySelector('[data-review]');
   if (!host) return;
-  if (!delivered) { host.hidden = true; host.innerHTML = ''; return; }
   host.hidden = false;
   if (host.dataset.done === c.id) return;   // never rebuild a card mid-typing
+
+  // Before delivery the card opens with his standing invitation instead of
+  // the wrap-up prompt. (Eric, 2026-08-21, verbatim.)
+  const ANYTIME = [
+    'If The Pocket Advocate has helped you, you\u2019re welcome to leave a review at any point along the way. You don\u2019t need to wait until your case is finished.',
+    'Share what the experience has been like, what\u2019s been helpful, or anything you think future clients should know.',
+  ];
 
   host.dataset.done = c.id;
   host.innerHTML = `
     <div class="review-card">
-      <h3>How did it go?</h3>
-      ${REVIEW_PROMPT.map((t) => `<p>${esc(t)}</p>`).join('')}
-      <p class="dim small"><em>You still keep all chat logs and documents for your case, untouched.</em></p>
+      <h3>${delivered ? 'How did it go?' : 'Leave a Review Anytime'}</h3>
+      ${(delivered ? REVIEW_PROMPT : ANYTIME).map((t) => `<p>${esc(t)}</p>`).join('')}
+      ${delivered ? `<p class="dim small"><em>You still keep all chat logs and documents for your case, untouched.</em></p>` : ''}
       <div class="stars" data-stars role="radiogroup" aria-label="Rating out of five">
         ${[1, 2, 3, 4, 5].map((n) => `
           <button type="button" class="star" data-star="${n}" role="radio" aria-checked="false"
@@ -506,12 +514,13 @@ function renderReview(el, c) {
         <button class="btn glow" data-review-send disabled>Submit</button>
       </div>
       <p class="error" data-review-error hidden></p>
-      ${c.addOnFollowUp && !c.followUp && !justBoughtFollowUp() ? `
+      ${delivered && c.addOnFollowUp && !c.followUp && !justBoughtFollowUp() ? `
         <p class="dim small follow-note">Your follow-up case review is still on the books. If it's still not scheduled, Eric will promptly discuss with you the best time to follow up with a second review.</p>` : ''}
+      ${delivered ? `
       <p class="dim small"><em>Note: You can export this as a PDF for your records and can hand select which sections you want to export.</em></p>
       <div class="actions">
         <button class="btn quiet" data-export>Export as PDF</button>
-      </div>
+      </div>` : ''}
     </div>`;
 
   let stars = 0;
@@ -528,7 +537,7 @@ function renderReview(el, c) {
       sendBtn.disabled = false;
     }));
 
-  host.querySelector('[data-export]').addEventListener('click', () => openExport(c));
+  host.querySelector('[data-export]')?.addEventListener('click', () => openExport(c));
 
   sendBtn.addEventListener('click', async () => {
     if (!stars) return;
@@ -668,6 +677,107 @@ const followUpPrice = (c) =>
  * card is already saying the follow-up is reserved; the review card below it
  * saying the same thing in different words reads as a glitch.
  */
+/**
+ * The bottom of the case page: the tip jar. Always there, never hidden, and
+ * never in the way. The words are Eric's, verbatim. If the v2.2 update card
+ * has not been seen yet, changelog.js folds a copy of this into the end of
+ * that flow (it looks for [data-tip-jar]).
+ */
+const TIP_QUOTE = [
+  'Professional patient advocacy at this level typically runs $150\u2013$275/hour. Between direct client time, research, and case preparation, my current pricing works out to roughly $6/hour.',
+  'Anything contributed here goes directly back into improving The Pocket Advocate, its tools, experience, and outcomes.',
+  'This is exactly what it sounds like: a tip jar. If you\u2019ve found the service valuable and want to contribute, you can. If not, nothing about the care or effort you receive changes.',
+  'Completely optional. Always appreciated.',
+];
+
+/** Everything they have paid on this case, in cents. */
+function totalPaidCents(c) {
+  const base = c.payment?.amountTotal || c.caseRateCents || 26500;
+  const extras = (Array.isArray(c.extraPayments) ? c.extraPayments : [])
+    .filter((x) => x.kind !== 'tip')
+    .reduce((sum, x) => sum + (Number(x.amountCents) || 0), 0);
+  return base + extras;
+}
+
+function tipJarHtml(c) {
+  const paid = totalPaidCents(c);
+  const pct = (n) => Math.round((paid * n) / 100);
+  const money = (cents) => `$${(cents / 100).toFixed(2)}`;
+  return `
+    <div class="panel" data-tip-jar style="margin-top:1.2rem; text-align:center;">
+      <p style="font-size:2.6rem; margin:.2rem 0 .6rem;" aria-hidden="true">\u{1FAD9}</p>
+      ${TIP_QUOTE.map((t) => `<p class="dim" style="text-align:left;">${esc(t)}</p>`).join('')}
+      <div style="display:flex; flex-direction:column; gap:.5rem; max-width:22rem; margin:1rem auto 0;">
+        <button type="button" class="btn ghost" data-tip-custom>Custom amount</button>
+        <div data-tip-box hidden style="gap:.5rem;">
+          <input type="number" min="1" max="5000" step="1" inputmode="decimal" placeholder="$"
+            data-tip-amount style="flex:1; text-align:center;">
+          <button type="button" class="btn glow" data-tip-send>Add</button>
+        </div>
+        <div style="display:flex; gap:.5rem;">
+          <button type="button" class="btn ghost" style="flex:1;" data-tip-pct="15">15%<br><span class="dim small">${money(pct(15))}</span></button>
+          <button type="button" class="btn ghost" style="flex:1;" data-tip-pct="20">20%<br><span class="dim small">${money(pct(20))}</span></button>
+          <button type="button" class="btn ghost" style="flex:1;" data-tip-pct="25">25%<br><span class="dim small">${money(pct(25))}</span></button>
+        </div>
+        <p class="error" data-tip-error hidden style="margin:0;"></p>
+        <p class="dim small" data-tip-thanks hidden style="margin:0;">Received. Thank you.</p>
+      </div>
+    </div>`;
+}
+
+function renderPageFooter(host, c) {
+  if (!host) return;
+  const delivered = c.status === 'delivered' || c.status === 'closed';
+  host.innerHTML = tipJarHtml(c) + (delivered ? '' : '<div data-review hidden></div>');
+  if (!delivered) renderReview(host, c);
+  if (new URLSearchParams(location.search).get('tipped') === '1') {
+    host.querySelector('[data-tip-thanks]').hidden = false;
+    history.replaceState(null, '', `/case.html?id=${c.id}`);
+  }
+}
+
+// One set of handlers at the document, so the copy changelog.js folds into
+// the update card works exactly like the one at the bottom of the page.
+async function sendTip(jar, amountCents) {
+  const err = jar.querySelector('[data-tip-error]');
+  if (err) err.hidden = true;
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/tip', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ caseId: currentId, amountCents }),
+    });
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+    location.href = out.url;
+  } catch (e) {
+    if (err) { err.textContent = e.message; err.hidden = false; }
+  }
+}
+document.addEventListener('click', (e) => {
+  const jar = e.target.closest?.('[data-tip-jar]');
+  if (!jar) return;
+  const pctBtn = e.target.closest('[data-tip-pct]');
+  if (pctBtn) {
+    const c = cases.find((x) => x.id === currentId);
+    if (c) sendTip(jar, Math.round((totalPaidCents(c) * Number(pctBtn.dataset.tipPct)) / 100));
+    return;
+  }
+  if (e.target.closest('[data-tip-custom]')) {
+    const box = jar.querySelector('[data-tip-box]');
+    box.hidden = false;
+    box.style.display = 'flex';
+    box.querySelector('[data-tip-amount]')?.focus();
+    return;
+  }
+  if (e.target.closest('[data-tip-send]')) {
+    const dollars = Number(jar.querySelector('[data-tip-amount]')?.value);
+    if (!(dollars >= 1)) return;
+    sendTip(jar, Math.round(dollars * 100));
+  }
+});
+
 function justBoughtFollowUp() {
   return new URLSearchParams(location.search).get('followup') === '1';
 }
