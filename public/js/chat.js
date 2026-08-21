@@ -345,10 +345,20 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       bridge?.stageFile(o.attachment);
       return;
     }
-    await post('/api/chat/react', {
+    // Clearing takes the chip off the bubble the moment the Worker confirms,
+    // rather than waiting on the snapshot to come back round. The listener
+    // repaints from Firestore a beat later and agrees with it; if the Worker
+    // refused, post() alerts and this never runs, so the chip stays - which is
+    // the truth. (Eric, 2026-08-21: "Remove reaction isn't working for chat.")
+    const clearing = choice.action === 'clear';
+    const ok = await post('/api/chat/react', {
       kind: kindOf(), id: parentPath[1], msgId: o.msgId,
-      reaction: choice.action === 'clear' ? null : choice.id,
+      reaction: clearing ? null : choice.id,
     }, "Couldn't set that");
+    if (ok && clearing) {
+      const row = log.querySelector(`[data-mid="${CSS.escape(o.msgId)}"]`);
+      row?.querySelectorAll('.msg-react, .msg-emoji-react').forEach((n) => n.remove());
+    }
   }
 
   /** Anything the optional module above wants drawn on the thread. */
@@ -382,9 +392,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error((await res.json()).error || `Failed (${res.status})`);
+      return true;
     } catch (err) {
       // An empty failMsg means fire-and-forget: fail silently.
       if (failMsg) alert(`${failMsg}: ${err.message}`);
+      return false;
     }
   }
 

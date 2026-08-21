@@ -630,7 +630,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-21-live';
+const BUILD_TAG = 'v2026-08-21-unreact';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1647,7 +1647,23 @@ async function handleChatReact(request, env) {
     return json({ error: 'You can only react to the other person\'s messages.' }, 403);
 
   if (!reaction) {
-    await patchDoc(env, ctx.path, { reaction: null }, { mask: ['reaction'] });
+    // Eric, 2026-08-21: "Remove reaction isn't working for chat."
+    //
+    // Two faults here, and the second is what made it invisible.
+    //
+    // It wrote an explicit null rather than removing the field. A document
+    // then carries `reaction: null`, which every reader has to remember to
+    // treat as absent. Passing undefined leaves the field out of the body
+    // while the mask still names it, which is how Firestore is told to DELETE
+    // a field - the reaction stops existing rather than existing as nothing.
+    //
+    // And it announced ok:true without ever looking at whether the write
+    // happened. patchDoc returns false on a failed precondition instead of
+    // throwing, so a clear that did nothing at all still answered "done", the
+    // browser had nothing to alert about, and the chip stayed exactly where it
+    // was. Now a failed clear says so and the client's error path fires.
+    const cleared = await patchDoc(env, ctx.path, { reaction: undefined }, { mask: ['reaction'] });
+    if (!cleared) return json({ error: 'Could not remove that reaction. Try again.' }, 409);
     return json({ ok: true, reaction: null });
   }
 
@@ -1655,7 +1671,8 @@ async function handleChatReact(request, env) {
   const record = isEmoji
     ? { id: reaction, emoji: EMOJI_REACTIONS[reaction], kind: 'emoji', by: user.uid, at: new Date() }
     : { id: reaction, label: CHAT_REACTIONS[reaction].label, kind: 'status', by: user.uid, at: new Date() };
-  await patchDoc(env, ctx.path, { reaction: record }, { mask: ['reaction'] });
+  const wrote = await patchDoc(env, ctx.path, { reaction: record }, { mask: ['reaction'] });
+  if (!wrote) return json({ error: 'Could not set that reaction. Try again.' }, 409);
 
   // Re-applying the same reaction is not news — their phone already said it.
   // Changing it is, so that one notifies. Notify whoever wrote the message.
