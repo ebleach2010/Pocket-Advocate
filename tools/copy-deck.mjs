@@ -344,7 +344,19 @@ ${section(10, 'A finding: the dashes',
 const OUT = process.argv[2] || '.';
 fs.writeFileSync(`${OUT}/deck.html`, html);
 
-const { chromium } = await import('playwright-core');
+// playwright-core is not a dependency of this repo — it is whatever happens to
+// be on the machine running the tool. Take the full package if that is what is
+// installed, and let PLAYWRIGHT_MODULE point at a copy somewhere else entirely.
+// Failing on the import after the HTML is already written was a poor trade: the
+// deck is the deliverable and the PDF is a rendering of it.
+const load = async () => {
+  const tries = [process.env.PLAYWRIGHT_MODULE, 'playwright-core', 'playwright'].filter(Boolean);
+  for (const m of tries) {
+    try { return await import(m); } catch { /* try the next one */ }
+  }
+  throw new Error(`no playwright module found (tried ${tries.join(', ')}); set PLAYWRIGHT_MODULE to a path`);
+};
+const { chromium } = await load();
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
 const page = await b.newPage();
 await page.setContent(html, { waitUntil: 'load' });

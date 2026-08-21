@@ -1,0 +1,1267 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Pocket Advocate — booking copy</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  :root {
+    --ink: #14181f;
+    --dim: #6a7280;
+    --rule: #d8dce3;
+    --accent: #0b6e84;
+    --paper: #fff;
+    --copy-bg: #f6f4ef;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 10.5pt/1.5 "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  h1 { font-size: 22pt; margin: 0 0 .2rem; letter-spacing: -.01em; }
+  .sub { color: var(--dim); font-size: 10pt; margin: 0 0 1.4rem; }
+  .lead { font-size: 10.5pt; line-height: 1.6; margin: 0 0 1.6rem; max-width: 46em; }
+  .sec { break-inside: auto; margin: 0 0 1.6rem; }
+  h2 {
+    font-size: 12.5pt; margin: 1.6rem 0 .3rem; padding-bottom: .25rem;
+    border-bottom: 2px solid var(--accent);
+    break-after: avoid;
+  }
+  h2 .num {
+    display: inline-block; min-width: 1.6em;
+    color: var(--accent); font-variant-numeric: tabular-nums;
+  }
+  .blurb { color: var(--dim); font-size: 9.5pt; margin: 0 0 .8rem; max-width: 44em; }
+  .entry { break-inside: avoid; margin: 0 0 .7rem; padding-left: .6rem; border-left: 2px solid var(--rule); }
+  .meta { display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap; }
+  .what {
+    font-size: 8pt; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--accent);
+  }
+  .where { font: 8pt ui-monospace, "SF Mono", Menlo, monospace; color: var(--dim); }
+  .when { font-size: 8.5pt; color: var(--dim); font-style: italic; margin: .1rem 0 .3rem; }
+  /* HIS WORDS. A different face, on tinted stock, so an edit is unambiguous. */
+  .copy {
+    font: 10.5pt/1.62 Georgia, "Times New Roman", serif;
+    background: var(--copy-bg);
+    padding: .45rem .6rem; margin: 0 0 .3rem;
+    border-radius: 3px;
+    white-space: pre-wrap;
+  }
+  .note {
+    margin: 1rem 0; padding: .7rem .9rem;
+    background: #fff8e6; border-left: 3px solid #d8a12a; border-radius: 3px;
+    font-size: 9.5pt; line-height: 1.55;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; margin: .5rem 0; }
+  th, td { text-align: left; padding: .3rem .4rem; border-bottom: 1px solid var(--rule); }
+  th { font-size: 8pt; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  code { font: 8.5pt ui-monospace, Menlo, monospace; }
+  .toc { columns: 2; font-size: 9.5pt; color: var(--dim); margin: 0 0 1rem; }
+  .toc div { break-inside: avoid; }
+</style>
+
+<h1>Pocket Advocate: the booking copy</h1>
+<p class="sub">Every word a client reads from the landing page to the day their case closes.
+  Generated from the source on 2026-08-21.</p>
+
+<p class="lead">Each entry says what the copy is, where it lives in the code, and when a client
+  sees it. <strong>Your words are set in the serif face on tinted stock;</strong> everything in the
+  sans-serif around them is a label. Mark up the serif and nothing is ambiguous.</p>
+
+<div class="toc">
+  <div>1. The landing page</div>
+  <div>2. About</div>
+  <div>3. Signing in</div>
+  <div>4. Booking, step by step</div>
+  <div>5. The legal texts, in full</div>
+  <div>6. After payment</div>
+  <div>7. Priority Chat</div>
+  <div>8. Every email</div>
+  <div>9. Errors and empty states</div>
+  <div>10. A finding: the dashes</div>
+</div>
+
+
+  <section class="sec">
+    <h2><span class="num">1</span>The landing page</h2>
+    <p class="blurb">The first thing anyone sees. Everything here is read before they trust you.</p>
+    
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h1</span>
+      <span class="where">public/index.html:64</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Go into your next appointment with a plan.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:65</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">I review your labs, imaging, records, and history, then help you sort out what deserves attention, what questions to ask next, and how to present the case clearly to your care team.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:66</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">I'm a professional patient advocate and an autoimmune encephalitis survivor. I know what it is like to have a complicated case that does not fit neatly into a box. Board certification (BCPA) is in progress.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:71</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Everything happens here</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h2</span>
+      <span class="where">public/index.html:75</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">How it works</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/index.html:77</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Choose a time for a phone or video call and give me the basics about your case. Booking takes about two minutes.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/index.html:80</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Review one agreement covering the service, privacy, and recording. It is written to be read, not buried in legal language.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/index.html:83</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Pay $265. Your case includes our call, review of the records you share, and a written report within 7 days. A follow-up session is $75 if you need one.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h3</span>
+      <span class="where">public/index.html:87</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">What happens after you book</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/index.html:89</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Upload the records you want me to review, including labs, imaging, visit notes, or anything else that helps me understand the case.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/index.html:90</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">We go through your history together, including what has been tried, what has helped, what has not, and where you are stuck. The call is recorded and saved in your case file for you.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/index.html:91</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Within 7 days, I send you a written case report that organizes the history, the open questions, and the next steps worth discussing with your care team.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/index.html:92</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">If you want to go back over the same case after the report is delivered, you can add a $75 follow-up session from your case page and use it within 30 days.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h2</span>
+      <span class="where">public/index.html:97</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Who you're hiring</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:99</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">I work with patients facing complicated neurological conditions across the US and Canada. I came to advocacy after living through autoimmune encephalitis myself and learning how hard it is to make a complicated medical story understandable to the people treating you. My role is to stay on your side of the table and help you make the strongest use of the care you already have.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:102</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">I've spoken to hundreds of patients struggling in the medical system, and I have firsthand experience of how debilitating these diseases are, and how disheartening the process can be. My mission statement is simply this: earlier diagnosis and treatment leads to better outcome. My one job is to get you to the finish line faster, so you suffer less and have a better and more robust recovery.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h2</span>
+      <span class="where">public/index.html:107</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Pricing</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:108</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">There are two ways to work with me. No hidden fees.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h3</span>
+      <span class="where">public/index.html:111</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Advocacy Case</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:112</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">A full case review includes one live discussion and a written report within 7 days. A follow-up discussion on the same case is $75.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h3</span>
+      <span class="where">public/index.html:117</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">24/7 Priority Chat</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:118</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime; your message history stays available to you.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h2</span>
+      <span class="where">public/index.html:124</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Straight answers</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">summary</span>
+      <span class="where">public/index.html:126</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Is this medical advice?</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:127</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">No. I do not diagnose, treat, or prescribe. I help you understand the information already in front of you, organize the case, and prepare for conversations with the clinicians who are treating you. If this is an emergency, call 911.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">summary</span>
+      <span class="where">public/index.html:130</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">What happens on the first call?</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:131</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">You walk me through the case in your own words. I ask questions, take notes, and start building the structure of your report. The call is recorded and saved in your private case file for you to keep.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">summary</span>
+      <span class="where">public/index.html:134</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">What if you ask me something I don't want to answer?</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:135</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">You can skip it. In chat, long-press a message and tap the flag if you do not want to answer. No explanation is required; we just move on.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">summary</span>
+      <span class="where">public/index.html:138</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">What do you need from me?</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:139</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">An email address to sign in, plus your name and date of birth so I know whose case I am reviewing. Labs, records, imaging, and other documents are optional and only shared if you choose.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">summary</span>
+      <span class="where">public/index.html:142</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Can I stop?</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:143</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Priority Chat can be canceled anytime, with access continuing through the period you already paid for. Advocacy Case fees are non-refundable once your time is booked, except if I reschedule you more than once; in that situation, you can request a full refund.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">summary</span>
+      <span class="where">public/index.html:146</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Is my information private?</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:147</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Yes. Your data is encrypted, stored in the United States, and accessible only to you and me through the app. Sessions are private, and you can request deletion of your account and case data at any time.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h2</span>
+      <span class="where">public/index.html:152</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">What clients say</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:153</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">★ GOOGLE REVIEWS</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:155</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Read all reviews</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h2</span>
+      <span class="where">public/index.html:159</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Ready when you are.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/index.html:164</span>
+    </div>
+    <div class="when">Before signing in, on the front page.</div>
+    <div class="copy">Pocket Advocate provides patient advocacy, not medical care. I do not diagnose, treat, or prescribe, and this service does not replace your care team. If you are having a medical emergency, call 911. Pocket Advocate currently serves clients in the United States and Canada.</div>
+  </div>
+  </section>
+
+
+  <section class="sec">
+    <h2><span class="num">2</span>About</h2>
+    <p class="blurb">Who you are and what you are not. Read by people deciding whether to book.</p>
+    
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h1</span>
+      <span class="where">public/about.html:47</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">What I can do for you</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h2</span>
+      <span class="where">public/about.html:51</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">The mission</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/about.html:53</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">I work with patients facing complicated neurological conditions across the US and Canada. I came to advocacy after living through autoimmune encephalitis myself and learning how hard it is to make a complicated medical story understandable to the people treating you. My role is to stay on your side of the table and help you make the strongest use of the care you already have.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h2</span>
+      <span class="where">public/about.html:58</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">From me</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/about.html:60</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">I've spoken to hundreds of patients struggling in the medical system, and I have firsthand experience of how debilitating these diseases are, and how disheartening the process can be. My mission statement is simply this: earlier diagnosis and treatment leads to better outcome. My one job is to get you to the finish line faster, so you suffer less and have a better and more robust recovery.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h2</span>
+      <span class="where">public/about.html:65</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">The purpose</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/about.html:66</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">I'm a patient advocate, not a doctor. I do not diagnose or treat. I help you make sense of what your records actually say, identify the questions that still need answers, and prepare for the next conversation with your care team. When it is useful, I can also research physicians, programs, and other resources that fit your case and your travel limits. I serve clients in the US and Canada.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h2</span>
+      <span class="where">public/about.html:70</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">How a case runs</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/about.html:72</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">Choose a time for a phone or video call and give me the basics about your case. Booking takes about two minutes.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/about.html:75</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">Review one agreement covering the service, privacy, and recording. It is written to be read, not buried in legal language.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/about.html:78</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">Pay $265. Your case includes our call, review of the records you share, and a written report within 7 days. A follow-up session is $75 if you need one.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h3</span>
+      <span class="where">public/about.html:82</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">What happens after you book</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/about.html:84</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">Upload the records you want me to review, including labs, imaging, visit notes, or anything else that helps me understand the case.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/about.html:85</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">We go through your history together, including what has been tried, what has helped, what has not, and where you are stuck. The call is recorded and saved in your case file for you.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/about.html:86</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">Within 7 days, I send you a written case report that organizes the history, the open questions, and the next steps worth discussing with your care team.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/about.html:87</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">If you want to go back over the same case after the report is delivered, you can add a $75 follow-up session from your case page and use it within 30 days.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">li</span>
+      <span class="where">public/about.html:88</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">Your case chat stays open while the case is active, so you can send questions, updates, or new documents without starting over.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h2</span>
+      <span class="where">public/about.html:93</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">What you get out of it</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/about.html:94</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">A second set of eyes on a complicated case, a clear summary of the history, the questions that still need answers, and a plan for what to bring to your next appointment. Instead of carrying the whole story in your head, you leave with one organized file you can use with any specialist.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h2</span>
+      <span class="where">public/about.html:98</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">24/7 Priority Chat</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/about.html:99</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">Priority Chat is $50 a month and is separate from case work. You can message me from your phone and see when I am online. I answer as I am available, so response time is not guaranteed. Cancel anytime; your history remains available to you.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h2</span>
+      <span class="where">public/about.html:103</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">The legal basics</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/about.html:104</span>
+    </div>
+    <div class="when">Before signing in, from the nav.</div>
+    <div class="copy">This is patient advocacy, not medical care. There is no diagnosis, treatment, prescribing, doctor-patient relationship, or emergency service. If this is an emergency, call 911. Your data is encrypted, stored in the United States, accessible only to you and me through the app, and deletable on request.</div>
+  </div>
+  </section>
+
+
+  <section class="sec">
+    <h2><span class="num">3</span>Signing in</h2>
+    <p class="blurb">The email-and-code screen. Short, and read while someone is already committed.</p>
+    
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h1</span>
+      <span class="where">public/signin.html:47</span>
+    </div>
+    <div class="when">On the way to booking, or coming back.</div>
+    <div class="copy">Sign in</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/signin.html:49</span>
+    </div>
+    <div class="when">On the way to booking, or coming back.</div>
+    <div class="copy">Signing you in…</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/signin.html:51</span>
+    </div>
+    <div class="when">On the way to booking, or coming back.</div>
+    <div class="copy">Enter your email and I'll send you a 6-digit sign-in code. No password to remember.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/signin.html:60</span>
+    </div>
+    <div class="when">On the way to booking, or coming back.</div>
+    <div class="copy">← Back Continue</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h3</span>
+      <span class="where">public/signin.html:67</span>
+    </div>
+    <div class="when">On the way to booking, or coming back.</div>
+    <div class="copy">Enter your code</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/signin.html:68</span>
+    </div>
+    <div class="when">On the way to booking, or coming back.</div>
+    <div class="copy">I sent a 6-digit code to. It should arrive shortly and expires in 10 minutes.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/signin.html:72</span>
+    </div>
+    <div class="when">On the way to booking, or coming back.</div>
+    <div class="copy">← Back Sign in</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/signin.html:76</span>
+    </div>
+    <div class="when">On the way to booking, or coming back.</div>
+    <div class="copy">Didn't get it? Check Spam or Promotions, or send a new code.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/signin.html:77</span>
+    </div>
+    <div class="when">On the way to booking, or coming back.</div>
+    <div class="copy">This device will stay signed in. If you later add Pocket Advocate to your Home Screen, your phone may ask for one more code because it treats the installed app separately from the browser. After that, you should stay signed in there too.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h3</span>
+      <span class="where">public/signin.html:81</span>
+    </div>
+    <div class="when">On the way to booking, or coming back.</div>
+    <div class="copy">Enter your password</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/signin.html:85</span>
+    </div>
+    <div class="when">On the way to booking, or coming back.</div>
+    <div class="copy">← Back Sign in</div>
+  </div>
+  </section>
+
+
+  <section class="sec">
+    <h2><span class="num">4</span>Booking, step by step</h2>
+    <p class="blurb">Three visible steps under a persistent rail. This is the copy that takes payment.</p>
+    
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:43</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">Our call is recorded so you can revisit it later. The recording is saved in your private case file.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:77</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">Checkout was canceled, so the time you selected is no longer being held. Choose a time to try again.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:150</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">Choose any date and time that works for you. I will review the request and confirm it before the appointment. Times are shown in your time zone.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:172</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">Best phone number for the call</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:182</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">Please use your real name so I know whose case I am reviewing. Your information stays private, like the rest of your case file.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:221</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">No appointments are open right now. I add new availability regularly, so check back soon.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:302</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">Choose a date and time to see it in my time zone.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:353</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">Please choose a time at least 72 hours from now.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:358</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">Please choose a time within the next 10 days.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:366</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">Enter a valid phone number so I can reach you for the call.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:381</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">First and last name, please, so I know whose case I am reviewing.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:393</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">A parent or guardian needs to contact me first</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:421</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">One agreement, three short parts</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:422</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">Open each part and read it through. Once you have reached the end of all three, you can acknowledge the agreement.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:431</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">I have read and acknowledge this</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:498</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">Time requested. Awaiting confirmation.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:508</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">This includes our call and your written report within 7 days.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">booking</span>
+      <span class="where">public/js/book.js:510</span>
+    </div>
+    <div class="when">While booking, steps 1 to 3.</div>
+    <div class="copy">Your selected time is held while you complete payment.</div>
+  </div>
+  </section>
+
+
+  <section class="sec">
+    <h2><span class="num">5</span>The legal texts, in full (4)</h2>
+    <p class="blurb">Verbatim. You have said these are settled, so they are here whole rather than summarised: nothing about them should be a surprise later. The first three are the booking agreements; the last is agreed on the subscribe screen instead.</p>
+    
+  <div class="entry">
+    <div class="meta">
+      <span class="what">Service disclaimer &amp; waiver</span>
+      <span class="where">public/js/waivers.js:37</span>
+    </div>
+    <div class="when">Step 2 of booking. Each has to be read to the end before it can be ticked.</div>
+    <div class="copy">What this service is Pocket Advocate is a patient-advocacy service offered to residents of the United States and Canada. I help you navigate your medical journey: organizing your story, helping you understand your labs and imaging in plain language, preparing questions to bring to your doctors, and identifying options to discuss with your care team. What this service is NOT This service is not medical care. Specifically, it is: • Not diagnosis, not treatment, and not prescriptions. Nothing said in a discussion, written in chat, or included in a report is a diagnosis, a treatment plan, or medical advice. • Not a doctor-patient relationship, and not a substitute for one. I am not acting as your physician or clinician. • Not therapy and not emergency care. If this is an emergency, call 911. The advocacy relationship By purchasing an Advocacy Case you engage me to review the materials you choose to share, discuss them with you, and prepare a written advocacy summary. You remain responsible for all decisions about your health, made together with your own licensed care team. You agree to share the advocacy summary with your care team before acting on anything in it. Assumption of responsibility &amp; limitation of liability You acknowledge that the service provides information, organization, and preparation — not medical judgment. To the maximum extent permitted by law, the service's total liability for any claim arising out of an Advocacy Case is limited to the amount you paid for that case. Payment The Advocacy Case fee (and the optional follow-up session, priced as shown when you buy it) is non-refundable once your time slot is booked. A follow-up session must be used within 30 days of purchase; your case page shows the exact date, and unused follow-ups expire (you'll get a reminder a week before). 24/7 Priority Chat is separate: cancel it anytime, and access simply runs to the end of the period you already paid for. If I need to reschedule I reserve the right to reschedule your discussion. Occasionally something unavoidable comes up on my end, and I would rather move a session than turn up to it without my full attention on you. If that happens you will be offered a new time at no extra cost. If I reschedule your discussion more than once, you are entitled to a full refund on request — that overrides the non-refundable terms above. This covers reschedules I initiate; a change you ask for yourself does not count toward it.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">Privacy &amp; data handling</span>
+      <span class="where">public/js/waivers.js:58</span>
+    </div>
+    <div class="when">Step 2 of booking. Each has to be read to the end before it can be ticked.</div>
+    <div class="copy">What we store Your account email; the files you choose to upload (labs, imaging, records); the recording of your discussion; the written report; and your chat messages. Where it lives All data is stored in Google Firebase (United States region), encrypted in transit and at rest. Payments are processed by Stripe — your card details never touch this application. Who can see it Exactly two parties: you and me, your advocate. Access is enforced by security rules on every document and file. Every discussion is private — there is no public or broadcast option. Retention &amp; deletion Your case file remains available to you indefinitely after your case closes, so you can download or print any document at any time. You may request deletion of your account and all associated data at any time, and it will be honored within 30 days. Breach notification This service is not a HIPAA covered entity, but it treats your health information as sensitive regardless. If a breach affecting your data occurs, you will be notified promptly and candidly, consistent with the FTC Health Breach Notification Rule and applicable state law.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">Recording consent</span>
+      <span class="where">public/js/waivers.js:73</span>
+    </div>
+    <div class="when">Step 2 of booking. Each has to be read to the end before it can be ticked.</div>
+    <div class="copy">Your discussion is recorded Every Advocacy Case discussion is recorded so that the recording can be placed in your private case file for you to revisit, download, and keep. What you are consenting to By acknowledging this form you give written consent for me to record the audio and video of your discussion, whether it takes place by phone or video call. This written consent is collected from every participant before any recording begins, which satisfies the all-party consent laws of states such as California, Washington, and Florida. Where the recording goes Into your case file, visible only to you and me. Every session is private: recordings are never broadcast, published, or shared with anyone else.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">24/7 Priority Chat terms</span>
+      <span class="where">public/js/waivers.js:88</span>
+    </div>
+    <div class="when">On the Priority Chat subscribe screen.</div>
+    <div class="copy">The honest deal, up front Response timing is never guaranteed. Your subscription buys an always-open chat line to me, with my live online status visible. I reply on my own time, when I am available. Sometimes that is minutes; sometimes it is days. That trade-off is the deal, stated plainly, and by subscribing you accept it. Still not medical advice Everything in the service disclaimer applies to chat: nothing I write is a diagnosis, a treatment plan, or medical advice. Chat is for understanding your situation and preparing for your care team — it is not a substitute for one, and it is not for emergencies. If this is an emergency, call 911. Billing &amp; cancellation $50 per month through Stripe, renewed automatically. Cancel anytime from the Manage Subscription page — access runs to the end of the period you already paid for, and your message history stays visible to you. If a renewal payment fails, access likewise runs out at the end of the paid period. Separate from cases The subscription is independent of any Advocacy Case. Case chats live in their case file and close with the case; this chat lives with your subscription.</div>
+  </div>
+  </section>
+
+
+  <section class="sec">
+    <h2><span class="num">6</span>After payment</h2>
+    <p class="blurb">The screen that catches someone the moment their money has left.</p>
+    
+  <div class="entry">
+    <div class="meta">
+      <span class="what">h1</span>
+      <span class="where">public/return.html:47</span>
+    </div>
+    <div class="when">Immediately after Stripe, before the case page.</div>
+    <div class="copy">Finishing up…</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/return.html:48</span>
+    </div>
+    <div class="when">Immediately after Stripe, before the case page.</div>
+    <div class="copy">Payment received. I am opening your case now; this usually takes a few seconds.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/return.html:49</span>
+    </div>
+    <div class="when">Immediately after Stripe, before the case page.</div>
+    <div class="copy">Go to my case</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">p</span>
+      <span class="where">public/return.html:50</span>
+    </div>
+    <div class="when">Immediately after Stripe, before the case page.</div>
+    <div class="copy">Nothing is lost, and you will not be charged twice.</div>
+  </div>
+  </section>
+
+
+  <section class="sec">
+    <h2><span class="num">7</span>Priority Chat</h2>
+    <p class="blurb">The separate subscription. Sold on its own terms, and cancelled on them too.</p>
+    
+  <div class="entry">
+    <div class="meta">
+      <span class="what">subscription</span>
+      <span class="where">public/js/subscribe.js:64</span>
+    </div>
+    <div class="when">On the subscribe page and in the manage screen.</div>
+    <div class="copy">Checkout was canceled and nothing was charged. You can subscribe whenever you are ready.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">subscription</span>
+      <span class="where">public/js/subscribe.js:75</span>
+    </div>
+    <div class="when">On the subscribe page and in the manage screen.</div>
+    <div class="copy">The terms, in plain words</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">subscription</span>
+      <span class="where">public/js/subscribe.js:76</span>
+    </div>
+    <div class="when">On the subscribe page and in the manage screen.</div>
+    <div class="copy">The important part: response time is not guaranteed. Please read the terms before you subscribe.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">subscription</span>
+      <span class="where">public/js/subscribe.js:79</span>
+    </div>
+    <div class="when">On the subscribe page and in the manage screen.</div>
+    <div class="copy">I have read and accept these terms</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">subscription</span>
+      <span class="where">public/js/subscribe.js:84</span>
+    </div>
+    <div class="when">On the subscribe page and in the manage screen.</div>
+    <div class="copy">You'll complete payment through Stripe's secure checkout, so your card details never pass through Pocket Advocate.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">subscription</span>
+      <span class="where">public/subscribe.html:47</span>
+    </div>
+    <div class="when">On the subscribe page and in the manage screen.</div>
+    <div class="copy">24/7 Priority Chat</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">subscription</span>
+      <span class="where">public/subscribe.html:48</span>
+    </div>
+    <div class="when">On the subscribe page and in the manage screen.</div>
+    <div class="copy">A private chat line to me inside Pocket Advocate. Send questions, updates, photos, labs, or records from your phone, and see when I am online.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">subscription</span>
+      <span class="where">public/subscribe.html:51</span>
+    </div>
+    <div class="when">On the subscribe page and in the manage screen.</div>
+    <div class="copy">Loading…</div>
+  </div>
+  </section>
+
+
+  <section class="sec">
+    <h2><span class="num">8</span>Every email</h2>
+    <p class="blurb">19 emails. Nobody reviews these because nobody sees them all at once, and several are read at the worst moment of someone's week.</p>
+    
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:616</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Your case file is yours to keep</div><div class="copy">It has been a couple of days since your report landed, so the case chat is now closed. Everything else stays exactly where it is. Your report, your recording, your documents and the whole chat log remain in your file for as long as you want them, and you can download or print any of it at any time. If something new comes up, you can book another case whenever you need one. Open your case `, }).catch(() =&gt; { /* the close still stands if the mail fails */ }); await notifyUser(env, row.data.clientUid, { title: 'Pocket Advocate', body: 'Your case chat has closed. Your file stays yours.', link: '/case.html', }).catch(() =&gt; {}); } } catch (err) { console.warn('close delivered:', err.message || err); } } // Open, unbooked slots whose start is already past — or inside the booking // lead window — can never be booked. The cron sweeps them out of the database // so the admin calendar and the client picker never show dead inventory. // Booked and actively-held slots are never touched. Deletions are capped per // run: Workers limit outbound calls per invocation, and the cron comes back // every 15 minutes anyway. async function cleanupStaleSlots(env) { try { const open = await queryDocs(env, 'availability', [['state', 'EQUAL', 'open']], 300); const cutoff = Date.now() + LEAD_TIME_HOURS * 3600_000; const stale = open.filter((s) =&gt; new Date(s.data.start).getTime() &lt; cutoff).slice(0, 40); for (const s of stale) await deleteDoc(env, `availability/${s.id}`); if (stale.length) console.log(`slot cleanup: deleted ${stale.length} unbookable open slots`); } catch (err) { console.warn('slot cleanup failed:', err.message || err); }</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:692</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Your Pocket Advocate case is open</div><div class="copy">Payment confirmed — your case file is live. ${whenHtml(start, c.clientTz)} Meeting method: ${escHtml(c.appointment?.method || 'video')}. Upload labs, imaging, or records any time before the call. Open your case ${homeScreenTips(env.PUBLIC_BASE_URL)}</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:1030</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Your 24/7 Priority Chat is live</div><div class="copy">Your chat line to me is open. I reply when I'm available — response timing is never guaranteed, exactly as the terms you accepted say. Open your chat ${homeScreenTips(env.PUBLIC_BASE_URL)}</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:1050</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Your 24/7 Priority Chat has ended</div><div class="copy">Your subscription is canceled. Chat access runs to the end of the period you already paid for, and your message history stays visible to you. </div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:1112</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Something new is waiting in Pocket Advocate</div><div class="copy">There's a new message, document, or update waiting for you in the app. Open Pocket Advocate You'll only get this once a day, and only when there's something you haven't seen yet. </div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to Eric</span>
+      <span class="where">worker/index.js:1300</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: A client requested a time that is not on your calendar</div><div class="copy">${escHtml(m.name || 'A client')} paid for a case and asked for: ${mt} MST This time was not open on your calendar and nothing is reserved. Confirm it or offer another time from the case page. Review the request </div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:1325</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Your Pocket Advocate case is open</div><div class="copy">Payment confirmed — your case file is live. ${whenHtml(start, m.tz)} Meeting method: ${m.method}. Upload labs, imaging, or records any time before the call. Open your case ${homeScreenTips(env.PUBLIC_BASE_URL)}</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:2193</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Your follow-up session is paid for</div><div class="copy">That's booked in principle — I'll be in touch in your case chat to find a time that works. It's yours to use within a month from today. Open your case `, }).catch(() =&gt; { /* the purchase still stands if the mail fails */ }); const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() =&gt; []); for (const a of admins) { await notifyUser(env, a.id, { title: 'Pocket Advocate', body: `${c.data.clientName || 'A client'} bought a follow-up session.`, link: `/admin-case.html?id=${caseId}`, }).catch(() =&gt; {}); } } /** How long a case chat stays open after the report lands. */ const REVIEW_WINDOW_MS = 48 * 3600_000; /** * POST /api/review — the client's five stars and a few words, on their own * delivered case. One review per case: a second submission edits the first * rather than stacking, because a review is a verdict on a case and a case has * one of those. * * Nothing is published by this route. Every review lands unpublished and Eric * decides, which is why the copy the client reads promises them nothing about * where it appears. */ async function handleReviewSubmit(request, env) { const user = await requireUser(request, env); if (!user) return json({ error: 'Sign in required' }, 401); const body = await request.json().catch(() =&gt; ({})); const caseId = typeof body?.caseId === 'string'? body.caseId: ''; if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400); const stars = Math.round(Number(body?.stars)); if (!(stars &gt;= 1 &amp;&amp; stars &lt;= 5)) return json({ error: 'Pick one to five stars.' }, 400); const text = typeof body?.text === 'string'? body.text.trim().slice(0, 1000): '';</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:2856</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Your Pocket Advocate sign-in code: ${code}</div><div class="copy">html: signinCodeEmail(code, env.PUBLIC_BASE_URL), });</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:3094</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Great meeting — your report is on the way</div><div class="copy">It was great talking with you today. Your discussion is done, and the recording will be in your case file for you to revisit anytime. I'm now putting together your written report. Expect it within 7 business days — some reports take slightly longer depending on complexity, and yours will be worth the care. When the report lands, you'll have 48 hours to look it over and ask any questions in your case chat before the case wraps up. Your file — report, recording, everything — stays yours forever either way. Open your case </div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:3113</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Your Pocket Advocate report is ready</div><div class="copy">Your written report is in your case file — yours to download, print, and keep forever. Share it with your care team. Take a couple of days to read it over — the case chat stays open for 48 hours, so ask me anything it raises while it's fresh. Open your case </div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:3128</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Your requested time is confirmed</div><div class="copy">Good news — the time you asked for works. Your discussion is booked for: ${whenHtml(new Date(appt.start), doc.data.clientTz)} Open your case </div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:3147</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: That time did not work — let us find another</div><div class="copy">I'm sorry — the time you asked for isn't one I can make. Nothing is lost: your case is open and paid, and I'll offer you another time shortly. If a particular window suits you better, message me in your case chat and I'll work around it. Open your case </div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:3345</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Your Pocket Advocate appointment moved</div><div class="copy">Your discussion with me is now scheduled for: ${whenHtml(start, c.clientTz)} Open your case </div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:3368</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Your follow-up session is booked</div><div class="copy">Your follow-up discussion with me is scheduled: ${whenHtml(start, c.clientTz)} Open your case </div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:3397</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: A session with me is booked</div><div class="copy">${escHtml(label)} — no charge. ${whenHtml(start, c.clientTz)} Open your case </div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:3444</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: I scheduled a session for you — payment needed to confirm</div><div class="copy">${escHtml(label)} — $${(amountCents / 100).toFixed(2)}. ${whenHtml(start, c.clientTz)} The time is held for 24 hours. Pay to confirm, or open your case page. </div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:3487</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Your session is confirmed</div><div class="copy">Payment received — you're booked: ${whenHtml(start, c.clientTz)} Open your case </div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">to the client</span>
+      <span class="where">worker/index.js:3511</span>
+    </div>
+    <div class="when">Sent automatically.</div>
+    <div class="copy">SUBJECT: Your follow-up session expires in one week</div><div class="copy">You bought a follow-up discussion on your case, and it expires one month after your first discussion: ${whenHtml(new Date(expires), c.clientTz)} To use it, message me in your case chat and I'll get it scheduled. Open your case </div>
+  </div>
+  </section>
+
+
+  <section class="sec">
+    <h2><span class="num">9</span>Errors and empty states</h2>
+    <p class="blurb">The copy nobody reviews, read exactly when something has gone wrong.</p>
+    
+  <div class="entry">
+    <div class="meta">
+      <span class="what">error / empty</span>
+      <span class="where">public/js/book.js:77</span>
+    </div>
+    <div class="when">When something fails or a list is empty.</div>
+    <div class="copy">Checkout was canceled, so the time you selected is no longer being held. Choose a time to try again.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">error / empty</span>
+      <span class="where">public/js/book.js:221</span>
+    </div>
+    <div class="when">When something fails or a list is empty.</div>
+    <div class="copy">No appointments are open right now. I add new availability regularly, so check back soon.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">error / empty</span>
+      <span class="where">public/js/case.js:243</span>
+    </div>
+    <div class="when">When something fails or a list is empty.</div>
+    <div class="copy">A copy is in your email. Nothing else is needed from you before the call, though labs and imaging help if you have them.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">error / empty</span>
+      <span class="where">public/js/case.js:416</span>
+    </div>
+    <div class="when">When something fails or a list is empty.</div>
+    <div class="copy">Nothing here yet. Add files above, or share them in chat and long-press to save.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">error / empty</span>
+      <span class="where">public/js/case.js:488</span>
+    </div>
+    <div class="when">When something fails or a list is empty.</div>
+    <div class="copy">Your follow-up case review is still on the books. If it's still not scheduled, Eric will promptly discuss with you the best time to follow up with a second review.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">error / empty</span>
+      <span class="where">public/js/case.js:679</span>
+    </div>
+    <div class="when">When something fails or a list is empty.</div>
+    <div class="copy">Same case. Same file. No starting over.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">error / empty</span>
+      <span class="where">public/js/subscribe.js:64</span>
+    </div>
+    <div class="when">When something fails or a list is empty.</div>
+    <div class="copy">Checkout was canceled and nothing was charged. You can subscribe whenever you are ready.</div>
+  </div>
+  <div class="entry">
+    <div class="meta">
+      <span class="what">error / empty</span>
+      <span class="where">public/js/subscribe.js:76</span>
+    </div>
+    <div class="when">When something fails or a list is empty.</div>
+    <div class="copy">The important part: response time is not guaranteed. Please read the terms before you subscribe.</div>
+  </div>
+  </section>
+
+
+  <section class="sec">
+    <h2><span class="num">10</span>A finding: the dashes</h2>
+    <p class="blurb">You told me em dashes are an AI giveaway and that the advisor must never use one. Your own copy has 42 of them. Code comments are separated out, because nobody reads those.</p>
+    <table>
+     <tr><th>File</th><th class="n">In copy</th><th class="n">In comments</th></tr>
+     <tr><td><code>public/index.html</code></td><td class="n">1</td><td class="n">1</td></tr><tr><td><code>public/about.html</code></td><td class="n">0</td><td class="n">1</td></tr><tr><td><code>public/signin.html</code></td><td class="n">0</td><td class="n">1</td></tr><tr><td><code>public/return.html</code></td><td class="n">1</td><td class="n">3</td></tr><tr><td><code>public/js/book.js</code></td><td class="n">1</td><td class="n">0</td></tr><tr><td><code>public/js/case.js</code></td><td class="n">1</td><td class="n">4</td></tr><tr><td><code>public/js/waivers.js</code></td><td class="n">6</td><td class="n">4</td></tr><tr><td><code>worker/index.js</code></td><td class="n">29</td><td class="n">58</td></tr><tr><td><code>worker/email.js</code></td><td class="n">3</td><td class="n">3</td></tr>
+   </table>
+   <div class="note"><strong>Three of them are email subject lines</strong>, which are the most
+     visible strings in the whole product: they show in a notification, on a lock screen, and in
+     an inbox list. If you want them gone, those three are worth doing first.</div>
+   
+     <div class="entry">
+       <div class="meta"><span class="what">public/index.html</span><span class="where">1 in copy</span></div>
+       <div class="copy">44: } catch (e) { /* storage blocked — land normally */ }</div>
+     </div>
+     <div class="entry">
+       <div class="meta"><span class="what">public/return.html</span><span class="where">1 in copy</span></div>
+       <div class="copy">84: } catch { /* transient — keep polling */ }</div>
+     </div>
+     <div class="entry">
+       <div class="meta"><span class="what">public/js/book.js</span><span class="where">1 in copy</span></div>
+       <div class="copy">50: requestedStart: null, // Date — a time asked for that isn't on the calendar</div>
+     </div>
+     <div class="entry">
+       <div class="meta"><span class="what">public/js/case.js</span><span class="where">1 in copy</span></div>
+       <div class="copy">321: &lt;p class="small" style="margin:0 0 .4rem;"&gt;&lt;strong&gt;${esc(c.pendingExtra.label)}&lt;/strong&gt; —</div>
+     </div>
+     <div class="entry">
+       <div class="meta"><span class="what">public/js/waivers.js</span><span class="where">6 in copy</span></div>
+       <div class="copy">50: &lt;p&gt;You acknowledge that the service provides information, organization, and preparation — not medical judgment. To the maximum extent permitted by law</div><div class="copy">55: &lt;p&gt;&lt;strong&gt;If I reschedule your discussion more than once, you are entitled to a full refund on request&lt;/strong&gt; — that overrides the non-refundable t</div><div class="copy">64: &lt;p&gt;All data is stored in Google Firebase (United States region), encrypted in transit and at rest. Payments are processed by Stripe — your card detail</div><div class="copy">66: &lt;p&gt;Exactly two parties: &lt;strong&gt;you&lt;/strong&gt; and &lt;strong&gt;me, your advocate&lt;/strong&gt;. Access is enforced by security rules on every document and file. </div><div class="copy">94: &lt;p&gt;Everything in the service disclaimer applies to chat: nothing I write is a diagnosis, a treatment plan, or medical advice. Chat is for understandin</div><div class="copy">96: &lt;p&gt;$50 per month through Stripe, renewed automatically. Cancel anytime from the Manage Subscription page — access runs to the end of the period you al</div>
+     </div>
+     <div class="entry">
+       <div class="meta"><span class="what">worker/index.js</span><span class="where">29 in copy</span></div>
+       <div class="copy">693: html: `&lt;p&gt;Payment confirmed — your case file is live.&lt;/p&gt;</div><div class="copy">1031: html: `&lt;p&gt;Your chat line to me is open. I reply when I'm available — response</div><div class="copy">1326: html: `&lt;p&gt;Payment confirmed — your case file is live.&lt;/p&gt;</div><div class="copy">1368: return { error: 'Your date of birth looks invalid — re-enter it.', code: 400 };</div><div class="copy">1374: return { error: 'Pocket Advocate serves adults — a parent or guardian needs to reach out first.', code: 403 };</div><div class="copy">1889: if (!text || text.length &gt; 2000) return json({ error: 'Message must be 1–2000 characters.' }, 400);</div><div class="copy">1958: } catch { /* client gone — the cron queue covers an interrupted analysis */ }</div><div class="copy">2194: html: `&lt;p&gt;That's booked in principle — I'll be in touch in your case chat to</div>
+     </div>
+     <div class="entry">
+       <div class="meta"><span class="what">worker/email.js</span><span class="where">3 in copy</span></div>
+       <div class="copy">27: &lt;li&gt;Tap the &lt;strong&gt;Share&lt;/strong&gt; button — the square with an arrow pointing up&lt;/li&gt;</div><div class="copy">36: &lt;p style="margin:0; color:#555;"&gt;You can skip this and sign in right here instead — it will still work.&lt;/p&gt;</div><div class="copy">55: &lt;li&gt;Tap the &lt;strong&gt;Share&lt;/strong&gt; button — the square with an arrow pointing up&lt;/li&gt;</div>
+     </div>
+  </section>
