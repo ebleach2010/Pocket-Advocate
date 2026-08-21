@@ -159,7 +159,12 @@ html { font-size: 17.5px; }
 /* The page never scrolls sideways — anything wider than the screen scrolls
    inside its own box (nav tabs, calendar), not by dragging the whole page. */
 html,
-body { overflow-x: hidden; overflow-x: clip; }
+/* On BOTH html and body. iOS Safari pans the whole viewport sideways when
+   anything extends the ROOT element, and a clip on body alone does not stop
+   that (Eric, 2026-08-21, iPhone: "There's side to side scroll"). Nothing in
+   this app ever wants the page itself scrolling horizontally; wide content
+   scrolls inside its own container. */
+html, body { overflow-x: hidden; overflow-x: clip; }
 img,
 video { max-width: 100%; }
 body {

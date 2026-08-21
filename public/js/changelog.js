@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.2';
+export const VERSION = '2.3';
 
 /**
  * Newest first.
@@ -25,8 +25,36 @@ export const VERSION = '2.2';
  * person reading it.
  *
  * A version with an empty list never shows a card at all.
+ *
+ * ERIC'S VERSIONING RULE (2026-08-21, his words condensed): every push to
+ * main is a version, even when it is not loudly announced. Each push bumps
+ * VERSION here (and the worker's copy for /api/version), and the NEWEST
+ * entry's `client` list is REPLACED with that push's changes - what was
+ * added CLIENT SIDE ONLY, plus bug fixes. Never anything from his side.
+ * `quiet: true` means footer-only: the version and its notes show behind
+ * the small "Version notes" button at the bottom of the page (client and
+ * admin alike), but no update card and no tour ever open for it. A loud
+ * release omits `quiet` and may carry a `tour`; only Eric calls for one of
+ * those.
+ *
+ * His two commands (verbatim, 2026-08-21): "push as full update" = a loud
+ * entry, existing clients get the update card with bullet points. "push as
+ * silent update" = a quiet entry, footer only, and anything NEW clients
+ * need to know goes into the onboarding tutorial instead, replacing old
+ * copy there if necessary. An unspecified push is silent.
  */
 export const CHANGELOG = [
+  {
+    version: '2.3',
+    quiet: true,
+    client: [
+      'When you write in chat, it first asks what your message is about, so urgent things reach me marked urgent and nothing gets lost in a pile.',
+      'A "For our next call" list now lives right under the chat. Add anything to it, anytime. We go through the list together on the call, where it gets real attention instead of a rushed reply.',
+      'Files you share in chat file themselves under records automatically.',
+      'Bug fix: chat opens at your newest message instead of somewhere in the middle of history.',
+      'Bug fix: removing a reaction from a message works again.',
+    ],
+  },
   {
     version: '2.2',
     // A guided tour rather than a list. Each card is one page of their case,
@@ -142,7 +170,9 @@ export function unseenVersions(extra = {}) {
   const seen = seenVersion();
   if (!seen) return [];
   return CHANGELOG
-    .filter((v) => rank(v.version) > rank(seen))
+    // Quiet versions never open a card or a tour; their notes live behind the
+    // "Version notes" button in the page footer instead (version-note.js).
+    .filter((v) => !v.quiet && rank(v.version) > rank(seen))
     .map((v) => ({
       version: v.version,
       // `extra` is Eric's half, fetched from the admin route. A client never
