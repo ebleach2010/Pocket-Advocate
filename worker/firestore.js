@@ -89,16 +89,32 @@ export async function batchCreate(env, entries) {
  *
  * `orderBy` takes Firestore's syntax: "ts" ascending, "ts desc" descending.
  */
-export async function listDocs(env, collectionPath, { pageSize = 100, orderBy } = {}) {
-  const params = new URLSearchParams({ pageSize: String(pageSize) });
-  if (orderBy) params.set('orderBy', orderBy);
-  const res = await authedFetch(env, `${baseUrl(env)}/${collectionPath}?${params}`);
-  if (!res.ok) throw new Error(`firestore list ${collectionPath}: ${res.status} ${await res.text()}`);
-  const out = await res.json();
-  return (out.documents || []).map((d) => ({
-    id: d.name.split('/').pop(),
-    data: fromFields(d.fields || {}),
-  }));
+/**
+ * List a collection.
+ *
+ * `all: true` follows nextPageToken to the end. Without it this returns one
+ * page and no indication that there was another, which is fine for the callers
+ * that want a bounded read (a shelf, a dropdown) and quietly wrong for anything
+ * that means "every document". A sweep that believes it saw everything is worse
+ * than one that knows it did not.
+ */
+export async function listDocs(env, collectionPath, { pageSize = 100, orderBy, all = false } = {}) {
+  const out = [];
+  let pageToken = '';
+  do {
+    const params = new URLSearchParams({ pageSize: String(pageSize) });
+    if (orderBy) params.set('orderBy', orderBy);
+    if (pageToken) params.set('pageToken', pageToken);
+    const res = await authedFetch(env, `${baseUrl(env)}/${collectionPath}?${params}`);
+    if (!res.ok) throw new Error(`firestore list ${collectionPath}: ${res.status} ${await res.text()}`);
+    const page = await res.json();
+    for (const d of page.documents || []) {
+      out.push({ id: d.name.split('/').pop(), data: fromFields(d.fields || {}) });
+    }
+    // One page unless asked, so every existing caller behaves exactly as before.
+    pageToken = all ? (page.nextPageToken || '') : '';
+  } while (pageToken);
+  return out;
 }
 
 /** Delete a document. Returns true (idempotent — deleting a missing doc is fine). */

@@ -13,8 +13,8 @@ export function mountBanner(role) {
   bar.className = 'demo-bar';
   bar.innerHTML = `
     <span class="demo-dot" aria-hidden="true"></span>
-    <span class="demo-what"><strong>Demo.</strong> Invented case, nothing saved anywhere,
-      no payments, no email. ${role === 'admin' ? "You are looking at the advocate's side." : 'You are looking at what a client sees.'}</span>
+    <span class="demo-what"><strong>Demo.</strong>
+      <span class="demo-more">Invented case. Nothing saved, charged or sent.</span></span>
     <span class="demo-acts">
       <a class="btn ghost" href="${role === 'admin' ? '/case.html?demo=1' : '/admin.html?demo=admin'}"
         >${role === 'admin' ? 'Client side' : 'Advocate side'}</a>
@@ -22,6 +22,33 @@ export function mountBanner(role) {
     </span>`;
   document.body.prepend(bar);
   document.body.classList.add('has-demo-bar');
+
+  // The strip wraps to a different number of lines at every width, and the
+  // sticky page header docks underneath it. A guessed height meant the header
+  // slid under the strip and vanished the moment anything scrolled, so the
+  // real height is published and kept current through a rotation.
+  const publish = () => document.documentElement.style.setProperty(
+    '--demo-bar-h', `${Math.round(bar.getBoundingClientRect().height)}px`);
+  publish();
+  if (window.ResizeObserver) new ResizeObserver(publish).observe(bar);
+  else window.addEventListener('resize', publish);
+
+  // Loud at the top of the page, slim once you start reading. Three lines of
+  // banner pinned over every screen fights everything the tabs were built to
+  // fix, and the sentence has done its job by the time anyone scrolls: what is
+  // still worth keeping in reach is the word Demo and the two buttons.
+  //
+  // Two thresholds, not one. Slimming removes about fifty pixels of page, which
+  // moves the scroll position back up; on a single threshold that lands you
+  // under it again, the strip grows, and the page shivers between the two
+  // states for as long as you sit there.
+  const slim = () => {
+    const y = window.scrollY;
+    if (y > 90) bar.classList.add('slim');
+    else if (y < 20) bar.classList.remove('slim');
+  };
+  slim();
+  window.addEventListener('scroll', slim, { passive: true });
 
   bar.querySelector('[data-demo-reset]').addEventListener('click', () => {
     reset();

@@ -781,6 +781,10 @@ body.chat-full-open { overflow: hidden; }
 @media (prefers-reduced-motion: no-preference) {
 html { scroll-behavior: smooth; }
 }
+/* Every in-page jump on this site landed underneath the sticky header, which
+   is the header's own height of the thing you jumped to, gone. The demo strip
+   stacks on top of that and publishes its own measured height. */
+html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
 
 /* ---- landing / about ---- */
 /* Consistent vertical rhythm between landing and about sections. */
@@ -1435,8 +1439,17 @@ button.attach-btn {
   color: #07090F; border-color: rgba(7, 9, 15, .45); background: rgba(255, 255, 255, .35);
 }
 .demo-bar .btn:hover { background: rgba(255, 255, 255, .6); }
-/* The sticky header sits under the strip rather than over it. */
-body.has-demo-bar .bar { top: 2.4rem; }
+/* Scrolled: the sentence goes and the word, the dot and the buttons close up
+   onto one row. Same strip, a third of the height. */
+.demo-bar.slim { align-items: center; }
+.demo-bar.slim .demo-more { display: none; }
+.demo-bar.slim .demo-what { flex: 0 0 auto; }
+.demo-bar.slim .demo-dot { margin-top: 0; }
+/* The sticky header sits under the strip rather than over it. The height comes
+   from the strip itself, measured after it wraps: a fixed value was short by
+   about ninety pixels on a phone, so the header slid underneath and disappeared
+   as soon as anything scrolled. */
+body.has-demo-bar .bar { top: var(--demo-bar-h, 2.4rem); }
 
 /* --------------------------------------------------------- saved messages
    Both sides get this, and on both sides it is private: the bookmark lives in

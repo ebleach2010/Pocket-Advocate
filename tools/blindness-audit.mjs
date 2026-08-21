@@ -47,6 +47,8 @@ const HARD = [
   /machine.generated/i,
   /auto.generated/i,
   /\bthe model\b/i,
+  /\ba model\b/i,
+  /from a model/i,
 ];
 
 // Internal identifiers. None of these belong in a file a client downloads, and
@@ -91,7 +93,7 @@ const ADMIN_ASSETS = [
   '/js/admin.js', '/js/admin-case.js', '/js/admin-chats.js', '/js/admin-calendar.js',
   '/js/admin-availability.js', '/js/admin-dictionary.js',
   '/js/advisor.js', '/js/notes.js', '/js/duty.js', '/js/prep.js',
-  '/js/drawer.js', '/js/seen.js', '/css/admin.css',
+  '/js/drawer.js', '/js/seen.js', '/js/panel-bridge.js', '/css/admin.css',
   // The demo's fixtures are advisor output, so they are gated the same way. A
   // browser that never asked for the demo, which is what this audit is,
   // should not be able to read them either.

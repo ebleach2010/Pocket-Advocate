@@ -32,13 +32,19 @@ export const statusById = (id) => STATUS_REACTIONS.find((r) => r.id === id);
 
 /**
  * Open the menu for one message.
- * opts: { canReact, canUseStatus, canEdit, canPass, canStage, canSave,
- *         savedAlready, passedByMe, hasReaction, hasText, current }
+ * opts: { canReact, canUseStatus, canEdit, canPass, canSave, savedAlready,
+ *         passedByMe, hasReaction, hasText, current, extraRows }
+ *
+ * extraRows: [{ act, emoji, label }] the caller wants in the sheet. Used for
+ * rows whose meaning belongs to the caller rather than to the chat.
  * Resolves to { action: 'react', id } | { action: 'clear' } | { action: 'edit' }
  * | { action: 'copy' } | { action: 'stage' }, or undefined if dismissed.
  */
+const esc = (s) => String(s).replace(/[&<>"']/g, (ch) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
 export function openMessageMenu(opts) {
-  const { canReact, canUseStatus, canEdit, canPass, canStage, canSave, savedAlready, passedByMe, hasReaction, hasText, current } = opts;
+  const { canReact, canUseStatus, canEdit, canPass, canSave, savedAlready, passedByMe, hasReaction, hasText, current, extraRows = [] } = opts;
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'msg-menu-overlay';
@@ -58,7 +64,7 @@ export function openMessageMenu(opts) {
                 <span class="react-emoji">${r.emoji}</span><span>${r.label}</span>
               </button>`).join('')}
             <p class="msg-menu-note">They get a notification saying exactly this. Nothing from the message itself is included.</p>` : ''}
-          ${canStage ? '<button class="msg-menu-row" data-act="stage"><span class="react-emoji">👨‍⚕️</span><span>Stage this file for review</span></button>' : ''}
+          ${extraRows.map((r) => `<button class="msg-menu-row" data-act="${esc(r.act)}"><span class="react-emoji">${esc(r.emoji || '')}</span><span>${esc(r.label)}</span></button>`).join('')}
           ${hasReaction ? '<button class="msg-menu-row" data-act="clear"><span class="react-emoji">✕</span><span>Remove reaction</span></button>' : ''}
           ${canEdit ? '<button class="msg-menu-row" data-act="edit"><span class="react-emoji">✏️</span><span>Edit message</span></button>' : ''}
           ${canPass ? '<button class="msg-menu-row" data-act="pass"><span class="react-emoji">⚐</span><span>Pass on this — no questions asked</span></button>' : ''}
@@ -95,52 +101,6 @@ export function openMessageMenu(opts) {
  * in-place editor mid-sentence if the other person wrote while you were typing.
  * Resolves to the new text, or undefined if cancelled.
  */
-/**
- * The sheet behind a flagged message. Shows what is wrong and the repaired
- * wording, and returns 'fix', 'leave', or undefined if he backs out.
- *
- * Deliberately not a confirm(): this needs to show two blocks of text, and
- * the codebase has already been bitten once by a native dialog that does
- * nothing at all inside an iOS home-screen app.
- */
-export function openCorrection(issue, fixed) {
-  return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.className = 'settings-overlay';
-    overlay.innerHTML = `
-      <div class="settings-card fix-card" role="dialog" aria-modal="true" aria-label="Worth a second look">
-        <div class="row"><h3 style="margin:0;">Worth a second look</h3>
-          <button class="btn quiet" data-cancel>Close</button></div>
-        <p class="fix-issue"></p>
-        <div class="fix-text"></div>
-        <div class="actions" style="margin-top:.7rem;">
-          <button class="btn" data-fix>Use this wording</button>
-          <button class="btn quiet" data-leave>Leave it as is</button>
-        </div>
-      </div>`;
-    // textContent, not innerHTML: both strings come back from a model.
-    overlay.querySelector('.fix-issue').textContent = issue || '';
-    overlay.querySelector('.fix-text').textContent = fixed || '';
-
-    let settled = false;
-    const done = (v) => {
-      if (settled) return;
-      settled = true;
-      overlay.remove();
-      document.removeEventListener('keydown', onKey);
-      resolve(v);
-    };
-    function onKey(e) { if (e.key === 'Escape') done(undefined); }
-
-    overlay.querySelector('[data-cancel]').addEventListener('click', () => done(undefined));
-    overlay.querySelector('[data-fix]').addEventListener('click', () => done('fix'));
-    overlay.querySelector('[data-leave]').addEventListener('click', () => done('leave'));
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(undefined); });
-    document.addEventListener('keydown', onKey);
-    document.body.appendChild(overlay);
-  });
-}
-
 /**
  * A note alongside a saved message. Resolves with the text, or undefined if
  * he backs out. Empty is a real answer: a bookmark with no note is still a

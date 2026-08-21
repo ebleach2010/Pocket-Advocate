@@ -9,18 +9,11 @@
 // implicitly, because that is how ES modules work; nothing else changes.
 
 /**
- * Demo mode, and the two gates on it.
+ * Preview mode. Off unless the host is a per-deployment preview build, which
+ * the server decides and this only mirrors: the live site cannot enter it
+ * whatever a URL says, and the modules it needs are not served there at all.
  *
- * First: NEVER on the production host. Not a config flag, not an env var, a
- * hostname check that fails closed. thepocketadvocates.com cannot enter demo
- * mode whatever the URL says.
- *
- * Second: it is entirely browser-side. No demo branch exists in the Worker, no
- * magic code, no bypass in handleVerifyCode. The worst a leaked demo link can
- * do is let a stranger play with invented data in their own tab.
- *
- * `?demo=1` is the client, `?demo=admin` is his side. It sticks for the tab so
- * a navigation (booking, the return page) stays in the demo; `?demo=0` leaves.
+ * Nothing about the authentication path changes here or in the Worker.
  */
 const DEMO = (() => {
   try {
@@ -76,5 +69,5 @@ export const {
   onDisconnect,
 } = impl;
 
-/** '' when this is the real thing, otherwise the demo role. */
+/** '' in normal use. */
 export const DEMO_MODE = DEMO;

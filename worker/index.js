@@ -157,7 +157,7 @@ const DIGEST_MIN_AGE_MS = 10 * 60_000;
 // /admin.html at /admin as well, and a gate that only knows one spelling is
 // not a gate. Trailing slash likewise.
 const ADMIN_ASSET =
-  /^\/(admin[\w-]*(\.html)?\/?|js\/(admin[\w-]*|advisor|notes|duty|prep|drawer|seen)\.js|css\/admin\.css)$/;
+  /^\/(admin[\w-]*(\.html)?\/?|js\/(admin[\w-]*|advisor|notes|duty|prep|drawer|seen|panel-bridge)\.js|css\/admin\.css)$/;
 
 /**
  * The demo. Its fixtures carry advisor output, so it is subject to the same
@@ -169,6 +169,27 @@ const ADMIN_ASSET =
  * this is the second of two independent gates rather than the only one.
  */
 const DEMO_ASSET = /^\/js\/demo\//;
+
+/**
+ * The 404 a gated path returns.
+ *
+ * It used to be hand-built: 9 bytes, text/plain, no cache header. A real miss
+ * from the asset server is zero bytes, no content-type, `no-store`. That
+ * difference turned every gated name into a yes/no oracle: ask for
+ * /js/advisor.js and the shape of the refusal told you the file was there.
+ * Now the refusal IS a real miss, fetched from the asset server.
+ */
+async function notFound(env, request, url) {
+  try {
+    // Ask for a miss in the SAME directory, so the _headers rules that apply
+    // to the real path apply to the refusal too. /js/* carries no-store, and a
+    // refusal without it was still distinguishable from a genuine miss.
+    const miss = new URL(url.pathname.replace(/[^/]*$/, '__nothing-is-here'), url);
+    return await env.ASSETS.fetch(new Request(miss.toString(), { method: request.method }));
+  } catch {
+    return new Response(null, { status: 404, headers: { 'cache-control': 'no-store' } });
+  }
+}
 
 /**
  * Has this browser asked for the demo?
@@ -187,7 +208,7 @@ const DEMO_COOKIE = 'pa_demo';
 
 /** '' if this browser has not asked for the demo, else '1' or 'admin'. */
 function demoRole(request, url) {
-  if (PROD_HOST.test(url.hostname)) return '';
+  if (!DEMO_HOST.test(url.hostname)) return '';
   const q = url.searchParams.get('demo');
   if (q === '0') return '';
   if (q) return q === 'admin' ? 'admin' : '1';
@@ -203,8 +224,23 @@ const demoCookie = (role) =>
 // header, so the gate reads a cookie instead of a bearer token. Signed with a
 // key derived from the service account: no new secret to configure, and it
 // rotates if that ever does.
-// The live site, by name. Used to keep the demo off it.
+// The live site, by name.
 const PROD_HOST = /(^|\.)thepocketadvocates\.com$/i;
+
+/**
+ * Hosts the demo may run on, as an ALLOWLIST.
+ *
+ * It was a denylist of the production domain, which fails open on every other
+ * hostname this Worker answers to — and there is a permanent one: without
+ * workers_dev:false and an explicit routes block, Cloudflare also publishes it
+ * at pocket-advocate.<subdomain>.workers.dev. On that host ?demo=admin was
+ * serving js/advisor.js, css/admin.css and the rest to anyone who asked.
+ *
+ * A versioned preview URL looks like 8f3a91c2-pocket-advocate.<sub>.workers.dev
+ * and is created per deployment. That, and a local dev server, are the only
+ * two places a demo belongs.
+ */
+const DEMO_HOST = /^(?:[0-9a-f]{6,}-[\w-]+\.[\w-]+\.workers\.dev|localhost|127\.0\.0\.1|\[::1\])$/i;
 
 const ADMIN_COOKIE = 'pa_adm';
 const ADMIN_COOKIE_DAYS = 14;
@@ -349,9 +385,7 @@ export default {
     // like the admin ones: a browser that never asked for the demo gets the
     // same 404 it would get for a path that is not there. On the production
     // host demoRole is always '', so they are simply not served at all.
-    if (DEMO_ASSET.test(url.pathname) && !demo) {
-      return new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain' } });
-    }
+    if (DEMO_ASSET.test(url.pathname) && !demo) return notFound(env, request, url);
 
     // A browser that asked for the admin demo gets the admin half of it, on a
     // preview host only. The cookie is set here so the pages the demo
@@ -373,8 +407,8 @@ export default {
       return out;
     }
 
-    // The admin half of the site. A stranger gets the same 404 they would get
-    // for a path that does not exist, so this does not confirm what is here.
+    // The admin half of the site. A stranger gets a real miss from the asset
+    // server, byte for byte, so this does not confirm what is here.
     if (ADMIN_ASSET.test(url.pathname)) {
       // A page gets sent to sign in; a module or stylesheet just is not there.
       const isPage = /^\/admin[\w-]*(\.html)?\/?$/.test(url.pathname);
@@ -385,7 +419,7 @@ export default {
           to.searchParams.set('to', url.pathname);
           return Response.redirect(to.toString(), 302);
         }
-        return new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain' } });
+        return notFound(env, request, url);
       }
       // _headers puts `public, max-age=3600` on /css/*, which would let a
       // shared cache keep admin.css and hand it to the next person who asks.
@@ -460,7 +494,7 @@ async function closeDeliveredCases(env) {
       // it alone rather than closing a chat on a guess.
       if (!at || at > cutoff) continue;
       await patchDoc(env, `cases/${row.id}`, {
-        status: 'closed', closedAt: new Date(), closedBy: 'review-window',
+        status: 'closed', closedAt: new Date(), closedBy: 'automatic',
       }, { mask: ['status', 'closedAt', 'closedBy'] });
       await sendEmail(env, {
         to: row.data.clientEmail,
@@ -1006,9 +1040,13 @@ export async function purgeRecaps(env) {
     let writes = 0;
     let complete = true;
     for (const coll of ['cases', 'subscriptions']) {
-      const parents = await listDocs(env, coll, { pageSize: 300 });
+      // Both of these are paginated. They were not, and a page size of 300 was
+      // being read as "all of them": past 300 cases, or 300 messages in one
+      // thread, the sweep would step over the rest and then set the done flag,
+      // which is the difference between cleaned up and believed cleaned up.
+      const parents = await listDocs(env, coll, { pageSize: 300, all: true });
       for (const p of parents) {
-        const msgs = await listDocs(env, `${coll}/${p.id}/chat`, { pageSize: 300 });
+        const msgs = await listDocs(env, `${coll}/${p.id}/chat`, { pageSize: 300, all: true });
         for (const m of msgs) {
           if (!m.data.recap) continue;
           if (writes >= PURGE_WRITE_CAP) { complete = false; break; }
@@ -1500,7 +1538,9 @@ async function handleUploaded(request, env) {
  */
 async function handleDaySummary(request, env) {
   const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Admin only' }, 403);
+  // 404 for the same reason the advisor routes give one: a status code that
+  // differs from an unknown route confirms the route is there.
+  if (!admin) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => null);
   const kind = body?.kind === 'sub' ? 'sub' : 'case';
   const id = String(body?.id || '');
@@ -1770,9 +1810,9 @@ function keepaliveRun(ctx, work, { raw = false } = {}) {
  */
 async function handleAdvisorState(request, env, url) {
   const user = await requireUser(request, env);
-  if (!user) return json({ error: 'Sign in required' }, 401);
+  if (!user) return json({ error: 'Not found' }, 404);
   const profile = await getDoc(env, `users/${user.uid}`);
-  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+  if (profile?.data.role !== 'admin') return json({ error: 'Not found' }, 404);
 
   const kind = url.searchParams.get('kind') === 'sub' ? 'sub' : 'case';
   const id = url.searchParams.get('id') || '';
@@ -2101,9 +2141,9 @@ async function handleReviewsAdmin(request, env) {
  */
 async function handleAdvisorCovers(request, env) {
   const user = await requireUser(request, env);
-  if (!user) return json({ error: 'Sign in required' }, 401);
+  if (!user) return json({ error: 'Not found' }, 404);
   const profile = await getDoc(env, `users/${user.uid}`);
-  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+  if (profile?.data.role !== 'admin') return json({ error: 'Not found' }, 404);
 
   const rows = await listDocs(env, 'caseMeta', { pageSize: 200 }).catch(() => []);
   const covers = {};
@@ -2134,9 +2174,9 @@ async function handleAdvisorCovers(request, env) {
  */
 async function handleDictionary(request, env) {
   const user = await requireUser(request, env);
-  if (!user) return json({ error: 'Sign in required' }, 401);
+  if (!user) return json({ error: 'Not found' }, 404);
   const profile = await getDoc(env, `users/${user.uid}`);
-  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+  if (profile?.data.role !== 'admin') return json({ error: 'Not found' }, 404);
 
   if (request.method === 'POST') {
     const body = await request.json().catch(() => null);
@@ -2237,10 +2277,13 @@ function sanitizeNotes(html) {
  * for a long Opus turn.
  */
 async function handleAdvisor(request, env, ctx) {
+  // 404, not 401 or 403. An unknown route answers 404, so answering anything
+  // else here confirms to a client that a route by this name exists. The data
+  // was never reachable; the status code was the leak.
   const user = await requireUser(request, env);
-  if (!user) return json({ error: 'Sign in required' }, 401);
+  if (!user) return json({ error: 'Not found' }, 404);
   const profile = await getDoc(env, `users/${user.uid}`);
-  if (profile?.data.role !== 'admin') return json({ error: 'Admin only' }, 403);
+  if (profile?.data.role !== 'admin') return json({ error: 'Not found' }, 404);
 
   const body = await request.json().catch(() => null);
   const kind = body?.kind === 'sub' ? 'sub' : 'case';

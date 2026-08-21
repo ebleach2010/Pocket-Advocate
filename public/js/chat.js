@@ -14,26 +14,20 @@ import {
   ref, uploadBytesResumable, getDownloadURL,
 } from './firebase.js';
 import {
-  emojiById, statusById, openMessageMenu, openEditor, openCorrection, openNote,
-  EDIT_WINDOW_MS,
+  emojiById, statusById, openMessageMenu, openEditor, openNote, EDIT_WINDOW_MS,
 } from './msg-actions.js';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const LONG_PRESS_MS = 550;
 
-// Per-message notes the admin panel pushes in: msgId → { wrong, fixed }.
-// Populated only by 'pa-panel-state', which no client page ever fires, and
-// read only once an admin thread has mounted (adminChat below).
-let adminChat = false;
-window.__paCorrections = window.__paCorrections || new Map();
-document.addEventListener('pa-panel-state', (e) => {
-  if (!adminChat) return;
-  const map = window.__paCorrections;
-  map.clear();
-  for (const c of e.detail?.corrections || []) {
-    if (c?.msgId) map.set(c.msgId, { issue: c.issue || '', fixed: c.fixed || '' });
-  }
-});
+// Everything that only happens on an admin thread lives in its own module,
+// which is not served to a client at all. Loaded on demand when one mounts;
+// null otherwise, and every use of it is optional-chained.
+//
+// It used to live here. It was gated at runtime and never rendered for a
+// client, but this file downloads on every case, chat and subscription page,
+// and a runtime gate does not stop devtools.
+let bridge = null;
 
 /** Shows the advocate's live status in `el` (any element with a .p-dot child). */
 export function watchPresence(el) {
@@ -93,6 +87,10 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   `;
   const log = container.querySelector('[data-log]');
   const errEl = container.querySelector('[data-err]');
+  // Set by send(), cleared by the repaint that draws the result: your own
+  // message takes you to the bottom even if you were reading back through the
+  // history, because you asked for it. Nobody else's does.
+  let followNext = false;
   const parentRef = doc(db, ...parentPath);
   const messagesRef = collection(db, ...parentPath, 'chat');
 
@@ -104,6 +102,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     const fmt = new Intl.DateTimeFormat('en-US', {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
     });
+    // Measured before the rebuild, because emptying the log sets scrollTop to
+    // 0 and the answer would always be yes.
+    const wasAtBottom = followNext
+      || log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+    followNext = false;
     log.innerHTML = '';
     let hasAttachment = false;
     snap.forEach((m) => {
@@ -119,7 +122,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         div.appendChild(span);
       }
       // Images and PDFs can be selected on admin threads, and only where the
-      // panel that consumes the selection is actually mounted.
+      // module that consumes the selection has actually loaded.
       const att = data.attachment;
       const attCt = (att?.contentType || '').toLowerCase();
       const attReadable = !!att?.url && !/heic|heif/.test(attCt) &&
@@ -129,7 +132,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       if (att && att.url) {
         hasAttachment = true;
         div.appendChild(renderAttachment(att, saveUid));
-        if (canStage) div.appendChild(selectBadge(att));
+        if (canStage && bridge) div.appendChild(bridge.selectBadge(att));
       }
       const sentAt = data.ts?.toDate ? data.ts.toDate() : null;
       const meta = document.createElement('span');
@@ -205,7 +208,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
           // nobody, so there is nothing to gate.
           canSave: !!(data.text || att),
           savedAlready: savedIds.has(m.id),
-          canStage,
+          extraRows: bridge ? bridge.extraMenuRows({ canStage }) : [],
           attachment: canStage ? att : null,
           passedByMe: data.pass?.by === user.uid,
           hasReaction: !!data.reaction?.id,
@@ -237,29 +240,31 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       hint.textContent = hintText;
       hint.hidden = !hintText;
     }
-    log.scrollTop = log.scrollHeight;
-    paintCorrections();
+    // Only chase the bottom if that is where they already were. Any write to
+    // any message in the thread rebuilds this list, and scrolling
+    // unconditionally would throw someone reading back through the history
+    // down to the end for no reason they could see.
+    if (wasAtBottom) log.scrollTop = log.scrollHeight;
+    repaintFlags();
     paintSaved();
   }, (err) => {
     log.innerHTML = `<p class="error">Couldn't load messages: ${esc(err.message)}</p>`;
   });
 
-  // Repaint the selection badges whenever the panel changes the selection
-  // (they also re-derive on every snapshot).
+  // The admin-only half, fetched only on an admin thread. A client's browser
+  // never asks for this file and would be refused if it did. The role comes
+  // from the mount, never from a caller-supplied flag.
   if (myRole === 'admin') {
-    // The gate on the correction map above. It was declared and read but never
-    // set, so corrections applied to nobody - not to clients, which was the
-    // point, but not to Eric either, which was not. Set from the mounted role,
-    // never from a caller-supplied flag: a caller cannot talk its way past it.
-    adminChat = true;
-    document.addEventListener('pa-panel-state', () => paintCorrections());
-    document.addEventListener('pa-panel-select', () => {
-      container.querySelectorAll('.dr-badge').forEach((b) =>
-        b.classList.toggle('on', !!window.__paMediaSel?.has(b.dataset.url)));
-    });
+    import('./panel-bridge.js').then((m) => {
+      bridge = m;
+      m.watchSelection(container);
+      m.onPanelState(repaintFlags);
+      repaintFlags();
+    }).catch(() => { /* the chat is a chat without it */ });
   }
 
   async function send({ text = '', attachment = null }) {
+    followNext = true;
     const message = { from: user.uid, role: myRole, text, ts: serverTimestamp() };
     if (attachment) message.attachment = attachment;
     await addDoc(messagesRef, message);
@@ -280,7 +285,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   function messageLongPress(el, opts) {
     el.classList.add('react-target');
     let timer = null;
-    const onAttachment = (e) => !!e.target.closest?.('.msg-img, .file-chip, .dr-badge');
+    // The last selector is furniture only an admin thread adds, and naming it
+    // here would put it in a file every client downloads. The module that adds
+    // it says what to skip.
+    const skip = ['.msg-img', '.file-chip', ...(bridge?.noLongPress || [])].join(', ');
+    const onAttachment = (e) => !!e.target.closest?.(skip);
     const open = () => runMenu(opts);
     const start = (e) => {
       if (onAttachment(e)) return;
@@ -330,11 +339,9 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       return;
     }
     if (choice.action === 'stage') {
-      // The panel on the admin case page owns the actual request; the chat
+      // The page that owns the request is on the other side of this; the chat
       // just hands the file over.
-      document.dispatchEvent(new CustomEvent('pa-panel-review', {
-        detail: { attachment: o.attachment },
-      }));
+      bridge?.stageFile(o.attachment);
       return;
     }
     await post('/api/chat/react', {
@@ -343,44 +350,16 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     }, "Couldn't set that");
   }
 
-  /**
-   * A quiet mark on one of his own messages that the last read flagged. Only
-   * ever on an admin thread: the map is only ever filled there, and this is
-   * gated again on the mounted role.
-   */
-  function paintCorrections() {
-    if (myRole !== 'admin') return;
-    const map = window.__paCorrections;
-    for (const el of log.querySelectorAll('.msg.me[data-mid]')) {
-      const c = map.get(el.dataset.mid);
-      const existing = el.querySelector('.msg-fix');
-      if (!c || (!c.issue && !c.fixed)) { existing?.remove(); continue; }
-      if (existing) continue;
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'msg-fix';
-      chip.textContent = '⚠ Worth a second look';
-      chip.title = c.issue;
-      chip.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const choice = await openCorrection(c.issue, c.fixed);
-        if (!choice) return;
-        if (choice === 'fix') {
-          const text = await openEditor(c.fixed, Date.now() + EDIT_WINDOW_MS);
-          if (text === undefined) return;
-          await post('/api/chat/edit',
-            { kind: kindOf(), id: parentPath[1], msgId: el.dataset.mid, text },
-            "Couldn't save the edit");
-        }
-        // Fixed or waved away, it stops being raised either way.
-        window.__paCorrections.delete(el.dataset.mid);
-        chip.remove();
-        document.dispatchEvent(new CustomEvent('pa-correction-applied', {
-          detail: { msgId: el.dataset.mid },
-        }));
-      });
-      el.appendChild(chip);
-    }
+  /** Marks that only exist on an admin thread, drawn by the admin module. */
+  function repaintFlags() {
+    bridge?.paintCorrections(log, {
+      openEditor,
+      editWindowMs: EDIT_WINDOW_MS,
+      edit: (msgId, text) => post('/api/chat/edit',
+        { kind: kindOf(), id: parentPath[1], msgId, text }, "Couldn't save the edit"),
+      applied: (msgId) => document.dispatchEvent(
+        new CustomEvent('pa-correction-applied', { detail: { msgId } })),
+    });
   }
 
   async function editMessage(o) {
@@ -574,28 +553,6 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
 
   // Handed back so the admin panel can post an approved message as me.
   return { send: (text) => send({ text }) };
-}
-
-/**
- * A 👨‍⚕️ badge under an image or PDF in an admin thread. Tap once to select
- * the file, tap again to deselect. Highlighted while selected; the panel's
- * Update button counts what is selected.
- */
-function selectBadge(att) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'dr-badge';
-  b.dataset.url = att.url;
-  b.textContent = '👨‍⚕️';
-  b.title = 'Select this file, then press Analyze in the panel';
-  if (window.__paMediaSel?.has(att.url)) b.classList.add('on');
-  b.addEventListener('click', () => {
-    b.classList.toggle('on');
-    document.dispatchEvent(new CustomEvent('pa-panel-toggle', {
-      detail: { attachment: { name: att.name || 'file', url: att.url, contentType: att.contentType || '', size: att.size || 0 } },
-    }));
-  });
-  return b;
 }
 
 // ---- attachment rendering + long-press save ----
