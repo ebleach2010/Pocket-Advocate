@@ -15,7 +15,6 @@ import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
 import { HELP_BUTTON, wireHelp, openCaseHelp } from './help.js';
 import { mountFolder, folderEnter } from './folder.js';
-import { BUSINESS_PHONE, BUSINESS_PHONE_TEXT } from './reviews-config.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -294,7 +293,6 @@ function renderProgress(el, c) {
         <p class="dim small">Session: <strong style="color:${election.choice === 'public' ? 'var(--magenta)' : 'var(--cyan)'};">
           ${election.choice === 'public' ? 'PUBLIC, streams live on YouTube' : 'PRIVATE'}</strong></p>
         ${revocable ? `<p><button class="btn ghost" data-private>Make it private</button></p>` : ''}
-        <p class="dim small">Need me on the phone? <a href="tel:${BUSINESS_PHONE}">${BUSINESS_PHONE_TEXT}</a></p>
         ${followUpSection(c)}
       </div>
     </details>`;

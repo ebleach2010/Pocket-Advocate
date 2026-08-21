@@ -3,17 +3,15 @@
 // Bodies stay deliberately content-free about health specifics — an email
 // says "something happened, open the app," never what was discussed.
 
-// His business line. (Eric, 2026-08-21: "My phone number is (208)670-8608 so
-// integrate that. It's my business number.") The web pages read the same
-// number from public/js/reviews-config.js; a Worker cannot import a browser
-// module, so it is written once here and the two are changed together.
-export const BUSINESS_PHONE = '+12086708608';
-export const BUSINESS_PHONE_TEXT = '(208) 670-8608';
+// The business line is NOT in this file, and must not go back in.
+// (Eric, 2026-08-21: "CLIENTS CASE PAGE SHOULD NOT ADVERTISE BUSINESS
+// NUMBER. THEY'LL SPAM IT. THEY ALREADY HAVE CHAT.")
+// Every email here lands in a client's inbox, so the same rule applies. The
+// number belongs on the public pages, where somebody who has not bought yet
+// needs a way to reach him: public/js/reviews-config.js.
 
 const FOOTER = `
   <p style="color:#888; font-size:12px; border-top:1px solid #ddd; padding-top:12px; margin-top:24px;">
-    Reach me on <a href="tel:${BUSINESS_PHONE}" style="color:#888;">${BUSINESS_PHONE_TEXT}</a>,
-    or just reply to this email.<br><br>
     Pocket Advocate is a patient-advocacy service, offered to residents of the United States and Canada.
     It does not provide diagnosis, treatment, prescriptions, or medical advice,
     and does not create a doctor-patient relationship. If this is an emergency, call 911.
