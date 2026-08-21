@@ -1,3 +1,21 @@
+// ============================================================================
+// ERIC'S STANDING PREFERENCES FOR THE ADVISOR'S LEARNING (2026-08-21).
+// His calls, in his words where quoted. Do not re-litigate them.
+//
+//  - "The advisor learns how I speak across time from how I edit its drafts to
+//    how I message clients." Two loops: the on-edit fast path (runStyleDistill)
+//    and the nightly voice study (runVoiceStudy) - 3 readers (cadence/rhythm,
+//    style/verbiage, belief systems) over his messages across ALL threads,
+//    merged into the one advisorStyle/profile.
+//  - Runs every 24h at ~9pm MST "until I say stop" - the dashboard switch is
+//    the stop, never a redeploy. Silent: no changelog entry, no client surface.
+//  - One merged profile (his choice), the same three sections About-you shows.
+//    His marked overrides ALWAYS survive a merge, at the top, in his words.
+//  - The corpus is HIS words only - never a client's.
+//  - The advisor NEVER uses em or en dashes ("an AI giveaway").
+//  - Clients never see or hear about any of this. "Don't mention AI."
+// ============================================================================
+//
 // The private advisor: an Opus-backed second opinion that only Eric ever sees.
 //
 // Deliberately the Messages API, not Managed Agents. A managed agent buys you a

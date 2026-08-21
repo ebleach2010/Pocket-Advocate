@@ -28,7 +28,7 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat59">
+<link rel="stylesheet" href="/css/site.css?v=stat60">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
@@ -90,9 +90,13 @@
     </p>
   </div>
 
-  <p class="muted small" id="demo-hint" hidden style="margin-top:1rem;">
-    Test suite: <strong>1234</strong> opens the client side, <strong>2345</strong> the advocate side.
-  </p>
+  <div id="demo-hint" hidden style="margin-top:1rem;">
+    <p class="muted small" style="margin:0 0 .4rem;">Test suite — no email needed:</p>
+    <p style="display:flex; gap:.5rem; flex-wrap:wrap; margin:0;">
+      <button type="button" class="btn glow" onclick="location.href='/case.html?demo=1&tour=1'">Client suite</button>
+      <button type="button" class="btn quiet" onclick="location.href='/admin.html?demo=admin&tour=1'">Admin suite</button>
+    </p>
+  </div>
 
   <script>
   // Pick the door before paint. The module at the bottom owns this properly,
@@ -130,7 +134,11 @@
     document.documentElement.dataset.demoHost = '1';
     document.getElementById('demo-hint').hidden = false;
 
-    var DEMO_CODES = { 1234: '/?demo=1', 2345: '/admin.html?demo=admin' };
+    // 1234 lands IN the case, not on the sales page. He asked for the client
+    // who is already in as a case, and that is a person whose app opens on
+    // their own case file, update card included. The booking side is one tap
+    // away on the brand for anyone who wants it.
+    var DEMO_CODES = { 1234: '/case.html?demo=1&tour=1', 2345: '/admin.html?demo=admin&tour=1' };
     var codeTyped = function () {
       var ids = ['email', 'pin'];
       for (var i = 0; i < ids.length; i++) {

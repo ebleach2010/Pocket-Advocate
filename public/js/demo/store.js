@@ -1,3 +1,34 @@
+// ============================================================================
+// THE TEST SUITE — read this before touching it again (2026-08-21).
+//
+// HOW IT IS ENTERED: two buttons, "Client suite" and "Admin suite", on
+// book.html and signin.html. Preview/dev hosts only (same allowlist as
+// DEMO_HOST in worker/index.js). Client → /case.html?demo=1&tour=1.
+// Admin → /admin.html?demo=admin&tour=1. No email, no code, no account, ever.
+//
+// Getting here burned a full day across repeated failures. The traps, so the
+// NEXT isolated suite takes an hour and not a day:
+//
+//  1. NO SIGN-UP IN A DEMO. mountDemo once overwrote the seeded profile
+//     (first/last name, dob) with a bare {email,name,role}, so booking asked
+//     him to make an account. Merge onto the seed; never docs.set over it.
+//  2. THE UPDATE TOUR ONLY SHOWS FOR "EXISTING" USERS. unseenVersions()
+//     shows a first-ever visitor nothing, and a fresh demo store looks like a
+//     first-ever visitor - so the v2.2 tour was unreachable. &tour=1 stamps
+//     the previous release (seedLastSeenVersion below) and ONLY &tour=1 does,
+//     or the card fires on every harness navigation and blocks their clicks.
+//  3. THE LANDING PAGE HIJACKS. index.html bounces an admin-hinted device to
+//     /admin.html, which ate the client-suite link on his phone. It must
+//     stand aside whenever a demo is running.
+//  4. TYPED CODES IN THE EMAIL BOX ARE A TRAP. 1234 in a type=email box on
+//     the page the user is actually on (book.html's inline card, not
+//     signin.html) just said "invalid email". Buttons, not codes. Codes still
+//     work on signin.html as a bonus, nothing more.
+//  5. NOTHING SUITE-RELATED MAY DEPEND ON FIREBASE LOADING. The buttons are
+//     static markup + classic script, so the suite opens even when the app
+//     cannot.
+// ============================================================================
+//
 // The demo's data layer: an in-memory Firestore, Storage and Realtime
 // Database with the same exports the real ones have.
 //
@@ -21,6 +52,7 @@
 
 import { seed } from './seed.js';
 import { demoApi } from './api.js';
+import { CHANGELOG, VERSION } from '../changelog.js';
 
 const KEY = 'pa-demo-store';
 
@@ -80,6 +112,31 @@ function fire(path) {
 }
 
 /** Wipe and re-seed. The banner's Reset, so the booking flow can be re-run. */
+/**
+ * The suite buttons carry &tour=1, and that is the one thing that replays the
+ * v2.2 update tour.
+ *
+ * (Eric, 2026-08-21: "what the client who is already in as a case will see for
+ * the update" / "EACH SIDE WITH THE NEW V2.2 TUTORIAL.")
+ *
+ * unseenVersions() shows a first-ever visitor no changelog at all, on purpose,
+ * and an empty demo store looked exactly like a first-ever visitor - so the
+ * one screen only an EXISTING client ever sees was unreachable from the test
+ * suite. Stamping the previous release makes this browser a client who has
+ * been away since the last version, and the card fires exactly as it will for
+ * every real client the moment 2.2 ships.
+ *
+ * Only on &tour=1: each button press replays it on that side, and plain
+ * demo navigation (the banner's cross-links, every test harness) is left
+ * alone.
+ */
+function seedLastSeenVersion() {
+  try {
+    const previous = CHANGELOG.find((v) => v.version !== VERSION);
+    localStorage.setItem('pa-seen-version', previous ? previous.version : '0.1');
+  } catch { /* storage blocked: the card simply does not show */ }
+}
+
 export function reset() {
   docs = new Map();
   files = new Map();
@@ -404,6 +461,9 @@ export function mountDemo(role) {
   // Set before anything reads or writes, so the first persist already filters.
   clientSide = !admin;
   if (!load()) reset();
+  try {
+    if (new URLSearchParams(location.search).get('tour')) seedLastSeenVersion();
+  } catch { /* no URL to read: leave it alone */ }
   // Another tab wrote: repaint. This is what makes the two links one system
   // rather than two demos.
   window.addEventListener('storage', (e) => {
