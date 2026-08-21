@@ -1585,6 +1585,14 @@ const statePath = (kind, id) =>
 // subcollections can't be swept without a collection-group index, and the
 // cron needs to find this work with a plain list.
 const queuePath = (kind, id) => `advisorQueue/${kind}_${id}`;
+// A draft in flight rides the same queue under its own marker. An analysis
+// that dies gets retried because markPending queued it FIRST; a draft had no
+// such cover, so a locked screen (which drops the connection keeping the
+// Worker alive) killed it with no retry and no trace. Eric, 2026-08-21: "a
+// draft was never produced in a draft window to edit or send. It just
+// stopped." The request itself is saved on state (draftReq) so the cron can
+// re-run it verbatim.
+const draftQueuePath = (kind, id) => `advisorQueue/draft_${kind}_${id}`;
 
 async function setState(env, kind, id, fields) {
   await patchDoc(env, statePath(kind, id), fields, { mask: Object.keys(fields) });
@@ -1624,6 +1632,33 @@ export async function runQueuedAnalyses(env) {
     for (const row of rows) {
       const { kind, id } = row.data;
       if (!kind || !id) { await deleteDoc(env, `advisorQueue/${row.id}`); continue; }
+      // A draft marker: rescue a draft whose connection died mid-run. It
+      // ignores paused (the draft was an explicit request, not automation)
+      // and counts as this firing's one model job.
+      if (row.data.draft) {
+        const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+        const req = st?.data.draftReq;
+        // Finished or failed on its own since the marker was written.
+        if (st?.data.draftStatus !== 'running' || !req) {
+          await deleteDoc(env, `advisorQueue/${row.id}`);
+          continue;
+        }
+        const ds = st.data.draftStartedAt ? new Date(st.data.draftStartedAt).getTime() : 0;
+        const dBeat = Math.max(ds, st.data.draftProgressAt ? new Date(st.data.draftProgressAt).getTime() : 0);
+        if (dBeat && Date.now() - dBeat < 2 * 60_000) continue; // still writing
+        const tries = Number(row.data.tries || 0) + 1;
+        if (tries > 2) {
+          await deleteDoc(env, `advisorQueue/${row.id}`);
+          await setState(env, kind, id, {
+            draftStatus: 'error', draftReq: null,
+            draftError: 'The draft kept getting interrupted. Tap Prepare a response to try again.',
+          }).catch(() => {});
+          continue;
+        }
+        await patchDoc(env, `advisorQueue/${row.id}`, { tries }, { mask: ['tries'] }).catch(() => {});
+        await runDraft(env, kind, id, req.instruction || '', !!req.revise, req.base || '');
+        break; // one per firing
+      }
       const state = await getDoc(env, statePath(kind, id));
       if (state?.data.paused) { await deleteDoc(env, `advisorQueue/${row.id}`); continue; }
       // Someone (the panel) is already mid-run — leave it alone unless stale.
@@ -2082,7 +2117,14 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
   try {
     await setState(env, kind, id, {
       draftStatus: 'running', draftError: null, draftStartedAt: new Date(), draftProgressAt: null,
+      // The request, saved before the run: if this connection dies mid-write
+      // (screen lock, app switch), the cron finds the marker below, sees the
+      // heartbeat has stopped, and re-runs exactly this. Cleared when a run
+      // finishes or fails on its own.
+      draftReq: { instruction: instruction || '', revise: !!revise, base: base || '', at: new Date() },
     });
+    await patchDoc(env, draftQueuePath(kind, id), { kind, id, draft: true, at: new Date() },
+      { mask: ['kind', 'id', 'draft', 'at'] }).catch(() => {});
     const [rows, state, style] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
@@ -2159,12 +2201,17 @@ will chase down, and what to bring to the next appointment.` }],
     });
     await setState(env, kind, id, {
       draft, draftStatus: 'ready', draftError: null, draftAt: new Date(),
-      draftStartedAt: null, draftProgressAt: null,
+      draftStartedAt: null, draftProgressAt: null, draftReq: null,
     });
+    await deleteDoc(env, draftQueuePath(kind, id)).catch(() => {});
   } catch (err) {
     console.error('advisor draft:', err.stack || err);
+    // A real failure surfaces as its own error; only a DEAD run (no status
+    // write at all) leaves the marker for the cron, so a model error is
+    // never silently re-bought.
     await setState(env, kind, id, {
-      draftStatus: 'error', draftError: friendly(err),
+      draftStatus: 'error', draftError: friendly(err), draftReq: null,
     }).catch(() => {});
+    await deleteDoc(env, draftQueuePath(kind, id)).catch(() => {});
   }
 }

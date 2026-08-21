@@ -89,7 +89,7 @@ function termPalette(text) {
  */
 export let sendToClient = null;
 
-export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null, diffContainer = null, qaContainer = null }) {
+export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null, diffContainer = null, qaContainer = null, goTo = null }) {
   container.innerHTML = `
     <div class="advisor">
       <div class="advisor-head">
@@ -131,6 +131,19 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   const prepBtn = el('[data-prep]');
   const qBox = el('[data-q]');
 
+  // Errors used to paint only on the Read page. The buttons that cause most
+  // of them now live on the Chat page (the foot moves there below), so every
+  // error paints in both places and the failure is visible from wherever he
+  // pressed the button. (Eric, 2026-08-21: pressed Prepare a response, the
+  // draft died, and from the Chat page it looked like nothing happened.)
+  let chatErr = null;
+  const showErr = (msg) => {
+    for (const e of [errEl, chatErr]) if (e) { e.textContent = msg; e.hidden = false; }
+  };
+  const hideErr = () => {
+    for (const e of [errEl, chatErr]) if (e) e.hidden = true;
+  };
+
   // The files staged for the next analysis: the 👨‍⚕️ badges on chat files and
   // the case file list, plus anything added from Eric's own device. Declared
   // here rather than beside its wiring below because the first poll can land
@@ -145,6 +158,10 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
 
   let paused = false;
   let draftRendered = null; // the server draft the card was last built from
+  // He pressed Prepare a response (or Revise) this session and is owed a
+  // draft. When it lands, the panel takes him to it instead of leaving it to
+  // appear silently on another page.
+  let awaitingDraft = false;
   let firedFor = null; // pendingAt value we already launched an analysis for
   // Which page he is on, and it survives leaving the tab and coming back. A
   // closure variable reset him to 1 of 9 every time he looked at the chat.
@@ -167,7 +184,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   let pingedStall = false;
 
   const post = async (payload) => {
-    errEl.hidden = true;
+    hideErr();
     try {
       const token = await user.getIdToken();
       const res = await fetch('/api/advisor', {
@@ -182,8 +199,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       setTimeout(refresh, 400);
       return out;
     } catch (err) {
-      errEl.textContent = err.message;
-      errEl.hidden = false;
+      showErr(err.message);
       return null;
     }
   };
@@ -219,10 +235,9 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         : stalled ? '⚠ stalled — tap Update' : paused ? '‖ paused' : '';
     statusEl.className = `advisor-status${alive ? ' live' : ''}`;
     if (noKey) {
-      errEl.textContent = 'ANTHROPIC_API_KEY is not set on the Worker, so the '
+      showErr('ANTHROPIC_API_KEY is not set on the Worker, so the '
         + 'advisor cannot run at all. Set it with: npx wrangler secret put '
-        + 'ANTHROPIC_API_KEY. Nothing else in the app is affected.';
-      errEl.hidden = false;
+        + 'ANTHROPIC_API_KEY. Nothing else in the app is affected.');
     }
     // A stall runs its own diagnostics, once per stall: a one-token round trip
     // to the model. Either "the pipe is fine, the run died - tap Update" or
@@ -240,10 +255,9 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
             body: JSON.stringify({ kind, id, action: 'ping' }),
           });
           const out = await res.json();
-          errEl.textContent = out.ok
+          showErr(out.ok
             ? `Diagnostics: the model responds normally (${out.ms}ms), so this run died on its own. Tap Update to restart it.`
-            : `Diagnostics: ${out.error}`;
-          errEl.hidden = false;
+            : `Diagnostics: ${out.error}`);
         } catch { /* the refresh loop will try again on the next stall */ }
       })();
     }
@@ -251,8 +265,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     const running = alive;
 
     if (d.status === 'error' && d.error) {
-      errEl.textContent = `Analysis failed: ${d.error}`;
-      errEl.hidden = false;
+      showErr(`Analysis failed: ${d.error}`);
     }
 
     if (d.analysis) {
@@ -295,14 +308,21 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     // is that home.)
     if (d.draftStatus === 'ready' && d.draft) {
       renderDraftCard(d.draft);
+      // He pressed the button this session and the draft just landed: take
+      // him to it. Without this the card fills in silently on Mine › Drafts,
+      // which from any other page reads as "it just stopped".
+      if (awaitingDraft) {
+        awaitingDraft = false;
+        if (goTo) goTo('drafts');
+      }
     } else if (d.draftStatus !== 'ready') {
       draftRendered = null;
       draftCard.hidden = true;
       draftCard.innerHTML = '';
     }
     if (d.draftStatus === 'error' && d.draftError) {
-      errEl.textContent = `Draft failed: ${d.draftError}`;
-      errEl.hidden = false;
+      awaitingDraft = false;
+      showErr(`Draft failed: ${d.draftError}`);
     }
 
     // Drafts die silently when the connection that carries them drops (screen
@@ -316,8 +336,10 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     prepBtn.disabled = draftAlive;
     prepBtn.textContent = draftAlive ? '✍️ Drafting…' : '✍️ Prepare a response';
     if (draftStalled) {
-      errEl.textContent = 'The draft was interrupted — keep the app open while it writes, and tap ✍️ Prepare a response to try again.';
-      errEl.hidden = false;
+      // The worker's cron now re-runs a dead draft from its saved request, so
+      // the honest message is "it recovers on its own", not "you broke it by
+      // locking your phone".
+      showErr('The draft was interrupted (leaving the app can do that). It restarts on its own within a few minutes, or tap ✍️ Prepare a response to run it again now.');
     }
 
     lastQa = qa || [];
@@ -500,8 +522,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         if (act === 'copy' && out) await navigator.clipboard?.writeText(out).catch(() => {});
         if (act === 'send' && out) {
           try { await onSend?.(out); } catch (err) {
-            errEl.textContent = `Couldn't send that: ${err.message}`;
-            errEl.hidden = false;
+            showErr(`Couldn't send that: ${err.message}`);
           }
         }
       }));
@@ -704,17 +725,15 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       const file = e.target.files[0];
       e.target.value = '';
       if (!file) return;
-      errEl.hidden = true;
+      hideErr();
       const isPdf = file.type === 'application/pdf';
       const cap = isPdf ? 12 * 1024 * 1024 : Math.floor(4.5 * 1024 * 1024);
       if (!isPdf && !/^image\/(png|jpeg|webp|gif)$/.test(file.type)) {
-        errEl.textContent = `${file.name}: the advisor reads JPEG, PNG, WebP, GIF, and PDF.`;
-        errEl.hidden = false;
+        showErr(`${file.name}: the advisor reads JPEG, PNG, WebP, GIF, and PDF.`);
         return;
       }
       if (file.size > cap) {
-        errEl.textContent = `${file.name} is too big to read (${isPdf ? '12' : '4.5'} MB max).`;
-        errEl.hidden = false;
+        showErr(`${file.name} is too big to read (${isPdf ? '12' : '4.5'} MB max).`);
         return;
       }
       const data = await new Promise((resolve, reject) => {
@@ -724,8 +743,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         r.readAsDataURL(file);
       }).catch(() => '');
       if (!data) {
-        errEl.textContent = `Couldn't read ${file.name} from this device.`;
-        errEl.hidden = false;
+        showErr(`Couldn't read ${file.name} from this device.`);
         return;
       }
       mediaSel.set(`inline:${++inlineSeq}`, {
@@ -786,6 +804,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       // interrupted run can't leave it stuck saying "Drafting…" forever.
       prepBtn.disabled = true;
       prepBtn.textContent = '✍️ Drafting…';
+      awaitingDraft = true;
       await post({ action: 'draft', instruction });
     });
     document.body.appendChild(overlay);
@@ -831,8 +850,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     if (asking) return;
     const question = qBox.value.trim();
     if (!question) {
-      errEl.textContent = 'Type a question first.';
-      errEl.hidden = false;
+      showErr('Type a question first.');
       qBox.focus();
       return;
     }
@@ -861,6 +879,13 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     const home = qaContainer.querySelector('.advisor');
     home.appendChild(qaEl);
     home.appendChild(container.querySelector('.advisor-foot'));
+    // The Chat page's own error line, painted in lockstep with the Read
+    // page's by showErr/hideErr. Without it, a failure caused by a button on
+    // THIS page reported itself on a page he was not looking at.
+    chatErr = document.createElement('p');
+    chatErr.className = 'error';
+    chatErr.hidden = true;
+    home.appendChild(chatErr);
   }
 
   // "Send to the advisor for review" — dispatched by the chat's long-press
@@ -982,6 +1007,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         closeOv();
         prepBtn.disabled = true;
         prepBtn.textContent = '✍️ Drafting…';
+        awaitingDraft = true;
         await post({ action: 'draft', instruction, revise: true, base: box.value });
       });
       document.body.appendChild(overlay);

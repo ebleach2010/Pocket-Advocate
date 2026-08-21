@@ -312,6 +312,9 @@ function render(el) {
     diffContainer: folder.el('dx'),
     // And the Q&A - asking the advisor - onto its own Chat page.
     qaContainer: folder.el('advisor-chat').querySelector('#advisor-chat'),
+    // Lets the panel walk him to a page - today, to Drafts the moment the
+    // draft he asked for lands, instead of leaving it to appear silently.
+    goTo: (page) => folder.show(page),
   });
 
   renderedFor = caseId;
