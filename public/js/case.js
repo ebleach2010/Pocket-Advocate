@@ -149,8 +149,17 @@ function render() {
         id: 'chat', title: 'Chat', icon: '💬', fade: true,
         render: (pane) => renderChat(pane, c),
         onShow: (pane) => {
-          const log = pane.querySelector('[data-log]');
-          if (log) log.scrollTop = log.scrollHeight;
+          // The log fills while this page is hidden (display:none), where its
+          // scrollHeight is 0 - so scrolling it then, or too early now, lands
+          // on old history. Drop to the newest message once now and again a
+          // frame later when layout has real heights. (Eric, 2026-08-21:
+          // "have the chat scrolled down to the most recent message.")
+          const drop = () => {
+            const log = pane.querySelector('[data-log]');
+            if (log) log.scrollTop = log.scrollHeight;
+          };
+          drop();
+          requestAnimationFrame(() => requestAnimationFrame(drop));
         },
       },
       // 'Docs', not 'Documents': three pills have to fit across a 390px phone,

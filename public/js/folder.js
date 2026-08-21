@@ -199,8 +199,16 @@ export function mountPages({ container, pages, storageKey = '', noFlip = [], gro
       const strip = nav;
       const barH = parseInt(getComputedStyle(document.documentElement)
         .getPropertyValue('--bar-h'), 10) || 52;
-      if (strip && strip.getBoundingClientRect().top > barH + 4) {
-        const y = window.scrollY + strip.getBoundingClientRect().top - barH;
+      // In BOTH directions. This used to fire only when the strip sat below
+      // its docked spot (a page scrolled near the top), so opening a tab from
+      // halfway down a long page left you staring at the MIDDLE of the new
+      // page - the chat especially, which he opened onto a random slice of
+      // history. (Eric, 2026-08-21: "it should put the chat center of
+      // screen.") Now a tab tap always lands the strip under the bar, page
+      // filling the screen below it.
+      const top = strip ? strip.getBoundingClientRect().top : barH;
+      if (strip && Math.abs(top - barH) > 4) {
+        const y = window.scrollY + top - barH;
         window.scrollTo({ top: Math.max(0, y), behavior: REDUCED() ? 'auto' : 'smooth' });
       }
     } catch { /* scrolling is a nicety, never a requirement */ }
