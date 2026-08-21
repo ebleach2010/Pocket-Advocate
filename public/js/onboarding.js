@@ -20,7 +20,23 @@ export function initSetupGuide(user, mount, { welcome = true } = {}) {
   if (!mount || !user) return;
   const fullySet = pushInstalled() && notifOn();
 
-  if (localStorage.getItem(DONE_KEY)) {
+  // Eric, 2026-08-21: "Be sure active clients don't get a 'Welcome to Pocket
+  // Advocate' bullshit line. They should get update notes and then take the
+  // tour."
+  //
+  // The first-run intro is keyed on a per-DEVICE flag, so a client who has
+  // been with him for months got welcomed to the app as a newcomer the first
+  // time they opened it on a new phone - and on the morning an update landed,
+  // greeted before being told anything changed. A stored version marker means
+  // this browser has already seen a release, which means they are not new.
+  // The whole first-run intro is skipped for them, not just its opening card:
+  // it is a modal, the update card is a modal, and two of those stacked on the
+  // morning of a release is worse than either. The quiet reminder still runs if
+  // notifications are not set up.
+  let known = false;
+  try { known = !!localStorage.getItem('pa-seen-version'); } catch { /* blocked */ }
+
+  if (known || localStorage.getItem(DONE_KEY)) {
     if (!fullySet) reminder(user, mount);
     return;
   }

@@ -169,8 +169,10 @@ export async function showVersionCard(isAdmin = false, user = null) {
   // The tour, if this release has one. One card per page, in tab order, paged
   // through with Next: a person who is unwell should never have to scroll a
   // wall of text to find out how to stop scrolling.
+  // Eric, 2026-08-21: "They should get update notes and then take the tour."
+  // step -1 is the notes page. The tour follows it, not the other way round.
   const tour = versions.flatMap((v) => v.tour || []);
-  let step = 0;
+  let step = -1;
 
   const overlay = document.createElement('div');
   overlay.className = 'settings-overlay';
@@ -183,7 +185,17 @@ export async function showVersionCard(isAdmin = false, user = null) {
   const actsEl = overlay.querySelector('[data-acts]');
 
   function draw() {
-    if (tour.length && step < tour.length) {
+    if (step < 0) {
+      // What changed, first. This is somebody who already uses the app.
+      bodyEl.innerHTML = versions.map((v) => `
+        <h3>Pocket Advocate ${esc(v.version)}</h3>
+        <ul class="whats-new-list">${v.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`).join('');
+      actsEl.innerHTML = tour.length
+        ? `<button class="btn glow" data-next>Take the tour</button>
+           <button class="btn ghost" data-close>Not now</button>`
+        : '<button class="btn glow" data-close>Got it</button>';
+      actsEl.querySelector('[data-next]')?.addEventListener('click', () => { step = 0; draw(); });
+    } else if (step < tour.length) {
       const t = tour[step];
       bodyEl.innerHTML = `
         <p class="wn-step">${step + 1} of ${tour.length}</p>
@@ -192,16 +204,13 @@ export async function showVersionCard(isAdmin = false, user = null) {
         <div class="wn-dots" aria-hidden="true">${tour.map((_, i) =>
           `<span class="${i === step ? 'on' : ''}"></span>`).join('')}</div>`;
       actsEl.innerHTML = `
-        ${step > 0 ? '<button class="btn quiet" data-back>Back</button>' : ''}
-        <button class="btn glow" data-next>${step === tour.length - 1 ? 'See what changed' : 'Next'}</button>
-        <button class="btn ghost" data-close>Skip</button>`;
+        <button class="btn quiet" data-back>Back</button>
+        ${step === tour.length - 1
+          ? '<button class="btn glow" data-close>Done</button>'
+          : '<button class="btn glow" data-next>Next</button>'}
+        ${step === tour.length - 1 ? '' : '<button class="btn ghost" data-close>Skip</button>'}`;
       actsEl.querySelector('[data-back]')?.addEventListener('click', () => { step--; draw(); });
-      actsEl.querySelector('[data-next]').addEventListener('click', () => { step++; draw(); });
-    } else {
-      bodyEl.innerHTML = versions.map((v) => `
-        <h3>Pocket Advocate ${esc(v.version)}</h3>
-        <ul class="whats-new-list">${v.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`).join('');
-      actsEl.innerHTML = '<button class="btn glow" data-close>Got it</button>';
+      actsEl.querySelector('[data-next]')?.addEventListener('click', () => { step++; draw(); });
     }
     actsEl.querySelector('[data-close]').addEventListener('click', close);
   }
