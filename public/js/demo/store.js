@@ -517,7 +517,10 @@ export function mountDemo(role) {
   });
   persist();
 
-  demoApi(role, { docs, files, reset });
+  // `fire` rides along so an api-route write to a message (a reaction, a
+  // lane stamp) repaints the open chat the way a real Firestore write would,
+  // instead of waiting for the next unrelated write to shake the snapshot.
+  demoApi(role, { docs, files, reset, fire });
   import('./banner.js').then((m) => {
     if (document.body) m.mountBanner(role);
     else document.addEventListener('DOMContentLoaded', () => m.mountBanner(role));

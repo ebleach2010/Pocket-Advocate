@@ -289,9 +289,17 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   async function send({ text = '', attachment = null, lane = null }) {
     followNext = true;
     const message = { from: user.uid, role: myRole, text, ts: serverTimestamp() };
-    if (lane) message.lane = lane;
     if (attachment) message.attachment = attachment;
-    await addDoc(messagesRef, message);
+    // The lane must NOT ride the document from the browser. The Firestore
+    // rules allow exactly the message keys they have always allowed
+    // (validMessage's hasOnly), so a send that carried `lane` was refused
+    // wholesale and the whole composer read as broken. The message goes up
+    // legal, then the Worker stamps the lane with the service account.
+    // Best effort on purpose: a message without its tag beats no message.
+    const ref = await addDoc(messagesRef, message);
+    if (lane && ref?.id) {
+      post('/api/chat/lane', { kind: kindOf(), id: parentPath[1], msgId: ref.id, lane }, '');
+    }
     await updateDoc(parentRef, {
       lastMessage: {
         text: (text || `📎 ${attachment?.name || 'file'}`).slice(0, 120),

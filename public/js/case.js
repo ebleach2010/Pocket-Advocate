@@ -422,20 +422,10 @@ async function agendaPost(payload) {
 async function mountAgenda(el, caseId) {
   const box = el.querySelector('[data-nextcall]');
   if (!box) return;
-  try {
-    const token = await user.getIdToken();
-    const res = await fetch(`/api/agenda?id=${encodeURIComponent(caseId)}`, {
-      headers: { authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error('unavailable');
-    // Visible even when empty: the door matters as much as the list.
-    box.hidden = false;
-    paintAgenda(box, (await res.json()).items || []);
-  } catch {
-    // Fail-soft: an unreachable list must not break the chat above it.
-    box.hidden = true;
-    return;
-  }
+  // Listeners FIRST, fetch second. They used to be wired only after a
+  // successful load, but addAgendaItem un-hides this box on a composer add
+  // even when the load failed - and then Add was a bare form submit that
+  // reloaded the page and ate the typed text.
   box.querySelector('[data-agenda-form]')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const input = e.target.querySelector('input');
@@ -453,6 +443,19 @@ async function mountAgenda(el, caseId) {
       paintAgenda(box, (box._items || []).filter((i) => i.id !== id));
     } catch { /* leave it; the next load resolves it */ }
   });
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch(`/api/agenda?id=${encodeURIComponent(caseId)}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('unavailable');
+    // Visible even when empty: the door matters as much as the list.
+    box.hidden = false;
+    paintAgenda(box, (await res.json()).items || []);
+  } catch {
+    // Fail-soft: an unreachable list must not break the chat above it.
+    box.hidden = true;
+  }
 }
 
 async function addAgendaItem(el, caseId, text) {

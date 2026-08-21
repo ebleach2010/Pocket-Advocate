@@ -407,6 +407,8 @@ export default {
         return await handleAdminSchedule(request, env);
       if (url.pathname === '/api/notify' && request.method === 'POST')
         return await handleNotify(request, env, ctx);
+      if (url.pathname === '/api/chat/lane' && request.method === 'POST')
+        return await handleChatLane(request, env);
       if (url.pathname === '/api/chat/react' && request.method === 'POST')
         return await handleChatReact(request, env);
       if (url.pathname === '/api/chat/edit' && request.method === 'POST')
@@ -666,7 +668,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-21-verline';
+const BUILD_TAG = 'v2026-08-22-lanefix';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1688,6 +1690,31 @@ async function chatContext(env, user, kind, id, msgId) {
 }
 
 /**
+ * POST /api/chat/lane  Body: { kind, id, msgId, lane }
+ *
+ * The lane a message was filed under, written with the service account.
+ * It cannot ride the message document from the browser: the deployed rules
+ * allow exactly the message keys they have always allowed (validMessage's
+ * hasOnly), and a send carrying an extra key was refused wholesale, which
+ * made the whole laned composer read as broken. Only the sender lanes their
+ * own message, and only with a lane that exists.
+ */
+async function handleChatLane(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = await request.json().catch(() => null);
+  const ctx = await chatContext(env, user, body?.kind, String(body?.id || ''), String(body?.msgId || ''));
+  if (ctx.error) return json({ error: ctx.error }, ctx.code);
+  const lane = String(body?.lane || '');
+  if (!['intake', 'records', 'clinical'].includes(lane)) return json({ error: 'Unknown lane' }, 400);
+  const msg = await getDoc(env, ctx.path);
+  if (!msg) return json({ error: 'No such message' }, 404);
+  if (msg.data.from !== user.uid) return json({ error: 'Not your message' }, 403);
+  const ok = await patchDoc(env, ctx.path, { lane }, { mask: ['lane'] });
+  return json({ ok: ok !== false });
+}
+
+/**
  * POST /api/chat/react  Body: { kind: 'case'|'sub', id, msgId, reaction|null }
  *
  * Chat messages are immutable to the browser (firestore.rules: `allow update:
@@ -2011,6 +2038,11 @@ async function handleAgenda(request, env, url) {
     if (!/^[\w-]{1,64}$/.test(itemId)) return json({ error: 'Bad item' }, 400);
     if (action === 'done') {
       if (!ctx.isAdmin) return json({ error: 'Not found' }, 404);
+      // Look before patching: patchDoc with a mask CREATES a missing doc, so
+      // checking off an item the client removed a moment earlier resurrected
+      // it as a text-less stub both pages painted as "✓ undefined".
+      const row = await getDoc(env, `${coll}/${itemId}`);
+      if (!row) return json({ ok: true, removed: true });
       const done = body?.done !== false;
       await patchDoc(env, `${coll}/${itemId}`,
         { done, doneAt: done ? new Date() : null }, { mask: ['done', 'doneAt'] });
