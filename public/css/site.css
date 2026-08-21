@@ -269,8 +269,7 @@ main { padding-top: .5rem; padding-bottom: 1.2rem; }
 .btn.glow { background: var(--cyan); border-color: var(--cyan); color: var(--on-accent); box-shadow: var(--glow-c); }
 .btn:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
 .btn.ghost { background: transparent; color: var(--cyan); border-color: var(--cyan); box-shadow: none; }
-.btn.quiet,
-.btn.mute { background: transparent; color: var(--dim); border-color: var(--line); box-shadow: none; }
+.btn.quiet { background: transparent; color: var(--dim); border-color: var(--line); box-shadow: none; }
 .btn.mag { background: transparent; border-color: var(--magenta); color: var(--magenta); box-shadow: none; }
 .btn.mag.glow { background: var(--magenta); border-color: var(--magenta); color: #1A0413; box-shadow: var(--glow-m); }
 .btn.mag.glow:disabled { box-shadow: none; }
@@ -781,7 +780,6 @@ button:focus-visible,
 }
 .btn.tiny { font-size: .7rem; padding: .6rem .75rem; min-height: 44px; }
 .btn.tiny.on { border-color: var(--magenta); color: var(--magenta); }
-[data-count].over { color: var(--orange); font-weight: 700; }
 
 /* Full-screen chat. The ⤢/✕ button sits in the top-right corner of the
    thread; full mode takes the real visible viewport (dvh survives the iOS
@@ -868,7 +866,6 @@ body.chat-full-open { overflow: hidden; }
 .p-dot.on { background: var(--cyan); box-shadow: var(--glow-c); }
 .p-label { font-size: .8rem; color: var(--dim); }
 .expectation { font-size: .85rem; color: var(--dim); font-style: italic; }
-.subtabs button.active { color: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c); }
 .case-picker { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .8rem; }
 
 /* chat attachments */
@@ -1100,7 +1097,6 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
 .auth-inline h3 { margin-bottom: .35rem; }
 .auth-inline input[type=email],
 .auth-inline input[type=text] { min-height: 44px; }
-.jump-chips a.on { color: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c); }
 /* Each section is labeled in the scroll itself — the chips alone shouldn't
    be the only way to know which block you're looking at. */
 .case-sec-h { color: var(--cyan); font-size: 1.02rem; letter-spacing: .04em; margin: 0 0 .55rem; }

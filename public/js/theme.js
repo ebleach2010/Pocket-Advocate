@@ -48,10 +48,3 @@ export function applyScheme(id) {
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', THEME_COLOR[id] || THEME_COLOR.neon);
 }
-
-/** Applies the stored scheme now - for pages whose head snippet is missing. */
-export function ensureScheme() {
-  const s = currentScheme();
-  if (s === 'neon') delete document.documentElement.dataset.scheme;
-  else document.documentElement.dataset.scheme = s;
-}

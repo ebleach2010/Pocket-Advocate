@@ -49,12 +49,6 @@ export function guessCountry(tz) {
     ? 'CA' : 'US';
 }
 
-/** The whole message, ready to read and send. */
-export function dutyDraft(country = 'US') {
-  const r = RESOURCES[country] || RESOURCES.US;
-  return `${OPENING}\n\n${r.lines.map(([name, how]) => `- ${name}: ${how}`).join('\n')}`;
-}
-
 export const COUNTRIES = Object.entries(RESOURCES).map(([id, r]) => ({ id, label: r.label }));
 
 /**

@@ -1250,8 +1250,6 @@ no closing note.` }],
  * panel renders the glossary as its own page with an "I understand" checkbox
  * per term.
  */
-const TERM_CATEGORIES = ['Condition', 'Symptom', 'Test or lab', 'Medication', 'Anatomy', 'Procedure', 'Concept'];
-
 async function harvestKeyTerms(env, text) {
   // Tolerant, not exact: any case, two hashes or three, and the decoration a
   // low-effort reply sometimes puts round a heading. An exact match failed

@@ -8,7 +8,6 @@ import { folderCardHtml, wireFolderOpen, wireDxLongPress, openDxSheet } from './
 import { unseenBadges } from './seen.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
-const OPEN_ORDER = { awaiting_report: 0, confirmed: 1, forms: 2, paid: 3, delivered: 4, closed: 5 };
 
 hydrateNav();
 const user = await requireAdmin();

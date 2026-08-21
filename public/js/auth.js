@@ -11,7 +11,6 @@ import {
   query,
   where,
   onAuthStateChanged,
-  sendSignInLinkToEmail,
   signOut,
   rtdbRef,
   rtdbSet,
@@ -49,14 +48,6 @@ export function rememberEmail(email) {
 }
 export function recallEmail() {
   return localStorage.getItem(EMAIL_KEY) || '';
-}
-
-export async function sendMagicLink(email, returnTo = '/book.html') {
-  await sendSignInLinkToEmail(auth, email, {
-    url: `${location.origin}/signin.html?to=${encodeURIComponent(returnTo)}`,
-    handleCodeInApp: true,
-  });
-  rememberEmail(email);
 }
 
 /** Resolves with the signed-in user, or null. */

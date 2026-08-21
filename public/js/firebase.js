@@ -68,6 +68,3 @@ export const {
   rtdbSet,
   onDisconnect,
 } = impl;
-
-/** '' in normal use. */
-export const DEMO_MODE = DEMO;

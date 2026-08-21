@@ -418,11 +418,6 @@
 .folder.opening .folder-body { animation: fld-flap var(--fld-open) cubic-bezier(.3, .8, .35, 1) both; }
 .folder.opening .folder-tab { animation: fld-tab var(--fld-open) ease-out both; }
 
-@keyframes fld-lift {
-  0% { transform: none; }
-  55% { transform: scale(1.03) translateY(-4px); }
-  100% { transform: scale(1.07) translateY(-11px); }
-}
 @keyframes fld-flap {
   0% { transform: rotateX(0deg); }
   100% { transform: rotateX(-54deg) translateY(-2px); }
@@ -430,14 +425,6 @@
 @keyframes fld-tab {
   0% { transform: none; }
   100% { transform: translateY(-3px) rotate(-.6deg); }
-}
-@keyframes fld-sheet-a {
-  0% { transform: none; }
-  100% { transform: translateY(-15px) rotate(-2.6deg); }
-}
-@keyframes fld-sheet-b {
-  0% { transform: none; }
-  100% { transform: translateY(-9px) rotate(3.2deg); }
 }
 
 @keyframes fpage-shuffle-r {

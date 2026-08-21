@@ -11,8 +11,6 @@ export const GOOGLE_REVIEWS_URL = null;
 // The Google Business voice number belongs to another business, so the app
 // deliberately uses this one. About and Reviews render call buttons from it.
 export const BUSINESS_PHONE = '+12086708608';
-// The same number, formatted for a person to read.
-export const BUSINESS_PHONE_TEXT = '(208) 670-8608';
 
 export const REVIEWS = [
   {
