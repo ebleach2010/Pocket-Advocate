@@ -28,7 +28,7 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat62">
+<link rel="stylesheet" href="/css/site.css?v=stat63">
 <script>
 // The admin's device opens straight to the dashboard — he never books a case.
 // Inline in <head> so there's no flash of the booking page first. The hint is
@@ -70,10 +70,12 @@
     <p class="hero-sub">I review your labs, imaging, records, and history, then help you sort out what deserves attention, what questions to ask next, and how to present the case clearly to your care team.</p>
     <p class="hero-cred">I'm a professional patient advocate and an autoimmune encephalitis survivor. I know what it is like to have a complicated case that does not fit neatly into a box. Board certification (BCPA) is in progress.</p>
     <div class="actions">
-      <a class="btn glow" href="/book.html">Book a case, <span data-rate="case">$265</span></a>
+      <!-- Eric, 2026-08-21: "don't highlight one button over the other."
+           Two ways to work with him, not a recommended one and an also-ran. -->
+      <a class="btn quiet" href="/book.html">Book a case, <span data-rate="case">$265</span></a>
       <a class="btn quiet" href="/subscribe.html">Or just chat, $50/mo</a>
     </div>
-    <p class="webapp-note" id="webapp-note">Everything happens here</p>
+    <p class="webapp-note" id="webapp-note">This is a web app</p>
   </section>
 
   <section class="land-sec">
