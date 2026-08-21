@@ -35,11 +35,6 @@ const STATUS_LABEL = {
   awaiting_report: 'REPORT DUE', delivered: 'REPORT READY', closed: 'CLOSED',
 };
 
-// Isolated preview: /case.html?demo=1 renders the full client dashboard with
-// sample data — no login, no booking, no real data touched. Live panels (chat,
-// documents) show representative static samples.
-const DEMO = new URLSearchParams(location.search).get('demo') === '1';
-
 hydrateNav();
 let user = null;
 let cases = [];
@@ -47,56 +42,22 @@ let currentId = null;
 // Case id the current page shell (and its one chat mount) was built for.
 // Refresh paths (makePrivate -> boot) must never rebuild the chat's DOM.
 let renderedFor = null;
-// Declared before the top-level DEMO branch below: that path calls render()
-// synchronously during module evaluation, and the refresh path reads this.
 let folder = null;
 
 // A file saved from chat lands in Documents. The listener is permanent (the
 // pages never unmount), so every save refreshes the list, not just the first.
 document.addEventListener('pa-saved-file', () => {
-  if (DEMO) return;
   const el = folder?.el('docs');
   const c = cases.find((x) => x.id === currentId);
   if (el && c) refreshFiles(c, el);
 });
 
-if (DEMO) {
-  user = { uid: 'demo', getIdToken: async () => '' };
-  cases = [DEMO_CASE()];
-  currentId = 'demo';
-  renderDemoBanner();
-  render();
-} else {
-  user = await requireUser();
-  if (user) {
-    boot();
-    // Introductory setup guide (install + notifications) for any signed-in
-    // client — not gated on having a case.
-    initSetupGuide(user, document.querySelector('main'));
-  }
-}
-
-function DEMO_CASE() {
-  const start = new Date(Date.now() + 4 * 86_400_000);
-  return {
-    id: 'demo',
-    status: 'confirmed',
-    createdAt: new Date(Date.now() - 2 * 86_400_000),
-    clientName: 'Jane Sample',
-    clientEmail: 'jane@example.com',
-    appointment: { start, durationMin: 60, method: 'video', joinLink: null, phone: null },
-    publicElection: { choice: 'private', revocableUntil: start },
-    addOnFollowUp: true,
-  };
-}
-
-function renderDemoBanner() {
-  const main = document.querySelector('main');
-  const b = document.createElement('div');
-  b.className = 'panel';
-  b.style.cssText = 'border-color:var(--magenta); box-shadow:var(--glow-m);';
-  b.innerHTML = `<p style="margin:0;"><strong>Preview mode</strong> — this is exactly what a client sees, with sample data. Nothing here is real. <a href="/case.html">Exit preview</a></p>`;
-  main.prepend(b);
+user = await requireUser();
+if (user) {
+  boot();
+  // Introductory setup guide (install + notifications) for any signed-in
+  // client — not gated on having a case.
+  initSetupGuide(user, document.querySelector('main'));
 }
 
 async function boot() {
@@ -377,7 +338,6 @@ function renderProgress(el, c) {
 
 // ---- Chat section (mounted once per case id; never re-rendered by refresh paths) ----
 function renderChat(el, c) {
-  if (DEMO) return renderDemoChat(el);
   const closed = c.status === 'closed';
   el.innerHTML = `
     <h2 class="case-sec-h">Chat</h2>
@@ -395,35 +355,8 @@ function renderChat(el, c) {
   });
 }
 
-function renderDemoChat(el) {
-  const msgs = [
-    { role: 'admin', text: "Hi Jane — I've got your case. Upload any labs or imaging when you can and we'll dig into it on our call.", d: '10:02 AM' },
-    { role: 'client', text: 'Thank you! Just added my recent MRI and bloodwork to Documents.', d: '10:15 AM' },
-    { role: 'admin', text: 'Perfect, I see them. I already have a couple of questions ready for your neurologist. See you Thursday.', d: '10:20 AM' },
-  ];
-  el.innerHTML = `
-    <h2 class="case-sec-h">Chat</h2>
-    <p style="margin:.2rem 0 .3rem;"><span class="p-dot on"></span><span class="p-label">I'm online</span></p>
-    <div class="panel">
-      <div class="chat-log">
-        ${msgs.map((m) => `
-          <div class="msg ${m.role === 'client' ? 'me' : 'them'}">
-            <span class="msg-text">${esc(m.text)}</span>
-            <span class="msg-meta">${m.d}</span>
-          </div>`).join('')}
-      </div>
-      <form class="chat-form" onsubmit="return false;">
-        <label class="attach-btn" title="Attach a file">📎</label>
-        <input type="text" placeholder="Write a message…" autocomplete="off">
-        <button class="btn" type="submit">Send</button>
-      </form>
-      <p class="dim small" style="margin-top:.4rem;">Preview only — messages aren't sent.</p>
-    </div>`;
-}
-
 // ---- Documents section ----
 function renderDocs(el, c) {
-  if (DEMO) return renderDemoDocs(el);
   const closed = c.status === 'closed';
   el.innerHTML = `
     <h2 class="case-sec-h">Documents</h2>
@@ -449,27 +382,6 @@ function renderDocs(el, c) {
     wireFollowUpOffer(offer, c);
   }
   // Chat saves refresh this list via the permanent pa-saved-file listener at the top.
-}
-
-function renderDemoDocs(el) {
-  const files = [
-    { kind: 'upload', name: 'MRI_brain_2026-05.pdf', meta: 'May 12 · 4.2 MB' },
-    { kind: 'upload', name: 'Bloodwork_June.pdf', meta: 'Jun 3 · 320 KB' },
-    { kind: 'saved', name: 'referral_letter.jpg', meta: 'Jun 4 · 1.1 MB' },
-  ];
-  el.innerHTML = `
-    <h2 class="case-sec-h">Documents</h2>
-    <label class="dropzone">Tap to add labs, imaging, or records<br>
-      <span class="small">PDF · JPEG · PNG · HEIC · DICOM · ZIP — 25 MB max each</span></label>
-    <ul class="filelist">
-      ${files.map((r) => `
-        <li>
-          <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
-            <a href="#" onclick="return false;">${esc(r.name)}</a></span>
-          <span class="fmeta">${r.meta}</span>
-        </li>`).join('')}
-    </ul>
-    <p class="dim small" style="margin-top:.4rem;">Preview only — sample documents.</p>`;
 }
 
 async function refreshFiles(c, el) {
@@ -528,7 +440,6 @@ const REVIEW_PROMPT = [
 ];
 
 function renderReview(el, c) {
-  if (DEMO) return;
   const delivered = c.status === 'delivered' || c.status === 'closed';
   const host = el.querySelector('[data-review]');
   if (!host) return;
@@ -719,7 +630,6 @@ function justBoughtFollowUp() {
 }
 
 function followUpOffer(c) {
-  if (DEMO) return '';
   // Straight back from Stripe. The webhook may not have landed yet, so say
   // thank you from the URL rather than from a flag that might still be false
   // for another second.

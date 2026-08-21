@@ -159,10 +159,53 @@ const DIGEST_MIN_AGE_MS = 10 * 60_000;
 const ADMIN_ASSET =
   /^\/(admin[\w-]*(\.html)?\/?|js\/(admin[\w-]*|advisor|notes|duty|prep|drawer|seen)\.js|css\/admin\.css)$/;
 
+/**
+ * The demo. Its fixtures carry advisor output, so it is subject to the same
+ * blindness rule as everything else, and it has no business existing on the
+ * live site at all. Not served from anywhere: 404, same as a path that is not
+ * there.
+ *
+ * firebase.js also refuses to enter demo mode on the production hostname, so
+ * this is the second of two independent gates rather than the only one.
+ */
+const DEMO_ASSET = /^\/js\/demo\//;
+
+/**
+ * Has this browser asked for the demo?
+ *
+ * The demo needs the admin pages to open, and the gate above exists precisely
+ * to stop that. Both are right, so the demo asks by name: visiting any page
+ * with ?demo=admin sets a cookie, and that cookie is what opens the admin half
+ * for the demo. A stranger who never asked still gets the same 404 they would
+ * get for a path that does not exist, which is what the blindness audit
+ * checks, because the audit never asks.
+ *
+ * Refused outright on the production host. This is a preview affordance and
+ * has no business on the live site.
+ */
+const DEMO_COOKIE = 'pa_demo';
+
+/** '' if this browser has not asked for the demo, else '1' or 'admin'. */
+function demoRole(request, url) {
+  if (PROD_HOST.test(url.hostname)) return '';
+  const q = url.searchParams.get('demo');
+  if (q === '0') return '';
+  if (q) return q === 'admin' ? 'admin' : '1';
+  const m = (request.headers.get('cookie') || '')
+    .match(new RegExp(`(?:^|;\\s*)${DEMO_COOKIE}=([^;]+)`));
+  return m ? (m[1] === 'admin' ? 'admin' : '1') : '';
+}
+
+const demoCookie = (role) =>
+  `${DEMO_COOKIE}=${role}; Path=/; SameSite=Lax; Max-Age=86400`;
+
 // A <script src> and a <link rel=stylesheet> cannot carry an Authorization
 // header, so the gate reads a cookie instead of a bearer token. Signed with a
 // key derived from the service account: no new secret to configure, and it
 // rotates if that ever does.
+// The live site, by name. Used to keep the demo off it.
+const PROD_HOST = /(^|\.)thepocketadvocates\.com$/i;
+
 const ADMIN_COOKIE = 'pa_adm';
 const ADMIN_COOKIE_DAYS = 14;
 
@@ -300,6 +343,36 @@ export default {
       return json({ error: 'Internal error' }, 500);
     }
 
+    const demo = demoRole(request, url);
+
+    // The demo's own files carry advisor fixtures, so they are gated exactly
+    // like the admin ones: a browser that never asked for the demo gets the
+    // same 404 it would get for a path that is not there. On the production
+    // host demoRole is always '', so they are simply not served at all.
+    if (DEMO_ASSET.test(url.pathname) && !demo) {
+      return new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain' } });
+    }
+
+    // A browser that asked for the admin demo gets the admin half of it, on a
+    // preview host only. The cookie is set here so the pages the demo
+    // navigates to keep working once the query string is gone.
+    if ((ADMIN_ASSET.test(url.pathname) || DEMO_ASSET.test(url.pathname)) && demo) {
+      const wantsAdmin = ADMIN_ASSET.test(url.pathname);
+      if (wantsAdmin && demo !== 'admin') {
+        // Asked for the client demo and navigated to an admin page: that is
+        // the gate doing its job, not the demo.
+        const to = new URL('/signin.html', url);
+        to.searchParams.set('to', url.pathname);
+        return Response.redirect(to.toString(), 302);
+      }
+      const res = await env.ASSETS.fetch(request);
+      const out = new Response(res.body, res);
+      out.headers.set('cache-control', 'private, no-store');
+      out.headers.set('vary', 'Cookie');
+      out.headers.append('set-cookie', demoCookie(demo));
+      return out;
+    }
+
     // The admin half of the site. A stranger gets the same 404 they would get
     // for a path that does not exist, so this does not confirm what is here.
     if (ADMIN_ASSET.test(url.pathname)) {
@@ -324,6 +397,17 @@ export default {
       // Serving an admin page renews the cookie, so an open tab never expires
       // out from under the modules it is about to ask for.
       if (isPage) out.headers.append('set-cookie', await adminCookieHeader(env, uid));
+      return out;
+    }
+
+    // Landing anywhere with ?demo= is how a demo starts, and the cookie has to
+    // be set right there: the very next thing the page does is import the demo
+    // store, and that request carries no query string of its own.
+    if (demo && url.searchParams.get('demo')) {
+      const res = await env.ASSETS.fetch(request);
+      const out = new Response(res.body, res);
+      out.headers.set('cache-control', 'no-store');
+      out.headers.append('set-cookie', demoCookie(demo));
       return out;
     }
     return env.ASSETS.fetch(request);

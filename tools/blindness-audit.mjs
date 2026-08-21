@@ -92,6 +92,10 @@ const ADMIN_ASSETS = [
   '/js/admin-availability.js', '/js/admin-dictionary.js',
   '/js/advisor.js', '/js/notes.js', '/js/duty.js', '/js/prep.js',
   '/js/drawer.js', '/js/seen.js', '/css/admin.css',
+  // The demo's fixtures are advisor output, so they are gated the same way. A
+  // browser that never asked for the demo, which is what this audit is,
+  // should not be able to read them either.
+  '/js/demo/store.js', '/js/demo/seed.js', '/js/demo/api.js', '/js/demo/banner.js',
 ];
 
 let failures = 0;

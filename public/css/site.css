@@ -1411,6 +1411,33 @@ button.attach-btn {
 .whats-new .wn-dots span.on { background: var(--cyan); box-shadow: var(--glow-c); }
 .whats-new .actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
 
+/* ---------------------------------------------------------------- the demo
+   Loud on purpose. A demo that looks exactly like the product is the point and
+   also the risk: nobody should get a paragraph into reading a case before
+   working out that none of it happened. */
+.demo-bar {
+  position: sticky; top: 0; z-index: 90;
+  /* flex-start, not center: the text wraps to three lines on a phone and a
+     centred dot floats in the middle of them. */
+  display: flex; align-items: flex-start; gap: .6rem; flex-wrap: wrap;
+  padding: .5rem .8rem;
+  font-size: .8rem; line-height: 1.45;
+  color: #07090F; background: var(--gold);
+}
+.demo-bar .demo-what { flex: 1 1 14rem; min-width: 0; }
+.demo-dot {
+  width: 8px; height: 8px; flex: none; margin-top: .38rem; border-radius: 50%;
+  background: #07090F;
+}
+.demo-acts { display: flex; gap: .4rem; flex: none; }
+.demo-bar .btn {
+  padding: .22rem .6rem; font-size: .75rem;
+  color: #07090F; border-color: rgba(7, 9, 15, .45); background: rgba(255, 255, 255, .35);
+}
+.demo-bar .btn:hover { background: rgba(255, 255, 255, .6); }
+/* The sticky header sits under the strip rather than over it. */
+body.has-demo-bar .bar { top: 2.4rem; }
+
 /* --------------------------------------------------------- saved messages
    Both sides get this, and on both sides it is private: the bookmark lives in
    a subtree the browser cannot read, and nothing is written back to the
