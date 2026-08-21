@@ -109,7 +109,7 @@ function render(el) {
     // across a 320px screen with their labels whole; five do not.
     groups: [
       { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files'] },
-      { id: 'read', label: 'Advisor', icon: '👨‍⚕️', pages: ['advisor', 'dx', 'education'] },
+      { id: 'read', label: 'Advisor', icon: '👨‍⚕️', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
       { id: 'track', label: 'Track', icon: '🗒', pages: ['summary', 'unanswered', 'about'] },
       { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'drafts', 'saved'] },
     ],
@@ -152,9 +152,17 @@ function render(el) {
         render: (pane) => { pane.innerHTML = '<div class="panel advisor-panel" id="advisor"></div>'; },
       },
       {
-        id: 'dx', title: 'Differential', icon: '🧬',
+        // "Dx", because four tabs share this row now and "Differential" ate
+        // half of it. Same page, same 🧬; Eric writes Dx everywhere anyway.
+        id: 'dx', title: 'Dx', icon: '🧬',
         // The advisor owns this page and repaints it on every state poll.
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
+      },
+      {
+        // Talking to the advisor, out of the bottom of Read and onto its own
+        // page. mountAdvisor moves its Q&A here when given the container.
+        id: 'advisor-chat', title: 'Chat', icon: '💬',
+        render: (pane) => { pane.innerHTML = '<div id="advisor-chat"></div>'; },
       },
       {
         // The page id stays 'files' so a remembered tab still resolves; the
@@ -302,6 +310,8 @@ function render(el) {
     draftContainer: folder.el('drafts').querySelector('#draft-panel'),
     // The differential renders onto its own page too.
     diffContainer: folder.el('dx'),
+    // And the Q&A - asking the advisor - onto its own Chat page.
+    qaContainer: folder.el('advisor-chat').querySelector('#advisor-chat'),
   });
 
   renderedFor = caseId;

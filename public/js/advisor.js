@@ -89,7 +89,7 @@ function termPalette(text) {
  */
 export let sendToClient = null;
 
-export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null, diffContainer = null }) {
+export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null, diffContainer = null, qaContainer = null }) {
   container.innerHTML = `
     <div class="advisor">
       <div class="advisor-head">
@@ -844,6 +844,24 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   askBtn.type = 'button';
   askBtn.addEventListener('click', doAsk);
   askForm.addEventListener('submit', (e) => { e.preventDefault(); doAsk(); });
+
+  // The conversation with the advisor lives on its own Chat page when the
+  // host provides one (Eric, 2026-08-21: "Do move where I talk to the advisor
+  // there"). The nodes MOVE - listeners, poll references and all - so
+  // everything above keeps working untouched; only the address changes. The
+  // Read page keeps the analysis, the controls and the errors.
+  if (qaContainer) {
+    qaContainer.innerHTML = `
+      <div class="panel advisor-panel">
+        <div class="advisor">
+          <h3>💬 Ask your advisor</h3>
+          <p class="dim small">Questions and answers about this case, between you and the advisor only. The client never sees any of it.</p>
+        </div>
+      </div>`;
+    const home = qaContainer.querySelector('.advisor');
+    home.appendChild(qaEl);
+    home.appendChild(container.querySelector('.advisor-foot'));
+  }
 
   // "Send to the advisor for review" — dispatched by the chat's long-press
   // menu and the file list. The file rides the ask flow as an attachment; the
