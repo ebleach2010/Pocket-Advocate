@@ -578,12 +578,59 @@ export default {
     // The nightly voice study. Returns immediately on every fire but one: it
     // wants his evening, a day since the last run, and no explicit off switch.
     ctx.waitUntil(maybeVoiceStudy(env));
+    // Runs once, ever. Instant no-op on every fire after that.
+    ctx.waitUntil(grandfatherFollowUps(env));
   },
 };
 
+/**
+ * Everyone who booked before the repricing keeps the follow-up they paid for.
+ *
+ * (Eric, 2026-08-21: "Be sure the current client gets grandfathered in to
+ * having a booked follow up - he's already paid, I only have one.")
+ *
+ * A case used to include the follow-up session in its price. It does not any
+ * more: it is a separate $75 purchase off the case page. Shipping that change
+ * without this would quietly take a session off somebody who had already been
+ * charged for it, and would ask him to pay a second time for it.
+ *
+ * Every case that exists at the moment this first runs predates the change, so
+ * every one of them is granted the flag the rest of the system already
+ * understands. Cases opened afterwards buy it the new way.
+ *
+ * Written as a marker doc created with mustNotExist, so two cron fires in the
+ * same minute cannot both claim the job, and a restart cannot replay it.
+ */
+async function grandfatherFollowUps(env) {
+  const MARKER = 'migrations/followUpGrandfather';
+  if (await getDoc(env, MARKER)) return;
+  const claimed = await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;   // another fire got there first
+
+  const cases = await listDocs(env, 'cases', { all: true });
+  const granted = [];
+  for (const c of cases) {
+    const d = c.data || {};
+    // Already has it, however it got there. Never touch a paid record twice.
+    if (d.addOnFollowUp) continue;
+    await patchDoc(env, `cases/${c.id}`, {
+      addOnFollowUp: true,
+      // The 30 day window starts now, not at a call that may be weeks behind
+      // them - the same rule confirmFollowUpPurchase uses.
+      addOnFollowUpAt: new Date(),
+      grandfathered: true,
+      pendingFollowUp: null,
+    }, { mask: ['addOnFollowUp', 'addOnFollowUpAt', 'grandfathered', 'pendingFollowUp'] });
+    granted.push(c.id);
+  }
+  await patchDoc(env, MARKER, {
+    startedAt: new Date(), finishedAt: new Date(), granted, count: granted.length,
+  });
+}
+
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-21-hero';
+const BUILD_TAG = 'v2026-08-21-grandfather';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
