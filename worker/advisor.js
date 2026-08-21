@@ -1544,9 +1544,16 @@ dash or en dash.` }],
     messages: [{ role: 'user', content: `${day}\n\n${transcript}` }],
   });
 
-  if (finished) await patchDoc(env, path, {
+  // Cache it, unconditionally. `ask` streams and only resolves when the model
+  // completes, so reaching this line IS finished - the old `if (finished)`
+  // guard referenced a variable that never existed anywhere, a leftover from
+  // a draft, and it threw AFTER every successful model call: the summary was
+  // generated, paid for, discarded, and the button said it failed.
+  // (Eric, 2026-08-21: "Still hitting error.") A failed cache write must not
+  // take the answer with it, so it only costs a recompute next time.
+  await patchDoc(env, path, {
     text: text.slice(0, 8000), day, at: new Date(), messages: mine.length,
-  });
+  }).catch(() => { /* the text still returns; the same day recomputes later */ });
   return { day, text, cached: false };
 }
 
