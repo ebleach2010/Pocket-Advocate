@@ -711,13 +711,13 @@ function tipJarHtml(c) {
         <button type="button" class="btn ghost" data-tip-custom>Custom amount</button>
         <div data-tip-box hidden style="gap:.5rem;">
           <input type="number" min="1" max="5000" step="1" inputmode="decimal" placeholder="$"
-            data-tip-amount style="flex:1; text-align:center;">
+            data-tip-amount style="flex:1; min-width:0; text-align:center;">
           <button type="button" class="btn glow" data-tip-send>Add</button>
         </div>
         <div style="display:flex; gap:.5rem;">
-          <button type="button" class="btn ghost" style="flex:1;" data-tip-pct="15">15%<br><span class="dim small">${money(pct(15))}</span></button>
-          <button type="button" class="btn ghost" style="flex:1;" data-tip-pct="20">20%<br><span class="dim small">${money(pct(20))}</span></button>
-          <button type="button" class="btn ghost" style="flex:1;" data-tip-pct="25">25%<br><span class="dim small">${money(pct(25))}</span></button>
+          <button type="button" class="btn ghost" style="flex:1; min-width:0; padding-left:.2rem; padding-right:.2rem;" data-tip-pct="15">15%<br><span class="dim small">${money(pct(15))}</span></button>
+          <button type="button" class="btn ghost" style="flex:1; min-width:0; padding-left:.2rem; padding-right:.2rem;" data-tip-pct="20">20%<br><span class="dim small">${money(pct(20))}</span></button>
+          <button type="button" class="btn ghost" style="flex:1; min-width:0; padding-left:.2rem; padding-right:.2rem;" data-tip-pct="25">25%<br><span class="dim small">${money(pct(25))}</span></button>
         </div>
         <p class="error" data-tip-error hidden style="margin:0;"></p>
         <p class="dim small" data-tip-thanks hidden style="margin:0;">Received. Thank you.</p>

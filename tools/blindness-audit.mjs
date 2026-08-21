@@ -82,7 +82,8 @@ const EXTRA = [
   '/_headers', '/_redirects', '/css/site.css',
 ];
 
-// Must not be reachable without the admin cookie. Pages redirect to sign-in;
+// Must not be reachable without the admin cookie. Pages 404 exactly like a
+// missing path (the 302-to-sign-in was an existence oracle, closed 2026-08-21);
 // modules and the stylesheet 404, which is what a path that does not exist
 // returns, so the gate does not confirm what is behind it.
 const ADMIN_PAGES = [
@@ -194,8 +195,7 @@ console.log(`  ${files} text files scanned, ${hits} forbidden ${hits === 1 ? 'ma
 console.log('\n2. the admin half, as a stranger');
 for (const path of ADMIN_PAGES) {
   const res = await fetch(new URL(path, ORIGIN), { redirect: 'manual' });
-  if (res.status !== 302) fail(`${path} — ${res.status}, expected a 302 to sign-in`);
-  else if (!/signin/.test(res.headers.get('location') || '')) fail(`${path} — redirects to ${res.headers.get('location')}`);
+  if (res.status !== 404) fail(`${path} — ${res.status}, expected the byte-identical 404`);
 }
 for (const path of ADMIN_ASSETS) {
   const res = await fetch(new URL(path, ORIGIN), { redirect: 'manual' });

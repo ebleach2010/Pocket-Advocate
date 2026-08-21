@@ -15,6 +15,13 @@ const DONE_KEY = 'pa-intro-done';
 const KNOWN_AT_LOAD = (() => {
   try { return !!localStorage.getItem('pa-seen-version'); } catch { return false; }
 })();
+// The marker alone is not enough: every page stamps it, so a brand-new person
+// who looked at the booking page first arrives at their case already stamped.
+// changelog.js flags the session in which the stamp was first created; while
+// that flag is up, this browser is a first-ever visitor and the welcome runs.
+const FRESH_SESSION = (() => {
+  try { return sessionStorage.getItem('pa-fresh-visitor') === '1'; } catch { return false; }
+})();
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 const notifOn = () => 'Notification' in window && Notification.permission === 'granted';
 
@@ -46,7 +53,7 @@ export function initSetupGuide(user, mount, { welcome = true } = {}) {
   let done = false;
   try { done = !!localStorage.getItem(DONE_KEY); } catch { /* blocked */ }
 
-  if (KNOWN_AT_LOAD || done) {
+  if (done || (KNOWN_AT_LOAD && !FRESH_SESSION)) {
     if (!fullySet) reminder(user, mount);
     return;
   }

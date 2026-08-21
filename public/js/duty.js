@@ -44,6 +44,19 @@ const OPENING = "Based on what you said, I'm obligated to send you this. But you
   + 'suggest therapy during illness. It can be invaluable. It kept me alive when I was sick.';
 
 /** Canada if their timezone says so, otherwise the US. He can switch it. */
+/**
+ * The whole message, ready to read and send.
+ *
+ * Removed once as "unreferenced" - the app builds the same text inside
+ * openDutyDraft - and restored on purpose: the r2 duty suite reads THIS to
+ * pin Eric's exact words and every hotline number. Copy this important gets
+ * a test surface, and a pure function is that surface. Do not remove again.
+ */
+export function dutyDraft(country = 'US') {
+  const r = RESOURCES[country] || RESOURCES.US;
+  return `${OPENING}\n\n${r.lines.map(([name, how]) => `- ${name}: ${how}`).join('\n')}`;
+}
+
 export function guessCountry(tz) {
   return /^America\/(Toronto|Vancouver|Edmonton|Winnipeg|Halifax|St_Johns|Regina|Montreal|Moncton|Whitehorse|Yellowknife|Iqaluit|Glace_Bay|Goose_Bay|Blanc-Sablon|Rankin_Inlet|Resolute|Creston|Dawson|Fort_Nelson|Inuvik|Cambridge_Bay|Atikokan|Nipigon|Rainy_River|Thunder_Bay|Swift_Current)$/.test(String(tz || ''))
     ? 'CA' : 'US';

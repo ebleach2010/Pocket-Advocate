@@ -1662,10 +1662,13 @@ body.has-demo-bar .bar { top: var(--demo-bar-h, 2.4rem); }
    page row always fits across a 320px screen without scrolling and without a
    single label being cut short. */
 .folder-groups {
-  position: sticky; top: 3rem; z-index: 5;
+  /* Static, like the tab row below it: tabs do not travel (Eric, 2026-08-21),
+     and one strip sticking while its partner scrolls away is worse than
+     either. Same horizontal edges as the tab row, or the two rows sit 7px
+     out of line and read as a mistake. */
   display: flex; gap: .3rem;
-  margin: 0 -.4rem .1rem; padding: .45rem .5rem .35rem;
-  background: var(--bar); backdrop-filter: blur(8px);
+  margin: 0 0 .1rem; padding: .45rem .1rem .35rem;
+  background: var(--bar);
 }
 .fgrp {
   position: relative; flex: 1 1 0; min-width: 0;

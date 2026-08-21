@@ -170,6 +170,13 @@ export async function showVersionCard(isAdmin = false, user = null) {
     } catch { /* the client half still shows */ }
   }
   const versions = unseenVersions(extra);
+  // A marker created just now, from empty, means this person is NEW this
+  // session - they browsed in, nothing more. The intro (onboarding.js) reads
+  // this to tell a first-ever visitor from a returning client, because by the
+  // time they reach their case page the marker exists either way.
+  try {
+    if (!seenVersion()) sessionStorage.setItem('pa-fresh-visitor', '1');
+  } catch { /* storage blocked */ }
   markVersionSeen();
   if (!versions.length) return false;
 
