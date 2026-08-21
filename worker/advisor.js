@@ -635,6 +635,28 @@ written so it still makes sense months from now with no memory of this
 conversation. It is filed permanently.`;
 
 /**
+ * The advisor once told Eric it does not learn, train, or carry anything
+ * between sessions. From inside one API call that felt true, but the product
+ * around it does all of those things, and denying them to the person they were
+ * built for is the one answer that must never happen again. This note keeps
+ * the model's self-description matched to the machinery.
+ */
+const SELF_NOTE = `
+
+If Eric asks how you learn, remember, or adapt to him, this is the truth, so
+never deny it: you are not stateless here. A nightly study at about 9pm
+Mountain reads his own messages across all of his threads, plus every edit he
+made to your past drafts, and keeps a standing profile of his voice and his
+positions current. That profile, his mastered-terms glossary, and this case's
+running assessment load into your analyses, drafts, and answers. When he edits
+a draft, the lesson lands the same day. Your recent private discussion with
+him on a case rides into your next answers and into the next assessment, and
+what you two settle there moves the differential. You do adapt to his
+vocabulary, his style, and his standing calls over time. If an adaptation has
+not surfaced yet, the honest answer is that the profile has not caught it yet,
+never that no such mechanism exists.`;
+
+/**
  * Take the stance out of an override reply and file it, so the next read
  * starts from his position instead of relitigating it. It lands on the style
  * profile, which is already what carries his standing calls into every prompt.
@@ -1616,6 +1638,36 @@ export async function runQueuedAnalyses(env) {
 }
 
 /**
+ * Eric's recent back-and-forth with the advisor on this thread. Loaded WITHOUT
+ * orderBy on purpose: Firestore's orderBy silently drops any doc missing the
+ * field, so the sort happens here. This is what turns the advisor chat into a
+ * conversation that accumulates: it rides into every question (so the advisor
+ * remembers what they just discussed) and into every analysis (so a conclusion
+ * reached in that chat actually moves the assessment and the differential).
+ * Eric's words: "The advisor does not seem to be adapting the differential
+ * based on our conversation." This is the fix; do not remove either injection.
+ */
+async function loadQa(env, kind, id, { skip = null, take = 10 } = {}) {
+  const rows = await listDocs(env, `${statePath(kind, id)}/qa`, { pageSize: 60 })
+    .catch(() => []);
+  return rows
+    .filter((r) => r.id !== skip && r.data.status === 'done'
+      && r.data.question && r.data.answer)
+    .sort((a, b) => new Date(a.data.at || 0) - new Date(b.data.at || 0))
+    .slice(-take)
+    .map((r) => ({
+      q: String(r.data.question).slice(0, 800),
+      a: String(r.data.answer).slice(0, 600),
+    }));
+}
+
+function qaBlock(qa) {
+  if (!qa.length) return '';
+  const turns = qa.map((x) => `ERIC: ${x.q}\nYOU: ${x.a}`).join('\n\n');
+  return `\n<discussion_with_eric>\nYour recent private discussion with Eric about this client, oldest first (long answers shortened):\n\n${turns}\n</discussion_with_eric>\n`;
+}
+
+/**
  * Re-read the thread and update the running assessment. Progressive on
  * purpose: the previous analysis goes back in as memory, so each pass refines
  * rather than restarting, and the picture compounds over the life of the case.
@@ -1623,11 +1675,12 @@ export async function runQueuedAnalyses(env) {
 export async function runAnalysis(env, kind, id, mediaList = null) {
   try {
     await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date() });
-    const [rows, state, knowledge, style] = await Promise.all([
+    const [rows, state, knowledge, style, qa] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
       loadKnowledge(env),
       loadStyle(env),
+      loadQa(env, kind, id),
     ]);
     const chat = transcript(rows);
     if (!chat) {
@@ -1806,9 +1859,14 @@ ${style.voice}` : ''}` }],
         content: [
           {
             type: 'text',
+            // The private discussion goes in beside the client transcript, and
+            // it carries weight: what Eric settled with the advisor there has
+            // to move this assessment, or the advisor chat is decoration.
             text: (prior
-              ? `Here is your previous assessment of this client:\n\n<previous>\n${prior}\n</previous>\n\nHere is the full conversation as it now stands:\n\n<transcript>\n${chat}\n</transcript>\n\nUpdate the assessment. Carry forward what still holds, revise what the new messages change, and say explicitly if something new contradicts an earlier read.`
-              : `Here is the conversation so far:\n\n<transcript>\n${chat}\n</transcript>\n\nWrite the first assessment.`) + mediaNote(media),
+              ? `Here is your previous assessment of this client:\n\n<previous>\n${prior}\n</previous>\n\nHere is the full conversation as it now stands:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nUpdate the assessment. Carry forward what still holds, revise what the new messages change, and say explicitly if something new contradicts an earlier read.`
+              : `Here is the conversation so far:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nWrite the first assessment.`)
+              + (qa.length ? `\n\nThe discussion with Eric is part of the case record. A conclusion he reached with you there, a direction he gave, or a possibility you two raised or sank moves this assessment and the Differential section exactly as if he had said it in the client thread. If that discussion changed your read since the previous assessment, say so in "Right now".` : '')
+              + mediaNote(media),
           },
           ...media.blocks,
         ],
@@ -1926,11 +1984,15 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
   const path = `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state/qa/${qaId}`;
   const override = isOverride(question);
   try {
-    const [rows, state, knowledge, style] = await Promise.all([
+    const [rows, state, knowledge, style, qa] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
       loadKnowledge(env),
       loadStyle(env),
+      // The exchanges before this one, minus the row being answered right now.
+      // Without them every question started from zero and "our conversation"
+      // never existed on the advisor's side.
+      loadQa(env, kind, id, { skip: qaId }),
     ]);
     const chat = transcript(rows);
     let fileBlocks = [];
@@ -1972,7 +2034,7 @@ reasoning, concede it plainly and say what it changes; do not concede as a
 courtesy and then carry on as before. When he says something outright wrong,
 correct it just as plainly, once, without softening it into a maybe. Both of
 those are the job.
-${knowledgeNote(knowledge)}${stanceNote(style)}${override ? OVERRIDE_NOTE : ''}` }],
+${knowledgeNote(knowledge)}${stanceNote(style)}${SELF_NOTE}${override ? OVERRIDE_NOTE : ''}` }],
       messages: [{
         role: 'user',
         content: [
@@ -1982,6 +2044,8 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}${override ? OVERRIDE_NOTE : ''}`
               state?.data.analysis ? `\n<your_current_assessment>\n${state.data.analysis}\n</your_current_assessment>\n` : ''
             }${
               state?.data.draft ? `\n<your_current_draft>\nA reply you drafted for Eric to send, not yet sent. He may be asking about it.\n${state.data.draft}\n</your_current_draft>\n` : ''
+            }${qaBlock(qa)}${
+              qa.length ? '\nThis is one continuing conversation. His question below may lean on it; do not repeat what you already told him there.\n' : ''
             }${fileNote}\nEric asks: ${question}`,
           },
           ...fileBlocks,
@@ -1996,6 +2060,11 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}${override ? OVERRIDE_NOTE : ''}`
     await patchDoc(env, path, {
       answer: cleaned, status: 'done', override,
     }, { mask: ['answer', 'status', 'override'] });
+    // A settled exchange is new case material now that analyses read the
+    // discussion, so flag the assessment stale. markPending's own floor keeps
+    // a burst of questions from buying a max-effort analysis per question; the
+    // cron picks the flag up, and the next pass folds the discussion in.
+    await markPending(env, kind, id).catch(() => {});
   } catch (err) {
     console.error('advisor question:', err.stack || err);
     await patchDoc(env, path, {
