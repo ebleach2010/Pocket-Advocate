@@ -40,9 +40,8 @@ export const CHANGELOG = [
         where: 'Your case',
         icon: '📁',
         body: 'Your case is a folder with tabs across the top. Tap a tab to open '
-          + 'that page, or tap the right side of the page itself to turn to the '
-          + 'next one. You can swipe between them too. Nothing is buried: every '
-          + 'page is one tap away.',
+          + 'that page, or swipe left and right to move between them. Nothing '
+          + 'is buried: every page is one tap away.',
       },
       {
         where: 'Progress',
@@ -92,7 +91,7 @@ export const CHANGELOG = [
       },
     ],
     client: [
-      'Your case is now a folder with tabs instead of one long scroll. Tap a tab, or tap the right side of the page to turn it.',
+      'Your case is now a folder with tabs instead of one long scroll. Tap a tab, or swipe left and right to move between pages.',
       'A new Saved tab: press and hold any message to bookmark it with a note of your own.',
       'Files shared in chat now show up in your Documents, where they always should have.',
       'Long file names are readable again instead of being cut off mid-word.',

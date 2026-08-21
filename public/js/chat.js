@@ -522,7 +522,9 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     if (!file) return;
     errEl.hidden = true;
     if (file.size > MAX_BYTES) {
-      errEl.textContent = `${file.name} is over 25 MB.`;
+      // Same words as the Documents page, which already told people what to do
+      // about it rather than only what was wrong.
+      errEl.textContent = `${file.name} is over 25 MB. Compress it or split it up.`;
       errEl.hidden = false;
       return;
     }
@@ -634,6 +636,17 @@ export function openLightbox(att) {
   document.body.appendChild(overlay);
 }
 
+/** A confirmation that does not have to be dismissed before life continues. */
+function toast(text, bad = false) {
+  document.querySelector('.pa-toast')?.remove();
+  const el = document.createElement('div');
+  el.className = `pa-toast${bad ? ' bad' : ''}`;
+  el.setAttribute('role', 'status');
+  el.textContent = text;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
 async function promptSave(att, saveUid) {
   if (!confirm(`Save "${att.name}" to Documents?`)) return;
   try {
@@ -641,7 +654,7 @@ async function promptSave(att, saveUid) {
     const dest = ref(storage, `profiles/${saveUid}/saved/${Date.now()}-${att.name.replace(/[^\w.\- ]+/g, '_')}`);
     const task = uploadBytesResumable(dest, blob, { contentType: att.contentType });
     await new Promise((resolve, reject) => task.on('state_changed', null, reject, resolve));
-    alert(`Saved "${att.name}" to Documents.`);
+    toast(`Saved "${att.name}" to Documents.`);
     document.dispatchEvent(new CustomEvent('pa-saved-file'));
   } catch (err) {
     alert(`Couldn't save: ${err.message}`);

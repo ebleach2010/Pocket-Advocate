@@ -8,7 +8,15 @@ const DONE_KEY = 'pa-intro-done';
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 const notifOn = () => 'Notification' in window && Notification.permission === 'granted';
 
-export function initSetupGuide(user, mount) {
+/**
+ * `welcome: false` drops the opening card.
+ *
+ * It says "You're in. This is your private space - your case, your documents"
+ * which is true on the case page and false on the booking page, where the same
+ * guide runs to offer the Home Screen install before anyone pays. A returning
+ * client opening the pricing page on a new phone was told they had a case.
+ */
+export function initSetupGuide(user, mount, { welcome = true } = {}) {
   if (!mount || !user) return;
   const fullySet = pushInstalled() && notifOn();
 
@@ -16,7 +24,7 @@ export function initSetupGuide(user, mount) {
     if (!fullySet) reminder(user, mount);
     return;
   }
-  runIntro(user, mount, fullySet);
+  runIntro(user, mount, fullySet, welcome);
 }
 
 function finish() {
@@ -24,13 +32,13 @@ function finish() {
   document.getElementById('pa-intro')?.remove();
 }
 
-function runIntro(user, mount, fullySet) {
+function runIntro(user, mount, fullySet, welcome = true) {
   const steps = [
-    {
+    ...(welcome ? [{
       title: 'Welcome to Pocket Advocate 👋',
       body: `<p>You're in. This is your private space — your case, your documents, and a direct line to me. Just a couple of quick things to set up first.</p>`,
       cta: 'Get started',
-    },
+    }] : []),
     {
       title: 'Keep it one tap away',
       body: `
@@ -68,7 +76,30 @@ function runIntro(user, mount, fullySet) {
   const overlay = document.createElement('div');
   overlay.id = 'pa-intro';
   overlay.className = 'intro-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
   document.body.appendChild(overlay);
+  // Focus goes in and stays in. It said aria-modal and then let Tab walk the
+  // page behind it, which for anyone navigating by keyboard is worse than not
+  // claiming to be modal at all.
+  const returnTo = document.activeElement;
+  const trap = (e) => {
+    if (e.key === 'Escape') { finish(); return; }
+    if (e.key !== 'Tab') return;
+    const can = [...overlay.querySelectorAll('button, [href], input, select, textarea')]
+      .filter((el) => !el.disabled && el.offsetParent !== null);
+    if (!can.length) return;
+    const first = can[0];
+    const last = can[can.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    else if (!overlay.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+  };
+  document.addEventListener('keydown', trap);
+  const releaseFocus = () => {
+    document.removeEventListener('keydown', trap);
+    if (returnTo && document.contains(returnTo)) returnTo.focus?.();
+  };
 
   const paint = () => {
     const s = steps[i];
@@ -83,11 +114,12 @@ function runIntro(user, mount, fullySet) {
           <button class="btn" data-next>${last ? 'Done' : s.cta || 'Next'}</button>
         </div>
       </div>`;
-    overlay.querySelector('[data-skip]')?.addEventListener('click', finish);
+    overlay.querySelector('[data-skip]')?.addEventListener('click', () => { releaseFocus(); finish(); });
+    overlay.querySelector('[data-next]')?.focus();
     if (s.onPaint) s.onPaint(overlay);
     overlay.querySelector('[data-next]').addEventListener('click', async (e) => {
       if (s.action) await s.action(e.target);
-      if (i < steps.length - 1) { i += 1; paint(); } else finish();
+      if (i < steps.length - 1) { i += 1; paint(); } else { releaseFocus(); finish(); }
     });
   };
   paint();

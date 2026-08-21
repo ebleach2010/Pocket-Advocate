@@ -11,6 +11,7 @@ const ADMIN = 'demo-admin';
 
 const days = (n) => new Date(Date.now() - n * 86_400_000);
 const hours = (n) => new Date(Date.now() - n * 3_600_000);
+const inDays = (n) => new Date(Date.now() + n * 86_400_000);
 
 const CHAT = [
   [10, 'client', "Hi Eric. I've been going in circles for about two years now. Fatigue that doesn't lift, joint pain that moves around, and three doctors who have each told me something different."],
@@ -114,6 +115,20 @@ const GLOSSARY = [
 
 /** Write the whole thing. `set` takes a Firestore path, `file` a Storage one. */
 export function seed({ set, file }) {
+  // Open times to book into. Without these the booking page says "No open
+  // times right now" and the sign-up walk - the thing the demo exists to let
+  // him do - stops on its first step. The window the page accepts is 72 hours
+  // out to ten and a half days, so these sit inside it with room either side.
+  const SLOT_HOURS = [10, 13, 15];
+  let slot = 0;
+  for (const day of [4, 5, 6, 8]) {
+    for (const hour of SLOT_HOURS) {
+      const start = inDays(day);
+      start.setHours(hour, 0, 0, 0);
+      set(`availability/slot-${++slot}`, { state: 'open', start, durationMin: 60 });
+    }
+  }
+
   set(`users/${CLIENT}`, { email: 'jordan@example.demo', name: 'Jordan Avery', role: 'client' });
   set(`users/${ADMIN}`, { email: 'you@pocketadvocate.demo', name: 'Eric', role: 'admin' });
 

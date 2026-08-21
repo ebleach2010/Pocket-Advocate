@@ -37,11 +37,33 @@
 .advisor-body { max-height: 30rem; overflow-y: auto; }
 .advisor-page-head { display: flex; align-items: center; gap: .45rem; }
 .advisor-page-head h4 { flex: 1; margin: 0; font-size: .84rem; letter-spacing: .02em; color: var(--cyan); min-width: 0; overflow-wrap: anywhere; }
+/* The advisor pager. Ten sections deep, pressed constantly, so it is sized to
+   be pressed rather than to be small. */
 .pg-btn {
   border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
-  border-radius: 8px; width: 1.7rem; height: 1.7rem; min-width: 1.7rem;
-  font-size: 1rem; line-height: 1; cursor: pointer;
+  border-radius: 10px; width: 2.5rem; height: 2.5rem; min-width: 2.5rem;
+  font-size: 1.05rem; line-height: 1; cursor: pointer;
 }
+
+/* Schedule a session, Meeting link, Milestones, Their review, Close case: the
+   whole case toolbar, and until now five unstyled <summary> rows 28px tall.
+   They are what he reaches for on every case. */
+.mgmt {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin-bottom: .5rem;
+}
+.mgmt > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+  cursor: pointer; list-style: none; padding: .75rem .9rem; min-height: 44px;
+  font-weight: 600; color: var(--ink); font-size: .92rem;
+}
+.mgmt > summary::-webkit-details-marker { display: none; }
+.mgmt > summary::after { content: '\25B8'; color: var(--cyan); flex: none; font-size: .75rem; }
+.mgmt[open] > summary { color: var(--cyan); border-bottom: 1px solid var(--line); }
+.mgmt[open] > summary::after { transform: rotate(90deg); }
+.mgmt-body { padding: .75rem .9rem .9rem; }
+/* Close case is the one that cannot be taken back. */
+.mgmt[data-k="close"] > summary { color: var(--soft); }
 .pg-btn:disabled { opacity: .3; cursor: default; }
 .pg-count { font-size: .68rem; color: var(--dim); white-space: nowrap; }
 .advisor-page-body { margin-top: .35rem; }

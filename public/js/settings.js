@@ -3,10 +3,14 @@
 import { enablePush } from './push.js';
 import { db, doc, getDoc, setDoc } from './firebase.js';
 import { SCHEMES, currentScheme, applyScheme } from './theme.js';
+import { barActs } from './nav-menu.js';
 
 export function initSettings(user, isAdmin = false) {
   if (!user) return;
-  const nav = document.querySelector('.tabs');
+  // The right-hand end of the bar, never the link strip: inside the strip the
+  // cog was the last thing on a row wider than the screen, so the one control
+  // the onboarding tells people to tap was the one always off it.
+  const nav = barActs();
   if (!nav || nav.querySelector('.cog-btn')) return;
   const cog = document.createElement('button');
   cog.className = 'cog-btn';
@@ -68,8 +72,13 @@ function openPanel(user, isAdmin = false) {
     </div>`;
   document.body.appendChild(overlay);
 
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-  overlay.querySelector('[data-close]').addEventListener('click', () => overlay.remove());
+  // Escape, the backdrop and Done all close it. It was the only overlay in the
+  // app that ignored Escape.
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('[data-close]').addEventListener('click', close);
 
   // A silent push failure is indistinguishable from "nothing has happened yet",
   // so give both of us a way to prove delivery on demand.

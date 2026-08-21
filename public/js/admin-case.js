@@ -136,7 +136,10 @@ function render(el) {
         },
       },
       {
-        id: 'advisor', title: 'Advisor', icon: '👨‍⚕️',
+        // "Read", not "Advisor". The group chip above it already says Advisor
+        // and carries the same 👨‍⚕️, so the two rows read as "Advisor ›
+        // Advisor" with nothing to tell a tired person which is which.
+        id: 'advisor', title: 'Read', icon: '📖',
         render: (pane) => { pane.innerHTML = '<div class="panel advisor-panel" id="advisor"></div>'; },
       },
       {
@@ -393,7 +396,7 @@ function paintSummary(pane) {
         day always reads the same.</p>
       <div class="row" style="gap:.5rem; flex-wrap:wrap; align-items:center;">
         <input type="date" data-day value="${iso(today)}" max="${iso(today)}">
-        <button class="btn" data-go>Read that day</button>
+        <button class="btn glow" data-go>Read that day</button>
       </div>
       <p class="error" data-err hidden style="margin:.5rem 0 0;"></p>
       <div class="sum-out" data-out hidden></div>
@@ -970,7 +973,7 @@ async function refreshFiles() {
     <li>
       ${thumbable(r) ? `<img class="thumb" src="${r.url}" alt="" loading="lazy" data-thumb="${i}">` : ''}
       <span class="up-text">
-        <span class="fname"><span class="kind-pill ${r.kind}">${label(r.kind)}</span><a href="${r.url}" target="_blank" rel="noopener">${esc(r.name)}</a></span>
+        <span class="fname"><span class="kind-pill ${r.kind}">${label(r.kind)}</span><a href="${r.url}" target="_blank" rel="noopener">${esc(String(r.name).replace(/^\d{10,}-/, ''))}</a></span>
         <span class="fmeta">${time.format(r.ts)} · ${prettySize(r.size)}</span>
       </span>
       ${reviewable(r)
@@ -1045,7 +1048,7 @@ function infoBar(c, mtFmt, start, due) {
   const rows = [];
   const row = (label, value, color) => rows.push(`
     <span style="font:600 .62rem/1.7 ui-monospace,monospace; letter-spacing:.13em; color:var(--dim); white-space:nowrap;">${label}</span>
-    <span class="small" style="color:${color || 'var(--ink)'}; font-weight:600; min-width:0;">${value}</span>`);
+    <span class="small" style="color:${color || 'var(--ink)'}; font-weight:600; min-width:0; overflow-wrap:anywhere;">${value}</span>`);
 
   if (c.clientName || c.clientDob) {
     const age = c.clientDob ? Math.floor((Date.now() - new Date(c.clientDob + 'T00:00:00').getTime()) / 31_557_600_000) : null;

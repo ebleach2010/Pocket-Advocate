@@ -186,8 +186,12 @@ function showNavHint(folderEl) {
   try { if (localStorage.getItem(NAV_HINT_KEY)) return; } catch { return; }
   const note = document.createElement('p');
   note.className = 'nav-hint';
-  note.innerHTML = 'Your case has tabs. Tap one to switch pages, or tap the '
-    + 'right side of the page to turn to the next one. '
+  // Swipe first, because swipe works on every page. Tap-to-turn does not: a
+  // page whose whole width is taken by the chat has no bare margin to tap, so
+  // the tap lands on the chat and nothing happens, with no way to tell that
+  // from the gesture being wrong.
+  note.innerHTML = 'Your case has tabs. Tap one to switch pages, or swipe '
+    + 'left and right to move between them. '
     + '<button type="button" class="btn ghost" data-hint-ok>Got it</button>';
   folderEl.parentElement?.insertBefore(note, folderEl);
   note.querySelector('[data-hint-ok]').addEventListener('click', () => {
@@ -407,6 +411,10 @@ async function refreshFiles(c, el) {
     listEl.innerHTML = '<li class="dim small">Nothing here yet. Add files above, or share them in chat and long-press to save.</li>';
     return;
   }
+  // Uploads are stored as `${Date.now()}-${name}` so two files called the same
+  // thing cannot collide. That is a storage detail, and printing it put a
+  // thirteen-digit number in front of every filename a client reads.
+  const shownName = (n) => String(n).replace(/^\d{10,}-/, '');
   const order = { report: 0, recording: 1, upload: 2, saved: 3 };
   rows.sort((a, b) => order[a.kind] - order[b.kind] || b.ts - a.ts);
   const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
@@ -418,7 +426,7 @@ async function refreshFiles(c, el) {
     <li>
       <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
         ${r.kind === 'report' && delivered ? '<span class="delivered-tick" title="Delivered" role="img" aria-label="Delivered">✅</span>' : ''}
-        <a href="${r.url}" target="_blank" rel="noopener">${esc(r.name)}</a></span>
+        <a href="${r.url}" target="_blank" rel="noopener">${esc(shownName(r.name))}</a></span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
     </li>`).join('');
 }
@@ -644,7 +652,10 @@ function followUpOffer(c) {
       </div>`;
   if (c.addOnFollowUp || c.followUp || c.pendingExtra) return '';
   if (!['awaiting_report', 'delivered', 'closed'].includes(c.status)) return '';
-  const price = followUpPrice(c).toFixed(0);
+  // With a dollar sign. Every other price in the product carries one, and a
+  // bare "75" beside a button, wrapped onto its own line on a narrow phone, is
+  // seventy-five of nothing.
+  const price = `$${followUpPrice(c).toFixed(0)}`;
   // Copy is Eric's, word for word (2026-08-20). Do not paraphrase it.
   return `
     <div class="followup-offer">

@@ -80,7 +80,9 @@ export function demoApi(role, store) {
         : `/return.html?session_id=demo&demo=${role}`;
       return ok({ ok: true, url: to });
     }
-    if (path === '/api/case-for-session') return ok({ caseId: DEMO_CASE_ID });
+    // ready, not just the id: the return page polls on that flag, and without
+    // it the demo sat on "opening your case now" until it gave up.
+    if (path === '/api/case-for-session') return ok({ ready: true, caseId: DEMO_CASE_ID });
     if (path === '/api/portal') return ok({ url: `/subscription.html?demo=${role}` });
 
     // ---- the advisor, from a fixture -------------------------------------

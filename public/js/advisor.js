@@ -960,25 +960,45 @@ function splitPages(text) {
   return pages;
 }
 
-/** Just enough markdown for what the model actually emits. */
+/**
+ * Just enough markdown for what the model actually emits.
+ *
+ * A paragraph is a run of lines with a blank line at each end, not one line.
+ * This used to wrap every single line in its own <p>, so hard-wrapped prose -
+ * which is most of what comes back - was served as a column of sentence
+ * fragments with a paragraph gap between them. That is the page he reads to
+ * think with.
+ */
 function md(text, terms = null) {
   const lines = String(text).trim().split('\n');
   let html = '';
   let inList = false;
+  let para = [];
+  const flush = () => {
+    if (!para.length) return;
+    html += `<p>${inline(para.join(' '), terms)}</p>`;
+    para = [];
+  };
   for (const raw of lines) {
     const line = raw.trimEnd();
     const bullet = line.match(/^\s*[-*]\s+(.*)$/);
     const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
     if (bullet || numbered) {
+      flush();
       if (!inList) { html += '<ul>'; inList = true; }
       html += `<li>${inline(bullet ? bullet[1] : numbered[1], terms)}</li>`;
       continue;
     }
     if (inList) { html += '</ul>'; inList = false; }
-    if (!line.trim()) continue;
-    if (/^###\s+/.test(line)) html += `<h5>${inline(line.replace(/^###\s+/, ''), terms)}</h5>`;
-    else html += `<p>${inline(line, terms)}</p>`;
+    if (!line.trim()) { flush(); continue; }
+    if (/^###\s+/.test(line)) {
+      flush();
+      html += `<h5>${inline(line.replace(/^###\s+/, ''), terms)}</h5>`;
+      continue;
+    }
+    para.push(line.trim());
   }
+  flush();
   if (inList) html += '</ul>';
   return html;
 }

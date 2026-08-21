@@ -28,7 +28,7 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat52">
+<link rel="stylesheet" href="/css/site.css?v=stat53">
 <script>
 // The admin's device opens straight to the dashboard — he never books a case.
 // Inline in <head> so there's no flash of the booking page first. The hint is
@@ -44,6 +44,7 @@
   } catch (e) { /* storage blocked — land normally */ }
 })();
 </script>
+<script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
 <header class="bar">
@@ -218,7 +219,9 @@
   // paying. Signed-in only, once per device, and skippable. Never a gate:
   // the Book button stays live behind it.
   const u = await currentUser();
-  if (u) initSetupGuide(u, document.querySelector('main'));
+  // No welcome card here: this is the booking page, and "you're in, this is
+  // your case" is not true of anyone reading it.
+  if (u) initSetupGuide(u, document.querySelector('main'), { welcome: false });
 </script>
 </body>
 </html>

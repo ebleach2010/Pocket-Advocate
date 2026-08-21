@@ -28,7 +28,8 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat52">
+<link rel="stylesheet" href="/css/site.css?v=stat53">
+<script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
 <header class="bar">
@@ -46,6 +47,7 @@
   <h1 id="title">Finishing up…</h1>
   <p class="muted" id="msg">Payment received — opening your case now. This usually takes a few seconds.</p>
   <p id="actions" hidden><a class="btn glow" id="case-link" href="/case.html">Go to my case</a></p>
+  <p class="muted small" id="reassure" hidden>Nothing is lost, and you will not be charged twice.</p>
 </main>
 <script type="module">
   import { requireUser, hydrateNav } from '/js/auth.js';
@@ -80,7 +82,18 @@
           return;
         }
       } catch { /* transient — keep polling */ }
-      if (Date.now() - started < 90_000) {
+      const waited = Date.now() - started;
+      // Ninety seconds of "this usually takes a few seconds" is how someone who
+      // has just paid decides it did not work and pays again. At ten seconds the
+      // page stops claiming it is nearly done and gives them a way out; it goes
+      // on polling behind that, so if the case lands they are still taken to it.
+      if (waited > 10_000 && document.getElementById('actions').hidden) {
+        title.textContent = 'Still working';
+        msg.textContent = 'Your payment went through and your case is being set up. This can take a minute. You can wait here, or open My cases whenever you like — it will be there.';
+        document.getElementById('actions').hidden = false;
+        document.getElementById('reassure').hidden = false;
+      }
+      if (waited < 90_000) {
         setTimeout(poll, 2500);
       } else {
         title.textContent = 'Almost there';

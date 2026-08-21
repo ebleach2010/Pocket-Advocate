@@ -192,13 +192,15 @@ header.bar {
   color: var(--ink); text-decoration: none;
 }
 .brand .spark { color: var(--cyan); text-shadow: var(--glow-c); }
-/* The signed-in nav holds up to 5 links — on phones it scrolls sideways
-   instead of shoving Admin/Sign out off the screen. */
+/* The signed-in nav holds up to six links. It used to scroll sideways with the
+   scrollbar hidden, which on a phone put two thirds of it - including the
+   settings cog the onboarding tells people to tap - past the right edge with
+   nothing to say so. It does not scroll now: when the links stop fitting,
+   nav-menu.js collapses them into the menu below. */
 .tabs {
   display: flex; gap: .3rem; align-items: center; min-width: 0;
-  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  overflow: hidden;
 }
-.tabs::-webkit-scrollbar { display: none; }
 .tabs a {
   font: 600 .82rem/1 inherit; color: var(--dim); cursor: pointer; text-decoration: none;
   padding: .45rem .85rem; border-radius: 999px; border: 1px solid transparent;
@@ -207,12 +209,47 @@ header.bar {
 [data-nav-auth] { display: contents; }
 @media (max-width: 480px) {
 .bar-inner { gap: .5rem; padding-left: .8rem; padding-right: .8rem; }
-.tabs a { padding: .45rem .45rem; font-size: .8rem; }
+.bar-inner:not(.collapsed) .tabs a { padding: .45rem .45rem; font-size: .8rem; }
 }
 .tabs a.active { color: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c); }
+
+/* The end of the bar that is always on screen: the menu button and the cog. */
+.bar-acts { display: flex; align-items: center; gap: .4rem; flex: none; }
+.nav-toggle {
+  display: none;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+  width: 2.5rem; height: 2.5rem; min-width: 2.5rem; border-radius: 12px;
+  font-size: 1.05rem; line-height: 1; place-items: center; cursor: pointer; padding: 0;
+}
+.bar-inner.collapsed .nav-toggle { display: grid; }
+/* Collapsed, the same links become a panel under the button. Same elements,
+   restyled - not copies - so every listener on them still works. */
+.bar-inner.collapsed .tabs {
+  position: absolute; top: 100%; right: .8rem; left: auto; z-index: 70;
+  display: none; flex-direction: column; align-items: stretch; gap: .15rem;
+  min-width: 12rem; padding: .4rem; margin-top: .3rem;
+  background: var(--panel); border: 1px solid var(--cyan); border-radius: 14px;
+  box-shadow: var(--glow-c), 0 12px 30px rgba(0, 0, 0, .45);
+  max-height: calc(100dvh - 5rem); overflow-y: auto;
+}
+.bar-inner.collapsed .tabs.open { display: flex; }
+/* Full-width rows, tall enough to hit. */
+.bar-inner.collapsed .tabs a { padding: .7rem .9rem; border-radius: 10px; font-size: .92rem; }
+.bar-inner { position: relative; }
 .who { color: var(--dim); font-size: .82rem; }
 
 main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
+/* A phone on its side has under 400px of height, and the case header alone -
+   back link, title, subtitle, two tab rows - used almost all of it. */
+@media (orientation: landscape) and (max-height: 460px) {
+main { padding-top: .5rem; padding-bottom: 1.2rem; }
+.case-head { margin-bottom: .2rem; }
+.case-head h1, .case-head h2 { font-size: 1rem; margin-bottom: 0; }
+/* The working line stays. It is the one thing in this header worth its
+   pixels; everything around it gets tighter instead. */
+.case-head .working-line { font-size: .74rem; margin-top: .05rem; }
+.bar-inner { padding-top: .35rem; padding-bottom: .35rem; }
+}
 
 /* buttons - calm by default (PR 69 calm-neon pass). The ONE primary action
    on a screen adds .glow and carries the neon; every other button reads as a
@@ -255,17 +292,29 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
 /* Settings cog + panel. */
 .cog-btn {
   border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
-  width: 1.9rem; height: 1.9rem; min-width: 1.9rem; border-radius: 50%; font-size: 1rem;
+  width: 2.5rem; height: 2.5rem; min-width: 2.5rem; border-radius: 50%; font-size: 1.05rem;
   display: grid; place-items: center; cursor: pointer; padding: 0; flex-shrink: 0;
 }
+/* The card is taller than a phone. It did not scroll, so its bottom sat off
+   the screen with no way to reach it - and what was cut off was "Open to my
+   dashboard", the switch for looking at the client's side. */
 .settings-overlay {
   position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center;
   padding: 3.5rem 1.1rem 1.1rem; background: rgba(4,6,10,.6); backdrop-filter: blur(4px);
+  overflow-y: auto; overscroll-behavior: contain;
 }
 .settings-card {
   background: var(--panel); border: 1px solid var(--cyan); box-shadow: var(--glow-c);
   border-radius: 16px; padding: 1.1rem 1.2rem; max-width: 26rem; width: 100%;
+  margin-bottom: 1.1rem;
 }
+/* Radios and checkboxes in a form are 13px by default, which is smaller than
+   anything else you are asked to press. */
+input[type="radio"], input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--cyan); }
+label:has(> input[type="radio"]), label:has(> input[type="checkbox"]) {
+  display: flex; align-items: flex-start; gap: .5rem; padding: .35rem 0; min-height: 2.2rem;
+}
+
 .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .6rem; }
 .switch {
   width: 2.7rem; height: 1.55rem; min-width: 2.7rem; border-radius: 999px; border: 1px solid var(--line);
@@ -315,8 +364,14 @@ main { max-width: 42rem; margin: 0 auto; padding: 1rem 1.1rem 3rem; }
   border: 1px solid var(--cyan); background: transparent; color: var(--cyan);
   font: 700 .88rem/1 inherit;
 }
-.help-dot:hover,
-.help-dot:focus-visible { box-shadow: var(--glow-c); outline: none; }
+/* Focus keeps the outline every other control has. It used to be cancelled and
+   replaced with an 18%-opacity glow on a button that already has a cyan ring -
+   focused and unfocused were indistinguishable, on the control the onboarding
+   explicitly tells people to press. */
+.help-dot:hover { box-shadow: var(--glow-c); }
+/* A thumb-sized target. It is a "?" that opens the explanation of the whole
+   page, not a decoration. */
+.help-dot { width: 1.9rem; height: 1.9rem; min-width: 1.9rem; font-size: 1rem; }
 /* Long-form content: cap the height and scroll inside the card so the close
    button never leaves the screen on a short phone. */
 .help-card { max-width: 30rem; max-height: calc(100dvh - 5rem); overflow-y: auto; }
@@ -630,11 +685,15 @@ button:focus-visible,
 .msg.react-target { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 
 /* ---- long-press message menu (Messenger-style: emoji bar, then a sheet) ---- */
+/* margin:auto on the child rather than align-items:center on the box: centred
+   flex content that is taller than its container overflows BOTH ends, and the
+   top one cannot be scrolled back to. */
 .msg-menu-overlay {
   position: fixed; inset: 0; z-index: 70; display: flex;
-  align-items: center; justify-content: center; padding: 1.1rem;
+  justify-content: center; padding: 1.1rem; overflow-y: auto;
   background: rgba(4,6,10,.72); backdrop-filter: blur(5px);
 }
+.msg-menu { margin: auto; }
 .msg-menu { width: 100%; max-width: 26rem; }
 .react-bar {
   display: flex; justify-content: space-between; gap: .2rem; margin: 0 auto .7rem;
@@ -644,6 +703,7 @@ button:focus-visible,
 .react-emoji-btn {
   border: 0; background: none; cursor: pointer; padding: .15rem .3rem;
   font-size: 1.75rem; line-height: 1; border-radius: 50%;
+  min-width: 2.6rem; min-height: 2.6rem;
   transition: transform .12s ease;
 }
 .react-emoji-btn:hover,
@@ -652,14 +712,23 @@ button:focus-visible,
 .msg-menu-sheet {
   background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
   padding: .5rem; box-shadow: 0 8px 26px rgba(0,0,0,.45);
-  max-height: min(60vh, 30rem); overflow-y: auto;
+  /* Taller than it was. On a 667px phone the status list runs to about 510px
+     of rows, and at 60vh the last three - Save, Copy text and Cancel - all sat
+     below the fold of a box with nothing to say it scrolled. */
+  max-height: min(72dvh, 34rem); overflow-y: auto;
+}
+/* Cancel never scrolls away. It is the way out of a sheet that opened without
+   being asked for, so it is the one row that has to be on screen. */
+.msg-menu-sheet .msg-menu-row.cancel {
+  position: sticky; bottom: -.5rem; margin-top: .15rem;
+  background: var(--panel); box-shadow: 0 -10px 12px -6px var(--panel);
 }
 .msg-menu-head { margin: .4rem .55rem .35rem; font-size: .72rem; letter-spacing: .04em;
   text-transform: uppercase; color: var(--dim); }
 .msg-menu-note { margin: .4rem .55rem .2rem; font-size: .72rem; color: var(--dim); }
 .msg-menu-row {
   display: flex; align-items: center; gap: .65rem; width: 100%; text-align: left;
-  padding: .62rem .6rem; border-radius: 11px; cursor: pointer; font-size: .92rem;
+  padding: .62rem .6rem; min-height: 2.6rem; border-radius: 11px; cursor: pointer; font-size: .92rem;
   border: 0; background: none; color: var(--ink);
 }
 .msg-menu-row:hover,
@@ -673,7 +742,7 @@ button:focus-visible,
   width: 100%; resize: vertical; min-height: 6rem; line-height: 1.5;
   font: inherit; font-size: .95rem;
 }
-.btn.tiny { font-size: .7rem; padding: .3rem .55rem; min-height: 0; }
+.btn.tiny { font-size: .7rem; padding: .55rem .7rem; min-height: 2.4rem; }
 .btn.tiny.on { border-color: var(--magenta); color: var(--magenta); }
 [data-count].over { color: var(--orange); font-weight: 700; }
 
@@ -717,17 +786,47 @@ button:focus-visible,
 .chat-root.chat-full p:has(> [data-export]) { display: none; }
 body.chat-full-open { overflow: hidden; }
 
-.chat-form { display: flex; gap: .5rem; margin-top: .4rem; align-items: flex-end; }
+/* The message box gets its own row, and the controls sit under it.
+   They all used to share one line. By the time the row held full screen, attach,
+   duty of care and Send, the box itself was down to fifty pixels on a phone and
+   twenty-seven at 320 - two characters a line, a tower of them, unusable for
+   the one thing the screen is for. Nothing was cut; the row was. */
+.chat-form {
+  display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .4rem; align-items: flex-end;
+}
 /* A composer you can actually read what you typed in: it grows to five-ish
    lines before it starts scrolling, instead of marching the words off the left. */
 .chat-form textarea {
-  flex: 1; resize: none; overflow-y: auto; font: inherit; font-size: .95rem;
+  order: -1; flex: 1 1 100%; min-width: 0;
+  resize: none; overflow-y: auto; font: inherit; font-size: .95rem;
   line-height: 1.45; min-height: 2.9rem; max-height: 9rem; padding: .6rem .7rem;
 }
 /* Both buttons sit level with the bottom of the growing box. */
 .chat-form .attach-btn,
 .chat-form .btn { flex: none; align-self: flex-end; height: 2.9rem; }
+/* Send to the far end of the control row, away from the icons, so the one
+   button that is not undoable is not the one your thumb brushes. */
+.chat-form .btn[type="submit"] { margin-left: auto; }
+/* Wide enough for one line and everything still fits on it. */
+@media (min-width: 560px) {
+.chat-form textarea { order: 0; flex: 1 1 12rem; }
+}
 .chat-notice { border-top: 1px solid var(--line); padding-top: .6rem; }
+/* Small confirmations. A native alert() for "saved" is an unstyled system
+   dialog on an iOS home-screen app, and it needs dismissing before anything
+   else can happen - a modal interruption to say a thing went well. */
+.pa-toast {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 1.2rem);
+  transform: translateX(-50%); z-index: 90; max-width: min(26rem, calc(100vw - 2rem));
+  padding: .65rem 1rem; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--cyan); box-shadow: var(--glow-c);
+  color: var(--ink); font-size: .88rem; text-align: center;
+  animation: pa-toast-in .18s ease-out;
+}
+.pa-toast.bad { border-color: var(--magenta); box-shadow: var(--glow-m); }
+@keyframes pa-toast-in { from { opacity: 0; transform: translate(-50%, .5rem); } }
+@media (prefers-reduced-motion: reduce) { .pa-toast { animation: none; } }
+
 .p-dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; background: var(--line); margin-right: .3rem; }
 .p-dot.on { background: var(--cyan); box-shadow: var(--glow-c); }
 .p-label { font-size: .8rem; color: var(--dim); }
@@ -840,6 +939,7 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
 .pack:focus-visible .pack-cta { background: rgba(45,226,255,.1); }
 
 /* FAQ expanders ("Straight answers"). */
+/* FAQ expanders ("Straight answers"). */
 .faq { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin-bottom: .6rem; }
 .faq > summary {
   display: flex; align-items: center; justify-content: space-between; gap: .6rem;
@@ -880,6 +980,14 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
      exactly the kind of truncation this flow exists to avoid. */
 .step-rail .t { font-size: .74rem; letter-spacing: 0; white-space: normal; line-height: 1.15; overflow: visible; text-overflow: clip; }
 }
+/* Narrow phones: the badge goes above the label rather than beside it. Beside
+   it, the label had about fifty pixels for the word "agreement" and, with
+   nothing to clip it, simply printed across the next step's number - the rail
+   read "2 One agreeme③ Payme". */
+@media (max-width: 400px) {
+.step-rail li { flex-direction: column; align-items: center; gap: .25rem; text-align: center; }
+.step-rail .t { min-width: 0; overflow-wrap: anywhere; }
+}
 
 /* Agreement expander: title + plain-words line in the summary, the verbatim
    legal body in a scroll box (same look as .waiver-body, shorter), and a
@@ -901,8 +1009,11 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
 .agreement[open] > summary { border-bottom: 1px solid var(--line); }
 .agreement-title { grid-column: 1; grid-row: 1; font-weight: 700; color: var(--ink); }
 .agreement-plain { grid-column: 1; grid-row: 2; font-size: .88rem; font-weight: 400; color: var(--dim); line-height: 1.45; }
+/* Was 14rem: a six-line window onto about twelve screens of legal text, inside
+   a page that also scrolls. Nothing is added below it and nothing overlays it,
+   because the JS unlocks the acknowledgement from this box's own scrollHeight. */
 .agreement-body {
-  max-height: 14rem; overflow-y: auto; margin: .75rem 1.05rem 0;
+  max-height: min(58dvh, 30rem); overflow-y: auto; margin: .75rem 1.05rem 0;
   border: 1px solid var(--line); border-radius: 12px;
   padding: 1rem 1.1rem; background: var(--bg); font-size: .96rem;
 }
@@ -1552,7 +1663,12 @@ body.has-demo-bar .bar { top: var(--demo-bar-h, 2.4rem); }
    option - a tab reading "Unansw..." is worse than no tab at all. */
 .folder-tabs.tight { gap: .18rem; overflow-x: visible; padding-left: .35rem; padding-right: .35rem; }
 .folder-tabs.tight > a {
-  flex: 1 1 0; min-width: 0;
+  /* Basis is the label's own width, not zero. On an equal-shares row every tab
+     got the same 64px whether it said "Chat" or "Unanswered", so the long ones
+     overflowed while the short ones sat half empty. Growing from content means
+     a row that fits gives each label at least what it needs, and a row that
+     does not shrinks the wide ones first. */
+  flex: 1 1 auto; min-width: 0;
   flex-direction: column; gap: .2rem;
   /* Four tabs across 320px leaves 64px of tab. Measured: "Overview" and
      "Summary" are 75-76px at the full size, so the label needs both a smaller
@@ -1574,7 +1690,19 @@ body.has-demo-bar .bar { top: var(--demo-bar-h, 2.4rem); }
    in a step down of type size, rather than in a truncated label or a row that
    scrolls sideways. */
 @media (max-width: 360px) {
-  .folder-tabs.tight > a { font-size: .64rem; padding: .42rem .12rem; }
+  /* The icon goes, and the label gets what it paid for: readable type and
+     enough side padding to clear the trapezoid's slanted corners. It was
+     11.2px with two pixels of padding, which reads as clipped even where it
+     is not. The group row above keeps its icons - that is the row where the
+     icon is doing the work. */
+  /* The icon goes, and what it was using goes to the label: readable type and
+     enough side padding to clear the trapezoid's slanted corners, which taper
+     to about four pixels by the height the label sits at. It was 11.2px with
+     three pixels of padding, which reads as clipped even where it is not. The
+     group row above keeps its icons - that is the row where the icon is doing
+     the work. */
+  .folder-tabs.tight > a { font-size: .68rem; padding: .42rem .32rem; gap: 0; }
+  .folder-tabs.tight > a .ftab-ic { display: none; }
   .fgrp { font-size: .7rem; padding: .4rem .3rem; }
 }
 /* Four groups across a phone: the label goes under the icon here too. */
