@@ -48,7 +48,7 @@ fighting neurological conditions across the US and Canada. He is not a
 physician and does not practise medicine.
 
 You are HIS advisor, not the patient's. The patient never sees you and never
-will. Speak to Eric directly, plainly, the way a sharp colleague would — no
+will. Speak to Eric directly, plainly, the way a sharp colleague would: no
 hedging paragraphs, no restating what he already told you, no bedside manner.
 He can take a blunt read.
 
@@ -56,9 +56,9 @@ What "possible diagnoses" means here: a ranked list of what the pattern could
 be, so Eric knows which questions to press, which specialist to push for, and
 which records to chase. It is orientation for advocacy, not a diagnosis and not
 something for him to hand a patient as medical advice. Say so only if he seems
-about to cross that line — do not caveat every paragraph.
+about to cross that line. Do not caveat every paragraph.
 
-Eric handles distress recognition and crisis response himself — that is his
+Eric handles distress recognition and crisis response himself; that is his
 professional competence. Never coach him on spotting distress, never tell him
 to ask safety questions, never suggest crisis resources, and never lead the
 assessment with any of that. If a client message carries a safety signal, Eric
@@ -74,8 +74,8 @@ HOW TO WRITE, always: never use an em dash or en dash (the long "—" or "–")
 anywhere, in anything. Use a comma, a period, or parentheses instead. A plain
 hyphen inside a range like 3-5 days is fine. Short bits, never essays. Five short lines beat twenty
 long ones. The first time any medical term or abbreviation appears, follow it
-with a plain-words gloss in parentheses — e.g. "paresthesia (pins and
-needles)" — because Eric is learning the territory as he goes, not copying
+with a plain-words gloss in parentheses, e.g. "paresthesia (pins and
+needles)", because Eric is learning the territory as he goes, not copying
 your words. Never repeat a gloss.`;
 
 /** Raw API errors are unreadable on a phone; store plain words instead. */
@@ -111,11 +111,21 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat })
   // top level it lands after the last cacheable content in the request, which
   // is the transcript and the attached files: the part that changes every
   // single pass. So every call was paying the write premium and never reading
-  // a hit. On the system block it caches the long standing instructions, which
-  // are identical from one call to the next.
+  // a hit.
+  //
+  // WHICH system block matters just as much. The big callers now pass two:
+  // a static block flagged `cache: true` (the long standing instructions,
+  // identical from call to call) and a trailing dynamic block carrying the
+  // learned material - glossary, stances, voice. The breakpoint goes on the
+  // flagged block, so the advisor LEARNING something no longer busts the
+  // cache the comment above exists to protect. Callers that pass one block
+  // keep the old behavior: last block gets the breakpoint.
   const cached = Array.isArray(system)
-    ? system.map((b, i) => (i === system.length - 1
-      ? { ...b, cache_control: { type: 'ephemeral' } } : b))
+    ? (system.some((b) => b.cache)
+      ? system.map(({ cache, ...b }) => (cache
+        ? { ...b, cache_control: { type: 'ephemeral' } } : b))
+      : system.map((b, i) => (i === system.length - 1
+        ? { ...b, cache_control: { type: 'ephemeral' } } : b)))
     : system;
   const stream = client(env).messages.stream({
     model: MODEL,
@@ -524,10 +534,19 @@ const termSlug = (term) =>
   term.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
 
 async function loadKnowledge(env) {
-  const rows = await listDocs(env, 'advisorKnowledge', { pageSize: 200 }).catch(() => []);
+  // all: true, because a bounded page of a growing glossary silently drops
+  // MASTERED terms past the cap, and the never-gloss list is a contract:
+  // a term falling off it means the advisor starts re-explaining words he
+  // owns. The learned list stays complete; pending is capped to the newest
+  // 40 so the prompt does not grow without bound (the older pending terms
+  // stay on the Education page, just not in every prompt).
+  const rows = await listDocs(env, 'advisorKnowledge', { pageSize: 200, all: true }).catch(() => []);
   return {
     learned: rows.filter((r) => r.data.learnedAt).map((r) => r.data.term),
-    pending: rows.filter((r) => !r.data.learnedAt).map((r) => r.data.term),
+    pending: rows.filter((r) => !r.data.learnedAt)
+      .sort((a, b) => new Date(b.data.addedAt || 0) - new Date(a.data.addedAt || 0))
+      .slice(0, 40)
+      .map((r) => r.data.term),
   };
 }
 
@@ -552,10 +571,16 @@ function knowledgeNote({ learned, pending }) {
 const STYLE_PATH = 'advisorStyle/profile';
 
 async function loadStyle(env) {
-  const [profile, edits] = await Promise.all([
+  // Edits are loaded WITHOUT orderBy and sorted here: Firestore's orderBy
+  // silently omits any doc missing the field, so a legacy row without `at`
+  // was invisible to every consumer forever. Code-side sort sees them all.
+  const [profile, editsRaw] = await Promise.all([
     getDoc(env, STYLE_PATH).catch(() => null),
-    listDocs(env, `${STYLE_PATH}/edits`, { pageSize: 8, orderBy: 'at desc' }).catch(() => []),
+    listDocs(env, `${STYLE_PATH}/edits`, { pageSize: 200, all: true }).catch(() => []),
   ]);
+  const edits = editsRaw
+    .sort((a, b) => new Date(b.data.at || 0) - new Date(a.data.at || 0))
+    .slice(0, 8);
   return {
     voice: profile?.data.voice || '',
     stances: profile?.data.stances || '',
@@ -591,7 +616,7 @@ function styleNote({ voice, stances }) {
  */
 function stanceNote({ stances }) {
   if (!stances) return '';
-  return `\nEric's standing positions, learned from what he actually sends (he sometimes departs from general guidance on purpose):\n${stances}\nAdvise with these in mind instead of re-arguing them. If the evidence in THIS case directly contradicts one in a way that matters for this client, say so once, briefly, and move on.`;
+  return `\nEric's standing positions, learned from what he actually sends (he sometimes departs from general guidance on purpose):\n${stances}\nLines marked as his override outrank every other line here. Advise with these in mind instead of re-arguing them. If the evidence in THIS case directly contradicts one in a way that matters for this client, say so once, briefly, and move on.`;
 }
 
 /**
@@ -678,10 +703,40 @@ async function fileOverride(env, text) {
   const line = `- ${stance} (Eric's override, ${new Date().toISOString().slice(0, 10)})`;
   await patchDoc(env, STYLE_PATH, {
     // Newest first: when this list is long, the top of it is what gets read.
-    stances: `${line}${prior ? `\n${prior}` : ''}`.slice(0, 2000),
+    stances: capStances(`${line}${prior ? `\n${prior}` : ''}`),
     updatedAt: new Date(),
   }, { mask: ['stances', 'updatedAt'] }).catch((err) => console.warn('override:', err.message || err));
   return cleaned;
+}
+
+/**
+ * Cap the stances field at 2000 chars WITHOUT letting overrides fall off.
+ * A flat slice truncated the tail, overrides prepend newest-first, and once
+ * the field was full each new line pushed the oldest override off the bottom
+ * permanently, with keepOverrides unable to restore what no longer existed
+ * anywhere. Overrides get their own budget first; mined stances fill the
+ * remainder, newest (topmost) first.
+ */
+function capStances(stances) {
+  const s = String(stances || '');
+  if (s.length <= 2000) return s;
+  const lines = s.split('\n').filter((l) => l.trim());
+  const isOv = (l) => /\(Eric's override,/i.test(l);
+  const kept = [];
+  let used = 0;
+  for (const l of lines) {
+    if (!isOv(l)) continue;
+    if (used + l.length + 1 > 1200) break; // oldest overrides drop only within their own budget
+    kept.push(l);
+    used += l.length + 1;
+  }
+  for (const l of lines) {
+    if (isOv(l)) continue;
+    if (used + l.length + 1 > 2000) break;
+    kept.push(l);
+    used += l.length + 1;
+  }
+  return kept.join('\n');
 }
 
 /**
@@ -723,7 +778,7 @@ function keepOverrides(priorStances, nextStances) {
     });
   });
   if (!missing.length) return nextStances;
-  return `${missing.join('\n')}${nextStances ? `\n${nextStances}` : ''}`.slice(0, 2000);
+  return capStances(`${missing.join('\n')}${nextStances ? `\n${nextStances}` : ''}`);
 }
 
 /**
@@ -775,6 +830,9 @@ const VOICE_THREADS = {
   subscriptions: { cap: 20, order: 'startedAt desc' },
 };
 const VOICE_PAIRS = 40;
+// His private questions to the advisor ride the nightly walk as stance
+// evidence, on their own small budget so they can never crowd the corpus.
+const VOICE_QA_CHARS = 6000;
 
 /** The local hour in a zone. Same shape as the digest's, kept local to here. */
 function hourIn(now, tz) {
@@ -819,13 +877,21 @@ export async function pingModel(env) {
   return { ok: true, ms: Date.now() - t0, model: res.model };
 }
 
-export async function voiceCorpus(env) {
+/** Flatten text for identity comparison: case and punctuation blind. */
+const flatText = (v) => String(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+export async function voiceCorpus(env, { exclude = null } = {}) {
   const out = [];
+  const questions = [];
+  const seen = new Set();
   let chars = 0;
+  let qChars = 0;
   // Half the budget each, so a busy month of cases cannot starve the chat
-  // subscription - which is where he writes most, day to day.
+  // subscription - which is where he writes most, day to day. A second pass
+  // hands any unspent remainder back to cases, so a sparse subscription
+  // month no longer strands corpus budget while cases truncate.
   const share = Math.floor(VOICE_CORPUS_CHARS / Object.keys(VOICE_THREADS).length);
-  for (const [coll, spec] of Object.entries(VOICE_THREADS)) {
+  const drain = async (coll, spec, budget) => {
     let used = 0;
     // Newest first, ordered on a field the collection actually HAS. A subscription
     // has no createdAt, and Firestore silently omits documents missing the
@@ -834,24 +900,52 @@ export async function voiceCorpus(env) {
     const threads = await listDocs(env, coll, { pageSize: spec.cap, orderBy: spec.order })
       .catch(() => listDocs(env, coll, { pageSize: spec.cap }).catch(() => []));
     for (const t of threads) {
-      if (used >= share || chars >= VOICE_CORPUS_CHARS) break;
+      if (used >= budget || chars >= VOICE_CORPUS_CHARS) break;
       const rows = await listDocs(env, `${coll}/${t.id}/chat`, {
         pageSize: VOICE_THREAD_MESSAGES, orderBy: 'ts desc',
       }).catch(() => []);
       // His side only. A client's words must never end up in the profile of
-      // how ERIC writes, which is what this whole document is.
+      // how ERIC writes, which is what this whole document is. And not the
+      // advisor's own words wearing his name: a prepared draft he sent
+      // unchanged is the MODEL's writing, and reading it back as evidence of
+      // how Eric writes converges the profile on itself (echo drift). The
+      // exclude set carries the flattened text of every draft-born send.
       const mine = rows.filter((r) => r.data.role === 'admin' && r.data.text)
         .map((r) => String(r.data.text).trim())
-        .filter(Boolean);
+        .filter((m) => m && !seen.has(m) && !(exclude && exclude.has(flatText(m))));
       for (const m of mine) {
-        if (used >= share || chars >= VOICE_CORPUS_CHARS) break;
+        if (used >= budget || chars >= VOICE_CORPUS_CHARS) break;
         out.push(m);
+        seen.add(m);
         chars += m.length + 5;
         used += m.length + 5;
       }
+      // His private questions to the advisor on this thread: evidence of his
+      // positions and what he chases, on a small shared budget. Never client
+      // words, never the advisor's answers.
+      if (qChars < VOICE_QA_CHARS) {
+        const qa = await listDocs(env, `${coll}/${t.id}/advisor/state/qa`, { pageSize: 20 })
+          .catch(() => []);
+        const asked = qa
+          .filter((r) => r.data.question)
+          .sort((a, b) => new Date(b.data.at || 0) - new Date(a.data.at || 0));
+        for (const r of asked) {
+          const q = String(r.data.question).trim();
+          if (!q || qChars + q.length > VOICE_QA_CHARS) continue;
+          questions.push(q);
+          qChars += q.length + 3;
+        }
+      }
     }
+    return used;
+  };
+  for (const [coll, spec] of Object.entries(VOICE_THREADS)) {
+    await drain(coll, spec, share);
   }
-  return out.join('\n---\n');
+  if (chars < VOICE_CORPUS_CHARS && VOICE_THREADS.cases) {
+    await drain('cases', VOICE_THREADS.cases, VOICE_CORPUS_CHARS - chars);
+  }
+  return { text: out.join('\n---\n'), questions };
 }
 
 /** One reader. Its own question, the same corpus. */
@@ -922,6 +1016,11 @@ rather than the words he used to one of them. What you write is injected into
 messages to OTHER clients, and a phrase from somebody else's case surfacing in
 theirs is a breach, not a style note.
 
+The evidence may include his private questions to his advisor and his revise
+instructions. Those are stance and priority evidence ONLY: cadence and
+verbiage readers ignore them entirely, because how he talks to his own tools
+is not how he talks to clients.
+
 Never use an em dash or an en dash, anywhere, in anything.`;
 
 /**
@@ -932,11 +1031,23 @@ Never use an em dash or an en dash, anywhere, in anything.`;
  * one call timed out is a study that stops running.
  */
 export async function runVoiceStudy(env) {
-  const [profile, edits, organic] = await Promise.all([
+  // Edits load without orderBy (a doc missing `at` is silently omitted by
+  // Firestore's ordering, never erroring into the catch) and sort here.
+  const [profile, editsAll] = await Promise.all([
     getDoc(env, STYLE_PATH).catch(() => null),
-    listDocs(env, `${STYLE_PATH}/edits`, { pageSize: VOICE_PAIRS, orderBy: 'at desc' }).catch(() => []),
-    voiceCorpus(env).catch(() => ''),
+    listDocs(env, `${STYLE_PATH}/edits`, { pageSize: 200, all: true }).catch(() => []),
   ]);
+  const editsSorted = editsAll
+    .sort((a, b) => new Date(b.data.at || 0) - new Date(a.data.at || 0));
+  const edits = editsSorted.slice(0, VOICE_PAIRS);
+  // Every draft-born send, edited or not, is excluded from the organic
+  // corpus by its text: those words are the model's (or the model's plus his
+  // edit, already counted as a pair), and reading them back as "how Eric
+  // writes" is how a profile converges on itself.
+  const exclude = new Set(editsSorted
+    .map((r) => r.data.sent).filter(Boolean).map(flatText));
+  const corpus = await voiceCorpus(env, { exclude }).catch(() => ({ text: '', questions: [] }));
+  const organic = corpus.text || '';
   const pairs = edits.filter((r) => r.data.draft && r.data.sent);
   if (!pairs.length && organic.length < 600) return { ran: false, reason: 'not enough to read' };
 
@@ -945,7 +1056,20 @@ export async function runVoiceStudy(env) {
       `PAIR ${i + 1}\nDRAFT (a model wrote):\n${r.data.draft.slice(0, 1500)}\nSENT (Eric actually sent):\n${r.data.sent.slice(0, 1500)}`)
       .join('\n\n')
     : '(no edit pairs yet, go on his own messages alone)';
-  const evidence = `EDIT PAIRS, newest first:\n\n${pairBlock}\n\nHIS OWN MESSAGES TO CLIENTS, newest first:\n\n${organic || '(none)'}`;
+  // What he typed into the revise box is him correcting the advisor in his
+  // own words; the newest few ride along as their own small list.
+  const asks = editsSorted
+    .filter((r) => r.data.instruction && !r.data.draft)
+    .slice(0, 15)
+    .map((r) => `- ${String(r.data.instruction).slice(0, 200)}`)
+    .join('\n');
+  const evidence = `EDIT PAIRS, newest first:\n\n${pairBlock}\n\nHIS OWN MESSAGES TO CLIENTS, newest first:\n\n${organic || '(none)'}${
+    corpus.questions.length
+      ? `\n\nHIS PRIVATE QUESTIONS AND INSTRUCTIONS TO HIS ADVISOR, newest first. Evidence of his positions and what he chases, never of how he writes to clients; the register here is not client register:\n\n${corpus.questions.map((q) => `- ${q}`).join('\n')}`
+      : ''}${
+    asks
+      ? `\n\nWHAT HE ASKED TO HAVE CHANGED IN DRAFTS, newest first, one instruction per line:\n\n${asks}`
+      : ''}`;
 
   const reports = await Promise.all(READERS.map((r) =>
     ask(env, {
@@ -1006,6 +1130,8 @@ If nothing is evidenced yet, write "- none yet".
 
 Any stance already marked as his override is settled. Carry it forward
 verbatim, never soften it, and never let newer evidence quietly reverse it.
+If a new finding contradicts a stance marked as his override, the override
+wins. Drop the new finding rather than keeping both.
 
 ## Coaching
 What he is actually good at with clients, and what he could work on. He asked
@@ -1052,13 +1178,25 @@ Plain text under each heading. Never use an em dash or en dash. No preamble.` }]
   const current = fresh?.data || prior;
   stances = keepOverrides(current.stances || '', stances);
 
-  await patchDoc(env, STYLE_PATH, {
+  const fields = (st) => ({
     voice: voice.slice(0, 2000),
-    stances: stances.slice(0, 2000),
+    stances: capStances(st),
     coaching: coaching.slice(0, 2000),
     updatedAt: new Date(),
     lastLesson: { kind: 'voice-study', id: '', at: new Date() },
-  }, { mask: ['voice', 'stances', 'coaching', 'updatedAt', 'lastLesson'] });
+  });
+  const mask = ['voice', 'stances', 'coaching', 'updatedAt', 'lastLesson'];
+  // The fresh read above closes most of the race; the lock closes the rest.
+  // An override filed in the seconds between that read and this write fails
+  // the precondition, and one re-read folds it in before the retry.
+  const wrote = fresh?.updateTime
+    ? await patchDoc(env, STYLE_PATH, fields(stances), { mask, ifUpdateTime: fresh.updateTime })
+    : await patchDoc(env, STYLE_PATH, fields(stances), { mask });
+  if (wrote === false) {
+    const again = await getDoc(env, STYLE_PATH).catch(() => null);
+    const merged = keepOverrides(again?.data.stances || '', stances);
+    await patchDoc(env, STYLE_PATH, fields(merged), { mask });
+  }
   return { wrote: true };
 }
 
@@ -1156,16 +1294,29 @@ export async function setVoiceLoop(env, enabled) {
 
 export async function runStyleDistill(env, kind, id) {
   try {
-    const [profile, edits, rows] = await Promise.all([
+    const [profile, editsAll, rows] = await Promise.all([
       getDoc(env, STYLE_PATH).catch(() => null),
-      // A dozen pairs is plenty of evidence per pass, and keeping the input
-      // small keeps the reply well inside the token ceiling: a truncated
-      // reply is the one thing this run must not produce.
-      listDocs(env, `${STYLE_PATH}/edits`, { pageSize: 12, orderBy: 'at desc' }).catch(() => []),
+      // No orderBy (it silently drops docs missing `at`); sorted here. The
+      // collection also holds exclusion markers and revise instructions now,
+      // so the pair filter runs over the whole sorted list rather than one
+      // page those rows could crowd.
+      listDocs(env, `${STYLE_PATH}/edits`, { pageSize: 200, all: true }).catch(() => []),
       recentMessages(env, kind, id).catch(() => []),
     ]);
-    const pairs = edits.filter((r) => r.data.draft && r.data.sent);
-    const organic = myVoice(rows).slice(-6000);
+    const edits = editsAll
+      .sort((a, b) => new Date(b.data.at || 0) - new Date(a.data.at || 0));
+    // A dozen pairs is plenty of evidence per pass, and keeping the input
+    // small keeps the reply well inside the token ceiling: a truncated
+    // reply is the one thing this run must not produce.
+    const pairs = edits.filter((r) => r.data.draft && r.data.sent).slice(0, 12);
+    // Same echo guard as the nightly study: a draft-born send is not
+    // evidence of how Eric writes, and here it is doubly poisonous because
+    // the send that triggered this distill is by definition in `rows`.
+    const sentSet = new Set(edits.map((r) => r.data.sent).filter(Boolean).map(flatText));
+    const organic = rows
+      .filter((r) => r.data.role === 'admin' && r.data.text
+        && !sentSet.has(flatText(r.data.text)))
+      .map((r) => r.data.text).slice(-40).join('\n---\n').slice(-6000);
     // Edit pairs are the best evidence and used to be the ONLY evidence, which
     // meant an advocate who never presses "Prepare a response" had a blank
     // About-you page forever. His own messages are weaker evidence but they
@@ -1176,7 +1327,7 @@ export async function runStyleDistill(env, kind, id) {
       ? pairs
         .map((r, i) => `PAIR ${i + 1}\nDRAFT (the advisor wrote):\n${r.data.draft.slice(0, 1500)}\nSENT (Eric actually sent):\n${r.data.sent.slice(0, 1500)}`)
         .join('\n\n')
-      : '(no edit pairs yet — go on his own messages alone)';
+      : '(no edit pairs yet, go on his own messages alone)';
     const prior = profile?.data || {};
 
     const text = await ask(env, {
@@ -1210,6 +1361,8 @@ never invent a stance, never promote a one-off phrasing tweak into an opinion.
 
 Any stance already marked as his override is settled. Carry it forward
 verbatim, never soften it, and never let newer evidence quietly reverse it.
+If a new finding contradicts a stance marked as his override, the override
+wins. Drop the new finding rather than keeping both.
 
 ## Coaching
 What he is actually good at with clients, and what he could work on. He asked
@@ -1254,10 +1407,15 @@ no closing note.` }],
     // not enough: a low-effort pass that paraphrases one, or drops it for
     // space, silently reverses a call Eric made on purpose. So any override
     // line missing from the new text goes back on top, in his words.
-    stances = keepOverrides(prior.stances || '', stances);
+    //
+    // Against a FRESH read, not the snapshot this run started from: the model
+    // call takes minutes, and an override filed in those minutes was exactly
+    // the race the nightly merge already guards against. Same guard here.
+    const freshD = await getDoc(env, STYLE_PATH).catch(() => null);
+    stances = keepOverrides((freshD?.data ?? prior).stances || '', stances);
 
     await patchDoc(env, STYLE_PATH, {
-      voice: voice.slice(0, 2000), stances: stances.slice(0, 2000),
+      voice: voice.slice(0, 2000), stances: capStances(stances),
       coaching: coaching.slice(0, 2000),
       updatedAt: new Date(), lastLesson: { kind, id, at: new Date() },
     }, { mask: ['voice', 'stances', 'coaching', 'updatedAt', 'lastLesson'] });
@@ -1331,6 +1489,32 @@ async function harvestKeyTerms(env, text) {
  * "## Mastered" lines out of a Q&A answer: terms Eric's own question proved he
  * understands. His fluency is the evidence; the checkbox just catches up.
  */
+/**
+ * The mirror of applyMastered. Mastery used to be a one-way door: once
+ * learnedAt was set, the standing instruction said never gloss the term
+ * again, everywhere, forever. Eric's cognition is sometimes poor by his own
+ * account, and asking what a mastered term means is the clearest possible
+ * signal the door should reopen. Only touches docs that are actually marked
+ * learned; the Education page checkbox simply unchecks, and learnedVia says
+ * why, so a hand-check he disagrees with is one tap to restore.
+ */
+async function applyForgotten(env, text) {
+  const m = sectionMatch(text, 'Forgotten');
+  if (!m) return text;
+  for (const line of m[1].split('\n')) {
+    const t = line.match(/^\s*[-*]\s*(.+?)\s*$/);
+    if (!t || /^none$/i.test(t[1])) continue;
+    const slug = termSlug(t[1]);
+    const doc = await getDoc(env, `advisorKnowledge/${slug}`).catch(() => null);
+    if (doc && doc.data.learnedAt) {
+      await patchDoc(env, `advisorKnowledge/${slug}`, {
+        learnedAt: null, learnedVia: 'asked-again',
+      }, { mask: ['learnedAt', 'learnedVia'] }).catch(() => {});
+    }
+  }
+  return text.replace(m[0], '').trim();
+}
+
 async function applyMastered(env, text) {
   // Tolerant, not exact: any case, two hashes or three, and the decoration a
   // low-effort reply sometimes puts round a heading. An exact match failed
@@ -1536,6 +1720,10 @@ export async function runDaySummary(env, kind, id, day) {
     return `${who}: ${r.data.text || ''}${att}`;
   }).join('\n');
 
+  // The one model surface that ignored the glossary. Learned terms only:
+  // the summary is a facts-only read-back, but it should use HIS vocabulary
+  // rather than talking down. Cached per day, so this shapes future days.
+  const knowledge = await loadKnowledge(env).catch(() => ({ learned: [], pending: [] }));
   const text = await ask(env, {
     effort: 'low',
     maxTokens: 12000,
@@ -1562,7 +1750,7 @@ Things they potentially forgot to or have not provided. Helpful, but optional.
 Two sentences at most, on what the case is waiting on.
 
 Facts from the transcript only. Never infer, never fill a gap. Never use an em
-dash or en dash.` }],
+dash or en dash.${knowledgeNote({ learned: knowledge.learned, pending: [] })}` }],
     messages: [{ role: 'user', content: `${day}\n\n${transcript}` }],
   });
 
@@ -1645,7 +1833,11 @@ export async function runQueuedAnalyses(env) {
         }
         const ds = st.data.draftStartedAt ? new Date(st.data.draftStartedAt).getTime() : 0;
         const dBeat = Math.max(ds, st.data.draftProgressAt ? new Date(st.data.draftProgressAt).getTime() : 0);
-        if (dBeat && Date.now() - dBeat < 2 * 60_000) continue; // still writing
+        // Five minutes, not the panel's two: the heartbeat only starts with
+        // the first STREAM event, and a run stuck in connect/overload
+        // retries can sit longer than two minutes while very much alive. A
+        // rescue that races it doubles the spend and the loser's write wins.
+        if (dBeat && Date.now() - dBeat < 5 * 60_000) continue; // still writing
         const tries = Number(row.data.tries || 0) + 1;
         if (tries > 2) {
           await deleteDoc(env, `advisorQueue/${row.id}`);
@@ -1683,23 +1875,76 @@ export async function runQueuedAnalyses(env) {
  * based on our conversation." This is the fix; do not remove either injection.
  */
 async function loadQa(env, kind, id, { skip = null, take = 10 } = {}) {
-  const rows = await listDocs(env, `${statePath(kind, id)}/qa`, { pageSize: 60 })
+  // all: true, because one unordered page of a growing collection is a
+  // random sample: qa ids are UUIDs, and past one page the "last 10 by date"
+  // was the last 10 of an arbitrary subset, which is exactly the amnesia
+  // this loader exists to end. Docs are tiny; reading them all is cheap.
+  const rows = await listDocs(env, `${statePath(kind, id)}/qa`, { pageSize: 200, all: true })
     .catch(() => []);
-  return rows
+  const done = rows
     .filter((r) => r.id !== skip && r.data.status === 'done'
       && r.data.question && r.data.answer)
-    .sort((a, b) => new Date(a.data.at || 0) - new Date(b.data.at || 0))
-    .slice(-take)
-    .map((r) => ({
-      q: String(r.data.question).slice(0, 800),
-      a: String(r.data.answer).slice(0, 600),
-    }));
+    .sort((a, b) => new Date(a.data.at || 0) - new Date(b.data.at || 0));
+  const recent = done.slice(-take);
+  // Overrides are settled calls, not chat scroll: up to three older ones
+  // stay pinned ahead of the recency window, at a longer slice, so the
+  // context that produced a filed stance never just ages out.
+  const pinned = done.slice(0, -take)
+    .filter((r) => r.data.override)
+    .slice(-3);
+  return [...pinned, ...recent].map((r) => ({
+    q: String(r.data.question).slice(0, 800),
+    a: String(r.data.answer).slice(0, r.data.override ? 900 : 600),
+    override: !!r.data.override,
+  }));
 }
 
 function qaBlock(qa) {
   if (!qa.length) return '';
-  const turns = qa.map((x) => `ERIC: ${x.q}\nYOU: ${x.a}`).join('\n\n');
+  const turns = qa.map((x) =>
+    `${x.override ? 'ERIC (override, settled): ' : 'ERIC: '}${x.q}\nYOU: ${x.a}`).join('\n\n');
   return `\n<discussion_with_eric>\nYour recent private discussion with Eric about this client, oldest first (long answers shortened):\n\n${turns}\n</discussion_with_eric>\n`;
+}
+
+/**
+ * Eric's hand-written working line, when he has set one. Pressing his own
+ * line onto the folder is the most explicit case-level call he can make, and
+ * the analysis used to never see it: the advisor kept producing and
+ * defending its own line against a call already made, every pass.
+ */
+function dxOverrideNote(state) {
+  const raw = state?.data.dxOverride;
+  const line = typeof raw === 'string' ? raw.trim() : '';
+  if (!line) return '';
+  return `\n\nEric has written his own working line on this case's folder: "${line.slice(0, 200)}". Treat it as his standing read of the case. Your ## Working line still states your own best read, but do not argue his in the sections he reads. If the evidence now cuts against his line in a way that matters for this client, say so once, under For you.`;
+}
+
+/**
+ * The bookkeeping the model is asked to maintain but never used to see.
+ * Without the open rows, a rephrased ask failed the flat-text match in
+ * harvestUnanswered and reset firstAskedAt to today (the age is the whole
+ * point); without the settled lists, re-emitted rows burned slots in the
+ * caps before the merge discarded them.
+ */
+function bookkeepingNote(state) {
+  const d = state?.data || {};
+  const open = (Array.isArray(d.unanswered) ? d.unanswered : []).filter((r) => !r.answered);
+  const settled = (Array.isArray(d.unanswered) ? d.unanswered : []).filter((r) => r.answered);
+  const dismissed = (Array.isArray(d.corrections) ? d.corrections : []).filter((c) => c.dismissed);
+  let note = '';
+  if (open.length) {
+    note += `\n\nRows already tracked under Not answered, with the date each was first asked. Reuse each ask's exact wording and date unless the thread shows it arrived or he dropped it:\n${
+      open.slice(0, 12).map((r) => `- ${r.ask} | ${String(r.firstAskedAt || '').slice(0, 10)} | ${r.times || 1}`).join('\n')}`;
+  }
+  if (settled.length) {
+    note += `\n\nThese asks are settled; never list them under Not answered again:\n${
+      settled.slice(0, 12).map((r) => `- ${r.ask}`).join('\n')}`;
+  }
+  if (dismissed.length) {
+    note += `\n\nCorrections he has dismissed; never raise these message ids again: ${
+      dismissed.slice(0, 10).map((c) => c.msgId).filter(Boolean).join(', ')}`;
+  }
+  return note;
 }
 
 /**
@@ -1776,9 +2021,9 @@ Use exactly these headings, in this order, as markdown \`##\` headings:
 ## Not answered
 ## Corrections
 
-"Right now": 2–4 short sentences, under 120 words, plain language. If you have
-a previous assessment, open with what CHANGED since it — new message, new
-signal, a shift in your read — then the single most useful next move. This is a
+"Right now": 2 to 4 short sentences, under 120 words, plain language. If you have
+a previous assessment, open with what CHANGED since it (new message, new
+signal, a shift in your read), then the single most useful next move. This is a
 running commentary he reads mid-conversation, not a report.
 
 "Plain English": the same read as "Right now", said the way you would say it to
@@ -1792,10 +2037,10 @@ reading. So: name the term in "Right now", explain it here, bracket it in both.
 Never bracket a term from his mastered list. Never bracket the same term twice
 in one section.
 
-"What this could be": at most 4 bullets, one line each — possibility, then the
+"What this could be": at most 4 bullets, one line each: possibility, then the
 one thing that would raise or lower it.
 
-"Worth investigating": at most 5 bullets — a specific lab, image, record or
+"Worth investigating": at most 5 bullets: a specific lab, image, record or
 referral, and what the result would settle either way. Order by what moves the
 case most, not by what is easiest.
 
@@ -1810,7 +2055,7 @@ far as the thread allows. If nothing is outstanding, write "- none".
 "Worth asking": at most 4 questions for the CLIENT, verbatim, each on its own
 bullet, in Eric's plain register and ready to send as they stand. He sends them
 straight from this list with one press, so never write a preamble, a heading or
-a parenthetical inside a bullet — just the question.
+a parenthetical inside a bullet: just the question.
 
 "What we know so far": the chart note, the thing Eric can hand a specialist.
 This is a REFERENCE section and the only one with no length limit; completeness
@@ -1821,18 +2066,18 @@ where you have one. Never infer, never round, never fill a gap with a typical
 value. If a section has nothing, leave it out.
 
 "What's missing": at most 5 bullets. Not strictly required, but would sharpen
-the picture — a record nobody has pulled, a date nobody has pinned down, a
+the picture: a record nobody has pulled, a date nobody has pinned down, a
 symptom nobody has characterised. Each written as a QUESTION Eric could send to
 the client as it stands, because he sends these with one press too.
 
 "Ruled out": what was genuinely on the list and is now off it, at most 5
-bullets, each \`- Name — the one fact that killed it\`. Only things a specific
+bullets, each \`- Name: the one fact that killed it\`. Only things a specific
 result or a specific statement actually closed. Never move a possibility here
 because it became unfashionable in your own thinking, and never re-litigate
 something already on this list in a later section. Write "- Nothing is closed
 yet." when nothing has been.
 
-"For you": at most 3 bullets of advocacy strategy — who to push, where this
+"For you": at most 3 bullets of advocacy strategy: who to push, where this
 stalls, and how to engage THIS patient if that matters (fewer questions and
 more prompting for someone exhausted, more structure for someone scattered).
 
@@ -1884,11 +2129,15 @@ transcript is too thin for a section, one line saying what you'd need.
 Carry forward what still holds. "What we know so far" and "Ruled out"
 especially are cumulative records, not a fresh take each pass: reproduce what
 your previous assessment had, add what is new, and only remove something when
-the thread has actually contradicted it.
-${knowledgeNote(knowledge)}${stanceNote(style)}${style.voice ? `
+the thread has actually contradicted it.`, cache: true },
+      // The learned material rides its OWN system block, after the cached
+      // one: the standing instructions above are identical from call to
+      // call, and gluing the glossary and the profile onto them meant the
+      // advisor learning anything busted the cache built to protect them.
+      { type: 'text', text: `${knowledgeNote(knowledge)}${stanceNote(style)}${style.voice ? `
 
 Two of your sections leave this page as messages FROM ERIC: "Worth asking" and "What's missing". He presses one line and it goes to the client as it stands. Write those two in his voice, from this profile of how he writes:
-${style.voice}` : ''}` }],
+${style.voice}` : ''}` || ' ' }],
       messages: [{
         role: 'user',
         content: [
@@ -1901,6 +2150,8 @@ ${style.voice}` : ''}` }],
               ? `Here is your previous assessment of this client:\n\n<previous>\n${prior}\n</previous>\n\nHere is the full conversation as it now stands:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nUpdate the assessment. Carry forward what still holds, revise what the new messages change, and say explicitly if something new contradicts an earlier read.`
               : `Here is the conversation so far:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nWrite the first assessment.`)
               + (qa.length ? `\n\nThe discussion with Eric is part of the case record. A conclusion he reached with you there, a direction he gave, or a possibility you two raised or sank moves this assessment and the Differential section exactly as if he had said it in the client thread. If that discussion changed your read since the previous assessment, say so in "Right now".` : '')
+              + dxOverrideNote(state)
+              + bookkeepingNote(state)
               + mediaNote(media),
           },
           ...media.blocks,
@@ -2047,29 +2298,36 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
       // being thought about, and the panel had nothing to go on.
       onBeat: () => patchDoc(env, `${statePath(kind, id)}/qa/${qaId}`,
         { progressAt: new Date() }, { mask: ['progressAt'] }).catch(() => {}),
-      system: [{ type: 'text', text: `${VOICE}
+      system: [{ type: 'text', cache: true, text: `${VOICE}
 
-Eric is asking you a direct question about this client. Answer it and stop —
+Eric is asking you a direct question about this client. Answer it and stop:
 under 120 words unless the question itself demands more. Don't re-summarise
 the case at him; he has the transcript in front of him.
 
-After the answer, two optional machine-read sections (they are stripped before
-he sees the answer):
-\`## Key terms\` — any medical term central to your answer that is not in his
+After the answer, three optional machine-read sections (they are stripped
+before he sees the answer):
+\`## Key terms\`: any medical term central to your answer that is not in his
 glossary, one per line as \`- Term [Category]: plain-words definition\`
 (Category: Condition, Symptom, Test or lab, Medication, Anatomy, Procedure,
 Concept). Skip the section if there are none.
-\`## Mastered\` — any not-yet-mastered glossary term his QUESTION shows he
+\`## Mastered\`: any not-yet-mastered glossary term his QUESTION shows he
 already understands: he used it correctly and fluently, not asking what it
 means. One term per line as \`- Term\`. Asking about a term is the opposite of
 mastering it. Skip the section if none.
+\`## Forgotten\`: any term on his mastered list that this question shows he no
+longer holds. He asked what it means, or used it wrongly. One term per line as
+\`- Term\`. Skip the section if none.
 
 He is allowed to be right. When he makes a point that actually breaks your
 reasoning, concede it plainly and say what it changes; do not concede as a
 courtesy and then carry on as before. When he says something outright wrong,
 correct it just as plainly, once, without softening it into a maybe. Both of
 those are the job.
-${knowledgeNote(knowledge)}${stanceNote(style)}${SELF_NOTE}${override ? OVERRIDE_NOTE : ''}` }],
+${SELF_NOTE}` },
+      // Learned material on its own block, after the cached one, so the
+      // glossary growing or the profile updating never busts the cache on
+      // the standing instructions above.
+      { type: 'text', text: `${knowledgeNote(knowledge)}${stanceNote(style)}${override ? OVERRIDE_NOTE : ''}` || ' ' }],
       messages: [{
         role: 'user',
         content: [
@@ -2088,9 +2346,11 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}${SELF_NOTE}${override ? OVERRIDE
       }],
     });
     // Same learning protocol as assessments: new jargon lands in the
-    // dictionary, and fluent use in his question counts as mastery.
+    // dictionary, fluent use in his question counts as mastery, and asking
+    // what a mastered term means counts the other way.
     let cleaned = await harvestKeyTerms(env, answer);
     cleaned = await applyMastered(env, cleaned);
+    cleaned = await applyForgotten(env, cleaned);
     if (override) cleaned = await fileOverride(env, cleaned);
     await patchDoc(env, path, {
       answer: cleaned, status: 'done', override,
@@ -2125,10 +2385,15 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
     });
     await patchDoc(env, draftQueuePath(kind, id), { kind, id, draft: true, at: new Date() },
       { mask: ['kind', 'id', 'draft', 'at'] }).catch(() => {});
-    const [rows, state, style] = await Promise.all([
+    const [rows, state, style, qa] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
       loadStyle(env),
+      // The usual sequence is: settle direction with the advisor, then press
+      // Prepare a response. The assessment lags that discussion by at least
+      // the pending floor, so without this the draft was written blind to
+      // the direction it was written for.
+      loadQa(env, kind, id).catch(() => []),
     ]);
     const chat = transcript(rows);
     const voice = myVoice(rows);
@@ -2149,7 +2414,7 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
 
 Write the next message for Eric to send to this client, as Eric, in his voice.
 
-Answer the client's MOST RECENT messages — everything they've sent since Eric
+Answer the client's MOST RECENT messages: everything they've sent since Eric
 last wrote. That's what the reply is for. The rest of the thread and your
 assessment are context to keep the reply consistent, not material to re-answer.
 
@@ -2158,12 +2423,13 @@ is, whether he uses contractions, how he opens and closes, how much warmth he
 shows, whether he uses lists. If his messages are short, yours is short.
 
 You may also be given his learned profile and recent before/after examples of
-how he edited your past drafts. Those edits are him correcting you: treat every
-difference as an instruction. His opinions go in as HIS calls, at full
-strength, even where they differ from general guidance. Never sand his
-positions down into textbook language he has already edited out.${styleNote(style)}
+how he edited your past drafts, at the end of these instructions. Those edits
+are him correcting you: treat every difference as an instruction. His opinions
+are his calls. Hold them, and where one bears on this message, surface it the
+way his profile says to: as what he wants asked or chased, in his register.
+Never sand his wording down into textbook language he has already edited out.
 
-Output the message text and nothing else — no preamble, no "here's a draft",
+Output the message text and nothing else: no preamble, no "here's a draft",
 no quotation marks around it, no sign-off he doesn't actually use.
 
 Length: this chat rejects messages over 2000 characters, and a wall of text
@@ -2187,11 +2453,18 @@ the next appointment, never what to do instead. If his learned positions point
 at a treatment call, convert it into a question for the doctor.
 
 What he CAN say: what he would want asked, what a result might mean, what he
-will chase down, and what to bring to the next appointment.` }],
+will chase down, and what to bring to the next appointment.
+
+Everything in this block, the patient-safety rules above especially, outranks
+anything in the learned profile that follows.`, cache: true },
+      // The learned profile rides its own block after the cached one, so the
+      // nightly study updating it never busts the cache on the rules above.
+      { type: 'text', text: styleNote(style) || ' ' }],
       messages: [{
         role: 'user',
-        content: `Here is how Eric writes, in his own messages to this client:\n\n<his_voice>\n${voice || '(none yet — keep it plain, warm and brief)'}\n</his_voice>\n${
+        content: `Here is how Eric writes, in his own messages to this client:\n\n<his_voice>\n${voice || '(none yet: keep it plain, warm and brief)'}\n</his_voice>\n${
           lessons ? `\nHow he edited your recent drafts before sending (each difference is an instruction):\n\n<his_edits>\n${lessons}\n</his_edits>\n` : ''
+        }${qa.length ? `${qaBlock(qa)}\nThat discussion is direction for what this message should do. It is private between you and Eric. Nothing from it goes to the client in its own words, and nothing in it is quoted or referenced to them.\n` : ''
         }\nThe conversation so far:\n\n<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${
           state?.data.analysis ? `\nYour current assessment of the case:\n\n<assessment>\n${state.data.analysis}\n</assessment>\n` : ''
         }${baseDraft

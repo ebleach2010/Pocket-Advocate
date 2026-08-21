@@ -668,7 +668,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-lanefix';
+const BUILD_TAG = 'v2026-08-22-learn';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2082,11 +2082,20 @@ async function handleChatTime(request, env) {
   const id = String(body?.id || '');
   if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad id' }, 400);
   const seconds = Math.max(0, Math.min(120, Number(body?.seconds) || 0));
-  const meta = await getDoc(env, `caseMeta/${id}`).catch(() => null);
-  const total = Math.max(0, Number(meta?.data.chatSeconds) || 0) + seconds;
-  if (seconds) {
-    await patchDoc(env, `caseMeta/${id}`, { chatSeconds: total, chatSecondsAt: new Date() },
-      { mask: ['chatSeconds', 'chatSecondsAt'] });
+  // Locked increment: chat open on the phone and the desktop at once meant
+  // two read-modify-writes racing, and the loser's 30 seconds vanished from
+  // the one number this meter exists to keep honest.
+  let total = 0;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const meta = await getDoc(env, `caseMeta/${id}`).catch(() => null);
+    total = Math.max(0, Number(meta?.data.chatSeconds) || 0) + seconds;
+    if (!seconds) break;
+    const ok = meta
+      ? await patchDoc(env, `caseMeta/${id}`, { chatSeconds: total, chatSecondsAt: new Date() },
+        { mask: ['chatSeconds', 'chatSecondsAt'], ifUpdateTime: meta.updateTime })
+      : await patchDoc(env, `caseMeta/${id}`, { chatSeconds: total, chatSecondsAt: new Date() },
+        { mask: ['chatSeconds', 'chatSecondsAt'] });
+    if (ok !== false) break;
   }
   return json({ total });
 }
@@ -2468,7 +2477,10 @@ async function confirmFollowUpPurchase(env, session) {
       kind: 'followup', amountCents: session.amount_total || followUpCents(c.data),
       sessionId: session.id, at: now, duplicate: true,
     });
-    await patchDoc(env, `cases/${caseId}`, { extraPayments: prior }, { mask: ['extraPayments'] });
+    // Locked like confirmTip: a concurrent confirm must not erase this row.
+    const okDup = await patchDoc(env, `cases/${caseId}`, { extraPayments: prior },
+      { mask: ['extraPayments'], ifUpdateTime: c.updateTime });
+    if (okDup === false) return confirmFollowUpPurchase(env, session);
     const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
     for (const a of admins) {
       await notifyUser(env, a.id, {
@@ -2484,13 +2496,16 @@ async function confirmFollowUpPurchase(env, session) {
     kind: 'followup', amountCents: session.amount_total || followUpCents(c.data),
     sessionId: session.id, at: now,
   });
-  await patchDoc(env, `cases/${caseId}`, {
+  const okBuy = await patchDoc(env, `cases/${caseId}`, {
     addOnFollowUp: true,
     // The month runs from here, not from a call that may be weeks behind them.
     addOnFollowUpAt: now,
     pendingFollowUp: null,
     extraPayments: payments,
-  }, { mask: ['addOnFollowUp', 'addOnFollowUpAt', 'pendingFollowUp', 'extraPayments'] });
+  }, { mask: ['addOnFollowUp', 'addOnFollowUpAt', 'pendingFollowUp', 'extraPayments'], ifUpdateTime: c.updateTime });
+  // Lost the lock: something else wrote the case between read and write.
+  // Re-run from the top; the sessionId dedup makes the retry idempotent.
+  if (okBuy === false) return confirmFollowUpPurchase(env, session);
   await sendEmail(env, {
     to: c.data.clientEmail,
     subject: 'Your follow-up session is paid for',
@@ -2565,14 +2580,23 @@ async function handleTip(request, env) {
 async function confirmTip(env, session) {
   const caseId = session.metadata?.caseId;
   if (!caseId) return;
-  const c = await getDoc(env, `cases/${caseId}`);
-  if (!c) return;
-  const payments = Array.isArray(c.data.extraPayments) ? c.data.extraPayments : [];
-  if (payments.some((x) => x.sessionId === session.id)) return;
-  payments.push({
-    kind: 'tip', amountCents: session.amount_total || 0, sessionId: session.id, at: new Date(),
-  });
-  await patchDoc(env, `cases/${caseId}`, { extraPayments: payments }, { mask: ['extraPayments'] });
+  // Locked read-modify-write: two webhook confirms landing together each
+  // read the same array, and the loser's write erased the winner's entry, a
+  // paid tip with no ledger row. The precondition makes the loser re-read.
+  let wrote = false;
+  for (let attempt = 0; attempt < 3 && !wrote; attempt++) {
+    const c = await getDoc(env, `cases/${caseId}`);
+    if (!c) return;
+    const payments = Array.isArray(c.data.extraPayments) ? c.data.extraPayments : [];
+    if (payments.some((x) => x.sessionId === session.id)) return;
+    payments.push({
+      kind: 'tip', amountCents: session.amount_total || 0, sessionId: session.id, at: new Date(),
+    });
+    wrote = false !== await patchDoc(env, `cases/${caseId}`, { extraPayments: payments },
+      { mask: ['extraPayments'], ifUpdateTime: c.updateTime });
+  }
+  if (!wrote) { console.warn('confirmTip: ledger append kept losing the lock', caseId); return; }
+  const c = { data: (await getDoc(env, `cases/${caseId}`))?.data || {} };
   const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
   for (const a of admins) {
     await notifyUser(env, a.id, {
@@ -2982,6 +3006,18 @@ async function handleAdvisor(request, env, ctx) {
       await patchDoc(env, `advisorStyle/profile/edits/${crypto.randomUUID()}`, {
         draft, sent, changed, kind, id, at: new Date(),
       });
+    } else {
+      // An unchanged send still stores an EXCLUSION KEY: sent text with no
+      // draft field, so every pair filter skips it. It is never evidence
+      // (the re-send poisoning the comment above guards against cannot
+      // happen through a doc that carries no draft); it exists so the voice
+      // study can recognise draft-born words in the chat and keep them out
+      // of the "how Eric writes" corpus. Without it, an unedited send was
+      // read back as his organic writing, and the profile slowly converged
+      // on the model's own style wearing his name.
+      await patchDoc(env, `advisorStyle/profile/edits/${crypto.randomUUID()}`, {
+        sent, changed: false, kind, id, at: new Date(),
+      }).catch(() => {});
     }
     await patchDoc(env, statePath, { draft: null, draftStatus: null }, {
       mask: ['draft', 'draftStatus'],
@@ -3060,6 +3096,15 @@ async function handleAdvisor(request, env, ctx) {
     // revision builds on Eric's in-place edits.
     const revise = body?.revise === true;
     const base = revise && typeof body?.base === 'string' ? body.base.slice(0, 4000) : '';
+    // "Make it warmer", typed into the revise box, is Eric correcting the
+    // advisor in his own words, and it used to evaporate with the request.
+    // Stored with no draft/sent so every pair filter skips it; the nightly
+    // study reads the newest few as their own small evidence list.
+    if (revise && instruction) {
+      await patchDoc(env, `advisorStyle/profile/edits/${crypto.randomUUID()}`, {
+        instruction, changed: false, kind, id, at: new Date(),
+      }).catch(() => {});
+    }
     return keepaliveRun(ctx, runDraft(env, kind, id, instruction, revise, base), { raw: true });
   }
 
@@ -3874,7 +3919,7 @@ async function confirmExtraSession(env, session) {
     sessionId: session.id,
     at: new Date(),
   });
-  await patchDoc(env, `cases/${m.caseId}`, {
+  const okX = await patchDoc(env, `cases/${m.caseId}`, {
     followUp: {
       start, durationMin, slotId: m.slotId, kind: 'extra',
       label: m.tagline || 'Advocacy Session',
@@ -3883,7 +3928,9 @@ async function confirmExtraSession(env, session) {
     },
     pendingExtra: null,
     extraPayments: payments,
-  }, { mask: ['followUp', 'pendingExtra', 'extraPayments'] });
+  }, { mask: ['followUp', 'pendingExtra', 'extraPayments'], ifUpdateTime: caseDoc.updateTime });
+  // Lost the lock; re-run from the top, the sessionId check makes it idempotent.
+  if (okX === false) return confirmExtraSession(env, session);
   await sendEmail(env, {
     to: c.clientEmail,
     subject: 'Your session is confirmed',
