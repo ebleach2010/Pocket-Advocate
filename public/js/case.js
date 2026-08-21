@@ -840,6 +840,11 @@ function renderPageFooter(host, c) {
   if (!host) return;
   const delivered = c.status === 'delivered' || c.status === 'closed';
   host.innerHTML = tipJarHtml(c) + (delivered ? '' : '<div data-review hidden></div>');
+  // The version line rides just above the jar (Eric, 2026-08-21). It mounts
+  // itself at the end of main before this footer exists; before() MOVES the
+  // node, click wiring intact. Idempotent across repaints.
+  const verline = document.getElementById('pa-verline');
+  if (verline) host.before(verline);
   if (!delivered) renderReview(host, c);
   if (new URLSearchParams(location.search).get('tipped') === '1') {
     host.querySelector('[data-tip-thanks]').hidden = false;

@@ -40,6 +40,7 @@ function openNotes() {
 function mount() {
   const host = document.querySelector('main') || document.body;
   const line = document.createElement('p');
+  line.id = 'pa-verline';
   // Small on purpose, both halves equally: furniture, not a feature.
   line.style.cssText = 'margin:1.4rem 0 .4rem; text-align:center; font-size:.68rem; opacity:.65;';
   line.innerHTML = `
@@ -48,7 +49,14 @@ function mount() {
       style="font:inherit; background:none; border:none; cursor:pointer; text-decoration:underline; padding:0 0 0 .5rem; color:inherit;"
       >Version notes</button>`;
   line.querySelector('[data-vnotes]').addEventListener('click', openNotes);
-  host.appendChild(line);
+  // On the client case page the line sits ABOVE the tip jar (Eric,
+  // 2026-08-21), not under it at the very end. The page footer div exists in
+  // the case page's skeleton; everywhere else the line takes the bottom of
+  // main. case.js re-asserts this placement when it paints the footer, which
+  // covers whichever module happens to run first.
+  const jarHost = document.querySelector('[data-page-footer]');
+  if (jarHost) jarHost.before(line);
+  else host.appendChild(line);
 }
 
 mount();
