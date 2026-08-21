@@ -164,6 +164,8 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   // review" has somewhere to land on this page.
   document.body.dataset.panel = '1';
 
+  let pingedStall = false;
+
   const post = async (payload) => {
     errEl.hidden = true;
     try {
@@ -222,6 +224,30 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         + 'ANTHROPIC_API_KEY. Nothing else in the app is affected.';
       errEl.hidden = false;
     }
+    // A stall runs its own diagnostics, once per stall: a one-token round trip
+    // to the model. Either "the pipe is fine, the run died - tap Update" or
+    // the provider's actual error, in its own words. No more guessing about
+    // API keys from a phone. (Eric, 2026-08-21: "Send an agent to run
+    // diagnostics.")
+    if (stalled && !pingedStall) {
+      pingedStall = true;
+      (async () => {
+        try {
+          const token = await user.getIdToken();
+          const res = await fetch('/api/advisor', {
+            method: 'POST',
+            headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ kind, id, action: 'ping' }),
+          });
+          const out = await res.json();
+          errEl.textContent = out.ok
+            ? `Diagnostics: the model responds normally (${out.ms}ms), so this run died on its own. Tap Update to restart it.`
+            : `Diagnostics: ${out.error}`;
+          errEl.hidden = false;
+        } catch { /* the refresh loop will try again on the next stall */ }
+      })();
+    }
+    if (!stalled) pingedStall = false;
     const running = alive;
 
     if (d.status === 'error' && d.error) {

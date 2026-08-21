@@ -25,7 +25,7 @@ import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 import {
   runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses, runStyleDistill,
-  runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop,
+  runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
 
 // These build the real Stripe line items. Three browser files mirror them for
@@ -630,7 +630,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-21-chatscroll';
+const BUILD_TAG = 'v2026-08-21-diag';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1800,7 +1800,16 @@ async function handleDaySummary(request, env) {
     return json(out);
   } catch (err) {
     console.error('day summary:', err.stack || err);
-    return json({ error: 'That did not go through. Try again.' }, 502);
+    // The REAL reason, because this route is requireAdmin-gated: only Eric's
+    // panel ever sees it. Every other advisor path already reports raw
+    // (keepaliveRun {raw:true}); this was the one place that hid the cause
+    // behind a shrug, which left him guessing about API keys from his phone.
+    // (Eric, 2026-08-21: "Same error. Send an agent to run diagnostics.")
+    // The status from the provider rides along when there is one - a 401
+    // means the key, a 529 means Anthropic is overloaded, and the two need
+    // opposite responses.
+    const detail = [err.status, err.message || String(err)].filter(Boolean).join(': ');
+    return json({ error: `Day summary failed - ${detail}` }, 502);
   }
 }
 
@@ -2695,6 +2704,16 @@ async function handleAdvisor(request, env, ctx) {
     });
     if (!changed) return json({ ok: true, learned: false });
     return keepaliveRun(ctx, runStyleDistill(env, kind, id), { raw: true });
+  }
+
+  if (action === 'ping') {
+    // The panel fires this on its own when a run stalls; the answer is the
+    // provider's, verbatim, on a route only the admin can reach.
+    try {
+      return json(await pingModel(env));
+    } catch (err) {
+      return json({ ok: false, error: [err.status, err.message || String(err)].filter(Boolean).join(': ') });
+    }
   }
 
   if (action === 'analyze') {

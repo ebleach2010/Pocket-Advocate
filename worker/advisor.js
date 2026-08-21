@@ -776,6 +776,27 @@ function hourIn(now, tz) {
  * query would be cheaper and needs a collection-group index, which is exactly
  * the kind of thing he cannot deploy.
  */
+/**
+ * One tiny round trip to the model, for exactly one question: is the pipe to
+ * Anthropic working, and if not, in whose words does it fail?
+ *
+ * (Eric, 2026-08-21: "Same error. Send an agent to run diagnostics.") The
+ * panel runs this by itself whenever a run stalls, so the answer to "is it us,
+ * the key, or the provider" arrives without anyone guessing from a phone.
+ * Admin-gated by the route; costs a few tokens.
+ */
+export async function pingModel(env) {
+  if (!env.ANTHROPIC_API_KEY) {
+    return { ok: false, error: 'ANTHROPIC_API_KEY is not set on the Worker. Set it with: npx wrangler secret put ANTHROPIC_API_KEY' };
+  }
+  const t0 = Date.now();
+  const res = await client(env).messages.create({
+    model: MODEL, max_tokens: 1,
+    messages: [{ role: 'user', content: 'ping' }],
+  });
+  return { ok: true, ms: Date.now() - t0, model: res.model };
+}
+
 export async function voiceCorpus(env) {
   const out = [];
   let chars = 0;
