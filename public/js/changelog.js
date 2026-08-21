@@ -81,6 +81,14 @@ export const CHANGELOG = [
           + 'and you never owe an explanation.',
       },
       {
+        where: 'The tip jar',
+        icon: '\u{1FAD9}',
+        body: 'At the bottom of your case page. Completely optional, and '
+          + 'nothing about your care changes either way. Right under it is '
+          + 'the review card: you are welcome to leave one at any point, '
+          + 'not just when your case wraps up.',
+      },
+      {
         where: 'How it looks',
         icon: '⚙',
         body: 'Four looks, including a light one and a high-contrast one. Tap '
@@ -97,6 +105,8 @@ export const CHANGELOG = [
       'When your report is delivered it is marked with a ✅, and a short feedback card opens under it.',
       'You can export your case as a PDF and pick which sections to include. It is in the feedback card, under Docs.',
       'Four looks to choose from, including a light one and a high-contrast one. Tap the ⚙ in the top bar.',
+      'A tip jar sits at the bottom of your case page. Completely optional, always appreciated, and nothing about your care changes either way.',
+      'You can leave a review at any point along the way, not just at the end. The card is at the bottom of your case page.',
     ],
   },
   {
