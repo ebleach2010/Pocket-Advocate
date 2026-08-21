@@ -32,13 +32,13 @@ export const statusById = (id) => STATUS_REACTIONS.find((r) => r.id === id);
 
 /**
  * Open the menu for one message.
- * opts: { canReact, canUseStatus, canEdit, canPass, canStage,
- *         passedByMe, hasReaction, hasText, current }
+ * opts: { canReact, canUseStatus, canEdit, canPass, canStage, canSave,
+ *         savedAlready, passedByMe, hasReaction, hasText, current }
  * Resolves to { action: 'react', id } | { action: 'clear' } | { action: 'edit' }
  * | { action: 'copy' } | { action: 'stage' }, or undefined if dismissed.
  */
 export function openMessageMenu(opts) {
-  const { canReact, canUseStatus, canEdit, canPass, canStage, passedByMe, hasReaction, hasText, current } = opts;
+  const { canReact, canUseStatus, canEdit, canPass, canStage, canSave, savedAlready, passedByMe, hasReaction, hasText, current } = opts;
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'msg-menu-overlay';
@@ -63,6 +63,7 @@ export function openMessageMenu(opts) {
           ${canEdit ? '<button class="msg-menu-row" data-act="edit"><span class="react-emoji">✏️</span><span>Edit message</span></button>' : ''}
           ${canPass ? '<button class="msg-menu-row" data-act="pass"><span class="react-emoji">⚐</span><span>Pass on this — no questions asked</span></button>' : ''}
           ${passedByMe ? '<button class="msg-menu-row" data-act="unpass"><span class="react-emoji">⚑</span><span>Take back the pass</span></button>' : ''}
+          ${canSave ? `<button class="msg-menu-row" data-act="save"><span class="react-emoji">🔖</span><span>${savedAlready ? 'Update your note on this' : 'Save this message'}</span></button>` : ''}
           ${hasText ? '<button class="msg-menu-row" data-act="copy"><span class="react-emoji">📋</span><span>Copy text</span></button>' : ''}
           <button class="msg-menu-row cancel" data-act="cancel"><span>Cancel</span></button>
         </div>
@@ -137,6 +138,49 @@ export function openCorrection(issue, fixed) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) done(undefined); });
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
+  });
+}
+
+/**
+ * A note alongside a saved message. Resolves with the text, or undefined if
+ * he backs out. Empty is a real answer: a bookmark with no note is still a
+ * bookmark.
+ */
+export function openNote(current) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'settings-overlay';
+    overlay.innerHTML = `
+      <div class="settings-card" role="dialog" aria-modal="true" aria-label="Your note">
+        <div class="row"><h3 style="margin:0;">Your note</h3>
+          <button class="btn quiet" data-cancel>Cancel</button></div>
+        <p class="dim small" style="margin:.5rem 0 .4rem;">Private to you. Saving
+          a message tells nobody, and this note is never shown to anyone else.</p>
+        <textarea class="edit-box" data-text rows="3" maxlength="2000"
+          placeholder="Why this one matters"></textarea>
+        <div class="actions" style="margin-top:.7rem;">
+          <button class="btn" data-save>Save it</button>
+        </div>
+      </div>`;
+    const box = overlay.querySelector('[data-text]');
+    box.value = current || '';
+
+    let settled = false;
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    function onKey(e) { if (e.key === 'Escape') done(undefined); }
+
+    overlay.querySelector('[data-cancel]').addEventListener('click', () => done(undefined));
+    overlay.querySelector('[data-save]').addEventListener('click', () => done(box.value));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(undefined); });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+    setTimeout(() => box.focus(), 30);
   });
 }
 

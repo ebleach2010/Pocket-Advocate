@@ -23,7 +23,7 @@ import {
 } from './schedule.js';
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
-import { runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses, runStyleDistill } from './advisor.js';
+import { runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses, runStyleDistill, runDaySummary } from './advisor.js';
 
 // These build the real Stripe line items. Three browser files mirror them for
 // display — public/js/book.js, public/js/subscribe.js, public/js/admin-case.js
@@ -286,6 +286,10 @@ export default {
         return await handleSetRates(request, env);
       if (url.pathname === '/api/version' && request.method === 'GET')
         return json({ tag: BUILD_TAG, version: VERSION });
+      if (url.pathname === '/api/summary' && request.method === 'POST')
+        return await handleDaySummary(request, env);
+      if (url.pathname === '/api/saved')
+        return await handleSaved(request, env, url);
       if (url.pathname === '/api/uploaded' && request.method === 'POST')
         return await handleUploaded(request, env);
       if (url.pathname === '/api/admin/session')
@@ -836,8 +840,13 @@ async function uidForCustomer(env, customerId) {
 //   • CLIENT-directed nudges (Eric wrote): at most ONE per day, sent at 6pm in
 //     the client's own timezone, and only if they still haven't opened it. No
 //     inbox spam during a back-and-forth — push is the instant channel.
-//   • ADMIN-directed nudges (client wrote): stay prompt, so Eric hears quickly
-//     even without push.
+//   • ADMIN-directed nudges (client wrote): removed 2026-08-20. Push is the
+//     channel for those now, and it is his own inbox.
+//
+// What is NOT here, and should not be confused with it: the booking
+// confirmation, the follow-up receipt, the case-closed note, both
+// subscription emails, and the alert when a client asks for a time that is
+// not on his calendar. Those are transactional and fire once.
 // Never any message content in the email.
 const CLIENT_DIGEST_HOUR = 18; // 6pm, client-local
 
@@ -873,17 +882,15 @@ export async function runChatDigest(env, now = Date.now()) {
               <p style="color:#888; font-size:13px;">You'll only get this once a day, and only when there's something you haven't seen yet.</p>`,
           });
         }
-      } else {
-        // Eric is the recipient — prompt.
-        if (env.ADMIN_EMAIL) {
-          await sendEmail(env, {
-            to: env.ADMIN_EMAIL,
-            subject: 'New message on Pocket Advocate',
-            html: `<p>You have an unread client message.</p>
-              <p><a href="${env.PUBLIC_BASE_URL}/admin-chats.html">Open the chat</a></p>`,
-          });
-        }
       }
+      // The other branch used to email Eric within 15 minutes of any client
+      // message. It is gone (Eric, 2026-08-20: "stop sending my email updates
+      // on unseen messages. We have push notifications working, this is
+      // unnecessary"). Push already tells him, and it is his own inbox.
+      //
+      // The flag write below still runs for BOTH branches. Without it every
+      // client-authored message would stay emailed:false forever and be
+      // re-queried, fifty rows at a time, every quarter hour, for nothing.
       await patchDoc(env, `${coll}/${row.id}`, { lastMessage: { emailed: true } }, {
         mask: ['lastMessage.emailed'],
       });
@@ -1252,6 +1259,39 @@ const EDIT_WINDOW_MS = 3 * 60 * 1000;
  * Resolve a chat thread and check the caller belongs in it. Returns
  * { clientUid, link, path, isAdmin } or { error, code }.
  */
+/**
+ * Membership in a thread, without naming a message. chatContext is this plus a
+ * message id; splitting it out lets a route that operates on the whole thread
+ * ask the same question. The contract of chatContext itself is unchanged, and
+ * has to stay that way: react, pass and edit all depend on it byte for byte.
+ */
+async function threadContext(env, user, kind, id) {
+  if ((kind !== 'case' && kind !== 'sub') || !/^[\w-]{1,64}$/.test(id))
+    return { error: 'Bad request', code: 400 };
+
+  const profile = await getDoc(env, `users/${user.uid}`);
+  const isAdmin = profile?.data.role === 'admin';
+
+  let clientUid;
+  let link;
+  if (kind === 'case') {
+    const doc = await getDoc(env, `cases/${id}`);
+    if (!doc) return { error: 'Not found', code: 404 };
+    clientUid = doc.data.clientUid;
+    link = `/case.html?id=${id}`;
+  } else {
+    const sub = await getDoc(env, `subscriptions/${id}`);
+    if (!sub) return { error: 'Not found', code: 404 };
+    clientUid = id;
+    link = '/subscription.html';
+  }
+  // Membership, not merely authentication: being signed in is not permission
+  // to touch a stranger's thread.
+  if (!isAdmin && user.uid !== clientUid) return { error: 'Not your thread', code: 403 };
+
+  return { clientUid, link, isAdmin, parent: kind === 'case' ? 'cases' : 'subscriptions' };
+}
+
 async function chatContext(env, user, kind, id, msgId) {
   if ((kind !== 'case' && kind !== 'sub') || !/^[\w-]{1,64}$/.test(id) || !/^[\w-]{1,64}$/.test(msgId))
     return { error: 'Bad request', code: 400 };
@@ -1364,12 +1404,136 @@ async function handleUploaded(request, env) {
 }
 
 /**
+ * POST /api/summary  Body: { kind, id, day: 'YYYY-MM-DD' }
+ *
+ * One day of a thread, read back to him. ADMIN ONLY, and deliberately so:
+ * Eric asked for this on his side after taking it off the client's, and a
+ * client is never to be handed anything generated for them.
+ *
+ * Once per day per case is enforced here rather than by a disabled button.
+ * The day is cached on first generation and served from cache after, so the
+ * limit is a property of the data rather than of the UI.
+ */
+async function handleDaySummary(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Admin only' }, 403);
+  const body = await request.json().catch(() => null);
+  const kind = body?.kind === 'sub' ? 'sub' : 'case';
+  const id = String(body?.id || '');
+  const day = String(body?.day || '');
+  if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad id' }, 400);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return json({ error: 'Bad day' }, 400);
+  // A day that has not happened has nothing in it.
+  if (new Date(`${day}T00:00:00Z`).getTime() > Date.now() + 86_400_000)
+    return json({ error: 'That day has not happened yet.' }, 400);
+
+  const parent = kind === 'case' ? 'cases' : 'subscriptions';
+  const doc = await getDoc(env, `${parent}/${id}`);
+  if (!doc) return json({ error: 'Not found' }, 404);
+
+  // Awaited rather than run through keepaliveRun: that helper reports only
+  // ok/failed, and the whole point here is the text it produces. One day of
+  // one thread at low effort is a short call, and he pressed a button and is
+  // waiting for an answer.
+  try {
+    const out = await runDaySummary(env, kind, id, day);
+    if (out.empty) return json({ error: 'Nothing was said that day.' }, 404);
+    return json(out);
+  } catch (err) {
+    console.error('day summary:', err.stack || err);
+    return json({ error: 'That did not go through. Try again.' }, 502);
+  }
+}
+
+/**
+ * /api/saved — messages either side has bookmarked, with a note.
+ *
+ *   GET  ?kind=case&id=…            list mine on this thread
+ *   POST { kind, id, msgId, note }  save one, or update its note
+ *   POST { kind, id, msgId, delete: true }
+ *
+ * Stored at {parent}/{id}/private/saved/{savedUid}/{msgId} — six path segments
+ * so it resolves to a document, five for the list, structurally identical to
+ * the advisor/state/qa/{id} shape that already works, and NOT the odd-segment
+ * shape that has bitten this codebase before.
+ *
+ * Under private/ because that subtree is denied to the browser in both cases
+ * and subscriptions, and falls through to deny-all if the live rules have not
+ * caught up. Denied either way, which is the only safe assumption when rules
+ * cannot be deployed from here.
+ *
+ * The saver's uid is a PATH SEGMENT, not a field, so one person's bookmarks
+ * are structurally unreachable from the other's rather than filtered out by
+ * code that could be got wrong later. {msgId} as the document id gives free
+ * dedupe: saving the same message twice is one row.
+ *
+ * The two invariants: nothing is written to the shared chat message document,
+ * and notifyUser is never called from here. React and pass do both, and
+ * either one would tell the other person they had been bookmarked.
+ */
+const SAVED_NOTE_MAX = 2000;
+
+async function handleSaved(request, env, url) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+
+  const body = request.method === 'POST' ? await request.json().catch(() => null) : null;
+  const kind = (body?.kind || url.searchParams.get('kind')) === 'sub' ? 'sub' : 'case';
+  const id = String(body?.id || url.searchParams.get('id') || '');
+  const ctx = await threadContext(env, user, kind, id);
+  if (ctx.error) return json({ error: ctx.error }, ctx.code);
+
+  const mine = `${ctx.parent}/${id}/private/saved/${user.uid}`;
+
+  if (request.method === 'GET') {
+    const rows = await listDocs(env, mine, { pageSize: 200 }).catch(() => []);
+    return json({
+      saved: rows
+        .map((r) => ({ msgId: r.id, ...r.data }))
+        .sort((a, b) => new Date(b.savedAt || 0) - new Date(a.savedAt || 0)),
+    });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+
+  const msgId = String(body?.msgId || '');
+  if (!/^[\w-]{1,64}$/.test(msgId)) return json({ error: 'Bad message' }, 400);
+  const path = `${mine}/${msgId}`;
+
+  if (body?.delete) {
+    await deleteDoc(env, path);
+    return json({ ok: true, removed: msgId });
+  }
+
+  // The snapshot is read from the message with the service account. Taking it
+  // from the request body would let a caller store words the other person
+  // never wrote, under their name, on a page that looks like a record.
+  const msg = await getDoc(env, `${ctx.parent}/${id}/chat/${msgId}`);
+  if (!msg) return json({ error: 'No such message' }, 404);
+  const note = typeof body?.note === 'string' ? body.note.slice(0, SAVED_NOTE_MAX) : '';
+
+  const existing = await getDoc(env, path).catch(() => null);
+  await patchDoc(env, path, {
+    text: String(msg.data.text || '').slice(0, 2000),
+    role: msg.data.role === 'admin' ? 'admin' : 'client',
+    attachmentName: msg.data.attachment?.name || null,
+    sentAt: msg.data.ts || null,
+    note,
+    // Saving it again keeps the moment it was first saved.
+    savedAt: existing?.data.savedAt ? new Date(existing.data.savedAt) : new Date(),
+    updatedAt: new Date(),
+  });
+  return json({ ok: true, msgId });
+}
+
+/**
  * POST /api/chat/pass  Body: { kind: 'case'|'sub', id, msgId, pass: bool }
  *
- * Passing on a question. Either side can flag a message from the other person
- * as PASS: "not answering that one, please don't ask why." The mark is visible
- * to both, the asker gets one quiet notification, and nobody owes anybody an
- * explanation. Only whoever set the flag can take it back. Worker-written for
+ * Passing on a question. A CLIENT can flag a message of Eric's as PASS: "not
+ * answering that one, please don't ask why." The mark is visible to both, he
+ * gets one quiet notification, and nobody owes anybody an explanation. Only
+ * whoever set the flag can take it back, which is why an admin can still
+ * unset one he made before this became client-only (Eric, 2026-08-20: "I can't
+ * pass on messages. Only they should be able to"). Worker-written for
  * the same reason as reactions and edits: chat messages are browser-immutable
  * by rule.
  */
@@ -1387,6 +1551,11 @@ async function handleChatPass(request, env) {
   if (body?.pass) {
     if (msg.data.from === user.uid)
       return json({ error: "You can only pass on the other person's message." }, 403);
+    // The UI stopped offering this to him; the route refuses it too, so the
+    // rule holds against anything that talks to the API directly. Taking a
+    // pass BACK is still his, for anything he set before this shipped.
+    if (ctx.isAdmin)
+      return json({ error: 'Passing is the client\'s to do.' }, 403);
     const already = !!msg.data.pass;
     await patchDoc(env, ctx.path, { pass: { by: user.uid, at: new Date() } }, { mask: ['pass'] });
     const author = msg.data.from;
@@ -1577,6 +1746,11 @@ async function handleAdvisorState(request, env, url) {
     // chat stops marking that message.
     corrections: (Array.isArray(state?.data.corrections) ? state.data.corrections : [])
       .filter((c) => c && !c.dismissed),
+    // Things he asked the client for and has not received. Rows he marked
+    // answered stay stored, so the next pass knows not to raise them again,
+    // and never come back out here.
+    unanswered: (Array.isArray(state?.data.unanswered) ? state.data.unanswered : [])
+      .filter((r) => r && !r.answered),
     // Exactly what the last analysis did with every file it was handed: read,
     // already read, queued for the next pass, or unreadable with the reason.
     // Eric shared eight documents once and the advisor discussed three; this
@@ -1621,6 +1795,16 @@ const ADMIN_NOTES = {
     'Education and About you are their own tabs.',
     'Reviews land in the case Overview for you to publish or keep private.',
     'A duty-of-care draft and a printable video prep sheet live under Drafts.',
+    'Tabs are grouped now: Case, Advisor, Track and Mine across the top, three pages in each, everything two taps away.',
+    'The duty-of-care draft is a ⚕️ in the chat composer, on every case, always the same. It says nothing about anyone.',
+    'Unanswered: things you asked the client for that never came back, oldest first, with ask-again and got-it.',
+    'Summary: one day of a thread read back to you. Once per day, and the same day always reads the same.',
+    'Saved: press and hold any message to bookmark it with a note. Private to you, and nothing is written back to the message.',
+    'The corrections the advisor flags are actually wired up now. A flagged message of yours carries a mark and offers the repaired wording.',
+    'The override opens a real editor instead of a prompt(), which did nothing at all inside the home-screen app.',
+    'The differential shows why each one fits and what would move it, on the page and on the printed prep sheet.',
+    'Documents uploaded on the client\'s own page are read now. They never were: that page uploads straight to storage and nothing told the advisor.',
+    'You no longer get an email when a client writes. Push already told you.',
   ],
 };
 
@@ -1961,6 +2145,7 @@ function sanitizeNotes(html) {
  * POST /api/advisor  Body: { kind: 'case'|'sub', id, action, question?, instruction?, draft?, sent? }
  * action: 'analyze' | 'ask' | 'draft' | 'draft-feedback' | 'pause' | 'resume' | 'clear-draft'
  *       | 'dx' (folder-cover override) | 'note' (private notes) | 'correction-dismiss'
+ *       | 'unanswered-answered' (an outstanding ask he got, or let go)
  *
  * Admin only, and invisible to clients by rule — see the `advisor` match in
  * firestore.rules. The model calls run in ctx.waitUntil and land in Firestore,
@@ -2041,6 +2226,27 @@ async function handleAdvisor(request, env, ctx) {
       html: sanitizeNotes(body.html), updatedAt: now,
     }, { mask: ['html', 'updatedAt'] });
     return json({ ok: true, savedAt: now.toISOString() });
+  }
+
+  if (action === 'unanswered-answered') {
+    // He got it, or decided to let it go. The flag rides on the row itself so
+    // the next analysis merges it forward rather than raising the same ask
+    // again next week.
+    const ask = typeof body?.ask === 'string' ? body.ask.slice(0, 300) : '';
+    if (!ask) return json({ error: 'Which one?' }, 400);
+    const flat = (v) => String(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const state = await getDoc(env, statePath);
+    const unanswered = (Array.isArray(state?.data.unanswered) ? state.data.unanswered : [])
+      .filter((r) => r && r.ask)
+      // Reading decodes timestamps to ISO strings; writing the array back
+      // untouched would retype every date from timestamp to string.
+      .map((r) => ({
+        ...r,
+        firstAskedAt: r.firstAskedAt ? new Date(r.firstAskedAt) : new Date(),
+        answered: flat(r.ask) === flat(ask) ? true : !!r.answered,
+      }));
+    await patchDoc(env, statePath, { unanswered }, { mask: ['unanswered'] });
+    return json({ ok: true });
   }
 
   if (action === 'correction-dismiss') {

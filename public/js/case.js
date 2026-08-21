@@ -10,6 +10,7 @@ import {
 } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence } from './chat.js';
+import { mountSaved } from './saved.js';
 import { initSetupGuide } from './onboarding.js';
 import { HELP_BUTTON, wireHelp, openCaseHelp } from './help.js';
 import { mountFolder, folderEnter } from './folder.js';
@@ -194,6 +195,15 @@ function render() {
       // and a tab hanging half off the edge reads as a broken page rather than
       // as more to scroll to. The 📄 carries the rest of the word.
       { id: 'docs', title: 'Docs', icon: '📄', render: (pane) => renderDocs(pane, c) },
+      {
+        // Messages they bookmarked, each with a note of their own. Private:
+        // Eric is not told what they save, and nothing is written back to the
+        // message, so there is nothing for him to notice.
+        id: 'saved', title: 'Saved', icon: '🔖',
+        render: (pane) => {
+          mountSaved({ container: pane, kind: 'case', id: c.id, user, myRole: 'client' });
+        },
+      },
     ],
   });
   showNavHint(container.querySelector('[data-folder]'));

@@ -31,8 +31,69 @@ export const VERSION = '2.2';
 export const CHANGELOG = [
   {
     version: '2.2',
+    // A guided tour rather than a list. Each card is one page of their case,
+    // in the order the tabs are in, and says what the page is for and how to
+    // get around it. `where` is the tab it is talking about, so the card and
+    // the thing it describes are never out of step.
+    tour: [
+      {
+        where: 'Your case',
+        icon: '📁',
+        body: 'Your case is a folder with tabs across the top. Tap a tab to open '
+          + 'that page, or tap the right side of the page itself to turn to the '
+          + 'next one. You can swipe between them too. Nothing is buried: every '
+          + 'page is one tap away.',
+      },
+      {
+        where: 'Progress',
+        icon: '📍',
+        body: 'Where your case is up to, and when we are speaking. The time is '
+          + 'shown in your own timezone as well as mine, and there is a "+ '
+          + 'calendar" link that adds it to your phone. Session details are '
+          + 'folded up underneath; tap to open them.',
+      },
+      {
+        where: 'Chat',
+        icon: '💬',
+        body: 'Messages between us. The ⤢ button next to the box makes it full '
+          + 'screen, which is easier to read on a phone, and the same button '
+          + 'brings it back. Press and hold any message to react to it, copy it, '
+          + 'or save it. You can edit your own message for three minutes after '
+          + 'sending it.',
+      },
+      {
+        where: 'Docs',
+        icon: '📄',
+        body: 'Everything on your case: your report, the recording, and anything '
+          + 'either of us has uploaded. Tap the box at the top to add labs, '
+          + 'imaging or records. Files shared in chat land here too, so there is '
+          + 'one place to look.',
+      },
+      {
+        where: 'Saved',
+        icon: '🔖',
+        body: 'Messages you have bookmarked, each with room for a note of your '
+          + 'own. Press and hold a message in Chat and choose "Save this '
+          + 'message". This page is yours: I am not told what you save.',
+      },
+      {
+        where: 'If a question is too much',
+        icon: '⚐',
+        body: 'Press and hold any question I asked and tap the flag to pass on '
+          + 'it. It is marked and we move on. No questions asked, no judgement, '
+          + 'and you never owe an explanation.',
+      },
+      {
+        where: 'How it looks',
+        icon: '⚙',
+        body: 'Four looks, including a light one and a high-contrast one. Tap '
+          + 'the ⚙ in the top bar. If reading is hard today, the high-contrast '
+          + 'one is worth trying.',
+      },
+    ],
     client: [
-      'Your case is now three pages instead of one long scroll. Tap Progress, Chat or Docs at the top, or swipe between them.',
+      'Your case is now a folder with tabs instead of one long scroll. Tap a tab, or tap the right side of the page to turn it.',
+      'A new Saved tab: press and hold any message to bookmark it with a note of your own.',
       'Files shared in chat now show up in your Documents, where they always should have.',
       'Long file names are readable again instead of being cut off mid-word.',
       'When your report is delivered it is marked with a ✅, and a short feedback card opens under it.',
@@ -79,6 +140,7 @@ export function unseenVersions(extra = {}) {
       // `extra` is Eric's half, fetched from the admin route. A client never
       // has one, and never has a way to ask for one.
       notes: [...v.client, ...(extra[v.version] || [])],
+      tour: v.tour || [],
     }))
     .filter((v) => v.notes.length);
 }
@@ -107,18 +169,49 @@ export async function showVersionCard(isAdmin = false, user = null) {
   const esc = (s) => String(s).replace(/[&<>"']/g, (ch) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
+  // The tour, if this release has one. One card per page, in tab order, paged
+  // through with Next: a person who is unwell should never have to scroll a
+  // wall of text to find out how to stop scrolling.
+  const tour = versions.flatMap((v) => v.tour || []);
+  let step = 0;
+
   const overlay = document.createElement('div');
   overlay.className = 'settings-overlay';
   overlay.innerHTML = `
     <div class="settings-card whats-new" role="dialog" aria-modal="true" aria-label="What's new">
-      ${versions.map((v) => `
-        <h3>Pocket Advocate ${esc(v.version)}</h3>
-        <ul class="whats-new-list">${v.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`).join('')}
-      <div class="actions"><button class="btn glow" data-close>Got it</button></div>
+      <div data-body></div>
+      <div class="actions" data-acts></div>
     </div>`;
-  const close = () => overlay.remove();
+  const bodyEl = overlay.querySelector('[data-body]');
+  const actsEl = overlay.querySelector('[data-acts]');
+
+  function draw() {
+    if (tour.length && step < tour.length) {
+      const t = tour[step];
+      bodyEl.innerHTML = `
+        <p class="wn-step">${step + 1} of ${tour.length}</p>
+        <h3>${esc(t.icon || '')} ${esc(t.where)}</h3>
+        <p class="wn-body">${esc(t.body)}</p>
+        <div class="wn-dots" aria-hidden="true">${tour.map((_, i) =>
+          `<span class="${i === step ? 'on' : ''}"></span>`).join('')}</div>`;
+      actsEl.innerHTML = `
+        ${step > 0 ? '<button class="btn quiet" data-back>Back</button>' : ''}
+        <button class="btn glow" data-next>${step === tour.length - 1 ? 'See what changed' : 'Next'}</button>
+        <button class="btn ghost" data-close>Skip</button>`;
+      actsEl.querySelector('[data-back]')?.addEventListener('click', () => { step--; draw(); });
+      actsEl.querySelector('[data-next]').addEventListener('click', () => { step++; draw(); });
+    } else {
+      bodyEl.innerHTML = versions.map((v) => `
+        <h3>Pocket Advocate ${esc(v.version)}</h3>
+        <ul class="whats-new-list">${v.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`).join('');
+      actsEl.innerHTML = '<button class="btn glow" data-close>Got it</button>';
+    }
+    actsEl.querySelector('[data-close]').addEventListener('click', close);
+  }
+
+  function close() { overlay.remove(); }
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-  overlay.querySelector('[data-close]').addEventListener('click', close);
+  draw();
   document.body.appendChild(overlay);
   return true;
 }

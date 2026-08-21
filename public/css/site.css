@@ -1394,6 +1394,75 @@ button.attach-btn {
   cursor: pointer;
 }
 
+/* The update card is a guided tour now: one page of their case per card, in
+   tab order, paged through with Next. A wall of text about how to stop
+   scrolling is the wrong shape for the thing it is explaining. */
+.whats-new .wn-step {
+  margin: 0 0 .3rem; font-size: .72rem; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.whats-new .wn-body { margin: .4rem 0 0; font-size: .95rem; line-height: 1.65; color: var(--soft); }
+.whats-new .wn-dots { display: flex; gap: .3rem; margin: .9rem 0 0; }
+.whats-new .wn-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--line);
+}
+.whats-new .wn-dots span.on { background: var(--cyan); box-shadow: var(--glow-c); }
+.whats-new .actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+
+/* --------------------------------------------------------- saved messages
+   Both sides get this, and on both sides it is private: the bookmark lives in
+   a subtree the browser cannot read, and nothing is written back to the
+   message, so saving one tells the other person nothing.
+
+   Prefixed sv- throughout. Never a bare .saved: that is already a file-kind
+   pill on the Documents list. */
+.sv-list { list-style: none; margin: .8rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .7rem; }
+.sv-item {
+  position: relative;
+  padding: .7rem .8rem .8rem;
+  background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 12px;
+}
+.sv-head { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .4rem; }
+.sv-who { font-weight: 700; font-size: .8rem; color: var(--ink); }
+.sv-when { font-size: .75rem; color: var(--dim); }
+.sv-drop {
+  margin-left: auto; flex: none;
+  width: 1.9rem; height: 1.9rem; padding: 0;
+  font: inherit; font-size: .85rem; line-height: 1; cursor: pointer;
+  color: var(--dim); background: none;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.sv-drop:hover, .sv-drop:focus-visible { color: var(--danger); border-color: var(--danger); outline: none; }
+.sv-text {
+  margin: 0 0 .55rem; padding: .5rem .65rem;
+  border-left: 3px solid var(--cyan-dim); border-radius: 0 8px 8px 0;
+  background: var(--panel);
+  font-size: .9rem; line-height: 1.55; color: var(--soft);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.sv-note-label { display: block; font-size: .75rem; color: var(--dim); }
+.sv-note {
+  display: block; width: 100%; margin-top: .25rem;
+  padding: .5rem .6rem; font: inherit; font-size: .9rem; line-height: 1.5;
+  color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 9px; resize: vertical;
+}
+.sv-note:focus-visible { border-color: var(--cyan); outline: none; }
+/* Where the save got to. Absent when there is nothing to say. */
+.sv-pill {
+  position: absolute; right: .8rem; bottom: .35rem;
+  font-size: .7rem; color: var(--dim);
+}
+.sv-pill.ok { color: var(--green); }
+.sv-pill.bad { color: var(--danger); }
+.sv-pill[hidden] { display: none; }
+/* The bookmark on a message in the chat. Only the person who saved it has it
+   in their list, so only they ever see this. */
+.sv-mark { margin-left: .35rem; font-size: .72rem; opacity: .75; }
+
 /* ---------------------------------------------------------------- two tiers
    Eric asked for grouping that kills side scroll and left-to-right travel and
    keeps every page two taps away. So: a group row that never changes, and a

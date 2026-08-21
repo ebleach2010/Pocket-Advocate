@@ -682,3 +682,31 @@
 }
 
 .dx-card .edit-box { min-height: 3.4rem; }
+
+.un-list { list-style: none; margin: .7rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .6rem; }
+.un-item {
+  padding: .65rem .75rem;
+  background: var(--panel-2);
+  border: 1px solid var(--line); border-left: 3px solid var(--orange); border-radius: 0 10px 10px 0;
+}
+.un-ask { margin: 0 0 .35rem; font-size: .92rem; line-height: 1.5; color: var(--ink); }
+.un-meta {
+  display: flex; gap: .55rem; flex-wrap: wrap; align-items: baseline;
+  margin: 0 0 .5rem; font-size: .75rem; color: var(--dim);
+}
+.un-age { color: var(--orange); font-weight: 700; }
+.un-times {
+  padding: 0 .35rem; border: 1px solid var(--line); border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.un-acts { display: flex; gap: .45rem; flex-wrap: wrap; }
+.un-acts .btn { padding: .3rem .7rem; font-size: .78rem; }
+.un-limit { margin: .7rem 0 0; }
+
+.sum-out { margin-top: .9rem; }
+.sum-sec { margin: 0 0 .8rem; }
+.sum-sec h4 {
+  margin: 0 0 .25rem; font-size: .82rem; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--cyan);
+}
+.sum-sec p { margin: 0; font-size: .92rem; line-height: 1.6; color: var(--soft); white-space: pre-wrap; }

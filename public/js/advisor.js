@@ -79,6 +79,16 @@ function termPalette(text) {
  * card renders into, so drafts live in their own section of the page.
  * `diffContainer` (optional): an element the differential page renders into.
  */
+/**
+ * The panel's "send this to the client, as you" sheet, published so another
+ * page can offer the same thing. The Unanswered page uses it for "ask again",
+ * and a second implementation of the same sheet would be a second thing to
+ * keep in step.
+ *
+ * Null until a panel mounts, which on the case page is always.
+ */
+export let sendToClient = null;
+
 export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null, diffContainer = null }) {
   container.innerHTML = `
     <div class="advisor">
@@ -371,6 +381,8 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     });
   }
 
+  sendToClient = openSendSheet;
+
   function openSendSheet(text, title) {
     if (!text) return;
     const overlay = document.createElement('div');
@@ -532,6 +544,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           notes: out.notes || '',
           notesUpdatedAt: out.notesUpdatedAt || null,
           corrections: out.corrections || [],
+          unanswered: out.unanswered || [],
           differential: out.differential || [],
           workingLine: out.workingLine || '',
           dxOverride: out.dxOverride || null,

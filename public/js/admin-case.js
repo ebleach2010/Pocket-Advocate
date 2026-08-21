@@ -10,8 +10,9 @@ import {
 } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { mountChat, openLightbox } from './chat.js';
-import { mountAdvisor } from './advisor.js';
+import { mountAdvisor, sendToClient } from './advisor.js';
 import { mountNotes } from './notes.js';
+import { mountSaved } from './saved.js';
 import { markSeen, isUnseen, PAGE_BADGES } from './seen.js';
 import { openDutyDraft } from './duty.js';
 import { openPrepSheet } from './prep.js';
@@ -183,6 +184,26 @@ function render(el) {
         },
       },
       {
+        // One day of the thread, read back to him. His side only: he took this
+        // off the client's side deliberately.
+        id: 'summary', title: 'Summary', icon: '🗒',
+        render: (pane) => paintSummary(pane),
+      },
+      {
+        // What he asked the client for and never got. Painted from the poll.
+        id: 'unanswered', title: 'Unanswered', icon: '⚠️',
+        render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
+      },
+      {
+        // His bookmarks on this thread, each with a note. Private by path: a
+        // client cannot read them, and nothing is written back to the message,
+        // so saving one tells them nothing.
+        id: 'saved', title: 'Saved', icon: '🔖',
+        render: (pane) => {
+          mountSaved({ container: pane, kind: 'case', id: caseId, user, myRole: 'admin' });
+        },
+      },
+      {
         id: 'drafts', title: 'Drafts', icon: '✍️',
         // Today's draft panel, relocated. The advisor renders into it and
         // owns its heading and its hidden state.
@@ -346,6 +367,158 @@ async function paintCaseReview(pane) {
 const CATEGORY_ORDER = ['Condition', 'Symptom', 'Test or lab', 'Medication', 'Procedure', 'Anatomy', 'Concept', 'General'];
 
 let eduKey = null;
+/**
+ * Things he asked for and has not received, oldest first, because the oldest
+ * is the one quietly holding the case up.
+ *
+ * Two actions per row, both reusing what already works: asking again is the
+ * same long-press-to-send that "Worth asking" has, and marking one answered is
+ * the same dismissal as a correction.
+ */
+/**
+ * One day of the thread. He picks a date, presses once, and reads it. Once per
+ * day per case: the first press generates and caches it, every press after
+ * that serves the same words back, because a record of a day that changes
+ * every time you look at it is not a record.
+ */
+function paintSummary(pane) {
+  if (!pane) return;
+  const today = new Date();
+  const iso = (d) => d.toISOString().slice(0, 10);
+  pane.innerHTML = `
+    <div class="panel">
+      <h3>Day summary</h3>
+      <p class="dim small">One day of this thread, read back to you: what was
+        said, what moved, and what is still hanging. Once per day, and the same
+        day always reads the same.</p>
+      <div class="row" style="gap:.5rem; flex-wrap:wrap; align-items:center;">
+        <input type="date" data-day value="${iso(today)}" max="${iso(today)}">
+        <button class="btn" data-go>Read that day</button>
+      </div>
+      <p class="error" data-err hidden style="margin:.5rem 0 0;"></p>
+      <div class="sum-out" data-out hidden></div>
+    </div>`;
+
+  const dayEl = pane.querySelector('[data-day]');
+  const errEl = pane.querySelector('[data-err]');
+  const outEl = pane.querySelector('[data-out]');
+  const btn = pane.querySelector('[data-go]');
+
+  btn.addEventListener('click', async () => {
+    const day = dayEl.value;
+    if (!day) return;
+    btn.disabled = true;
+    btn.textContent = 'Reading…';
+    errEl.hidden = true;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/summary', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'case', id: caseId, day }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || `Failed (${res.status})`);
+      // Rendered as text, section by section: this came back from a model and
+      // never goes near innerHTML as markup.
+      outEl.innerHTML = '';
+      for (const block of String(d.text || '').split(/\n(?=## )/)) {
+        const head = block.match(/^## (.+)$/m);
+        const sec = document.createElement('section');
+        sec.className = 'sum-sec';
+        if (head) {
+          const h = document.createElement('h4');
+          h.textContent = head[1].trim();
+          sec.appendChild(h);
+        }
+        const body = document.createElement('p');
+        body.textContent = block.replace(/^## .+$/m, '').trim();
+        sec.appendChild(body);
+        outEl.appendChild(sec);
+      }
+      const note = document.createElement('p');
+      note.className = 'dim small';
+      note.textContent = d.cached
+        ? 'Read earlier today; this is the same one.'
+        : 'Saved. Opening this day again shows exactly this.';
+      outEl.appendChild(note);
+      outEl.hidden = false;
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+    }
+    btn.disabled = false;
+    btn.textContent = 'Read that day';
+  });
+}
+
+let unKey = null;
+function paintUnanswered(pane, rows) {
+  if (!pane) return;
+  const key = JSON.stringify(rows);
+  if (key === unKey) return;    // a poll that changed nothing must not steal a tap
+  unKey = key;
+
+  const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+  const days = (v) => {
+    const t = v ? new Date(v).getTime() : 0;
+    if (!t) return '';
+    const n = Math.floor((Date.now() - t) / 86_400_000);
+    return n <= 0 ? 'today' : n === 1 ? '1 day' : `${n} days`;
+  };
+  const open = rows.filter((r) => r && r.ask && !r.answered)
+    .sort((a, b) => new Date(a.firstAskedAt || 0) - new Date(b.firstAskedAt || 0));
+
+  pane.innerHTML = `
+    <div class="panel">
+      <h3>Unanswered</h3>
+      ${open.length ? `
+        <p class="dim small">Things you asked for that have not come back.
+          Oldest first.</p>
+        <ul class="un-list">
+          ${open.map((r) => `
+            <li class="un-item">
+              <p class="un-ask">${esc(r.ask)}</p>
+              <p class="un-meta">
+                <span>Asked ${esc(fmt.format(new Date(r.firstAskedAt || Date.now())))}</span>
+                <span class="un-age">${esc(days(r.firstAskedAt))} ago</span>
+                ${r.times > 1 ? `<span class="un-times">${r.times}×</span>` : ''}
+              </p>
+              <div class="un-acts">
+                <button class="btn quiet" data-again="${esc(r.ask)}">Ask again</button>
+                <button class="btn ghost" data-done="${esc(r.ask)}">Got it</button>
+              </div>
+            </li>`).join('')}
+        </ul>
+        <p class="dim small un-limit">Read off the transcript, not a ledger.
+          Check it before you lean on it.</p>`
+        : '<p class="dim small">Nothing outstanding. Anything you asked for and did not get would be here.</p>'}
+    </div>`;
+
+  pane.querySelectorAll('[data-again]').forEach((b) => {
+    b.addEventListener('click', () => sendToClient?.(b.dataset.again, 'Unanswered'));
+  });
+  pane.querySelectorAll('[data-done]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/advisor', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ kind: 'case', id: caseId, action: 'unanswered-answered', ask: b.dataset.done }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Failed (${res.status})`);
+        b.closest('.un-item')?.remove();
+        unKey = null;   // the next poll repaints from the truth
+      } catch (err) {
+        alert(err.message);
+        b.disabled = false;
+      }
+    });
+  });
+}
+
 function paintEducation(pane, glossary) {
   if (!pane) return;
   const key = JSON.stringify(glossary);
@@ -490,6 +663,7 @@ document.addEventListener('pa-panel-state', (e) => {
   if (Array.isArray(d.differential)) lastDifferential = d.differential;
   if (Array.isArray(d.glossary)) paintEducation(folder?.el('education'), d.glossary);
   if (d.about) paintAbout(folder?.el('about'), d.about);
+  if (Array.isArray(d.unanswered)) paintUnanswered(folder?.el('unanswered'), d.unanswered);
 
   const wl = document.querySelector('[data-working]');
   if (!wl) return;

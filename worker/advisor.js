@@ -891,6 +891,51 @@ function harvestDifferential(text) {
 }
 
 /**
+ * "## Not answered": `- what he asked | YYYY-MM-DD | how many times`.
+ *
+ * Things ERIC asked the client for and never got. Not gaps in the medical
+ * picture (that is "What's missing") but gaps in the conversation: he asked
+ * for the discharge summary three weeks ago, twice, and it never came, and
+ * nothing in the app has been tracking that.
+ *
+ * Merged with what is already stored so a row he marked answered stays marked,
+ * and one he asked again keeps the date he first asked.
+ */
+function harvestUnanswered(text, prior) {
+  const m = text.match(/^## Not answered\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  if (!m) return { text, unanswered: Array.isArray(prior) ? prior : [] };
+  const was = Array.isArray(prior) ? prior : [];
+  const out = [];
+  const flat = (v) => String(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  for (const line of m[1].split('\n')) {
+    const parts = line.replace(/^\s*[-*]\s*/, '').split('|');
+    const ask = (parts[0] || '').trim().slice(0, 300);
+    if (!ask || /^none( yet)?\.?$/i.test(ask)) continue;
+    const first = (parts[1] || '').trim();
+    const times = Math.max(1, Math.min(50, parseInt(parts[2], 10) || 1));
+    const before = was.find((r) => r && flat(r.ask) === flat(ask));
+    if (out.some((r) => flat(r.ask) === flat(ask))) continue;
+    out.push({
+      ask,
+      // A date the reply gave, else the one already stored, else today. Never
+      // moves forward on its own: the age of the ask is the whole point.
+      firstAskedAt: before?.firstAskedAt
+        ? new Date(before.firstAskedAt)
+        : (Number.isNaN(Date.parse(first)) ? new Date() : new Date(first)),
+      times,
+      answered: !!before?.answered,
+    });
+    if (out.length >= 12) break;
+  }
+  // Rows he already marked answered survive even if this pass stopped naming
+  // them, so a dismissal is permanent rather than good until the next run.
+  for (const r of was) {
+    if (r?.answered && !out.some((x) => flat(x.ask) === flat(r.ask))) out.push(r);
+  }
+  return { text: text.replace(m[0], '').trim(), unanswered: out };
+}
+
+/**
  * "## Corrections": `- <msgId> | what is wrong | the repaired message`, one
  * row per message of Eric's that got a fact wrong. Rows are resolved against
  * his real messages (a correction that cannot point at one is noise) and
@@ -931,6 +976,76 @@ function harvestCorrections(text, rows, prior) {
     if (corrections.length >= 10) break;
   }
   return { text: text.replace(m[0], '').trim(), corrections };
+}
+
+/**
+ * One day of a thread, read back to him.
+ *
+ * Cached at {parent}/{id}/private/summaries/{yyyy-mm-dd} — six segments, a
+ * document, under the subtree the browser is denied in both directions. Once
+ * generated, the day never regenerates: it is a record of that day, and a
+ * second pass over the same messages producing different words would make it
+ * useless as one.
+ *
+ * Returns { day, text, cached }.
+ */
+export async function runDaySummary(env, kind, id, day) {
+  const parent = kind === 'case' ? 'cases' : 'subscriptions';
+  const path = `${parent}/${id}/private/summaries/${day}`;
+  const have = await getDoc(env, path).catch(() => null);
+  if (have?.data.text) return { day, text: have.data.text, cached: true };
+
+  const rows = await recentMessages(env, kind, id);
+  const start = new Date(`${day}T00:00:00Z`).getTime();
+  const end = start + 86_400_000;
+  const mine = rows.filter((r) => {
+    const t = r.data.ts ? new Date(r.data.ts).getTime() : 0;
+    return t >= start && t < end;
+  });
+  if (!mine.length) {
+    return { day, text: '', cached: false, empty: true };
+  }
+
+  const transcript = mine.map((r) => {
+    const who = r.data.role === 'admin' ? 'Eric' : 'Client';
+    const att = r.data.attachment?.name ? ` [attached: ${r.data.attachment.name}]` : '';
+    return `${who}: ${r.data.text || ''}${att}`;
+  }).join('\n');
+
+  const text = await ask(env, {
+    effort: 'low',
+    maxTokens: 12000,
+    system: [{ type: 'text', text: `You summarise one day of a patient advocate's
+chat with a client, for the advocate himself. He reads this to get back on top
+of a case he has not looked at since yesterday.
+
+Exactly these four headings, as markdown \`##\`, and nothing else:
+
+## Key points
+What was actually said that matters. Bullets, at most six. Facts and decisions,
+not atmosphere.
+
+## Progress
+What moved. If nothing moved, say so in one line rather than padding it.
+
+## Loose ends
+Anything he asked for that did not come back, and anything the client said they
+would send and did not. Bullets, at most six. End this section with this line
+exactly, on its own:
+potentially forgot to or have not provided. Helpful, but optional.
+
+## Where it stands
+Two sentences at most, on what the case is waiting on.
+
+Facts from the transcript only. Never infer, never fill a gap. Never use an em
+dash or en dash.` }],
+    messages: [{ role: 'user', content: `${day}\n\n${transcript}` }],
+  });
+
+  await patchDoc(env, path, {
+    text: text.slice(0, 8000), day, at: new Date(), messages: mine.length,
+  });
+  return { day, text, cached: false };
 }
 
 const statePath = (kind, id) =>
@@ -1046,6 +1161,7 @@ Use exactly these headings, in this order, as markdown \`##\` headings:
 ## Key terms
 ## Working line
 ## Differential
+## Not answered
 ## Corrections
 
 "Right now": 2–4 short sentences, under 120 words, plain language. If you have
@@ -1070,6 +1186,14 @@ one thing that would raise or lower it.
 "Worth investigating": at most 5 bullets — a specific lab, image, record or
 referral, and what the result would settle either way. Order by what moves the
 case most, not by what is easiest.
+
+"Not answered": what ERIC asked the client for and has not received. One
+bullet each, \`- what he asked | YYYY-MM-DD | how many times\`, oldest first, at
+most 8. Only things he actually asked for in the thread: a record, a date, a
+document, a decision. Not gaps in the picture, which belong in "What's
+missing"; this is only where the CONVERSATION stalled. If something arrived
+later, or he said to drop it, leave it out. Write the ask in his own words as
+far as the thread allows. If nothing is outstanding, write "- none".
 
 "Worth asking": at most 4 questions for the CLIENT, verbatim, each on its own
 bullet, in Eric's plain register and ready to send as they stand. He sends them
@@ -1168,7 +1292,8 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
     // it reaches the assessment Eric actually reads.
     const cover = harvestWorkingLine(await harvestKeyTerms(env, analysis));
     const dx = harvestDifferential(cover.text);
-    const corr = harvestCorrections(dx.text, rows, state?.data.corrections);
+    const un = harvestUnanswered(dx.text, state?.data.unanswered);
+    const corr = harvestCorrections(un.text, rows, state?.data.corrections);
     // Stamps for the shelf badges. A differential that came back identical is
     // not news, so its stamp holds rather than moving; a badge that lights on
     // every pass is a badge he stops reading. fileAt moves when this pass
@@ -1184,6 +1309,9 @@ ${knowledgeNote(knowledge)}${stanceNote(style)}` }],
       pendingAt: null, startedAt: null, progressAt: null,
       workingDx: cover.workingDx,
       differential: dx.differential,
+      // What he asked for and never got. Its own list, because "What's
+      // missing" is about the picture and this is about the conversation.
+      unanswered: un.unanswered,
       corrections: corr.corrections,
       // What this pass did with every file it was handed. The panel prints it
       // verbatim, so "did he see my photos" has an answer on screen instead of

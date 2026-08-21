@@ -14,7 +14,8 @@ import {
   ref, uploadBytesResumable, getDownloadURL,
 } from './firebase.js';
 import {
-  emojiById, statusById, openMessageMenu, openEditor, openCorrection, EDIT_WINDOW_MS,
+  emojiById, statusById, openMessageMenu, openEditor, openCorrection, openNote,
+  EDIT_WINDOW_MS,
 } from './msg-actions.js';
 
 const MAX_BYTES = 25 * 1024 * 1024;
@@ -153,12 +154,17 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         div.appendChild(chip);
       }
 
-      // The pass flag. A question or request from the other person carries an
-      // outline flag; tapping it fills red as PASS — "not answering that one,
-      // please don't ask why" — visible to both sides. Only whoever passed can
-      // take it back.
+      // The pass flag. A question or request carries an outline flag; tapping
+      // it fills red as PASS — "not answering that one, please don't ask why"
+      // — visible to both sides. Only whoever passed can take it back.
+      //
+      // Offered to CLIENTS only (Eric, 2026-08-20: "I can't pass on messages.
+      // Only they should be able to"). He still sees a pass a client set,
+      // because that is how he knows to stop asking, and anything he passed
+      // before this shipped stays his to take back.
+      const canOfferPass = myRole === 'client';
       const askish = data.text && /\?|(^|\s)(please|can you|could you|would you|will you|do you|did you|have you|are you|send|upload|share|let me know)\b/i.test(data.text);
-      if (data.pass || (!mine && askish && data.text)) {
+      if (data.pass || (canOfferPass && !mine && askish && data.text)) {
         const flag = document.createElement('button');
         flag.type = 'button';
         flag.className = `pass-flag${data.pass ? ' on' : ''}`;
@@ -166,7 +172,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         flag.title = data.pass
           ? (data.pass.by === user.uid ? 'Passed — tap to take it back' : 'They passed on this — moving on')
           : "Pass on this question — it's marked PASS and we move on, no explanation needed";
-        const canToggle = data.pass ? data.pass.by === user.uid : !mine;
+        const canToggle = data.pass ? data.pass.by === user.uid : (canOfferPass && !mine);
         if (canToggle) {
           flag.addEventListener('click', async () => {
             flag.disabled = true;
@@ -194,7 +200,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
           canReact: !mine,
           canUseStatus: !mine && myRole === 'admin',
           canEdit: !!editable,
-          canPass: !mine && !!data.text && !data.pass,
+          canPass: myRole === 'client' && !mine && !!data.text && !data.pass,
+          // Either side, either person's message. Saving is private and tells
+          // nobody, so there is nothing to gate.
+          canSave: !!(data.text || att),
+          savedAlready: savedIds.has(m.id),
           canStage,
           attachment: canStage ? att : null,
           passedByMe: data.pass?.by === user.uid,
@@ -210,7 +220,10 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     });
     const hint = container.querySelector('[data-hint]');
     if (hint) {
-      const passNote = 'Long hold the message and press the flag to pass on a question or subject. No questions asked, no judgement; we\'ll move forward like it was never said.';
+      // Passing is the client's to do, so only the client is told about it.
+      const passNote = myRole === 'client'
+        ? 'Long hold the message and press the flag to pass on a question or subject. No questions asked, no judgement; we\'ll move forward like it was never said.'
+        : '';
       const hintText = ((myRole === 'admin'
         ? (hasAttachment
           ? 'Press and hold a shared file to save it to their Documents. '
@@ -222,10 +235,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       // changelog.js does this job now, for every release rather than one, and
       // it says what changed instead of only that something did.
       hint.textContent = hintText;
-      hint.hidden = false;
+      hint.hidden = !hintText;
     }
     log.scrollTop = log.scrollHeight;
     paintCorrections();
+    paintSaved();
   }, (err) => {
     log.innerHTML = `<p class="error">Couldn't load messages: ${esc(err.message)}</p>`;
   });
@@ -299,6 +313,21 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       return post('/api/chat/pass',
         { kind: kindOf(), id: parentPath[1], msgId: o.msgId, pass: choice.action === 'pass' },
         "Couldn't set that");
+    }
+    if (choice.action === 'save') {
+      // A note can be added here or on the Saved page; offering it at the
+      // moment of saving is the difference between a bookmark and a record.
+      const note = await openNote(savedIds.get(o.msgId) || '');
+      if (note === undefined) return;
+      await post('/api/saved',
+        { kind: kindOf(), id: parentPath[1], msgId: o.msgId, note },
+        "Couldn't save that");
+      savedIds.set(o.msgId, note);
+      paintSaved();
+      document.dispatchEvent(new CustomEvent('pa-saved-changed', {
+        detail: { kind: kindOf(), id: parentPath[1] },
+      }));
+      return;
     }
     if (choice.action === 'stage') {
       // The panel on the admin case page owns the actual request; the chat
@@ -411,6 +440,36 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       e.preventDefault();
       composerButton.onClick();
     });
+  }
+
+  // The ids this person has bookmarked on this thread. Loaded once and kept
+  // in step by hand: it only ever changes from actions taken right here.
+  const savedIds = new Map();   // msgId -> the note, so "update" starts where it left off
+  (async () => {
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/saved?kind=${kindOf()}&id=${encodeURIComponent(parentPath[1])}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      for (const r of (await res.json()).saved || []) savedIds.set(r.msgId, r.note || '');
+      paintSaved();
+    } catch { /* the mark is a nicety, not the feature */ }
+  })();
+
+  /** A small bookmark on a message this person saved. Only they ever see it. */
+  function paintSaved() {
+    for (const el of log.querySelectorAll('.msg[data-mid]')) {
+      const on = savedIds.has(el.dataset.mid);
+      const had = el.querySelector('.sv-mark');
+      if (on && !had) {
+        const mark = document.createElement('span');
+        mark.className = 'sv-mark';
+        mark.textContent = '🔖';
+        mark.title = 'Saved to your saved messages';
+        el.appendChild(mark);
+      } else if (!on && had) had.remove();
+    }
   }
 
   const form = container.querySelector('[data-form]');
