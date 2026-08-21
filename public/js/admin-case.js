@@ -110,7 +110,7 @@ function render(el) {
     groups: [
       { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files'] },
       { id: 'read', label: 'Advisor', icon: '👨‍⚕️', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
-      { id: 'track', label: 'Track', icon: '🗒', pages: ['summary', 'unanswered', 'about'] },
+      { id: 'track', label: 'Track', icon: '🗒', pages: ['summary', 'unanswered', 'agenda', 'about'] },
       { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'drafts', 'saved'] },
     ],
     // Landing on a page IS having seen it. The badge clears here rather than
@@ -127,6 +127,7 @@ function render(el) {
           pane.innerHTML = `
             <div class="panel">
               <h3>Chat with the client</h3>
+              <p class="dim small" data-chattime style="margin:.1rem 0 .4rem;" hidden></p>
               <div id="chat"></div>
             </div>`;
         },
@@ -215,6 +216,14 @@ function render(el) {
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
       {
+        // The next call's plan, built from the queue the chat lanes feed.
+        // Re-fetched every time the page opens: the client adds to the list
+        // from their side and a stale agenda defeats the point.
+        id: 'agenda', title: 'Agenda', icon: '🗓',
+        render: (pane) => paintAgendaPage(pane),
+        onShow: (pane) => pane._reload?.(),
+      },
+      {
         // His bookmarks on this thread, each with a note. Private by path: a
         // client cannot read them, and nothing is written back to the message,
         // so saving one tells them nothing.
@@ -296,6 +305,7 @@ function render(el) {
   });
 
   chatSend = (text) => chat.send(text);
+  startChatMeter();
 
   // Admin-only, and admin-only by rule — see the `advisor` match in
   // firestore.rules. An approved draft goes out through the same send path as
@@ -406,6 +416,194 @@ let eduKey = null;
  * that serves the same words back, because a record of a day that changes
  * every time you look at it is not a record.
  */
+// ---- the Agenda page: the next-call queue becomes the call plan ----
+// The lanes on the client's composer send everything that is not logistics
+// or urgent here instead of into the chat. This page is where that time
+// comes back: check items off during the call, export the post-call summary,
+// clear the covered ones for next time.
+function paintAgendaPage(pane) {
+  if (!pane) return;
+  pane.innerHTML = `
+    <div class="panel">
+      <h3>🗓 Next call agenda</h3>
+      <p class="dim small">Built from what you and the client put on the list.
+        Check things off during the call; Export writes the post-call summary
+        for you.</p>
+      <ul data-alist style="margin:.4rem 0 0; padding-left:0;"><li class="dim small" style="list-style:none;">Loading…</li></ul>
+      <form data-aform style="display:flex; gap:.4rem; margin-top:.6rem;">
+        <input type="text" maxlength="500" placeholder="Add an item…" style="flex:1; min-width:0;">
+        <button class="btn quiet" type="submit">Add</button>
+      </form>
+      <div class="row" style="gap:.5rem; margin-top:.7rem; flex-wrap:wrap;">
+        <button class="btn" data-aexport>⬇ Export call summary</button>
+        <button class="btn quiet" data-aclear>Clear covered items</button>
+      </div>
+      <p class="error" data-aerr hidden style="margin:.5rem 0 0;"></p>
+      <div data-aout hidden style="margin-top:.7rem;">
+        <textarea data-atext rows="10" style="width:100%;"></textarea>
+        <div class="row" style="gap:.5rem; margin-top:.4rem;">
+          <button class="btn quiet" data-acopy>Copy</button>
+          <button class="btn quiet" data-asend>Send to client</button>
+        </div>
+      </div>
+    </div>`;
+
+  let items = [];
+  const listEl = pane.querySelector('[data-alist]');
+  const errEl = pane.querySelector('[data-aerr]');
+  const showE = (e) => { errEl.textContent = e.message || String(e); errEl.hidden = false; };
+
+  const post = async (payload) => {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/agenda', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ id: caseId, ...payload }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+    return out;
+  };
+
+  const paint = () => {
+    if (!items.length) {
+      listEl.innerHTML = '<li class="dim small" style="list-style:none;">Nothing queued yet. What the client files under "Bring to next call" lands here, and you can add your own.</li>';
+      return;
+    }
+    listEl.innerHTML = items.map((i) => `
+      <li style="margin:.3rem 0; list-style:none;">
+        <label style="display:flex; gap:.45rem; align-items:flex-start; cursor:pointer;">
+          <input type="checkbox" data-adone="${esc(i.id)}" ${i.done ? 'checked' : ''} style="margin-top:.2rem;">
+          <span${i.done ? ' class="dim" style="text-decoration:line-through;"' : ''}>${esc(i.text)}
+            <span class="dim small">· ${i.role === 'admin' ? 'you' : 'client'}</span></span>
+        </label>
+      </li>`).join('');
+  };
+
+  const load = async () => {
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/agenda?id=${encodeURIComponent(caseId)}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`Failed (${res.status})`);
+      items = (await res.json()).items || [];
+      paint();
+    } catch (e) { showE(e); }
+  };
+  pane._reload = load;
+  load();
+
+  listEl.addEventListener('change', async (e) => {
+    const id = e.target?.dataset?.adone;
+    if (!id) return;
+    const done = e.target.checked;
+    try {
+      await post({ action: 'done', itemId: id, done });
+      const it = items.find((x) => x.id === id);
+      if (it) it.done = done;
+      paint();
+    } catch (err) { e.target.checked = !done; showE(err); }
+  });
+
+  pane.querySelector('[data-aform]').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = e.target.querySelector('input');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    errEl.hidden = true;
+    try {
+      const out = await post({ action: 'add', text });
+      items.push(out.item);
+      paint();
+    } catch (err) { input.value = text; showE(err); }
+  });
+
+  pane.querySelector('[data-aexport]').addEventListener('click', () => {
+    const day = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+      .format(new Date());
+    const covered = items.filter((i) => i.done);
+    const open = items.filter((i) => !i.done);
+    const text = [
+      `Call summary, ${day}`,
+      '',
+      'What we covered:',
+      covered.length ? covered.map((i) => `- ${i.text}`).join('\n') : '- (nothing checked off yet)',
+      '',
+      'Still on the list for next time:',
+      open.length ? open.map((i) => `- ${i.text}`).join('\n') : '- Nothing. The list is clear.',
+      '',
+    ].join('\n');
+    const out = pane.querySelector('[data-aout]');
+    out.hidden = false;
+    out.querySelector('[data-atext]').value = text;
+  });
+
+  pane.querySelector('[data-acopy]').addEventListener('click', async (e) => {
+    try {
+      await navigator.clipboard.writeText(pane.querySelector('[data-atext]').value);
+      e.target.textContent = 'Copied ✓';
+      setTimeout(() => { e.target.textContent = 'Copy'; }, 1500);
+    } catch { /* the textarea is right there to select by hand */ }
+  });
+
+  pane.querySelector('[data-asend]').addEventListener('click', async (e) => {
+    // The chat rejects messages over 2000 characters; a call summary that
+    // long should be trimmed in the box first anyway.
+    const text = pane.querySelector('[data-atext]').value.trim().slice(0, 1900);
+    if (!text) return;
+    e.target.disabled = true;
+    try {
+      await chatSend?.(text);
+      e.target.textContent = 'Sent ✓';
+      setTimeout(() => { e.target.textContent = 'Send to client'; e.target.disabled = false; }, 1500);
+    } catch (err) { e.target.disabled = false; showE(err); }
+  });
+
+  pane.querySelector('[data-aclear]').addEventListener('click', async () => {
+    try {
+      await post({ action: 'clear' });
+      items = items.filter((i) => !i.done);
+      paint();
+    } catch (err) { showE(err); }
+  });
+}
+
+// ---- the chat-hours meter (visible to Eric only; stored on caseMeta) ----
+// 30 seconds at a time, only while the chat page is the open page in a
+// visible tab. What it buys: a per-client number for what chat actually
+// costs, which is the fact the whole scoped-chat layer exists to manage.
+let meterTimer = null;
+function startChatMeter() {
+  const paint = (total) => {
+    const el = document.querySelector('[data-chattime]');
+    if (!el) return;
+    const h = Math.floor(total / 3600);
+    const m = Math.round((total % 3600) / 60);
+    el.textContent = `🕐 Your time in this chat so far: ${h ? `${h}h ` : ''}${m}m`;
+    el.hidden = false;
+  };
+  const beat = async (seconds) => {
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/chattime', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ id: caseId, seconds }),
+      });
+      if (res.ok) paint((await res.json()).total || 0);
+    } catch { /* the meter is a nicety, never a blocker */ }
+  };
+  beat(0); // read the running total without adding to it
+  clearInterval(meterTimer);
+  meterTimer = setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    if (folder?.current() !== 'chat') return;
+    beat(30);
+  }, 30_000);
+}
+
 function paintSummary(pane) {
   if (!pane) return;
   const today = new Date();

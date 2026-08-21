@@ -57,8 +57,22 @@ export function watchPresence(el) {
  * the composer row, left of the text box. The caller owns what it means; this
  * file only knows where it goes.
  */
-export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null }) {
+export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null, lanes = null }) {
   container.classList.add('chat-root');
+  // The lanes, where the mount asks for them (the client case chat only:
+  // Eric's own sends are never gated, and subscribers pay monthly precisely
+  // for an open line). A message needs a lane to send, intake closes after
+  // the first call, and "bring to next call" goes to the agenda list below
+  // the chat instead of into the thread. That last lane is the point of the
+  // whole feature: the thread stays for logistics and urgencies, the
+  // thinking work waits for a call. (Eric, 2026-08-21: "The chat is
+  // swallowing my time to the point I make next to nothing.")
+  const LANES = lanes && !disabled ? [
+    ...(lanes.intakeOpen ? [{ id: 'intake', icon: '📋', label: 'Intake answer', ph: 'Your answer to my intake questions…' }] : []),
+    { id: 'records', icon: '📎', label: 'Records & scheduling', ph: 'Uploads, appointment dates, provider names…' },
+    { id: 'clinical', icon: '🚨', label: 'New or urgent', ph: 'A new symptom or result, or something happening right now…' },
+    { id: 'nextcall', icon: '🗓', label: 'Bring to next call', ph: 'Anything else: it goes on our next call’s list…' },
+  ] : null;
   container.innerHTML = `
     ${disabled
       ? '<button class="chat-expand" data-expand type="button" title="Full screen" aria-label="Full screen">⤢</button>'
@@ -66,7 +80,10 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     <div class="chat-log" data-log><p class="dim small">Loading messages…</p></div>
     ${disabled
       ? `<p class="dim small chat-notice">${esc(notice)}</p>`
-      : `<form class="chat-form" data-form>
+      : `${LANES ? `<div class="lane-row" data-lanes>
+             <span class="dim small" style="flex-basis:100%;">What is this about?</span>
+             ${LANES.map((l) => `<button type="button" class="lane-chip" data-lane="${l.id}">${l.icon} ${esc(l.label)}</button>`).join('')}
+           </div>` : ''}<form class="chat-form" data-form>
            <button type="button" class="attach-btn" data-expand title="Full screen"
              aria-label="Full screen">⤢</button>
            <label class="attach-btn" title="Attach a file">📎<input type="file" hidden data-attach
@@ -138,7 +155,12 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       const sentAt = data.ts?.toDate ? data.ts.toDate() : null;
       const meta = document.createElement('span');
       meta.className = 'msg-meta';
-      meta.textContent = (sentAt ? fmt.format(sentAt) : 'sending…') + (data.editedAt ? ' · edited' : '');
+      // The lane the sender filed it under rides the timestamp, so a scan of
+      // the thread shows what is urgent and what is paperwork at a glance.
+      const laneIcon = { intake: '📋', records: '📎', clinical: '🚨' }[data.lane] || '';
+      if (data.lane === 'clinical') div.classList.add('lane-hot');
+      meta.textContent = (laneIcon ? `${laneIcon} ` : '')
+        + (sentAt ? fmt.format(sentAt) : 'sending…') + (data.editedAt ? ' · edited' : '');
       div.appendChild(meta);
 
       // The reaction, visible to both sides. A plain emoji rides the corner of
@@ -264,9 +286,10 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     }).catch(() => { /* the chat is a chat without it */ });
   }
 
-  async function send({ text = '', attachment = null }) {
+  async function send({ text = '', attachment = null, lane = null }) {
     followNext = true;
     const message = { from: user.uid, role: myRole, text, ts: serverTimestamp() };
+    if (lane) message.lane = lane;
     if (attachment) message.attachment = attachment;
     await addDoc(messagesRef, message);
     await updateDoc(parentRef, {
@@ -467,6 +490,27 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   const form = container.querySelector('[data-form]');
   const input = container.querySelector('[data-input]');
 
+  // Lane state. With lanes on, nothing sends without one, and the agenda
+  // lane retargets the Send button so "Add to list" is what it says it is.
+  let lane = null;
+  const laneRow = container.querySelector('[data-lanes]');
+  const sendBtn = form?.querySelector('button[type="submit"]');
+  if (laneRow && input) {
+    input.placeholder = 'First, tap what this is about ↑';
+    laneRow.querySelectorAll('[data-lane]').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        lane = lane === chip.dataset.lane ? null : chip.dataset.lane;
+        laneRow.querySelectorAll('[data-lane]').forEach((b) =>
+          b.classList.toggle('on', b.dataset.lane === lane));
+        const def = LANES.find((l) => l.id === lane);
+        input.placeholder = def ? def.ph : 'First, tap what this is about ↑';
+        if (sendBtn) sendBtn.textContent = lane === 'nextcall' ? 'Add to list' : 'Send';
+        errEl.hidden = true;
+        if (def) input.focus();
+      });
+    });
+  }
+
   // Grow with the message instead of scrolling it out of sight, up to the cap
   // in .chat-form textarea, after which it scrolls internally.
   const autoGrow = () => {
@@ -484,11 +528,23 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     e.preventDefault();
     const text = input.value.trim();
     if (!text) return;
+    if (LANES && !lane) {
+      errEl.textContent = 'Tap what this is about first, so it lands in the right place.';
+      errEl.hidden = false;
+      return;
+    }
     input.value = '';
     autoGrow();
     errEl.hidden = true;
     try {
-      await send({ text });
+      if (lane === 'nextcall') {
+        // Not a message: it goes on the shared next-call list under the chat,
+        // where they can see it captured.
+        const added = await lanes.onQueue(text);
+        if (!added) throw new Error('could not add it, try again');
+      } else {
+        await send({ text, lane });
+      }
     } catch (err) {
       errEl.textContent = `Couldn't send: ${err.message}`;
       errEl.hidden = false;
@@ -562,6 +618,9 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
           name: named, url, path: storageRef.fullPath,
           size: file.size, contentType: file.type || 'application/octet-stream',
         },
+        // An upload IS records unless they filed it sharper themselves; a
+        // file never waits on a chip and never lands on the agenda list.
+        lane: LANES ? (lane && lane !== 'nextcall' ? lane : 'records') : null,
       });
       // Documents lists chat-files now, so a file shared here belongs in that
       // list the moment it lands rather than after a reload. Same event the

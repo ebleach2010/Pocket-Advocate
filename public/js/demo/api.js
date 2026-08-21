@@ -47,6 +47,10 @@ potentially forgot to or have not provided. Helpful, but optional.
 Waiting on paperwork she has to prise out of a practice that does not answer
 the phone. The referral question is the one that changes the shape of the case.`;
 
+// A plausible running total for the chat-hours meter, so the admin suite
+// shows the number doing its job the moment the page opens. Demo only.
+let demoChatSecs = 3 * 3600 + 40 * 60;
+
 // What the study looks like after a few nights. Demo only.
 const demoVoice = {
   enabled: true,
@@ -217,6 +221,45 @@ export function demoApi(role, store) {
         savedAt: store.docs.get(at)?.savedAt || new Date(),
       });
       return ok({ ok: true, msgId: body.msgId });
+    }
+
+    // ---- the next-call agenda + the chat-hours meter ----------------------
+    if (path === '/api/agenda') {
+      const base = `cases/${DEMO_CASE_ID}/agenda`;
+      const list = () => [...store.docs.entries()]
+        .filter(([p]) => p.startsWith(`${base}/`))
+        .map(([p, d]) => ({ id: p.split('/').pop(), ...d }))
+        .sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
+      if (!init.method || init.method === 'GET') return ok({ items: list() });
+      if (body.action === 'add') {
+        const id = `a${Date.now()}`;
+        const item = {
+          text: String(body.text || '').slice(0, 500),
+          by: role === 'admin' ? 'demo-admin' : 'demo-client',
+          role, at: new Date(), done: false, doneAt: null,
+        };
+        store.docs.set(`${base}/${id}`, item);
+        return ok({ ok: true, item: { id, ...item } });
+      }
+      if (body.action === 'done') {
+        const it = store.docs.get(`${base}/${body.itemId}`);
+        if (it) {
+          store.docs.set(`${base}/${body.itemId}`, {
+            ...it, done: body.done !== false, doneAt: body.done !== false ? new Date() : null,
+          });
+        }
+        return ok({ ok: true });
+      }
+      if (body.action === 'remove') { store.docs.delete(`${base}/${body.itemId}`); return ok({ ok: true }); }
+      if (body.action === 'clear') {
+        for (const it of list().filter((x) => x.done)) store.docs.delete(`${base}/${it.id}`);
+        return ok({ ok: true });
+      }
+      return ok({ ok: true });
+    }
+    if (path === '/api/chattime') {
+      demoChatSecs += Math.max(0, Math.min(120, Number(body.seconds) || 0));
+      return ok({ total: demoChatSecs });
     }
 
     // ---- everything else --------------------------------------------------

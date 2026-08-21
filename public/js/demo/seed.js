@@ -175,6 +175,17 @@ export function seed({ set, file }) {
     });
   }
 
+  // The next-call list the chat lanes feed: one item from each side, so both
+  // suites show the shared agenda doing its job.
+  set(`cases/${CASE_ID}/agenda/a001`, {
+    text: 'Go over what the March panel result actually changes',
+    by: CLIENT, role: 'client', at: days(1), done: false, doneAt: null,
+  });
+  set(`cases/${CASE_ID}/agenda/a002`, {
+    text: 'Decide whether to push the rheumatology referral now or wait for the panel',
+    by: ADMIN, role: 'admin', at: hours(20), done: false, doneAt: null,
+  });
+
   // The advisor's own state, so every page on his side has something on it.
   set(`cases/${CASE_ID}/advisor/state`, {
     analysis: ANALYSIS,

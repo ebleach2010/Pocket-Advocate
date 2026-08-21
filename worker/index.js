@@ -457,6 +457,10 @@ export default {
         return await handleDaySummary(request, env);
       if (url.pathname === '/api/saved')
         return await handleSaved(request, env, url);
+      if (url.pathname === '/api/agenda')
+        return await handleAgenda(request, env, url);
+      if (url.pathname === '/api/chattime' && request.method === 'POST')
+        return await handleChatTime(request, env);
       if (url.pathname === '/api/uploaded' && request.method === 'POST')
         return await handleUploaded(request, env);
       if (url.pathname === '/api/admin/session')
@@ -662,7 +666,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-21-draftback';
+const BUILD_TAG = 'v2026-08-21-lanes';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1949,6 +1953,107 @@ async function handleSaved(request, env, url) {
     updatedAt: new Date(),
   });
   return json({ ok: true, msgId });
+}
+
+/**
+ * The next-call agenda. The lanes on the client composer route anything that
+ * is not intake, logistics, or urgent into this list instead of the thread:
+ * captured and visible to both sides, then dealt with together on a call
+ * instead of piecemeal in chat. (Eric, 2026-08-21: "The chat is swallowing
+ * my time to the point I make next to nothing.")
+ *
+ * GET  /api/agenda?id=…                               both sides
+ * POST /api/agenda {id, action:'add', text}           both sides
+ * POST /api/agenda {id, action:'done', itemId, done}  admin only
+ * POST /api/agenda {id, action:'remove', itemId}      admin, or author while open
+ * POST /api/agenda {id, action:'clear'}               admin: drop covered items
+ */
+async function handleAgenda(request, env, url) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = request.method === 'POST' ? await request.json().catch(() => null) : null;
+  const id = String(body?.id || url.searchParams.get('id') || '');
+  const ctx = await threadContext(env, user, 'case', id);
+  if (ctx.error) return json({ error: ctx.error }, ctx.code);
+  const coll = `cases/${id}/agenda`;
+
+  if (request.method === 'GET') {
+    // No orderBy: it silently drops docs missing the field. Sort here.
+    const rows = await listDocs(env, coll, { pageSize: 200 }).catch(() => []);
+    return json({
+      items: rows
+        .map((r) => ({ id: r.id, ...r.data }))
+        .sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0)),
+    });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+  const action = body?.action;
+
+  if (action === 'add') {
+    const c = await getDoc(env, `cases/${id}`);
+    if (c?.data.status === 'closed') return json({ error: 'This case is closed.' }, 409);
+    const text = typeof body?.text === 'string' ? body.text.trim().slice(0, 500) : '';
+    if (!text) return json({ error: 'Write the item first.' }, 400);
+    const itemId = crypto.randomUUID();
+    const item = {
+      text, by: user.uid, role: ctx.isAdmin ? 'admin' : 'client',
+      at: new Date(), done: false, doneAt: null,
+    };
+    await patchDoc(env, `${coll}/${itemId}`, item);
+    return json({ ok: true, item: { id: itemId, ...item } });
+  }
+
+  if (action === 'done' || action === 'remove') {
+    const itemId = String(body?.itemId || '');
+    if (!/^[\w-]{1,64}$/.test(itemId)) return json({ error: 'Bad item' }, 400);
+    if (action === 'done') {
+      if (!ctx.isAdmin) return json({ error: 'Not found' }, 404);
+      const done = body?.done !== false;
+      await patchDoc(env, `${coll}/${itemId}`,
+        { done, doneAt: done ? new Date() : null }, { mask: ['done', 'doneAt'] });
+      return json({ ok: true });
+    }
+    const row = await getDoc(env, `${coll}/${itemId}`);
+    if (!row) return json({ ok: true });
+    // A client can take back their own item while it is still open; a
+    // covered item is part of the call record and stays.
+    if (!ctx.isAdmin && (row.data.by !== user.uid || row.data.done))
+      return json({ error: 'Not yours to remove' }, 403);
+    await deleteDoc(env, `${coll}/${itemId}`);
+    return json({ ok: true });
+  }
+
+  if (action === 'clear') {
+    if (!ctx.isAdmin) return json({ error: 'Not found' }, 404);
+    const rows = await listDocs(env, coll, { pageSize: 200 }).catch(() => []);
+    for (const r of rows) {
+      if (r.data.done) await deleteDoc(env, `${coll}/${r.id}`).catch(() => {});
+    }
+    return json({ ok: true });
+  }
+  return json({ error: 'Unknown action' }, 400);
+}
+
+/**
+ * Eric's per-client chat-hours meter. Admin-only by route, and admin-only by
+ * storage: totals land on caseMeta, which no client-served path reads, so a
+ * client can never see what their chat costs. The admin chat page beats every
+ * 30 seconds while open and visible; seconds:0 just reads the total back.
+ */
+async function handleChatTime(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => null);
+  const id = String(body?.id || '');
+  if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad id' }, 400);
+  const seconds = Math.max(0, Math.min(120, Number(body?.seconds) || 0));
+  const meta = await getDoc(env, `caseMeta/${id}`).catch(() => null);
+  const total = Math.max(0, Number(meta?.data.chatSeconds) || 0) + seconds;
+  if (seconds) {
+    await patchDoc(env, `caseMeta/${id}`, { chatSeconds: total, chatSecondsAt: new Date() },
+      { mask: ['chatSeconds', 'chatSecondsAt'] });
+  }
+  return json({ total });
 }
 
 /**

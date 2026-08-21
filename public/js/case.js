@@ -370,9 +370,25 @@ function renderChat(el, c) {
   const closed = c.status === 'closed';
   el.innerHTML = `
     <h2 class="case-sec-h">Chat</h2>
+    <p class="dim small" style="margin:.1rem 0 .3rem;">Chat keeps your case moving between calls: records, scheduling, and anything new or urgent with your health. The analysis itself happens on our calls, and everything else goes on the list for the next one.</p>
     <p style="margin:.2rem 0 .3rem;"><span class="p-dot"></span><span class="p-label">Checking…</span></p>
-    <div class="panel" data-chat></div>`;
+    <div class="panel" data-chat></div>
+    <div class="panel" data-nextcall hidden style="margin-top:.7rem;">
+      <h3 style="margin:.1rem 0 .2rem;">🗓 For our next call</h3>
+      <p class="dim small" style="margin:0 0 .5rem;">Anything you add here is captured, and we go through the list together on the call, where it gets real attention instead of a rushed reply.</p>
+      <ul class="agenda-list" data-agenda-list></ul>
+      ${closed ? '' : `<form data-agenda-form style="display:flex; gap:.4rem; margin-top:.5rem;">
+        <input type="text" maxlength="500" placeholder="Add something for the call…" style="flex:1; min-width:0;">
+        <button class="btn quiet" type="submit">Add</button>
+      </form>
+      <p class="error" data-agenda-err hidden></p>`}
+    </div>`;
   watchPresence(el);
+  // The first call has happened once its scheduled time is behind us, and
+  // intake answers close with it. Reschedule into the future and intake
+  // opens back up, which is exactly right.
+  const start = c.appointment?.start ? toDate(c.appointment.start).getTime() : null;
+  const intakeOpen = !(start && start < Date.now());
   mountChat({
     container: el.querySelector('[data-chat]'),
     parentPath: ['cases', c.id],
@@ -381,7 +397,102 @@ function renderChat(el, c) {
     saveUid: user.uid,
     disabled: closed,
     notice: 'This chat ended when the case closed. Your documents remain yours forever.',
+    lanes: closed ? null : { intakeOpen, onQueue: (text) => addAgendaItem(el, c.id, text) },
   });
+  mountAgenda(el, c.id);
+}
+
+// ---- the next-call list (the shared agenda; the Worker holds it) ----
+// New Firestore paths cannot be read from the browser (rules ship by CLI,
+// which the owner of this project has no way to run), so the whole list
+// lives behind /api/agenda and the Worker enforces whose case it is.
+
+async function agendaPost(payload) {
+  const token = await user.getIdToken();
+  const res = await fetch('/api/agenda', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+  return out;
+}
+
+async function mountAgenda(el, caseId) {
+  const box = el.querySelector('[data-nextcall]');
+  if (!box) return;
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch(`/api/agenda?id=${encodeURIComponent(caseId)}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('unavailable');
+    // Visible even when empty: the door matters as much as the list.
+    box.hidden = false;
+    paintAgenda(box, (await res.json()).items || []);
+  } catch {
+    // Fail-soft: an unreachable list must not break the chat above it.
+    box.hidden = true;
+    return;
+  }
+  box.querySelector('[data-agenda-form]')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = e.target.querySelector('input');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    const ok = await addAgendaItem(el, caseId, text);
+    if (!ok) input.value = text;
+  });
+  box.addEventListener('click', async (e) => {
+    const id = e.target.closest?.('[data-agenda-remove]')?.dataset.agendaRemove;
+    if (!id) return;
+    try {
+      await agendaPost({ id: caseId, action: 'remove', itemId: id });
+      paintAgenda(box, (box._items || []).filter((i) => i.id !== id));
+    } catch { /* leave it; the next load resolves it */ }
+  });
+}
+
+async function addAgendaItem(el, caseId, text) {
+  const box = el.querySelector('[data-nextcall]');
+  const err = box?.querySelector('[data-agenda-err]');
+  if (err) err.hidden = true;
+  try {
+    const out = await agendaPost({ id: caseId, action: 'add', text });
+    if (box) {
+      paintAgenda(box, [...(box._items || []), out.item]);
+      box.hidden = false;
+      // Their words, visibly on the list: captured, not refused.
+      box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    return true;
+  } catch (e) {
+    if (err) { err.textContent = e.message; err.hidden = false; }
+    return false;
+  }
+}
+
+function paintAgenda(box, items) {
+  box._items = items;
+  const list = box.querySelector('[data-agenda-list]');
+  if (!list) return;
+  if (!items.length) {
+    list.innerHTML = '<li class="dim small" style="list-style:none; margin-left:-1rem;">Nothing on the list yet.</li>';
+    return;
+  }
+  const open = items.filter((i) => !i.done);
+  const covered = items.filter((i) => i.done);
+  list.innerHTML = [
+    ...open.map((i) => `<li data-item="${esc(i.id)}" style="display:flex; gap:.4rem; align-items:flex-start; margin:.3rem 0; list-style:none;">
+      <span style="flex:1; min-width:0;">• ${esc(i.text)}</span>${
+      i.role === 'client'
+        ? `<button type="button" class="btn quiet" style="font-size:.68rem; padding:.15rem .5rem; flex:none;" data-agenda-remove="${esc(i.id)}">Remove</button>`
+        : ''
+    }</li>`),
+    ...covered.map((i) => `<li class="dim" style="margin:.3rem 0; list-style:none;">✓ ${esc(i.text)} <span class="small">· covered</span></li>`),
+  ].join('');
 }
 
 // ---- Documents section ----
