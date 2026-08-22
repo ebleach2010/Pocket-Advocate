@@ -75,16 +75,16 @@ function runIntro(user, mount, fullySet, welcome = true) {
       body: `<p>You're in. This is your private space: your case, your documents, and a direct line to me. Just a couple of quick things to set up first.</p>`,
       cta: 'Get started',
     }, {
-      // The chat lanes, taught up front to new clients only. Existing clients
-      // were deliberately not sent an update card for this (Eric, 2026-08-21:
-      // "Not as a full update with a new tour for the existing client. But
-      // can be integrated into the initial tutorial for a new client.").
-      // Gated on `welcome` with the card above: both are case-page material,
-      // and this guide also runs on the booking page, where there is no chat.
+      // Taught up front to new clients only; existing clients were
+      // deliberately never sent a card about any of this. Gated on `welcome`
+      // with the card above: both are case-page material, and this guide
+      // also runs on the booking page, where there is no chat. The lane
+      // chips this card once described are gone (Eric, 2026-08-22: "Have it
+      // just be a chat"); the next-call list is what remains worth teaching.
       title: 'How chat works',
       body: `
-        <p>When you write to me, the chat first asks what your message is about: an intake answer, records and scheduling, or something new or urgent with your health. Those come straight to me.</p>
-        <p>Anything bigger goes on <strong>For our next call</strong>, the list right under the chat. That is not a brush-off: we go through the list together on the call, where it gets my full attention instead of a rushed reply.</p>`,
+        <p>Chat is a direct line to me: updates, questions, records, anything on your mind.</p>
+        <p>For the bigger things, there is a <strong>For our next call</strong> list right under the chat. Add to it anytime; we go through the list together on the call, where it gets my full attention instead of a rushed reply.</p>`,
       cta: 'Next',
     }] : []),
     {

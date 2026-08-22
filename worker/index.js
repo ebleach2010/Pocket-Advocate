@@ -407,8 +407,6 @@ export default {
         return await handleAdminSchedule(request, env);
       if (url.pathname === '/api/notify' && request.method === 'POST')
         return await handleNotify(request, env, ctx);
-      if (url.pathname === '/api/chat/lane' && request.method === 'POST')
-        return await handleChatLane(request, env);
       if (url.pathname === '/api/chat/react' && request.method === 'POST')
         return await handleChatReact(request, env);
       if (url.pathname === '/api/chat/edit' && request.method === 'POST')
@@ -668,7 +666,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-info';
+const BUILD_TAG = 'v2026-08-22-justchat';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1712,31 +1710,6 @@ async function chatContext(env, user, kind, id, msgId) {
     callerName: firstName(profile?.data.name) || '',
     path: `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/chat/${msgId}`,
   };
-}
-
-/**
- * POST /api/chat/lane  Body: { kind, id, msgId, lane }
- *
- * The lane a message was filed under, written with the service account.
- * It cannot ride the message document from the browser: the deployed rules
- * allow exactly the message keys they have always allowed (validMessage's
- * hasOnly), and a send carrying an extra key was refused wholesale, which
- * made the whole laned composer read as broken. Only the sender lanes their
- * own message, and only with a lane that exists.
- */
-async function handleChatLane(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'Sign in required' }, 401);
-  const body = await request.json().catch(() => null);
-  const ctx = await chatContext(env, user, body?.kind, String(body?.id || ''), String(body?.msgId || ''));
-  if (ctx.error) return json({ error: ctx.error }, ctx.code);
-  const lane = String(body?.lane || '');
-  if (!['reply', 'intake', 'info', 'records', 'clinical'].includes(lane)) return json({ error: 'Unknown lane' }, 400);
-  const msg = await getDoc(env, ctx.path);
-  if (!msg) return json({ error: 'No such message' }, 404);
-  if (msg.data.from !== user.uid) return json({ error: 'Not your message' }, 403);
-  const ok = await patchDoc(env, ctx.path, { lane }, { mask: ['lane'] });
-  return json({ ok: ok !== false });
 }
 
 /**

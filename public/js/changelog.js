@@ -48,9 +48,7 @@ export const CHANGELOG = [
     version: '2.3',
     quiet: true,
     client: [
-      'When you write in chat, it first asks what your message is about, so urgent things reach me marked urgent and nothing gets lost in a pile.',
       'A "For our next call" list now lives right under the chat. Add anything to it, anytime. We go through the list together on the call, where it gets real attention instead of a rushed reply.',
-      'Files you share in chat file themselves under records automatically.',
       'Bug fix: chat opens at your newest message instead of somewhere in the middle of history.',
       'Bug fix: removing a reaction from a message works again.',
     ],

@@ -853,24 +853,8 @@ body.chat-full-open { overflow: hidden; }
 }
 .chat-notice { border-top: 1px solid var(--line); padding-top: .6rem; }
 
-/* The lanes above the client composer: a message has to say what it is
-   before it can go anywhere, and "Bring to next call" is a first-class
-   choice, not a rejection. Chips, not a select: every option visible, one
-   thumb-tap each, nothing hidden behind a dropdown on a phone. */
-.lane-row {
-  display: flex; flex-wrap: wrap; gap: .35rem;
-  margin: .5rem 0 0; padding-top: .5rem; border-top: 1px solid var(--line);
-}
-.lane-chip {
-  font: inherit; font-size: .78rem; line-height: 1.2; cursor: pointer;
-  padding: .38rem .6rem; border-radius: 999px;
-  border: 1px solid var(--line); background: transparent; color: var(--dim);
-}
-.lane-chip.on {
-  border-color: var(--cyan-dim); color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--cyan-dim);
-}
-/* A clinical update reads as what it is at a glance, both sides. */
+/* Messages sent while the lane chips existed (2026-08-22, for a day) keep
+   their marks; a clinical one still reads as what it was at a glance. */
 .msg.lane-hot { border-left: 3px solid var(--magenta); }
 /* Small confirmations. A native alert() for "saved" is an unstyled system
    dialog on an iOS home-screen app, and it needs dismissing before anything

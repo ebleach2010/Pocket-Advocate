@@ -271,8 +271,7 @@ export function demoApi(role, store) {
     }
     if (path === '/api/reviews') return ok({ reviews: [] });
     if (path === '/api/uploaded' || path === '/api/notify' || path === '/api/push/test') return ok({ ok: true });
-    if (path === '/api/chat/react' || path === '/api/chat/pass' || path === '/api/chat/edit'
-        || path === '/api/chat/lane') {
+    if (path === '/api/chat/react' || path === '/api/chat/pass' || path === '/api/chat/edit') {
       // These write to the message, and in the demo the store is the message.
       const msgPath = `cases/${DEMO_CASE_ID}/chat/${body.msgId}`;
       const msg = store.docs.get(msgPath);
@@ -280,7 +279,6 @@ export function demoApi(role, store) {
       if (path === '/api/chat/react') store.docs.set(msgPath, { ...msg, reaction: body.reaction || null });
       if (path === '/api/chat/pass') store.docs.set(msgPath, { ...msg, pass: body.pass ? { by: 'demo-client', at: new Date() } : null });
       if (path === '/api/chat/edit') store.docs.set(msgPath, { ...msg, text: body.text, editedAt: new Date() });
-      if (path === '/api/chat/lane') store.docs.set(msgPath, { ...msg, lane: body.lane });
       store.fire?.(msgPath);
       return ok({ ok: true });
     }

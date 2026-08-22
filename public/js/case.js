@@ -384,11 +384,8 @@ function renderChat(el, c) {
       <p class="error" data-agenda-err hidden></p>`}
     </div>`;
   watchPresence(el);
-  // The first call has happened once its scheduled time is behind us, and
-  // intake answers close with it. Reschedule into the future and intake
-  // opens back up, which is exactly right.
-  const start = c.appointment?.start ? toDate(c.appointment.start).getTime() : null;
-  const intakeOpen = !(start && start < Date.now());
+  // Just a chat (Eric, 2026-08-22: "Have it just be a chat"). The next-call
+  // list keeps its own panel and add box below; the composer stays clean.
   mountChat({
     container: el.querySelector('[data-chat]'),
     parentPath: ['cases', c.id],
@@ -397,7 +394,6 @@ function renderChat(el, c) {
     saveUid: user.uid,
     disabled: closed,
     notice: 'This chat ended when the case closed. Your documents remain yours forever.',
-    lanes: closed ? null : { intakeOpen, onQueue: (text) => addAgendaItem(el, c.id, text) },
   });
   mountAgenda(el, c.id);
 }

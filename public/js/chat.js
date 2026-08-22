@@ -57,30 +57,13 @@ export function watchPresence(el) {
  * the composer row, left of the text box. The caller owns what it means; this
  * file only knows where it goes.
  */
-export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null, lanes = null }) {
+export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null }) {
   container.classList.add('chat-root');
-  // The lanes, where the mount asks for them (the client case chat only:
-  // Eric's own sends are never gated, and subscribers pay monthly precisely
-  // for an open line). A message needs a lane to send, intake closes after
-  // the first call, and "bring to next call" goes to the agenda list below
-  // the chat instead of into the thread. That last lane is the point of the
-  // whole feature: the thread stays for logistics and urgencies, the
-  // thinking work waits for a call. (Eric, 2026-08-21: "The chat is
-  // swallowing my time to the point I make next to nothing.")
-  const LANES = lanes && !disabled ? [
-    // Reply first: answering something Eric asked is the most common send
-    // there is, and it should never need shoehorning into a category.
-    // (Eric, 2026-08-22: "Add reply in there.")
-    { id: 'reply', icon: '↩️', label: 'Reply', ph: 'Your reply…' },
-    ...(lanes.intakeOpen ? [{ id: 'intake', icon: '📋', label: 'Intake answer', ph: 'Your answer to my intake questions…' }] : []),
-    // New information sits between reply and urgent: something new he should
-    // know that is not an alarm. Without it, a mild update had to either cry
-    // urgent or wait for the call. (Eric, 2026-08-22: "And new information.")
-    { id: 'info', icon: '🆕', label: 'New information', ph: 'Something new about your case or health…' },
-    { id: 'records', icon: '📎', label: 'Records & scheduling', ph: 'Uploads, appointment dates, provider names…' },
-    { id: 'clinical', icon: '🚨', label: 'New or urgent', ph: 'A new symptom or result, or something happening right now…' },
-    { id: 'nextcall', icon: '🗓', label: 'Bring to next call', ph: 'Anything else: it goes on our next call’s list…' },
-  ] : null;
+  // The lane chips lived and died on 2026-08-22 (Eric: "Just get rid of all
+  // of them. They're pointless. Have it just be a chat."). Do not rebuild a
+  // categoriser into this composer. Messages already sent with a lane keep
+  // their little mark below; the next-call list under the chat has its own
+  // add box and never needed the composer.
   container.innerHTML = `
     ${disabled
       ? '<button class="chat-expand" data-expand type="button" title="Full screen" aria-label="Full screen">⤢</button>'
@@ -88,10 +71,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     <div class="chat-log" data-log><p class="dim small">Loading messages…</p></div>
     ${disabled
       ? `<p class="dim small chat-notice">${esc(notice)}</p>`
-      : `${LANES ? `<div class="lane-row" data-lanes>
-             <span class="dim small" style="flex-basis:100%;">What is this about?</span>
-             ${LANES.map((l) => `<button type="button" class="lane-chip" data-lane="${l.id}">${l.icon} ${esc(l.label)}</button>`).join('')}
-           </div>` : ''}<form class="chat-form" data-form>
+      : `<form class="chat-form" data-form>
            <button type="button" class="attach-btn" data-expand title="Full screen"
              aria-label="Full screen">⤢</button>
            <label class="attach-btn" title="Attach a file">📎<input type="file" hidden data-attach
@@ -294,20 +274,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     }).catch(() => { /* the chat is a chat without it */ });
   }
 
-  async function send({ text = '', attachment = null, lane = null }) {
+  async function send({ text = '', attachment = null }) {
     followNext = true;
     const message = { from: user.uid, role: myRole, text, ts: serverTimestamp() };
     if (attachment) message.attachment = attachment;
-    // The lane must NOT ride the document from the browser. The Firestore
-    // rules allow exactly the message keys they have always allowed
-    // (validMessage's hasOnly), so a send that carried `lane` was refused
-    // wholesale and the whole composer read as broken. The message goes up
-    // legal, then the Worker stamps the lane with the service account.
-    // Best effort on purpose: a message without its tag beats no message.
-    const ref = await addDoc(messagesRef, message);
-    if (lane && ref?.id) {
-      post('/api/chat/lane', { kind: kindOf(), id: parentPath[1], msgId: ref.id, lane }, '');
-    }
+    await addDoc(messagesRef, message);
     await updateDoc(parentRef, {
       lastMessage: {
         text: (text || `📎 ${attachment?.name || 'file'}`).slice(0, 120),
@@ -506,26 +477,6 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   const form = container.querySelector('[data-form]');
   const input = container.querySelector('[data-input]');
 
-  // Lane state. With lanes on, nothing sends without one, and the agenda
-  // lane retargets the Send button so "Add to list" is what it says it is.
-  let lane = null;
-  const laneRow = container.querySelector('[data-lanes]');
-  const sendBtn = form?.querySelector('button[type="submit"]');
-  if (laneRow && input) {
-    input.placeholder = 'First, tap what this is about ↑';
-    laneRow.querySelectorAll('[data-lane]').forEach((chip) => {
-      chip.addEventListener('click', () => {
-        lane = lane === chip.dataset.lane ? null : chip.dataset.lane;
-        laneRow.querySelectorAll('[data-lane]').forEach((b) =>
-          b.classList.toggle('on', b.dataset.lane === lane));
-        const def = LANES.find((l) => l.id === lane);
-        input.placeholder = def ? def.ph : 'First, tap what this is about ↑';
-        if (sendBtn) sendBtn.textContent = lane === 'nextcall' ? 'Add to list' : 'Send';
-        errEl.hidden = true;
-        if (def) input.focus();
-      });
-    });
-  }
 
   // Grow with the message instead of scrolling it out of sight, up to the cap
   // in .chat-form textarea, after which it scrolls internally.
@@ -544,23 +495,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     e.preventDefault();
     const text = input.value.trim();
     if (!text) return;
-    if (LANES && !lane) {
-      errEl.textContent = 'Tap what this is about first, so it lands in the right place.';
-      errEl.hidden = false;
-      return;
-    }
     input.value = '';
     autoGrow();
     errEl.hidden = true;
     try {
-      if (lane === 'nextcall') {
-        // Not a message: it goes on the shared next-call list under the chat,
-        // where they can see it captured.
-        const added = await lanes.onQueue(text);
-        if (!added) throw new Error('could not add it, try again');
-      } else {
-        await send({ text, lane });
-      }
+      await send({ text });
     } catch (err) {
       errEl.textContent = `Couldn't send: ${err.message}`;
       errEl.hidden = false;
@@ -634,9 +573,6 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
           name: named, url, path: storageRef.fullPath,
           size: file.size, contentType: file.type || 'application/octet-stream',
         },
-        // An upload IS records unless they filed it sharper themselves; a
-        // file never waits on a chip and never lands on the agenda list.
-        lane: LANES ? (lane && lane !== 'nextcall' ? lane : 'records') : null,
       });
       // Documents lists chat-files now, so a file shared here belongs in that
       // list the moment it lands rather than after a reload. Same event the
