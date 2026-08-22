@@ -602,6 +602,7 @@ export default {
     if (minute % 15 === 0) {
       ctx.waitUntil(runChatDigest(env));
       ctx.waitUntil(runFollowUpWarnings(env));
+      ctx.waitUntil(runChatOpenNotices(env));
       ctx.waitUntil(cleanupStaleSlots(env));
       ctx.waitUntil(repairMissingCaseEmails(env));
       ctx.waitUntil(closeDeliveredCases(env));
@@ -728,7 +729,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-chatgate';
+const BUILD_TAG = 'v2026-08-22-chatnotice';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2779,11 +2780,19 @@ async function confirmChatUnlock(env, session) {
       sessionId: session.id, at: new Date(),
     });
     wrote = false !== await patchDoc(env, `cases/${caseId}`, {
-      chatUnlocked: true, chatUnlockedAt: new Date(), extraPayments: payments,
-    }, { mask: ['chatUnlocked', 'chatUnlockedAt', 'extraPayments'], ifUpdateTime: c.updateTime });
+      chatUnlocked: true, chatUnlockedAt: new Date(), chatOpenNotified: true,
+      extraPayments: payments,
+    }, { mask: ['chatUnlocked', 'chatUnlockedAt', 'chatOpenNotified', 'extraPayments'], ifUpdateTime: c.updateTime });
   }
   if (!wrote) { console.warn('confirmChatUnlock: kept losing the lock', caseId); return; }
   const c = await getDoc(env, `cases/${caseId}`).catch(() => null);
+  if (session.metadata?.uid) {
+    await notifyUser(env, session.metadata.uid, {
+      title: 'Pocket Advocate',
+      body: 'Chat is open on your case. Message me anytime.',
+      link: `/case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
   const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
   for (const a of admins) {
     await notifyUser(env, a.id, {
@@ -2791,6 +2800,53 @@ async function confirmChatUnlock(env, session) {
       body: `${firstName(c?.data.clientName) || 'A client'} opened chat early ($${((session.amount_total || CHAT_OPEN_CENTS) / 100).toFixed(2)}).`,
       link: `/admin-case.html?id=${caseId}`,
     }).catch(() => {});
+  }
+}
+
+/**
+ * Cron: tell a gated client the moment their chat opens (Eric, 2026-08-22:
+ * "They get notified when chat becomes unlocked"). Only cases that actually
+ * LIVED through the gate: booked more than a week before their call, still
+ * pre-call, never paid the early-open fee. A normal booking whose chat was
+ * open from day one gets no notice, because nothing changed for them. The
+ * marker is written before the sends, so an overlapping cron fire can never
+ * notify twice; push and email both go, since not every client turns
+ * notifications on.
+ */
+async function runChatOpenNotices(env) {
+  try {
+    const rows = await listDocs(env, 'cases', { pageSize: 300, all: true });
+    const now = Date.now();
+    for (const r of rows) {
+      const c = r.data;
+      if (c.chatOpenNotified || c.chatUnlocked) continue;
+      if (['delivered', 'closed'].includes(c.status)) continue;
+      const start = c.appointment?.start ? new Date(c.appointment.start).getTime() : 0;
+      if (!start) continue;
+      const opensAt = start - CHAT_OPEN_DAYS * 86_400_000;
+      if (now < opensAt || now >= start) continue;
+      if (!c.createdAt || new Date(c.createdAt).getTime() >= opensAt) continue; // never gated
+      const marked = await patchDoc(env, `cases/${r.id}`, { chatOpenNotified: true },
+        { mask: ['chatOpenNotified'], ifUpdateTime: r.updateTime });
+      if (marked === false) continue; // raced; the other writer owns it
+      if (c.clientUid) {
+        await notifyUser(env, c.clientUid, {
+          title: 'Pocket Advocate',
+          body: 'Chat is now open ahead of our call. Message me anytime.',
+          link: `/case.html?id=${r.id}`,
+        }).catch(() => {});
+      }
+      if (c.clientEmail) {
+        await sendEmail(env, {
+          to: c.clientEmail,
+          subject: 'Chat is open on your case',
+          html: `<p>We're inside a week of our call, so chat is now open on your case. Message me anytime.</p>
+            <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${r.id}">Open your case</a></p>`,
+        }).catch(() => { /* the push may still have landed */ });
+      }
+    }
+  } catch (err) {
+    console.warn('chat open notices:', err.message || err);
   }
 }
 

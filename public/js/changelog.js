@@ -50,6 +50,7 @@ export const CHANGELOG = [
     client: [
       'Chat now opens one week before your scheduled call. Until then, your "For our next call" list stays open, and I read it.',
       'Want a direct line sooner? You can open chat immediately for a one-time $50, right from your case page, and it stays open for the life of your case.',
+      "You'll get a notification and an email the moment chat opens, so there's nothing to watch for.",
     ],
   },
   {
