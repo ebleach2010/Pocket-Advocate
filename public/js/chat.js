@@ -73,6 +73,10 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     // (Eric, 2026-08-22: "Add reply in there.")
     { id: 'reply', icon: '↩️', label: 'Reply', ph: 'Your reply…' },
     ...(lanes.intakeOpen ? [{ id: 'intake', icon: '📋', label: 'Intake answer', ph: 'Your answer to my intake questions…' }] : []),
+    // New information sits between reply and urgent: something new he should
+    // know that is not an alarm. Without it, a mild update had to either cry
+    // urgent or wait for the call. (Eric, 2026-08-22: "And new information.")
+    { id: 'info', icon: '🆕', label: 'New information', ph: 'Something new about your case or health…' },
     { id: 'records', icon: '📎', label: 'Records & scheduling', ph: 'Uploads, appointment dates, provider names…' },
     { id: 'clinical', icon: '🚨', label: 'New or urgent', ph: 'A new symptom or result, or something happening right now…' },
     { id: 'nextcall', icon: '🗓', label: 'Bring to next call', ph: 'Anything else: it goes on our next call’s list…' },
@@ -161,7 +165,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       meta.className = 'msg-meta';
       // The lane the sender filed it under rides the timestamp, so a scan of
       // the thread shows what is urgent and what is paperwork at a glance.
-      const laneIcon = { reply: '↩️', intake: '📋', records: '📎', clinical: '🚨' }[data.lane] || '';
+      const laneIcon = { reply: '↩️', intake: '📋', info: '🆕', records: '📎', clinical: '🚨' }[data.lane] || '';
       if (data.lane === 'clinical') div.classList.add('lane-hot');
       meta.textContent = (laneIcon ? `${laneIcon} ` : '')
         + (sentAt ? fmt.format(sentAt) : 'sending…') + (data.editedAt ? ' · edited' : '');
