@@ -130,6 +130,33 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat })
       : system.map((b, i) => (i === system.length - 1
         ? { ...b, cache_control: { type: 'ephemeral' } } : b)))
     : system;
+  // Heartbeat, on a WALL CLOCK, not on stream events.
+  //
+  // Event-driven beats told the truth only once tokens were flowing. Before
+  // the first event there is real work with no events at all: uploading
+  // several megabytes of staged PDFs, the provider queueing a max-effort
+  // turn, the model thinking before it emits anything. On a case with files
+  // staged that gap ran past the panel's two minute deadline, so a perfectly
+  // alive run was declared stalled, Eric tapped Update, and the tap started
+  // a SECOND run racing the first, which made the next gap worse. That is
+  // the loop he hit: "It keeps saying stalled, tap to update, every time I
+  // try to update." (2026-08-22.)
+  //
+  // Now the run itself beats every twenty seconds from dispatch to
+  // completion, so a missing heartbeat means one thing only: the Worker
+  // carrying this run is gone. The stream listener stays as a cheap extra
+  // signal.
+  let running = true;
+  const beat = () => { try { onBeat(); } catch { /* a beat is never fatal */ } };
+  if (onBeat) {
+    beat();
+    (async () => {
+      while (running) {
+        await new Promise((r) => setTimeout(r, 20_000));
+        if (running) beat();
+      }
+    })();
+  }
   const stream = client(env).messages.stream({
     model: MODEL,
     max_tokens: maxTokens,
@@ -138,17 +165,19 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat })
     system: cached,
     messages,
   });
-  // Heartbeat: every SSE event proves the model is alive (thinking included,
-  // which streams no visible text for minutes). The panel uses it to tell a
-  // long think from a dead run.
   if (onBeat) {
-    let last = 0;
+    let last = Date.now();
     stream.on('streamEvent', () => {
       const now = Date.now();
-      if (now - last > 8000) { last = now; onBeat(); }
+      if (now - last > 8000) { last = now; beat(); }
     });
   }
-  const final = await stream.finalMessage();
+  let final;
+  try {
+    final = await stream.finalMessage();
+  } finally {
+    running = false;
+  }
   if (final.stop_reason === 'refusal')
     throw new Error('The model declined this request.');
   if (final.stop_reason === 'max_tokens')
