@@ -33,9 +33,32 @@ import { getDoc, patchDoc, listDocs, deleteDoc } from './firestore.js';
 import { listIntake, mediaFetch } from './storage.js';
 
 const MODEL = 'claude-opus-5';
-// "Opus max" — deepest reasoning. Streaming keeps the socket warm through the
-// long turns this produces; drop to 'high' if analyses feel too slow.
-const ANALYSIS_EFFORT = 'max';
+// Opus at HIGH by default (Eric, 2026-08-22: "Change version to opus 5
+// high... it's taking >5min for a read when I'm sitting staring at a
+// screen"). Max is still available, from the switch in Settings, for a case
+// worth waiting on. The stored choice is read per run, so flipping the
+// switch changes the very next Update with no redeploy.
+const ANALYSIS_EFFORT = 'high';
+const EFFORT_PATH = 'config/advisor';
+
+/** The stored analysis effort, or the default. Never throws. */
+async function loadEffort(env) {
+  const doc = await getDoc(env, EFFORT_PATH).catch(() => null);
+  return doc?.data.analysisEffort === 'max' ? 'max' : ANALYSIS_EFFORT;
+}
+
+/** Read the switch, for the Settings panel. */
+export async function getAdvisorEffort(env) {
+  return { effort: await loadEffort(env) };
+}
+
+/** Set it. Anything but 'max' means the fast default. */
+export async function setAdvisorEffort(env, effort) {
+  const want = effort === 'max' ? 'max' : 'high';
+  await patchDoc(env, EFFORT_PATH, { analysisEffort: want, updatedAt: new Date() },
+    { mask: ['analysisEffort', 'updatedAt'] });
+  return { effort: want };
+}
 const DRAFT_EFFORT = 'high';
 // The Q&A prompt says "answer it and stop, under 120 words". It was running at
 // max effort with a 64k ceiling, which is the most expensive setting in the
@@ -2013,6 +2036,63 @@ function qaBlock(qa) {
 }
 
 /**
+ * What this case has paid against what it has cost him so far.
+ *
+ * Eric, 2026-08-22: "The advisor also needs to keep in mind how much I've
+ * been paid to how much work I've done so I don't perpetually ask questions
+ * when I have a solid plan for the call and it's okay to stop and not drag
+ * my value down by earning less than $0/client."
+ *
+ * The chat meter is a FLOOR on his effort, not the whole of it: it counts
+ * only the minutes his admin chat page was open and visible, and never the
+ * call, the records reading, or the report. Said plainly in the note, so a
+ * model reasoning from it does not mistake the floor for the total.
+ */
+async function loadEconomics(env, kind, id) {
+  if (kind !== 'case') {
+    return { sub: true, paidCents: 0, tipCents: 0, seconds: 0 };
+  }
+  const [doc, meta] = await Promise.all([
+    getDoc(env, `cases/${id}`).catch(() => null),
+    getDoc(env, `caseMeta/${id}`).catch(() => null),
+  ]);
+  const c = doc?.data || {};
+  let paidCents = Number(c.payment?.amountTotal) || Number(c.stripe?.amountTotal)
+    || Number(c.caseRateCents) || 0;
+  let tipCents = 0;
+  for (const p of (Array.isArray(c.extraPayments) ? c.extraPayments : [])) {
+    const cents = Number(p?.amountCents) || 0;
+    if (p?.kind === 'tip') tipCents += cents;
+    else paidCents += cents;
+  }
+  return {
+    sub: false,
+    paidCents,
+    tipCents,
+    seconds: Math.max(0, Number(meta?.data.chatSeconds) || 0),
+  };
+}
+
+function economicsNote(econ) {
+  if (!econ || econ.sub) return '';
+  const dollars = (c) => `$${Math.round(c / 100)}`;
+  const hours = econ.seconds / 3600;
+  const spent = hours >= 1
+    ? `${Math.floor(hours)}h ${Math.round((econ.seconds % 3600) / 60)}m`
+    : `${Math.round(econ.seconds / 60)}m`;
+  // Only compute a rate once there is enough time logged for one to mean
+  // anything. Ten minutes of chat does not imply a $1,590 hourly rate.
+  const rate = hours >= 0.5 && econ.paidCents
+    ? ` That is about ${dollars(econ.paidCents / hours)} an hour against chat time alone, and it only falls from here.`
+    : '';
+  return `
+
+What this case has paid, and what it has cost him so far: ${dollars(econ.paidCents)} paid${
+    econ.tipCents ? ` plus ${dollars(econ.tipCents)} in tips` : ''
+  }, against ${spent} of logged chat time.${rate} That figure counts only the minutes his chat page was open in front of him. It does not count the call, reading the records, or writing the report, so his real hours are higher than it says.`;
+}
+
+/**
  * Eric's hand-written working line, when he has set one. Pressing his own
  * line onto the folder is the most explicit case-level call he can make, and
  * the analysis used to never see it: the advisor kept producing and
@@ -2061,12 +2141,14 @@ function bookkeepingNote(state) {
 export async function runAnalysis(env, kind, id, mediaList = null) {
   try {
     await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date() });
-    const [rows, state, knowledge, style, qa] = await Promise.all([
+    const [rows, state, knowledge, style, qa, effort, econ] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
       loadKnowledge(env),
       loadStyle(env),
       loadQa(env, kind, id),
+      loadEffort(env),
+      loadEconomics(env, kind, id),
     ]);
     const chat = transcript(rows);
     if (!chat) {
@@ -2103,7 +2185,7 @@ export async function runAnalysis(env, kind, id, mediaList = null) {
     const media = await selectedMediaBlocks(env, queue, kind, id, alreadyRead);
 
     const analysis = await ask(env, {
-      effort: ANALYSIS_EFFORT,
+      effort,
       onBeat: () => setState(env, kind, id, { progressAt: new Date() }).catch(() => {}),
       system: [{ type: 'text', text: `${VOICE}
 
@@ -2187,6 +2269,23 @@ yet." when nothing has been.
 stalls, and how to engage THIS patient if that matters (fewer questions and
 more prompting for someone exhausted, more structure for someone scattered).
 
+One of those bullets is about his effort, when and only when it earns its
+place. He is a working advocate on a fixed fee, and the failure mode he
+actually has is grinding a case he has already solved: asking a fourth
+question when the plan is sound, chasing a detail that changes nothing. You
+are given what this case paid and how much chat time it has already taken.
+When the plan for the next call is genuinely solid and the remaining
+questions would not change what he does, say so in plain words: he is ready,
+stop here, the next move belongs to the call. Say it as a judgement about
+READINESS, never as a complaint about money to him, and never quote the
+hourly figure back at him.
+
+The one thing this never does is push a case short. If something clinically
+important is still open, say that instead, however long it has taken and
+whatever it paid. A dangerous possibility unchased is not a saving. Effort
+guidance is about when he has ENOUGH, never about withholding something the
+patient needs.
+
 "Key terms": Eric is learning the territory as he goes. Up to 5 medical terms
 or diagnoses central to THIS assessment that he has not yet learned, each on
 its own line as \`- Term [Category]: plain-words definition in one sentence, plus
@@ -2266,6 +2365,7 @@ ${style.voice}` : ''}` || ' ' }],
               + (qa.length ? `\n\nThe discussion with Eric is part of the case record. A conclusion he reached with you there, a direction he gave, or a possibility you two raised or sank moves this assessment and the Differential section exactly as if he had said it in the client thread. Anything conceded in that discussion, by you or by him, is settled unless new evidence reopens it: move the differential by as much as the conceded point actually bears on it, no more and no less. If that discussion changed your read since the previous assessment, say so in "Right now".` : '')
               + dxOverrideNote(state)
               + bookkeepingNote(state)
+              + economicsNote(econ)
               + mediaNote(media),
           },
           ...media.blocks,
@@ -2384,7 +2484,7 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
   const path = `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state/qa/${qaId}`;
   const override = isOverride(question);
   try {
-    const [rows, state, knowledge, style, qa] = await Promise.all([
+    const [rows, state, knowledge, style, qa, econ] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
       loadKnowledge(env),
@@ -2393,6 +2493,7 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
       // Without them every question started from zero and "our conversation"
       // never existed on the advisor's side.
       loadQa(env, kind, id, { skip: qaId }),
+      loadEconomics(env, kind, id),
     ]);
     const chat = transcript(rows);
     let fileBlocks = [];
@@ -2432,6 +2533,15 @@ mastering it. Skip the section if none.
 longer holds. He asked what it means, or used it wrongly. One term per line as
 \`- Term\`. Skip the section if none.
 
+Tell him when he is done. He is a working advocate on a fixed fee, and his
+failure mode is grinding a case he has already solved, asking a fourth
+question when the plan is sound. If his question is one whose answer would
+not change what he actually does next, answer it briefly and then say so in
+one line: he has what he needs, the next move belongs to the call. Judge it
+on readiness, not on the clock, and never quote money back at him. If
+something clinically important is still open, that outranks this entirely:
+say what is open and keep going, however long it has taken.
+
 He is allowed to be right. When he makes a point that actually breaks your
 reasoning, concede it plainly and say what it changes; do not concede as a
 courtesy and then carry on as before. When a concession touches the
@@ -2457,7 +2567,7 @@ ${SELF_NOTE}` },
               state?.data.draft ? `\n<your_current_draft>\nA reply you drafted for Eric to send, not yet sent. He may be asking about it.\n${state.data.draft}\n</your_current_draft>\n` : ''
             }${qaBlock(qa)}${
               qa.length ? '\nThis is one continuing conversation. His question below may lean on it; do not repeat what you already told him there.\n' : ''
-            }${fileNote}\nEric asks: ${question}`,
+            }${economicsNote(econ)}${fileNote}\nEric asks: ${question}`,
           },
           ...fileBlocks,
         ],

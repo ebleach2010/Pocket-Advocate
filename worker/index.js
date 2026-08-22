@@ -25,6 +25,7 @@ import {
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 import {
+  getAdvisorEffort, setAdvisorEffort,
   runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses, runStyleDistill,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
@@ -457,6 +458,8 @@ export default {
         return await handleRates(env);
       if (url.pathname === '/api/admin/rates' && request.method === 'POST')
         return await handleSetRates(request, env);
+      if (url.pathname === '/api/admin/effort')
+        return await handleEffort(request, env);
       if (url.pathname === '/api/admin/voice')
         return await handleVoiceLoop(request, env, ctx);
       if (url.pathname === '/api/version' && request.method === 'GET')
@@ -821,7 +824,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-links';
+const BUILD_TAG = 'v2026-08-22-effort';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2268,6 +2271,24 @@ async function handleFileDelete(request, env) {
 
   await deleteFile(env, path);
   return json({ ok: true });
+}
+
+/**
+ * GET/POST /api/admin/effort
+ *
+ * How hard the advisor thinks on an analysis. High is the default and is
+ * what Eric reads on; max is there for a case worth waiting on. Stored
+ * server side so the choice follows him between devices, and read per run,
+ * so the switch takes effect on the very next Update.
+ */
+async function handleEffort(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    return json(await setAdvisorEffort(env, body?.effort));
+  }
+  return json(await getAdvisorEffort(env));
 }
 
 /**

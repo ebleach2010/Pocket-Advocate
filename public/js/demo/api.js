@@ -50,6 +50,7 @@ the phone. The referral question is the one that changes the shape of the case.`
 // A plausible running total for the chat-hours meter, so the admin suite
 // shows the number doing its job the moment the page opens. Demo only.
 let demoChatSecs = 3 * 3600 + 40 * 60;
+let demoEffort = 'high';
 
 // What the study looks like after a few nights. Demo only.
 const demoVoice = {
@@ -87,6 +88,10 @@ export function demoApi(role, store) {
     if (path === '/api/admin/rates') return ok({ caseCents: 26500, addonCents: 7500, bookings: 0, changed: false });
     // The nightly study, with a plausible history so the card on the dashboard
     // shows what it shows on a real night.
+    if (path === '/api/admin/effort') {
+      if (init.method === 'POST') demoEffort = body.effort === 'max' ? 'max' : 'high';
+      return ok({ effort: demoEffort });
+    }
     if (path === '/api/admin/voice') {
       if (typeof body.enabled === 'boolean') demoVoice.enabled = body.enabled;
       if (body.run === true) {
