@@ -368,11 +368,31 @@ function renderProgress(el, c) {
 // ---- Chat section (mounted once per case id; never re-rendered by refresh paths) ----
 function renderChat(el, c) {
   const closed = c.status === 'closed';
+  // Chat opens one week before the booked call. Booking far out used to buy
+  // the whole wait as free chat runway; now the wait is quiet, the next-call
+  // list stays open, and $50 (the direct line price) opens chat immediately
+  // for the life of the case. (Eric, 2026-08-22: "explicitly for avoiding
+  // chat abuse by booking two months in advance.")
+  const startMs = c.appointment?.start ? toDate(c.appointment.start).getTime() : null;
+  const justOpened = new URLSearchParams(location.search).get('chatopen') === '1';
+  const chatLocked = !closed && !c.chatUnlocked && !justOpened
+    && startMs && (startMs - Date.now() > 7 * 86_400_000);
+  const opensOn = startMs ? new Intl.DateTimeFormat('en-US', {
+    month: 'long', day: 'numeric',
+  }).format(new Date(startMs - 7 * 86_400_000)) : '';
   el.innerHTML = `
     <h2 class="case-sec-h">Chat</h2>
     <p class="dim small" style="margin:.1rem 0 .3rem;">Chat keeps your case moving between calls: records, scheduling, and anything new or urgent with your health. The analysis itself happens on our calls, and everything else goes on the list for the next one.</p>
     <p style="margin:.2rem 0 .3rem;"><span class="p-dot"></span><span class="p-label">Checking…</span></p>
     <div class="panel" data-chat></div>
+    ${chatLocked ? `
+    <div class="panel" data-chat-unlock style="margin-top:.7rem;">
+      <h3 style="margin:.1rem 0 .2rem;">Want a direct line before then?</h3>
+      <p class="dim small" style="margin:0 0 .5rem;">Open chat now for a one-time <span data-unlock-price>$50</span> and it stays open for the life of your case. Otherwise it opens on its own, one week before we talk.</p>
+      <button class="btn" data-unlock-go>Open chat now · <span data-unlock-price>$50</span></button>
+      <p class="error" data-unlock-err hidden style="margin:.5rem 0 0;"></p>
+    </div>` : ''}
+    ${justOpened && !c.chatUnlocked ? '<p class="dim small" data-unlock-thanks style="margin:.4rem 0 0;">✓ Chat is open. Thank you.</p>' : ''}
     <div class="panel" data-nextcall hidden style="margin-top:.7rem;">
       <h3 style="margin:.1rem 0 .2rem;">🗓 For our next call</h3>
       <p class="dim small" style="margin:0 0 .5rem;">Anything you add here is captured, and we go through the list together on the call, where it gets real attention instead of a rushed reply.</p>
@@ -392,8 +412,41 @@ function renderChat(el, c) {
     user,
     myRole: 'client',
     saveUid: user.uid,
-    disabled: closed,
-    notice: 'This chat ended when the case closed. Your documents remain yours forever.',
+    disabled: closed || chatLocked,
+    notice: closed
+      ? 'This chat ended when the case closed. Your documents remain yours forever.'
+      : `Chat opens ${opensOn}, one week before our call. Your "For our next call" list below is always open, and I read it.`,
+  });
+  if (justOpened) history.replaceState(null, '', `/case.html?id=${c.id}`);
+  // The figure comes from the worker, per the never-hardcode-a-price rule;
+  // the markup's $50 is only the first paint while this answers.
+  if (chatLocked) {
+    fetch('/api/rates').then((r) => r.json()).then((r) => {
+      if (Number(r.chatOpenCents) > 0) {
+        el.querySelectorAll('[data-unlock-price]').forEach((sp) => {
+          sp.textContent = `$${(r.chatOpenCents / 100).toFixed(0)}`;
+        });
+      }
+    }).catch(() => {});
+  }
+  el.querySelector('[data-unlock-go]')?.addEventListener('click', async (e) => {
+    const err = el.querySelector('[data-unlock-err]');
+    if (err) err.hidden = true;
+    e.target.disabled = true;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/chat-unlock', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ caseId: c.id }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      location.href = out.url;
+    } catch (ex) {
+      e.target.disabled = false;
+      if (err) { err.textContent = ex.message; err.hidden = false; }
+    }
   });
   mountAgenda(el, c.id);
 }

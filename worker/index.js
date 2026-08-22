@@ -41,6 +41,11 @@ const CASE_PRICE_CENTS = 26500;
 // after the report lands rather than at checkout. It is NOT included.
 const ADDON_PRICE_CENTS = 7500;
 const SUB_PRICE_CENTS = 5000;
+// Case chat opens this many days before the booked call; opening it sooner
+// costs a one-time fee at the direct-line price. Eric, 2026-08-22:
+// "explicitly for avoiding chat abuse by booking two months in advance."
+const CHAT_OPEN_DAYS = 7;
+const CHAT_OPEN_CENTS = 5000;
 
 // Every completed booking lifts the case and the follow-up by this much. No
 // ceiling, and nothing anywhere says it is happening.
@@ -178,7 +183,7 @@ async function handleSetRates(request, env) {
 
 async function handleRates(env) {
   const r = await readRates(env);
-  return json({ caseCents: r.caseCents, addonCents: r.addonCents });
+  return json({ caseCents: r.caseCents, addonCents: r.addonCents, chatOpenCents: CHAT_OPEN_CENTS });
 }
 // Follow-up sessions expire one month after the first discussion (Eric,
 // 2026-07-13); clients get one warning email a week before the deadline.
@@ -434,6 +439,8 @@ export default {
         return await handleVerifyCode(request, env);
       if (url.pathname === '/api/auth/device-signin' && request.method === 'POST')
         return await handleDeviceSignin(request, env);
+      if (url.pathname === '/api/chat-unlock' && request.method === 'POST')
+        return await handleChatUnlock(request, env);
       if (url.pathname === '/api/tip' && request.method === 'POST')
         return await handleTip(request, env);
       if (url.pathname === '/api/review' && request.method === 'POST')
@@ -721,7 +728,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-tuesdays';
+const BUILD_TAG = 'v2026-08-22-chatgate';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -729,7 +736,7 @@ const BUILD_TAG = 'v2026-08-22-tuesdays';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.4';
+const VERSION = '2.5';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -1154,6 +1161,7 @@ async function handleWebhook(request, env) {
     } else if (obj.payment_status && obj.payment_status !== 'paid') {
       // Not settled yet; the success event will come back through here.
     } else if (obj.metadata?.kind === 'tip') await confirmTip(env, obj);
+    else if (obj.metadata?.kind === 'chatunlock') await confirmChatUnlock(env, obj);
     else if (obj.metadata?.kind === 'extra') await confirmExtraSession(env, obj);
     else if (obj.metadata?.kind === 'followup') await confirmFollowUpPurchase(env, obj);
     else await createCaseFromSession(env, obj);
@@ -2718,6 +2726,72 @@ async function handleTip(request, env) {
     metadata: { kind: 'tip', caseId, uid: user.uid },
   });
   return json({ url: session.url });
+}
+
+/**
+ * POST /api/chat-unlock  Body: { caseId }
+ *
+ * Opens the case chat before its one-week window, for a one-time $50 (the
+ * direct-line price). Anti-abuse by design: a call booked far out no longer
+ * buys months of free chat runway. The fee never changes what the case
+ * includes; it only moves the chat's opening day.
+ */
+async function handleChatUnlock(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+  const doc = await getDoc(env, `cases/${caseId}`);
+  if (!doc || doc.data.clientUid !== user.uid) return json({ error: 'Not found' }, 404);
+  if (doc.data.chatUnlocked) return json({ error: 'Chat is already open.' }, 409);
+
+  const session = await stripePost(env, '/checkout/sessions', {
+    mode: 'payment',
+    customer_email: doc.data.clientEmail || user.email || undefined,
+    line_items: [{
+      quantity: 1,
+      price_data: {
+        currency: 'usd',
+        unit_amount: CHAT_OPEN_CENTS,
+        product_data: { name: 'Open chat now', description: 'Direct line for the life of your case - The Pocket Advocate' },
+      },
+    }],
+    success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&chatopen=1`,
+    cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
+    metadata: { kind: 'chatunlock', caseId, uid: user.uid },
+  });
+  return json({ url: session.url });
+}
+
+/** Paid. Open the chat, write the ledger row, tell Eric. */
+async function confirmChatUnlock(env, session) {
+  const caseId = session.metadata?.caseId;
+  if (!caseId) return;
+  let wrote = false;
+  for (let attempt = 0; attempt < 3 && !wrote; attempt++) {
+    const c = await getDoc(env, `cases/${caseId}`);
+    if (!c) return;
+    const payments = Array.isArray(c.data.extraPayments) ? c.data.extraPayments : [];
+    if (payments.some((x) => x.sessionId === session.id)) return;
+    payments.push({
+      kind: 'chatunlock', amountCents: session.amount_total || CHAT_OPEN_CENTS,
+      sessionId: session.id, at: new Date(),
+    });
+    wrote = false !== await patchDoc(env, `cases/${caseId}`, {
+      chatUnlocked: true, chatUnlockedAt: new Date(), extraPayments: payments,
+    }, { mask: ['chatUnlocked', 'chatUnlockedAt', 'extraPayments'], ifUpdateTime: c.updateTime });
+  }
+  if (!wrote) { console.warn('confirmChatUnlock: kept losing the lock', caseId); return; }
+  const c = await getDoc(env, `cases/${caseId}`).catch(() => null);
+  const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  for (const a of admins) {
+    await notifyUser(env, a.id, {
+      title: 'Pocket Advocate',
+      body: `${firstName(c?.data.clientName) || 'A client'} opened chat early ($${((session.amount_total || CHAT_OPEN_CENTS) / 100).toFixed(2)}).`,
+      link: `/admin-case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
 }
 
 /** Paid. A ledger entry and a thank-you to nobody but Eric. */

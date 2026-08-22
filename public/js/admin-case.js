@@ -129,6 +129,7 @@ function render(el) {
             <div class="panel">
               <h3>Chat with the client</h3>
               <p class="dim small" data-chattime style="margin:.1rem 0 .4rem;" hidden></p>
+              <p class="dim small" data-client-gate style="margin:.1rem 0 .4rem;" hidden></p>
               <div id="chat"></div>
             </div>`;
         },
@@ -307,6 +308,21 @@ function render(el) {
 
   chatSend = (text) => chat.send(text);
   startChatMeter();
+  // Whether THEIR side of this chat is open yet, so silence before a far-out
+  // call reads as the gate doing its job rather than a client ignoring him.
+  {
+    const gateEl = document.querySelector('[data-client-gate]');
+    const startMs = c.appointment?.start ? toDate(c.appointment.start).getTime() : null;
+    if (gateEl && !c.chatUnlocked && startMs && startMs - Date.now() > 7 * 86_400_000) {
+      const opens = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' })
+        .format(new Date(startMs - 7 * 86_400_000));
+      gateEl.textContent = `🔒 Their chat opens ${opens} (one week before the call). They can open it early for the $50 direct line fee.`;
+      gateEl.hidden = false;
+    } else if (gateEl && c.chatUnlocked) {
+      gateEl.textContent = '🔓 They paid the $50 to open chat early.';
+      gateEl.hidden = false;
+    }
+  }
 
   // Admin-only, and admin-only by rule — see the `advisor` match in
   // firestore.rules. An approved draft goes out through the same send path as

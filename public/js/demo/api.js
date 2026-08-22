@@ -83,7 +83,7 @@ export function demoApi(role, store) {
     if (path === '/api/admin/session') return ok({ ok: true });
 
     // ---- money, without any -----------------------------------------------
-    if (path === '/api/rates') return ok({ caseCents: 26500, addonCents: 7500 });
+    if (path === '/api/rates') return ok({ caseCents: 26500, addonCents: 7500, chatOpenCents: 5000 });
     if (path === '/api/admin/rates') return ok({ caseCents: 26500, addonCents: 7500, bookings: 0, changed: false });
     // The nightly study, with a plausible history so the card on the dashboard
     // shows what it shows on a real night.
@@ -109,6 +109,7 @@ export function demoApi(role, store) {
     if (path === '/api/case-for-session') return ok({ ready: true, caseId: DEMO_CASE_ID });
     if (path === '/api/portal') return ok({ url: `/subscription.html?demo=${role}` });
     if (path === '/api/tip') return ok({ url: `/case.html?demo=1&tipped=1` });
+    if (path === '/api/chat-unlock') return ok({ url: `/case.html?demo=1&chatopen=1` });
 
     // ---- the advisor, from a fixture -------------------------------------
     if (path === '/api/advisor/state') {
@@ -284,7 +285,7 @@ export function demoApi(role, store) {
     }
 
     // ---- everything else --------------------------------------------------
-    if (path === '/api/version') return ok({ tag: 'demo', version: '2.4' });
+    if (path === '/api/version') return ok({ tag: 'demo', version: '2.5' });
     if (path === '/api/changelog') {
       return role === 'admin'
         ? ok({ admin: { '2.2': ['Everything on your side, in one place, with nothing real behind it.'] } })
