@@ -1943,20 +1943,26 @@ async function loadQa(env, kind, id, { skip = null, take = 10 } = {}) {
   // this loader exists to end. Docs are tiny; reading them all is cheap.
   const rows = await listDocs(env, `${statePath(kind, id)}/qa`, { pageSize: 200, all: true })
     .catch(() => []);
-  const done = rows
-    .filter((r) => r.id !== skip && r.data.status === 'done'
-      && r.data.question && r.data.answer)
+  // Rows with a QUESTION count, answered or not. Filtering to finished
+  // exchanges dropped the freshest thing Eric said, which is precisely what
+  // "take what I just said to you" points at: he speaks, presses Prepare a
+  // response while the advisor is still answering, and the draft was written
+  // blind to the one message that mattered. His words are evidence the
+  // moment they exist; the answer can say "(still answering)".
+  const spoken = rows
+    .filter((r) => r.id !== skip && r.data.question
+      && (r.data.status === 'done' || r.data.status === 'running'))
     .sort((a, b) => new Date(a.data.at || 0) - new Date(b.data.at || 0));
-  const recent = done.slice(-take);
+  const recent = spoken.slice(-take);
   // Overrides are settled calls, not chat scroll: up to three older ones
   // stay pinned ahead of the recency window, at a longer slice, so the
   // context that produced a filed stance never just ages out.
-  const pinned = done.slice(0, -take)
-    .filter((r) => r.data.override)
+  const pinned = spoken.slice(0, -take)
+    .filter((r) => r.data.override && r.data.answer)
     .slice(-3);
   return [...pinned, ...recent].map((r) => ({
     q: String(r.data.question).slice(0, 800),
-    a: String(r.data.answer).slice(0, r.data.override ? 900 : 600),
+    a: r.data.answer ? String(r.data.answer).slice(0, r.data.override ? 900 : 600) : '',
     override: !!r.data.override,
   }));
 }
@@ -1964,7 +1970,7 @@ async function loadQa(env, kind, id, { skip = null, take = 10 } = {}) {
 function qaBlock(qa) {
   if (!qa.length) return '';
   const turns = qa.map((x) =>
-    `${x.override ? 'ERIC (override, settled): ' : 'ERIC: '}${x.q}\nYOU: ${x.a}`).join('\n\n');
+    `${x.override ? 'ERIC (override, settled): ' : 'ERIC: '}${x.q}\nYOU: ${x.a || '(you have not answered this yet; his words stand on their own)'}`).join('\n\n');
   return `\n<discussion_with_eric>\nYour recent private discussion with Eric about this client, oldest first (long answers shortened):\n\n${turns}\n</discussion_with_eric>\n`;
 }
 
@@ -2480,6 +2486,15 @@ Answer the client's MOST RECENT messages: everything they've sent since Eric
 last wrote. That's what the reply is for. The rest of the thread and your
 assessment are context to keep the reply consistent, not material to re-answer.
 
+One exception outranks that default: when Eric's instruction tells you to
+relay or restate something ("take what I just said to you", "tell him what
+we discussed"), the message is BUILT from Eric's own words in the private
+discussion you are given. Reorganize and tidy them for the client; invent
+nothing, add none of your own read, and drop nothing he said that fits the
+instruction. If you cannot find what he is pointing at, the draft is the
+single sentence: I could not find what you are referring to, ask me again
+after my answer lands.
+
 You are given his own past messages. Match them: sentence length, how formal he
 is, whether he uses contractions, how he opens and closes, how much warmth he
 shows, whether he uses lists. If his messages are short, yours is short.
@@ -2526,7 +2541,7 @@ anything in the learned profile that follows.`, cache: true },
         role: 'user',
         content: `Here is how Eric writes, in his own messages to this client:\n\n<his_voice>\n${voice || '(none yet: keep it plain, warm and brief)'}\n</his_voice>\n${
           lessons ? `\nHow he edited your recent drafts before sending (each difference is an instruction):\n\n<his_edits>\n${lessons}\n</his_edits>\n` : ''
-        }${qa.length ? `${qaBlock(qa)}\nThat discussion is direction for what this message should do. It is private between you and Eric. Nothing from it goes to the client in its own words, and nothing in it is quoted or referenced to them.\n` : ''
+        }${qa.length ? `${qaBlock(qa)}\nThat discussion is direction AND material. Eric's own words in it are his to send: when his instruction points at the discussion ("what I just said", "what we talked about"), build the message FROM what he said there, keeping his content and his calls, tidied for the client to read. What never reaches the client: YOUR half of the discussion in its own voice, and any mention that the discussion exists.\n` : ''
         }\nThe conversation so far:\n\n<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${
           state?.data.analysis ? `\nYour current assessment of the case:\n\n<assessment>\n${state.data.analysis}\n</assessment>\n` : ''
         }${baseDraft
