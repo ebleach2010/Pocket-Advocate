@@ -256,7 +256,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           });
           const out = await res.json();
           showErr(out.ok
-            ? `Diagnostics: the model responds normally (${out.ms}ms), so this run died on its own. Tap Update to restart it.`
+            ? `Diagnostics: the model responds normally (${out.ms}ms), so this run died on its own (leaving the app mid-run can do that). It restarts by itself within a few minutes, or tap Update to restart it now.`
             : `Diagnostics: ${out.error}`);
         } catch { /* the refresh loop will try again on the next stall */ }
       })();

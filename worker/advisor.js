@@ -1915,9 +1915,18 @@ export async function runQueuedAnalyses(env) {
       }
       const state = await getDoc(env, statePath(kind, id));
       if (state?.data.paused) { await deleteDoc(env, `advisorQueue/${row.id}`); continue; }
-      // Someone (the panel) is already mid-run — leave it alone unless stale.
-      const startedAt = state?.data.startedAt ? new Date(state.data.startedAt).getTime() : 0;
-      if (state?.data.status === 'running' && Date.now() - startedAt < 12 * 60_000) continue;
+      // Someone (the panel) is already mid-run: leave it alone while it is
+      // ALIVE, which means a fresh heartbeat, not a fresh start. progressAt
+      // beats every ~8s while the model streams, so five quiet minutes is a
+      // corpse even if startedAt is recent. Judging on startedAt alone made
+      // the cron wait out a dead run for up to twelve minutes while the
+      // panel told Eric at two to tap Update by hand. Same clock the draft
+      // rescue uses.
+      const st = state?.data || {};
+      const beat = Math.max(
+        st.startedAt ? new Date(st.startedAt).getTime() : 0,
+        st.progressAt ? new Date(st.progressAt).getTime() : 0);
+      if (st.status === 'running' && beat && Date.now() - beat < 5 * 60_000) continue;
       await runAnalysis(env, kind, id);
       break; // one per firing
     }
