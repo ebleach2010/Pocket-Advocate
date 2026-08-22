@@ -4,10 +4,13 @@
 //
 //  - "The advisor learns how I speak across time from how I edit its drafts to
 //    how I message clients." Two loops: the on-edit fast path (runStyleDistill)
-//    and the nightly voice study (runVoiceStudy) - 3 readers (cadence/rhythm,
-//    style/verbiage, belief systems) over his messages across ALL threads,
-//    merged into the one advisorStyle/profile.
-//  - Runs every 24h at ~9pm MST "until I say stop" - the dashboard switch is
+//    and the nightly voice study (runVoiceStudy) - SEVEN readers, one per
+//    element of a writing voice per the style literature (diction, syntax and
+//    structure, cadence and rhythm, tone and attitude, detail and example
+//    habits, beliefs and persona, mechanics and idiosyncrasies), over his
+//    messages across ALL threads, merged into the one advisorStyle/profile.
+//    (Eric, 2026-08-22: as many readers as there are notes to a voice.)
+//  - Runs every 24h at ~10pm MST "until I say stop" - the dashboard switch is
 //    the stop, never a redeploy. Silent: no changelog entry, no client surface.
 //  - One merged profile (his choice), the same three sections About-you shows.
 //    His marked overrides ALWAYS survive a merge, at the top, in his words.
@@ -820,7 +823,7 @@ function sectionOf(text, name) {
 // That one is the fast path: it exists so the VERY NEXT draft carries the
 // lesson. This is the slow wide pass over everything he wrote today.
 
-const VOICE_LOOP_HOUR = 21;                       // 9pm, his time (his choice)
+const VOICE_LOOP_HOUR = 22;                       // 10pm, his time (his choice, 2026-08-22)
 const VOICE_LOOP_TZ = 'Etc/GMT+7';                // MST, a fixed offset: no DST
 const VOICE_LOOP_MIN_GAP_MS = 23 * 3_600_000;
 const VOICE_CORPUS_CHARS = 40_000;
@@ -948,16 +951,48 @@ export async function voiceCorpus(env, { exclude = null } = {}) {
   return { text: out.join('\n---\n'), questions };
 }
 
-/** One reader. Its own question, the same corpus. */
+/**
+ * One reader per element of a writing voice. Seven, from the style
+ * literature (diction, syntax, tone, imagery and detail, rhythm, persona,
+ * mechanics), adapted to chat-length advocacy writing. Eric, 2026-08-22:
+ * "send out just as many agents as there are notes to someone's writing
+ * voice." Each reader is blind to the others' questions on purpose.
+ */
 const READERS = [
+  {
+    id: 'diction',
+    what: 'diction and word choice',
+    ask: `Read this writing for DICTION only. The words themselves.
+
+Word choice and register. Phrases he reaches for again and again. Words he
+plainly will not use. When he goes formal and when he does not. How he names
+medical things: the term, the plain word, or both. In the edit pairs: what he
+STRIKES OUT of a draft is the loudest signal here, so read the deletions as
+carefully as the additions.
+
+One observation per line, each with a real example of his wording where you
+have one.`,
+  },
+  {
+    id: 'syntax',
+    what: 'syntax and structure',
+    ask: `Read this writing for SYNTAX AND STRUCTURE only. The shape of it.
+
+Sentence shapes and how they vary. Simple against compound. Fragments, and
+when he allows them. Whether he uses lists or runs things into prose. How
+long a message runs before he splits it. Questions against statements. What
+a first sentence tends to do and what a last one tends to do structurally.
+
+One observation per line, specific enough that another writer could follow
+it.`,
+  },
   {
     id: 'cadence',
     what: 'cadence and rhythm',
     ask: `Read this writing for CADENCE AND RHYTHM only. Not what he says: how it moves.
 
-Sentence length and how it varies. Where he puts the short one. How he opens a
-message and how he closes it. Paragraph length. Whether he front-loads the point
-or builds to it. Punctuation habits, including the ones he clearly avoids. How
+Where he puts the short sentence. How he opens a message and how he closes
+it. Paragraph length. Whether he front-loads the point or builds to it. How
 he paces a long message so it stays readable, and where his pacing slips.
 
 One observation per line, each one specific enough that another writer could
@@ -965,33 +1000,58 @@ follow it. "Opens with what the person did, not with a greeting" is worth
 writing. "Writes clearly" is not.`,
   },
   {
-    id: 'verbiage',
-    what: 'style and verbiage',
-    ask: `Read this writing for STYLE AND VERBIAGE only. The words themselves.
+    id: 'tone',
+    what: 'tone and attitude',
+    ask: `Read this writing for TONE AND ATTITUDE only. How he sits with the reader.
 
-Word choice and register. Phrases he reaches for again and again. Words he
-plainly will not use. Contractions. When he goes formal and when he does not.
-Whether he uses lists, bold, questions. How he handles a technical term the
-first time it appears. In the edit pairs: what he STRIKES OUT of a draft is the
-loudest signal here, so read the deletions as carefully as the additions.
+Warmth, and where he spends it. Directness, and where he softens. How he
+delivers hard news. How he handles a frustrated or frightened person. Humor,
+if any, and what kind. How he apologises, if he does. What he sounds like
+when he is pushing and what he sounds like when he is reassuring.
 
-One observation per line, each with a real example of his wording where you
-have one.`,
+One observation per line, tied to something in the evidence.`,
+  },
+  {
+    id: 'detail',
+    what: 'detail and example habits',
+    ask: `Read this writing for DETAIL AND EXAMPLE HABITS only. How concrete he gets.
+
+When he states a thing plainly and when he illustrates it. Whether he uses
+numbers, dates, and specifics or keeps it general. How he explains a medical
+idea: analogy, example, definition, or none. How much context he gives before
+an ask. What he leaves out that a textbook would put in.
+
+One observation per line, with the shape of a real example where you have
+one.`,
   },
   {
     id: 'beliefs',
-    what: 'belief systems',
-    ask: `Read this writing for BELIEF SYSTEMS only. What he holds to be true.
+    what: 'beliefs and persona',
+    ask: `Read this writing for BELIEFS AND PERSONA only. What he holds to be true, and who he is on the page.
 
 His standing positions. What he pushes for every single time. What he refuses
 to do. Where he knowingly departs from general clinical guidance or textbook
 advice, and what he puts in its place. What he thinks the client's job is and
-what he thinks his own job is.
+what he thinks his own job is. The role he writes from: fellow patient,
+professional, fighter, neighbor.
 
 One line each, stated as HIS position, with the evidence in parentheses. Only
 what his own words support: never invent a position, and never promote a
 one-off phrasing tweak into a belief. If the evidence is too thin, say so
 rather than filling the space.`,
+  },
+  {
+    id: 'mechanics',
+    what: 'mechanics and idiosyncrasies',
+    ask: `Read this writing for MECHANICS AND IDIOSYNCRASIES only. The fingerprints.
+
+Punctuation habits, including what he clearly avoids. Contractions. Emoji, if
+any, and which. Capitalization quirks. Ellipses, parentheses, dashes or the
+absence of them. Greetings and sign-offs, or the absence of them. Anything a
+forger would need to get right that the other readers would call too small to
+mention.
+
+One observation per line.`,
   },
 ];
 
@@ -1017,9 +1077,9 @@ messages to OTHER clients, and a phrase from somebody else's case surfacing in
 theirs is a breach, not a style note.
 
 The evidence may include his private questions to his advisor and his revise
-instructions. Those are stance and priority evidence ONLY: cadence and
-verbiage readers ignore them entirely, because how he talks to his own tools
-is not how he talks to clients.
+instructions. Those are evidence for the beliefs and persona reader ONLY:
+every other reader ignores them entirely, because how he talks to his own
+tools is not how he talks to clients.
 
 Never use an em dash or an en dash, anywhere, in anything.`;
 
@@ -1116,10 +1176,12 @@ duplicates rather than listing them twice. Newer evidence beats older.
 Write exactly three markdown sections and nothing else:
 
 ## Voice
-How he writes: everything the cadence and the verbiage readers found, as one
-list rather than two. Sentence shape and length, openings and closings, warmth,
-contractions, phrases he reaches for, what he strips out of drafts. One
-observation per line. 220 words max.
+How he writes: everything the diction, syntax, cadence, tone, detail, and
+mechanics readers found, folded into one list rather than six. Word choice,
+sentence shape, openings and closings, warmth, pacing, how concrete he gets,
+punctuation habits, what he strips out of drafts. Keep the sharpest
+observation per habit and drop duplicates hard. One observation per line.
+260 words max.
 
 ## Stances
 His positions and standing calls, especially where he knowingly departs from

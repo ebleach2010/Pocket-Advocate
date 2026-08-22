@@ -616,6 +616,8 @@ export default {
     ctx.waitUntil(grandfatherFollowUps(env));
     // Same deal: Eric's Tuesday hours, opened once, no-op forever after.
     ctx.waitUntil(openTuesdaySlots(env));
+    // And the seven-reader voice study's first pass, once, right away.
+    ctx.waitUntil(voiceStudyKickoff(env));
   },
 };
 
@@ -637,6 +639,32 @@ export default {
  * Written as a marker doc created with mustNotExist, so two cron fires in the
  * same minute cannot both claim the job, and a restart cannot replay it.
  */
+/**
+ * Run-once: fire one voice study immediately (Eric, 2026-08-22: seven
+ * readers "to read through my messages NOW"). force skips the clock and the
+ * once-a-day gap but honors his off switch and the concurrent-claim guard
+ * inside maybeVoiceStudy, so this can never stack a second study on a live
+ * one. The nightly loop then carries on at its new 10pm hour.
+ */
+async function voiceStudyKickoff(env) {
+  const MARKER = 'migrations/voice-study-2026-08-22';
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 30 * 60_000) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;
+  try {
+    const out = await maybeVoiceStudy(env, Date.now(), { force: true });
+    await patchDoc(env, MARKER, { finishedAt: new Date(), result: out?.reason || (out?.ran ? 'ran' : 'no') },
+      { mask: ['finishedAt', 'result'] });
+    console.log('voice study kickoff:', JSON.stringify(out));
+  } catch (err) {
+    console.error('voice study kickoff:', err.message || err);
+  }
+}
+
 /**
  * Run-once: open every Tuesday 10am to 7pm MST, hourly, through 2026-10-20
  * (Eric, 2026-08-22: "Open my schedule every Tuesday from 10am-7pm for the
@@ -729,7 +757,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-chatnotice';
+const BUILD_TAG = 'v2026-08-22-sevenvoices';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller

@@ -57,7 +57,7 @@ const demoVoice = {
   lastRunAt: new Date(Date.now() - 13 * 3_600_000).toISOString(),
   runs: 6,
   lastError: null,
-  hour: 21,
+  hour: 22,
 };
 
 export function demoApi(role, store) {
@@ -92,7 +92,7 @@ export function demoApi(role, store) {
       if (body.run === true) {
         demoVoice.runs += 1;
         demoVoice.lastRunAt = new Date().toISOString();
-        return ok({ ...demoVoice, lastRun: { ran: true, wrote: true, readers: ['cadence', 'verbiage', 'beliefs'] } });
+        return ok({ ...demoVoice, lastRun: { ran: true, wrote: true, readers: ['diction', 'syntax', 'cadence', 'tone', 'detail', 'beliefs', 'mechanics'] } });
       }
       return ok({ ...demoVoice });
     }
