@@ -68,6 +68,10 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   // thinking work waits for a call. (Eric, 2026-08-21: "The chat is
   // swallowing my time to the point I make next to nothing.")
   const LANES = lanes && !disabled ? [
+    // Reply first: answering something Eric asked is the most common send
+    // there is, and it should never need shoehorning into a category.
+    // (Eric, 2026-08-22: "Add reply in there.")
+    { id: 'reply', icon: '↩️', label: 'Reply', ph: 'Your reply…' },
     ...(lanes.intakeOpen ? [{ id: 'intake', icon: '📋', label: 'Intake answer', ph: 'Your answer to my intake questions…' }] : []),
     { id: 'records', icon: '📎', label: 'Records & scheduling', ph: 'Uploads, appointment dates, provider names…' },
     { id: 'clinical', icon: '🚨', label: 'New or urgent', ph: 'A new symptom or result, or something happening right now…' },
@@ -157,7 +161,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       meta.className = 'msg-meta';
       // The lane the sender filed it under rides the timestamp, so a scan of
       // the thread shows what is urgent and what is paperwork at a glance.
-      const laneIcon = { intake: '📋', records: '📎', clinical: '🚨' }[data.lane] || '';
+      const laneIcon = { reply: '↩️', intake: '📋', records: '📎', clinical: '🚨' }[data.lane] || '';
       if (data.lane === 'clinical') div.classList.add('lane-hot');
       meta.textContent = (laneIcon ? `${laneIcon} ` : '')
         + (sentAt ? fmt.format(sentAt) : 'sending…') + (data.editedAt ? ' · edited' : '');

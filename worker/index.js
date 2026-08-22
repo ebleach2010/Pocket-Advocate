@@ -668,7 +668,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-names';
+const BUILD_TAG = 'v2026-08-22-reply';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1731,7 +1731,7 @@ async function handleChatLane(request, env) {
   const ctx = await chatContext(env, user, body?.kind, String(body?.id || ''), String(body?.msgId || ''));
   if (ctx.error) return json({ error: ctx.error }, ctx.code);
   const lane = String(body?.lane || '');
-  if (!['intake', 'records', 'clinical'].includes(lane)) return json({ error: 'Unknown lane' }, 400);
+  if (!['reply', 'intake', 'records', 'clinical'].includes(lane)) return json({ error: 'Unknown lane' }, 400);
   const msg = await getDoc(env, ctx.path);
   if (!msg) return json({ error: 'No such message' }, 404);
   if (msg.data.from !== user.uid) return json({ error: 'Not your message' }, 403);
