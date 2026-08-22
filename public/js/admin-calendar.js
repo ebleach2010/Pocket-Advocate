@@ -2,6 +2,7 @@
 // on a real grid, MST like everything else. Tapping a day lists its slots
 // with client names and links into the case.
 
+import './admin-ledger.js';
 import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 

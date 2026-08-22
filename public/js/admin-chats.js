@@ -3,6 +3,7 @@
 // the client's. Also holds the subscriber thread view (?sub=<uid>) and the
 // Eric-controlled expectation line.
 
+import './admin-ledger.js';
 import { db, collection, getDocs, doc, getDoc, setDoc } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { mountChat } from './chat.js';

@@ -4,6 +4,7 @@
 // only repaint the Overview and Files contents in place, so the chat's live
 // onSnapshot and the advisor's poll survive every action on this page.
 
+import './admin-ledger.js';
 import {
   db, storage, doc, getDoc, collection, getDocs, query, where,
   ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata,
@@ -1150,7 +1151,7 @@ async function refreshFiles() {
         const [url, meta] = await Promise.all([getDownloadURL(item), getMetadata(item)]);
         rows.push({
           kind, name: item.name, url, ts: new Date(meta.timeCreated),
-          size: meta.size, contentType: meta.contentType || '',
+          size: meta.size, contentType: meta.contentType || '', path: item.fullPath,
         });
       }
     } catch { /* empty */ }
@@ -1193,7 +1194,7 @@ async function refreshFiles() {
   const row = (r) => {
     const i = rows.indexOf(r);
     return `
-    <li>
+    <li data-frow="${i}">
       ${thumbable(r) ? `<img class="thumb" src="${r.url}" alt="" loading="lazy" data-thumb="${i}">` : ''}
       <span class="up-text">
         <span class="fname"><span class="kind-pill ${r.kind}">${label(r.kind)}</span><a href="${r.url}" target="_blank" rel="noopener">${esc(String(r.name).replace(/^\d{10,}-/, ''))}</a></span>
@@ -1216,6 +1217,37 @@ async function refreshFiles() {
     const r = rows[Number(img.dataset.thumb)];
     img.addEventListener('click', () => openLightbox({ name: r.name, url: r.url }));
   });
+  // Long-press (or right-click) any row to delete the file. Full authority
+  // on this side (Eric, 2026-08-22: "I get authority on both"); the confirm
+  // is the only brake.
+  listEl.querySelectorAll('[data-frow]').forEach((li) => {
+    const r = rows[Number(li.dataset.frow)];
+    if (!r?.path) return;
+    const name = String(r.name).replace(/^\d{10,}-/, '');
+    const askThen = () => {
+      if (!confirm(`Delete "${name}"? This removes it for the client too.`)) return;
+      (async () => {
+        try {
+          const token = await user.getIdToken();
+          const res = await fetch('/api/file/delete', {
+            method: 'POST',
+            headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ kind: 'case', id: caseId, path: r.path }),
+          });
+          const out = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+          refreshFiles();
+        } catch (err) { alert(`Couldn't delete: ${err.message}`); }
+      })();
+    };
+    let timer = null;
+    li.addEventListener('touchstart', () => { timer = setTimeout(askThen, 550); }, { passive: true });
+    for (const ev of ['touchend', 'touchmove', 'touchcancel']) {
+      li.addEventListener(ev, () => clearTimeout(timer), { passive: true });
+    }
+    li.addEventListener('contextmenu', (e) => { e.preventDefault(); askThen(); });
+  });
+
   // Toggle to stage the file for the advisor's next analysis; highlighted
   // while staged. The advisor panel owns the selection and the Analyze run.
   listEl.querySelectorAll('[data-review]').forEach((b) => {

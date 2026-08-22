@@ -1,6 +1,7 @@
 // Admin case list: every case, status badges, and the "report due in N days"
 // countdown that keeps the 7-day SLA from silently slipping (SPEC §F).
 
+import './admin-ledger.js';
 import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { initPushPrompt } from './push.js';

@@ -16,6 +16,7 @@
 import { requireUser } from './firebase-auth.js';
 import { mintCustomToken, getAccessToken } from './google-auth.js';
 import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, listDocs } from './firestore.js';
+import { deleteFile } from './storage.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import {
   slotTimingProblem, windowProblem, HOLD_MINUTES,
@@ -459,6 +460,10 @@ export default {
         return await handleSaved(request, env, url);
       if (url.pathname === '/api/agenda')
         return await handleAgenda(request, env, url);
+      if (url.pathname === '/api/file/delete' && request.method === 'POST')
+        return await handleFileDelete(request, env);
+      if (url.pathname === '/api/admin/ledger' && request.method === 'GET')
+        return await handleLedger(request, env);
       if (url.pathname === '/api/chattime' && request.method === 'POST')
         return await handleChatTime(request, env);
       if (url.pathname === '/api/uploaded' && request.method === 'POST')
@@ -666,7 +671,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-justchat';
+const BUILD_TAG = 'v2026-08-22-ledger';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -674,7 +679,7 @@ const BUILD_TAG = 'v2026-08-22-justchat';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.3';
+const VERSION = '2.4';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2065,6 +2070,97 @@ async function handleAgenda(request, env, url) {
     return json({ ok: true });
   }
   return json({ error: 'Unknown action' }, 400);
+}
+
+/**
+ * POST /api/file/delete  Body: { kind: 'case'|'sub', id, path }
+ *
+ * Deleting an uploaded file, with the authority rules Eric set (2026-08-22):
+ * "I should also be able to long press and delete any uploaded files. They
+ * should too, so long as they themselves uploaded it. I get authority on
+ * both." So: the admin deletes anything under the thread; a client deletes
+ * their own dropzone uploads and their own saved shelf freely, a chat file
+ * only when a chat message of THEIRS carries it (authorship proven from the
+ * thread, not claimed by the caller), and never the report or the recording.
+ */
+async function handleFileDelete(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = await request.json().catch(() => null);
+  const kind = body?.kind === 'sub' ? 'sub' : 'case';
+  const id = String(body?.id || '');
+  const ctx = await threadContext(env, user, kind, id);
+  if (ctx.error) return json({ error: ctx.error }, ctx.code);
+  const path = String(body?.path || '');
+  if (!path || path.length > 1024 || path.includes('..'))
+    return json({ error: 'Bad path' }, 400);
+
+  const base = `${ctx.parent}/${id}/`;
+  const inThread = ['uploads/', 'chat-files/', 'report/', 'recording/']
+    .some((f) => path.startsWith(base + f));
+  const ownShelf = path.startsWith(`profiles/${user.uid}/saved/`);
+  const clientShelf = path.startsWith(`profiles/${ctx.clientUid}/saved/`);
+
+  if (ctx.isAdmin) {
+    if (!inThread && !clientShelf) return json({ error: 'Bad path' }, 400);
+  } else {
+    if (!inThread && !ownShelf) return json({ error: 'Bad path' }, 400);
+    if (path.startsWith(`${base}report/`) || path.startsWith(`${base}recording/`))
+      return json({ error: 'That file is part of your case record.' }, 403);
+    if (path.startsWith(`${base}chat-files/`)) {
+      const rows = await listDocs(env, `${base}chat`, { pageSize: 200, all: true }).catch(() => []);
+      const theirs = rows.some((r) =>
+        r.data.from === user.uid && r.data.attachment?.path === path);
+      if (!theirs) return json({ error: 'Only files you shared yourself can be removed.' }, 403);
+    }
+  }
+
+  await deleteFile(env, path);
+  return json({ ok: true });
+}
+
+/**
+ * GET /api/admin/ledger
+ *
+ * The running tally behind the admin hamburger: what each client has paid,
+ * and what they have tipped, summed from the cases (the booking itself plus
+ * every extraPayments row). Subscriptions bill monthly in Stripe and are not
+ * mirrored per-payment into Firestore, so they are not counted here; the
+ * Stripe dashboard stays the truth for those.
+ */
+async function handleLedger(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const rows = await listDocs(env, 'cases', { pageSize: 300, all: true }).catch(() => []);
+  const byClient = new Map();
+  for (const r of rows) {
+    const c = r.data;
+    const key = c.clientUid || r.id;
+    if (!byClient.has(key)) {
+      byClient.set(key, {
+        name: c.clientName || c.clientEmail || 'Unknown client',
+        paidCents: 0, tipCents: 0, cases: 0,
+      });
+    }
+    const g = byClient.get(key);
+    g.cases += 1;
+    g.paidCents += Number(c.payment?.amountTotal) || Number(c.stripe?.amountTotal)
+      || Number(c.caseRateCents) || 0;
+    for (const p of (Array.isArray(c.extraPayments) ? c.extraPayments : [])) {
+      const cents = Number(p?.amountCents) || 0;
+      if (p?.kind === 'tip') g.tipCents += cents;
+      else g.paidCents += cents;
+    }
+  }
+  const clients = [...byClient.values()]
+    .sort((a, b) => (b.paidCents + b.tipCents) - (a.paidCents + a.tipCents));
+  return json({
+    clients,
+    totals: {
+      paidCents: clients.reduce((s, c) => s + c.paidCents, 0),
+      tipCents: clients.reduce((s, c) => s + c.tipCents, 0),
+    },
+  });
 }
 
 /**

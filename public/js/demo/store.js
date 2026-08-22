@@ -439,7 +439,7 @@ async function listAll(ref) {
   return {
     items: [...files.keys()]
       .filter((p) => p.startsWith(prefix))
-      .map((p) => ({ __kind: 'file', path: p, name: parts(p).pop() })),
+      .map((p) => ({ __kind: 'file', path: p, fullPath: p, name: parts(p).pop() })),
     prefixes: [],
   };
 }

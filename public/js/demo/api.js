@@ -262,8 +262,29 @@ export function demoApi(role, store) {
       return ok({ total: demoChatSecs });
     }
 
+    // ---- the ledger + file deletion ---------------------------------------
+    if (path === '/api/admin/ledger') {
+      const c = store.docs.get(`cases/${DEMO_CASE_ID}`) || {};
+      let paid = Number(c.stripe?.amountTotal) || Number(c.caseRateCents) || 0;
+      let tips = 0;
+      for (const pmt of (Array.isArray(c.extraPayments) ? c.extraPayments : [])) {
+        if (pmt?.kind === 'tip') tips += Number(pmt.amountCents) || 0;
+        else paid += Number(pmt.amountCents) || 0;
+      }
+      // A little tip on the demo books, so the column shows its job.
+      if (!tips) tips = 2500;
+      return ok({
+        clients: [{ name: c.clientName || 'Jordan Avery', paidCents: paid, tipCents: tips, cases: 1 }],
+        totals: { paidCents: paid, tipCents: tips },
+      });
+    }
+    if (path === '/api/file/delete') {
+      if (typeof body.path === 'string') { store.files.delete(body.path); store.fire?.(body.path); }
+      return ok({ ok: true });
+    }
+
     // ---- everything else --------------------------------------------------
-    if (path === '/api/version') return ok({ tag: 'demo', version: '2.3' });
+    if (path === '/api/version') return ok({ tag: 'demo', version: '2.4' });
     if (path === '/api/changelog') {
       return role === 'admin'
         ? ok({ admin: { '2.2': ['Everything on your side, in one place, with nothing real behind it.'] } })

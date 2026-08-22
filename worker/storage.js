@@ -61,6 +61,21 @@ export async function listFiles(env, prefix, { max = 100 } = {}) {
     .sort((a, b) => a.at - b.at);
 }
 
+/**
+ * Delete one object with the service account. A missing object counts as
+ * deleted: the point is that it is gone, not who got there first. Uses the
+ * read_write scope only here; everything else in this file stays read-only.
+ */
+export async function deleteFile(env, path) {
+  const token = await getAccessToken(env, 'https://www.googleapis.com/auth/devstorage.read_write');
+  const res = await fetch(`${GCS}/${BUCKET}/o/${encodeURIComponent(path)}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!res.ok && res.status !== 404)
+    throw new Error(`storage delete ${path}: ${res.status} ${await res.text()}`);
+}
+
 function leafName(objectPath) {
   const leaf = objectPath.split('/').pop() || 'file';
   // "1755712345678-scan.jpg" reads better as "scan.jpg".

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.3';
+export const VERSION = '2.4';
 
 /**
  * Newest first.
@@ -44,6 +44,13 @@ export const VERSION = '2.3';
  * copy there if necessary. An unspecified push is silent.
  */
 export const CHANGELOG = [
+  {
+    version: '2.4',
+    quiet: true,
+    client: [
+      'Press and hold a file you uploaded on the Docs page to delete it. Files I place there, like your report and the call recording, stay part of your case record.',
+    ],
+  },
   {
     version: '2.3',
     quiet: true,

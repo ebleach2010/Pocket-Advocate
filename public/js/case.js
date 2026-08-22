@@ -542,7 +542,7 @@ async function refreshFiles(c, el) {
       const res = await listAll(ref(storage, path));
       for (const item of res.items) {
         const [url, meta] = await Promise.all([getDownloadURL(item), getMetadata(item)]);
-        rows.push({ kind, name: item.name, url, ts: new Date(meta.timeCreated), size: meta.size });
+        rows.push({ kind, name: item.name, url, ts: new Date(meta.timeCreated), size: meta.size, path: item.fullPath });
       }
     } catch { /* folder may not exist yet */ }
   }
@@ -569,13 +569,50 @@ async function refreshFiles(c, el) {
   // they have been waiting for, and "is this the final one" should not be a
   // question they have to work out from the filename.
   const delivered = c.status === 'delivered' || c.status === 'closed';
-  listEl.innerHTML = rows.map((r) => `
-    <li>
+  listEl.innerHTML = rows.map((r, i) => `
+    <li data-frow="${i}">
       <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' || r.kind === 'chat' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
         ${r.kind === 'report' && delivered ? '<span class="delivered-tick" title="Delivered" role="img" aria-label="Delivered">✅</span>' : ''}
         <a href="${r.url}" target="_blank" rel="noopener">${esc(shownName(r.name))}</a></span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
     </li>`).join('');
+
+  // Long-press (or right-click) a file you put here to remove it. Offered on
+  // your own kinds only; the report and the recording are the case record.
+  // The Worker is the authority: a chat file is only deletable when a chat
+  // message of YOURS carries it. (Eric, 2026-08-22: "They should too, so
+  // long as they themselves uploaded it.")
+  listEl.querySelectorAll('[data-frow]').forEach((li) => {
+    const r = rows[Number(li.dataset.frow)];
+    if (!r?.path || !['upload', 'chat', 'saved'].includes(r.kind)) return;
+    wireFileDelete(li, r, async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/file/delete', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ kind: 'case', id: c.id, path: r.path }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+        refreshFiles(c, el);
+      } catch (err) { alert(`Couldn't delete: ${err.message}`); }
+    });
+  });
+}
+
+/** Long-press (550ms) or right-click asks, then runs the delete. */
+function wireFileDelete(li, r, doDelete) {
+  const name = String(r.name).replace(/^\d{10,}-/, '');
+  const askThen = () => {
+    if (confirm(`Delete "${name}"? This removes the file for both of us.`)) doDelete();
+  };
+  let timer = null;
+  li.addEventListener('touchstart', () => { timer = setTimeout(askThen, 550); }, { passive: true });
+  for (const ev of ['touchend', 'touchmove', 'touchcancel']) {
+    li.addEventListener(ev, () => clearTimeout(timer), { passive: true });
+  }
+  li.addEventListener('contextmenu', (e) => { e.preventDefault(); askThen(); });
 }
 
 /**
