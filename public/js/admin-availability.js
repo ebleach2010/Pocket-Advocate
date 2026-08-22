@@ -6,7 +6,7 @@ import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7'; // MST = fixed UTC-7 (IANA sign is inverted)
-const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]; // last 60-min slot ends 6pm
+const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]; // last 60-min slot ends 7pm (CLOSE_HOUR in worker/schedule.js)
 // Keep in sync with LEAD_TIME_HOURS in worker/schedule.js — slots inside the
 // booking lead window are unbookable, so we neither create nor display them.
 const LEAD_TIME_HOURS = 72;

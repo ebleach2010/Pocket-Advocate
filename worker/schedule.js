@@ -11,7 +11,10 @@ export const LEAD_TIME_HOURS = 72;
 // advertised in the UI — far slots simply don't show, and the server rejects.
 export const MAX_LEAD_TIME_HOURS = 252; // 1.5 weeks
 export const OPEN_HOUR = 8; // 8am MST
-export const CLOSE_HOUR = 18; // 6pm MST
+// 7pm close (Eric, 2026-08-22: "Open my schedule every Tuesday from
+// 10am-7pm") - the ceiling for any slot's END; which hours actually open on
+// a given day is whatever slots exist.
+export const CLOSE_HOUR = 19; // 7pm MST
 export const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Spec asks for a ~15-minute hold; Stripe Checkout sessions cannot expire in
 // less than 30 minutes, so the hold matches the session's real lifetime.
@@ -39,7 +42,7 @@ export function windowProblem(startIso, durationMin) {
   const startMinutes = startParts.hour * 60 + startParts.minute;
   const endMinutes = endParts.hour * 60 + endParts.minute;
   if (startMinutes < OPEN_HOUR * 60 || endMinutes > CLOSE_HOUR * 60 || endMinutes <= startMinutes)
-    return `Appointments run 8:00am–6:00pm MST.`;
+    return `Appointments run 8:00am–7:00pm MST.`;
   return null;
 }
 

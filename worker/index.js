@@ -606,6 +606,8 @@ export default {
     ctx.waitUntil(maybeVoiceStudy(env));
     // Runs once, ever. Instant no-op on every fire after that.
     ctx.waitUntil(grandfatherFollowUps(env));
+    // Same deal: Eric's Tuesday hours, opened once, no-op forever after.
+    ctx.waitUntil(openTuesdaySlots(env));
   },
 };
 
@@ -627,6 +629,54 @@ export default {
  * Written as a marker doc created with mustNotExist, so two cron fires in the
  * same minute cannot both claim the job, and a restart cannot replay it.
  */
+/**
+ * Run-once: open every Tuesday 10am to 7pm MST, hourly, through 2026-10-20
+ * (Eric, 2026-08-22: "Open my schedule every Tuesday from 10am-7pm for the
+ * next two months."). Same claim pattern as the grandfather migration; the
+ * slot writes are batchCreate with mustNotExist, so a Tuesday slot he
+ * already opened (or that a client is mid-booking on) is skipped, never
+ * clobbered. Far Tuesdays sit invisible to clients until they roll inside
+ * the 1.5 week booking horizon, exactly per his quiet-horizon rule.
+ */
+async function openTuesdaySlots(env) {
+  const MARKER = 'migrations/tuesdays-2026-08-22';
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;
+
+  // Tuesdays, MST dates. MST is fixed UTC-7, so 10:00 MST = 17:00 UTC and
+  // 18:00 MST (the 6pm start that ends 7pm) rolls into 01:00 UTC next day;
+  // Date.UTC carries the overflow.
+  const TUESDAYS = [
+    [2026, 8, 25], [2026, 9, 1], [2026, 9, 8], [2026, 9, 15], [2026, 9, 22],
+    [2026, 9, 29], [2026, 10, 6], [2026, 10, 13], [2026, 10, 20],
+  ];
+  const entries = [];
+  for (const [y, mo, d] of TUESDAYS) {
+    for (let h = 10; h <= 18; h++) {
+      const start = new Date(Date.UTC(y, mo - 1, d, h + 7));
+      if (start.getTime() < Date.now() + LEAD_TIME_HOURS * 3600_000) continue;
+      if (windowProblem(start.toISOString(), 60)) continue;
+      entries.push({
+        path: `availability/${slotIdFor(start)}`,
+        data: { start, durationMin: 60, state: 'open' },
+      });
+    }
+  }
+  try {
+    const { created, skipped } = await batchCreate(env, entries);
+    await patchDoc(env, MARKER, { finishedAt: new Date(), created, skipped },
+      { mask: ['finishedAt', 'created', 'skipped'] });
+    console.log(`tuesday slots: created ${created}, skipped ${skipped}`);
+  } catch (err) {
+    console.error('tuesday slots:', err.message || err);
+  }
+}
+
 async function grandfatherFollowUps(env) {
   const MARKER = 'migrations/followUpGrandfather';
   // Done means FINISHED, not merely started. Gating on the marker's existence
@@ -671,7 +721,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-ledger';
+const BUILD_TAG = 'v2026-08-22-tuesdays';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
