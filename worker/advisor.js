@@ -2177,10 +2177,18 @@ write exactly: Still forming.
 \`- Name [NN%]: why it fits | what would raise or lower it\`
 NN is YOUR confidence as a whole number, and the numbers must not add up to
 more than 100: whatever is left over is "not enough information", which early
-on is most of it. Only possibilities this thread actually supports. Whenever a
-dangerous but treatable possibility is plausible at all, give it a row at its
-real low percentage, because that is the one worth chasing even at long odds.
-If you have nothing yet, write "- none yet".
+on is most of it. Only possibilities the case record supports, and the case
+record includes your private discussion with Eric. Confidence moves on
+exactly two things: diagnostic evidence, and points settled in that
+discussion. A possibility either of you raised there that survives scrutiny
+gets its row. A point conceded in either direction moves the numbers by as
+much as the conceded point actually bears on the ranking: a small concession
+nudges a percentage, a load-bearing one reranks the list. Never move a
+number to be agreeable, and never hold one still merely because the evidence
+arrived in the discussion instead of the thread. Whenever a dangerous but
+treatable possibility is plausible at all, give it a row at its real low
+percentage, because that is the one worth chasing even at long odds. If you
+have nothing yet, write "- none yet".
 
 "## Corrections": OPTIONAL. Only when one of ERIC's own recent messages
 contains a factual error worth repairing. Each line exactly
@@ -2217,7 +2225,7 @@ ${style.voice}` : ''}` || ' ' }],
             text: (prior
               ? `Here is your previous assessment of this client:\n\n<previous>\n${prior}\n</previous>\n\nHere is the full conversation as it now stands:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nUpdate the assessment. Carry forward what still holds, revise what the new messages change, and say explicitly if something new contradicts an earlier read.`
               : `Here is the conversation so far:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nWrite the first assessment.`)
-              + (qa.length ? `\n\nThe discussion with Eric is part of the case record. A conclusion he reached with you there, a direction he gave, or a possibility you two raised or sank moves this assessment and the Differential section exactly as if he had said it in the client thread. If that discussion changed your read since the previous assessment, say so in "Right now".` : '')
+              + (qa.length ? `\n\nThe discussion with Eric is part of the case record. A conclusion he reached with you there, a direction he gave, or a possibility you two raised or sank moves this assessment and the Differential section exactly as if he had said it in the client thread. Anything conceded in that discussion, by you or by him, is settled unless new evidence reopens it: move the differential by as much as the conceded point actually bears on it, no more and no less. If that discussion changed your read since the previous assessment, say so in "Right now".` : '')
               + dxOverrideNote(state)
               + bookkeepingNote(state)
               + mediaNote(media),
@@ -2388,9 +2396,13 @@ longer holds. He asked what it means, or used it wrongly. One term per line as
 
 He is allowed to be right. When he makes a point that actually breaks your
 reasoning, concede it plainly and say what it changes; do not concede as a
-courtesy and then carry on as before. When he says something outright wrong,
-correct it just as plainly, once, without softening it into a maybe. Both of
-those are the job.
+courtesy and then carry on as before. When a concession touches the
+differential, say so in the concession itself: name the possibility and
+roughly how the point moves it (a nudge, a rerank, a new row), weighted to
+what the point actually bears, so your next assessment starts from the
+concession instead of relitigating it. When he says something outright
+wrong, correct it just as plainly, once, without softening it into a maybe.
+Both of those are the job.
 ${SELF_NOTE}` },
       // Learned material on its own block, after the cached one, so the
       // glossary growing or the profile updating never busts the cache on
