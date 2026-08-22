@@ -618,6 +618,8 @@ export default {
     ctx.waitUntil(openTuesdaySlots(env));
     // And the seven-reader voice study's first pass, once, right away.
     ctx.waitUntil(voiceStudyKickoff(env));
+    // And the vanished send-as-me, put back where it belonged, once.
+    ctx.waitUntil(reviveLostSend(env));
   },
 };
 
@@ -713,6 +715,68 @@ async function openTuesdaySlots(env) {
   }
 }
 
+/**
+ * Run-once: revive the send-as-me that vanished (Eric, 2026-08-22). His
+ * edited draft ended "...is at the bottom ten of my differential"; the send
+ * either landed invisibly (the oldest-200 render window, fixed in this same
+ * deploy) or died. The edited text survives regardless, because
+ * draft-feedback archives every changed send as a style pair. So: find the
+ * newest archived send carrying the phrase; if the thread already holds an
+ * admin message with it, do nothing (the window fix makes it visible);
+ * otherwise write it into the chat as Eric, stamp lastMessage, and nudge
+ * the client, exactly as a normal send would have.
+ */
+async function reviveLostSend(env) {
+  const MARKER = 'migrations/revive-2026-08-22';
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;
+  const done = (result) => patchDoc(env, MARKER, { finishedAt: new Date(), result },
+    { mask: ['finishedAt', 'result'] }).catch(() => {});
+  try {
+    const flat = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const needle = 'bottom ten of my differential';
+    const edits = await listDocs(env, 'advisorStyle/profile/edits', { pageSize: 200, all: true });
+    const row = edits
+      .filter((r) => r.data.sent && flat(r.data.sent).includes(needle))
+      .sort((a, b) => new Date(b.data.at || 0) - new Date(a.data.at || 0))[0];
+    if (!row) return done('no archived send matched');
+    const { kind, id } = row.data;
+    const parent = kind === 'sub' ? 'subscriptions' : 'cases';
+    const chat = await listDocs(env, `${parent}/${id}/chat`, { pageSize: 300, all: true })
+      .catch(() => []);
+    if (chat.some((c) => c.data.role === 'admin' && flat(c.data.text).includes(needle)))
+      return done('already in the thread; the window fix surfaces it');
+    const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5);
+    const eric = admins[0];
+    if (!eric) return done('no admin user found');
+    const text = String(row.data.sent).slice(0, 2200);
+    await patchDoc(env, `${parent}/${id}/chat/${crypto.randomUUID()}`, {
+      from: eric.id, role: 'admin', text, ts: new Date(),
+    });
+    await patchDoc(env, `${parent}/${id}`, {
+      lastMessage: {
+        text: text.slice(0, 120), from: eric.id, role: 'admin', ts: new Date(), emailed: false,
+      },
+    }, { mask: ['lastMessage'] }).catch(() => {});
+    const clientUid = kind === 'sub' ? id : (await getDoc(env, `cases/${id}`))?.data.clientUid;
+    if (clientUid) {
+      await notifyUser(env, clientUid, {
+        title: 'Pocket Advocate',
+        body: `${firstName(eric.data.name) || 'Eric'} sent you a message.`,
+        link: kind === 'sub' ? '/subscription.html' : `/case.html?id=${id}`,
+      }).catch(() => {});
+    }
+    return done('revived and sent');
+  } catch (err) {
+    console.error('revive lost send:', err.message || err);
+  }
+}
+
 async function grandfatherFollowUps(env) {
   const MARKER = 'migrations/followUpGrandfather';
   // Done means FINISHED, not merely started. Gating on the marker's existence
@@ -757,7 +821,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-dxweight';
+const BUILD_TAG = 'v2026-08-22-revive';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller

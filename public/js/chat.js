@@ -100,7 +100,14 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   const parentRef = doc(db, ...parentPath);
   const messagesRef = collection(db, ...parentPath, 'chat');
 
-  onSnapshot(query(messagesRef, orderBy('ts', 'asc'), limit(200)), (snap) => {
+  // DESCENDING with the limit, then re-sorted ascending below. Ascending
+  // with limit(200) keeps the OLDEST 200: the moment a thread crossed two
+  // hundred messages, every NEW message was written successfully and then
+  // silently fell outside the render window on both sides. (Eric,
+  // 2026-08-22: "I did a 'send as me' after editing a draft and it just
+  // disappeared.") Descending keeps the NEWEST 200, which is the window a
+  // conversation actually needs; the full history stays in the CSV export.
+  onSnapshot(query(messagesRef, orderBy('ts', 'desc'), limit(200)), (snap) => {
     if (snap.empty) {
       log.innerHTML = '<p class="dim small">No messages yet. Say hi.</p>';
       return;
@@ -115,7 +122,17 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     followNext = false;
     log.innerHTML = '';
     let hasAttachment = false;
-    snap.forEach((m) => {
+    const ordered = [];
+    snap.forEach((m) => ordered.push(m));
+    // Oldest first for reading, whatever order the window arrived in. A
+    // just-sent message has a null server timestamp for a beat; it sorts to
+    // the end, which is exactly where a just-sent message belongs.
+    ordered.sort((a, b) => {
+      const ta = a.data().ts?.toDate?.()?.getTime?.() ?? Infinity;
+      const tb = b.data().ts?.toDate?.()?.getTime?.() ?? Infinity;
+      return ta - tb;
+    });
+    for (const m of ordered) {
       const data = m.data();
       const mine = data.from === user.uid;
       const div = document.createElement('div');
@@ -231,7 +248,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       }
 
       log.appendChild(div);
-    });
+    }
     const hint = container.querySelector('[data-hint]');
     if (hint) {
       // Passing is the client's to do, so only the client is told about it.
