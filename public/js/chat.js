@@ -141,7 +141,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       if (data.text) {
         const span = document.createElement('span');
         span.className = 'msg-text';
-        span.textContent = data.text;
+        span.appendChild(linkify(data.text));
         div.appendChild(span);
       }
       // Images and PDFs can be selected on admin threads, and only where the
@@ -316,7 +316,9 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     // The last selector is furniture only an admin thread adds, and naming it
     // here would put it in a file every client downloads. The module that adds
     // it says what to skip.
-    const skip = ['.msg-img', '.file-chip', ...(bridge?.noLongPress || [])].join(', ');
+    // A link is a link: pressing one opens it (and a long press should get
+    // the browser's own link menu), so the message menu stays out of its way.
+    const skip = ['.msg-img', '.file-chip', 'a', ...(bridge?.noLongPress || [])].join(', ');
     const onAttachment = (e) => !!e.target.closest?.(skip);
     const open = () => runMenu(opts);
     const start = (e) => {
@@ -604,6 +606,57 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
 
   // Handed back so the admin panel can post an approved message as me.
   return { send: (text) => send({ text }) };
+}
+
+// ---- links inside message text ----
+//
+// Message text is rendered as TEXT NODES, never as markup: that is what makes
+// a message safe to show, and it is why a pasted link used to sit there dead.
+// So links are found in the text and built as real elements, with the text
+// around them still going in as text. A URL is only linked when it parses and
+// its protocol is http, https or mailto, which is what keeps "javascript:..."
+// from ever becoming something a client can tap.
+const LINK_RE = /((?:https?:\/\/|www\.)[^\s<>"']+|[^\s<>"'@]+@[^\s<>"'@]+\.[a-z]{2,})/gi;
+// Sentence punctuation that follows a link rather than belonging to it.
+const LINK_TRAIL = /[.,;:!?'")\]}>]+$/;
+
+function linkify(text) {
+  const frag = document.createDocumentFragment();
+  const str = String(text);
+  let i = 0;
+  for (const m of str.matchAll(LINK_RE)) {
+    const raw = m[0];
+    const start = m.index;
+    let body = raw.replace(LINK_TRAIL, '');
+    // Give back a closing paren the URL actually owns, so a wikipedia-style
+    // "..._(disease)" link is not cut in half.
+    while (body.length < raw.length && raw[body.length] === ')'
+      && (body.match(/\(/g) || []).length > (body.match(/\)/g) || []).length) {
+      body = raw.slice(0, body.length + 1);
+    }
+    if (!body) continue;
+    const isEmail = !/^(https?:\/\/|www\.)/i.test(body) && body.includes('@');
+    const href = isEmail ? `mailto:${body}`
+      : /^www\./i.test(body) ? `https://${body}` : body;
+    let okProto = false;
+    try {
+      okProto = ['http:', 'https:', 'mailto:'].includes(new URL(href).protocol);
+    } catch { okProto = false; }
+    if (!okProto) continue;
+    if (start > i) frag.appendChild(document.createTextNode(str.slice(i, start)));
+    const a = document.createElement('a');
+    a.href = href;
+    a.textContent = body;
+    a.className = 'msg-link';
+    if (!isEmail) {
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer nofollow';
+    }
+    frag.appendChild(a);
+    i = start + body.length;
+  }
+  if (i < str.length) frag.appendChild(document.createTextNode(str.slice(i)));
+  return frag;
 }
 
 // ---- attachment rendering + long-press save ----

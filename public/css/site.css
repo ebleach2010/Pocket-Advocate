@@ -856,6 +856,15 @@ body.chat-full-open { overflow: hidden; }
 /* Messages sent while the lane chips existed (2026-08-22, for a day) keep
    their marks; a clinical one still reads as what it was at a glance. */
 .msg.lane-hot { border-left: 3px solid var(--magenta); }
+
+/* A link inside a message. Underlined rather than colour-only, because it
+   sits on two different bubble colours and colour alone is not a signal
+   everyone can see. Long URLs break instead of stretching the bubble. */
+.msg-link {
+  color: inherit; text-decoration: underline; text-underline-offset: 2px;
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.msg-link:hover, .msg-link:focus-visible { text-decoration-thickness: 2px; }
 /* Small confirmations. A native alert() for "saved" is an unstyled system
    dialog on an iOS home-screen app, and it needs dismissing before anything
    else can happen - a modal interruption to say a thing went well. */
