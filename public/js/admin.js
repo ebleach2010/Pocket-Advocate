@@ -5,7 +5,7 @@ import './admin-ledger.js';
 import { db, collection, getDocs, doc, getDoc, setDoc } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { initPushPrompt } from './push.js';
-import { folderCardHtml, wireFolderOpen, wireDxLongPress, openDxSheet } from './drawer.js';
+import { folderCardHtml, wireFolderOpen, wireFolderClocks, wireDxLongPress, openDxSheet } from './drawer.js';
 import { unseenBadges } from './seen.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -208,9 +208,21 @@ async function load() {
       // needs rescheduling wants his attention whether or not anything moved.
       overview: c.needsReschedule || dueSoon(c),
     });
+    // The clock as it stands right now, so a card can paint "running" the
+    // moment the shelf does rather than after a round trip.
+    const w = c.work || {};
+    const banked = Math.max(0, Number(w.seconds) || 0);
+    const started = w.startedAt ? toDate(w.startedAt).getTime() : 0;
+    const live = banked + (started ? (Date.now() - started) / 1000 : 0);
+    const h = Math.floor(live / 3600);
+    const m = Math.floor((live % 3600) / 60);
     return folderCardHtml({
       id: c.id,
       href: `/admin-case.html?id=${c.id}`,
+      clock: {
+        running: !!started,
+        label: live >= 60 ? (h ? `${h}h ${m}m` : `${m}m`) : '',
+      },
       name: c.clientName || c.clientEmail || c.clientUid,
       dx: cover.text || '',
       dxIsMine: cover.by === 'eric',
@@ -326,6 +338,16 @@ async function load() {
   // Tap a folder and it opens in the hand before the case page loads; press
   // and hold the diagnosis line to write your own over the advisor's.
   wireFolderOpen(listEl);
+  // Start and stop a case's clock without opening it, several at once if that
+  // is how the day is going. onChange keeps the local copy in step so a
+  // repaint does not show a stale total.
+  wireFolderClocks(listEl, {
+    getToken: () => user.getIdToken(),
+    onChange: (id, running, seconds) => {
+      const c = cases.find((x) => x.id === id);
+      if (c) c.work = { ...(c.work || {}), seconds, startedAt: running ? new Date() : null };
+    },
+  });
   wireDxLongPress(listEl, overrideDx);
 }
 

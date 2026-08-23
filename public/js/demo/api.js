@@ -89,7 +89,10 @@ export function demoApi(role, store) {
     // The nightly study, with a plausible history so the card on the dashboard
     // shows what it shows on a real night.
     if (path === '/api/work') {
-      const key = `cases/${DEMO_CASE_ID}`;
+      // Whichever case the caller named. Hardcoding the id meant every clock
+      // on the shelf drove the same case's timer, which is exactly the thing
+      // the shelf controls exist to avoid.
+      const key = `cases/${body.caseId || DEMO_CASE_ID}`;
       const c = store.docs.get(key) || {};
       const w = c.work || { seconds: 0, startedAt: null };
       if (body.on === true) {

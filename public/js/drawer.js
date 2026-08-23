@@ -26,6 +26,12 @@ function esc(s) {
 export function folderCardHtml({
   id = '', href = '#', name = '', dx = '', dxIsMine = false,
   meta = '', badge = '', badgeClass = '', flags = '',
+  // The work clock, on the card itself. Eric, 2026-08-23: "Sometimes I'm
+  // working on it outside of their file and I don't want to load into chat.
+  // And sometimes I'm working multiple at once." So the toggle lives where
+  // every case is already visible, several can run at the same time, and
+  // starting one never opens anything.
+  clock = null,
 } = {}) {
   const read = String(dx || '').trim();
   // An override has to carry his mark, or a line he wrote reads as the
@@ -42,6 +48,14 @@ export function folderCardHtml({
         ${badge ? `<span class="status-pill ${esc(badgeClass)}">${esc(badge)}</span>` : ''}
         ${flags ? `<span class="folder-flags">${flags}</span>` : ''}
       </span>
+      ${clock ? `
+        <span class="folder-clock${clock.running ? ' on' : ''}" data-clock="${esc(id)}"
+          role="button" tabindex="0"
+          aria-pressed="${clock.running ? 'true' : 'false'}"
+          aria-label="${clock.running ? 'Stop' : 'Start'} the work clock for ${esc(name)}"
+          title="${clock.running ? 'Working now. Tap to stop.' : 'Tap to start the clock'}"
+          ><span class="fc-dot" aria-hidden="true"></span><span class="fc-t"
+            data-clock-t="${esc(id)}">${esc(clock.label || '')}</span></span>` : ''}
     </a>`;
 }
 
@@ -53,6 +67,15 @@ export function wireFolderOpen(root) {
   root.addEventListener('click', (e) => {
     const card = e.target.closest?.('.folder');
     if (!card || !root.contains(card)) return;
+
+    // The clock is a control ON a link. Without this the browser follows the
+    // href and he lands in the case he was trying to avoid opening, which is
+    // the entire reason the button is here.
+    if (e.target.closest?.('[data-clock]')) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
 
     // A long press on the working-diagnosis line opens the override editor, and
     // the click that trails that fired press is not a request to open the case
@@ -197,5 +220,80 @@ export function wireDxLongPress(root, handler) {
     e.preventDefault();
     cancel();
     fire(el);
+  });
+}
+
+/**
+ * The work clock on every card. Several may run at once, which the Worker
+ * already allows: /api/work is per case and never touches another.
+ *
+ * `getToken` is passed in rather than imported so this module keeps its "no
+ * app imports" property. `onChange(id, running, seconds)` lets the caller
+ * keep its own copy of the case in step without a refetch.
+ */
+export function wireFolderClocks(root, { getToken, onChange } = {}) {
+  if (!root || root.__paClocks) return;
+  root.__paClocks = true;
+
+  const fmt = (secs) => {
+    const t = Math.max(0, Math.floor(secs));
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    return h ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  // Live tick for whatever is running. One interval for the whole shelf, and
+  // a minute is plenty: this is hours, not a stopwatch.
+  const tick = () => {
+    for (const el of root.querySelectorAll('.folder-clock.on')) {
+      const started = Number(el.dataset.started) || 0;
+      const banked = Number(el.dataset.banked) || 0;
+      if (!started) continue;
+      const t = el.querySelector('[data-clock-t]');
+      if (t) t.textContent = fmt(banked + (Date.now() - started) / 1000);
+    }
+  };
+  clearInterval(root.__paClockTimer);
+  root.__paClockTimer = setInterval(tick, 30_000);
+  tick();
+
+  const toggle = async (el) => {
+    const id = el.dataset.clock;
+    const want = !el.classList.contains('on');
+    el.classList.add('busy');
+    try {
+      const token = await getToken();
+      const res = await fetch('/api/work', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ caseId: id, on: want }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      el.classList.toggle('on', !!out.running);
+      el.setAttribute('aria-pressed', out.running ? 'true' : 'false');
+      el.dataset.banked = String(Number(out.seconds) || 0);
+      el.dataset.started = out.running ? String(Date.now()) : '0';
+      const t = el.querySelector('[data-clock-t]');
+      if (t) t.textContent = fmt(Number(out.seconds) || 0);
+      el.title = out.running ? 'Working now. Tap to stop.' : 'Tap to start the clock';
+      onChange?.(id, !!out.running, Number(out.seconds) || 0);
+    } catch (err) {
+      // Say it out loud rather than leaving a button that looks like it worked.
+      alert(`Couldn't change the clock: ${err.message}`);
+    }
+    el.classList.remove('busy');
+  };
+
+  root.addEventListener('click', (e) => {
+    const el = e.target.closest?.('[data-clock]');
+    if (el && root.contains(el)) toggle(el);
+  });
+  // A control has to be operable from the keyboard, and this one is a span on
+  // a link, so it needs saying explicitly.
+  root.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target.closest?.('[data-clock]');
+    if (el && root.contains(el)) { e.preventDefault(); e.stopPropagation(); toggle(el); }
   });
 }
