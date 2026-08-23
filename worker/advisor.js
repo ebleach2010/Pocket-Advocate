@@ -2664,7 +2664,10 @@ async function loadEconomics(env, kind, id) {
     getDoc(env, 'config/rates').catch(() => null),
   ]);
   const c = doc?.data || {};
-  let paidCents = Number(c.payment?.amountTotal) || Number(c.stripe?.amountTotal)
+  // A Full Access case paid its own price, which already covers the standard
+  // case; caseRateCents on one of those is only the percentage-charge base.
+  let paidCents = (c.fullAccess && Number(c.fullAccessRateCents) > 0 ? Number(c.fullAccessRateCents) : 0)
+    || Number(c.payment?.amountTotal) || Number(c.stripe?.amountTotal)
     || Number(c.caseRateCents) || 0;
   let tipCents = 0;
   for (const p of (Array.isArray(c.extraPayments) ? c.extraPayments : [])) {

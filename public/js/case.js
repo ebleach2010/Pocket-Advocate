@@ -639,6 +639,7 @@ function renderDocs(el, c) {
          <p class="error" data-upload-error hidden></p>`}
     <ul class="filelist" data-files><li class="dim small">Loading files…</li></ul>
     <div data-review hidden></div>
+    <div data-upgrade></div>
     <div data-followup></div>`;
   const input = el.querySelector('[data-file-input]');
   input?.addEventListener('change', () => uploadFiles(c, el, [...input.files]));
@@ -648,6 +649,11 @@ function renderDocs(el, c) {
   if (offer) {
     offer.innerHTML = followUpOffer(c);
     wireFollowUpOffer(offer, c);
+  }
+  const up = el.querySelector('[data-upgrade]');
+  if (up) {
+    up.innerHTML = upgradeOffer(c);
+    wireUpgradeOffer(up, c);
   }
   // Chat saves refresh this list via the permanent pa-saved-file listener at the top.
 }
@@ -948,6 +954,16 @@ const FOLLOWUP_PRICE_CENTS = 17500;
 const followUpPrice = (c) =>
   (Number(c?.addonRateCents) > 0 ? Number(c.addonRateCents) : FOLLOWUP_PRICE_CENTS) / 100;
 
+// The Full Access list price, in CENTS, corrected from /api/rates the moment
+// it answers. The upgrade card subtracts what this case already paid, so the
+// number on the button is the difference and never the list price.
+let fullAccessCents = 350000;
+const fullAccessPrice = () => fullAccessCents;
+fetch('/api/rates')
+  .then((r) => (r.ok ? r.json() : null))
+  .then((d) => { if (Number(d?.fullCents) > 0) fullAccessCents = Number(d.fullCents); })
+  .catch(() => { /* the compiled-in price is right at deploy time */ });
+
 /**
  * True on the one page load that comes straight back from Stripe. The offer
  * card is already saying the follow-up is reserved; the review card below it
@@ -968,7 +984,10 @@ const TIP_QUOTE = [
 
 /** Everything they have paid on this case, in cents. */
 function totalPaidCents(c) {
-  const base = c.payment?.amountTotal || c.caseRateCents || 65000;
+  // Full Access paid its own price; caseRateCents on such a case is the
+  // standard-case base for percentage charges, so never sum the two.
+  const base = (c.fullAccess && Number(c.fullAccessRateCents) > 0 ? Number(c.fullAccessRateCents) : 0)
+    || c.payment?.amountTotal || c.caseRateCents || 65000;
   const extras = (Array.isArray(c.extraPayments) ? c.extraPayments : [])
     .filter((x) => x.kind !== 'tip')
     .reduce((sum, x) => sum + (Number(x.amountCents) || 0), 0);
@@ -1113,6 +1132,85 @@ function followUpOffer(c) {
         message you in chat to find a time.</p>
       <p class="error" data-followup-error hidden></p>
     </div>`;
+}
+
+/**
+ * Moving an open case up to Full Access. Same shape as the follow-up offer
+ * because it is the same kind of thing: something sold from inside a case
+ * that is already running, to somebody who has already met him.
+ *
+ * The price shown is the difference, not the list price. They have already
+ * paid for the case part and should never be asked for it twice.
+ */
+function upgradeOffer(c) {
+  if (new URLSearchParams(location.search).get('upgraded') === '1' && !c.fullAccess)
+    return `
+      <div class="followup-offer is-done">
+        <h3><span class="fu-tick" aria-hidden="true">\u2713</span> Full Access is open on your case.</h3>
+        <p>There is an authorisation waiting for you on this page. Nothing can
+          start until it is signed, so it is the one thing I need from you now.</p>
+      </div>`;
+  if (c.fullAccess || c.status === 'closed') return '';
+  // Not offered while a checkout for it is already live: two payable links
+  // for the same thing is how somebody pays twice.
+  if (c.pendingFullAccess?.url) return `
+    <div class="followup-offer">
+      <h3>Your Full Access checkout is still open</h3>
+      <p>Pick up where you left off, or ignore this and it expires on its own.</p>
+      <div class="fu-buy">
+        <a class="btn glow" href="${esc(c.pendingFullAccess.url)}">Finish that</a>
+      </div>
+    </div>`;
+  const diff = Math.max(1, Math.round((fullAccessPrice() - (Number(c.caseRateCents) || 0)) / 100));
+  return `
+    <div class="followup-offer">
+      <h3>Want me to deal with them directly?</h3>
+      <p>Right now I work beside you: I read everything, we talk it through,
+        and you carry it to your doctors and your insurer. Full Access is where
+        I do that part myself. I speak to your clinics, with you on the line or
+        under your written authorisation, and I write and file your insurance
+        appeals.</p>
+      <p class="fu-emphasis">Same case. Same file. I just stop handing it back to you.</p>
+      <div class="fu-buy">
+        <span class="price">$${diff}</span>
+        <button class="btn glow" data-buy-upgrade>Upgrade this case</button>
+      </div>
+      <p class="fu-fine">That is the difference between what you have already
+        paid and the Full Access price. You will be shown exactly what it covers,
+        and where it stops, before anything is charged.</p>
+      <p class="error" data-upgrade-error hidden></p>
+    </div>`;
+}
+
+function wireUpgradeOffer(el, c) {
+  const btn = el.querySelector('[data-buy-upgrade]');
+  if (!btn) return;
+  const errEl = el.querySelector('[data-upgrade-error]');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    errEl.hidden = true;
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/upgrade', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ caseId: c.id }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (res.status === 409 && out.error === 'full-booked') {
+        errEl.textContent = 'I am at capacity for this right now and cannot take another one honestly. Ask me in chat and I will tell you when a place opens.';
+        errEl.hidden = false;
+        btn.disabled = true;
+        return;
+      }
+      if (!res.ok || !out.url) throw new Error(out.error || `Couldn't start that (${res.status})`);
+      location.assign(out.url);
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+      btn.disabled = false;
+    }
+  });
 }
 
 function wireFollowUpOffer(el, c) {

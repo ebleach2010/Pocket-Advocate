@@ -1044,6 +1044,28 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
 /* Agreement expander: title + plain-words line in the summary, the verbatim
    legal body in a scroll box (same look as .waiver-body, shorter), and a
    checkbox row that the JS enables after open + scroll-to-end. */
+/* The two services, side by side on the payment step. A choice this size
+   deserves to be seen next to its price, not buried in a link. Stacks on a
+   narrow phone, because two four-figure cards side by side at 320px are two
+   unreadable cards. */
+.tier-pick { display: flex; gap: .6rem; margin: 0 0 .9rem; flex-wrap: wrap; }
+.tier-card {
+  flex: 1 1 14rem; min-width: 0; text-align: left; cursor: pointer;
+  display: flex; flex-direction: column; gap: .3rem;
+  padding: .8rem .9rem; border-radius: 12px;
+  background: var(--card, rgba(255, 255, 255, .03));
+  border: 1px solid rgba(255, 255, 255, .14);
+  color: inherit; font: inherit;
+}
+.tier-card:hover:not(:disabled) { border-color: rgba(255, 255, 255, .3); }
+.tier-card.on { border-color: var(--cyan); box-shadow: inset 0 0 0 1px var(--cyan); }
+.tier-card:disabled { opacity: .55; cursor: not-allowed; }
+.tier-card .tier-name { font-weight: 700; }
+.tier-card .tier-price { font: 700 1.35rem/1 ui-monospace, monospace; color: var(--cyan); }
+.tier-card.on .tier-price { color: var(--magenta); }
+.tier-card .tier-what { font-size: .78rem; line-height: 1.45; color: var(--dim); }
+.tier-card:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
 .agreement {
   border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
   margin-bottom: .8rem;

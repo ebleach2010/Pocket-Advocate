@@ -12,6 +12,7 @@ import { currentUser, hydrateNav } from './auth.js';
 import { ensureSignedIn } from './inline-auth.js';
 import { ageFromDob, MIN_AGE } from './profile.js';
 import { WAIVERS } from './waivers.js';
+import { FULL_ACCESS_TERMS, FULL_ACCESS_PLAIN } from './tier-terms.js';
 import { rates } from './rates.js';
 
 // The fallback price, and only the fallback. The real one lives in the Worker
@@ -27,7 +28,19 @@ const CASE_PRICE_CENTS = 65000;
 // Filled from /api/rates before the payment step renders, and again if the
 // Worker refuses a stale quote.
 let caseCents = CASE_PRICE_CENTS;
+// The other thing this page can sell. Eric works inside the case rather than
+// beside it: he talks to the clinics and the insurer himself and files the
+// appeals. Chosen on the payment step, because that is where somebody is
+// already weighing what this is worth, and because making every visitor pick
+// between two products before they can even see a calendar taxes the common
+// path for the sake of the rare one.
+const FULL_PRICE_CENTS = 350000;
+let fullCents = FULL_PRICE_CENTS;
+// Whether he has room for another Full Access client at all. False closes the
+// door honestly instead of taking money for work that cannot be started.
+let fullOpen = true;
 const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
+const tierCents = () => (state.tier === 'full' ? fullCents : caseCents);
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -44,6 +57,7 @@ const AGREEMENT_PLAIN = {
 };
 
 const state = {
+  tier: 'case', // 'case' | 'full' — chosen on the payment step
   acks: {}, // formId -> ms timestamp, captured the moment the box is ticked
   read: {}, // formId -> true once a body has been opened and read to the end
   slot: null, // { id, start: Date, durationMin }
@@ -71,6 +85,8 @@ async function init() {
   // is re-checked by the Worker before a card is ever charged.
   rates().then((r) => {
     if (r && Number(r.caseCents) > 0) caseCents = Number(r.caseCents);
+    if (r && Number(r.fullCents) > 0) fullCents = Number(r.fullCents);
+    if (r && r.fullOpen === false) fullOpen = false;
   }).catch(() => {});
   drawRail(); // step 1 shows active even while the sign-in card is up
   if (new URLSearchParams(location.search).get('canceled')) {
@@ -503,21 +519,98 @@ function renderPayment() {
       your payment is taken as normal, and I'll confirm this time, or offer you the nearest one
       that works, before the date. Nothing is lost either way.
     </p>` : ''}
+    <div class="tier-pick" role="group" aria-label="What you are buying">
+      <button type="button" class="tier-card${state.tier === 'case' ? ' on' : ''}" data-tier="case"
+        aria-pressed="${state.tier === 'case'}">
+        <span class="tier-name">Advocacy Case</span>
+        <span class="tier-price" data-tier-price-case>$${money(caseCents)}</span>
+        <span class="tier-what">I read everything, we talk it through, and you get a written report to carry to your own doctors.</span>
+      </button>
+      <button type="button" class="tier-card${state.tier === 'full' ? ' on' : ''}" data-tier="full"
+        aria-pressed="${state.tier === 'full'}"${fullOpen ? '' : ' disabled'}>
+        <span class="tier-name">Full Access</span>
+        <span class="tier-price" data-tier-price-full>$${money(fullCents)}</span>
+        <span class="tier-what">${fullOpen
+          ? 'Everything above, and I deal with your clinics and your insurer myself, including writing and filing your appeals.'
+          : 'I am at capacity for this right now and cannot take another one honestly. Book a case and ask me about it; I will tell you when a place opens.'}</span>
+      </button>
+    </div>
+    <details class="agreement" data-id="${FULL_ACCESS_TERMS.id}" data-full-terms hidden>
+      <summary>
+        <span class="agreement-title">${esc(FULL_ACCESS_TERMS.title)}</span>
+        <span class="agreement-plain">${FULL_ACCESS_PLAIN}</span>
+      </summary>
+      <div class="agreement-body">${FULL_ACCESS_TERMS.body}</div>
+      <label class="agreement-check"><input type="checkbox" ${state.acks[FULL_ACCESS_TERMS.id] ? 'checked' : ''} ${state.acks[FULL_ACCESS_TERMS.id] || state.read[FULL_ACCESS_TERMS.id] ? '' : 'disabled'}> I have read and acknowledge this</label>
+    </details>
     <div class="price-line">
-      <span class="price" data-price>$${money(caseCents)}</span>
-      <span class="included">This includes our call and your written report within 7 days.</span>
+      <span class="price" data-price>$${money(tierCents())}</span>
+      <span class="included" data-included>This includes our call and your written report within 7 days.</span>
     </div>
     <p class="muted small">${isRequest ? 'Requested times are not held while you complete payment.' : 'Your selected time is held while you complete payment.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once your slot is booked. If I reschedule you more than once, you're entitled to a full refund on request.</p>
     <p class="error" id="pay-error" hidden></p>
     <p>
       <button class="btn quiet" id="back">Back</button>
-      <button class="btn glow" id="pay">Pay $${money(caseCents)} and book</button>
+      <button class="btn glow" id="pay">Pay $${money(tierCents())} and book</button>
     </p>`);
 
   el.querySelector('#back').addEventListener('click', back);
 
+  // Which service, and the extra agreement Full Access needs. The scope note
+  // uses the same proof-of-exposure gate as the three standing agreements:
+  // opened AND scrolled to the end before the box can be ticked. A tier this
+  // size should not be buyable by anyone who has not seen where it stops.
+  const payBtn = el.querySelector('#pay');
+  const priceEl = el.querySelector('[data-price]');
+  const includedEl = el.querySelector('[data-included]');
+  const terms = el.querySelector('[data-full-terms]');
+  const termsBox = terms.querySelector('.agreement-check input');
+  const termsBody = terms.querySelector('.agreement-body');
+
+  const syncTier = () => {
+    const full = state.tier === 'full';
+    terms.hidden = !full;
+    if (!full) terms.open = false;
+    priceEl.textContent = `$${money(tierCents())}`;
+    includedEl.textContent = full
+      ? 'Everything in a case, plus the records, the calls with your clinics, and your appeals.'
+      : 'This includes our call and your written report within 7 days.';
+    payBtn.textContent = `Pay $${money(tierCents())} and book`;
+    payBtn.disabled = full && !state.acks[FULL_ACCESS_TERMS.id];
+    for (const card of el.querySelectorAll('[data-tier]')) {
+      const on = card.dataset.tier === state.tier;
+      card.classList.toggle('on', on);
+      card.setAttribute('aria-pressed', String(on));
+    }
+  };
+
+  for (const card of el.querySelectorAll('[data-tier]')) {
+    card.addEventListener('click', () => {
+      if (card.disabled) return;
+      state.tier = card.dataset.tier;
+      syncTier();
+    });
+  }
+
+  const checkTermsScrolled = () => {
+    if (!terms.open) return;
+    if (termsBody.scrollTop + termsBody.clientHeight >= termsBody.scrollHeight - 8) {
+      state.read[FULL_ACCESS_TERMS.id] = true;
+      termsBox.disabled = false;
+    }
+  };
+  termsBody.addEventListener('scroll', checkTermsScrolled);
+  terms.addEventListener('toggle', () => {
+    if (terms.open) requestAnimationFrame(checkTermsScrolled);
+  });
+  termsBox.addEventListener('change', () => {
+    if (termsBox.checked) state.acks[FULL_ACCESS_TERMS.id] = Date.now();
+    else delete state.acks[FULL_ACCESS_TERMS.id];
+    syncTier();
+  });
+  syncTier();
+
   el.querySelector('#pay').addEventListener('click', async () => {
-    const payBtn = el.querySelector('#pay');
     const errEl = el.querySelector('#pay-error');
     payBtn.disabled = true;
     errEl.hidden = true;
@@ -532,10 +625,11 @@ function renderPayment() {
           method: state.method,
           phone: state.phone,
           acks: state.acks,
+          tier: state.tier,
           // What this screen is showing. If the rate moved between the page
           // loading and this button being pressed, the Worker refuses rather
           // than charging a number nobody agreed to.
-          quotedCents: caseCents,
+          quotedCents: tierCents(),
           // So emails can speak the client's local time (Eric, 2026-07-15).
           tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
         }),
@@ -545,10 +639,27 @@ function renderPayment() {
         // Update the number and hand the button back. No explanation: the
         // price is what it is, and why it changed is nobody's business.
         caseCents = Number(data.caseCents);
-        const priceEl = el.querySelector('[data-price]');
-        if (priceEl) priceEl.textContent = `$${money(caseCents)}`;
-        payBtn.textContent = `Pay $${money(caseCents)} and book`;
+        if (Number(data.fullCents) > 0) fullCents = Number(data.fullCents);
+        syncTier();
         payBtn.disabled = false;
+        return;
+      }
+      // He is full. Say so plainly, put them back on the standard case, and
+      // do not pretend the button will work if they press it again.
+      if (res.status === 409 && data.error === 'full-booked') {
+        fullOpen = false;
+        state.tier = 'case';
+        delete state.acks[FULL_ACCESS_TERMS.id];
+        const card = el.querySelector('[data-tier="full"]');
+        if (card) {
+          card.disabled = true;
+          card.querySelector('.tier-what').textContent =
+            'Someone took the last place while you were reading. Book a case and ask me about it; I will tell you when one opens.';
+        }
+        syncTier();
+        payBtn.disabled = false;
+        errEl.textContent = 'Full Access just filled up. Your case is still here at the standard price.';
+        errEl.hidden = false;
         return;
       }
       if (!res.ok) throw new Error(data.error || `Checkout failed (${res.status})`);

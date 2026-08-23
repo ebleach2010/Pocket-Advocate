@@ -114,12 +114,15 @@ export function demoApi(role, store) {
       }
       return ok({ ...demoVoice });
     }
-    if (path === '/api/checkout' || path === '/api/subscribe' || path === '/api/followup') {
+    if (path === '/api/checkout' || path === '/api/subscribe' || path === '/api/followup'
+      || path === '/api/upgrade') {
       await beat(600);
       // Straight past Stripe to where paying would have landed him.
       const to = path === '/api/followup'
         ? `/case.html?id=${DEMO_CASE_ID}&followup=1&demo=1`
-        : `/return.html?session_id=demo&demo=${role}`;
+        : path === '/api/upgrade'
+          ? `/case.html?id=${DEMO_CASE_ID}&upgraded=1&demo=1`
+          : `/return.html?session_id=demo&demo=${role}`;
       return ok({ ok: true, url: to });
     }
     // ready, not just the id: the return page polls on that flag, and without
@@ -303,7 +306,7 @@ export function demoApi(role, store) {
     }
 
     // ---- everything else --------------------------------------------------
-    if (path === '/api/version') return ok({ tag: 'demo', version: '2.25' });
+    if (path === '/api/version') return ok({ tag: 'demo', version: '2.26' });
     if (path === '/api/changelog') {
       return role === 'admin'
         ? ok({ admin: { '2.2': ['Everything on your side, in one place, with nothing real behind it.'] } })

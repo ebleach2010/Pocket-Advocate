@@ -40,7 +40,12 @@ const dollars = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cent
  */
 function paidCents(c) {
   const extras = Array.isArray(c?.extraPayments) ? c.extraPayments : [];
-  return caseRate(c)
+  // A Full Access case paid its own price, which INCLUDES everything in the
+  // standard case. caseRateCents on such a case is the standard-case rate
+  // kept as the base for percentage charges, so the two are never summed.
+  const base = c?.fullAccess && Number(c.fullAccessRateCents) > 0
+    ? Number(c.fullAccessRateCents) : caseRate(c);
+  return base
     + extras.filter((x) => x.kind !== 'tip').reduce((n, x) => n + (Number(x.amountCents) || 0), 0);
 }
 

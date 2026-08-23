@@ -326,13 +326,20 @@ async function handleSetRates(request, env) {
 }
 
 async function handleRates(env) {
-  const r = await readRates(env);
+  const [r, cap] = await Promise.all([
+    readRates(env),
+    fullAccessCapacity(env).catch(() => ({ room: true })),
+  ]);
   // floorCents is deliberately NOT here: it is Eric's own margin line, it has
   // no business on a client-served endpoint, and the admin reads it back
   // through POST /api/admin/rates.
+  //
+  // fullOpen is a bare boolean, never the counts. Whether he can take the work
+  // is something a buyer has to know before choosing; how many clients he has
+  // is not their business.
   return json({
     caseCents: r.caseCents, addonCents: r.addonCents, subCents: r.subCents,
-    fullCents: r.fullCents, chatOpenCents: CHAT_OPEN_CENTS,
+    fullCents: r.fullCents, fullOpen: cap.room !== false, chatOpenCents: CHAT_OPEN_CENTS,
   });
 }
 // Follow-up sessions expire one month after the first discussion (Eric,
@@ -342,6 +349,9 @@ const FOLLOWUP_WARN_DAYS = 7;
 // Admin-priced sessions: a percentage of THAT CLIENT'S case rate, 25% steps.
 const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
 const METHODS = ['phone', 'video'];
+// The Full Access scope note. Not in REQUIRED_ACKS: a standard case must not
+// be blocked on an agreement about a tier it is not buying.
+const FULL_ACCESS_ACK = 'fullAccess';
 const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording'];
 // A chat message this old with no in-app read gets an email nudge (spec: batched).
 const DIGEST_MIN_AGE_MS = 10 * 60_000;
@@ -597,6 +607,8 @@ export default {
         return await handleReviewSubmit(request, env);
       if (url.pathname === '/api/reviews' && request.method === 'GET')
         return await handleReviewsPublic(env);
+      if (url.pathname === '/api/upgrade' && request.method === 'POST')
+        return await handleUpgradeCheckout(request, env);
       if (url.pathname === '/api/followup' && request.method === 'POST')
         return await handleFollowUpCheckout(request, env);
       if (url.pathname === '/api/changelog' && request.method === 'GET')
@@ -1177,7 +1189,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-24-shortretry';
+const BUILD_TAG = 'v2026-08-25-fullaccess';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1185,7 +1197,7 @@ const BUILD_TAG = 'v2026-08-24-shortretry';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.25';
+const VERSION = '2.26';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -1205,6 +1217,11 @@ async function closeDeliveredCases(env) {
       // No delivery stamp means an older case that predates the field. Leave
       // it alone rather than closing a chat on a guess.
       if (!at || at > cutoff) continue;
+      // Full Access does not end when the report lands - that is roughly when
+      // the appeals begin, and they run for months. Closing would shut the
+      // chat and block uploads by rule, mid-fight. Eric closes these by hand
+      // when the work is genuinely finished.
+      if (row.data.fullAccess) continue;
       await patchDoc(env, `cases/${row.id}`, {
         status: 'closed', closedAt: new Date(), closedBy: 'automatic',
       }, { mask: ['status', 'closedAt', 'closedBy'] });
@@ -1320,6 +1337,47 @@ function caseLineItems(cents) {
 }
 
 /** The follow-up, bought on its own from an existing case. */
+/**
+ * Full Access. The description is what Stripe prints on the receipt and the
+ * card statement line, so it says what he actually does rather than naming a
+ * tier nobody outside this app would recognise.
+ */
+function fullAccessLineItems(cents) {
+  return [
+    {
+      quantity: 1,
+      price_data: {
+        currency: 'usd',
+        unit_amount: cents,
+        product_data: {
+          name: 'Full Access advocacy',
+          description: 'Direct work with your clinics and insurer, including appeals',
+        },
+      },
+    },
+  ];
+}
+
+/**
+ * How many Full Access cases are open right now, and the ceiling.
+ *
+ * This is the real protection for Eric's cognitive limits, and it is not the
+ * price. Full Access is months of adversarial work per client; past a few at
+ * once the quality goes, and quality is the whole product. When he is full,
+ * the door closes rather than the price rising - nobody should be able to buy
+ * work that cannot be started.
+ */
+const FULL_MAX_OPEN_DEFAULT = 3;
+async function fullAccessCapacity(env) {
+  const [rows, cfg] = await Promise.all([
+    queryDocs(env, 'cases', [['fullAccess', 'EQUAL', true]], 50).catch(() => []),
+    getDoc(env, 'settings/fullAccess').catch(() => null),
+  ]);
+  const max = Number(cfg?.data.maxOpen) > 0 ? Number(cfg.data.maxOpen) : FULL_MAX_OPEN_DEFAULT;
+  const open = rows.filter((r) => r.data.status !== 'closed').length;
+  return { open, max, room: open < max };
+}
+
 function followUpLineItems(cents) {
   return [
     {
@@ -1351,6 +1409,21 @@ async function handleCheckout(request, env) {
   if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
   const { slotId, requestedStart, method, phone, acks } = body;
   const clientTz = validTz(body.tz);
+  // Which of the two services is being bought. Not a new Stripe metadata
+  // `kind`: the webhook treats "no kind" as "this is a new case", and a case
+  // is exactly what both tiers create. The tier rides as its own field.
+  const wantsFull = body?.tier === 'full';
+  if (wantsFull) {
+    const cap = await fullAccessCapacity(env);
+    if (!cap.room)
+      return json({ error: 'full-booked', open: cap.open, max: cap.max }, 409);
+    // The tier's own scope note is not optional. The page gates the button on
+    // it, and this is the half that cannot be skipped by posting straight at
+    // the route: a four-figure engagement whose limits were never shown is
+    // exactly the sale nobody should be able to make.
+    if (typeof body?.acks?.[FULL_ACCESS_ACK] !== 'number')
+      return json({ error: 'Read and acknowledge what Full Access covers first.' }, 400);
+  }
 
   if (!METHODS.includes(method)) return json({ error: 'Choose a meeting method.' }, 400);
   if (method === 'phone' && !/^\+?[\d\s().-]{7,20}$/.test(phone || ''))
@@ -1362,7 +1435,7 @@ async function handleCheckout(request, env) {
   // Two paths: an open slot off the calendar, or a time the client requested.
   const isRequest = !slotId && typeof requestedStart === 'string';
   if (isRequest) return await checkoutRequestedTime(env, {
-    user, identity, requestedStart, method, phone, acks, clientTz, body,
+    user, identity, requestedStart, method, phone, acks, clientTz, body, wantsFull,
   });
 
   // Load and validate the slot.
@@ -1397,21 +1470,30 @@ async function handleCheckout(request, env) {
   // the page updates the number and re-enables the button. Honest about what
   // it costs, silent about why it changed.
   const live = await readRates(env);
+  const priceCents = wantsFull ? live.fullCents : live.caseCents;
   const quoted = Number(body?.quotedCents) || 0;
-  if (quoted && quoted !== live.caseCents) {
+  if (quoted && quoted !== priceCents) {
     // The slot was held a few lines up. Give it back rather than parking it
     // for 30 minutes on a checkout that is not going to happen.
     await patchDoc(env, `availability/${slotId}`,
       { state: 'open', holdExpiresAt: null, heldByUid: null },
       { mask: ['state', 'holdExpiresAt', 'heldByUid'] }).catch(() => {});
-    return json({ error: 'rate-changed', caseCents: live.caseCents, addonCents: live.addonCents }, 409);
+    return json({
+      error: 'rate-changed', caseCents: live.caseCents,
+      addonCents: live.addonCents, fullCents: live.fullCents,
+    }, 409);
   }
-  const lineItems = caseLineItems(live.caseCents);
+  const lineItems = wantsFull ? fullAccessLineItems(priceCents) : caseLineItems(priceCents);
 
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: identity.email || user.email || undefined,
     line_items: lineItems,
+    // Full Access is a four-figure number for someone who is usually already
+    // paying for being ill. Letting Stripe offer pay-over-time (Affirm and
+    // friends, switched on in the dashboard) is what puts it in reach, and
+    // Eric is still paid in full on the day.
+    ...(wantsFull ? { automatic_payment_methods: { enabled: true } } : {}),
     success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.PUBLIC_BASE_URL}/book.html?canceled=1`,
     expires_at: Math.floor(holdExpiresAt.getTime() / 1000),
@@ -1425,6 +1507,7 @@ async function handleCheckout(request, env) {
       method,
       phone: method === 'phone' ? phone : '',
       acks: JSON.stringify(acks),
+      tier: wantsFull ? 'full' : '',
     },
   });
 
@@ -1442,7 +1525,7 @@ async function handleCheckout(request, env) {
  * flagged `appointment.requested`, and the admin confirms or declines it.
  */
 async function checkoutRequestedTime(env, o) {
-  const { user, identity, requestedStart, method, phone, acks, clientTz } = o;
+  const { user, identity, requestedStart, method, phone, acks, clientTz, wantsFull } = o;
   const start = new Date(requestedStart);
   if (Number.isNaN(start.getTime())) return json({ error: 'Pick a valid date and time.' }, 400);
 
@@ -1462,17 +1545,22 @@ async function checkoutRequestedTime(env, o) {
   // ratchet landed: the one path made for people whose time is not on the
   // calendar could not take their money. (Post-2.2 audit, 2026-08-21.)
   const live = await readRates(env);
+  const priceCents = wantsFull ? live.fullCents : live.caseCents;
   const quoted = Number(o.body?.quotedCents) || 0;
-  if (quoted && quoted !== live.caseCents)
-    return json({ error: 'rate-changed', caseCents: live.caseCents, addonCents: live.addonCents }, 409);
+  if (quoted && quoted !== priceCents)
+    return json({
+      error: 'rate-changed', caseCents: live.caseCents,
+      addonCents: live.addonCents, fullCents: live.fullCents,
+    }, 409);
 
   const now = new Date();
   const expiresAt = new Date(now.getTime() + HOLD_MINUTES * 60_000);
-  const lineItems = caseLineItems(live.caseCents);
+  const lineItems = wantsFull ? fullAccessLineItems(priceCents) : caseLineItems(priceCents);
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: identity.email || user.email || undefined,
     line_items: lineItems,
+    ...(wantsFull ? { automatic_payment_methods: { enabled: true } } : {}),
     success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.PUBLIC_BASE_URL}/book.html?canceled=1`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),
@@ -1487,6 +1575,7 @@ async function checkoutRequestedTime(env, o) {
       method,
       phone: method === 'phone' ? phone : '',
       acks: JSON.stringify(acks),
+      tier: wantsFull ? 'full' : '',
     },
   });
   return json({ url: session.url });
@@ -1616,6 +1705,7 @@ async function handleWebhook(request, env) {
     else if (obj.metadata?.kind === 'chatunlock') await confirmChatUnlock(env, obj);
     else if (obj.metadata?.kind === 'extra') await confirmExtraSession(env, obj);
     else if (obj.metadata?.kind === 'followup') await confirmFollowUpPurchase(env, obj);
+    else if (obj.metadata?.kind === 'fullaccess') await confirmFullAccessPurchase(env, obj);
     else await createCaseFromSession(env, obj);
   } else if (event.type === 'checkout.session.async_payment_failed') {
     // The money never arrived: give the slot back, exactly as an expiry does.
@@ -1871,6 +1961,10 @@ async function createCaseFromSession(env, session) {
   // used twice: written onto the case as what this client bought at, and, one
   // booking later, what the next client is quoted.
   const rateAtBooking = await readRates(env);
+  // Which service was bought. Carried as its own metadata field rather than a
+  // Stripe `kind`, because "no kind" is what tells the webhook this session
+  // creates a case at all, and both tiers do.
+  const isFull = m.tier === 'full';
 
   const created = await patchDoc(
     env,
@@ -1899,9 +1993,15 @@ async function createCaseFromSession(env, session) {
       // Nothing sold at checkout carries a follow-up any more; it is bought
       // later, from the case, and that purchase sets this flag.
       addOnFollowUp: false,
-      forms: Object.fromEntries(
-        REQUIRED_ACKS.map((f) => [f, typeof acks[f] === 'number' ? new Date(acks[f]) : null])
-      ),
+      forms: {
+        ...Object.fromEntries(
+          REQUIRED_ACKS.map((f) => [f, typeof acks[f] === 'number' ? new Date(acks[f]) : null])
+        ),
+        // Recorded only when it was actually given, so the presence of the key
+        // is itself the evidence rather than a null sitting on every case.
+        ...(typeof acks[FULL_ACCESS_ACK] === 'number'
+          ? { [FULL_ACCESS_ACK]: new Date(acks[FULL_ACCESS_ACK]) } : {}),
+      },
       files: [],
       reportDueAt: null, // set when the call ends (Phase 2)
       // The rate this client was sold at. A percentage charge later is a share
@@ -1914,6 +2014,19 @@ async function createCaseFromSession(env, session) {
       // this, a client who booked at $265 would be quoted whatever the add-on
       // had drifted to by the time their report landed.
       addonRateCents: rateAtBooking.addonCents,
+      // Full Access, bought at booking. A boolean the rest of the system keys
+      // off, exactly like addOnFollowUp: no "tier" concept is introduced,
+      // because a capability flag is what every other purchase here sets.
+      //
+      // The two rate fields mean different things and must not be added
+      // together. caseRateCents stays the STANDARD case rate at booking: it
+      // is the base for the percentage charges on an extra session, and a
+      // share of $3,500 would be an absurd price for one more call.
+      // fullAccessRateCents is what this client actually paid in total, and
+      // it is what the "what has this case paid" helpers read.
+      fullAccess: isFull,
+      fullAccessAt: isFull ? now : null,
+      fullAccessRateCents: isFull ? rateAtBooking.fullCents : null,
       stripe: {
         sessionId: session.id,
         paymentIntentId: session.payment_intent || null,
@@ -3095,6 +3208,133 @@ async function handleChangelog(request, env) {
  * build and no second way for the two to disagree. He books it exactly as he
  * books one that was bought at checkout.
  */
+/**
+ * What upgrading THIS case to Full Access costs: the live tier price less
+ * what the case has already paid toward it. Nobody pays twice for the part
+ * they already bought. Floored at one dollar so a case that somehow paid more
+ * than the tier price still produces a chargeable session rather than a
+ * Stripe error.
+ */
+function upgradeCents(c, liveFullCents) {
+  const alreadyPaid = Number(c.caseRateCents) || 0;
+  return Math.max(100, liveFullCents - alreadyPaid);
+}
+
+/**
+ * POST /api/upgrade - move an open case up to Full Access.
+ *
+ * Deliberately the same shape as the follow-up purchase: it is the pattern
+ * this codebase already proved for selling something from inside a case, and
+ * two different shapes for two in-case purchases would be two things to keep
+ * in step.
+ */
+async function handleUpgradeCheckout(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c || c.data.clientUid !== user.uid) return json({ error: 'Not found' }, 404);
+  if (c.data.fullAccess)
+    return json({ error: 'This case already has Full Access.' }, 409);
+  if (c.data.status === 'closed')
+    return json({ error: 'This case is closed. Book a new one and we will start there.' }, 409);
+  // Capacity is checked here as well as at booking: an upgrade consumes one of
+  // the same slots, and the offer card can be a few minutes stale.
+  const cap = await fullAccessCapacity(env);
+  if (!cap.room) return json({ error: 'full-booked', open: cap.open, max: cap.max }, 409);
+
+  const pending = c.data.pendingFullAccess;
+  if (pending?.url && new Date(pending.expiresAt || 0).getTime() > Date.now())
+    return json({ ok: true, url: pending.url });
+
+  const live = await readRates(env);
+  const cents = upgradeCents(c.data, live.fullCents);
+  const expiresAt = new Date(Date.now() + 23 * 3600_000);
+  const session = await stripePost(env, '/checkout/sessions', {
+    mode: 'payment',
+    customer_email: c.data.clientEmail || undefined,
+    line_items: fullAccessLineItems(cents),
+    automatic_payment_methods: { enabled: true },
+    success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&upgraded=1`,
+    cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
+    expires_at: Math.floor(expiresAt.getTime() / 1000),
+    metadata: { kind: 'fullaccess', caseId, uid: c.data.clientUid, fullCents: String(live.fullCents) },
+  });
+  await patchDoc(env, `cases/${caseId}`, {
+    pendingFullAccess: { sessionId: session.id, url: session.url, cents, createdAt: new Date(), expiresAt },
+  }, { mask: ['pendingFullAccess'] });
+  return json({ ok: true, url: session.url });
+}
+
+/**
+ * The webhook half. Same two paths as the follow-up: money that arrives for
+ * something the case already has is RECORDED rather than dropped, because it
+ * moved, and Eric is told to refund it.
+ */
+async function confirmFullAccessPurchase(env, session, attempt = 0) {
+  if (attempt > 3) return;
+  const caseId = session.metadata?.caseId;
+  if (!caseId) return;
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c) return;
+  const amountCents = Number(session.amount_total) || 0;
+  const payments = Array.isArray(c.data.extraPayments) ? [...c.data.extraPayments] : [];
+  if (payments.some((x) => x.sessionId === session.id)) return; // replay
+
+  if (c.data.fullAccess) {
+    payments.push({ kind: 'fullaccess', amountCents, sessionId: session.id, at: new Date(), duplicate: true });
+    const ok = await patchDoc(env, `cases/${caseId}`, { extraPayments: payments },
+      { mask: ['extraPayments'], ifUpdateTime: c.updateTime }).catch(() => false);
+    if (ok === false) return confirmFullAccessPurchase(env, session, attempt + 1);
+    const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+    for (const a of admins) {
+      await notifyUser(env, a.id, {
+        title: 'Pocket Advocate',
+        body: `${firstName(c.data.clientName)} paid for Full Access their case already has. Refund it from Stripe.`,
+        link: `/admin-case.html?id=${caseId}`,
+      }).catch(() => {});
+    }
+    return;
+  }
+
+  payments.push({ kind: 'fullaccess', amountCents, sessionId: session.id, at: new Date() });
+  const now = new Date();
+  const okBuy = await patchDoc(env, `cases/${caseId}`, {
+    fullAccess: true,
+    fullAccessAt: now,
+    // What they paid in total for the tier: the case fee plus this upgrade.
+    // The helpers that ask "what has this case paid" read this one field.
+    fullAccessRateCents: (Number(c.data.caseRateCents) || 0) + amountCents,
+    pendingFullAccess: null,
+    extraPayments: payments,
+  }, {
+    mask: ['fullAccess', 'fullAccessAt', 'fullAccessRateCents', 'pendingFullAccess', 'extraPayments'],
+    ifUpdateTime: c.updateTime,
+  }).catch(() => false);
+  if (okBuy === false) return confirmFullAccessPurchase(env, session, attempt + 1);
+
+  if (c.data.clientEmail) {
+    await sendEmail(env, {
+      to: c.data.clientEmail,
+      subject: 'Full Access is open on your case',
+      html: `<p>Your case is now Full Access. That means I work directly with your clinics and your insurer rather than alongside you.</p>
+        <p>The next thing I need is your authorisation, which is waiting on your case page. Nothing can start until that is signed.</p>
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
+    }).catch(() => {});
+  }
+  const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  for (const a of admins) {
+    await notifyUser(env, a.id, {
+      title: 'Pocket Advocate',
+      body: `${firstName(c.data.clientName)} upgraded to Full Access.`,
+      link: `/admin-case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
+}
+
 async function handleFollowUpCheckout(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in required' }, 401);
@@ -4471,6 +4711,14 @@ async function releaseHold(env, session) {
     if (caseDoc?.data.pendingFollowUp?.sessionId === session.id)
       await patchDoc(env, `cases/${session.metadata.caseId}`, { pendingFollowUp: null }, {
         mask: ['pendingFollowUp'],
+      });
+  }
+  // An upgrade to Full Access that was started and walked away from.
+  if (session.metadata?.kind === 'fullaccess' && session.metadata.caseId) {
+    const caseDoc = await getDoc(env, `cases/${session.metadata.caseId}`);
+    if (caseDoc?.data.pendingFullAccess?.sessionId === session.id)
+      await patchDoc(env, `cases/${session.metadata.caseId}`, { pendingFullAccess: null }, {
+        mask: ['pendingFullAccess'],
       });
   }
   // An admin-priced session that was never paid: clear the client's pay prompt.
