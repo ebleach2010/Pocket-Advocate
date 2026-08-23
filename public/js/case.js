@@ -256,6 +256,31 @@ function confirmationBanner(c, start, localFmt) {
 }
 
 // ---- Progress section ----
+/**
+ * Hours worked on this case, shown to the CLIENT. Eric clocks the time on
+ * himself and they see the total (his call, 2026-08-22: "They can see
+ * this"). It is a plain statement of work done, not a bill and not a
+ * countdown: nothing about it changes what the case includes.
+ *
+ * Nothing is shown until there is something real to show, because "0m" on a
+ * case somebody just paid for reads as neglect rather than as honesty.
+ */
+function workLine(c) {
+  const w = c.work || {};
+  const banked = Math.max(0, Number(w.seconds) || 0);
+  const live = w.startedAt
+    ? Math.min(Math.floor((Date.now() - toDate(w.startedAt).getTime()) / 1000), 12 * 3600)
+    : 0;
+  const total = banked + live;
+  if (total < 60) return '';
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const spent = `${h ? `${h}h ` : ''}${m}m`;
+  return `<p class="dim small" style="margin:.6rem 0 0;">⏱ Time I have worked on your case: <strong style="color:var(--ink);">${spent}</strong>${
+    w.startedAt ? ' <span style="color:var(--cyan);">· working on it right now</span>' : ''
+  }</p>`;
+}
+
 function renderProgress(el, c) {
   const start = c.appointment && toDate(c.appointment.start);
   const closed = c.status === 'closed';
@@ -305,6 +330,7 @@ function renderProgress(el, c) {
           ${start ? '<a href="#" class="btn ghost" style="text-align:center;" data-ics>📅 Add to calendar</a>' : ''}
         </p>` : ''}
       ${requestedNote}
+      ${workLine(c)}
       <ul class="timeline">
         ${STEPS.map(([, label], i) => `
           <li class="${i + 1 < rank ? 'done' : i + 1 === rank ? (closed ? 'done' : 'now') : ''}">

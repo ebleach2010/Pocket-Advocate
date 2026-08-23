@@ -2122,11 +2122,21 @@ async function loadEconomics(env, kind, id) {
     if (p?.kind === 'tip') tipCents += cents;
     else paidCents += cents;
   }
+  // The clock Eric toggles by hand is the real number: it counts the call,
+  // the records and the report, which the chat-page meter never could. That
+  // old meter stays only as a fallback for a case predating the clock.
+  const w = c.work || {};
+  const banked = Math.max(0, Number(w.seconds) || 0);
+  const live = w.startedAt
+    ? Math.min(Math.floor((Date.now() - new Date(w.startedAt).getTime()) / 1000), 12 * 3600)
+    : 0;
+  const clocked = banked + live;
   return {
     sub: false,
     paidCents,
     tipCents,
-    seconds: Math.max(0, Number(meta?.data.chatSeconds) || 0),
+    seconds: clocked || Math.max(0, Number(meta?.data.chatSeconds) || 0),
+    metered: clocked > 0,
   };
 }
 
@@ -2140,13 +2150,15 @@ function economicsNote(econ) {
   // Only compute a rate once there is enough time logged for one to mean
   // anything. Ten minutes of chat does not imply a $1,590 hourly rate.
   const rate = hours >= 0.5 && econ.paidCents
-    ? ` That is about ${dollars(econ.paidCents / hours)} an hour against chat time alone, and it only falls from here.`
+    ? ` That is about ${dollars(econ.paidCents / hours)} an hour, and it only falls from here.`
     : '';
   return `
 
 What this case has paid, and what it has cost him so far: ${dollars(econ.paidCents)} paid${
     econ.tipCents ? ` plus ${dollars(econ.tipCents)} in tips` : ''
-  }, against ${spent} of logged chat time.${rate} That figure counts only the minutes his chat page was open in front of him. It does not count the call, reading the records, or writing the report, so his real hours are higher than it says.`;
+  }, against ${spent} of work.${rate} ${econ.metered
+    ? 'That is time he clocked himself, so it is the real figure, and his client can see it too.'
+    : 'That figure counts only the minutes his chat page was open, so his real hours are higher than it says.'}`;
 }
 
 /**

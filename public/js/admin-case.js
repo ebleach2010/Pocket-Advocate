@@ -128,7 +128,10 @@ function render(el) {
           pane.innerHTML = `
             <div class="panel">
               <h3>Chat with the client</h3>
-              <p class="dim small" data-chattime style="margin:.1rem 0 .4rem;" hidden></p>
+              <div class="row" data-workclock style="gap:.5rem; align-items:center; margin:.1rem 0 .5rem;">
+                <button class="btn quiet" data-work-toggle style="flex:none;">▶ Start working</button>
+                <span class="dim small" data-work-total></span>
+              </div>
               <p class="dim small" data-client-gate style="margin:.1rem 0 .4rem;" hidden></p>
               <div id="chat"></div>
             </div>`;
@@ -307,7 +310,7 @@ function render(el) {
   });
 
   chatSend = (text) => chat.send(text);
-  startChatMeter();
+  startWorkClock(c);
   // Whether THEIR side of this chat is open yet, so silence before a far-out
   // call reads as the gate doing its job rather than a client ignoring him.
   {
@@ -587,7 +590,61 @@ function paintAgendaPage(pane) {
   });
 }
 
-// ---- the chat-hours meter (visible to Eric only; stored on caseMeta) ----
+/**
+ * The work clock. He toggles it on when he starts on a case and off when he
+ * stops, and the client sees the total on their own page (Eric, 2026-08-22:
+ * "the cost is a toggle per client... They can see this"). Manual on
+ * purpose: the automatic meter it replaces only ever saw minutes the chat
+ * page was open, which is the smallest part of the work.
+ */
+let workTick = null;
+function startWorkClock(c) {
+  const row = document.querySelector('[data-workclock]');
+  if (!row) return;
+  const btn = row.querySelector('[data-work-toggle]');
+  const totalEl = row.querySelector('[data-work-total]');
+  const w = c?.work || {};
+  let seconds = Math.max(0, Number(w.seconds) || 0);
+  let startedAt = w.startedAt ? toDate(w.startedAt).getTime() : 0;
+
+  const live = () => seconds + (startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0);
+  const paint = () => {
+    const t = live();
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    totalEl.textContent = `${h ? `${h}h ` : ''}${m}m on this case${startedAt ? ' · running' : ''}`;
+    totalEl.classList.toggle('on', !!startedAt);
+    btn.textContent = startedAt ? '⏸ Stop working' : '▶ Start working';
+    btn.classList.toggle('glow', !!startedAt);
+  };
+  paint();
+  clearInterval(workTick);
+  // A minute is plenty: this is hours, not a stopwatch.
+  workTick = setInterval(() => { if (startedAt) paint(); }, 30_000);
+
+  btn.addEventListener('click', async () => {
+    const want = !startedAt;
+    btn.disabled = true;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/work', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ caseId, on: want }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      seconds = Number(out.seconds) || 0;
+      startedAt = out.running ? Date.now() : 0;
+      paint();
+    } catch (err) {
+      alert(`Couldn't change the clock: ${err.message}`);
+    }
+    btn.disabled = false;
+  });
+}
+
+// ---- the old automatic chat meter (retired; kept for reference) ----
 // 30 seconds at a time, only while the chat page is the open page in a
 // visible tab. What it buys: a per-client number for what chat actually
 // costs, which is the fact the whole scoped-chat layer exists to manage.

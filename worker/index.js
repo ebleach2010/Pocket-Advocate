@@ -458,6 +458,8 @@ export default {
         return await handleRates(env);
       if (url.pathname === '/api/admin/rates' && request.method === 'POST')
         return await handleSetRates(request, env);
+      if (url.pathname === '/api/work' && request.method === 'POST')
+        return await handleWork(request, env);
       if (url.pathname === '/api/admin/effort')
         return await handleEffort(request, env);
       if (url.pathname === '/api/admin/voice')
@@ -623,6 +625,8 @@ export default {
     ctx.waitUntil(voiceStudyKickoff(env));
     // And the vanished send-as-me, put back where it belonged, once.
     ctx.waitUntil(reviveLostSend(env));
+    // And the hours already worked on the open case, onto the new clock.
+    ctx.waitUntil(seedWorkClock(env));
   },
 };
 
@@ -729,6 +733,37 @@ async function openTuesdaySlots(env) {
  * otherwise write it into the chat as Eric, stamp lastMessage, and nudge
  * the client, exactly as a normal send would have.
  */
+/**
+ * Run-once: put the 10h 22m Eric has already worked on his current client's
+ * case onto the new clock (2026-08-22). Targets that one case by id, and
+ * only if the clock is still unset, so it can never double-count or land on
+ * the wrong client.
+ */
+async function seedWorkClock(env) {
+  const MARKER = 'migrations/workclock-2026-08-22';
+  const CASE_ID = '65cc57c1-2057-47eb-8dee-d82fce8bf5fe';
+  const SECONDS = 10 * 3600 + 22 * 60;
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;
+  const done = (result) => patchDoc(env, MARKER, { finishedAt: new Date(), result },
+    { mask: ['finishedAt', 'result'] }).catch(() => {});
+  try {
+    const doc = await getDoc(env, `cases/${CASE_ID}`);
+    if (!doc) return done('case not found');
+    if (Number(doc.data.work?.seconds) > 0) return done('clock already set');
+    await patchDoc(env, `cases/${CASE_ID}`, {
+      work: { seconds: SECONDS, startedAt: null, updatedAt: new Date() },
+    }, { mask: ['work'] });
+    return done(`seeded ${SECONDS}s`);
+  } catch (err) {
+    console.error('seed work clock:', err.message || err);
+  }
+}
+
 async function reviveLostSend(env) {
   const MARKER = 'migrations/revive-2026-08-22';
   const m = await getDoc(env, MARKER);
@@ -824,7 +859,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-bigfile';
+const BUILD_TAG = 'v2026-08-22-workclock';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -832,7 +867,7 @@ const BUILD_TAG = 'v2026-08-22-bigfile';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.6';
+const VERSION = '2.7';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2271,6 +2306,57 @@ async function handleFileDelete(request, env) {
 
   await deleteFile(env, path);
   return json({ ok: true });
+}
+
+/**
+ * POST /api/work  Body: { caseId, on }   admin only
+ *
+ * The work clock. Eric, 2026-08-22: "the cost is a toggle per client. I
+ * toggle it on if I'm working on their case. I toggle it off if I'm not
+ * working on their case. They can see this."
+ *
+ * Deliberately manual. The automatic chat meter only ever knew about minutes
+ * his chat page was open, which is the smallest part of the work: the call,
+ * the records, the report and the thinking all happened somewhere else. This
+ * counts whatever he says it counts.
+ *
+ * It lives on the CASE doc, not caseMeta, precisely because the client is
+ * meant to see it: the case doc is the one a client can read. Only this
+ * admin-gated route ever writes it.
+ */
+async function handleWork(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+  const doc = await getDoc(env, `cases/${caseId}`);
+  if (!doc) return json({ error: 'Not found' }, 404);
+  const w = doc.data.work || {};
+  const startedAt = w.startedAt ? new Date(w.startedAt).getTime() : 0;
+  let seconds = Math.max(0, Number(w.seconds) || 0);
+  const on = body?.on === true;
+
+  if (on) {
+    // Already running: leave the existing start alone rather than resetting
+    // it, so a double tap cannot quietly discard time already on the clock.
+    if (!startedAt) {
+      await patchDoc(env, `cases/${caseId}`, {
+        work: { seconds, startedAt: new Date(), updatedAt: new Date() },
+      }, { mask: ['work'] });
+    }
+    return json({ seconds, running: true });
+  }
+  if (startedAt) {
+    // A clock left running for days is a forgotten toggle, not a work week.
+    // Bank at most twelve hours from one stretch and say so in the reply.
+    const elapsed = Math.min(Math.floor((Date.now() - startedAt) / 1000), 12 * 3600);
+    seconds += elapsed;
+  }
+  await patchDoc(env, `cases/${caseId}`, {
+    work: { seconds, startedAt: null, updatedAt: new Date() },
+  }, { mask: ['work'] });
+  return json({ seconds, running: false });
 }
 
 /**

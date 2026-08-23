@@ -162,6 +162,8 @@ export function seed({ set, file }) {
     reportDeliveredAt: hours(20),
     files: [],
     stripe: { sessionId: 'cs_demo', paymentIntentId: 'pi_demo', amountTotal: 26500 },
+    // The work clock, part-way through, so both suites show a real total.
+    work: { seconds: 4 * 3600 + 15 * 60, startedAt: null },
   });
 
   let i = 0;

@@ -88,6 +88,19 @@ export function demoApi(role, store) {
     if (path === '/api/admin/rates') return ok({ caseCents: 26500, addonCents: 7500, bookings: 0, changed: false });
     // The nightly study, with a plausible history so the card on the dashboard
     // shows what it shows on a real night.
+    if (path === '/api/work') {
+      const key = `cases/${DEMO_CASE_ID}`;
+      const c = store.docs.get(key) || {};
+      const w = c.work || { seconds: 0, startedAt: null };
+      if (body.on === true) {
+        if (!w.startedAt) store.docs.set(key, { ...c, work: { ...w, startedAt: new Date() } });
+        return ok({ seconds: w.seconds || 0, running: true });
+      }
+      const add = w.startedAt ? Math.floor((Date.now() - new Date(w.startedAt).getTime()) / 1000) : 0;
+      const seconds = (Number(w.seconds) || 0) + add;
+      store.docs.set(key, { ...c, work: { seconds, startedAt: null } });
+      return ok({ seconds, running: false });
+    }
     if (path === '/api/admin/effort') {
       if (init.method === 'POST') demoEffort = body.effort === 'max' ? 'max' : 'high';
       return ok({ effort: demoEffort });
@@ -290,7 +303,7 @@ export function demoApi(role, store) {
     }
 
     // ---- everything else --------------------------------------------------
-    if (path === '/api/version') return ok({ tag: 'demo', version: '2.6' });
+    if (path === '/api/version') return ok({ tag: 'demo', version: '2.7' });
     if (path === '/api/changelog') {
       return role === 'admin'
         ? ok({ admin: { '2.2': ['Everything on your side, in one place, with nothing real behind it.'] } })
