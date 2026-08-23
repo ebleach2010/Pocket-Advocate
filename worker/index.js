@@ -679,12 +679,19 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    // The cron fires every five minutes, because Eric asked for a read within
-    // five minutes of a message or a document landing. Only the advisor queue
-    // wants that cadence: the digests and sweeps are quarter-hourly work and
-    // running them three times as often would be three times the Firestore
-    // reads for the same outcome, so they still only run on the quarter hour.
-    const minute = new Date(event.scheduledTime || Date.now()).getUTCMinutes();
+    // The cron fires every MINUTE now: with routine passes running delta (one
+    // to three minutes each) a firing per minute means a queued read starts
+    // within a minute and a failed one retries within a minute, not five.
+    // Everything that is not the drain is gated to a coarser minute so the
+    // Firestore bill does not multiply with the cadence.
+    const fired = Date.now();
+    // The platform kills a cron invocation at 15 minutes of wall time from
+    // the FIRING, catch and finally included; a kill like that leaves status
+    // stuck on "running" forever (the half-day wedge of 2026-08-23). The
+    // drain hands this deadline to the run so a long turn aborts itself into
+    // the ordinary retry path a couple of minutes before the platform wall.
+    const deadlineAt = fired + 12.5 * 60_000;
+    const minute = new Date(event.scheduledTime || fired).getUTCMinutes();
     if (minute % 15 === 0) {
       ctx.waitUntil(runChatDigest(env));
       ctx.waitUntil(runFollowUpWarnings(env));
@@ -693,32 +700,25 @@ export default {
       ctx.waitUntil(repairMissingCaseEmails(env));
       ctx.waitUntil(closeDeliveredCases(env));
       ctx.waitUntil(purgeRecaps(env));
+      // Run-once migrations: instant no-ops on every fire after their first.
+      ctx.waitUntil(grandfatherFollowUps(env));
+      ctx.waitUntil(openTuesdaySlots(env));
+      ctx.waitUntil(voiceStudyKickoff(env));
+      ctx.waitUntil(reviveLostSend(env));
+      ctx.waitUntil(seedWorkClock(env));
     }
-    // One model job per firing. The queue drain and the voice study used to
-    // share this invocation's bounded wall clock, and on the 10pm firing the
-    // seven-reader study racing a queued max-effort analysis got whichever
-    // was still streaming at the limit killed uncatchably: status stuck on
-    // "running", no error, no catch. The study has all evening; it waits for
-    // a firing whose queue is empty.
-    //
-    // The sweep runs FIRST, in the same chain, so a thread it re-queues (a
-    // wedged run, a floored pending flag) is drained by this very firing:
-    // stranded work waits five minutes, not until Eric opens the panel.
+    // One model job per firing, and the drain goes FIRST so the wall clock
+    // belongs to the turn. The sweep only finds work for a later firing
+    // anyway (and walks every thread), so it runs on the five-minute marks
+    // after the drain; the voice study waits for one of those firings with
+    // an empty queue.
     ctx.waitUntil((async () => {
-      await requeueStranded(env);
-      const ranAnalysis = await runQueuedAnalyses(env);
-      if (!ranAnalysis) await maybeVoiceStudy(env);
+      const ranAnalysis = await runQueuedAnalyses(env, deadlineAt);
+      if (minute % 5 === 0) {
+        await requeueStranded(env);
+        if (!ranAnalysis) await maybeVoiceStudy(env);
+      }
     })());
-    // Runs once, ever. Instant no-op on every fire after that.
-    ctx.waitUntil(grandfatherFollowUps(env));
-    // Same deal: Eric's Tuesday hours, opened once, no-op forever after.
-    ctx.waitUntil(openTuesdaySlots(env));
-    // And the seven-reader voice study's first pass, once, right away.
-    ctx.waitUntil(voiceStudyKickoff(env));
-    // And the vanished send-as-me, put back where it belonged, once.
-    ctx.waitUntil(reviveLostSend(env));
-    // And the hours already worked on the open case, onto the new clock.
-    ctx.waitUntil(seedWorkClock(env));
   },
 };
 
@@ -951,7 +951,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-23-liveclock';
+const BUILD_TAG = 'v2026-08-24-delta';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -959,7 +959,7 @@ const BUILD_TAG = 'v2026-08-23-liveclock';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.10';
+const VERSION = '2.11';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3680,7 +3680,12 @@ async function handleAdvisor(request, env, ctx) {
     // "running", nothing queued, nothing for the cron to find. That wedge
     // held until he happened to reopen the panel.
     await markPending(env, kind, id, { force: true });
-    return keepaliveRun(ctx, runAnalysis(env, kind, id, media), { raw: true });
+    // auto rides in from the panel's auto-fire so a noise flag can take the
+    // no-new-content exit instead of buying a full turn; a real tap (no auto)
+    // also reads files still inside the settle window, because waiting four
+    // minutes on files he just uploaded reads as "it ignored my photos".
+    const isAuto = body?.auto === true;
+    return keepaliveRun(ctx, runAnalysis(env, kind, id, media, { auto: isAuto, freshFiles: !isAuto }), { raw: true });
   }
 
   if (action === 'draft') {

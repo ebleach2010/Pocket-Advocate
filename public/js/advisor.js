@@ -370,7 +370,9 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     // The error shows above; a manual Update or the cron retries it.
     if (d.pendingAt && !running && !paused && d.status !== 'error' && firedFor !== d.pendingAt) {
       firedFor = d.pendingAt;
-      post({ action: 'analyze' });
+      // auto, so the worker can take the cheap no-new-content exit when the
+      // pending flag turns out to be noise; only a real tap forces a read.
+      post({ action: 'analyze', auto: true });
     }
     return { ...d, running, draftAlive };
   }
@@ -818,6 +820,11 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       document.dispatchEvent(new CustomEvent('pa-panel-select'));
     }
     post({ action: 'analyze', ...(media ? { media } : {}) });
+    // post() resolves when the whole keepalive stream ends, minutes from now,
+    // and the next idle poll could be 12 seconds out. Poll now so the status
+    // line moves the moment the worker stamps the run, not a quarter minute
+    // after he pressed the button.
+    setTimeout(refresh, 700);
   });
   pauseBtn.addEventListener('click', () => post({ action: paused ? 'resume' : 'pause' }));
   // window.prompt() silently does nothing in iOS Home-Screen apps — a real

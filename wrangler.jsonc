@@ -23,8 +23,12 @@
     "run_worker_first": true
   },
   "triggers": {
-    // Chat digest: email a nudge for unread messages (spec: batched email).
-    "crons": ["*/5 * * * *"]
+    // Every minute: the advisor queue drains one job per firing, and with
+    // routine passes running delta (1-3 min) a per-minute firing means reads
+    // start and retry within a minute. scheduled() gates everything heavier
+    // to the 5- and 15-minute marks, so the cost of the cadence is one queue
+    // list per minute.
+    "crons": ["* * * * *"]
   },
   "vars": {
     // Non-secret config. Replace after creating the Firebase project (docs/SETUP.md).

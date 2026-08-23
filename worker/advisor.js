@@ -67,6 +67,15 @@ const QUESTION_EFFORT = 'high';
 const QUESTION_TOKENS = 12000;
 // Enough history to reason over without pushing a whole case into one request.
 const MAX_MESSAGES = 150;
+// The delta pass (Eric, 2026-08-24: "reading only unread messages and files
+// and relating them to memory, not reading everything beginning to end each
+// time"). A routine update feeds the model its own previous assessment plus
+// only what arrived since, so it fits comfortably inside a cron firing's
+// wall clock instead of dying against it.
+const DELTA_OVERLAP = 10;        // older messages re-shown for context
+const FULL_PASS_EVERY = 8;       // safety-net full pass after this many deltas
+const COMPACT_AT_CHARS = 45_000; // prior length that forces a consolidating full pass
+const PREV_HARD_CAP = 80_000;    // absolute injection cap on the prior
 
 const VOICE = `You are advising Eric, a professional patient advocate working toward his
 BCPA. He is an autoimmune encephalitis survivor himself and works with patients
@@ -148,7 +157,7 @@ function client(env) {
 const STREAM_QUIET_MS = 5 * 60_000;
 const RUN_BUDGET_MS = 900_000;
 
-async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, initialStage = 'sending' }) {
+async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, initialStage = 'sending', deadlineAt = 0 }) {
   // The cache breakpoint goes on the SYSTEM block, not at the top level. At the
   // top level it lands after the last cacheable content in the request, which
   // is the transcript and the attached files: the part that changes every
@@ -243,7 +252,14 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, i
       await new Promise((r) => setTimeout(r, 20_000));
       if (!running) break;
       const now = Date.now();
-      if (now - lastEvent > STREAM_QUIET_MS)
+      // The deadline is the platform's clock, not ours: a cron invocation is
+      // killed at 15 minutes of wall time measured from the FIRING, catch and
+      // finally included, and a kill like that leaves status stuck on running
+      // forever. Aborting ourselves a couple of minutes early turns an
+      // uncatchable death into an ordinary error the queue knows how to retry.
+      if (deadlineAt && now > deadlineAt)
+        stalledWhy = 'This read ran out of background time and was stopped partway.';
+      else if (now - lastEvent > STREAM_QUIET_MS)
         stalledWhy = 'The model went quiet mid-read and the run was stopped.';
       else if (now - dispatched > RUN_BUDGET_MS)
         stalledWhy = 'This read hit its fifteen minute budget and was stopped.';
@@ -327,6 +343,30 @@ function transcript(rows) {
     .join('\n\n');
 }
 
+/**
+ * Split a chronological window at the last-analyzed stamp. `fresh` is what
+ * the last completed pass never saw; `context` is a short tail of already
+ * read messages so the model can hear the conversational turn; `omitted` is
+ * how many older rows the previous assessment is trusted to cover. Strictly
+ * greater-than on the cutoff: analyzedThroughTs is stamped from the newest
+ * row the pass actually sent, so the boundary message was already read.
+ */
+function splitDelta(rows, throughMs, overlap = DELTA_OVERLAP) {
+  const at = (r) => {
+    const ts = r.data.ts;
+    const t = ts ? new Date(ts.toDate ? ts.toDate() : ts).getTime() : 0;
+    return Number.isFinite(t) ? t : 0;
+  };
+  if (!throughMs) return { context: [], fresh: rows, omitted: 0 };
+  const older = rows.filter((r) => at(r) <= throughMs);
+  const fresh = rows.filter((r) => at(r) > throughMs);
+  return {
+    context: older.slice(-overlap),
+    fresh,
+    omitted: Math.max(0, older.length - overlap),
+  };
+}
+
 /** Only Eric's lines — the sample the draft writer imitates. */
 function myVoice(rows) {
   return rows.filter((r) => r.data.role === 'admin' && r.data.text)
@@ -387,7 +427,11 @@ const ANALYSIS_MAX_TRIES = 3;
  * no floor, a script sending a message every few seconds buys an analysis
  * every five minutes, all day, on Eric's own API key.
  */
-const PENDING_FLOOR_MS = 12 * 60_000;
+// Five minutes, down from twelve: with routine passes running delta (small
+// prompt, medium effort) the floor no longer needs to ration max-effort
+// turns, only to stop a message-per-second script buying a read per firing.
+// The no-new-content bail in runAnalysis refuses wasted turns either way.
+const PENDING_FLOOR_MS = 5 * 60_000;
 const MAX_CARRY_FILES = 40;
 
 function mediaKind(att) {
@@ -567,8 +611,8 @@ const AUTO_READ_SETTLE_MS = 4 * 60_000;
  * Failure is not fatal: a listing that errors leaves the chat-attachment path
  * exactly as it was.
  */
-async function storageReadableFiles(env, alreadyRead, kind, id, seen = new Set(alreadyRead)) {
-  const cutoff = Date.now() - AUTO_READ_SETTLE_MS;
+async function storageReadableFiles(env, alreadyRead, kind, id, seen = new Set(alreadyRead), settleMs = AUTO_READ_SETTLE_MS) {
+  const cutoff = Date.now() - settleMs;
   try {
     const files = await listIntake(env, kind, id);
     const out = [];
@@ -586,8 +630,8 @@ async function storageReadableFiles(env, alreadyRead, kind, id, seen = new Set(a
   }
 }
 
-function autoReadableFiles(rows, alreadyRead, kind, id, seen = new Set(alreadyRead)) {
-  const cutoff = Date.now() - AUTO_READ_SETTLE_MS;
+function autoReadableFiles(rows, alreadyRead, kind, id, seen = new Set(alreadyRead), settleMs = AUTO_READ_SETTLE_MS) {
+  const cutoff = Date.now() - settleMs;
   const out = [];
   for (const r of (rows || [])) {
     const att = r.data?.attachment;
@@ -1870,7 +1914,7 @@ function harvestDifferential(text, prior) {
       why: why.trim().slice(0, 400),
       moves: moves.join('|').trim().slice(0, 400),
     });
-    if (differential.length >= 5) break;
+    if (differential.length >= 7) break;
   }
   // The heading was there but no row parsed: format drift, not an emptied
   // list. Keep the stored one rather than blanking the page.
@@ -2087,12 +2131,16 @@ async function setState(env, kind, id, fields) {
 export async function markPending(env, kind, id, { force = false } = {}) {
   const now = new Date();
   await setState(env, kind, id, { pendingAt: now });
-  // Already waiting to be read? Then it is already going to be read, and
-  // re-stamping it only resets the clock. Eric asking by hand always goes
-  // through; a client typing does not.
+  // Already waiting to be read? Then it is already going to be read. This
+  // check runs for FORCE too: the write below is a full-document replace,
+  // and re-writing an existing row reset its tries to zero, so every time
+  // Eric opened the app mid-cycle the give-up counter rewound and three
+  // more doomed turns got bought. A row that exists is left alone.
+  const q = await getDoc(env, queuePath(kind, id)).catch(() => null);
+  if (q) return;
+  // Eric asking by hand always goes through; a client typing waits out the
+  // floor.
   if (!force) {
-    const q = await getDoc(env, queuePath(kind, id)).catch(() => null);
-    if (q) return;
     const st = await getDoc(env, statePath(kind, id)).catch(() => null);
     const last = st?.data.updatedAt ? new Date(st.data.updatedAt).getTime() : 0;
     if (last && Date.now() - last < PENDING_FLOOR_MS) return;
@@ -2125,50 +2173,86 @@ export async function requeueStranded(env) {
     const threads = [];
     for (const [coll, kind] of [['cases', 'case'], ['subscriptions', 'sub']]) {
       const rows = await listDocs(env, coll, { pageSize: 300, all: true }).catch(() => []);
-      for (const r of rows) threads.push({ kind, id: r.id });
+      for (const r of rows) {
+        // A closed case has no advisor work owed; skipping it keeps the sweep
+        // from growing linearly with the archive.
+        if (kind === 'case' && r.data.status === 'closed') continue;
+        threads.push({ kind, id: r.id });
+      }
     }
-    for (const t of threads) {
-      const st = await getDoc(env, statePath(t.kind, t.id)).catch(() => null);
-      const d = st?.data;
-      if (!d || d.paused) continue;
-      const q = await getDoc(env, queuePath(t.kind, t.id)).catch(() => null);
-      if (q) continue; // already on the drain's plate
-      const startedTs = d.startedAt ? new Date(d.startedAt).getTime() : 0;
-      const beat = Math.max(startedTs, d.progressAt ? new Date(d.progressAt).getTime() : 0);
-      const stuckRunning = d.status === 'running'
-        && (!beat || Date.now() - beat > 20 * 60_000
-          || (startedTs && Date.now() - startedTs > 20 * 60_000));
-      const pend = d.pendingAt ? new Date(d.pendingAt).getTime() : 0;
-      const upd = d.updatedAt ? new Date(d.updatedAt).getTime() : 0;
-      // Settled: past the upload settle window (so a photo batch finishes
-      // landing first) and past the spam floor. status "error" stays manual:
-      // re-queueing a standing error (credits out) would loop on it.
-      const owed = pend && d.status !== 'error' && d.status !== 'running' && pend > upd
-        && Date.now() - pend > 5 * 60_000
-        && (!upd || Date.now() - upd >= PENDING_FLOOR_MS);
-      if (!stuckRunning && !owed) continue;
-      if (stuckRunning)
-        await setState(env, t.kind, t.id, { status: 'idle', startedAt: null, progressAt: null, stage: null })
-          .catch(() => {});
-      await patchDoc(env, queuePath(t.kind, t.id), { kind: t.kind, id: t.id, at: new Date(), tries: 0 })
-        .catch(() => {});
-      console.warn(`advisor sweep: re-queued stranded ${t.kind}/${t.id}`);
+    // Bounded parallelism: the serial version spent up to a minute of the
+    // firing's wall clock on reads before the drain got a turn.
+    const CHUNK = 10;
+    for (let i = 0; i < threads.length; i += CHUNK) {
+      await Promise.all(threads.slice(i, i + CHUNK).map((t) => sweepOne(env, t).catch(() => {})));
     }
   } catch (err) {
     console.warn('advisor sweep:', err.message || err);
   }
 }
 
+async function sweepOne(env, t) {
+  const st = await getDoc(env, statePath(t.kind, t.id)).catch(() => null);
+  const d = st?.data;
+  if (!d || d.paused) return;
+  const q = await getDoc(env, queuePath(t.kind, t.id)).catch(() => null);
+  if (q) return; // already on the drain's plate
+  const startedTs = d.startedAt ? new Date(d.startedAt).getTime() : 0;
+  const beat = Math.max(startedTs, d.progressAt ? new Date(d.progressAt).getTime() : 0);
+  const stuckRunning = d.status === 'running'
+    && (!beat || Date.now() - beat > 20 * 60_000
+      || (startedTs && Date.now() - startedTs > 20 * 60_000));
+  const pend = d.pendingAt ? new Date(d.pendingAt).getTime() : 0;
+  const upd = d.updatedAt ? new Date(d.updatedAt).getTime() : 0;
+  // Settled: past the upload settle window (so a photo batch finishes
+  // landing first) and past the spam floor.
+  const owed = pend && d.status !== 'error' && d.status !== 'running' && pend > upd
+    && Date.now() - pend > 5 * 60_000
+    && (!upd || Date.now() - upd >= PENDING_FLOOR_MS);
+  // A pass killed between deleting its row and re-queueing its leftover
+  // files strands the carry list with pendingAt already cleared; nothing
+  // else ever reads those files again.
+  const carryOwed = Array.isArray(d.pendingMedia) && d.pendingMedia.length
+    && d.status === 'idle' && upd && Date.now() - upd > 10 * 60_000;
+  // Errors used to park forever: the give-up wrote status "error" and every
+  // background path refused it, so half a day passed with work owed and
+  // nothing retrying. A parked error now retries on a slow clock, bounded,
+  // and never for the error classes where retrying is throwing money at a
+  // wall (credits out, rate limited).
+  const standing = /credits|Rate limited/i.test(String(d.error || ''));
+  const errAge = upd ? Date.now() - upd : Infinity;
+  const errRetryDue = d.status === 'error' && !standing && pend && pend > upd
+    && (Number(d.errorRetries) || 0) < 8
+    && (!d.errorRetryAt || Date.now() - new Date(d.errorRetryAt).getTime() > 30 * 60_000)
+    && errAge > 30 * 60_000;
+  if (!stuckRunning && !owed && !carryOwed && !errRetryDue) return;
+  if (stuckRunning)
+    await setState(env, t.kind, t.id, { status: 'idle', startedAt: null, progressAt: null, stage: null })
+      .catch(() => {});
+  if (errRetryDue)
+    await setState(env, t.kind, t.id, {
+      status: 'idle',
+      errorRetries: (Number(d.errorRetries) || 0) + 1,
+      errorRetryAt: new Date(),
+    }).catch(() => {});
+  await patchDoc(env, queuePath(t.kind, t.id), { kind: t.kind, id: t.id, at: new Date(), tries: 0 })
+    .catch(() => {});
+  console.warn(`advisor sweep: re-queued stranded ${t.kind}/${t.id}`);
+}
+
 /**
- * Cron backstop: run ONE queued analysis per firing. A scheduled event gets a
- * full 15 minutes of wall clock — the one place in a Worker where a long Opus
- * turn is safe without a client holding a connection open — and one max-effort
- * turn can eat most of it.
+ * Cron backstop: run ONE queued analysis per firing. A scheduled event gets
+ * 15 minutes of wall clock, measured from the FIRING and shared with
+ * everything else the invocation does; a platform kill at that wall runs no
+ * catch and no finally. So the caller hands in deadlineAt, and the run
+ * aborts itself before the platform can, which turns an uncatchable death
+ * into an ordinary retryable error. Delta passes at medium effort finish in
+ * one to three minutes and rarely meet either clock.
  *
  * Returns true when this firing spent a model turn, so scheduled() can keep
  * the voice study out of the same invocation's wall clock.
  */
-export async function runQueuedAnalyses(env) {
+export async function runQueuedAnalyses(env, deadlineAt = 0) {
   try {
     const rows = await listDocs(env, 'advisorQueue', { pageSize: 5 });
     for (const row of rows) {
@@ -2265,7 +2349,7 @@ export async function runQueuedAnalyses(env) {
       const claimed = await patchDoc(env, `advisorQueue/${row.id}`, { tries },
         { mask: ['tries'], ifUpdateTime: fresh.updateTime }).catch(() => false);
       if (claimed === false) continue;
-      await runAnalysis(env, kind, id, null, { skipMedia: tries >= 3, counted: true, auto: true });
+      await runAnalysis(env, kind, id, null, { skipMedia: tries >= 3, counted: true, auto: true, deadlineAt });
       return true; // one model job per firing
     }
   } catch (err) {
@@ -2422,12 +2506,20 @@ function dxOverrideNote(state) {
  * point); without the settled lists, re-emitted rows burned slots in the
  * caps before the merge discarded them.
  */
-function bookkeepingNote(state) {
+function bookkeepingNote(state, { delta = false } = {}) {
   const d = state?.data || {};
   const open = (Array.isArray(d.unanswered) ? d.unanswered : []).filter((r) => !r.answered);
   const settled = (Array.isArray(d.unanswered) ? d.unanswered : []).filter((r) => r.answered);
   const dismissed = (Array.isArray(d.corrections) ? d.corrections : []).filter((c) => c.dismissed);
+  const openCorr = (Array.isArray(d.corrections) ? d.corrections : []).filter((c) => !c.dismissed);
   let note = '';
+  // On a delta pass the model cannot see the old messages a correction points
+  // at, so a correction it does not re-emit would silently vanish. Hand the
+  // open ones back and make re-emitting them the default.
+  if (delta && openCorr.length) {
+    note += `\n\nCorrections still open from earlier passes. Re-emit each under ## Corrections exactly as written, \`- msgId | issue | repaired message\`, unless a new message shows Eric already fixed it or withdrew the claim:\n${
+      openCorr.slice(0, 10).map((c) => `- ${c.msgId} | ${c.issue} | ${c.fixed}`).join('\n')}`;
+  }
   if (open.length) {
     note += `\n\nRows already tracked under Not answered, with the date each was first asked. Reuse each ask's exact wording and date unless the thread shows it arrived or he dropped it:\n${
       open.slice(0, 12).map((r) => `- ${r.ask} | ${String(r.firstAskedAt || '').slice(0, 10)} | ${r.times || 1}`).join('\n')}`;
@@ -2448,15 +2540,19 @@ function bookkeepingNote(state) {
  * purpose: the previous analysis goes back in as memory, so each pass refines
  * rather than restarting, and the picture compounds over the life of the case.
  */
-export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia = false, counted = false, auto = false } = {}) {
+export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia = false, counted = false, auto = false, deadlineAt = 0, freshFiles = false } = {}) {
   try {
     // Two triggers can land in the same seconds (a cron takeover and a tap,
-    // both judging the same corpse dead). Each would buy a full max-effort
-    // turn and the loser's write would clobber the winner's. The later one
-    // bails: a run that set startedAt in the last half minute is not a corpse.
+    // both judging the same corpse dead). Each would buy a full turn and the
+    // loser's write would clobber the winner's. The later one bails. Judged
+    // on the freshest BEAT, not startedAt: a genuinely live run can be many
+    // minutes past its start (the sweep once reset one to idle on age alone
+    // and this guard, reading only startedAt, let a twin stream beside it).
     const pre = await getDoc(env, statePath(kind, id)).catch(() => null);
-    const preStarted = pre?.data.startedAt ? new Date(pre.data.startedAt).getTime() : 0;
-    if (pre?.data.status === 'running' && preStarted && Date.now() - preStarted < 30_000) return;
+    const preBeat = Math.max(
+      pre?.data.startedAt ? new Date(pre.data.startedAt).getTime() : 0,
+      pre?.data.progressAt ? new Date(pre.data.progressAt).getTime() : 0);
+    if (pre?.data.status === 'running' && preBeat && Date.now() - preBeat < 45_000) return;
     await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date(), stage: 'starting' });
     const [rows, state, knowledge, style, qa, effort, econ] = await Promise.all([
       recentMessages(env, kind, id),
@@ -2498,11 +2594,15 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     // can never be held hostage by one document. What was skipped is named in
     // the media report, and the carry list is cleared so the next ordinary
     // pass starts clean rather than walking into the same wall.
+    // A manual tap skips the settle window: waiting four minutes on files he
+    // just uploaded and explicitly asked about reads as "it ignored my
+    // photos". Auto passes keep the window so a batch mid-upload settles.
+    const settleMs = freshFiles ? 0 : undefined;
     const queue = skipMedia ? [] : [
       ...carried,
       ...(mediaList || []),
-      ...autoReadableFiles(rows, alreadyRead, kind, id, found),
-      ...(await storageReadableFiles(env, alreadyRead, kind, id, found)),
+      ...autoReadableFiles(rows, alreadyRead, kind, id, found, settleMs),
+      ...(await storageReadableFiles(env, alreadyRead, kind, id, found, settleMs)),
     ];
     const media = await selectedMediaBlocks(env, queue, kind, id, alreadyRead);
     if (skipMedia) {
@@ -2532,13 +2632,61 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       await deleteDoc(env, queuePath(kind, id)).catch(() => {});
       return;
     }
+    // FULL or DELTA. A delta pass feeds the model its own previous assessment
+    // as memory plus only the messages that arrived since the last completed
+    // pass: small prompt, fast turn, fits inside a cron firing instead of
+    // dying against its wall clock. Full passes re-expose the whole window
+    // and are reserved for the moments that genuinely need one.
+    const p = state?.data || {};
+    const throughMs = p.analyzedThroughTs ? new Date(p.analyzedThroughTs).getTime() : 0;
+    const dxSig = flatText(p.dxOverride || '');
+    const curDismissedSig = (Array.isArray(p.corrections) ? p.corrections : [])
+      .filter((c) => c.dismissed).map((c) => c.msgId).sort().join(',');
+    const qaOverrides = qa.filter((x) => x.override).length;
+    const { context, fresh, omitted } = splitDelta(rows, throughMs);
+    const full =
+         !prior                                          // first analysis
+      || !throughMs                                      // legacy state, no stamp yet
+      || p.forceFull === true                            // last delta came back too short
+      || (Array.isArray(mediaList) && mediaList.length)  // staged-files tap: the explicit deep look
+      || dxSig !== (p.dxOverrideSig || '')               // Eric set or changed his working line
+      || curDismissedSig !== (p.dismissedSig || '')      // a correction was dismissed since
+      || qaOverrides !== (p.qaOverrideCount || 0)        // a Q&A override was filed since
+      || (p.passesSinceFull || 0) >= FULL_PASS_EVERY     // periodic drift corrector
+      || String(prior || '').length > COMPACT_AT_CHARS   // assessment outgrew the budget: consolidate
+      || omitted === 0;                                  // the delta IS the whole window
+    const passType = full ? 'full' : 'delta';
+    const compacting = full && String(prior || '').length > COMPACT_AT_CHARS;
+    // Effort per pass type. Manual runs always honor Eric's own switch; the
+    // background never spends max, and a routine text-only delta runs at
+    // medium, which is the one-to-two-minute pass.
+    const passEffort = !auto ? effort
+      : passType === 'full' ? 'high'
+        : media.blocks.length ? 'high'
+          : 'medium';
+    const passTokens = passType === 'full' ? 64000
+      : media.blocks.length ? 48000
+        : 32000;
+    // The prior, capped. The chart note and Ruled out are never truncated
+    // (their loss is unrecoverable without a beginning-to-end re-read); if
+    // the whole prior is over the hard cap, keep those two sections whole
+    // and trim the commentary.
+    let priorText = String(prior || '');
+    if (priorText.length > PREV_HARD_CAP) {
+      const keep = ['What we know so far', 'Ruled out']
+        .map((h) => sectionMatch(priorText, h)?.[0] || '').filter(Boolean).join('\n\n');
+      const rest = cleanCut(priorText, Math.max(10_000, PREV_HARD_CAP - keep.length));
+      priorText = `(Older commentary sections are trimmed for length. The chart note and Ruled out below are complete.)\n\n${rest}\n\n${keep}`;
+    }
     // The plan, stamped before dispatch, so the panel can show a live "reading
     // N files" from server truth on ANY trigger (the old local counter only
     // knew about taps made in that same browser session, and froze otherwise).
     await setState(env, kind, id, { mediaPlan: media.included.slice(0, 40) }).catch(() => {});
 
     const analysis = await ask(env, {
-      effort,
+      effort: passEffort,
+      maxTokens: passTokens,
+      deadlineAt,
       // "reading files" holds until the first token: with url sources the
       // fetching happens on the API's side of the wire, before any event.
       initialStage: media.blocks.length ? 'reading files' : 'sending',
@@ -2581,14 +2729,32 @@ or [[ganglionic AChR antibody]]. His panel paints each bracketed term a colour
 and paints its explanation here the same colour, so his eye pairs them without
 reading. So: name the term in "Right now", explain it here, bracket it in both.
 Never bracket a term from his mastered list. Never bracket the same term twice
-in one section.
+in one section. Inside "Right now" and "Plain English" the brackets replace
+the parenthetical gloss rule: bracket the term, explain it in "Plain English",
+and add no gloss in parentheses. Everywhere else in the assessment the gloss
+rule stands.
 
 "What this could be": at most 4 bullets, one line each: possibility, then the
 one thing that would raise or lower it.
 
 "Worth investigating": at most 5 bullets: a specific lab, image, record or
 referral, and what the result would settle either way. Order by what moves the
-case most, not by what is easiest.
+case most among moves that can actually be started now; a test nobody on the
+current care team can order ranks below the reachable step that gets him to
+whoever can.
+
+Every move you recommend, here, under "For you", and as the next move in
+"Right now", has to be startable in the real US system. Name WHO orders or
+provides it (a PCP does not send a paraneoplastic panel; that is the
+neurologist's), HOW it gets set in motion (a portal message, a referral
+request, a records request through the hospital's release of information
+office), and the honest TIMELINE (specialist referrals often run 4-12 weeks,
+records requests up to 30 days, prior auth adds more, and an ER works up what
+is dangerous today and nothing else). A second opinion at an academic center
+cannot even be booked until the records land, so the records request always
+starts first. When the textbook move and the reachable move differ, lead with
+the one Eric can start this month and note in the same bullet what the ideal
+one is waiting on. A move he cannot start is not a move.
 
 "Not answered": what ERIC asked the client for and has not received. One
 bullet each, \`- what he asked | YYYY-MM-DD | how many times\`, oldest first, at
@@ -2624,12 +2790,13 @@ the picture: a record nobody has pulled, a date nobody has pinned down, a
 symptom nobody has characterised. Each written as a QUESTION Eric could send to
 the client as it stands, because he sends these with one press too.
 
-"Ruled out": what was genuinely on the list and is now off it, at most 5
-bullets, each \`- Name: the one fact that killed it\`. Only things a specific
-result or a specific statement actually closed. Never move a possibility here
-because it became unfashionable in your own thinking, and never re-litigate
-something already on this list in a later section. Write "- Nothing is closed
-yet." when nothing has been.
+"Ruled out": what was genuinely on the list and is now off it, one line each,
+\`- Name: the one fact that killed it\`. Like "What we know so far" this is a
+cumulative record: keep every entry the case has earned, however many. Only
+things a specific result or a specific statement actually closed. Never move a
+possibility here because it became unfashionable in your own thinking, and
+never re-litigate something already on this list in a later section. Write
+"- Nothing is closed yet." when nothing has been.
 
 "For you": at most 3 bullets of advocacy strategy: who to push, where this
 stalls, and how to engage THIS patient if that matters (fewer questions and
@@ -2676,7 +2843,7 @@ physical case folder, so write a label, not a sentence. No hedging, no
 percentage, no trailing punctuation. If the thread cannot support one yet,
 write exactly: Still forming.
 
-"## Differential": up to 5 lines, most likely first, each exactly
+"## Differential": up to 7 lines, most likely first, each exactly
 \`- Name [NN%]: why it fits | what would raise or lower it\`
 NN is YOUR confidence as a whole number, and the numbers must not add up to
 more than 100: whatever is left over is "not enough information", which early
@@ -2725,12 +2892,14 @@ ${style.voice}` : ''}` || ' ' }],
             // The private discussion goes in beside the client transcript, and
             // it carries weight: what Eric settled with the advisor there has
             // to move this assessment, or the advisor chat is decoration.
-            text: (prior
-              ? `Here is your previous assessment of this client:\n\n<previous>\n${prior}\n</previous>\n\nHere is the full conversation as it now stands:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nUpdate the assessment. Carry forward what still holds, revise what the new messages change, and say explicitly if something new contradicts an earlier read.`
-              : `Here is the conversation so far:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nWrite the first assessment.`)
+            text: (passType === 'delta'
+              ? `Here is your working assessment of this client. It is your memory of the whole case: every earlier message, every file you have read, and everything you and Eric have settled are already folded into it.\n\n<previous>\n${priorText}\n</previous>\n\nThe machine rows you filed after your last pass:\n\n<filed>\nWorking line: ${p.workingDx || 'Still forming'}\nDifferential:\n${(Array.isArray(p.differential) ? p.differential : []).map((r) => `- ${r.name} [${r.pct}%]: ${r.why} | ${r.moves}`).join('\n') || '- none yet'}\n</filed>\n\nSince that assessment, ${fresh.length} new message${fresh.length === 1 ? '' : 's'} arrived. ${omitted} earlier messages are not shown this pass; your previous assessment already accounts for them. The last ${context.length} messages you have already read are shown first so you can hear the turn of the conversation:\n\n<already_read>\n${transcript(context) || '(none)'}\n</already_read>\n\n<new_messages>\n${transcript(fresh) || '(no new chat; new files or discussion below)'}\n</new_messages>\n${qaBlock(qa)}\nThis is an update pass, not a fresh read. Revise the assessment; do not restart it. Keep every section, and rewrite only what the new material changes:\n\n- Output the complete assessment, every heading, in the required order.\n- A section the new material does not touch comes back from your previous assessment unchanged, word for word. Do not rephrase for variety.\n- "What we know so far" and "Ruled out" are cumulative records. Reproduce them in full and add what is new, each fact with its date. Never drop a dated fact because it is old, and never rewrite a value you cannot see this pass.\n- Open "Right now" with what the new material changed. If nothing of substance changed, say so in one line and leave the rest standing.\n- Re-emit ## Working line, ## Differential, ## Not answered, and ## Corrections in their exact formats every pass. Start the Differential from the filed rows above and move a number only by what the new material actually settles; do not re-derive the list from scratch.\n- If a new message contradicts something in your previous assessment, the new message wins. Change the read, and say plainly in "Right now" what changed and why.`
+              : prior
+                ? `Here is your previous assessment of this client:\n\n<previous>\n${priorText}\n</previous>\n\nHere is the full conversation as it now stands:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nUpdate the assessment. Carry forward what still holds, revise what the new messages change, and say explicitly if something new contradicts an earlier read.${compacting ? `\n\nYour previous assessment has grown long. This pass, consolidate "What we know so far" without losing information: merge duplicate rows, collapse repeated normal results into one dated range (for example "CBC normal x4, Jun 3 to Jul 20"), and keep every abnormal result, every medication change, and every date as its own line. Consolidation means shorter, never emptier: anything a specialist would ask about stays.` : ''}`
+                : `Here is the conversation so far:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nWrite the first assessment.`)
               + (qa.length ? `\n\nThe discussion with Eric is part of the case record. A conclusion he reached with you there, a direction he gave, or a possibility you two raised or sank moves this assessment and the Differential section exactly as if he had said it in the client thread. Anything conceded in that discussion, by you or by him, is settled unless new evidence reopens it: move the differential by as much as the conceded point actually bears on it, no more and no less. If that discussion changed your read since the previous assessment, say so in "Right now".` : '')
               + dxOverrideNote(state)
-              + bookkeepingNote(state)
+              + bookkeepingNote(state, { delta: passType === 'delta' })
               + economicsNote(econ)
               + mediaNote(media),
           },
@@ -2762,15 +2931,34 @@ ${style.voice}` : ''}` || ' ' }],
     const diffHistory = moved && dx.differential.length
       ? [{ at: now, rows: dx.differential.map((r) => ({ name: r.name, pct: r.pct })) }, ...prevHistory].slice(0, 12)
       : prevHistory;
+    // A delta reply that came back at half the prior's size lost sections,
+    // and saving it would destroy them permanently (the assessment is its own
+    // memory). Discard it and force the retry to be a full read.
+    if (passType === 'delta' && prior && corr.text.length < String(prior).length * 0.5) {
+      await setState(env, kind, id, { forceFull: true }).catch(() => {});
+      throw new Error('The update pass came back too short and was discarded. A full read runs next.');
+    }
     await setState(env, kind, id, {
       diffAt, fileAt, diffHistory,
       // What this pass folded in, so the next auto fire can tell "new
       // messages" from "the pending flag was noise" and skip the spend.
       analyzedThroughTs: newestTs ? new Date(newestTs) : null,
       qaSig,
+      // Delta bookkeeping: what kind of pass this was, how many deltas since
+      // the last full read, and the signatures whose change forces one.
+      lastPassType: passType,
+      passesSinceFull: passType === 'full' ? 0 : (Number(p.passesSinceFull) || 0) + 1,
+      lastFullAt: passType === 'full' ? now : (p.lastFullAt ? new Date(p.lastFullAt) : null),
+      dxOverrideSig: dxSig,
+      qaOverrideCount: qaOverrides,
+      dismissedSig: corr.corrections.filter((c) => c.dismissed).map((c) => c.msgId).sort().join(','),
+      forceFull: null,
+      errorRetries: null, errorRetryAt: null,
       analysis: corr.text, status: 'idle', error: null, updatedAt: new Date(),
       pendingAt: null, startedAt: null, progressAt: null, stage: null, mediaPlan: null,
-      workingDx: cover.workingDx,
+      // A pass that lost the working line keeps the stored one: blanking the
+      // folder cover over a formatting slip reads as the case going backwards.
+      workingDx: cover.workingDx || p.workingDx || '',
       differential: dx.differential,
       // What he asked for and never got. Its own list, because "What's
       // missing" is about the picture and this is about the conversation.
@@ -2805,7 +2993,7 @@ ${style.voice}` : ''}` || ' ' }],
       // that was already happening for the cover.
       await patchDoc(env, `caseMeta/${id}`, {
         workingDx: {
-          text: override || cover.workingDx,
+          text: override || cover.workingDx || p.workingDx || '',
           by: override ? 'eric' : 'advisor',
           at: now,
         },
@@ -2909,6 +3097,11 @@ Eric is asking you a direct question about this client. Answer it and stop:
 under 120 words unless the question itself demands more. Don't re-summarise
 the case at him; he has the transcript in front of him.
 
+When your answer recommends a move, ground it: who orders it, how it gets
+started in practice, and how long that realistically takes. Never hand him a
+move that needs a specialist or an approval he does not have yet without
+naming the step that gets him there.
+
 After the answer, three optional machine-read sections (they are stripped
 before he sees the answer):
 \`## Key terms\`: any medical term central to your answer that is not in his
@@ -2930,7 +3123,10 @@ not change what he actually does next, answer it briefly and then say so in
 one line: he has what he needs, the next move belongs to the call. Judge it
 on readiness, not on the clock, and never quote money back at him. If
 something clinically important is still open, that outranks this entirely:
-say what is open and keep going, however long it has taken.
+say what is open and keep going, however long it has taken. And say it once:
+if you already told him he was ready in this discussion and nothing has
+changed, do not say it again; a readiness line on every answer is noise he
+will rightly stop reading.
 
 He is allowed to be right. When he makes a point that actually breaks your
 reasoning, concede it plainly and say what it changes; do not concede as a
@@ -3063,6 +3259,10 @@ Never sand his wording down into textbook language he has already edited out.
 Output the message text and nothing else: no preamble, no "here's a draft",
 no quotation marks around it, no sign-off he doesn't actually use.
 
+Nothing in the message may hint that any assessment, analysis, note system,
+or advisor exists behind it: the client only ever hears Eric, writing from
+what he knows.
+
 Length: this chat rejects messages over 2000 characters, and a wall of text
 reads as canned anyway. Stay under 900 characters unless Eric's instruction
 genuinely requires more; never exceed 1900. The 1900 ceiling beats every
@@ -3073,7 +3273,13 @@ needs a second message (he will cut that line before sending).
 
 THIS MESSAGE GOES TO THE PATIENT. Every instruction above about how to talk to
 Eric is about talking to ERIC. It does not apply here. Warmth over bluntness.
-Never correct the client the way you would correct him. Never gloss a term for
+Never correct the client the way you would correct him. Warmth here is
+specific, not performed: it lives in remembering what they said, naming what
+happens next, and not wasting their energy. Never open with a canned empathy
+line ("I hear you", "I completely understand", "I'm so sorry you're going
+through this") unless his own messages open that way. No bullet lists, no
+numbered steps, and one question at a time unless his samples do otherwise.
+Never gloss a term for
 his benefit; explain it for theirs, or leave it out. Never include anything
 about distress, safety or crisis resources: that is Eric's own to handle,
 through a control he presses himself, and it must never arrive inside a draft.
@@ -3089,6 +3295,10 @@ at a treatment call, convert it into a question for the doctor.
 
 What he CAN say: what he would want asked, what a result might mean, what he
 will chase down, and what to bring to the next appointment.
+
+Honest about uncertainty, always. Never promise an outcome, call a pending
+result probably fine, or round a real unknown up to reassurance. What he can
+honestly offer is the next step and his own persistence, so offer that.
 
 Everything in this block, the patient-safety rules above especially, outranks
 anything in the learned profile that follows.`, cache: true },

@@ -303,7 +303,7 @@ export function demoApi(role, store) {
     }
 
     // ---- everything else --------------------------------------------------
-    if (path === '/api/version') return ok({ tag: 'demo', version: '2.10' });
+    if (path === '/api/version') return ok({ tag: 'demo', version: '2.11' });
     if (path === '/api/changelog') {
       return role === 'admin'
         ? ok({ admin: { '2.2': ['Everything on your side, in one place, with nothing real behind it.'] } })
