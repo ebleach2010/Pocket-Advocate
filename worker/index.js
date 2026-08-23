@@ -951,7 +951,7 @@ async function seedWorkClock(env) {
  * one attempt. Runs once; the marker pattern is the standard one.
  */
 async function unparkAdvisor(env) {
-  const MARKER = 'migrations/unpark-2026-08-25a';
+  const MARKER = 'migrations/unpark-2026-08-25b';
   const m = await getDoc(env, MARKER);
   if (m?.data.finishedAt) return;
   if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
@@ -1084,7 +1084,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-24-fullwhy';
+const BUILD_TAG = 'v2026-08-24-shortretry';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1092,7 +1092,7 @@ const BUILD_TAG = 'v2026-08-24-fullwhy';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.24';
+const VERSION = '2.25';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

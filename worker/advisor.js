@@ -2397,6 +2397,24 @@ async function pollFlight(env, kind, id, rowId, flight) {
       out = { state: 'failed', why: String(err?.message || err) };
     }
   }
+  // A discarded too-short delta is not a fault to park: nothing is wrong,
+  // the prior is intact, forceFull is already set, and the retry should run
+  // NOW as the full read the discard promised, not after the half-hour
+  // error clock (which would re-create exactly the staleness this pipeline
+  // exists to end). The full retry cannot loop here: only deltas can trip
+  // the too-short guard.
+  if (/came back too short/.test(String(out.why || ''))) {
+    await diagLog(env, {
+      ev: 'end', ok: false, kind, auto: flight.auto !== false, batch: true, requeued: true,
+      err: String(out.why).slice(0, 140), ms: started ? Date.now() - started : 0,
+    });
+    await setState(env, kind, id, {
+      status: 'idle', batchCtx: null, startedAt: null, progressAt: null, stage: null, mediaPlan: null,
+    }).catch(() => {});
+    await deleteDoc(env, `advisorQueue/${rowId}`).catch(() => {});
+    await markPending(env, kind, id, { force: true }).catch(() => {});
+    return;
+  }
   await diagLog(env, {
     ev: 'end', ok: false, kind, auto: flight.auto !== false, batch: true,
     err: String(out.why || 'batch failed').slice(0, 140),
