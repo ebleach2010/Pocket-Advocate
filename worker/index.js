@@ -824,7 +824,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-effort';
+const BUILD_TAG = 'v2026-08-22-bigfile';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -3454,9 +3454,13 @@ async function handleAdvisor(request, env, ctx) {
     // already more than one pass can carry.
     let media = null;
     if (Array.isArray(body?.media) && body.media.length) {
-      let inlineBudget = 24_000_000;
+      // 8MB of inline base64 per request, down from 24. Inline bytes are
+      // parsed into this Worker's memory as JSON and then copied again on the
+      // way out; 24MB of them could kill the isolate before the analysis even
+      // began. Files staged from the case have URLs and are unaffected.
+      let inlineBudget = 8_000_000;
       media = body.media.slice(0, 60).map((m) => {
-        const data = typeof m?.data === 'string' && m.data.length <= 20_000_000 ? m.data : '';
+        const data = typeof m?.data === 'string' && m.data.length <= 8_000_000 ? m.data : '';
         const fits = data && data.length <= inlineBudget;
         if (fits) inlineBudget -= data.length;
         return {

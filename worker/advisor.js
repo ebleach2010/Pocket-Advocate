@@ -272,13 +272,33 @@ function myVoice(rows) {
 // marker so the advisor can ask for a JPEG or a screenshot instead.
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const MAX_IMAGE_BYTES = Math.floor(4.5 * 1024 * 1024); // API cap is 5MB per image
-const MAX_PDF_BYTES = 12 * 1024 * 1024;
-// What one pass can carry, not what an analysis can cover. base64 inflates a
-// file by a third and the Messages API takes a 32MB request, so 18MB of raw
-// file is about 24MB on the wire with the transcript still to fit. Anything
-// past either ceiling is read on the NEXT pass. Nothing is ever dropped.
-const MAX_TOTAL_MEDIA_BYTES = 18 * 1024 * 1024;
+// 8MB, not 12. This ceiling only governs files encoded inside the Worker or
+// arriving inline from his device; both spend isolate memory several times
+// over, and 12MB of PDF was enough to put a run near the edge on its own. A
+// file with a URL is not bound by this at all: the model fetches it directly.
+const MAX_PDF_BYTES = 8 * 1024 * 1024;
+// THE MEMORY BUDGET, and it is the reason analyses were dying.
+//
+// A Worker isolate gets 128MB. Turning one 18MB PDF into a content block cost
+// far more than 18MB: b64() builds a JS binary string (UTF-16, so double), then
+// btoa returns another string a third larger again, and then the SDK serialises
+// the whole request body into yet another copy. One large PDF could pass 80MB
+// on its own. Over the ceiling the isolate is KILLED - not an exception, so
+// nothing catches it, nothing writes an error, and the run simply stops with
+// status still "running". The panel called that stalled, the cron rescue died
+// exactly the same way on the same file, and pendingMedia handed the same file
+// to every following pass. That is the loop Eric hit: "This boy is not
+// updating... He doesn't even reliably update in the app." (2026-08-22.)
+//
+// So: a file that has a fetchable URL is now sent to the model AS a URL, and
+// its bytes never enter the Worker at all. Only a file discovered by walking
+// the bucket (path, no URL) is still encoded here, and that path gets a small
+// budget that cannot threaten the isolate.
+const MAX_TOTAL_MEDIA_BYTES = 6 * 1024 * 1024;
 const MAX_MEDIA_FILES = 8;
+// Encoded-in-the-Worker files per pass. URL files do not count: they cost no
+// memory here.
+const MAX_B64_FILES = 2;
 // How many read files we remember per thread, and how many unread ones we
 // carry forward. Both are generous: a case that outgrows them is one where the
 // oldest reads have long since been folded into the running assessment.
@@ -387,11 +407,27 @@ async function attachmentBlock(env, att, kind, id) {
       block: { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: att.data } },
     };
   }
-  // Two ways in. A file shared in chat carries a tokened download URL that
-  // does its own authorizing. A file found by listing the bucket has only its
-  // object path, and is fetched with the service account.
-  let res;
   const cap = mk === 'image' ? MAX_IMAGE_BYTES : MAX_PDF_BYTES;
+  // THE CHEAP PATH, and now the normal one. A file shared in chat or listed
+  // on the case carries a tokened download URL that authorizes itself, and
+  // the Messages API will fetch a URL source directly. The bytes go from
+  // Storage to the model without ever passing through this Worker, which is
+  // what keeps a large PDF from killing the isolate. bytes: 0 because that is
+  // literally what it costs us.
+  const publicUrl = att.url ? safeAttachmentUrl(att, kind, id) : null;
+  if (publicUrl) {
+    if (att.size && att.size > cap) return { skip: 'too large to read' };
+    return {
+      bytes: 0,
+      block: mk === 'image'
+        ? { type: 'image', source: { type: 'url', url: publicUrl } }
+        : { type: 'document', source: { type: 'url', url: publicUrl } },
+    };
+  }
+  // Only a file found by walking the bucket reaches here: it has an object
+  // path and no URL, so the service account fetches it and it is encoded in
+  // memory, under the small budget above.
+  let res;
   if (att.path && !att.url) {
     const path = storageKey(att, kind, id);
     if (!path) return { skip: 'not a file from this case' };
@@ -514,6 +550,7 @@ async function selectedMediaBlocks(env, list, kind, id, alreadyRead = []) {
   const readKeys = [];
   const carry = [];
   let budget = MAX_TOTAL_MEDIA_BYTES;
+  let b64Files = 0;
   for (const att of (list || [])) {
     // Storage names carry a collision-proof timestamp in front. The model does
     // not need it, and since the rest of the name is now the client's own
@@ -526,13 +563,17 @@ async function selectedMediaBlocks(env, list, kind, id, alreadyRead = []) {
     // on the state doc as a URL, but a file Eric uploaded inline from his own
     // device is base64 in this request and nowhere else, so all we can do is
     // tell him it needs another tap.
-    const overCount = included.length >= MAX_MEDIA_FILES;
-    const overBytes = budget <= 0 || (att.size || 0) > budget;
+    // A URL-backed file costs this Worker nothing, so it is bounded by the
+    // file count alone; only an encoded one spends the memory budget.
+    const byUrl = !!(att.url && safeAttachmentUrl(att, kind, id));
+    const overCount = included.length >= MAX_MEDIA_FILES
+      || (!byUrl && !att.data && b64Files >= MAX_B64_FILES);
+    const overBytes = !byUrl && (budget <= 0 || (att.size || 0) > budget);
     // Bigger than a whole pass, so no pass will ever hold it. Carrying it means
     // carrying it forever: every carry re-queues the case, and the queue buys
     // another max-effort turn five minutes later, for a file that is refused
     // again on arrival. Say so once and stop.
-    if ((att.size || 0) > MAX_TOTAL_MEDIA_BYTES) {
+    if (!byUrl && (att.size || 0) > MAX_TOTAL_MEDIA_BYTES) {
       skipped.push(`${name} (too large to read: ${Math.round((att.size || 0) / 1048576)} MB, the limit for one read is ${Math.round(MAX_TOTAL_MEDIA_BYTES / 1048576)} MB. Ask for it split up, or as screenshots)`);
       readKeys.push(key);   // remembered as handled, so it is not re-offered
       continue;
@@ -553,6 +594,7 @@ async function selectedMediaBlocks(env, list, kind, id, alreadyRead = []) {
       const out = await attachmentBlock(env, att, kind, id);
       if (out.block) {
         budget -= out.bytes;
+        if (out.bytes > 0) b64Files += 1;
         blocks.push(out.block);
         included.push(name);
         readKeys.push(key);
@@ -1979,7 +2021,22 @@ export async function runQueuedAnalyses(env) {
         st.startedAt ? new Date(st.startedAt).getTime() : 0,
         st.progressAt ? new Date(st.progressAt).getTime() : 0);
       if (st.status === 'running' && beat && Date.now() - beat < 5 * 60_000) continue;
-      await runAnalysis(env, kind, id);
+      // Count the attempt BEFORE running it. runAnalysis's own catch bumps
+      // this too, but a run that dies by having its isolate killed (memory,
+      // wall clock) never reaches any catch, and those are exactly the runs
+      // that repeat forever. Counting here makes even an uncatchable death
+      // move the case toward the no-files fallback instead of looping.
+      const tries = Number(row.data.tries || 0) + 1;
+      await patchDoc(env, `advisorQueue/${row.id}`, { tries }, { mask: ['tries'] }).catch(() => {});
+      if (tries > ANALYSIS_MAX_TRIES + 1) {
+        await deleteDoc(env, `advisorQueue/${row.id}`).catch(() => {});
+        await setState(env, kind, id, {
+          status: 'error',
+          error: 'This read kept stopping partway. Tap Update to try again, or remove the newest file from the staged list.',
+        }).catch(() => {});
+        continue;
+      }
+      await runAnalysis(env, kind, id, null, { skipMedia: tries >= 2 });
       break; // one per firing
     }
   } catch (err) {
@@ -2138,7 +2195,7 @@ function bookkeepingNote(state) {
  * purpose: the previous analysis goes back in as memory, so each pass refines
  * rather than restarting, and the picture compounds over the life of the case.
  */
-export async function runAnalysis(env, kind, id, mediaList = null) {
+export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia = false } = {}) {
   try {
     await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date() });
     const [rows, state, knowledge, style, qa, effort, econ] = await Promise.all([
@@ -2176,13 +2233,23 @@ export async function runAnalysis(env, kind, id, mediaList = null) {
     // once as "read this now" and once as "you already read this, treat it as
     // read", about the same file, on the first pass that read it.
     const found = new Set(alreadyRead);
-    const queue = [
+    // skipMedia is the last resort, set by the queue after a run has died
+    // twice on the same case: read the thread with no files at all, so a case
+    // can never be held hostage by one document. What was skipped is named in
+    // the media report, and the carry list is cleared so the next ordinary
+    // pass starts clean rather than walking into the same wall.
+    const queue = skipMedia ? [] : [
       ...carried,
       ...(mediaList || []),
       ...autoReadableFiles(rows, alreadyRead, kind, id, found),
       ...(await storageReadableFiles(env, alreadyRead, kind, id, found)),
     ];
     const media = await selectedMediaBlocks(env, queue, kind, id, alreadyRead);
+    if (skipMedia) {
+      media.skipped = [...media.skipped, ...carried.map((c) =>
+        `${String(c.name || 'file').replace(/^\d{10,}-/, '')} (skipped: reading it stopped this analysis twice, so this pass ran without it)`)];
+      media.carry = [];
+    }
 
     const analysis = await ask(env, {
       effort,
