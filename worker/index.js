@@ -64,13 +64,19 @@ export class AdvisorTurn extends WorkflowEntrypoint {
 // page quotes one number and the card is charged another (which is exactly
 // what happened after the $150 experiment). Seeds (Eric, 2026-08-20): $265
 // per case, a $75 follow-up bought separately, $50/mo chat.
-const CASE_PRICE_CENTS = 26500;
+const CASE_PRICE_CENTS = 65000;
 // The follow-up is a second discussion on the same case, sold from the case
 // after the report lands rather than at checkout. It is NOT included.
-const ADDON_PRICE_CENTS = 7500;
+const ADDON_PRICE_CENTS = 17500;
 // The chat subscription's SEED. The live number lives on the rates doc like
 // the other two and climbs on its own; see the ratchet below.
-const SUB_PRICE_CENTS = 5000;
+const SUB_PRICE_CENTS = 9500;
+// Full access: Eric works INSIDE the case, not beside it - records under a
+// signed release, three-way calls with clinics, and insurance appeals he
+// drafts and files himself. Priced from hours actually required (25-35) at
+// the low half of what independent advocates charge for appeals work
+// ($100-350/hr nationally, Aug 2026), which is where $3,500 comes from.
+const FULL_PRICE_CENTS = 350000;
 // Case chat opens this many days before the booked call; opening it sooner
 // costs a one-time fee at the direct-line price. Eric, 2026-08-22:
 // "explicitly for avoiding chat abuse by booking two months in advance."
@@ -89,15 +95,30 @@ const CHAT_OPEN_CENTS = 5000;
 // nothing anywhere says any of it is happening.
 const RATE_GROWTH = 1.10;
 const RATE_ROUND_CENTS = 500;
-const CASE_CAP_CENTS = 100000;
-const ADDON_CAP_CENTS = 50000;
+const CASE_CAP_CENTS = 140000;
+const ADDON_CAP_CENTS = 40000;
 const SUB_STEP_CENTS = 500;
-const SUB_CAP_CENTS = 10000;
+const SUB_CAP_CENTS = 15000;
+// Full access climbs GENTLER than the rest: 5% a booking, to the nearest $25,
+// parked at $5,000. Two reasons. A 10% step from $3,500 leaves reach behind
+// in three sales, and this tier has a second throttle the others do not - a
+// hard cap on how many can be open at once - so the price does not have to do
+// that work alone. At the ceiling the scope still pays about $145-200/hr,
+// which is the honest top for non-attorney advocacy.
+const FULL_GROWTH = 1.05;
+const FULL_ROUND_CENTS = 2500;
+const FULL_CAP_CENTS = 500000;
 // Sanity rails on the manual setter, not on the ratchet. A typo that sets the
 // case rate to $5 or $50,000 should bounce rather than take a booking.
 const RATE_MIN_CENTS = 5000;
 const RATE_MAX_CENTS = 500000;
 const RATES_PATH = 'config/rates';
+// The line under which a case is being worked at a loss, in cents per hour.
+// Eric, 2026-08-23: "I've lost money on my current client." The app counts
+// his worked minutes already; this is what turns that count into a warning
+// he sees while the case is still open instead of afterwards. $75/hr is the
+// bottom of the national independent-advocacy band; he can move it.
+const HOURLY_FLOOR_CENTS = 7500;
 
 /**
  * The live rate. Seeded from the constants above the first time it is asked
@@ -114,18 +135,24 @@ async function readRates(env) {
     caseCents: Number(d.caseCents) > 0 ? Number(d.caseCents) : CASE_PRICE_CENTS,
     addonCents: Number(d.addonCents) > 0 ? Number(d.addonCents) : ADDON_PRICE_CENTS,
     subCents: Number(d.subCents) > 0 ? Number(d.subCents) : SUB_PRICE_CENTS,
+    fullCents: Number(d.fullCents) > 0 ? Number(d.fullCents) : FULL_PRICE_CENTS,
+    // The floor below which a case is being worked at a loss. Eric's own
+    // number, set from the dashboard; the default is the bottom of the
+    // national independent-advocacy band.
+    floorCents: Number(d.floorCents) > 0 ? Number(d.floorCents) : HOURLY_FLOOR_CENTS,
     bookings: Number(d.bookings) || 0,
     updateTime: doc?.updateTime || null,
     seeded: !!doc,
   };
 }
 
-/** One exponential step: times the growth factor, to the nearest $5, never
- *  less than one $5 step (a small number times 1.1 can round back onto
- *  itself), capped and parked at the cap. */
-function growRate(cents, cap) {
-  const grown = Math.round((cents * RATE_GROWTH) / RATE_ROUND_CENTS) * RATE_ROUND_CENTS;
-  return Math.min(cap, Math.max(cents + RATE_ROUND_CENTS, grown));
+/** One exponential step: times the growth factor, to the nearest rounding
+ *  unit, never less than one unit (a small number times 1.1 can round back
+ *  onto itself), capped and parked at the cap. The growth and rounding are
+ *  arguments because full access climbs on a gentler curve than the rest. */
+function growRate(cents, cap, growth = RATE_GROWTH, round = RATE_ROUND_CENTS) {
+  const grown = Math.round((cents * growth) / round) * round;
+  return Math.min(cap, Math.max(cents + round, grown));
 }
 
 /**
@@ -147,13 +174,14 @@ async function raiseRates(env, attempt = 0) {
   const next = {
     caseCents: growRate(now.caseCents, CASE_CAP_CENTS),
     addonCents: growRate(now.addonCents, ADDON_CAP_CENTS),
+    fullCents: growRate(now.fullCents, FULL_CAP_CENTS, FULL_GROWTH, FULL_ROUND_CENTS),
     // A booking is a new client of any type, so it lifts the chat price too.
     subCents: Math.min(SUB_CAP_CENTS, now.subCents + SUB_STEP_CENTS),
     bookings: now.bookings + 1,
     updatedAt: new Date(),
   };
   const opts = now.seeded
-    ? { mask: ['caseCents', 'addonCents', 'subCents', 'bookings', 'updatedAt'], ifUpdateTime: now.updateTime }
+    ? { mask: ['caseCents', 'addonCents', 'subCents', 'fullCents', 'bookings', 'updatedAt'], ifUpdateTime: now.updateTime }
     : { mustNotExist: true };
   const won = await patchDoc(env, RATES_PATH, next, opts).catch(() => false);
   if (won === false) return raiseRates(env, attempt + 1);
@@ -174,7 +202,9 @@ async function capPings(env, prev, next) {
   if (prev.addonCents < ADDON_CAP_CENTS && next.addonCents >= ADDON_CAP_CENTS)
     hits.push('the follow-up just hit its $500 ceiling');
   if (prev.subCents < SUB_CAP_CENTS && next.subCents >= SUB_CAP_CENTS)
-    hits.push('Priority Chat just hit its $100/mo ceiling');
+    hits.push('Priority Chat just hit its $150/mo ceiling');
+  if (prev.fullCents < FULL_CAP_CENTS && next.fullCents >= FULL_CAP_CENTS)
+    hits.push('Full Access just hit its $5,000 ceiling');
   for (const h of hits) {
     await notifyUser(env, env.ADMIN_UID, {
       title: 'Pocket Advocate',
@@ -202,7 +232,7 @@ async function raiseSubRate(env, attempt = 0) {
     : { mustNotExist: true };
   const body = now.seeded
     ? { subCents, updatedAt: new Date() }
-    : { caseCents: now.caseCents, addonCents: now.addonCents, subCents, bookings: now.bookings, updatedAt: new Date() };
+    : { caseCents: now.caseCents, addonCents: now.addonCents, fullCents: now.fullCents, subCents, bookings: now.bookings, updatedAt: new Date() };
   const won = await patchDoc(env, RATES_PATH, body, opts).catch(() => false);
   if (won === false) return raiseSubRate(env, attempt + 1);
   await capPings(env, now, { ...now, subCents });
@@ -272,26 +302,38 @@ async function handleSetRates(request, env) {
     caseCents: body?.caseCents === undefined ? now.caseCents : Number(body.caseCents),
     addonCents: body?.addonCents === undefined ? now.addonCents : Number(body.addonCents),
     subCents: body?.subCents === undefined ? now.subCents : Number(body.subCents),
+    fullCents: body?.fullCents === undefined ? now.fullCents : Number(body.fullCents),
+    floorCents: body?.floorCents === undefined ? now.floorCents : Number(body.floorCents),
   };
   for (const [k, v] of Object.entries(want)) {
-    // The chat rate rails lower: $100 is its ceiling by design, and $50 is
-    // under the general floor.
-    const [min, max] = k === 'subCents' ? [1000, SUB_CAP_CENTS] : [RATE_MIN_CENTS, RATE_MAX_CENTS];
+    // The chat rate rails lower: its ceiling is by design, and a monthly
+    // number sits under the general floor. The hourly floor is a rate, not a
+    // price, and rails on its own scale.
+    const [min, max] = k === 'subCents' ? [1000, SUB_CAP_CENTS]
+      : k === 'floorCents' ? [1000, 100000]
+        : [RATE_MIN_CENTS, RATE_MAX_CENTS];
     if (!Number.isInteger(v) || v < min || v > max)
       return json({ error: `${k} has to be a whole number of cents between ${min} and ${max}.` }, 400);
   }
   const changed = want.caseCents !== now.caseCents || want.addonCents !== now.addonCents
-    || want.subCents !== now.subCents;
+    || want.subCents !== now.subCents || want.fullCents !== now.fullCents
+    || want.floorCents !== now.floorCents;
   if (changed) {
     await patchDoc(env, RATES_PATH, { ...want, updatedAt: new Date(), setByHand: true },
-      { mask: ['caseCents', 'addonCents', 'subCents', 'updatedAt', 'setByHand'] });
+      { mask: ['caseCents', 'addonCents', 'subCents', 'fullCents', 'floorCents', 'updatedAt', 'setByHand'] });
   }
   return json({ ...want, bookings: now.bookings, changed });
 }
 
 async function handleRates(env) {
   const r = await readRates(env);
-  return json({ caseCents: r.caseCents, addonCents: r.addonCents, subCents: r.subCents, chatOpenCents: CHAT_OPEN_CENTS });
+  // floorCents is deliberately NOT here: it is Eric's own margin line, it has
+  // no business on a client-served endpoint, and the admin reads it back
+  // through POST /api/admin/rates.
+  return json({
+    caseCents: r.caseCents, addonCents: r.addonCents, subCents: r.subCents,
+    fullCents: r.fullCents, chatOpenCents: CHAT_OPEN_CENTS,
+  });
 }
 // Follow-up sessions expire one month after the first discussion (Eric,
 // 2026-07-13); clients get one warning email a week before the deadline.
@@ -778,6 +820,7 @@ export default {
       ctx.waitUntil(voiceStudyKickoff(env));
       ctx.waitUntil(reviveLostSend(env));
       ctx.waitUntil(seedWorkClock(env));
+      ctx.waitUntil(restructureRates(env));
     }
     // Un-gated on purpose: the wedged case should recover on the FIRST
     // firing after this deploys, not up to a quarter hour later. One marker
@@ -918,6 +961,56 @@ async function openTuesdaySlots(env) {
  * only if the clock is still unset, so it can never double-count or land on
  * the wrong client.
  */
+/**
+ * The 2026-08-23 restructure. The seed constants only bite a Firestore that
+ * has never been written, and this one has, so the live prices have to be
+ * moved by hand exactly once.
+ *
+ * Eric set me on this: "We're restructuring pricing outside of those
+ * grandfathered in... I'm worth the money; I've lost money on my current
+ * client." Measured against the hours his own work clock records, every old
+ * price sat under the floor for independent advocacy nationally. Nobody
+ * already in the door is touched: a paid case is paid, each case carries the
+ * follow-up price it was quoted (`addonRateCents`), and existing chat
+ * subscriptions keep billing at their original Stripe price until they
+ * cancel. This moves the LIST price for whoever comes next.
+ *
+ * It refuses to run over a hand-set doc: if Eric has since set prices from
+ * the dashboard, his numbers win and this stays out of the way forever.
+ */
+async function restructureRates(env) {
+  const MARKER = 'migrations/reprice-2026-08-23';
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;
+  const done = (result) => patchDoc(env, MARKER, { finishedAt: new Date(), result },
+    { mask: ['finishedAt', 'result'] }).catch(() => {});
+  try {
+    const doc = await getDoc(env, RATES_PATH).catch(() => null);
+    if (doc?.data.setByHand) return done('rates are hand-set; left alone');
+    const next = {
+      caseCents: CASE_PRICE_CENTS,
+      addonCents: ADDON_PRICE_CENTS,
+      subCents: SUB_PRICE_CENTS,
+      fullCents: FULL_PRICE_CENTS,
+      floorCents: HOURLY_FLOOR_CENTS,
+      updatedAt: new Date(),
+    };
+    const opts = doc
+      ? { mask: ['caseCents', 'addonCents', 'subCents', 'fullCents', 'floorCents', 'updatedAt'], ifUpdateTime: doc.updateTime }
+      : { mustNotExist: true };
+    const won = await patchDoc(env, RATES_PATH, next, opts).catch(() => false);
+    if (won === false) return; // someone wrote first; the next firing retries
+    return done(`case ${next.caseCents}, addon ${next.addonCents}, sub ${next.subCents}, full ${next.fullCents}`);
+  } catch (err) {
+    console.error('restructure rates:', err.message || err);
+  }
+}
+
 async function seedWorkClock(env) {
   const MARKER = 'migrations/workclock-2026-08-22';
   const CASE_ID = '65cc57c1-2057-47eb-8dee-d82fce8bf5fe';

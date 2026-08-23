@@ -2656,9 +2656,12 @@ async function loadEconomics(env, kind, id) {
   if (kind !== 'case') {
     return { sub: true, paidCents: 0, tipCents: 0, seconds: 0 };
   }
-  const [doc, meta] = await Promise.all([
+  const [doc, meta, rates] = await Promise.all([
     getDoc(env, `cases/${id}`).catch(() => null),
     getDoc(env, `caseMeta/${id}`).catch(() => null),
+    // Eric's own margin floor, so the advisor can tell him a case has crossed
+    // from thorough into unpaid while he can still act on it.
+    getDoc(env, 'config/rates').catch(() => null),
   ]);
   const c = doc?.data || {};
   let paidCents = Number(c.payment?.amountTotal) || Number(c.stripe?.amountTotal)
@@ -2684,6 +2687,7 @@ async function loadEconomics(env, kind, id) {
     tipCents,
     seconds: clocked || Math.max(0, Number(meta?.data.chatSeconds) || 0),
     metered: clocked > 0,
+    floorCents: Number(rates?.data.floorCents) > 0 ? Number(rates.data.floorCents) : 7500,
   };
 }
 
@@ -2699,14 +2703,21 @@ function economicsNote(econ) {
   // Numbers only. The persuasion lives in the "For you" instruction, and a
   // rhetorical flourish in a data block is exactly what a model paraphrases
   // into a sentence the guardrail then has to catch.
-  const rate = hours >= 0.5 && econ.paidCents
-    ? ` That is about ${dollars(econ.paidCents / hours)} an hour so far.`
+  const hourly = hours >= 0.5 && econ.paidCents ? econ.paidCents / hours : 0;
+  const rate = hourly
+    ? ` That is about ${dollars(hourly)} an hour so far.`
+    : '';
+  // The floor is his own figure, set from his dashboard. Stated as a fact
+  // and nothing more, same rule as everything else in this block: the
+  // judgement about what to DO belongs to the "For you" instruction.
+  const under = hourly && econ.floorCents && hourly < econ.floorCents
+    ? ` His floor is ${dollars(econ.floorCents)} an hour, so this case is now under it.`
     : '';
   return `
 
 What this case has paid, and what it has cost him so far: ${dollars(econ.paidCents)} paid${
     econ.tipCents ? ` plus ${dollars(econ.tipCents)} in tips` : ''
-  }, against ${spent} of work.${rate} ${econ.metered
+  }, against ${spent} of work.${rate}${under} ${econ.metered
     ? 'That is time he clocked himself, so it is the real figure, and his client can see it too.'
     : 'That figure counts only the minutes his chat page was open, so his real hours are higher than it says.'}`;
 }

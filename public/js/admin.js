@@ -2,7 +2,7 @@
 // countdown that keeps the 7-day SLA from silently slipping (SPEC §F).
 
 import './admin-ledger.js';
-import { db, collection, getDocs } from './firebase.js';
+import { db, collection, getDocs, doc, getDoc, setDoc } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { initPushPrompt } from './push.js';
 import { folderCardHtml, wireFolderOpen, wireDxLongPress, openDxSheet } from './drawer.js';
@@ -110,6 +110,16 @@ async function load() {
     });
     if (res.ok) voice = await res.json();
   } catch { /* same */ }
+
+  // The tip jar switch. Lives on `settings`, which is world-readable and
+  // admin-writable by rule, so the client page reads it directly and one tap
+  // here retires the jar everywhere with no deploy.
+  let tipJar = true;
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'tipJar'));
+    if (snap.exists() && snap.data().enabled === false) tipJar = false;
+  } catch { /* default on */ }
+
   const dollars = (c) => (c % 100 ? (c / 100).toFixed(2) : String(c / 100));
   const rateBlock = rate ? `
     <details class="panel" style="margin-bottom:1rem;">
@@ -119,9 +129,11 @@ async function load() {
       </summary>
       <p class="dim small" style="margin:.5rem 0 .6rem;">Follow-up
         <strong style="color:var(--ink)">$${dollars(rate.addonCents)}</strong>,
-        Priority Chat <strong style="color:var(--ink)">$${dollars(rate.subCents || 5000)}/mo</strong>.
-        Case and follow-up grow 10% per booking (to $1000 and $500 caps); chat
-        climbs $5 per new client of any type (to $100). ${rate.bookings} booking${rate.bookings === 1 ? ' has' : 's have'}
+        Priority Chat <strong style="color:var(--ink)">$${dollars(rate.subCents || 9500)}/mo</strong>,
+        Full Access <strong style="color:var(--ink)">$${dollars(rate.fullCents || 350000)}</strong>.
+        Case and follow-up grow 10% per booking (to $1,400 and $400 caps); chat
+        climbs $5 per new client of any type (to $150); Full Access grows 5% to
+        the nearest $25 (to $5,000). ${rate.bookings} booking${rate.bookings === 1 ? ' has' : 's have'}
         counted so far. Everyone already booked keeps what they were quoted.</p>
       <div class="row" style="gap:.5rem; flex-wrap:wrap;">
         <label class="dim small">Case $
@@ -131,11 +143,26 @@ async function load() {
           <input type="number" id="rate-addon" min="50" step="1" value="${(rate.addonCents / 100)}"
             style="width:6rem;"></label>
         <label class="dim small">Chat $/mo
-          <input type="number" id="rate-sub" min="10" max="100" step="1" value="${((rate.subCents || 5000) / 100)}"
+          <input type="number" id="rate-sub" min="10" max="150" step="1" value="${((rate.subCents || 9500) / 100)}"
+            style="width:5rem;"></label>
+        <label class="dim small">Full Access $
+          <input type="number" id="rate-full" min="50" step="25" value="${((rate.fullCents || 350000) / 100)}"
+            style="width:7rem;"></label>
+      </div>
+      <p class="dim small" style="margin:.7rem 0 .35rem;">Tell me when a case
+        has dropped below this much an hour, against the clock I ran on it.</p>
+      <div class="row" style="gap:.5rem; flex-wrap:wrap; align-items:center;">
+        <label class="dim small">Floor $/hr
+          <input type="number" id="rate-floor" min="10" max="1000" step="5" value="${((rate.floorCents || 7500) / 100)}"
             style="width:5rem;"></label>
         <button class="btn quiet" id="rate-save">Set</button>
       </div>
       <p class="dim small" id="rate-said" style="margin:.4rem 0 0;" hidden></p>
+      <label class="row dim small" style="gap:.5rem; margin:.8rem 0 0; align-items:center; cursor:pointer;">
+        <input type="checkbox" id="tip-jar-on"${tipJar ? ' checked' : ''}>
+        Show the tip jar on client case pages
+      </label>
+      <p class="dim small" id="tip-said" style="margin:.3rem 0 0;" hidden></p>
     </details>` : '';
 
   const ago = (iso) => {
@@ -259,12 +286,14 @@ async function load() {
             caseCents: Math.round(Number(listEl.querySelector('#rate-case').value) * 100),
             addonCents: Math.round(Number(listEl.querySelector('#rate-addon').value) * 100),
             subCents: Math.round(Number(listEl.querySelector('#rate-sub').value) * 100),
+            fullCents: Math.round(Number(listEl.querySelector('#rate-full').value) * 100),
+            floorCents: Math.round(Number(listEl.querySelector('#rate-floor').value) * 100),
           }),
         });
         const d = await res.json();
         if (!res.ok) throw new Error(d.error || `Failed (${res.status})`);
         said.textContent = d.changed
-          ? `Set. A case is $${dollars(d.caseCents)}, a follow-up $${dollars(d.addonCents)}, chat $${dollars(d.subCents)}/mo.`
+          ? `Set. A case is $${dollars(d.caseCents)}, a follow-up $${dollars(d.addonCents)}, chat $${dollars(d.subCents)}/mo, full access $${dollars(d.fullCents)}. Warning below $${dollars(d.floorCents)}/hr.`
           : 'Already those numbers.';
         said.hidden = false;
       } catch (err) {
@@ -272,6 +301,25 @@ async function load() {
         said.hidden = false;
       }
       saveRate.disabled = false;
+    });
+  }
+
+  const tipToggle = listEl.querySelector('#tip-jar-on');
+  if (tipToggle) {
+    tipToggle.addEventListener('change', async () => {
+      const said = listEl.querySelector('#tip-said');
+      tipToggle.disabled = true;
+      try {
+        await setDoc(doc(db, 'settings', 'tipJar'), { enabled: tipToggle.checked }, { merge: true });
+        said.textContent = tipToggle.checked
+          ? 'The jar is showing on client case pages.'
+          : 'The jar is gone from client case pages.';
+      } catch (err) {
+        tipToggle.checked = !tipToggle.checked;
+        said.textContent = `Couldn't save that: ${err.message}`;
+      }
+      said.hidden = false;
+      tipToggle.disabled = false;
     });
   }
 

@@ -22,7 +22,7 @@ import { mountFolder } from './folder.js';
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
 // percentages below are a share of the standard Advocacy Case fee.
-const CASE_PRICE_CENTS = 26500;
+const CASE_PRICE_CENTS = 65000;
 
 /**
  * The rate a given client booked at. Recorded on the case at checkout, so a
@@ -33,6 +33,34 @@ const CASE_PRICE_CENTS = 26500;
  */
 const caseRate = (c) => (c && c.caseRateCents) || CASE_PRICE_CENTS;
 const dollars = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
+
+/**
+ * What this case has actually paid, tips excluded. A tip is a gift, and
+ * counting it would flatter the one number here that has to stay honest.
+ */
+function paidCents(c) {
+  const extras = Array.isArray(c?.extraPayments) ? c.extraPayments : [];
+  return caseRate(c)
+    + extras.filter((x) => x.kind !== 'tip').reduce((n, x) => n + (Number(x.amountCents) || 0), 0);
+}
+
+/**
+ * Eric, 2026-08-23: "I've lost money on my current client." He found that out
+ * afterwards. The clock beside this already counts his worked minutes, so the
+ * app can say it while the case is still open: what this case pays him per
+ * hour, right now, against the hours he has actually put in.
+ *
+ * Null under six minutes of clock: a case fee over one recorded minute is a
+ * meaningless five-figure hourly, and a number that silly teaches him to
+ * ignore the line.
+ */
+let floorCents = 7500;
+function effectiveHourly(c, liveSeconds) {
+  const secs = Math.max(0, Number(liveSeconds) || 0);
+  if (secs < 360) return null;
+  return Math.round(paidCents(c) / (secs / 3600));
+}
+
 const caseId = new URLSearchParams(location.search).get('id');
 // Sentinel value for "a time that isn't on the calendar" in the slot dropdown.
 const CUSTOM = '__custom__';
@@ -40,7 +68,7 @@ const CUSTOM_OPTION = `<option value="${CUSTOM}">A time not on the calendar…</
 
 hydrateNav();
 const user = await requireAdmin();
-if (user && caseId) load();
+if (user && caseId) { loadFloor(); load(); }
 
 let data = null;
 // Case id the folder shell (and its one chat + advisor mount) was built for.
@@ -57,6 +85,25 @@ let lastDifferential = [];
 // Set once the chat mounts; the Drafts page tools send through it.
 let chatSend = null;
 let notesHtml = '';
+
+/**
+ * His margin floor, read once per page load from the admin rates route. It
+ * never reaches a client surface: /api/rates deliberately omits it, and this
+ * module is behind the admin asset gate.
+ */
+async function loadFloor() {
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/admin/rates', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    if (!res.ok) return;
+    const d = await res.json();
+    if (Number(d.floorCents) > 0) floorCents = Number(d.floorCents);
+  } catch { /* the default floor stands */ }
+}
 
 async function load() {
   const el = document.getElementById('case');
@@ -131,6 +178,7 @@ function render(el) {
               <div class="row" data-workclock style="gap:.5rem; align-items:center; margin:.1rem 0 .5rem;">
                 <button class="btn quiet" data-work-toggle style="flex:none;">▶ Start working</button>
                 <span class="dim small" data-work-total></span>
+                <span class="work-rate" data-work-rate hidden></span>
               </div>
               <p class="dim small" data-client-gate style="margin:.1rem 0 .4rem;" hidden></p>
               <div id="chat"></div>
@@ -608,12 +656,25 @@ function startWorkClock(c) {
   let startedAt = w.startedAt ? toDate(w.startedAt).getTime() : 0;
 
   const live = () => seconds + (startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0);
+  const rateEl = row.querySelector('[data-work-rate]');
   const paint = () => {
     const t = live();
     const h = Math.floor(t / 3600);
     const m = Math.floor((t % 3600) / 60);
     totalEl.textContent = `${h ? `${h}h ` : ''}${m}m on this case${startedAt ? ' · running' : ''}`;
     totalEl.classList.toggle('on', !!startedAt);
+    // The margin line, live beside the clock that produces it.
+    if (rateEl) {
+      const hourly = effectiveHourly(c, t);
+      rateEl.hidden = hourly === null;
+      if (hourly !== null) {
+        rateEl.textContent = `$${dollars(hourly)}/hr`;
+        rateEl.classList.toggle('under', hourly < floorCents);
+        rateEl.title = hourly < floorCents
+          ? `Below your $${dollars(floorCents)}/hr floor. $${dollars(paidCents(c))} paid so far.`
+          : `$${dollars(paidCents(c))} paid so far.`;
+      }
+    }
     btn.textContent = startedAt ? '⏸ Stop working' : '▶ Start working';
     btn.classList.toggle('glow', !!startedAt);
   };

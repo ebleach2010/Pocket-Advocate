@@ -84,8 +84,8 @@ export function demoApi(role, store) {
     if (path === '/api/admin/session') return ok({ ok: true });
 
     // ---- money, without any -----------------------------------------------
-    if (path === '/api/rates') return ok({ caseCents: 26500, addonCents: 7500, subCents: 5000, chatOpenCents: 5000 });
-    if (path === '/api/admin/rates') return ok({ caseCents: 26500, addonCents: 7500, subCents: 5000, bookings: 0, changed: false });
+    if (path === '/api/rates') return ok({ caseCents: 65000, addonCents: 17500, subCents: 9500, fullCents: 350000, chatOpenCents: 5000 });
+    if (path === '/api/admin/rates') return ok({ caseCents: 65000, addonCents: 17500, subCents: 9500, fullCents: 350000, floorCents: 7500, bookings: 0, changed: false });
     // The nightly study, with a plausible history so the card on the dashboard
     // shows what it shows on a real night.
     if (path === '/api/work') {

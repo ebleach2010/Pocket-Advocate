@@ -5,7 +5,7 @@
 // scrolls to each section and highlights the one in view.
 
 import {
-  db, storage, collection, getDocs, query, where, doc, onSnapshot,
+  db, storage, collection, getDocs, query, where, doc, getDoc, onSnapshot,
   ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata,
 } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
@@ -66,6 +66,8 @@ if (user) {
 }
 
 async function boot() {
+  // The jar switch, read once before anything paints the footer.
+  await loadTipJarSetting();
   const container = document.getElementById('cases');
   try {
     const snapshot = await getDocs(query(collection(db, 'cases'), where('clientUid', '==', user.uid)));
@@ -942,7 +944,7 @@ function printExport(c, want) {
 // were quoted when they booked, which the case carries as addonRateCents.
 // Everyone booked before that field existed falls back to this, and since the
 // rate only moves upward that errs in their favour.
-const FOLLOWUP_PRICE_CENTS = 7500;
+const FOLLOWUP_PRICE_CENTS = 17500;
 const followUpPrice = (c) =>
   (Number(c?.addonRateCents) > 0 ? Number(c.addonRateCents) : FOLLOWUP_PRICE_CENTS) / 100;
 
@@ -966,7 +968,7 @@ const TIP_QUOTE = [
 
 /** Everything they have paid on this case, in cents. */
 function totalPaidCents(c) {
-  const base = c.payment?.amountTotal || c.caseRateCents || 26500;
+  const base = c.payment?.amountTotal || c.caseRateCents || 65000;
   const extras = (Array.isArray(c.extraPayments) ? c.extraPayments : [])
     .filter((x) => x.kind !== 'tip')
     .reduce((sum, x) => sum + (Number(x.amountCents) || 0), 0);
@@ -999,17 +1001,32 @@ function tipJarHtml(c) {
     </div>`;
 }
 
+/**
+ * The jar is on a switch (Eric, 2026-08-23: "Keep the tip jar until I get the
+ * next client, then we'll drop it entirely"). `settings` is world-readable
+ * and admin-writable by rule, so retiring it is one tap on his phone with no
+ * deploy and no help. Default ON: a failed read must never silently remove
+ * something he still wants shown.
+ */
+let tipJarOn = true;
+async function loadTipJarSetting() {
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'tipJar'));
+    if (snap.exists() && snap.data().enabled === false) tipJarOn = false;
+  } catch { /* the default stands */ }
+}
+
 function renderPageFooter(host, c) {
   if (!host) return;
   const delivered = c.status === 'delivered' || c.status === 'closed';
-  host.innerHTML = tipJarHtml(c) + (delivered ? '' : '<div data-review hidden></div>');
+  host.innerHTML = (tipJarOn ? tipJarHtml(c) : '') + (delivered ? '' : '<div data-review hidden></div>');
   // The version line rides just above the jar (Eric, 2026-08-21). It mounts
   // itself at the end of main before this footer exists; before() MOVES the
   // node, click wiring intact. Idempotent across repaints.
   const verline = document.getElementById('pa-verline');
   if (verline) host.before(verline);
   if (!delivered) renderReview(host, c);
-  if (new URLSearchParams(location.search).get('tipped') === '1') {
+  if (tipJarOn && new URLSearchParams(location.search).get('tipped') === '1') {
     host.querySelector('[data-tip-thanks]').hidden = false;
     history.replaceState(null, '', `/case.html?id=${c.id}`);
   }
