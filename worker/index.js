@@ -26,7 +26,7 @@ import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 import {
   getAdvisorEffort, setAdvisorEffort,
-  runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses, runStyleDistill,
+  runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
 
@@ -131,7 +131,31 @@ async function raiseRates(env, attempt = 0) {
     : { mustNotExist: true };
   const won = await patchDoc(env, RATES_PATH, next, opts).catch(() => false);
   if (won === false) return raiseRates(env, attempt + 1);
+  await capPings(env, now, next);
   return next;
+}
+
+/**
+ * Eric, 2026-08-23: "After which point it will ping me to update pricing."
+ * Fires exactly once per price: only the step that PARKS a number at its
+ * ceiling crosses the boundary, so there is nothing to dedupe.
+ */
+async function capPings(env, prev, next) {
+  if (!env.ADMIN_UID) return;
+  const hits = [];
+  if (prev.caseCents < CASE_CAP_CENTS && next.caseCents >= CASE_CAP_CENTS)
+    hits.push('the case rate just hit its $1,000 ceiling');
+  if (prev.addonCents < ADDON_CAP_CENTS && next.addonCents >= ADDON_CAP_CENTS)
+    hits.push('the follow-up just hit its $500 ceiling');
+  if (prev.subCents < SUB_CAP_CENTS && next.subCents >= SUB_CAP_CENTS)
+    hits.push('Priority Chat just hit its $100/mo ceiling');
+  for (const h of hits) {
+    await notifyUser(env, env.ADMIN_UID, {
+      title: 'Pocket Advocate',
+      body: `Pricing: ${h}. It stays parked there until you set the next move from the rates card on your dashboard.`,
+      link: '/admin.html',
+    }).catch(() => {});
+  }
 }
 
 /**
@@ -155,6 +179,7 @@ async function raiseSubRate(env, attempt = 0) {
     : { caseCents: now.caseCents, addonCents: now.addonCents, subCents, bookings: now.bookings, updatedAt: new Date() };
   const won = await patchDoc(env, RATES_PATH, body, opts).catch(() => false);
   if (won === false) return raiseSubRate(env, attempt + 1);
+  await capPings(env, now, { ...now, subCents });
   return { subCents };
 }
 
@@ -675,7 +700,12 @@ export default {
     // was still streaming at the limit killed uncatchably: status stuck on
     // "running", no error, no catch. The study has all evening; it waits for
     // a firing whose queue is empty.
+    //
+    // The sweep runs FIRST, in the same chain, so a thread it re-queues (a
+    // wedged run, a floored pending flag) is drained by this very firing:
+    // stranded work waits five minutes, not until Eric opens the panel.
     ctx.waitUntil((async () => {
+      await requeueStranded(env);
       const ranAnalysis = await runQueuedAnalyses(env);
       if (!ranAnalysis) await maybeVoiceStudy(env);
     })());
@@ -921,7 +951,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-23-advisor3';
+const BUILD_TAG = 'v2026-08-23-sweep';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -929,7 +959,7 @@ const BUILD_TAG = 'v2026-08-23-advisor3';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.8';
+const VERSION = '2.9';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

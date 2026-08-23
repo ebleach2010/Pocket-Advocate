@@ -2101,6 +2101,65 @@ export async function markPending(env, kind, id, { force = false } = {}) {
 }
 
 /**
+ * The background half of "it needs to happen in the background so when I
+ * open it's updated" (Eric, 2026-08-23).
+ *
+ * The cron drain below only sees advisorQueue rows, and two states owe work
+ * while holding NO row, so nothing in the background ever touched them:
+ *
+ *  - a run whose isolate died leaves status "running" forever, and the
+ *    original queue row is long gone (deleted on the success path of the
+ *    pass that spawned it, or by a give-up) - the 10-hour wedge on his phone;
+ *  - a client message inside the twelve-minute floor stamps pendingAt but is
+ *    refused a queue row, and if no later message lands outside the floor,
+ *    the flag sits there until his panel happens to be open to auto-fire it.
+ *
+ * This sweep walks every thread, and any state that is stuck-running past
+ * twenty minutes, or flagged-and-settled past the floor, gets its row back.
+ * The drain in the same firing then runs it. Reads only, plus one small
+ * write per genuinely stranded thread, so it is cheap enough for every
+ * firing.
+ */
+export async function requeueStranded(env) {
+  try {
+    const threads = [];
+    for (const [coll, kind] of [['cases', 'case'], ['subscriptions', 'sub']]) {
+      const rows = await listDocs(env, coll, { pageSize: 300, all: true }).catch(() => []);
+      for (const r of rows) threads.push({ kind, id: r.id });
+    }
+    for (const t of threads) {
+      const st = await getDoc(env, statePath(t.kind, t.id)).catch(() => null);
+      const d = st?.data;
+      if (!d || d.paused) continue;
+      const q = await getDoc(env, queuePath(t.kind, t.id)).catch(() => null);
+      if (q) continue; // already on the drain's plate
+      const startedTs = d.startedAt ? new Date(d.startedAt).getTime() : 0;
+      const beat = Math.max(startedTs, d.progressAt ? new Date(d.progressAt).getTime() : 0);
+      const stuckRunning = d.status === 'running'
+        && (!beat || Date.now() - beat > 20 * 60_000
+          || (startedTs && Date.now() - startedTs > 20 * 60_000));
+      const pend = d.pendingAt ? new Date(d.pendingAt).getTime() : 0;
+      const upd = d.updatedAt ? new Date(d.updatedAt).getTime() : 0;
+      // Settled: past the upload settle window (so a photo batch finishes
+      // landing first) and past the spam floor. status "error" stays manual:
+      // re-queueing a standing error (credits out) would loop on it.
+      const owed = pend && d.status !== 'error' && d.status !== 'running' && pend > upd
+        && Date.now() - pend > 5 * 60_000
+        && (!upd || Date.now() - upd >= PENDING_FLOOR_MS);
+      if (!stuckRunning && !owed) continue;
+      if (stuckRunning)
+        await setState(env, t.kind, t.id, { status: 'idle', startedAt: null, progressAt: null, stage: null })
+          .catch(() => {});
+      await patchDoc(env, queuePath(t.kind, t.id), { kind: t.kind, id: t.id, at: new Date(), tries: 0 })
+        .catch(() => {});
+      console.warn(`advisor sweep: re-queued stranded ${t.kind}/${t.id}`);
+    }
+  } catch (err) {
+    console.warn('advisor sweep:', err.message || err);
+  }
+}
+
+/**
  * Cron backstop: run ONE queued analysis per firing. A scheduled event gets a
  * full 15 minutes of wall clock — the one place in a Worker where a long Opus
  * turn is safe without a client holding a connection open — and one max-effort
