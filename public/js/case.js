@@ -985,6 +985,12 @@ fetch('/api/rates')
  * has not been seen yet, changelog.js folds a copy of this into the end of
  * that flow (it looks for [data-tip-jar]).
  */
+// ERIC: the first line of this is now WRONG and only you can fix it. It says
+// your pricing "works out to roughly $6/hour", which was true at $275 a case.
+// At $650, and against the hours your own clock records, it is not. I have
+// not rewritten it because it is your voice making a claim about your own
+// economics, and that is yours to state, not mine to invent. Tell me the
+// number and I will change the line, or say the word and the jar goes.
 const TIP_QUOTE = [
   'Professional patient advocacy at this level typically runs $150\u2013$275/hour. Between direct client time, research, and case preparation, my current pricing works out to roughly $6/hour.',
   'Anything contributed here goes directly back into improving The Pocket Advocate, its tools, experience, and outcomes.',
@@ -1048,14 +1054,18 @@ async function loadTipJarSetting() {
 function renderPageFooter(host, c) {
   if (!host) return;
   const delivered = c.status === 'delivered' || c.status === 'closed';
-  host.innerHTML = (tipJarOn ? tipJarHtml(c) : '') + (delivered ? '' : '<div data-review hidden></div>');
+  // Never on a Full Access case. Somebody who has just paid four figures for
+  // direct advocacy should not then be shown a jar, and the jar's own copy is
+  // written about the standard case's economics, which do not describe theirs.
+  const showJar = tipJarOn && !c.fullAccess;
+  host.innerHTML = (showJar ? tipJarHtml(c) : '') + (delivered ? '' : '<div data-review hidden></div>');
   // The version line rides just above the jar (Eric, 2026-08-21). It mounts
   // itself at the end of main before this footer exists; before() MOVES the
   // node, click wiring intact. Idempotent across repaints.
   const verline = document.getElementById('pa-verline');
   if (verline) host.before(verline);
   if (!delivered) renderReview(host, c);
-  if (tipJarOn && new URLSearchParams(location.search).get('tipped') === '1') {
+  if (showJar && new URLSearchParams(location.search).get('tipped') === '1') {
     host.querySelector('[data-tip-thanks]').hidden = false;
     history.replaceState(null, '', `/case.html?id=${c.id}`);
   }

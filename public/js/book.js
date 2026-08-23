@@ -544,7 +544,6 @@ function renderPayment() {
       <label class="agreement-check"><input type="checkbox" ${state.acks[FULL_ACCESS_TERMS.id] ? 'checked' : ''} ${state.acks[FULL_ACCESS_TERMS.id] || state.read[FULL_ACCESS_TERMS.id] ? '' : 'disabled'}> I have read and acknowledge this</label>
     </details>
     <div class="price-line">
-      <span class="price" data-price>$${money(tierCents())}</span>
       <span class="included" data-included>This includes our call and your written report within 7 days.</span>
     </div>
     <p class="muted small">${isRequest ? 'Requested times are not held while you complete payment.' : 'Your selected time is held while you complete payment.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once your slot is booked. If I reschedule you more than once, you're entitled to a full refund on request.</p>
@@ -561,7 +560,6 @@ function renderPayment() {
   // opened AND scrolled to the end before the box can be ticked. A tier this
   // size should not be buyable by anyone who has not seen where it stops.
   const payBtn = el.querySelector('#pay');
-  const priceEl = el.querySelector('[data-price]');
   const includedEl = el.querySelector('[data-included]');
   const terms = el.querySelector('[data-full-terms]');
   const termsBox = terms.querySelector('.agreement-check input');
@@ -571,12 +569,19 @@ function renderPayment() {
     const full = state.tier === 'full';
     terms.hidden = !full;
     if (!full) terms.open = false;
-    priceEl.textContent = `$${money(tierCents())}`;
     includedEl.textContent = full
       ? 'Everything in a case, plus the records, the calls with your clinics, and your appeals.'
       : 'This includes our call and your written report within 7 days.';
     payBtn.textContent = `Pay $${money(tierCents())} and book`;
     payBtn.disabled = full && !state.acks[FULL_ACCESS_TERMS.id];
+    // The cards carry the only visible prices now, so they have to be
+    // repainted here too: a rate-changed 409 moves both numbers, and a card
+    // still showing the old one is the exact mismatch the handshake exists
+    // to prevent.
+    const caseEl = el.querySelector('[data-tier-price-case]');
+    const fullEl = el.querySelector('[data-tier-price-full]');
+    if (caseEl) caseEl.textContent = `$${money(caseCents)}`;
+    if (fullEl) fullEl.textContent = `$${money(fullCents)}`;
     for (const card of el.querySelectorAll('[data-tier]')) {
       const on = card.dataset.tier === state.tier;
       card.classList.toggle('on', on);

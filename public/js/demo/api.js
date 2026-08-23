@@ -129,14 +129,58 @@ export function demoApi(role, store) {
     // it the demo sat on "opening your case now" until it gave up.
     // Full Access authorisations. The demo case is a standard one, so the
     // list is empty and the two Sign buttons are what a real client sees.
+    // The signed authorisations, read out of the store so the Full Access
+    // demo case shows real ones and the standard case correctly shows none.
     if (path === '/api/authority') {
-      if ((init.method || 'GET').toUpperCase() === 'GET') return ok({ items: [] });
+      const cid = body.caseId || q.get('caseId') || '';
+      const prefix = `demoAuthority/${cid}/items/`;
+      if ((init.method || 'GET').toUpperCase() === 'GET') {
+        const items = [...store.docs.entries()]
+          .filter(([k]) => k.startsWith(prefix))
+          .map(([k, v]) => ({ id: k.slice(prefix.length), ...v }))
+          .sort((a, b) => new Date(b.signedAt || 0) - new Date(a.signedAt || 0));
+        return ok({ items });
+      }
       await beat(500);
-      return ok({ ok: true, id: 'demo-auth', signedAt: new Date().toISOString() });
+      if (body.action === 'revoke') {
+        const k = prefix + body.id;
+        const cur = store.docs.get(k);
+        if (cur) store.docs.set(k, { ...cur, revokedAt: new Date() });
+        return ok({ ok: true });
+      }
+      const id = `demo-${Math.random().toString(36).slice(2, 8)}`;
+      store.docs.set(prefix + id, {
+        kind: body.kind, signedName: body.signedName, signedAt: new Date(),
+        revokedAt: null, clinicName: body.clinicName || '', clinicAddress: body.clinicAddress || '',
+        clinicPhone: body.clinicPhone || '', fromDate: body.fromDate || '', toDate: body.toDate || '',
+        planName: body.planName || '', memberId: body.memberId || '',
+        categories: Array.isArray(body.categories) ? body.categories : [],
+      });
+      return ok({ ok: true, id, signedAt: new Date().toISOString() });
     }
     if (path === '/api/clinic-calls') {
-      if ((init.method || 'GET').toUpperCase() === 'GET') return ok({ items: [] });
+      const cid = body.caseId || q.get('caseId') || '';
+      const prefix = `cases/${cid}/private/clinicCalls/items/`;
+      if ((init.method || 'GET').toUpperCase() === 'GET') {
+        const items = [...store.docs.entries()]
+          .filter(([k]) => k.startsWith(prefix))
+          .map(([k, v]) => ({ id: k.slice(prefix.length), ...v }))
+          .sort((a, b) => new Date(a.at || a.createdAt || 0) - new Date(b.at || b.createdAt || 0));
+        return ok({ items });
+      }
       await beat(400);
+      if (body.action === 'notes') {
+        const k = prefix + body.id;
+        const cur = store.docs.get(k);
+        if (cur) store.docs.set(k, { ...cur, notes: body.notes || '', notesAt: new Date() });
+        return ok({ ok: true });
+      }
+      if (body.action === 'add') {
+        store.docs.set(prefix + `c-${Math.random().toString(36).slice(2, 8)}`, {
+          clinic: body.clinic || '', phone: body.phone || '', parties: body.parties || '',
+          at: body.at ? new Date(body.at) : null, notes: '', createdAt: new Date(),
+        });
+      }
       return ok({ ok: true });
     }
     if (path === '/api/case-for-session') return ok({ ready: true, caseId: DEMO_CASE_ID });
@@ -146,9 +190,14 @@ export function demoApi(role, store) {
 
     // ---- the advisor, from a fixture -------------------------------------
     if (path === '/api/advisor/state') {
-      const state = store.docs.get(`cases/${DEMO_CASE_ID}/advisor/state`) || {};
+      // Whichever case is open, not always the first one: the Full Access
+      // case carries its own assessment and its own appeal letter, and
+      // hardcoding the id showed the wrong case's work on the right case's
+      // page.
+      const cid = q.get('id') || body.id || DEMO_CASE_ID;
+      const state = store.docs.get(`cases/${cid}/advisor/state`) || {};
       const style = store.docs.get('advisorStyle/profile') || {};
-      const notes = store.docs.get(`cases/${DEMO_CASE_ID}/private/notes/doc`) || {};
+      const notes = store.docs.get(`cases/${cid}/private/notes/doc`) || {};
       const { readFiles, pendingMedia, ...panelState } = state;
       void readFiles; void pendingMedia;
       return ok({
@@ -226,7 +275,7 @@ export function demoApi(role, store) {
       // demonstrative.
       if (body.action === 'appeal-draft') {
         await beat(900);
-        const path = `cases/${DEMO_CASE_ID}/advisor/state`;
+        const path = `cases/${body.id || DEMO_CASE_ID}/advisor/state`;
         store.docs.set(path, {
           ...(store.docs.get(path) || {}),
           appealStatus: 'ready',
@@ -241,7 +290,7 @@ export function demoApi(role, store) {
         return ok({ ok: true });
       }
       if (body.action === 'clear-appeal' || body.action === 'appeal-filed') {
-        const path = `cases/${DEMO_CASE_ID}/advisor/state`;
+        const path = `cases/${body.id || DEMO_CASE_ID}/advisor/state`;
         const cur = store.docs.get(path) || {};
         store.docs.set(path, body.action === 'clear-appeal'
           ? { ...cur, appeal: null, appealStatus: null, appealMeta: null }
