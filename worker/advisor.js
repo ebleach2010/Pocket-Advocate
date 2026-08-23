@@ -1035,6 +1035,26 @@ function sectionOf(text, name) {
 }
 
 /**
+ * Replace a `## Heading` whose body is the single word "unchanged" with the
+ * stored section from the previous assessment. The delta prompt offers this
+ * for the two big cumulative sections so a routine pass stops re-typing
+ * thousands of tokens of chart note it is not allowed to alter anyway;
+ * shorter output is also what keeps a background pass under the invocation's
+ * CPU budget.
+ */
+function spliceUnchanged(text, prior, headings) {
+  let out = String(text);
+  for (const h of headings) {
+    const cur = sectionMatch(out, h);
+    if (!cur || !/^\s*unchanged\.?\s*$/i.test(cur[1] || '')) continue;
+    const old = sectionMatch(String(prior || ''), h);
+    if (!old) continue;
+    out = out.replace(cur[0], `${old[0].trim()}\n\n`);
+  }
+  return out;
+}
+
+/**
  * Rebuild the style profile from the accumulated edits. Runs right after Eric
  * sends an edited draft, so the very next draft already writes with the
  * lesson. Cheap on purpose (low effort, small ceiling): this is distillation,
@@ -2690,8 +2710,8 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     const curDismissedSig = (Array.isArray(p.corrections) ? p.corrections : [])
       .filter((c) => c.dismissed).map((c) => c.msgId).sort().join(',');
     const qaOverrides = qa.filter((x) => x.override).length;
-    const { context, fresh, omitted } = splitDelta(rows, throughMs);
-    const full =
+    let { context, fresh, omitted } = splitDelta(rows, throughMs);
+    const fullReasons =
          !prior                                          // first analysis
       || !throughMs                                      // legacy state, no stamp yet
       || p.forceFull === true                            // last delta came back too short
@@ -2702,8 +2722,29 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       || (p.passesSinceFull || 0) >= FULL_PASS_EVERY     // periodic drift corrector
       || String(prior || '').length > COMPACT_AT_CHARS   // assessment outgrew the budget: consolidate
       || omitted === 0;                                  // the delta IS the whole window
+    // THE GUILLOTINE (measured live, 2026-08-24): a cron-carried invocation is
+    // killed, uncatchably, about 4 minutes 20 seconds after its firing, no
+    // matter how the work is structured. Five recorded deaths on that exact
+    // curve, awaited and waitUntil-parked alike, event-heavy and event-silent
+    // alike. So the BACKGROUND never runs a pass that cannot finish in about
+    // three minutes: only a first analysis goes full back there; every other
+    // full trigger runs as a delta now and flags fullDue so a foreground run
+    // (a tap, a held-open panel, where the wall does not exist) does the deep
+    // read. A backlog too big for one delta is walked in CHUNKS, oldest
+    // first, the through-stamp advancing with each completed chunk.
+    const full = auto ? (!prior || !throughMs) : fullReasons;
+    const fullDue = auto && fullReasons && !full;
     const passType = full ? 'full' : 'delta';
-    const compacting = full && String(prior || '').length > COMPACT_AT_CHARS;
+    let catchup = false;
+    if (passType === 'delta' && auto && fresh.length > 60) {
+      catchup = true;
+      fresh = fresh.slice(0, 60);        // oldest unread chunk; rows are chronological
+      context = context.length ? context : [];
+      omitted = Math.max(omitted, 0);
+    }
+    const newerLeft = passType === 'delta'
+      ? Math.max(0, splitDelta(rows, throughMs).fresh.length - fresh.length) : 0;
+    const compacting = full && !auto && String(prior || '').length > COMPACT_AT_CHARS;
     // Effort per pass type. Manual runs always honor Eric's own switch; the
     // background never spends max, and a routine text-only delta runs at
     // medium, which is the one-to-two-minute pass.
@@ -2711,8 +2752,9 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       : passType === 'full' ? 'high'
         : media.blocks.length ? 'high'
           : 'medium';
-    const passTokens = passType === 'full' ? 64000
-      : media.blocks.length ? 48000
+    const passTokens = !auto
+      ? (passType === 'full' ? 64000 : 48000)
+      : media.blocks.length ? 40000
         : 32000;
     // The prior, capped. The chart note and Ruled out are never truncated
     // (their loss is unrecoverable without a beginning-to-end re-read); if
@@ -2940,7 +2982,7 @@ ${style.voice}` : ''}` || ' ' }],
             // it carries weight: what Eric settled with the advisor there has
             // to move this assessment, or the advisor chat is decoration.
             text: (passType === 'delta'
-              ? `Here is your working assessment of this client. It is your memory of the whole case: every earlier message, every file you have read, and everything you and Eric have settled are already folded into it.\n\n<previous>\n${priorText}\n</previous>\n\nThe machine rows you filed after your last pass:\n\n<filed>\nWorking line: ${p.workingDx || 'Still forming'}\nDifferential:\n${(Array.isArray(p.differential) ? p.differential : []).map((r) => `- ${r.name} [${r.pct}%]: ${r.why} | ${r.moves}`).join('\n') || '- none yet'}\n</filed>\n\nSince that assessment, ${fresh.length} new message${fresh.length === 1 ? '' : 's'} arrived. ${omitted} earlier messages are not shown this pass; your previous assessment already accounts for them. The last ${context.length} messages you have already read are shown first so you can hear the turn of the conversation:\n\n<already_read>\n${transcript(context) || '(none)'}\n</already_read>\n\n<new_messages>\n${transcript(fresh) || '(no new chat; new files or discussion below)'}\n</new_messages>\n${qaBlock(qa)}\nThis is an update pass, not a fresh read. Revise the assessment; do not restart it. Keep every section, and rewrite only what the new material changes:\n\n- Output the complete assessment, every heading, in the required order.\n- A section the new material does not touch comes back from your previous assessment unchanged, word for word. Do not rephrase for variety.\n- "What we know so far" and "Ruled out" are cumulative records. Reproduce them in full and add what is new, each fact with its date. Never drop a dated fact because it is old, and never rewrite a value you cannot see this pass.\n- Open "Right now" with what the new material changed. If nothing of substance changed, say so in one line and leave the rest standing.\n- Re-emit ## Working line, ## Differential, ## Not answered, and ## Corrections in their exact formats every pass. Start the Differential from the filed rows above and move a number only by what the new material actually settles; do not re-derive the list from scratch.\n- If a new message contradicts something in your previous assessment, the new message wins. Change the read, and say plainly in "Right now" what changed and why.`
+              ? `Here is your working assessment of this client. It is your memory of the whole case: every earlier message, every file you have read, and everything you and Eric have settled are already folded into it.\n\n<previous>\n${priorText}\n</previous>\n\nThe machine rows you filed after your last pass:\n\n<filed>\nWorking line: ${p.workingDx || 'Still forming'}\nDifferential:\n${(Array.isArray(p.differential) ? p.differential : []).map((r) => `- ${r.name} [${r.pct}%]: ${r.why} | ${r.moves}`).join('\n') || '- none yet'}\n</filed>\n\nSince that assessment, ${fresh.length} new message${fresh.length === 1 ? '' : 's'} ${catchup ? 'are shown this pass (the oldest unread; ' + newerLeft + ' newer ones reach you next pass, so do not treat this as the end of the story)' : 'arrived'}. ${omitted} earlier messages are not shown this pass; your previous assessment already accounts for them. The last ${context.length} messages you have already read are shown first so you can hear the turn of the conversation:\n\n<already_read>\n${transcript(context) || '(none)'}\n</already_read>\n\n<new_messages>\n${transcript(fresh) || '(no new chat; new files or discussion below)'}\n</new_messages>\n${qaBlock(qa)}\nThis is an update pass, not a fresh read. Revise the assessment; do not restart it. Keep every section, and rewrite only what the new material changes:\n\n- Output the complete assessment, every heading, in the required order.\n- A section the new material does not touch comes back from your previous assessment unchanged, word for word. Do not rephrase for variety.\n- "What we know so far" and "Ruled out" are cumulative records: never drop a dated fact because it is old, and never rewrite a value you cannot see this pass. If the new material adds NOTHING to one of these two sections, output just its heading followed by the single word: unchanged. I will keep your previous version of that section exactly as it was. If anything is new, reproduce the section in full with the additions.\n- Open "Right now" with what the new material changed. If nothing of substance changed, say so in one line and leave the rest standing.\n- Re-emit ## Working line, ## Differential, ## Not answered, and ## Corrections in their exact formats every pass. Start the Differential from the filed rows above and move a number only by what the new material actually settles; do not re-derive the list from scratch.\n- If a new message contradicts something in your previous assessment, the new message wins. Change the read, and say plainly in "Right now" what changed and why.`
               : prior
                 ? `Here is your previous assessment of this client:\n\n<previous>\n${priorText}\n</previous>\n\nHere is the full conversation as it now stands:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nUpdate the assessment. Carry forward what still holds, revise what the new messages change, and say explicitly if something new contradicts an earlier read.${compacting ? `\n\nYour previous assessment has grown long. This pass, consolidate "What we know so far" without losing information: merge duplicate rows, collapse repeated normal results into one dated range (for example "CBC normal x4, Jun 3 to Jul 20"), and keep every abnormal result, every medication change, and every date as its own line. Consolidation means shorter, never emptier: anything a specialist would ask about stays.` : ''}`
                 : `Here is the conversation so far:\n\n<transcript>\n${chat || '(no messages yet; the case material is in the attached files)'}\n</transcript>\n${qaBlock(qa)}\nWrite the first assessment.`)
@@ -2978,19 +3020,36 @@ ${style.voice}` : ''}` || ' ' }],
     const diffHistory = moved && dx.differential.length
       ? [{ at: now, rows: dx.differential.map((r) => ({ name: r.name, pct: r.pct })) }, ...prevHistory].slice(0, 12)
       : prevHistory;
+    // Fold "unchanged" stubs back in BEFORE judging length: a legitimate
+    // delta that stubbed both cumulative sections is short by design.
+    const finalText = passType === 'delta'
+      ? spliceUnchanged(corr.text, prior, ['What we know so far', 'Ruled out'])
+      : corr.text;
     // A delta reply that came back at half the prior's size lost sections,
     // and saving it would destroy them permanently (the assessment is its own
     // memory). Discard it and force the retry to be a full read.
-    if (passType === 'delta' && prior && corr.text.length < String(prior).length * 0.5) {
+    if (passType === 'delta' && prior && finalText.length < String(prior).length * 0.5) {
       await setState(env, kind, id, { forceFull: true }).catch(() => {});
       throw new Error('The update pass came back too short and was discarded. A full read runs next.');
     }
     await setState(env, kind, id, {
       diffAt, fileAt, diffHistory,
       // What this pass folded in, so the next auto fire can tell "new
-      // messages" from "the pending flag was noise" and skip the spend.
-      analyzedThroughTs: newestTs ? new Date(newestTs) : null,
-      qaSig,
+      // messages" from "the pending flag was noise" and skip the spend. A
+      // catch-up chunk stamps only through ITS OWN last message, so the
+      // backlog behind it stays owed and the next pass takes the next chunk.
+      analyzedThroughTs: (() => {
+        if (passType === 'delta' && catchup && fresh.length) {
+          const ts = fresh[fresh.length - 1].data.ts;
+          const t = ts ? new Date(ts.toDate ? ts.toDate() : ts) : null;
+          if (t) return t;
+        }
+        return newestTs ? new Date(newestTs) : null;
+      })(),
+      qaSig: catchup ? (p.qaSig || '') : qaSig,
+      // A deep read is owed (a full trigger fired in the background, where
+      // full passes cannot survive); the next foreground run does it.
+      fullDue: fullDue ? true : (passType === 'full' ? null : (p.fullDue || null)),
       // Delta bookkeeping: what kind of pass this was, how many deltas since
       // the last full read, and the signatures whose change forces one.
       lastPassType: passType,
@@ -3001,7 +3060,7 @@ ${style.voice}` : ''}` || ' ' }],
       dismissedSig: corr.corrections.filter((c) => c.dismissed).map((c) => c.msgId).sort().join(','),
       forceFull: null,
       errorRetries: null, errorRetryAt: null,
-      analysis: corr.text, status: 'idle', error: null, updatedAt: new Date(),
+      analysis: finalText, status: 'idle', error: null, updatedAt: new Date(),
       pendingAt: null, startedAt: null, progressAt: null, stage: null, mediaPlan: null,
       // A pass that lost the working line keeps the stored one: blanking the
       // folder cover over a formatting slip reads as the case going backwards.
@@ -3058,7 +3117,8 @@ ${style.voice}` : ''}` || ' ' }],
     // here: without it the twelve minute floor swallowed this re-queue every
     // single time, and the follow-up pass only ever ran while his panel
     // happened to be open. That is how "Files: 1 of 3 read" froze overnight.
-    if (media.carry.length) await markPending(env, kind, id, { force: true }).catch(() => {});
+    if (media.carry.length || (catchup && newerLeft > 0))
+      await markPending(env, kind, id, { force: true }).catch(() => {});
     await diagLog(env, {
       ev: 'end', ok: true, kind, passType, effort: passEffort, auto,
       ms: Date.now() - runT0, freshMsgs: fresh.length, files: media.included.length,
