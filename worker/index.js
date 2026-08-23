@@ -756,6 +756,10 @@ export default {
     // anyway (and walks every thread), so it runs on the five-minute marks
     // after the drain; the voice study waits for one of those firings with
     // an empty queue.
+    // Un-gated on purpose: the wedged case should recover on the FIRST
+    // firing after this deploys, not up to a quarter hour later. One marker
+    // read per firing once finished; remove with the diag scaffolding.
+    ctx.waitUntil(unparkAdvisor(env));
     ctx.waitUntil((async () => {
       const ranAnalysis = await runQueuedAnalyses(env, deadlineAt);
       if (minute % 5 === 0) {
@@ -900,6 +904,46 @@ async function seedWorkClock(env) {
   }
 }
 
+/**
+ * One-shot recovery from the 2026-08-24 wedge: cases whose overnight retries
+ * burned the error-retry cap on full reads that could never fit the
+ * background budget. With the delta bootstrap live those cases now run
+ * short passes, so clear the burned counters, un-park the error, and queue
+ * one attempt. Runs once; the marker pattern is the standard one.
+ */
+async function unparkAdvisor(env) {
+  const MARKER = 'migrations/unpark-2026-08-24';
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;
+  const done = (result) => patchDoc(env, MARKER, { finishedAt: new Date(), result },
+    { mask: ['finishedAt', 'result'] }).catch(() => {});
+  try {
+    const cases = await listDocs(env, 'cases', { pageSize: 100, all: true }).catch(() => []);
+    let fixed = 0;
+    for (const c of cases.filter((r) => r.data.status !== 'closed')) {
+      const st = await getDoc(env, `cases/${c.id}/advisor/state`).catch(() => null);
+      const d = st?.data;
+      if (!d || d.paused) continue;
+      const owed = d.pendingAt && (!d.updatedAt || new Date(d.pendingAt) > new Date(d.updatedAt));
+      if (!owed || d.status === 'running') continue;
+      await patchDoc(env, `cases/${c.id}/advisor/state`, {
+        status: 'idle', error: null, errorRetries: null, errorRetryAt: null,
+        startedAt: null, progressAt: null, stage: null,
+      }, { mask: ['status', 'error', 'errorRetries', 'errorRetryAt', 'startedAt', 'progressAt', 'stage'] });
+      await markPending(env, 'case', c.id, { force: true }).catch(() => {});
+      fixed += 1;
+    }
+    return done(`un-parked ${fixed}`);
+  } catch (err) {
+    console.error('unpark advisor:', err.message || err);
+  }
+}
+
 async function reviveLostSend(env) {
   const MARKER = 'migrations/revive-2026-08-22';
   const m = await getDoc(env, MARKER);
@@ -995,7 +1039,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-24-diag';
+const BUILD_TAG = 'v2026-08-24-boot';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1003,7 +1047,7 @@ const BUILD_TAG = 'v2026-08-24-diag';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.13';
+const VERSION = '2.14';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

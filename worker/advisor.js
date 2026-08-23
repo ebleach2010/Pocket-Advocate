@@ -2674,7 +2674,14 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     // dying against its wall clock. Full passes re-expose the whole window
     // and are reserved for the moments that genuinely need one.
     const p = state?.data || {};
-    const throughMs = p.analyzedThroughTs ? new Date(p.analyzedThroughTs).getTime() : 0;
+    // Bootstrap: a case whose last success predates the delta machinery has a
+    // prior but no through-stamp, and "no stamp means full pass" locked it
+    // out of the fast lane forever: full reads are the turn type that dies in
+    // the background, so the stamp could never get laid. When a prior exists,
+    // updatedAt is a semantically correct substitute: the prior covers
+    // everything up to the moment it was written.
+    const throughMs = p.analyzedThroughTs ? new Date(p.analyzedThroughTs).getTime()
+      : (p.analysis && p.updatedAt) ? new Date(p.updatedAt).getTime() : 0;
     const dxSig = flatText(p.dxOverride || '');
     const curDismissedSig = (Array.isArray(p.corrections) ? p.corrections : [])
       .filter((c) => c.dismissed).map((c) => c.msgId).sort().join(',');
