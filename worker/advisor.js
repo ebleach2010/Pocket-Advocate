@@ -2909,7 +2909,11 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     }
     const newerLeft = passType === 'delta'
       ? Math.max(0, splitDelta(rows, throughMs).fresh.length - fresh.length) : 0;
-    const compacting = full && !auto && String(prior || '').length > COMPACT_AT_CHARS;
+    // No !auto gate anymore: background fulls are real turns again (batches),
+    // and without consolidation an assessment past the threshold would force
+    // EVERY background pass full at high effort, forever, since only
+    // consolidation can bring it back under.
+    const compacting = full && String(prior || '').length > COMPACT_AT_CHARS;
     // Effort per pass type. Manual runs always honor Eric's own switch; the
     // background never spends max, and a routine text-only delta runs at
     // medium, which is the one-to-two-minute pass.
