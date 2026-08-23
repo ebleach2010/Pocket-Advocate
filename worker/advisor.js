@@ -149,12 +149,16 @@ function client(env) {
  * realistically happen.
  */
 /**
- * Watchdog clocks. Five quiet minutes covers the longest legitimate silence
- * (the API fetching several large url-source documents before the first
- * token); the budget matches the client timeout and the scheduled event's
- * wall clock, past which the isolate is on borrowed time anyway.
+ * Watchdog clocks. Quiet means NO stream events, and on this model that is
+ * normal for the whole of a long think: with thinking display omitted (the
+ * default) no thinking deltas are sent, and the SDK filters ping events out
+ * before any listener sees them. So a healthy ten minute think is ten
+ * silent minutes, and a five minute quiet clock was killing it as "went
+ * quiet mid-read". Eleven minutes keeps the abort for genuinely dead
+ * connections while clearing every legitimate think; the deadline and the
+ * budget are the real guards.
  */
-const STREAM_QUIET_MS = 5 * 60_000;
+const STREAM_QUIET_MS = 11 * 60_000;
 const RUN_BUDGET_MS = 900_000;
 
 async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, initialStage = 'sending', deadlineAt = 0 }) {

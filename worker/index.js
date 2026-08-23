@@ -751,22 +751,33 @@ export default {
       ctx.waitUntil(reviveLostSend(env));
       ctx.waitUntil(seedWorkClock(env));
     }
-    // One model job per firing, and the drain goes FIRST so the wall clock
-    // belongs to the turn. The sweep only finds work for a later firing
-    // anyway (and walks every thread), so it runs on the five-minute marks
-    // after the drain; the voice study waits for one of those firings with
-    // an empty queue.
     // Un-gated on purpose: the wedged case should recover on the FIRST
     // firing after this deploys, not up to a quarter hour later. One marker
     // read per firing once finished; remove with the diag scaffolding.
     ctx.waitUntil(unparkAdvisor(env));
-    ctx.waitUntil((async () => {
-      const ranAnalysis = await runQueuedAnalyses(env, deadlineAt);
-      if (minute % 5 === 0) {
-        await requeueStranded(env);
-        if (!ranAnalysis) await maybeVoiceStudy(env);
-      }
-    })());
+    // THE KILL, found by the flight recorder (2026-08-24). Cloudflare's
+    // fifteen minute guarantee attaches to the promise scheduled() RETURNS:
+    // "The runtime waits for the promise returned by the scheduled() handler
+    // to resolve (up to the 15-minute duration limit)." This drain used to
+    // ride ctx.waitUntil while the handler resolved instantly, so the
+    // platform treated every model turn as post-event cleanup and canceled
+    // it silently about five minutes after the firing: no catch, no
+    // finally, status stuck on running. Four recorded deaths, all mid-write
+    // near the five minute mark (16:45, 16:58, 17:08, 17:18 UTC). The drain
+    // is AWAITED now, so the invocation lives until the turn finishes or
+    // the wall arrives; the deadline above still aborts us first, into the
+    // ordinary retry path.
+    //
+    // One model job per firing, and the drain goes FIRST so the wall clock
+    // belongs to the turn. The sweep runs on the five-minute marks after
+    // it; the voice study waits for one of those firings with an empty
+    // queue. The quick jobs above stay on waitUntil: they finish in
+    // seconds, well inside the post-event grace.
+    const ranAnalysis = await runQueuedAnalyses(env, deadlineAt);
+    if (minute % 5 === 0) {
+      await requeueStranded(env);
+      if (!ranAnalysis) await maybeVoiceStudy(env);
+    }
   },
 };
 
@@ -912,7 +923,7 @@ async function seedWorkClock(env) {
  * one attempt. Runs once; the marker pattern is the standard one.
  */
 async function unparkAdvisor(env) {
-  const MARKER = 'migrations/unpark-2026-08-24';
+  const MARKER = 'migrations/unpark-2026-08-24b';
   const m = await getDoc(env, MARKER);
   if (m?.data.finishedAt) return;
   if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
@@ -1039,7 +1050,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-24-boot';
+const BUILD_TAG = 'v2026-08-24-await';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1047,7 +1058,7 @@ const BUILD_TAG = 'v2026-08-24-boot';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.14';
+const VERSION = '2.15';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
