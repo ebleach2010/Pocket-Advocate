@@ -2879,25 +2879,34 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       .filter((c) => c.dismissed).map((c) => c.msgId).sort().join(',');
     const qaOverrides = qa.filter((x) => x.override).length;
     let { context, fresh, omitted } = splitDelta(rows, throughMs);
-    const fullReasons =
-         !prior                                          // first analysis
-      || !throughMs                                      // legacy state, no stamp yet
-      || p.forceFull === true                            // last delta came back too short
-      || (Array.isArray(mediaList) && mediaList.length)  // staged-files tap: the explicit deep look
-      || dxSig !== (p.dxOverrideSig || '')               // Eric set or changed his working line
-      || curDismissedSig !== (p.dismissedSig || '')      // a correction was dismissed since
-      || qaOverrides !== (p.qaOverrideCount || 0)        // a Q&A override was filed since
-      || (p.passesSinceFull || 0) >= FULL_PASS_EVERY     // periodic drift corrector
-      || String(prior || '').length > COMPACT_AT_CHARS   // assessment outgrew the budget: consolidate
-      || p.fullDue === true                              // a deep read owed from the pre-batch era
-      || omitted === 0;                                  // the delta IS the whole window
+    // Each reason carries a name so the recorder can say WHY a full ran; a
+    // full pass at high effort is the expensive turn, and "it keeps going
+    // full" was undiagnosable from outside without this (2026-08-23, five in
+    // a row). The oversize trigger runs on a SLOW clock: consolidation
+    // doesn't consolidate any better back to back, and a stubbornly large
+    // assessment was forcing every single pass full. One in three is enough
+    // pressure; the deltas in between still carry the (capped) prior whole.
+    const fullWhy = [
+      !prior && 'first',
+      !throughMs && 'no-stamp',
+      p.forceFull === true && 'forced',
+      (Array.isArray(mediaList) && mediaList.length) && 'staged',
+      dxSig !== (p.dxOverrideSig || '') && 'dx-override',
+      curDismissedSig !== (p.dismissedSig || '') && 'dismissed',
+      qaOverrides !== (p.qaOverrideCount || 0) && 'qa-override',
+      (p.passesSinceFull || 0) >= FULL_PASS_EVERY && 'cadence',
+      (String(prior || '').length > COMPACT_AT_CHARS
+        && (p.passesSinceFull || 0) >= 2) && 'oversize',
+      p.fullDue === true && 'owed',
+      omitted === 0 && 'whole-window',
+    ].filter(Boolean).join(',');
     // The guillotine era is over: the turn runs on Anthropic's side via the
     // Batches API, so no invocation clock applies and the background can run
     // a full read again. Deltas stay the routine pass because they are
     // cheaper and hold the assessment steadier; a backlog too big for one
     // delta is still walked in CHUNKS, oldest first, the through-stamp
     // advancing with each completed chunk.
-    const full = fullReasons;
+    const full = !!fullWhy;
     const fullDue = false;
     const passType = full ? 'full' : 'delta';
     let catchup = false;
@@ -3196,6 +3205,9 @@ ${style.voice}` : ''}` || ' ' }],
     await diagLog(env, {
       ev: 'batch-submit', kind, passType, effort: passEffort, auto,
       ms: Date.now() - runT0, freshMsgs: fresh.length, files: media.included.length,
+      // Lengths and reason names only, never content: why a full ran, and how
+      // big the prior it re-read was.
+      ...(fullWhy ? { why: fullWhy } : {}), priorChars: String(prior || '').length,
     });
   } catch (err) {
     console.error('advisor analysis:', err.stack || err);
