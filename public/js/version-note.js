@@ -16,9 +16,19 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
 
+// The newest release that changed anything for the person READING. Admin-only
+// pushes keep an empty client list (Eric's scope rule, changelog.js,
+// 2026-08-23), so both the footer number and the notes window hold still
+// through them and move only when the client's own app changes. Admin pages
+// show the same thing on purpose: the real deploy tag lives at /api/version,
+// and a footer that differed between the two sides would advertise that
+// admin-side releases exist at all.
+const CURRENT = CHANGELOG.find((e) => (e.client || []).length)
+  || { version: VERSION, client: [] };
+
 function openNotes() {
   if (document.getElementById('pa-vnotes')) return;
-  const current = CHANGELOG[0] || { version: VERSION, client: [] };
+  const current = CURRENT;
   const overlay = document.createElement('div');
   overlay.id = 'pa-vnotes';
   overlay.className = 'settings-overlay';
@@ -44,7 +54,7 @@ function mount() {
   // Small on purpose, both halves equally: furniture, not a feature.
   line.style.cssText = 'margin:1.4rem 0 .4rem; text-align:center; font-size:.68rem; opacity:.65;';
   line.innerHTML = `
-    <span class="dim">Update v${esc(VERSION)}</span>
+    <span class="dim">Update v${esc(CURRENT.version)}</span>
     <button type="button" data-vnotes class="dim"
       style="font:inherit; background:none; border:none; cursor:pointer; text-decoration:underline; padding:0 0 0 .5rem; color:inherit;"
       >Version notes</button>`;

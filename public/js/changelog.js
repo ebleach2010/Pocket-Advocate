@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.20';
+export const VERSION = '2.21';
 
 /**
  * Newest first.
@@ -42,14 +42,24 @@ export const VERSION = '2.20';
  * silent update" = a quiet entry, footer only, and anything NEW clients
  * need to know goes into the onboarding tutorial instead, replacing old
  * copy there if necessary. An unspecified push is silent.
+ *
+ * ERIC'S SCOPE RULE (2026-08-23, from a screenshot of the notes window):
+ * client-readable notes never describe admin-side machinery, however it is
+ * worded. A push whose changes are admin-only keeps an EMPTY client list,
+ * and the footer (version-note.js) keeps showing the newest version that
+ * actually changed something for clients, so the number and the notes a
+ * client sees only move when their app does.
  */
 export const CHANGELOG = [
   {
+    version: '2.21',
+    quiet: true,
+    client: [],
+  },
+  {
     version: '2.20',
     quiet: true,
-    client: [
-      'Bug fix: case reviews now run on infrastructure with no processing time limit at all, whether the app is open or closed, so they complete around the clock. This closes the review outage.',
-    ],
+    client: [],
   },
   {
     version: '2.19',
@@ -64,30 +74,22 @@ export const CHANGELOG = [
   {
     version: '2.17',
     quiet: true,
-    client: [
-      'Bug fix: case reviews now run on infrastructure that cannot cut them off partway, whether the app is open or closed. This closes the review outage.',
-    ],
+    client: [],
   },
   {
     version: '2.16',
     quiet: true,
-    client: [
-      'Bug fix: background case reviews now fit inside the time the platform actually allows, so they complete instead of being cut off. A long backlog is caught up in quick chunks, oldest first.',
-    ],
+    client: [],
   },
   {
     version: '2.15',
     quiet: true,
-    client: [
-      'Bug fix: the root cause of case reviews dying partway in the background was found and removed. Reviews now run to completion around the clock.',
-    ],
+    client: [],
   },
   {
     version: '2.14',
     quiet: true,
-    client: [
-      'Bug fix: background case reviews that had been failing since yesterday now recover and complete on their own.',
-    ],
+    client: [],
   },
   {
     version: '2.13',
@@ -97,17 +99,12 @@ export const CHANGELOG = [
   {
     version: '2.12',
     quiet: true,
-    client: [
-      'Bug fix: a brand-new case with documents uploaded but no messages yet is now read properly instead of waiting for the first chat message.',
-    ],
+    client: [],
   },
   {
     version: '2.11',
     quiet: true,
-    client: [
-      'Case reviews behind the scenes are much faster now: new messages and files are read against what is already known instead of re-reading the whole case every time, so updates land within minutes around the clock.',
-      'Bug fix: a review interrupted partway (for example by a closed app) now recovers and finishes on its own instead of waiting to be restarted by hand.',
-    ],
+    client: [],
   },
   {
     version: '2.10',
@@ -119,17 +116,12 @@ export const CHANGELOG = [
   {
     version: '2.9',
     quiet: true,
-    client: [
-      'Bug fix: a case review that stopped partway now restarts itself in the background within minutes, so your case is always freshly read.',
-    ],
+    client: [],
   },
   {
     version: '2.8',
     quiet: true,
-    client: [
-      'Bug fix: case reviews behind the scenes could quietly stall for hours. They now notice within minutes, restart themselves, and say plainly what happened if something does go wrong.',
-      'Larger records are readable now: a scanned record or imaging file up to 30 MB can be shared and read without splitting it up.',
-    ],
+    client: [],
   },
   {
     version: '2.7',
