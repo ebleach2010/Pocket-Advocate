@@ -2334,7 +2334,18 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
           continue;
         }
         await patchDoc(env, `advisorQueue/${row.id}`, { tries }, { mask: ['tries'] }).catch(() => {});
-        await runDraft(env, kind, id, req.instruction || '', !!req.revise, req.base || '');
+        // The turn itself runs in the Workflow when the binding exists: a
+        // cron invocation's CPU budget killed every long turn it carried
+        // (measured live, 2026-08-24), and a Workflow step has the raised
+        // limit and no wall clock. The queue machinery here stays the owner
+        // of retries either way.
+        if (env.ADVISOR_WF) {
+          await env.ADVISOR_WF.create({
+            params: { job: 'draft', kind, id, opts: { instruction: req.instruction || '', revise: !!req.revise, base: req.base || '' } },
+          });
+        } else {
+          await runDraft(env, kind, id, req.instruction || '', !!req.revise, req.base || '');
+        }
         return true; // one model job per firing
       }
       const state = await getDoc(env, statePath(kind, id));
@@ -2394,7 +2405,17 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
       const claimed = await patchDoc(env, `advisorQueue/${row.id}`, { tries },
         { mask: ['tries'], ifUpdateTime: fresh.updateTime }).catch(() => false);
       if (claimed === false) continue;
-      await runAnalysis(env, kind, id, null, { skipMedia: tries >= 3, counted: true, auto: true, deadlineAt });
+      // Same escape as the draft branch: the Workflow carries the turn, out
+      // of reach of the invocation budget that was killing it. No deadline
+      // in there: a Workflow step has no wall clock, and RUN_BUDGET_MS still
+      // bounds the stream itself.
+      if (env.ADVISOR_WF) {
+        await env.ADVISOR_WF.create({
+          params: { job: 'analysis', kind, id, opts: { skipMedia: tries >= 3, counted: true, auto: true } },
+        });
+      } else {
+        await runAnalysis(env, kind, id, null, { skipMedia: tries >= 3, counted: true, auto: true, deadlineAt });
+      }
       return true; // one model job per firing
     }
   } catch (err) {

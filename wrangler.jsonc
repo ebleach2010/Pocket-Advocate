@@ -30,6 +30,19 @@
     // list per minute.
     "crons": ["* * * * *"]
   },
+  // Five minutes of CPU per invocation (paid plan) instead of the 30 second
+  // default. Streaming a model turn burns real CPU in workerd (~10-16% duty,
+  // measured live 2026-08-24), so the default killed every foreground turn
+  // near the four minute mark, silently. This raises the fetch path and,
+  // with it, the Workflow steps below.
+  "limits": { "cpu_ms": 300000 },
+  // The advisor's model turns run inside a Workflow: unlimited wall clock
+  // per step and the raised CPU limit, fully detached from any client
+  // connection or cron invocation, which are the two things that were
+  // killing them. Provisioned by wrangler deploy itself; no dashboard step.
+  "workflows": [
+    { "name": "advisor-turn", "binding": "ADVISOR_WF", "class_name": "AdvisorTurn" }
+  ],
   "vars": {
     // Non-secret config. Replace after creating the Firebase project (docs/SETUP.md).
     "FIREBASE_PROJECT_ID": "pocket-advocate-f3148",

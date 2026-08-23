@@ -13,6 +13,7 @@
 // Plus a cron (see scheduled()) that emails unread-chat digests.
 // Everything else falls through to the static app in public/.
 
+import { WorkflowEntrypoint } from 'cloudflare:workers';
 import { requireUser } from './firebase-auth.js';
 import { mintCustomToken, getAccessToken } from './google-auth.js';
 import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, listDocs } from './firestore.js';
@@ -29,6 +30,31 @@ import {
   runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
+
+/**
+ * The advisor's model turns, out of harm's way. A Workflow step has no wall
+ * clock and runs under the raised CPU limit, detached from client
+ * connections and cron invocations, the two hosts whose budgets killed
+ * every long turn (measured live, 2026-08-24). One step, no Workflow-side
+ * retries: the Firestore queue machinery already owns retrying, and two
+ * retry systems fighting is how double spend happens.
+ */
+export class AdvisorTurn extends WorkflowEntrypoint {
+  async run(event, step) {
+    const { job, kind, id, opts } = event.payload || {};
+    if (!kind || !id) return 'bad payload';
+    await step.do('turn', { retries: { limit: 0 }, timeout: '30 minutes' }, async () => {
+      if (job === 'draft') {
+        const r = opts || {};
+        await runDraft(this.env, kind, id, r.instruction || '', !!r.revise, r.base || '');
+      } else {
+        await runAnalysis(this.env, kind, id, (opts && opts.mediaList) || null, opts || {});
+      }
+      return 'done';
+    });
+    return 'done';
+  }
+}
 
 // SEEDS, not the live prices. The live numbers sit on config/rates and climb
 // on their own (see the ratchet constants below); these only matter on a
@@ -923,7 +949,7 @@ async function seedWorkClock(env) {
  * one attempt. Runs once; the marker pattern is the standard one.
  */
 async function unparkAdvisor(env) {
-  const MARKER = 'migrations/unpark-2026-08-24c';
+  const MARKER = 'migrations/unpark-2026-08-24d';
   const m = await getDoc(env, MARKER);
   if (m?.data.finishedAt) return;
   if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
@@ -1050,7 +1076,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-24-fit';
+const BUILD_TAG = 'v2026-08-24-wf';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1058,7 +1084,7 @@ const BUILD_TAG = 'v2026-08-24-fit';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.16';
+const VERSION = '2.17';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3784,6 +3810,17 @@ async function handleAdvisor(request, env, ctx) {
     // also reads files still inside the settle window, because waiting four
     // minutes on files he just uploaded reads as "it ignored my photos".
     const isAuto = body?.auto === true;
+    // The turn rides the Workflow whenever it can: detached from this
+    // connection, a locked phone no longer kills the read. The one case that
+    // cannot (inline base64 media exceeds the Workflow payload limit) keeps
+    // the keepalive path, now under the raised CPU limit.
+    const hasInlineData = Array.isArray(media) && media.some((m) => m.data);
+    if (env.ADVISOR_WF && !hasInlineData) {
+      await env.ADVISOR_WF.create({
+        params: { job: 'analysis', kind, id, opts: { auto: isAuto, freshFiles: !isAuto, mediaList: media || null } },
+      });
+      return json({ ok: true, started: true });
+    }
     return keepaliveRun(ctx, runAnalysis(env, kind, id, media, { auto: isAuto, freshFiles: !isAuto }), { raw: true });
   }
 
