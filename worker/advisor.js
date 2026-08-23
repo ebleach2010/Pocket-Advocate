@@ -2123,6 +2123,22 @@ async function setState(env, kind, id, fields) {
 }
 
 /**
+ * The flight recorder. After three generations of fixes built on theory, the
+ * only way left to see why production runs die is to have the runs say so
+ * themselves. A newest-first ring of the last 30 events; NO case content
+ * ever rides in an entry (kind, pass type, effort, durations, and friendly()
+ * error text only). Never throws into the run it is recording.
+ */
+export async function diagLog(env, entry) {
+  try {
+    const doc = await getDoc(env, 'diag/advisor').catch(() => null);
+    const runs = Array.isArray(doc?.data.runs) ? doc.data.runs : [];
+    runs.unshift({ at: new Date(), ...entry });
+    await patchDoc(env, 'diag/advisor', { runs: runs.slice(0, 30) }, { mask: ['runs'] });
+  } catch { /* diagnostics never break the thing they watch */ }
+}
+
+/**
  * Flag that the thread changed and the assessment is stale. Cheap and instant,
  * so it's safe anywhere — including the ~30s of background grace a Worker gets
  * after answering a request, which is exactly where a real analysis dies.
@@ -2237,6 +2253,10 @@ async function sweepOne(env, t) {
     }).catch(() => {});
   await patchDoc(env, queuePath(t.kind, t.id), { kind: t.kind, id: t.id, at: new Date(), tries: 0 })
     .catch(() => {});
+  await diagLog(env, {
+    ev: 'requeue', kind: t.kind,
+    why: stuckRunning ? 'stuck-running' : owed ? 'owed' : carryOwed ? 'carry' : 'error-retry',
+  });
   console.warn(`advisor sweep: re-queued stranded ${t.kind}/${t.id}`);
 }
 
@@ -2344,6 +2364,7 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
           error: `This read kept stopping partway${st.stage && st.stage !== 'starting' ? ` (it was ${st.stage === 'sending' ? 'sending the case' : st.stage})` : ''}. Tap Update to try again, or remove the newest file from the staged list.`,
         }).catch(() => {});
         await deleteDoc(env, `advisorQueue/${row.id}`).catch(() => {});
+        await diagLog(env, { ev: 'gave-up', kind, tries });
         continue;
       }
       const claimed = await patchDoc(env, `advisorQueue/${row.id}`, { tries },
@@ -2553,6 +2574,8 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       pre?.data.startedAt ? new Date(pre.data.startedAt).getTime() : 0,
       pre?.data.progressAt ? new Date(pre.data.progressAt).getTime() : 0);
     if (pre?.data.status === 'running' && preBeat && Date.now() - preBeat < 45_000) return;
+    const runT0 = Date.now();
+    await diagLog(env, { ev: 'start', kind, auto, skipMedia, hasDeadline: !!deadlineAt });
     await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date(), stage: 'starting' });
     const [rows, state, knowledge, style, qa, effort, econ] = await Promise.all([
       recentMessages(env, kind, id),
@@ -2621,6 +2644,7 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
         pendingAt: null, updatedAt: new Date(),
       });
       await deleteDoc(env, queuePath(kind, id)).catch(() => {});
+      await diagLog(env, { ev: 'end', ok: true, kind, skipped: 'empty-thread', ms: Date.now() - runT0 });
       return;
     }
     // Auto-fired with nothing new to read: the pending flag was noise (a
@@ -2641,6 +2665,7 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
         status: 'idle', startedAt: null, progressAt: null, stage: null, pendingAt: null,
       });
       await deleteDoc(env, queuePath(kind, id)).catch(() => {});
+      await diagLog(env, { ev: 'end', ok: true, kind, skipped: 'nothing-new', ms: Date.now() - runT0 });
       return;
     }
     // FULL or DELTA. A delta pass feeds the model its own previous assessment
@@ -3023,12 +3048,20 @@ ${style.voice}` : ''}` || ' ' }],
     // single time, and the follow-up pass only ever ran while his panel
     // happened to be open. That is how "Files: 1 of 3 read" froze overnight.
     if (media.carry.length) await markPending(env, kind, id, { force: true }).catch(() => {});
+    await diagLog(env, {
+      ev: 'end', ok: true, kind, passType, effort: passEffort, auto,
+      ms: Date.now() - runT0, freshMsgs: fresh.length, files: media.included.length,
+    });
     // The stale-profile top-up that used to hang off an analysis is gone. The
     // nightly voice study covers it, from every thread rather than this one,
     // and two schedules writing the same profile is how it gets rebuilt twice
     // in an evening for no gain.
   } catch (err) {
     console.error('advisor analysis:', err.stack || err);
+    await diagLog(env, {
+      ev: 'end', ok: false, kind, auto,
+      err: String(err?.message || err).slice(0, 140),
+    });
     await setState(env, kind, id, { status: 'error', error: friendly(err) })
       .catch(() => {});
     // Count the failure on the queue entry, and give up after three. The delete

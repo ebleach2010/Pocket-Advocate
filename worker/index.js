@@ -537,6 +537,19 @@ export default {
         return await handleReviewsAdmin(request, env);
       if (url.pathname === '/api/rates' && request.method === 'GET')
         return await handleRates(env);
+      // The flight recorder's read hatch. Temporary scaffolding for the
+      // advisor incident: run telemetry only, no case content anywhere in
+      // the payload. Wrong or missing key answers 404 like every admin
+      // route, so the route is indistinguishable from one that is not there.
+      if (url.pathname === '/api/diag' && request.method === 'GET') {
+        if (url.searchParams.get('k') !== 'b6e6f406dc540d5459188b00716ab631')
+          return json({ error: 'Not found' }, 404);
+        const [cron, adv] = await Promise.all([
+          getDoc(env, 'diag/cron').catch(() => null),
+          getDoc(env, 'diag/advisor').catch(() => null),
+        ]);
+        return json({ now: new Date(), cron: cron?.data || null, runs: adv?.data.runs || [] });
+      }
       if (url.pathname === '/api/admin/rates' && request.method === 'POST')
         return await handleSetRates(request, env);
       if (url.pathname === '/api/work' && request.method === 'POST')
@@ -692,6 +705,10 @@ export default {
     // the ordinary retry path a couple of minutes before the platform wall.
     const deadlineAt = fired + 12.5 * 60_000;
     const minute = new Date(event.scheduledTime || fired).getUTCMinutes();
+    // Flight-recorder heartbeat: proof, readable from outside, that the cron
+    // trigger itself is firing. One tiny masked write per minute.
+    ctx.waitUntil(patchDoc(env, 'diag/cron', { lastFiredAt: new Date(), minute },
+      { mask: ['lastFiredAt', 'minute'] }).catch(() => {}));
     if (minute % 15 === 0) {
       ctx.waitUntil(runChatDigest(env));
       ctx.waitUntil(runFollowUpWarnings(env));
@@ -951,7 +968,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-24-nochat';
+const BUILD_TAG = 'v2026-08-24-diag';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -959,7 +976,7 @@ const BUILD_TAG = 'v2026-08-24-nochat';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.12';
+const VERSION = '2.13';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

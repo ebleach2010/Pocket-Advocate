@@ -368,7 +368,13 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     // closed. Fire once per pending flag, not once per poll.
     // Never auto-fire into a standing error (credits out, etc.) — that loops.
     // The error shows above; a manual Update or the cron retries it.
-    if (d.pendingAt && !running && !paused && d.status !== 'error' && firedFor !== d.pendingAt) {
+    // Cooldown: firedFor is a per-page-load closure, so every app re-entry
+    // used to auto-fire a fresh run while the last one's corpse was still
+    // warm. The per-minute cron owns retries now; the panel only volunteers
+    // when nothing has even STARTED in the last three minutes.
+    const anyStart = d.startedAt ? toDate(d.startedAt).getTime() : 0;
+    if (d.pendingAt && !running && !paused && d.status !== 'error' && firedFor !== d.pendingAt
+      && (!anyStart || Date.now() - anyStart > 3 * 60_000)) {
       firedFor = d.pendingAt;
       // auto, so the worker can take the cheap no-new-content exit when the
       // pending flag turns out to be noise; only a real tap forces a read.
