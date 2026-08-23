@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.17';
+export const VERSION = '2.18';
 
 /**
  * Newest first.
@@ -44,6 +44,11 @@ export const VERSION = '2.17';
  * copy there if necessary. An unspecified push is silent.
  */
 export const CHANGELOG = [
+  {
+    version: '2.18',
+    quiet: true,
+    client: [],
+  },
   {
     version: '2.17',
     quiet: true,
