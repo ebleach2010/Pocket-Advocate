@@ -52,12 +52,15 @@ Progress: one clinic signed, the insurer form signed, both with View and
 Withdraw. Sign another and it appears; the form previews itself as you type,
 and the whole document is readable before anything is signed.
 
-**Advocate.** The shelf shows both cases and today's rate. Open the Full
-Access case and there is a fifth tab group, **Act**, holding Appeals and
-Clinic calls, plus the authority status card on Overview and the margin badge
-beside the work clock ($134/hr on that case, amber $56/hr on the other). The
-appeal is drafted and sitting against a live deadline; Write, Revise, Print
-and Mark it filed all work against the local store.
+**Advocate.** The shelf shows both cases and today's rate. Each card carries
+its **work clock** on the folder tab, top right: tap to start or stop that
+client's clock without opening the case, and start both at once to see them
+keep separate totals. Open the Full Access case and there is a fifth tab
+group, **Act**, holding Appeals and Clinic calls, plus the authority status
+card on Overview and the margin badge beside the work clock ($134/hr on that
+case, amber $56/hr on the other). The appeal is drafted and sitting against a
+live deadline; Write, Revise, Print and Mark it filed all work against the
+local store.
 
 ## What is invented
 
