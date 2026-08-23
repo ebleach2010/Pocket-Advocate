@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.26';
+export const VERSION = '2.27';
 
 /**
  * Newest first.
@@ -51,6 +51,11 @@ export const VERSION = '2.26';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    version: '2.27',
+    quiet: true,
+    client: [],
+  },
   {
     version: '2.26',
     quiet: true,

@@ -27,7 +27,7 @@ import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 import {
   getAdvisorEffort, setAdvisorEffort,
-  runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
+  runAnalysis, runQuestion, runDraft, runAppeal, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
 
@@ -673,6 +673,8 @@ export default {
         return await handleDaySummary(request, env);
       if (url.pathname === '/api/saved')
         return await handleSaved(request, env, url);
+      if (url.pathname === '/api/clinic-calls')
+        return await handleClinicCalls(request, env, url);
       if (url.pathname === '/api/authority')
         return await handleAuthority(request, env, url);
       if (url.pathname === '/api/agenda')
@@ -823,6 +825,7 @@ export default {
     if (minute % 15 === 0) {
       ctx.waitUntil(runChatDigest(env));
       ctx.waitUntil(runFollowUpWarnings(env));
+      ctx.waitUntil(runAppealWarnings(env));
       ctx.waitUntil(runChatOpenNotices(env));
       ctx.waitUntil(cleanupStaleSlots(env));
       ctx.waitUntil(repairMissingCaseEmails(env));
@@ -1191,7 +1194,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-25-fullaccess';
+const BUILD_TAG = 'v2026-08-25-appeals';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1199,7 +1202,7 @@ const BUILD_TAG = 'v2026-08-25-fullaccess';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.26';
+const VERSION = '2.27';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2751,6 +2754,57 @@ async function handleAuthority(request, env, url) {
   return json({ ok: true, id: itemId, signedAt: item.signedAt });
 }
 
+/**
+ * GET/POST /api/clinic-calls - the three-way calls, admin only.
+ *
+ * Their own private record, not a value on `appointment`: that field's
+ * `method` is a two-value enum gating checkout, and everything on the
+ * appointment sits on the client-readable case doc, so a clinic's direct line
+ * would be published to the client along with it. This lives under the case's
+ * private subtree, which no browser can read either way.
+ *
+ * Notes only. No audio: the recording consent covers Eric's calls with his
+ * client, not a third party on the other end, and recording a clinic without
+ * asking is a legal trap in every two-party-consent state.
+ */
+async function handleClinicCalls(request, env, url) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = request.method === 'POST' ? await request.json().catch(() => null) : null;
+  const id = String(body?.caseId || url.searchParams.get('caseId') || '');
+  if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad request' }, 400);
+  const coll = `cases/${id}/private/clinicCalls/items`;
+
+  if (request.method === 'GET') {
+    const rows = await listDocs(env, coll, { pageSize: 50 }).catch(() => []);
+    return json({
+      items: rows.map((r) => ({ id: r.id, ...r.data }))
+        .sort((a, b) => new Date(a.at || a.createdAt || 0) - new Date(b.at || b.createdAt || 0)),
+    });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+
+  const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+  if (body?.action === 'add') {
+    const clinic = str(body?.clinic, 200);
+    if (!clinic) return json({ error: 'Name the clinic.' }, 400);
+    const at = str(body?.at, 40);
+    await patchDoc(env, `${coll}/${crypto.randomUUID()}`, {
+      clinic, phone: str(body?.phone, 40), parties: str(body?.parties, 200),
+      at: at ? new Date(at) : null, notes: '', createdAt: new Date(),
+    }, { mustNotExist: true });
+    return json({ ok: true });
+  }
+  if (body?.action === 'notes') {
+    const itemId = String(body?.id || '');
+    if (!/^[\w-]{1,64}$/.test(itemId)) return json({ error: 'Bad request' }, 400);
+    await patchDoc(env, `${coll}/${itemId}`,
+      { notes: str(body?.notes, 20000), notesAt: new Date() }, { mask: ['notes', 'notesAt'] });
+    return json({ ok: true });
+  }
+  return json({ error: 'Bad request' }, 400);
+}
+
 async function handleAgenda(request, env, url) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in required' }, 401);
@@ -4000,6 +4054,7 @@ function sanitizeNotes(html) {
 /**
  * POST /api/advisor  Body: { kind: 'case'|'sub', id, action, question?, instruction?, draft?, sent? }
  * action: 'analyze' | 'ask' | 'draft' | 'draft-feedback' | 'pause' | 'resume' | 'clear-draft'
+ *       | 'appeal-draft' | 'clear-appeal' | 'appeal-filed'
  *       | 'dx' (folder-cover override) | 'note' (private notes) | 'correction-dismiss'
  *       | 'unanswered-answered' (an outstanding ask he got, or let go)
  *
@@ -4278,6 +4333,54 @@ async function handleAdvisor(request, env, ctx) {
       return json({ ok: true, started: true });
     }
     return keepaliveRun(ctx, runAnalysis(env, kind, id, media, { auto: isAuto, freshFiles: !isAuto }), { raw: true });
+  }
+
+  // The appeal workbench. Same 404 gate and same keepalive contract as every
+  // other advisor action; the letter is never sent from here, only written,
+  // revised, and marked filed, because Eric files it himself through the
+  // insurer's own channel and that is what keeps proof of timely filing his.
+  if (action === 'appeal-draft') {
+    const c = await getDoc(env, `cases/${id}`).catch(() => null);
+    if (kind === 'case' && !c?.data.fullAccess)
+      return json({ ok: false, error: 'This case is not on Full Access.' }, 409);
+    const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+    const appeal = {
+      memberName: str(body?.appeal?.memberName, 120) || c?.data.clientName || '',
+      memberId: str(body?.appeal?.memberId, 80),
+      planName: str(body?.appeal?.planName, 200),
+      claimNumber: str(body?.appeal?.claimNumber, 80),
+      serviceDates: str(body?.appeal?.serviceDates, 120),
+      provider: str(body?.appeal?.provider, 200),
+      deniedAt: str(body?.appeal?.deniedAt, 20),
+      trackId: str(body?.appeal?.trackId, 60),
+      trackLabel: str(body?.appeal?.trackLabel, 120),
+      dueAt: str(body?.appeal?.dueAt, 20),
+      denialReason: str(body?.appeal?.denialReason, 4000),
+      policyText: str(body?.appeal?.policyText, 8000),
+      clinicalFacts: str(body?.appeal?.clinicalFacts, 8000),
+      instruction: str(body?.appeal?.instruction, 1000),
+    };
+    const revise = body?.revise === true;
+    const base = revise && typeof body?.base === 'string' ? body.base.slice(0, 30000) : '';
+    return keepaliveRun(ctx, runAppeal(env, kind, id, appeal, revise, base), { raw: true });
+  }
+
+  if (action === 'clear-appeal') {
+    await patchDoc(env, statePath, { appeal: null, appealStatus: null, appealMeta: null }, {
+      mask: ['appeal', 'appealStatus', 'appealMeta'],
+    });
+    return json({ ok: true });
+  }
+
+  // Filed. The deadline stops mattering, the warning stops firing, and the
+  // date he actually filed is recorded, which is the thing a plan disputes.
+  if (action === 'appeal-filed') {
+    const st = await getDoc(env, statePath).catch(() => null);
+    const meta = st?.data.appealMeta || {};
+    await patchDoc(env, statePath, {
+      appealMeta: { ...meta, filedAt: new Date(), warned: true },
+    }, { mask: ['appealMeta'] });
+    return json({ ok: true });
   }
 
   if (action === 'draft') {
@@ -5143,6 +5246,49 @@ async function confirmExtraSession(env, session) {
  * Cron: warn clients one week before an unscheduled follow-up session expires
  * (30 days after the first discussion). One email, ever, per case.
  */
+/**
+ * The appeal deadline warning. A missed filing window is not a setback, it is
+ * the end of the claim, so this warns early and again when it is close.
+ *
+ * Built on the follow-up warning's shape (query a flag, compute an expiry,
+ * a one-shot marker) with one deliberate difference: two rungs rather than
+ * one, because the consequence here is not an expired session credit.
+ */
+const APPEAL_WARN_DAYS = [14, 3];
+async function runAppealWarnings(env) {
+  try {
+    const rows = await queryDocs(env, 'cases', [['fullAccess', 'EQUAL', true]], 50);
+    for (const row of rows) {
+      if (row.data.status === 'closed') continue;
+      const st = await getDoc(env, `cases/${row.id}/advisor/state`).catch(() => null);
+      const meta = st?.data.appealMeta;
+      if (!meta?.dueAt || meta.filedAt) continue;
+      const due = new Date(meta.dueAt).getTime();
+      if (!Number.isFinite(due)) continue;
+      const daysLeft = Math.ceil((due - Date.now()) / 86_400_000);
+      // Which rung this crosses. `warnedAt` holds the rung already sent, so
+      // each fires once and a later, more urgent one still gets through.
+      const rung = APPEAL_WARN_DAYS.find((d) => daysLeft <= d);
+      if (rung === undefined) continue;
+      if (Number(meta.warnedAt) && Number(meta.warnedAt) <= rung) continue;
+      await patchDoc(env, `cases/${row.id}/advisor/state`,
+        { appealMeta: { ...meta, warnedAt: rung } }, { mask: ['appealMeta'] }).catch(() => {});
+      const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+      for (const a of admins) {
+        await notifyUser(env, a.id, {
+          title: 'Pocket Advocate',
+          body: daysLeft <= 0
+            ? `${firstName(row.data.clientName)}: the appeal filing date has passed. Check the plan's own letter before assuming it is closed.`
+            : `${firstName(row.data.clientName)}: ${daysLeft} day${daysLeft === 1 ? '' : 's'} left to file the appeal.`,
+          link: `/admin-case.html?id=${row.id}`,
+        }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.warn('appeal warnings:', err.message || err);
+  }
+}
+
 export async function runFollowUpWarnings(env, now = Date.now()) {
   const rows = await queryDocs(env, 'cases', [['addOnFollowUp', 'EQUAL', true]], 100);
   for (const row of rows) {

@@ -188,3 +188,36 @@ export const AUTHORITY_KINDS = {
   records: { title: 'Records authorisation', build: recordsAuthorisation },
   representative: { title: 'Insurance representative', build: representativeDesignation },
 };
+
+/**
+ * The appeal deadlines that actually decide cases. A missed filing window is
+ * not a setback, it is the end of the claim, and no amount of being right
+ * afterwards reopens it. Days from the adverse determination unless noted.
+ *
+ * Sources are the governing rules, not folklore: ERISA internal appeals get
+ * at least 180 days (29 CFR 2560.503-1(h)); external review runs 4 months
+ * from the final internal denial; Medicare Advantage reconsideration is 60
+ * days; Original Medicare redetermination is 120 days from the MSN; Medicaid
+ * fair hearings are state-set and commonly 90.
+ *
+ * These are FLOORS. A specific plan can allow longer and none may allow less,
+ * so the tracker warns early and the copy tells him to check the denial
+ * letter rather than trusting this table.
+ */
+export const APPEAL_DEADLINES = [
+  { id: 'commercial-internal', label: 'Commercial or employer plan, internal appeal', days: 180 },
+  { id: 'commercial-external', label: 'External review (after the final internal denial)', days: 120 },
+  { id: 'ma-reconsideration', label: 'Medicare Advantage, reconsideration', days: 60 },
+  { id: 'medicare-redetermination', label: 'Original Medicare, redetermination', days: 120 },
+  { id: 'medicaid-hearing', label: 'Medicaid, state fair hearing', days: 90 },
+  { id: 'urgent', label: 'Urgent or expedited (pre-service, care is waiting)', days: 3 },
+];
+
+/** The date a filing is due, from the denial date and the track. */
+export function appealDueAt(deniedAt, trackId) {
+  const track = APPEAL_DEADLINES.find((t) => t.id === trackId);
+  if (!deniedAt || !track) return null;
+  const d = new Date(deniedAt);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(d.getTime() + track.days * 86_400_000);
+}

@@ -134,6 +134,11 @@ export function demoApi(role, store) {
       await beat(500);
       return ok({ ok: true, id: 'demo-auth', signedAt: new Date().toISOString() });
     }
+    if (path === '/api/clinic-calls') {
+      if ((init.method || 'GET').toUpperCase() === 'GET') return ok({ items: [] });
+      await beat(400);
+      return ok({ ok: true });
+    }
     if (path === '/api/case-for-session') return ok({ ready: true, caseId: DEMO_CASE_ID });
     if (path === '/api/portal') return ok({ url: `/subscription.html?demo=${role}` });
     if (path === '/api/tip') return ok({ url: `/case.html?demo=1&tipped=1` });
@@ -214,6 +219,33 @@ export function demoApi(role, store) {
         store.docs.set(`cases/${DEMO_CASE_ID}/private/notes/doc`, {
           html: body.html || '', updatedAt: new Date(),
         });
+        return ok({ ok: true });
+      }
+      // The appeal workbench. Without a branch here the buttons answer a bare
+      // ok, the state never moves, and the page looks broken rather than
+      // demonstrative.
+      if (body.action === 'appeal-draft') {
+        await beat(900);
+        const path = `cases/${DEMO_CASE_ID}/advisor/state`;
+        store.docs.set(path, {
+          ...(store.docs.get(path) || {}),
+          appealStatus: 'ready',
+          appealAt: new Date(),
+          appeal: `RE: Demo Member | ID DEMO-1 | claim 44821 | dates of service 12 Jun 2026\n\n1. WHAT WAS DENIED AND WHY\nThe plan denied the study as not medically necessary, citing policy MP-114.\n\n2. WHY THAT REASON DOES NOT APPLY HERE\nMP-114 requires two documented failed conservative measures. The record shows both, on 3 Feb and 19 Apr, each with the ordering clinician named.\n\n3. WHAT IS REQUESTED\nOverturn and pay, a peer to peer review, and the reviewer's specialty and credentials.\n\n[NEEDS: the denial letter's reference number]\n\nThis is demonstration text.`,
+          appealMeta: {
+            planName: 'Demo Health', memberId: 'DEMO-1', claimNumber: '44821',
+            trackLabel: 'Commercial or employer plan, internal appeal',
+            dueAt: new Date(Date.now() + 21 * 86_400_000).toISOString().slice(0, 10),
+          },
+        });
+        return ok({ ok: true });
+      }
+      if (body.action === 'clear-appeal' || body.action === 'appeal-filed') {
+        const path = `cases/${DEMO_CASE_ID}/advisor/state`;
+        const cur = store.docs.get(path) || {};
+        store.docs.set(path, body.action === 'clear-appeal'
+          ? { ...cur, appeal: null, appealStatus: null, appealMeta: null }
+          : { ...cur, appealMeta: { ...(cur.appealMeta || {}), filedAt: new Date() } });
         return ok({ ok: true });
       }
       await beat(700);
@@ -313,7 +345,7 @@ export function demoApi(role, store) {
     }
 
     // ---- everything else --------------------------------------------------
-    if (path === '/api/version') return ok({ tag: 'demo', version: '2.26' });
+    if (path === '/api/version') return ok({ tag: 'demo', version: '2.27' });
     if (path === '/api/changelog') {
       return role === 'admin'
         ? ok({ admin: { '2.2': ['Everything on your side, in one place, with nothing real behind it.'] } })
