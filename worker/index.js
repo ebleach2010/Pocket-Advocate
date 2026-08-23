@@ -663,6 +663,8 @@ export default {
         return await handleSetRates(request, env);
       if (url.pathname === '/api/work' && request.method === 'POST')
         return await handleWork(request, env);
+      if (url.pathname === '/api/work/here' && request.method === 'POST')
+        return await handleWorkPresence(request, env);
       if (url.pathname === '/api/admin/effort')
         return await handleEffort(request, env);
       if (url.pathname === '/api/admin/voice')
@@ -843,6 +845,11 @@ export default {
     // firing after this deploys, not up to a quarter hour later. One marker
     // read per firing once finished; remove with the diag scaffolding.
     ctx.waitUntil(unparkAdvisor(env));
+    // Also un-gated, and for a plainer reason: the first rung of the clock
+    // ladder is five minutes, so a quarter-hour gate could not deliver it.
+    // One document read on any firing where he is in the app or nothing is
+    // running, which is nearly all of them.
+    ctx.waitUntil(runWorkClockNudges(env));
     // THE KILL, found by the flight recorder (2026-08-24). Cloudflare's
     // fifteen minute guarantee attaches to the promise scheduled() RETURNS:
     // "The runtime waits for the promise returned by the scheduled() handler
@@ -1194,7 +1201,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-26-shelf-clock';
+const BUILD_TAG = 'v2026-08-27-auto-clock';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1202,7 +1209,7 @@ const BUILD_TAG = 'v2026-08-26-shelf-clock';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.28';
+const VERSION = '2.29';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2924,16 +2931,92 @@ async function handleFileDelete(request, env) {
 }
 
 /**
- * POST /api/work  Body: { caseId, on }   admin only
+ * The work clock's two kinds of running, and why there are two.
+ *
+ * Eric, 2026-08-25: "If I enter their chart it automatically clocks on. If I
+ * exit their chart it automatically clocks off unless I turn the toggle back
+ * on. If I exit the app, whatever state it was in remains with a prompt after
+ * 5, 10, and 30 min pushed to me asking if I'm still working."
+ *
+ * That is two different claims wearing one button, so the record keeps them
+ * apart:
+ *
+ *   AUTO   - "I am looking at this chart right now." Started by opening the
+ *            chart. At most one at a time, and it dies the moment he is
+ *            demonstrably somewhere else in the app.
+ *   PINNED - "I am working on this, wherever I happen to be." Started by
+ *            tapping a toggle, on the shelf or in the chart. Any number may
+ *            run at once, which is the whole point: he works several cases in
+ *            parallel and the shelf is where he says so.
+ *
+ * Leaving the APP is not evidence of either. A locked phone looks exactly
+ * like a closed tab, and both look exactly like reading a denial letter on
+ * paper with the app in the background - which is real work on that case. So
+ * nothing stops on its own when the app goes away; he is asked instead, per
+ * client, at five, ten and thirty minutes.
+ *
+ * The ladder is measured from when the app was last open, not from when the
+ * clock started, because a two hour stretch with him in front of it needs no
+ * prompt at all.
+ */
+const WORK_NUDGE_MINUTES = [5, 10, 30];
+/**
+ * The presence beacon's own clock. Pages send one on load and once a minute
+ * while visible, so anything older than this means no admin page is open.
+ * Three minutes rather than two forgives one dropped request on a phone that
+ * has wandered between cells.
+ */
+const WORK_PRESENCE_STALE_MS = 3 * 60_000;
+/**
+ * Worker-only by the catch-all deny in firestore.rules: no `admin` match
+ * block exists, so no client can read or write this however they are signed
+ * in. It holds the beacon and a list of which cases have a live clock, so the
+ * per-minute cron costs one document read instead of a query over every case.
+ */
+const CLOCK_DOC = 'admin/clock';
+
+/** The running list, self-healing: whatever the case docs actually say. */
+async function setClockRunning(env, caseId, running) {
+  const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
+  const list = Array.isArray(doc?.data.running) ? doc.data.running.filter((x) => typeof x === 'string') : [];
+  const next = running ? [...new Set([...list, caseId])] : list.filter((x) => x !== caseId);
+  if (next.length === list.length && next.every((x, i) => x === list[i])) return;
+  await patchDoc(env, CLOCK_DOC, { running: next }, { mask: ['running'] }).catch(() => {});
+}
+
+/**
+ * Stop one clock and bank its time.
+ *
+ * `until` exists for the nudge's "no, I stopped ages ago" answer: banking to
+ * now would charge the client for the half hour the phone spent in a pocket,
+ * which is the exact overcount the prompt is there to prevent. Banking to the
+ * last beacon is the last moment the time is known to be real.
+ */
+async function stopWorkClock(env, caseId, w, until = Date.now()) {
+  const startedAt = w?.startedAt ? new Date(w.startedAt).getTime() : 0;
+  let seconds = Math.max(0, Number(w?.seconds) || 0);
+  if (startedAt) {
+    // A clock left running for days is a forgotten toggle, not a work week.
+    // Bank at most twelve hours from one stretch.
+    const end = Math.max(startedAt, Math.min(until, Date.now()));
+    seconds += Math.min(Math.floor((end - startedAt) / 1000), 12 * 3600);
+  }
+  await patchDoc(env, `cases/${caseId}`, {
+    work: { seconds, startedAt: null, updatedAt: new Date(), auto: false, nudged: 0 },
+  }, { mask: ['work'] });
+  await setClockRunning(env, caseId, false);
+  return seconds;
+}
+
+/**
+ * POST /api/work  Body: { caseId, on, auto, backdate }   admin only
  *
  * The work clock. Eric, 2026-08-22: "the cost is a toggle per client. I
  * toggle it on if I'm working on their case. I toggle it off if I'm not
  * working on their case. They can see this."
  *
- * Deliberately manual. The automatic chat meter only ever knew about minutes
- * his chat page was open, which is the smallest part of the work: the call,
- * the records, the report and the thinking all happened somewhere else. This
- * counts whatever he says it counts.
+ * `auto: true` marks the stretch as "started because he opened the chart",
+ * which is the only kind that stops itself. Anything he taps is pinned.
  *
  * It lives on the CASE doc, not caseMeta, precisely because the client is
  * meant to see it: the case doc is the one a client can read. Only this
@@ -2949,29 +3032,157 @@ async function handleWork(request, env) {
   if (!doc) return json({ error: 'Not found' }, 404);
   const w = doc.data.work || {};
   const startedAt = w.startedAt ? new Date(w.startedAt).getTime() : 0;
-  let seconds = Math.max(0, Number(w.seconds) || 0);
+  const seconds = Math.max(0, Number(w.seconds) || 0);
   const on = body?.on === true;
+  const auto = body?.auto === true;
 
   if (on) {
+    if (!startedAt) {
+      const now = new Date();
+      await patchDoc(env, `cases/${caseId}`, {
+        work: { seconds, startedAt: now, updatedAt: now, auto, nudged: 0 },
+      }, { mask: ['work'] });
+      await setClockRunning(env, caseId, true);
+      return json({ seconds, running: true, auto, startedAt: now });
+    }
     // Already running: leave the existing start alone rather than resetting
     // it, so a double tap cannot quietly discard time already on the clock.
-    if (!startedAt) {
-      await patchDoc(env, `cases/${caseId}`, {
-        work: { seconds, startedAt: new Date(), updatedAt: new Date() },
-      }, { mask: ['work'] });
+    // The reply carries the ORIGINAL start, because a caller that assumed
+    // "running now means started now" would paint a two hour stretch as
+    // nothing and look, to him, like time was lost.
+    //
+    // One thing does change - a deliberate tap over an automatic stretch
+    // PINS it, which is "unless I turn the toggle back on" arriving without
+    // a stop in between.
+    if (w.auto === true && !auto) {
+      await patchDoc(env, `cases/${caseId}`, { work: { ...w, auto: false, updatedAt: new Date() } },
+        { mask: ['work'] }).catch(() => {});
+      return json({ seconds, running: true, auto: false, startedAt: new Date(startedAt) });
     }
-    return json({ seconds, running: true });
+    return json({ seconds, running: true, auto: w.auto === true, startedAt: new Date(startedAt) });
   }
-  if (startedAt) {
-    // A clock left running for days is a forgotten toggle, not a work week.
-    // Bank at most twelve hours from one stretch and say so in the reply.
-    const elapsed = Math.min(Math.floor((Date.now() - startedAt) / 1000), 12 * 3600);
-    seconds += elapsed;
+
+  // "I stopped a while ago" - bank to the last time the APP was known open,
+  // which is the beacon on the shared clock doc, not anything on this case.
+  // A per-case stamp was the obvious place for it and the wrong one: only the
+  // start ever wrote it, so backdating would have banked to the beginning of
+  // the stretch and thrown away hours of real work. Caught by the suite, which
+  // had happened to beacon immediately after starting.
+  let until = Date.now();
+  if (body?.backdate === true) {
+    const clock = await getDoc(env, CLOCK_DOC).catch(() => null);
+    const seen = clock?.data.seenAt ? new Date(clock.data.seenAt).getTime() : 0;
+    if (seen) until = seen;
   }
-  await patchDoc(env, `cases/${caseId}`, {
-    work: { seconds, startedAt: null, updatedAt: new Date() },
-  }, { mask: ['work'] });
-  return json({ seconds, running: false });
+  const banked = await stopWorkClock(env, caseId, w, until);
+  return json({
+    seconds: banked,
+    running: false,
+    startedAt: null,
+    // What the caller tells him: a backdated stop banked less than the clock
+    // on screen was showing, and silence about that reads as lost time.
+    bankedTo: until < Date.now() - 30_000 ? new Date(until) : null,
+  });
+}
+
+/**
+ * POST /api/work/here  Body: { caseId }   admin only
+ *
+ * The presence beacon. Every admin page sends one on load and once a minute
+ * while it is the visible page; `caseId` is the chart he has open, or empty
+ * for anywhere else in the app.
+ *
+ * It does two jobs, and both are things no client-side unload handler can be
+ * trusted with. Arriving anywhere that is not a given chart is proof he left
+ * it, so that chart's automatic clock stops here rather than in a `pagehide`
+ * the browser is free to skip. And the timestamp it leaves is what the nudge
+ * ladder measures "away from the app" against.
+ *
+ * Beacons stop when the page is hidden, on purpose: a backgrounded app is
+ * exactly the state he asked to be asked about.
+ */
+async function handleWorkPresence(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const raw = typeof body?.caseId === 'string' ? body.caseId : '';
+  const atCaseId = /^[\w-]{1,64}$/.test(raw) ? raw : '';
+
+  const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
+  const prevAt = typeof doc?.data.atCaseId === 'string' ? doc.data.atCaseId : '';
+  const prevSeen = doc?.data.seenAt ? new Date(doc.data.seenAt).getTime() : 0;
+  const running = Array.isArray(doc?.data.running) ? doc.data.running.filter((x) => typeof x === 'string') : [];
+  const wasAway = !prevSeen || Date.now() - prevSeen > WORK_PRESENCE_STALE_MS;
+
+  await patchDoc(env, CLOCK_DOC, { seenAt: new Date(), atCaseId },
+    { mask: ['seenAt', 'atCaseId'] }).catch(() => {});
+
+  // Nothing running is the common case, and it costs nothing more than this.
+  if (!running.length) return json({ ok: true });
+  // Nothing to reconcile while he sits on the same page and never left.
+  if (prevAt === atCaseId && !wasAway) return json({ ok: true });
+
+  const stopped = [];
+  for (const id of running) {
+    const c = await getDoc(env, `cases/${id}`).catch(() => null);
+    const w = c?.data.work;
+    if (!w?.startedAt) { await setClockRunning(env, id, false); continue; }
+    // He is demonstrably elsewhere in the app, so this automatic stretch is
+    // over. A pinned one is untouched: that is what pinning means.
+    if (w.auto === true && id !== atCaseId) {
+      // The new banked total rides back, not just the id: the page that sent
+      // this beacon has already painted that card from a case doc it read
+      // before the stop, so it needs the number as well as the news.
+      const seconds = await stopWorkClock(env, id, w);
+      stopped.push({ id, seconds });
+      continue;
+    }
+    // He came back. Re-arm the ladder so a later absence asks again.
+    if (wasAway && Number(w.nudged)) {
+      await patchDoc(env, `cases/${id}`, { work: { ...w, nudged: 0 } }, { mask: ['work'] }).catch(() => {});
+    }
+  }
+  return json({ ok: true, stopped });
+}
+
+/**
+ * The nudge ladder, on the per-minute cron.
+ *
+ * Costs one document read on every firing where he is in the app or nothing
+ * is running, which is almost all of them.
+ */
+async function runWorkClockNudges(env) {
+  try {
+    const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
+    const running = Array.isArray(doc?.data.running) ? doc.data.running.filter((x) => typeof x === 'string') : [];
+    if (!running.length) return;
+    const seenAt = doc?.data.seenAt ? new Date(doc.data.seenAt).getTime() : 0;
+    const awayMin = seenAt ? (Date.now() - seenAt) / 60_000 : Infinity;
+    if (awayMin < WORK_NUDGE_MINUTES[0]) return; // the app is open; he can see it
+    const rung = [...WORK_NUDGE_MINUTES].reverse().find((m) => awayMin >= m);
+    if (rung === undefined) return;
+
+    for (const id of running) {
+      const c = await getDoc(env, `cases/${id}`).catch(() => null);
+      const w = c?.data.work;
+      if (!w?.startedAt) { await setClockRunning(env, id, false); continue; }
+      if (Number(w.nudged || 0) >= rung) continue;
+      await patchDoc(env, `cases/${id}`, { work: { ...w, nudged: rung } }, { mask: ['work'] }).catch(() => {});
+      const started = new Date(w.startedAt).getTime();
+      const mins = Math.max(0, Math.floor((Date.now() - started) / 60_000));
+      const ran = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+      const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+      for (const a of admins) {
+        await notifyUser(env, a.id, {
+          title: 'Pocket Advocate',
+          body: `${firstName(c.data.clientName)}: the clock has been running ${ran} and the app has been closed for ${Math.floor(awayMin)} minutes. Still working?`,
+          link: `/admin-case.html?id=${id}&clock=ask`,
+        }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.warn('work clock nudges:', err.message || err);
+  }
 }
 
 /**
@@ -3415,6 +3626,15 @@ async function handleUpgradeCheckout(request, env) {
   const cap = await fullAccessCapacity(env);
   if (!cap.room) return json({ error: 'full-booked', open: cap.open, max: cap.max }, 409);
 
+  // The same gate booking enforces, and for the same reason: nobody buys a
+  // four figure engagement without the note that says where it stops. This
+  // was missing when the upgrade card first shipped, while the card's own
+  // fine print promised "you will be shown exactly what it covers, and where
+  // it stops, before anything is charged" - so the flow was quietly making
+  // the copy untrue. Caught reading the flow back, 2026-08-25.
+  if (typeof body?.acks?.[FULL_ACCESS_ACK] !== 'number')
+    return json({ error: 'Read the scope note and acknowledge it first.' }, 400);
+
   const pending = c.data.pendingFullAccess;
   if (pending?.url && new Date(pending.expiresAt || 0).getTime() > Date.now())
     return json({ ok: true, url: pending.url });
@@ -3430,7 +3650,12 @@ async function handleUpgradeCheckout(request, env) {
     success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&upgraded=1`,
     cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),
-    metadata: { kind: 'fullaccess', caseId, uid: c.data.clientUid, fullCents: String(live.fullCents) },
+    metadata: {
+      kind: 'fullaccess', caseId, uid: c.data.clientUid, fullCents: String(live.fullCents),
+      // Carried through Stripe so the acknowledgment lands on the case with
+      // the purchase, in the same `forms` map booking writes.
+      ackAt: String(body.acks[FULL_ACCESS_ACK]),
+    },
   });
   await patchDoc(env, `cases/${caseId}`, {
     pendingFullAccess: { sessionId: session.id, url: session.url, cents, createdAt: new Date(), expiresAt },
@@ -3471,6 +3696,14 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
 
   payments.push({ kind: 'fullaccess', amountCents, sessionId: session.id, at: new Date() });
   const now = new Date();
+  // Merged rather than masked on its own, because `forms` already holds the
+  // three booking acknowledgments and a masked write of one key would take
+  // the other three with it.
+  const ackMs = Number(session.metadata?.ackAt);
+  const forms = {
+    ...(c.data.forms || {}),
+    ...(Number.isFinite(ackMs) && ackMs > 0 ? { [FULL_ACCESS_ACK]: new Date(ackMs) } : {}),
+  };
   const okBuy = await patchDoc(env, `cases/${caseId}`, {
     fullAccess: true,
     fullAccessAt: now,
@@ -3479,8 +3712,9 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
     fullAccessRateCents: (Number(c.data.caseRateCents) || 0) + amountCents,
     pendingFullAccess: null,
     extraPayments: payments,
+    forms,
   }, {
-    mask: ['fullAccess', 'fullAccessAt', 'fullAccessRateCents', 'pendingFullAccess', 'extraPayments'],
+    mask: ['fullAccess', 'fullAccessAt', 'fullAccessRateCents', 'pendingFullAccess', 'extraPayments', 'forms'],
     ifUpdateTime: c.updateTime,
   }).catch(() => false);
   if (okBuy === false) return confirmFullAccessPurchase(env, session, attempt + 1);

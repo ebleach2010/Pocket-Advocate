@@ -76,7 +76,7 @@ const CUSTOM_OPTION = `<option value="${CUSTOM}">A time not on the calendar…</
 
 hydrateNav();
 const user = await requireAdmin();
-if (user && caseId) { loadFloor(); load(); }
+if (user && caseId) { loadFloor(); load(); autoClockOn(); }
 
 let data = null;
 // Case id the folder shell (and its one chat + advisor mount) was built for.
@@ -665,30 +665,134 @@ function paintAgendaPage(pane) {
 }
 
 /**
- * The work clock. He toggles it on when he starts on a case and off when he
- * stops, and the client sees the total on their own page (Eric, 2026-08-22:
- * "the cost is a toggle per client... They can see this"). Manual on
- * purpose: the automatic meter it replaces only ever saw minutes the chat
- * page was open, which is the smallest part of the work.
+ * The work clock. The client sees the total on their own page (Eric,
+ * 2026-08-22: "the cost is a toggle per client... They can see this").
+ *
+ * It starts itself when he opens this chart, because that is the one moment
+ * the app can be certain about (Eric, 2026-08-25: "If I enter their chart it
+ * automatically clocks on"). Stopping is the interesting half, and it lives
+ * in the Worker: leaving for anywhere else in the app stops an automatic
+ * stretch, while leaving the APP stops nothing and asks him instead.
+ *
+ * Two things follow from that here. The start is fired at page level rather
+ * than from this row, because the row lives in the Chat pane and he
+ * explicitly does not want the clock to require loading the chat. And the
+ * live state is held in one module-level object, so the automatic start and
+ * this toggle can never end up painting different totals.
  */
 let workTick = null;
+const clock = { seconds: 0, startedAt: 0, loaded: false };
+let paintClock = () => {};
+
+/** One place that talks to /api/work, so every path updates the same state. */
+async function postWork(payload) {
+  const token = await user.getIdToken();
+  const res = await fetch('/api/work', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ caseId, ...payload }),
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+  clock.seconds = Number(out.seconds) || 0;
+  // The Worker sends the ORIGINAL start when the clock was already running,
+  // so re-entering a chart mid-stretch keeps counting rather than appearing
+  // to reset to the banked total.
+  clock.startedAt = out.startedAt ? new Date(out.startedAt).getTime() : 0;
+  clock.loaded = true;
+  paintClock();
+  return out;
+}
+
+/**
+ * Entering the chart is the start. Quiet on failure on purpose: an offline
+ * moment should not throw an alert over a page he came here to read, and the
+ * toggle is right there if it did not take.
+ */
+async function autoClockOn() {
+  try {
+    await postWork({ on: true, auto: true });
+  } catch { /* the toggle still works */ }
+  askIfStillWorking();
+}
+
+/**
+ * The answer half of the 5 / 10 / 30 minute prompt. The push lands on
+ * `?clock=ask`, and the honest thing to offer is a stop that banks to when
+ * the app was last open rather than to now - otherwise saying "no, I
+ * finished a while ago" would still charge the client for the while.
+ */
+function askIfStillWorking() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('clock') !== 'ask') return;
+  // Take it out of the URL immediately: a reload or a shared link should not
+  // ask again about a question already answered.
+  params.delete('clock');
+  history.replaceState({}, '', `${location.pathname}?${params}`);
+
+  const el = document.getElementById('case') || document.body;
+  const card = document.createElement('div');
+  card.className = 'panel';
+  card.style.cssText = 'margin:.6rem 0;';
+  card.innerHTML = `
+    <h3 style="margin:0 0 .3rem;">Still working on this one?</h3>
+    <p class="dim small" style="margin:0 0 .6rem;">The clock is running and the
+      app had been closed a while. If you finished earlier, stopping here banks
+      the time up to when you last had the app open, not up to now.</p>
+    <div class="row" style="gap:.5rem; flex-wrap:wrap;">
+      <button class="btn glow" data-clock-yes style="flex:none;">Yes, still on it</button>
+      <button class="btn quiet" data-clock-no style="flex:none;">No, stop it</button>
+    </div>
+    <p class="dim small" data-clock-said style="margin:.5rem 0 0;" hidden></p>`;
+  el.prepend(card);
+
+  const said = card.querySelector('[data-clock-said]');
+  card.querySelector('[data-clock-yes]').addEventListener('click', () => {
+    // Being here is the answer: this page's beacon has already re-armed the
+    // ladder, so the next absence asks again from five minutes.
+    card.remove();
+  });
+  card.querySelector('[data-clock-no]').addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    try {
+      const out = await postWork({ on: false, backdate: true });
+      const to = out.bankedTo ? new Date(out.bankedTo) : null;
+      said.textContent = to
+        ? `Stopped. Banked up to ${to.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}, when you last had the app open.`
+        : 'Stopped.';
+      said.hidden = false;
+      setTimeout(() => card.remove(), 6000);
+    } catch (err) {
+      said.textContent = `Couldn't stop it: ${err.message}`;
+      said.hidden = false;
+      e.currentTarget.disabled = false;
+    }
+  });
+}
+
 function startWorkClock(c) {
   const row = document.querySelector('[data-workclock]');
   if (!row) return;
   const btn = row.querySelector('[data-work-toggle]');
   const totalEl = row.querySelector('[data-work-total]');
-  const w = c?.work || {};
-  let seconds = Math.max(0, Number(w.seconds) || 0);
-  let startedAt = w.startedAt ? toDate(w.startedAt).getTime() : 0;
+  // Only seed from the case doc if the automatic start has not already said
+  // something newer. It usually has: it fires on load, this row is built
+  // when the Chat pane renders.
+  if (!clock.loaded) {
+    const w = c?.work || {};
+    clock.seconds = Math.max(0, Number(w.seconds) || 0);
+    clock.startedAt = w.startedAt ? toDate(w.startedAt).getTime() : 0;
+  }
 
-  const live = () => seconds + (startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0);
+  const live = () => clock.seconds
+    + (clock.startedAt ? Math.floor((Date.now() - clock.startedAt) / 1000) : 0);
   const rateEl = row.querySelector('[data-work-rate]');
   const paint = () => {
     const t = live();
     const h = Math.floor(t / 3600);
     const m = Math.floor((t % 3600) / 60);
-    totalEl.textContent = `${h ? `${h}h ` : ''}${m}m on this case${startedAt ? ' · running' : ''}`;
-    totalEl.classList.toggle('on', !!startedAt);
+    totalEl.textContent = `${h ? `${h}h ` : ''}${m}m on this case${clock.startedAt ? ' · running' : ''}`;
+    totalEl.classList.toggle('on', !!clock.startedAt);
     // The margin line, live beside the clock that produces it.
     if (rateEl) {
       const hourly = effectiveHourly(c, t);
@@ -701,29 +805,23 @@ function startWorkClock(c) {
           : `$${dollars(paidCents(c))} paid so far.`;
       }
     }
-    btn.textContent = startedAt ? '⏸ Stop working' : '▶ Start working';
-    btn.classList.toggle('glow', !!startedAt);
+    btn.textContent = clock.startedAt ? '⏸ Stop working' : '▶ Start working';
+    btn.classList.toggle('glow', !!clock.startedAt);
   };
+  paintClock = paint;
   paint();
   clearInterval(workTick);
   // A minute is plenty: this is hours, not a stopwatch.
-  workTick = setInterval(() => { if (startedAt) paint(); }, 30_000);
+  workTick = setInterval(() => { if (clock.startedAt) paint(); }, 30_000);
 
   btn.addEventListener('click', async () => {
-    const want = !startedAt;
+    const want = !clock.startedAt;
     btn.disabled = true;
     try {
-      const token = await user.getIdToken();
-      const res = await fetch('/api/work', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ caseId, on: want }),
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
-      seconds = Number(out.seconds) || 0;
-      startedAt = out.running ? Date.now() : 0;
-      paint();
+      // A tap is always a pin. Turning it back on after the automatic start
+      // stopped is exactly how he keeps a clock running while he works on
+      // this case from somewhere else.
+      await postWork({ on: want, auto: false });
     } catch (err) {
       alert(`Couldn't change the clock: ${err.message}`);
     }

@@ -17,6 +17,7 @@ import { HELP_BUTTON, wireHelp, openCaseHelp } from './help.js';
 import {
   recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
 } from './authority.js';
+import { FULL_ACCESS_TERMS, FULL_ACCESS_PLAIN } from './tier-terms.js';
 import { mountFolder, folderEnter } from './folder.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
@@ -1191,13 +1192,24 @@ function upgradeOffer(c) {
         under your written authorisation, and I write and file your insurance
         appeals.</p>
       <p class="fu-emphasis">Same case. Same file. I just stop handing it back to you.</p>
+      <details class="agreement" data-id="${esc(FULL_ACCESS_TERMS.id)}">
+        <summary>
+          <span class="agreement-title">${esc(FULL_ACCESS_TERMS.title)}</span>
+          <span class="agreement-plain">${esc(FULL_ACCESS_PLAIN)}</span>
+        </summary>
+        <div class="agreement-body">${FULL_ACCESS_TERMS.body}</div>
+        <label class="agreement-check">
+          <input type="checkbox" data-upgrade-ack disabled> I have read and acknowledge this
+        </label>
+      </details>
       <div class="fu-buy">
         <span class="price">$${diff}</span>
-        <button class="btn glow" data-buy-upgrade>Upgrade this case</button>
+        <button class="btn glow" data-buy-upgrade disabled>Upgrade this case</button>
       </div>
       <p class="fu-fine">That is the difference between what you have already
-        paid and the Full Access price. You will be shown exactly what it covers,
-        and where it stops, before anything is charged.</p>
+        paid and the Full Access price. Open the note above first: it is the
+        whole of what I do, what I need from you, and where it stops, and the
+        button unlocks once you have read it through.</p>
       <p class="error" data-upgrade-error hidden></p>
     </div>`;
 }
@@ -1206,6 +1218,32 @@ function wireUpgradeOffer(el, c) {
   const btn = el.querySelector('[data-buy-upgrade]');
   if (!btn) return;
   const errEl = el.querySelector('[data-upgrade-error]');
+
+  // Proof of exposure, exactly as booking does it (book.js): the box unlocks
+  // only once the note has been opened AND scrolled to its end, and the buy
+  // button only once the box is ticked. Never measured while closed - a
+  // hidden body reads 0/0 and would unlock for free.
+  const det = el.querySelector('details.agreement');
+  const body = det?.querySelector('.agreement-body');
+  const box = el.querySelector('[data-upgrade-ack]');
+  let ackAt = 0;
+  if (det && body && box) {
+    const checkScrolled = () => {
+      if (!det.open) return;
+      if (body.scrollTop + body.clientHeight >= body.scrollHeight - 8) box.disabled = false;
+    };
+    body.addEventListener('scroll', checkScrolled);
+    det.addEventListener('toggle', () => { if (det.open) requestAnimationFrame(checkScrolled); });
+    box.addEventListener('change', () => {
+      // The timestamp is the moment the box is ticked; the Worker stores it
+      // on the case beside the three booking acknowledgments.
+      ackAt = box.checked ? Date.now() : 0;
+      btn.disabled = !ackAt;
+    });
+  } else {
+    btn.disabled = false;
+  }
+
   btn.addEventListener('click', async () => {
     btn.disabled = true;
     errEl.hidden = true;
@@ -1214,7 +1252,7 @@ function wireUpgradeOffer(el, c) {
       const res = await fetch('/api/upgrade', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ caseId: c.id }),
+        body: JSON.stringify({ caseId: c.id, acks: { [FULL_ACCESS_TERMS.id]: ackAt } }),
       });
       const out = await res.json().catch(() => ({}));
       if (res.status === 409 && out.error === 'full-booked') {
@@ -1228,7 +1266,9 @@ function wireUpgradeOffer(el, c) {
     } catch (err) {
       errEl.textContent = err.message;
       errEl.hidden = false;
-      btn.disabled = false;
+      // Back to whatever the gate says, not unconditionally open: a failed
+      // attempt must not become the way past the scope note.
+      btn.disabled = !!(det && body && box) && !ackAt;
     }
   });
 }

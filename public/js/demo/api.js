@@ -96,13 +96,45 @@ export function demoApi(role, store) {
       const c = store.docs.get(key) || {};
       const w = c.work || { seconds: 0, startedAt: null };
       if (body.on === true) {
-        if (!w.startedAt) store.docs.set(key, { ...c, work: { ...w, startedAt: new Date() } });
-        return ok({ seconds: w.seconds || 0, running: true });
+        const startedAt = w.startedAt ? new Date(w.startedAt) : new Date();
+        const auto = w.startedAt ? (body.auto === true && w.auto === true) : body.auto === true;
+        store.docs.set(key, { ...c, work: { ...w, startedAt, auto, nudged: 0 } });
+        store.persist?.();
+        // The ORIGINAL start comes back, matching the Worker: a caller that
+        // assumed "running now means started now" would paint a long stretch
+        // as nothing.
+        return ok({ seconds: w.seconds || 0, running: true, auto, startedAt });
       }
-      const add = w.startedAt ? Math.floor((Date.now() - new Date(w.startedAt).getTime()) / 1000) : 0;
+      // The real one can bank to the last beacon when he answers "no, I
+      // finished a while ago". The demo never pushes, so that answer never
+      // arrives here and the stop is always simply now.
+      const started = w.startedAt ? new Date(w.startedAt).getTime() : 0;
+      const add = started ? Math.floor((Date.now() - started) / 1000) : 0;
       const seconds = (Number(w.seconds) || 0) + add;
-      store.docs.set(key, { ...c, work: { seconds, startedAt: null } });
-      return ok({ seconds, running: false });
+      store.docs.set(key, { ...c, work: { seconds, startedAt: null, auto: false, nudged: 0 } });
+      store.persist?.();
+      return ok({ seconds, running: false, startedAt: null, bankedTo: null });
+    }
+    // The presence beacon. In the demo it stops an automatic stretch the same
+    // way the Worker does, so walking from a chart back to the shelf behaves
+    // the way it will in the real app rather than leaving a clock on.
+    if (path === '/api/work/here') {
+      const at = typeof body.caseId === 'string' ? body.caseId : '';
+      const stopped = [];
+      for (const [key, c] of store.docs) {
+        if (!key.startsWith('cases/') || key.slice(6).includes('/')) continue;
+        const w = c.work;
+        if (!w?.startedAt || w.auto !== true || key.slice(6) === at) continue;
+        const add = Math.floor((Date.now() - new Date(w.startedAt).getTime()) / 1000);
+        const seconds = (Number(w.seconds) || 0) + add;
+        store.docs.set(key, {
+          ...c,
+          work: { seconds, startedAt: null, auto: false, nudged: 0 },
+        });
+        stopped.push({ id: key.slice(6), seconds });
+      }
+      if (stopped.length) store.persist?.();
+      return ok({ ok: true, stopped });
     }
     if (path === '/api/admin/effort') {
       if (init.method === 'POST') demoEffort = body.effort === 'max' ? 'max' : 'high';
@@ -119,6 +151,11 @@ export function demoApi(role, store) {
     }
     if (path === '/api/checkout' || path === '/api/subscribe' || path === '/api/followup'
       || path === '/api/upgrade') {
+      // The scope note is a real gate, not decoration, so the demo refuses
+      // the same way the Worker does. A demo that waves the buyer through
+      // teaches the wrong thing about the one screen that has to hold.
+      if (path === '/api/upgrade' && typeof body?.acks?.fullAccess !== 'number')
+        return fail(400, 'Read the scope note and acknowledge it first.');
       await beat(600);
       // Straight past Stripe to where paying would have landed him.
       const to = path === '/api/followup'

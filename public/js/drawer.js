@@ -266,14 +266,19 @@ export function wireFolderClocks(root, { getToken, onChange } = {}) {
       const res = await fetch('/api/work', {
         method: 'POST',
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ caseId: id, on: want }),
+        // `auto: false` says this is a deliberate tap, so the clock is PINNED:
+        // it keeps running while he moves around the app, which is the whole
+        // reason the control is out here rather than only inside the case.
+        body: JSON.stringify({ caseId: id, on: want, auto: false }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
       el.classList.toggle('on', !!out.running);
       el.setAttribute('aria-pressed', out.running ? 'true' : 'false');
       el.dataset.banked = String(Number(out.seconds) || 0);
-      el.dataset.started = out.running ? String(Date.now()) : '0';
+      // The ORIGINAL start, not now: tapping a card whose clock was already
+      // running must not appear to throw the running stretch away.
+      el.dataset.started = out.startedAt ? String(new Date(out.startedAt).getTime()) : '0';
       const t = el.querySelector('[data-clock-t]');
       if (t) t.textContent = fmt(Number(out.seconds) || 0);
       el.title = out.running ? 'Working now. Tap to stop.' : 'Tap to start the clock';
@@ -295,5 +300,28 @@ export function wireFolderClocks(root, { getToken, onChange } = {}) {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const el = e.target.closest?.('[data-clock]');
     if (el && root.contains(el)) { e.preventDefault(); e.stopPropagation(); toggle(el); }
+  });
+
+  // Arriving on the shelf is what stops an automatic clock, and the Worker
+  // does it while this page is painting the card from a case it read a moment
+  // before. admin-presence.js announces the stop; without this the card keeps
+  // a running dot on a clock that has already been banked.
+  window.addEventListener('pa-clock-stopped', (e) => {
+    for (const row of e.detail?.stopped || []) {
+      const id = typeof row === 'string' ? row : row?.id;
+      const el = id && root.querySelector(`[data-clock="${CSS.escape(id)}"]`);
+      if (!el) continue;
+      const secs = Number(typeof row === 'string' ? NaN : row?.seconds);
+      el.classList.remove('on');
+      el.setAttribute('aria-pressed', 'false');
+      el.dataset.started = '0';
+      if (Number.isFinite(secs)) {
+        el.dataset.banked = String(secs);
+        const t = el.querySelector('[data-clock-t]');
+        if (t) t.textContent = fmt(secs);
+      }
+      el.title = 'Tap to start the clock';
+      onChange?.(id, false, Number.isFinite(secs) ? secs : Number(el.dataset.banked) || 0);
+    }
   });
 }
