@@ -92,7 +92,7 @@ const ADMIN_PAGES = [
 ];
 const ADMIN_ASSETS = [
   '/js/admin.js', '/js/admin-case.js', '/js/admin-chats.js', '/js/admin-calendar.js',
-  '/js/admin-availability.js', '/js/admin-dictionary.js',
+  '/js/admin-availability.js', '/js/admin-dictionary.js', '/js/admin-settings.js',
   '/js/advisor.js', '/js/notes.js', '/js/duty.js', '/js/prep.js',
   '/js/drawer.js', '/js/seen.js', '/js/panel-bridge.js', '/css/admin.css',
   // The demo's fixtures are advisor output, so they are gated the same way. A

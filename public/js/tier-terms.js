@@ -2,8 +2,8 @@
 //
 // Written 2026-08-23, PENDING ERIC'S SIGN-OFF, and flagged in the PR. It is a
 // NEW file rather than a fourth entry in waivers.js, because that file is
-// frozen (CLAUDE.md) and this copy has not been through the legal review the
-// three original forms have.
+// frozen by the repo's standing instructions, and this copy has not been
+// through the legal review the three original forms have.
 //
 // Two hard constraints on the wording, both from the frozen file it sits
 // beside, and neither may be contradicted here:
