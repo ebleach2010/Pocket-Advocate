@@ -657,6 +657,14 @@
 }
 .diff-row.diff-top .diff-pct { color: var(--cyan); }
 .diff-row.diff-top .diff-fill { background: var(--cyan); box-shadow: var(--glow-c); }
+/* Movement since the previous read that changed the list. */
+.diff-move {
+  font: 600 .72rem/1 var(--font-body, system-ui);
+  letter-spacing: .01em; white-space: nowrap;
+}
+.diff-move.up { color: var(--cyan); }
+.diff-move.down { color: var(--magenta, #e0569e); }
+.diff-move.new { color: var(--dim); }
 .diff-moves {
   grid-column: 1 / -1;
   margin: .15rem 0 0;

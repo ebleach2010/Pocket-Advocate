@@ -102,7 +102,8 @@ hyphen inside a range like 3-5 days is fine. Short bits, never essays. Five shor
 long ones. The first time any medical term or abbreviation appears, follow it
 with a plain-words gloss in parentheses, e.g. "paresthesia (pins and
 needles)", because Eric is learning the territory as he goes, not copying
-your words. Never repeat a gloss.`;
+your words. Never repeat a gloss. Glosses are for what ERIC reads: never put
+one inside anything that leaves as his own message to a client.`;
 
 /** Raw API errors are unreadable on a phone; store plain words instead. */
 function friendly(err) {
@@ -110,7 +111,13 @@ function friendly(err) {
   if (/credit balance is too low/i.test(m))
     return 'Your Anthropic account is out of credits — top up at console.anthropic.com → Plans & Billing, then tap Update.';
   if (/rate.?limit/i.test(m)) return 'Rate limited by the API — wait a minute and tap Update.';
-  if (/overloaded/i.test(m)) return 'The model is overloaded right now — try again in a minute.';
+  if (/overloaded|529/i.test(m)) return 'The model is overloaded right now — try again in a minute.';
+  if (/timed?\s?out|timeout|ETIMEDOUT/i.test(m))
+    return 'The model took too long to answer. It retries on its own, or tap Update to run it now.';
+  if (/fetch failed|ECONNRESET|connection (error|closed|reset)|network/i.test(m))
+    return 'The connection to the model dropped mid-read. It retries on its own within a few minutes.';
+  if (/url/i.test(m) && /fetch|retriev|download|access/i.test(m))
+    return 'One of the staged files could not be fetched from storage. Remove it from the staged list and tap Update.';
   return m.length > 200 ? m.slice(0, 200) + '…' : m;
 }
 
@@ -132,7 +139,16 @@ function client(env) {
  * Streaming makes big ceilings free, so set them where truncation can't
  * realistically happen.
  */
-async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat }) {
+/**
+ * Watchdog clocks. Five quiet minutes covers the longest legitimate silence
+ * (the API fetching several large url-source documents before the first
+ * token); the budget matches the client timeout and the scheduled event's
+ * wall clock, past which the isolate is on borrowed time anyway.
+ */
+const STREAM_QUIET_MS = 5 * 60_000;
+const RUN_BUDGET_MS = 900_000;
+
+async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, initialStage = 'sending' }) {
   // The cache breakpoint goes on the SYSTEM block, not at the top level. At the
   // top level it lands after the last cacheable content in the request, which
   // is the transcript and the attached files: the part that changes every
@@ -142,18 +158,25 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat })
   // WHICH system block matters just as much. The big callers now pass two:
   // a static block flagged `cache: true` (the long standing instructions,
   // identical from call to call) and a trailing dynamic block carrying the
-  // learned material - glossary, stances, voice. The breakpoint goes on the
-  // flagged block, so the advisor LEARNING something no longer busts the
-  // cache the comment above exists to protect. Callers that pass one block
-  // keep the old behavior: last block gets the breakpoint.
+  // learned material - glossary, stances, voice. Both get breakpoints: the
+  // flagged block so the advisor LEARNING something still hits the prefix,
+  // and the trailing one because the learned material only changes when a
+  // lesson lands. Callers that pass one block keep the old behavior: last
+  // block gets the breakpoint.
+  //
+  // ttl '1h', not the default five minutes: analyses are spaced at least
+  // twelve minutes apart by PENDING_FLOOR_MS, so a five minute cache was
+  // written on every run (at the 1.25x premium) and read on none. An hour
+  // means a working day of passes actually hits.
+  const bp = { type: 'ephemeral', ttl: '1h' };
   const cached = Array.isArray(system)
     ? (system.some((b) => b.cache)
-      ? system.map(({ cache, ...b }) => (cache
-        ? { ...b, cache_control: { type: 'ephemeral' } } : b))
+      ? system.map(({ cache, ...b }, i) => (cache || i === system.length - 1
+        ? { ...b, cache_control: bp } : b))
       : system.map((b, i) => (i === system.length - 1
-        ? { ...b, cache_control: { type: 'ephemeral' } } : b)))
+        ? { ...b, cache_control: bp } : b)))
     : system;
-  // Heartbeat, on a WALL CLOCK, not on stream events.
+  // Heartbeat, on a WALL CLOCK, not on stream events - and it is a WATCHDOG.
   //
   // Event-driven beats told the truth only once tokens were flowing. Before
   // the first event there is real work with no events at all: uploading
@@ -165,21 +188,28 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat })
   // the loop he hit: "It keeps saying stalled, tap to update, every time I
   // try to update." (2026-08-22.)
   //
-  // Now the run itself beats every twenty seconds from dispatch to
-  // completion, so a missing heartbeat means one thing only: the Worker
-  // carrying this run is gone. The stream listener stays as a cheap extra
-  // signal.
+  // But a beat that never stops lies the other way. The SDK's 900s timeout
+  // only bounds the CONNECTION (its timer is cleared when response headers
+  // arrive), so a stream that stalls MID-BODY leaves finalMessage() pending
+  // forever while an unconditional beat stamps the run alive. Every rescue
+  // defers to the beat - the panel, the Update tap, the cron takeover - so
+  // one hung stream wedged the whole advisor for as long as the isolate
+  // lived: "thinking" on screen, updated 8h ago (2026-08-23). So the loop
+  // now judges as well as beats: five minutes with no stream event, or
+  // fifteen total, and it aborts the stream itself, which lands the run in
+  // the ordinary catch path where tries and the queue already know what to
+  // do.
+  //
+  // The beat also carries a STAGE (sending / thinking / writing), read off
+  // real stream transitions, so the panel can say what the run is actually
+  // doing instead of one word for everything.
   let running = true;
-  const beat = () => { try { onBeat(); } catch { /* a beat is never fatal */ } };
-  if (onBeat) {
-    beat();
-    (async () => {
-      while (running) {
-        await new Promise((r) => setTimeout(r, 20_000));
-        if (running) beat();
-      }
-    })();
-  }
+  let stage = initialStage;
+  let stalledWhy = null;
+  const dispatched = Date.now();
+  let lastEvent = dispatched;
+  const beat = () => { try { onBeat(stage); } catch { /* a beat is never fatal */ } };
+  if (onBeat) beat();
   const stream = client(env).messages.stream({
     model: MODEL,
     max_tokens: maxTokens,
@@ -188,16 +218,50 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat })
     system: cached,
     messages,
   });
-  if (onBeat) {
-    let last = Date.now();
-    stream.on('streamEvent', () => {
-      const now = Date.now();
-      if (now - last > 8000) { last = now; beat(); }
+  {
+    let lastBeat = Date.now();
+    stream.on('streamEvent', (ev) => {
+      lastEvent = Date.now();
+      if (ev?.type === 'content_block_start') {
+        const t = ev.content_block?.type;
+        const next = t === 'thinking' ? 'thinking' : t === 'text' ? 'writing' : null;
+        if (next && next !== stage) {
+          stage = next;
+          // Beat immediately on a transition so the panel label moves with
+          // the run, not up to twenty seconds behind it. Adaptive thinking
+          // interleaves blocks, so the label can flip back to thinking mid
+          // run; that is honest, not a bug.
+          if (onBeat) { lastBeat = Date.now(); beat(); }
+          return;
+        }
+      }
+      if (onBeat && Date.now() - lastBeat > 8000) { lastBeat = Date.now(); beat(); }
     });
   }
+  (async () => {
+    while (running) {
+      await new Promise((r) => setTimeout(r, 20_000));
+      if (!running) break;
+      const now = Date.now();
+      if (now - lastEvent > STREAM_QUIET_MS)
+        stalledWhy = 'The model went quiet mid-read and the run was stopped.';
+      else if (now - dispatched > RUN_BUDGET_MS)
+        stalledWhy = 'This read hit its fifteen minute budget and was stopped.';
+      if (stalledWhy) {
+        running = false;
+        try { stream.abort(); } catch { /* already closed */ }
+        break;
+      }
+      if (onBeat) beat();
+    }
+  })();
   let final;
   try {
     final = await stream.finalMessage();
+  } catch (err) {
+    // The watchdog's abort surfaces as an AbortError; name the real cause.
+    if (stalledWhy) throw new Error(`${stalledWhy} It retries on its own, or tap Update to run it now.`);
+    throw err;
   } finally {
     running = false;
   }
@@ -219,9 +283,13 @@ function stripDashes(t) {
   return t
     .replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2')
     .replace(/^[—–]\s*/gm, '')
-    // A full stop, not a comma. A dash between two clauses is doing the work of
-    // a period, and replacing it with a comma leaves a comma splice, which
-    // reads MORE machine-written than the dash it was hiding.
+    // A PAIR of dashes is a parenthetical, and periods butcher it ("ask.
+    // gently. about"). Commas keep the sentence a sentence. Bounded and
+    // space-delimited so two unrelated dashes on one line cannot pair up.
+    .replace(/(\S) [—–] ([^—–\n]{2,60}?) [—–] (\S)/g, '$1, $2, $3')
+    // A full stop, not a comma. A lone dash between two clauses is doing the
+    // work of a period, and replacing it with a comma leaves a comma splice,
+    // which reads MORE machine-written than the dash it was hiding.
     .replace(/\s*[—–]+\s*/g, '. ');
 }
 
@@ -295,6 +363,12 @@ const MAX_PDF_BYTES = 8 * 1024 * 1024;
 // the bucket (path, no URL) is still encoded here, and that path gets a small
 // budget that cannot threaten the isolate.
 const MAX_TOTAL_MEDIA_BYTES = 6 * 1024 * 1024;
+// Caps for the URL path, which are the API's own, not this Worker's memory:
+// the model's fetcher takes a PDF up to ~32MB and an image up to 5MB. The old
+// 8MB local cap sat on this branch too and silently refused exactly the big
+// files the URL path was built to carry.
+const MAX_URL_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_URL_PDF_BYTES = 30 * 1024 * 1024;
 const MAX_MEDIA_FILES = 8;
 // Encoded-in-the-Worker files per pass. URL files do not count: they cost no
 // memory here.
@@ -333,6 +407,11 @@ function safeAttachmentUrl(att, kind, id) {
   try {
     const u = new URL(att.url);
     if (u.protocol !== 'https:' || u.hostname !== 'firebasestorage.googleapis.com') return null;
+    // alt=media is what makes the URL serve BYTES. Without it Storage answers
+    // with metadata JSON, which the model's fetcher would dutifully read as
+    // the document. Every writer uses getDownloadURL, which includes it; a
+    // URL without it is not one of ours.
+    if (u.searchParams.get('alt') !== 'media') return null;
     const m = u.pathname.match(/^\/v0\/b\/[^/]+\/o\/(.+)$/);
     if (!m) return null;
     const objectPath = decodeURIComponent(m[1]);
@@ -416,7 +495,9 @@ async function attachmentBlock(env, att, kind, id) {
   // literally what it costs us.
   const publicUrl = att.url ? safeAttachmentUrl(att, kind, id) : null;
   if (publicUrl) {
-    if (att.size && att.size > cap) return { skip: 'too large to read' };
+    const urlCap = mk === 'image' ? MAX_URL_IMAGE_BYTES : MAX_URL_PDF_BYTES;
+    if (att.size && att.size > urlCap)
+      return { skip: `too large to read: ${Math.round(att.size / 1048576)} MB, the limit is ${Math.round(urlCap / 1048576)} MB. Ask for it split up, or as screenshots` };
     return {
       bytes: 0,
       block: mk === 'image'
@@ -598,7 +679,12 @@ async function selectedMediaBlocks(env, list, kind, id, alreadyRead = []) {
         blocks.push(out.block);
         included.push(name);
         readKeys.push(key);
-      } else skipped.push(`${name} (${out.skip})`);
+      } else {
+        skipped.push(`${name} (${out.skip})`);
+        // A file over its hard cap will be over it on every pass. Remember it
+        // as handled so it stops being re-offered and re-refused forever.
+        if (/too large/.test(out.skip)) readKeys.push(key);
+      }
     } catch (err) {
       skipped.push(`${name} (fetch failed: ${String(err?.message || err).slice(0, 80)})`);
     }
@@ -608,7 +694,7 @@ async function selectedMediaBlocks(env, list, kind, id, alreadyRead = []) {
 
 /** Tell the model exactly which files it has, which it already read, and which
  *  it has not seen — so it can never quietly answer as if it saw everything. */
-function mediaNote({ blocks, included, known, queued, skipped }) {
+function mediaNote({ blocks, included, known, queued, skipped, deferred }) {
   let note = '';
   if (blocks.length)
     note += `\n\nEric selected these files for this analysis; they are attached after this message, in order: ${included.join('; ')}. Read them directly and fold what you actually see into your answer; cite specific values, findings, and page details.\nIf a value is not legible with certainty - a photo at an angle, a faxed page, a smudged column - write that it is unreadable and name the file. Never write a number you are not sure of. A misread value here is copied forward into every later pass as an established fact and ends up on the sheet he reads out to a specialist, and nothing in the thread will ever contradict it, because the thread never contained it.`;
@@ -616,8 +702,15 @@ function mediaNote({ blocks, included, known, queued, skipped }) {
     note += `\nYou already read these on an earlier pass and what you found is in your previous assessment, so they are deliberately not attached again: ${known.join('; ')}. Treat them as read, never as missing.`;
   if (queued?.length)
     note += `\nThese did not fit in this pass and are attached to the next one: ${queued.join('; ')}. Say plainly that you have not read them yet, and do not characterise their contents.`;
+  if (deferred?.length)
+    note += `\nThese were set aside for stability after two interrupted reads; an ordinary later pass will read them. Treat them as unread, and do NOT ask for screenshots of them: ${deferred.join('; ')}.`;
   if (skipped.length)
     note += `\nThese you cannot read: ${skipped.join('; ')}. Never guess at their contents. Ask Eric, by file name, to upload screenshots of each one.`;
+  // Standing rule, even on a pass with no files: the transcript advertises
+  // every shared file by name, including ones still inside the settle window
+  // that no list above mentions, and nothing else stops the model treating a
+  // bare marker as something it saw.
+  note += `\nAny [shared a file: ...] marker in the transcript whose file is in none of the lists above is a file you have NOT read yet (it is usually still settling and a later pass reads it). Say so if it matters, and never characterise its contents.`;
   return note;
 }
 
@@ -977,6 +1070,34 @@ export async function pingModel(env) {
 /** Flatten text for identity comparison: case and punctuation blind. */
 const flatText = (v) => String(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
+/** Cap a stored profile at a line boundary. A mid-word slice injected into
+ *  every prompt read as corrupted evidence of how Eric writes. */
+const cleanCut = (s, n) => {
+  const t = String(s || '');
+  if (t.length <= n) return t;
+  const cut = t.slice(0, n);
+  const nl = cut.lastIndexOf('\n');
+  return (nl > n * 0.6 ? cut.slice(0, nl) : cut).trim();
+};
+
+/**
+ * Is this chat message really the advisor's own draft coming back as "Eric"?
+ * Exact flat identity misses the common escapes: he splits a long draft in two
+ * because of the 2000 character limit, or tops it with a greeting. Containment
+ * catches the halves; the length floors keep a short common phrase from
+ * blanking a real message of his.
+ */
+const isEcho = (m, exclude) => {
+  if (!exclude) return false;
+  const f = flatText(m);
+  if (exclude.has(f)) return true;
+  for (const s of exclude) {
+    if (f.length >= 60 && s.length >= f.length && s.includes(f)) return true;
+    if (s.length >= 60 && s.length > f.length * 0.7 && f.includes(s)) return true;
+  }
+  return false;
+};
+
 export async function voiceCorpus(env, { exclude = null } = {}) {
   const out = [];
   const questions = [];
@@ -1009,7 +1130,7 @@ export async function voiceCorpus(env, { exclude = null } = {}) {
       // exclude set carries the flattened text of every draft-born send.
       const mine = rows.filter((r) => r.data.role === 'admin' && r.data.text)
         .map((r) => String(r.data.text).trim())
-        .filter((m) => m && !seen.has(m) && !(exclude && exclude.has(flatText(m))));
+        .filter((m) => m && !seen.has(m) && !isEcho(m, exclude));
       for (const m of mine) {
         if (used >= budget || chars >= VOICE_CORPUS_CHARS) break;
         out.push(m);
@@ -1335,9 +1456,9 @@ Plain text under each heading. Never use an em dash or en dash. No preamble.` }]
   stances = keepOverrides(current.stances || '', stances);
 
   const fields = (st) => ({
-    voice: voice.slice(0, 2000),
+    voice: cleanCut(voice, 2000),
     stances: capStances(st),
-    coaching: coaching.slice(0, 2000),
+    coaching: cleanCut(coaching, 2000),
     updatedAt: new Date(),
     lastLesson: { kind: 'voice-study', id: '', at: new Date() },
   });
@@ -1571,8 +1692,8 @@ no closing note.` }],
     stances = keepOverrides((freshD?.data ?? prior).stances || '', stances);
 
     await patchDoc(env, STYLE_PATH, {
-      voice: voice.slice(0, 2000), stances: capStances(stances),
-      coaching: coaching.slice(0, 2000),
+      voice: cleanCut(voice, 2000), stances: capStances(stances),
+      coaching: cleanCut(coaching, 2000),
       updatedAt: new Date(), lastLesson: { kind, id, at: new Date() },
     }, { mask: ['voice', 'stances', 'coaching', 'updatedAt', 'lastLesson'] });
   } catch (err) {
@@ -1723,12 +1844,18 @@ function harvestWorkingLine(text) {
  * "## Differential": `- Name [NN%]: why it fits | what would raise or lower
  * it` rows, most likely first. Returns { text, differential }.
  */
-function harvestDifferential(text) {
+function harvestDifferential(text, prior) {
   // Tolerant, not exact: any case, two hashes or three, and the decoration a
   // low-effort reply sometimes puts round a heading. An exact match failed
   // silently here and emptied a whole page, or printed raw ids into his read.
   const m = sectionMatch(text, 'Differential');
-  if (!m) return { text, differential: [] };
+  // A reply that lost or renamed the heading must not wipe the stored
+  // differential (same fail-safe harvestUnanswered has always had): one
+  // malformed pass emptied the panel's list and reset every badge.
+  if (!m) {
+    console.warn('advisor: reply had no Differential heading; keeping the stored list');
+    return { text, differential: Array.isArray(prior) ? prior : [] };
+  }
   const differential = [];
   for (const line of m[1].split('\n')) {
     const t = line.match(/^\s*[-*]\s*\**(.+?)\**\s*\[\s*(\d{1,3})\s*%\s*\]\s*:\s*(.+)$/);
@@ -1744,6 +1871,12 @@ function harvestDifferential(text) {
       moves: moves.join('|').trim().slice(0, 400),
     });
     if (differential.length >= 5) break;
+  }
+  // The heading was there but no row parsed: format drift, not an emptied
+  // list. Keep the stored one rather than blanking the page.
+  if (!differential.length && Array.isArray(prior) && prior.length) {
+    console.warn('advisor: Differential section had no parseable rows; keeping the stored list');
+    return { text: text.replace(m[0], '').trim(), differential: prior };
   }
   return { text: text.replace(m[0], '').trim(), differential };
 }
@@ -1811,7 +1944,10 @@ function harvestCorrections(text, rows, prior) {
   // low-effort reply sometimes puts round a heading. An exact match failed
   // silently here and emptied a whole page, or printed raw ids into his read.
   const m = sectionMatch(text, 'Corrections');
-  if (!m) return { text, corrections: [] };
+  // Same fail-safe as the differential: a reply without the heading keeps what
+  // is stored. Wiping it also resurrected every dismissed correction, because
+  // the dismissed ids ride this list into bookkeepingNote's never-again line.
+  if (!m) return { text, corrections: Array.isArray(prior) ? prior : [] };
   const was = Array.isArray(prior) ? prior : [];
   const mine = rows.filter((r) => r.data.role === 'admin');
   const corrections = [];
@@ -1969,6 +2105,9 @@ export async function markPending(env, kind, id, { force = false } = {}) {
  * full 15 minutes of wall clock — the one place in a Worker where a long Opus
  * turn is safe without a client holding a connection open — and one max-effort
  * turn can eat most of it.
+ *
+ * Returns true when this firing spent a model turn, so scheduled() can keep
+ * the voice study out of the same invocation's wall clock.
  */
 export async function runQueuedAnalyses(env) {
   try {
@@ -1993,22 +2132,37 @@ export async function runQueuedAnalyses(env) {
         // the first STREAM event, and a run stuck in connect/overload
         // retries can sit longer than two minutes while very much alive. A
         // rescue that races it doubles the spend and the loser's write wins.
-        if (dBeat && Date.now() - dBeat < 5 * 60_000) continue; // still writing
+        // But never trust a beat past twenty minutes of total age: a hung
+        // stream used to beat forever (the watchdog now kills those; this is
+        // the belt to its braces).
+        if (dBeat && Date.now() - dBeat < 5 * 60_000
+          && (!ds || Date.now() - ds < 20 * 60_000)) continue; // still writing
         const tries = Number(row.data.tries || 0) + 1;
         if (tries > 2) {
-          await deleteDoc(env, `advisorQueue/${row.id}`);
           await setState(env, kind, id, {
             draftStatus: 'error', draftReq: null,
             draftError: 'The draft kept getting interrupted. Tap Prepare a response to try again.',
           }).catch(() => {});
+          await deleteDoc(env, `advisorQueue/${row.id}`);
           continue;
         }
         await patchDoc(env, `advisorQueue/${row.id}`, { tries }, { mask: ['tries'] }).catch(() => {});
         await runDraft(env, kind, id, req.instruction || '', !!req.revise, req.base || '');
-        break; // one per firing
+        return true; // one model job per firing
       }
       const state = await getDoc(env, statePath(kind, id));
-      if (state?.data.paused) { await deleteDoc(env, `advisorQueue/${row.id}`); continue; }
+      if (state?.data.paused) {
+        await deleteDoc(env, `advisorQueue/${row.id}`);
+        // A dead run's leftover "running" reads as "stalled - tap Update"
+        // forever on a paused case, because auto-fire refuses while paused
+        // and this purge used to walk straight past it.
+        const sp = state.data;
+        const pBeat = Math.max(sp.startedAt ? new Date(sp.startedAt).getTime() : 0,
+          sp.progressAt ? new Date(sp.progressAt).getTime() : 0);
+        if (sp.status === 'running' && (!pBeat || Date.now() - pBeat > 5 * 60_000))
+          await setState(env, kind, id, { status: 'idle', startedAt: null, progressAt: null, stage: null }).catch(() => {});
+        continue;
+      }
       // Someone (the panel) is already mid-run: leave it alone while it is
       // ALIVE, which means a fresh heartbeat, not a fresh start. progressAt
       // beats every ~8s while the model streams, so five quiet minutes is a
@@ -2020,28 +2174,45 @@ export async function runQueuedAnalyses(env) {
       const beat = Math.max(
         st.startedAt ? new Date(st.startedAt).getTime() : 0,
         st.progressAt ? new Date(st.progressAt).getTime() : 0);
-      if (st.status === 'running' && beat && Date.now() - beat < 5 * 60_000) continue;
-      // Count the attempt BEFORE running it. runAnalysis's own catch bumps
-      // this too, but a run that dies by having its isolate killed (memory,
-      // wall clock) never reaches any catch, and those are exactly the runs
-      // that repeat forever. Counting here makes even an uncatchable death
-      // move the case toward the no-files fallback instead of looping.
-      const tries = Number(row.data.tries || 0) + 1;
-      await patchDoc(env, `advisorQueue/${row.id}`, { tries }, { mask: ['tries'] }).catch(() => {});
-      if (tries > ANALYSIS_MAX_TRIES + 1) {
-        await deleteDoc(env, `advisorQueue/${row.id}`).catch(() => {});
+      const started = st.startedAt ? new Date(st.startedAt).getTime() : 0;
+      // Same belt-and-braces as the draft branch: a fresh beat defers, but
+      // never past twenty minutes of total age. A hung stream used to beat
+      // forever and this gate deferred to it every five minutes, all night.
+      if (st.status === 'running' && beat && Date.now() - beat < 5 * 60_000
+        && (!started || Date.now() - started < 20 * 60_000)) continue;
+      // Count the attempt BEFORE running it. runAnalysis's own catch skips
+      // its increment when the cron counted (counted: true below), but a run
+      // that dies by having its isolate killed (memory, wall clock) never
+      // reaches any catch, and those are exactly the runs that repeat
+      // forever. Counting here makes even an uncatchable death move the case
+      // toward the no-files fallback instead of looping.
+      //
+      // The write doubles as a CLAIM: conditional on the row not having moved
+      // since it was read, so two invocations judging the same corpse in the
+      // same seconds cannot both buy the turn. listDocs does not return
+      // updateTime, so the row is re-read; a row that vanished meanwhile
+      // means someone else finished or claimed it.
+      const fresh = await getDoc(env, `advisorQueue/${row.id}`).catch(() => null);
+      if (!fresh) continue;
+      const tries = Number(fresh.data.tries || 0) + 1;
+      if (tries > ANALYSIS_MAX_TRIES) {
         await setState(env, kind, id, {
-          status: 'error',
-          error: 'This read kept stopping partway. Tap Update to try again, or remove the newest file from the staged list.',
+          status: 'error', stage: null,
+          error: `This read kept stopping partway${st.stage && st.stage !== 'starting' ? ` (it was ${st.stage === 'sending' ? 'sending the case' : st.stage})` : ''}. Tap Update to try again, or remove the newest file from the staged list.`,
         }).catch(() => {});
+        await deleteDoc(env, `advisorQueue/${row.id}`).catch(() => {});
         continue;
       }
-      await runAnalysis(env, kind, id, null, { skipMedia: tries >= 2 });
-      break; // one per firing
+      const claimed = await patchDoc(env, `advisorQueue/${row.id}`, { tries },
+        { mask: ['tries'], ifUpdateTime: fresh.updateTime }).catch(() => false);
+      if (claimed === false) continue;
+      await runAnalysis(env, kind, id, null, { skipMedia: tries >= 3, counted: true, auto: true });
+      return true; // one model job per firing
     }
   } catch (err) {
     console.warn('advisor queue:', err.message || err);
   }
+  return false;
 }
 
 /**
@@ -2054,7 +2225,7 @@ export async function runQueuedAnalyses(env) {
  * Eric's words: "The advisor does not seem to be adapting the differential
  * based on our conversation." This is the fix; do not remove either injection.
  */
-async function loadQa(env, kind, id, { skip = null, take = 10 } = {}) {
+async function loadQa(env, kind, id, { skip = null, take = 10, full = false } = {}) {
   // all: true, because one unordered page of a growing collection is a
   // random sample: qa ids are UUIDs, and past one page the "last 10 by date"
   // was the last 10 of an arbitrary subset, which is exactly the amnesia
@@ -2078,9 +2249,17 @@ async function loadQa(env, kind, id, { skip = null, take = 10 } = {}) {
   const pinned = spoken.slice(0, -take)
     .filter((r) => r.data.override && r.data.answer)
     .slice(-3);
+  // A silent slice is how a draft relays half of what he said and calls it
+  // done. Marked cuts, and the draft path (full) gets his words nearly whole:
+  // the relay rule commands "drop nothing he said", which the loader has to
+  // actually honor.
+  const cut = (s, n) => {
+    const t = String(s);
+    return t.length > n ? `${t.slice(0, n)}…` : t;
+  };
   return [...pinned, ...recent].map((r) => ({
-    q: String(r.data.question).slice(0, 800),
-    a: r.data.answer ? String(r.data.answer).slice(0, r.data.override ? 900 : 600) : '',
+    q: cut(r.data.question, full ? 4000 : 800),
+    a: r.data.answer ? cut(r.data.answer, full ? 2000 : (r.data.override ? 900 : 600)) : '',
     override: !!r.data.override,
   }));
 }
@@ -2089,7 +2268,7 @@ function qaBlock(qa) {
   if (!qa.length) return '';
   const turns = qa.map((x) =>
     `${x.override ? 'ERIC (override, settled): ' : 'ERIC: '}${x.q}\nYOU: ${x.a || '(you have not answered this yet; his words stand on their own)'}`).join('\n\n');
-  return `\n<discussion_with_eric>\nYour recent private discussion with Eric about this client, oldest first (long answers shortened):\n\n${turns}\n</discussion_with_eric>\n`;
+  return `\n<discussion_with_eric>\nYour recent private discussion with Eric about this client, oldest first (either side may be shortened; a shortened one ends with …):\n\n${turns}\n</discussion_with_eric>\n`;
 }
 
 /**
@@ -2149,8 +2328,11 @@ function economicsNote(econ) {
     : `${Math.round(econ.seconds / 60)}m`;
   // Only compute a rate once there is enough time logged for one to mean
   // anything. Ten minutes of chat does not imply a $1,590 hourly rate.
+  // Numbers only. The persuasion lives in the "For you" instruction, and a
+  // rhetorical flourish in a data block is exactly what a model paraphrases
+  // into a sentence the guardrail then has to catch.
   const rate = hours >= 0.5 && econ.paidCents
-    ? ` That is about ${dollars(econ.paidCents / hours)} an hour, and it only falls from here.`
+    ? ` That is about ${dollars(econ.paidCents / hours)} an hour so far.`
     : '';
   return `
 
@@ -2207,9 +2389,16 @@ function bookkeepingNote(state) {
  * purpose: the previous analysis goes back in as memory, so each pass refines
  * rather than restarting, and the picture compounds over the life of the case.
  */
-export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia = false } = {}) {
+export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia = false, counted = false, auto = false } = {}) {
   try {
-    await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date() });
+    // Two triggers can land in the same seconds (a cron takeover and a tap,
+    // both judging the same corpse dead). Each would buy a full max-effort
+    // turn and the loser's write would clobber the winner's. The later one
+    // bails: a run that set startedAt in the last half minute is not a corpse.
+    const pre = await getDoc(env, statePath(kind, id)).catch(() => null);
+    const preStarted = pre?.data.startedAt ? new Date(pre.data.startedAt).getTime() : 0;
+    if (pre?.data.status === 'running' && preStarted && Date.now() - preStarted < 30_000) return;
+    await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date(), stage: 'starting' });
     const [rows, state, knowledge, style, qa, effort, econ] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
@@ -2258,14 +2447,45 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     ];
     const media = await selectedMediaBlocks(env, queue, kind, id, alreadyRead);
     if (skipMedia) {
-      media.skipped = [...media.skipped, ...carried.map((c) =>
-        `${String(c.name || 'file').replace(/^\d{10,}-/, '')} (skipped: reading it stopped this analysis twice, so this pass ran without it)`)];
+      // Their own bucket, not "unreadable": these files read fine, the pass
+      // that held them kept dying. Labelling them unreadable made the advisor
+      // ask Eric for screenshots of files a later ordinary pass reads whole.
+      media.deferred = carried.map((c) => String(c.name || 'file').replace(/^\d{10,}-/, ''));
       media.carry = [];
     }
+    // Auto-fired with nothing new to read: the pending flag was noise (a
+    // re-queue racing a finished pass, a double tap somewhere). Bail before
+    // buying a max-effort turn that would re-read an unchanged case. A manual
+    // tap never takes this exit: Eric asking by hand always runs.
+    const newestTs = rows.reduce((acc, r) => {
+      const ts = r.data.ts;
+      const t = ts ? new Date(ts.toDate ? ts.toDate() : ts).getTime() : 0;
+      return Number.isFinite(t) && t > acc ? t : acc;
+    }, 0);
+    const qaSig = qa.map((x) => `${x.q.length}:${x.a.length}${x.override ? '*' : ''}`).join(',');
+    if (auto && !skipMedia && prior && !media.blocks.length && !media.carry.length
+      && state?.data.analyzedThroughTs
+      && newestTs <= new Date(state.data.analyzedThroughTs).getTime()
+      && qaSig === (state.data.qaSig || '')) {
+      await setState(env, kind, id, {
+        status: 'idle', startedAt: null, progressAt: null, stage: null, pendingAt: null,
+      });
+      await deleteDoc(env, queuePath(kind, id)).catch(() => {});
+      return;
+    }
+    // The plan, stamped before dispatch, so the panel can show a live "reading
+    // N files" from server truth on ANY trigger (the old local counter only
+    // knew about taps made in that same browser session, and froze otherwise).
+    await setState(env, kind, id, { mediaPlan: media.included.slice(0, 40) }).catch(() => {});
 
     const analysis = await ask(env, {
       effort,
-      onBeat: () => setState(env, kind, id, { progressAt: new Date() }).catch(() => {}),
+      // "reading files" holds until the first token: with url sources the
+      // fetching happens on the API's side of the wire, before any event.
+      initialStage: media.blocks.length ? 'reading files' : 'sending',
+      onBeat: (stage) => setState(env, kind, id, {
+        progressAt: new Date(), ...(stage ? { stage } : {}),
+      }).catch(() => {}),
       system: [{ type: 'text', text: `${VOICE}
 
 Write Eric's working assessment of this client. He reads it on a phone beside
@@ -2323,6 +2543,14 @@ far as the thread allows. If nothing is outstanding, write "- none".
 bullet, in Eric's plain register and ready to send as they stand. He sends them
 straight from this list with one press, so never write a preamble, a heading or
 a parenthetical inside a bullet: just the question.
+
+"Worth asking" and "What's missing" bullets leave this page AS MESSAGES FROM
+ERIC: the client receives them word for word. Inside those bullets the client
+rules outrank every instruction above about how to talk to Eric: no glosses or
+parentheticals, no diagnosis put in his mouth, no treatment instruction (a
+treatment concern becomes a question for the doctor), and never a word that
+hints at any assessment, discussion, or advisor. Plain and warm, one question
+per bullet.
 
 "What we know so far": the chart note, the thing Eric can hand a specialist.
 This is a REFERENCE section and the only one with no length limit; completeness
@@ -2455,7 +2683,7 @@ ${style.voice}` : ''}` || ' ' }],
     // Each machine-read section is pulled out and stripped in turn, so none of
     // it reaches the assessment Eric actually reads.
     const cover = harvestWorkingLine(await harvestKeyTerms(env, analysis));
-    const dx = harvestDifferential(cover.text);
+    const dx = harvestDifferential(cover.text, state?.data.differential);
     const un = harvestUnanswered(dx.text, state?.data.unanswered);
     const corr = harvestCorrections(un.text, rows, state?.data.corrections);
     // Stamps for the shelf badges. A differential that came back identical is
@@ -2464,13 +2692,25 @@ ${style.voice}` : ''}` || ' ' }],
     // actually read something new, which is the moment the Uploads page has
     // something in it he has not seen.
     const now = new Date();
-    const diffAt = sameDifferential(state?.data.differential, dx.differential)
-      ? (state?.data.diffAt || null) : now;
+    const moved = !sameDifferential(state?.data.differential, dx.differential);
+    const diffAt = moved ? now : (state?.data.diffAt || null);
     const fileAt = media.included.length ? now : (state?.data.fileAt || null);
+    // Movement history: a slim snapshot per pass that changed the list, so the
+    // panel can say "up from 45%" instead of making Eric remember. Name and
+    // number only (~150 bytes a row); a renamed differential paints once as
+    // new plus gone, which is acceptable.
+    const prevHistory = Array.isArray(state?.data.diffHistory) ? state.data.diffHistory : [];
+    const diffHistory = moved && dx.differential.length
+      ? [{ at: now, rows: dx.differential.map((r) => ({ name: r.name, pct: r.pct })) }, ...prevHistory].slice(0, 12)
+      : prevHistory;
     await setState(env, kind, id, {
-      diffAt, fileAt,
+      diffAt, fileAt, diffHistory,
+      // What this pass folded in, so the next auto fire can tell "new
+      // messages" from "the pending flag was noise" and skip the spend.
+      analyzedThroughTs: newestTs ? new Date(newestTs) : null,
+      qaSig,
       analysis: corr.text, status: 'idle', error: null, updatedAt: new Date(),
-      pendingAt: null, startedAt: null, progressAt: null,
+      pendingAt: null, startedAt: null, progressAt: null, stage: null, mediaPlan: null,
       workingDx: cover.workingDx,
       differential: dx.differential,
       // What he asked for and never got. Its own list, because "What's
@@ -2488,6 +2728,7 @@ ${style.voice}` : ''}` || ' ' }],
         known: media.known,
         queued: media.queued,
         unreadable: media.skipped,
+        deferred: media.deferred || [],
         at: new Date(),
       },
     });
@@ -2519,8 +2760,11 @@ ${style.voice}` : ''}` || ' ' }],
     await deleteDoc(env, queuePath(kind, id));
     // Files left over means the job is not finished. Re-queue so the cron
     // picks up the next batch on its own, rather than waiting for Eric to
-    // notice and tap Analyze again.
-    if (media.carry.length) await markPending(env, kind, id).catch(() => {});
+    // notice and tap Analyze again. force, because updatedAt is seconds old
+    // here: without it the twelve minute floor swallowed this re-queue every
+    // single time, and the follow-up pass only ever ran while his panel
+    // happened to be open. That is how "Files: 1 of 3 read" froze overnight.
+    if (media.carry.length) await markPending(env, kind, id, { force: true }).catch(() => {});
     // The stale-profile top-up that used to hang off an analysis is gone. The
     // nightly voice study covers it, from every thread rather than this one,
     // and two schedules writing the same profile is how it gets rebuilt twice
@@ -2534,18 +2778,26 @@ ${style.voice}` : ''}` || ' ' }],
     // model turn - a Firestore blip on the state write, a bad field - left the
     // job queued and the cron bought the identical max-effort turn again every
     // five minutes, indefinitely, throwing every answer away.
-    try {
-      const q = await getDoc(env, queuePath(kind, id));
-      const tries = Number(q?.data.tries || 0) + 1;
-      if (tries >= ANALYSIS_MAX_TRIES) {
-        await deleteDoc(env, queuePath(kind, id));
-        console.warn(`advisor: giving up on ${kind}/${id} after ${tries} tries`);
-      } else {
-        await patchDoc(env, queuePath(kind, id), { tries }, { mask: ['tries'] });
+    //
+    // counted means the cron already stamped this attempt before dispatching
+    // it. Counting it again here charged every catchable failure double, which
+    // cut "three goes at one analysis" down to two, and made the one real
+    // retry a degraded no-files pass. The cron's own give-up check handles the
+    // cap on its next firing.
+    if (!counted) {
+      try {
+        const q = await getDoc(env, queuePath(kind, id));
+        const tries = Number(q?.data.tries || 0) + 1;
+        if (tries >= ANALYSIS_MAX_TRIES) {
+          await deleteDoc(env, queuePath(kind, id));
+          console.warn(`advisor: giving up on ${kind}/${id} after ${tries} tries`);
+        } else {
+          await patchDoc(env, queuePath(kind, id), { tries }, { mask: ['tries'] });
+        }
+      } catch (e2) {
+        // Cannot even record the failure: drop the job rather than loop on it.
+        await deleteDoc(env, queuePath(kind, id)).catch(() => {});
       }
-    } catch (e2) {
-      // Cannot even record the failure: drop the job rather than loop on it.
-      await deleteDoc(env, queuePath(kind, id)).catch(() => {});
     }
   }
 }
@@ -2699,8 +2951,9 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
       // The usual sequence is: settle direction with the advisor, then press
       // Prepare a response. The assessment lags that discussion by at least
       // the pending floor, so without this the draft was written blind to
-      // the direction it was written for.
-      loadQa(env, kind, id).catch(() => []),
+      // the direction it was written for. full, because the relay rule says
+      // "drop nothing he said" and the analysis-sized slices dropped plenty.
+      loadQa(env, kind, id, { full: true }).catch(() => []),
     ]);
     const chat = transcript(rows);
     const voice = myVoice(rows);
@@ -2732,7 +2985,10 @@ discussion you are given. Reorganize and tidy them for the client; invent
 nothing, add none of your own read, and drop nothing he said that fits the
 instruction. If you cannot find what he is pointing at, the draft is the
 single sentence: I could not find what you are referring to, ask me again
-after my answer lands.
+after my answer lands. And if the passage you would relay appears cut off
+partway (a shortened one ends with …), do not relay a fragment: the draft is
+the single sentence: Part of what you said reached me cut off, ask me again
+and I will use the whole of it.
 
 You are given his own past messages. Match them: sentence length, how formal he
 is, whether he uses contractions, how he opens and closes, how much warmth he
@@ -2750,7 +3006,11 @@ no quotation marks around it, no sign-off he doesn't actually use.
 
 Length: this chat rejects messages over 2000 characters, and a wall of text
 reads as canned anyway. Stay under 900 characters unless Eric's instruction
-genuinely requires more; never exceed 1900.
+genuinely requires more; never exceed 1900. The 1900 ceiling beats every
+other rule here, the relay rule included: when everything he said will not
+fit under it, keep his content in his order up to the ceiling, end at a
+sentence boundary, and finish with one short line telling Eric the rest
+needs a second message (he will cut that line before sending).
 
 THIS MESSAGE GOES TO THE PATIENT. Every instruction above about how to talk to
 Eric is about talking to ERIC. It does not apply here. Warmth over bluntness.

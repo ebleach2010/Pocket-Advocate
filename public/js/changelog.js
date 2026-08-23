@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.7';
+export const VERSION = '2.8';
 
 /**
  * Newest first.
@@ -44,6 +44,14 @@ export const VERSION = '2.7';
  * copy there if necessary. An unspecified push is silent.
  */
 export const CHANGELOG = [
+  {
+    version: '2.8',
+    quiet: true,
+    client: [
+      'Bug fix: case reviews behind the scenes could quietly stall for hours. They now notice within minutes, restart themselves, and say plainly what happened if something does go wrong.',
+      'Larger records are readable now: a scanned record or imaging file up to 30 MB can be shared and read without splitting it up.',
+    ],
+  },
   {
     version: '2.7',
     quiet: true,

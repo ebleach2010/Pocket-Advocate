@@ -9,19 +9,25 @@ import { currentUser, hydrateNav } from './auth.js';
 import { ensureSignedIn } from './inline-auth.js';
 import { ensureFullProfile } from './profile.js';
 import { SUBSCRIPTION_TERMS } from './waivers.js';
+import { rates } from './rates.js';
 
-// Keep in sync with SUB_PRICE_CENTS in worker/index.js. The Worker builds the
-// real Stripe line item from its own copy, so a hardcoded figure here can only
-// ever be a lie waiting to happen.
+// The seed only, for when /api/rates cannot be reached. The live chat price
+// climbs with every new client, so the real figure always comes from the
+// Worker; the checkout charges whatever the rates doc says at that moment.
 const SUB_PRICE_CENTS = 5000;
 const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 
 hydrateNav();
 
-// The pitch is visible before sign-in; every displayed price derives from the
-// mirror above.
+let subCents = SUB_PRICE_CENTS;
+try {
+  const r = await rates();
+  if (Number(r?.subCents) > 0) subCents = Number(r.subCents);
+} catch { /* the seed stands */ }
+
+// The pitch is visible before sign-in; every displayed price is the live one.
 document.getElementById('pitch').innerHTML = `
-  <p class="price-line"><strong>$${money(SUB_PRICE_CENTS)}</strong> a month. Cancel anytime; your chat history stays available.</p>
+  <p class="price-line"><strong>$${money(subCents)}</strong> a month. Cancel anytime; your chat history stays available.</p>
   <p><strong>The honest deal:</strong> I answer as I am available. Sometimes that is within minutes; other times it may take longer. Response time is not guaranteed.</p>`;
 
 const flow = document.getElementById('flow');
@@ -79,7 +85,7 @@ function renderTerms() {
       <label class="agreement-check"><input type="checkbox" id="terms-ok" disabled> I have read and accept these terms</label>
     </details>
     <div class="actions">
-      <button class="btn glow" id="go" disabled>Subscribe, $${money(SUB_PRICE_CENTS)}/mo</button>
+      <button class="btn glow" id="go" disabled>Subscribe, $${money(subCents)}/mo</button>
     </div>
     <p class="dim small" style="margin-top:.6rem;">You'll complete payment through Stripe's secure checkout, so your card details never pass through Pocket Advocate.</p>`;
 

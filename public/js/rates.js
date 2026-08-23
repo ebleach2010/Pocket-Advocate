@@ -1,6 +1,6 @@
-// What a case and a follow-up cost right now. The Worker owns the figures;
-// this fetches them and corrects whatever the page shipped with. The chat
-// subscription is not in here.
+// What a case, a follow-up, and the chat subscription cost right now. The
+// Worker owns the figures; this fetches them and corrects whatever the page
+// shipped with.
 
 const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 
@@ -24,6 +24,7 @@ export function rates() {
  *
  *   <span data-rate="case">$265</span>
  *   <span data-rate="addon">$75</span>
+ *   <span data-rate="sub">$50</span>
  *
  * `data-rate-fmt="bare"` drops the dollar sign, for a spot that supplies its own.
  */
@@ -33,7 +34,7 @@ export async function paintRates(root = document) {
   const r = await rates();
   if (!r) return;
   for (const el of spots) {
-    const cents = el.dataset.rate === 'addon' ? r.addonCents : r.caseCents;
+    const cents = { addon: r.addonCents, sub: r.subCents }[el.dataset.rate] ?? r.caseCents;
     if (!(Number(cents) > 0)) continue;
     const text = el.dataset.rateFmt === 'bare' ? money(cents) : `$${money(cents)}`;
     if (el.textContent !== text) el.textContent = text;

@@ -118,10 +118,11 @@ async function load() {
         <span class="price" style="color:var(--magenta);">$${dollars(rate.caseCents)}</span>
       </summary>
       <p class="dim small" style="margin:.5rem 0 .6rem;">Follow-up
-        <strong style="color:var(--ink)">$${dollars(rate.addonCents)}</strong>.
-        Both rise $10 on every booking, and ${rate.bookings} booking${rate.bookings === 1 ? ' has' : 's have'}
-        counted so far. Everyone already booked keeps what they were quoted.
-        Priority Chat does not move.</p>
+        <strong style="color:var(--ink)">$${dollars(rate.addonCents)}</strong>,
+        Priority Chat <strong style="color:var(--ink)">$${dollars(rate.subCents || 5000)}/mo</strong>.
+        Case and follow-up grow 10% per booking (to $1000 and $500 caps); chat
+        climbs $5 per new client of any type (to $100). ${rate.bookings} booking${rate.bookings === 1 ? ' has' : 's have'}
+        counted so far. Everyone already booked keeps what they were quoted.</p>
       <div class="row" style="gap:.5rem; flex-wrap:wrap;">
         <label class="dim small">Case $
           <input type="number" id="rate-case" min="50" step="1" value="${(rate.caseCents / 100)}"
@@ -129,6 +130,9 @@ async function load() {
         <label class="dim small">Follow-up $
           <input type="number" id="rate-addon" min="50" step="1" value="${(rate.addonCents / 100)}"
             style="width:6rem;"></label>
+        <label class="dim small">Chat $/mo
+          <input type="number" id="rate-sub" min="10" max="100" step="1" value="${((rate.subCents || 5000) / 100)}"
+            style="width:5rem;"></label>
         <button class="btn quiet" id="rate-save">Set</button>
       </div>
       <p class="dim small" id="rate-said" style="margin:.4rem 0 0;" hidden></p>
@@ -254,12 +258,13 @@ async function load() {
           body: JSON.stringify({
             caseCents: Math.round(Number(listEl.querySelector('#rate-case').value) * 100),
             addonCents: Math.round(Number(listEl.querySelector('#rate-addon').value) * 100),
+            subCents: Math.round(Number(listEl.querySelector('#rate-sub').value) * 100),
           }),
         });
         const d = await res.json();
         if (!res.ok) throw new Error(d.error || `Failed (${res.status})`);
         said.textContent = d.changed
-          ? `Set. A case is $${dollars(d.caseCents)}, a follow-up $${dollars(d.addonCents)}.`
+          ? `Set. A case is $${dollars(d.caseCents)}, a follow-up $${dollars(d.addonCents)}, chat $${dollars(d.subCents)}/mo.`
           : 'Already those numbers.';
         said.hidden = false;
       } catch (err) {

@@ -30,17 +30,20 @@ import {
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
 
-// These build the real Stripe line items. Three browser files mirror them for
-// display — public/js/book.js, public/js/subscribe.js, public/js/admin-case.js
-// — and every price shown there is derived, never typed. Current rates (Eric,
-// 2026-08-20): $265 per case, a $75 follow-up session bought separately, and
-// $50/mo chat. Change a rate here and change it in those three, or the page
-// quotes one number and the card is charged another (which is exactly what
-// happened after the $150 experiment).
+// SEEDS, not the live prices. The live numbers sit on config/rates and climb
+// on their own (see the ratchet constants below); these only matter on a
+// fresh Firestore. Three browser files mirror them for display —
+// public/js/book.js, public/js/subscribe.js, public/js/admin-case.js — and
+// every price shown there is derived from /api/rates, never typed, or the
+// page quotes one number and the card is charged another (which is exactly
+// what happened after the $150 experiment). Seeds (Eric, 2026-08-20): $265
+// per case, a $75 follow-up bought separately, $50/mo chat.
 const CASE_PRICE_CENTS = 26500;
 // The follow-up is a second discussion on the same case, sold from the case
 // after the report lands rather than at checkout. It is NOT included.
 const ADDON_PRICE_CENTS = 7500;
+// The chat subscription's SEED. The live number lives on the rates doc like
+// the other two and climbs on its own; see the ratchet below.
 const SUB_PRICE_CENTS = 5000;
 // Case chat opens this many days before the booked call; opening it sooner
 // costs a one-time fee at the direct-line price. Eric, 2026-08-22:
@@ -48,9 +51,22 @@ const SUB_PRICE_CENTS = 5000;
 const CHAT_OPEN_DAYS = 7;
 const CHAT_OPEN_CENTS = 5000;
 
-// Every completed booking lifts the case and the follow-up by this much. No
-// ceiling, and nothing anywhere says it is happening.
-const RATE_STEP_CENTS = 1000;
+// The ratchet, v2 (Eric, 2026-08-23: "Pricing will now scale exponentially
+// until it hits $1000/case without add-on and $500 cap for f/u add-on. Chat
+// will increase by $5/new client of any type until it reaches $100/mo.")
+//
+// Every completed booking multiplies the case and the follow-up by the growth
+// factor (10% per booking, Eric's pick), rounded to the nearest $5, never
+// less than one $5 step, until each hits its cap and stays there. The chat
+// subscription climbs a flat $5 for every NEW client of any type - a case
+// booking or a first-ever subscription - until its own cap. Still silent:
+// nothing anywhere says any of it is happening.
+const RATE_GROWTH = 1.10;
+const RATE_ROUND_CENTS = 500;
+const CASE_CAP_CENTS = 100000;
+const ADDON_CAP_CENTS = 50000;
+const SUB_STEP_CENTS = 500;
+const SUB_CAP_CENTS = 10000;
 // Sanity rails on the manual setter, not on the ratchet. A typo that sets the
 // case rate to $5 or $50,000 should bounce rather than take a booking.
 const RATE_MIN_CENTS = 5000;
@@ -71,10 +87,19 @@ async function readRates(env) {
   return {
     caseCents: Number(d.caseCents) > 0 ? Number(d.caseCents) : CASE_PRICE_CENTS,
     addonCents: Number(d.addonCents) > 0 ? Number(d.addonCents) : ADDON_PRICE_CENTS,
+    subCents: Number(d.subCents) > 0 ? Number(d.subCents) : SUB_PRICE_CENTS,
     bookings: Number(d.bookings) || 0,
     updateTime: doc?.updateTime || null,
     seeded: !!doc,
   };
+}
+
+/** One exponential step: times the growth factor, to the nearest $5, never
+ *  less than one $5 step (a small number times 1.1 can round back onto
+ *  itself), capped and parked at the cap. */
+function growRate(cents, cap) {
+  const grown = Math.round((cents * RATE_GROWTH) / RATE_ROUND_CENTS) * RATE_ROUND_CENTS;
+  return Math.min(cap, Math.max(cents + RATE_ROUND_CENTS, grown));
 }
 
 /**
@@ -94,17 +119,43 @@ async function raiseRates(env, attempt = 0) {
   }
   const now = await readRates(env);
   const next = {
-    caseCents: Math.min(RATE_MAX_CENTS, now.caseCents + RATE_STEP_CENTS),
-    addonCents: Math.min(RATE_MAX_CENTS, now.addonCents + RATE_STEP_CENTS),
+    caseCents: growRate(now.caseCents, CASE_CAP_CENTS),
+    addonCents: growRate(now.addonCents, ADDON_CAP_CENTS),
+    // A booking is a new client of any type, so it lifts the chat price too.
+    subCents: Math.min(SUB_CAP_CENTS, now.subCents + SUB_STEP_CENTS),
     bookings: now.bookings + 1,
     updatedAt: new Date(),
   };
   const opts = now.seeded
-    ? { mask: ['caseCents', 'addonCents', 'bookings', 'updatedAt'], ifUpdateTime: now.updateTime }
+    ? { mask: ['caseCents', 'addonCents', 'subCents', 'bookings', 'updatedAt'], ifUpdateTime: now.updateTime }
     : { mustNotExist: true };
   const won = await patchDoc(env, RATES_PATH, next, opts).catch(() => false);
   if (won === false) return raiseRates(env, attempt + 1);
   return next;
+}
+
+/**
+ * The chat half of the ratchet on its own, for a first-ever subscription.
+ * Same compare-and-swap as raiseRates; the caller has already proven the
+ * client is new (no subscription doc) and the event unclaimed (rateEvents
+ * marker), so this only has to move one number safely.
+ */
+async function raiseSubRate(env, attempt = 0) {
+  if (attempt > 4) {
+    console.warn('sub rate raise: gave up after 5 attempts');
+    return null;
+  }
+  const now = await readRates(env);
+  const subCents = Math.min(SUB_CAP_CENTS, now.subCents + SUB_STEP_CENTS);
+  const opts = now.seeded
+    ? { mask: ['subCents', 'updatedAt'], ifUpdateTime: now.updateTime }
+    : { mustNotExist: true };
+  const body = now.seeded
+    ? { subCents, updatedAt: new Date() }
+    : { caseCents: now.caseCents, addonCents: now.addonCents, subCents, bookings: now.bookings, updatedAt: new Date() };
+  const won = await patchDoc(env, RATES_PATH, body, opts).catch(() => false);
+  if (won === false) return raiseSubRate(env, attempt + 1);
+  return { subCents };
 }
 
 /**
@@ -169,22 +220,27 @@ async function handleSetRates(request, env) {
   const want = {
     caseCents: body?.caseCents === undefined ? now.caseCents : Number(body.caseCents),
     addonCents: body?.addonCents === undefined ? now.addonCents : Number(body.addonCents),
+    subCents: body?.subCents === undefined ? now.subCents : Number(body.subCents),
   };
   for (const [k, v] of Object.entries(want)) {
-    if (!Number.isInteger(v) || v < RATE_MIN_CENTS || v > RATE_MAX_CENTS)
-      return json({ error: `${k} has to be a whole number of cents between ${RATE_MIN_CENTS} and ${RATE_MAX_CENTS}.` }, 400);
+    // The chat rate rails lower: $100 is its ceiling by design, and $50 is
+    // under the general floor.
+    const [min, max] = k === 'subCents' ? [1000, SUB_CAP_CENTS] : [RATE_MIN_CENTS, RATE_MAX_CENTS];
+    if (!Number.isInteger(v) || v < min || v > max)
+      return json({ error: `${k} has to be a whole number of cents between ${min} and ${max}.` }, 400);
   }
-  const changed = want.caseCents !== now.caseCents || want.addonCents !== now.addonCents;
+  const changed = want.caseCents !== now.caseCents || want.addonCents !== now.addonCents
+    || want.subCents !== now.subCents;
   if (changed) {
     await patchDoc(env, RATES_PATH, { ...want, updatedAt: new Date(), setByHand: true },
-      { mask: ['caseCents', 'addonCents', 'updatedAt', 'setByHand'] });
+      { mask: ['caseCents', 'addonCents', 'subCents', 'updatedAt', 'setByHand'] });
   }
   return json({ ...want, bookings: now.bookings, changed });
 }
 
 async function handleRates(env) {
   const r = await readRates(env);
-  return json({ caseCents: r.caseCents, addonCents: r.addonCents, chatOpenCents: CHAT_OPEN_CENTS });
+  return json({ caseCents: r.caseCents, addonCents: r.addonCents, subCents: r.subCents, chatOpenCents: CHAT_OPEN_CENTS });
 }
 // Follow-up sessions expire one month after the first discussion (Eric,
 // 2026-07-13); clients get one warning email a week before the deadline.
@@ -613,10 +669,16 @@ export default {
       ctx.waitUntil(closeDeliveredCases(env));
       ctx.waitUntil(purgeRecaps(env));
     }
-    ctx.waitUntil(runQueuedAnalyses(env));
-    // The nightly voice study. Returns immediately on every fire but one: it
-    // wants his evening, a day since the last run, and no explicit off switch.
-    ctx.waitUntil(maybeVoiceStudy(env));
+    // One model job per firing. The queue drain and the voice study used to
+    // share this invocation's bounded wall clock, and on the 10pm firing the
+    // seven-reader study racing a queued max-effort analysis got whichever
+    // was still streaming at the limit killed uncatchably: status stuck on
+    // "running", no error, no catch. The study has all evening; it waits for
+    // a firing whose queue is empty.
+    ctx.waitUntil((async () => {
+      const ranAnalysis = await runQueuedAnalyses(env);
+      if (!ranAnalysis) await maybeVoiceStudy(env);
+    })());
     // Runs once, ever. Instant no-op on every fire after that.
     ctx.waitUntil(grandfatherFollowUps(env));
     // Same deal: Eric's Tuesday hours, opened once, no-op forever after.
@@ -859,7 +921,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-22-workclock';
+const BUILD_TAG = 'v2026-08-23-advisor3';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -867,7 +929,7 @@ const BUILD_TAG = 'v2026-08-22-workclock';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.7';
+const VERSION = '2.8';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -1227,6 +1289,9 @@ async function handleSubscribe(request, env) {
   if (existing && new Date(existing.data.currentPeriodEnd || 0) > new Date())
     return json({ error: 'You already have an active subscription.' }, 409);
 
+  // The live rate, not the constant: the chat price climbs with every new
+  // client, and the page quoted whatever /api/rates said when it loaded.
+  const subRate = await readRates(env);
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'subscription',
     customer_email: identity.email || user.email || undefined,
@@ -1235,7 +1300,7 @@ async function handleSubscribe(request, env) {
         quantity: 1,
         price_data: {
           currency: 'usd',
-          unit_amount: SUB_PRICE_CENTS,
+          unit_amount: subRate.subCents,
           recurring: { interval: 'month' },
           product_data: {
             name: '24/7 Priority Chat',
@@ -1318,6 +1383,10 @@ async function activateSubscription(env, session) {
   const uid = session.metadata && session.metadata.uid;
   if (!uid) return;
   const now = new Date();
+  // Read BEFORE the write below creates the doc: a first-ever subscription is
+  // a new client, and a new client of any type lifts the chat price one step.
+  // A renewal or reactivation has a doc already and lifts nothing.
+  const existing = await getDoc(env, `subscriptions/${uid}`).catch(() => null);
   const email = await resolveClientEmail(env, uid, session.metadata.email, session);
   await patchDoc(env, `subscriptions/${uid}`, {
     stripeCustomerId: session.customer || null,
@@ -1331,6 +1400,14 @@ async function activateSubscription(env, session) {
     // Provisional; the customer.subscription.updated event corrects it.
     currentPeriodEnd: new Date(now.getTime() + 32 * 86_400_000),
   });
+  // The marker makes a webhook replay count zero times: Stripe re-delivers
+  // completed sessions, and by the second delivery the doc above exists, but
+  // two deliveries racing each other would both have seen it missing.
+  if (!existing && session.id) {
+    const first = await patchDoc(env, `rateEvents/${session.id}`, { uid, at: now },
+      { mustNotExist: true }).catch(() => false);
+    if (first) await raiseSubRate(env).catch((err) => console.warn('sub rate raise:', err.message || err));
+  }
   await sendEmail(env, {
     to: email,
     subject: 'Your 24/7 Priority Chat is live',
@@ -3526,7 +3603,13 @@ async function handleAdvisor(request, env, ctx) {
     const startedAt = state?.data.startedAt ? new Date(state.data.startedAt).getTime() : 0;
     const progressAt = state?.data.progressAt ? new Date(state.data.progressAt).getTime() : 0;
     const lastBeat = Math.max(startedAt, progressAt);
-    if (state?.data.status === 'running' && lastBeat && Date.now() - lastBeat < ADVISOR_ALIVE_MS)
+    // The beat can lie: a stream hung mid-body used to beat for hours while
+    // finalMessage() never resolved, and this gate answered every tap
+    // ok:true and threw it away, all night. The watchdog in advisor.js now
+    // aborts those, and this absolute age is the belt to its braces: no run
+    // is alive at twenty minutes, whatever its heartbeat says.
+    if (state?.data.status === 'running' && lastBeat && Date.now() - lastBeat < ADVISOR_ALIVE_MS
+      && (!startedAt || Date.now() - startedAt < 20 * 60_000))
       return json({ ok: true, already: true });
     // Files Eric explicitly selected (the 👨‍⚕️ badges), plus files he
     // uploaded straight to the advisor from his own device: those arrive
@@ -3561,8 +3644,12 @@ async function handleAdvisor(request, env, ctx) {
     }
     // Queue first: if this connection drops mid-run, the cron retries it
     // (a cron retry runs without the selected files; the selection belongs
-    // to the tap that made it).
-    await markPending(env, kind, id);
+    // to the tap that made it). force, because within twelve minutes of the
+    // last success the floor silently swallowed this queue row, and a tap
+    // whose phone locked mid-run died with no cover at all: status stuck on
+    // "running", nothing queued, nothing for the cron to find. That wedge
+    // held until he happened to reopen the panel.
+    await markPending(env, kind, id, { force: true });
     return keepaliveRun(ctx, runAnalysis(env, kind, id, media), { raw: true });
   }
 

@@ -150,10 +150,6 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   // before that code runs. Key (url or inline id) -> { name, url?, data?,
   // contentType, size }.
   const mediaSel = new Map();
-  // How many files THIS run was handed. The selection is cleared the moment
-  // Analyze is pressed, so reading it back during the run always saw zero and
-  // the progress bar could never show. Cleared when the run stops.
-  let readingCount = 0;
   window.__paMediaSel = mediaSel;
 
   let paused = false;
@@ -228,10 +224,21 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     // secret from a dead run - which is exactly the wrong guess to have to
     // make. Say it plainly, and say it above everything else.
     const noKey = d.keyConfigured === false;
+    // The run reports its real stage now (the worker reads it off the stream),
+    // so "thinking" stops being one word for uploading, queueing, reading
+    // three PDFs, and writing. The label can flip back to thinking mid-run;
+    // adaptive thinking interleaves, and that is honest.
+    const stageLabel = {
+      starting: 'starting',
+      sending: 'sending the case',
+      'reading files': 'reading files',
+      thinking: 'thinking',
+      writing: 'writing',
+    }[d.stage] || 'thinking';
     statusEl.textContent = noKey
       ? '⚠ no API key on the Worker'
       : alive
-        ? `● thinking${mins ? ` · ${mins}m` : ''}`
+        ? `● ${stageLabel}${mins ? ` · ${mins}m` : ''}`
         : stalled ? '⚠ stalled — tap Update' : paused ? '‖ paused' : '';
     statusEl.className = `advisor-status${alive ? ' live' : ''}`;
     if (noKey) {
@@ -256,7 +263,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           });
           const out = await res.json();
           showErr(out.ok
-            ? `Diagnostics: the model responds normally (${out.ms}ms), so this run died on its own (leaving the app mid-run can do that). It restarts by itself within a few minutes, or tap Update to restart it now.`
+            ? `Diagnostics: the model responds normally (${out.ms}ms), so this run died on its own${d.stage && d.stage !== 'starting' ? ` while ${d.stage === 'sending' ? 'sending the case' : d.stage}` : ''} (leaving the app mid-run can do that). It restarts by itself within a few minutes, or tap Update to restart it now.`
             : `Diagnostics: ${out.error}`);
         } catch { /* the refresh loop will try again on the next stall */ }
       })();
@@ -294,8 +301,18 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         drawnKey = key;
         renderPager(pages, terms);
       }
+      // A one-line digest of what the last run actually did, composed from
+      // stamps the payload already carries. No model involved, so it cannot
+      // lie: fileAt/diffAt landing beside updatedAt means this run read
+      // files / moved the differential.
+      const upT = d.updatedAt ? toDate(d.updatedAt).getTime() : 0;
+      const near = (v) => v && upT && Math.abs(toDate(v).getTime() - upT) < 5000;
+      const bits = [];
+      const readN = near(d.mediaReport?.at) ? (d.mediaReport.read || []).length : 0;
+      if (readN) bits.push(`read ${readN} file${readN === 1 ? '' : 's'}`);
+      if (near(d.diffAt)) bits.push('differential moved');
       updatedEl.textContent = d.updatedAt
-        ? `Updated ${timeAgo(toDate(d.updatedAt))}${paused ? ' · analysis paused' : ''}`
+        ? `Updated ${timeAgo(toDate(d.updatedAt))}${bits.length ? ` · ${bits.join(', ')}` : ''}${paused ? ' · analysis paused' : ''}`
         : '';
     } else if (!running) {
       bodyEl.innerHTML = '<p class="dim small">No assessment yet. Tap <strong>Update</strong> once there are a few messages to read.</p>';
@@ -539,16 +556,28 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   let diffKey = null;
   function renderDiff(d) {
     if (!diffContainer) return;
-    const key = JSON.stringify([d.workingLine, d.dxOverride, d.differential]);
+    const key = JSON.stringify([d.workingLine, d.dxOverride, d.differential, (d.diffHistory || []).length]);
     if (key === diffKey) return;
     diffKey = key;
     const line = (d.dxOverride && d.dxOverride.text) || d.workingLine || '';
+    // Movement since the previous read that changed anything. The worker keeps
+    // slim snapshots; history[0] is the current list, history[1] what it
+    // replaced. Matched on flattened name, so a renamed row paints once as
+    // new; that is acceptable.
+    const flat = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const prevSnap = (d.diffHistory || [])[1];
+    const prevPct = new Map((prevSnap?.rows || []).map((r) => [flat(r.name), Math.round(Number(r.pct) || 0)]));
     const rows = (d.differential || []).map((r, i) => {
       const pct = Math.max(0, Math.min(100, Math.round(Number(r.pct) || 0)));
+      const was = prevSnap ? prevPct.get(flat(r.name)) : undefined;
+      const move = was === undefined
+        ? (prevSnap ? '<span class="diff-move new">new this read</span>' : '')
+        : was === pct ? ''
+          : `<span class="diff-move ${pct > was ? 'up' : 'down'}">${pct > was ? 'up' : 'down'} from ${was}%</span>`;
       return `
         <div class="diff-row${i === 0 ? ' diff-top' : ''}">
           <span class="diff-name">${esc(r.name || '')}</span>
-          <span class="diff-pct">${pct}%</span>
+          <span class="diff-pct">${pct}% ${move}</span>
           <div class="diff-bar"><div class="diff-fill" style="width:${pct}%"></div></div>
           <p class="diff-note">${esc(r.why || r.note || '')}</p>
           ${r.moves ? `<p class="diff-moves"><span>Moves on:</span> ${esc(r.moves)}</p>` : ''}
@@ -576,7 +605,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
    * every file inside one turn, so there is no honest per-file percentage to
    * show, and inventing one would be the same lie in a nicer shape.
    */
-  function renderRead(report, queuedNames, running, stagedCount) {
+  function renderRead(report, queuedNames, running, plan) {
     const groups = [];
     const rd = report || {};
     const list = (names, cls, label) => {
@@ -587,10 +616,16 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       </div>`);
     };
 
-    if (running && stagedCount) {
+    // The live bar keys off mediaPlan, which the WORKER stamps at dispatch, so
+    // it shows for every trigger: taps, the cron, another device. The old
+    // local counter only knew about taps made in this same browser session,
+    // which is why cron-fired runs sat on last run's frozen "1 of 3" all
+    // night.
+    if (running && plan?.length) {
       readEl.hidden = false;
       readEl.innerHTML = `
-        <div class="rd-head"><strong>Reading ${stagedCount} file${stagedCount === 1 ? '' : 's'}</strong></div>
+        <div class="rd-head"><strong>Reading ${plan.length} file${plan.length === 1 ? '' : 's'}</strong>
+          <span class="dim small">${esc(plan.slice(0, 4).join(', '))}${plan.length > 4 ? '…' : ''}</span></div>
         <div class="rd-bar rd-busy"><i></i></div>`;
       return;
     }
@@ -598,14 +633,16 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     const read = rd.read || [];
     const known = rd.known || [];
     const queued = rd.queued?.length ? rd.queued : (queuedNames || []);
+    const deferred = rd.deferred || [];
     const bad = rd.unreadable || [];
-    const total = read.length + known.length + queued.length + bad.length;
+    const total = read.length + known.length + queued.length + deferred.length + bad.length;
     if (!total) { readEl.hidden = true; readEl.innerHTML = ''; return; }
 
     const done = read.length + known.length;
     list(read, 'rd-ok', `Read this pass (${read.length})`);
     list(known, 'rd-known', `Already read (${known.length})`);
     list(queued, 'rd-queued', `Queued for the next pass (${queued.length})`);
+    list(deferred, 'rd-queued', `Set aside after interrupted reads, retried later (${deferred.length})`);
     list(bad, 'rd-bad', `Couldn't read (${bad.length})`);
 
     // Open when something needs him: a file waiting on the next pass, or one
@@ -642,7 +679,10 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       });
       if (res.ok) {
         const out = await res.json();
-        const d = apply(out.state || {}, out.qa || [], out.glossary || []);
+        // mediaReport rides along so the digest line can count what the last
+        // run read without a second lookup.
+        const d = apply({ ...(out.state || {}), mediaReport: out.mediaReport || null },
+          out.qa || [], out.glossary || []);
         busy = d.running || d.draftAlive ||
           (out.qa || []).some((q) => q.status === 'running');
         // The folder pages (differential, notes, the header line) and the
@@ -656,6 +696,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           corrections: out.corrections || [],
           unanswered: out.unanswered || [],
           differential: out.differential || [],
+          diffHistory: out.state?.diffHistory || [],
           workingLine: out.workingLine || '',
           dxOverride: out.dxOverride || null,
           // The Education and About-you folder pages ride this same poll, so
@@ -677,8 +718,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           clientMsgAt: out.state?.clientMsgAt || null,
         };
         renderDiff(detail);
-        if (!d.running) readingCount = 0;
-        renderRead(out.mediaReport, out.queuedFiles, d.running, readingCount);
+        renderRead(out.mediaReport, out.queuedFiles, d.running, out.state?.mediaPlan || []);
         document.dispatchEvent(new CustomEvent('pa-panel-state', { detail }));
       }
     } catch { /* transient — the next tick tries again */ }
@@ -771,7 +811,8 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       : undefined;
     if (media) {
       // The selection is consumed by this analysis; badges clear with it.
-      readingCount = media.length;
+      // (The live "reading" bar paints from the worker's mediaPlan now, so
+      // nothing here needs to remember the count.)
       mediaSel.clear();
       syncStaged();
       document.dispatchEvent(new CustomEvent('pa-panel-select'));
