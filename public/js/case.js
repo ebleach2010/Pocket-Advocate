@@ -5,7 +5,7 @@
 // scrolls to each section and highlights the one in view.
 
 import {
-  db, storage, collection, getDocs, query, where,
+  db, storage, collection, getDocs, query, where, doc, onSnapshot,
   ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata,
 } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
@@ -44,6 +44,10 @@ let currentId = null;
 // Refresh paths (makePrivate -> boot) must never rebuild the chat's DOM.
 let renderedFor = null;
 let folder = null;
+// The live feed on the case doc itself, and the work clock's minute tick.
+let caseUnsub = null;
+let watchedFor = null;
+let workTimer = null;
 
 // A file saved from chat lands in Documents. The listener is permanent (the
 // pages never unmount), so every save refreshes the list, not just the first.
@@ -91,6 +95,7 @@ async function boot() {
   } else {
     render();
   }
+  watchCase();
 
   // First arrival straight from checkout: open the explainer unprompted. It's
   // the one moment a client has no idea what they just bought access to.
@@ -210,6 +215,49 @@ function showNavHint(folderEl) {
     try { localStorage.setItem(NAV_HINT_KEY, '1'); } catch { /* blocked */ }
     note.remove();
   });
+}
+
+/**
+ * The case doc, live, plus a minute tick for the work clock (Eric,
+ * 2026-08-23: "does it update live?"). Two feeds:
+ *
+ *  - one onSnapshot on the case doc, so his work-clock toggle flips
+ *    "working on it right now" on an OPEN client page the moment he presses
+ *    it, banked time lands the moment he stops, and status changes paint
+ *    without a reload;
+ *  - a half-minute tick while the clock runs, so the minutes climb between
+ *    writes.
+ *
+ * Both repaint Progress in place through the same path makePrivate already
+ * uses; the chat's DOM is never touched (its own listener would orphan).
+ */
+function watchCase() {
+  if (watchedFor === currentId) return;
+  watchedFor = currentId;
+  if (caseUnsub) { try { caseUnsub(); } catch { /* already gone */ } caseUnsub = null; }
+  try {
+    caseUnsub = onSnapshot(doc(db, 'cases', currentId), (snap) => {
+      const data = snap.data ? snap.data() : null;
+      if (!data) return;
+      const i = cases.findIndex((x) => x.id === currentId);
+      if (i < 0) return;
+      cases[i] = { id: currentId, ...data };
+      refreshSections();
+      armWorkTick();
+    });
+  } catch { /* live updates are a nicety; the load-time truth stands */ }
+  armWorkTick();
+}
+
+function armWorkTick() {
+  clearInterval(workTimer);
+  const c = cases.find((x) => x.id === currentId);
+  if (!c?.work?.startedAt) return;
+  workTimer = setInterval(() => {
+    const cc = cases.find((x) => x.id === currentId);
+    const el = folder?.el('progress');
+    if (el && cc) renderProgress(el, cc);
+  }, 30_000);
 }
 
 /**

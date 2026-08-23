@@ -162,8 +162,10 @@ export function seed({ set, file }) {
     reportDeliveredAt: hours(20),
     files: [],
     stripe: { sessionId: 'cs_demo', paymentIntentId: 'pi_demo', amountTotal: 26500 },
-    // The work clock, part-way through, so both suites show a real total.
-    work: { seconds: 4 * 3600 + 15 * 60, startedAt: null },
+    // The work clock, part-way through AND running, so both suites show a
+    // real total plus the live "working on it right now" state. Seeded
+    // relative to load time, so the demo always shows about 22 live minutes.
+    work: { seconds: 4 * 3600 + 15 * 60, startedAt: new Date(Date.now() - 22 * 60_000) },
   });
 
   let i = 0;
