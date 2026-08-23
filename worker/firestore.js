@@ -5,7 +5,10 @@
 import { getAccessToken } from './google-auth.js';
 
 function baseUrl(env) {
-  return `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+  // FIRESTORE_HOST is a TEST seam: the local queue harness points it at a
+  // stub so the real state machine can run end to end through /__scheduled.
+  // Production never sets it and gets the real host.
+  return `${env.FIRESTORE_HOST || 'https://firestore.googleapis.com'}/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 }
 
 async function authedFetch(env, url, init = {}) {

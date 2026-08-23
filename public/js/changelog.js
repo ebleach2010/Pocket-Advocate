@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.11';
+export const VERSION = '2.12';
 
 /**
  * Newest first.
@@ -44,6 +44,13 @@ export const VERSION = '2.11';
  * copy there if necessary. An unspecified push is silent.
  */
 export const CHANGELOG = [
+  {
+    version: '2.12',
+    quiet: true,
+    client: [
+      'Bug fix: a brand-new case with documents uploaded but no messages yet is now read properly instead of waiting for the first chat message.',
+    ],
+  },
   {
     version: '2.11',
     quiet: true,

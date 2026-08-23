@@ -173,10 +173,10 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, i
   // lesson lands. Callers that pass one block keep the old behavior: last
   // block gets the breakpoint.
   //
-  // ttl '1h', not the default five minutes: analyses are spaced at least
-  // twelve minutes apart by PENDING_FLOOR_MS, so a five minute cache was
-  // written on every run (at the 1.25x premium) and read on none. An hour
-  // means a working day of passes actually hits.
+  // ttl '1h', not the default five minutes: PENDING_FLOOR_MS spaces auto
+  // passes out further than a five minute cache survives, so it was written
+  // on every run (at the 1.25x premium) and read on none. An hour means a
+  // working day of passes actually hits.
   const bp = { type: 'ephemeral', ttl: '1h' };
   const cached = Array.isArray(system)
     ? (system.some((b) => b.cache)
@@ -2564,10 +2564,10 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       loadEconomics(env, kind, id),
     ]);
     const chat = transcript(rows);
-    if (!chat) {
-      await setState(env, kind, id, { status: 'idle', updatedAt: new Date() });
-      return;
-    }
+    // NOTE: the empty-thread bail moved BELOW the media walk. Bailing here
+    // left the queue row and pendingAt standing (three burned firings, then a
+    // phantom error), and it also meant a case whose only material was
+    // Documents-page uploads could never be analyzed at all.
     const prior = state?.data.analysis;
     // Only the files Eric staged with the 👨‍⚕️ badges ride along; an analysis
     // without a selection reads no files, so it is always clear what was read.
@@ -2611,6 +2611,17 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       // ask Eric for screenshots of files a later ordinary pass reads whole.
       media.deferred = carried.map((c) => String(c.name || 'file').replace(/^\d{10,}-/, ''));
       media.carry = [];
+    }
+    // Nothing to read at all: no chat AND no files. Clean up completely (the
+    // row and the flag included) so the queue slot is not burned again next
+    // firing on the same nothing.
+    if (!chat && !media.blocks.length && !media.carry.length) {
+      await setState(env, kind, id, {
+        status: 'idle', startedAt: null, progressAt: null, stage: null,
+        pendingAt: null, updatedAt: new Date(),
+      });
+      await deleteDoc(env, queuePath(kind, id)).catch(() => {});
+      return;
     }
     // Auto-fired with nothing new to read: the pending flag was noise (a
     // re-queue racing a finished pass, a double tap somewhere). Bail before
@@ -2896,7 +2907,7 @@ ${style.voice}` : ''}` || ' ' }],
               ? `Here is your working assessment of this client. It is your memory of the whole case: every earlier message, every file you have read, and everything you and Eric have settled are already folded into it.\n\n<previous>\n${priorText}\n</previous>\n\nThe machine rows you filed after your last pass:\n\n<filed>\nWorking line: ${p.workingDx || 'Still forming'}\nDifferential:\n${(Array.isArray(p.differential) ? p.differential : []).map((r) => `- ${r.name} [${r.pct}%]: ${r.why} | ${r.moves}`).join('\n') || '- none yet'}\n</filed>\n\nSince that assessment, ${fresh.length} new message${fresh.length === 1 ? '' : 's'} arrived. ${omitted} earlier messages are not shown this pass; your previous assessment already accounts for them. The last ${context.length} messages you have already read are shown first so you can hear the turn of the conversation:\n\n<already_read>\n${transcript(context) || '(none)'}\n</already_read>\n\n<new_messages>\n${transcript(fresh) || '(no new chat; new files or discussion below)'}\n</new_messages>\n${qaBlock(qa)}\nThis is an update pass, not a fresh read. Revise the assessment; do not restart it. Keep every section, and rewrite only what the new material changes:\n\n- Output the complete assessment, every heading, in the required order.\n- A section the new material does not touch comes back from your previous assessment unchanged, word for word. Do not rephrase for variety.\n- "What we know so far" and "Ruled out" are cumulative records. Reproduce them in full and add what is new, each fact with its date. Never drop a dated fact because it is old, and never rewrite a value you cannot see this pass.\n- Open "Right now" with what the new material changed. If nothing of substance changed, say so in one line and leave the rest standing.\n- Re-emit ## Working line, ## Differential, ## Not answered, and ## Corrections in their exact formats every pass. Start the Differential from the filed rows above and move a number only by what the new material actually settles; do not re-derive the list from scratch.\n- If a new message contradicts something in your previous assessment, the new message wins. Change the read, and say plainly in "Right now" what changed and why.`
               : prior
                 ? `Here is your previous assessment of this client:\n\n<previous>\n${priorText}\n</previous>\n\nHere is the full conversation as it now stands:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nUpdate the assessment. Carry forward what still holds, revise what the new messages change, and say explicitly if something new contradicts an earlier read.${compacting ? `\n\nYour previous assessment has grown long. This pass, consolidate "What we know so far" without losing information: merge duplicate rows, collapse repeated normal results into one dated range (for example "CBC normal x4, Jun 3 to Jul 20"), and keep every abnormal result, every medication change, and every date as its own line. Consolidation means shorter, never emptier: anything a specialist would ask about stays.` : ''}`
-                : `Here is the conversation so far:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nWrite the first assessment.`)
+                : `Here is the conversation so far:\n\n<transcript>\n${chat || '(no messages yet; the case material is in the attached files)'}\n</transcript>\n${qaBlock(qa)}\nWrite the first assessment.`)
               + (qa.length ? `\n\nThe discussion with Eric is part of the case record. A conclusion he reached with you there, a direction he gave, or a possibility you two raised or sank moves this assessment and the Differential section exactly as if he had said it in the client thread. Anything conceded in that discussion, by you or by him, is settled unless new evidence reopens it: move the differential by as much as the conceded point actually bears on it, no more and no less. If that discussion changed your read since the previous assessment, say so in "Right now".` : '')
               + dxOverrideNote(state)
               + bookkeepingNote(state, { delta: passType === 'delta' })
