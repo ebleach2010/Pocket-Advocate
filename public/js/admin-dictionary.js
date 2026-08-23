@@ -55,6 +55,26 @@ async function load() {
             </label>`).join('')}
       </div>`).join('')}`;
 
+  // Arrive AT the term that was tapped, not at the top of the page. Every
+  // term rendered anywhere (a painted mark in an assessment, a name in Key
+  // terms or Education) links here as #k=<normalized term>; the row is found
+  // by the same normalization, brought to the middle of the screen, and lit
+  // briefly so the eye lands with it. A term the dictionary does not hold
+  // yet (the advisor logs them with a small lag) just leaves the page at the
+  // top, which is the old behavior and the honest one.
+  const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const rawHash = location.hash.replace(/^#/, '');
+  const want = rawHash ? norm(decodeURIComponent(rawHash.replace(/^k=/, ''))) : '';
+  if (want) {
+    const hit = [...el.querySelectorAll('.gloss-item')].find(
+      (row) => norm(row.querySelector('strong')?.textContent || '') === want);
+    if (hit) {
+      hit.classList.add('dict-hit');
+      hit.scrollIntoView({ block: 'center' });
+      setTimeout(() => hit.classList.remove('dict-hit'), 2600);
+    }
+  }
+
   el.querySelectorAll('[data-term]').forEach((cb) =>
     cb.addEventListener('change', async () => {
       cb.disabled = true;

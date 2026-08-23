@@ -836,11 +836,14 @@ function paintEducation(pane, glossary) {
 
   const detail = (label, value) => (value
     ? `<p class="edu-line"><span class="edu-k">${label}</span> ${esc(value)}</p>` : '');
+  // The term NAME jumps to its own row in the full dictionary (Eric,
+  // 2026-08-23); the box and the definition text still tick it.
+  const termKey = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const entry = (g) => `
     <div class="edu-item">
       <label class="gloss-item">
         <input type="checkbox" data-term="${esc(g.id)}" ${g.learned ? 'checked' : ''}>
-        <span class="gloss-text"><strong>${esc(g.term)}</strong>: ${esc(g.definition)}</span>
+        <span class="gloss-text"><strong><a class="term-jump" href="/admin-dictionary.html#k=${encodeURIComponent(termKey(g.term))}">${esc(g.term)}</a></strong>: ${esc(g.definition)}</span>
       </label>
       ${detail('How it works', g.mechanism)}
       ${detail('Treatment', g.treatment)}

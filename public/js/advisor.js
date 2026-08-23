@@ -1108,10 +1108,13 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
 
 /** The Key terms page: tick a box when a term is yours, untick to review it. */
 function glossaryHtml(glossary) {
+  // The term NAME is a link to its own row in the full dictionary; the box
+  // and the definition text still tick it. Interactive content inside a label
+  // does not activate the label, so the two taps stay separate.
   const item = (g) => `
     <label class="gloss-item">
       <input type="checkbox" data-term="${esc(g.id)}" ${g.learned ? 'checked' : ''}>
-      <span class="gloss-text"><strong>${esc(g.term)}</strong>: ${esc(g.definition)}</span>
+      <span class="gloss-text"><strong><a class="term-jump" href="/admin-dictionary.html#k=${encodeURIComponent(termKey(g.term))}">${esc(g.term)}</a></strong>: ${esc(g.definition)}</span>
     </label>`;
   const fresh = glossary.filter((g) => !g.learned);
   const known = glossary.filter((g) => g.learned);
@@ -1213,9 +1216,23 @@ function inline(s, terms = null) {
     const i = terms?.get(key);
     return i === undefined
       ? label
-      : `<mark class="tm tm-${i}" data-tm="${esc(key)}">${label}</mark>`;
+      : `<mark class="tm tm-${i}" data-tm="${esc(key)}" title="Open in your dictionary">${label}</mark>`;
   });
   return out;
+}
+
+// A painted term is a door, not just a colour: tapping it opens the full
+// dictionary AT that term (Eric, 2026-08-23: "take me to the exact term in
+// the index that I tapped on"). One listener for every mark this module ever
+// paints, wherever its container lives.
+document.addEventListener('click', (e) => {
+  const m = e.target.closest?.('mark.tm[data-tm]');
+  if (m) location.href = `/admin-dictionary.html#k=${encodeURIComponent(m.dataset.tm)}`;
+});
+
+/** The same normalization the paint uses, so every door finds the same room. */
+function termKey(s) {
+  return String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
 function toDate(v) { return v?.toDate ? v.toDate() : new Date(v || 0); }
