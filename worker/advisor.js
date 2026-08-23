@@ -161,7 +161,7 @@ function client(env) {
 const STREAM_QUIET_MS = 11 * 60_000;
 const RUN_BUDGET_MS = 900_000;
 
-async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, initialStage = 'sending', deadlineAt = 0 }) {
+async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, initialStage = 'sending', deadlineAt = 0, noStream = false }) {
   // The cache breakpoint goes on the SYSTEM block, not at the top level. At the
   // top level it lands after the last cacheable content in the request, which
   // is the transcript and the attached files: the part that changes every
@@ -223,7 +223,15 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, i
   let lastEvent = dispatched;
   const beat = () => { try { onBeat(stage); } catch { /* a beat is never fatal */ } };
   if (onBeat) beat();
-  const stream = client(env).messages.stream({
+  // noStream: the BACKGROUND path. Measured live (2026-08-24): processing a
+  // stream costs enough CPU in workerd that the invocation's CPU budget
+  // (unraisable on this plan) killed every background turn near the four
+  // minute mark. A non-streamed call is one network wait, which costs no
+  // CPU at all, and one JSON parse at the end. The wall-clock heartbeat
+  // below covers liveness either way; the watchdog aborts through the
+  // controller. Foreground keeps streaming for the live stage display.
+  const ac = new AbortController();
+  const stream = noStream ? null : client(env).messages.stream({
     model: MODEL,
     max_tokens: maxTokens,
     thinking: { type: 'adaptive' },
@@ -231,7 +239,7 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, i
     system: cached,
     messages,
   });
-  {
+  if (stream) {
     let lastBeat = Date.now();
     stream.on('streamEvent', (ev) => {
       lastEvent = Date.now();
@@ -250,6 +258,8 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, i
       }
       if (onBeat && Date.now() - lastBeat > 8000) { lastBeat = Date.now(); beat(); }
     });
+  } else {
+    stage = 'thinking';
   }
   (async () => {
     while (running) {
@@ -263,13 +273,13 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, i
       // uncatchable death into an ordinary error the queue knows how to retry.
       if (deadlineAt && now > deadlineAt)
         stalledWhy = 'This read ran out of background time and was stopped partway.';
-      else if (now - lastEvent > STREAM_QUIET_MS)
+      else if (!noStream && now - lastEvent > STREAM_QUIET_MS)
         stalledWhy = 'The model went quiet mid-read and the run was stopped.';
       else if (now - dispatched > RUN_BUDGET_MS)
         stalledWhy = 'This read hit its fifteen minute budget and was stopped.';
       if (stalledWhy) {
         running = false;
-        try { stream.abort(); } catch { /* already closed */ }
+        try { if (stream) stream.abort(); else ac.abort(); } catch { /* already closed */ }
         break;
       }
       if (onBeat) beat();
@@ -277,7 +287,16 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, i
   })();
   let final;
   try {
-    final = await stream.finalMessage();
+    final = stream
+      ? await stream.finalMessage()
+      : await client(env).messages.create({
+          model: MODEL,
+          max_tokens: maxTokens,
+          thinking: { type: 'adaptive' },
+          output_config: { effort },
+          system: cached,
+          messages,
+        }, { signal: ac.signal });
   } catch (err) {
     // The watchdog's abort surfaces as an AbortError; name the real cause.
     if (stalledWhy) throw new Error(`${stalledWhy} It retries on its own, or tap Update to run it now.`);
@@ -2344,7 +2363,7 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
             params: { job: 'draft', kind, id, opts: { instruction: req.instruction || '', revise: !!req.revise, base: req.base || '' } },
           });
         } else {
-          await runDraft(env, kind, id, req.instruction || '', !!req.revise, req.base || '');
+          await runDraft(env, kind, id, req.instruction || '', !!req.revise, req.base || '', true);
         }
         return true; // one model job per firing
       }
@@ -2797,6 +2816,9 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       effort: passEffort,
       maxTokens: passTokens,
       deadlineAt,
+      // Background turns never stream: stream processing is what spent the
+      // invocation's CPU budget and killed them (measured 2026-08-24).
+      noStream: auto === true,
       // "reading files" holds until the first token: with url sources the
       // fetching happens on the API's side of the wire, before any event.
       initialStage: media.blocks.length ? 'reading files' : 'sending',
@@ -3323,7 +3345,7 @@ ${SELF_NOTE}` },
  * him, so his own past messages go in as the style reference rather than any
  * description of a tone.
  */
-export async function runDraft(env, kind, id, instruction, revise = false, base = '') {
+export async function runDraft(env, kind, id, instruction, revise = false, base = '', noStream = false) {
   try {
     await setState(env, kind, id, {
       draftStatus: 'running', draftError: null, draftStartedAt: new Date(), draftProgressAt: null,
@@ -3358,6 +3380,7 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
       .join('\n\n');
     const draft = await ask(env, {
       effort: DRAFT_EFFORT,
+      noStream,
       onBeat: () => setState(env, kind, id, { draftProgressAt: new Date() }).catch(() => {}),
       // The visible draft is short, but thinking spends from the same budget.
       maxTokens: 16000,

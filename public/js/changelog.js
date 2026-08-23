@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.18';
+export const VERSION = '2.19';
 
 /**
  * Newest first.
@@ -44,6 +44,13 @@ export const VERSION = '2.18';
  * copy there if necessary. An unspecified push is silent.
  */
 export const CHANGELOG = [
+  {
+    version: '2.19',
+    quiet: true,
+    client: [
+      'Bug fix: background case reviews no longer consume the processing budget that was silently cutting them off, so they complete around the clock. This closes the review outage.',
+    ],
+  },
   {
     version: '2.18',
     quiet: true,
