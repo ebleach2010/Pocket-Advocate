@@ -544,11 +544,38 @@ export default {
       if (url.pathname === '/api/diag' && request.method === 'GET') {
         if (url.searchParams.get('k') !== 'b6e6f406dc540d5459188b00716ab631')
           return json({ error: 'Not found' }, 404);
-        const [cron, adv] = await Promise.all([
+        const [cron, adv, queueRows, caseRows] = await Promise.all([
           getDoc(env, 'diag/cron').catch(() => null),
           getDoc(env, 'diag/advisor').catch(() => null),
+          listDocs(env, 'advisorQueue', { pageSize: 10 }).catch(() => []),
+          listDocs(env, 'cases', { pageSize: 50, all: true }).catch(() => []),
         ]);
-        return json({ now: new Date(), cron: cron?.data || null, runs: adv?.data.runs || [] });
+        // Sanitized machine state for the open cases: ages and counters only,
+        // no ids and no case content, so "why is nothing even queueing" is
+        // answerable from here.
+        const age = (v) => (v ? Math.round((Date.now() - new Date(v).getTime()) / 1000) : null);
+        const states = [];
+        for (const c of caseRows.filter((r) => r.data.status !== 'closed').slice(0, 5)) {
+          const st = await getDoc(env, `cases/${c.id}/advisor/state`).catch(() => null);
+          const d = st?.data || {};
+          states.push({
+            status: d.status || null, stage: d.stage || null,
+            error: d.error ? String(d.error).slice(0, 140) : null,
+            errorRetries: d.errorRetries || 0,
+            lastPassType: d.lastPassType || null,
+            passesSinceFull: d.passesSinceFull || 0,
+            pendingAgeS: age(d.pendingAt), updatedAgeS: age(d.updatedAt),
+            startedAgeS: age(d.startedAt), beatAgeS: age(d.progressAt),
+            analyzedThroughAgeS: age(d.analyzedThroughTs),
+            forceFull: !!d.forceFull, paused: !!d.paused,
+          });
+        }
+        return json({
+          now: new Date(), cron: cron?.data || null,
+          queue: queueRows.map((r) => ({ kind: r.data.kind, draft: !!r.data.draft, tries: r.data.tries || 0, ageS: age(r.data.at) })),
+          states,
+          runs: adv?.data.runs || [],
+        });
       }
       if (url.pathname === '/api/admin/rates' && request.method === 'POST')
         return await handleSetRates(request, env);
