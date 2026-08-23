@@ -18,6 +18,7 @@ import { markSeen, isUnseen, PAGE_BADGES } from './seen.js';
 import { openDutyDraft } from './duty.js';
 import { openPrepSheet } from './prep.js';
 import { mountFolder } from './folder.js';
+import { recordsAuthorisation, representativeDesignation } from './authority.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
@@ -172,7 +173,7 @@ function render(el) {
     pages: [
       {
         id: 'overview', title: 'Overview', icon: '⚡',
-        render: (pane) => paintOverview(pane),
+        render: (pane) => { paintOverview(pane); paintAuthorityStatus(pane); },
       },
       {
         id: 'chat', title: 'Chat', icon: '💬', fade: true,
@@ -1058,6 +1059,7 @@ function paintOverview(pane) {
 
   pane.innerHTML = `
     ${infoBar(c, mtFmt, start, due)}
+    ${c.fullAccess ? '<div data-authority-status></div>' : ''}
     ${c.appointment?.requested ? `
     <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
       <h3 style="margin:0 0 .3rem; color:var(--orange);">Booking request — not on your calendar</h3>
@@ -1158,6 +1160,9 @@ function refreshOverview() {
   const open = new Set(
     [...pane.querySelectorAll('details[data-k][open]')].map((d) => d.dataset.k));
   paintOverview(pane);
+  // paintOverview rewrites the pane, so the authority card has to be re-served
+  // after it, not before.
+  paintAuthorityStatus(pane);
   open.forEach((k) => {
     const d = pane.querySelector(`details[data-k="${k}"]`);
     if (d) d.open = true;
@@ -1593,4 +1598,84 @@ function prettySize(bytes) {
 }
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+/**
+ * Whether he is actually allowed to act yet, on the page where he decides what
+ * to do next. Read-only: he can see and print what was signed, and he can
+ * never sign it himself. The client's own page is where signing happens.
+ *
+ * Served through the Worker like everything else under the case's private
+ * subtree, which the browser cannot read directly by rule.
+ */
+async function paintAuthorityStatus(pane) {
+  const host = pane?.querySelector('[data-authority-status]');
+  if (!host) return;
+  let items = [];
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch(`/api/authority?caseId=${encodeURIComponent(caseId)}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (res.ok) items = (await res.json()).items || [];
+  } catch { /* the card still says what it does not know */ }
+
+  const live = items.filter((i) => !i.revokedAt);
+  const recs = live.filter((i) => i.kind === 'records');
+  const rep = live.find((i) => i.kind === 'representative');
+  const revoked = items.filter((i) => i.revokedAt);
+  const days = data.authorityAt
+    ? Math.max(0, 90 - Math.floor((Date.now() - toDate(data.authorityAt).getTime()) / 86_400_000))
+    : null;
+
+  host.innerHTML = `
+    <div class="panel" style="${live.length ? '' : 'border-color:var(--orange); box-shadow:var(--glow-o);'}">
+      <h3 style="margin:0 0 .35rem;${live.length ? '' : ' color:var(--orange);'}">
+        ${live.length ? 'Authority to act' : 'No authority yet'}</h3>
+      ${live.length ? '' : `<p class="dim small" style="margin:0 0 .5rem;">Nothing
+        can start until the client signs. The forms are waiting on their case page;
+        a nudge in chat is usually all it takes.</p>`}
+      <p class="dim small" style="margin:.1rem 0;">
+        Records: ${recs.length
+          ? recs.map((r) => esc(r.clinicName || 'clinic')).join(', ')
+          : '<span style="color:var(--orange)">none signed</span>'}</p>
+      <p class="dim small" style="margin:.1rem 0;">
+        Insurer: ${rep
+          ? `${esc(rep.planName || 'plan')}${rep.memberId ? ` · ${esc(rep.memberId)}` : ''}`
+          : '<span style="color:var(--orange)">not signed</span>'}</p>
+      ${days !== null ? `<p class="dim small" style="margin:.35rem 0 0;">
+        ${days} day${days === 1 ? '' : 's'} left in the 90 day window.</p>` : ''}
+      ${revoked.length ? `<p class="dim small" style="margin:.35rem 0 0; color:var(--orange);">
+        ${revoked.length} withdrawn. Do not act on ${revoked.length === 1 ? 'it' : 'them'}.</p>` : ''}
+      ${live.length ? `<p class="row" style="gap:.4rem; flex-wrap:wrap; margin:.5rem 0 0;">
+        ${live.map((i) => `<button class="btn ghost tiny" data-auth-print="${esc(i.id)}">
+          ${i.kind === 'records' ? esc(i.clinicName || 'Records') : 'Insurer form'}</button>`).join('')}
+      </p>` : ''}
+    </div>`;
+
+  for (const b of host.querySelectorAll('[data-auth-print]')) {
+    b.addEventListener('click', () => {
+      const item = items.find((i) => i.id === b.dataset.authPrint);
+      if (item) printAuthorityDoc(item);
+    });
+  }
+}
+
+/** A paper copy for the clinic or the plan. Same print path as the prep sheet. */
+function printAuthorityDoc(item) {
+  const o = {
+    ...item,
+    clientName: data.clientName, clientDob: data.clientDob, advocateName: 'Eric Bleach',
+  };
+  const text = item.kind === 'records' ? recordsAuthorisation(o) : representativeDesignation(o);
+  const win = window.open('', '_blank');
+  if (!win) { alert('Allow pop-ups to print this.'); return; }
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
+    <title>${item.kind === 'records' ? 'Records authorisation' : 'Insurance representative'}</title>
+    <style>@page { margin: 16mm; }
+      body { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color:#000; }
+      pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }</style>
+    </head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre></body></html>`);
+  win.document.close();
+  setTimeout(() => win.print(), 350);
 }

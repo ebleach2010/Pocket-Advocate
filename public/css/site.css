@@ -1048,6 +1048,29 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
    deserves to be seen next to its price, not buried in a link. Stacks on a
    narrow phone, because two four-figure cards side by side at 320px are two
    unreadable cards. */
+/* The two authorisations, on the client's own case page. Deliberately plain:
+   this is the most consequential thing they will do here, and a form that
+   looks like a sales card is a form people skim. */
+.authority h3 { margin: 0 0 .3rem; }
+.auth-row { padding: .8rem 0; border-top: 1px solid rgba(255, 255, 255, .1); }
+.auth-row:first-of-type { border-top: 0; }
+.auth-head { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; }
+.auth-on { font: 600 .72rem/1 ui-monospace, monospace; color: var(--cyan); }
+.auth-off { font: 600 .72rem/1 ui-monospace, monospace; color: var(--dim); }
+.auth-item {
+  display: flex; gap: .5rem; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; margin: .45rem 0; font-size: .85rem;
+}
+.auth-item-acts { display: flex; gap: .35rem; flex: none; }
+.btn.tiny { padding: .2rem .5rem; font-size: .72rem; }
+/* The full form, as it will actually read. Monospace because it is a
+   document, not prose, and wrapped because a phone is 390px wide. */
+.auth-doc {
+  white-space: pre-wrap; word-wrap: break-word; margin: 0;
+  font: .74rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--soft);
+}
+
 .tier-pick { display: flex; gap: .6rem; margin: 0 0 .9rem; flex-wrap: wrap; }
 .tier-card {
   flex: 1 1 14rem; min-width: 0; text-align: left; cursor: pointer;

@@ -673,6 +673,8 @@ export default {
         return await handleDaySummary(request, env);
       if (url.pathname === '/api/saved')
         return await handleSaved(request, env, url);
+      if (url.pathname === '/api/authority')
+        return await handleAuthority(request, env, url);
       if (url.pathname === '/api/agenda')
         return await handleAgenda(request, env, url);
       if (url.pathname === '/api/file/delete' && request.method === 'POST')
@@ -2636,6 +2638,119 @@ async function handleSaved(request, env, url) {
  * POST /api/agenda {id, action:'remove', itemId}      admin, or author while open
  * POST /api/agenda {id, action:'clear'}               admin: drop covered items
  */
+/**
+ * GET/POST /api/authority - the two documents Full Access runs on.
+ *
+ * Worker-mediated, and it has to be: `firestore.rules` ships by Firebase CLI
+ * and the owner of this project has no way to run it (the same constraint
+ * that put the agenda list behind a route instead of a Firestore path). So
+ * these live under `cases/{id}/private/`, denied to the browser in both
+ * directions by the rules already deployed, and this route is the only way
+ * in. Both sides read; only the client signs; only the Worker stamps time.
+ */
+const AUTHORITY_KINDS = ['records', 'representative'];
+async function handleAuthority(request, env, url) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = request.method === 'POST' ? await request.json().catch(() => null) : null;
+  const id = String(body?.caseId || url.searchParams.get('caseId') || '');
+  const ctx = await threadContext(env, user, 'case', id);
+  if (ctx.error) return json({ error: ctx.error }, ctx.code);
+  const coll = `cases/${id}/private/authority/items`;
+
+  if (request.method === 'GET') {
+    const rows = await listDocs(env, coll, { pageSize: 100 }).catch(() => []);
+    return json({
+      items: rows.map((r) => ({ id: r.id, ...r.data }))
+        .sort((a, b) => new Date(b.signedAt || 0) - new Date(a.signedAt || 0)),
+    });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+
+  const c = await getDoc(env, `cases/${id}`);
+  if (!c?.data.fullAccess)
+    return json({ error: 'This case is not on Full Access.' }, 409);
+
+  if (body?.action === 'revoke') {
+    // Revocation is the client's right and is not negotiable, so it is one
+    // field and no conditions beyond owning the case. It stops future use; it
+    // cannot unmake a disclosure already relied on, and the copy says so.
+    if (ctx.isAdmin) return json({ error: 'Only the client can revoke this.' }, 403);
+    const itemId = String(body?.id || '');
+    if (!/^[\w-]{1,64}$/.test(itemId)) return json({ error: 'Bad request' }, 400);
+    await patchDoc(env, `${coll}/${itemId}`, { revokedAt: new Date() }, { mask: ['revokedAt'] });
+    const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+    for (const a of admins) {
+      await notifyUser(env, a.id, {
+        title: 'Pocket Advocate',
+        body: `${firstName(c.data.clientName)} withdrew an authorisation.`,
+        link: `/admin-case.html?id=${id}`,
+      }).catch(() => {});
+    }
+    return json({ ok: true });
+  }
+
+  // Signing. The advocate can never do this for the client: a signature
+  // somebody else applied is not a signature.
+  if (ctx.isAdmin) return json({ error: 'Only the client can sign this.' }, 403);
+  const kind = String(body?.kind || '');
+  if (!AUTHORITY_KINDS.includes(kind)) return json({ error: 'Bad request' }, 400);
+  const typed = typeof body?.signedName === 'string' ? body.signedName.trim().slice(0, 120) : '';
+  if (typed.length < 2) return json({ error: 'Type your full name to sign.' }, 400);
+  // The typed name has to be the name on the case. Not signature matching,
+  // just the one check that catches the wrong person at a shared device, and
+  // deliberately forgiving about case, spacing and punctuation.
+  const flat = (s) => String(s || '').toLowerCase().replace(/[^a-z]+/g, '');
+  if (c.data.clientName && flat(typed) !== flat(c.data.clientName))
+    return json({ error: 'Sign with the same name that is on this case.' }, 400);
+
+  const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+  const item = {
+    kind,
+    signedName: typed,
+    // Stamped HERE, never taken from the browser: a client-sent timestamp is
+    // a claim, and this one has to be a record.
+    signedAt: new Date(),
+    revokedAt: null,
+    // A year, which is what both documents say on their face.
+    expiresAt: new Date(Date.now() + 365 * 24 * 3600_000),
+    clinicName: str(body?.clinicName, 200),
+    clinicAddress: str(body?.clinicAddress, 400),
+    clinicPhone: str(body?.clinicPhone, 40),
+    fromDate: str(body?.fromDate, 20),
+    toDate: str(body?.toDate, 20),
+    purpose: str(body?.purpose, 600),
+    memberId: str(body?.memberId, 80),
+    planName: str(body?.planName, 200),
+    categories: Array.isArray(body?.categories)
+      ? body.categories.filter((x) => typeof x === 'string').slice(0, 12) : [],
+  };
+  if (kind === 'records' && !item.clinicName)
+    return json({ error: 'Name the clinic this authorisation is for.' }, 400);
+  if (kind === 'representative' && !item.planName)
+    return json({ error: 'Name your insurance plan.' }, 400);
+
+  const itemId = crypto.randomUUID();
+  await patchDoc(env, `${coll}/${itemId}`, item, { mustNotExist: true });
+
+  // The 90-day clock starts at the FIRST authorisation, not at purchase: the
+  // tier's scope note says so, and until something is signed there is nothing
+  // Eric is able to do.
+  if (!c.data.authorityAt) {
+    await patchDoc(env, `cases/${id}`, { authorityAt: new Date() }, { mask: ['authorityAt'] })
+      .catch(() => {});
+  }
+  const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  for (const a of admins) {
+    await notifyUser(env, a.id, {
+      title: 'Pocket Advocate',
+      body: `${firstName(c.data.clientName)} signed ${kind === 'records' ? 'a records authorisation' : 'the insurance representative form'}.`,
+      link: `/admin-case.html?id=${id}`,
+    }).catch(() => {});
+  }
+  return json({ ok: true, id: itemId, signedAt: item.signedAt });
+}
+
 async function handleAgenda(request, env, url) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in required' }, 401);

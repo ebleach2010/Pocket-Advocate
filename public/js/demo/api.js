@@ -127,6 +127,13 @@ export function demoApi(role, store) {
     }
     // ready, not just the id: the return page polls on that flag, and without
     // it the demo sat on "opening your case now" until it gave up.
+    // Full Access authorisations. The demo case is a standard one, so the
+    // list is empty and the two Sign buttons are what a real client sees.
+    if (path === '/api/authority') {
+      if ((init.method || 'GET').toUpperCase() === 'GET') return ok({ items: [] });
+      await beat(500);
+      return ok({ ok: true, id: 'demo-auth', signedAt: new Date().toISOString() });
+    }
     if (path === '/api/case-for-session') return ok({ ready: true, caseId: DEMO_CASE_ID });
     if (path === '/api/portal') return ok({ url: `/subscription.html?demo=${role}` });
     if (path === '/api/tip') return ok({ url: `/case.html?demo=1&tipped=1` });

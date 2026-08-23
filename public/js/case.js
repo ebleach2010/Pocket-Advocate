@@ -14,6 +14,9 @@ import { mountSaved } from './saved.js';
 import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
 import { HELP_BUTTON, wireHelp, openCaseHelp } from './help.js';
+import {
+  recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
+} from './authority.js';
 import { mountFolder, folderEnter } from './folder.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
@@ -387,6 +390,7 @@ function renderProgress(el, c) {
             <span class="t-dot"></span>${label}</li>`).join('')}
       </ul>
     </div>
+    <div data-authority></div>
     <details class="faq" data-more>
       <summary>Session details</summary>
       <div class="faq-a">
@@ -396,6 +400,12 @@ function renderProgress(el, c) {
         ${followUpSection(c)}
       </div>
     </details>`;
+
+  // Full Access cannot start until this is signed, so it sits directly under
+  // the timeline rather than behind a tab: the client tab strip is already at
+  // four and three pills barely fit a 390px phone.
+  const auth = el.querySelector('[data-authority]');
+  if (auth && c.fullAccess) mountAuthority(auth, c);
 
   el.querySelector('[data-ics]')?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -1360,4 +1370,245 @@ function prettySize(bytes) {
 }
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+/**
+ * The authorisations, on the client's own case page. Two documents, because
+ * they do two different legal jobs: one lets a clinic release records to
+ * Eric, the other lets Eric argue with the insurer. Signing one does not
+ * grant the other, and clients conflate them constantly, so they are two
+ * cards with two buttons and never a single "I agree".
+ *
+ * Everything is Worker-mediated: the records live under the case's private
+ * subtree, which the browser cannot read or write directly by rule.
+ */
+async function mountAuthority(host, c) {
+  const paint = (items) => {
+    const signed = (kind) => items.find((i) => i.kind === kind && !i.revokedAt);
+    const rep = signed('representative');
+    const recs = items.filter((i) => i.kind === 'records' && !i.revokedAt);
+    host.innerHTML = `
+      <div class="panel authority" data-auth-panel>
+        <h3>What I need signed</h3>
+        <p class="dim small">Nothing on your case can start until these are in
+          place. They are two separate permissions, and you can withdraw either
+          one at any time.</p>
+
+        <div class="auth-row">
+          <div class="auth-head">
+            <strong>Your clinics</strong>
+            ${recs.length
+              ? `<span class="auth-on">✓ ${recs.length} signed</span>`
+              : '<span class="auth-off">Not signed</span>'}
+          </div>
+          <p class="dim small">Lets a clinic release your records to me. One for
+            each clinic or hospital I need records from.</p>
+          ${recs.map((r) => `
+            <p class="auth-item">
+              <span>${esc(r.clinicName || 'Clinic')}<span class="dim small"> · signed ${new Date(r.signedAt).toLocaleDateString()}</span></span>
+              <span class="auth-item-acts">
+                <button type="button" class="btn ghost tiny" data-auth-view="${esc(r.id)}">View</button>
+                <button type="button" class="btn ghost tiny" data-auth-revoke="${esc(r.id)}">Withdraw</button>
+              </span>
+            </p>`).join('')}
+          <p><button class="btn${recs.length ? ' ghost' : ' glow'}" data-auth-add="records">
+            ${recs.length ? 'Add another clinic' : 'Sign a records authorisation'}</button></p>
+        </div>
+
+        <div class="auth-row">
+          <div class="auth-head">
+            <strong>Your insurer</strong>
+            ${rep ? '<span class="auth-on">✓ Signed</span>' : '<span class="auth-off">Not signed</span>'}
+          </div>
+          <p class="dim small">Lets me file appeals and speak to your plan on
+            your behalf. It is not a power of attorney and it is not legal
+            representation.</p>
+          ${rep ? `
+            <p class="auth-item">
+              <span>${esc(rep.planName || 'Your plan')}<span class="dim small"> · signed ${new Date(rep.signedAt).toLocaleDateString()}</span></span>
+              <span class="auth-item-acts">
+                <button type="button" class="btn ghost tiny" data-auth-view="${esc(rep.id)}">View</button>
+                <button type="button" class="btn ghost tiny" data-auth-revoke="${esc(rep.id)}">Withdraw</button>
+              </span>
+            </p>` : `
+            <p><button class="btn glow" data-auth-add="representative">Sign the insurance form</button></p>`}
+        </div>
+        <p class="error" data-auth-error hidden></p>
+      </div>`;
+
+    for (const b of host.querySelectorAll('[data-auth-add]'))
+      b.addEventListener('click', () => openAuthoritySheet(c, b.dataset.authAdd, load));
+    for (const b of host.querySelectorAll('[data-auth-view]'))
+      b.addEventListener('click', () => printAuthority(c, items.find((i) => i.id === b.dataset.authView)));
+    for (const b of host.querySelectorAll('[data-auth-revoke]')) {
+      b.addEventListener('click', async () => {
+        if (!confirm('Withdraw this authorisation? I will stop using it straight away. It cannot undo anything already sent to me under it.')) return;
+        b.disabled = true;
+        try {
+          const idToken = await user.getIdToken();
+          const res = await fetch('/api/authority', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+            body: JSON.stringify({ caseId: c.id, action: 'revoke', id: b.dataset.authRevoke }),
+          });
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed');
+          load();
+        } catch (err) {
+          const e = host.querySelector('[data-auth-error]');
+          e.textContent = err.message;
+          e.hidden = false;
+          b.disabled = false;
+        }
+      });
+    }
+  };
+
+  async function load() {
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch(`/api/authority?caseId=${encodeURIComponent(c.id)}`, {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      paint(res.ok ? ((await res.json()).items || []) : []);
+    } catch {
+      paint([]); // an unreachable list still shows the two buttons
+    }
+  }
+  load();
+}
+
+/** The signing sheet. Same overlay furniture as everything else on this page. */
+function openAuthoritySheet(c, kind, onDone) {
+  const isRecords = kind === 'records';
+  const overlay = document.createElement('div');
+  overlay.className = 'settings-overlay';
+  overlay.innerHTML = `
+    <div class="settings-card" role="dialog" aria-modal="true" aria-label="Sign">
+      <h3 style="margin:0 0 .3rem;">${isRecords ? 'Records authorisation' : 'Insurance representative'}</h3>
+      <p class="dim small" style="margin:0 0 .8rem;">${isRecords
+        ? 'One clinic per form. Fill in what you know; I can chase the rest.'
+        : 'This lets me deal with your plan about your claims and appeals.'}</p>
+      ${isRecords ? `
+        <label class="dim small">Clinic or hospital name
+          <input type="text" data-f="clinicName" maxlength="200" placeholder="e.g. Valley Neurology"></label>
+        <label class="dim small">Their address, if you have it
+          <input type="text" data-f="clinicAddress" maxlength="400"></label>
+        <label class="dim small">Their phone, if you have it
+          <input type="tel" data-f="clinicPhone" maxlength="40"></label>
+        <div class="row" style="gap:.5rem;">
+          <label class="dim small" style="flex:1;">Records from
+            <input type="date" data-f="fromDate"></label>
+          <label class="dim small" style="flex:1;">Through
+            <input type="date" data-f="toDate"></label>
+        </div>
+        <p class="dim small" style="margin:.8rem 0 .3rem;">Some records need your
+          specific permission and are left out unless you tick them. Nothing here
+          is required, and leaving one unticked never stops the rest.</p>
+        ${SENSITIVE_CATEGORIES.map((cat) => `
+          <label class="agreement-check" style="align-items:flex-start;">
+            <input type="checkbox" data-cat="${cat.id}">
+            <span><strong>${esc(cat.label)}</strong><br><span class="dim small">${esc(cat.note)}</span></span>
+          </label>`).join('')}
+      ` : `
+        <label class="dim small">Insurance plan or company
+          <input type="text" data-f="planName" maxlength="200" placeholder="e.g. Blue Cross of Arizona"></label>
+        <label class="dim small">Member or policy ID
+          <input type="text" data-f="memberId" maxlength="80"></label>
+      `}
+      <details class="agreement" style="margin:.9rem 0 .6rem;">
+        <summary><span class="agreement-title">Read the whole form</span></summary>
+        <div class="agreement-body"><pre class="auth-doc" data-preview></pre></div>
+      </details>
+      <label class="dim small">Type your full name to sign
+        <input type="text" data-f="signedName" maxlength="120" placeholder="${esc(c.clientName || 'Your full name')}"></label>
+      <p class="dim small" style="margin:.4rem 0 0;">Typing your name here is your
+        signature. The date and time are recorded when you press Sign.</p>
+      <p class="error" data-sheet-error hidden></p>
+      <div class="actions">
+        <button class="btn quiet" data-x>Cancel</button>
+        <button class="btn glow" data-sign>Sign</button>
+      </div>
+    </div>`;
+
+  const val = (name) => overlay.querySelector(`[data-f="${name}"]`)?.value.trim() || '';
+  const cats = () => [...overlay.querySelectorAll('[data-cat]:checked')].map((i) => i.dataset.cat);
+  const preview = overlay.querySelector('[data-preview]');
+  const repaint = () => {
+    const o = {
+      clientName: c.clientName, clientDob: c.clientDob,
+      clinicName: val('clinicName'), clinicAddress: val('clinicAddress'),
+      fromDate: val('fromDate'), toDate: val('toDate'),
+      planName: val('planName'), memberId: val('memberId'),
+      categories: cats(), signedName: val('signedName'),
+    };
+    preview.textContent = isRecords ? recordsAuthorisation(o) : representativeDesignation(o);
+  };
+  overlay.addEventListener('input', repaint);
+  overlay.addEventListener('change', repaint);
+  repaint();
+
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('[data-x]').addEventListener('click', close);
+  overlay.querySelector('[data-sign]').addEventListener('click', async () => {
+    const btn = overlay.querySelector('[data-sign]');
+    const err = overlay.querySelector('[data-sheet-error]');
+    btn.disabled = true;
+    err.hidden = true;
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/authority', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          caseId: c.id, kind,
+          signedName: val('signedName'),
+          clinicName: val('clinicName'), clinicAddress: val('clinicAddress'),
+          clinicPhone: val('clinicPhone'),
+          fromDate: val('fromDate'), toDate: val('toDate'),
+          planName: val('planName'), memberId: val('memberId'),
+          categories: cats(),
+        }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Couldn't sign that (${res.status})`);
+      close();
+      onDone?.();
+    } catch (e2) {
+      err.textContent = e2.message;
+      err.hidden = false;
+      btn.disabled = false;
+    }
+  });
+  document.body.appendChild(overlay);
+  overlay.querySelector('[data-f]')?.focus();
+}
+
+/**
+ * A paper copy, on demand, for either side. Same window.open + print pattern
+ * the case export and the prep sheet already use; there is no PDF library in
+ * this stack and none is being added for this.
+ */
+function printAuthority(c, item) {
+  if (!item) return;
+  const o = {
+    ...item,
+    clientName: c.clientName, clientDob: c.clientDob,
+    advocateName: 'Eric Bleach',
+  };
+  const text = item.kind === 'records' ? recordsAuthorisation(o) : representativeDesignation(o);
+  const win = window.open('', '_blank');
+  if (!win) {
+    alert('Your browser blocked the print window. Allow pop-ups for this site and try again.');
+    return;
+  }
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
+    <title>${item.kind === 'records' ? 'Records authorisation' : 'Insurance representative'}</title>
+    <style>
+      @page { margin: 16mm; }
+      body { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: #000; }
+      pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
+    </style></head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre></body></html>`);
+  win.document.close();
+  setTimeout(() => win.print(), 350);
 }
