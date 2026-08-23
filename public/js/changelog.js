@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.19';
+export const VERSION = '2.20';
 
 /**
  * Newest first.
@@ -45,11 +45,16 @@ export const VERSION = '2.19';
  */
 export const CHANGELOG = [
   {
-    version: '2.19',
+    version: '2.20',
     quiet: true,
     client: [
-      'Bug fix: background case reviews no longer consume the processing budget that was silently cutting them off, so they complete around the clock. This closes the review outage.',
+      'Bug fix: case reviews now run on infrastructure with no processing time limit at all, whether the app is open or closed, so they complete around the clock. This closes the review outage.',
     ],
+  },
+  {
+    version: '2.19',
+    quiet: true,
+    client: [],
   },
   {
     version: '2.18',

@@ -594,6 +594,8 @@ export default {
             startedAgeS: age(d.startedAt), beatAgeS: age(d.progressAt),
             analyzedThroughAgeS: age(d.analyzedThroughTs),
             forceFull: !!d.forceFull, paused: !!d.paused,
+            batchAgeS: d.batchCtx ? age(d.batchCtx.submittedAt) : null,
+            batchPass: d.batchCtx?.passType || null,
           });
         }
         return json({
@@ -949,7 +951,7 @@ async function seedWorkClock(env) {
  * one attempt. Runs once; the marker pattern is the standard one.
  */
 async function unparkAdvisor(env) {
-  const MARKER = 'migrations/unpark-2026-08-24e';
+  const MARKER = 'migrations/unpark-2026-08-25a';
   const m = await getDoc(env, MARKER);
   if (m?.data.finishedAt) return;
   if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
@@ -967,11 +969,17 @@ async function unparkAdvisor(env) {
       const d = st?.data;
       if (!d || d.paused) continue;
       const owed = d.pendingAt && (!d.updatedAt || new Date(d.pendingAt) > new Date(d.updatedAt));
-      if (!owed || d.status === 'running') continue;
+      // A "running" with a live beat is real work: leave it. A stale one is a
+      // corpse from the pre-batch era (every in-place background turn died),
+      // and waiting out the sweep's clocks costs another half hour.
+      const beatT = Math.max(d.startedAt ? new Date(d.startedAt).getTime() : 0,
+        d.progressAt ? new Date(d.progressAt).getTime() : 0);
+      const liveRun = d.status === 'running' && beatT && Date.now() - beatT < 10 * 60_000;
+      if (!owed || liveRun) continue;
       await patchDoc(env, `cases/${c.id}/advisor/state`, {
         status: 'idle', error: null, errorRetries: null, errorRetryAt: null,
-        startedAt: null, progressAt: null, stage: null,
-      }, { mask: ['status', 'error', 'errorRetries', 'errorRetryAt', 'startedAt', 'progressAt', 'stage'] });
+        startedAt: null, progressAt: null, stage: null, batchCtx: null,
+      }, { mask: ['status', 'error', 'errorRetries', 'errorRetryAt', 'startedAt', 'progressAt', 'stage', 'batchCtx'] });
       await markPending(env, 'case', c.id, { force: true }).catch(() => {});
       fixed += 1;
     }
@@ -1076,7 +1084,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-24-nostream';
+const BUILD_TAG = 'v2026-08-24-batches';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1084,7 +1092,7 @@ const BUILD_TAG = 'v2026-08-24-nostream';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.19';
+const VERSION = '2.20';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

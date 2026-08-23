@@ -161,34 +161,63 @@ function client(env) {
 const STREAM_QUIET_MS = 11 * 60_000;
 const RUN_BUDGET_MS = 900_000;
 
-async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, initialStage = 'sending', deadlineAt = 0, noStream = false }) {
-  // The cache breakpoint goes on the SYSTEM block, not at the top level. At the
-  // top level it lands after the last cacheable content in the request, which
-  // is the transcript and the attached files: the part that changes every
-  // single pass. So every call was paying the write premium and never reading
-  // a hit.
-  //
-  // WHICH system block matters just as much. The big callers now pass two:
-  // a static block flagged `cache: true` (the long standing instructions,
-  // identical from call to call) and a trailing dynamic block carrying the
-  // learned material - glossary, stances, voice. Both get breakpoints: the
-  // flagged block so the advisor LEARNING something still hits the prefix,
-  // and the trailing one because the learned material only changes when a
-  // lesson lands. Callers that pass one block keep the old behavior: last
-  // block gets the breakpoint.
-  //
-  // ttl '1h', not the default five minutes: PENDING_FLOOR_MS spaces auto
-  // passes out further than a five minute cache survives, so it was written
-  // on every run (at the 1.25x premium) and read on none. An hour means a
-  // working day of passes actually hits.
+/**
+ * The cache breakpoints, shared by every carrier of a turn (the live stream,
+ * the non-streamed create, and the Batches API) so they all build the same
+ * prefix. The breakpoint goes on the SYSTEM blocks, not at the top level: at
+ * the top level it lands after the last cacheable content in the request,
+ * which is the transcript and the attached files, the part that changes every
+ * single pass. So every call was paying the write premium and never reading a
+ * hit.
+ *
+ * WHICH system block matters just as much. The big callers pass two: a static
+ * block flagged `cache: true` (the long standing instructions, identical from
+ * call to call) and a trailing dynamic block carrying the learned material -
+ * glossary, stances, voice. Both get breakpoints: the flagged block so the
+ * advisor LEARNING something still hits the prefix, and the trailing one
+ * because the learned material only changes when a lesson lands. Callers that
+ * pass one block keep the old behavior: last block gets the breakpoint.
+ *
+ * ttl '1h', not the default five minutes: PENDING_FLOOR_MS spaces auto passes
+ * out further than a five minute cache survives, so it was written on every
+ * run (at the 1.25x premium) and read on none. An hour means a working day of
+ * passes actually hits.
+ */
+function withCacheBp(system) {
   const bp = { type: 'ephemeral', ttl: '1h' };
-  const cached = Array.isArray(system)
+  return Array.isArray(system)
     ? (system.some((b) => b.cache)
       ? system.map(({ cache, ...b }, i) => (cache || i === system.length - 1
         ? { ...b, cache_control: bp } : b))
       : system.map((b, i) => (i === system.length - 1
         ? { ...b, cache_control: bp } : b)))
     : system;
+}
+
+/** One request body, whoever carries it: stream, create, and batch alike. */
+function turnRequest({ system, messages, effort, maxTokens = 64000 }) {
+  return {
+    model: MODEL,
+    max_tokens: maxTokens,
+    thinking: { type: 'adaptive' },
+    output_config: { effort },
+    system: withCacheBp(system),
+    messages,
+  };
+}
+
+/** The checks and the text pull, shared by every way a final Message arrives. */
+function extractText(final) {
+  if (final.stop_reason === 'refusal')
+    throw new Error('The model declined this request.');
+  if (final.stop_reason === 'max_tokens')
+    console.warn('advisor: response truncated at max_tokens');
+  const text = final.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+  return stripDashes(text);
+}
+
+async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, initialStage = 'sending', deadlineAt = 0, noStream = false }) {
+  const turn = turnRequest({ system, messages, effort, maxTokens });
   // Heartbeat, on a WALL CLOCK, not on stream events - and it is a WATCHDOG.
   //
   // Event-driven beats told the truth only once tokens were flowing. Before
@@ -231,14 +260,7 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, i
   // below covers liveness either way; the watchdog aborts through the
   // controller. Foreground keeps streaming for the live stage display.
   const ac = new AbortController();
-  const stream = noStream ? null : client(env).messages.stream({
-    model: MODEL,
-    max_tokens: maxTokens,
-    thinking: { type: 'adaptive' },
-    output_config: { effort },
-    system: cached,
-    messages,
-  });
+  const stream = noStream ? null : client(env).messages.stream(turn);
   if (stream) {
     let lastBeat = Date.now();
     stream.on('streamEvent', (ev) => {
@@ -289,14 +311,7 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, i
   try {
     final = stream
       ? await stream.finalMessage()
-      : await client(env).messages.create({
-          model: MODEL,
-          max_tokens: maxTokens,
-          thinking: { type: 'adaptive' },
-          output_config: { effort },
-          system: cached,
-          messages,
-        }, { signal: ac.signal });
+      : await client(env).messages.create(turn, { signal: ac.signal });
   } catch (err) {
     // The watchdog's abort surfaces as an AbortError; name the real cause.
     if (stalledWhy) throw new Error(`${stalledWhy} It retries on its own, or tap Update to run it now.`);
@@ -304,12 +319,59 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, i
   } finally {
     running = false;
   }
-  if (final.stop_reason === 'refusal')
-    throw new Error('The model declined this request.');
-  if (final.stop_reason === 'max_tokens')
-    console.warn('advisor: response truncated at max_tokens', maxTokens);
-  const text = final.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
-  return stripDashes(text);
+  return extractText(final);
+}
+
+/**
+ * THE BACKGROUND ESCAPE (2026-08-24). Both ways of carrying an analysis turn
+ * inside a Worker invocation die on this plan, measured live:
+ *  - streamed: processing the stream burns the invocation's unraisable CPU
+ *    budget, and the platform kills the run near four minutes, silently;
+ *  - non-streamed: api.anthropic.com sits behind its own edge proxy, and a
+ *    request that has produced no response bytes after about 100 seconds is
+ *    answered 524 (two recorded, both near two minutes).
+ * So an analysis turn no longer runs inside ANY invocation. It is submitted
+ * to the Message Batches API (one small POST), runs entirely on Anthropic's
+ * side, and the per-minute cron polls for the result (one small GET) and
+ * folds it in when it lands. Usually done in minutes, half the token price,
+ * and no clock in this Worker is anywhere near it.
+ */
+async function submitTurnBatch(env, turn, customId) {
+  const b = await client(env).messages.batches.create({
+    requests: [{ custom_id: customId, params: turn }],
+  });
+  return b.id;
+}
+
+/**
+ * One look at an in-flight batch. Returns { state: 'running' } while it
+ * processes, { state: 'done', message } with the turn's final Message, or
+ * { state: 'failed', why }. A transient transport failure throws; the caller
+ * just looks again next firing.
+ */
+async function pollTurnBatch(env, batchId, customId) {
+  const batch = await client(env).messages.batches.retrieve(batchId);
+  if (batch.processing_status !== 'ended') return { state: 'running' };
+  if (!batch.results_url) return { state: 'failed', why: 'The batch ended without results.' };
+  // The results file is fetched raw rather than through the SDK's streaming
+  // decoder: one request per batch means one small JSONL line.
+  const res = await fetch(batch.results_url, {
+    headers: {
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+  });
+  if (!res.ok) throw new Error(`batch results fetch: ${res.status}`);
+  for (const line of (await res.text()).trim().split('\n')) {
+    let row;
+    try { row = JSON.parse(line); } catch { continue; }
+    if (row.custom_id !== customId) continue;
+    const r = row.result || {};
+    if (r.type === 'succeeded' && r.message) return { state: 'done', message: r.message };
+    const detail = r.error?.error?.message || r.error?.message || r.type || 'failed';
+    return { state: 'failed', why: String(detail).slice(0, 300) };
+  }
+  return { state: 'failed', why: 'The batch result went missing.' };
 }
 
 /**
@@ -2304,16 +2366,59 @@ async function sweepOne(env, t) {
 }
 
 /**
- * Cron backstop: run ONE queued analysis per firing. A scheduled event gets
- * 15 minutes of wall clock, measured from the FIRING and shared with
- * everything else the invocation does; a platform kill at that wall runs no
- * catch and no finally. So the caller hands in deadlineAt, and the run
- * aborts itself before the platform can, which turns an uncatchable death
- * into an ordinary retryable error. Delta passes at medium effort finish in
- * one to three minutes and rarely meet either clock.
+ * One poll of an in-flight batch turn, from the drain. Still processing:
+ * stamp the heartbeat so every liveness judge (the panel, the route gate,
+ * the twin guard, the sweep) sees a live run. Landed: finish it. Failed, or
+ * three hours old: park the error exactly like a turn that died in place
+ * used to, and the sweep's bounded error-retry clock buys the next attempt.
+ */
+async function pollFlight(env, kind, id, rowId, flight) {
+  const started = flight.submittedAt ? new Date(flight.submittedAt).getTime() : 0;
+  let out;
+  try {
+    out = await pollTurnBatch(env, flight.batchId, flight.customId);
+  } catch {
+    out = { state: 'running' }; // transient transport failure: look again next firing
+  }
+  if (out.state === 'running') {
+    if (!started || Date.now() - started < 3 * 3_600_000) {
+      await setState(env, kind, id, { status: 'running', stage: 'thinking', progressAt: new Date() })
+        .catch(() => {});
+      return;
+    }
+    try { await client(env).messages.batches.cancel(flight.batchId); } catch { /* best effort */ }
+    out = { state: 'failed', why: 'The background read took too long and was abandoned. It retries on its own.' };
+  }
+  if (out.state === 'done') {
+    try {
+      await finishAnalysis(env, kind, id, flight, out.message);
+      return;
+    } catch (err) {
+      out = { state: 'failed', why: String(err?.message || err) };
+    }
+  }
+  await diagLog(env, {
+    ev: 'end', ok: false, kind, auto: flight.auto !== false, batch: true,
+    err: String(out.why || 'batch failed').slice(0, 140),
+    ms: started ? Date.now() - started : 0,
+  });
+  await setState(env, kind, id, {
+    status: 'error', error: friendly(new Error(out.why || 'The background read failed.')),
+    batchCtx: null, startedAt: null, progressAt: null, stage: null, mediaPlan: null,
+  }).catch(() => {});
+  await deleteDoc(env, `advisorQueue/${rowId}`).catch(() => {});
+}
+
+/**
+ * Cron backstop: one look at the queue per firing. An analysis turn no
+ * longer runs inside this invocation at all - it is SUBMITTED as a batch
+ * (small POST) and every later firing POLLS it (small GET) until the result
+ * lands, so neither the invocation CPU budget nor any wall clock ever
+ * touches the model turn again. deadlineAt is kept for the draft rescue,
+ * which still carries its (short) turn in place.
  *
- * Returns true when this firing spent a model turn, so scheduled() can keep
- * the voice study out of the same invocation's wall clock.
+ * Returns true when this firing bought a model turn, so scheduled() can keep
+ * the voice study out of the same invocation.
  */
 export async function runQueuedAnalyses(env, deadlineAt = 0) {
   try {
@@ -2374,10 +2479,27 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
         // forever on a paused case, because auto-fire refuses while paused
         // and this purge used to walk straight past it.
         const sp = state.data;
+        // A batch in flight for a case Eric just paused: nobody should pay
+        // for or write an answer he asked to stop. Cancel and clear.
+        if (sp.batchCtx?.batchId) {
+          try { await client(env).messages.batches.cancel(sp.batchCtx.batchId); } catch { /* gone */ }
+          await setState(env, kind, id, {
+            batchCtx: null, status: 'idle', startedAt: null, progressAt: null, stage: null,
+          }).catch(() => {});
+          continue;
+        }
         const pBeat = Math.max(sp.startedAt ? new Date(sp.startedAt).getTime() : 0,
           sp.progressAt ? new Date(sp.progressAt).getTime() : 0);
         if (sp.status === 'running' && (!pBeat || Date.now() - pBeat > 5 * 60_000))
           await setState(env, kind, id, { status: 'idle', startedAt: null, progressAt: null, stage: null }).catch(() => {});
+        continue;
+      }
+      // A batch turn in flight for this case: poll it. One API GET; the
+      // model is running on Anthropic's side, where no invocation clock
+      // exists. Never falls through to the claim below - a flight owns its
+      // case until it lands, fails, or ages out at three hours.
+      if (state?.data.batchCtx?.batchId) {
+        await pollFlight(env, kind, id, row.id, state.data.batchCtx);
         continue;
       }
       // Someone (the panel) is already mid-run: leave it alone while it is
@@ -2638,6 +2760,12 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       pre?.data.startedAt ? new Date(pre.data.startedAt).getTime() : 0,
       pre?.data.progressAt ? new Date(pre.data.progressAt).getTime() : 0);
     if (pre?.data.status === 'running' && preBeat && Date.now() - preBeat < 45_000) return;
+    // A batch turn already in flight owns this case: a second submit would
+    // orphan the first and pay twice for one update. The poll abandons a
+    // flight at three hours, and this guard expires with it.
+    const flight = pre?.data.batchCtx;
+    if (flight?.batchId
+      && Date.now() - new Date(flight.submittedAt || 0).getTime() < 3 * 3_600_000) return;
     const runT0 = Date.now();
     await diagLog(env, { ev: 'start', kind, auto, skipMedia, hasDeadline: !!deadlineAt });
     await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date(), stage: 'starting' });
@@ -2761,19 +2889,16 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       || qaOverrides !== (p.qaOverrideCount || 0)        // a Q&A override was filed since
       || (p.passesSinceFull || 0) >= FULL_PASS_EVERY     // periodic drift corrector
       || String(prior || '').length > COMPACT_AT_CHARS   // assessment outgrew the budget: consolidate
+      || p.fullDue === true                              // a deep read owed from the pre-batch era
       || omitted === 0;                                  // the delta IS the whole window
-    // THE GUILLOTINE (measured live, 2026-08-24): a cron-carried invocation is
-    // killed, uncatchably, about 4 minutes 20 seconds after its firing, no
-    // matter how the work is structured. Five recorded deaths on that exact
-    // curve, awaited and waitUntil-parked alike, event-heavy and event-silent
-    // alike. So the BACKGROUND never runs a pass that cannot finish in about
-    // three minutes: only a first analysis goes full back there; every other
-    // full trigger runs as a delta now and flags fullDue so a foreground run
-    // (a tap, a held-open panel, where the wall does not exist) does the deep
-    // read. A backlog too big for one delta is walked in CHUNKS, oldest
-    // first, the through-stamp advancing with each completed chunk.
-    const full = auto ? (!prior || !throughMs) : fullReasons;
-    const fullDue = auto && fullReasons && !full;
+    // The guillotine era is over: the turn runs on Anthropic's side via the
+    // Batches API, so no invocation clock applies and the background can run
+    // a full read again. Deltas stay the routine pass because they are
+    // cheaper and hold the assessment steadier; a backlog too big for one
+    // delta is still walked in CHUNKS, oldest first, the through-stamp
+    // advancing with each completed chunk.
+    const full = fullReasons;
+    const fullDue = false;
     const passType = full ? 'full' : 'delta';
     let catchup = false;
     if (passType === 'delta' && auto && fresh.length > 60) {
@@ -2794,8 +2919,9 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
           : 'medium';
     const passTokens = !auto
       ? (passType === 'full' ? 64000 : 48000)
-      : media.blocks.length ? 40000
-        : 32000;
+      : passType === 'full' ? 48000
+        : media.blocks.length ? 40000
+          : 32000;
     // The prior, capped. The chart note and Ruled out are never truncated
     // (their loss is unrecoverable without a beginning-to-end re-read); if
     // the whole prior is over the hard cap, keep those two sections whole
@@ -2812,19 +2938,12 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     // knew about taps made in that same browser session, and froze otherwise).
     await setState(env, kind, id, { mediaPlan: media.included.slice(0, 40) }).catch(() => {});
 
-    const analysis = await ask(env, {
+    // The turn does NOT run here. It is submitted to the Batches API and the
+    // cron's poll folds the result in when it lands; see submitTurnBatch for
+    // why nothing longer than a poll can live inside a Worker invocation.
+    const turn = turnRequest({
       effort: passEffort,
       maxTokens: passTokens,
-      deadlineAt,
-      // Background turns never stream: stream processing is what spent the
-      // invocation's CPU budget and killed them (measured 2026-08-24).
-      noStream: auto === true,
-      // "reading files" holds until the first token: with url sources the
-      // fetching happens on the API's side of the wire, before any event.
-      initialStage: media.blocks.length ? 'reading files' : 'sending',
-      onBeat: (stage) => setState(env, kind, id, {
-        progressAt: new Date(), ...(stage ? { stage } : {}),
-      }).catch(() => {}),
       system: [{ type: 'text', text: `${VOICE}
 
 Write Eric's working assessment of this client. He reads it on a phone beside
@@ -3040,136 +3159,40 @@ ${style.voice}` : ''}` || ' ' }],
       }],
     });
 
-    // Each machine-read section is pulled out and stripped in turn, so none of
-    // it reaches the assessment Eric actually reads.
-    const cover = harvestWorkingLine(await harvestKeyTerms(env, analysis));
-    const dx = harvestDifferential(cover.text, state?.data.differential);
-    const un = harvestUnanswered(dx.text, state?.data.unanswered);
-    const corr = harvestCorrections(un.text, rows, state?.data.corrections);
-    // Stamps for the shelf badges. A differential that came back identical is
-    // not news, so its stamp holds rather than moving; a badge that lights on
-    // every pass is a badge he stops reading. fileAt moves when this pass
-    // actually read something new, which is the moment the Uploads page has
-    // something in it he has not seen.
-    const now = new Date();
-    const moved = !sameDifferential(state?.data.differential, dx.differential);
-    const diffAt = moved ? now : (state?.data.diffAt || null);
-    const fileAt = media.included.length ? now : (state?.data.fileAt || null);
-    // Movement history: a slim snapshot per pass that changed the list, so the
-    // panel can say "up from 45%" instead of making Eric remember. Name and
-    // number only (~150 bytes a row); a renamed differential paints once as
-    // new plus gone, which is acceptable.
-    const prevHistory = Array.isArray(state?.data.diffHistory) ? state.data.diffHistory : [];
-    const diffHistory = moved && dx.differential.length
-      ? [{ at: now, rows: dx.differential.map((r) => ({ name: r.name, pct: r.pct })) }, ...prevHistory].slice(0, 12)
-      : prevHistory;
-    // Fold "unchanged" stubs back in BEFORE judging length: a legitimate
-    // delta that stubbed both cumulative sections is short by design.
-    const finalText = passType === 'delta'
-      ? spliceUnchanged(corr.text, prior, ['What we know so far', 'Ruled out'])
-      : corr.text;
-    // A delta reply that came back at half the prior's size lost sections,
-    // and saving it would destroy them permanently (the assessment is its own
-    // memory). Discard it and force the retry to be a full read.
-    if (passType === 'delta' && prior && finalText.length < String(prior).length * 0.5) {
-      await setState(env, kind, id, { forceFull: true }).catch(() => {});
-      throw new Error('The update pass came back too short and was discarded. A full read runs next.');
-    }
+    const customId = `${kind}-${String(id).slice(0, 40)}-${runT0}`;
+    const batchId = await submitTurnBatch(env, turn, customId);
+    // Everything the finish needs that cannot be recomputed when the result
+    // lands. The thread keeps moving while the batch runs, so the stamps are
+    // pinned to what THIS turn was actually shown: a message that arrives
+    // mid-flight stays past the through-stamp and the finish re-queues it.
     await setState(env, kind, id, {
-      diffAt, fileAt, diffHistory,
-      // What this pass folded in, so the next auto fire can tell "new
-      // messages" from "the pending flag was noise" and skip the spend. A
-      // catch-up chunk stamps only through ITS OWN last message, so the
-      // backlog behind it stays owed and the next pass takes the next chunk.
-      analyzedThroughTs: (() => {
-        if (passType === 'delta' && catchup && fresh.length) {
+      stage: 'thinking', progressAt: new Date(),
+      batchCtx: {
+        batchId, customId, submittedAt: new Date(),
+        passType, catchup, newerLeft, freshMsgs: fresh.length,
+        effort: passEffort, auto, skipMedia,
+        newestTs: newestTs ? new Date(newestTs) : null,
+        chunkThroughTs: (() => {
+          if (!(passType === 'delta' && catchup && fresh.length)) return null;
           const ts = fresh[fresh.length - 1].data.ts;
-          const t = ts ? new Date(ts.toDate ? ts.toDate() : ts) : null;
-          if (t) return t;
-        }
-        return newestTs ? new Date(newestTs) : null;
-      })(),
-      qaSig: catchup ? (p.qaSig || '') : qaSig,
-      // A deep read is owed (a full trigger fired in the background, where
-      // full passes cannot survive); the next foreground run does it.
-      fullDue: fullDue ? true : (passType === 'full' ? null : (p.fullDue || null)),
-      // Delta bookkeeping: what kind of pass this was, how many deltas since
-      // the last full read, and the signatures whose change forces one.
-      lastPassType: passType,
-      passesSinceFull: passType === 'full' ? 0 : (Number(p.passesSinceFull) || 0) + 1,
-      lastFullAt: passType === 'full' ? now : (p.lastFullAt ? new Date(p.lastFullAt) : null),
-      dxOverrideSig: dxSig,
-      qaOverrideCount: qaOverrides,
-      dismissedSig: corr.corrections.filter((c) => c.dismissed).map((c) => c.msgId).sort().join(','),
-      forceFull: null,
-      errorRetries: null, errorRetryAt: null,
-      analysis: finalText, status: 'idle', error: null, updatedAt: new Date(),
-      pendingAt: null, startedAt: null, progressAt: null, stage: null, mediaPlan: null,
-      // A pass that lost the working line keeps the stored one: blanking the
-      // folder cover over a formatting slip reads as the case going backwards.
-      workingDx: cover.workingDx || p.workingDx || '',
-      differential: dx.differential,
-      // What he asked for and never got. Its own list, because "What's
-      // missing" is about the picture and this is about the conversation.
-      unanswered: un.unanswered,
-      corrections: corr.corrections,
-      // What this pass did with every file it was handed. The panel prints it
-      // verbatim, so "did he see my photos" has an answer on screen instead of
-      // being something Eric has to infer from whether the assessment mentions
-      // them.
-      readFiles: [...alreadyRead, ...media.readKeys].slice(-MAX_READ_MEMORY),
-      pendingMedia: media.carry,
-      mediaReport: {
-        read: media.included,
-        known: media.known,
-        queued: media.queued,
-        unreadable: media.skipped,
-        deferred: media.deferred || [],
-        at: new Date(),
+          return ts ? new Date(ts.toDate ? ts.toDate() : ts) : null;
+        })(),
+        qaSig, dxSig, qaOverrides,
+        media: {
+          included: media.included, known: media.known, queued: media.queued,
+          skipped: media.skipped, deferred: media.deferred || [],
+          readKeys: media.readKeys, carry: media.carry,
+        },
       },
     });
-    // Mirror the cover so the dashboard shelf paints every folder from one
-    // read instead of a request per case. It lands on caseMeta, which is
-    // Worker-only by rule, NOT on the case doc: a case doc is client-readable,
-    // and a working diagnosis is Eric's private material, never something a
-    // patient should find on their own record. Eric's override always wins.
-    if (kind === 'case') {
-      const raw = state?.data.dxOverride;
-      const override = typeof raw === 'string' ? raw.trim() : '';
-      // The shelf needs to know what changed, not just what it says, or every
-      // folder on the dashboard would need its own advisor-state read to paint
-      // a badge. These four stamps are all it takes, and they ride the mirror
-      // that was already happening for the cover.
-      await patchDoc(env, `caseMeta/${id}`, {
-        workingDx: {
-          text: override || cover.workingDx || p.workingDx || '',
-          by: override ? 'eric' : 'advisor',
-          at: now,
-        },
-        advisorAt: now,
-        diffAt,
-        fileAt,
-        draftAt: state?.data.draftStatus === 'ready' ? (state?.data.draftAt || now) : null,
-      }, { mask: ['workingDx', 'advisorAt', 'diffAt', 'fileAt', 'draftAt'] })
-        .catch((err) => console.warn('caseMeta mirror:', err.message || err));
-    }
-    await deleteDoc(env, queuePath(kind, id));
-    // Files left over means the job is not finished. Re-queue so the cron
-    // picks up the next batch on its own, rather than waiting for Eric to
-    // notice and tap Analyze again. force, because updatedAt is seconds old
-    // here: without it the twelve minute floor swallowed this re-queue every
-    // single time, and the follow-up pass only ever ran while his panel
-    // happened to be open. That is how "Files: 1 of 3 read" froze overnight.
-    if (media.carry.length || (catchup && newerLeft > 0))
-      await markPending(env, kind, id, { force: true }).catch(() => {});
+    // The queue row is the poll's to-do entry, so it must survive the flight.
+    // kind and id ride a MASKED write: a full write here once reset tries,
+    // and a row that vanished meanwhile comes back valid this way.
+    await patchDoc(env, queuePath(kind, id), { kind, id }, { mask: ['kind', 'id'] }).catch(() => {});
     await diagLog(env, {
-      ev: 'end', ok: true, kind, passType, effort: passEffort, auto,
+      ev: 'batch-submit', kind, passType, effort: passEffort, auto,
       ms: Date.now() - runT0, freshMsgs: fresh.length, files: media.included.length,
     });
-    // The stale-profile top-up that used to hang off an analysis is gone. The
-    // nightly voice study covers it, from every thread rather than this one,
-    // and two schedules writing the same profile is how it gets rebuilt twice
-    // in an evening for no gain.
   } catch (err) {
     console.error('advisor analysis:', err.stack || err);
     await diagLog(env, {
@@ -3205,6 +3228,139 @@ ${style.voice}` : ''}` || ' ' }],
       }
     }
   }
+}
+
+/**
+ * The second half of an analysis: the batch landed, fold the turn's answer
+ * into the case. Everything volatile was pinned in batchCtx at submit time;
+ * the state and the thread are re-read fresh, because the harvest priors and
+ * the correction id check only get better with newer data, and the analysis
+ * text itself cannot have moved (a flight owns its case; see the guard in
+ * runAnalysis). Throws land in pollFlight's failure path, which parks the
+ * error on the sweep's slow retry clock.
+ */
+async function finishAnalysis(env, kind, id, ctx, message) {
+  const analysis = extractText(message);
+  const [rows, state] = await Promise.all([
+    recentMessages(env, kind, id),
+    getDoc(env, statePath(kind, id)),
+  ]);
+  const p = state?.data || {};
+  const prior = p.analysis;
+  const alreadyRead = Array.isArray(p.readFiles) ? p.readFiles : [];
+  const m = ctx.media || {};
+  const passType = ctx.passType || 'full';
+  const submittedMs = ctx.submittedAt ? new Date(ctx.submittedAt).getTime() : 0;
+  // Each machine-read section is pulled out and stripped in turn, so none of
+  // it reaches the assessment Eric actually reads.
+  const cover = harvestWorkingLine(await harvestKeyTerms(env, analysis));
+  const dx = harvestDifferential(cover.text, p.differential);
+  const un = harvestUnanswered(dx.text, p.unanswered);
+  const corr = harvestCorrections(un.text, rows, p.corrections);
+  // Stamps for the shelf badges. A differential that came back identical is
+  // not news, so its stamp holds rather than moving; a badge that lights on
+  // every pass is a badge he stops reading. fileAt moves when this pass
+  // actually read something new.
+  const now = new Date();
+  const moved = !sameDifferential(p.differential, dx.differential);
+  const diffAt = moved ? now : (p.diffAt || null);
+  const fileAt = (m.included || []).length ? now : (p.fileAt || null);
+  // Movement history: a slim snapshot per pass that changed the list, so the
+  // panel can say "up from 45%" instead of making Eric remember.
+  const prevHistory = Array.isArray(p.diffHistory) ? p.diffHistory : [];
+  const diffHistory = moved && dx.differential.length
+    ? [{ at: now, rows: dx.differential.map((r) => ({ name: r.name, pct: r.pct })) }, ...prevHistory].slice(0, 12)
+    : prevHistory;
+  // Fold "unchanged" stubs back in BEFORE judging length: a legitimate delta
+  // that stubbed both cumulative sections is short by design.
+  const finalText = passType === 'delta'
+    ? spliceUnchanged(corr.text, prior, ['What we know so far', 'Ruled out'])
+    : corr.text;
+  // A delta reply that came back at half the prior's size lost sections, and
+  // saving it would destroy them permanently (the assessment is its own
+  // memory). Discard it and force the retry to be a full read. pollFlight's
+  // failure path clears batchCtx and parks the error.
+  if (passType === 'delta' && prior && finalText.length < String(prior).length * 0.5) {
+    await setState(env, kind, id, { forceFull: true }).catch(() => {});
+    throw new Error('The update pass came back too short and was discarded. A full read runs next.');
+  }
+  await setState(env, kind, id, {
+    diffAt, fileAt, diffHistory,
+    // What this turn folded in. A catch-up chunk stamps only through ITS OWN
+    // last message, so the backlog behind it stays owed and the next pass
+    // takes the next chunk.
+    analyzedThroughTs: (passType === 'delta' && ctx.catchup && ctx.chunkThroughTs)
+      ? new Date(ctx.chunkThroughTs)
+      : (ctx.newestTs ? new Date(ctx.newestTs) : null),
+    qaSig: ctx.catchup ? (p.qaSig || '') : (ctx.qaSig || ''),
+    fullDue: passType === 'full' ? null : (p.fullDue || null),
+    lastPassType: passType,
+    passesSinceFull: passType === 'full' ? 0 : (Number(p.passesSinceFull) || 0) + 1,
+    lastFullAt: passType === 'full' ? now : (p.lastFullAt ? new Date(p.lastFullAt) : null),
+    dxOverrideSig: ctx.dxSig || '',
+    qaOverrideCount: ctx.qaOverrides || 0,
+    dismissedSig: corr.corrections.filter((c) => c.dismissed).map((c) => c.msgId).sort().join(','),
+    forceFull: null,
+    errorRetries: null, errorRetryAt: null,
+    batchCtx: null,
+    analysis: finalText, status: 'idle', error: null, updatedAt: new Date(),
+    pendingAt: null, startedAt: null, progressAt: null, stage: null, mediaPlan: null,
+    // A pass that lost the working line keeps the stored one: blanking the
+    // folder cover over a formatting slip reads as the case going backwards.
+    workingDx: cover.workingDx || p.workingDx || '',
+    differential: dx.differential,
+    unanswered: un.unanswered,
+    corrections: corr.corrections,
+    readFiles: [...alreadyRead, ...(m.readKeys || [])].slice(-MAX_READ_MEMORY),
+    pendingMedia: m.carry || [],
+    mediaReport: {
+      read: m.included || [],
+      known: m.known || [],
+      queued: m.queued || [],
+      unreadable: m.skipped || [],
+      deferred: m.deferred || [],
+      at: new Date(),
+    },
+  });
+  // Mirror the cover so the dashboard shelf paints every folder from one
+  // read. It lands on caseMeta, which is Worker-only by rule, NOT on the
+  // client-readable case doc: a working diagnosis is Eric's private
+  // material, never something a patient should find on their own record.
+  if (kind === 'case') {
+    const raw = p.dxOverride;
+    const override = typeof raw === 'string' ? raw.trim() : '';
+    await patchDoc(env, `caseMeta/${id}`, {
+      workingDx: {
+        text: override || cover.workingDx || p.workingDx || '',
+        by: override ? 'eric' : 'advisor',
+        at: now,
+      },
+      advisorAt: now,
+      diffAt,
+      fileAt,
+      draftAt: p.draftStatus === 'ready' ? (p.draftAt || now) : null,
+    }, { mask: ['workingDx', 'advisorAt', 'diffAt', 'fileAt', 'draftAt'] })
+      .catch((err) => console.warn('caseMeta mirror:', err.message || err));
+  }
+  await deleteDoc(env, queuePath(kind, id)).catch(() => {});
+  // Unfinished business re-queues itself: files this turn could not fit, the
+  // rest of a catch-up backlog, and anything that arrived while the batch was
+  // in flight (the through-stamp is pinned to submit time, so a mid-flight
+  // message is past it and still owed a pass). force, because updatedAt is
+  // seconds old here and the floor would swallow the row.
+  const newestNow = rows.reduce((acc, r) => {
+    const ts = r.data.ts;
+    const t = ts ? new Date(ts.toDate ? ts.toDate() : ts).getTime() : 0;
+    return Number.isFinite(t) && t > acc ? t : acc;
+  }, 0);
+  const behind = ctx.newestTs && newestNow > new Date(ctx.newestTs).getTime();
+  if ((m.carry || []).length || (ctx.catchup && ctx.newerLeft > 0) || behind)
+    await markPending(env, kind, id, { force: true }).catch(() => {});
+  await diagLog(env, {
+    ev: 'end', ok: true, kind, passType, effort: ctx.effort, auto: ctx.auto !== false,
+    batch: true, ms: submittedMs ? Date.now() - submittedMs : 0,
+    freshMsgs: ctx.freshMsgs || 0, files: (m.included || []).length,
+  });
 }
 
 /**
