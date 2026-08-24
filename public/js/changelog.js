@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.25';
+export const VERSION = '2.30';
 
 /**
  * Newest first.
@@ -51,6 +51,42 @@ export const VERSION = '2.25';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // Empty, and this one is worth saying why. The booking page changed for
+    // anyone who visits it: the books are shut for two weeks. But this card
+    // is shown to people who ALREADY have a case, and for them nothing
+    // changed at all - the closure says so out loud on the page itself.
+    // Telling an existing client "I have stopped taking clients" reads as bad
+    // news about their case, and it is not news about their case.
+    version: '2.30',
+    quiet: true,
+    client: [],
+  },
+  {
+    // Empty on purpose, and not because nothing changed for clients: the
+    // Full Access upgrade card gained the scope note it always promised. That
+    // card is part of a tier that is not live yet, so announcing the note now
+    // would describe a screen no client has. The whole tier's client notes get
+    // written in one go on the release that turns it on.
+    version: '2.29',
+    quiet: true,
+    client: [],
+  },
+  {
+    version: '2.28',
+    quiet: true,
+    client: [],
+  },
+  {
+    version: '2.27',
+    quiet: true,
+    client: [],
+  },
+  {
+    version: '2.26',
+    quiet: true,
+    client: [],
+  },
   {
     version: '2.25',
     quiet: true,

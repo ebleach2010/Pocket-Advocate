@@ -15,7 +15,12 @@
 // No imports, deliberately: the suite has to open even on a day Firebase or
 // the app itself cannot. (See the header of store.js for the other traps.)
 
+// Four doors, three suites. The client side has two because the tier added a
+// second thing worth seeing: a standard case (which offers the upgrade) and a
+// Full Access case (which carries the authorisations).
+const BOOKING = '/book.html?demo=1';
 const CLIENT = '/case.html?demo=1&tour=1';
+const CLIENT_FULL = '/case.html?demo=1&id=demo-case-full';
 const ADMIN = '/admin.html?demo=admin&tour=1';
 
 export function mount(page) {
@@ -23,12 +28,19 @@ export function mount(page) {
   box.style.marginTop = '1rem';
   box.innerHTML = `
     <p class="muted small" style="margin:0 0 .4rem;">Test suite — no email needed:</p>
+    <p style="display:flex; gap:.5rem; flex-wrap:wrap; margin:0 0 .4rem;">
+      <button type="button" class="btn glow" data-suite-book>Booking suite</button>
+      <button type="button" class="btn" data-suite-client>Client suite</button>
+      <button type="button" class="btn quiet" data-suite-admin>Advocate suite</button>
+    </p>
     <p style="display:flex; gap:.5rem; flex-wrap:wrap; margin:0;">
-      <button type="button" class="btn glow" data-suite-client>Client suite</button>
-      <button type="button" class="btn quiet" data-suite-admin>Admin suite</button>
+      <button type="button" class="btn quiet" data-suite-full>Client suite, Full Access case</button>
     </p>`;
-  box.querySelector('[data-suite-client]').addEventListener('click', () => { location.href = CLIENT; });
-  box.querySelector('[data-suite-admin]').addEventListener('click', () => { location.href = ADMIN; });
+  const go = (sel, to) => box.querySelector(sel)?.addEventListener('click', () => { location.href = to; });
+  go('[data-suite-book]', BOOKING);
+  go('[data-suite-client]', CLIENT);
+  go('[data-suite-full]', CLIENT_FULL);
+  go('[data-suite-admin]', ADMIN);
   const anchor = page === 'signin'
     ? document.getElementById('email-form')
     : document.getElementById('step');
@@ -37,9 +49,10 @@ export function mount(page) {
 
   if (page !== 'signin') return;
 
-  // The typed codes: 1234 is the client side, 2345 the advocate side, in
-  // either box. Capture phase, so a code never reaches the sign-in handlers.
-  const CODES = { 1234: CLIENT, 2345: ADMIN };
+  // The typed codes: 1234 the client side, 2345 the advocate side, 3456 the
+  // booking walk, 4567 the Full Access case. Either box. Capture phase, so a
+  // code never reaches the sign-in handlers.
+  const CODES = { 1234: CLIENT, 2345: ADMIN, 3456: BOOKING, 4567: CLIENT_FULL };
   const typed = () => {
     for (const id of ['email', 'pin']) {
       const el = document.getElementById(id);

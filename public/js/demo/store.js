@@ -520,7 +520,12 @@ export function mountDemo(role) {
   // `fire` rides along so an api-route write to a message (a reaction, a
   // lane stamp) repaints the open chat the way a real Firestore write would,
   // instead of waiting for the next unrelated write to shake the snapshot.
-  demoApi(role, { docs, files, reset, fire });
+  // `persist` too, because a route that writes straight into `docs` (the work
+  // clock does) was only changing the in-memory copy: the next page load read
+  // the seed back and the change vanished. Harmless for a reaction on a
+  // message, wrong for a clock, whose whole behaviour is about what survives
+  // walking from one page to another.
+  demoApi(role, { docs, files, reset, fire, persist });
   import('./banner.js').then((m) => {
     if (document.body) m.mountBanner(role);
     else document.addEventListener('DOMContentLoaded', () => m.mountBanner(role));

@@ -22,11 +22,16 @@ export function rates() {
  * fallback and is already correct at deploy time, so a failed fetch or a slow
  * one shows a real price rather than a blank or a spinner.
  *
- *   <span data-rate="case">$265</span>
- *   <span data-rate="addon">$75</span>
- *   <span data-rate="sub">$50</span>
+ *   <span data-rate="case">$650</span>
+ *   <span data-rate="addon">$175</span>
+ *   <span data-rate="sub">$95</span>
+ *   <span data-rate="full">$3500</span>
  *
  * `data-rate-fmt="bare"` drops the dollar sign, for a spot that supplies its own.
+ *
+ * Every key a page can use has to appear in the map below. The case price is
+ * the `??` fallback, so an unlisted key does not fail loudly: it quietly
+ * paints the wrong number, which is the worse kind of wrong.
  */
 export async function paintRates(root = document) {
   const spots = root.querySelectorAll('[data-rate]');
@@ -34,7 +39,7 @@ export async function paintRates(root = document) {
   const r = await rates();
   if (!r) return;
   for (const el of spots) {
-    const cents = { addon: r.addonCents, sub: r.subCents }[el.dataset.rate] ?? r.caseCents;
+    const cents = { addon: r.addonCents, sub: r.subCents, full: r.fullCents }[el.dataset.rate] ?? r.caseCents;
     if (!(Number(cents) > 0)) continue;
     const text = el.dataset.rateFmt === 'bare' ? money(cents) : `$${money(cents)}`;
     if (el.textContent !== text) el.textContent = text;

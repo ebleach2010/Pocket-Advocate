@@ -63,16 +63,7 @@ function openPanel(user, isAdmin = false) {
             <span class="scheme-blurb dim small">${x.blurb}</span>
           </button>`).join('')}
       </div>
-      ${isAdmin ? `
-      <div class="toggle-row" style="margin-top:1rem;">
-        <span><strong>Open to my dashboard</strong><br><span class="dim small">This device skips the booking page and lands on Admin. Turn off to test the client view.</span></span>
-        <button class="switch ${localStorage.getItem('pa-open-admin') !== '0' ? 'on' : ''}" data-open-admin
-          aria-pressed="${localStorage.getItem('pa-open-admin') !== '0'}" aria-label="Open to my dashboard"></button>
-      </div>
-      <div class="toggle-row" style="margin-top:1rem;">
-        <span><strong>Deep read</strong><br><span class="dim small">The advisor thinks harder on every Update. Better on a knotty case, several minutes slower. Off is the normal setting.</span></span>
-        <button class="switch" data-effort aria-pressed="false" aria-label="Deep read" disabled></button>
-      </div>` : ''}
+      ${isAdmin ? '<div data-admin-rows></div>' : ''}
     </div>`;
   document.body.appendChild(overlay);
 
@@ -120,49 +111,16 @@ function openPanel(user, isAdmin = false) {
       });
     }));
 
-  // The advisor's effort switch. Server-stored, so it follows him between
-  // devices; painted from the server rather than assumed, and only enabled
-  // once the real answer is in, so it can never show a state it is not in.
-  const effortBtn = overlay.querySelector('[data-effort]');
-  if (effortBtn) {
-    const paint = (on) => {
-      effortBtn.classList.toggle('on', on);
-      effortBtn.setAttribute('aria-pressed', String(on));
-      effortBtn.disabled = false;
-    };
-    (async () => {
-      try {
-        const token = await user.getIdToken();
-        const res = await fetch('/api/admin/effort', { headers: { authorization: `Bearer ${token}` } });
-        if (res.ok) paint((await res.json()).effort === 'max');
-      } catch { /* leave it disabled rather than lying about the state */ }
-    })();
-    effortBtn.addEventListener('click', async () => {
-      const want = !effortBtn.classList.contains('on');
-      effortBtn.disabled = true;
-      try {
-        const token = await user.getIdToken();
-        const res = await fetch('/api/admin/effort', {
-          method: 'POST',
-          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ effort: want ? 'max' : 'high' }),
-        });
-        const out = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(out.error || 'Failed');
-        paint(out.effort === 'max');
-      } catch {
-        paint(!want); // put the switch back where it was
-      }
-    });
+  // The advocate's own rows come from a module a client is never served. A
+  // dynamic import, so the request only happens for him: this file is public,
+  // and even the NAMES of his tools are his business, not everyone's.
+  const adminRows = overlay.querySelector('[data-admin-rows]');
+  if (adminRows) {
+    import('./admin-settings.js').then((m) => {
+      adminRows.innerHTML = m.adminSettingsHtml();
+      m.wireAdminSettings(overlay, user);
+    }).catch(() => { /* his switches are missing; the client half still works */ });
   }
-
-  overlay.querySelector('[data-open-admin]')?.addEventListener('click', (e) => {
-    const btn = e.currentTarget;
-    const on = !btn.classList.contains('on');
-    localStorage.setItem('pa-open-admin', on ? '1' : '0');
-    btn.classList.toggle('on', on);
-    btn.setAttribute('aria-pressed', String(on));
-  });
 
   const notifBtn = overlay.querySelector('[data-notif]');
   notifBtn.addEventListener('click', async () => {

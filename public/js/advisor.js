@@ -724,6 +724,15 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           // The Chat tab's dot reads this. It was never sent, so the one dot
           // that says "they wrote back" never lit inside a case.
           clientMsgAt: out.state?.clientMsgAt || null,
+          // The appeal workbench rides this poll too, for the same reason
+          // Education and About-you do: one place talks to the state route.
+          // This detail object is a WHITELIST, so a field that is not named
+          // here simply never reaches the page that needs it.
+          appeal: out.state?.appeal || '',
+          appealStatus: out.state?.appealStatus || null,
+          appealAt: out.state?.appealAt || null,
+          appealError: out.state?.appealError || '',
+          appealMeta: out.state?.appealMeta || null,
         };
         renderDiff(detail);
         renderRead(out.mediaReport, out.queuedFiles, d.running, out.state?.mediaPlan || []);

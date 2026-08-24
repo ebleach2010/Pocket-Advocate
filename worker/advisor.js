@@ -2222,6 +2222,10 @@ const queuePath = (kind, id) => `advisorQueue/${kind}_${id}`;
 // stopped." The request itself is saved on state (draftReq) so the cron can
 // re-run it verbatim.
 const draftQueuePath = (kind, id) => `advisorQueue/draft_${kind}_${id}`;
+// An appeal letter in flight, under its own marker for the same reason: a
+// screen lock must not lose a document that is being written against a legal
+// deadline.
+const appealQueuePath = (kind, id) => `advisorQueue/appeal_${kind}_${id}`;
 
 async function setState(env, kind, id, fields) {
   await patchDoc(env, statePath(kind, id), fields, { mask: Object.keys(fields) });
@@ -2447,6 +2451,32 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
       // A draft marker: rescue a draft whose connection died mid-run. It
       // ignores paused (the draft was an explicit request, not automation)
       // and counts as this firing's one model job.
+      // An appeal letter whose run died. Same rescue as a draft, and it
+      // matters more: this one is written against a filing deadline.
+      if (row.data.appeal) {
+        const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+        const req = st?.data.appealReq;
+        if (st?.data.appealStatus !== 'running' || !req) {
+          await deleteDoc(env, `advisorQueue/${row.id}`);
+          continue;
+        }
+        const as = st.data.appealStartedAt ? new Date(st.data.appealStartedAt).getTime() : 0;
+        const aBeat = Math.max(as, st.data.appealProgressAt ? new Date(st.data.appealProgressAt).getTime() : 0);
+        if (aBeat && Date.now() - aBeat < 5 * 60_000
+          && (!as || Date.now() - as < 20 * 60_000)) continue;
+        const tries = Number(row.data.tries || 0) + 1;
+        if (tries > 2) {
+          await setState(env, kind, id, {
+            appealStatus: 'error', appealReq: null,
+            appealError: 'The letter kept getting interrupted. Open the appeal and try again.',
+          }).catch(() => {});
+          await deleteDoc(env, `advisorQueue/${row.id}`);
+          continue;
+        }
+        await patchDoc(env, `advisorQueue/${row.id}`, { tries }, { mask: ['tries'] }).catch(() => {});
+        await runAppeal(env, kind, id, req.appeal || {}, !!req.revise, req.base || '', true);
+        return true; // one model job per firing
+      }
       if (row.data.draft) {
         const st = await getDoc(env, statePath(kind, id)).catch(() => null);
         const req = st?.data.draftReq;
@@ -2656,12 +2686,18 @@ async function loadEconomics(env, kind, id) {
   if (kind !== 'case') {
     return { sub: true, paidCents: 0, tipCents: 0, seconds: 0 };
   }
-  const [doc, meta] = await Promise.all([
+  const [doc, meta, rates] = await Promise.all([
     getDoc(env, `cases/${id}`).catch(() => null),
     getDoc(env, `caseMeta/${id}`).catch(() => null),
+    // Eric's own margin floor, so the advisor can tell him a case has crossed
+    // from thorough into unpaid while he can still act on it.
+    getDoc(env, 'config/rates').catch(() => null),
   ]);
   const c = doc?.data || {};
-  let paidCents = Number(c.payment?.amountTotal) || Number(c.stripe?.amountTotal)
+  // A Full Access case paid its own price, which already covers the standard
+  // case; caseRateCents on one of those is only the percentage-charge base.
+  let paidCents = (c.fullAccess && Number(c.fullAccessRateCents) > 0 ? Number(c.fullAccessRateCents) : 0)
+    || Number(c.payment?.amountTotal) || Number(c.stripe?.amountTotal)
     || Number(c.caseRateCents) || 0;
   let tipCents = 0;
   for (const p of (Array.isArray(c.extraPayments) ? c.extraPayments : [])) {
@@ -2684,6 +2720,7 @@ async function loadEconomics(env, kind, id) {
     tipCents,
     seconds: clocked || Math.max(0, Number(meta?.data.chatSeconds) || 0),
     metered: clocked > 0,
+    floorCents: Number(rates?.data.floorCents) > 0 ? Number(rates.data.floorCents) : 7500,
   };
 }
 
@@ -2699,14 +2736,21 @@ function economicsNote(econ) {
   // Numbers only. The persuasion lives in the "For you" instruction, and a
   // rhetorical flourish in a data block is exactly what a model paraphrases
   // into a sentence the guardrail then has to catch.
-  const rate = hours >= 0.5 && econ.paidCents
-    ? ` That is about ${dollars(econ.paidCents / hours)} an hour so far.`
+  const hourly = hours >= 0.5 && econ.paidCents ? econ.paidCents / hours : 0;
+  const rate = hourly
+    ? ` That is about ${dollars(hourly)} an hour so far.`
+    : '';
+  // The floor is his own figure, set from his dashboard. Stated as a fact
+  // and nothing more, same rule as everything else in this block: the
+  // judgement about what to DO belongs to the "For you" instruction.
+  const under = hourly && econ.floorCents && hourly < econ.floorCents
+    ? ` His floor is ${dollars(econ.floorCents)} an hour, so this case is now under it.`
     : '';
   return `
 
 What this case has paid, and what it has cost him so far: ${dollars(econ.paidCents)} paid${
     econ.tipCents ? ` plus ${dollars(econ.tipCents)} in tips` : ''
-  }, against ${spent} of work.${rate} ${econ.metered
+  }, against ${spent} of work.${rate}${under} ${econ.metered
     ? 'That is time he clocked himself, so it is the real figure, and his client can see it too.'
     : 'That figure counts only the minutes his chat page was open, so his real hours are higher than it says.'}`;
 }
@@ -3680,5 +3724,160 @@ anything in the learned profile that follows.`, cache: true },
       draftStatus: 'error', draftError: friendly(err), draftReq: null,
     }).catch(() => {});
     await deleteDoc(env, draftQueuePath(kind, id)).catch(() => {});
+  }
+}
+
+/**
+ * Write an insurance appeal letter.
+ *
+ * A deliberate sibling of runDraft rather than a branch inside it: they share
+ * a shape but almost nothing else. A draft is a short message to a frightened
+ * person and must never read as clinical. An appeal is a formal document to a
+ * plan's medical reviewer, is meant to read as clinical, cites the plan's own
+ * policy back at it, and is filed against a legal deadline. One prompt trying
+ * to be both would be worse at each.
+ *
+ * The letter goes OUT under Eric's name through the insurer's own portal, fax
+ * or certified mail, so nothing here sends anything. Approval is a state
+ * write; the sending is his, which is also what keeps proof of timely filing
+ * in his hands.
+ */
+export async function runAppeal(env, kind, id, appeal, revise = false, base = '', noStream = false) {
+  try {
+    await setState(env, kind, id, {
+      appealStatus: 'running', appealError: null,
+      appealStartedAt: new Date(), appealProgressAt: null,
+      appealReq: { appeal: appeal || {}, revise: !!revise, base: base || '', at: new Date() },
+    });
+    await patchDoc(env, appealQueuePath(kind, id), { kind, id, appeal: true, at: new Date() },
+      { mask: ['kind', 'id', 'appeal', 'at'] }).catch(() => {});
+
+    const [rows, state, style] = await Promise.all([
+      recentMessages(env, kind, id),
+      getDoc(env, statePath(kind, id)),
+      loadStyle(env),
+    ]);
+    const p = state?.data || {};
+    const chat = transcript(rows);
+    const baseLetter = revise ? (base || p.appeal || '') : '';
+    const a = appeal || {};
+
+    const letter = await ask(env, {
+      effort: 'high',
+      noStream,
+      onBeat: () => setState(env, kind, id, { appealProgressAt: new Date() }).catch(() => {}),
+      maxTokens: 20000,
+      system: [{ type: 'text', text: `${VOICE}
+
+You are writing an insurance appeal letter for Eric to file on his client's
+behalf. He is their authorised representative. The letter goes out over his
+name, on his letterhead, to a plan reviewer who is usually a nurse and
+sometimes a physician.
+
+WHAT AN APPEAL IS
+It is an argument that the plan applied its own rules wrongly to these facts.
+It is not a plea, not a story about how much the patient is suffering, and not
+a demand. The reader has a stack of these and a checklist. Win on the
+checklist.
+
+STRUCTURE, in this order, with these headings:
+
+RE: line - member name, member ID, claim number, dates of service, the
+provider, and the denial date. Every one you were given, on one block.
+
+1. What was denied and why. State the plan's own stated reason and its denial
+   code if there is one, in the plan's own words. If you were not told the
+   reason, say that the reason was not stated and request it in writing, which
+   is itself a ground.
+2. Why that reason does not apply here. This is the letter. Take the plan's
+   criterion apart against the documented facts: what the records show, on
+   what dates, from which clinician. Quote the plan's own medical policy or
+   coverage criteria where you were given them, and show the criterion met
+   line by line. Where a criterion is not met, say so and say why it should
+   not control.
+3. The clinical support. Cite what is in the record: results with dates,
+   clinician statements, the treating physician's rationale. Name published
+   guidelines by body and year ONLY where you are certain of them, and never
+   invent a citation, a study, a guideline number, or a quotation. An appeal
+   caught fabricating loses the whole letter's credibility and the claim.
+4. What is being requested. Overturn and pay, a peer to peer review, the full
+   plan document and criteria used, and the reviewer's specialty and
+   credentials. Be specific.
+5. The deadline and the record. State the filing date, that this is timely,
+   and that a written response is requested within the plan's own timeframe.
+
+RULES
+- Facts only, from what you were given. If a fact is missing, write
+  [NEEDS: what is missing] inline so Eric can fill it before filing. Never
+  invent a date, a value, a name or a claim number.
+- No diagnosis of your own and no treatment recommendation. You are arguing
+  about coverage of care that clinicians ordered.
+- Formal register, short paragraphs, no adjectives doing work that facts
+  should do. Never sentimental, never threatening.
+- Never mention that anything was drafted with help. It is his letter.
+- No em dashes or en dashes anywhere.
+- End with his signature block and an enclosures line listing what should be
+  attached.
+
+Output the letter and nothing else. No preamble, no notes to Eric outside the
+[NEEDS: ] markers, no closing commentary.` , cache: true },
+      { type: 'text', text: stanceNote(style) || ' ' }],
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'text',
+          text: `<claim>
+Member: ${a.memberName || '(not given)'}
+Member ID: ${a.memberId || '(not given)'}
+Plan: ${a.planName || '(not given)'}
+Claim number: ${a.claimNumber || '(not given)'}
+Dates of service: ${a.serviceDates || '(not given)'}
+Provider: ${a.provider || '(not given)'}
+Denied on: ${a.deniedAt || '(not given)'}
+Appeal track: ${a.trackLabel || '(not given)'}
+Filing deadline: ${a.dueAt || '(not given)'}
+</claim>
+
+<denial_reason>
+${a.denialReason || '(the plan did not state a reason, or it was not supplied)'}
+</denial_reason>
+
+<plan_policy>
+${a.policyText || '(no policy language supplied)'}
+</plan_policy>
+
+<clinical_record>
+${a.clinicalFacts || '(none supplied beyond the case notes below)'}
+</clinical_record>
+
+<case_notes>
+${p.analysis ? String(p.analysis).slice(0, 12000) : '(no assessment on file)'}
+</case_notes>
+
+<thread>
+${chat.slice(-8000)}
+</thread>
+${baseLetter ? `\n<current_letter>\n${baseLetter}\n</current_letter>\n\nRevise the letter above. ${a.instruction ? `What to change: ${a.instruction}` : 'Tighten the argument and fix anything unsupported.'} Keep everything that is working.` : ''}`,
+        }],
+      }],
+    });
+
+    await setState(env, kind, id, {
+      appeal: letter, appealAt: new Date(), appealStatus: 'ready',
+      appealReq: null, appealStartedAt: null, appealProgressAt: null, appealError: null,
+      appealMeta: {
+        memberId: a.memberId || '', planName: a.planName || '',
+        claimNumber: a.claimNumber || '', deniedAt: a.deniedAt || '',
+        trackId: a.trackId || '', trackLabel: a.trackLabel || '', dueAt: a.dueAt || '',
+      },
+    });
+    await deleteDoc(env, appealQueuePath(kind, id)).catch(() => {});
+  } catch (err) {
+    console.error('advisor appeal:', err.stack || err);
+    await setState(env, kind, id, {
+      appealStatus: 'error', appealError: friendly(err),
+      appealReq: null, appealStartedAt: null, appealProgressAt: null,
+    }).catch(() => {});
+    await deleteDoc(env, appealQueuePath(kind, id)).catch(() => {});
   }
 }

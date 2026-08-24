@@ -22,7 +22,60 @@ function init() {
       ${h <= 11 ? h + 'am' : h === 12 ? '12pm' : (h - 12) + 'pm'}
     </label>`).join('');
   document.getElementById('create').addEventListener('click', createSlots);
+  wireClosure();
   loadCalendar();
+}
+
+/**
+ * Shutting the books, from his phone.
+ *
+ * Eric, 2026-08-23: "close off my availability for next two weeks." The slots
+ * themselves are left alone - deleting them is destructive and he has no way
+ * to put them back - so this is one date that hides everything before it and
+ * refuses everything before it, and Reopen restores the calendar exactly as
+ * it was.
+ */
+function wireClosure() {
+  const stateEl = document.getElementById('closure-state');
+  const errEl = document.getElementById('closure-error');
+  const paint = (msg) => {
+    stateEl.innerHTML = msg
+      ? `🚫 <strong>${msg}</strong>`
+      : '✅ <strong>Open for new cases.</strong> Clients can book any slot below.';
+  };
+  const call = async (body) => {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/admin/booking-closure', {
+      method: body ? 'POST' : 'GET',
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(body ? { 'content-type': 'application/json' } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+    return out;
+  };
+  call().then((o) => paint(o.message)).catch(() => {
+    stateEl.textContent = "Couldn't read whether the books are open.";
+  });
+  for (const btn of document.querySelectorAll('[data-close-weeks]')) {
+    btn.addEventListener('click', async () => {
+      errEl.hidden = true;
+      btn.disabled = true;
+      try {
+        paint((await call({ weeks: Number(btn.dataset.closeWeeks) })).message);
+        // The closure changes which slots are bookable, so the calendar below
+        // is stale the moment this returns.
+        loadCalendar();
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.hidden = false;
+      }
+      btn.disabled = false;
+    });
+  }
 }
 
 async function createSlots() {

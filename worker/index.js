@@ -27,7 +27,7 @@ import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 import {
   getAdvisorEffort, setAdvisorEffort,
-  runAnalysis, runQuestion, runDraft, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
+  runAnalysis, runQuestion, runDraft, runAppeal, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
 
@@ -64,13 +64,19 @@ export class AdvisorTurn extends WorkflowEntrypoint {
 // page quotes one number and the card is charged another (which is exactly
 // what happened after the $150 experiment). Seeds (Eric, 2026-08-20): $265
 // per case, a $75 follow-up bought separately, $50/mo chat.
-const CASE_PRICE_CENTS = 26500;
+const CASE_PRICE_CENTS = 65000;
 // The follow-up is a second discussion on the same case, sold from the case
 // after the report lands rather than at checkout. It is NOT included.
-const ADDON_PRICE_CENTS = 7500;
+const ADDON_PRICE_CENTS = 17500;
 // The chat subscription's SEED. The live number lives on the rates doc like
 // the other two and climbs on its own; see the ratchet below.
-const SUB_PRICE_CENTS = 5000;
+const SUB_PRICE_CENTS = 9500;
+// Full access: Eric works INSIDE the case, not beside it - records under a
+// signed release, three-way calls with clinics, and insurance appeals he
+// drafts and files himself. Priced from hours actually required (25-35) at
+// the low half of what independent advocates charge for appeals work
+// ($100-350/hr nationally, Aug 2026), which is where $3,500 comes from.
+const FULL_PRICE_CENTS = 350000;
 // Case chat opens this many days before the booked call; opening it sooner
 // costs a one-time fee at the direct-line price. Eric, 2026-08-22:
 // "explicitly for avoiding chat abuse by booking two months in advance."
@@ -89,15 +95,30 @@ const CHAT_OPEN_CENTS = 5000;
 // nothing anywhere says any of it is happening.
 const RATE_GROWTH = 1.10;
 const RATE_ROUND_CENTS = 500;
-const CASE_CAP_CENTS = 100000;
-const ADDON_CAP_CENTS = 50000;
+const CASE_CAP_CENTS = 140000;
+const ADDON_CAP_CENTS = 40000;
 const SUB_STEP_CENTS = 500;
-const SUB_CAP_CENTS = 10000;
+const SUB_CAP_CENTS = 15000;
+// Full access climbs GENTLER than the rest: 5% a booking, to the nearest $25,
+// parked at $5,000. Two reasons. A 10% step from $3,500 leaves reach behind
+// in three sales, and this tier has a second throttle the others do not - a
+// hard cap on how many can be open at once - so the price does not have to do
+// that work alone. At the ceiling the scope still pays about $145-200/hr,
+// which is the honest top for non-attorney advocacy.
+const FULL_GROWTH = 1.05;
+const FULL_ROUND_CENTS = 2500;
+const FULL_CAP_CENTS = 500000;
 // Sanity rails on the manual setter, not on the ratchet. A typo that sets the
 // case rate to $5 or $50,000 should bounce rather than take a booking.
 const RATE_MIN_CENTS = 5000;
 const RATE_MAX_CENTS = 500000;
 const RATES_PATH = 'config/rates';
+// The line under which a case is being worked at a loss, in cents per hour.
+// Eric, 2026-08-23: "I've lost money on my current client." The app counts
+// his worked minutes already; this is what turns that count into a warning
+// he sees while the case is still open instead of afterwards. $75/hr is the
+// bottom of the national independent-advocacy band; he can move it.
+const HOURLY_FLOOR_CENTS = 7500;
 
 /**
  * The live rate. Seeded from the constants above the first time it is asked
@@ -114,18 +135,24 @@ async function readRates(env) {
     caseCents: Number(d.caseCents) > 0 ? Number(d.caseCents) : CASE_PRICE_CENTS,
     addonCents: Number(d.addonCents) > 0 ? Number(d.addonCents) : ADDON_PRICE_CENTS,
     subCents: Number(d.subCents) > 0 ? Number(d.subCents) : SUB_PRICE_CENTS,
+    fullCents: Number(d.fullCents) > 0 ? Number(d.fullCents) : FULL_PRICE_CENTS,
+    // The floor below which a case is being worked at a loss. Eric's own
+    // number, set from the dashboard; the default is the bottom of the
+    // national independent-advocacy band.
+    floorCents: Number(d.floorCents) > 0 ? Number(d.floorCents) : HOURLY_FLOOR_CENTS,
     bookings: Number(d.bookings) || 0,
     updateTime: doc?.updateTime || null,
     seeded: !!doc,
   };
 }
 
-/** One exponential step: times the growth factor, to the nearest $5, never
- *  less than one $5 step (a small number times 1.1 can round back onto
- *  itself), capped and parked at the cap. */
-function growRate(cents, cap) {
-  const grown = Math.round((cents * RATE_GROWTH) / RATE_ROUND_CENTS) * RATE_ROUND_CENTS;
-  return Math.min(cap, Math.max(cents + RATE_ROUND_CENTS, grown));
+/** One exponential step: times the growth factor, to the nearest rounding
+ *  unit, never less than one unit (a small number times 1.1 can round back
+ *  onto itself), capped and parked at the cap. The growth and rounding are
+ *  arguments because full access climbs on a gentler curve than the rest. */
+function growRate(cents, cap, growth = RATE_GROWTH, round = RATE_ROUND_CENTS) {
+  const grown = Math.round((cents * growth) / round) * round;
+  return Math.min(cap, Math.max(cents + round, grown));
 }
 
 /**
@@ -147,13 +174,14 @@ async function raiseRates(env, attempt = 0) {
   const next = {
     caseCents: growRate(now.caseCents, CASE_CAP_CENTS),
     addonCents: growRate(now.addonCents, ADDON_CAP_CENTS),
+    fullCents: growRate(now.fullCents, FULL_CAP_CENTS, FULL_GROWTH, FULL_ROUND_CENTS),
     // A booking is a new client of any type, so it lifts the chat price too.
     subCents: Math.min(SUB_CAP_CENTS, now.subCents + SUB_STEP_CENTS),
     bookings: now.bookings + 1,
     updatedAt: new Date(),
   };
   const opts = now.seeded
-    ? { mask: ['caseCents', 'addonCents', 'subCents', 'bookings', 'updatedAt'], ifUpdateTime: now.updateTime }
+    ? { mask: ['caseCents', 'addonCents', 'subCents', 'fullCents', 'bookings', 'updatedAt'], ifUpdateTime: now.updateTime }
     : { mustNotExist: true };
   const won = await patchDoc(env, RATES_PATH, next, opts).catch(() => false);
   if (won === false) return raiseRates(env, attempt + 1);
@@ -174,7 +202,9 @@ async function capPings(env, prev, next) {
   if (prev.addonCents < ADDON_CAP_CENTS && next.addonCents >= ADDON_CAP_CENTS)
     hits.push('the follow-up just hit its $500 ceiling');
   if (prev.subCents < SUB_CAP_CENTS && next.subCents >= SUB_CAP_CENTS)
-    hits.push('Priority Chat just hit its $100/mo ceiling');
+    hits.push('Priority Chat just hit its $150/mo ceiling');
+  if (prev.fullCents < FULL_CAP_CENTS && next.fullCents >= FULL_CAP_CENTS)
+    hits.push('Full Access just hit its $5,000 ceiling');
   for (const h of hits) {
     await notifyUser(env, env.ADMIN_UID, {
       title: 'Pocket Advocate',
@@ -202,7 +232,7 @@ async function raiseSubRate(env, attempt = 0) {
     : { mustNotExist: true };
   const body = now.seeded
     ? { subCents, updatedAt: new Date() }
-    : { caseCents: now.caseCents, addonCents: now.addonCents, subCents, bookings: now.bookings, updatedAt: new Date() };
+    : { caseCents: now.caseCents, addonCents: now.addonCents, fullCents: now.fullCents, subCents, bookings: now.bookings, updatedAt: new Date() };
   const won = await patchDoc(env, RATES_PATH, body, opts).catch(() => false);
   if (won === false) return raiseSubRate(env, attempt + 1);
   await capPings(env, now, { ...now, subCents });
@@ -272,26 +302,45 @@ async function handleSetRates(request, env) {
     caseCents: body?.caseCents === undefined ? now.caseCents : Number(body.caseCents),
     addonCents: body?.addonCents === undefined ? now.addonCents : Number(body.addonCents),
     subCents: body?.subCents === undefined ? now.subCents : Number(body.subCents),
+    fullCents: body?.fullCents === undefined ? now.fullCents : Number(body.fullCents),
+    floorCents: body?.floorCents === undefined ? now.floorCents : Number(body.floorCents),
   };
   for (const [k, v] of Object.entries(want)) {
-    // The chat rate rails lower: $100 is its ceiling by design, and $50 is
-    // under the general floor.
-    const [min, max] = k === 'subCents' ? [1000, SUB_CAP_CENTS] : [RATE_MIN_CENTS, RATE_MAX_CENTS];
+    // The chat rate rails lower: its ceiling is by design, and a monthly
+    // number sits under the general floor. The hourly floor is a rate, not a
+    // price, and rails on its own scale.
+    const [min, max] = k === 'subCents' ? [1000, SUB_CAP_CENTS]
+      : k === 'floorCents' ? [1000, 100000]
+        : [RATE_MIN_CENTS, RATE_MAX_CENTS];
     if (!Number.isInteger(v) || v < min || v > max)
       return json({ error: `${k} has to be a whole number of cents between ${min} and ${max}.` }, 400);
   }
   const changed = want.caseCents !== now.caseCents || want.addonCents !== now.addonCents
-    || want.subCents !== now.subCents;
+    || want.subCents !== now.subCents || want.fullCents !== now.fullCents
+    || want.floorCents !== now.floorCents;
   if (changed) {
     await patchDoc(env, RATES_PATH, { ...want, updatedAt: new Date(), setByHand: true },
-      { mask: ['caseCents', 'addonCents', 'subCents', 'updatedAt', 'setByHand'] });
+      { mask: ['caseCents', 'addonCents', 'subCents', 'fullCents', 'floorCents', 'updatedAt', 'setByHand'] });
   }
   return json({ ...want, bookings: now.bookings, changed });
 }
 
 async function handleRates(env) {
-  const r = await readRates(env);
-  return json({ caseCents: r.caseCents, addonCents: r.addonCents, subCents: r.subCents, chatOpenCents: CHAT_OPEN_CENTS });
+  const [r, cap] = await Promise.all([
+    readRates(env),
+    fullAccessCapacity(env).catch(() => ({ room: true })),
+  ]);
+  // floorCents is deliberately NOT here: it is Eric's own margin line, it has
+  // no business on a client-served endpoint, and the admin reads it back
+  // through POST /api/admin/rates.
+  //
+  // fullOpen is a bare boolean, never the counts. Whether he can take the work
+  // is something a buyer has to know before choosing; how many clients he has
+  // is not their business.
+  return json({
+    caseCents: r.caseCents, addonCents: r.addonCents, subCents: r.subCents,
+    fullCents: r.fullCents, fullOpen: cap.room !== false, chatOpenCents: CHAT_OPEN_CENTS,
+  });
 }
 // Follow-up sessions expire one month after the first discussion (Eric,
 // 2026-07-13); clients get one warning email a week before the deadline.
@@ -300,6 +349,9 @@ const FOLLOWUP_WARN_DAYS = 7;
 // Admin-priced sessions: a percentage of THAT CLIENT'S case rate, 25% steps.
 const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
 const METHODS = ['phone', 'video'];
+// The Full Access scope note. Not in REQUIRED_ACKS: a standard case must not
+// be blocked on an agreement about a tier it is not buying.
+const FULL_ACCESS_ACK = 'fullAccess';
 const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording'];
 // A chat message this old with no in-app read gets an email nudge (spec: batched).
 const DIGEST_MIN_AGE_MS = 10 * 60_000;
@@ -555,6 +607,8 @@ export default {
         return await handleReviewSubmit(request, env);
       if (url.pathname === '/api/reviews' && request.method === 'GET')
         return await handleReviewsPublic(env);
+      if (url.pathname === '/api/upgrade' && request.method === 'POST')
+        return await handleUpgradeCheckout(request, env);
       if (url.pathname === '/api/followup' && request.method === 'POST')
         return await handleFollowUpCheckout(request, env);
       if (url.pathname === '/api/changelog' && request.method === 'GET')
@@ -609,6 +663,10 @@ export default {
         return await handleSetRates(request, env);
       if (url.pathname === '/api/work' && request.method === 'POST')
         return await handleWork(request, env);
+      if (url.pathname === '/api/work/here' && request.method === 'POST')
+        return await handleWorkPresence(request, env);
+      if (url.pathname === '/api/admin/booking-closure')
+        return await handleBookingClosure(request, env);
       if (url.pathname === '/api/admin/effort')
         return await handleEffort(request, env);
       if (url.pathname === '/api/admin/voice')
@@ -619,6 +677,10 @@ export default {
         return await handleDaySummary(request, env);
       if (url.pathname === '/api/saved')
         return await handleSaved(request, env, url);
+      if (url.pathname === '/api/clinic-calls')
+        return await handleClinicCalls(request, env, url);
+      if (url.pathname === '/api/authority')
+        return await handleAuthority(request, env, url);
       if (url.pathname === '/api/agenda')
         return await handleAgenda(request, env, url);
       if (url.pathname === '/api/file/delete' && request.method === 'POST')
@@ -767,6 +829,7 @@ export default {
     if (minute % 15 === 0) {
       ctx.waitUntil(runChatDigest(env));
       ctx.waitUntil(runFollowUpWarnings(env));
+      ctx.waitUntil(runAppealWarnings(env));
       ctx.waitUntil(runChatOpenNotices(env));
       ctx.waitUntil(cleanupStaleSlots(env));
       ctx.waitUntil(repairMissingCaseEmails(env));
@@ -778,11 +841,21 @@ export default {
       ctx.waitUntil(voiceStudyKickoff(env));
       ctx.waitUntil(reviveLostSend(env));
       ctx.waitUntil(seedWorkClock(env));
+      ctx.waitUntil(restructureRates(env));
     }
     // Un-gated on purpose: the wedged case should recover on the FIRST
     // firing after this deploys, not up to a quarter hour later. One marker
     // read per firing once finished; remove with the diag scaffolding.
     ctx.waitUntil(unparkAdvisor(env));
+    // Also un-gated, and for a plainer reason: the first rung of the clock
+    // ladder is five minutes, so a quarter-hour gate could not deliver it.
+    // One document read on any firing where he is in the app or nothing is
+    // running, which is nearly all of them.
+    ctx.waitUntil(runWorkClockNudges(env));
+    // Un-gated too, and only until it finishes: this one shuts the books, and
+    // a quarter hour of the old behaviour after the deploy is a quarter hour
+    // in which somebody can buy a case he has said he cannot take.
+    ctx.waitUntil(closeBookingsAug2026(env));
     // THE KILL, found by the flight recorder (2026-08-24). Cloudflare's
     // fifteen minute guarantee attaches to the promise scheduled() RETURNS:
     // "The runtime waits for the promise returned by the scheduled() handler
@@ -854,6 +927,104 @@ async function voiceStudyKickoff(env) {
 }
 
 /**
+ * The books-closed window.
+ *
+ * Eric, 2026-08-23: "close off my availability for next two weeks. I can't
+ * take on anymore clients."
+ *
+ * Deliberately NOT done by deleting slots. Deleting is destructive, it cannot
+ * be undone from his phone, and the Tuesday migration that created them has
+ * already run and marked itself finished, so they would not come back. A date
+ * on a settings document costs nothing to move and nothing to lift.
+ *
+ * It lives on `settings/booking`, which firestore.rules already makes
+ * public-read and admin-write, so the booking page can say WHEN he reopens
+ * rather than an unexplained empty calendar - and this Worker still enforces
+ * it, because a client-side filter is a courtesy and the trust boundary is
+ * here.
+ */
+async function readBookingClosure(env) {
+  const doc = await getDoc(env, 'settings/booking').catch(() => null);
+  const until = doc?.data.closedUntil ? new Date(doc.data.closedUntil).getTime() : 0;
+  return Number.isFinite(until) && until > Date.now() ? until : 0;
+}
+
+/** The one sentence a client sees when they try to book inside the window. */
+function closedMessage(until) {
+  const when = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Etc/GMT+7', weekday: 'long', month: 'long', day: 'numeric',
+  }).format(new Date(until));
+  return `I am not taking new cases until ${when}. Existing clients are unaffected.`;
+}
+
+/**
+ * GET/POST /api/admin/booking-closure   admin only
+ *
+ * Shut the books, extend, or reopen, from his phone, with no deploy. `weeks`
+ * counts from the end of today in MST so "two weeks" means two whole weeks
+ * and not fourteen days minus however far into today it is; `weeks: 0`
+ * reopens immediately.
+ *
+ * Anything he sets here is stamped `setByHand`, which the one-shot migration
+ * checks before writing, so his decision is never overruled by a later
+ * deploy replaying it.
+ */
+async function handleBookingClosure(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const weeks = Number(body?.weeks);
+    if (!Number.isFinite(weeks) || weeks < 0 || weeks > 26)
+      return json({ error: 'Pick between 0 and 26 weeks.' }, 400);
+    // Midnight MST at the end of today, then whole weeks on top.
+    const mst = new Date(Date.now() - 7 * 3600_000);
+    const midnight = Date.UTC(mst.getUTCFullYear(), mst.getUTCMonth(), mst.getUTCDate() + 1)
+      + 7 * 3600_000;
+    const until = weeks === 0 ? null : new Date(midnight + weeks * 7 * 86_400_000);
+    await patchDoc(env, 'settings/booking', { closedUntil: until, setByHand: true },
+      { mask: ['closedUntil', 'setByHand'] });
+    return json({ closedUntil: until, message: until ? closedMessage(until.getTime()) : null });
+  }
+  const until = await readBookingClosure(env);
+  return json({
+    closedUntil: until ? new Date(until) : null,
+    message: until ? closedMessage(until) : null,
+  });
+}
+
+/**
+ * Run-once: close the books for two weeks.
+ *
+ * The date is written out rather than computed from the deploy moment, so it
+ * means the same thing whenever this lands and can be read back later without
+ * having to know when it ran. Midnight MST on the 7th, so the 6th is the last
+ * closed day.
+ */
+async function closeBookingsAug2026(env) {
+  const MARKER = 'migrations/books-closed-2026-08-23';
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;
+  try {
+    const existing = await getDoc(env, 'settings/booking').catch(() => null);
+    // If he has already set a date by hand, his wins: this is a one-shot
+    // convenience, not a thing that overrules him on some later deploy.
+    if (!existing?.data.setByHand) {
+      await patchDoc(env, 'settings/booking',
+        { closedUntil: new Date('2026-09-07T07:00:00Z'), setByHand: false },
+        { mask: ['closedUntil', 'setByHand'] });
+    }
+    await patchDoc(env, MARKER, { finishedAt: new Date() }, { mask: ['finishedAt'] });
+  } catch (err) {
+    console.error('close bookings:', err.message || err);
+  }
+}
+
+/**
  * Run-once: open every Tuesday 10am to 7pm MST, hourly, through 2026-10-20
  * (Eric, 2026-08-22: "Open my schedule every Tuesday from 10am-7pm for the
  * next two months."). Same claim pattern as the grandfather migration; the
@@ -918,6 +1089,56 @@ async function openTuesdaySlots(env) {
  * only if the clock is still unset, so it can never double-count or land on
  * the wrong client.
  */
+/**
+ * The 2026-08-23 restructure. The seed constants only bite a Firestore that
+ * has never been written, and this one has, so the live prices have to be
+ * moved by hand exactly once.
+ *
+ * Eric set me on this: "We're restructuring pricing outside of those
+ * grandfathered in... I'm worth the money; I've lost money on my current
+ * client." Measured against the hours his own work clock records, every old
+ * price sat under the floor for independent advocacy nationally. Nobody
+ * already in the door is touched: a paid case is paid, each case carries the
+ * follow-up price it was quoted (`addonRateCents`), and existing chat
+ * subscriptions keep billing at their original Stripe price until they
+ * cancel. This moves the LIST price for whoever comes next.
+ *
+ * It refuses to run over a hand-set doc: if Eric has since set prices from
+ * the dashboard, his numbers win and this stays out of the way forever.
+ */
+async function restructureRates(env) {
+  const MARKER = 'migrations/reprice-2026-08-23';
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;
+  const done = (result) => patchDoc(env, MARKER, { finishedAt: new Date(), result },
+    { mask: ['finishedAt', 'result'] }).catch(() => {});
+  try {
+    const doc = await getDoc(env, RATES_PATH).catch(() => null);
+    if (doc?.data.setByHand) return done('rates are hand-set; left alone');
+    const next = {
+      caseCents: CASE_PRICE_CENTS,
+      addonCents: ADDON_PRICE_CENTS,
+      subCents: SUB_PRICE_CENTS,
+      fullCents: FULL_PRICE_CENTS,
+      floorCents: HOURLY_FLOOR_CENTS,
+      updatedAt: new Date(),
+    };
+    const opts = doc
+      ? { mask: ['caseCents', 'addonCents', 'subCents', 'fullCents', 'floorCents', 'updatedAt'], ifUpdateTime: doc.updateTime }
+      : { mustNotExist: true };
+    const won = await patchDoc(env, RATES_PATH, next, opts).catch(() => false);
+    if (won === false) return; // someone wrote first; the next firing retries
+    return done(`case ${next.caseCents}, addon ${next.addonCents}, sub ${next.subCents}, full ${next.fullCents}`);
+  } catch (err) {
+    console.error('restructure rates:', err.message || err);
+  }
+}
+
 async function seedWorkClock(env) {
   const MARKER = 'migrations/workclock-2026-08-22';
   const CASE_ID = '65cc57c1-2057-47eb-8dee-d82fce8bf5fe';
@@ -1084,7 +1305,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-24-shortretry';
+const BUILD_TAG = 'v2026-08-27-books-closed';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1092,7 +1313,7 @@ const BUILD_TAG = 'v2026-08-24-shortretry';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.25';
+const VERSION = '2.30';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -1112,6 +1333,11 @@ async function closeDeliveredCases(env) {
       // No delivery stamp means an older case that predates the field. Leave
       // it alone rather than closing a chat on a guess.
       if (!at || at > cutoff) continue;
+      // Full Access does not end when the report lands - that is roughly when
+      // the appeals begin, and they run for months. Closing would shut the
+      // chat and block uploads by rule, mid-fight. Eric closes these by hand
+      // when the work is genuinely finished.
+      if (row.data.fullAccess) continue;
       await patchDoc(env, `cases/${row.id}`, {
         status: 'closed', closedAt: new Date(), closedBy: 'automatic',
       }, { mask: ['status', 'closedAt', 'closedBy'] });
@@ -1227,6 +1453,47 @@ function caseLineItems(cents) {
 }
 
 /** The follow-up, bought on its own from an existing case. */
+/**
+ * Full Access. The description is what Stripe prints on the receipt and the
+ * card statement line, so it says what he actually does rather than naming a
+ * tier nobody outside this app would recognise.
+ */
+function fullAccessLineItems(cents) {
+  return [
+    {
+      quantity: 1,
+      price_data: {
+        currency: 'usd',
+        unit_amount: cents,
+        product_data: {
+          name: 'Full Access advocacy',
+          description: 'Direct work with your clinics and insurer, including appeals',
+        },
+      },
+    },
+  ];
+}
+
+/**
+ * How many Full Access cases are open right now, and the ceiling.
+ *
+ * This is the real protection for Eric's cognitive limits, and it is not the
+ * price. Full Access is months of adversarial work per client; past a few at
+ * once the quality goes, and quality is the whole product. When he is full,
+ * the door closes rather than the price rising - nobody should be able to buy
+ * work that cannot be started.
+ */
+const FULL_MAX_OPEN_DEFAULT = 3;
+async function fullAccessCapacity(env) {
+  const [rows, cfg] = await Promise.all([
+    queryDocs(env, 'cases', [['fullAccess', 'EQUAL', true]], 50).catch(() => []),
+    getDoc(env, 'settings/fullAccess').catch(() => null),
+  ]);
+  const max = Number(cfg?.data.maxOpen) > 0 ? Number(cfg.data.maxOpen) : FULL_MAX_OPEN_DEFAULT;
+  const open = rows.filter((r) => r.data.status !== 'closed').length;
+  return { open, max, room: open < max };
+}
+
 function followUpLineItems(cents) {
   return [
     {
@@ -1258,6 +1525,21 @@ async function handleCheckout(request, env) {
   if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
   const { slotId, requestedStart, method, phone, acks } = body;
   const clientTz = validTz(body.tz);
+  // Which of the two services is being bought. Not a new Stripe metadata
+  // `kind`: the webhook treats "no kind" as "this is a new case", and a case
+  // is exactly what both tiers create. The tier rides as its own field.
+  const wantsFull = body?.tier === 'full';
+  if (wantsFull) {
+    const cap = await fullAccessCapacity(env);
+    if (!cap.room)
+      return json({ error: 'full-booked', open: cap.open, max: cap.max }, 409);
+    // The tier's own scope note is not optional. The page gates the button on
+    // it, and this is the half that cannot be skipped by posting straight at
+    // the route: a four-figure engagement whose limits were never shown is
+    // exactly the sale nobody should be able to make.
+    if (typeof body?.acks?.[FULL_ACCESS_ACK] !== 'number')
+      return json({ error: 'Read and acknowledge what Full Access covers first.' }, 400);
+  }
 
   if (!METHODS.includes(method)) return json({ error: 'Choose a meeting method.' }, 400);
   if (method === 'phone' && !/^\+?[\d\s().-]{7,20}$/.test(phone || ''))
@@ -1269,7 +1551,7 @@ async function handleCheckout(request, env) {
   // Two paths: an open slot off the calendar, or a time the client requested.
   const isRequest = !slotId && typeof requestedStart === 'string';
   if (isRequest) return await checkoutRequestedTime(env, {
-    user, identity, requestedStart, method, phone, acks, clientTz, body,
+    user, identity, requestedStart, method, phone, acks, clientTz, body, wantsFull,
   });
 
   // Load and validate the slot.
@@ -1286,6 +1568,11 @@ async function handleCheckout(request, env) {
     return json({ error: 'That time is no longer available.' }, 409);
   const timingProblem = slotTimingProblem(slot.data.start, slot.data.durationMin || 60, now);
   if (timingProblem) return json({ error: timingProblem }, 409);
+  // Checked before the hold, so a closed-books slot is never taken off the
+  // calendar for half an hour on the way to being refused.
+  const closedUntil = await readBookingClosure(env);
+  if (closedUntil && new Date(slot.data.start).getTime() < closedUntil)
+    return json({ error: closedMessage(closedUntil), closedUntil: new Date(closedUntil) }, 409);
 
   // Hold the slot. The updateTime precondition makes two simultaneous
   // checkouts for the same slot impossible — the loser gets a 409.
@@ -1304,21 +1591,30 @@ async function handleCheckout(request, env) {
   // the page updates the number and re-enables the button. Honest about what
   // it costs, silent about why it changed.
   const live = await readRates(env);
+  const priceCents = wantsFull ? live.fullCents : live.caseCents;
   const quoted = Number(body?.quotedCents) || 0;
-  if (quoted && quoted !== live.caseCents) {
+  if (quoted && quoted !== priceCents) {
     // The slot was held a few lines up. Give it back rather than parking it
     // for 30 minutes on a checkout that is not going to happen.
     await patchDoc(env, `availability/${slotId}`,
       { state: 'open', holdExpiresAt: null, heldByUid: null },
       { mask: ['state', 'holdExpiresAt', 'heldByUid'] }).catch(() => {});
-    return json({ error: 'rate-changed', caseCents: live.caseCents, addonCents: live.addonCents }, 409);
+    return json({
+      error: 'rate-changed', caseCents: live.caseCents,
+      addonCents: live.addonCents, fullCents: live.fullCents,
+    }, 409);
   }
-  const lineItems = caseLineItems(live.caseCents);
+  const lineItems = wantsFull ? fullAccessLineItems(priceCents) : caseLineItems(priceCents);
 
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: identity.email || user.email || undefined,
     line_items: lineItems,
+    // Full Access is a four-figure number for someone who is usually already
+    // paying for being ill. Letting Stripe offer pay-over-time (Affirm and
+    // friends, switched on in the dashboard) is what puts it in reach, and
+    // Eric is still paid in full on the day.
+    ...(wantsFull ? { automatic_payment_methods: { enabled: true } } : {}),
     success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.PUBLIC_BASE_URL}/book.html?canceled=1`,
     expires_at: Math.floor(holdExpiresAt.getTime() / 1000),
@@ -1332,6 +1628,7 @@ async function handleCheckout(request, env) {
       method,
       phone: method === 'phone' ? phone : '',
       acks: JSON.stringify(acks),
+      tier: wantsFull ? 'full' : '',
     },
   });
 
@@ -1349,7 +1646,7 @@ async function handleCheckout(request, env) {
  * flagged `appointment.requested`, and the admin confirms or declines it.
  */
 async function checkoutRequestedTime(env, o) {
-  const { user, identity, requestedStart, method, phone, acks, clientTz } = o;
+  const { user, identity, requestedStart, method, phone, acks, clientTz, wantsFull } = o;
   const start = new Date(requestedStart);
   if (Number.isNaN(start.getTime())) return json({ error: 'Pick a valid date and time.' }, 400);
 
@@ -1362,6 +1659,12 @@ async function checkoutRequestedTime(env, o) {
     return json({ error: `Please pick a time at least ${LEAD_TIME_HOURS} hours from now.` }, 409);
   if (leadMs > MAX_LEAD_TIME_HOURS * 3600_000)
     return json({ error: 'Please pick a time within the next week and a half.' }, 409);
+  // The requested-time path is the one that would otherwise walk straight
+  // around a closed calendar: it never reads a slot, so hiding slots does
+  // nothing to it.
+  const closedUntil = await readBookingClosure(env);
+  if (closedUntil && start.getTime() < closedUntil)
+    return json({ error: closedMessage(closedUntil), closedUntil: new Date(closedUntil) }, 409);
 
   // The live rate, and the same honesty check the slot path runs. This built
   // its line items with NO amount at all - caseLineItems() with nothing in it
@@ -1369,17 +1672,22 @@ async function checkoutRequestedTime(env, o) {
   // ratchet landed: the one path made for people whose time is not on the
   // calendar could not take their money. (Post-2.2 audit, 2026-08-21.)
   const live = await readRates(env);
+  const priceCents = wantsFull ? live.fullCents : live.caseCents;
   const quoted = Number(o.body?.quotedCents) || 0;
-  if (quoted && quoted !== live.caseCents)
-    return json({ error: 'rate-changed', caseCents: live.caseCents, addonCents: live.addonCents }, 409);
+  if (quoted && quoted !== priceCents)
+    return json({
+      error: 'rate-changed', caseCents: live.caseCents,
+      addonCents: live.addonCents, fullCents: live.fullCents,
+    }, 409);
 
   const now = new Date();
   const expiresAt = new Date(now.getTime() + HOLD_MINUTES * 60_000);
-  const lineItems = caseLineItems(live.caseCents);
+  const lineItems = wantsFull ? fullAccessLineItems(priceCents) : caseLineItems(priceCents);
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: identity.email || user.email || undefined,
     line_items: lineItems,
+    ...(wantsFull ? { automatic_payment_methods: { enabled: true } } : {}),
     success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.PUBLIC_BASE_URL}/book.html?canceled=1`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),
@@ -1394,6 +1702,7 @@ async function checkoutRequestedTime(env, o) {
       method,
       phone: method === 'phone' ? phone : '',
       acks: JSON.stringify(acks),
+      tier: wantsFull ? 'full' : '',
     },
   });
   return json({ url: session.url });
@@ -1523,6 +1832,7 @@ async function handleWebhook(request, env) {
     else if (obj.metadata?.kind === 'chatunlock') await confirmChatUnlock(env, obj);
     else if (obj.metadata?.kind === 'extra') await confirmExtraSession(env, obj);
     else if (obj.metadata?.kind === 'followup') await confirmFollowUpPurchase(env, obj);
+    else if (obj.metadata?.kind === 'fullaccess') await confirmFullAccessPurchase(env, obj);
     else await createCaseFromSession(env, obj);
   } else if (event.type === 'checkout.session.async_payment_failed') {
     // The money never arrived: give the slot back, exactly as an expiry does.
@@ -1778,6 +2088,10 @@ async function createCaseFromSession(env, session) {
   // used twice: written onto the case as what this client bought at, and, one
   // booking later, what the next client is quoted.
   const rateAtBooking = await readRates(env);
+  // Which service was bought. Carried as its own metadata field rather than a
+  // Stripe `kind`, because "no kind" is what tells the webhook this session
+  // creates a case at all, and both tiers do.
+  const isFull = m.tier === 'full';
 
   const created = await patchDoc(
     env,
@@ -1806,9 +2120,15 @@ async function createCaseFromSession(env, session) {
       // Nothing sold at checkout carries a follow-up any more; it is bought
       // later, from the case, and that purchase sets this flag.
       addOnFollowUp: false,
-      forms: Object.fromEntries(
-        REQUIRED_ACKS.map((f) => [f, typeof acks[f] === 'number' ? new Date(acks[f]) : null])
-      ),
+      forms: {
+        ...Object.fromEntries(
+          REQUIRED_ACKS.map((f) => [f, typeof acks[f] === 'number' ? new Date(acks[f]) : null])
+        ),
+        // Recorded only when it was actually given, so the presence of the key
+        // is itself the evidence rather than a null sitting on every case.
+        ...(typeof acks[FULL_ACCESS_ACK] === 'number'
+          ? { [FULL_ACCESS_ACK]: new Date(acks[FULL_ACCESS_ACK]) } : {}),
+      },
       files: [],
       reportDueAt: null, // set when the call ends (Phase 2)
       // The rate this client was sold at. A percentage charge later is a share
@@ -1821,6 +2141,19 @@ async function createCaseFromSession(env, session) {
       // this, a client who booked at $265 would be quoted whatever the add-on
       // had drifted to by the time their report landed.
       addonRateCents: rateAtBooking.addonCents,
+      // Full Access, bought at booking. A boolean the rest of the system keys
+      // off, exactly like addOnFollowUp: no "tier" concept is introduced,
+      // because a capability flag is what every other purchase here sets.
+      //
+      // The two rate fields mean different things and must not be added
+      // together. caseRateCents stays the STANDARD case rate at booking: it
+      // is the base for the percentage charges on an extra session, and a
+      // share of $3,500 would be an absurd price for one more call.
+      // fullAccessRateCents is what this client actually paid in total, and
+      // it is what the "what has this case paid" helpers read.
+      fullAccess: isFull,
+      fullAccessAt: isFull ? now : null,
+      fullAccessRateCents: isFull ? rateAtBooking.fullCents : null,
       stripe: {
         sessionId: session.id,
         paymentIntentId: session.payment_intent || null,
@@ -2430,6 +2763,170 @@ async function handleSaved(request, env, url) {
  * POST /api/agenda {id, action:'remove', itemId}      admin, or author while open
  * POST /api/agenda {id, action:'clear'}               admin: drop covered items
  */
+/**
+ * GET/POST /api/authority - the two documents Full Access runs on.
+ *
+ * Worker-mediated, and it has to be: `firestore.rules` ships by Firebase CLI
+ * and the owner of this project has no way to run it (the same constraint
+ * that put the agenda list behind a route instead of a Firestore path). So
+ * these live under `cases/{id}/private/`, denied to the browser in both
+ * directions by the rules already deployed, and this route is the only way
+ * in. Both sides read; only the client signs; only the Worker stamps time.
+ */
+const AUTHORITY_KINDS = ['records', 'representative'];
+async function handleAuthority(request, env, url) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = request.method === 'POST' ? await request.json().catch(() => null) : null;
+  const id = String(body?.caseId || url.searchParams.get('caseId') || '');
+  const ctx = await threadContext(env, user, 'case', id);
+  if (ctx.error) return json({ error: ctx.error }, ctx.code);
+  const coll = `cases/${id}/private/authority/items`;
+
+  if (request.method === 'GET') {
+    const rows = await listDocs(env, coll, { pageSize: 100 }).catch(() => []);
+    return json({
+      items: rows.map((r) => ({ id: r.id, ...r.data }))
+        .sort((a, b) => new Date(b.signedAt || 0) - new Date(a.signedAt || 0)),
+    });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+
+  const c = await getDoc(env, `cases/${id}`);
+  if (!c?.data.fullAccess)
+    return json({ error: 'This case is not on Full Access.' }, 409);
+
+  if (body?.action === 'revoke') {
+    // Revocation is the client's right and is not negotiable, so it is one
+    // field and no conditions beyond owning the case. It stops future use; it
+    // cannot unmake a disclosure already relied on, and the copy says so.
+    if (ctx.isAdmin) return json({ error: 'Only the client can revoke this.' }, 403);
+    const itemId = String(body?.id || '');
+    if (!/^[\w-]{1,64}$/.test(itemId)) return json({ error: 'Bad request' }, 400);
+    await patchDoc(env, `${coll}/${itemId}`, { revokedAt: new Date() }, { mask: ['revokedAt'] });
+    const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+    for (const a of admins) {
+      await notifyUser(env, a.id, {
+        title: 'Pocket Advocate',
+        body: `${firstName(c.data.clientName)} withdrew an authorisation.`,
+        link: `/admin-case.html?id=${id}`,
+      }).catch(() => {});
+    }
+    return json({ ok: true });
+  }
+
+  // Signing. The advocate can never do this for the client: a signature
+  // somebody else applied is not a signature.
+  if (ctx.isAdmin) return json({ error: 'Only the client can sign this.' }, 403);
+  const kind = String(body?.kind || '');
+  if (!AUTHORITY_KINDS.includes(kind)) return json({ error: 'Bad request' }, 400);
+  const typed = typeof body?.signedName === 'string' ? body.signedName.trim().slice(0, 120) : '';
+  if (typed.length < 2) return json({ error: 'Type your full name to sign.' }, 400);
+  // The typed name has to be the name on the case. Not signature matching,
+  // just the one check that catches the wrong person at a shared device, and
+  // deliberately forgiving about case, spacing and punctuation.
+  const flat = (s) => String(s || '').toLowerCase().replace(/[^a-z]+/g, '');
+  if (c.data.clientName && flat(typed) !== flat(c.data.clientName))
+    return json({ error: 'Sign with the same name that is on this case.' }, 400);
+
+  const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+  const item = {
+    kind,
+    signedName: typed,
+    // Stamped HERE, never taken from the browser: a client-sent timestamp is
+    // a claim, and this one has to be a record.
+    signedAt: new Date(),
+    revokedAt: null,
+    // A year, which is what both documents say on their face.
+    expiresAt: new Date(Date.now() + 365 * 24 * 3600_000),
+    clinicName: str(body?.clinicName, 200),
+    clinicAddress: str(body?.clinicAddress, 400),
+    clinicPhone: str(body?.clinicPhone, 40),
+    fromDate: str(body?.fromDate, 20),
+    toDate: str(body?.toDate, 20),
+    purpose: str(body?.purpose, 600),
+    memberId: str(body?.memberId, 80),
+    planName: str(body?.planName, 200),
+    categories: Array.isArray(body?.categories)
+      ? body.categories.filter((x) => typeof x === 'string').slice(0, 12) : [],
+  };
+  if (kind === 'records' && !item.clinicName)
+    return json({ error: 'Name the clinic this authorisation is for.' }, 400);
+  if (kind === 'representative' && !item.planName)
+    return json({ error: 'Name your insurance plan.' }, 400);
+
+  const itemId = crypto.randomUUID();
+  await patchDoc(env, `${coll}/${itemId}`, item, { mustNotExist: true });
+
+  // The 90-day clock starts at the FIRST authorisation, not at purchase: the
+  // tier's scope note says so, and until something is signed there is nothing
+  // Eric is able to do.
+  if (!c.data.authorityAt) {
+    await patchDoc(env, `cases/${id}`, { authorityAt: new Date() }, { mask: ['authorityAt'] })
+      .catch(() => {});
+  }
+  const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  for (const a of admins) {
+    await notifyUser(env, a.id, {
+      title: 'Pocket Advocate',
+      body: `${firstName(c.data.clientName)} signed ${kind === 'records' ? 'a records authorisation' : 'the insurance representative form'}.`,
+      link: `/admin-case.html?id=${id}`,
+    }).catch(() => {});
+  }
+  return json({ ok: true, id: itemId, signedAt: item.signedAt });
+}
+
+/**
+ * GET/POST /api/clinic-calls - the three-way calls, admin only.
+ *
+ * Their own private record, not a value on `appointment`: that field's
+ * `method` is a two-value enum gating checkout, and everything on the
+ * appointment sits on the client-readable case doc, so a clinic's direct line
+ * would be published to the client along with it. This lives under the case's
+ * private subtree, which no browser can read either way.
+ *
+ * Notes only. No audio: the recording consent covers Eric's calls with his
+ * client, not a third party on the other end, and recording a clinic without
+ * asking is a legal trap in every two-party-consent state.
+ */
+async function handleClinicCalls(request, env, url) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = request.method === 'POST' ? await request.json().catch(() => null) : null;
+  const id = String(body?.caseId || url.searchParams.get('caseId') || '');
+  if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad request' }, 400);
+  const coll = `cases/${id}/private/clinicCalls/items`;
+
+  if (request.method === 'GET') {
+    const rows = await listDocs(env, coll, { pageSize: 50 }).catch(() => []);
+    return json({
+      items: rows.map((r) => ({ id: r.id, ...r.data }))
+        .sort((a, b) => new Date(a.at || a.createdAt || 0) - new Date(b.at || b.createdAt || 0)),
+    });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+
+  const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+  if (body?.action === 'add') {
+    const clinic = str(body?.clinic, 200);
+    if (!clinic) return json({ error: 'Name the clinic.' }, 400);
+    const at = str(body?.at, 40);
+    await patchDoc(env, `${coll}/${crypto.randomUUID()}`, {
+      clinic, phone: str(body?.phone, 40), parties: str(body?.parties, 200),
+      at: at ? new Date(at) : null, notes: '', createdAt: new Date(),
+    }, { mustNotExist: true });
+    return json({ ok: true });
+  }
+  if (body?.action === 'notes') {
+    const itemId = String(body?.id || '');
+    if (!/^[\w-]{1,64}$/.test(itemId)) return json({ error: 'Bad request' }, 400);
+    await patchDoc(env, `${coll}/${itemId}`,
+      { notes: str(body?.notes, 20000), notesAt: new Date() }, { mask: ['notes', 'notesAt'] });
+    return json({ ok: true });
+  }
+  return json({ error: 'Bad request' }, 400);
+}
+
 async function handleAgenda(request, env, url) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in required' }, 401);
@@ -2549,16 +3046,92 @@ async function handleFileDelete(request, env) {
 }
 
 /**
- * POST /api/work  Body: { caseId, on }   admin only
+ * The work clock's two kinds of running, and why there are two.
+ *
+ * Eric, 2026-08-25: "If I enter their chart it automatically clocks on. If I
+ * exit their chart it automatically clocks off unless I turn the toggle back
+ * on. If I exit the app, whatever state it was in remains with a prompt after
+ * 5, 10, and 30 min pushed to me asking if I'm still working."
+ *
+ * That is two different claims wearing one button, so the record keeps them
+ * apart:
+ *
+ *   AUTO   - "I am looking at this chart right now." Started by opening the
+ *            chart. At most one at a time, and it dies the moment he is
+ *            demonstrably somewhere else in the app.
+ *   PINNED - "I am working on this, wherever I happen to be." Started by
+ *            tapping a toggle, on the shelf or in the chart. Any number may
+ *            run at once, which is the whole point: he works several cases in
+ *            parallel and the shelf is where he says so.
+ *
+ * Leaving the APP is not evidence of either. A locked phone looks exactly
+ * like a closed tab, and both look exactly like reading a denial letter on
+ * paper with the app in the background - which is real work on that case. So
+ * nothing stops on its own when the app goes away; he is asked instead, per
+ * client, at five, ten and thirty minutes.
+ *
+ * The ladder is measured from when the app was last open, not from when the
+ * clock started, because a two hour stretch with him in front of it needs no
+ * prompt at all.
+ */
+const WORK_NUDGE_MINUTES = [5, 10, 30];
+/**
+ * The presence beacon's own clock. Pages send one on load and once a minute
+ * while visible, so anything older than this means no admin page is open.
+ * Three minutes rather than two forgives one dropped request on a phone that
+ * has wandered between cells.
+ */
+const WORK_PRESENCE_STALE_MS = 3 * 60_000;
+/**
+ * Worker-only by the catch-all deny in firestore.rules: no `admin` match
+ * block exists, so no client can read or write this however they are signed
+ * in. It holds the beacon and a list of which cases have a live clock, so the
+ * per-minute cron costs one document read instead of a query over every case.
+ */
+const CLOCK_DOC = 'admin/clock';
+
+/** The running list, self-healing: whatever the case docs actually say. */
+async function setClockRunning(env, caseId, running) {
+  const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
+  const list = Array.isArray(doc?.data.running) ? doc.data.running.filter((x) => typeof x === 'string') : [];
+  const next = running ? [...new Set([...list, caseId])] : list.filter((x) => x !== caseId);
+  if (next.length === list.length && next.every((x, i) => x === list[i])) return;
+  await patchDoc(env, CLOCK_DOC, { running: next }, { mask: ['running'] }).catch(() => {});
+}
+
+/**
+ * Stop one clock and bank its time.
+ *
+ * `until` exists for the nudge's "no, I stopped ages ago" answer: banking to
+ * now would charge the client for the half hour the phone spent in a pocket,
+ * which is the exact overcount the prompt is there to prevent. Banking to the
+ * last beacon is the last moment the time is known to be real.
+ */
+async function stopWorkClock(env, caseId, w, until = Date.now()) {
+  const startedAt = w?.startedAt ? new Date(w.startedAt).getTime() : 0;
+  let seconds = Math.max(0, Number(w?.seconds) || 0);
+  if (startedAt) {
+    // A clock left running for days is a forgotten toggle, not a work week.
+    // Bank at most twelve hours from one stretch.
+    const end = Math.max(startedAt, Math.min(until, Date.now()));
+    seconds += Math.min(Math.floor((end - startedAt) / 1000), 12 * 3600);
+  }
+  await patchDoc(env, `cases/${caseId}`, {
+    work: { seconds, startedAt: null, updatedAt: new Date(), auto: false, nudged: 0 },
+  }, { mask: ['work'] });
+  await setClockRunning(env, caseId, false);
+  return seconds;
+}
+
+/**
+ * POST /api/work  Body: { caseId, on, auto, backdate }   admin only
  *
  * The work clock. Eric, 2026-08-22: "the cost is a toggle per client. I
  * toggle it on if I'm working on their case. I toggle it off if I'm not
  * working on their case. They can see this."
  *
- * Deliberately manual. The automatic chat meter only ever knew about minutes
- * his chat page was open, which is the smallest part of the work: the call,
- * the records, the report and the thinking all happened somewhere else. This
- * counts whatever he says it counts.
+ * `auto: true` marks the stretch as "started because he opened the chart",
+ * which is the only kind that stops itself. Anything he taps is pinned.
  *
  * It lives on the CASE doc, not caseMeta, precisely because the client is
  * meant to see it: the case doc is the one a client can read. Only this
@@ -2574,29 +3147,157 @@ async function handleWork(request, env) {
   if (!doc) return json({ error: 'Not found' }, 404);
   const w = doc.data.work || {};
   const startedAt = w.startedAt ? new Date(w.startedAt).getTime() : 0;
-  let seconds = Math.max(0, Number(w.seconds) || 0);
+  const seconds = Math.max(0, Number(w.seconds) || 0);
   const on = body?.on === true;
+  const auto = body?.auto === true;
 
   if (on) {
+    if (!startedAt) {
+      const now = new Date();
+      await patchDoc(env, `cases/${caseId}`, {
+        work: { seconds, startedAt: now, updatedAt: now, auto, nudged: 0 },
+      }, { mask: ['work'] });
+      await setClockRunning(env, caseId, true);
+      return json({ seconds, running: true, auto, startedAt: now });
+    }
     // Already running: leave the existing start alone rather than resetting
     // it, so a double tap cannot quietly discard time already on the clock.
-    if (!startedAt) {
-      await patchDoc(env, `cases/${caseId}`, {
-        work: { seconds, startedAt: new Date(), updatedAt: new Date() },
-      }, { mask: ['work'] });
+    // The reply carries the ORIGINAL start, because a caller that assumed
+    // "running now means started now" would paint a two hour stretch as
+    // nothing and look, to him, like time was lost.
+    //
+    // One thing does change - a deliberate tap over an automatic stretch
+    // PINS it, which is "unless I turn the toggle back on" arriving without
+    // a stop in between.
+    if (w.auto === true && !auto) {
+      await patchDoc(env, `cases/${caseId}`, { work: { ...w, auto: false, updatedAt: new Date() } },
+        { mask: ['work'] }).catch(() => {});
+      return json({ seconds, running: true, auto: false, startedAt: new Date(startedAt) });
     }
-    return json({ seconds, running: true });
+    return json({ seconds, running: true, auto: w.auto === true, startedAt: new Date(startedAt) });
   }
-  if (startedAt) {
-    // A clock left running for days is a forgotten toggle, not a work week.
-    // Bank at most twelve hours from one stretch and say so in the reply.
-    const elapsed = Math.min(Math.floor((Date.now() - startedAt) / 1000), 12 * 3600);
-    seconds += elapsed;
+
+  // "I stopped a while ago" - bank to the last time the APP was known open,
+  // which is the beacon on the shared clock doc, not anything on this case.
+  // A per-case stamp was the obvious place for it and the wrong one: only the
+  // start ever wrote it, so backdating would have banked to the beginning of
+  // the stretch and thrown away hours of real work. Caught by the suite, which
+  // had happened to beacon immediately after starting.
+  let until = Date.now();
+  if (body?.backdate === true) {
+    const clock = await getDoc(env, CLOCK_DOC).catch(() => null);
+    const seen = clock?.data.seenAt ? new Date(clock.data.seenAt).getTime() : 0;
+    if (seen) until = seen;
   }
-  await patchDoc(env, `cases/${caseId}`, {
-    work: { seconds, startedAt: null, updatedAt: new Date() },
-  }, { mask: ['work'] });
-  return json({ seconds, running: false });
+  const banked = await stopWorkClock(env, caseId, w, until);
+  return json({
+    seconds: banked,
+    running: false,
+    startedAt: null,
+    // What the caller tells him: a backdated stop banked less than the clock
+    // on screen was showing, and silence about that reads as lost time.
+    bankedTo: until < Date.now() - 30_000 ? new Date(until) : null,
+  });
+}
+
+/**
+ * POST /api/work/here  Body: { caseId }   admin only
+ *
+ * The presence beacon. Every admin page sends one on load and once a minute
+ * while it is the visible page; `caseId` is the chart he has open, or empty
+ * for anywhere else in the app.
+ *
+ * It does two jobs, and both are things no client-side unload handler can be
+ * trusted with. Arriving anywhere that is not a given chart is proof he left
+ * it, so that chart's automatic clock stops here rather than in a `pagehide`
+ * the browser is free to skip. And the timestamp it leaves is what the nudge
+ * ladder measures "away from the app" against.
+ *
+ * Beacons stop when the page is hidden, on purpose: a backgrounded app is
+ * exactly the state he asked to be asked about.
+ */
+async function handleWorkPresence(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const raw = typeof body?.caseId === 'string' ? body.caseId : '';
+  const atCaseId = /^[\w-]{1,64}$/.test(raw) ? raw : '';
+
+  const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
+  const prevAt = typeof doc?.data.atCaseId === 'string' ? doc.data.atCaseId : '';
+  const prevSeen = doc?.data.seenAt ? new Date(doc.data.seenAt).getTime() : 0;
+  const running = Array.isArray(doc?.data.running) ? doc.data.running.filter((x) => typeof x === 'string') : [];
+  const wasAway = !prevSeen || Date.now() - prevSeen > WORK_PRESENCE_STALE_MS;
+
+  await patchDoc(env, CLOCK_DOC, { seenAt: new Date(), atCaseId },
+    { mask: ['seenAt', 'atCaseId'] }).catch(() => {});
+
+  // Nothing running is the common case, and it costs nothing more than this.
+  if (!running.length) return json({ ok: true });
+  // Nothing to reconcile while he sits on the same page and never left.
+  if (prevAt === atCaseId && !wasAway) return json({ ok: true });
+
+  const stopped = [];
+  for (const id of running) {
+    const c = await getDoc(env, `cases/${id}`).catch(() => null);
+    const w = c?.data.work;
+    if (!w?.startedAt) { await setClockRunning(env, id, false); continue; }
+    // He is demonstrably elsewhere in the app, so this automatic stretch is
+    // over. A pinned one is untouched: that is what pinning means.
+    if (w.auto === true && id !== atCaseId) {
+      // The new banked total rides back, not just the id: the page that sent
+      // this beacon has already painted that card from a case doc it read
+      // before the stop, so it needs the number as well as the news.
+      const seconds = await stopWorkClock(env, id, w);
+      stopped.push({ id, seconds });
+      continue;
+    }
+    // He came back. Re-arm the ladder so a later absence asks again.
+    if (wasAway && Number(w.nudged)) {
+      await patchDoc(env, `cases/${id}`, { work: { ...w, nudged: 0 } }, { mask: ['work'] }).catch(() => {});
+    }
+  }
+  return json({ ok: true, stopped });
+}
+
+/**
+ * The nudge ladder, on the per-minute cron.
+ *
+ * Costs one document read on every firing where he is in the app or nothing
+ * is running, which is almost all of them.
+ */
+async function runWorkClockNudges(env) {
+  try {
+    const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
+    const running = Array.isArray(doc?.data.running) ? doc.data.running.filter((x) => typeof x === 'string') : [];
+    if (!running.length) return;
+    const seenAt = doc?.data.seenAt ? new Date(doc.data.seenAt).getTime() : 0;
+    const awayMin = seenAt ? (Date.now() - seenAt) / 60_000 : Infinity;
+    if (awayMin < WORK_NUDGE_MINUTES[0]) return; // the app is open; he can see it
+    const rung = [...WORK_NUDGE_MINUTES].reverse().find((m) => awayMin >= m);
+    if (rung === undefined) return;
+
+    for (const id of running) {
+      const c = await getDoc(env, `cases/${id}`).catch(() => null);
+      const w = c?.data.work;
+      if (!w?.startedAt) { await setClockRunning(env, id, false); continue; }
+      if (Number(w.nudged || 0) >= rung) continue;
+      await patchDoc(env, `cases/${id}`, { work: { ...w, nudged: rung } }, { mask: ['work'] }).catch(() => {});
+      const started = new Date(w.startedAt).getTime();
+      const mins = Math.max(0, Math.floor((Date.now() - started) / 60_000));
+      const ran = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+      const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+      for (const a of admins) {
+        await notifyUser(env, a.id, {
+          title: 'Pocket Advocate',
+          body: `${firstName(c.data.clientName)}: the clock has been running ${ran} and the app has been closed for ${Math.floor(awayMin)} minutes. Still working?`,
+          link: `/admin-case.html?id=${id}&clock=ask`,
+        }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.warn('work clock nudges:', err.message || err);
+  }
 }
 
 /**
@@ -3002,6 +3703,156 @@ async function handleChangelog(request, env) {
  * build and no second way for the two to disagree. He books it exactly as he
  * books one that was bought at checkout.
  */
+/**
+ * What upgrading THIS case to Full Access costs: the live tier price less
+ * what the case has already paid toward it. Nobody pays twice for the part
+ * they already bought. Floored at one dollar so a case that somehow paid more
+ * than the tier price still produces a chargeable session rather than a
+ * Stripe error.
+ */
+function upgradeCents(c, liveFullCents) {
+  const alreadyPaid = Number(c.caseRateCents) || 0;
+  return Math.max(100, liveFullCents - alreadyPaid);
+}
+
+/**
+ * POST /api/upgrade - move an open case up to Full Access.
+ *
+ * Deliberately the same shape as the follow-up purchase: it is the pattern
+ * this codebase already proved for selling something from inside a case, and
+ * two different shapes for two in-case purchases would be two things to keep
+ * in step.
+ */
+async function handleUpgradeCheckout(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c || c.data.clientUid !== user.uid) return json({ error: 'Not found' }, 404);
+  if (c.data.fullAccess)
+    return json({ error: 'This case already has Full Access.' }, 409);
+  if (c.data.status === 'closed')
+    return json({ error: 'This case is closed. Book a new one and we will start there.' }, 409);
+  // Capacity is checked here as well as at booking: an upgrade consumes one of
+  // the same slots, and the offer card can be a few minutes stale.
+  const cap = await fullAccessCapacity(env);
+  if (!cap.room) return json({ error: 'full-booked', open: cap.open, max: cap.max }, 409);
+
+  // The same gate booking enforces, and for the same reason: nobody buys a
+  // four figure engagement without the note that says where it stops. This
+  // was missing when the upgrade card first shipped, while the card's own
+  // fine print promised "you will be shown exactly what it covers, and where
+  // it stops, before anything is charged" - so the flow was quietly making
+  // the copy untrue. Caught reading the flow back, 2026-08-25.
+  if (typeof body?.acks?.[FULL_ACCESS_ACK] !== 'number')
+    return json({ error: 'Read the scope note and acknowledge it first.' }, 400);
+
+  const pending = c.data.pendingFullAccess;
+  if (pending?.url && new Date(pending.expiresAt || 0).getTime() > Date.now())
+    return json({ ok: true, url: pending.url });
+
+  const live = await readRates(env);
+  const cents = upgradeCents(c.data, live.fullCents);
+  const expiresAt = new Date(Date.now() + 23 * 3600_000);
+  const session = await stripePost(env, '/checkout/sessions', {
+    mode: 'payment',
+    customer_email: c.data.clientEmail || undefined,
+    line_items: fullAccessLineItems(cents),
+    automatic_payment_methods: { enabled: true },
+    success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&upgraded=1`,
+    cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
+    expires_at: Math.floor(expiresAt.getTime() / 1000),
+    metadata: {
+      kind: 'fullaccess', caseId, uid: c.data.clientUid, fullCents: String(live.fullCents),
+      // Carried through Stripe so the acknowledgment lands on the case with
+      // the purchase, in the same `forms` map booking writes.
+      ackAt: String(body.acks[FULL_ACCESS_ACK]),
+    },
+  });
+  await patchDoc(env, `cases/${caseId}`, {
+    pendingFullAccess: { sessionId: session.id, url: session.url, cents, createdAt: new Date(), expiresAt },
+  }, { mask: ['pendingFullAccess'] });
+  return json({ ok: true, url: session.url });
+}
+
+/**
+ * The webhook half. Same two paths as the follow-up: money that arrives for
+ * something the case already has is RECORDED rather than dropped, because it
+ * moved, and Eric is told to refund it.
+ */
+async function confirmFullAccessPurchase(env, session, attempt = 0) {
+  if (attempt > 3) return;
+  const caseId = session.metadata?.caseId;
+  if (!caseId) return;
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c) return;
+  const amountCents = Number(session.amount_total) || 0;
+  const payments = Array.isArray(c.data.extraPayments) ? [...c.data.extraPayments] : [];
+  if (payments.some((x) => x.sessionId === session.id)) return; // replay
+
+  if (c.data.fullAccess) {
+    payments.push({ kind: 'fullaccess', amountCents, sessionId: session.id, at: new Date(), duplicate: true });
+    const ok = await patchDoc(env, `cases/${caseId}`, { extraPayments: payments },
+      { mask: ['extraPayments'], ifUpdateTime: c.updateTime }).catch(() => false);
+    if (ok === false) return confirmFullAccessPurchase(env, session, attempt + 1);
+    const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+    for (const a of admins) {
+      await notifyUser(env, a.id, {
+        title: 'Pocket Advocate',
+        body: `${firstName(c.data.clientName)} paid for Full Access their case already has. Refund it from Stripe.`,
+        link: `/admin-case.html?id=${caseId}`,
+      }).catch(() => {});
+    }
+    return;
+  }
+
+  payments.push({ kind: 'fullaccess', amountCents, sessionId: session.id, at: new Date() });
+  const now = new Date();
+  // Merged rather than masked on its own, because `forms` already holds the
+  // three booking acknowledgments and a masked write of one key would take
+  // the other three with it.
+  const ackMs = Number(session.metadata?.ackAt);
+  const forms = {
+    ...(c.data.forms || {}),
+    ...(Number.isFinite(ackMs) && ackMs > 0 ? { [FULL_ACCESS_ACK]: new Date(ackMs) } : {}),
+  };
+  const okBuy = await patchDoc(env, `cases/${caseId}`, {
+    fullAccess: true,
+    fullAccessAt: now,
+    // What they paid in total for the tier: the case fee plus this upgrade.
+    // The helpers that ask "what has this case paid" read this one field.
+    fullAccessRateCents: (Number(c.data.caseRateCents) || 0) + amountCents,
+    pendingFullAccess: null,
+    extraPayments: payments,
+    forms,
+  }, {
+    mask: ['fullAccess', 'fullAccessAt', 'fullAccessRateCents', 'pendingFullAccess', 'extraPayments', 'forms'],
+    ifUpdateTime: c.updateTime,
+  }).catch(() => false);
+  if (okBuy === false) return confirmFullAccessPurchase(env, session, attempt + 1);
+
+  if (c.data.clientEmail) {
+    await sendEmail(env, {
+      to: c.data.clientEmail,
+      subject: 'Full Access is open on your case',
+      html: `<p>Your case is now Full Access. That means I work directly with your clinics and your insurer rather than alongside you.</p>
+        <p>The next thing I need is your authorisation, which is waiting on your case page. Nothing can start until that is signed.</p>
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
+    }).catch(() => {});
+  }
+  const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  for (const a of admins) {
+    await notifyUser(env, a.id, {
+      title: 'Pocket Advocate',
+      body: `${firstName(c.data.clientName)} upgraded to Full Access.`,
+      link: `/admin-case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
+}
+
 async function handleFollowUpCheckout(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in required' }, 401);
@@ -3552,6 +4403,7 @@ function sanitizeNotes(html) {
 /**
  * POST /api/advisor  Body: { kind: 'case'|'sub', id, action, question?, instruction?, draft?, sent? }
  * action: 'analyze' | 'ask' | 'draft' | 'draft-feedback' | 'pause' | 'resume' | 'clear-draft'
+ *       | 'appeal-draft' | 'clear-appeal' | 'appeal-filed'
  *       | 'dx' (folder-cover override) | 'note' (private notes) | 'correction-dismiss'
  *       | 'unanswered-answered' (an outstanding ask he got, or let go)
  *
@@ -3830,6 +4682,54 @@ async function handleAdvisor(request, env, ctx) {
       return json({ ok: true, started: true });
     }
     return keepaliveRun(ctx, runAnalysis(env, kind, id, media, { auto: isAuto, freshFiles: !isAuto }), { raw: true });
+  }
+
+  // The appeal workbench. Same 404 gate and same keepalive contract as every
+  // other advisor action; the letter is never sent from here, only written,
+  // revised, and marked filed, because Eric files it himself through the
+  // insurer's own channel and that is what keeps proof of timely filing his.
+  if (action === 'appeal-draft') {
+    const c = await getDoc(env, `cases/${id}`).catch(() => null);
+    if (kind === 'case' && !c?.data.fullAccess)
+      return json({ ok: false, error: 'This case is not on Full Access.' }, 409);
+    const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+    const appeal = {
+      memberName: str(body?.appeal?.memberName, 120) || c?.data.clientName || '',
+      memberId: str(body?.appeal?.memberId, 80),
+      planName: str(body?.appeal?.planName, 200),
+      claimNumber: str(body?.appeal?.claimNumber, 80),
+      serviceDates: str(body?.appeal?.serviceDates, 120),
+      provider: str(body?.appeal?.provider, 200),
+      deniedAt: str(body?.appeal?.deniedAt, 20),
+      trackId: str(body?.appeal?.trackId, 60),
+      trackLabel: str(body?.appeal?.trackLabel, 120),
+      dueAt: str(body?.appeal?.dueAt, 20),
+      denialReason: str(body?.appeal?.denialReason, 4000),
+      policyText: str(body?.appeal?.policyText, 8000),
+      clinicalFacts: str(body?.appeal?.clinicalFacts, 8000),
+      instruction: str(body?.appeal?.instruction, 1000),
+    };
+    const revise = body?.revise === true;
+    const base = revise && typeof body?.base === 'string' ? body.base.slice(0, 30000) : '';
+    return keepaliveRun(ctx, runAppeal(env, kind, id, appeal, revise, base), { raw: true });
+  }
+
+  if (action === 'clear-appeal') {
+    await patchDoc(env, statePath, { appeal: null, appealStatus: null, appealMeta: null }, {
+      mask: ['appeal', 'appealStatus', 'appealMeta'],
+    });
+    return json({ ok: true });
+  }
+
+  // Filed. The deadline stops mattering, the warning stops firing, and the
+  // date he actually filed is recorded, which is the thing a plan disputes.
+  if (action === 'appeal-filed') {
+    const st = await getDoc(env, statePath).catch(() => null);
+    const meta = st?.data.appealMeta || {};
+    await patchDoc(env, statePath, {
+      appealMeta: { ...meta, filedAt: new Date(), warned: true },
+    }, { mask: ['appealMeta'] });
+    return json({ ok: true });
   }
 
   if (action === 'draft') {
@@ -4380,6 +5280,14 @@ async function releaseHold(env, session) {
         mask: ['pendingFollowUp'],
       });
   }
+  // An upgrade to Full Access that was started and walked away from.
+  if (session.metadata?.kind === 'fullaccess' && session.metadata.caseId) {
+    const caseDoc = await getDoc(env, `cases/${session.metadata.caseId}`);
+    if (caseDoc?.data.pendingFullAccess?.sessionId === session.id)
+      await patchDoc(env, `cases/${session.metadata.caseId}`, { pendingFullAccess: null }, {
+        mask: ['pendingFullAccess'],
+      });
+  }
   // An admin-priced session that was never paid: clear the client's pay prompt.
   if (session.metadata?.kind === 'extra' && session.metadata.caseId) {
     const caseDoc = await getDoc(env, `cases/${session.metadata.caseId}`);
@@ -4687,6 +5595,49 @@ async function confirmExtraSession(env, session) {
  * Cron: warn clients one week before an unscheduled follow-up session expires
  * (30 days after the first discussion). One email, ever, per case.
  */
+/**
+ * The appeal deadline warning. A missed filing window is not a setback, it is
+ * the end of the claim, so this warns early and again when it is close.
+ *
+ * Built on the follow-up warning's shape (query a flag, compute an expiry,
+ * a one-shot marker) with one deliberate difference: two rungs rather than
+ * one, because the consequence here is not an expired session credit.
+ */
+const APPEAL_WARN_DAYS = [14, 3];
+async function runAppealWarnings(env) {
+  try {
+    const rows = await queryDocs(env, 'cases', [['fullAccess', 'EQUAL', true]], 50);
+    for (const row of rows) {
+      if (row.data.status === 'closed') continue;
+      const st = await getDoc(env, `cases/${row.id}/advisor/state`).catch(() => null);
+      const meta = st?.data.appealMeta;
+      if (!meta?.dueAt || meta.filedAt) continue;
+      const due = new Date(meta.dueAt).getTime();
+      if (!Number.isFinite(due)) continue;
+      const daysLeft = Math.ceil((due - Date.now()) / 86_400_000);
+      // Which rung this crosses. `warnedAt` holds the rung already sent, so
+      // each fires once and a later, more urgent one still gets through.
+      const rung = APPEAL_WARN_DAYS.find((d) => daysLeft <= d);
+      if (rung === undefined) continue;
+      if (Number(meta.warnedAt) && Number(meta.warnedAt) <= rung) continue;
+      await patchDoc(env, `cases/${row.id}/advisor/state`,
+        { appealMeta: { ...meta, warnedAt: rung } }, { mask: ['appealMeta'] }).catch(() => {});
+      const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+      for (const a of admins) {
+        await notifyUser(env, a.id, {
+          title: 'Pocket Advocate',
+          body: daysLeft <= 0
+            ? `${firstName(row.data.clientName)}: the appeal filing date has passed. Check the plan's own letter before assuming it is closed.`
+            : `${firstName(row.data.clientName)}: ${daysLeft} day${daysLeft === 1 ? '' : 's'} left to file the appeal.`,
+          link: `/admin-case.html?id=${row.id}`,
+        }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.warn('appeal warnings:', err.message || err);
+  }
+}
+
 export async function runFollowUpWarnings(env, now = Date.now()) {
   const rows = await queryDocs(env, 'cases', [['addOnFollowUp', 'EQUAL', true]], 100);
   for (const row of rows) {
