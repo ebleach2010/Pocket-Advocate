@@ -2,10 +2,10 @@
 // countdown that keeps the 7-day SLA from silently slipping (SPEC §F).
 
 import './admin-ledger.js';
-import { db, collection, getDocs } from './firebase.js';
+import { db, collection, getDocs, doc, getDoc, setDoc } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { initPushPrompt } from './push.js';
-import { folderCardHtml, wireFolderOpen, wireDxLongPress, openDxSheet } from './drawer.js';
+import { folderCardHtml, wireFolderOpen, wireFolderClocks, wireDxLongPress, openDxSheet } from './drawer.js';
 import { unseenBadges } from './seen.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -85,8 +85,7 @@ async function load() {
   const cents = cases.reduce((sum, c) =>
     sum + (c.stripe?.amountTotal || 0) +
     // Tips excluded, the way handleLedger already excludes them. A tip is a
-    // gift, and counting it flatters the one number here that has to stay
-    // honest.
+    // gift, and counting it flatters the one number here that must stay honest.
     (Array.isArray(c.extraPayments)
       ? c.extraPayments.reduce((x, p) => x + (p.kind === 'tip' ? 0 : (p.amountCents || 0)), 0)
       : 0), 0);
@@ -115,6 +114,16 @@ async function load() {
     });
     if (res.ok) voice = await res.json();
   } catch { /* same */ }
+
+  // The tip jar switch. Lives on `settings`, which is world-readable and
+  // admin-writable by rule, so the client page reads it directly and one tap
+  // here retires the jar everywhere with no deploy.
+  let tipJar = true;
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'tipJar'));
+    if (snap.exists() && snap.data().enabled === false) tipJar = false;
+  } catch { /* default on */ }
+
   const dollars = (c) => (c % 100 ? (c / 100).toFixed(2) : String(c / 100));
   const rateBlock = rate ? `
     <details class="panel" style="margin-bottom:1rem;">
@@ -124,9 +133,11 @@ async function load() {
       </summary>
       <p class="dim small" style="margin:.5rem 0 .6rem;">Follow-up
         <strong style="color:var(--ink)">$${dollars(rate.addonCents)}</strong>,
-        Priority Chat <strong style="color:var(--ink)">$${dollars(rate.subCents || 5000)}/mo</strong>.
-        Case and follow-up grow 10% per booking (to $1000 and $500 caps); chat
-        climbs $5 per new client of any type (to $100). ${rate.bookings} booking${rate.bookings === 1 ? ' has' : 's have'}
+        Priority Chat <strong style="color:var(--ink)">$${dollars(rate.subCents || 9500)}/mo</strong>,
+        Full Access <strong style="color:var(--ink)">$${dollars(rate.fullCents || 150000)}</strong>.
+        Case and follow-up grow 10% per booking (to $1,400 and $400 caps); chat
+        climbs $5 per new client of any type (to $150); Full Access grows 5% to
+        the nearest $25 (to $5,000). ${rate.bookings} booking${rate.bookings === 1 ? ' has' : 's have'}
         counted so far. Everyone already booked keeps what they were quoted.</p>
       <div class="row" style="gap:.5rem; flex-wrap:wrap;">
         <label class="dim small">Case $
@@ -136,11 +147,26 @@ async function load() {
           <input type="number" id="rate-addon" min="50" step="1" value="${(rate.addonCents / 100)}"
             style="width:6rem;"></label>
         <label class="dim small">Chat $/mo
-          <input type="number" id="rate-sub" min="10" max="100" step="1" value="${((rate.subCents || 5000) / 100)}"
+          <input type="number" id="rate-sub" min="10" max="150" step="1" value="${((rate.subCents || 9500) / 100)}"
+            style="width:5rem;"></label>
+        <label class="dim small">Full Access $
+          <input type="number" id="rate-full" min="50" step="25" value="${((rate.fullCents || 150000) / 100)}"
+            style="width:7rem;"></label>
+      </div>
+      <p class="dim small" style="margin:.7rem 0 .35rem;">Tell me when a case
+        has dropped below this much an hour, against the clock I ran on it.</p>
+      <div class="row" style="gap:.5rem; flex-wrap:wrap; align-items:center;">
+        <label class="dim small">Floor $/hr
+          <input type="number" id="rate-floor" min="10" max="1000" step="5" value="${((rate.floorCents || 7500) / 100)}"
             style="width:5rem;"></label>
         <button class="btn quiet" id="rate-save">Set</button>
       </div>
       <p class="dim small" id="rate-said" style="margin:.4rem 0 0;" hidden></p>
+      <label class="row dim small" style="gap:.5rem; margin:.8rem 0 0; align-items:center; cursor:pointer;">
+        <input type="checkbox" id="tip-jar-on"${tipJar ? ' checked' : ''}>
+        Show the tip jar on client case pages
+      </label>
+      <p class="dim small" id="tip-said" style="margin:.3rem 0 0;" hidden></p>
     </details>` : '';
 
   const ago = (iso) => {
@@ -186,9 +212,31 @@ async function load() {
       // needs rescheduling wants his attention whether or not anything moved.
       overview: c.needsReschedule || dueSoon(c),
     });
+    // The clock as it stands right now, so a card can paint "running" the
+    // moment the shelf does rather than after a round trip.
+    const w = c.work || {};
+    const banked = Math.max(0, Number(w.seconds) || 0);
+    const started = w.startedAt ? toDate(w.startedAt).getTime() : 0;
+    const live = banked + (started ? (Date.now() - started) / 1000 : 0);
+    const h = Math.floor(live / 3600);
+    const m = Math.floor((live % 3600) / 60);
     return folderCardHtml({
       id: c.id,
       href: `/admin-case.html?id=${c.id}`,
+      // A closed case gets no clock at all: there is no more work to bill to
+      // it, and a stray tap on the FORMER CLIENTS shelf used to start one.
+      clock: c.status === 'closed' ? null : {
+        running: !!started,
+        // Never wordless. This used to be '' below sixty seconds, which is
+        // every case the first time he goes looking - so the control was a
+        // faint 8px ring with no text on manila, and he reported, correctly,
+        // that there was no toggle on the file.
+        label: live >= 60 ? (h ? `${h}h ${m}m` : `${m}m`) : (started ? '0m' : 'Start'),
+        // The ticker reads these off the element; without them it found 0 and
+        // skipped every card, so a running clock sat frozen until a reload.
+        startedAt: started,
+        banked,
+      },
       name: c.clientName || c.clientEmail || c.clientUid,
       dx: cover.text || '',
       dxIsMine: cover.by === 'eric',
@@ -264,12 +312,14 @@ async function load() {
             caseCents: Math.round(Number(listEl.querySelector('#rate-case').value) * 100),
             addonCents: Math.round(Number(listEl.querySelector('#rate-addon').value) * 100),
             subCents: Math.round(Number(listEl.querySelector('#rate-sub').value) * 100),
+            fullCents: Math.round(Number(listEl.querySelector('#rate-full').value) * 100),
+            floorCents: Math.round(Number(listEl.querySelector('#rate-floor').value) * 100),
           }),
         });
         const d = await res.json();
         if (!res.ok) throw new Error(d.error || `Failed (${res.status})`);
         said.textContent = d.changed
-          ? `Set. A case is $${dollars(d.caseCents)}, a follow-up $${dollars(d.addonCents)}, chat $${dollars(d.subCents)}/mo.`
+          ? `Set. A case is $${dollars(d.caseCents)}, a follow-up $${dollars(d.addonCents)}, chat $${dollars(d.subCents)}/mo, full access $${dollars(d.fullCents)}. Warning below $${dollars(d.floorCents)}/hr.`
           : 'Already those numbers.';
         said.hidden = false;
       } catch (err) {
@@ -280,9 +330,38 @@ async function load() {
     });
   }
 
+  const tipToggle = listEl.querySelector('#tip-jar-on');
+  if (tipToggle) {
+    tipToggle.addEventListener('change', async () => {
+      const said = listEl.querySelector('#tip-said');
+      tipToggle.disabled = true;
+      try {
+        await setDoc(doc(db, 'settings', 'tipJar'), { enabled: tipToggle.checked }, { merge: true });
+        said.textContent = tipToggle.checked
+          ? 'The jar is showing on client case pages.'
+          : 'The jar is gone from client case pages.';
+      } catch (err) {
+        tipToggle.checked = !tipToggle.checked;
+        said.textContent = `Couldn't save that: ${err.message}`;
+      }
+      said.hidden = false;
+      tipToggle.disabled = false;
+    });
+  }
+
   // Tap a folder and it opens in the hand before the case page loads; press
   // and hold the diagnosis line to write your own over the advisor's.
   wireFolderOpen(listEl);
+  // Start and stop a case's clock without opening it, several at once if that
+  // is how the day is going. onChange keeps the local copy in step so a
+  // repaint does not show a stale total.
+  wireFolderClocks(listEl, {
+    getToken: () => user.getIdToken(),
+    onChange: (id, running, seconds) => {
+      const c = cases.find((x) => x.id === id);
+      if (c) c.work = { ...(c.work || {}), seconds, startedAt: running ? new Date() : null };
+    },
+  });
   wireDxLongPress(listEl, overrideDx);
 }
 
@@ -301,7 +380,11 @@ function followUpFlag(c) {
   }
   if (c.pendingExtra) return '· <strong style="color:var(--magenta)">AWAITING PAYMENT</strong>';
   if (!c.addOnFollowUp) return '';
-  const base = c.appointment?.start ? toDate(c.appointment.start).getTime() : null;
+  // Same base the Worker enforces (followUpBase): purchase date first, the
+  // call as fallback. Counting from the appointment expired every follow-up
+  // early, since one is always bought after the call.
+  const bought = c.addOnFollowUpAt ? toDate(c.addOnFollowUpAt).getTime() : null;
+  const base = bought || (c.appointment?.start ? toDate(c.appointment.start).getTime() : null);
   if (!base) return '· <strong style="color:var(--magenta)">FOLLOW-UP PAID</strong>';
   const days = Math.ceil((base + 30 * 86_400_000 - Date.now()) / 86_400_000);
   if (days <= 0) return '· <strong style="color:var(--danger)">FOLLOW-UP EXPIRED</strong>';

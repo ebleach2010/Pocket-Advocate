@@ -32,10 +32,7 @@ async function load() {
       <h1>No subscription yet</h1>
       <p class="dim">24/7 Priority Chat, <span data-rate="sub">$50</span>/mo: chat, case files, photos, and labs all in one on-the-go priority chat. Cancel anytime.</p>
       <div class="actions"><a class="btn mag" href="/subscribe.html">Get 24/7 Priority Chat →</a></div>`;
-    // Painted after the markup exists, not on module load: this page builds
-    // its body at runtime. A typed price on the one screen shown to somebody
-    // about to subscribe is how the page quotes one number and the card is
-    // charged another.
+    // Painted after the markup exists: this page builds its body at runtime.
     paintRates(page).catch(() => {});
     return;
   }

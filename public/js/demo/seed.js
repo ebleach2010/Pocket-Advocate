@@ -6,6 +6,9 @@
 // interface, not to be read as medicine.
 
 const CASE_ID = 'demo-case';
+// The Full Access case. Its own id so both states are drivable: the standard
+// case still shows the upgrade card, which is how most of these get sold.
+const FULL_ID = 'demo-case-full';
 const CLIENT = 'demo-client';
 const ADMIN = 'demo-admin';
 
@@ -114,6 +117,79 @@ const GLOSSARY = [
 ];
 
 /** Write the whole thing. `set` takes a Firestore path, `file` a Storage one. */
+
+// The Full Access thread. Shorter than the main one on purpose: what this
+// case is FOR is the work that happens off the thread, and the demo should
+// make that obvious rather than bury it in chat.
+const FULL_CHAT = [
+  [37, 'client', 'They denied the MRI. The letter just says not medically necessary and gives a policy number.'],
+  [37, 'admin', 'Send me the letter and your card, front and back. I will get the policy they are citing and we will see whether they actually applied it.'],
+  [36, 'client', 'Sent. I do not understand any of it.'],
+  [36, 'admin', 'You do not have to. That is mine now. I need two forms signed before I can talk to them, and they are on your case page.'],
+  [31, 'client', 'Both signed.'],
+  [31, 'admin', 'Got them. I have the records request in with Valley Neurology and I am booked with your plan on Tuesday.'],
+  [3, 'admin', 'The appeal is written. I am filing it before the deadline and I will tell you the day it goes.'],
+];
+
+// The denial and its clock, computed so the deadline is always live in the
+// demo rather than a date that has quietly gone past.
+const DENIED_AT = days(37).toISOString().slice(0, 10);
+const APPEAL_DUE = new Date(days(37).getTime() + 180 * 86_400_000)
+  .toISOString().slice(0, 10);
+
+// A letter in the shape runAppeal actually produces, including a [NEEDS: ]
+// marker, because the gap markers are the part he has to know about.
+const DEMO_APPEAL = `RE: Jordan Avery | Member ID CH-4417822 | Claim 44821-2
+Dates of service: 12 June 2026 | Provider: Valley Neurology
+Denial dated: ${DENIED_AT}
+
+1. WHAT WAS DENIED AND WHY
+
+Cascade Health PPO denied MRI of the brain with and without contrast as not
+medically necessary, citing medical policy MP-114 and denial code UM-22.
+
+2. WHY THAT REASON DOES NOT APPLY HERE
+
+MP-114 requires documented failure of two conservative measures over at least
+six weeks before advanced imaging is approved. The record documents both.
+Physical therapy ran from 3 February to 21 March 2026, discharged without
+improvement by the treating therapist. A trial of amitriptyline ran from 2
+April to 19 May 2026 and was stopped for intolerance, documented by the
+prescribing physician. That is two measures across fifteen weeks, which
+exceeds the policy's own threshold.
+
+MP-114 further requires a focal neurological finding. The 19 May examination
+records a persistent left-sided visual field deficit, which is focal by any
+reading of the policy.
+
+3. THE CLINICAL SUPPORT
+
+Neurology consultation note, 19 May 2026, recording the field deficit and the
+rationale for imaging. Physical therapy discharge summary, 21 March 2026.
+Medication record for the amitriptyline trial and its discontinuation.
+
+[NEEDS: the reference number printed on the denial letter]
+
+4. WHAT IS REQUESTED
+
+Overturn the denial and authorise the study. In the alternative, a peer to
+peer review with the treating neurologist. I also request the full plan
+document and the clinical criteria applied to this claim, and the specialty
+and credentials of the reviewer who decided it.
+
+5. TIMELINESS
+
+This appeal is filed within the plan's own filing window from the date of the
+adverse determination. A written response is requested within the timeframe
+the plan's documents require.
+
+Eric Bleach
+Patient advocate, authorised representative
+Pocket Advocate
+
+Enclosures: appointment of authorised representative; neurology consultation
+note; physical therapy discharge summary; medication record.`;
+
 export function seed({ set, file }) {
   // Open times to book into. Without these the booking page says "No open
   // times right now" and the sign-up walk - the thing the demo exists to let
@@ -155,17 +231,21 @@ export function seed({ set, file }) {
     },
     publicElection: { choice: 'private', history: [{ choice: 'private', at: days(11) }] },
     addOnFollowUp: false,
-    caseRateCents: 26500,
-    addonRateCents: 7500,
+    caseRateCents: 65000,
+    addonRateCents: 17500,
     forms: { disclaimer: days(11), privacy: days(11), recording: days(11) },
     reportDueAt: days(-4),
     reportDeliveredAt: hours(20),
     files: [],
-    stripe: { sessionId: 'cs_demo', paymentIntentId: 'pi_demo', amountTotal: 26500 },
+    stripe: { sessionId: 'cs_demo', paymentIntentId: 'pi_demo', amountTotal: 65000 },
     // The work clock, part-way through AND running, so both suites show a
     // real total plus the live "working on it right now" state. Seeded
     // relative to load time, so the demo always shows about 22 live minutes.
-    work: { seconds: 4 * 3600 + 15 * 60, startedAt: new Date(Date.now() - 22 * 60_000) },
+    // Eleven and a half hours against $650 is about $56/hr, under the
+    // default floor, so the margin badge shows its amber state on the case
+    // where that is the real story. The Full Access case below is the
+    // healthy one.
+    work: { seconds: 11 * 3600 + 40 * 60, startedAt: new Date(Date.now() - 22 * 60_000) },
   });
 
   let i = 0;
@@ -239,6 +319,131 @@ export function seed({ set, file }) {
   doc(`cases/${CASE_ID}/uploads/1755000002000-hand-rash-2.jpg`, 'hand-rash-2.jpg', 'image/jpeg', 1_180_000, 2);
   doc(`cases/${CASE_ID}/report/advocacy-case-review.pdf`, 'advocacy-case-review.pdf', 'application/pdf', 512_000, 0);
   doc(`cases/${CASE_ID}/recording/discussion.m4a`, 'discussion.m4a', 'audio/mp4', 41_000_000, 3);
+
+  // ---------------------------------------------------------------- suite 3
+  // A Full Access case, so the tier's own surfaces are drivable rather than
+  // described: the authorisations on the client side, and the appeal, the
+  // clinic calls and the capacity counter on his.
+  //
+  // A SECOND case rather than a flag on the first, because the two states are
+  // both worth showing: the standard case above still offers the upgrade card,
+  // which is how most of these will actually be sold.
+  set(`cases/${FULL_ID}`, {
+    clientUid: CLIENT,
+    clientEmail: 'jordan@example.demo',
+    clientName: 'Jordan Avery',
+    clientDob: '1988-03-14',
+    clientTz: 'America/Denver',
+    status: 'awaiting_report',
+    createdAt: days(38),
+    appointment: {
+      start: days(-30), durationMin: 60, method: 'phone',
+      phone: '+1 555 0148', joinLink: null, requested: false,
+    },
+    publicElection: { choice: 'private', history: [{ choice: 'private', at: days(38) }] },
+    addOnFollowUp: false,
+    // The standard rate stays the base for percentage charges; what the tier
+    // actually cost is its own field, and the two are never summed.
+    caseRateCents: 65000,
+    addonRateCents: 17500,
+    fullAccess: true,
+    fullAccessAt: days(38),
+    fullAccessRateCents: 150000,
+    // The 90 day window runs from the SIGNATURE, so it is stamped here to
+    // match the authorisation seeded below.
+    authorityAt: days(31),
+    forms: {
+      disclaimer: days(38), privacy: days(38), recording: days(38),
+      fullAccess: days(38),
+    },
+    reportDueAt: days(-2),
+    files: [],
+    stripe: { sessionId: 'cs_demo_full', paymentIntentId: 'pi_demo_full', amountTotal: 150000 },
+    // 26 hours against $3,500 is about $134/hr, which is what the tier is
+    // priced to earn. The standard case above is deliberately the opposite
+    // number, so the margin badge shows both of its states across the demo.
+    work: { seconds: 26 * 3600, startedAt: null },
+  });
+
+  for (const [ago, role, text] of FULL_CHAT) {
+    const id = `f${String(++i).padStart(3, '0')}`;
+    set(`cases/${FULL_ID}/chat/${id}`, {
+      from: role === 'admin' ? ADMIN : CLIENT,
+      role, text, ts: days(ago),
+    });
+  }
+
+  // The signed authorisations. Stored under their own demo path rather than
+  // `cases/{id}/private/`, because the demo store keeps everything under
+  // /private/ out of the client half entirely, and a client is meant to see
+  // their own signed forms. In production the split is the same idea done
+  // properly: the records sit in the private subtree and the Worker route is
+  // what lets each side read its own view.
+  set(`demoAuthority/${FULL_ID}/items/a1`, {
+    kind: 'records',
+    signedName: 'Jordan Avery', signedAt: days(31), revokedAt: null,
+    expiresAt: days(-334),
+    clinicName: 'Valley Neurology', clinicAddress: '10 Mesa Road, Phoenix AZ',
+    clinicPhone: '+1 555 0102',
+    fromDate: '2024-01-01', toDate: '2026-07-31',
+    categories: ['genetic'],
+    purpose: '',
+    memberId: '', planName: '',
+  });
+  set(`demoAuthority/${FULL_ID}/items/a2`, {
+    kind: 'representative',
+    signedName: 'Jordan Avery', signedAt: days(30), revokedAt: null,
+    expiresAt: days(-335),
+    planName: 'Cascade Health PPO', memberId: 'CH-4417822',
+    clinicName: '', clinicAddress: '', clinicPhone: '',
+    fromDate: '', toDate: '', categories: [],
+  });
+
+  // Two clinic calls of the three the tier includes: one done with notes, one
+  // still to happen. Admin-only by path, which is the point.
+  set(`cases/${FULL_ID}/private/clinicCalls/items/c1`, {
+    clinic: 'Valley Neurology, records office',
+    phone: '+1 555 0102', parties: 'me, Jordan, records clerk',
+    at: days(24), createdAt: days(26), notesAt: days(24),
+    notes: 'Records request logged, reference VN-88213. They quoted 30 days and '
+      + 'confirmed the authorisation is on file. Asked for imaging on disc as well '
+      + 'as the reports. Jordan confirmed her date of birth on the call.',
+  });
+  set(`cases/${FULL_ID}/private/clinicCalls/items/c2`, {
+    clinic: 'Cascade Health, utilisation review',
+    phone: '+1 555 0190', parties: 'me, Jordan',
+    at: days(2), createdAt: days(5), notes: '',
+  });
+
+  // The advisor state for this case: an assessment, and an appeal letter
+  // already drafted and waiting to be filed against a live deadline. All of
+  // it is admin-only by path.
+  set(`cases/${FULL_ID}/advisor/state`, {
+    status: 'idle',
+    analysis: ANALYSIS,
+    updatedAt: hours(3),
+    workingDx: 'Denied MRI, criteria arguably met',
+    differential: DIFFERENTIAL,
+    unanswered: [],
+    corrections: [],
+    lastPassType: 'delta',
+    passesSinceFull: 2,
+    appeal: DEMO_APPEAL,
+    appealAt: hours(4),
+    appealStatus: 'ready',
+    appealMeta: {
+      memberId: 'CH-4417822', planName: 'Cascade Health PPO',
+      claimNumber: '44821-2', deniedAt: DENIED_AT,
+      trackId: 'commercial-internal',
+      trackLabel: 'Commercial or employer plan, internal appeal',
+      dueAt: APPEAL_DUE,
+    },
+  });
+
+  doc(`cases/${FULL_ID}/uploads/1755000010000-denial-letter.pdf`, 'denial-letter.pdf', 'application/pdf', 96_000, 37);
+  doc(`cases/${FULL_ID}/uploads/1755000011000-insurance-card.jpg`, 'insurance-card.jpg', 'image/jpeg', 820_000, 36);
+  doc(`cases/${FULL_ID}/uploads/1755000012000-neurology-note-19-may.pdf`, 'neurology-note-19-may.pdf', 'application/pdf', 214_000, 20);
 }
 
 export const DEMO_CASE_ID = CASE_ID;
+export const DEMO_FULL_CASE_ID = FULL_ID;

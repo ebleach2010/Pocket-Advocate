@@ -26,6 +26,12 @@ function esc(s) {
 export function folderCardHtml({
   id = '', href = '#', name = '', dx = '', dxIsMine = false,
   meta = '', badge = '', badgeClass = '', flags = '',
+  // The work clock, on the card itself. Eric, 2026-08-23: "Sometimes I'm
+  // working on it outside of their file and I don't want to load into chat.
+  // And sometimes I'm working multiple at once." So the toggle lives where
+  // every case is already visible, several can run at the same time, and
+  // starting one never opens anything.
+  clock = null,
 } = {}) {
   const read = String(dx || '').trim();
   // An override has to carry his mark, or a line he wrote reads as the
@@ -42,6 +48,16 @@ export function folderCardHtml({
         ${badge ? `<span class="status-pill ${esc(badgeClass)}">${esc(badge)}</span>` : ''}
         ${flags ? `<span class="folder-flags">${flags}</span>` : ''}
       </span>
+      ${clock ? `
+        <span class="folder-clock${clock.running ? ' on' : ''}" data-clock="${esc(id)}"
+          role="button" tabindex="0"
+          aria-pressed="${clock.running ? 'true' : 'false'}"
+          aria-label="${clock.running ? 'Stop' : 'Start'} the work clock for ${esc(name)}"
+          title="${clock.running ? 'Working now. Tap to stop.' : 'Tap to start the clock'}"
+          data-started="${Number(clock.startedAt) || 0}"
+          data-banked="${Number(clock.banked) || 0}"
+          ><span class="fc-dot" aria-hidden="true"></span><span class="fc-t"
+            data-clock-t="${esc(id)}">${esc(clock.label || 'Start')}</span></span>` : ''}
     </a>`;
 }
 
@@ -53,6 +69,19 @@ export function wireFolderOpen(root) {
   root.addEventListener('click', (e) => {
     const card = e.target.closest?.('.folder');
     if (!card || !root.contains(card)) return;
+
+    // The clock is a control ON a link. Without this the browser follows the
+    // href and he lands in the case he was trying to avoid opening, which is
+    // the entire reason the button is here.
+    // Note what this does NOT do: stopPropagation. The clock's own handler is
+    // a sibling listener on this same node, and stopping propagation here only
+    // spared it by accident of registration order - swap the two wirings, or
+    // reach for stopImmediatePropagation, and the shelf toggle goes silently
+    // dead. Preventing the navigation is the whole job.
+    if (e.target.closest?.('[data-clock]')) {
+      e.preventDefault();
+      return;
+    }
 
     // A long press on the working-diagnosis line opens the override editor, and
     // the click that trails that fired press is not a request to open the case
@@ -197,5 +226,108 @@ export function wireDxLongPress(root, handler) {
     e.preventDefault();
     cancel();
     fire(el);
+  });
+}
+
+/**
+ * The work clock on every card. Several may run at once, which the Worker
+ * already allows: /api/work is per case and never touches another.
+ *
+ * `getToken` is passed in rather than imported so this module keeps its "no
+ * app imports" property. `onChange(id, running, seconds)` lets the caller
+ * keep its own copy of the case in step without a refetch.
+ */
+export function wireFolderClocks(root, { getToken, onChange } = {}) {
+  if (!root || root.__paClocks) return;
+  root.__paClocks = true;
+
+  const fmt = (secs) => {
+    const t = Math.max(0, Math.floor(secs));
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    return h ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  // Live tick for whatever is running. One interval for the whole shelf, and
+  // a minute is plenty: this is hours, not a stopwatch.
+  const tick = () => {
+    for (const el of root.querySelectorAll('.folder-clock.on')) {
+      const started = Number(el.dataset.started) || 0;
+      const banked = Number(el.dataset.banked) || 0;
+      if (!started) continue;
+      const t = el.querySelector('[data-clock-t]');
+      if (t) t.textContent = fmt(banked + (Date.now() - started) / 1000);
+    }
+  };
+  clearInterval(root.__paClockTimer);
+  root.__paClockTimer = setInterval(tick, 30_000);
+  tick();
+
+  const toggle = async (el) => {
+    const id = el.dataset.clock;
+    const want = !el.classList.contains('on');
+    el.classList.add('busy');
+    try {
+      const token = await getToken();
+      const res = await fetch('/api/work', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        // `auto: false` says this is a deliberate tap, so the clock is PINNED:
+        // it keeps running while he moves around the app, which is the whole
+        // reason the control is out here rather than only inside the case.
+        body: JSON.stringify({ caseId: id, on: want, auto: false }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      el.classList.toggle('on', !!out.running);
+      el.setAttribute('aria-pressed', out.running ? 'true' : 'false');
+      el.dataset.banked = String(Number(out.seconds) || 0);
+      // The ORIGINAL start, not now: tapping a card whose clock was already
+      // running must not appear to throw the running stretch away.
+      el.dataset.started = out.startedAt ? String(new Date(out.startedAt).getTime()) : '0';
+      const t = el.querySelector('[data-clock-t]');
+      if (t) t.textContent = fmt(Number(out.seconds) || 0);
+      el.title = out.running ? 'Working now. Tap to stop.' : 'Tap to start the clock';
+      onChange?.(id, !!out.running, Number(out.seconds) || 0);
+    } catch (err) {
+      // Say it out loud rather than leaving a button that looks like it worked.
+      alert(`Couldn't change the clock: ${err.message}`);
+    }
+    el.classList.remove('busy');
+  };
+
+  root.addEventListener('click', (e) => {
+    const el = e.target.closest?.('[data-clock]');
+    if (el && root.contains(el)) toggle(el);
+  });
+  // A control has to be operable from the keyboard, and this one is a span on
+  // a link, so it needs saying explicitly.
+  root.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target.closest?.('[data-clock]');
+    if (el && root.contains(el)) { e.preventDefault(); e.stopPropagation(); toggle(el); }
+  });
+
+  // Arriving on the shelf is what stops an automatic clock, and the Worker
+  // does it while this page is painting the card from a case it read a moment
+  // before. admin-presence.js announces the stop; without this the card keeps
+  // a running dot on a clock that has already been banked.
+  window.addEventListener('pa-clock-stopped', (e) => {
+    for (const row of e.detail?.stopped || []) {
+      const id = typeof row === 'string' ? row : row?.id;
+      const el = id && root.querySelector(`[data-clock="${CSS.escape(id)}"]`);
+      if (!el) continue;
+      const secs = Number(typeof row === 'string' ? NaN : row?.seconds);
+      el.classList.remove('on');
+      el.setAttribute('aria-pressed', 'false');
+      el.dataset.started = '0';
+      if (Number.isFinite(secs)) {
+        el.dataset.banked = String(secs);
+        const t = el.querySelector('[data-clock-t]');
+        if (t) t.textContent = fmt(secs);
+      }
+      el.title = 'Tap to start the clock';
+      onChange?.(id, false, Number.isFinite(secs) ? secs : Number(el.dataset.banked) || 0);
+    }
   });
 }

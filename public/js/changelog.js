@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.32';
+export const VERSION = '2.33';
 
 /**
  * Newest first.
@@ -52,19 +52,63 @@ export const VERSION = '2.32';
  */
 export const CHANGELOG = [
   {
-    version: '2.32',
+    // The tier is not live yet, so its client notes wait for the release that
+    // turns it on. What IS listed is a fix a client can see on their own page
+    // today.
+    version: '2.33',
     quiet: true,
     client: [
-      'Bug fix: your exported case PDF now shows who said what. Every message was being labelled as Eric, including your own, and the times were missing. Export again from the Docs page for a corrected copy.',
+      'Bug fix: the scope note and the buttons on your Docs page no longer reset while you are reading them. If you had a form snap shut on you mid-tap, that was this.',
     ],
   },
   {
-    // 2.26 through 2.30 lived on main for about an hour on 2026-08-23 and
-    // were pulled back the same night to be fixed and re-landed; all five
-    // were quiet with empty client lists, so no client ever saw a card or a
-    // footer note from them and none is listed here. This push keeps the
-    // booking closure and is otherwise the app as it was.
+    // The re-landing of the pulled-back update (2.26-2.30). Client notes for
+    // the whole feature get written in one go on the release that turns the
+    // new tier on; until then this stays quiet.
+    version: '2.32',
+    quiet: true,
+    client: [],
+  },
+  {
+    // The pullback itself: kept the booking closure and the settings split,
+    // reverted the rest to be fixed and re-landed.
     version: '2.31',
+    quiet: true,
+    client: [],
+  },
+  {
+    // Empty, and this one is worth saying why. The booking page changed for
+    // anyone who visits it: the books are shut for two weeks. But this card
+    // is shown to people who ALREADY have a case, and for them nothing
+    // changed at all - the closure says so out loud on the page itself.
+    // Telling an existing client "I have stopped taking clients" reads as bad
+    // news about their case, and it is not news about their case.
+    version: '2.30',
+    quiet: true,
+    client: [],
+  },
+  {
+    // Empty on purpose, and not because nothing changed for clients: the
+    // Full Access upgrade card gained the scope note it always promised. That
+    // card is part of a tier that is not live yet, so announcing the note now
+    // would describe a screen no client has. The whole tier's client notes get
+    // written in one go on the release that turns it on.
+    version: '2.29',
+    quiet: true,
+    client: [],
+  },
+  {
+    version: '2.28',
+    quiet: true,
+    client: [],
+  },
+  {
+    version: '2.27',
+    quiet: true,
+    client: [],
+  },
+  {
+    version: '2.26',
     quiet: true,
     client: [],
   },
