@@ -84,7 +84,12 @@ async function load() {
   const covers = await loadCovers();
   const cents = cases.reduce((sum, c) =>
     sum + (c.stripe?.amountTotal || 0) +
-    (Array.isArray(c.extraPayments) ? c.extraPayments.reduce((x, p) => x + (p.amountCents || 0), 0) : 0), 0);
+    // Tips excluded, the way handleLedger already excludes them. A tip is a
+    // gift, and counting it flatters the one number here that has to stay
+    // honest.
+    (Array.isArray(c.extraPayments)
+      ? c.extraPayments.reduce((x, p) => x + (p.kind === 'tip' ? 0 : (p.amountCents || 0)), 0)
+      : 0), 0);
   // What a case costs right now. It rises by $10 on every completed booking,
   // silently, so this is the only place the current number is stated.
   let rate = null;

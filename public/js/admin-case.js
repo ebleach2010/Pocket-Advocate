@@ -370,8 +370,13 @@ async function paintCaseReview(pane) {
   } catch { /* the overview is still usable without it */ }
 
   const key = JSON.stringify(review);
-  if (key === reviewKey) return;
+  // The key alone is not enough: paintOverview rebuilds this pane's innerHTML
+  // first, so the host comes back empty while the key still matches and the
+  // early return left "Loading..." on screen permanently. paintAppeals and
+  // paintClinicCalls already check the host survived; this one did not.
+  if (key === reviewKey && host.dataset.painted === '1') return;
   reviewKey = key;
+  host.dataset.painted = '1';
 
   if (!review) {
     host.innerHTML = '<p class="dim small">No review yet. The card opens on their side once the report is delivered.</p>';
@@ -1350,7 +1355,15 @@ document.addEventListener('pa-panel-select', () => {
 const FOLLOWUP_EXPIRY_MS = 30 * 86_400_000;
 
 function followUpDaysLeft(c) {
-  const base = c.appointment?.start ? toDate(c.appointment.start).getTime() : null;
+  // The SAME base the Worker enforces (followUpBase in worker/index.js): the
+  // purchase date when there is one, the call otherwise. This screen counted
+  // from the appointment alone, and a follow-up is ALWAYS bought after the
+  // call - so it expired early on every case, disabling the booking radio and
+  // telling Eric to honour it by hand, while the client's own page correctly
+  // said the session was live. The Worker fixed this in the 2026-08-21 audit;
+  // this copy was missed.
+  const bought = c.addOnFollowUpAt ? toDate(c.addOnFollowUpAt).getTime() : null;
+  const base = bought || (c.appointment?.start ? toDate(c.appointment.start).getTime() : null);
   if (!base) return null;
   return Math.ceil((base + FOLLOWUP_EXPIRY_MS - Date.now()) / 86_400_000);
 }

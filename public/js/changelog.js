@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.31';
+export const VERSION = '2.32';
 
 /**
  * Newest first.
@@ -51,6 +51,13 @@ export const VERSION = '2.31';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    version: '2.32',
+    quiet: true,
+    client: [
+      'Bug fix: your exported case PDF now shows who said what. Every message was being labelled as Eric, including your own, and the times were missing. Export again from the Docs page for a corrected copy.',
+    ],
+  },
   {
     // 2.26 through 2.30 lived on main for about an hour on 2026-08-23 and
     // were pulled back the same night to be fixed and re-landed; all five

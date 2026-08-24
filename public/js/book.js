@@ -228,8 +228,12 @@ async function renderTime() {
 
   const daysEl = el.querySelector('#days');
   if (!slots.length) {
+    // MST, like every policy date. Without the zone a viewer in Alaska or
+    // Hawaii read "Sunday, September 6" - the day they were standing in -
+    // beside an empty calendar, which is the exact impression this banner
+    // exists to prevent. The Worker's own closedMessage already pins it.
     const backOn = closedUntil && new Intl.DateTimeFormat('en-US', {
-      weekday: 'long', month: 'long', day: 'numeric',
+      timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric',
     }).format(new Date(closedUntil));
     daysEl.innerHTML = closedUntil
       ? `<p class="muted">I have closed my books for now: I am carrying as many

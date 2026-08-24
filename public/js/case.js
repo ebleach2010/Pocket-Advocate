@@ -885,9 +885,14 @@ function printExport(c, want) {
   // fresh read: it is the same messages, and a second query would need rules
   // this page does not have open.
   const msgs = [...document.querySelectorAll('.msg')].map((m) => ({
-    mine: m.classList.contains('mine'),
+    // chat.js writes 'me', never 'mine', so every message in the export was
+    // attributed to Eric - including the client's own, in their permanent
+    // record of their case.
+    mine: m.classList.contains('me'),
     text: (m.querySelector('.msg-text')?.textContent || m.textContent || '').trim(),
-    when: m.querySelector('time')?.textContent?.trim() || '',
+    // There is no <time> element in chat.js; the stamp lives in .msg-meta,
+    // so every exported line was dated blank.
+    when: m.querySelector('.msg-meta')?.textContent?.trim() || '',
   })).filter((m) => m.text);
   const files = [...document.querySelectorAll('[data-files] li')]
     .map((li) => li.textContent.replace(/\s+/g, ' ').trim())
