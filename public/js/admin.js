@@ -301,7 +301,11 @@ function followUpFlag(c) {
   }
   if (c.pendingExtra) return '· <strong style="color:var(--magenta)">AWAITING PAYMENT</strong>';
   if (!c.addOnFollowUp) return '';
-  const base = c.appointment?.start ? toDate(c.appointment.start).getTime() : null;
+  // Same base the Worker enforces (followUpBase): purchase date first, the
+  // call as fallback. Counting from the appointment marked every follow-up
+  // expired early, since one is always bought after the call.
+  const bought = c.addOnFollowUpAt ? toDate(c.addOnFollowUpAt).getTime() : null;
+  const base = bought || (c.appointment?.start ? toDate(c.appointment.start).getTime() : null);
   if (!base) return '· <strong style="color:var(--magenta)">FOLLOW-UP PAID</strong>';
   const days = Math.ceil((base + 30 * 86_400_000 - Date.now()) / 86_400_000);
   if (days <= 0) return '· <strong style="color:var(--danger)">FOLLOW-UP EXPIRED</strong>';
