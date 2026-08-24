@@ -5,7 +5,7 @@
 // scrolls to each section and highlights the one in view.
 
 import {
-  db, storage, collection, getDocs, query, where, doc, getDoc, onSnapshot,
+  db, storage, collection, getDocs, query, where, doc, onSnapshot,
   ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata,
 } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';

@@ -2,7 +2,7 @@
 // countdown that keeps the 7-day SLA from silently slipping (SPEC §F).
 
 import './admin-ledger.js';
-import { db, collection, getDocs, doc, getDoc, setDoc } from './firebase.js';
+import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { initPushPrompt } from './push.js';
 import { folderCardHtml, wireFolderOpen, wireFolderClocks, wireDxLongPress, openDxSheet } from './drawer.js';
@@ -316,7 +316,34 @@ async function load() {
     });
   }
 
+  // Tap a folder and it opens in the hand before the case page loads; press
+  // and hold the diagnosis line to write your own over the advisor's.
+  wireFolderOpen(listEl);
+  // The clock on each card. Tapping out here PINS it, so it keeps running
+  // while he moves around the app — which is the entire reason the control
+  // lives on the shelf and not only inside the chart.
+  wireFolderClocks(listEl, { getToken: () => user.getIdToken() });
+  wireDxLongPress(listEl, overrideDx);
+}
 
+function badge(c) {
+  if (c.status === 'awaiting_report' && c.reportDueAt) {
+    const days = Math.ceil((toDate(c.reportDueAt) - Date.now()) / 86_400_000);
+    return days >= 0 ? `REPORT DUE ${days}d` : `OVERDUE ${-days}d`;
+  }
+  return (c.status || '?').replace('_', ' ').toUpperCase();
+}
+/** Loud follow-up state in the list: paid+countdown, booked, or expired. */
+function followUpFlag(c) {
+  if (c.followUp) {
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric' });
+    return `· <strong style="color:var(--cyan)">FOLLOW-UP ${fmt.format(toDate(c.followUp.start))}</strong>`;
+  }
+  if (c.pendingExtra) return '· <strong style="color:var(--magenta)">AWAITING PAYMENT</strong>';
+  if (!c.addOnFollowUp) return '';
+  // Same base the Worker enforces (followUpBase): purchase date first, the
+  // call as fallback. Counting from the appointment marked every follow-up
+  // expired early, since one is always bought after the call.
   const bought = c.addOnFollowUpAt ? toDate(c.addOnFollowUpAt).getTime() : null;
   const base = bought || (c.appointment?.start ? toDate(c.appointment.start).getTime() : null);
   if (!base) return '· <strong style="color:var(--magenta)">FOLLOW-UP PAID</strong>';
