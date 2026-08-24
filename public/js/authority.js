@@ -75,6 +75,47 @@ const fmt = (d) => {
   });
 };
 
+const RULE = '_'.repeat(46);
+
+/**
+ * A field's value, or somewhere to write it. On screen an unfilled field reads
+ * "(name)", which tells you what belongs there. On a blank being filled in by
+ * hand, a parenthesis is not somewhere to write, so it becomes a rule.
+ */
+function field(o, v, placeholder, n = 46) {
+  return v || (o.blank ? '_'.repeat(n) : placeholder);
+}
+
+/**
+ * The signature block, and there are two of them because there are two ways
+ * these get signed.
+ *
+ * Signed in the app, the typed name IS the signature and the Worker stamps
+ * the date, so the form says so. Printed blank and sent ahead of a case — a
+ * client deciding whether to upgrade, a clinic that wants paper — none of
+ * that is true yet, and a form that attests to an electronic signature nobody
+ * made is a false statement on a document a records department will read.
+ * So a blank gets ruled lines and no attestation.
+ *
+ * `who` is 'patient' or 'member', matching the document's own vocabulary.
+ */
+function signatureBlock(o, who) {
+  if (o.blank) {
+    return `SIGNATURE
+Signed: ${RULE}
+
+Print name: ${o.clientName || RULE}
+
+Date: ______________________`;
+  }
+  return `SIGNATURE
+Signed: ${o.signedName || '(typed full name)'}
+Date: ${o.signedAt ? fmt(o.signedAt) : '(date)'}
+Signed electronically by the ${who} through the Pocket Advocate case page.
+The typed name above is the ${who}'s signature and the date is recorded by
+the system at the moment of signing.`;
+}
+
 /**
  * The records authorisation, as the client and the clinic both read it.
  *
@@ -90,15 +131,15 @@ export function recordsAuthorisation(o = {}) {
     : 'Records covering the whole period of my care.';
   return `AUTHORISATION FOR RELEASE OF PROTECTED HEALTH INFORMATION
 
-Patient: ${o.clientName || '(name)'}
-Date of birth: ${o.clientDob || '(date of birth)'}
+Patient: ${field(o, o.clientName, '(name)')}
+Date of birth: ${field(o, o.clientDob, '(date of birth)', 24)}
 
 I authorise the provider named below to release my health information to the
 person named below.
 
 RELEASING PROVIDER
-${o.clinicName || '(clinic)'}
-${o.clinicAddress || ''}
+${field(o, o.clinicName, '(clinic)')}
+${field(o, o.clinicAddress, '', 46)}
 
 RECEIVING PERSON
 ${o.advocateName || 'Eric Bleach'}, patient advocate, Pocket Advocate.
@@ -142,12 +183,7 @@ MY RIGHTS, WHICH THIS FORM DOES NOT TAKE AWAY
 EXPIRY
 This authorisation expires on ${o.expiresAt ? fmt(o.expiresAt) : 'one year from the date signed'}, or when I revoke it in writing, whichever comes first.
 
-SIGNATURE
-Signed: ${o.signedName || '(typed full name)'}
-Date: ${o.signedAt ? fmt(o.signedAt) : '(date)'}
-Signed electronically by the patient through the Pocket Advocate case page.
-The typed name above is the patient's signature and the date is recorded by
-the system at the moment of signing.`;
+${signatureBlock(o, 'patient')}`;
 }
 
 /**
@@ -161,10 +197,10 @@ the system at the moment of signing.`;
 export function representativeDesignation(o = {}) {
   return `APPOINTMENT OF AUTHORISED REPRESENTATIVE
 
-Member: ${o.clientName || '(name)'}
-Date of birth: ${o.clientDob || '(date of birth)'}
-Member or policy ID: ${o.memberId || '(member ID)'}
-Plan: ${o.planName || '(plan or insurer)'}
+Member: ${field(o, o.clientName, '(name)')}
+Date of birth: ${field(o, o.clientDob, '(date of birth)', 24)}
+Member or policy ID: ${field(o, o.memberId, '(member ID)', 32)}
+Plan: ${field(o, o.planName, '(plan or insurer)')}
 
 I appoint ${o.advocateName || 'Eric Bleach'}, patient advocate, Pocket Advocate,
 as my authorised representative in connection with claims and appeals under my
@@ -188,10 +224,7 @@ provide legal representation.
 DURATION
 This appointment stays in effect until ${o.expiresAt ? fmt(o.expiresAt) : 'one year from the date signed'}, or until I revoke it in writing, whichever comes first. I may revoke it at any time by writing to my plan and to my representative.
 
-SIGNATURE
-Signed: ${o.signedName || '(typed full name)'}
-Date: ${o.signedAt ? fmt(o.signedAt) : '(date)'}
-Signed electronically by the member through the Pocket Advocate case page.`;
+${signatureBlock(o, 'member')}`;
 }
 
 /** Which document a stored record is. The pair is the whole vocabulary. */

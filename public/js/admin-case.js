@@ -1244,6 +1244,20 @@ function paintOverview(pane) {
   pane.innerHTML = `
     ${infoBar(c, mtFmt, start, due)}
     ${c.fullAccess ? '<div data-authority-status></div>' : ''}
+    <details class="mgmt" data-k="auth">
+      <summary>📄 Authorisation forms</summary>
+      <div class="mgmt-body">
+        <p class="dim small" style="margin:0 0 .6rem;">A blank copy to print or
+          send, with ${esc(c.clientName || 'the client')}'s name already on it and
+          ruled lines to sign by hand. Use this to get a form into their hands
+          before a case is running${c.fullAccess ? '' : ' — signing in the app opens when they upgrade'}.
+          Records requests take weeks, so the form going out early is the whole game.</p>
+        <p class="row" style="gap:.4rem; flex-wrap:wrap; margin:0;">
+          <button class="btn quiet tiny" data-blank="records">Records authorisation</button>
+          <button class="btn quiet tiny" data-blank="representative">Insurance representative</button>
+        </p>
+      </div>
+    </details>
     ${c.appointment?.requested ? `
     <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
       <h3 style="margin:0 0 .3rem; color:var(--orange);">Booking request — not on your calendar</h3>
@@ -1371,6 +1385,11 @@ function paintOverview(pane) {
   wireScheduler(pane);
   pane.querySelectorAll('[data-action]').forEach((b) =>
     b.addEventListener('click', () => milestone(b.dataset.action, b)));
+  // Blank forms print straight from the pure functions — nothing is written
+  // down, because nothing has been signed. Deliberately not a [data-action]:
+  // those all post a milestone to the server, and this one is just paper.
+  pane.querySelectorAll('[data-blank]').forEach((b) =>
+    b.addEventListener('click', () => printAuthorityDoc({ kind: b.dataset.blank, blank: true })));
   wireHoldAndClose(pane);
 }
 
@@ -1902,9 +1921,8 @@ async function paintAuthorityStatus(pane) {
   const recs = live.filter((i) => i.kind === 'records');
   const rep = live.find((i) => i.kind === 'representative');
   const revoked = items.filter((i) => i.revokedAt);
-  const days = data.authorityAt
-    ? Math.max(0, 90 - Math.floor((Date.now() - toDate(data.authorityAt).getTime()) / 86_400_000))
-    : null;
+  const days = fullAccessDaysLeft(data);
+  const paused = !!data.hold?.pausedAt;
 
   host.innerHTML = `
     <div class="panel" style="${live.length ? '' : 'border-color:var(--orange); box-shadow:var(--glow-o);'}">
@@ -1922,7 +1940,7 @@ async function paintAuthorityStatus(pane) {
           ? `${esc(rep.planName || 'plan')}${rep.memberId ? ` · ${esc(rep.memberId)}` : ''}`
           : '<span style="color:var(--orange)">not signed</span>'}</p>
       ${days !== null ? `<p class="dim small" style="margin:.35rem 0 0;">
-        ${days} day${days === 1 ? '' : 's'} left in the 90 day window.</p>` : ''}
+        ${days} day${days === 1 ? '' : 's'} left in the ${FULL_WINDOW_DAYS} day window${paused ? ', paused' : ''}.</p>` : ''}
       ${revoked.length ? `<p class="dim small" style="margin:.35rem 0 0; color:var(--orange);">
         ${revoked.length} withdrawn. Do not act on ${revoked.length === 1 ? 'it' : 'them'}.</p>` : ''}
       ${live.length ? `<p class="row" style="gap:.4rem; flex-wrap:wrap; margin:.5rem 0 0;">
@@ -1937,6 +1955,29 @@ async function paintAuthorityStatus(pane) {
       if (item) printAuthorityDoc(item);
     });
   }
+}
+
+/**
+ * The coordination window, by the Worker's own rule (fullAccessWindowEnd):
+ * sixty days from the FIRST CALL, plus any extension bought, plus every
+ * stretch the case has spent on hold.
+ *
+ * This card used to count ninety days from the first signature — a window
+ * length the tier no longer sells, measured from a date it never ran from. It
+ * disagreed with the client's own agreement on both halves, and with the
+ * auto-close sweep that actually ends the case.
+ */
+const FULL_WINDOW_DAYS = 60;
+function fullAccessDaysLeft(c) {
+  const start = c?.appointment?.start ? toDate(c.appointment.start).getTime() : 0;
+  if (!start) return null;
+  // Same as heldMs(): what is banked, plus the stretch still running if the
+  // case is paused right now. While paused these two grow together, so the
+  // number on the card holds still, which is the point of a pause.
+  const held = Math.max(0, Number(c?.hold?.totalMs) || 0)
+    + (c?.hold?.pausedAt ? Math.max(0, Date.now() - toDate(c.hold.pausedAt).getTime()) : 0);
+  const end = start + (FULL_WINDOW_DAYS + (Number(c.fullAccessExtraDays) || 0)) * 86_400_000 + held;
+  return Math.max(0, Math.ceil((end - Date.now()) / 86_400_000));
 }
 
 /** A paper copy for the clinic or the plan. Same print path as the prep sheet. */
