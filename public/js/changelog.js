@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.33';
+export const VERSION = '2.34';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '2.33';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // The tip jar's removal is client-visible and worth saying: something they
+    // could see on their page every visit is simply gone, and silence about
+    // that invites "did I break something". The rest of this push is the
+    // agreement they tick at booking, which existing clients never see again,
+    // and admin machinery.
+    version: '2.34',
+    quiet: true,
+    client: [
+      'The tip jar is gone from the bottom of your case page. Nothing on this app asks you for money beyond what you booked.',
+    ],
+  },
   {
     // The tier is not live yet, so its client notes wait for the release that
     // turns it on. What IS listed is a fix a client can see on their own page
@@ -408,11 +420,8 @@ export async function showVersionCard(isAdmin = false, user = null) {
   // Eric, 2026-08-21: "They should get update notes and then take the tour."
   // step -1 is the notes page. The tour follows it, not the other way round.
   const tour = versions.flatMap((v) => v.tour || []);
-  // If the page carries the tip jar (the client case page does), the flow
-  // ends on a copy of it - "if they haven't viewed the new update this gets
-  // wrapped in with it". The copy works because the jar's buttons are handled
-  // at the document level, not on the original element.
-  const jarSrc = document.querySelector('[data-tip-jar]');
+  // This flow used to end on a copy of the tip jar. The jar was retired on
+  // 2026-08-24, so the notes end on the tour, or on themselves.
   let step = -1;
 
   const overlay = document.createElement('div');
@@ -431,8 +440,8 @@ export async function showVersionCard(isAdmin = false, user = null) {
       bodyEl.innerHTML = versions.map((v) => `
         <h3>Pocket Advocate ${esc(v.version)}</h3>
         <ul class="whats-new-list">${v.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`).join('');
-      actsEl.innerHTML = (tour.length || jarSrc)
-        ? `<button class="btn glow" data-next>${tour.length ? 'Take the tour' : 'One more thing'}</button>
+      actsEl.innerHTML = tour.length
+        ? `<button class="btn glow" data-next>Take the tour</button>
            <button class="btn ghost" data-close>Not now</button>`
         : '<button class="btn glow" data-close>Got it</button>';
       actsEl.querySelector('[data-next]')?.addEventListener('click', () => { step = 0; draw(); });
@@ -444,7 +453,7 @@ export async function showVersionCard(isAdmin = false, user = null) {
         <p class="wn-body">${esc(t.body)}</p>
         <div class="wn-dots" aria-hidden="true">${tour.map((_, i) =>
           `<span class="${i === step ? 'on' : ''}"></span>`).join('')}</div>`;
-      const lastTour = step === tour.length - 1 && !jarSrc;
+      const lastTour = step === tour.length - 1;
       actsEl.innerHTML = `
         <button class="btn quiet" data-back>Back</button>
         ${lastTour
@@ -453,15 +462,8 @@ export async function showVersionCard(isAdmin = false, user = null) {
         ${lastTour ? '' : '<button class="btn ghost" data-close>Skip</button>'}`;
       actsEl.querySelector('[data-back]')?.addEventListener('click', () => { step--; draw(); });
       actsEl.querySelector('[data-next]')?.addEventListener('click', () => { step++; draw(); });
-    } else if (jarSrc) {
-      // The jar itself, word for word, buttons live.
-      bodyEl.innerHTML = jarSrc.outerHTML;
-      actsEl.innerHTML = `
-        <button class="btn quiet" data-back>Back</button>
-        <button class="btn glow" data-close>Done</button>`;
-      actsEl.querySelector('[data-back]')?.addEventListener('click', () => { step--; draw(); });
     }
-    actsEl.querySelector('[data-close]').addEventListener('click', close);
+    actsEl.querySelector('[data-close]')?.addEventListener('click', close);
   }
 
   function close() { overlay.remove(); }

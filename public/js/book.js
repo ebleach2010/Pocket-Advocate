@@ -12,6 +12,7 @@ import { currentUser, hydrateNav } from './auth.js';
 import { ensureSignedIn } from './inline-auth.js';
 import { ageFromDob, MIN_AGE } from './profile.js';
 import { WAIVERS } from './waivers.js';
+import { SERVICE_TERMS, SERVICE_TERMS_PLAIN } from './service-terms.js';
 import { FULL_ACCESS_TERMS, FULL_ACCESS_PLAIN } from './tier-terms.js';
 import { rates } from './rates.js';
 
@@ -54,6 +55,7 @@ const AGREEMENT_PLAIN = {
   disclaimer: "What this is, what it is not, and what you're agreeing to.",
   privacy: "What I store, where it lives, and who can see it. You and me. That's the list.",
   recording: 'Our call is recorded so you can revisit it later. The recording is saved in your private case file.',
+  [SERVICE_TERMS.id]: SERVICE_TERMS_PLAIN,
 };
 
 const state = {
@@ -495,11 +497,17 @@ async function renderTime() {
 
 // ---- Step 2: One agreement ----
 
+// The three original waivers, plus the service terms added 2026-08-24. Kept
+// as one list so the scroll gate, the tick boxes and the Continue button all
+// count the same set - a fourth part bolted on beside them would have been a
+// fourth chance to leave one unwired.
+const AGREEMENT_PARTS = [...WAIVERS, SERVICE_TERMS];
+
 function renderAgreement() {
   const el = mount(`
-    <h2>One agreement, three short parts</h2>
-    <p class="muted small">Open each part and read it through. Once you have reached the end of all three, you can acknowledge the agreement.</p>
-    ${WAIVERS.map(
+    <h2>One agreement, four short parts</h2>
+    <p class="muted small">Open each part and read it through. Once you have reached the end of all four, you can acknowledge the agreement.</p>
+    ${AGREEMENT_PARTS.map(
       (w) => `
       <details class="agreement" data-id="${w.id}">
         <summary>
@@ -512,12 +520,12 @@ function renderAgreement() {
     ).join('')}
     <p>
       <button class="btn quiet" id="back">Back</button>
-      <button class="btn glow" id="continue" ${WAIVERS.every((w) => state.acks[w.id]) ? '' : 'disabled'}>Continue</button>
+      <button class="btn glow" id="continue" ${AGREEMENT_PARTS.every((w) => state.acks[w.id]) ? '' : 'disabled'}>Continue</button>
     </p>`);
 
   const continueBtn = el.querySelector('#continue');
   const syncContinue = () => {
-    continueBtn.disabled = !WAIVERS.every((w) => state.acks[w.id]);
+    continueBtn.disabled = !AGREEMENT_PARTS.every((w) => state.acks[w.id]);
   };
 
   el.querySelectorAll('details.agreement').forEach((d) => {

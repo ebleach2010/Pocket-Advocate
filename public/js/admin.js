@@ -115,15 +115,6 @@ async function load() {
     if (res.ok) voice = await res.json();
   } catch { /* same */ }
 
-  // The tip jar switch. Lives on `settings`, which is world-readable and
-  // admin-writable by rule, so the client page reads it directly and one tap
-  // here retires the jar everywhere with no deploy.
-  let tipJar = true;
-  try {
-    const snap = await getDoc(doc(db, 'settings', 'tipJar'));
-    if (snap.exists() && snap.data().enabled === false) tipJar = false;
-  } catch { /* default on */ }
-
   const dollars = (c) => (c % 100 ? (c / 100).toFixed(2) : String(c / 100));
   const rateBlock = rate ? `
     <details class="panel" style="margin-bottom:1rem;">
@@ -162,11 +153,6 @@ async function load() {
         <button class="btn quiet" id="rate-save">Set</button>
       </div>
       <p class="dim small" id="rate-said" style="margin:.4rem 0 0;" hidden></p>
-      <label class="row dim small" style="gap:.5rem; margin:.8rem 0 0; align-items:center; cursor:pointer;">
-        <input type="checkbox" id="tip-jar-on"${tipJar ? ' checked' : ''}>
-        Show the tip jar on client case pages
-      </label>
-      <p class="dim small" id="tip-said" style="margin:.3rem 0 0;" hidden></p>
     </details>` : '';
 
   const ago = (iso) => {
@@ -330,59 +316,7 @@ async function load() {
     });
   }
 
-  const tipToggle = listEl.querySelector('#tip-jar-on');
-  if (tipToggle) {
-    tipToggle.addEventListener('change', async () => {
-      const said = listEl.querySelector('#tip-said');
-      tipToggle.disabled = true;
-      try {
-        await setDoc(doc(db, 'settings', 'tipJar'), { enabled: tipToggle.checked }, { merge: true });
-        said.textContent = tipToggle.checked
-          ? 'The jar is showing on client case pages.'
-          : 'The jar is gone from client case pages.';
-      } catch (err) {
-        tipToggle.checked = !tipToggle.checked;
-        said.textContent = `Couldn't save that: ${err.message}`;
-      }
-      said.hidden = false;
-      tipToggle.disabled = false;
-    });
-  }
 
-  // Tap a folder and it opens in the hand before the case page loads; press
-  // and hold the diagnosis line to write your own over the advisor's.
-  wireFolderOpen(listEl);
-  // Start and stop a case's clock without opening it, several at once if that
-  // is how the day is going. onChange keeps the local copy in step so a
-  // repaint does not show a stale total.
-  wireFolderClocks(listEl, {
-    getToken: () => user.getIdToken(),
-    onChange: (id, running, seconds) => {
-      const c = cases.find((x) => x.id === id);
-      if (c) c.work = { ...(c.work || {}), seconds, startedAt: running ? new Date() : null };
-    },
-  });
-  wireDxLongPress(listEl, overrideDx);
-}
-
-function badge(c) {
-  if (c.status === 'awaiting_report' && c.reportDueAt) {
-    const days = Math.ceil((toDate(c.reportDueAt) - Date.now()) / 86_400_000);
-    return days >= 0 ? `REPORT DUE ${days}d` : `OVERDUE ${-days}d`;
-  }
-  return (c.status || '?').replace('_', ' ').toUpperCase();
-}
-/** Loud follow-up state in the list: paid+countdown, booked, or expired. */
-function followUpFlag(c) {
-  if (c.followUp) {
-    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric' });
-    return `· <strong style="color:var(--cyan)">FOLLOW-UP ${fmt.format(toDate(c.followUp.start))}</strong>`;
-  }
-  if (c.pendingExtra) return '· <strong style="color:var(--magenta)">AWAITING PAYMENT</strong>';
-  if (!c.addOnFollowUp) return '';
-  // Same base the Worker enforces (followUpBase): purchase date first, the
-  // call as fallback. Counting from the appointment expired every follow-up
-  // early, since one is always bought after the call.
   const bought = c.addOnFollowUpAt ? toDate(c.addOnFollowUpAt).getTime() : null;
   const base = bought || (c.appointment?.start ? toDate(c.appointment.start).getTime() : null);
   if (!base) return '· <strong style="color:var(--magenta)">FOLLOW-UP PAID</strong>';

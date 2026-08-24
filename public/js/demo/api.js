@@ -162,6 +162,40 @@ export function demoApi(role, store) {
         message: live ? `I am not taking new cases until ${when}. Existing clients are unaffected.` : null,
       });
     }
+    // Pausing a case and closing one, mirrored so both are drivable in the
+    // demo rather than dead buttons.
+    if (path === '/api/admin/hold' || path === '/api/admin/close-case') {
+      const key = `cases/${body.caseId || DEMO_CASE_ID}`;
+      const c = store.docs.get(key) || {};
+      const hold = c.hold || {};
+      if (path === '/api/admin/close-case') {
+        store.docs.set(key, {
+          ...c, status: 'closed', closedAt: new Date(), closedBy: 'advocate',
+          hold: { pausedAt: null, totalMs: Number(hold.totalMs) || 0, reason: '', backBy: null },
+        });
+        store.persist?.();
+        return ok({ ok: true });
+      }
+      if (body.on === true) {
+        store.docs.set(key, {
+          ...c,
+          hold: {
+            pausedAt: new Date(), totalMs: Number(hold.totalMs) || 0,
+            reason: body.reason || '', backBy: body.backBy ? new Date(body.backBy) : null,
+          },
+        });
+        store.persist?.();
+        return ok({ ok: true, paused: true });
+      }
+      const stretch = hold.pausedAt
+        ? Math.max(0, Date.now() - new Date(hold.pausedAt).getTime()) : 0;
+      store.docs.set(key, {
+        ...c,
+        hold: { pausedAt: null, totalMs: (Number(hold.totalMs) || 0) + stretch, reason: '', backBy: null },
+      });
+      store.persist?.();
+      return ok({ ok: true, paused: false, addedMs: stretch });
+    }
     if (path === '/api/admin/effort') {
       if (init.method === 'POST') demoEffort = body.effort === 'max' ? 'max' : 'high';
       return ok({ effort: demoEffort });
@@ -251,7 +285,9 @@ export function demoApi(role, store) {
     }
     if (path === '/api/case-for-session') return ok({ ready: true, caseId: DEMO_CASE_ID });
     if (path === '/api/portal') return ok({ url: `/subscription.html?demo=${role}` });
-    if (path === '/api/tip') return ok({ url: `/case.html?demo=1&tipped=1` });
+    // Retired with the jar itself. The ledger branch below still reports
+    // tips, because a real ledger still has to reconcile ones already given.
+    if (path === '/api/tip') return fail(404, 'Not found');
     if (path === '/api/chat-unlock') return ok({ url: `/case.html?demo=1&chatopen=1` });
 
     // ---- the advisor, from a fixture -------------------------------------

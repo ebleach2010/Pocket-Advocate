@@ -1303,6 +1303,42 @@ function paintOverview(pane) {
       </div>
     </details>
 
+    <details class="mgmt" data-k="hold">
+      <summary>${c.hold?.pausedAt ? '⏸ Paused' : '⏸ Pause / close'}</summary>
+      <div class="mgmt-body">
+        ${c.hold?.pausedAt ? `
+          <p class="dim small" style="margin:.2rem 0 .6rem;">Paused since
+            <strong>${esc(new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric' }).format(toDate(c.hold.pausedAt)))}</strong>. Every deadline on
+            this case is stopped. Their page says so and says their dates moved
+            with it.</p>
+          <div class="actions"><button class="btn glow" data-hold-off>Resume the case</button></div>`
+        : `
+          <p class="dim small" style="margin:.2rem 0 .6rem;">Stops every clock
+            on this case: the report deadline, the follow-up month, the
+            coordination window. Resuming puts the time back on all of them.
+            An insurance appeal deadline is NOT paused, because that clock
+            belongs to the plan, not to you.</p>
+          <label class="dim small" style="display:block; margin-bottom:.4rem;">Back around (optional)
+            <input type="date" data-hold-back style="margin-left:.4rem;"></label>
+          <label class="dim small" style="display:block; margin-bottom:.6rem;">Why, for your record only
+            <input type="text" data-hold-why maxlength="300" placeholder="never shown to them"
+              style="width:100%; margin-top:.2rem;"></label>
+          <div class="actions"><button class="btn secondary" data-hold-on>Pause this case</button></div>`}
+        <hr style="margin:.9rem 0; border:0; border-top:1px solid var(--line);">
+        ${c.status === 'closed'
+          ? '<p class="dim small" style="margin:0;">Case closed. They can still leave a review.</p>'
+          : `
+          <p class="dim small" style="margin:.2rem 0 .6rem;">Closing ends the
+            case at your discretion, for any reason. They keep everything in
+            it, and they can still leave a review.</p>
+          <label class="dim small" style="display:block; margin-bottom:.6rem;">Note, for your record only
+            <input type="text" data-close-note maxlength="500" placeholder="never shown to them"
+              style="width:100%; margin-top:.2rem;"></label>
+          <div class="actions"><button class="btn quiet" data-close-case>Close this case</button></div>`}
+        <p class="error" data-hold-error hidden style="margin:.5rem 0 0;"></p>
+      </div>
+    </details>
+
     <details class="mgmt" data-k="miles">
       <summary>✓ Milestones</summary>
       <div class="mgmt-body">
@@ -1335,6 +1371,60 @@ function paintOverview(pane) {
   wireScheduler(pane);
   pane.querySelectorAll('[data-action]').forEach((b) =>
     b.addEventListener('click', () => milestone(b.dataset.action, b)));
+  wireHoldAndClose(pane);
+}
+
+/**
+ * Pausing a case, resuming it, and ending it at his discretion.
+ *
+ * Both routes are admin-gated and both 404 to anyone else. The reason and the
+ * closing note are stored for his record and never reach a client surface;
+ * the client is told the case is paused, and roughly when he expects to be
+ * back, and nothing about why.
+ */
+function wireHoldAndClose(pane) {
+  const errEl = pane.querySelector('[data-hold-error]');
+  const say = (msg) => { if (errEl) { errEl.textContent = msg; errEl.hidden = !msg; } };
+  const post = async (path, payload, btn) => {
+    btn.disabled = true;
+    say('');
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ caseId, ...payload }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      load();
+    } catch (err) {
+      say(err.message);
+      btn.disabled = false;
+    }
+  };
+
+  pane.querySelector('[data-hold-on]')?.addEventListener('click', (e) => {
+    const back = pane.querySelector('[data-hold-back]')?.value || '';
+    post('/api/admin/hold', {
+      on: true,
+      reason: pane.querySelector('[data-hold-why]')?.value || '',
+      // A bare date means the whole MST day, the same rule the rest of the
+      // app uses; without the offset it would mean UTC midnight and land a
+      // day early on his own screen.
+      backBy: back ? `${back}T12:00:00-07:00` : null,
+    }, e.currentTarget);
+  });
+
+  pane.querySelector('[data-hold-off]')?.addEventListener('click', (e) =>
+    post('/api/admin/hold', { on: false }, e.currentTarget));
+
+  pane.querySelector('[data-close-case]')?.addEventListener('click', (e) => {
+    if (!confirm('Close this case? They keep every file and can still leave a review. This is not reversible from here.')) return;
+    post('/api/admin/close-case', {
+      note: pane.querySelector('[data-close-note]')?.value || '',
+    }, e.currentTarget);
+  });
 }
 
 /** Repaint Overview in place, keeping whichever rows Eric had open. */

@@ -376,7 +376,11 @@ const METHODS = ['phone', 'video'];
 // The Full Access scope note. Not in REQUIRED_ACKS: a standard case must not
 // be blocked on an agreement about a tier it is not buying.
 const FULL_ACCESS_ACK = 'fullAccess';
-const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording'];
+// 'service' added 2026-08-24: the no-guarantees clause, his right to close a
+// case, and what a pause does to their deadlines. Enforced here as well as in
+// the page, because the page is not the trust boundary - a booking that
+// arrives without it is refused.
+const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording', 'service'];
 // A chat message this old with no in-app read gets an email nudge (spec: batched).
 const DIGEST_MIN_AGE_MS = 10 * 60_000;
 
@@ -625,8 +629,12 @@ export default {
         return await handleDeviceSignin(request, env);
       if (url.pathname === '/api/chat-unlock' && request.method === 'POST')
         return await handleChatUnlock(request, env);
+      // /api/tip is retired (Eric, 2026-08-24: "Remove tip jar"). The route
+      // is gone so nothing can start a new one; the webhook branch and the
+      // ledger's tip column stay, because tips already received are real
+      // money that has to keep reconciling.
       if (url.pathname === '/api/tip' && request.method === 'POST')
-        return await handleTip(request, env);
+        return json({ error: 'Not found' }, 404);
       if (url.pathname === '/api/review' && request.method === 'POST')
         return await handleReviewSubmit(request, env);
       if (url.pathname === '/api/reviews' && request.method === 'GET')
@@ -691,6 +699,10 @@ export default {
         return await handleWorkPresence(request, env);
       if (url.pathname === '/api/admin/booking-closure')
         return await handleBookingClosure(request, env);
+      if (url.pathname === '/api/admin/hold' && request.method === 'POST')
+        return await handleHold(request, env);
+      if (url.pathname === '/api/admin/close-case' && request.method === 'POST')
+        return await handleCloseCase(request, env);
       if (url.pathname === '/api/admin/effort')
         return await handleEffort(request, env);
       if (url.pathname === '/api/admin/voice')
@@ -1333,7 +1345,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-30-coordination';
+const BUILD_TAG = 'v2026-08-31-terms';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1341,7 +1353,7 @@ const BUILD_TAG = 'v2026-08-30-coordination';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.33';
+const VERSION = '2.34';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -1357,7 +1369,11 @@ async function closeDeliveredCases(env) {
     const rows = await queryDocs(env, 'cases', [['status', 'EQUAL', 'delivered']], 40);
     const cutoff = Date.now() - REVIEW_WINDOW_MS;
     for (const row of rows) {
-      const at = row.data.reportDeliveredAt ? new Date(row.data.reportDeliveredAt).getTime() : 0;
+      // A held case is not closed at all: his clocks are stopped, and closing
+      // would take the chat away from somebody who is waiting on him.
+      if (onHold(row.data)) continue;
+      const at = row.data.reportDeliveredAt
+        ? new Date(row.data.reportDeliveredAt).getTime() + heldMs(row.data) : 0;
       // No delivery stamp means an older case that predates the field. Leave
       // it alone rather than closing a chat on a guess.
       if (!at || at > cutoff) continue;
@@ -1541,17 +1557,158 @@ const FULL_MAX_OPEN_DEFAULT = 2;
  * ran from `authorityAt`, a field the Worker wrote and then read NOWHERE, so
  * the window the client was sold could not be located by either side.
  */
+/**
+ * A case on hold: how long its clocks have been stopped.
+ *
+ * Eric, 2026-08-24: "my health could take a nosedive that would make my
+ * utility useless. I may also have the option to pause their case timeline in
+ * case of personal crisis, family, health, or otherwise. And then resume it at
+ * the same timestamp later."
+ *
+ * `hold = { pausedAt, totalMs, reason }`. Every clock that is HIS - the report
+ * deadline, the follow-up month, the tier's coordination window, the close
+ * sweep - moves by this amount, so resuming really does pick up at the same
+ * timestamp rather than at a deadline that ran on without him.
+ *
+ * IT DOES NOT MOVE A CLOCK SOMEBODY ELSE OWNS. An insurance appeal deadline
+ * belongs to the plan, not to Eric, and pausing his case cannot buy the
+ * client another day of it. Pretending otherwise would be the single most
+ * dangerous thing this feature could do: a missed filing window ends a claim,
+ * and a paused case that quietly showed more time than the insurer allows
+ * would cause exactly that. runAppealWarnings deliberately does not consult
+ * this function.
+ */
+function heldMs(c) {
+  const banked = Math.max(0, Number(c?.hold?.totalMs) || 0);
+  const since = c?.hold?.pausedAt ? Date.now() - new Date(c.hold.pausedAt).getTime() : 0;
+  return banked + Math.max(0, Number.isFinite(since) ? since : 0);
+}
+const onHold = (c) => !!c?.hold?.pausedAt;
+
 /** Appeal letters actually filed on this case. The scope note promises two. */
 const FULL_APPEALS_INCLUDED = 2;
 function appealsUsed(state) {
   return Number(state?.appealMeta?.filedCount) || 0;
 }
 
+/**
+ * POST /api/admin/hold  Body: { caseId, on, reason }   admin only
+ *
+ * Stops or restarts a case's clocks. Resuming banks the paused stretch into
+ * `totalMs`, which every deadline of his adds - so a case paused for eleven
+ * days resumes with eleven days put back on each of them, not with a
+ * fortnight of silent decay to explain.
+ *
+ * The reason is stored for his own record and is never shown to the client.
+ * They are told the case is paused and roughly when he expects to be back;
+ * they are not told about his health, his family, or anything else.
+ */
+async function handleHold(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+  const doc = await getDoc(env, `cases/${caseId}`);
+  if (!doc) return json({ error: 'Not found' }, 404);
+  const hold = doc.data.hold || {};
+  const want = body?.on === true;
+
+  if (want) {
+    if (hold.pausedAt) return json({ ok: true, paused: true, hold });
+    const next = {
+      pausedAt: new Date(),
+      totalMs: Math.max(0, Number(hold.totalMs) || 0),
+      reason: typeof body?.reason === 'string' ? body.reason.slice(0, 300) : '',
+      backBy: body?.backBy ? new Date(body.backBy) : null,
+    };
+    await patchDoc(env, `cases/${caseId}`, { hold: next }, { mask: ['hold'] });
+    // Their page will say the case is paused the moment it repaints; the push
+    // is so they are not left refreshing to find out.
+    if (doc.data.clientUid) {
+      await notifyUser(env, doc.data.clientUid, {
+        title: 'Pocket Advocate',
+        body: 'Your case is paused for a short while. Open the app for what that means.',
+        link: `/case.html?id=${caseId}`,
+      }).catch(() => {});
+    }
+    return json({ ok: true, paused: true, hold: next });
+  }
+
+  if (!hold.pausedAt) return json({ ok: true, paused: false, hold });
+  const stretch = Math.max(0, Date.now() - new Date(hold.pausedAt).getTime());
+  const next = {
+    pausedAt: null,
+    totalMs: (Math.max(0, Number(hold.totalMs) || 0)) + stretch,
+    reason: '',
+    backBy: null,
+  };
+  // reportDueAt is a stored absolute date rather than something derived, so
+  // it is moved here instead of at every read. Everything else his side
+  // (the follow-up month, the tier window, the close sweep) adds heldMs where
+  // it is computed.
+  const patch = { hold: next };
+  const mask = ['hold'];
+  if (doc.data.reportDueAt) {
+    patch.reportDueAt = new Date(new Date(doc.data.reportDueAt).getTime() + stretch);
+    mask.push('reportDueAt');
+  }
+  await patchDoc(env, `cases/${caseId}`, patch, { mask });
+  if (doc.data.clientUid) {
+    await notifyUser(env, doc.data.clientUid, {
+      title: 'Pocket Advocate',
+      body: 'Your case is moving again. Every date on it moved with it.',
+      link: `/case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
+  return json({ ok: true, paused: false, hold, addedMs: stretch });
+}
+
+/**
+ * POST /api/admin/close-case  Body: { caseId, note }   admin only
+ *
+ * Eric, 2026-08-24: "I reserve the right to close a case for whatever reason.
+ * After which, they still have the right to leave a review."
+ *
+ * So this closes the case and nothing else. It does not touch the review, and
+ * the review surface is deliberately not gated on an open case - somebody
+ * whose case he ended is exactly the person whose account of it should still
+ * be publishable. Muzzling that would be the wrong instinct and would read,
+ * correctly, as him only wanting reviews he liked.
+ */
+async function handleCloseCase(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+  const doc = await getDoc(env, `cases/${caseId}`);
+  if (!doc) return json({ error: 'Not found' }, 404);
+  if (doc.data.status === 'closed') return json({ ok: true, alreadyClosed: true });
+  await patchDoc(env, `cases/${caseId}`, {
+    status: 'closed',
+    closedAt: new Date(),
+    closedBy: 'advocate',
+    // His note, for his own record. Never rendered on a client surface.
+    closedNote: typeof body?.note === 'string' ? body.note.slice(0, 500) : '',
+    // A closed case has no running clock to bill.
+    hold: { pausedAt: null, totalMs: Math.max(0, Number(doc.data.hold?.totalMs) || 0), reason: '', backBy: null },
+  }, { mask: ['status', 'closedAt', 'closedBy', 'closedNote', 'hold'] });
+  if (doc.data.clientUid) {
+    await notifyUser(env, doc.data.clientUid, {
+      title: 'Pocket Advocate',
+      body: 'Your case has been closed. Everything in it stays yours to read and download.',
+      link: `/case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
+  return json({ ok: true });
+}
+
 function fullAccessWindowEnd(c) {
   const start = c?.appointment?.start ? new Date(c.appointment.start).getTime() : 0;
   if (!Number.isFinite(start) || !start) return null;
   const days = FULL_WINDOW_DAYS + (Number(c.fullAccessExtraDays) || 0);
-  return new Date(start + days * 86_400_000);
+  return new Date(start + days * 86_400_000 + heldMs(c));
 }
 async function fullAccessCapacity(env) {
   const [rows, cfg] = await Promise.all([
@@ -4081,45 +4238,6 @@ const REVIEW_WINDOW_MS = 48 * 3600_000;
  * where it appears.
  */
 /**
- * POST /api/tip  Body: { caseId, amountCents }
- *
- * The tip jar. Entirely optional, never gates anything, and grants nothing:
- * the only record is a ledger entry and a note to Eric. The amount is chosen
- * on the page (a percentage of what they paid, or their own number); this
- * only checks it is a sane amount on their own case, then hands them to
- * Stripe. Charged immediately - it is a checkout, not a saved card.
- */
-async function handleTip(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'Sign in required' }, 401);
-  const body = await request.json().catch(() => ({}));
-  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
-  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
-  const amountCents = Math.round(Number(body?.amountCents));
-  if (!(amountCents >= 100 && amountCents <= 500000))
-    return json({ error: 'Pick an amount between $1 and $5,000.' }, 400);
-  const doc = await getDoc(env, `cases/${caseId}`);
-  if (!doc || doc.data.clientUid !== user.uid) return json({ error: 'Not found' }, 404);
-
-  const session = await stripePost(env, '/checkout/sessions', {
-    mode: 'payment',
-    customer_email: doc.data.clientEmail || user.email || undefined,
-    line_items: [{
-      quantity: 1,
-      price_data: {
-        currency: 'usd',
-        unit_amount: amountCents,
-        product_data: { name: 'Tip', description: 'Optional contribution — The Pocket Advocate' },
-      },
-    }],
-    success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&tipped=1`,
-    cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
-    metadata: { kind: 'tip', caseId, uid: user.uid },
-  });
-  return json({ url: session.url });
-}
-
-/**
  * POST /api/chat-unlock  Body: { caseId }
  *
  * Opens the case chat before its one-week window, for a one-time $50 (the
@@ -5463,7 +5581,9 @@ function followUpBase(c) {
 
 function followUpExpiry(c) {
   const base = followUpBase(c);
-  return base ? new Date(base.getTime() + FOLLOWUP_EXPIRY_DAYS * 86_400_000) : null;
+  return base
+    ? new Date(base.getTime() + FOLLOWUP_EXPIRY_DAYS * 86_400_000 + heldMs(c))
+    : null;
 }
 
 /**

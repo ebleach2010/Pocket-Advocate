@@ -71,7 +71,6 @@ if (user) {
 
 async function boot() {
   // The jar switch, read once before anything paints the footer.
-  await loadTipJarSetting();
   const container = document.getElementById('cases');
   try {
     const snapshot = await getDocs(query(collection(db, 'cases'), where('clientUid', '==', user.uid)));
@@ -353,6 +352,41 @@ function workLine(c) {
   }</p>`;
 }
 
+/**
+ * What a client sees while their case is paused.
+ *
+ * Said plainly, at the top, before anything else on the page - because the
+ * alternative is somebody watching a date slide past with no explanation and
+ * concluding they have been dropped. It says what stopped, that their dates
+ * moved with it, and the one thing that did NOT stop, which is the part that
+ * could actually hurt them if they assumed otherwise.
+ *
+ * It does not say why. His health and his family are not the client's
+ * business, and `hold.reason` is never sent to this page.
+ */
+function pausedNotice(c) {
+  if (!c?.hold?.pausedAt) return '';
+  const back = c.hold.backBy ? toDate(c.hold.backBy) : null;
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric',
+  });
+  return `
+    <div class="panel" style="border-color:var(--magenta);">
+      <h3 style="margin:0 0 .3rem;">Your case is paused</h3>
+      <p style="margin:0 0 .5rem;">I have had to stop work for a short while.
+        Every date on your case has stopped with it, so nothing is running
+        down while I am away and you lose no time.${
+        back ? ` I expect to pick it back up around <strong>${fmt.format(back)}</strong>.` : ''}</p>
+      <p class="dim small" style="margin:0 0 .5rem;">Your case page, your files
+        and your chat all stay open. Message me any time; I will read it when
+        I am back.</p>
+      <p class="dim small" style="margin:0;"><strong>One thing does not
+        pause.</strong> If your insurer has given you a deadline to appeal,
+        that clock is theirs and it keeps running. If one is close, tell me
+        and I will deal with it before anything else.</p>
+    </div>`;
+}
+
 function renderProgress(el, c) {
   const start = c.appointment && toDate(c.appointment.start);
   const closed = c.status === 'closed';
@@ -390,6 +424,7 @@ function renderProgress(el, c) {
 
   el.innerHTML = `
     ${confirmationBanner(c, start, localFmt)}
+    ${pausedNotice(c)}
     <h2 class="case-sec-h">Progress</h2>
     <div class="panel">
       ${start ? `
@@ -800,9 +835,12 @@ function wireFileDelete(li, r, doDelete) {
  */
 const REVIEW_PROMPT = [
   'Please leave feedback for me. This helps better improve the patient experience, app development, and future cases.',
-  'The chat closes 48hrs after you receive your advocacy case review.',
   'Thank You!',
 ];
+// Said only where it is true. A standard case closes 48 hours after the
+// report; a Full Access case does not, and a case Eric closed by hand has
+// already closed. Telling either of them to hurry was wrong.
+const REVIEW_48H = 'The chat closes 48hrs after you receive your advocacy case review.';
 
 function renderReview(el, c) {
   const delivered = c.status === 'delivered' || c.status === 'closed';
@@ -823,6 +861,11 @@ function renderReview(el, c) {
     <div class="review-card">
       <h3>${delivered ? 'How did it go?' : 'Leave a Review Anytime'}</h3>
       ${(delivered ? REVIEW_PROMPT : ANYTIME).map((t) => `<p>${esc(t)}</p>`).join('')}
+      ${delivered && c.status !== 'closed' && !c.fullAccess
+        ? `<p>${esc(REVIEW_48H)}</p>` : ''}
+      ${c.status === 'closed'
+        ? '<p>Your case is closed, and this stays open. If you have something to say about how it went, I would rather hear it than not.</p>'
+        : ''}
       ${delivered ? `<p class="dim small"><em>You still keep all chat logs and documents for your case, untouched.</em></p>` : ''}
       <div class="stars" data-stars role="radiogroup" aria-label="Rating out of five">
         ${[1, 2, 3, 4, 5].map((n) => `
@@ -1013,150 +1056,23 @@ const ratesReady = fetch('/api/rates')
  * card is already saying the follow-up is reserved; the review card below it
  * saying the same thing in different words reads as a glitch.
  */
-/**
- * The bottom of the case page: the tip jar. Always there, never hidden, and
- * never in the way. The words are Eric's, verbatim. If the v2.2 update card
- * has not been seen yet, changelog.js folds a copy of this into the end of
- * that flow (it looks for [data-tip-jar]).
- */
-// ERIC: the first line of this is now WRONG and only you can fix it. It says
-// your pricing "works out to roughly $6/hour", which was true at $275 a case.
-// At $650, and against the hours your own clock records, it is not. I have
-// not rewritten it because it is your voice making a claim about your own
-// economics, and that is yours to state, not mine to invent. Tell me the
-// number and I will change the line, or say the word and the jar goes.
-const TIP_QUOTE = [
-  'Professional patient advocacy at this level typically runs $150\u2013$275/hour. Between direct client time, research, and case preparation, my current pricing works out to roughly $6/hour.',
-  'Anything contributed here goes directly back into improving The Pocket Advocate, its tools, experience, and outcomes.',
-  'This is exactly what it sounds like: a tip jar. If you\u2019ve found the service valuable and want to contribute, you can. If not, nothing about the care or effort you receive changes.',
-  'Completely optional. Always appreciated.',
-];
-
-/** Everything they have paid on this case, in cents. */
-function totalPaidCents(c) {
-  // Full Access paid its own price; caseRateCents on such a case is the
-  // standard-case base for percentage charges, so never sum the two.
-  // c.payment does not exist on a case document; the charge lives on
-  // c.stripe.amountTotal (confirmationBanner reads it correctly). Reading the
-  // wrong field meant the real charge was never consulted, so a client who
-  // paid one number was offered tip percentages computed from another.
-  const base = (c.fullAccess && Number(c.fullAccessRateCents) > 0 ? Number(c.fullAccessRateCents) : 0)
-    // No compiled-in case price here on purpose: a case with neither a charge
-    // nor a stamped rate is old enough that guessing today's list price would
-    // be worse than showing nothing, so the jar's percentages simply do not
-    // render (see the caller's `paid > 0` gate).
-    || c.stripe?.amountTotal || c.caseRateCents || 0;
-  const extras = (Array.isArray(c.extraPayments) ? c.extraPayments : [])
-    // 'fullaccess' excluded with tips: fullAccessRateCents above already is
-    // the whole tier price, so adding the upgrade row counts it twice.
-    .filter((x) => x.kind !== 'tip' && x.kind !== 'fullaccess')
-    .reduce((sum, x) => sum + (Number(x.amountCents) || 0), 0);
-  return base + extras;
-}
-
-function tipJarHtml(c) {
-  const paid = totalPaidCents(c);
-  const pct = (n) => Math.round((paid * n) / 100);
-  const money = (cents) => `$${(cents / 100).toFixed(2)}`;
-  return `
-    <div class="panel" data-tip-jar style="margin-top:1.2rem; text-align:center;">
-      <p style="font-size:2.6rem; margin:.2rem 0 .6rem;" aria-hidden="true">\u{1FAD9}</p>
-      ${TIP_QUOTE.map((t) => `<p class="dim" style="text-align:left;">${esc(t)}</p>`).join('')}
-      <div style="display:flex; flex-direction:column; gap:.5rem; max-width:22rem; margin:1rem auto 0;">
-        <button type="button" class="btn ghost" data-tip-custom>Custom amount</button>
-        <div data-tip-box hidden style="gap:.5rem;">
-          <input type="number" min="1" max="5000" step="1" inputmode="decimal" placeholder="$"
-            data-tip-amount style="flex:1; min-width:0; text-align:center;">
-          <button type="button" class="btn glow" data-tip-send>Add</button>
-        </div>
-        ${paid > 0 ? `
-        <div style="display:flex; gap:.5rem;">
-          <button type="button" class="btn ghost" style="flex:1; min-width:0; padding-left:.2rem; padding-right:.2rem;" data-tip-pct="15">15%<br><span class="dim small">${money(pct(15))}</span></button>
-          <button type="button" class="btn ghost" style="flex:1; min-width:0; padding-left:.2rem; padding-right:.2rem;" data-tip-pct="20">20%<br><span class="dim small">${money(pct(20))}</span></button>
-          <button type="button" class="btn ghost" style="flex:1; min-width:0; padding-left:.2rem; padding-right:.2rem;" data-tip-pct="25">25%<br><span class="dim small">${money(pct(25))}</span></button>
-        </div>` : ''}
-        <p class="error" data-tip-error hidden style="margin:0;"></p>
-        <p class="dim small" data-tip-thanks hidden style="margin:0;">Received. Thank you.</p>
-      </div>
-    </div>`;
-}
-
-/**
- * The jar is on a switch (Eric, 2026-08-23: "Keep the tip jar until I get the
- * next client, then we'll drop it entirely"). `settings` is world-readable
- * and admin-writable by rule, so retiring it is one tap on his phone with no
- * deploy and no help. Default ON: a failed read must never silently remove
- * something he still wants shown.
- */
-let tipJarOn = true;
-async function loadTipJarSetting() {
-  try {
-    const snap = await getDoc(doc(db, 'settings', 'tipJar'));
-    if (snap.exists() && snap.data().enabled === false) tipJarOn = false;
-  } catch { /* the default stands */ }
-}
-
 function renderPageFooter(host, c) {
   if (!host) return;
-  const delivered = c.status === 'delivered' || c.status === 'closed';
-  // Never on a Full Access case. Somebody who has just paid four figures for
-  // direct advocacy should not then be shown a jar, and the jar's own copy is
-  // written about the standard case's economics, which do not describe theirs.
-  const showJar = tipJarOn && !c.fullAccess;
-  host.innerHTML = (showJar ? tipJarHtml(c) : '') + (delivered ? '' : '<div data-review hidden></div>');
+  // The tip jar was retired here on 2026-08-24 at Eric's word. Past tips stay
+  // in the ledger - that money was really received - but nothing on a client
+  // surface asks for another one.
+  //
+  // The review card is NOT here either. renderDocs already mounts one, and
+  // having a second in the footer meant an undelivered case showed the same
+  // card twice, each independently wired, so answering one left the other
+  // still asking.
+  host.innerHTML = '';
   // The version line rides just above the jar (Eric, 2026-08-21). It mounts
   // itself at the end of main before this footer exists; before() MOVES the
   // node, click wiring intact. Idempotent across repaints.
   const verline = document.getElementById('pa-verline');
   if (verline) host.before(verline);
-  if (!delivered) renderReview(host, c);
-  if (showJar && new URLSearchParams(location.search).get('tipped') === '1') {
-    host.querySelector('[data-tip-thanks]').hidden = false;
-    history.replaceState(null, '', `/case.html?id=${c.id}`);
-  }
 }
-
-// One set of handlers at the document, so the copy changelog.js folds into
-// the update card works exactly like the one at the bottom of the page.
-async function sendTip(jar, amountCents) {
-  const err = jar.querySelector('[data-tip-error]');
-  if (err) err.hidden = true;
-  try {
-    const token = await user.getIdToken();
-    const res = await fetch('/api/tip', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ caseId: currentId, amountCents }),
-    });
-    const out = await res.json();
-    if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
-    location.href = out.url;
-  } catch (e) {
-    if (err) { err.textContent = e.message; err.hidden = false; }
-  }
-}
-document.addEventListener('click', (e) => {
-  const jar = e.target.closest?.('[data-tip-jar]');
-  if (!jar) return;
-  const pctBtn = e.target.closest('[data-tip-pct]');
-  if (pctBtn) {
-    const c = cases.find((x) => x.id === currentId);
-    if (c) sendTip(jar, Math.round((totalPaidCents(c) * Number(pctBtn.dataset.tipPct)) / 100));
-    return;
-  }
-  if (e.target.closest('[data-tip-custom]')) {
-    const box = jar.querySelector('[data-tip-box]');
-    box.hidden = false;
-    box.style.display = 'flex';
-    box.querySelector('[data-tip-amount]')?.focus();
-    return;
-  }
-  if (e.target.closest('[data-tip-send]')) {
-    const dollars = Number(jar.querySelector('[data-tip-amount]')?.value);
-    if (!(dollars >= 1)) return;
-    sendTip(jar, Math.round(dollars * 100));
-  }
-});
 
 function justBoughtFollowUp() {
   return new URLSearchParams(location.search).get('followup') === '1';
