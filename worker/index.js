@@ -665,6 +665,8 @@ export default {
         return await handleWork(request, env);
       if (url.pathname === '/api/work/here' && request.method === 'POST')
         return await handleWorkPresence(request, env);
+      if (url.pathname === '/api/admin/booking-closure')
+        return await handleBookingClosure(request, env);
       if (url.pathname === '/api/admin/effort')
         return await handleEffort(request, env);
       if (url.pathname === '/api/admin/voice')
@@ -850,6 +852,10 @@ export default {
     // One document read on any firing where he is in the app or nothing is
     // running, which is nearly all of them.
     ctx.waitUntil(runWorkClockNudges(env));
+    // Un-gated too, and only until it finishes: this one shuts the books, and
+    // a quarter hour of the old behaviour after the deploy is a quarter hour
+    // in which somebody can buy a case he has said he cannot take.
+    ctx.waitUntil(closeBookingsAug2026(env));
     // THE KILL, found by the flight recorder (2026-08-24). Cloudflare's
     // fifteen minute guarantee attaches to the promise scheduled() RETURNS:
     // "The runtime waits for the promise returned by the scheduled() handler
@@ -917,6 +923,104 @@ async function voiceStudyKickoff(env) {
     console.log('voice study kickoff:', JSON.stringify(out));
   } catch (err) {
     console.error('voice study kickoff:', err.message || err);
+  }
+}
+
+/**
+ * The books-closed window.
+ *
+ * Eric, 2026-08-23: "close off my availability for next two weeks. I can't
+ * take on anymore clients."
+ *
+ * Deliberately NOT done by deleting slots. Deleting is destructive, it cannot
+ * be undone from his phone, and the Tuesday migration that created them has
+ * already run and marked itself finished, so they would not come back. A date
+ * on a settings document costs nothing to move and nothing to lift.
+ *
+ * It lives on `settings/booking`, which firestore.rules already makes
+ * public-read and admin-write, so the booking page can say WHEN he reopens
+ * rather than an unexplained empty calendar - and this Worker still enforces
+ * it, because a client-side filter is a courtesy and the trust boundary is
+ * here.
+ */
+async function readBookingClosure(env) {
+  const doc = await getDoc(env, 'settings/booking').catch(() => null);
+  const until = doc?.data.closedUntil ? new Date(doc.data.closedUntil).getTime() : 0;
+  return Number.isFinite(until) && until > Date.now() ? until : 0;
+}
+
+/** The one sentence a client sees when they try to book inside the window. */
+function closedMessage(until) {
+  const when = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Etc/GMT+7', weekday: 'long', month: 'long', day: 'numeric',
+  }).format(new Date(until));
+  return `I am not taking new cases until ${when}. Existing clients are unaffected.`;
+}
+
+/**
+ * GET/POST /api/admin/booking-closure   admin only
+ *
+ * Shut the books, extend, or reopen, from his phone, with no deploy. `weeks`
+ * counts from the end of today in MST so "two weeks" means two whole weeks
+ * and not fourteen days minus however far into today it is; `weeks: 0`
+ * reopens immediately.
+ *
+ * Anything he sets here is stamped `setByHand`, which the one-shot migration
+ * checks before writing, so his decision is never overruled by a later
+ * deploy replaying it.
+ */
+async function handleBookingClosure(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const weeks = Number(body?.weeks);
+    if (!Number.isFinite(weeks) || weeks < 0 || weeks > 26)
+      return json({ error: 'Pick between 0 and 26 weeks.' }, 400);
+    // Midnight MST at the end of today, then whole weeks on top.
+    const mst = new Date(Date.now() - 7 * 3600_000);
+    const midnight = Date.UTC(mst.getUTCFullYear(), mst.getUTCMonth(), mst.getUTCDate() + 1)
+      + 7 * 3600_000;
+    const until = weeks === 0 ? null : new Date(midnight + weeks * 7 * 86_400_000);
+    await patchDoc(env, 'settings/booking', { closedUntil: until, setByHand: true },
+      { mask: ['closedUntil', 'setByHand'] });
+    return json({ closedUntil: until, message: until ? closedMessage(until.getTime()) : null });
+  }
+  const until = await readBookingClosure(env);
+  return json({
+    closedUntil: until ? new Date(until) : null,
+    message: until ? closedMessage(until) : null,
+  });
+}
+
+/**
+ * Run-once: close the books for two weeks.
+ *
+ * The date is written out rather than computed from the deploy moment, so it
+ * means the same thing whenever this lands and can be read back later without
+ * having to know when it ran. Midnight MST on the 7th, so the 6th is the last
+ * closed day.
+ */
+async function closeBookingsAug2026(env) {
+  const MARKER = 'migrations/books-closed-2026-08-23';
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;
+  try {
+    const existing = await getDoc(env, 'settings/booking').catch(() => null);
+    // If he has already set a date by hand, his wins: this is a one-shot
+    // convenience, not a thing that overrules him on some later deploy.
+    if (!existing?.data.setByHand) {
+      await patchDoc(env, 'settings/booking',
+        { closedUntil: new Date('2026-09-07T07:00:00Z'), setByHand: false },
+        { mask: ['closedUntil', 'setByHand'] });
+    }
+    await patchDoc(env, MARKER, { finishedAt: new Date() }, { mask: ['finishedAt'] });
+  } catch (err) {
+    console.error('close bookings:', err.message || err);
   }
 }
 
@@ -1201,7 +1305,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-27-auto-clock';
+const BUILD_TAG = 'v2026-08-27-books-closed';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1209,7 +1313,7 @@ const BUILD_TAG = 'v2026-08-27-auto-clock';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.29';
+const VERSION = '2.30';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -1464,6 +1568,11 @@ async function handleCheckout(request, env) {
     return json({ error: 'That time is no longer available.' }, 409);
   const timingProblem = slotTimingProblem(slot.data.start, slot.data.durationMin || 60, now);
   if (timingProblem) return json({ error: timingProblem }, 409);
+  // Checked before the hold, so a closed-books slot is never taken off the
+  // calendar for half an hour on the way to being refused.
+  const closedUntil = await readBookingClosure(env);
+  if (closedUntil && new Date(slot.data.start).getTime() < closedUntil)
+    return json({ error: closedMessage(closedUntil), closedUntil: new Date(closedUntil) }, 409);
 
   // Hold the slot. The updateTime precondition makes two simultaneous
   // checkouts for the same slot impossible — the loser gets a 409.
@@ -1550,6 +1659,12 @@ async function checkoutRequestedTime(env, o) {
     return json({ error: `Please pick a time at least ${LEAD_TIME_HOURS} hours from now.` }, 409);
   if (leadMs > MAX_LEAD_TIME_HOURS * 3600_000)
     return json({ error: 'Please pick a time within the next week and a half.' }, 409);
+  // The requested-time path is the one that would otherwise walk straight
+  // around a closed calendar: it never reads a slot, so hiding slots does
+  // nothing to it.
+  const closedUntil = await readBookingClosure(env);
+  if (closedUntil && start.getTime() < closedUntil)
+    return json({ error: closedMessage(closedUntil), closedUntil: new Date(closedUntil) }, 409);
 
   // The live rate, and the same honesty check the slot path runs. This built
   // its line items with NO amount at all - caseLineItems() with nothing in it

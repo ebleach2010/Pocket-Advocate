@@ -136,6 +136,32 @@ export function demoApi(role, store) {
       if (stopped.length) store.persist?.();
       return ok({ ok: true, stopped });
     }
+    // Shutting the books. Backed by the same settings document the booking
+    // page reads, so closing here really does empty the calendar in the demo.
+    if (path === '/api/admin/booking-closure') {
+      const key = 'settings/booking';
+      if (init.method === 'POST') {
+        const weeks = Number(body.weeks);
+        if (!Number.isFinite(weeks) || weeks < 0 || weeks > 26)
+          return fail(400, 'Pick between 0 and 26 weeks.');
+        const mst = new Date(Date.now() - 7 * 3600_000);
+        const midnight = Date.UTC(mst.getUTCFullYear(), mst.getUTCMonth(), mst.getUTCDate() + 1)
+          + 7 * 3600_000;
+        const until = weeks === 0 ? null : new Date(midnight + weeks * 7 * 86_400_000);
+        store.docs.set(key, { closedUntil: until, setByHand: true });
+        store.persist?.();
+      }
+      const raw = store.docs.get(key)?.closedUntil;
+      const t = raw ? new Date(raw).getTime() : 0;
+      const live = Number.isFinite(t) && t > Date.now() ? t : 0;
+      const when = live && new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Etc/GMT+7', weekday: 'long', month: 'long', day: 'numeric',
+      }).format(new Date(live));
+      return ok({
+        closedUntil: live ? new Date(live) : null,
+        message: live ? `I am not taking new cases until ${when}. Existing clients are unaffected.` : null,
+      });
+    }
     if (path === '/api/admin/effort') {
       if (init.method === 'POST') demoEffort = body.effort === 'max' ? 'max' : 'high';
       return ok({ effort: demoEffort });

@@ -155,7 +155,7 @@ async function renderTime() {
   const today = new Date().toISOString().slice(0, 10);
   const el = mount(`
     <h2>When should we talk?</h2>
-    <p class="muted small">All times are shown in <strong>your</strong> time zone (${zone.replace(/_/g, ' ')}), with my MST time underneath. Appointments must be at least 72 hours out.</p>
+    <p class="muted small" id="time-intro">All times are shown in <strong>your</strong> time zone (${zone.replace(/_/g, ' ')}), with my MST time underneath. Appointments must be at least 72 hours out.</p>
     <div id="days"><p class="muted">Loading available times…</p></div>
 
     <details id="request-box" style="margin-top:1rem;">
@@ -173,6 +173,7 @@ async function renderTime() {
       </div>
     </details>
 
+    <div id="after-times">
     <h3 style="margin:1.4rem 0 .5rem;">How should we talk?</h3>
     <div id="chips">
       <label class="chip-label ${state.method === 'phone' ? 'selected' : ''}">
@@ -206,17 +207,29 @@ async function renderTime() {
         a parent or guardian needs to reach out first, through the site or the About page's call button.</p>
       <p class="error" id="pf-err" hidden></p>
     </div>` : ''}
+    </div>
     <p>
       <a class="btn quiet" href="/">← Back</a>
       <button class="btn glow" id="continue" disabled>Continue</button>
     </p>`);
 
   let slots = [];
+  // When the books are shut, say so. An empty calendar with no explanation
+  // reads as a broken page or an abandoned business; a date reads as a man
+  // who is busy and will be back. The Worker enforces the same window - this
+  // is the courtesy half, not the lock.
+  let closedUntil = 0;
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'booking'));
+    const raw = snap.exists() ? snap.data().closedUntil : null;
+    const t = raw?.toDate ? raw.toDate().getTime() : (raw ? new Date(raw).getTime() : 0);
+    if (Number.isFinite(t) && t > Date.now()) closedUntil = t;
+  } catch { /* an unreadable setting is not a reason to hide the calendar */ }
   try {
     const snapshot = await getDocs(
       query(collection(db, 'availability'), where('state', '==', 'open'))
     );
-    const cutoff = Date.now() + LEAD_TIME_MS;
+    const cutoff = Math.max(Date.now() + LEAD_TIME_MS, closedUntil);
     const horizon = Date.now() + MAX_LEAD_MS;
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
@@ -233,8 +246,28 @@ async function renderTime() {
 
   const daysEl = el.querySelector('#days');
   if (!slots.length) {
-    daysEl.innerHTML =
-      '<p class="muted">No appointments are open right now. I add new availability regularly, so check back soon.</p>';
+    const backOn = closedUntil && new Intl.DateTimeFormat('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric',
+    }).format(new Date(closedUntil));
+    daysEl.innerHTML = closedUntil
+      ? `<p class="muted">I have closed my books for now: I am carrying as many
+           cases as I can do properly, and taking another would mean doing all
+           of them worse. I open again <strong>${backOn}</strong>, and the
+           times will appear here.</p>
+         <p class="muted small">If you are already a client, nothing about your
+           case changes. Message me in your chat as usual.</p>`
+      : '<p class="muted">No appointments are open right now. I add new availability regularly, so check back soon.</p>';
+    // Everything below the calendar is wired AFTER this early return, so
+    // leaving it on screen offers a picker and a set of choices that silently
+    // do nothing. When the books are shut there is one thing to say and no
+    // decisions to make, so take the rest away rather than let somebody fill
+    // it in and press a dead button.
+    if (closedUntil) {
+      el.querySelector('#time-intro')?.remove();
+      el.querySelector('#continue')?.remove();
+    }
+    el.querySelector('#request-box')?.remove();
+    el.querySelector('#after-times')?.remove();
     return;
   }
 
@@ -309,7 +342,10 @@ async function renderTime() {
     const d = new Date(ms);
     return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
   };
-  reqDate.min = localDay(Date.now() + LEAD_TIME_MS);
+  // The closure raises the floor as well, or a request for a closed date
+  // would be typed in full and refused at payment - which is the failure this
+  // fencing exists to prevent, and a worse one than an empty calendar.
+  reqDate.min = localDay(Math.max(Date.now() + LEAD_TIME_MS, closedUntil));
   reqDate.max = localDay(Date.now() + MAX_LEAD_MS);
 
   const syncRequest = () => {
