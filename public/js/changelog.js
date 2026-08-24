@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.34';
+export const VERSION = '2.35';
 
 /**
  * Newest first.
@@ -57,7 +57,11 @@ export const CHANGELOG = [
     // that invites "did I break something". The rest of this push is the
     // agreement they tick at booking, which existing clients never see again,
     // and admin machinery.
-    version: '2.34',
+    //
+    // 2.35, not 2.34: while this branch sat unmerged, 2.33 shipped to main as
+    // the maintenance window. Everything here moved up one rather than reuse
+    // a number a client's app has already seen.
+    version: '2.35',
     quiet: true,
     client: [
       'The tip jar is gone from the bottom of your case page. Nothing on this app asks you for money beyond what you booked.',
@@ -67,11 +71,19 @@ export const CHANGELOG = [
     // The tier is not live yet, so its client notes wait for the release that
     // turns it on. What IS listed is a fix a client can see on their own page
     // today.
-    version: '2.33',
+    version: '2.34',
     quiet: true,
     client: [
       'Bug fix: the scope note and the buttons on your Docs page no longer reset while you are reading them. If you had a form snap shut on you mid-tap, that was this.',
     ],
+  },
+  {
+    // Shipped to main on 2026-08-24 while this branch waited: the front-door
+    // maintenance window. Empty client list because it changed nothing for
+    // anyone who already had a case.
+    version: '2.33',
+    quiet: true,
+    client: [],
   },
   {
     // The re-landing of the pulled-back update (2.26-2.30). Client notes for
