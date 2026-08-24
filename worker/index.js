@@ -1197,21 +1197,41 @@ async function restructureRates(env) {
     { mask: ['finishedAt', 'result'] }).catch(() => {});
   try {
     const doc = await getDoc(env, RATES_PATH).catch(() => null);
-    if (doc?.data.setByHand) return done('rates are hand-set; left alone');
-    const next = {
-      caseCents: CASE_PRICE_CENTS,
-      addonCents: ADDON_PRICE_CENTS,
-      subCents: SUB_PRICE_CENTS,
-      fullCents: FULL_PRICE_CENTS,
-      floorCents: HOURLY_FLOOR_CENTS,
-      updatedAt: new Date(),
-    };
-    const opts = doc
-      ? { mask: ['caseCents', 'addonCents', 'subCents', 'fullCents', 'floorCents', 'updatedAt'], ifUpdateTime: doc.updateTime }
-      : { mustNotExist: true };
+    // Hand-set rates win — but NOT for fullCents, and the distinction matters
+    // enough to spell out.
+    //
+    // `setByHand` means "Eric chose these numbers, stay out of the way", and
+    // for the base prices that is exactly right. fullCents is different: the
+    // live doc holds 350000 from the hour the FIRST version of this tier was
+    // up, a price for a product that no longer exists. He never chose it for
+    // the tier being sold now; he rescoped that one to $1,500.
+    //
+    // And the guard bites on a tap he has every reason to make. Any save from
+    // the rates panel stamps setByHand (handleSetRates), including one that
+    // only moves the chat price — so fixing the chat rate on his dashboard
+    // would have silently condemned Full Access to sell at $3,500 for ever,
+    // against a scope note, a PR and a checkout card that all say $1,500.
+    // Order of operations must not decide a price.
+    const handSet = !!doc?.data.setByHand;
+    const next = handSet
+      ? { fullCents: FULL_PRICE_CENTS, updatedAt: new Date() }
+      : {
+        caseCents: CASE_PRICE_CENTS,
+        addonCents: ADDON_PRICE_CENTS,
+        subCents: SUB_PRICE_CENTS,
+        fullCents: FULL_PRICE_CENTS,
+        floorCents: HOURLY_FLOOR_CENTS,
+        updatedAt: new Date(),
+      };
+    const mask = handSet
+      ? ['fullCents', 'updatedAt']
+      : ['caseCents', 'addonCents', 'subCents', 'fullCents', 'floorCents', 'updatedAt'];
+    const opts = doc ? { mask, ifUpdateTime: doc.updateTime } : { mustNotExist: true };
     const won = await patchDoc(env, RATES_PATH, next, opts).catch(() => false);
     if (won === false) return; // someone wrote first; the next firing retries
-    return done(`case ${next.caseCents}, addon ${next.addonCents}, sub ${next.subCents}, full ${next.fullCents}`);
+    return done(handSet
+      ? `hand-set rates kept; only the retired tier price moved, full ${next.fullCents}`
+      : `case ${next.caseCents}, addon ${next.addonCents}, sub ${next.subCents}, full ${next.fullCents}`);
   } catch (err) {
     console.error('restructure rates:', err.message || err);
   }
