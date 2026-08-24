@@ -5,7 +5,7 @@
 // scrolls to each section and highlights the one in view.
 
 import {
-  db, storage, collection, getDocs, query, where, doc, getDoc, onSnapshot,
+  db, storage, collection, getDocs, query, where, doc, onSnapshot,
   ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata,
 } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
@@ -14,10 +14,6 @@ import { mountSaved } from './saved.js';
 import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
 import { HELP_BUTTON, wireHelp, openCaseHelp } from './help.js';
-import {
-  recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
-} from './authority.js';
-import { FULL_ACCESS_TERMS, FULL_ACCESS_PLAIN } from './tier-terms.js';
 import { mountFolder, folderEnter } from './folder.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
@@ -70,8 +66,6 @@ if (user) {
 }
 
 async function boot() {
-  // The jar switch, read once before anything paints the footer.
-  await loadTipJarSetting();
   const container = document.getElementById('cases');
   try {
     const snapshot = await getDocs(query(collection(db, 'cases'), where('clientUid', '==', user.uid)));
@@ -391,7 +385,6 @@ function renderProgress(el, c) {
             <span class="t-dot"></span>${label}</li>`).join('')}
       </ul>
     </div>
-    <div data-authority></div>
     <details class="faq" data-more>
       <summary>Session details</summary>
       <div class="faq-a">
@@ -401,12 +394,6 @@ function renderProgress(el, c) {
         ${followUpSection(c)}
       </div>
     </details>`;
-
-  // Full Access cannot start until this is signed, so it sits directly under
-  // the timeline rather than behind a tab: the client tab strip is already at
-  // four and three pills barely fit a 390px phone.
-  const auth = el.querySelector('[data-authority]');
-  if (auth && c.fullAccess) mountAuthority(auth, c);
 
   el.querySelector('[data-ics]')?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -650,7 +637,6 @@ function renderDocs(el, c) {
          <p class="error" data-upload-error hidden></p>`}
     <ul class="filelist" data-files><li class="dim small">Loading files…</li></ul>
     <div data-review hidden></div>
-    <div data-upgrade></div>
     <div data-followup></div>`;
   const input = el.querySelector('[data-file-input]');
   input?.addEventListener('change', () => uploadFiles(c, el, [...input.files]));
@@ -660,11 +646,6 @@ function renderDocs(el, c) {
   if (offer) {
     offer.innerHTML = followUpOffer(c);
     wireFollowUpOffer(offer, c);
-  }
-  const up = el.querySelector('[data-upgrade]');
-  if (up) {
-    up.innerHTML = upgradeOffer(c);
-    wireUpgradeOffer(up, c);
   }
   // Chat saves refresh this list via the permanent pa-saved-file listener at the top.
 }
@@ -961,19 +942,9 @@ function printExport(c, want) {
 // were quoted when they booked, which the case carries as addonRateCents.
 // Everyone booked before that field existed falls back to this, and since the
 // rate only moves upward that errs in their favour.
-const FOLLOWUP_PRICE_CENTS = 17500;
+const FOLLOWUP_PRICE_CENTS = 7500;
 const followUpPrice = (c) =>
   (Number(c?.addonRateCents) > 0 ? Number(c.addonRateCents) : FOLLOWUP_PRICE_CENTS) / 100;
-
-// The Full Access list price, in CENTS, corrected from /api/rates the moment
-// it answers. The upgrade card subtracts what this case already paid, so the
-// number on the button is the difference and never the list price.
-let fullAccessCents = 350000;
-const fullAccessPrice = () => fullAccessCents;
-fetch('/api/rates')
-  .then((r) => (r.ok ? r.json() : null))
-  .then((d) => { if (Number(d?.fullCents) > 0) fullAccessCents = Number(d.fullCents); })
-  .catch(() => { /* the compiled-in price is right at deploy time */ });
 
 /**
  * True on the one page load that comes straight back from Stripe. The offer
@@ -986,12 +957,6 @@ fetch('/api/rates')
  * has not been seen yet, changelog.js folds a copy of this into the end of
  * that flow (it looks for [data-tip-jar]).
  */
-// ERIC: the first line of this is now WRONG and only you can fix it. It says
-// your pricing "works out to roughly $6/hour", which was true at $275 a case.
-// At $650, and against the hours your own clock records, it is not. I have
-// not rewritten it because it is your voice making a claim about your own
-// economics, and that is yours to state, not mine to invent. Tell me the
-// number and I will change the line, or say the word and the jar goes.
 const TIP_QUOTE = [
   'Professional patient advocacy at this level typically runs $150\u2013$275/hour. Between direct client time, research, and case preparation, my current pricing works out to roughly $6/hour.',
   'Anything contributed here goes directly back into improving The Pocket Advocate, its tools, experience, and outcomes.',
@@ -1001,10 +966,7 @@ const TIP_QUOTE = [
 
 /** Everything they have paid on this case, in cents. */
 function totalPaidCents(c) {
-  // Full Access paid its own price; caseRateCents on such a case is the
-  // standard-case base for percentage charges, so never sum the two.
-  const base = (c.fullAccess && Number(c.fullAccessRateCents) > 0 ? Number(c.fullAccessRateCents) : 0)
-    || c.payment?.amountTotal || c.caseRateCents || 65000;
+  const base = c.payment?.amountTotal || c.caseRateCents || 26500;
   const extras = (Array.isArray(c.extraPayments) ? c.extraPayments : [])
     .filter((x) => x.kind !== 'tip')
     .reduce((sum, x) => sum + (Number(x.amountCents) || 0), 0);
@@ -1037,36 +999,17 @@ function tipJarHtml(c) {
     </div>`;
 }
 
-/**
- * The jar is on a switch (Eric, 2026-08-23: "Keep the tip jar until I get the
- * next client, then we'll drop it entirely"). `settings` is world-readable
- * and admin-writable by rule, so retiring it is one tap on his phone with no
- * deploy and no help. Default ON: a failed read must never silently remove
- * something he still wants shown.
- */
-let tipJarOn = true;
-async function loadTipJarSetting() {
-  try {
-    const snap = await getDoc(doc(db, 'settings', 'tipJar'));
-    if (snap.exists() && snap.data().enabled === false) tipJarOn = false;
-  } catch { /* the default stands */ }
-}
-
 function renderPageFooter(host, c) {
   if (!host) return;
   const delivered = c.status === 'delivered' || c.status === 'closed';
-  // Never on a Full Access case. Somebody who has just paid four figures for
-  // direct advocacy should not then be shown a jar, and the jar's own copy is
-  // written about the standard case's economics, which do not describe theirs.
-  const showJar = tipJarOn && !c.fullAccess;
-  host.innerHTML = (showJar ? tipJarHtml(c) : '') + (delivered ? '' : '<div data-review hidden></div>');
+  host.innerHTML = tipJarHtml(c) + (delivered ? '' : '<div data-review hidden></div>');
   // The version line rides just above the jar (Eric, 2026-08-21). It mounts
   // itself at the end of main before this footer exists; before() MOVES the
   // node, click wiring intact. Idempotent across repaints.
   const verline = document.getElementById('pa-verline');
   if (verline) host.before(verline);
   if (!delivered) renderReview(host, c);
-  if (showJar && new URLSearchParams(location.search).get('tipped') === '1') {
+  if (new URLSearchParams(location.search).get('tipped') === '1') {
     host.querySelector('[data-tip-thanks]').hidden = false;
     history.replaceState(null, '', `/case.html?id=${c.id}`);
   }
@@ -1153,124 +1096,6 @@ function followUpOffer(c) {
         message you in chat to find a time.</p>
       <p class="error" data-followup-error hidden></p>
     </div>`;
-}
-
-/**
- * Moving an open case up to Full Access. Same shape as the follow-up offer
- * because it is the same kind of thing: something sold from inside a case
- * that is already running, to somebody who has already met him.
- *
- * The price shown is the difference, not the list price. They have already
- * paid for the case part and should never be asked for it twice.
- */
-function upgradeOffer(c) {
-  if (new URLSearchParams(location.search).get('upgraded') === '1' && !c.fullAccess)
-    return `
-      <div class="followup-offer is-done">
-        <h3><span class="fu-tick" aria-hidden="true">\u2713</span> Full Access is open on your case.</h3>
-        <p>There is an authorisation waiting for you on this page. Nothing can
-          start until it is signed, so it is the one thing I need from you now.</p>
-      </div>`;
-  if (c.fullAccess || c.status === 'closed') return '';
-  // Not offered while a checkout for it is already live: two payable links
-  // for the same thing is how somebody pays twice.
-  if (c.pendingFullAccess?.url) return `
-    <div class="followup-offer">
-      <h3>Your Full Access checkout is still open</h3>
-      <p>Pick up where you left off, or ignore this and it expires on its own.</p>
-      <div class="fu-buy">
-        <a class="btn glow" href="${esc(c.pendingFullAccess.url)}">Finish that</a>
-      </div>
-    </div>`;
-  const diff = Math.max(1, Math.round((fullAccessPrice() - (Number(c.caseRateCents) || 0)) / 100));
-  return `
-    <div class="followup-offer">
-      <h3>Want me to deal with them directly?</h3>
-      <p>Right now I work beside you: I read everything, we talk it through,
-        and you carry it to your doctors and your insurer. Full Access is where
-        I do that part myself. I speak to your clinics, with you on the line or
-        under your written authorisation, and I write and file your insurance
-        appeals.</p>
-      <p class="fu-emphasis">Same case. Same file. I just stop handing it back to you.</p>
-      <details class="agreement" data-id="${esc(FULL_ACCESS_TERMS.id)}">
-        <summary>
-          <span class="agreement-title">${esc(FULL_ACCESS_TERMS.title)}</span>
-          <span class="agreement-plain">${esc(FULL_ACCESS_PLAIN)}</span>
-        </summary>
-        <div class="agreement-body">${FULL_ACCESS_TERMS.body}</div>
-        <label class="agreement-check">
-          <input type="checkbox" data-upgrade-ack disabled> I have read and acknowledge this
-        </label>
-      </details>
-      <div class="fu-buy">
-        <span class="price">$${diff}</span>
-        <button class="btn glow" data-buy-upgrade disabled>Upgrade this case</button>
-      </div>
-      <p class="fu-fine">That is the difference between what you have already
-        paid and the Full Access price. Open the note above first: it is the
-        whole of what I do, what I need from you, and where it stops, and the
-        button unlocks once you have read it through.</p>
-      <p class="error" data-upgrade-error hidden></p>
-    </div>`;
-}
-
-function wireUpgradeOffer(el, c) {
-  const btn = el.querySelector('[data-buy-upgrade]');
-  if (!btn) return;
-  const errEl = el.querySelector('[data-upgrade-error]');
-
-  // Proof of exposure, exactly as booking does it (book.js): the box unlocks
-  // only once the note has been opened AND scrolled to its end, and the buy
-  // button only once the box is ticked. Never measured while closed - a
-  // hidden body reads 0/0 and would unlock for free.
-  const det = el.querySelector('details.agreement');
-  const body = det?.querySelector('.agreement-body');
-  const box = el.querySelector('[data-upgrade-ack]');
-  let ackAt = 0;
-  if (det && body && box) {
-    const checkScrolled = () => {
-      if (!det.open) return;
-      if (body.scrollTop + body.clientHeight >= body.scrollHeight - 8) box.disabled = false;
-    };
-    body.addEventListener('scroll', checkScrolled);
-    det.addEventListener('toggle', () => { if (det.open) requestAnimationFrame(checkScrolled); });
-    box.addEventListener('change', () => {
-      // The timestamp is the moment the box is ticked; the Worker stores it
-      // on the case beside the three booking acknowledgments.
-      ackAt = box.checked ? Date.now() : 0;
-      btn.disabled = !ackAt;
-    });
-  } else {
-    btn.disabled = false;
-  }
-
-  btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    errEl.hidden = true;
-    try {
-      const idToken = await user.getIdToken();
-      const res = await fetch('/api/upgrade', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ caseId: c.id, acks: { [FULL_ACCESS_TERMS.id]: ackAt } }),
-      });
-      const out = await res.json().catch(() => ({}));
-      if (res.status === 409 && out.error === 'full-booked') {
-        errEl.textContent = 'I am at capacity for this right now and cannot take another one honestly. Ask me in chat and I will tell you when a place opens.';
-        errEl.hidden = false;
-        btn.disabled = true;
-        return;
-      }
-      if (!res.ok || !out.url) throw new Error(out.error || `Couldn't start that (${res.status})`);
-      location.assign(out.url);
-    } catch (err) {
-      errEl.textContent = err.message;
-      errEl.hidden = false;
-      // Back to whatever the gate says, not unconditionally open: a failed
-      // attempt must not become the way past the scope note.
-      btn.disabled = !!(det && body && box) && !ackAt;
-    }
-  });
 }
 
 function wireFollowUpOffer(el, c) {
@@ -1420,245 +1245,4 @@ function prettySize(bytes) {
 }
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-}
-
-/**
- * The authorisations, on the client's own case page. Two documents, because
- * they do two different legal jobs: one lets a clinic release records to
- * Eric, the other lets Eric argue with the insurer. Signing one does not
- * grant the other, and clients conflate them constantly, so they are two
- * cards with two buttons and never a single "I agree".
- *
- * Everything is Worker-mediated: the records live under the case's private
- * subtree, which the browser cannot read or write directly by rule.
- */
-async function mountAuthority(host, c) {
-  const paint = (items) => {
-    const signed = (kind) => items.find((i) => i.kind === kind && !i.revokedAt);
-    const rep = signed('representative');
-    const recs = items.filter((i) => i.kind === 'records' && !i.revokedAt);
-    host.innerHTML = `
-      <div class="panel authority" data-auth-panel>
-        <h3>What I need signed</h3>
-        <p class="dim small">Nothing on your case can start until these are in
-          place. They are two separate permissions, and you can withdraw either
-          one at any time.</p>
-
-        <div class="auth-row">
-          <div class="auth-head">
-            <strong>Your clinics</strong>
-            ${recs.length
-              ? `<span class="auth-on">✓ ${recs.length} signed</span>`
-              : '<span class="auth-off">Not signed</span>'}
-          </div>
-          <p class="dim small">Lets a clinic release your records to me. One for
-            each clinic or hospital I need records from.</p>
-          ${recs.map((r) => `
-            <p class="auth-item">
-              <span>${esc(r.clinicName || 'Clinic')}<span class="dim small"> · signed ${new Date(r.signedAt).toLocaleDateString()}</span></span>
-              <span class="auth-item-acts">
-                <button type="button" class="btn ghost tiny" data-auth-view="${esc(r.id)}">View</button>
-                <button type="button" class="btn ghost tiny" data-auth-revoke="${esc(r.id)}">Withdraw</button>
-              </span>
-            </p>`).join('')}
-          <p><button class="btn${recs.length ? ' ghost' : ' glow'}" data-auth-add="records">
-            ${recs.length ? 'Add another clinic' : 'Sign a records authorisation'}</button></p>
-        </div>
-
-        <div class="auth-row">
-          <div class="auth-head">
-            <strong>Your insurer</strong>
-            ${rep ? '<span class="auth-on">✓ Signed</span>' : '<span class="auth-off">Not signed</span>'}
-          </div>
-          <p class="dim small">Lets me file appeals and speak to your plan on
-            your behalf. It is not a power of attorney and it is not legal
-            representation.</p>
-          ${rep ? `
-            <p class="auth-item">
-              <span>${esc(rep.planName || 'Your plan')}<span class="dim small"> · signed ${new Date(rep.signedAt).toLocaleDateString()}</span></span>
-              <span class="auth-item-acts">
-                <button type="button" class="btn ghost tiny" data-auth-view="${esc(rep.id)}">View</button>
-                <button type="button" class="btn ghost tiny" data-auth-revoke="${esc(rep.id)}">Withdraw</button>
-              </span>
-            </p>` : `
-            <p><button class="btn glow" data-auth-add="representative">Sign the insurance form</button></p>`}
-        </div>
-        <p class="error" data-auth-error hidden></p>
-      </div>`;
-
-    for (const b of host.querySelectorAll('[data-auth-add]'))
-      b.addEventListener('click', () => openAuthoritySheet(c, b.dataset.authAdd, load));
-    for (const b of host.querySelectorAll('[data-auth-view]'))
-      b.addEventListener('click', () => printAuthority(c, items.find((i) => i.id === b.dataset.authView)));
-    for (const b of host.querySelectorAll('[data-auth-revoke]')) {
-      b.addEventListener('click', async () => {
-        if (!confirm('Withdraw this authorisation? I will stop using it straight away. It cannot undo anything already sent to me under it.')) return;
-        b.disabled = true;
-        try {
-          const idToken = await user.getIdToken();
-          const res = await fetch('/api/authority', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-            body: JSON.stringify({ caseId: c.id, action: 'revoke', id: b.dataset.authRevoke }),
-          });
-          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed');
-          load();
-        } catch (err) {
-          const e = host.querySelector('[data-auth-error]');
-          e.textContent = err.message;
-          e.hidden = false;
-          b.disabled = false;
-        }
-      });
-    }
-  };
-
-  async function load() {
-    try {
-      const idToken = await user.getIdToken();
-      const res = await fetch(`/api/authority?caseId=${encodeURIComponent(c.id)}`, {
-        headers: { authorization: `Bearer ${idToken}` },
-      });
-      paint(res.ok ? ((await res.json()).items || []) : []);
-    } catch {
-      paint([]); // an unreachable list still shows the two buttons
-    }
-  }
-  load();
-}
-
-/** The signing sheet. Same overlay furniture as everything else on this page. */
-function openAuthoritySheet(c, kind, onDone) {
-  const isRecords = kind === 'records';
-  const overlay = document.createElement('div');
-  overlay.className = 'settings-overlay';
-  overlay.innerHTML = `
-    <div class="settings-card" role="dialog" aria-modal="true" aria-label="Sign">
-      <h3 style="margin:0 0 .3rem;">${isRecords ? 'Records authorisation' : 'Insurance representative'}</h3>
-      <p class="dim small" style="margin:0 0 .8rem;">${isRecords
-        ? 'One clinic per form. Fill in what you know; I can chase the rest.'
-        : 'This lets me deal with your plan about your claims and appeals.'}</p>
-      ${isRecords ? `
-        <label class="dim small">Clinic or hospital name
-          <input type="text" data-f="clinicName" maxlength="200" placeholder="e.g. Valley Neurology"></label>
-        <label class="dim small">Their address, if you have it
-          <input type="text" data-f="clinicAddress" maxlength="400"></label>
-        <label class="dim small">Their phone, if you have it
-          <input type="tel" data-f="clinicPhone" maxlength="40"></label>
-        <div class="row" style="gap:.5rem;">
-          <label class="dim small" style="flex:1;">Records from
-            <input type="date" data-f="fromDate"></label>
-          <label class="dim small" style="flex:1;">Through
-            <input type="date" data-f="toDate"></label>
-        </div>
-        <p class="dim small" style="margin:.8rem 0 .3rem;">Some records need your
-          specific permission and are left out unless you tick them. Nothing here
-          is required, and leaving one unticked never stops the rest.</p>
-        ${SENSITIVE_CATEGORIES.map((cat) => `
-          <label class="agreement-check" style="align-items:flex-start;">
-            <input type="checkbox" data-cat="${cat.id}">
-            <span><strong>${esc(cat.label)}</strong><br><span class="dim small">${esc(cat.note)}</span></span>
-          </label>`).join('')}
-      ` : `
-        <label class="dim small">Insurance plan or company
-          <input type="text" data-f="planName" maxlength="200" placeholder="e.g. Blue Cross of Arizona"></label>
-        <label class="dim small">Member or policy ID
-          <input type="text" data-f="memberId" maxlength="80"></label>
-      `}
-      <details class="agreement" style="margin:.9rem 0 .6rem;">
-        <summary><span class="agreement-title">Read the whole form</span></summary>
-        <div class="agreement-body"><pre class="auth-doc" data-preview></pre></div>
-      </details>
-      <label class="dim small">Type your full name to sign
-        <input type="text" data-f="signedName" maxlength="120" placeholder="${esc(c.clientName || 'Your full name')}"></label>
-      <p class="dim small" style="margin:.4rem 0 0;">Typing your name here is your
-        signature. The date and time are recorded when you press Sign.</p>
-      <p class="error" data-sheet-error hidden></p>
-      <div class="actions">
-        <button class="btn quiet" data-x>Cancel</button>
-        <button class="btn glow" data-sign>Sign</button>
-      </div>
-    </div>`;
-
-  const val = (name) => overlay.querySelector(`[data-f="${name}"]`)?.value.trim() || '';
-  const cats = () => [...overlay.querySelectorAll('[data-cat]:checked')].map((i) => i.dataset.cat);
-  const preview = overlay.querySelector('[data-preview]');
-  const repaint = () => {
-    const o = {
-      clientName: c.clientName, clientDob: c.clientDob,
-      clinicName: val('clinicName'), clinicAddress: val('clinicAddress'),
-      fromDate: val('fromDate'), toDate: val('toDate'),
-      planName: val('planName'), memberId: val('memberId'),
-      categories: cats(), signedName: val('signedName'),
-    };
-    preview.textContent = isRecords ? recordsAuthorisation(o) : representativeDesignation(o);
-  };
-  overlay.addEventListener('input', repaint);
-  overlay.addEventListener('change', repaint);
-  repaint();
-
-  const close = () => overlay.remove();
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-  overlay.querySelector('[data-x]').addEventListener('click', close);
-  overlay.querySelector('[data-sign]').addEventListener('click', async () => {
-    const btn = overlay.querySelector('[data-sign]');
-    const err = overlay.querySelector('[data-sheet-error]');
-    btn.disabled = true;
-    err.hidden = true;
-    try {
-      const idToken = await user.getIdToken();
-      const res = await fetch('/api/authority', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({
-          caseId: c.id, kind,
-          signedName: val('signedName'),
-          clinicName: val('clinicName'), clinicAddress: val('clinicAddress'),
-          clinicPhone: val('clinicPhone'),
-          fromDate: val('fromDate'), toDate: val('toDate'),
-          planName: val('planName'), memberId: val('memberId'),
-          categories: cats(),
-        }),
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(out.error || `Couldn't sign that (${res.status})`);
-      close();
-      onDone?.();
-    } catch (e2) {
-      err.textContent = e2.message;
-      err.hidden = false;
-      btn.disabled = false;
-    }
-  });
-  document.body.appendChild(overlay);
-  overlay.querySelector('[data-f]')?.focus();
-}
-
-/**
- * A paper copy, on demand, for either side. Same window.open + print pattern
- * the case export and the prep sheet already use; there is no PDF library in
- * this stack and none is being added for this.
- */
-function printAuthority(c, item) {
-  if (!item) return;
-  const o = {
-    ...item,
-    clientName: c.clientName, clientDob: c.clientDob,
-    advocateName: 'Eric Bleach',
-  };
-  const text = item.kind === 'records' ? recordsAuthorisation(o) : representativeDesignation(o);
-  const win = window.open('', '_blank');
-  if (!win) {
-    alert('Your browser blocked the print window. Allow pop-ups for this site and try again.');
-    return;
-  }
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
-    <title>${item.kind === 'records' ? 'Records authorisation' : 'Insurance representative'}</title>
-    <style>
-      @page { margin: 16mm; }
-      body { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: #000; }
-      pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
-    </style></head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre></body></html>`);
-  win.document.close();
-  setTimeout(() => win.print(), 350);
 }

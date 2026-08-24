@@ -18,14 +18,11 @@ import { markSeen, isUnseen, PAGE_BADGES } from './seen.js';
 import { openDutyDraft } from './duty.js';
 import { openPrepSheet } from './prep.js';
 import { mountFolder } from './folder.js';
-import {
-  recordsAuthorisation, representativeDesignation, APPEAL_DEADLINES, appealDueAt,
-} from './authority.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
 // percentages below are a share of the standard Advocacy Case fee.
-const CASE_PRICE_CENTS = 65000;
+const CASE_PRICE_CENTS = 26500;
 
 /**
  * The rate a given client booked at. Recorded on the case at checkout, so a
@@ -36,39 +33,6 @@ const CASE_PRICE_CENTS = 65000;
  */
 const caseRate = (c) => (c && c.caseRateCents) || CASE_PRICE_CENTS;
 const dollars = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
-
-/**
- * What this case has actually paid, tips excluded. A tip is a gift, and
- * counting it would flatter the one number here that has to stay honest.
- */
-function paidCents(c) {
-  const extras = Array.isArray(c?.extraPayments) ? c.extraPayments : [];
-  // A Full Access case paid its own price, which INCLUDES everything in the
-  // standard case. caseRateCents on such a case is the standard-case rate
-  // kept as the base for percentage charges, so the two are never summed.
-  const base = c?.fullAccess && Number(c.fullAccessRateCents) > 0
-    ? Number(c.fullAccessRateCents) : caseRate(c);
-  return base
-    + extras.filter((x) => x.kind !== 'tip').reduce((n, x) => n + (Number(x.amountCents) || 0), 0);
-}
-
-/**
- * Eric, 2026-08-23: "I've lost money on my current client." He found that out
- * afterwards. The clock beside this already counts his worked minutes, so the
- * app can say it while the case is still open: what this case pays him per
- * hour, right now, against the hours he has actually put in.
- *
- * Null under six minutes of clock: a case fee over one recorded minute is a
- * meaningless five-figure hourly, and a number that silly teaches him to
- * ignore the line.
- */
-let floorCents = 7500;
-function effectiveHourly(c, liveSeconds) {
-  const secs = Math.max(0, Number(liveSeconds) || 0);
-  if (secs < 360) return null;
-  return Math.round(paidCents(c) / (secs / 3600));
-}
-
 const caseId = new URLSearchParams(location.search).get('id');
 // Sentinel value for "a time that isn't on the calendar" in the slot dropdown.
 const CUSTOM = '__custom__';
@@ -76,7 +40,7 @@ const CUSTOM_OPTION = `<option value="${CUSTOM}">A time not on the calendar…</
 
 hydrateNav();
 const user = await requireAdmin();
-if (user && caseId) { loadFloor(); load(); autoClockOn(); }
+if (user && caseId) load();
 
 let data = null;
 // Case id the folder shell (and its one chat + advisor mount) was built for.
@@ -93,25 +57,6 @@ let lastDifferential = [];
 // Set once the chat mounts; the Drafts page tools send through it.
 let chatSend = null;
 let notesHtml = '';
-
-/**
- * His margin floor, read once per page load from the admin rates route. It
- * never reaches a client surface: /api/rates deliberately omits it, and this
- * module is behind the admin asset gate.
- */
-async function loadFloor() {
-  try {
-    const token = await user.getIdToken();
-    const res = await fetch('/api/admin/rates', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: '{}',
-    });
-    if (!res.ok) return;
-    const d = await res.json();
-    if (Number(d.floorCents) > 0) floorCents = Number(d.floorCents);
-  } catch { /* the default floor stands */ }
-}
 
 async function load() {
   const el = document.getElementById('case');
@@ -168,32 +113,14 @@ function render(el) {
       { id: 'read', label: 'Advisor', icon: '👨‍⚕️', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
       { id: 'track', label: 'Track', icon: '🗒', pages: ['summary', 'unanswered', 'agenda', 'about'] },
       { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'drafts', 'saved'] },
-      // A FIFTH group rather than a fifth page in an existing one: four per
-      // group is the width constraint, and 'read' and 'track' are both full.
-      // Only rendered for a Full Access case; on a standard case these pages
-      // would be furniture for work that was never bought.
-      ...(data.fullAccess
-        ? [{ id: 'act', label: 'Act', icon: '⚖️', pages: ['appeals', 'calls'] }] : []),
     ],
     // Landing on a page IS having seen it. The badge clears here rather than
     // on some later save, so it never outlives the thing it was pointing at.
     onShow: (id) => { markSeen(caseId, id); folder?.mark(id, false); },
     pages: [
-      ...(data.fullAccess ? [
-        {
-          id: 'appeals', title: 'Appeals', icon: '⚖️',
-          render: (pane) => paintAppeals(pane),
-          onShow: (pane) => pane._reload?.(),
-        },
-        {
-          id: 'calls', title: 'Clinic calls', icon: '📞',
-          render: (pane) => paintClinicCalls(pane),
-          onShow: (pane) => pane._reload?.(),
-        },
-      ] : []),
       {
         id: 'overview', title: 'Overview', icon: '⚡',
-        render: (pane) => { paintOverview(pane); paintAuthorityStatus(pane); },
+        render: (pane) => paintOverview(pane),
       },
       {
         id: 'chat', title: 'Chat', icon: '💬', fade: true,
@@ -204,7 +131,6 @@ function render(el) {
               <div class="row" data-workclock style="gap:.5rem; align-items:center; margin:.1rem 0 .5rem;">
                 <button class="btn quiet" data-work-toggle style="flex:none;">▶ Start working</button>
                 <span class="dim small" data-work-total></span>
-                <span class="work-rate" data-work-rate hidden></span>
               </div>
               <p class="dim small" data-client-gate style="margin:.1rem 0 .4rem;" hidden></p>
               <div id="chat"></div>
@@ -665,163 +591,52 @@ function paintAgendaPage(pane) {
 }
 
 /**
- * The work clock. The client sees the total on their own page (Eric,
- * 2026-08-22: "the cost is a toggle per client... They can see this").
- *
- * It starts itself when he opens this chart, because that is the one moment
- * the app can be certain about (Eric, 2026-08-25: "If I enter their chart it
- * automatically clocks on"). Stopping is the interesting half, and it lives
- * in the Worker: leaving for anywhere else in the app stops an automatic
- * stretch, while leaving the APP stops nothing and asks him instead.
- *
- * Two things follow from that here. The start is fired at page level rather
- * than from this row, because the row lives in the Chat pane and he
- * explicitly does not want the clock to require loading the chat. And the
- * live state is held in one module-level object, so the automatic start and
- * this toggle can never end up painting different totals.
+ * The work clock. He toggles it on when he starts on a case and off when he
+ * stops, and the client sees the total on their own page (Eric, 2026-08-22:
+ * "the cost is a toggle per client... They can see this"). Manual on
+ * purpose: the automatic meter it replaces only ever saw minutes the chat
+ * page was open, which is the smallest part of the work.
  */
 let workTick = null;
-const clock = { seconds: 0, startedAt: 0, loaded: false };
-let paintClock = () => {};
-
-/** One place that talks to /api/work, so every path updates the same state. */
-async function postWork(payload) {
-  const token = await user.getIdToken();
-  const res = await fetch('/api/work', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ caseId, ...payload }),
-  });
-  const out = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
-  clock.seconds = Number(out.seconds) || 0;
-  // The Worker sends the ORIGINAL start when the clock was already running,
-  // so re-entering a chart mid-stretch keeps counting rather than appearing
-  // to reset to the banked total.
-  clock.startedAt = out.startedAt ? new Date(out.startedAt).getTime() : 0;
-  clock.loaded = true;
-  paintClock();
-  return out;
-}
-
-/**
- * Entering the chart is the start. Quiet on failure on purpose: an offline
- * moment should not throw an alert over a page he came here to read, and the
- * toggle is right there if it did not take.
- */
-async function autoClockOn() {
-  try {
-    await postWork({ on: true, auto: true });
-  } catch { /* the toggle still works */ }
-  askIfStillWorking();
-}
-
-/**
- * The answer half of the 5 / 10 / 30 minute prompt. The push lands on
- * `?clock=ask`, and the honest thing to offer is a stop that banks to when
- * the app was last open rather than to now - otherwise saying "no, I
- * finished a while ago" would still charge the client for the while.
- */
-function askIfStillWorking() {
-  const params = new URLSearchParams(location.search);
-  if (params.get('clock') !== 'ask') return;
-  // Take it out of the URL immediately: a reload or a shared link should not
-  // ask again about a question already answered.
-  params.delete('clock');
-  history.replaceState({}, '', `${location.pathname}?${params}`);
-
-  const el = document.getElementById('case') || document.body;
-  const card = document.createElement('div');
-  card.className = 'panel';
-  card.style.cssText = 'margin:.6rem 0;';
-  card.innerHTML = `
-    <h3 style="margin:0 0 .3rem;">Still working on this one?</h3>
-    <p class="dim small" style="margin:0 0 .6rem;">The clock is running and the
-      app had been closed a while. If you finished earlier, stopping here banks
-      the time up to when you last had the app open, not up to now.</p>
-    <div class="row" style="gap:.5rem; flex-wrap:wrap;">
-      <button class="btn glow" data-clock-yes style="flex:none;">Yes, still on it</button>
-      <button class="btn quiet" data-clock-no style="flex:none;">No, stop it</button>
-    </div>
-    <p class="dim small" data-clock-said style="margin:.5rem 0 0;" hidden></p>`;
-  el.prepend(card);
-
-  const said = card.querySelector('[data-clock-said]');
-  card.querySelector('[data-clock-yes]').addEventListener('click', () => {
-    // Being here is the answer: this page's beacon has already re-armed the
-    // ladder, so the next absence asks again from five minutes.
-    card.remove();
-  });
-  card.querySelector('[data-clock-no]').addEventListener('click', async (e) => {
-    e.currentTarget.disabled = true;
-    try {
-      const out = await postWork({ on: false, backdate: true });
-      const to = out.bankedTo ? new Date(out.bankedTo) : null;
-      said.textContent = to
-        ? `Stopped. Banked up to ${to.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}, when you last had the app open.`
-        : 'Stopped.';
-      said.hidden = false;
-      setTimeout(() => card.remove(), 6000);
-    } catch (err) {
-      said.textContent = `Couldn't stop it: ${err.message}`;
-      said.hidden = false;
-      e.currentTarget.disabled = false;
-    }
-  });
-}
-
 function startWorkClock(c) {
   const row = document.querySelector('[data-workclock]');
   if (!row) return;
   const btn = row.querySelector('[data-work-toggle]');
   const totalEl = row.querySelector('[data-work-total]');
-  // Only seed from the case doc if the automatic start has not already said
-  // something newer. It usually has: it fires on load, this row is built
-  // when the Chat pane renders.
-  if (!clock.loaded) {
-    const w = c?.work || {};
-    clock.seconds = Math.max(0, Number(w.seconds) || 0);
-    clock.startedAt = w.startedAt ? toDate(w.startedAt).getTime() : 0;
-  }
+  const w = c?.work || {};
+  let seconds = Math.max(0, Number(w.seconds) || 0);
+  let startedAt = w.startedAt ? toDate(w.startedAt).getTime() : 0;
 
-  const live = () => clock.seconds
-    + (clock.startedAt ? Math.floor((Date.now() - clock.startedAt) / 1000) : 0);
-  const rateEl = row.querySelector('[data-work-rate]');
+  const live = () => seconds + (startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0);
   const paint = () => {
     const t = live();
     const h = Math.floor(t / 3600);
     const m = Math.floor((t % 3600) / 60);
-    totalEl.textContent = `${h ? `${h}h ` : ''}${m}m on this case${clock.startedAt ? ' · running' : ''}`;
-    totalEl.classList.toggle('on', !!clock.startedAt);
-    // The margin line, live beside the clock that produces it.
-    if (rateEl) {
-      const hourly = effectiveHourly(c, t);
-      rateEl.hidden = hourly === null;
-      if (hourly !== null) {
-        rateEl.textContent = `$${dollars(hourly)}/hr`;
-        rateEl.classList.toggle('under', hourly < floorCents);
-        rateEl.title = hourly < floorCents
-          ? `Below your $${dollars(floorCents)}/hr floor. $${dollars(paidCents(c))} paid so far.`
-          : `$${dollars(paidCents(c))} paid so far.`;
-      }
-    }
-    btn.textContent = clock.startedAt ? '⏸ Stop working' : '▶ Start working';
-    btn.classList.toggle('glow', !!clock.startedAt);
+    totalEl.textContent = `${h ? `${h}h ` : ''}${m}m on this case${startedAt ? ' · running' : ''}`;
+    totalEl.classList.toggle('on', !!startedAt);
+    btn.textContent = startedAt ? '⏸ Stop working' : '▶ Start working';
+    btn.classList.toggle('glow', !!startedAt);
   };
-  paintClock = paint;
   paint();
   clearInterval(workTick);
   // A minute is plenty: this is hours, not a stopwatch.
-  workTick = setInterval(() => { if (clock.startedAt) paint(); }, 30_000);
+  workTick = setInterval(() => { if (startedAt) paint(); }, 30_000);
 
   btn.addEventListener('click', async () => {
-    const want = !clock.startedAt;
+    const want = !startedAt;
     btn.disabled = true;
     try {
-      // A tap is always a pin. Turning it back on after the automatic start
-      // stopped is exactly how he keeps a clock running while he works on
-      // this case from somewhere else.
-      await postWork({ on: want, auto: false });
+      const token = await user.getIdToken();
+      const res = await fetch('/api/work', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ caseId, on: want }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      seconds = Number(out.seconds) || 0;
+      startedAt = out.running ? Date.now() : 0;
+      paint();
     } catch (err) {
       alert(`Couldn't change the clock: ${err.message}`);
     }
@@ -1127,15 +942,9 @@ function refreshHeader() {
 
 // The working line under the client's name, kept current by the advisor's
 // state poll. Eric's override wins and carries his ✎ mark.
-// The advisor panel's own poll broadcasts the whole state; the appeals page
-// reads its letter and status from here rather than running a second poll.
-let panelState = {};
-
 document.addEventListener('pa-panel-state', (e) => {
   const d = e.detail || {};
   if (d.id && d.id !== caseId) return;
-  panelState = d;
-  if (folder?.el('appeals')) folder.el('appeals')._reload?.();
 
   // The saved notes ride the same poll. setHtml refuses to overwrite work in
   // progress, so this is safe to call on every tick.
@@ -1183,7 +992,6 @@ function paintOverview(pane) {
 
   pane.innerHTML = `
     ${infoBar(c, mtFmt, start, due)}
-    ${c.fullAccess ? '<div data-authority-status></div>' : ''}
     ${c.appointment?.requested ? `
     <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
       <h3 style="margin:0 0 .3rem; color:var(--orange);">Booking request — not on your calendar</h3>
@@ -1284,9 +1092,6 @@ function refreshOverview() {
   const open = new Set(
     [...pane.querySelectorAll('details[data-k][open]')].map((d) => d.dataset.k));
   paintOverview(pane);
-  // paintOverview rewrites the pane, so the authority card has to be re-served
-  // after it, not before.
-  paintAuthorityStatus(pane);
   open.forEach((k) => {
     const d = pane.querySelector(`details[data-k="${k}"]`);
     if (d) d.open = true;
@@ -1722,350 +1527,4 @@ function prettySize(bytes) {
 }
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-}
-
-/**
- * Whether he is actually allowed to act yet, on the page where he decides what
- * to do next. Read-only: he can see and print what was signed, and he can
- * never sign it himself. The client's own page is where signing happens.
- *
- * Served through the Worker like everything else under the case's private
- * subtree, which the browser cannot read directly by rule.
- */
-async function paintAuthorityStatus(pane) {
-  const host = pane?.querySelector('[data-authority-status]');
-  if (!host) return;
-  let items = [];
-  try {
-    const token = await user.getIdToken();
-    const res = await fetch(`/api/authority?caseId=${encodeURIComponent(caseId)}`, {
-      headers: { authorization: `Bearer ${token}` },
-    });
-    if (res.ok) items = (await res.json()).items || [];
-  } catch { /* the card still says what it does not know */ }
-
-  const live = items.filter((i) => !i.revokedAt);
-  const recs = live.filter((i) => i.kind === 'records');
-  const rep = live.find((i) => i.kind === 'representative');
-  const revoked = items.filter((i) => i.revokedAt);
-  const days = data.authorityAt
-    ? Math.max(0, 90 - Math.floor((Date.now() - toDate(data.authorityAt).getTime()) / 86_400_000))
-    : null;
-
-  host.innerHTML = `
-    <div class="panel" style="${live.length ? '' : 'border-color:var(--orange); box-shadow:var(--glow-o);'}">
-      <h3 style="margin:0 0 .35rem;${live.length ? '' : ' color:var(--orange);'}">
-        ${live.length ? 'Authority to act' : 'No authority yet'}</h3>
-      ${live.length ? '' : `<p class="dim small" style="margin:0 0 .5rem;">Nothing
-        can start until the client signs. The forms are waiting on their case page;
-        a nudge in chat is usually all it takes.</p>`}
-      <p class="dim small" style="margin:.1rem 0;">
-        Records: ${recs.length
-          ? recs.map((r) => esc(r.clinicName || 'clinic')).join(', ')
-          : '<span style="color:var(--orange)">none signed</span>'}</p>
-      <p class="dim small" style="margin:.1rem 0;">
-        Insurer: ${rep
-          ? `${esc(rep.planName || 'plan')}${rep.memberId ? ` · ${esc(rep.memberId)}` : ''}`
-          : '<span style="color:var(--orange)">not signed</span>'}</p>
-      ${days !== null ? `<p class="dim small" style="margin:.35rem 0 0;">
-        ${days} day${days === 1 ? '' : 's'} left in the 90 day window.</p>` : ''}
-      ${revoked.length ? `<p class="dim small" style="margin:.35rem 0 0; color:var(--orange);">
-        ${revoked.length} withdrawn. Do not act on ${revoked.length === 1 ? 'it' : 'them'}.</p>` : ''}
-      ${live.length ? `<p class="row" style="gap:.4rem; flex-wrap:wrap; margin:.5rem 0 0;">
-        ${live.map((i) => `<button class="btn ghost tiny" data-auth-print="${esc(i.id)}">
-          ${i.kind === 'records' ? esc(i.clinicName || 'Records') : 'Insurer form'}</button>`).join('')}
-      </p>` : ''}
-    </div>`;
-
-  for (const b of host.querySelectorAll('[data-auth-print]')) {
-    b.addEventListener('click', () => {
-      const item = items.find((i) => i.id === b.dataset.authPrint);
-      if (item) printAuthorityDoc(item);
-    });
-  }
-}
-
-/** A paper copy for the clinic or the plan. Same print path as the prep sheet. */
-function printAuthorityDoc(item) {
-  const o = {
-    ...item,
-    clientName: data.clientName, clientDob: data.clientDob, advocateName: 'Eric Bleach',
-  };
-  const text = item.kind === 'records' ? recordsAuthorisation(o) : representativeDesignation(o);
-  const win = window.open('', '_blank');
-  if (!win) { alert('Allow pop-ups to print this.'); return; }
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
-    <title>${item.kind === 'records' ? 'Records authorisation' : 'Insurance representative'}</title>
-    <style>@page { margin: 16mm; }
-      body { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color:#000; }
-      pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }</style>
-    </head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre></body></html>`);
-  win.document.close();
-  setTimeout(() => win.print(), 350);
-}
-
-/**
- * The appeals workbench. One letter in flight at a time per case, which is
- * how appeals actually run: you file one, you wait for the plan's answer, and
- * what you file next depends on that answer.
- *
- * The letter is never sent from here. Eric files it through the insurer's own
- * portal, fax or certified mail, which is what keeps proof of timely filing
- * in his hands rather than in a mail server's logs. Approving is a state
- * write; the sending is his.
- */
-let appealKey = null;
-function paintAppeals(pane) {
-  const load = () => {
-    const st = panelState || {};
-    const meta = st.appealMeta || {};
-    const running = st.appealStatus === 'running';
-    const ready = st.appealStatus === 'ready' && st.appeal;
-    const key = JSON.stringify([st.appealStatus, st.appealAt, meta, (st.appeal || '').length]);
-    // A poll that changed nothing must not steal a tap, or rebuild a form
-    // mid-typing.
-    if (key === appealKey && pane.querySelector('[data-appeal-root]')) return;
-    appealKey = key;
-
-    const due = meta.dueAt ? new Date(meta.dueAt) : null;
-    const daysLeft = due ? Math.ceil((due.getTime() - Date.now()) / 86_400_000) : null;
-    const urgency = daysLeft === null ? '' : daysLeft <= 3 ? 'over' : daysLeft <= 14 ? 'soon' : '';
-
-    pane.innerHTML = `
-      <div class="panel" data-appeal-root>
-        <h3 style="margin:0 0 .3rem;">⚖️ Appeal</h3>
-        ${meta.filedAt ? `
-          <p class="dim small" style="margin:0 0 .6rem;">Filed ${new Date(meta.filedAt).toLocaleDateString()}.
-            ${meta.planName ? esc(meta.planName) : 'The plan'} owes an answer; commercial plans
-            generally have 30 days before service and 60 after.</p>`
-          : due ? `
-          <p class="appeal-due ${urgency}" style="margin:0 0 .6rem;">
-            Due ${due.toLocaleDateString()}${daysLeft !== null
-              ? ` · ${daysLeft <= 0 ? 'past due' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}` : ''}
-            ${meta.trackLabel ? `<br><span class="dim small">${esc(meta.trackLabel)}</span>` : ''}</p>`
-          : '<p class="dim small" style="margin:0 0 .6rem;">Fill in the denial and I will work out the filing deadline.</p>'}
-
-        <details class="faq" data-k="appeal-facts"${ready ? '' : ' open'}>
-          <summary>The claim and the denial</summary>
-          <div class="faq-a">
-            <div class="row" style="gap:.5rem; flex-wrap:wrap;">
-              <label class="dim small" style="flex:1 1 8rem;">Member ID
-                <input type="text" data-a="memberId" value="${esc(meta.memberId || '')}"></label>
-              <label class="dim small" style="flex:1 1 8rem;">Plan
-                <input type="text" data-a="planName" value="${esc(meta.planName || '')}"></label>
-            </div>
-            <div class="row" style="gap:.5rem; flex-wrap:wrap;">
-              <label class="dim small" style="flex:1 1 8rem;">Claim number
-                <input type="text" data-a="claimNumber" value="${esc(meta.claimNumber || '')}"></label>
-              <label class="dim small" style="flex:1 1 8rem;">Dates of service
-                <input type="text" data-a="serviceDates" placeholder="e.g. 12 Jun 2026"></label>
-            </div>
-            <div class="row" style="gap:.5rem; flex-wrap:wrap;">
-              <label class="dim small" style="flex:1 1 8rem;">Provider
-                <input type="text" data-a="provider"></label>
-              <label class="dim small" style="flex:1 1 8rem;">Denied on
-                <input type="date" data-a="deniedAt" value="${esc(meta.deniedAt || '')}"></label>
-            </div>
-            <label class="dim small">Which appeal is this
-              <select data-a="trackId">
-                <option value="">Choose…</option>
-                ${APPEAL_DEADLINES.map((t) => `<option value="${t.id}"${meta.trackId === t.id ? ' selected' : ''}>${esc(t.label)} (${t.days} days)</option>`).join('')}
-              </select></label>
-            <p class="dim small" style="margin:.3rem 0 .6rem;">Those are the legal
-              floors. Check the denial letter: a plan may allow longer and none may
-              allow less.</p>
-            <label class="dim small">What the plan said, in its words
-              <textarea data-a="denialReason" rows="3" placeholder="The denial reason and its code, copied from the letter."></textarea></label>
-            <label class="dim small">Their policy or criteria, if you have it
-              <textarea data-a="policyText" rows="3" placeholder="Paste the plan's medical policy language. This is what the letter argues against."></textarea></label>
-            <label class="dim small">Clinical facts worth leading with
-              <textarea data-a="clinicalFacts" rows="3" placeholder="Results with dates, who ordered what, what the treating clinician said."></textarea></label>
-          </div>
-        </details>
-
-        <p class="row" style="gap:.5rem; flex-wrap:wrap; margin:.7rem 0 0;">
-          <button class="btn${ready ? ' quiet' : ' glow'}" data-appeal-write ${running ? 'disabled' : ''}>
-            ${running ? '⚖️ Writing…' : ready ? 'Rewrite from these facts' : 'Write the appeal'}</button>
-          ${ready ? '<button class="btn quiet" data-appeal-revise>🔁 Revise…</button>' : ''}
-          ${ready ? '<button class="btn quiet" data-appeal-print>🖨 Print or save</button>' : ''}
-          ${ready && !meta.filedAt ? '<button class="btn" data-appeal-filed>Mark it filed</button>' : ''}
-          ${ready ? '<button class="btn quiet" data-appeal-clear>Discard</button>' : ''}
-        </p>
-        ${st.appealError ? `<p class="error" style="margin:.5rem 0 0;">${esc(st.appealError)}</p>` : ''}
-        <p class="error" data-appeal-err hidden style="margin:.5rem 0 0;"></p>
-        ${ready ? `
-          <textarea class="draft-box" data-appeal-text rows="18" style="margin-top:.7rem;">${esc(st.appeal)}</textarea>
-          <p class="dim small" style="margin:.3rem 0 0;">Anything in square brackets
-            marked NEEDS is a gap it would not invent. Fill those in before you file.</p>` : ''}
-      </div>`;
-
-    const facts = () => {
-      const g = (n) => pane.querySelector(`[data-a="${n}"]`)?.value.trim() || '';
-      const trackId = g('trackId');
-      const track = APPEAL_DEADLINES.find((t) => t.id === trackId);
-      const deniedAt = g('deniedAt');
-      const dueAt = appealDueAt(deniedAt, trackId);
-      return {
-        memberId: g('memberId'), planName: g('planName'), claimNumber: g('claimNumber'),
-        serviceDates: g('serviceDates'), provider: g('provider'), deniedAt,
-        trackId, trackLabel: track?.label || '',
-        dueAt: dueAt ? dueAt.toISOString().slice(0, 10) : '',
-        denialReason: g('denialReason'), policyText: g('policyText'),
-        clinicalFacts: g('clinicalFacts'),
-      };
-    };
-
-    const post = async (payload, btn) => {
-      const err = pane.querySelector('[data-appeal-err]');
-      if (btn) btn.disabled = true;
-      err.hidden = true;
-      try {
-        const token = await user.getIdToken();
-        const res = await fetch('/api/advisor', {
-          method: 'POST',
-          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ kind: 'case', id: caseId, ...payload }),
-        });
-        const out = await res.json().catch(() => ({}));
-        if (!res.ok || out.ok === false) throw new Error(out.error || `Failed (${res.status})`);
-        appealKey = null; // let the next poll rebuild from truth
-      } catch (e) {
-        err.textContent = e.message;
-        err.hidden = false;
-        if (btn) btn.disabled = false;
-      }
-    };
-
-    pane.querySelector('[data-appeal-write]')?.addEventListener('click', (e) =>
-      post({ action: 'appeal-draft', appeal: facts() }, e.currentTarget));
-    pane.querySelector('[data-appeal-revise]')?.addEventListener('click', (e) => {
-      const what = prompt('What should change about the letter?');
-      if (what === null) return;
-      post({
-        action: 'appeal-draft', revise: true,
-        base: pane.querySelector('[data-appeal-text]')?.value || '',
-        appeal: { ...facts(), instruction: what.slice(0, 1000) },
-      }, e.currentTarget);
-    });
-    pane.querySelector('[data-appeal-clear]')?.addEventListener('click', (e) => {
-      if (confirm('Discard this letter?')) post({ action: 'clear-appeal' }, e.currentTarget);
-    });
-    pane.querySelector('[data-appeal-filed]')?.addEventListener('click', (e) => {
-      if (confirm('Mark this appeal as filed? The deadline warnings stop.')) post({ action: 'appeal-filed' }, e.currentTarget);
-    });
-    pane.querySelector('[data-appeal-print]')?.addEventListener('click', () => {
-      const text = pane.querySelector('[data-appeal-text]')?.value || '';
-      const win = window.open('', '_blank');
-      if (!win) { alert('Allow pop-ups to print this.'); return; }
-      win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Appeal</title>
-        <style>@page { margin: 20mm; }
-          body { font: 12.5px/1.6 Georgia, "Times New Roman", serif; color:#000; }
-          pre { white-space: pre-wrap; word-wrap: break-word; margin:0; font: inherit; }</style>
-        </head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre></body></html>`);
-      win.document.close();
-      setTimeout(() => win.print(), 350);
-    });
-  };
-  pane._reload = load;
-  load();
-}
-
-/**
- * Clinic calls. Their own private record rather than a value on the
- * appointment: `appointment.method` is a two-value enum that gates checkout,
- * and everything on `appointment` is client-readable, so a clinic's direct
- * line would be on the client's own case doc. What the client sees is a
- * summary line; the number stays here.
- *
- * No audio recording. The recording consent covers Eric's calls with his
- * client, not a third party, and two-party-consent states make recording a
- * clinic without asking a legal trap. The artifact is the written note.
- */
-let callsKey = null;
-function paintClinicCalls(pane) {
-  const load = async () => {
-    let items = [];
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch(`/api/clinic-calls?caseId=${encodeURIComponent(caseId)}`, {
-        headers: { authorization: `Bearer ${token}` },
-      });
-      if (res.ok) items = (await res.json()).items || [];
-    } catch { /* an unreachable list still offers the form */ }
-    const key = JSON.stringify(items);
-    if (key === callsKey && pane.querySelector('[data-calls-root]')) return;
-    callsKey = key;
-
-    pane.innerHTML = `
-      <div class="panel" data-calls-root>
-        <h3 style="margin:0 0 .3rem;">📞 Clinic calls</h3>
-        <p class="dim small" style="margin:0 0 .6rem;">Three are included. Notes
-          only, never a recording: your recording consent covers your calls with
-          your client, not a clinic on the other end of the line.</p>
-        <p class="dim small" style="margin:0 0 .6rem;">${items.length} of 3 used.</p>
-        ${items.map((i) => `
-          <details class="faq" data-k="call-${esc(i.id)}">
-            <summary>${esc(i.clinic || 'Clinic')} · ${i.at ? new Date(i.at).toLocaleDateString() : 'unscheduled'}</summary>
-            <div class="faq-a">
-              ${i.phone ? `<p class="dim small">${esc(i.phone)}</p>` : ''}
-              <textarea class="notes-root" data-call-notes="${esc(i.id)}" rows="6"
-                placeholder="What was said, what was agreed, who owes what by when.">${esc(i.notes || '')}</textarea>
-              <p><button class="btn quiet tiny" data-call-save="${esc(i.id)}">Save notes</button></p>
-            </div>
-          </details>`).join('')}
-        <details class="faq" data-k="call-new">
-          <summary>Log another call</summary>
-          <div class="faq-a">
-            <label class="dim small">Clinic
-              <input type="text" data-c="clinic"></label>
-            <div class="row" style="gap:.5rem; flex-wrap:wrap;">
-              <label class="dim small" style="flex:1 1 8rem;">Their number
-                <input type="tel" data-c="phone"></label>
-              <label class="dim small" style="flex:1 1 8rem;">When
-                <input type="datetime-local" data-c="at"></label>
-            </div>
-            <label class="dim small">Who is on it
-              <input type="text" data-c="parties" placeholder="e.g. me, the client, records clerk"></label>
-            <p><button class="btn" data-call-add>Add it</button></p>
-          </div>
-        </details>
-        <p class="error" data-calls-err hidden></p>
-      </div>`;
-
-    const post = async (payload, btn) => {
-      const err = pane.querySelector('[data-calls-err]');
-      if (btn) btn.disabled = true;
-      err.hidden = true;
-      try {
-        const token = await user.getIdToken();
-        const res = await fetch('/api/clinic-calls', {
-          method: 'POST',
-          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ caseId, ...payload }),
-        });
-        const out = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
-        callsKey = null;
-        load();
-      } catch (e) {
-        err.textContent = e.message;
-        err.hidden = false;
-        if (btn) btn.disabled = false;
-      }
-    };
-
-    pane.querySelector('[data-call-add]')?.addEventListener('click', (e) => {
-      const g = (n) => pane.querySelector(`[data-c="${n}"]`)?.value.trim() || '';
-      if (!g('clinic')) { alert('Name the clinic first.'); return; }
-      post({ action: 'add', clinic: g('clinic'), phone: g('phone'), at: g('at'), parties: g('parties') }, e.currentTarget);
-    });
-    for (const b of pane.querySelectorAll('[data-call-save]')) {
-      b.addEventListener('click', (e) => post({
-        action: 'notes', id: b.dataset.callSave,
-        notes: pane.querySelector(`[data-call-notes="${b.dataset.callSave}"]`)?.value || '',
-      }, e.currentTarget));
-    }
-  };
-  pane._reload = load;
-  load();
 }

@@ -93,16 +93,6 @@
 }
 .advisor-ask .btn { flex: none; align-self: flex-end; }
 
-/* What this case pays per hour, live beside the clock that produces it.
-   Amber is not decoration: under his own floor, the case is costing him
-   money and he should see that while he can still act on it. */
-.work-rate {
-  font: 600 .72rem/1 ui-monospace, monospace;
-  padding: .2rem .4rem; border-radius: 999px;
-  color: var(--dim); border: 1px solid currentColor; opacity: .8;
-}
-.work-rate.under { color: #FFB454; opacity: 1; }
-
 .gloss-item { display: flex; gap: .55rem; align-items: flex-start; margin: 0 0 .55rem; }
 .gloss-item input[type=checkbox] { width: 1.05rem; height: 1.05rem; margin-top: .15rem; flex: none; accent-color: var(--cyan); }
 .gloss-item .gloss-text { font-size: .85rem; line-height: 1.5; color: var(--soft); overflow-wrap: anywhere; }
