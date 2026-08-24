@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.32';
+export const VERSION = '2.33';
 
 /**
  * Newest first.
@@ -51,6 +51,14 @@ export const VERSION = '2.32';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    version: '2.33',
+    quiet: true,
+    // Maintenance window on the front door only. Nothing about it changes
+    // anything for a client who already has a case, which is why the list
+    // is empty: they see no card, no footer note, and no difference.
+    client: [],
+  },
   {
     version: '2.32',
     quiet: true,

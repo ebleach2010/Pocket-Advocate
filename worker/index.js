@@ -499,6 +499,13 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     try {
+      // Maintenance: refuse the two routes that spend money, before either
+      // handler can reach Stripe. Deliberately above everything else and
+      // deliberately narrow — an existing client's case, chat, uploads and
+      // sign-in all carry on through this window untouched.
+      if (maintenanceUntil()
+        && (url.pathname === '/api/checkout' || url.pathname === '/api/subscribe'))
+        return json({ error: maintenanceMessage(), maintenanceUntil: MAINTENANCE_UNTIL }, 503);
       if (url.pathname === '/api/checkout' && request.method === 'POST')
         return await handleCheckout(request, env);
       if (url.pathname === '/api/case-for-session' && request.method === 'GET')
@@ -883,6 +890,37 @@ async function readBookingClosure(env) {
   return Number.isFinite(until) && until > Date.now() ? until : 0;
 }
 
+/**
+ * Maintenance mode: the front door is shut while an update is checked over.
+ *
+ * A compiled-in window rather than a settings document, deliberately. The
+ * booking closure above is a business decision Eric changes from his phone
+ * and leaves standing for weeks. This is a deploy-shaped thing that lasts
+ * hours and must not be able to get stuck on: it lifts itself, and the only
+ * way to move it is another deploy, which is the same act that ends the
+ * maintenance anyway.
+ *
+ * MUST match MAINTENANCE_UNTIL in public/js/maintenance.js, which greys the
+ * page and names the same time. That file is a courtesy - a stale tab or a
+ * bookmarked /book.html never sees it. THIS is the gate. A test pins the two
+ * together, because a page saying "back at 1pm" while checkout still answers
+ * is exactly how somebody gets charged inside a window meant to be shut.
+ *
+ * Only the two routes that spend money are refused. Everything an existing
+ * client touches - their case, chat, uploads, files, sign-in - is untouched,
+ * which was the condition Eric set.
+ */
+const MAINTENANCE_UNTIL = '2026-08-25T20:00:00Z';   // 1PM MST, 2026-08-25
+function maintenanceUntil() {
+  const t = Date.parse(MAINTENANCE_UNTIL);
+  return Number.isFinite(t) && Date.now() < t ? t : 0;
+}
+function maintenanceMessage() {
+  return 'Under maintenance until 1PM MST on August 25. I am checking over an '
+    + 'update before taking anything new on top of it. Existing clients are '
+    + 'unaffected: your case, your files and your chat are open as normal.';
+}
+
 /** The one sentence a client sees when they try to book inside the window. */
 function closedMessage(until) {
   const when = new Intl.DateTimeFormat('en-US', {
@@ -1190,7 +1228,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-livefixes';
+const BUILD_TAG = 'v2026-08-25-maintenance';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1198,7 +1236,7 @@ const BUILD_TAG = 'v2026-08-29-livefixes';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.32';
+const VERSION = '2.33';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
