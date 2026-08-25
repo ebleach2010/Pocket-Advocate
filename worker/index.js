@@ -719,7 +719,14 @@ export default {
       // handler can reach Stripe. Deliberately above everything else and
       // deliberately narrow — an existing client's case, chat, uploads and
       // sign-in all carry on through this window untouched.
-      if (maintenanceUntil()
+      //
+      // NOT on a preview host. A preview exists to be reviewed and driven, and
+      // a window meant to keep strangers off the FRONT DOOR was blanking the
+      // one place Eric checks work before it ships (2026-08-25: "the suite is
+      // blocked by the maintenance block"). Nothing is protected by refusing
+      // here: a preview's checkout is open outside a window anyway, so this
+      // returns it to its normal state rather than opening a new door.
+      if (maintenanceUntil() && !DEMO_HOST.test(url.hostname)
         && (url.pathname === '/api/checkout' || url.pathname === '/api/subscribe'))
         return json({ error: maintenanceMessage(), maintenanceUntil: MAINTENANCE_UNTIL }, 503);
       if (url.pathname === '/api/checkout' && request.method === 'POST')

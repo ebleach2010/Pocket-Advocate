@@ -2097,3 +2097,129 @@ body.has-demo-bar .bar { top: var(--demo-bar-h, 2.4rem); }
   --paper-rule: rgba(93, 143, 178, .55);  /* the printed blue ruling */
   --paper-margin: rgba(196, 106, 106, .7); /* the red margin rule */
 }
+
+/* ============================================================
+   Landing components (Eric, 2026-08-25: "You did nothing for the
+   visual aesthetics like I asked", against a mockup with drawn
+   icons, chip-and-chevron rows and a trust bar).
+
+   The tokens were already his. What was missing was everything
+   made OUT of them: the page was a text document with two flat
+   rectangles on it, 6,700px tall on a phone.
+   ============================================================ */
+
+/* One icon size, inherited colour. Every <use> below is 24x24. */
+.ico { width: 1.25rem; height: 1.25rem; flex: none; fill: none;
+  stroke: currentColor; stroke-width: 1.7; vertical-align: -.22em; }
+
+/* --- the hero ------------------------------------------------ */
+/* The h1 was running to four lines on a phone and pushing the
+   buttons under the fold. Smaller ceiling, tighter leading, and
+   `balance` so the break lands somewhere a person would choose. */
+.land-sec.hero { position: relative; overflow: hidden; padding: 1.3rem 1.05rem 1.15rem; }
+/* The root font is 17.5px here, not 16, so every rem below is ~9%
+   bigger than it reads. Sized against that, not against a default. */
+.landing h1,
+.land-sec.hero h1 {
+  font-size: 1.22rem; line-height: 1.2;
+  margin: 0 0 .45rem; letter-spacing: -.01em;
+}
+.land-sec.hero .hero-sub { font-size: .84rem; line-height: 1.5; }
+.land-sec.hero .hero-eyebrow { font-size: .62rem; letter-spacing: .2em; text-align: left; text-indent: 0; }
+/* The artwork sits top-right and the headline wraps to its LEFT rather
+   than under it. Measured, not eyeballed: at full width the h1 box ran
+   x39-352 straight through the art at x193, so "next" was printed over
+   a shield. The 62% cap is what clears it on a 390px phone. */
+/* A FLOAT, not a box cap. Capping the headline's width cleared the art
+   but cost a line: every line got the narrow measure, including the ones
+   that sit below the art with nothing beside them. Floating it lets the
+   first lines wrap around it and the rest run full width, which is the
+   whole point of the shape. */
+.hero-art {
+  float: right; shape-outside: inset(0 0 12% 8%); shape-margin: .5rem;
+  width: 8.4rem; height: auto; opacity: .55; pointer-events: none;
+  margin: -.1rem -.9rem .2rem .55rem;
+}
+@media (min-width: 26rem) { .hero-art { width: 10.2rem; opacity: .6; } }
+/* Flex and grid children do not wrap around a float, they sit under it.
+   By this point the float is spent anyway; clearing says so out loud. */
+.land-sec.hero .acts { clear: both; }
+.hero-cred {
+  font-size: .8rem; line-height: 1.45; color: var(--soft);
+  border-left: 2px solid var(--cyan); padding: .1rem 0 .1rem .7rem; margin: .65rem 0 0;
+}
+
+/* --- the two doors ------------------------------------------- */
+/* Full-width rows, not shrink-wrapped buttons: an icon to say what
+   it is, the price in the label, a chevron to say it goes somewhere.
+   The gradient edge is a border-box layer under a panel background,
+   which is how you get a gradient border without a wrapper element. */
+.acts { display: flex; flex-direction: column; gap: .55rem; margin-top: 1rem; }
+.act {
+  display: flex; align-items: center; gap: .7rem;
+  padding: .78rem .85rem; border-radius: 14px; text-decoration: none;
+  color: var(--ink); font-weight: 600; font-size: .98rem;
+  background:
+    linear-gradient(var(--panel-2), var(--panel-2)) padding-box,
+    linear-gradient(120deg, var(--cyan), var(--magenta)) border-box;
+  border: 1px solid transparent;
+  min-height: 56px;
+}
+.act:hover, .act:focus-visible { background:
+    linear-gradient(var(--panel), var(--panel)) padding-box,
+    linear-gradient(120deg, var(--cyan), var(--magenta)) border-box; }
+.act-ico {
+  display: grid; place-items: center; width: 2.3rem; height: 2.3rem; flex: none;
+  border-radius: 11px; border: 1px solid var(--line); background: var(--bg);
+}
+.act-c { box-shadow: var(--glow-c); } .act-c .act-ico { color: var(--cyan); }
+.act-m { box-shadow: var(--glow-m); } .act-m .act-ico { color: var(--magenta); }
+.act-label { flex: 1; }
+.act-chev { color: var(--dim); width: 1.1rem; height: 1.1rem; }
+/* Eric, 2026-08-25: the soft glow eases in and out over "book a case".
+   It moved from .btn to .act with the button; one glow per screen. */
+.act.pulse { animation: glow-pulse 3.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .act.pulse { animation: none; } }
+
+/* --- the trust bar ------------------------------------------- */
+/* Four at once on any phone: at 2x2 the eye reads it as two facts
+   and a second row it may not bother with. */
+.trust {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: .3rem;
+  list-style: none; margin: -1rem 0 0; padding: .75rem .4rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+}
+.trust li {
+  display: flex; flex-direction: column; align-items: center; gap: .3rem;
+  text-align: center; font-size: .64rem; line-height: 1.25; color: var(--dim);
+}
+.trust .ico { width: 1.35rem; height: 1.35rem; color: var(--cyan); }
+.trust li:nth-child(2) .ico { color: var(--green); }
+.trust li:nth-child(3) .ico { color: var(--magenta); }
+.trust li:nth-child(4) .ico { color: var(--gold); }
+
+/* --- the numbered steps -------------------------------------- */
+/* The rail is what makes three cards read as one sequence. It is
+   drawn on the row rather than between them so the last step has
+   no tail hanging off the bottom. */
+.icon-chip {
+  display: grid; place-items: center; width: 2.1rem; height: 2.1rem; flex: none;
+  border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--cyan);
+}
+/* No rail here: .hiw already draws one from the numbered markers, and
+   adding a second put two parallel lines down the left of every step. */
+
+/* --- the closing line ---------------------------------------- */
+.close-line {
+  display: flex; align-items: center; gap: .7rem; text-align: left;
+  margin: 0 0 .9rem; padding: .7rem .8rem; font-size: .9rem; line-height: 1.4;
+  border-radius: 14px; border: 1px solid var(--line); background: var(--panel-2);
+}
+.close-ico {
+  display: grid; place-items: center; width: 2.2rem; height: 2.2rem; flex: none;
+  border-radius: 999px; border: 1px solid var(--magenta); color: var(--magenta);
+  background: var(--bg); box-shadow: var(--glow-m);
+}
+.close-line > span:nth-child(2) { flex: 1; }
+.close-arrow { color: var(--cyan); }

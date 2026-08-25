@@ -43,7 +43,9 @@ check('M5 it answers 503, not a silent 200',
   /maintenanceMessage\(\), maintenanceUntil: MAINTENANCE_UNTIL \}, 503\)/.test(SRC));
 
 // Ordering: the guard has to sit ABOVE the real handlers or it never runs.
-const guardAt = SRC.indexOf('maintenanceUntil()\n');
+// Matched on the call rather than the newline after it: the guard gained a
+// host test on the same line (2026-08-25), which moved the newline.
+const guardAt = SRC.indexOf('if (maintenanceUntil()');
 const checkoutAt = SRC.indexOf("if (url.pathname === '/api/checkout' && request.method === 'POST')");
 check('M6 the guard is above the checkout route, so it actually fires',
   guardAt > 0 && checkoutAt > 0 && guardAt < checkoutAt, `guard@${guardAt} route@${checkoutAt}`);
@@ -84,10 +86,30 @@ check('M16 and says plainly that current clients are unaffected',
   /already a client, nothing has changed/i.test(CLIENT));
 
 // Only the money routes. A blanket block would take the whole app down.
+// The expression gained `&& !DEMO_HOST.test(url.hostname)` on 2026-08-25 -
+// Eric: "the suite is blocked by the maintenance block" - so the pin now
+// allows that clause while still requiring exactly these two routes and
+// nothing else. Widened deliberately, not relaxed: M17b below pins the host
+// test itself, and M17c pins that it is still only two routes.
 check('M17 the guard names exactly two routes, both of them purchases',
-  (SRC.match(/maintenanceUntil\(\)\n\s*&& \(url\.pathname === '\/api\/checkout' \|\| url\.pathname === '\/api\/subscribe'\)/) || []).length === 1);
+  (SRC.match(/maintenanceUntil\(\)[^;]*?&& \(url\.pathname === '\/api\/checkout' \|\| url\.pathname === '\/api\/subscribe'\)/) || []).length === 1);
+check('M17b and it stands down on a preview host, which exists to be reviewed',
+  /maintenanceUntil\(\) && !DEMO_HOST\.test\(url\.hostname\)/.test(SRC));
+check('M17c no third route was smuggled into the guard',
+  !/maintenanceUntil\(\)[^;]*?url\.pathname === '\/api\/(?!checkout|subscribe)/.test(SRC));
 
 // The demo drives booking end to end; a scrim would turn a real failure green.
+// The page half has to stand down on the same hosts the Worker does, or the
+// two disagree: a greyed preview whose checkout answers, or the reverse.
+check('M21 the page also stands down on a preview host',
+  /PREVIEW_HOST\.test\(location\.hostname\)\) return/.test(CLIENT));
+{
+  const w = SRC.match(/const DEMO_HOST = (\/.*\/i);/)?.[1];
+  const c = CLIENT.match(/const PREVIEW_HOST =\s*(\/[\s\S]*?\/i);/)?.[1]?.replace(/\s*\n\s*/g, '');
+  check('M22 and it is the SAME host pattern, so they cannot drift apart',
+    !!w && w === c, `worker ${w}\n         page   ${c}`);
+}
+
 check('M18 the demo is exempt', /pa-demo|demo/.test(CLIENT.split('export function initMaintenance')[1] || ''));
 
 // Purchase links are neutered for keyboard and screen-reader users too.

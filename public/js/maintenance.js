@@ -42,14 +42,28 @@ export function underMaintenance(now = Date.now()) {
 }
 
 /**
+ * Preview and local hosts, matching DEMO_HOST in worker/index.js. A versioned
+ * preview looks like 6e90a366-pocket-advocate.<sub>.workers.dev.
+ */
+const PREVIEW_HOST =
+  /^(?:[0-9a-f]{6,}-[\w-]+\.[\w-]+\.workers\.dev|localhost|127\.0\.0\.1|\[::1\])$/i;
+
+/**
  * Grey the page, say why, and stop anything that starts a purchase.
  *
  * Skipped entirely while the demo is running: the suites drive booking end to
  * end on a preview host, and a scrim over them would turn a real failure into
  * a green run.
+ *
+ * Skipped on a preview host FULL STOP, demo or not. Eric, 2026-08-25: "the
+ * suite is blocked by the maintenance block." A preview is not the front door
+ * - it is the one place work gets looked at before it ships, and a notice
+ * aimed at strangers was greying the review. The Worker skips the same hosts,
+ * so the page and the gate still agree with each other.
  */
 export function initMaintenance() {
   try {
+    if (PREVIEW_HOST.test(location.hostname)) return;
     const q = new URLSearchParams(location.search).get('demo');
     if (q !== '0' && (q || sessionStorage.getItem('pa-demo'))) return;
   } catch { /* storage blocked: carry on and show it */ }
