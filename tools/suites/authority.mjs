@@ -1,0 +1,112 @@
+// authority.mjs — the two Full Access documents, and the route that stores
+// them. The document text is legally load-bearing: a records authorisation
+// missing one of the 45 CFR 164.508(c) elements is defective, which in
+// practice means a records department rejects it and weeks are lost. So the
+// elements are pinned here, the way duty.js's copy is pinned.
+// Run: node authority.mjs
+// Repo-rooted: this file runs from tools/suites/ inside the repository, so
+// the sources it asserts against are found relative to itself, wherever the
+// repo is checked out.
+import { fileURLToPath as __f } from 'node:url';
+import { dirname as __d, join as __j } from 'node:path';
+const __REPO = __j(__d(__f(import.meta.url)), '..', '..');
+import { readFileSync } from 'node:fs';
+
+const {
+  recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
+} = await import(__j(__REPO, 'public/js/authority.js'));
+const WORKER = readFileSync(__j(__REPO, 'worker/index.js'), 'utf8');
+
+const results = [];
+function check(name, cond, detail = '') {
+  results.push({ name, pass: !!cond });
+  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${cond || !detail ? '' : `  -- ${detail}`}`);
+}
+
+const full = recordsAuthorisation({
+  clientName: 'Dana Reyes', clientDob: '1979-04-02',
+  clinicName: 'Valley Neurology', clinicAddress: '10 Mesa Rd, Phoenix AZ',
+  fromDate: '2024-01-01', toDate: '2026-08-01',
+  categories: ['mentalHealth', 'genetic'],
+  signedName: 'Dana Reyes', signedAt: '2026-08-23',
+});
+
+// ---- 45 CFR 164.508(c) core elements --------------------------------------
+for (const [el, re] of [
+  ['a specific description of the information', /office notes and consultation notes/i],
+  ['who may disclose', /RELEASING PROVIDER[\s\S]*Valley Neurology/],
+  ['who may receive', /RECEIVING PERSON[\s\S]*patient advocate/],
+  ['a purpose', /PURPOSE/],
+  ['an expiry', /EXPIR(Y|ES)/i],
+  ['a signature and date', /SIGNATURE[\s\S]*Signed:[\s\S]*Date:/],
+]) check(`A1 core element present: ${el}`, re.test(full));
+
+// ---- the three required statements -----------------------------------------
+check('A2 right to revoke, and how',
+  /revoke this authorisation at any time by writing/i.test(full));
+check('A3 revocation cannot undo what was already relied on',
+  /cannot undo a\s*\n?\s*release already made/i.test(full));
+check('A4 treatment may not be conditioned on signing',
+  /may not condition my treatment, payment, enrolment, or\s*\n?\s*eligibility/i.test(full));
+check('A5 re-disclosure warning',
+  /may be re-disclosed[\s\S]*no longer be protected/i.test(full));
+
+// ---- sensitive categories are opt-in, never bundled -------------------------
+check('A6 ticked categories are named specifically',
+  /I SPECIFICALLY authorise/.test(full)
+  && /Mental health records/.test(full) && /Genetic testing records/.test(full));
+check('A7 unticked categories are named as NOT authorised',
+  /Substance use/.test(full) === false || !/  - Substance use/.test(full));
+
+const none = recordsAuthorisation({ clientName: 'Dana Reyes', clinicName: 'X' });
+check('A8 with nothing ticked the form says so explicitly, rather than staying silent',
+  /I have NOT authorised release of separately protected categories/.test(none));
+check('A9 psychotherapy notes are excluded in both forms',
+  /Psychotherapy notes maintained separately/.test(full)
+  && /Psychotherapy notes maintained separately/.test(none));
+check('A10 every sensitive category carries its own explanation',
+  SENSITIVE_CATEGORIES.length >= 5 && SENSITIVE_CATEGORIES.every((c) => c.id && c.label && c.note));
+check('A11 Part 2 and its redisclosure limits are named on the substance-use row',
+  /42 CFR Part 2/.test(SENSITIVE_CATEGORIES.find((c) => c.id === 'substanceUse').note));
+
+// ---- the representative designation is a DIFFERENT document ----------------
+const rep = representativeDesignation({
+  clientName: 'Dana Reyes', memberId: 'XYZ123', planName: 'Blue Cross AZ',
+  signedName: 'Dana Reyes', signedAt: '2026-08-23',
+});
+check('R1 it grants appeal authority, which a records release does not',
+  /file and pursue internal\s*\n?\s*appeals/i.test(rep) && /external review/i.test(rep));
+check('R2 it asks for the plan documents and the reviewer credentials',
+  /medical policies, and clinical criteria/i.test(rep) && /credentials of the reviewer/i.test(rep));
+check('R3 it disclaims legal representation and medical decisions',
+  /not an attorney/i.test(rep) && /does not let my representative make medical decisions/i.test(rep)
+  && /not a power of attorney/i.test(rep));
+check('R4 it is revocable and time limited',
+  /revoke it at any time/i.test(rep) && /stays in effect until/i.test(rep));
+check('R5 the two documents are not the same text',
+  !/RELEASING PROVIDER/.test(rep) && !/file and pursue internal/.test(full));
+
+// ---- the route -------------------------------------------------------------
+check('W1 records live under the case private subtree, which no browser can read',
+  /cases\/\$\{id\}\/private\/authority\/items/.test(WORKER));
+check('W2 the advocate can never sign for the client',
+  /if \(ctx\.isAdmin\) return json\(\{ error: 'Only the client can sign this\.' \}, 403\)/.test(WORKER));
+check('W3 the advocate can never revoke for the client either',
+  /Only the client can revoke this/.test(WORKER));
+check('W4 the signing time is stamped by the Worker, never taken from the browser',
+  /signedAt: new Date\(\),/.test(WORKER) && /a client-sent timestamp is/.test(WORKER));
+check('W5 signing requires the name on the case',
+  /Sign with the same name that is on this case/.test(WORKER));
+check('W6 only a Full Access case can hold authorisations',
+  /if \(!c\?\.data\.fullAccess\)/.test(WORKER));
+check('W7 both sides read through threadContext, so a stranger gets a 404 or 403',
+  /const ctx = await threadContext\(env, user, 'case', id\);\n  if \(ctx\.error\) return json\(\{ error: ctx\.error \}, ctx\.code\);\n  const coll = `cases\/\$\{id\}\/private\/authority/.test(WORKER));
+// authorityAt is stamped at the first signature and is NOT the window any
+// more - the window runs 60 days from the first call (fullAccessWindowEnd).
+// The field is kept as the record of when he first had authority to act.
+check('W8 authorityAt is stamped at the first signature',
+  /if \(!c\.data\.authorityAt\)/.test(WORKER) && /authorityAt: new Date\(\)/.test(WORKER));
+
+const failed = results.filter((r) => !r.pass);
+console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
+process.exit(failed.length ? 1 : 0);

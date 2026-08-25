@@ -35,6 +35,22 @@ then poll `GET https://thepocketadvocates.com/api/version` until `tag`
 matches. If `public/css/site.css` changes, bump the `?v=statNN` query string
 in every HTML file that links it.
 
+## Full suites before main (Eric, 2026-08-25: "I want full suites before
+## being pushed to main")
+
+Before ANY push to main — a feature, a hotfix, a one-liner, a copy change —
+run the whole battery and get it green:
+
+    node tools/suites/run.mjs
+
+Every suite must pass; one red line blocks the push, full stop. For
+behavioral changes, also run the blindness audit
+(`node tools/blindness-audit.mjs` against a local server of `public/`) and
+drive the changed surfaces in a browser before pushing. The rule exists
+because a one-line hotfix once broke the admin dashboard and nothing caught
+it. When a suite fails because the DESIGN changed on Eric's word, update the
+suite's expectation in the same commit and say so — never delete the check.
+
 ## Iron rules (long-standing, do not relax)
 
 - Clients must be completely blind to admin information and tools. Admin

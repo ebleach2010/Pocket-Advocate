@@ -3,7 +3,18 @@
 Where the drivable demo lives and how to reach it. Written down because
 building and re-finding this once cost a full day.
 
-## Where they run
+## The static battery (runs anywhere, gates every push to main)
+
+    node tools/suites/run.mjs
+
+Nine suites assert against the real Worker and page sources: pricing
+constants, the tier window and closure rules, the maintenance gate, the
+acknowledgment flow, the authority documents, the hold model, the check-in
+cadence, and the defect regressions. No server, no browser, no network.
+Eric's rule (2026-08-25): this battery runs and passes before ANYTHING is
+pushed to main. See CLAUDE.md.
+
+## Where the drivable demo runs
 
 Preview hosts only. The demo host allowlist (`DEMO_HOST` in
 `worker/index.js`, mirrored in the page host checks) accepts versioned
