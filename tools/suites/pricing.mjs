@@ -221,9 +221,28 @@ check('T9i only an approval can create a tier case, so the cap cannot be raced',
 check('T9j a decline is written in his words and charges nothing',
   /Write the reason\. The client reads it word for word\./.test(SRC)
   && /state: 'declined'/.test(SRC));
-check('T10 pay-over-time is offered on the tier upgrade and nowhere at booking',
-  /automatic_payment_methods/.test(SRC)
-  && !/wantsFull/.test(SRC));
+// T10 INVERTED 2026-08-25, and this one is worth reading rather than skimming.
+//
+// It used to assert that `automatic_payment_methods` was present, as the way
+// pay-over-time reached the four-figure charges. That parameter does not
+// exist on Checkout Sessions - it belongs to PaymentIntents - and Stripe
+// refuses an unknown parameter with a 400. `stripePost` throws on non-2xx, so
+// the approval route and "another month" BOTH answered 500: the only two
+// routes that turn a Hands-Off request into money could not complete, and
+// every suite stayed green because this check only asked whether the string
+// was in the file.
+//
+// So the pin now asserts the opposite, and the intent behind it is NOT
+// silently dropped - it is unimplemented and flagged to Eric. Checkout shows
+// whichever methods are enabled in the Stripe Dashboard; restricting
+// pay-over-time to the big charges alone would mean naming
+// `payment_method_types` explicitly on those two routes, which only works
+// once Klarna/Affirm are live on the account. Guessing at that would recreate
+// exactly the 400 this replaces.
+check('T10 no phantom pay-over-time parameter Stripe would refuse',
+  !/automatic_payment_methods/.test(SRC));
+check('T10b booking still never offers the tier as a checkout line',
+  !/wantsFull/.test(SRC));
 
 // ---- the two rate fields must never be summed ----------------------------
 const CASEJS = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');

@@ -4587,12 +4587,15 @@ async function handleFullRequestDecision(request, env) {
   // climbed to while it sat on his desk.
   const cents = Number(req.firstMonthCents) > 0
     ? Number(req.firstMonthCents) : upgradeCents(c.data, (await readRates(env)).fullCents);
-  const expiresAt = new Date(Date.now() + 7 * 24 * 3600_000);
+  // 23 hours, like every other checkout here. It was seven days, which reads
+  // generously and is not a thing Stripe will do: a Checkout Session's
+  // expires_at may be at most 24 hours out, so the whole call was refused and
+  // Approve answered 500. If a link lapses he can approve the ask again.
+  const expiresAt = new Date(Date.now() + 23 * 3600_000);
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: c.data.clientEmail || undefined,
     line_items: fullAccessLineItems(cents),
-    automatic_payment_methods: { enabled: true },
     success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&upgraded=1`,
     cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),
@@ -4875,9 +4878,6 @@ async function handleExtendCheckout(request, env) {
     mode: 'payment',
     customer_email: c.data.clientEmail || undefined,
     line_items: extendLineItems(cents),
-    // Same reason the tier itself offers it: a four-figure charge to
-    // somebody already paying for being ill.
-    automatic_payment_methods: { enabled: true },
     success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&extended=1`,
     cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),

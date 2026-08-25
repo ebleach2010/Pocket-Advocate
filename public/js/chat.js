@@ -357,7 +357,14 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     const start = (e) => {
       if (onAttachment(e)) return;
       x0 = e.clientX; y0 = e.clientY;
-      timer = setTimeout(() => { timer = null; open(); }, LONG_PRESS_MS);
+      timer = setTimeout(() => {
+        timer = null;
+        // He was dragging out a selection, not asking for the menu. Text is
+        // selectable on a mouse now, so a held press that has produced one is
+        // a copy in progress and the menu would destroy it.
+        if (window.getSelection && String(window.getSelection())) return;
+        open();
+      }, LONG_PRESS_MS);
     };
     const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
     const moved = (e) => {
