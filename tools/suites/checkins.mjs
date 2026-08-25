@@ -161,6 +161,35 @@ check('E6 the demo drives the purchase and the days really stack',
   /'\/api\/extend'/.test(DEMO)
   && /fullAccessExtraDays: \(Number\(c\.fullAccessExtraDays\) \|\| 0\) \+ 30/.test(DEMO));
 
+// ---- the About sheets + the readiness checklist (Eric, 2026-08-25) ----
+const ABOUT = readFileSync(`${ROOT}/public/js/service-about.js`, 'utf8');
+const READY = readFileSync(`${ROOT}/public/js/readiness.js`, 'utf8');
+const { SERVICE_ABOUT } = await import(`${ROOT}/public/js/service-about.js`);
+check('AB1 the About module carries all six services, each fully shaped',
+  ['case', 'chat', 'handsOff', 'extension', 'followup', 'telehealth']
+    .every((k) => {
+      const a = SERVICE_ABOUT[k];
+      return a && a.title && a.tldr && a.paragraphs?.length && a.bullets?.length;
+    }));
+check('AB2 Hands-Off says he does the legwork, in those words',
+  /I do the legwork/.test(ABOUT));
+check('AB3 and that he writes appeals when a doctor will not cooperate',
+  /If a doctor will not cooperate/.test(ABOUT) && /I write the appeal/.test(ABOUT));
+check('AB4 the About buttons are wired on the landing page and every enhancement card',
+  (() => {
+    const idx = readFileSync(`${ROOT}/public/index.html`, 'utf8');
+    return /data-about="case"/.test(idx) && /data-about="handsOff"/.test(idx)
+      && /data-about="chat"/.test(idx) && /wireAboutButtons/.test(idx)
+      && /addAbout\(/.test(CASE);
+  })());
+check('AB5 the readiness checklist is DERIVED on both sides, never stored',
+  /export function handsOffReadiness/.test(READY)
+  && /from '\.\/readiness\.js'/.test(CASE)
+  && /from '\.\/readiness\.js'/.test(ADMIN)
+  && !/handsOffChecklist/.test(SRC));
+check('AB6 the client reads the honest clock sentence beside the checklist',
+  /the clock runs whether or not this list is done/.test(CASE));
+
 // ---- the copy that had to change ----
 check('W1 tier terms no longer close the case at any call',
   !/which is where we close the case/.test(TIER) && !/closes the case/.test(TIER));

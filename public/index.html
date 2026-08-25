@@ -75,8 +75,14 @@
            fading into the page. Same fill treatment, different accent, so
            they read as two ways to work with him rather than a headline act
            and an also-ran. Outlines on a near-black page disappeared. -->
-      <a class="btn glow" href="/book.html">Book a case, <span data-rate="case">$650</span></a>
+      <a class="btn glow pulse" href="/book.html">Book a case, <span data-rate="case">$650</span></a>
       <a class="btn mag glow" href="/subscribe.html">24/7 Priority Chat, <span data-rate="sub">$95</span>/mo</a>
+    </div>
+    <div class="actions" style="margin-top:.5rem;">
+      <!-- Eric, 2026-08-25: "Underneath the 'book' button is an 'about'
+           button that explains EVERYTHING they get." One sheet per service:
+           TL;DR, the whole picture, then point by point. -->
+      <button type="button" class="btn ghost" data-about="case">About the Advocacy Case</button>
     </div>
     <p class="webapp-note" id="webapp-note">This is a web app</p>
   </section>
@@ -125,6 +131,7 @@
       <p class="desc">One flat price for real depth: our full case overview call, my review of every record you share, and a written report within 7 days that organizes the history, the open questions, and the next steps. A follow-up discussion on the same case is <span data-rate="addon">$175</span>.</p>
       <span class="pack-cta">Book a case</span>
     </a>
+    <p class="pack-about"><button type="button" class="btn ghost" data-about="case">About the Advocacy Case</button></p>
     <a class="pack rec-c" href="#" data-about="handsOff">
       <span class="tag c">HANDS-OFF</span>
       <h3>Hands-Off Case Management</h3><span class="price" data-rate="full">$3,500</span>
@@ -137,6 +144,7 @@
       <p class="desc">A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime; your message history stays available to you.</p>
       <span class="pack-cta">Start chatting</span>
     </a>
+    <p class="pack-about"><button type="button" class="btn ghost" data-about="chat">About the chat line</button></p>
   </section>
 
   <section class="land-sec">
@@ -244,6 +252,12 @@
   // No welcome card here: this is the booking page, and "you're in, this is
   // your case" is not true of anyone reading it.
   if (u) initSetupGuide(u, document.querySelector('main'), { welcome: false });
+</script>
+<script type="module">
+  // The About sheets (Eric, 2026-08-25). Its own module with no Firebase
+  // dependency, so the sheets open even on a day the app cannot.
+  import { wireAboutButtons } from '/js/service-about.js';
+  wireAboutButtons();
 </script>
 </body>
 </html>

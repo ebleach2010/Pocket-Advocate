@@ -508,6 +508,31 @@ summary.btn::-webkit-details-marker { display: none; }
 .pack.rec-c,
 .pack.rec-m { animation: none; }
 }
+/* The one breathing element on the landing page (Eric, 2026-08-25: "A soft
+   glow should ease in and out in intensity over book a case"). Opt-in via
+   .pulse, on that one button only - the one-glow-per-screen rule holds. */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: var(--glow-c); }
+  50%      { box-shadow: 0 0 26px var(--cyan-dim), 0 0 46px var(--cyan-dim); }
+}
+.btn.pulse { animation: glow-pulse 3.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .btn.pulse { animation: none; }
+}
+/* The About sheets (service-about.js): TL;DR first, depth underneath. */
+.about-card { max-width: 34rem; }
+.about-card .about-body { max-height: min(68vh, 34rem); }
+.about-tldr {
+  border: 1px solid var(--cyan-dim); border-radius: 12px;
+  background: var(--panel-2); padding: .7rem .85rem; margin: 0 0 .8rem;
+}
+.about-list { margin: .2rem 0 .4rem; padding-left: 1.15rem; }
+.about-list li { margin: .3rem 0; }
+.pack-about { text-align: center; margin: -.3rem 0 1rem; }
+/* The Hands-Off readiness checklist (readiness.js), both sides. */
+.ready-list { list-style: none; margin: .2rem 0 .6rem; padding: 0; }
+.ready-list li { margin: .3rem 0; color: var(--soft); }
+.ready-list li.is-done { color: var(--green); }
 .tag {
   position: absolute; top: -.6rem; left: .9rem;
   font: 700 .64rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .18em;

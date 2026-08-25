@@ -21,6 +21,7 @@ import { mountFolder } from './folder.js';
 import {
   recordsAuthorisation, representativeDesignation, APPEAL_DEADLINES, appealDueAt,
 } from './authority.js';
+import { handsOffReadiness } from './readiness.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
@@ -1976,14 +1977,19 @@ async function paintAuthorityStatus(pane) {
   const revoked = items.filter((i) => i.revokedAt);
   const days = fullAccessDaysLeft(data);
   const paused = !!data.hold?.pausedAt;
+  // The same derived checklist the client sees, from the same helper - the
+  // two views cannot drift, and this card is where Eric reads "may I begin".
+  const ready = handsOffReadiness(data, items);
 
   host.innerHTML = `
-    <div class="panel" style="${live.length ? '' : 'border-color:var(--orange); box-shadow:var(--glow-o);'}">
-      <h3 style="margin:0 0 .35rem;${live.length ? '' : ' color:var(--orange);'}">
-        ${live.length ? 'Authority to act' : 'No authority yet'}</h3>
-      ${live.length ? '' : `<p class="dim small" style="margin:0 0 .5rem;">Nothing
-        can start until the client signs. The forms are waiting on their case page;
-        a nudge in chat is usually all it takes.</p>`}
+    <div class="panel" style="${ready.ready ? '' : 'border-color:var(--orange); box-shadow:var(--glow-o);'}">
+      <h3 style="margin:0 0 .35rem;${ready.ready ? '' : ' color:var(--orange);'}">
+        ${ready.ready ? 'Ready: authority to act' : 'Not ready yet'}</h3>
+      <p class="dim small" style="margin:0 0 .4rem;">
+        ${ready.rows.map((r) => `${r.done ? '✓' : '○'} ${esc(r.label)}`).join('<br>')}</p>
+      ${ready.ready ? '' : `<p class="dim small" style="margin:0 0 .5rem;">The
+        clock runs from purchase either way. The forms are waiting on their case
+        page; a nudge in chat is usually all it takes.</p>`}
       <p class="dim small" style="margin:.1rem 0;">
         Records: ${recs.length
           ? recs.map((r) => esc(r.clinicName || 'clinic')).join(', ')

@@ -18,6 +18,8 @@ import {
   recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
 } from './authority.js';
 import { FULL_ACCESS_TERMS, FULL_ACCESS_PLAIN } from './tier-terms.js';
+import { wireAboutButtons } from './service-about.js';
+import { handsOffReadiness } from './readiness.js';
 import { mountFolder, folderEnter } from './folder.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
@@ -1190,19 +1192,30 @@ function renderAddons(el, c) {
     <div data-followup></div>
     <div data-upgrade></div>
     <div data-extend></div>`;
+  // Every card carries its About sheet (Eric, 2026-08-25) - appended after
+  // each paint, because a repaint that rebuilds a host's innerHTML would
+  // otherwise silently eat the button.
+  const addAbout = (host, id) => {
+    if (!host || !host.innerHTML.trim() || host.querySelector('[data-about]')) return;
+    host.insertAdjacentHTML('beforeend',
+      `<p style="margin:.2rem 0 .9rem;"><button type="button" class="btn quiet tiny" data-about="${id}">About this enhancement</button></p>`);
+    wireAboutButtons(host);
+  };
   const th = el.querySelector('[data-telehealth]');
-  if (th) { th.innerHTML = telehealthCard(c); wireTelehealthCard(th, c); }
+  if (th) { th.innerHTML = telehealthCard(c); wireTelehealthCard(th, c); addAbout(th, 'telehealth'); }
   const ex = el.querySelector('[data-extend]');
-  if (ex) { ex.innerHTML = extendOffer(c); wireExtendOffer(ex, c); }
+  if (ex) { ex.innerHTML = extendOffer(c); wireExtendOffer(ex, c); addAbout(ex, 'extension'); }
   const offer = el.querySelector('[data-followup]');
   if (offer) {
     offer.innerHTML = followUpOffer(c);
     wireFollowUpOffer(offer, c);
+    addAbout(offer, 'followup');
   }
   const up = el.querySelector('[data-upgrade]');
   if (up) {
     up.innerHTML = upgradeOffer(c);
     wireUpgradeOffer(up, c);
+    addAbout(up, 'handsOff');
     // Repaint once the live price answers. Without this the card kept
     // whatever was compiled in, and the handshake would then bounce a buyer
     // who had done nothing wrong.
@@ -1210,6 +1223,7 @@ function renderAddons(el, c) {
       if (!up.isConnected || up.querySelector('[data-upgrade-ack]:checked')) return;
       up.innerHTML = upgradeOffer(c);
       wireUpgradeOffer(up, c);
+      addAbout(up, 'handsOff');
     }).catch(() => {});
   }
 }
@@ -1678,12 +1692,22 @@ async function mountAuthority(host, c) {
     const signed = (kind) => items.find((i) => i.kind === kind && !i.revokedAt);
     const rep = signed('representative');
     const recs = items.filter((i) => i.kind === 'records' && !i.revokedAt);
+    // The readiness checklist frames the two documents (Eric, 2026-08-25):
+    // what is done, what remains, and the one honest sentence about the
+    // clock, which runs from purchase however fast this list is finished.
+    const ready = handsOffReadiness(c, items);
+    const boughtAt = c.fullAccessAt ? toDate(c.fullAccessAt) : null;
     host.innerHTML = `
       <div class="panel authority" data-auth-panel>
-        <h3>What I need signed</h3>
-        <p class="dim small">Nothing on your case can start until these are in
-          place. They are two separate permissions, and you can withdraw either
-          one at any time.</p>
+        <h3>Before I can act for you</h3>
+        <ul class="ready-list" data-ready-list>
+          ${ready.rows.map((r) => `
+            <li class="${r.done ? 'is-done' : ''}">${r.done ? '✓' : '○'} ${esc(r.label)}</li>`).join('')}
+        </ul>
+        <p class="dim small">${ready.ready
+    ? 'Your checklist is done. The legwork is mine from here.'
+    : 'These are two separate permissions, and you can withdraw either one at any time. How fast you finish is up to you.'}
+          ${boughtAt ? `Your 60 days started ${esc(new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(boughtAt))}, the day you bought Hands-Off — the clock runs whether or not this list is done.` : ''}</p>
 
         <div class="auth-row">
           <div class="auth-head">
