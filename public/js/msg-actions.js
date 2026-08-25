@@ -27,7 +27,7 @@ export const STATUS_REACTIONS = [
   { id: 'vetting', emoji: '🕵️', label: 'Eric is doing background checks on providers…' },
   { id: 'coordinating', emoji: '📞', label: 'Eric is coordinating with providers…' },
   { id: 'insurance', emoji: '📨', label: 'Eric is writing to insurance…' },
-  { id: 'documents', emoji: '📑', label: 'Eric is preparing documents…' },
+  { id: 'documents', emoji: '📑', label: 'Eric is prepping documents…' },
   { id: 'notes', emoji: '📝', label: 'Eric is taking personal notes on the case…' },
 ];
 

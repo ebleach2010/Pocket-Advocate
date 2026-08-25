@@ -2866,7 +2866,7 @@ const CHAT_REACTIONS = {
   vetting: { label: 'Eric is doing background checks on providers…' },
   coordinating: { label: 'Eric is coordinating with providers…' },
   insurance: { label: 'Eric is writing to insurance…' },
-  documents: { label: 'Eric is preparing documents…' },
+  documents: { label: 'Eric is prepping documents…' },
   notes: { label: 'Eric is taking personal notes on the case…' },
 };
 
