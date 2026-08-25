@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.33';
+export const VERSION = '2.34';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '2.33';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    version: '2.34',
+    quiet: true,
+    // The work clock gains a correction, and the maintenance window moves to
+    // 8PM. Both are Eric's side of the app: the clock correction is a control
+    // on his chart, and the window is the front door, which a client who
+    // already has a case never meets. A client CAN see the hours total change
+    // as a result, but the change itself is admin machinery, so under his
+    // scope rule (2026-08-23) this list stays empty.
+    client: [],
+  },
   {
     version: '2.33',
     quiet: true,
