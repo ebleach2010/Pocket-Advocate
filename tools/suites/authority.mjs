@@ -14,8 +14,12 @@ import { readFileSync } from 'node:fs';
 
 const {
   recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
+  COMMUNICATION_SCOPES,
 } = await import(__j(__REPO, 'public/js/authority.js'));
 const WORKER = readFileSync(__j(__REPO, 'worker/index.js'), 'utf8');
+const CASE = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+const ADMIN = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
+const DEMO = readFileSync(__j(__REPO, 'public/js/demo/api.js'), 'utf8');
 
 const results = [];
 function check(name, cond, detail = '') {
@@ -106,6 +110,55 @@ check('W7 both sides read through threadContext, so a stranger gets a 404 or 403
 // The field is kept as the record of when he first had authority to act.
 check('W8 authorityAt is stamped at the first signature',
   /if \(!c\.data\.authorityAt\)/.test(WORKER) && /authorityAt: new Date\(\)/.test(WORKER));
+
+// ---- the beefed-up release: what he may DO, and the drawn signature ----
+// (Eric, 2026-08-25: "Essentially a beefed up release of records" so he can
+// speak on their behalf, with tick boxes, a finger signature, and a gate
+// that refuses an incomplete document.)
+const scoped = recordsAuthorisation({
+  clientName: 'Dana Reyes', clinicName: 'Valley Neurology',
+  scopes: ['discuss', 'records'], signedName: 'Dana Reyes', signedAt: '2026-08-23',
+});
+check('S1 the scopes list is real and each row explains itself',
+  COMMUNICATION_SCOPES.length >= 3
+  && COMMUNICATION_SCOPES.every((x) => x.id && x.label && x.note));
+check('S2 the document says what the advocate may do, not just what may be sent',
+  /WHAT I AUTHORISE MY ADVOCATE TO DO/.test(scoped)
+  && /Discuss my care with my advocate/.test(scoped));
+check('S3 only the ticked scopes print',
+  /\[X\] Discuss my care/.test(scoped)
+  && !/\[X\] Handle scheduling/.test(scoped));
+check('S4 a legacy document with no scopes stored still prints the full set',
+  (() => {
+    const legacy = recordsAuthorisation({ clientName: 'Dana Reyes', clinicName: 'X' });
+    return COMMUNICATION_SCOPES.every((x) => legacy.includes(x.label));
+  })());
+check('S5 a blank prints empty boxes to tick by hand, not ticked ones',
+  /\[ \] Discuss my care/.test(recordsAuthorisation({ blank: true })));
+check('S6 the Worker mirrors the scope ids exactly, and says why it must',
+  /const AUTHORITY_SCOPE_IDS = \['discuss', 'records', 'admin'\];/.test(WORKER)
+  && /cannot import a client module/.test(WORKER)
+  && COMMUNICATION_SCOPES.map((x) => x.id).join(',') === 'discuss,records,admin');
+check('S7 the signature is validated as an image, not trusted as a string',
+  /\^data:image\\\/\(png\|jpe\?g\);base64,\[A-Za-z0-9\+\/=\]\+\$/.test(WORKER)
+  && /AUTHORITY_SIG_MAX/.test(WORKER));
+check('S8 the Worker refuses an unsigned document, whatever the page did',
+  /Sign the document with your finger before sending it\./.test(WORKER)
+  && /Sign the document with your finger before sending it\./.test(DEMO));
+check('S9 the completeness gate carries Eric\'s wording, exactly',
+  CASE.includes('Your document is incomplete. please review the full document and be sure you did not miss any areas requiring your selection or signature.'));
+check('S10 bad fields go red and the pad is one of them',
+  /field-bad/.test(CASE) && /mark\('\[data-sig-open\]'\)/.test(CASE));
+check('S11 the signature prints on paper, outside the document text',
+  /function signatureInk/.test(CASE) && /function signatureInk/.test(ADMIN)
+  && /<\/pre>\$\{signatureInk\(item\)\}/.test(CASE)
+  && /<\/pre>\$\{signatureInk\(item\)\}/.test(ADMIN));
+check('S12 and it is re-checked before it is ever written into a document',
+  (CASE.match(/data:image\\\/\(png\|jpe\?g\);base64/g) || []).length >= 1
+  && (ADMIN.match(/data:image\\\/\(png\|jpe\?g\);base64/g) || []).length >= 1);
+check('S13 the demo stores both new fields, so it cannot silently drop them',
+  /scopes: Array\.isArray\(body\.scopes\)/.test(DEMO)
+  && /signatureImage: body\.signatureImage/.test(DEMO));
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

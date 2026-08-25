@@ -508,14 +508,22 @@ export function demoApi(role, store) {
         if (cur) store.docs.set(k, { ...cur, revokedAt: new Date() });
         return ok({ ok: true });
       }
+      // The Worker's own gate, mirrored: no drawn signature, no document.
+      if (!body.signatureImage)
+        return fail(400, 'Sign the document with your finger before sending it.');
       const id = `demo-${Math.random().toString(36).slice(2, 8)}`;
+      // The field list is hardcoded here, so anything new on the real
+      // document has to be added or the demo silently drops it.
       store.docs.set(prefix + id, {
         kind: body.kind, signedName: body.signedName, signedAt: new Date(),
         revokedAt: null, clinicName: body.clinicName || '', clinicAddress: body.clinicAddress || '',
         clinicPhone: body.clinicPhone || '', fromDate: body.fromDate || '', toDate: body.toDate || '',
         planName: body.planName || '', memberId: body.memberId || '',
         categories: Array.isArray(body.categories) ? body.categories : [],
+        scopes: Array.isArray(body.scopes) ? body.scopes : [],
+        signatureImage: body.signatureImage || '',
       });
+      store.persist?.();
       return ok({ ok: true, id, signedAt: new Date().toISOString() });
     }
     if (path === '/api/clinic-calls') {

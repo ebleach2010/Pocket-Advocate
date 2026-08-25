@@ -16,6 +16,7 @@ import { askName, safeName } from './rename.js';
 import { HELP_BUTTON, helpButton, wireHelp, openCaseHelp } from './help.js';
 import {
   recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
+  COMMUNICATION_SCOPES,
 } from './authority.js';
 import { FULL_ACCESS_TERMS, FULL_ACCESS_PLAIN } from './tier-terms.js';
 import { wireAboutButtons } from './service-about.js';
@@ -1830,14 +1831,30 @@ function openAuthoritySheet(c, kind, onDone) {
         <label class="dim small">Member or policy ID
           <input type="text" data-f="memberId" maxlength="80"></label>
       `}
+      ${isRecords ? `
+        <p class="dim small" style="margin:.8rem 0 .3rem;">What you are letting
+          me do with this clinic. All three are usually what makes the case
+          work; untick anything you want left out.</p>
+        ${COMMUNICATION_SCOPES.map((sc) => `
+          <label class="agreement-check" style="align-items:flex-start;">
+            <input type="checkbox" data-scope="${sc.id}" checked>
+            <span><strong>${esc(sc.label)}</strong><br><span class="dim small">${esc(sc.note)}</span></span>
+          </label>`).join('')}
+      ` : ''}
       <details class="agreement" style="margin:.9rem 0 .6rem;">
         <summary><span class="agreement-title">Read the whole form</span></summary>
         <div class="agreement-body"><pre class="auth-doc" data-preview></pre></div>
       </details>
       <label class="dim small">Type your full name to sign
         <input type="text" data-f="signedName" maxlength="120" placeholder="${esc(c.clientName || 'Your full name')}"></label>
-      <p class="dim small" style="margin:.4rem 0 0;">Typing your name here is your
-        signature. The date and time are recorded when you press Sign.</p>
+      <p class="dim small" style="margin:.6rem 0 .3rem;">Then sign with your finger:</p>
+      <button type="button" class="sig-box" data-sig-open aria-label="Tap to sign with your finger">
+        <span class="dim small" data-sig-hint>Tap here to sign</span>
+        <img data-sig-img alt="Your signature" hidden style="max-width:100%; max-height:70px;">
+      </button>
+      <p class="dim small" style="margin:.4rem 0 0;">Your typed name and your
+        drawn signature together are your signature. The date and time are
+        recorded when you press Sign.</p>
       <p class="error" data-sheet-error hidden></p>
       <div class="actions">
         <button class="btn quiet" data-x>Cancel</button>
@@ -1847,6 +1864,8 @@ function openAuthoritySheet(c, kind, onDone) {
 
   const val = (name) => overlay.querySelector(`[data-f="${name}"]`)?.value.trim() || '';
   const cats = () => [...overlay.querySelectorAll('[data-cat]:checked')].map((i) => i.dataset.cat);
+  const scopesOf = () => [...overlay.querySelectorAll('[data-scope]:checked')].map((i) => i.dataset.scope);
+  let signatureImage = '';
   const preview = overlay.querySelector('[data-preview]');
   const repaint = () => {
     const o = {
@@ -1854,7 +1873,7 @@ function openAuthoritySheet(c, kind, onDone) {
       clinicName: val('clinicName'), clinicAddress: val('clinicAddress'),
       fromDate: val('fromDate'), toDate: val('toDate'),
       planName: val('planName'), memberId: val('memberId'),
-      categories: cats(), signedName: val('signedName'),
+      categories: cats(), scopes: scopesOf(), signedName: val('signedName'),
     };
     preview.textContent = isRecords ? recordsAuthorisation(o) : representativeDesignation(o);
   };
@@ -1862,14 +1881,66 @@ function openAuthoritySheet(c, kind, onDone) {
   overlay.addEventListener('change', repaint);
   repaint();
 
+  // The finger-signature pad: tap the box, sign in the sheet that opens, and
+  // the drawing lands back in the box (Eric, 2026-08-25: "tap to pull up a
+  // box for them to sign with their finger").
+  overlay.querySelector('[data-sig-open]').addEventListener('click', () => {
+    openSignaturePad((dataUrl) => {
+      signatureImage = dataUrl;
+      const img = overlay.querySelector('[data-sig-img]');
+      const hint = overlay.querySelector('[data-sig-hint]');
+      img.src = dataUrl;
+      img.hidden = false;
+      if (hint) hint.textContent = 'Tap to sign again';
+      overlay.querySelector('[data-sig-open]').classList.remove('field-bad');
+    });
+  });
+
+  // Every field clears its own red the moment it is corrected.
+  overlay.addEventListener('input', (e) => e.target.classList?.remove('field-bad'));
+
+  /**
+   * The completeness gate (Eric, 2026-08-25, his wording verbatim in the
+   * message below): required fields present, dates parseable, no future
+   * dates, from before through. Offenders turn red; nothing is sent until
+   * the document is whole. The Worker re-checks everything - this is the
+   * half that explains, not the half that enforces.
+   */
+  const validateSheet = () => {
+    const bad = [];
+    const mark = (sel) => { const el = overlay.querySelector(sel); if (el) { el.classList.add('field-bad'); bad.push(el); } };
+    const need = isRecords ? ['clinicName', 'signedName'] : ['planName', 'memberId', 'signedName'];
+    for (const f of need) if (!val(f)) mark(`[data-f="${f}"]`);
+    if (isRecords) {
+      const today = new Date(); today.setHours(23, 59, 59, 999);
+      for (const f of ['fromDate', 'toDate']) {
+        const v = val(f);
+        if (!v) continue;
+        const t = new Date(`${v}T12:00:00`);
+        if (Number.isNaN(t.getTime()) || t.getTime() > today.getTime()) mark(`[data-f="${f}"]`);
+      }
+      const from = val('fromDate'); const to = val('toDate');
+      if (from && to && from > to) { mark('[data-f="fromDate"]'); mark('[data-f="toDate"]'); }
+    }
+    if (!signatureImage) mark('[data-sig-open]');
+    return bad;
+  };
+
   const close = () => overlay.remove();
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   overlay.querySelector('[data-x]').addEventListener('click', close);
   overlay.querySelector('[data-sign]').addEventListener('click', async () => {
     const btn = overlay.querySelector('[data-sign]');
     const err = overlay.querySelector('[data-sheet-error]');
-    btn.disabled = true;
     err.hidden = true;
+    const bad = validateSheet();
+    if (bad.length) {
+      err.textContent = 'Your document is incomplete. please review the full document and be sure you did not miss any areas requiring your selection or signature.';
+      err.hidden = false;
+      bad[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
+    btn.disabled = true;
     try {
       const idToken = await user.getIdToken();
       const res = await fetch('/api/authority', {
@@ -1882,7 +1953,8 @@ function openAuthoritySheet(c, kind, onDone) {
           clinicPhone: val('clinicPhone'),
           fromDate: val('fromDate'), toDate: val('toDate'),
           planName: val('planName'), memberId: val('memberId'),
-          categories: cats(),
+          categories: cats(), scopes: scopesOf(),
+          signatureImage,
         }),
       });
       const out = await res.json().catch(() => ({}));
@@ -1900,10 +1972,123 @@ function openAuthoritySheet(c, kind, onDone) {
 }
 
 /**
+ * The drawing pad itself. Pointer events cover finger, stylus and mouse;
+ * the canvas is scaled for the device's pixel ratio so a signature drawn on
+ * a phone is not a staircase; Done downsamples to at most 600px wide and
+ * hands back a JPEG dataURL small enough to live on the stored document.
+ */
+function openSignaturePad(onDone) {
+  if (document.getElementById('pa-sigpad')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'pa-sigpad';
+  overlay.className = 'settings-overlay';
+  overlay.innerHTML = `
+    <div class="settings-card" role="dialog" aria-modal="true" aria-label="Sign with your finger">
+      <h3 style="margin:0 0 .3rem;">Sign with your finger</h3>
+      <p class="dim small" style="margin:0 0 .5rem;">Sign the way you would on
+        paper. Clear starts over.</p>
+      <canvas data-sig-canvas class="sig-canvas"></canvas>
+      <div class="actions" style="margin-top:.7rem;">
+        <button class="btn quiet" data-sig-clear>Clear</button>
+        <button class="btn quiet" data-sig-cancel>Cancel</button>
+        <button class="btn glow" data-sig-done disabled>Done</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const canvas = overlay.querySelector('[data-sig-canvas]');
+  const doneBtn = overlay.querySelector('[data-sig-done]');
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const cssW = Math.min(overlay.querySelector('.settings-card').clientWidth - 20, 480) || 320;
+  const cssH = 180;
+  canvas.style.width = `${cssW}px`;
+  canvas.style.height = `${cssH}px`;
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, canvas.width, canvas.height);
+  g.strokeStyle = '#101828';
+  g.lineWidth = 2.2 * dpr;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+
+  let drawing = false;
+  let drew = false;
+  const pos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    return [(e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr];
+  };
+  canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    drawing = true;
+    canvas.setPointerCapture(e.pointerId);
+    const [x, y] = pos(e);
+    g.beginPath();
+    g.moveTo(x, y);
+    // A dot is a mark too: a tap without a drag still leaves ink.
+    g.lineTo(x + 0.1, y + 0.1);
+    g.stroke();
+    drew = true;
+    doneBtn.disabled = false;
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drawing) return;
+    const [x, y] = pos(e);
+    g.lineTo(x, y);
+    g.stroke();
+  });
+  const stop = () => { drawing = false; };
+  canvas.addEventListener('pointerup', stop);
+  canvas.addEventListener('pointercancel', stop);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('[data-sig-cancel]').addEventListener('click', close);
+  overlay.querySelector('[data-sig-clear]').addEventListener('click', () => {
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, canvas.width, canvas.height);
+    g.strokeStyle = '#101828';
+    drew = false;
+    doneBtn.disabled = true;
+  });
+  doneBtn.addEventListener('click', () => {
+    if (!drew) return;
+    const outW = Math.min(600, canvas.width);
+    const outH = Math.round(canvas.height * (outW / canvas.width));
+    const small = document.createElement('canvas');
+    small.width = outW;
+    small.height = outH;
+    const sg = small.getContext('2d');
+    sg.fillStyle = '#ffffff';
+    sg.fillRect(0, 0, outW, outH);
+    sg.drawImage(canvas, 0, 0, outW, outH);
+    const dataUrl = small.toDataURL('image/jpeg', 0.8);
+    close();
+    onDone(dataUrl);
+  });
+}
+
+/**
  * A paper copy, on demand, for either side. Same window.open + print pattern
  * the case export and the prep sheet already use; there is no PDF library in
  * this stack and none is being added for this.
  */
+/**
+ * The drawn signature, as printable HTML - or nothing at all.
+ *
+ * Re-checked here as well as server-side, because this string is about to
+ * be written into a document: anything that is not plainly a base64 png or
+ * jpeg never reaches document.write. It goes AFTER the </pre>, never inside
+ * it, so the text of the document (which a records department reads, and
+ * which the suite pins line by line) is untouched.
+ */
+function signatureInk(item) {
+  const src = typeof item?.signatureImage === 'string' ? item.signatureImage.trim() : '';
+  if (!src || !/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(src)) return '';
+  return `<figure class="sig-ink"><img src="${src}" alt="Signature">
+    <figcaption>Signature of the person named above.</figcaption></figure>`;
+}
+
 function printAuthority(c, item) {
   if (!item) return;
   const o = {
@@ -1923,7 +2108,10 @@ function printAuthority(c, item) {
       @page { margin: 16mm; }
       body { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: #000; }
       pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
-    </style></head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre></body></html>`);
+      .sig-ink { margin: 6mm 0 0; page-break-inside: avoid; }
+      .sig-ink img { max-width: 78mm; max-height: 26mm; display: block; }
+      .sig-ink figcaption { font-size: 10px; color: #444; margin-top: 1mm; }
+    </style></head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre>${signatureInk(item)}</body></html>`);
   win.document.close();
   setTimeout(() => win.print(), 350);
 }

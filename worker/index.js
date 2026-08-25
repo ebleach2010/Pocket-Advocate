@@ -3132,6 +3132,13 @@ async function handleSaved(request, env, url) {
  * in. Both sides read; only the client signs; only the Worker stamps time.
  */
 const AUTHORITY_KINDS = ['records', 'representative'];
+// Mirrored from COMMUNICATION_SCOPES in public/js/authority.js. The Worker
+// cannot import a client module, so a suite check asserts the two lists
+// stay identical rather than trusting them to.
+const AUTHORITY_SCOPE_IDS = ['discuss', 'records', 'admin'];
+// A downscaled signature is 15-40KB; this leaves room without letting a
+// document grow into something the GET has to ship on every paint.
+const AUTHORITY_SIG_MAX = 80_000;
 async function handleAuthority(request, env, url) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in required' }, 401);
@@ -3207,11 +3214,38 @@ async function handleAuthority(request, env, url) {
     planName: str(body?.planName, 200),
     categories: Array.isArray(body?.categories)
       ? body.categories.filter((x) => typeof x === 'string').slice(0, 12) : [],
+    // What the client is letting him DO with this provider - the half that
+    // makes the release a working instrument rather than a records slip
+    // (Eric, 2026-08-25: "a beefed up release of records... so I can speak
+    // on their behalf"). The id list is mirrored from COMMUNICATION_SCOPES
+    // in public/js/authority.js; the Worker cannot import a client module,
+    // so a suite check keeps the two in step.
+    scopes: Array.isArray(body?.scopes)
+      ? body.scopes.filter((x) => AUTHORITY_SCOPE_IDS.includes(x)).slice(0, 8) : [],
+    // The drawn signature, as a data URL. Stored beside the typed name
+    // rather than instead of it: the typed name is still the signature the
+    // name-match above gates, and this is the mark that goes on the paper.
+    signatureImage: '',
   };
+  // Validated rather than trusted: this string is written into a document
+  // that is later printed into an <img>, so anything that is not plainly a
+  // base64 png or jpeg is refused here instead of stored and rendered.
+  const sig = typeof body?.signatureImage === 'string' ? body.signatureImage.trim() : '';
+  if (sig) {
+    if (sig.length > AUTHORITY_SIG_MAX
+      || !/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(sig))
+      return json({ error: 'That signature did not come through. Sign it again.' }, 400);
+    item.signatureImage = sig;
+  }
+
   if (kind === 'records' && !item.clinicName)
     return json({ error: 'Name the clinic this authorisation is for.' }, 400);
   if (kind === 'representative' && !item.planName)
     return json({ error: 'Name your insurance plan.' }, 400);
+  // The page gates on this too; this is the half that cannot be skipped by
+  // posting straight at the route.
+  if (!item.signatureImage)
+    return json({ error: 'Sign the document with your finger before sending it.' }, 400);
 
   const itemId = crypto.randomUUID();
   await patchDoc(env, `${coll}/${itemId}`, item, { mustNotExist: true });

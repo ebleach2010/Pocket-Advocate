@@ -62,6 +62,33 @@ export const SENSITIVE_CATEGORIES = [
   },
 ];
 
+/**
+ * What the advocate is authorised to DO with this provider - the half that
+ * makes the release a working instrument rather than a records slip (Eric,
+ * 2026-08-25: "a beefed up release of records... so I can speak on their
+ * behalf"). Grounded in 45 CFR 164.510(b): a provider may discuss a
+ * patient's care with a person the patient involves in it. Each scope is
+ * ticked by the client; a legacy document with no scopes stored carries the
+ * full set, which is what those clients signed up to in substance.
+ */
+export const COMMUNICATION_SCOPES = [
+  {
+    id: 'discuss',
+    label: 'Discuss my care with my advocate',
+    note: 'Your clinicians and staff may speak with my advocate about my history, results, referrals, and treatment, and may answer his questions as they would answer mine.',
+  },
+  {
+    id: 'records',
+    label: 'Release my records to my advocate',
+    note: 'You may send the records described in this authorisation directly to my advocate, by mail, fax, portal, or electronic transfer.',
+  },
+  {
+    id: 'admin',
+    label: 'Handle scheduling, referrals, and billing follow-up',
+    note: 'My advocate may schedule and reschedule my appointments, follow up on my referrals and orders, and ask about billing and claim paperwork tied to my care here.',
+  },
+];
+
 // MST, always. Without the zone a signature stamped near midnight UTC printed
 // as one date on Eric's copy and the next day on a client's - the same
 // document, two execution dates, on a record a clinic and an insurer both
@@ -126,16 +153,25 @@ the system at the moment of signing.`;
  */
 export function recordsAuthorisation(o = {}) {
   const cats = SENSITIVE_CATEGORIES.filter((c) => (o.categories || []).includes(c.id));
+  // Ticked scopes, or the whole set: for a legacy record with none stored,
+  // and for a blank being filled in by hand, all three print (the blank with
+  // boxes to tick on paper).
+  const scopes = Array.isArray(o.scopes) && o.scopes.length
+    ? COMMUNICATION_SCOPES.filter((s) => o.scopes.includes(s.id))
+    : COMMUNICATION_SCOPES;
+  const scopeMark = o.blank ? '[ ]' : '[X]';
   const range = o.fromDate || o.toDate
     ? `Records dated ${o.fromDate ? fmt(o.fromDate) : 'the beginning of my care'} through ${o.toDate ? fmt(o.toDate) : 'today'}.`
     : 'Records covering the whole period of my care.';
   return `AUTHORISATION FOR RELEASE OF PROTECTED HEALTH INFORMATION
+AND FOR COMMUNICATION WITH MY PATIENT ADVOCATE
 
 Patient: ${field(o, o.clientName, '(name)')}
 Date of birth: ${field(o, o.clientDob, '(date of birth)', 24)}
 
 I authorise the provider named below to release my health information to the
-person named below.
+person named below, and to communicate with him as a person I have involved
+in my care.
 
 RELEASING PROVIDER
 ${field(o, o.clinicName, '(clinic)')}
@@ -143,6 +179,12 @@ ${field(o, o.clinicAddress, '', 46)}
 
 RECEIVING PERSON
 ${o.advocateName || 'Eric Bleach'}, patient advocate, Pocket Advocate.
+
+WHAT I AUTHORISE MY ADVOCATE TO DO
+I have involved the person named above in my care. I authorise each item
+marked below, and only those:
+${scopes.map((s) => `  ${scopeMark} ${s.label}
+      ${s.note}`).join('\n')}
 
 WHAT MAY BE RELEASED
 ${range}

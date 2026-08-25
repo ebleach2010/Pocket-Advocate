@@ -2060,6 +2060,22 @@ function checkInState(c) {
 }
 
 /** A paper copy for the clinic or the plan. Same print path as the prep sheet. */
+/**
+ * The drawn signature, as printable HTML - or nothing at all.
+ *
+ * Re-checked here as well as server-side, because this string is about to
+ * be written into a document: anything that is not plainly a base64 png or
+ * jpeg never reaches document.write. It goes AFTER the </pre>, never inside
+ * it, so the text of the document (which a records department reads, and
+ * which the suite pins line by line) is untouched.
+ */
+function signatureInk(item) {
+  const src = typeof item?.signatureImage === 'string' ? item.signatureImage.trim() : '';
+  if (!src || !/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(src)) return '';
+  return `<figure class="sig-ink"><img src="${src}" alt="Signature">
+    <figcaption>Signature of the person named above.</figcaption></figure>`;
+}
+
 function printAuthorityDoc(item) {
   const o = {
     ...item,
@@ -2072,8 +2088,12 @@ function printAuthorityDoc(item) {
     <title>${item.kind === 'records' ? 'Records authorisation' : 'Insurance representative'}</title>
     <style>@page { margin: 16mm; }
       body { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color:#000; }
-      pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }</style>
-    </head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre></body></html>`);
+      pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
+      .sig-ink { margin: 6mm 0 0; page-break-inside: avoid; }
+      .sig-ink img { max-width: 78mm; max-height: 26mm; display: block; }
+      .sig-ink figcaption { font-size: 10px; color: #444; margin-top: 1mm; }
+      </style>
+    </head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre>${signatureInk(item)}</body></html>`);
   win.document.close();
   setTimeout(() => win.print(), 350);
 }

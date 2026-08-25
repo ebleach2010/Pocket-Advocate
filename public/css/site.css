@@ -529,6 +529,23 @@ summary.btn::-webkit-details-marker { display: none; }
 .about-list { margin: .2rem 0 .4rem; padding-left: 1.15rem; }
 .about-list li { margin: .3rem 0; }
 .pack-about { text-align: center; margin: -.3rem 0 1rem; }
+/* The signing sheet: the finger-signature box, its pad, and the red a
+   field wears when the completeness gate sends them back to it. */
+.sig-box {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; min-height: 72px; padding: .5rem;
+  border: 1px dashed var(--line); border-radius: 12px;
+  background: var(--panel-2); color: var(--dim); cursor: pointer;
+}
+.sig-box:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.sig-canvas {
+  display: block; width: 100%; border: 1px solid var(--line);
+  border-radius: 10px; background: #fff;
+  /* Without this the first stroke scrolls the sheet instead of drawing. */
+  touch-action: none;
+}
+.field-bad,
+.field-bad:focus { border-color: var(--danger) !important; }
 /* The Hands-Off readiness checklist (readiness.js), both sides. */
 .ready-list { list-style: none; margin: .2rem 0 .6rem; padding: 0; }
 .ready-list li { margin: .3rem 0; color: var(--soft); }
