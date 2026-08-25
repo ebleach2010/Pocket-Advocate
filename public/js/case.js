@@ -181,7 +181,7 @@ function render() {
       // 2026-08-25: "an entire separate tab for add-ons"). The follow-up and
       // upgrade cards moved here from the bottom of Docs, where they were
       // easy to scroll past and crowded the file list.
-      { id: 'addons', title: 'Add-ons', icon: '➕', render: (pane) => renderAddons(pane, c) },
+      { id: 'addons', title: 'Enhance', icon: '➕', render: (pane) => renderAddons(pane, c) },
       {
         // Messages they bookmarked, each with a note of their own. Private:
         // Eric is not told what they save, and nothing is written back to the
@@ -427,9 +427,10 @@ function checkInLine(c, localFmt) {
     return `<p class="dim" style="margin:.4rem 0 0;">🗓 Next check-in:
       <strong style="color:var(--ink)">${esc(localFmt.format(next))}</strong> your time.</p>`;
   }
-  return `<p class="dim small" style="margin:.4rem 0 0;">🗓 Your case includes a
-    check-in call every two weeks. None is on the books right now — message me
-    in chat and we'll set the next one.</p>`;
+  return `<p class="dim small" style="margin:.4rem 0 0;">🗓 Your case includes
+    check-in calls at least twice a month — they are part of the service, so
+    we never go long without speaking. None is on the books right now —
+    message me in chat and we'll set the next one.</p>`;
 }
 
 function renderProgress(el, c) {
@@ -1107,7 +1108,7 @@ function renderPageFooter(host, c) {
  */
 function renderAddons(el, c) {
   el.innerHTML = `
-    <h2 class="case-sec-h">Add-ons</h2>
+    <h2 class="case-sec-h">Case Enhancements</h2>
     <p class="dim small" style="margin:.2rem 0 .8rem;">Extras you can put on
       this case whenever you need them. Nothing here is required, and nothing
       is charged until you choose it.</p>
@@ -1208,7 +1209,7 @@ function telehealthCard(c) {
         <button class="btn glow" data-th-request>${c.fullAccess ? 'Request it' : 'Pay and request'}</button>
       </div>
       <p class="fu-fine">${c.fullAccess
-        ? 'Included in your Full Access. I confirm every appointment personally.'
+        ? 'Included in your Hands-Off Case Management. I confirm every appointment personally.'
         : 'I confirm every appointment personally. If I can\'t attend, or your provider doesn\'t allow it, you get every dollar back.'}
         I never record your provider's visit — my role on that screen is notes and advocacy only.</p>
       <p class="error" data-th-error hidden></p>
@@ -1320,7 +1321,7 @@ function upgradeOffer(c) {
   if (new URLSearchParams(location.search).get('upgraded') === '1' && !c.fullAccess)
     return `
       <div class="followup-offer is-done">
-        <h3><span class="fu-tick" aria-hidden="true">\u2713</span> Full Access is open on your case.</h3>
+        <h3><span class="fu-tick" aria-hidden="true">\u2713</span> Hands-Off Case Management is open on your case.</h3>
         <p>There is an authorisation waiting for you on this page. Nothing can
           start until it is signed, so it is the one thing I need from you now.</p>
       </div>`;
@@ -1329,7 +1330,7 @@ function upgradeOffer(c) {
   // for the same thing is how somebody pays twice.
   if (c.pendingFullAccess?.url) return `
     <div class="followup-offer">
-      <h3>Your Full Access checkout is still open</h3>
+      <h3>Your Hands-Off checkout is still open</h3>
       <p>Pick up where you left off, or ignore this and it expires on its own.</p>
       <div class="fu-buy">
         <a class="btn glow" href="${esc(c.pendingFullAccess.url)}">Finish that</a>
@@ -1340,7 +1341,7 @@ function upgradeOffer(c) {
     <div class="followup-offer">
       <h3>Want me to deal with them directly?</h3>
       <p>Right now I work beside you: I read everything, we talk it through,
-        and you carry it to your doctors and your insurer. Full Access is where
+        and you carry it to your doctors and your insurer. Hands-Off Case Management is where
         I do that part myself. I speak to your clinics, with you on the line or
         under your written authorisation, and I write and file your insurance
         appeals.</p>
@@ -1360,7 +1361,7 @@ function upgradeOffer(c) {
         <button class="btn glow" data-buy-upgrade disabled>Upgrade this case</button>
       </div>
       <p class="fu-fine">That is the difference between what you have already
-        paid and the Full Access price. Open the note above first: it is the
+        paid and the Hands-Off price. Open the note above first: it is the
         whole of what I do, what I need from you, and where it stops, and the
         button unlocks once you have read it through.</p>
       <p class="error" data-upgrade-error hidden></p>

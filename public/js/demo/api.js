@@ -235,11 +235,13 @@ export function demoApi(role, store) {
       }).format(start) + ' MST';
 
       if (mode === 'checkin') {
-        if (!c.fullAccess) return fail(409, 'Check-ins are part of Full Access. Use "charge" for a standard case.');
+        if (!c.fullAccess) return fail(409, 'Check-ins are part of Hands-Off Case Management. Use "charge" for a standard case.');
         if (c.status === 'closed') return fail(409, 'This case is closed.');
         // Same 60-day rule the Worker enforces, minus the hold arithmetic the
-        // demo does not need: the refusal is the thing worth driving.
-        const first = c.appointment?.start ? new Date(c.appointment.start).getTime() : 0;
+        // demo does not need: the refusal is the thing worth driving. From
+        // PURCHASE, first-call fallback, matching fullAccessWindowEnd.
+        const first = c.fullAccessAt ? new Date(c.fullAccessAt).getTime()
+          : c.appointment?.start ? new Date(c.appointment.start).getTime() : 0;
         const extra = (Number(c.fullAccessExtraDays) || 0) * 86_400_000;
         if (first && start.getTime() > first + 60 * 86_400_000 + extra)
           return fail(409, 'That lands after the window ends. Extend the case first.');
@@ -375,6 +377,10 @@ export function demoApi(role, store) {
       // he just booked, the client view is the normal one, and the advocate
       // shelf grows the new card the moment he switches sides.
       if (path === '/api/checkout') {
+        // Booking sells ONE service (mirrors the Worker's refusal).
+        if (body.tier === 'full')
+          return fail(400, 'Hands-Off Case Management is added from inside an open case now. '
+            + 'Book an Advocacy Case, then add it from your case page.');
         const profile = store.docs.get('users/demo-client') || {};
         const slot = body.slotId ? store.docs.get(`availability/${body.slotId}`) : null;
         // The Worker refuses a slot taken out from under the buyer; a stale
@@ -384,7 +390,6 @@ export function demoApi(role, store) {
         const isRequest = !body.slotId && !!body.requestedStart;
         const start = isRequest ? new Date(body.requestedStart)
           : slot ? new Date(slot.start) : new Date();
-        const isFull = body.tier === 'full';
         const now = new Date();
         const id = 'demo-case-booked';
         store.docs.set(`cases/${id}`, {
@@ -407,12 +412,12 @@ export function demoApi(role, store) {
           reportDueAt: null,
           caseRateCents: 65000,
           addonRateCents: 17500,
-          fullAccess: isFull,
-          fullAccessAt: isFull ? now : null,
-          fullAccessRateCents: isFull ? 350000 : null,
+          fullAccess: false,
+          fullAccessAt: null,
+          fullAccessRateCents: null,
           stripe: {
             sessionId: 'cs_demo_booked', paymentIntentId: 'pi_demo_booked',
-            amountTotal: isFull ? 350000 : 65000,
+            amountTotal: 65000,
           },
           work: { seconds: 0, startedAt: null },
         });
@@ -680,7 +685,7 @@ export function demoApi(role, store) {
             '[Line chart: TSH results across the last six months]',
             '',
             'THE PITCH',
-            '"Jordan, the next sixty days are the heavy lift on this case. If you want me on every call and every portal message while that happens, the Full Access tier covers exactly that. You have seen this week what it looks like."',
+            '"Jordan, the next sixty days are the heavy lift on this case. If you want me on every call and every portal message while that happens, the Hands-Off Case Management tier covers exactly that. You have seen this week what it looks like."',
             '',
             'RESOURCES NEARBY',
             'University Medical Center, endocrinology and rheumatology, about 15 minutes out (verify current wait times).',

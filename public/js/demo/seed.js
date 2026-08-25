@@ -340,8 +340,9 @@ export function seed({ set, file }) {
       // The first call is 20 days BEHIND us, deliberately: the tier's
       // cadence is a check-in every two weeks, so a call 20 days back with
       // nothing booked ahead is exactly what lights CHECK-IN DUE on the
-      // shelf - the state the suite exists to show. The 60-day window still
-      // has 40 days to run, so booking the next check-in works too.
+      // shelf - the state the suite exists to show. The window runs from
+      // fullAccessAt (days(38)), so 22 of the 60 days remain - booking the
+      // next check-in inside them works too.
       start: days(20), durationMin: 60, method: 'phone',
       phone: '+1 555 0148', joinLink: null, requested: false,
     },

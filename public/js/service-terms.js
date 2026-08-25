@@ -36,7 +36,8 @@ export const SERVICE_TERMS = {
 <p>Your page, your files and your chat stay open the whole time. You can message me whenever you like and I will read it when I am back.</p>
 <p><strong>One clock does not pause, and I want you to see it here rather than find out later.</strong> If your insurer or a government programme has given you a deadline to appeal or to respond, that clock belongs to them and it keeps running whatever I do. If one of those is close while your case is on hold, tell me, and it comes before everything else.</p>
 <h3>Scheduling</h3>
-<p>Occasionally I will need to move a call. I will give you as much notice as I have and we will find another time. Booking is done in good faith on both sides.</p>`,
+<p>Occasionally I will need to move a call. I will give you as much notice as I have and we will find another time. Booking is done in good faith on both sides.</p>
+<p>Where your service includes check-in calls, they are part of the work, not an option: keeping them is how the case keeps moving, and a check-in you miss or decline is never a basis for a refund.</p>`,
 };
 
 /**

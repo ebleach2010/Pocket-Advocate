@@ -161,8 +161,10 @@ ck('scope note: it promises 60 days and two letters, both enforced',
    /<strong>60 days<\/strong>/.test(TT) && /<strong>Two insurance appeal letters<\/strong>/.test(TT));
 ck('scope note: it says the second letter outlives the window',
    /second appeal letter does not expire with the window/.test(TT));
-ck('scope note: it says the clock runs from the first call regardless',
-   /the 60 days runs from our first call whether or not you have signed/.test(TT));
+// The start MOVED (Eric, 2026-08-25: "the clock starts upon booking") and
+// the sentence moved with it, checklist wording included.
+ck('scope note: it says the clock runs from purchase regardless of the checklist',
+   /the 60 days runs from the day you buy, whether or not the checklist is done/.test(TT));
 
 // ---- 12. chat reactions: the record shape and who may touch what ---------
 // (Audit, 2026-08-25.) The stored reaction is a RECORD ({ id, kind, ... }),

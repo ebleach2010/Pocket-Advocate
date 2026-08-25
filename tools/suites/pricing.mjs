@@ -107,17 +107,19 @@ check('P13 the rescope has its OWN marker, because the August one finished',
   && !/MARKER = 'migrations\/reprice-2026-08-23'/.test(SRC));
 
 // ---- the tier -------------------------------------------------------------
-check('T1 booking carries the tier as metadata, not as a Stripe kind',
-  /tier: wantsFull \? 'full' : ''/.test(SRC)
-  && !/metadata: \{ kind: 'full'/.test(SRC));
+check('T1 booking REFUSES the tier: it is added from inside a case now',
+  // Eric, 2026-08-25: "Advocacy case and direct line are bookable. The
+  // others are ADD-ONS." A refusal with directions, never a silent clamp.
+  /Hands-Off Case Management is added from inside an open case now/.test(SRC)
+  && !/tier: wantsFull/.test(SRC) && !/const wantsFull/.test(SRC));
 check('T2 a full-access sale is refused without the scope-note ack',
   /typeof body\?\.acks\?\.\[FULL_ACCESS_ACK\] !== 'number'/.test(SRC));
 check('T3 the ack is not required for a standard case',
   !/REQUIRED_ACKS = \[[^\]]*fullAccess/.test(SRC));
 check('T4 capacity closes the door rather than raising the price',
   /error: 'full-booked'/.test(SRC) && /async function fullAccessCapacity/.test(SRC));
-check('T5 capacity is re-checked at upgrade, not just at booking',
-  (SRC.match(/error: 'full-booked'/g) || []).length >= 2);
+check('T5 capacity still guards the one door left: the upgrade',
+  (SRC.match(/error: 'full-booked'/g) || []).length === 1);
 check('T6 the upgrade charges the difference, never the list price',
   /function upgradeCents/.test(SRC) && /liveFullCents - alreadyPaid/.test(SRC));
 check('T7 an abandoned upgrade checkout is cleared',
@@ -134,9 +136,11 @@ check('T9 a tier case is not closed on the 48-hour report clock',
   && /if \(!\(until && Date\.now\(\) > until\.getTime\(\)\)\) continue;/.test(SRC));
 check('T9b and it waits for an appeal that has been filed and not answered',
   /if \(appeal\?\.filedAt && !appeal\.decidedAt\) continue;/.test(SRC));
-check('T9c the window is 60 days from the first call, computed not stored',
+check('T9c the window is 60 days from PURCHASE, first-call fallback, computed not stored',
+  // Eric, 2026-08-25: "the clock starts upon booking."
   /const FULL_WINDOW_DAYS = 60;/.test(SRC)
   && /function fullAccessWindowEnd\(c\)/.test(SRC)
+  && /c\?\.fullAccessAt/.test(SRC)
   && /c\?\.appointment\?\.start/.test(SRC));
 check('T9d two appeal letters are actually counted now',
   /const FULL_APPEALS_INCLUDED = 2;/.test(SRC)
@@ -149,9 +153,9 @@ check('T9f two concurrent tier cases, not three',
 check('T9g the upgrade refuses a stale quote, as booking does',
   /quoted && quoted !== cents/.test(SRC)
   && /error: 'rate-changed', upgradeCents: cents/.test(SRC));
-check('T10 pay-over-time is offered on the tier and not on the standard case',
+check('T10 pay-over-time is offered on the tier upgrade and nowhere at booking',
   /automatic_payment_methods/.test(SRC)
-  && /\.\.\.\(wantsFull \? \{ automatic_payment_methods/.test(SRC));
+  && !/wantsFull/.test(SRC));
 
 // ---- the two rate fields must never be summed ----------------------------
 const CASEJS = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');

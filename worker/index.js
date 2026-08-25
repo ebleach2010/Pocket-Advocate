@@ -1612,7 +1612,7 @@ function fullAccessLineItems(cents) {
         currency: 'usd',
         unit_amount: cents,
         product_data: {
-          name: 'Full Access advocacy',
+          name: 'Hands-Off Case Management',
           description: 'Direct work with your clinics and insurer, including appeals',
         },
       },
@@ -1636,13 +1636,19 @@ function fullAccessLineItems(cents) {
 const FULL_MAX_OPEN_DEFAULT = 2;
 
 /**
- * When a tier case's coordination window closes: the FIRST call plus 60 days,
- * plus whatever extension he has granted.
+ * When a Hands-Off case's coordination window closes: the PURCHASE moment
+ * plus 60 days, plus any extension bought.
  *
- * Computed, never stored. A stored copy is a second source of truth that goes
- * stale the moment a call is rescheduled - and the previous design's 90 days
- * ran from `authorityAt`, a field the Worker wrote and then read NOWHERE, so
- * the window the client was sold could not be located by either side.
+ * Eric, 2026-08-25: "the clock starts upon booking. It's up to them how
+ * fast they get their part done." The client's readiness checklist gates
+ * HIS work, never the clock. Legacy cases (bought when the window ran from
+ * the first call and fullAccessAt may predate the rule) fall back to the
+ * appointment start so nobody's live window jumps.
+ *
+ * Computed, never stored. A stored copy is a second source of truth that
+ * goes stale - an earlier design's 90 days ran from `authorityAt`, a field
+ * written and then read NOWHERE, so the window the client was sold could
+ * not be located by either side.
  */
 /**
  * A case on hold: how long its clocks have been stopped.
@@ -1803,7 +1809,9 @@ async function handleCloseCase(request, env) {
 }
 
 function fullAccessWindowEnd(c) {
-  const start = c?.appointment?.start ? new Date(c.appointment.start).getTime() : 0;
+  const bought = c?.fullAccessAt ? new Date(c.fullAccessAt).getTime() : 0;
+  const firstCall = c?.appointment?.start ? new Date(c.appointment.start).getTime() : 0;
+  const start = Number.isFinite(bought) && bought ? bought : firstCall;
   if (!Number.isFinite(start) || !start) return null;
   const days = FULL_WINDOW_DAYS + (Number(c.fullAccessExtraDays) || 0);
   return new Date(start + days * 86_400_000 + heldMs(c));
@@ -1849,21 +1857,19 @@ async function handleCheckout(request, env) {
   if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
   const { slotId, requestedStart, method, phone, acks } = body;
   const clientTz = validTz(body.tz);
-  // Which of the two services is being bought. Not a new Stripe metadata
-  // `kind`: the webhook treats "no kind" as "this is a new case", and a case
-  // is exactly what both tiers create. The tier rides as its own field.
-  const wantsFull = body?.tier === 'full';
-  if (wantsFull) {
-    const cap = await fullAccessCapacity(env);
-    if (!cap.room)
-      return json({ error: 'full-booked', open: cap.open, max: cap.max }, 409);
-    // The tier's own scope note is not optional. The page gates the button on
-    // it, and this is the half that cannot be skipped by posting straight at
-    // the route: a four-figure engagement whose limits were never shown is
-    // exactly the sale nobody should be able to make.
-    if (typeof body?.acks?.[FULL_ACCESS_ACK] !== 'number')
-      return json({ error: 'Read and acknowledge what Full Access covers first.' }, 400);
-  }
+  // Booking sells ONE service (Eric, 2026-08-25: "Advocacy case and direct
+  // line are bookable. The others are ADD-ONS."). Hands-Off Case Management
+  // is bought from inside an open case through /api/upgrade, at the
+  // difference, behind its own scope-note gate there. A refusal, not a
+  // silent clamp: charging $650 against a $3,500 intent is exactly the
+  // "figure nobody agreed to" this route's quote handshake exists to stop —
+  // the only senders of tier:'full' now are stale cached pages, and the
+  // sentence converts them.
+  if (body?.tier === 'full')
+    return json({
+      error: 'Hands-Off Case Management is added from inside an open case now. '
+        + 'Book an Advocacy Case, then add it from your case page — you pay the difference, never twice.',
+    }, 400);
 
   if (!METHODS.includes(method)) return json({ error: 'Choose a meeting method.' }, 400);
   if (method === 'phone' && !/^\+?[\d\s().-]{7,20}$/.test(phone || ''))
@@ -1875,7 +1881,7 @@ async function handleCheckout(request, env) {
   // Two paths: an open slot off the calendar, or a time the client requested.
   const isRequest = !slotId && typeof requestedStart === 'string';
   if (isRequest) return await checkoutRequestedTime(env, {
-    user, identity, requestedStart, method, phone, acks, clientTz, body, wantsFull,
+    user, identity, requestedStart, method, phone, acks, clientTz, body,
   });
 
   // Load and validate the slot.
@@ -1915,7 +1921,7 @@ async function handleCheckout(request, env) {
   // the page updates the number and re-enables the button. Honest about what
   // it costs, silent about why it changed.
   const live = await readRates(env);
-  const priceCents = wantsFull ? live.fullCents : live.caseCents;
+  const priceCents = live.caseCents;
   const quoted = Number(body?.quotedCents) || 0;
   if (quoted && quoted !== priceCents) {
     // The slot was held a few lines up. Give it back rather than parking it
@@ -1928,17 +1934,12 @@ async function handleCheckout(request, env) {
       addonCents: live.addonCents, fullCents: live.fullCents,
     }, 409);
   }
-  const lineItems = wantsFull ? fullAccessLineItems(priceCents) : caseLineItems(priceCents);
+  const lineItems = caseLineItems(priceCents);
 
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: identity.email || user.email || undefined,
     line_items: lineItems,
-    // Full Access is a four-figure number for someone who is usually already
-    // paying for being ill. Letting Stripe offer pay-over-time (Affirm and
-    // friends, switched on in the dashboard) is what puts it in reach, and
-    // Eric is still paid in full on the day.
-    ...(wantsFull ? { automatic_payment_methods: { enabled: true } } : {}),
     success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.PUBLIC_BASE_URL}/book.html?canceled=1`,
     expires_at: Math.floor(holdExpiresAt.getTime() / 1000),
@@ -1952,7 +1953,6 @@ async function handleCheckout(request, env) {
       method,
       phone: method === 'phone' ? phone : '',
       acks: JSON.stringify(acks),
-      tier: wantsFull ? 'full' : '',
     },
   });
 
@@ -1970,7 +1970,7 @@ async function handleCheckout(request, env) {
  * flagged `appointment.requested`, and the admin confirms or declines it.
  */
 async function checkoutRequestedTime(env, o) {
-  const { user, identity, requestedStart, method, phone, acks, clientTz, wantsFull } = o;
+  const { user, identity, requestedStart, method, phone, acks, clientTz } = o;
   const start = new Date(requestedStart);
   if (Number.isNaN(start.getTime())) return json({ error: 'Pick a valid date and time.' }, 400);
 
@@ -1996,7 +1996,7 @@ async function checkoutRequestedTime(env, o) {
   // ratchet landed: the one path made for people whose time is not on the
   // calendar could not take their money. (Post-2.2 audit, 2026-08-21.)
   const live = await readRates(env);
-  const priceCents = wantsFull ? live.fullCents : live.caseCents;
+  const priceCents = live.caseCents;
   const quoted = Number(o.body?.quotedCents) || 0;
   if (quoted && quoted !== priceCents)
     return json({
@@ -2006,12 +2006,11 @@ async function checkoutRequestedTime(env, o) {
 
   const now = new Date();
   const expiresAt = new Date(now.getTime() + HOLD_MINUTES * 60_000);
-  const lineItems = wantsFull ? fullAccessLineItems(priceCents) : caseLineItems(priceCents);
+  const lineItems = caseLineItems(priceCents);
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: identity.email || user.email || undefined,
     line_items: lineItems,
-    ...(wantsFull ? { automatic_payment_methods: { enabled: true } } : {}),
     success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.PUBLIC_BASE_URL}/book.html?canceled=1`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),
@@ -2026,7 +2025,6 @@ async function checkoutRequestedTime(env, o) {
       method,
       phone: method === 'phone' ? phone : '',
       acks: JSON.stringify(acks),
-      tier: wantsFull ? 'full' : '',
     },
   });
   return json({ url: session.url });
@@ -3151,7 +3149,7 @@ async function handleAuthority(request, env, url) {
 
   const c = await getDoc(env, `cases/${id}`);
   if (!c?.data.fullAccess)
-    return json({ error: 'This case is not on Full Access.' }, 409);
+    return json({ error: 'This case is not on Hands-Off Case Management.' }, 409);
 
   if (body?.action === 'revoke') {
     // Revocation is the client's right and is not negotiable, so it is one
@@ -3215,9 +3213,9 @@ async function handleAuthority(request, env, url) {
   const itemId = crypto.randomUUID();
   await patchDoc(env, `${coll}/${itemId}`, item, { mustNotExist: true });
 
-  // The 90-day clock starts at the FIRST authorisation, not at purchase: the
-  // tier's scope note says so, and until something is signed there is nothing
-  // Eric is able to do.
+  // A record of when he FIRST had authority to act - nothing more. No clock
+  // runs from this: the window runs from purchase (fullAccessWindowEnd), and
+  // the readiness checklist is derived from the signed items themselves.
   if (!c.data.authorityAt) {
     await patchDoc(env, `cases/${id}`, { authorityAt: new Date() }, { mask: ['authorityAt'] })
       .catch(() => {});
@@ -4116,7 +4114,7 @@ async function handleUpgradeCheckout(request, env) {
   const c = await getDoc(env, `cases/${caseId}`);
   if (!c || c.data.clientUid !== user.uid) return json({ error: 'Not found' }, 404);
   if (c.data.fullAccess)
-    return json({ error: 'This case already has Full Access.' }, 409);
+    return json({ error: 'This case already has Hands-Off Case Management.' }, 409);
   if (c.data.status === 'closed')
     return json({ error: 'This case is closed. Book a new one and we will start there.' }, 409);
   // Capacity is checked here as well as at booking: an upgrade consumes one of
@@ -4191,7 +4189,7 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
     for (const a of admins) {
       await notifyUser(env, a.id, {
         title: 'Pocket Advocate',
-        body: `${firstName(c.data.clientName)} paid for Full Access their case already has. Refund it from Stripe.`,
+        body: `${firstName(c.data.clientName)} paid for Hands-Off Case Management their case already has. Refund it from Stripe.`,
         link: `/admin-case.html?id=${caseId}`,
       }).catch(() => {});
     }
@@ -4226,8 +4224,8 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
   if (c.data.clientEmail) {
     await sendEmail(env, {
       to: c.data.clientEmail,
-      subject: 'Full Access is open on your case',
-      html: `<p>Your case is now Full Access. That means I work directly with your clinics and your insurer rather than alongside you.</p>
+      subject: 'Hands-Off Case Management is open on your case',
+      html: `<p>Your case is now on Hands-Off Case Management. I do the legwork from here: I work directly with your clinics and your insurer rather than alongside you.</p>
         <p>The next thing I need is your authorisation, which is waiting on your case page. Nothing can start until that is signed.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
     }).catch(() => {});
@@ -4236,7 +4234,7 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
   for (const a of admins) {
     await notifyUser(env, a.id, {
       title: 'Pocket Advocate',
-      body: `${firstName(c.data.clientName)} upgraded to Full Access.`,
+      body: `${firstName(c.data.clientName)} upgraded to Hands-Off Case Management.`,
       link: `/admin-case.html?id=${caseId}`,
     }).catch(() => {});
   }
@@ -5259,7 +5257,7 @@ async function handleAdvisor(request, env, ctx) {
   if (action === 'appeal-draft') {
     const c = await getDoc(env, `cases/${id}`).catch(() => null);
     if (kind === 'case' && !c?.data.fullAccess)
-      return json({ ok: false, error: 'This case is not on Full Access.' }, 409);
+      return json({ ok: false, error: 'This case is not on Hands-Off Case Management.' }, 409);
     // The scope note promises TWO appeal letters, and until now nothing
     // counted them - the document asserted a boundary neither side could
     // find. Filed letters are the count; drafting and redrafting the current
@@ -6097,7 +6095,7 @@ async function handleAdminSchedule(request, env) {
     // is no automation and no charge. Unlike followUp - a single object,
     // deliberately, because a standard case gets exactly one - check-ins are
     // an append-only array: the whole point is that there are several.
-    if (!c.fullAccess) return json({ error: 'Check-ins are part of Full Access. Use "charge" for a standard case.' }, 409);
+    if (!c.fullAccess) return json({ error: 'Check-ins are part of Hands-Off Case Management. Use "charge" for a standard case.' }, 409);
     if (c.status === 'closed') return json({ error: 'This case is closed.' }, 409);
     const until = fullAccessWindowEnd(c);
     if (until && start.getTime() > until.getTime())

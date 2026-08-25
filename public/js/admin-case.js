@@ -2012,17 +2012,15 @@ async function paintAuthorityStatus(pane) {
 
 /**
  * The coordination window, by the Worker's own rule (fullAccessWindowEnd):
- * sixty days from the FIRST CALL, plus any extension bought, plus every
- * stretch the case has spent on hold.
- *
- * This card used to count ninety days from the first signature — a window
- * length the tier no longer sells, measured from a date it never ran from. It
- * disagreed with the client's own agreement on both halves, and with the
- * auto-close sweep that actually ends the case.
+ * sixty days from the PURCHASE (Eric, 2026-08-25: "the clock starts upon
+ * booking"), plus any extension bought, plus every stretch the case has
+ * spent on hold. First-call fallback for legacy cases with no purchase
+ * stamp, matching the Worker exactly — two copies, kept in step.
  */
 const FULL_WINDOW_DAYS = 60;
 function fullAccessDaysLeft(c) {
-  const start = c?.appointment?.start ? toDate(c.appointment.start).getTime() : 0;
+  const bought = c?.fullAccessAt ? toDate(c.fullAccessAt).getTime() : 0;
+  const start = bought || (c?.appointment?.start ? toDate(c.appointment.start).getTime() : 0);
   if (!start) return null;
   // Same as heldMs(): what is banked, plus the stretch still running if the
   // case is paused right now. While paused these two grow together, so the

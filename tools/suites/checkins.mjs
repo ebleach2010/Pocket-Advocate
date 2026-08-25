@@ -27,7 +27,8 @@ const check = (name, cond, detail = '') => {
 
 // ---- the cadence ----
 check('C1 the checkin scheduler mode exists and is tier-only',
-  /'checkin'/.test(SRC) && /if \(!c\.fullAccess\) return json\(\{ error: 'Check-ins are part of Full Access/.test(SRC));
+  // Renamed with the tier (Eric, 2026-08-25): Hands-Off Case Management.
+  /'checkin'/.test(SRC) && /if \(!c\.fullAccess\) return json\(\{ error: 'Check-ins are part of Hands-Off Case Management/.test(SRC));
 check('C2 a check-in past the window is refused, pointing at extensions',
   /That lands after the window ends[\s\S]{0,80}Extend the case first/.test(SRC));
 check('C3 check-ins are an append-only ARRAY, never the single followUp object',
@@ -46,7 +47,9 @@ check('C7 the flag respects a pause and a booked future check-in',
 check('C8 the chart mirrors the same rule (two copies, kept in step)',
   /function checkInState\(c\)/.test(ADMIN) && /const CHECKIN_DAYS = 14/.test(ADMIN));
 check('C9 the client sees the next check-in, or the standing promise',
-  /function checkInLine\(c/.test(CASE) && /check-in call every two weeks/.test(CASE));
+  // "minimum biweekly (twice a month) meaning THEY don't get to go without
+  // checking in" (Eric, 2026-08-25) - the phrase moved with the promise.
+  /function checkInLine\(c/.test(CASE) && /check-in calls at least twice a month/.test(CASE));
 
 // ---- closure ----
 check('C10 the "closes at the second call" clause is GONE from the sweep',
@@ -118,14 +121,16 @@ check('T10 the client card promises the refund BEFORE they pay',
   /you get every dollar back/.test(CASE));
 check('T11 and says he never records the provider\'s visit',
   /never record your provider's visit/.test(CASE));
-check('T12 the Add-ons tab exists and hosts all three cards',
-  /id: 'addons', title: 'Add-ons'/.test(CASE)
+check('T12 the Case Enhancements tab exists and hosts all three cards',
+  // The pill stays short for the 390px strip; the pane h2 carries the name.
+  /id: 'addons', title: 'Enhance'/.test(CASE)
+  && /<h2 class="case-sec-h">Case Enhancements<\/h2>/.test(CASE)
   && /function renderAddons/.test(CASE)
   && /data-telehealth/.test(CASE) && /data-followup/.test(CASE) && /data-upgrade/.test(CASE));
 check('T13 Docs no longer hosts the purchase cards',
   !/renderDocs[\s\S]{0,900}data-upgrade/.test(CASE.match(/function renderDocs[\s\S]*?\n\}/)[0]));
-check('T14 the booking flow previews add-ons without selling them',
-  /Add-ons, once your case starts/.test(BOOK) && /Nothing to decide\s+now/.test(BOOK));
+check('T14 the booking flow previews the enhancements without selling them',
+  /Case Enhancements, once your case starts/.test(BOOK) && /Nothing to decide\s+now/.test(BOOK));
 check('T15 the admin card carries confirm and deny, wired to the route',
   /data-telehealth="confirm"/.test(ADMIN) && /\/api\/admin\/telehealth/.test(ADMIN));
 check('T16 the demo drives the whole loop',
@@ -134,8 +139,12 @@ check('T16 the demo drives the whole loop',
 // ---- the copy that had to change ----
 check('W1 tier terms no longer close the case at any call',
   !/which is where we close the case/.test(TIER) && !/closes the case/.test(TIER));
-check('W2 tier terms promise the two-week cadence',
-  /check-in call with you every two weeks/.test(TIER));
+check('W2 tier terms promise the cadence and make it unskippable',
+  // Eric, 2026-08-25: minimum twice a month, the client does not get to
+  // skip them, and a missed one is never a refund basis.
+  /Check-in calls, at least twice a month/.test(TIER)
+  && /you do not get to go without checking in/.test(TIER)
+  && /never a basis for a refund/.test(TIER));
 check('W3 the agreement says guarantees are not part of it, verbatim',
   /Guarantees of any sort are not part of this agreement\./.test(TERMS)
   && /fulfilled to the best of my ability/.test(TERMS));
@@ -145,9 +154,11 @@ check('W5 the worker constants match the $3,500 decision',
   /const FULL_PRICE_CENTS = 350000;/.test(SRC)
   && /const FULL_CAP_CENTS = 500000;/.test(SRC)
   && /const FULL_EXTEND = \{ 30: 175000, 60: 275000 \};/.test(SRC));
-check('W6 both client fallbacks moved with it',
+check('W6 the one client fallback left moved with it; booking compiles no tier price',
+  // Booking sells one service now, so the tier price lives only where the
+  // tier is sold: the upgrade card on the case page.
   /let fullAccessCents = 350000;/.test(CASE)
-  && /FULL_PRICE_CENTS = 350000/.test(BOOK));
+  && !/FULL_PRICE_CENTS/.test(BOOK));
 check('W7 the landing page sells with the value math and his phrase',
   (() => {
     const idx = readFileSync(`${ROOT}/public/index.html`, 'utf8');

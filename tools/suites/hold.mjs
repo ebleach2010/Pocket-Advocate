@@ -48,10 +48,15 @@ ck('onHold reads the pause, not the bank',
 
 // ---- his clocks move ----------------------------------------------------
 const call = '2026-08-01T17:00:00Z';
-const plain = { appointment: { start: call } };
-const held = { appointment: { start: call }, hold: { pausedAt: null, totalMs: 11 * DAY } };
-ck('the tier window is 60 days from the first call',
-   fullAccessWindowEnd(plain).getTime() === Date.parse(call) + 60 * DAY);
+// The window runs from PURCHASE now (Eric, 2026-08-25), with the first call
+// as the legacy fallback for cases stamped before the rule.
+const bought = '2026-07-28T17:00:00Z';
+const plain = { fullAccessAt: bought, appointment: { start: call } };
+const held = { fullAccessAt: bought, appointment: { start: call }, hold: { pausedAt: null, totalMs: 11 * DAY } };
+ck('the tier window is 60 days from the purchase',
+   fullAccessWindowEnd(plain).getTime() === Date.parse(bought) + 60 * DAY);
+ck('a legacy case with no purchase stamp falls back to the first call',
+   fullAccessWindowEnd({ appointment: { start: call } }).getTime() === Date.parse(call) + 60 * DAY);
 ck('an 11-day pause puts 11 days back on the tier window',
    fullAccessWindowEnd(held).getTime() - fullAccessWindowEnd(plain).getTime() === 11 * DAY);
 const fu = { addOnFollowUpAt: '2026-08-20T17:00:00Z' };
@@ -61,7 +66,7 @@ ck('the follow-up month is 30 days from purchase',
 ck('and it moves by the same pause',
    followUpExpiry(fuHeld).getTime() - followUpExpiry(fu).getTime() === 11 * DAY);
 ck('resuming really is the same timestamp: nothing is lost',
-   fullAccessWindowEnd(held).getTime() - Date.parse(call) === 60 * DAY + 11 * DAY);
+   fullAccessWindowEnd(held).getTime() - Date.parse(bought) === 60 * DAY + 11 * DAY);
 
 // ---- the clock a pause must NOT move ------------------------------------
 const appealFn = W.match(/async function runAppealWarnings\(env\) \{[\s\S]*?\n\}/)[0];
