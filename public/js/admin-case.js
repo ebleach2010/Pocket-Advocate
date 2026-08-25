@@ -232,6 +232,8 @@ function render(el) {
                 <button class="btn quiet" data-work-toggle style="flex:none;">▶ Start working</button>
                 <span class="dim small" data-work-total></span>
                 <span class="work-rate" data-work-rate hidden></span>
+                <button class="btn quiet tiny" data-work-fix style="flex:none;"
+                  title="Correct the total, for a clock left running by mistake">Fix total</button>
               </div>
               <p class="dim small" data-client-gate style="margin:.1rem 0 .4rem;" hidden></p>
               <div id="chat"></div>
@@ -763,7 +765,9 @@ async function postWork(payload) {
 // `auto` starts too, so a stale tab running the old code changes nothing.
 
 /**
- * The answer half of the 5 / 10 / 30 minute prompt. The push lands on
+ * The answer half of the reminder. Rungs at 5, 10 and 30 minutes and then
+ * every hour for as long as the clock runs - the ladder used to stop at 30
+ * and go silent, which is how ten hours banked themselves. The push lands on
  * `?clock=ask`, and the honest thing to offer is a stop that banks to when
  * the app was last open rather than to now - otherwise saying "no, I
  * finished a while ago" would still charge the client for the while.
@@ -901,6 +905,72 @@ function startWorkClock(c) {
   paint();
   armClockTick();
   wireClockToggle(btn);
+  wireClockFix(row.querySelector('[data-work-fix]'));
+}
+
+/**
+ * Correcting a total, for a clock left running by mistake.
+ *
+ * Start and stop were the only two things that could move this number, so a
+ * forgotten toggle was permanent (Eric, 2026-08-25: ten hours banked onto his
+ * only client). He is asked for the total the case SHOULD read, in hours and
+ * minutes, because that is the number he can see on the card in front of him
+ * - working out what to subtract is arithmetic he should not have to do while
+ * annoyed.
+ */
+function wireClockFix(btn) {
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const now = liveClockSeconds();
+    const h = Math.floor(now / 3600);
+    const m = Math.floor((now % 3600) / 60);
+    const answer = prompt(
+      `This case reads ${h}h ${m}m.\n\n`
+      + 'What should it be? Type hours and minutes, like "2h 15m" or "45m" or "0".\n\n'
+      + 'The client can see this total, so the change is recorded on the case.',
+      `${h}h ${m}m`,
+    );
+    if (answer === null) return;
+    const want = parseHoursMinutes(answer);
+    if (want === null) {
+      alert('I could not read that. Try something like "2h 15m", "45m", or "0".');
+      return;
+    }
+    if (clock.startedAt && !confirm(
+      'The clock is still RUNNING. Correcting the total does not stop it, and '
+      + 'the time since it started will still be added when you do.\n\nCarry on?')) return;
+    btn.disabled = true;
+    try {
+      // postWork banks the answer into `clock` and repaints every switch on
+      // the page, so there is nothing to paint by hand here.
+      await postWork({ setSeconds: want });
+    } catch (err) {
+      alert(err.message || 'That did not save. Try again.');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+/**
+ * "2h 15m", "45m", "1.5h", "90" (minutes), "0" -> seconds. null if unreadable.
+ *
+ * Deliberately forgiving about how it is typed and deliberately strict about
+ * nonsense: this sets a billable number, so a string it cannot understand has
+ * to be refused rather than guessed at as zero.
+ */
+function parseHoursMinutes(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return null;
+  if (/^0+$/.test(s)) return 0;
+  const hm = s.match(/^(?:(\d+(?:\.\d+)?)\s*h)?\s*(?:(\d+(?:\.\d+)?)\s*m)?$/);
+  if (hm && (hm[1] || hm[2])) {
+    return Math.round((Number(hm[1] || 0) * 3600) + (Number(hm[2] || 0) * 60));
+  }
+  // A bare number is minutes, which is what "90" means to somebody correcting
+  // a clock.
+  if (/^\d+(?:\.\d+)?$/.test(s)) return Math.round(Number(s) * 60);
+  return null;
 }
 
 // ---- the old automatic chat meter (retired; kept for reference) ----

@@ -96,6 +96,24 @@ export function demoApi(role, store) {
       const key = `cases/${body.caseId || DEMO_CASE_ID}`;
       const c = store.docs.get(key) || {};
       const w = c.work || { seconds: 0, startedAt: null };
+      // Correcting a total, mirroring the Worker: the only thing besides
+      // start and stop that can move this number, and the answer to a clock
+      // left running by mistake.
+      if (body.setSeconds !== undefined) {
+        const want = Number(body.setSeconds);
+        if (!Number.isFinite(want) || want < 0 || want > 4000 * 3600)
+          return fail(400, 'Give a whole number of seconds, zero or more.');
+        const next = Math.floor(want);
+        store.docs.set(key, {
+          ...c,
+          work: { ...w, seconds: next, correction: { from: w.seconds || 0, to: next, at: new Date() } },
+        });
+        store.persist?.();
+        return ok({
+          seconds: next, running: !!w.startedAt, auto: w.auto === true,
+          startedAt: w.startedAt || null, correctedFrom: w.seconds || 0,
+        });
+      }
       // MANUAL ONLY, mirroring the Worker (Eric, 2026-08-25): an `auto`
       // start answers with the current truth and changes nothing.
       if (body.on === true && body.auto === true) {
@@ -127,22 +145,12 @@ export function demoApi(role, store) {
     // way the Worker does, so walking from a chart back to the shelf behaves
     // the way it will in the real app rather than leaving a clock on.
     if (path === '/api/work/here') {
-      const at = typeof body.caseId === 'string' ? body.caseId : '';
-      const stopped = [];
-      for (const [key, c] of store.docs) {
-        if (!key.startsWith('cases/') || key.slice(6).includes('/')) continue;
-        const w = c.work;
-        if (!w?.startedAt || w.auto !== true || key.slice(6) === at) continue;
-        const add = Math.floor((Date.now() - new Date(w.startedAt).getTime()) / 1000);
-        const seconds = (Number(w.seconds) || 0) + add;
-        store.docs.set(key, {
-          ...c,
-          work: { seconds, startedAt: null, auto: false, nudged: 0 },
-        });
-        stopped.push({ id: key.slice(6), seconds });
-      }
-      if (stopped.length) store.persist?.();
-      return ok({ ok: true, stopped });
+      // The beacon stops NOTHING (Eric, 2026-08-25: "no automatic
+      // start/stops"). It used to end any `auto` stretch on a case he was not
+      // looking at, mirroring a Worker branch that is now gone. A forgotten
+      // clock is answered by the hourly reminder and the correction control,
+      // both of which leave the number in his hands.
+      return ok({ ok: true });
     }
     // Shutting the books. Backed by the same settings document the booking
     // page reads, so closing here really does empty the calendar in the demo.

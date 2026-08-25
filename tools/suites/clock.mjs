@@ -42,7 +42,8 @@ function konst(name) {
 }
 
 const LIFTED = [
-  konst('WORK_NUDGE_MINUTES'), konst('WORK_PRESENCE_STALE_MS'), konst('CLOCK_DOC'),
+  konst('WORK_NUDGE_MINUTES'), konst('WORK_NUDGE_REPEAT_MINUTES'),
+  konst('WORK_PRESENCE_STALE_MS'), konst('CLOCK_DOC'),
   fn('setClockRunning'), fn('stopWorkClock'), fn('handleWork'),
   fn('handleWorkPresence'), fn('runWorkClockNudges'),
 ].join('\n');
@@ -84,7 +85,8 @@ const build = new Function(
   ...Object.keys(deps), 'Date',
   `${LIFTED}
    return { handleWork, handleWorkPresence, runWorkClockNudges, stopWorkClock,
-            WORK_NUDGE_MINUTES, WORK_PRESENCE_STALE_MS, CLOCK_DOC };`,
+            WORK_NUDGE_MINUTES, WORK_NUDGE_REPEAT_MINUTES,
+            WORK_PRESENCE_STALE_MS, CLOCK_DOC };`,
 );
 const W = build(...Object.values(deps), FakeDate);
 
@@ -144,8 +146,19 @@ check('C10 two clocks run at once with their own totals',
 
 // ---- the legacy auto stretch ---------------------------------------------
 // A clock started under the retired chart-entry rule can still exist on a
-// case doc. The beacon reaps it; a tap over it pins it. This is cleanup of
-// old state, not a live behaviour - nothing can CREATE one any more (C1).
+// case doc. NOTHING reaps it any more.
+//
+// C11 used to assert the opposite: the beacon banked such a stretch the
+// moment he was seen elsewhere. That was the surviving half of the retired
+// auto-start, and it was removed on 2026-08-25 on Eric's word - "no
+// automatic start/stops" - after a forgotten toggle banked ten hours onto
+// his only client. A path that moves a billable number without his tap is
+// the thing he asked to be rid of, and it cut both ways: it could just as
+// easily END a stretch he meant to keep.
+//
+// A forgotten clock is answered by the reminder ladder (C16 onward), which
+// now keeps asking every hour instead of giving up at thirty minutes, and by
+// the correction control that can put the total back.
 reset();
 docs.set('cases/a', {
   clientName: 'Jordan Avery',
@@ -154,14 +167,13 @@ docs.set('cases/a', {
 docs.set(W.CLOCK_DOC, { running: ['a'], seenAt: new Date(NOW).toISOString(), atCaseId: 'a' });
 advance(30);
 const beacon = await W.handleWorkPresence(req({ caseId: '' }), env);
-check('C11 a LEGACY auto stretch is reaped by the beacon and banked',
-  !work('a').startedAt && work('a').seconds === 3600 + 30 * 60,
-  String(work('a').seconds));
-check('C11b the beacon reports the stop AND the new total, so the page it came '
-  + 'from can correct the card it already painted',
-  beacon.body.stopped?.[0]?.id === 'a' && beacon.body.stopped[0].seconds === 3600 + 30 * 60,
-  JSON.stringify(beacon.body.stopped));
-check('C11c the running list empties with it', running().length === 0, running().join());
+check('C11 a legacy auto stretch is NOT stopped by the beacon',
+  !!work('a').startedAt && work('a').seconds === 3600,
+  `startedAt=${!!work('a').startedAt} seconds=${work('a').seconds}`);
+check('C11b the beacon promises nothing it cannot do: no `stopped` field',
+  beacon.body.stopped === undefined, JSON.stringify(beacon.body));
+check('C11c and it stays on the running list, so the ladder keeps asking',
+  running().length === 1 && running()[0] === 'a', running().join());
 
 reset();
 docs.set('cases/a', {
@@ -203,17 +215,31 @@ await W.runWorkClockNudges(env);
 check('C20 nothing fires between rungs', pushes.length === 2);
 advance(10); // 31
 await W.runWorkClockNudges(env);
-check('C21 the thirty minute rung is the last one', pushes.length === 3);
-advance(120);
+check('C21 the thirty minute rung is the last of the FIXED ones', pushes.length === 3);
+
+// C22 used to assert the opposite - "it does not nag forever after that" -
+// and that silence is precisely how ten hours banked themselves onto Eric's
+// only client (2026-08-25). Past the fixed rungs the ladder now climbs by the
+// hour and never gives up while a clock is running. It is still a reminder
+// and never an automation: nothing here stops anything.
+advance(90); // 121 minutes away: into the second hour
 await W.runWorkClockNudges(env);
-check('C22 and it does not nag forever after that', pushes.length === 3);
+check('C22 past the fixed rungs it keeps reminding, by the hour',
+  pushes.length === 4, `${pushes.length} pushes`);
+check('C22b and by then it says what it costs, not "still working?"',
+  /billable time on their case/.test(pushes[3]?.body || ''), pushes[3]?.body);
+await W.runWorkClockNudges(env);
+check('C22c an hour still fires once, not once a minute', pushes.length === 4);
+advance(60); // into the third hour
+await W.runWorkClockNudges(env);
+check('C22d and the hour after that fires too', pushes.length === 5);
 
 // Coming back re-arms it.
 await W.handleWorkPresence(req({ caseId: 'a' }), env);
 check('C23 returning to the app clears the ladder', Number(work('a').nudged) === 0);
 advance(6);
 await W.runWorkClockNudges(env);
-check('C24 so a later absence asks again from the first rung', pushes.length === 4);
+check('C24 so a later absence asks again from the first rung', pushes.length === 6);
 
 // Per client, not per app: two running clocks are two separate prompts.
 reset();
@@ -282,6 +308,38 @@ check('C32 a beacon with nothing running only writes the beacon',
 reset();
 const bad = await W.handleWork(req({ caseId: '../../users/eric', on: true }), env);
 check('C33 the case id is still validated', bad.status === 400, JSON.stringify(bad));
+
+// ---- correcting a total --------------------------------------------------
+// The answer to a clock left running by mistake. Start and stop were the only
+// two things that could move this number, so a forgotten toggle was permanent
+// - ten hours banked onto Eric's only client, with nothing in the app able to
+// take them off again (2026-08-25).
+reset();
+docs.set('cases/a', { clientName: 'Jordan Avery', work: { seconds: 11 * 3600, startedAt: null } });
+const fixed = await W.handleWork(req({ caseId: 'a', setSeconds: 3600 }), env);
+check('C34 a correction sets the banked total to exactly what he asked for',
+  work('a').seconds === 3600 && fixed.body.seconds === 3600, String(work('a').seconds));
+check('C34b and it is recorded, because the CLIENT can see this number',
+  work('a').correction?.from === 11 * 3600 && work('a').correction?.to === 3600,
+  JSON.stringify(work('a').correction));
+check('C34c zero is a legitimate answer, not a missing one',
+  (await W.handleWork(req({ caseId: 'a', setSeconds: 0 }), env)).body.seconds === 0);
+
+// Nonsense is refused rather than quietly banked as zero: this is billable.
+for (const [label, v] of [['negative', -60], ['not a number', 'banana'], ['absurd', 9e9]]) {
+  const r = await W.handleWork(req({ caseId: 'a', setSeconds: v }), env);
+  check(`C35 a ${label} correction is refused`, r.status === 400, JSON.stringify(r.body));
+}
+
+// Correcting does NOT decide whether the clock is running - stopping is still
+// his own separate tap, because nothing here is automatic in either direction.
+reset();
+await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
+advance(30);
+const midRun = await W.handleWork(req({ caseId: 'a', setSeconds: 120 }), env);
+check('C36 a correction mid-stretch leaves the clock running',
+  midRun.body.running === true && !!work('a').startedAt, JSON.stringify(midRun.body));
+check('C36b and the banked total is the corrected one', work('a').seconds === 120);
 
 Date.now = realNow;
 const failed = results.filter((r) => !r.pass);

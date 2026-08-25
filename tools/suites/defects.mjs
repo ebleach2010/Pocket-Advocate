@@ -55,8 +55,20 @@ ck('nudge: awayMin is null rather than Infinity when there is no beacon',
    && !/: Infinity;/.test(W));
 ck('nudge: the body omits the closed-for clause it cannot fill',
    /awayMin === null \? '' : ` and the app has been closed for/.test(W));
+// Same behaviour, new shape: the ternary became an if/else on 2026-08-25 when
+// the ladder gained its hourly repeat.
 ck('nudge: an unknown absence starts at the first rung, not the loudest',
-   /awayMin === null\n\s*\? WORK_NUDGE_MINUTES\[0\]/.test(W));
+   /if \(awayMin === null\) \{\n\s*rung = WORK_NUDGE_MINUTES\[0\];/.test(W));
+ck('nudge: past the fixed rungs it keeps asking, by the hour, for ever',
+   /const hourly = Math\.floor\(awayMin \/ WORK_NUDGE_REPEAT_MINUTES\) \* WORK_NUDGE_REPEAT_MINUTES;/.test(W)
+   && /rung = Math\.max\(fixed, hourly\);/.test(W),
+   'a ladder that gave up at 30 minutes is how ten hours banked themselves');
+ck('nudge: and nothing in the beacon stops a clock any more',
+   !/const seconds = await stopWorkClock\(env, id, w\);/.test(W)
+   && /NOTHING IS STOPPED HERE ANY MORE/.test(W));
+ck('clock: a banked total can be corrected, which it never could before',
+   /if \(body\?\.setSeconds !== undefined\)/.test(W)
+   && /correction: \{ from: seconds, to: next, at: new Date\(\) \}/.test(W));
 
 // ---- 5. the upgrade payment is not counted twice ------------------------
 ck("paid sums: Eric's chart excludes the settled tier row",

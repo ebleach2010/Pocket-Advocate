@@ -3670,6 +3670,20 @@ async function handleFileDelete(request, env) {
  */
 const WORK_NUDGE_MINUTES = [5, 10, 30];
 /**
+ * And then EVERY HOUR, for as long as the clock is still running.
+ *
+ * The ladder used to stop at its top rung: three pings inside the first half
+ * hour and then complete silence. A clock still running at minute 31 was
+ * never mentioned again, which is exactly how ten hours banked themselves
+ * onto Eric's only client (2026-08-25). The rungs were designed as "are you
+ * still there?" and the real failure is "you are not there and have not been
+ * for hours", which needs a reminder that does not give up.
+ *
+ * Deliberately still a REMINDER and not an automation. Nothing stops a clock
+ * but his own tap; the standing rule is manual only, both ways.
+ */
+const WORK_NUDGE_REPEAT_MINUTES = 60;
+/**
  * The presence beacon's own clock. Pages send one on load and once a minute
  * while visible, so anything older than this means no admin page is open.
  * Three minutes rather than two forgives one dropped request on a phone that
@@ -3750,6 +3764,42 @@ async function handleWork(request, env) {
   const seconds = Math.max(0, Number(w.seconds) || 0);
   const on = body?.on === true;
   const auto = body?.auto === true;
+
+  // CORRECTING THE TOTAL (Eric, 2026-08-25, after ten hours ran on his only
+  // client because a toggle was left on).
+  //
+  // Start and stop were the only two things that could ever move this number,
+  // which meant a forgotten toggle was permanent: once the stretch banked,
+  // nothing in the app could take it off again. Stop-with-backdate only helps
+  // while the clock is still running.
+  //
+  // The correction is recorded rather than silent. The client can SEE this
+  // total on their own case page, so an unexplained drop is a number changing
+  // behind their back; `correction` keeps what it was, what it became, and
+  // when, so the change can always be accounted for.
+  if (body?.setSeconds !== undefined) {
+    const want = Number(body.setSeconds);
+    if (!Number.isFinite(want) || want < 0 || want > 4000 * 3600)
+      return json({ error: 'Give a whole number of seconds, zero or more.' }, 400);
+    const next = Math.floor(want);
+    const wrote = await patchDoc(env, `cases/${caseId}`, {
+      work: {
+        ...w,
+        seconds: next,
+        // A correction does not decide whether the clock is running. If it is
+        // running he can stop it separately, and the stretch since its start
+        // is untouched by this.
+        updatedAt: new Date(),
+        correction: { from: seconds, to: next, at: new Date() },
+      },
+    }, { mask: ['work'] });
+    if (wrote === false) return json({ error: 'Try that once more.' }, 409);
+    return json({
+      seconds: next, running: !!startedAt, auto: w.auto === true,
+      startedAt: startedAt ? new Date(startedAt) : null,
+      correctedFrom: seconds,
+    });
+  }
 
   // MANUAL ONLY (Eric, 2026-08-25: "All clocks in/clock out buttons are
   // manual. Nothing automatic."). An `auto` start - the retired chart-entry
@@ -3848,27 +3898,31 @@ async function handleWorkPresence(request, env) {
   // Nothing to reconcile while he sits on the same page and never left.
   if (prevAt === atCaseId && !wasAway) return json({ ok: true });
 
-  const stopped = [];
   for (const id of running) {
     const c = await getDoc(env, `cases/${id}`).catch(() => null);
     const w = c?.data.work;
     if (!w?.startedAt) { await setClockRunning(env, id, false); continue; }
-    // He is demonstrably elsewhere in the app, so this automatic stretch is
-    // over. A pinned one is untouched: that is what pinning means.
-    if (w.auto === true && id !== atCaseId) {
-      // The new banked total rides back, not just the id: the page that sent
-      // this beacon has already painted that card from a case doc it read
-      // before the stop, so it needs the number as well as the news.
-      const seconds = await stopWorkClock(env, id, w);
-      stopped.push({ id, seconds });
-      continue;
-    }
+    // NOTHING IS STOPPED HERE ANY MORE (Eric, 2026-08-25: "no automatic
+    // start/stops"). This used to end an `auto` stretch the moment he was
+    // seen elsewhere in the app - the other half of the chart-entry
+    // auto-start, which was already retired. With starts refused, no new
+    // stretch is ever `auto`, so this branch could only ever have fired on a
+    // record left over from before the rule; leaving it in meant the app
+    // still held one path that moved a billable number without his tap.
+    //
+    // A forgotten clock is now answered by the reminder ladder, which keeps
+    // asking every hour instead of giving up at thirty minutes, and by the
+    // correction control on the chart. Both put him in charge of the number.
+    //
     // He came back. Re-arm the ladder so a later absence asks again.
     if (wasAway && Number(w.nudged)) {
       await patchDoc(env, `cases/${id}`, { work: { ...w, nudged: 0 } }, { mask: ['work'] }).catch(() => {});
     }
   }
-  return json({ ok: true, stopped });
+  // `stopped` used to ride back here with the cases this beacon had ended.
+  // Nothing is ended here now, so the field is gone rather than shipping an
+  // always-empty promise that a later reader would trust.
+  return json({ ok: true });
 }
 
 /**
@@ -3894,10 +3948,21 @@ async function runWorkClockNudges(env) {
     if (awayMin !== null && awayMin < WORK_NUDGE_MINUTES[0]) return; // app open; he can see it
     // No beacon at all means we cannot place him on the ladder, so start at
     // the bottom rung rather than jumping to the loudest one.
-    const rung = awayMin === null
-      ? WORK_NUDGE_MINUTES[0]
-      : [...WORK_NUDGE_MINUTES].reverse().find((m) => awayMin >= m);
-    if (rung === undefined) return;
+    //
+    // Past the top fixed rung the ladder keeps climbing by the hour, so the
+    // rung is whichever is further along: the last fixed one he has passed,
+    // or the hour he is currently in. Because `nudged` stores the rung and a
+    // ping only fires when the rung EXCEEDS it, each new hour fires exactly
+    // once and no hour fires twice.
+    let rung;
+    if (awayMin === null) {
+      rung = WORK_NUDGE_MINUTES[0];
+    } else {
+      const fixed = [...WORK_NUDGE_MINUTES].reverse().find((m) => awayMin >= m) || 0;
+      const hourly = Math.floor(awayMin / WORK_NUDGE_REPEAT_MINUTES) * WORK_NUDGE_REPEAT_MINUTES;
+      rung = Math.max(fixed, hourly);
+    }
+    if (!rung) return;
 
     for (const id of running) {
       const c = await getDoc(env, `cases/${id}`).catch(() => null);
@@ -3912,9 +3977,15 @@ async function runWorkClockNudges(env) {
       for (const a of admins) {
         await notifyUser(env, a.id, {
           title: 'Pocket Advocate',
-          body: `${firstName(c.data.clientName)}: the clock has been running ${ran}${
-            awayMin === null ? '' : ` and the app has been closed for ${Math.floor(awayMin)} minutes`
-          }. Still working?`,
+          // Past an hour this stops being "are you still there?" and starts
+          // being "this is costing your client money". The soft wording is
+          // what let ten hours go by feeling like a routine ping.
+          body: mins >= WORK_NUDGE_REPEAT_MINUTES
+            ? `${firstName(c.data.clientName)}: the clock has been running ${ran}. `
+              + `If you are not working, stop it now - this is billable time on their case.`
+            : `${firstName(c.data.clientName)}: the clock has been running ${ran}${
+              awayMin === null ? '' : ` and the app has been closed for ${Math.floor(awayMin)} minutes`
+            }. Still working?`,
           link: `/admin-case.html?id=${id}&clock=ask`,
         }).catch(() => {});
       }
