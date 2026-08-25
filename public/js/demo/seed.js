@@ -231,17 +231,17 @@ export function seed({ set, file }) {
     },
     publicElection: { choice: 'private', history: [{ choice: 'private', at: days(11) }] },
     addOnFollowUp: false,
-    caseRateCents: 65000,
-    addonRateCents: 17500,
+    caseRateCents: 95000,
+    addonRateCents: 22500,
     forms: { disclaimer: days(11), privacy: days(11), recording: days(11) },
     reportDueAt: days(-4),
     reportDeliveredAt: hours(20),
     files: [],
-    stripe: { sessionId: 'cs_demo', paymentIntentId: 'pi_demo', amountTotal: 65000 },
+    stripe: { sessionId: 'cs_demo', paymentIntentId: 'pi_demo', amountTotal: 95000 },
     // The work clock, part-way through AND running, so both suites show a
     // real total plus the live "working on it right now" state. Seeded
     // relative to load time, so the demo always shows about 22 live minutes.
-    // Eleven and a half hours against $650 is about $56/hr, under the
+    // Eleven and a half hours against $950 is about $81/hr, under the
     // default floor, so the margin badge shows its amber state on the case
     // where that is the real story. The Full Access case below is the
     // healthy one.
@@ -350,15 +350,22 @@ export function seed({ set, file }) {
     addOnFollowUp: false,
     // The standard rate stays the base for percentage charges; what the tier
     // actually cost is its own field, and the two are never summed.
-    caseRateCents: 65000,
-    addonRateCents: 17500,
+    caseRateCents: 95000,
+    addonRateCents: 22500,
     fullAccess: true,
     fullAccessAt: days(38),
-    fullAccessRateCents: 350000,
+    // Month one plus one continuation: $2,600 x 2, less the case fee credited
+    // against the first. The tier is monthly since 2026-08-26. Two months
+    // bought 38 days ago leaves 22 days on the window, which is a case in
+    // healthy mid-flight - the state where "keep going another month" is the
+    // interesting card to press.
+    fullAccessRateCents: 520000 - 95000,
+    fullAccessMonths: 2,
+    fullAccessExtraDays: 30,
     // Stamped at the first signature, matching the authorisation seeded
-    // below. The tier window does NOT run from this any more - it runs 60
-    // days from the first call - but the field remains the record of when
-    // he first had authority to act.
+    // below. The window does NOT run from this - it runs thirty days per
+    // month taken, from the day month one started - but the field remains
+    // the record of when he first had authority to act.
     authorityAt: days(31),
     forms: {
       disclaimer: days(38), privacy: days(38), recording: days(38),
@@ -366,11 +373,13 @@ export function seed({ set, file }) {
     },
     reportDueAt: days(13),
     files: [],
-    stripe: { sessionId: 'cs_demo_full', paymentIntentId: 'pi_demo_full', amountTotal: 350000 },
-    // 26 hours against $3,500 is about $134/hr, which is what the tier is
-    // priced to earn. The standard case above is deliberately the opposite
-    // number, so the margin badge shows both of its states across the demo.
-    work: { seconds: 26 * 3600, startedAt: null },
+    stripe: { sessionId: 'cs_demo_full', paymentIntentId: 'pi_demo_full', amountTotal: 165000 },
+    // 24.5 hours against two months at $2,600 (less the credited case fee)
+    // is about $173/hr, which is exactly what the tier is priced to earn -
+    // the national average for this work. The standard case above is
+    // deliberately the opposite number, so the margin badge shows both of
+    // its states across the demo.
+    work: { seconds: 24 * 3600 + 30 * 60, startedAt: null },
   });
 
   for (const [ago, role, text] of FULL_CHAT) {

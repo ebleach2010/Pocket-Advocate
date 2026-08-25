@@ -26,7 +26,7 @@ import { handsOffReadiness } from './readiness.js';
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
 // percentages below are a share of the standard Advocacy Case fee.
-const CASE_PRICE_CENTS = 65000;
+const CASE_PRICE_CENTS = 95000;
 
 /**
  * The rate a given client booked at. Recorded on the case at checkout, so a
@@ -1285,6 +1285,22 @@ function paintOverview(pane) {
       <button class="btn" data-action="confirm-request">Confirm this time</button>
       <button class="btn quiet" data-action="deny-request">Can't make it</button>
     </div>` : ''}
+    ${c.fullAccessRequest?.state === 'pending' ? `
+    <div class="panel" style="border-color:var(--cyan); box-shadow:var(--glow-c);">
+      <h3 style="margin:0 0 .3rem; color:var(--cyan);">Hands-Off request — your call</h3>
+      <p class="small" style="margin:0 0 .2rem;">
+        First month <strong>$${((Number(c.fullAccessRequest.firstMonthCents) || 0) / 100).toLocaleString()}</strong>
+        (their case fee is already off it), then
+        <strong>$${((Number(c.fullAccessRequest.monthCents) || 0) / 100).toLocaleString()}/mo</strong>.</p>
+      <p class="dim small" style="margin:0 0 .7rem;">Nothing has been charged and no
+        card was taken. Approving sends them a link to start month one at the rate
+        quoted above — the one they were shown when they asked, not today's.
+        You take at most two of these at once; if you are full, approving
+        tells you so and asks before it goes ahead.</p>
+      <button class="btn" data-full-request="approve">Approve — send the link</button>
+      <button class="btn quiet" data-full-request="decline">Can't take it</button>
+      <p class="error" data-full-request-error hidden></p>
+    </div>` : ''}
     ${c.pendingTelehealth?.state === 'requested' ? `
     <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
       <h3 style="margin:0 0 .3rem; color:var(--orange);">Telehealth appointment — they want you there</h3>
@@ -1433,6 +1449,57 @@ function paintOverview(pane) {
         if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
         load();
       } catch (err) { alert(err.message); b.disabled = false; }
+    }));
+  // The live count deliberately does NOT come from /api/rates: that route
+  // publishes fullOpen as a bare boolean precisely because the counts are not
+  // a client's business, and this page shares it. The real numbers arrive in
+  // the 409 below, from the only route that can create one of these.
+  pane.querySelectorAll('[data-full-request]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const decision = b.dataset.fullRequest;
+      const errEl = pane.querySelector('[data-full-request-error]');
+      let reason = '';
+      if (decision === 'decline') {
+        // His words, verbatim, the same as a case closure: the client reads
+        // this and nothing was charged, so it had better say something.
+        reason = (prompt('Why can\'t you take this one? They read this word for word.') || '').trim();
+        if (!reason) return;
+      } else if (!confirm('Approve this? They get a link to start month one at the rate they were quoted.')) {
+        return;
+      }
+      b.disabled = true;
+      if (errEl) errEl.hidden = true;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/admin/full-request', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ caseId, decision, reason }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (res.status === 409 && out.error === 'full-booked') {
+          // The cap is real now - this route is the ONLY way a tier case can
+          // be created - so it can refuse him, and he can override knowingly.
+          if (!confirm(`You already carry ${out.open} of ${out.max}. Take this one anyway?`)) {
+            b.disabled = false;
+            return;
+          }
+          const again = await fetch('/api/admin/full-request', {
+            method: 'POST',
+            headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ caseId, decision, reason, overrideCap: true }),
+          });
+          const out2 = await again.json().catch(() => ({}));
+          if (!again.ok) throw new Error(out2.error || `Failed (${again.status})`);
+          load();
+          return;
+        }
+        if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+        load();
+      } catch (err) {
+        if (errEl) { errEl.textContent = err.message; errEl.hidden = false; }
+        b.disabled = false;
+      }
     }));
   wireHoldAndClose(pane);
 }
@@ -2043,7 +2110,7 @@ async function paintAuthorityStatus(pane) {
  * spent on hold. First-call fallback for legacy cases with no purchase
  * stamp, matching the Worker exactly — two copies, kept in step.
  */
-const FULL_WINDOW_DAYS = 60;
+const FULL_WINDOW_DAYS = 30;
 function fullAccessDaysLeft(c) {
   const bought = c?.fullAccessAt ? toDate(c.fullAccessAt).getTime() : 0;
   const start = bought || (c?.appointment?.start ? toDate(c.appointment.start).getTime() : 0);

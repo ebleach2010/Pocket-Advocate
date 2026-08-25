@@ -25,7 +25,7 @@ import { rates } from './rates.js';
 // Booking buys one thing (Eric, 2026-08-20). The follow-up used to be a
 // checkbox on this screen; it is sold from the case after the report lands
 // instead, so this step is a single price and a single decision.
-const CASE_PRICE_CENTS = 65000;
+const CASE_PRICE_CENTS = 95000;
 // Filled from /api/rates before the payment step renders, and again if the
 // Worker refuses a stale quote.
 let caseCents = CASE_PRICE_CENTS;

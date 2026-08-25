@@ -24,7 +24,7 @@ const num = (name) => {
 const CASE = num('CASE_PRICE_CENTS');
 const ADDON = num('ADDON_PRICE_CENTS');
 const SUB = num('SUB_PRICE_CENTS');
-const FULL = num('FULL_PRICE_CENTS');
+const FULL = num('FULL_MONTH_CENTS');
 const CASE_CAP = num('CASE_CAP_CENTS');
 const ADDON_CAP = num('ADDON_CAP_CENTS');
 const SUB_CAP = num('SUB_CAP_CENTS');
@@ -37,14 +37,23 @@ const FLOOR = num('HOURLY_FLOOR_CENTS');
 
 console.log(`# case ${CASE} addon ${ADDON} sub ${SUB} full ${FULL} floor ${FLOOR}`);
 
-// FULL moved to $3,500 on 2026-08-25: Eric's final answer after the market
-// research he asked for (advocates $100-500/hr; the tier is 25-35h).
+// Recalibrated to market 2026-08-26 at Eric's word ("exactly middle to
+// slightly above middle of what you've found"). Advocates bill $70-500/hr,
+// average $175, band $100-350; every seed below is that service's honest
+// hours priced in the $175-200 band. FULL is now a MONTHLY rate, not a
+// 60-day lump - the tier is billed by the month so no client faces a
+// five-figure charge, which is why this reads FULL_MONTH_CENTS.
 check('P1 the new list prices are what was agreed',
-  CASE === 65000 && ADDON === 17500 && SUB === 9500 && FULL === 350000,
+  CASE === 95000 && ADDON === 22500 && SUB === 15000 && FULL === 260000,
   JSON.stringify({ CASE, ADDON, SUB, FULL }));
 check('P2 caps moved with the prices',
-  CASE_CAP === 140000 && ADDON_CAP === 40000 && SUB_CAP === 15000 && FULL_CAP === 500000,
+  CASE_CAP === 160000 && ADDON_CAP === 40000 && SUB_CAP === 25000 && FULL_CAP === 340000,
   JSON.stringify({ CASE_CAP, ADDON_CAP, SUB_CAP, FULL_CAP }));
+check('P2b the tier price is per MONTH, and the month is defined',
+  num('FULL_MONTH_DAYS') === 30 && num('FULL_WINDOW_DAYS') === 30,
+  'a paid month buys thirty days; further months add thirty more each');
+check('P2c the two-month minimum is stated, not payment-locked',
+  num('FULL_MIN_MONTHS') === 2 && /It is NOT a payment lock/.test(SRC));
 check('P3 full access climbs gentler than the rest',
   FULL_GROWTH === 1.05 && FULL_ROUND === 2500 && GROWTH === 1.10 && ROUND === 500);
 
@@ -66,11 +75,13 @@ check('P7 a price can never round back onto itself',
   growRate(1000, CASE_CAP) > 1000
   && growRate(1000, FULL_CAP, FULL_GROWTH, FULL_ROUND) > 1000);
 
-// Eight bookings to the ceiling is the shape that was promised.
+// The monthly seed sits closer to its monthly ceiling than the old lump did
+// to its lump ceiling ($2,600 -> $3,400 rather than $3,500 -> $5,000), so the
+// climb is shorter by arithmetic, not by a change of intent. Still gradual.
 let n = FULL, steps = 0;
 while (n < FULL_CAP && steps < 50) { n = growRate(n, FULL_CAP, FULL_GROWTH, FULL_ROUND); steps++; }
 check('P8 full access reaches its ceiling in a sane number of bookings',
-  steps >= 6 && steps <= 14, `${steps} bookings`);
+  steps >= 5 && steps <= 14, `${steps} bookings`);
 
 // ---- the seams that must all know about the new price ---------------------
 for (const seam of [
@@ -97,14 +108,17 @@ check('P11 the follow-up is still quoted from the case, not the live rate',
 // his; the dead tier price is corrected regardless.
 check('P12 hand-set BASE prices are still left alone',
   /const handSet = !!doc\?\.data\.setByHand/.test(SRC)
-  && /handSet\s*\?\s*\{ fullCents: FULL_PRICE_CENTS, updatedAt: new Date\(\) \}/.test(SRC));
+  && /handSet\s*\?\s*\{ fullCents: FULL_MONTH_CENTS, updatedAt: new Date\(\) \}/.test(SRC));
 check('P12b but the retired tier price is corrected even so',
   /const mask = handSet\s*\n\s*\? \['fullCents', 'updatedAt'\]/.test(SRC));
 check('P12c and the mask cannot touch a hand-set base price',
   !/handSet\s*\n?\s*\? \['fullCents', 'updatedAt', '(caseCents|addonCents|subCents|floorCents)'/.test(SRC));
-check('P13 the rescope has its OWN marker, because the August one finished',
-  /migrations\/reprice-2026-08-24-tier/.test(SRC)
-  && !/MARKER = 'migrations\/reprice-2026-08-23'/.test(SRC));
+// A third marker. fullCents changed MEANING on 2026-08-26 - it was the price
+// of sixty days and it is now the price of one month - so a live doc holding
+// the old lump would read as a monthly rate and charge nearly double.
+check('P13 the monthly reshape has its OWN marker, because the last one finished',
+  /migrations\/reprice-2026-08-26-monthly/.test(SRC)
+  && !/MARKER = 'migrations\/reprice-2026-08-24-tier'/.test(SRC));
 
 // ---- the tier -------------------------------------------------------------
 check('T1 booking REFUSES the tier: it is added from inside a case now',
@@ -136,9 +150,12 @@ check('T9 a tier case is not closed on the 48-hour report clock',
   && /if \(!\(until && Date\.now\(\) > until\.getTime\(\)\)\) continue;/.test(SRC));
 check('T9b and it waits for an appeal that has been filed and not answered',
   /if \(appeal\?\.filedAt && !appeal\.decidedAt\) continue;/.test(SRC));
-check('T9c the window is 60 days from PURCHASE, first-call fallback, computed not stored',
-  // Eric, 2026-08-25: "the clock starts upon booking."
-  /const FULL_WINDOW_DAYS = 60;/.test(SRC)
+// Was 60 days in one payment. Monthly since 2026-08-26, so the base is 30 and
+// each further month adds another 30 - cases sold under the old shape keep
+// their 60, which FULL_LEGACY_WINDOW_DAYS exists to guarantee.
+check('T9c the window is a paid month from PURCHASE, computed not stored',
+  /const FULL_WINDOW_DAYS = 30;/.test(SRC)
+  && /const FULL_LEGACY_WINDOW_DAYS = 60;/.test(SRC)
   && /function fullAccessWindowEnd\(c\)/.test(SRC)
   && /c\?\.fullAccessAt/.test(SRC)
   && /c\?\.appointment\?\.start/.test(SRC));
@@ -146,13 +163,29 @@ check('T9d two appeal letters are actually counted now',
   /const FULL_APPEALS_INCLUDED = 2;/.test(SRC)
   && /appealsUsed\(stNow\?\.data\) >= FULL_APPEALS_INCLUDED/.test(SRC)
   && /filedCount: \(Number\(meta\.filedCount\) \|\| 0\) \+ 1,/.test(SRC));
-check('T9e extensions scaled with the $3,500 base: $1,750/30d, $2,750/60d',
-  /const FULL_EXTEND = \{ 30: 175000, 60: 275000 \};/.test(SRC));
+// There is no separate "extension" product any more: the next month costs
+// what the first month costs, which is the whole point of going monthly.
+check('T9e another month is the SAME price as the first month',
+  /const FULL_EXTEND = \{ 30: FULL_MONTH_CENTS \};/.test(SRC));
 check('T9f two concurrent tier cases, not three',
   /const FULL_MAX_OPEN_DEFAULT = 2;/.test(SRC));
-check('T9g the upgrade refuses a stale quote, as booking does',
-  /quoted && quoted !== cents/.test(SRC)
-  && /error: 'rate-changed', upgradeCents: cents/.test(SRC));
+// The stale-quote handshake is gone from this path because the path is no
+// longer a checkout: asking is free, and an approval charges the rate quoted
+// when they ASKED (firstMonthCents), not whatever it has climbed to since.
+// That is a stronger promise than the handshake it replaces.
+check('T9g an approval charges the rate the client was quoted when they asked',
+  /firstMonthCents: upgradeCents\(c\.data, live\.fullCents\)/.test(SRC)
+  && /Number\(req\.firstMonthCents\) > 0/.test(SRC));
+check('T9h asking for the tier charges nothing and takes no card',
+  /async function handleUpgradeCheckout/.test(SRC)
+  && !/stripePost[\s\S]{0,400}?kind: 'fullaccess'[\s\S]{0,200}?\n\}\n\nasync function handleFullRequestDecision/.test(SRC)
+  && /state: 'pending'/.test(SRC));
+check('T9i only an approval can create a tier case, so the cap cannot be raced',
+  /async function handleFullRequestDecision/.test(SRC)
+  && /const cap = await fullAccessCapacity\(env\);\n\s*if \(!cap\.room && !body\?\.overrideCap\)/.test(SRC));
+check('T9j a decline is written in his words and charges nothing',
+  /Write the reason\. The client reads it word for word\./.test(SRC)
+  && /state: 'declined'/.test(SRC));
 check('T10 pay-over-time is offered on the tier upgrade and nowhere at booking',
   /automatic_payment_methods/.test(SRC)
   && !/wantsFull/.test(SRC));

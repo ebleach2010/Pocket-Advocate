@@ -132,10 +132,20 @@ ck('clock: the "still working?" card outlives the render it used to sit in',
 const CJ = f('public/js/case.js');
 ck('purchase: a poll repaint leaves an in-progress pane alone',
    /if \(progress && !busyInside\(progress\)\)/.test(CJ) && /function busyInside\(pane\)/.test(CJ));
-ck('purchase: the upgrade card and its POST quote one number',
+// The quote handshake left this path on 2026-08-26, because the path stopped
+// being a checkout: asking is free, and the Worker records the rate quoted at
+// the moment of ASKING so an approval days later charges that number rather
+// than whatever the live rate has climbed to. Stronger than the handshake it
+// replaces, so the check follows it rather than being deleted.
+ck('purchase: asking for the tier is free and quotes the first month honestly',
    /function upgradeQuoteCents\(c\)/.test(CJ)
-   && /quotedCents: upgradeQuoteCents\(c\)/.test(CJ)
-   && /Math\.round\(upgradeQuoteCents\(c\) \/ 100\)/.test(CJ));
+   && /Math\.round\(upgradeQuoteCents\(c\) \/ 100\)/.test(CJ)
+   && /Asking costs nothing\s*\n?\s*and takes no card/.test(CJ)
+   && !/quotedCents: upgradeQuoteCents\(c\)/.test(CJ));
+ck('purchase: only an approval produces a payable link',
+   /req\?\.state === 'approved' && c\.pendingFullAccess\?\.url/.test(CJ));
+ck('purchase: a pending ask says plainly that nothing was charged',
+   /Nothing has been charged/.test(CJ) && /data-withdraw-upgrade/.test(CJ));
 ck('purchase: the card repaints when the live price lands',
    /ratesReady\.then\(\(\) => \{/.test(CJ));
 const BK = f('public/js/book.js');
@@ -159,14 +169,26 @@ const TT = f('public/js/tier-terms.js');
 for (const gone of ['90 days', 'up to <strong>five</strong>', 'three three-way']) {
   ck(`scope note: "${gone}" is gone`, !TT.includes(gone));
 }
-ck('scope note: it promises 60 days and two letters, both enforced',
-   /<strong>60 days<\/strong>/.test(TT) && /<strong>Two insurance appeal letters<\/strong>/.test(TT));
+// The window went MONTHLY on 2026-08-26, so the promise is thirty days per
+// month taken rather than a flat sixty. Both halves are still enforced: the
+// window by fullAccessWindowEnd, the letters by appealsUsed.
+ck('scope note: it promises a month at a time and two letters, both enforced',
+   /<strong>30 days per month you take<\/strong>/.test(TT)
+   && /<strong>Two insurance appeal letters<\/strong>/.test(TT));
+ck('scope note: it says asking is free and the answer is his',
+   /Asking costs nothing and I do not take a card/.test(TT)
+   && /I carry two of these at once/.test(TT));
+ck('scope note: it says continuing never costs more',
+   /one more month at the same price/.test(TT)
+   && /It never costs more for continuing/.test(TT));
+ck('scope note: it says nothing is charged before he approves',
+   /Nothing is charged unless and until I approve your request/.test(TT));
 ck('scope note: it says the second letter outlives the window',
    /second appeal letter does not expire with the window/.test(TT));
 // The start MOVED (Eric, 2026-08-25: "the clock starts upon booking") and
 // the sentence moved with it, checklist wording included.
-ck('scope note: it says the clock runs from purchase regardless of the checklist',
-   /the 60 days runs from the day you buy, whether or not the checklist is done/.test(TT));
+ck('scope note: it says the clock runs regardless of the checklist',
+   /the month runs from the day it starts, whether or not the checklist is done/.test(TT));
 
 // ---- 12. chat reactions: the record shape and who may touch what ---------
 // (Audit, 2026-08-25.) The stored reaction is a RECORD ({ id, kind, ... }),

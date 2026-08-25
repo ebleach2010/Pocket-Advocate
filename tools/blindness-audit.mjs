@@ -25,6 +25,9 @@
 // So: fetch real URLs, as an anonymous visitor with no cookie, and search
 // exactly what comes back.
 
+import http from 'node:http';
+import https from 'node:https';
+
 const ORIGIN = (process.argv[2] || 'http://127.0.0.1:8788').replace(/\/$/, '');
 
 // Terms that give the game away wherever they appear, including in a comment.
@@ -220,12 +223,44 @@ console.log(`  ${files} text files scanned, ${hits} forbidden ${hits === 1 ? 'ma
 
 // ---- 2. the admin half, with no cookie -----------------------------------
 console.log('\n2. the admin half, as a stranger');
+// A STRANGER ON THE LIVE SITE, which is the only thing this section is about.
+//
+// Sent with the production Host header, because the Worker's DEMO_HOST regex
+// deliberately treats localhost, 127.0.0.1 and *.workers.dev as demo hosts -
+// so pointing this audit at a dev server and asking "is the demo gated?"
+// answers a question nobody asked. Without the header, /js/demo/suite.js
+// correctly answers 200 here and the audit called it a leak.
+const LIVE_HOST = 'thepocketadvocates.com';
+//
+// Raw http, not fetch: `host` is a forbidden header name in the fetch spec
+// and Node drops it silently, so the override looked applied and was not.
+// This sends the real Host line while still connecting to ORIGIN.
+const asStranger = (path) => new Promise((resolve, reject) => {
+  const u = new URL(path, ORIGIN);
+  const lib = u.protocol === 'https:' ? https : http;
+  const req = lib.request({
+    protocol: u.protocol,
+    hostname: u.hostname,
+    port: u.port || (u.protocol === 'https:' ? 443 : 80),
+    path: u.pathname + u.search,
+    method: 'GET',
+    headers: { host: LIVE_HOST },
+    servername: u.hostname,
+  }, (res) => {
+    let body = '';
+    res.setEncoding('utf8');
+    res.on('data', (d) => { body += d; });
+    res.on('end', () => resolve({ status: res.statusCode, text: async () => body }));
+  });
+  req.on('error', reject);
+  req.end();
+});
 for (const path of ADMIN_PAGES) {
-  const res = await fetch(new URL(path, ORIGIN), { redirect: 'manual' });
+  const res = await asStranger(path);
   if (res.status !== 404) fail(`${path} — ${res.status}, expected the byte-identical 404`);
 }
 for (const path of ADMIN_ASSETS) {
-  const res = await fetch(new URL(path, ORIGIN), { redirect: 'manual' });
+  const res = await asStranger(path);
   if (res.status !== 404) fail(`${path} — ${res.status}, expected 404`);
   else {
     const body = await res.text();

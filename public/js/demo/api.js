@@ -85,8 +85,8 @@ export function demoApi(role, store) {
     if (path === '/api/admin/session') return ok({ ok: true });
 
     // ---- money, without any -----------------------------------------------
-    if (path === '/api/rates') return ok({ caseCents: 65000, addonCents: 17500, subCents: 9500, fullCents: 350000, chatOpenCents: 5000 });
-    if (path === '/api/admin/rates') return ok({ caseCents: 65000, addonCents: 17500, subCents: 9500, fullCents: 350000, floorCents: 7500, bookings: 0, changed: false });
+    if (path === '/api/rates') return ok({ caseCents: 95000, addonCents: 22500, subCents: 15000, fullCents: 260000, chatOpenCents: 5000 });
+    if (path === '/api/admin/rates') return ok({ caseCents: 95000, addonCents: 22500, subCents: 15000, fullCents: 260000, floorCents: 7500, bookings: 0, changed: false });
     // The nightly study, with a plausible history so the card on the dashboard
     // shows what it shows on a real night.
     if (path === '/api/work') {
@@ -273,7 +273,7 @@ export function demoApi(role, store) {
       // charge: 0% books it outright; a percentage writes the client's
       // pay-to-confirm prompt so that side of the loop is drivable too.
       const pct = Number(body.pct) || 0;
-      const caseRate = Number(c.caseRateCents) || 65000;
+      const caseRate = Number(c.caseRateCents) || 95000;
       const amountCents = Math.round((pct * caseRate) / 100);
       const label = (body.tagline || '').trim() || 'Additional session';
       if (amountCents === 0) {
@@ -317,10 +317,47 @@ export function demoApi(role, store) {
         return ok({ ok: true, requested: true });
       }
       // Standard case: straight past Stripe, landing as a paid request.
-      store.docs.set(key, { ...c, pendingTelehealth: { ...req, state: 'requested', paidCents: 25000 } });
+      store.docs.set(key, { ...c, pendingTelehealth: { ...req, state: 'requested', paidCents: 37500 } });
       store.persist?.();
       await beat(600);
       return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&telehealth=1&demo=${role}` });
+    }
+    if (path === '/api/admin/full-request') {
+      const key = `cases/${body.caseId || DEMO_CASE_ID}`;
+      const c = store.docs.get(key);
+      const req = c?.fullAccessRequest;
+      if (!c || req?.state !== 'pending') return fail(409, 'There is no request waiting.');
+      if (body.decision === 'decline') {
+        const reason = String(body.reason || '').trim();
+        if (!reason) return fail(400, 'Write the reason. The client reads it word for word.');
+        store.docs.set(key, {
+          ...c,
+          fullAccessRequest: { ...req, state: 'declined', decidedAt: new Date(), declineReason: reason },
+        });
+        store.persist?.();
+        store.fire?.(key);
+        return ok({ ok: true, state: 'declined' });
+      }
+      // Approving is what starts month one. In the demo there is no Stripe,
+      // so the "checkout" lands straight where paying would have.
+      const amount = Number(req.firstMonthCents) || 0;
+      store.docs.set(key, {
+        ...c,
+        fullAccess: true,
+        fullAccessAt: new Date(),
+        fullAccessMonths: 1,
+        fullAccessRateCents: (Number(c.caseRateCents) || 0) + amount,
+        pendingFullAccess: null,
+        fullAccessRequest: { ...req, state: 'started', decidedAt: new Date(), startedAt: new Date() },
+        forms: { ...(c.forms || {}), fullAccess: new Date(Number(req.ackAt) || Date.now()) },
+        extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), {
+          kind: 'fullaccess', amountCents: amount,
+          sessionId: `cs_demo_up_${Date.now()}`, at: new Date(),
+        }],
+      });
+      store.persist?.();
+      store.fire?.(key);
+      return ok({ ok: true, state: 'approved', cents: amount });
     }
     if (path === '/api/admin/telehealth') {
       const key = `cases/${body.caseId || DEMO_CASE_ID}`;
@@ -356,21 +393,31 @@ export function demoApi(role, store) {
       }
       return ok({ ...demoVoice });
     }
-    // Thirty more days on a Hands-Off window, stacking. Straight past
-    // Stripe, written down, so the demo's window guard actually moves.
+    // One more month on a Hands-Off case, stacking. Straight past Stripe,
+    // written down, so the demo's window guard actually moves.
+    //
+    // EVERY field the Worker's confirmExtensionPurchase writes has to be
+    // written here too. fullAccessMonths and fullAccessRateCents were missed
+    // when the tier went monthly, and the demo silently dropped them: the
+    // window moved, the month counter did not, and the ledger under-counted.
     if (path === '/api/extend') {
       const key = `cases/${body.caseId || DEMO_CASE_ID}`;
       const c = store.docs.get(key) || {};
       if (!c.fullAccess) return fail(409, 'Extensions are part of Hands-Off Case Management.');
       if (c.status === 'closed') return fail(409, 'This case is closed.');
       await beat(600);
+      const cents = 260000;
       store.docs.set(key, {
         ...c,
         fullAccessExtraDays: (Number(c.fullAccessExtraDays) || 0) + 30,
+        fullAccessMonths: (Number(c.fullAccessMonths) || 1) + 1,
+        fullAccessRateCents: (Number(c.fullAccessRateCents) || 0) + cents,
+        pendingExtend: null,
         extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), {
-          kind: 'extend', amountCents: 175000, sessionId: `cs_demo_ext_${Date.now()}`, at: new Date(), days: 30,
+          kind: 'extend', amountCents: cents, sessionId: `cs_demo_ext_${Date.now()}`, at: new Date(), days: 30,
         }],
       });
+      store.persist?.();
       store.fire?.(key);
       return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&extended=1&demo=1` });
     }
@@ -379,7 +426,8 @@ export function demoApi(role, store) {
       // The scope note is a real gate, not decoration, so the demo refuses
       // the same way the Worker does. A demo that waves the buyer through
       // teaches the wrong thing about the one screen that has to hold.
-      if (path === '/api/upgrade' && typeof body?.acks?.fullAccess !== 'number')
+      if (path === '/api/upgrade' && body?.action !== 'withdraw'
+        && typeof body?.acks?.fullAccess !== 'number')
         return fail(400, 'Read the scope note and acknowledge it first.');
       // Same five the Worker requires, phoneConsent included - the demo
       // refuses the same way so the booking drive proves the gate.
@@ -428,14 +476,14 @@ export function demoApi(role, store) {
             .map(([k, v]) => [k, new Date(v)])),
           files: [],
           reportDueAt: null,
-          caseRateCents: 65000,
-          addonRateCents: 17500,
+          caseRateCents: 95000,
+          addonRateCents: 22500,
           fullAccess: false,
           fullAccessAt: null,
           fullAccessRateCents: null,
           stripe: {
             sessionId: 'cs_demo_booked', paymentIntentId: 'pi_demo_booked',
-            amountTotal: 65000,
+            amountTotal: 95000,
           },
           work: { seconds: 0, startedAt: null },
         });
@@ -453,7 +501,7 @@ export function demoApi(role, store) {
           store.docs.set(key, {
             ...c, addOnFollowUp: true, addOnFollowUpAt: new Date(), pendingFollowUp: null,
             extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), {
-              kind: 'followup', amountCents: Number(c.addonRateCents) || 17500,
+              kind: 'followup', amountCents: Number(c.addonRateCents) || 22500,
               sessionId: `cs_demo_fu_${Date.now()}`, at: new Date(),
             }],
           });
@@ -462,25 +510,32 @@ export function demoApi(role, store) {
         return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&followup=1&demo=1` });
       }
       if (path === '/api/upgrade') {
+        // A REQUEST now, not a purchase - Eric approves before anything is
+        // charged, so the demo has to make him do it too or the drive would
+        // skip the only new decision in the flow.
         const key = `cases/${body.caseId || DEMO_CASE_ID}`;
         const c = store.docs.get(key);
-        if (c) {
-          // Priced at the difference, like the real card; the total-paid field
-          // still lands on the full tier price.
-          const amount = Math.max(0, 350000 - (Number(c.caseRateCents) || 0));
-          store.docs.set(key, {
-            ...c, fullAccess: true, fullAccessAt: new Date(),
-            fullAccessRateCents: (Number(c.caseRateCents) || 0) + amount,
-            pendingFullAccess: null,
-            forms: { ...(c.forms || {}), fullAccess: new Date(body.acks.fullAccess) },
-            extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), {
-              kind: 'fullaccess', amountCents: amount,
-              sessionId: `cs_demo_up_${Date.now()}`, at: new Date(),
-            }],
-          });
-                    store.fire?.(key);
+        if (!c) return ok({ ok: true, state: 'pending' });
+        if (body.action === 'withdraw') {
+          store.docs.set(key, { ...c, fullAccessRequest: null });
+          store.persist?.();
+          store.fire?.(key);
+          return ok({ ok: true, withdrawn: true });
         }
-        return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&upgraded=1&demo=1` });
+        const monthCents = 260000;
+        const at = new Date();
+        store.docs.set(key, {
+          ...c,
+          fullAccessRequest: {
+            state: 'pending', at, monthCents,
+            firstMonthCents: Math.max(100, monthCents - (Number(c.caseRateCents) || 0)),
+            ackAt: body.acks?.fullAccess || Date.now(),
+            decidedAt: null, declineReason: '',
+          },
+        });
+        store.persist?.();
+        store.fire?.(key);
+        return ok({ ok: true, state: 'pending', at });
       }
       // /api/subscribe: straight past Stripe to where paying would have landed.
       return ok({ ok: true, url: `/return.html?session_id=demo&demo=${role}` });

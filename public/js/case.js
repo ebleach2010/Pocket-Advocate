@@ -1064,14 +1064,14 @@ function printExport(c, want) {
 // were quoted when they booked, which the case carries as addonRateCents.
 // Everyone booked before that field existed falls back to this, and since the
 // rate only moves upward that errs in their favour.
-const FOLLOWUP_PRICE_CENTS = 17500;
+const FOLLOWUP_PRICE_CENTS = 22500;
 const followUpPrice = (c) =>
   (Number(c?.addonRateCents) > 0 ? Number(c.addonRateCents) : FOLLOWUP_PRICE_CENTS) / 100;
 
 // The Full Access list price, in CENTS, corrected from /api/rates the moment
 // it answers. The upgrade card subtracts what this case already paid, so the
 // number on the button is the difference and never the list price.
-let fullAccessCents = 350000;
+let fullAccessCents = 260000;
 const fullAccessPrice = () => fullAccessCents;
 // Named, because the upgrade card has to know when this has landed. It used
 // to be fire-and-forget, so a slow or failed fetch left the compiled-in price
@@ -1122,11 +1122,12 @@ function addAboutButton(host, id) {
 }
 
 /**
- * Thirty more days on a Hands-Off window, stacking as many times as a case
- * needs. A flat price the Worker also holds, so the compiled-in number here
- * and the number Stripe charges are the same number.
+ * Another month on a Hands-Off case, as many times as it needs. The SAME
+ * price as the first month, because it is the same thing - the tier is
+ * monthly all the way down. A flat price the Worker also holds, so the
+ * compiled-in number here and the number Stripe charges are the same.
  */
-const EXTEND_PRICE_CENTS = 175000;
+const EXTEND_PRICE_CENTS = 260000;
 function windowEndOf(c) {
   // The Worker's fullAccessWindowEnd, mirrored: purchase start (first-call
   // fallback), plus extensions, plus every stretch spent on hold.
@@ -1168,37 +1169,38 @@ function extendOffer(c) {
     // is true right now instead of promising days it does not yet carry.
     if (pending) return `
       <div class="followup-offer">
-        <h3>Payment received — putting the days on your case.</h3>
+        <h3>Payment received — putting the month on your case.</h3>
         <p>This takes a moment. Refresh in a minute if it hasn't updated;
           nothing is charged twice.</p>
       </div>`;
     const to = windowEndOf(c);
     return `
       <div class="followup-offer is-done">
-        <h3><span class="fu-tick" aria-hidden="true">✓</span> Thirty more days are on your case.</h3>
+        <h3><span class="fu-tick" aria-hidden="true">✓</span> Another month is on your case.</h3>
         <p>Same case, same file, same rhythm. Your coordination window now runs
           through <strong style="color:var(--ink)">${to ? esc(dateFmt.format(to)) : 'its new end date'}</strong>.</p>
-        <p><button type="button" class="btn quiet" data-extend-again>Add another 30 days</button></p>
+        <p><button type="button" class="btn quiet" data-extend-again>Add another month</button></p>
       </div>`;
   }
   if (pending)
     return `
       <div class="followup-offer">
-        <h3>Your extension checkout is still open</h3>
+        <h3>Your next month is waiting to be started</h3>
         <p>Finish it or let it lapse; nothing is charged until you do.</p>
         <p><a class="btn glow" href="${esc(pending.url)}">Finish checkout</a></p>
       </div>`;
   const end = windowEndOf(c);
   return `
     <div class="followup-offer">
-      <h3>Need more time on the clock?</h3>
+      <h3>Keep going another month?</h3>
       <p>Your coordination window ${end && end.getTime() < Date.now() ? 'ended' : 'runs through'}
         <strong style="color:var(--ink)">${end ? esc(dateFmt.format(end)) : 'its end date'}</strong>.
-        Add 30 days at a time, as often as your case needs it — the check-ins,
-        the calls on your behalf, and the rest keep running exactly as they are.</p>
+        Another month is the same price as the last one, and the check-ins, the
+        calls on your behalf and the rest carry on exactly as they are. Take as
+        many as your case needs, one at a time, and stop whenever you like.</p>
       <div class="fu-buy">
         <span class="price">$${(EXTEND_PRICE_CENTS / 100).toLocaleString()}</span>
-        <button class="btn glow" data-buy-extend>Add 30 days</button>
+        <button class="btn glow" data-buy-extend>Add another month</button>
       </div>
       <p class="error" data-extend-error hidden></p>
     </div>`;
@@ -1280,7 +1282,7 @@ function renderAddons(el, c) {
  * confirms or declines every one; a decline - his or the clinic's - refunds
  * the payment in full, and the card says so before they type a thing.
  */
-const TELEHEALTH_PRICE_CENTS = 25000;
+const TELEHEALTH_PRICE_CENTS = 37500;
 function telehealthCard(c) {
   const p = c.pendingTelehealth;
   const visits = (Array.isArray(c.telehealthVisits) ? c.telehealthVisits : [])
@@ -1463,17 +1465,50 @@ function upgradeOffer(c) {
           start until it is signed, so it is the one thing I need from you now.</p>
       </div>`;
   if (c.fullAccess || c.status === 'closed') return '';
-  // Not offered while a checkout for it is already live: two payable links
-  // for the same thing is how somebody pays twice.
-  if (c.pendingFullAccess?.url) return `
+
+  const req = c.fullAccessRequest;
+  // Approved and waiting to be paid. This is the ONLY payable link, and it
+  // exists because he said yes - nothing takes a card before that.
+  if (req?.state === 'approved' && c.pendingFullAccess?.url
+    && toDate(c.pendingFullAccess.expiresAt).getTime() > Date.now()) return `
     <div class="followup-offer">
-      <h3>Your Hands-Off checkout is still open</h3>
-      <p>Pick up where you left off, or ignore this and it expires on its own.</p>
+      <h3><span class="fu-tick" aria-hidden="true">\u2713</span> I can take your case.</h3>
+      <p>Your first month is ready to start. Your case fee comes off it, so
+        this is the difference and not a second payment for the same work.</p>
       <div class="fu-buy">
-        <a class="btn glow" href="${esc(c.pendingFullAccess.url)}">Finish that</a>
+        <span class="price">$${Math.max(1, Math.round(Number(c.pendingFullAccess.cents) / 100)).toLocaleString()}</span>
+        <a class="btn glow" href="${esc(c.pendingFullAccess.url)}">Start month one</a>
+      </div>
+      <p class="fu-fine">After this, it is $${Math.round(fullAccessCents / 100).toLocaleString()} a month for
+        as long as your case needs me, and every month is your choice.</p>
+    </div>`;
+  // Asked, waiting on him. Nothing has been charged and no card was taken.
+  if (req?.state === 'pending') return `
+    <div class="followup-offer">
+      <h3>Your request is with me</h3>
+      <p>I read every one of these myself, because I only carry two of these
+        cases at a time and I would rather say no than do it badly.
+        <strong style="color:var(--ink)">Nothing has been charged</strong> and
+        I have not taken a card.</p>
+      <p class="fu-fine">You will hear from me either way. If I say yes, you
+        will get a link to start your first month.</p>
+      <p><button type="button" class="btn quiet tiny" data-withdraw-upgrade>Withdraw my request</button></p>
+      <p class="error" data-upgrade-error hidden></p>
+    </div>`;
+  // He said no. His words, verbatim, and nothing was charged.
+  if (req?.state === 'declined') return `
+    <div class="followup-offer">
+      <h3>I could not take this one on</h3>
+      ${req.declineReason ? `<p>${esc(req.declineReason)}</p>` : ''}
+      <p class="fu-fine">Nothing was charged. Ask me again any time, in chat or
+        from here, if things change.</p>
+      <div class="fu-buy">
+        <button class="btn quiet" data-ask-again>Ask again</button>
       </div>
     </div>`;
-  const diff = Math.max(1, Math.round(upgradeQuoteCents(c) / 100));
+
+  const monthly = Math.max(1, Math.round(fullAccessCents / 100));
+  const first = Math.max(1, Math.round(upgradeQuoteCents(c) / 100));
   return `
     <div class="followup-offer">
       <h3>Want me to deal with them directly?</h3>
@@ -1494,21 +1529,66 @@ function upgradeOffer(c) {
         </label>
       </details>
       <div class="fu-buy">
-        <span class="price">$${diff}</span>
-        <button class="btn glow" data-buy-upgrade disabled>Upgrade this case</button>
+        <span class="price">$${monthly.toLocaleString()}<span style="font-size:.6em; font-weight:400;">/month</span></span>
+        <button class="btn glow" data-buy-upgrade disabled>Ask me to take this case</button>
       </div>
-      <p class="fu-fine">That is the difference between what you have already
-        paid and the Hands-Off price. Open the note above first: it is the
-        whole of what I do, what I need from you, and where it stops, and the
-        button unlocks once you have read it through.</p>
+      <p class="fu-fine"><strong style="color:var(--ink)">Asking costs nothing
+        and takes no card.</strong> I answer every request myself. If I say yes,
+        your first month is
+        <strong style="color:var(--ink)">$${first.toLocaleString()}</strong> — the
+        month, less the case fee you have already paid, so you never pay twice
+        for the same work. Every month after that is your choice, one at a time.
+        Open the note above first: it is the whole of what I do, what I need
+        from you, and where it stops.</p>
       <p class="error" data-upgrade-error hidden></p>
     </div>`;
 }
 
 function wireUpgradeOffer(el, c) {
+  const errEl = el.querySelector('[data-upgrade-error]');
+  const repaint = () => {
+    el.innerHTML = upgradeOffer(c);
+    wireUpgradeOffer(el, c);
+    addAboutButton(el, 'handsOff');
+  };
+
+  // "Ask again" after a decline: clear the answered request locally and put
+  // the asking card back. The Worker overwrites a declined request with a
+  // fresh pending one, so nothing has to be deleted first.
+  const again = el.querySelector('[data-ask-again]');
+  if (again) {
+    again.addEventListener('click', () => { c = { ...c, fullAccessRequest: null }; repaint(); });
+    return;
+  }
+
+  // Withdrawing a pending ask. Theirs to take back for as long as it is still
+  // waiting on him.
+  const undo = el.querySelector('[data-withdraw-upgrade]');
+  if (undo) {
+    undo.addEventListener('click', async () => {
+      undo.disabled = true;
+      if (errEl) errEl.hidden = true;
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch('/api/upgrade', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ caseId: c.id, action: 'withdraw' }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || `Couldn't do that (${res.status})`);
+        c = { ...c, fullAccessRequest: null };
+        repaint();
+      } catch (err) {
+        if (errEl) { errEl.textContent = err.message; errEl.hidden = false; }
+        undo.disabled = false;
+      }
+    });
+    return;
+  }
+
   const btn = el.querySelector('[data-buy-upgrade]');
   if (!btn) return;
-  const errEl = el.querySelector('[data-upgrade-error]');
 
   // Proof of exposure, exactly as booking does it (book.js): the box unlocks
   // only once the note has been opened AND scrolled to its end, and the buy
@@ -1540,30 +1620,23 @@ function wireUpgradeOffer(el, c) {
     errEl.hidden = true;
     try {
       const idToken = await user.getIdToken();
+      // An ASK, not a checkout. There is no quote handshake here any more and
+      // there does not need to be: the Worker records the rate quoted at this
+      // moment, and an approval days later charges THAT number rather than
+      // whatever the live rate has climbed to since.
       const res = await fetch('/api/upgrade', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-        // The number the card is SHOWING, so a stale one is refused rather
-        // than silently charged. The card paints once from a compiled-in
-        // price and a fire-and-forget /api/rates; with that fetch slow or
-        // failing, Stripe could otherwise have taken a different figure from
-        // the one on screen. Booking has had this handshake for a while; the
-        // upgrade never did.
         body: JSON.stringify({
           caseId: c.id,
-          quotedCents: upgradeQuoteCents(c),
           acks: { [FULL_ACCESS_TERMS.id]: ackAt },
         }),
       });
       const out = await res.json().catch(() => ({}));
-      if (res.status === 409 && out.error === 'full-booked') {
-        errEl.textContent = 'I am at capacity for this right now and cannot take another one honestly. Ask me in chat and I will tell you when a place opens.';
-        errEl.hidden = false;
-        btn.disabled = true;
-        return;
-      }
-      if (!res.ok || !out.url) throw new Error(out.error || `Couldn't start that (${res.status})`);
-      location.assign(out.url);
+      if (!res.ok) throw new Error(out.error || `Couldn't send that (${res.status})`);
+      c = { ...c, fullAccessRequest: { state: 'pending', at: out.at || new Date().toISOString() } };
+      repaint();
+      return;
     } catch (err) {
       errEl.textContent = err.message;
       errEl.hidden = false;

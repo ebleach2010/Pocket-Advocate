@@ -28,12 +28,26 @@ const lift = (names) => {
   // The cutover constant is READ from the Worker, not typed here: if it ever
   // moves, these checks move with it rather than quietly asserting a date the
   // product no longer uses.
-  const cutover = Number(W.match(/FULL_WINDOW_FROM_PURCHASE_AT = Date\.parse\('([^']+)'\)/)
-    ? Date.parse(W.match(/FULL_WINDOW_FROM_PURCHASE_AT = Date\.parse\('([^']+)'\)/)[1]) : NaN);
-  if (!Number.isFinite(cutover)) throw new Error('could not read FULL_WINDOW_FROM_PURCHASE_AT');
+  // Both cutovers are READ from the Worker, never typed here: if either date
+  // moves, these checks move with it rather than asserting a rule the product
+  // no longer follows.
+  const readAt = (name) => {
+    const m = W.match(new RegExp(`${name} = Date\\.parse\\('([^']+)'\\)`));
+    const t = m ? Date.parse(m[1]) : NaN;
+    if (!Number.isFinite(t)) throw new Error(`could not read ${name}`);
+    return t;
+  };
+  const readNum = (name) => {
+    const m = W.match(new RegExp(`const ${name} = (\\d+);`));
+    if (!m) throw new Error(`could not read ${name}`);
+    return Number(m[1]);
+  };
   return new Function('Date', 'FULL_WINDOW_DAYS', 'FOLLOWUP_EXPIRY_DAYS',
-    'FULL_WINDOW_FROM_PURCHASE_AT',
-    `${src}\n return { ${names.filter((n) => !n.includes('=')).join(', ')} };`)(FakeDate, 60, 30, cutover);
+    'FULL_WINDOW_FROM_PURCHASE_AT', 'FULL_MONTHLY_FROM_AT', 'FULL_LEGACY_WINDOW_DAYS',
+    `${src}\n return { ${names.filter((n) => !n.includes('=')).join(', ')} };`)(
+    FakeDate, readNum('FULL_WINDOW_DAYS'), 30,
+    readAt('FULL_WINDOW_FROM_PURCHASE_AT'), readAt('FULL_MONTHLY_FROM_AT'),
+    readNum('FULL_LEGACY_WINDOW_DAYS'));
 };
 const { heldMs, onHold, fullAccessWindowEnd, followUpBase, followUpExpiry } =
   lift(['heldMs', 'onHold', 'fullAccessWindowEnd', 'followUpBase', 'followUpExpiry']);
@@ -60,22 +74,27 @@ ck('onHold reads the pause, not the bank',
 // a naive "prefer the purchase date" would have taken days off live clients
 // rather than falling back to anything. Both sides are pinned here.
 const call = '2026-09-05T17:00:00Z';
-const bought = '2026-08-30T17:00:00Z';           // after the cutover
+const bought = '2026-08-30T17:00:00Z';           // after BOTH cutovers
 const plain = { fullAccessAt: bought, appointment: { start: call } };
 const held = { fullAccessAt: bought, appointment: { start: call }, hold: { pausedAt: null, totalMs: 11 * DAY } };
-ck('the tier window is 60 days from the purchase',
-   fullAccessWindowEnd(plain).getTime() === Date.parse(bought) + 60 * DAY);
+// A month at a time now (Eric, 2026-08-25): month one at approval, every
+// further month adding another thirty days through fullAccessExtraDays.
+ck('one paid month is 30 days from the purchase',
+   fullAccessWindowEnd(plain).getTime() === Date.parse(bought) + 30 * DAY);
 const oldCall = '2026-08-01T17:00:00Z';
 const oldBought = '2026-07-28T17:00:00Z';        // before the cutover
-ck('a case bought before the cutover keeps the first-call window it was sold',
+ck('a case bought before the cutover keeps the 60-day first-call window it was sold',
    fullAccessWindowEnd({ fullAccessAt: oldBought, appointment: { start: oldCall } }).getTime()
      === Date.parse(oldCall) + 60 * DAY);
 ck('a legacy case with no purchase stamp falls back to the first call',
    fullAccessWindowEnd({ appointment: { start: oldCall } }).getTime() === Date.parse(oldCall) + 60 * DAY);
 ck('a post-cutover case with no first call still runs from purchase',
-   fullAccessWindowEnd({ fullAccessAt: bought }).getTime() === Date.parse(bought) + 60 * DAY);
-ck('thirty bought days extend the window and nothing else does',
+   fullAccessWindowEnd({ fullAccessAt: bought }).getTime() === Date.parse(bought) + 30 * DAY);
+ck('a second month doubles the window and nothing else does',
    fullAccessWindowEnd({ ...plain, fullAccessExtraDays: 30 }).getTime()
+     === Date.parse(bought) + 60 * DAY);
+ck('a third month makes it ninety days',
+   fullAccessWindowEnd({ ...plain, fullAccessExtraDays: 60 }).getTime()
      === Date.parse(bought) + 90 * DAY);
 ck('an 11-day pause puts 11 days back on the tier window',
    fullAccessWindowEnd(held).getTime() - fullAccessWindowEnd(plain).getTime() === 11 * DAY);
@@ -86,7 +105,7 @@ ck('the follow-up month is 30 days from purchase',
 ck('and it moves by the same pause',
    followUpExpiry(fuHeld).getTime() - followUpExpiry(fu).getTime() === 11 * DAY);
 ck('resuming really is the same timestamp: nothing is lost',
-   fullAccessWindowEnd(held).getTime() - Date.parse(bought) === 60 * DAY + 11 * DAY);
+   fullAccessWindowEnd(held).getTime() - Date.parse(bought) === 30 * DAY + 11 * DAY);
 
 // ---- the clock a pause must NOT move ------------------------------------
 const appealFn = W.match(/async function runAppealWarnings\(env\) \{[\s\S]*?\n\}/)[0];

@@ -12,8 +12,8 @@
 export const SERVICE_ABOUT = {
   case: {
     title: 'The Advocacy Case',
-    price: '$650, once',
-    tldr: 'One flat $650. You talk, I dig in, and within a week of our call you hold a written plan your own doctors can act on. No hourly meter, no guessing what you get.',
+    price: '$950, once',
+    tldr: 'One flat $950. You talk, I dig in, and within a week of our call you hold a written plan your own doctors can act on. No hourly meter, no guessing what you get.',
     paragraphs: [
       'An Advocacy Case is me taking your whole medical story, the records, the labs, the half-answers, the years of going in circles, and turning it into something you can act on. It starts with a private call, phone or video, usually about an hour. Before it, you upload whatever you have. I read all of it properly before we ever speak.',
       'After the call you get a written report within 7 days. It organizes your history, names the open questions, and lays out the next steps worth discussing with your care team: the referral worth chasing, the result worth a second look, the question worth asking by name. The call is recorded and saved in your private file so nothing said gets lost. Both are yours to keep, forever.',
@@ -36,7 +36,7 @@ export const SERVICE_ABOUT = {
 
   chat: {
     title: '24/7 Priority Chat',
-    price: '$95/mo',
+    price: '$150/mo',
     tldr: 'A private line to me from your phone. Questions, updates, photos, records, and answers from a person who already knows your story. Cancel anytime; your history stays yours.',
     paragraphs: [
       'The chat line is for everything that happens between appointments: the letter you do not understand, the new symptom you are not sure matters, the scheduling call you are dreading. Send it when it happens. I read it personally and answer with your history in mind, not from a script.',
@@ -54,15 +54,18 @@ export const SERVICE_ABOUT = {
 
   handsOff: {
     title: 'Hands-Off Case Management',
-    price: '$3,500 total. On an open case you pay the difference.',
-    tldr: 'You hand me the case. I do the legwork: the calls, the records, the insurer, the appeals, for 60 days, and we talk at least twice a month so you always know where it stands.',
+    price: '$2,600 a month. On an open case, your case fee comes off the first one.',
+    tldr: 'You hand me the case. I do the legwork: the calls, the records, the insurer, the appeals, and we talk at least twice a month so you always know where it stands. A month at a time, for as long as you need it.',
     paragraphs: [
       'In a standard case I work beside you: I read, I explain, and you carry it to your doctors and your insurer. With Hands-Off Case Management I work inside the case. I phone your clinics, chase your records, deal with your insurer, and write your appeals myself. Your job shrinks to a short checklist, signing the documents that give me the authority to act, and from there the legwork is mine.',
-      'We speak at least twice a month, by phone or video, for the whole window. That rhythm is part of the service, not an option: it is how the case keeps moving, and how you always know what happened without having to push for updates. If something breaks between check-ins, I add calls at no charge.',
+      'You ask, and I answer personally. I carry two of these at a time, so this is not something you can simply buy - you send the request, I read it, and I tell you yes or no. Asking costs nothing and takes no card. If I say no, nothing is charged and I will tell you why.',
+      'It is billed a month at a time, and I would rather explain why than have you wonder. A single payment for a whole engagement is a large thing to hand over at the exact moment you are least able to think about money. Monthly means the biggest number you ever see is one month, and it means you are never locked into a case that is going nowhere. Most of these run about two months. Some run one. Some run five. You decide each month.',
+      'We speak at least twice a month, by phone or video, for as long as the case runs. That rhythm is part of the service, not an option: it is how the case keeps moving, and how you always know what happened without having to push for updates. If something breaks between check-ins, I add calls at no charge.',
       'If your insurer says no, I write the appeal: a first-level internal appeal, and one escalation if they deny it. If a doctor will not cooperate, a referral that never gets sent, records that never arrive, I put it in writing and go through the channels myself. Appeal help alone typically runs $500 to $2,500 per appeal elsewhere; two are included here, plus everything around them.',
-      'The window is 60 days from the day you buy it, and you can add 30 days at a time whenever the case needs more. I cannot make an insurer answer faster and I cannot promise an outcome. What I promise is that somebody who knows these clocks is running yours, and that you hear the truth about how it is going, at least twice a month.',
+      'I cannot make an insurer answer faster and I cannot promise an outcome. What I promise is that somebody who knows these clocks is running yours, and that you hear the truth about how it is going, at least twice a month.',
     ],
     bullets: [
+      'Asking costs nothing and takes no card. I answer every request myself',
       'Everything in an Advocacy Case included: the call, the record review, the written report',
       'I do the legwork: your clinics, your records, your insurer, handled by me on your authority',
       'Check-in calls at least twice a month, included; extra calls at my discretion, free',
@@ -71,31 +74,33 @@ export const SERVICE_ABOUT = {
       'The second appeal does not expire with the window: a late denial still gets its answer',
       'I write to providers too, when a doctor will not cooperate',
       'Telehealth advocacy included: I join your video visits and advocate live',
-      '60 days from purchase; add 30 more from this tab whenever you need them',
-      'A short checklist starts my authority; your pace is your own, the clock runs from purchase',
-      'On an open case you pay the difference between what you paid and the full price, never twice',
+      'A month at a time. Continue or stop at the end of any month, no penalty either way',
+      'A short checklist starts my authority; your pace is your own, the clock runs from the day you start',
+      'On an open case, the case fee you already paid comes off your first month, never twice',
     ],
   },
 
   extension: {
-    title: '30 more days',
-    price: '$1,750 per 30 days',
-    tldr: 'Thirty more days of everything: the check-ins, the calls on your behalf, the lot. Add it as many times as your case needs. Nothing else changes.',
+    title: 'Another month',
+    price: '$2,600 a month, the same as the first',
+    tldr: 'Another month of everything: the check-ins, the calls on your behalf, the lot. Take as many as your case needs, one at a time. Nothing else changes.',
     paragraphs: [
-      'Some cases outlast sixty days through nobody’s fault: a records office takes its full month, a referral sits in a queue, an insurer uses every day it is allowed. An extension keeps me inside the case while those clocks run.',
-      'Everything continues exactly as it was: the same cadence of check-ins, the same calls made in your name, the same file. There is no obligation to extend, ever, and no penalty for stopping: the second appeal I owe you survives the window regardless.',
+      'Some cases outlast a month or two through nobody\u2019s fault: a records office takes its full thirty days, a referral sits in a queue, an insurer uses every day it is allowed. Continuing keeps me inside the case while those clocks run.',
+      'It costs exactly what the first month cost. There is no separate extension product and no penalty rate for needing longer - the price is the price, month after month.',
+      'Everything continues exactly as it was: the same cadence of check-ins, the same calls made in your name, the same file. There is no obligation to continue, ever, and no penalty for stopping: the second appeal I owe you survives the window regardless.',
     ],
     bullets: [
       'Thirty days added to your coordination window, from the day it would have ended',
+      'The same price as your first month. It never climbs for continuing',
       'Same check-ins, same calls, same everything',
-      'Stack them: add 30 days as many times as the case needs',
+      'Take as many as the case needs, one at a time',
       'Never required. The obligations that outlive the window outlive it either way',
     ],
   },
 
   followup: {
     title: 'Follow-Up Session',
-    price: '$175, at the price you were quoted when you booked',
+    price: '$225, at the price you were quoted when you booked',
     tldr: 'A second full session on the same case, once your report has landed. Same file, no starting over.',
     paragraphs: [
       'The report usually raises things worth talking through: what changed, what a result actually means, which next step to take first. A follow-up is a full session for exactly that, on the same case, with everything we already built still in front of us.',
@@ -111,11 +116,11 @@ export const SERVICE_ABOUT = {
 
   telehealth: {
     title: 'Telehealth Appointment Advocacy',
-    price: '$250 flat. Included with Hands-Off Case Management.',
+    price: '$375 flat. Included with Hands-Off Case Management.',
     tldr: 'I join your telehealth appointment by video and advocate live. If I cannot attend, or your provider refuses, every dollar comes back.',
     paragraphs: [
       'You name the appointment: the time, the clinic, the provider. I confirm each one personally, and then I am in the visit with you, asking the questions that get lost, keeping the thread when the appointment moves fast, and making sure what was agreed gets said out loud before it ends.',
-      'Your provider still controls their visit and can decline my presence. If that happens, or if I cannot attend, the $250 for that appointment refunds in full, promised before you type a thing. And I never record a provider’s visit: notes and advocacy only.',
+      'Your provider still controls their visit and can decline my presence. If that happens, or if I cannot attend, the $375 for that appointment refunds in full, promised before you type a thing. And I never record a provider’s visit: notes and advocacy only.',
     ],
     bullets: [
       'I attend your telehealth visit by video and advocate live',

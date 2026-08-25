@@ -64,13 +64,26 @@ export class AdvisorTurn extends WorkflowEntrypoint {
 // page quotes one number and the card is charged another (which is exactly
 // what happened after the $150 experiment). Seeds (Eric, 2026-08-20): $265
 // per case, a $75 follow-up bought separately, $50/mo chat.
-const CASE_PRICE_CENTS = 65000;
+// Recalibrated 2026-08-25 to sit at market rather than under it. The research
+// behind every number here: independent advocates bill $70-500/hr, national
+// average $175, working band $100-350; one comparable practice charges $200/hr
+// in business hours and $250/hr for urgent work. Each price below is the
+// honest hours for that service priced in the $175-200 band.
+//
+// The case is ~5.25 hours (overview call, record review, written report), so
+// $950 is $181/hr. The closest published comparable - assessment plus a
+// written plan, flat - is $650, which is where this sat before.
+const CASE_PRICE_CENTS = 95000;
 // The follow-up is a second discussion on the same case, sold from the case
 // after the report lands rather than at checkout. It is NOT included.
-const ADDON_PRICE_CENTS = 17500;
+// ~1.25 hours with prep, so $225 is $180/hr.
+const ADDON_PRICE_CENTS = 22500;
 // The chat subscription's SEED. The live number lives on the rates doc like
 // the other two and climbs on its own; see the ratchet below.
-const SUB_PRICE_CENTS = 9500;
+// The one price with no honest hourly anchor: chat is not case work. The
+// nearest comparable is a monthly retainer, and those start at $200-500/mo,
+// so even here it sits under the floor of a much bigger service.
+const SUB_PRICE_CENTS = 15000;
 // Full access: Eric works INSIDE the case, not beside it - records under a
 // signed release, three-way calls with clinics, and insurance appeals he
 // drafts and files himself.
@@ -89,16 +102,49 @@ const SUB_PRICE_CENTS = 9500;
 // the tier is realistically 25-35 hours, so $3,500 is $100-140/hr. He holds
 // at most FULL_MAX_OPEN_DEFAULT of these at once with health that varies,
 // so each slot has to carry its weight - price above the floor, not at it.
-const FULL_PRICE_CENTS = 350000;
+// Hands-Off is billed BY THE MONTH, not as a lump (Eric, 2026-08-25). The
+// price is the same money either way; what changes is the moment of paying.
+//
+// The reasoning, because it decides the shape of three routes: hourly was
+// the other option and it is wrong for this product. Metered billing makes
+// customers ration their own usage - the taxi-meter effect - and this tier's
+// whole promise is "call me, I will deal with it". Billing by the hour tells
+// the client every call costs them money, which quietly destroys the thing
+// they bought. Flat rates also win on plain preference (the flat-rate bias:
+// an insurance effect, a taxi-meter effect and a convenience effect, and
+// these clients are already drowning in variable medical bills).
+//
+// But a single $5,200 charge is a large salient loss, and loss aversion
+// makes one big payment hurt more than its size. The fix in the literature
+// is not a lower price, it is decoupling payment from purchase - so the
+// price stays at market and the billing goes monthly. The largest number a
+// client ever sees is one month.
+//
+// ~15 hours a month, so $2,600 is $173/hr against a $175 national average.
+const FULL_MONTH_CENTS = 260000;
+// A month of coverage. Every purchase on this tier buys exactly this.
+const FULL_MONTH_DAYS = 30;
+// What the scope note says the engagement realistically takes, and what the
+// card leads with. It is NOT a payment lock: month one is charged on
+// approval and every further month is a choice the client makes. Locking
+// them in would have re-imported the commitment friction the monthly shape
+// exists to remove, and it gives Eric a case that cannot walk.
+const FULL_MIN_MONTHS = 2;
+// The window a single paid month opens. Further months each add another
+// FULL_MONTH_DAYS through fullAccessExtraDays, so the arithmetic in
+// fullAccessWindowEnd is unchanged - only the base moved from 60 to 30.
+const FULL_WINDOW_DAYS = 30;
+// Cases sold BEFORE the monthly reshape bought a 60-day window in one
+// payment. They keep it. Same discipline as FULL_WINDOW_FROM_PURCHASE_AT
+// below: a live client's window never shrinks because the product changed
+// underneath them.
+const FULL_MONTHLY_FROM_AT = Date.parse('2026-08-26T00:00:00Z');
+const FULL_LEGACY_WINDOW_DAYS = 60;
 // From the FIRST CALL, not from purchase or from the signed authorisation:
 // one date both sides know, which cannot stall because somebody is slow to
-// sign. The 60-day reasoning is worth keeping: he first set two weeks to
-// protect his own bandwidth, then talked himself out of it - a short clock
-// converts delays he does not control into deadline pressure he cannot
-// escape, and records requests alone run 2-4 weeks. Window length governs
-// how frantic each case feels; the concurrency cap governs how many he
-// carries. Long window, low cap.
-const FULL_WINDOW_DAYS = 60;
+// sign. Window length governs how frantic each case feels; the concurrency
+// cap governs how many he carries. Long window, low cap.
+//
 // The moment the window started running from purchase instead of from the
 // first call. Cases stamped before this keep the rule they were sold under;
 // see fullAccessWindowEnd.
@@ -107,23 +153,22 @@ const FULL_WINDOW_FROM_PURCHASE_AT = Date.parse('2026-08-25T00:00:00Z');
 // FLAG, not an automation - the dashboard marks a tier case that has gone
 // this long without a check-in on the books, and Eric schedules the call.
 const CHECKIN_DAYS = 14;
-// Extensions, bought from inside an open tier case. Scaled with the $3,500
-// base: half the base for half the duration stays the sentence he can say.
-const FULL_EXTEND = { 30: 175000, 60: 275000 };
-// Case chat opens this many days before the booked call; opening it sooner
-// costs a one-time fee at the direct-line price. Eric, 2026-08-22:
-// "explicitly for avoiding chat abuse by booking two months in advance."
+// One more month, bought from inside an open tier case. The SAME number as
+// month one, because it is the same thing - which is the point: "keep going
+// another month" is a far easier sentence than "buy a 30-day extension",
+// and the upsell stops being a separate decision.
+const FULL_EXTEND = { 30: FULL_MONTH_CENTS };
 const CHAT_OPEN_DAYS = 7;
 const CHAT_OPEN_CENTS = 5000;
 // Telehealth Appointment Advocacy: Eric joins the client's own telehealth
-// visit by video to advocate live. $250 flat per appointment (Eric,
-// 2026-08-25, priced against advocate hourly rates of $100-500 for the
-// realistic 1.5-2h of prep + visit + written debrief). NOT on the ratchet -
+// visit by video to advocate live. $375 flat per appointment - the realistic
+// 1.5-2h of prep, visit and written debrief priced against the $250/hr URGENT
+// rate rather than the standard one, because he is attending live. NOT on the ratchet -
 // a flat number he can say in a sentence. Included free on the tier: he
 // confirms or denies every appointment either way, so volume stays his.
 // If he denies, or the clinic refuses him entry, this exact amount refunds -
 // the case fee is never part of it.
-const TELEHEALTH_PRICE_CENTS = 25000;
+const TELEHEALTH_PRICE_CENTS = 37500;
 
 // The ratchet, v2 (Eric, 2026-08-23: "Pricing will now scale exponentially
 // until it hits $1000/case without add-on and $500 cap for f/u add-on. Chat
@@ -137,10 +182,10 @@ const TELEHEALTH_PRICE_CENTS = 25000;
 // nothing anywhere says any of it is happening.
 const RATE_GROWTH = 1.10;
 const RATE_ROUND_CENTS = 500;
-const CASE_CAP_CENTS = 140000;
+const CASE_CAP_CENTS = 160000;
 const ADDON_CAP_CENTS = 40000;
 const SUB_STEP_CENTS = 500;
-const SUB_CAP_CENTS = 15000;
+const SUB_CAP_CENTS = 25000;
 // Full access climbs GENTLER than the rest: 5% a booking, to the nearest $25,
 // parked at $5,000. Two reasons. A 10% step from $3,500 leaves reach behind
 // in three sales, and this tier has a second throttle the others do not - a
@@ -152,11 +197,14 @@ const FULL_ROUND_CENTS = 2500;
 // Scaled with the base: about seven bookings from $3,500 to the ceiling,
 // where the scope pays $145-200/hr - the honest top for non-attorney
 // advocacy. Also the manual setter's hard max (RATE_MAX_CENTS), on purpose.
-const FULL_CAP_CENTS = 500000;
+// A MONTHLY ceiling now, not a 60-day one. $3,400/mo is ~15 hours at
+// $227/hr - inside the $100-350 working band and under the $250/hr urgent
+// rate, which is the top I would defend for planned (not emergency) work.
+const FULL_CAP_CENTS = 340000;
 // Sanity rails on the manual setter, not on the ratchet. A typo that sets the
 // case rate to $5 or $50,000 should bounce rather than take a booking.
 const RATE_MIN_CENTS = 5000;
-const RATE_MAX_CENTS = 500000;
+const RATE_MAX_CENTS = 340000;
 const RATES_PATH = 'config/rates';
 // The line under which a case is being worked at a loss, in cents per hour.
 // Eric, 2026-08-23: "I've lost money on my current client." The app counts
@@ -180,7 +228,7 @@ async function readRates(env) {
     caseCents: Number(d.caseCents) > 0 ? Number(d.caseCents) : CASE_PRICE_CENTS,
     addonCents: Number(d.addonCents) > 0 ? Number(d.addonCents) : ADDON_PRICE_CENTS,
     subCents: Number(d.subCents) > 0 ? Number(d.subCents) : SUB_PRICE_CENTS,
-    fullCents: Number(d.fullCents) > 0 ? Number(d.fullCents) : FULL_PRICE_CENTS,
+    fullCents: Number(d.fullCents) > 0 ? Number(d.fullCents) : FULL_MONTH_CENTS,
     // The floor below which a case is being worked at a loss. Eric's own
     // number, set from the dashboard; the default is the bottom of the
     // national independent-advocacy band.
@@ -676,6 +724,8 @@ export default {
         return await handleReviewsPublic(env);
       if (url.pathname === '/api/upgrade' && request.method === 'POST')
         return await handleUpgradeCheckout(request, env);
+      if (url.pathname === '/api/admin/full-request' && request.method === 'POST')
+        return await handleFullRequestDecision(request, env);
       if (url.pathname === '/api/followup' && request.method === 'POST')
         return await handleFollowUpCheckout(request, env);
       if (url.pathname === '/api/extend' && request.method === 'POST')
@@ -1215,11 +1265,12 @@ async function openTuesdaySlots(env) {
  * the dashboard, his numbers win and this stays out of the way forever.
  */
 async function restructureRates(env) {
-  // A NEW marker, deliberately. The 08-23 one finished on the live database
-  // during the hour the first version of this tier was up, so it will never
-  // fire again - and it wrote a tier price that no longer exists. The base
-  // prices below are unchanged from that run; only fullCents moves.
-  const MARKER = 'migrations/reprice-2026-08-24-tier';
+  // A NEW marker again, and this one is not optional. fullCents changed
+  // MEANING on 2026-08-26: it used to be the price of a 60-day engagement
+  // and it is now the price of one month. A live doc holding the old lump
+  // would read as a monthly rate and charge nearly double. Every seed moved
+  // in the same pass (the market recalibration), so this rewrites them all.
+  const MARKER = 'migrations/reprice-2026-08-26-monthly';
   const m = await getDoc(env, MARKER);
   if (m?.data.finishedAt) return;
   if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
@@ -1246,14 +1297,18 @@ async function restructureRates(env) {
     // would have silently condemned Full Access to sell at $3,500 for ever,
     // against a scope note, a PR and a checkout card that all say $1,500.
     // Order of operations must not decide a price.
+    // Even hand-set rates get fullCents rewritten, for the same reason as
+    // last time only more so: whatever number is in there was chosen for a
+    // 60-day engagement, and the field now means one month. A number chosen
+    // for a different unit is not a choice worth preserving.
     const handSet = !!doc?.data.setByHand;
     const next = handSet
-      ? { fullCents: FULL_PRICE_CENTS, updatedAt: new Date() }
+      ? { fullCents: FULL_MONTH_CENTS, updatedAt: new Date() }
       : {
         caseCents: CASE_PRICE_CENTS,
         addonCents: ADDON_PRICE_CENTS,
         subCents: SUB_PRICE_CENTS,
-        fullCents: FULL_PRICE_CENTS,
+        fullCents: FULL_MONTH_CENTS,
         floorCents: HOURLY_FLOOR_CENTS,
         updatedAt: new Date(),
       };
@@ -1622,8 +1677,8 @@ function fullAccessLineItems(cents) {
         currency: 'usd',
         unit_amount: cents,
         product_data: {
-          name: 'Hands-Off Case Management',
-          description: 'Direct work with your clinics and insurer, including appeals',
+          name: 'Hands-Off Case Management, first month',
+          description: 'Direct work with your clinics and insurer, including appeals. Your case fee is credited against this.',
         },
       },
     },
@@ -1833,7 +1888,13 @@ function fullAccessWindowEnd(c) {
   const boughtUnderNewRule = bought && bought >= FULL_WINDOW_FROM_PURCHASE_AT;
   const start = boughtUnderNewRule ? bought : (firstCall || bought);
   if (!Number.isFinite(start) || !start) return null;
-  const days = FULL_WINDOW_DAYS + (Number(c.fullAccessExtraDays) || 0);
+  // A case sold before the monthly reshape paid ONE price for sixty days and
+  // keeps them. A case sold after buys thirty days at a time: month one at
+  // approval, and every further month adds another thirty through
+  // fullAccessExtraDays, which is the same field extensions always used.
+  const base = bought && bought >= FULL_MONTHLY_FROM_AT
+    ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS;
+  const days = base + (Number(c.fullAccessExtraDays) || 0);
   return new Date(start + days * 86_400_000 + heldMs(c));
 }
 async function fullAccessCapacity(env) {
@@ -4215,17 +4276,26 @@ async function handleChangelog(request, env) {
  * Stripe error.
  */
 function upgradeCents(c, liveFullCents) {
+  // MONTH ONE, not a 60-day total. The case fee they already paid is credited
+  // against it, so a $950 case makes the first month $1,650 - never twice for
+  // the same work. Every month after this one is the plain monthly rate.
   const alreadyPaid = Number(c.caseRateCents) || 0;
   return Math.max(100, liveFullCents - alreadyPaid);
 }
 
 /**
- * POST /api/upgrade - move an open case up to Full Access.
+ * POST /api/upgrade - ASK for Hands-Off Case Management.
  *
- * Deliberately the same shape as the follow-up purchase: it is the pattern
- * this codebase already proved for selling something from inside a case, and
- * two different shapes for two in-case purchases would be two things to keep
- * in step.
+ * This used to be a checkout. It is a request now (Eric, 2026-08-25: "Hands
+ * off cases get approval by me once they submit request. If I approve, they
+ * get charged."). Nothing is charged here and no card is taken - the client
+ * asks, Eric approves or declines from his chart, and only an approval
+ * creates a checkout.
+ *
+ * That also makes the concurrency cap real. It was checked here, but a third
+ * client could still buy one in the window between two checks; now the only
+ * way in is through a decision Eric makes with the current count in front of
+ * him.
  */
 async function handleUpgradeCheckout(request, env) {
   const user = await requireUser(request, env);
@@ -4240,33 +4310,107 @@ async function handleUpgradeCheckout(request, env) {
     return json({ error: 'This case already has Hands-Off Case Management.' }, 409);
   if (c.data.status === 'closed')
     return json({ error: 'This case is closed. Book a new one and we will start there.' }, 409);
-  // Capacity is checked here as well as at booking: an upgrade consumes one of
-  // the same slots, and the offer card can be a few minutes stale.
-  const cap = await fullAccessCapacity(env);
-  if (!cap.room) return json({ error: 'full-booked', open: cap.open, max: cap.max }, 409);
 
-  // The same gate booking enforces, and for the same reason: nobody buys a
-  // four figure engagement without the note that says where it stops. This
-  // was missing when the upgrade card first shipped, while the card's own
-  // fine print promised "you will be shown exactly what it covers, and where
-  // it stops, before anything is charged" - so the flow was quietly making
-  // the copy untrue. Caught reading the flow back, 2026-08-25.
+  // Withdrawing a request the client changed their mind about. Theirs to
+  // take back for as long as it is still pending.
+  if (body?.action === 'withdraw') {
+    if (c.data.fullAccessRequest?.state !== 'pending')
+      return json({ error: 'There is no request to withdraw.' }, 409);
+    const undone = await patchDoc(env, `cases/${caseId}`, { fullAccessRequest: null },
+      { mask: ['fullAccessRequest'], ifUpdateTime: c.updateTime });
+    if (undone === false) return json({ error: 'Try that once more.' }, 409);
+    return json({ ok: true, withdrawn: true });
+  }
+
+  // The same gate booking enforces, and for the same reason: nobody asks for
+  // a four figure engagement without the note that says where it stops.
   if (typeof body?.acks?.[FULL_ACCESS_ACK] !== 'number')
     return json({ error: 'Read the scope note and acknowledge it first.' }, 400);
 
-  const pending = c.data.pendingFullAccess;
-  if (pending?.url && new Date(pending.expiresAt || 0).getTime() > Date.now())
-    return json({ ok: true, url: pending.url });
+  const existing = c.data.fullAccessRequest;
+  if (existing?.state === 'pending')
+    return json({ ok: true, state: 'pending', at: existing.at });
 
   const live = await readRates(env);
-  const cents = upgradeCents(c.data, live.fullCents);
-  // Same rule the booking path runs: if the page quoted a different number,
-  // send the real one back and let it repaint rather than charging a card for
-  // a figure nobody agreed to.
-  const quoted = Number(body?.quotedCents) || 0;
-  if (quoted && quoted !== cents)
-    return json({ error: 'rate-changed', upgradeCents: cents, fullCents: live.fullCents }, 409);
-  const expiresAt = new Date(Date.now() + 23 * 3600_000);
+  const req = {
+    state: 'pending',
+    at: new Date(),
+    // The rate quoted at the moment of asking, so an approval days later
+    // charges the number they were shown rather than whatever the live rate
+    // has climbed to since. Eric sees this figure on the approve card.
+    monthCents: live.fullCents,
+    firstMonthCents: upgradeCents(c.data, live.fullCents),
+    ackAt: body.acks[FULL_ACCESS_ACK],
+    decidedAt: null,
+    declineReason: '',
+  };
+  const wrote = await patchDoc(env, `cases/${caseId}`, { fullAccessRequest: req },
+    { mask: ['fullAccessRequest'], ifUpdateTime: c.updateTime });
+  if (wrote === false) return json({ error: 'Try that once more.' }, 409);
+
+  const cap = await fullAccessCapacity(env);
+  for (const a of await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => [])) {
+    await notifyUser(env, a.id, {
+      title: 'Pocket Advocate',
+      body: `${firstName(c.data.clientName) || 'A client'} is asking for Hands-Off. ${cap.open}/${cap.max} open.`,
+      link: `/admin-case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
+  return json({ ok: true, state: 'pending', at: req.at });
+}
+
+/**
+ * POST /api/admin/full-request - approve or decline one of those asks.
+ *
+ * Approving is what creates the checkout, and the client is notified with the
+ * link rather than being charged behind their back: they asked, he said yes,
+ * they pay for month one. Declining charges nothing and says so plainly.
+ */
+async function handleFullRequestDecision(request, env) {
+  // 404, not 403, like every other admin route in this file.
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+  const decision = body?.decision === 'approve' ? 'approve'
+    : body?.decision === 'decline' ? 'decline' : '';
+  if (!decision) return json({ error: 'Bad request' }, 400);
+
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c) return json({ error: 'Not found' }, 404);
+  const req = c.data.fullAccessRequest;
+  if (req?.state !== 'pending') return json({ error: 'There is no request waiting.' }, 409);
+
+  if (decision === 'decline') {
+    const reason = typeof body?.reason === 'string' ? body.reason.trim().slice(0, 600) : '';
+    if (!reason)
+      return json({ error: 'Write the reason. The client reads it word for word.' }, 400);
+    const wrote = await patchDoc(env, `cases/${caseId}`, {
+      fullAccessRequest: { ...req, state: 'declined', decidedAt: new Date(), declineReason: reason },
+    }, { mask: ['fullAccessRequest'], ifUpdateTime: c.updateTime });
+    if (wrote === false) return json({ error: 'Try that once more.' }, 409);
+    if (c.data.clientUid) {
+      await notifyUser(env, c.data.clientUid, {
+        title: 'Pocket Advocate',
+        body: 'I have answered your Hands-Off request. Nothing was charged.',
+        link: `/case.html?id=${caseId}`,
+      }).catch(() => {});
+    }
+    return json({ ok: true, state: 'declined' });
+  }
+
+  // Approving. Capacity is checked HERE, at the only moment that can create
+  // one of these, so the cap cannot be raced any more.
+  const cap = await fullAccessCapacity(env);
+  if (!cap.room && !body?.overrideCap)
+    return json({ error: 'full-booked', open: cap.open, max: cap.max }, 409);
+
+  // The price they were quoted when they asked, not whatever the rate has
+  // climbed to while it sat on his desk.
+  const cents = Number(req.firstMonthCents) > 0
+    ? Number(req.firstMonthCents) : upgradeCents(c.data, (await readRates(env)).fullCents);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 3600_000);
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: c.data.clientEmail || undefined,
@@ -4276,16 +4420,27 @@ async function handleUpgradeCheckout(request, env) {
     cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),
     metadata: {
-      kind: 'fullaccess', caseId, uid: c.data.clientUid, fullCents: String(live.fullCents),
-      // Carried through Stripe so the acknowledgment lands on the case with
-      // the purchase, in the same `forms` map booking writes.
-      ackAt: String(body.acks[FULL_ACCESS_ACK]),
+      kind: 'fullaccess', caseId, uid: c.data.clientUid || '',
+      fullCents: String(req.monthCents || cents),
+      ackAt: String(req.ackAt || Date.now()),
     },
   });
-  await patchDoc(env, `cases/${caseId}`, {
-    pendingFullAccess: { sessionId: session.id, url: session.url, cents, createdAt: new Date(), expiresAt },
-  }, { mask: ['pendingFullAccess'] });
-  return json({ ok: true, url: session.url });
+  const wrote = await patchDoc(env, `cases/${caseId}`, {
+    fullAccessRequest: { ...req, state: 'approved', decidedAt: new Date() },
+    pendingFullAccess: {
+      sessionId: session.id, url: session.url, cents, createdAt: new Date(), expiresAt,
+    },
+  }, { mask: ['fullAccessRequest', 'pendingFullAccess'], ifUpdateTime: c.updateTime });
+  if (wrote === false) return json({ error: 'Try that once more.' }, 409);
+
+  if (c.data.clientUid) {
+    await notifyUser(env, c.data.clientUid, {
+      title: 'Pocket Advocate',
+      body: 'Good news - I can take your case. Your first month is ready to start.',
+      link: `/case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
+  return json({ ok: true, state: 'approved', url: session.url, cents });
 }
 
 /**
@@ -4329,17 +4484,26 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
     ...(c.data.forms || {}),
     ...(Number.isFinite(ackMs) && ackMs > 0 ? { [FULL_ACCESS_ACK]: new Date(ackMs) } : {}),
   };
+  const req = c.data.fullAccessRequest;
   const okBuy = await patchDoc(env, `cases/${caseId}`, {
     fullAccess: true,
     fullAccessAt: now,
-    // What they paid in total for the tier: the case fee plus this upgrade.
-    // The helpers that ask "what has this case paid" read this one field.
+    // What they paid in total for the tier: the case fee plus this first
+    // month. The helpers that ask "what has this case paid" read this field,
+    // and each further month adds to it as it is bought.
     fullAccessRateCents: (Number(c.data.caseRateCents) || 0) + amountCents,
+    // Month one of however many they choose to take. Every further month
+    // increments this and adds FULL_MONTH_DAYS to the window.
+    fullAccessMonths: 1,
     pendingFullAccess: null,
+    // The ask is answered and paid. Keeping it 'approved' would leave the
+    // chart showing a decision that has already turned into a live case.
+    fullAccessRequest: req ? { ...req, state: 'started', startedAt: now } : null,
     extraPayments: payments,
     forms,
   }, {
-    mask: ['fullAccess', 'fullAccessAt', 'fullAccessRateCents', 'pendingFullAccess', 'extraPayments', 'forms'],
+    mask: ['fullAccess', 'fullAccessAt', 'fullAccessRateCents', 'fullAccessMonths',
+      'pendingFullAccess', 'fullAccessRequest', 'extraPayments', 'forms'],
     ifUpdateTime: c.updateTime,
   }).catch(() => false);
   if (okBuy === false) return confirmFullAccessPurchase(env, session, attempt + 1);
@@ -4480,19 +4644,21 @@ async function confirmFollowUpPurchase(env, session) {
 /**
  * POST /api/extend  Body: { caseId }
  *
- * Thirty more days on a Hands-Off coordination window, purchasable as many
- * times as the case needs (Eric, 2026-08-25: "they can choose to add 30
- * days at a time under the same tab"). Flat FULL_EXTEND[30], off the
- * ratchet like telehealth, so no quote handshake: the price cannot move
- * between paint and tap.
+ * Another month on a Hands-Off case, as many times as it needs. This is the
+ * SAME price and the same thirty days as month one - the tier is monthly all
+ * the way down, so there is no separate "extension" product to reason about,
+ * just the next month.
+ *
+ * Off the ratchet, so no quote handshake: the price cannot move between the
+ * paint and the tap.
  */
 function extendLineItems(cents) {
   return [{
     price_data: {
       currency: 'usd',
       product_data: {
-        name: '30 more days',
-        description: 'Thirty days added to the coordination window on this case.',
+        name: 'Hands-Off Case Management, one month',
+        description: 'Another month of coordination on this case.',
       },
       unit_amount: cents,
     },
@@ -4593,15 +4759,24 @@ async function confirmExtensionPurchase(env, session, attempt = 0) {
   // on an undecided appeal), and adding 30 to an end date three weeks gone
   // sold the client nothing at all. Whatever the window has already lost is
   // credited first, so the new end is always today plus thirty at worst.
+  const months = (Number(c.data.fullAccessMonths) || 1) + 1;
   const prevEnd = fullAccessWindowEnd(c.data);
   const lapsedDays = prevEnd
     ? Math.max(0, Math.ceil((Date.now() - prevEnd.getTime()) / 86_400_000)) : 0;
-  const newDays = (Number(c.data.fullAccessExtraDays) || 0) + lapsedDays + 30;
+  const newDays = (Number(c.data.fullAccessExtraDays) || 0) + lapsedDays + FULL_MONTH_DAYS;
   const okBuy = await patchDoc(env, `cases/${caseId}`, {
     fullAccessExtraDays: newDays,
+    fullAccessMonths: months,
+    // Each month adds to what the case has paid in total, so the ledger and
+    // the "what has this case paid" helpers stay true as it runs on.
+    fullAccessRateCents: (Number(c.data.fullAccessRateCents) || 0) + amountCents,
     pendingExtend: null,
     extraPayments: payments,
-  }, { mask: ['fullAccessExtraDays', 'pendingExtend', 'extraPayments'], ifUpdateTime: c.updateTime });
+  }, {
+    mask: ['fullAccessExtraDays', 'fullAccessMonths', 'fullAccessRateCents',
+      'pendingExtend', 'extraPayments'],
+    ifUpdateTime: c.updateTime,
+  });
   // Lost the lock: re-run from the top; the sessionId dedup makes it idempotent.
   if (okBuy === false) return confirmExtensionPurchase(env, session, attempt + 1);
 

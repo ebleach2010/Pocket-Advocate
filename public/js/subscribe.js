@@ -14,7 +14,7 @@ import { rates } from './rates.js';
 // The seed only, for when /api/rates cannot be reached. The live chat price
 // climbs with every new client, so the real figure always comes from the
 // Worker; the checkout charges whatever the rates doc says at that moment.
-const SUB_PRICE_CENTS = 9500;
+const SUB_PRICE_CENTS = 15000;
 const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 
 hydrateNav();
