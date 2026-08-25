@@ -36,7 +36,7 @@ export const SERVICE_ABOUT = {
 
   chat: {
     title: '24/7 Priority Chat',
-    price: '$300/mo',
+    price: '$50/mo',
     tldr: 'A private line to me from your phone. Questions, updates, photos, records, and answers from a person who already knows your story. Cancel anytime; your history stays yours.',
     paragraphs: [
       'The chat line is for everything that happens between appointments: the letter you do not understand, the new symptom you are not sure matters, the scheduling call you are dreading. Send it when it happens. I read it personally and answer with your history in mind, not from a script.',

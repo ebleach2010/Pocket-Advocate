@@ -86,12 +86,14 @@ const CASE_PRICE_CENTS = 120000;
 const ADDON_PRICE_CENTS = 27500;
 // The chat subscription's SEED. The live number lives on the rates doc like
 // the other two and climbs on its own; see the ratchet below.
-// The one price with no honest hourly anchor: chat is not case work, so there
-// are no hours to price. The nearest comparable is a light monthly retainer,
-// and those run $200-500/mo - $300 is the middle of that. This is the number
-// I am least sure of, and it is the one to move first if renewals suffer:
-// subscriptions churn on price in a way project work does not.
-const SUB_PRICE_CENTS = 30000;
+// $50/mo, Eric's call (2026-08-26), against my $300 and the live $95.
+//
+// I had priced it at the middle of the $200-500/mo light-retainer band. He
+// overruled it, and the reasoning is his to make: chat is the cheap way in,
+// not a revenue line, and a low door on the subscription is worth more to
+// him than the margin on it. The market comparison in the research does not
+// bind here, because this is not case work and has no hours to price.
+const SUB_PRICE_CENTS = 5000;
 // Full access: Eric works INSIDE the case, not beside it - records under a
 // signed release, three-way calls with clinics, and insurance appeals he
 // drafts and files himself.
@@ -200,7 +202,10 @@ const RATE_ROUND_CENTS = 500;
 const CASE_CAP_CENTS = 180000;
 const ADDON_CAP_CENTS = 42500;
 const SUB_STEP_CENTS = 500;
-const SUB_CAP_CENTS = 45000;
+// $100, which is the ceiling Eric named when he first set the $5-a-client
+// climb against a $50 seed. Left at the recalibrated $450 it would have
+// climbed a $50 price nine-fold.
+const SUB_CAP_CENTS = 10000;
 // Full access climbs GENTLER than the rest: 5% a booking, to the nearest $25,
 // parked at $5,000. Two reasons. A 10% step from $3,500 leaves reach behind
 // in three sales, and this tier has a second throttle the others do not - a
@@ -220,6 +225,27 @@ const FULL_CAP_CENTS = 440000;
 // case rate to $5 or $50,000 should bounce rather than take a booking.
 const RATE_MIN_CENTS = 5000;
 const RATE_MAX_CENTS = 440000;
+// WHICH PRICING DECISION the numbers above belong to. Bump this whenever a
+// seed changes, and a deploy takes effect the moment it ships.
+//
+// The problem it solves: the real prices live on the rates document, not in
+// this file, and the seeds here are only a fallback for a document that does
+// not exist yet. So a reprice did not land until restructureRates ran on the
+// cron - up to fifteen minutes after deploy in production, and NEVER on a
+// preview build, because preview deployments get no cron triggers at all.
+// That made a price change impossible to review before merging it: the page
+// shipped the new number and then repainted itself with the old one from
+// /api/rates.
+//
+// readRates now ignores stored prices carrying an older stamp and answers
+// with the seeds. Every write of a price stamps the current one, so the
+// document takes over again the moment anything touches it - the migration,
+// the climb after a booking, or Eric's own rate panel.
+//
+// The climb is unaffected: it only ever mattered WITHIN a pricing decision,
+// and a reprice deliberately starts a new one. That is already what
+// restructureRates does, just slower and invisibly.
+const PRICING_EPOCH = '2026-08-26-market';
 const RATES_PATH = 'config/rates';
 // The line under which a case is being worked at a loss, in cents per hour.
 // Eric, 2026-08-23: "I've lost money on my current client." The app counts
@@ -239,16 +265,26 @@ const HOURLY_FLOOR_CENTS = 7500;
 async function readRates(env) {
   const doc = await getDoc(env, RATES_PATH).catch(() => null);
   const d = doc?.data || {};
+  // Prices from a SUPERSEDED pricing decision are not prices, they are
+  // history. A document stamped with an older epoch (or none at all, which
+  // is every document written before this existed) reads back as the seeds
+  // compiled into this file - the numbers Eric last approved.
+  const current = d.pricingEpoch === PRICING_EPOCH;
+  const priced = (stored, seed) =>
+    (current && Number(stored) > 0 ? Number(stored) : seed);
   return {
-    caseCents: Number(d.caseCents) > 0 ? Number(d.caseCents) : CASE_PRICE_CENTS,
-    addonCents: Number(d.addonCents) > 0 ? Number(d.addonCents) : ADDON_PRICE_CENTS,
-    subCents: Number(d.subCents) > 0 ? Number(d.subCents) : SUB_PRICE_CENTS,
-    fullCents: Number(d.fullCents) > 0 ? Number(d.fullCents) : FULL_MONTH_CENTS,
+    caseCents: priced(d.caseCents, CASE_PRICE_CENTS),
+    addonCents: priced(d.addonCents, ADDON_PRICE_CENTS),
+    subCents: priced(d.subCents, SUB_PRICE_CENTS),
+    fullCents: priced(d.fullCents, FULL_MONTH_CENTS),
     // The floor below which a case is being worked at a loss. Eric's own
     // number, set from the dashboard; the default is the bottom of the
     // national independent-advocacy band.
     floorCents: Number(d.floorCents) > 0 ? Number(d.floorCents) : HOURLY_FLOOR_CENTS,
     bookings: Number(d.bookings) || 0,
+    // Whether the stored prices are the ones being served. False means the
+    // seeds are answering and the document is waiting to be caught up.
+    epochCurrent: current,
     updateTime: doc?.updateTime || null,
     seeded: !!doc,
   };
@@ -286,10 +322,15 @@ async function raiseRates(env, attempt = 0) {
     // A booking is a new client of any type, so it lifts the chat price too.
     subCents: Math.min(SUB_CAP_CENTS, now.subCents + SUB_STEP_CENTS),
     bookings: now.bookings + 1,
+    // Stamped here as well as in the migration, so the first booking after a
+    // reprice settles the document without waiting on the cron. `now` is
+    // already the seeds when the stamp was stale, so this climbs from the
+    // new prices rather than the retired ones.
+    pricingEpoch: PRICING_EPOCH,
     updatedAt: new Date(),
   };
   const opts = now.seeded
-    ? { mask: ['caseCents', 'addonCents', 'subCents', 'fullCents', 'bookings', 'updatedAt'], ifUpdateTime: now.updateTime }
+    ? { mask: ['caseCents', 'addonCents', 'subCents', 'fullCents', 'bookings', 'pricingEpoch', 'updatedAt'], ifUpdateTime: now.updateTime }
     : { mustNotExist: true };
   const won = await patchDoc(env, RATES_PATH, next, opts).catch(() => false);
   if (won === false) return raiseRates(env, attempt + 1);
@@ -427,8 +468,12 @@ async function handleSetRates(request, env) {
     || want.subCents !== now.subCents || want.fullCents !== now.fullCents
     || want.floorCents !== now.floorCents;
   if (changed) {
-    await patchDoc(env, RATES_PATH, { ...want, updatedAt: new Date(), setByHand: true },
-      { mask: ['caseCents', 'addonCents', 'subCents', 'fullCents', 'floorCents', 'updatedAt', 'setByHand'] });
+    // His numbers are a decision under the CURRENT epoch, so they are stamped
+    // with it - otherwise the seeds would keep answering over the top of the
+    // rate he just set by hand.
+    await patchDoc(env, RATES_PATH,
+      { ...want, pricingEpoch: PRICING_EPOCH, updatedAt: new Date(), setByHand: true },
+      { mask: ['caseCents', 'addonCents', 'subCents', 'fullCents', 'floorCents', 'pricingEpoch', 'updatedAt', 'setByHand'] });
   }
   return json({ ...want, bookings: now.bookings, changed });
 }
@@ -1318,18 +1363,19 @@ async function restructureRates(env) {
     // for a different unit is not a choice worth preserving.
     const handSet = !!doc?.data.setByHand;
     const next = handSet
-      ? { fullCents: FULL_MONTH_CENTS, updatedAt: new Date() }
+      ? { fullCents: FULL_MONTH_CENTS, pricingEpoch: PRICING_EPOCH, updatedAt: new Date() }
       : {
         caseCents: CASE_PRICE_CENTS,
         addonCents: ADDON_PRICE_CENTS,
         subCents: SUB_PRICE_CENTS,
         fullCents: FULL_MONTH_CENTS,
         floorCents: HOURLY_FLOOR_CENTS,
+        pricingEpoch: PRICING_EPOCH,
         updatedAt: new Date(),
       };
     const mask = handSet
-      ? ['fullCents', 'updatedAt']
-      : ['caseCents', 'addonCents', 'subCents', 'fullCents', 'floorCents', 'updatedAt'];
+      ? ['fullCents', 'pricingEpoch', 'updatedAt']
+      : ['caseCents', 'addonCents', 'subCents', 'fullCents', 'floorCents', 'pricingEpoch', 'updatedAt'];
     const opts = doc ? { mask, ifUpdateTime: doc.updateTime } : { mustNotExist: true };
     const won = await patchDoc(env, RATES_PATH, next, opts).catch(() => false);
     if (won === false) return; // someone wrote first; the next firing retries

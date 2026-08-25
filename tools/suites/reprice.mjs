@@ -21,6 +21,11 @@ const CONST = {
   CASE_PRICE_CENTS: num('CASE_PRICE_CENTS'), ADDON_PRICE_CENTS: num('ADDON_PRICE_CENTS'),
   SUB_PRICE_CENTS: num('SUB_PRICE_CENTS'), FULL_MONTH_CENTS: num('FULL_MONTH_CENTS'),
   HOURLY_FLOOR_CENTS: num('HOURLY_FLOOR_CENTS'), RATES_PATH: 'config/rates',
+  // Read from the source, not typed: restructureRates stamps this now, and a
+  // missing binding here threw into the function's own catch - so the suite
+  // saw "nothing written" and reported a migration failure that was really a
+  // harness gap.
+  PRICING_EPOCH: SRC.match(/const PRICING_EPOCH = '([^']+)'/)[1],
 };
 
 // Read the marker out of the source rather than typing it: it changes every
@@ -73,6 +78,8 @@ check('R7 the marker records what it did', /only the retired tier price moved/.t
   out.marker?.result || '(none)');
 check('R7b the marker in the source is the one this suite drives',
   /reprice-2026-08-26-market/.test(MARKER), MARKER);
+check('R8 the migration stamps the pricing epoch, on both paths',
+  out.rates.pricingEpoch === CONST.PRICING_EPOCH, out.rates.pricingEpoch || '(none)');
 
 // 3. Idempotent: a finished marker means it never runs twice.
 {

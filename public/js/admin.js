@@ -124,7 +124,7 @@ async function load() {
       </summary>
       <p class="dim small" style="margin:.5rem 0 .6rem;">Follow-up
         <strong style="color:var(--ink)">$${dollars(rate.addonCents)}</strong>,
-        Priority Chat <strong style="color:var(--ink)">$${dollars(rate.subCents || 30000)}/mo</strong>,
+        Priority Chat <strong style="color:var(--ink)">$${dollars(rate.subCents || 5000)}/mo</strong>,
         Full Access <strong style="color:var(--ink)">$${dollars(rate.fullCents || 340000)}</strong>.
         Case and follow-up grow 10% per booking (to $1,400 and $400 caps); chat
         climbs $5 per new client of any type (to $150); Full Access grows 5% to
@@ -138,7 +138,7 @@ async function load() {
           <input type="number" id="rate-addon" min="50" step="1" value="${(rate.addonCents / 100)}"
             style="width:6rem;"></label>
         <label class="dim small">Chat $/mo
-          <input type="number" id="rate-sub" min="10" max="450" step="1" value="${((rate.subCents || 15000) / 100)}"
+          <input type="number" id="rate-sub" min="10" max="150" step="1" value="${((rate.subCents || 15000) / 100)}"
             style="width:5rem;"></label>
         <label class="dim small">Full Access $
           <input type="number" id="rate-full" min="50" step="25" value="${((rate.fullCents || 260000) / 100)}"

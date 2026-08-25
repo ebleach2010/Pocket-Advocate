@@ -48,13 +48,21 @@ console.log(`# case ${CASE} addon ${ADDON} sub ${SUB} full ${FULL} floor ${FLOOR
 //
 // FULL is a MONTHLY rate, not a 60-day lump - the tier is billed by the
 // month so no client faces a five-figure charge, hence FULL_MONTH_CENTS.
+// Chat is the exception to the band-middle rule, on Eric's explicit call
+// (2026-08-26): $50/mo against my $300 and the live $95. It is not case work
+// and has no hours to price, so the market research does not bind it - his
+// reasoning is that a low door on the subscription is worth more than the
+// margin. Its ceiling returns to the $100 he named with the $50 seed.
 check('P1 the new list prices are what was agreed',
-  CASE === 120000 && ADDON === 27500 && SUB === 30000 && FULL === 340000,
+  CASE === 120000 && ADDON === 27500 && SUB === 5000 && FULL === 340000,
   JSON.stringify({ CASE, ADDON, SUB, FULL }));
 check('P2 caps moved with the prices',
-  CASE_CAP === 180000 && ADDON_CAP === 42500 && SUB_CAP === 45000 && FULL_CAP === 440000,
+  CASE_CAP === 180000 && ADDON_CAP === 42500 && SUB_CAP === 10000 && FULL_CAP === 440000,
   JSON.stringify({ CASE_CAP, ADDON_CAP, SUB_CAP, FULL_CAP }));
-check('P2d every seed lands in the band middle, not on the average',
+check('P2e the chat ceiling is a sane multiple of its own seed',
+  SUB_CAP === 2 * SUB, `$${SUB / 100} -> $${SUB_CAP / 100}`);
+// Chat is deliberately excluded here: see P1.
+check('P2d every CASE-WORK seed lands in the band middle, not on the average',
   Math.round(CASE / 100 / 5.25) >= 210 && Math.round(CASE / 100 / 5.25) <= 245
   && Math.round(FULL / 100 / 15) >= 210 && Math.round(FULL / 100 / 15) <= 245
   && Math.round(ADDON / 100 / 1.25) >= 210 && Math.round(ADDON / 100 / 1.25) <= 245,
@@ -95,9 +103,9 @@ check('P8 full access reaches its ceiling in a sane number of bookings',
 
 // ---- the seams that must all know about the new price ---------------------
 for (const seam of [
-  ['readRates', /fullCents: Number\(d\.fullCents\)/],
+  ['readRates', /fullCents: priced\(d\.fullCents, FULL_MONTH_CENTS\)/],
   ['raiseRates', /fullCents: growRate\(now\.fullCents, FULL_CAP_CENTS, FULL_GROWTH, FULL_ROUND_CENTS\)/],
-  ['raiseRates mask', /mask: \['caseCents', 'addonCents', 'subCents', 'fullCents', 'bookings', 'updatedAt'\]/],
+  ['raiseRates mask', /mask: \['caseCents', 'addonCents', 'subCents', 'fullCents', 'bookings', 'pricingEpoch', 'updatedAt'\]/],
   ['raiseSubRate whole-doc body', /caseCents: now\.caseCents, addonCents: now\.addonCents, fullCents: now\.fullCents/],
   ['capPings', /next\.fullCents >= FULL_CAP_CENTS/],
   ['handleSetRates', /fullCents: body\?\.fullCents === undefined/],
@@ -118,14 +126,31 @@ check('P11 the follow-up is still quoted from the case, not the live rate',
 // his; the dead tier price is corrected regardless.
 check('P12 hand-set BASE prices are still left alone',
   /const handSet = !!doc\?\.data\.setByHand/.test(SRC)
-  && /handSet\s*\?\s*\{ fullCents: FULL_MONTH_CENTS, updatedAt: new Date\(\) \}/.test(SRC));
+  && /handSet\s*\n?\s*\? \{ fullCents: FULL_MONTH_CENTS, pricingEpoch: PRICING_EPOCH, updatedAt: new Date\(\) \}/.test(SRC));
 check('P12b but the retired tier price is corrected even so',
-  /const mask = handSet\s*\n\s*\? \['fullCents', 'updatedAt'\]/.test(SRC));
+  /const mask = handSet\s*\n\s*\? \['fullCents', 'pricingEpoch', 'updatedAt'\]/.test(SRC));
 check('P12c and the mask cannot touch a hand-set base price',
   !/handSet\s*\n?\s*\? \['fullCents', 'updatedAt', '(caseCents|addonCents|subCents|floorCents)'/.test(SRC));
 // A third marker. fullCents changed MEANING on 2026-08-26 - it was the price
 // of sixty days and it is now the price of one month - so a live doc holding
 // the old lump would read as a monthly rate and charge nearly double.
+// The pricing epoch (2026-08-26). Prices live on the rates document, not in
+// this file, so a reprice used to wait on the cron - up to fifteen minutes in
+// production and FOREVER on a preview build, which gets no cron triggers at
+// all. That made a price change impossible to review before merging it.
+check('P14 the seeds carry a pricing epoch',
+  /const PRICING_EPOCH = '[^']+';/.test(SRC));
+check('P15 stored prices from a superseded epoch are ignored',
+  /const current = d\.pricingEpoch === PRICING_EPOCH;/.test(SRC)
+  && /current && Number\(stored\) > 0 \? Number\(stored\) : seed/.test(SRC));
+check('P16 every write of a price stamps the current epoch',
+  (SRC.match(/pricingEpoch: PRICING_EPOCH/g) || []).length >= 4,
+  `${(SRC.match(/pricingEpoch: PRICING_EPOCH/g) || []).length} writes stamped`);
+check('P17 the hand-set panel stamps it too, or the seeds would answer over him',
+  /\{ \.\.\.want, pricingEpoch: PRICING_EPOCH/.test(SRC)
+  && /'floorCents', 'pricingEpoch', 'updatedAt', 'setByHand'/.test(SRC));
+check('P18 the climb still honours a document on the CURRENT epoch',
+  /bookings: Number\(d\.bookings\) \|\| 0/.test(SRC) && /epochCurrent: current/.test(SRC));
 check('P13 the market recalibration has its OWN marker, because the last finished',
   /migrations\/reprice-2026-08-26-market/.test(SRC)
   && !/MARKER = 'migrations\/reprice-2026-08-24-tier'/.test(SRC));
