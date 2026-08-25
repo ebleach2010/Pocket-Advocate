@@ -199,6 +199,88 @@ export function demoApi(role, store) {
       store.persist?.();
       return ok({ ok: true, paused: false, addedMs: stretch });
     }
+    // The admin scheduler, whole: reschedule, follow-up, check-in, charge.
+    // Added so the check-in cadence drives end to end in the suite - book one
+    // on the Full Access case and the client page shows it, the CHECK-IN DUE
+    // flag clears, and the window guard refuses a date past 60 days.
+    if (path === '/api/admin/schedule') {
+      const key = `cases/${body.caseId || DEMO_CASE_ID}`;
+      const c = store.docs.get(key) || {};
+      const mode = body.mode;
+      if (!['reschedule', 'followup', 'checkin', 'charge'].includes(mode))
+        return fail(400, 'Bad mode');
+      let start; let durationMin = 60; let slotId = body.slotId || null;
+      if (body.customStart) {
+        start = new Date(body.customStart);
+        durationMin = Number(body.customDurationMin) > 0 ? Number(body.customDurationMin) : 60;
+      } else {
+        const slot = store.docs.get(`availability/${slotId}`);
+        if (!slot) return fail(404, 'No such slot');
+        start = new Date(slot.start);
+        durationMin = slot.durationMin || 60;
+        store.docs.set(`availability/${slotId}`, { ...slot, state: 'booked', caseId: key.slice(6) });
+      }
+      if (Number.isNaN(start.getTime())) return fail(400, 'Pick a valid date and time.');
+      const when = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Etc/GMT+7', weekday: 'long', month: 'long', day: 'numeric',
+        hour: 'numeric', minute: '2-digit',
+      }).format(start) + ' MST';
+
+      if (mode === 'checkin') {
+        if (!c.fullAccess) return fail(409, 'Check-ins are part of Full Access. Use "charge" for a standard case.');
+        if (c.status === 'closed') return fail(409, 'This case is closed.');
+        // Same 60-day rule the Worker enforces, minus the hold arithmetic the
+        // demo does not need: the refusal is the thing worth driving.
+        const first = c.appointment?.start ? new Date(c.appointment.start).getTime() : 0;
+        const extra = (Number(c.fullAccessExtraDays) || 0) * 86_400_000;
+        if (first && start.getTime() > first + 60 * 86_400_000 + extra)
+          return fail(409, 'That lands after the window ends. Extend the case first.');
+        const checkIns = Array.isArray(c.checkIns) ? c.checkIns : [];
+        store.docs.set(key, {
+          ...c,
+          checkIns: [...checkIns, { start, durationMin, slotId, scheduledAt: new Date() }],
+        });
+        store.persist?.();
+        return ok({ ok: true, scheduled: when });
+      }
+      if (mode === 'reschedule') {
+        store.docs.set(key, {
+          ...c, appointment: { ...c.appointment, start, durationMin }, needsReschedule: null,
+        });
+        store.persist?.();
+        return ok({ ok: true, scheduled: when });
+      }
+      if (mode === 'followup') {
+        if (!c.addOnFollowUp) return fail(409, 'This case has no follow-up session on it.');
+        if (c.followUp) return fail(409, 'The follow-up is already scheduled.');
+        store.docs.set(key, {
+          ...c,
+          followUp: { start, durationMin, slotId, kind: 'followup', label: 'Follow-up discussion', amountCents: 0, scheduledAt: new Date() },
+        });
+        store.persist?.();
+        return ok({ ok: true, scheduled: when });
+      }
+      // charge: 0% books it outright; a percentage writes the client's
+      // pay-to-confirm prompt so that side of the loop is drivable too.
+      const pct = Number(body.pct) || 0;
+      const caseRate = Number(c.caseRateCents) || 65000;
+      const amountCents = Math.round((pct * caseRate) / 100);
+      const label = (body.tagline || '').trim() || 'Additional session';
+      if (amountCents === 0) {
+        store.docs.set(key, {
+          ...c,
+          followUp: { start, durationMin, slotId, kind: 'extra', label, amountCents: 0, scheduledAt: new Date() },
+        });
+        store.persist?.();
+        return ok({ ok: true, scheduled: when });
+      }
+      store.docs.set(key, {
+        ...c,
+        pendingExtra: { label, amountCents, start, durationMin, slotId, sessionId: 'demo' },
+      });
+      store.persist?.();
+      return ok({ ok: true, checkoutUrl: `/case.html?id=${key.slice(6)}&demo=client` });
+    }
     // Telehealth appointment advocacy, both sides, so the whole loop drives.
     if (path === '/api/telehealth') {
       const key = `cases/${body.caseId || DEMO_CASE_ID}`;

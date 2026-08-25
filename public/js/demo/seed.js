@@ -337,7 +337,12 @@ export function seed({ set, file }) {
     status: 'awaiting_report',
     createdAt: days(38),
     appointment: {
-      start: days(-30), durationMin: 60, method: 'phone',
+      // The first call is 20 days BEHIND us, deliberately: the tier's
+      // cadence is a check-in every two weeks, so a call 20 days back with
+      // nothing booked ahead is exactly what lights CHECK-IN DUE on the
+      // shelf - the state the suite exists to show. The 60-day window still
+      // has 40 days to run, so booking the next check-in works too.
+      start: days(20), durationMin: 60, method: 'phone',
       phone: '+1 555 0148', joinLink: null, requested: false,
     },
     publicElection: { choice: 'private', history: [{ choice: 'private', at: days(38) }] },
@@ -349,14 +354,16 @@ export function seed({ set, file }) {
     fullAccess: true,
     fullAccessAt: days(38),
     fullAccessRateCents: 350000,
-    // The 90 day window runs from the SIGNATURE, so it is stamped here to
-    // match the authorisation seeded below.
+    // Stamped at the first signature, matching the authorisation seeded
+    // below. The tier window does NOT run from this any more - it runs 60
+    // days from the first call - but the field remains the record of when
+    // he first had authority to act.
     authorityAt: days(31),
     forms: {
       disclaimer: days(38), privacy: days(38), recording: days(38),
       fullAccess: days(38),
     },
-    reportDueAt: days(-2),
+    reportDueAt: days(13),
     files: [],
     stripe: { sessionId: 'cs_demo_full', paymentIntentId: 'pi_demo_full', amountTotal: 150000 },
     // 26 hours against $3,500 is about $134/hr, which is what the tier is

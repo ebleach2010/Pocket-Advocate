@@ -47,31 +47,49 @@ Drop `&tour=1` to skip the update tour.
 ## What each one is for
 
 **Booking.** The three steps, then the payment step where the two services
-sit side by side. Pick Full Access and the price, the button and the
-included-line all change, the scope note appears, and the pay button stays
-disabled until it has been opened, scrolled to the end and ticked. That gate
-is the point of the screen: nobody should be able to buy a four figure
+sit side by side. On step 1, the continuity-of-care phone consent is a
+required tick - Continue refuses without it. Step 2 is the one agreement in
+FOUR read-to-the-end parts. On the payment step, pick Full Access and the
+price, the button and the included-line all change, the scope note appears,
+and the pay button stays disabled until it has been opened, scrolled to the
+end and ticked; "Add-ons, once your case starts" previews the follow-up,
+telehealth advocacy and the upgrade with prices, nothing purchasable. That
+gate is the point of the screen: nobody should be able to buy a four figure
 engagement without seeing where it stops.
 
-**Client, standard case.** A delivered case with the upgrade card in Docs,
-priced at the difference rather than the list price, and the follow-up card
-under it. The work clock reads about 12 hours, which against $650 is the
-below-floor number his margin badge is meant to catch.
+**Client, standard case.** A delivered case. The **Add-ons tab** (➕) now
+holds everything purchasable: telehealth appointment advocacy at $250 (fill
+the time, clinic and provider; the attestation tick is required; the refund
+promise is stated before paying), the follow-up card, and the upgrade card
+priced at the difference rather than the list price. The work clock reads
+about 12 hours, which against $650 is the below-floor number his margin
+badge is meant to catch.
 
 **Client, Full Access case.** The authorisations, under the timeline on
 Progress: one clinic signed, the insurer form signed, both with View and
 Withdraw. Sign another and it appears; the form previews itself as you type,
-and the whole document is readable before anything is signed.
+and the whole document is readable before anything is signed. Progress also
+carries the tier's cadence line - the next check-in call once one is booked
+from the advocate side, or the standing every-two-weeks promise. On the
+Add-ons tab, telehealth advocacy shows **Included** instead of a price, and
+a request goes straight to the advocate with no payment.
 
 **Advocate.** The shelf shows both cases and today's rate. Each card carries
 its **work clock** on the folder tab, top right: tap to start or stop that
 client's clock without opening the case, and start both at once to see them
-keep separate totals. Open the Full Access case and there is a fifth tab
-group, **Act**, holding Appeals and Clinic calls, plus the authority status
-card on Overview and the margin badge beside the work clock ($134/hr on that
-case, amber $56/hr on the other). The appeal is drafted and sitting against a
-live deadline; Write, Revise, Print and Mark it filed all work against the
-local store.
+keep separate totals. The Full Access card wears **CHECK-IN DUE** while its
+cadence is stale; book a check-in from the chart's scheduler (the new radio,
+tier-only, no charge - a date past the 60-day window is refused) and the
+flag clears, the client's Progress page shows the call. Request telehealth
+advocacy from a client suite first and the chart grows the confirm/deny
+card - denying pings the refund. The **Pause / close** card requires the
+closing reason and says, before you type, that the client reads it word for
+word; close with one and the client's page shows "Why this case closed."
+Open the Full Access case and there is a fifth tab group, **Act**, holding
+Appeals and Clinic calls, plus the authority status card on Overview and the
+margin badge beside the work clock. The appeal is drafted and sitting
+against a live deadline; Write, Revise, Print and Mark it filed all work
+against the local store.
 
 ## What is invented
 
