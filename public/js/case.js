@@ -216,10 +216,10 @@ function showNavHint(folderEl) {
   try { if (localStorage.getItem(NAV_HINT_KEY)) return; } catch { return; }
   const note = document.createElement('p');
   note.className = 'nav-hint';
-  // Swipe first, because swipe works on every page. Tap-to-turn does not: a
-  // page whose whole width is taken by the chat has no bare margin to tap, so
-  // the tap lands on the chat and nothing happens, with no way to tell that
-  // from the gesture being wrong.
+  // Tabs first, swipe second, and those are now the only two: tap-to-turn was
+  // removed on 2026-08-25 because an idle click in the middle of a page threw
+  // you onto a different one. This copy never advertised it, so the words
+  // below are unchanged.
   note.innerHTML = 'Your case has tabs. Tap one to switch pages, or swipe '
     + 'left and right to move between them. '
     + '<button type="button" class="btn ghost" data-hint-ok>Got it</button>';

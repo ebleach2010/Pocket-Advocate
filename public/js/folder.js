@@ -1,5 +1,7 @@
 // The case folder: a strip of staggered cut tabs over a stack of pages, one
-// page showing at a time, flipped by tap, sideways swipe, or arrow key.
+// page showing at a time, flipped by the tab strip, a sideways swipe, or an
+// arrow key. Tapping the page itself does NOT turn it - see the note by the
+// swipe handler for why that was removed.
 //
 // The rule the rest of this file hangs off: pages are built by the caller and
 // mounted ONCE. This engine only shows and hides them. The chat page carries a
@@ -32,7 +34,7 @@ let seq = 0;
  *
  * Most callers want mountFolder() below instead: it builds the panes for you.
  */
-export function mountPages({ container, pages, storageKey = '', noFlip = [], groups = null } = {}) {
+export function mountPages({ container, pages, storageKey = '', groups = null } = {}) {
   const list = (pages || []).filter((p) => p && p.id && p.el);
   if (!container || !list.length) return { show() {}, current: () => null };
 
@@ -284,24 +286,6 @@ export function mountPages({ container, pages, storageKey = '', noFlip = [], gro
     if (focusTab) tabs.get(scope[n].id)?.focus();
   }
 
-  /**
-   * Tap the right half of the paper to send it to the back of the pile, the
-   * left half to pull the back page forward.
-   *
-   * The rule that keeps this livable: controls win. A tap that lands on
-   * anything interactive does what that control does and never flips, or every
-   * button on the right of a page would fight the page turn. Pages that opt
-   * out entirely (`fade`/noTransform pages like the chat, which is mostly
-   * bubbles and dead space, and the notes sheet, where a tap places a cursor)
-   * are left alone and keep swipe and the tab strip.
-   */
-  // Anything interactive, plus whatever the caller says is not paper. The
-  // caller's half matters: a page can hold its own tappable furniture, and
-  // naming it here would put every page's internals in every page's bundle.
-  const NO_FLIP = ['a', 'button', 'input', 'textarea', 'select', 'label', 'summary',
-    'details', '[contenteditable]', '[role="button"]', '[role="tab"]',
-    '.msg', '.chip-label', '.folder-tabs', '.chat-root', ...noFlip].join(',');
-
   groupNav?.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-group]');
     if (!b) return;
@@ -312,25 +296,20 @@ export function mountPages({ container, pages, storageKey = '', noFlip = [], gro
     else { openGroup = b.dataset.group; paintGroups(); }
   }, on);
 
-  container.addEventListener('click', (e) => {
-    const page = byId.get(curId);
-    if (!page) return;
-    if (!page.el.contains(e.target)) return;    // not this page's paper
-    // Pages that opt out (the chat, thick with bubbles and dead space he taps
-    // around in; the notes sheet, where a tap places a cursor) only flip from
-    // the bare margin of the page itself. Without that they would be a trap:
-    // you could tap your way in and never tap your way out.
-    if (page.noTransform) {
-      if (e.target !== page.el) return;
-    } else if (e.target.closest?.(NO_FLIP)) {
-      return;                                   // a control, not the paper
-    }
-    // He was selecting text, not turning a page.
-    if (window.getSelection && String(window.getSelection())) return;
-    const box = page.el.getBoundingClientRect();
-    if (!box.width) return;
-    step(e.clientX - box.left > box.width / 2 ? 1 : -1, false, true);
-  }, { signal: abort.signal });
+  // TAP-TO-TURN IS GONE, and must not come back (Eric, 2026-08-25, on a PC:
+  // "when I click on center screen of advisor chat it puts me back to the
+  // dx… That can be removed. Pressing tabs is easy enough.").
+  //
+  // Why it bit worst exactly where he found it: a `fade` page like the chat
+  // only ever turned from the page's own bare margin, and on a wide screen
+  // the middle of the chat IS bare margin. So an idle click in the empty
+  // space between bubbles threw him onto another page, with nothing on
+  // screen to explain what he had done.
+  //
+  // The tab strip, the sideways swipe and the arrow keys all remain, and all
+  // three say what they are before you commit to them. A tap that turns a
+  // page does not, which is what made it the wrong control for a person who
+  // is tired and reading.
 
   /** Keep the open tab in the strip without ever scrolling the page itself. */
   function reveal(tab) {
@@ -433,12 +412,11 @@ export function mountPages({ container, pages, storageKey = '', noFlip = [], gro
  * handle with `el(id)` so the caller can reach into a page later (mounting
  * the chat, repainting a page in place) without ever rebuilding it.
  *
- * mountFolder({ container, pages, storageKey, initial, onShow, noFlip })
+ * mountFolder({ container, pages, storageKey, initial, onShow })
  *   pages: [{ id, title, icon, render(pane), onShow?(pane), fade? }]
  *          `fade` marks a page whose transform would break something inside it
  *          (full-screen chat is position:fixed and dies inside a transformed
  *          ancestor), so it cross-fades instead of flipping.
- *   noFlip: extra selectors that must not turn the page when tapped.
  *   groups: [{ id, label, icon, pages: [pageId…] }] turns the strip into two
  *          tiers - a group row that never changes and a page row showing only
  *          the open group. Omit it and the strip is exactly what it was.
@@ -448,7 +426,7 @@ export function mountPages({ container, pages, storageKey = '', noFlip = [], gro
  *          added later cannot forget to.
  * Returns { el(id), show(id), current(), mark(id, on) }.
  */
-export function mountFolder({ container, pages = [], storageKey = '', initial = '', onShow = null, noFlip = [], groups = null } = {}) {
+export function mountFolder({ container, pages = [], storageKey = '', initial = '', onShow = null, groups = null } = {}) {
   if (!container) return { el: () => null, show() {}, current: () => null };
 
   container.innerHTML = '';
@@ -487,7 +465,7 @@ export function mountFolder({ container, pages = [], storageKey = '', initial = 
     }
   }
 
-  const pager = mountPages({ container, pages: list, storageKey, noFlip, groups });
+  const pager = mountPages({ container, pages: list, storageKey, groups });
 
   // `initial` is a default, not a command: a remembered page wins, because
   // coming back to where you were beats being sent to the front every time.

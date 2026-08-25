@@ -180,7 +180,6 @@ function render(el) {
   folder = mountFolder({
     // Tappable furniture that must not turn the page. These selectors used to
     // live inside folder.js, which every client downloads.
-    noFlip: ['.adv-chip', '.notes-root', '.diff-row', '.gloss-item', '.dr-badge'],
     container: el.querySelector('[data-folder]'),
     storageKey: `case-${caseId}`,
     initial: 'overview',
