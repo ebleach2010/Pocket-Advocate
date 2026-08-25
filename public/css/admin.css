@@ -756,3 +756,41 @@
   text-transform: uppercase; color: var(--cyan);
 }
 .sum-sec p { margin: 0; font-size: .92rem; line-height: 1.6; color: var(--soft); white-space: pre-wrap; }
+
+/* ---- the work clock's correction sheet ----
+   Eric, 2026-08-25: "I should be able to tap on the time and subtract time or
+   add time." So the total is a button, not a label: quiet enough that it
+   still reads as the number it is, with a dotted underline as the only hint
+   that it presses. Cyan while the clock is running, matching the toggle. */
+.work-total-btn {
+  background: none; border: 0; padding: .1rem .15rem;
+  font-size: .8rem; color: var(--dim); font-weight: 400;
+  text-decoration: underline dotted; text-underline-offset: 3px;
+  cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.work-total-btn:hover { color: var(--soft); }
+.work-total-btn.on { color: var(--cyan); }
+.work-total-btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 4px; }
+
+/* The sheet itself. site.css has no overlay of its own on this branch, so it
+   is defined here beside the one thing that opens it. */
+.settings-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 3.5rem 1.1rem 1.1rem; background: rgba(4, 6, 10, .6);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  overflow-y: auto; overscroll-behavior: contain;
+}
+.settings-card {
+  background: var(--panel); border: 1px solid var(--cyan); box-shadow: var(--glow-c);
+  border-radius: 16px; padding: 1.1rem 1.2rem; max-width: 26rem; width: 100%;
+  margin-bottom: 1.1rem;
+}
+/* Native pickers, because on iOS that IS the scroll wheel he asked for. They
+   inherit nothing useful by default, so give them the panel's own colours and
+   a 44px target. */
+.settings-card select {
+  margin-top: .25rem; padding: .55rem .6rem; min-height: 44px;
+  background: var(--panel-2); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 10px; font-size: 1rem;
+}

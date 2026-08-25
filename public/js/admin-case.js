@@ -130,7 +130,8 @@ function render(el) {
               <h3>Chat with the client</h3>
               <div class="row" data-workclock style="gap:.5rem; align-items:center; margin:.1rem 0 .5rem;">
                 <button class="btn quiet" data-work-toggle style="flex:none;">▶ Start working</button>
-                <span class="dim small" data-work-total></span>
+                <button class="btn quiet work-total-btn" data-work-total
+                  style="flex:none;" title="Tap to add or subtract time"></button>
               </div>
               <p class="dim small" data-client-gate style="margin:.1rem 0 .4rem;" hidden></p>
               <div id="chat"></div>
@@ -612,12 +613,13 @@ function startWorkClock(c) {
   let seconds = Math.max(0, Number(w.seconds) || 0);
   let startedAt = w.startedAt ? toDate(w.startedAt).getTime() : 0;
 
-  const live = () => seconds + (startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0);
+  // Clamped the way the Worker banks it: a stretch forgotten over a weekend
+  // banks at most twelve hours, so the page and the bank agree on one number.
+  const live = () => Math.max(0, seconds
+    + (startedAt ? Math.min(Math.floor((Date.now() - startedAt) / 1000), 12 * 3600) : 0));
   const paint = () => {
     const t = live();
-    const h = Math.floor(t / 3600);
-    const m = Math.floor((t % 3600) / 60);
-    totalEl.textContent = `${h ? `${h}h ` : ''}${m}m on this case${startedAt ? ' · running' : ''}`;
+    totalEl.textContent = `${fmtHm(t)} on this case${startedAt ? ' · running' : ''}`;
     totalEl.classList.toggle('on', !!startedAt);
     btn.textContent = startedAt ? '⏸ Stop working' : '▶ Start working';
     btn.classList.toggle('glow', !!startedAt);
@@ -647,6 +649,129 @@ function startWorkClock(c) {
     }
     btn.disabled = false;
   });
+
+  // ---- correcting the total ----
+  //
+  // Eric, 2026-08-25: "I should be able to tap on the time and subtract time
+  // or add time (hours + minutes with the iOS scroll wheel widget)."
+  //
+  // So the TIME ITSELF is the control, and the amount is picked rather than
+  // typed. Two <select>s, because on iOS that is precisely the native wheel
+  // he means: a text box asking for "10h 0m" is the wrong shape on a phone
+  // and makes him do arithmetic while annoyed.
+  //
+  // He picks an AMOUNT and a direction, which is how the mistake actually
+  // presents ("that ran about ten hours too long"). The page does the
+  // arithmetic and sends the finished total, so the Worker takes one absolute
+  // number and a retry on a flaky connection cannot subtract it twice.
+  totalEl.addEventListener('click', () => {
+    if (document.getElementById('pa-clock-fix')) return;
+    const now = live();
+    const opts = (n) => Array.from({ length: n }, (_, i) =>
+      `<option value="${i}"${i === 0 ? ' selected' : ''}>${i}</option>`).join('');
+
+    const overlay = document.createElement('div');
+    overlay.id = 'pa-clock-fix';
+    overlay.className = 'settings-overlay';
+    overlay.innerHTML = `
+      <div class="settings-card" role="dialog" aria-modal="true" aria-label="Fix the clock">
+        <div class="row"><h3 style="margin:0;">⏱ Fix the clock</h3>
+          <button class="btn quiet" data-x style="margin-left:auto;">Cancel</button></div>
+        <p class="dim small" style="margin:.2rem 0 .8rem;">This case reads
+          <strong style="color:var(--ink)">${fmtHm(now)}</strong>.
+          Your client can see this number, so the change is written onto the case.</p>
+        <div class="row" style="gap:.5rem; align-items:flex-end;">
+          <label class="dim small" style="flex:1;">Hours
+            <select data-h style="width:100%;">${opts(25)}</select></label>
+          <label class="dim small" style="flex:1;">Minutes
+            <select data-m style="width:100%;">${opts(60)}</select></label>
+        </div>
+        <p class="dim small" style="margin:.7rem 0 .2rem;">New total:
+          <strong style="color:var(--ink)" data-preview>${fmtHm(now)}</strong></p>
+        <p class="error small" data-err style="margin:.4rem 0 0;" hidden></p>
+        <div class="row" style="gap:.5rem; margin-top:.6rem;">
+          <button class="btn" data-sub style="flex:1;">− Subtract</button>
+          <button class="btn" data-add style="flex:1;">+ Add</button>
+        </div>
+      </div>`;
+
+    const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', onKey);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('[data-x]').addEventListener('click', close);
+
+    const picked = () => (Number(overlay.querySelector('[data-h]').value) * 3600)
+      + (Number(overlay.querySelector('[data-m]').value) * 60);
+    const preview = overlay.querySelector('[data-preview]');
+    const err = overlay.querySelector('[data-err]');
+    // Which button he is heading for decides the preview, so hovering or
+    // focusing one shows what it would do before he commits to it.
+    let sign = -1;
+    const repaint = () => {
+      preview.textContent = fmtHm(Math.max(0, live() + (sign * picked())));
+      err.hidden = true;
+    };
+    for (const el of overlay.querySelectorAll('select')) el.addEventListener('change', repaint);
+    for (const [sel, s] of [['[data-sub]', -1], ['[data-add]', 1]]) {
+      const b = overlay.querySelector(sel);
+      b.addEventListener('pointerenter', () => { sign = s; repaint(); });
+      b.addEventListener('focus', () => { sign = s; repaint(); });
+    }
+
+    const apply = async (direction, button) => {
+      const amount = picked();
+      if (!amount) {
+        err.textContent = 'Pick an amount first.';
+        err.hidden = false;
+        return;
+      }
+      const from = live();
+      const next = from + (direction * amount);
+      if (next < 0) {
+        err.textContent = `That is more than the ${fmtHm(from)} on the clock. `
+          + 'Subtract that much or less, or take it to zero.';
+        err.hidden = false;
+        return;
+      }
+      button.disabled = true;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/work', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ caseId, setSeconds: next }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+        seconds = Number(out.seconds) || 0;
+        // The Worker re-anchors a running clock to the moment of the
+        // correction, so the stretch already inside the number he sent is not
+        // counted a second time. Match that here or the next repaint adds it
+        // straight back.
+        startedAt = out.running ? Date.now() : 0;
+        paint();
+        close();
+      } catch (e2) {
+        err.textContent = e2.message || 'That did not save. Try again.';
+        err.hidden = false;
+        button.disabled = false;
+      }
+    };
+    overlay.querySelector('[data-sub]').addEventListener('click', (e) => apply(-1, e.currentTarget));
+    overlay.querySelector('[data-add]').addEventListener('click', (e) => apply(1, e.currentTarget));
+
+    document.body.appendChild(overlay);
+    overlay.querySelector('[data-h]').focus();
+  });
+}
+
+/** Seconds as "10h 40m", the one shape the clock is written in. */
+function fmtHm(sec) {
+  const t = Math.max(0, Math.floor(sec));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  return `${h ? `${h}h ` : ''}${m}m`;
 }
 
 // ---- the old automatic chat meter (retired; kept for reference) ----

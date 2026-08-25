@@ -910,13 +910,13 @@ async function readBookingClosure(env) {
  * client touches - their case, chat, uploads, files, sign-in - is untouched,
  * which was the condition Eric set.
  */
-const MAINTENANCE_UNTIL = '2026-08-26T01:00:00Z';   // 6PM MST, 2026-08-25
+const MAINTENANCE_UNTIL = '2026-08-26T03:00:00Z';   // 8PM MST, 2026-08-25
 function maintenanceUntil() {
   const t = Date.parse(MAINTENANCE_UNTIL);
   return Number.isFinite(t) && Date.now() < t ? t : 0;
 }
 function maintenanceMessage() {
-  return 'Under maintenance until 6PM MST on August 25. Big update in '
+  return 'Under maintenance until 8PM MST on August 25. Big update in '
     + 'progress, and I am sorry for the inconvenience. Existing clients are '
     + 'unaffected: your case, your files and your chat are open as normal.';
 }
@@ -2708,7 +2708,7 @@ async function handleFileDelete(request, env) {
 }
 
 /**
- * POST /api/work  Body: { caseId, on }   admin only
+ * POST /api/work  Body: { caseId, on } or { caseId, setSeconds }   admin only
  *
  * The work clock. Eric, 2026-08-22: "the cost is a toggle per client. I
  * toggle it on if I'm working on their case. I toggle it off if I'm not
@@ -2735,6 +2735,34 @@ async function handleWork(request, env) {
   const startedAt = w.startedAt ? new Date(w.startedAt).getTime() : 0;
   let seconds = Math.max(0, Number(w.seconds) || 0);
   const on = body?.on === true;
+
+  // Correcting the total, for a clock left running by mistake. Eric,
+  // 2026-08-25: "Please undo 10hrs of accidental running work I did on this
+  // client." Absolute, not a delta: the page does the arithmetic and sends
+  // the finished number, so a retry on a flaky phone connection cannot
+  // subtract the same ten hours twice.
+  if (body?.setSeconds !== undefined) {
+    const want = Number(body.setSeconds);
+    if (!Number.isFinite(want) || want < 0 || want > 4000 * 3600)
+      return json({ error: 'Give a whole number of seconds, zero or more.' }, 400);
+    const next = Math.floor(want);
+    // The number he sent is what the page SHOWS, which is the banked total
+    // plus the stretch running right now. So if the clock is running, the
+    // stretch is already inside it and re-anchoring the start is what keeps
+    // it from being counted a second time - subtract ten hours from a clock
+    // still running and the display has to read ten hours less, not the same
+    // ten hours back. It keeps running; only its starting point moves.
+    const stillRunning = !!startedAt;
+    await patchDoc(env, `cases/${caseId}`, {
+      work: {
+        seconds: next,
+        startedAt: stillRunning ? new Date() : null,
+        updatedAt: new Date(),
+        correction: { from: seconds, to: next, at: new Date() },
+      },
+    }, { mask: ['work'] });
+    return json({ seconds: next, running: stillRunning, correctedFrom: seconds });
+  }
 
   if (on) {
     // Already running: leave the existing start alone rather than resetting
