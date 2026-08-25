@@ -105,10 +105,10 @@ check('T1 the request route validates when/clinic/provider/attestation',
   && /Tick the box confirming you are inviting me into your appointment\./.test(SRC));
 check('T2 tier requests charge nothing and go straight to pending',
   /if \(c\.data\.fullAccess\) \{[\s\S]{0,400}state: 'requested', paidCents: 0/.test(SRC));
-// $250 -> $375 in the 2026-08-26 market recalibration: 1.5-2h of prep, visit
+// $250 -> $450 in the 2026-08-26 market recalibration: 1.5-2h of prep, visit
 // and debrief priced against the $250/hr URGENT rate, because he attends live.
 check('T3 a standard case pays the flat constant, off the ratchet',
-  /const TELEHEALTH_PRICE_CENTS = 37500;/.test(SRC)
+  /const TELEHEALTH_PRICE_CENTS = 45000;/.test(SRC)
   && !/growRate\([^)]*TELEHEALTH/.test(SRC));
 check('T4 the webhook rebuilds the request from session metadata',
   /kind === 'telehealth'/.test(SRC) && /confirmTelehealthPurchase/.test(SRC)
@@ -218,15 +218,15 @@ check('W4 the agreement says the closure reason is written into the case',
 // no lump price any more, so there is no FULL_PRICE_CENTS to pin - the unit
 // is a month, and another month costs exactly what the first one did.
 check('W5 the worker constants match the monthly decision',
-  /const FULL_MONTH_CENTS = 260000;/.test(SRC)
-  && /const FULL_CAP_CENTS = 340000;/.test(SRC)
+  /const FULL_MONTH_CENTS = 340000;/.test(SRC)
+  && /const FULL_CAP_CENTS = 440000;/.test(SRC)
   && /const FULL_EXTEND = \{ 30: FULL_MONTH_CENTS \};/.test(SRC)
   && !/FULL_PRICE_CENTS/.test(SRC));
 check('W6 the one client fallback left moved with it; booking compiles no tier price',
   // Booking sells one service now, so the tier price lives only where the
   // tier is sold: the request card on the case page. A MONTHLY number since
   // 2026-08-26, matching FULL_MONTH_CENTS in the Worker.
-  /let fullAccessCents = 260000;/.test(CASE)
+  /let fullAccessCents = 340000;/.test(CASE)
   && !/FULL_PRICE_CENTS/.test(BOOK));
 check('W7 the landing page sells with the value math and his phrase',
   (() => {

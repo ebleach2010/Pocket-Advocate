@@ -37,18 +37,28 @@ const FLOOR = num('HOURLY_FLOOR_CENTS');
 
 console.log(`# case ${CASE} addon ${ADDON} sub ${SUB} full ${FULL} floor ${FLOOR}`);
 
-// Recalibrated to market 2026-08-26 at Eric's word ("exactly middle to
-// slightly above middle of what you've found"). Advocates bill $70-500/hr,
-// average $175, band $100-350; every seed below is that service's honest
-// hours priced in the $175-200 band. FULL is now a MONTHLY rate, not a
-// 60-day lump - the tier is billed by the month so no client faces a
-// five-figure charge, which is why this reads FULL_MONTH_CENTS.
+// Recalibrated to the MIDDLE of the market 2026-08-26 at Eric's word
+// ("exactly middle to slightly above middle of what you've found"), after a
+// first pass anchored on the AVERAGE that undershot. Advocates bill
+// $70-500/hr with a working band of $100-350 and an average of $175; the
+// average is not the middle, it is dragged down by cheaper regions and
+// lower-credentialed advocates. The middle of the band is $225/hr, and the
+// comparable practice's $200/hr standard and $250/hr urgent rates bracket
+// it. Every seed below is that service's honest hours at $225-240/hr.
+//
+// FULL is a MONTHLY rate, not a 60-day lump - the tier is billed by the
+// month so no client faces a five-figure charge, hence FULL_MONTH_CENTS.
 check('P1 the new list prices are what was agreed',
-  CASE === 95000 && ADDON === 22500 && SUB === 15000 && FULL === 260000,
+  CASE === 120000 && ADDON === 27500 && SUB === 30000 && FULL === 340000,
   JSON.stringify({ CASE, ADDON, SUB, FULL }));
 check('P2 caps moved with the prices',
-  CASE_CAP === 160000 && ADDON_CAP === 40000 && SUB_CAP === 25000 && FULL_CAP === 340000,
+  CASE_CAP === 180000 && ADDON_CAP === 42500 && SUB_CAP === 45000 && FULL_CAP === 440000,
   JSON.stringify({ CASE_CAP, ADDON_CAP, SUB_CAP, FULL_CAP }));
+check('P2d every seed lands in the band middle, not on the average',
+  Math.round(CASE / 100 / 5.25) >= 210 && Math.round(CASE / 100 / 5.25) <= 245
+  && Math.round(FULL / 100 / 15) >= 210 && Math.round(FULL / 100 / 15) <= 245
+  && Math.round(ADDON / 100 / 1.25) >= 210 && Math.round(ADDON / 100 / 1.25) <= 245,
+  `case $${Math.round(CASE / 100 / 5.25)}/hr, tier $${Math.round(FULL / 100 / 15)}/hr, follow-up $${Math.round(ADDON / 100 / 1.25)}/hr`);
 check('P2b the tier price is per MONTH, and the month is defined',
   num('FULL_MONTH_DAYS') === 30 && num('FULL_WINDOW_DAYS') === 30,
   'a paid month buys thirty days; further months add thirty more each');
@@ -116,8 +126,8 @@ check('P12c and the mask cannot touch a hand-set base price',
 // A third marker. fullCents changed MEANING on 2026-08-26 - it was the price
 // of sixty days and it is now the price of one month - so a live doc holding
 // the old lump would read as a monthly rate and charge nearly double.
-check('P13 the monthly reshape has its OWN marker, because the last one finished',
-  /migrations\/reprice-2026-08-26-monthly/.test(SRC)
+check('P13 the market recalibration has its OWN marker, because the last finished',
+  /migrations\/reprice-2026-08-26-market/.test(SRC)
   && !/MARKER = 'migrations\/reprice-2026-08-24-tier'/.test(SRC));
 
 // ---- the tier -------------------------------------------------------------

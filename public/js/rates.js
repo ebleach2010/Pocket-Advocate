@@ -2,7 +2,12 @@
 // Worker owns the figures; this fetches them and corrects whatever the page
 // shipped with.
 
-const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
+// Thousands separated. The case and tier prices crossed $1,000 in the
+// 2026-08-26 recalibration, and this helper repaints every price span on the
+// site - so without it the landing page rendered "$1200" and "$3400" the
+// moment the live rate landed, overwriting correctly formatted markup.
+const money = (cents) => (cents / 100).toLocaleString('en-US',
+  cents % 100 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {});
 
 let inflight = null;
 

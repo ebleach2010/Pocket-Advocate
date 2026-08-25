@@ -85,8 +85,8 @@ export function demoApi(role, store) {
     if (path === '/api/admin/session') return ok({ ok: true });
 
     // ---- money, without any -----------------------------------------------
-    if (path === '/api/rates') return ok({ caseCents: 95000, addonCents: 22500, subCents: 15000, fullCents: 260000, chatOpenCents: 5000 });
-    if (path === '/api/admin/rates') return ok({ caseCents: 95000, addonCents: 22500, subCents: 15000, fullCents: 260000, floorCents: 7500, bookings: 0, changed: false });
+    if (path === '/api/rates') return ok({ caseCents: 120000, addonCents: 27500, subCents: 30000, fullCents: 340000, chatOpenCents: 5000 });
+    if (path === '/api/admin/rates') return ok({ caseCents: 120000, addonCents: 27500, subCents: 30000, fullCents: 340000, floorCents: 7500, bookings: 0, changed: false });
     // The nightly study, with a plausible history so the card on the dashboard
     // shows what it shows on a real night.
     if (path === '/api/work') {
@@ -273,7 +273,7 @@ export function demoApi(role, store) {
       // charge: 0% books it outright; a percentage writes the client's
       // pay-to-confirm prompt so that side of the loop is drivable too.
       const pct = Number(body.pct) || 0;
-      const caseRate = Number(c.caseRateCents) || 95000;
+      const caseRate = Number(c.caseRateCents) || 120000;
       const amountCents = Math.round((pct * caseRate) / 100);
       const label = (body.tagline || '').trim() || 'Additional session';
       if (amountCents === 0) {
@@ -317,7 +317,7 @@ export function demoApi(role, store) {
         return ok({ ok: true, requested: true });
       }
       // Standard case: straight past Stripe, landing as a paid request.
-      store.docs.set(key, { ...c, pendingTelehealth: { ...req, state: 'requested', paidCents: 37500 } });
+      store.docs.set(key, { ...c, pendingTelehealth: { ...req, state: 'requested', paidCents: 45000 } });
       store.persist?.();
       await beat(600);
       return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&telehealth=1&demo=${role}` });
@@ -406,7 +406,7 @@ export function demoApi(role, store) {
       if (!c.fullAccess) return fail(409, 'Extensions are part of Hands-Off Case Management.');
       if (c.status === 'closed') return fail(409, 'This case is closed.');
       await beat(600);
-      const cents = 260000;
+      const cents = 340000;
       store.docs.set(key, {
         ...c,
         fullAccessExtraDays: (Number(c.fullAccessExtraDays) || 0) + 30,
@@ -476,14 +476,14 @@ export function demoApi(role, store) {
             .map(([k, v]) => [k, new Date(v)])),
           files: [],
           reportDueAt: null,
-          caseRateCents: 95000,
-          addonRateCents: 22500,
+          caseRateCents: 120000,
+          addonRateCents: 27500,
           fullAccess: false,
           fullAccessAt: null,
           fullAccessRateCents: null,
           stripe: {
             sessionId: 'cs_demo_booked', paymentIntentId: 'pi_demo_booked',
-            amountTotal: 95000,
+            amountTotal: 120000,
           },
           work: { seconds: 0, startedAt: null },
         });
@@ -501,7 +501,7 @@ export function demoApi(role, store) {
           store.docs.set(key, {
             ...c, addOnFollowUp: true, addOnFollowUpAt: new Date(), pendingFollowUp: null,
             extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), {
-              kind: 'followup', amountCents: Number(c.addonRateCents) || 22500,
+              kind: 'followup', amountCents: Number(c.addonRateCents) || 27500,
               sessionId: `cs_demo_fu_${Date.now()}`, at: new Date(),
             }],
           });
@@ -522,7 +522,7 @@ export function demoApi(role, store) {
           store.fire?.(key);
           return ok({ ok: true, withdrawn: true });
         }
-        const monthCents = 260000;
+        const monthCents = 340000;
         const at = new Date();
         store.docs.set(key, {
           ...c,

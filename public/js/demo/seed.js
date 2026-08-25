@@ -231,17 +231,17 @@ export function seed({ set, file }) {
     },
     publicElection: { choice: 'private', history: [{ choice: 'private', at: days(11) }] },
     addOnFollowUp: false,
-    caseRateCents: 95000,
-    addonRateCents: 22500,
+    caseRateCents: 120000,
+    addonRateCents: 27500,
     forms: { disclaimer: days(11), privacy: days(11), recording: days(11) },
     reportDueAt: days(-4),
     reportDeliveredAt: hours(20),
     files: [],
-    stripe: { sessionId: 'cs_demo', paymentIntentId: 'pi_demo', amountTotal: 95000 },
+    stripe: { sessionId: 'cs_demo', paymentIntentId: 'pi_demo', amountTotal: 120000 },
     // The work clock, part-way through AND running, so both suites show a
     // real total plus the live "working on it right now" state. Seeded
     // relative to load time, so the demo always shows about 22 live minutes.
-    // Eleven and a half hours against $950 is about $81/hr, under the
+    // Eleven and a half hours against $1,200 is about $103/hr, under the
     // default floor, so the margin badge shows its amber state on the case
     // where that is the real story. The Full Access case below is the
     // healthy one.
@@ -354,12 +354,12 @@ export function seed({ set, file }) {
     addonRateCents: 22500,
     fullAccess: true,
     fullAccessAt: days(38),
-    // Month one plus one continuation: $2,600 x 2, less the case fee credited
+    // Month one plus one continuation: $3,400 x 2, less the case fee credited
     // against the first. The tier is monthly since 2026-08-26. Two months
     // bought 38 days ago leaves 22 days on the window, which is a case in
     // healthy mid-flight - the state where "keep going another month" is the
     // interesting card to press.
-    fullAccessRateCents: 520000 - 95000,
+    fullAccessRateCents: 680000 - 120000,
     fullAccessMonths: 2,
     fullAccessExtraDays: 30,
     // Stamped at the first signature, matching the authorisation seeded
@@ -373,10 +373,10 @@ export function seed({ set, file }) {
     },
     reportDueAt: days(13),
     files: [],
-    stripe: { sessionId: 'cs_demo_full', paymentIntentId: 'pi_demo_full', amountTotal: 165000 },
-    // 24.5 hours against two months at $2,600 (less the credited case fee)
-    // is about $173/hr, which is exactly what the tier is priced to earn -
-    // the national average for this work. The standard case above is
+    stripe: { sessionId: 'cs_demo_full', paymentIntentId: 'pi_demo_full', amountTotal: 220000 },
+    // 24.5 hours against two months at $3,400 (less the credited case fee)
+    // is about $229/hr, which is exactly what the tier is priced to earn -
+    // the middle of the working band for this work. The standard case above is
     // deliberately the opposite number, so the margin badge shows both of
     // its states across the demo.
     work: { seconds: 24 * 3600 + 30 * 60, startedAt: null },

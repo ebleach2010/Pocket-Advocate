@@ -64,26 +64,34 @@ export class AdvisorTurn extends WorkflowEntrypoint {
 // page quotes one number and the card is charged another (which is exactly
 // what happened after the $150 experiment). Seeds (Eric, 2026-08-20): $265
 // per case, a $75 follow-up bought separately, $50/mo chat.
-// Recalibrated 2026-08-25 to sit at market rather than under it. The research
-// behind every number here: independent advocates bill $70-500/hr, national
-// average $175, working band $100-350; one comparable practice charges $200/hr
-// in business hours and $250/hr for urgent work. Each price below is the
-// honest hours for that service priced in the $175-200 band.
+// Recalibrated 2026-08-26 to the MIDDLE of the market, at Eric's word
+// ("exactly middle to slightly above middle of what you've found"), after a
+// first pass that anchored on the average and undershot.
+//
+// The research: independent advocates bill $70-500/hr, with a working band of
+// $100-350 and a national average of $175. The average is not the middle - it
+// is dragged down by lower-credentialed advocates and cheaper regions. The
+// middle of the working band is $225/hr, and one comparable practice charges
+// $200/hr in business hours and $250/hr for urgent work, which brackets it.
+//
+// So every price below is that service's honest hours at $225-240/hr, and
+// live-attendance work is priced against the $250/hr urgent rate instead.
 //
 // The case is ~5.25 hours (overview call, record review, written report), so
-// $950 is $181/hr. The closest published comparable - assessment plus a
-// written plan, flat - is $650, which is where this sat before.
-const CASE_PRICE_CENTS = 95000;
+// $1,200 is $229/hr.
+const CASE_PRICE_CENTS = 120000;
 // The follow-up is a second discussion on the same case, sold from the case
 // after the report lands rather than at checkout. It is NOT included.
-// ~1.25 hours with prep, so $225 is $180/hr.
-const ADDON_PRICE_CENTS = 22500;
+// ~1.25 hours with prep, so $275 is $220/hr.
+const ADDON_PRICE_CENTS = 27500;
 // The chat subscription's SEED. The live number lives on the rates doc like
 // the other two and climbs on its own; see the ratchet below.
-// The one price with no honest hourly anchor: chat is not case work. The
-// nearest comparable is a monthly retainer, and those start at $200-500/mo,
-// so even here it sits under the floor of a much bigger service.
-const SUB_PRICE_CENTS = 15000;
+// The one price with no honest hourly anchor: chat is not case work, so there
+// are no hours to price. The nearest comparable is a light monthly retainer,
+// and those run $200-500/mo - $300 is the middle of that. This is the number
+// I am least sure of, and it is the one to move first if renewals suffer:
+// subscriptions churn on price in a way project work does not.
+const SUB_PRICE_CENTS = 30000;
 // Full access: Eric works INSIDE the case, not beside it - records under a
 // signed release, three-way calls with clinics, and insurance appeals he
 // drafts and files himself.
@@ -120,8 +128,15 @@ const SUB_PRICE_CENTS = 15000;
 // price stays at market and the billing goes monthly. The largest number a
 // client ever sees is one month.
 //
-// ~15 hours a month, so $2,600 is $173/hr against a $175 national average.
-const FULL_MONTH_CENTS = 260000;
+// ~15 hours a month, so $3,400 is $227/hr - the middle of the working band,
+// between the comparable practice's $200/hr standard and $250/hr urgent rates.
+//
+// Worth knowing: this is ABOVE the $500-3,000/mo band published for monthly
+// retainers. That band is for lighter-touch ongoing support, not fifteen
+// hours a month of records chasing, clinic calls and appeal drafting, so the
+// hourly basis is the right one to price from. The retainer figure is the
+// wrong comparable, not a ceiling being broken.
+const FULL_MONTH_CENTS = 340000;
 // A month of coverage. Every purchase on this tier buys exactly this.
 const FULL_MONTH_DAYS = 30;
 // What the scope note says the engagement realistically takes, and what the
@@ -161,14 +176,14 @@ const FULL_EXTEND = { 30: FULL_MONTH_CENTS };
 const CHAT_OPEN_DAYS = 7;
 const CHAT_OPEN_CENTS = 5000;
 // Telehealth Appointment Advocacy: Eric joins the client's own telehealth
-// visit by video to advocate live. $375 flat per appointment - the realistic
+// visit by video to advocate live. $450 flat per appointment - the realistic
 // 1.5-2h of prep, visit and written debrief priced against the $250/hr URGENT
 // rate rather than the standard one, because he is attending live. NOT on the ratchet -
 // a flat number he can say in a sentence. Included free on the tier: he
 // confirms or denies every appointment either way, so volume stays his.
 // If he denies, or the clinic refuses him entry, this exact amount refunds -
 // the case fee is never part of it.
-const TELEHEALTH_PRICE_CENTS = 37500;
+const TELEHEALTH_PRICE_CENTS = 45000;
 
 // The ratchet, v2 (Eric, 2026-08-23: "Pricing will now scale exponentially
 // until it hits $1000/case without add-on and $500 cap for f/u add-on. Chat
@@ -182,10 +197,10 @@ const TELEHEALTH_PRICE_CENTS = 37500;
 // nothing anywhere says any of it is happening.
 const RATE_GROWTH = 1.10;
 const RATE_ROUND_CENTS = 500;
-const CASE_CAP_CENTS = 160000;
-const ADDON_CAP_CENTS = 40000;
+const CASE_CAP_CENTS = 180000;
+const ADDON_CAP_CENTS = 42500;
 const SUB_STEP_CENTS = 500;
-const SUB_CAP_CENTS = 25000;
+const SUB_CAP_CENTS = 45000;
 // Full access climbs GENTLER than the rest: 5% a booking, to the nearest $25,
 // parked at $5,000. Two reasons. A 10% step from $3,500 leaves reach behind
 // in three sales, and this tier has a second throttle the others do not - a
@@ -197,14 +212,14 @@ const FULL_ROUND_CENTS = 2500;
 // Scaled with the base: about seven bookings from $3,500 to the ceiling,
 // where the scope pays $145-200/hr - the honest top for non-attorney
 // advocacy. Also the manual setter's hard max (RATE_MAX_CENTS), on purpose.
-// A MONTHLY ceiling now, not a 60-day one. $3,400/mo is ~15 hours at
-// $227/hr - inside the $100-350 working band and under the $250/hr urgent
-// rate, which is the top I would defend for planned (not emergency) work.
-const FULL_CAP_CENTS = 340000;
+// A MONTHLY ceiling. $4,400/mo is ~15 hours at $293/hr - inside the $100-350
+// working band, above the $250/hr urgent rate, and the top I would defend for
+// planned work by a non-attorney advocate.
+const FULL_CAP_CENTS = 440000;
 // Sanity rails on the manual setter, not on the ratchet. A typo that sets the
 // case rate to $5 or $50,000 should bounce rather than take a booking.
 const RATE_MIN_CENTS = 5000;
-const RATE_MAX_CENTS = 340000;
+const RATE_MAX_CENTS = 440000;
 const RATES_PATH = 'config/rates';
 // The line under which a case is being worked at a loss, in cents per hour.
 // Eric, 2026-08-23: "I've lost money on my current client." The app counts
@@ -1270,7 +1285,7 @@ async function restructureRates(env) {
   // and it is now the price of one month. A live doc holding the old lump
   // would read as a monthly rate and charge nearly double. Every seed moved
   // in the same pass (the market recalibration), so this rewrites them all.
-  const MARKER = 'migrations/reprice-2026-08-26-monthly';
+  const MARKER = 'migrations/reprice-2026-08-26-market';
   const m = await getDoc(env, MARKER);
   if (m?.data.finishedAt) return;
   if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;

@@ -72,7 +72,7 @@ check('R6 setByHand is not cleared behind his back', out.rates.setByHand === tru
 check('R7 the marker records what it did', /only the retired tier price moved/.test(out.marker?.result || ''),
   out.marker?.result || '(none)');
 check('R7b the marker in the source is the one this suite drives',
-  /reprice-2026-08-26-monthly/.test(MARKER), MARKER);
+  /reprice-2026-08-26-market/.test(MARKER), MARKER);
 
 // 3. Idempotent: a finished marker means it never runs twice.
 {

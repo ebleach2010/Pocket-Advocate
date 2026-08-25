@@ -25,7 +25,7 @@ import { rates } from './rates.js';
 // Booking buys one thing (Eric, 2026-08-20). The follow-up used to be a
 // checkbox on this screen; it is sold from the case after the report lands
 // instead, so this step is a single price and a single decision.
-const CASE_PRICE_CENTS = 95000;
+const CASE_PRICE_CENTS = 120000;
 // Filled from /api/rates before the payment step renders, and again if the
 // Worker refuses a stale quote.
 let caseCents = CASE_PRICE_CENTS;
@@ -33,7 +33,10 @@ let caseCents = CASE_PRICE_CENTS;
 // line are bookable. The others are ADD-ONS."). Hands-Off Case Management is
 // bought from inside an open case at the difference; no tier price is
 // compiled into this file any more.
-const money = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
+// Thousands separated, because the case price crossed $1,000 in the 2026-08-26
+// recalibration and "$1200" on a payment button reads like a typo.
+const money = (cents) => (cents / 100).toLocaleString('en-US',
+  cents % 100 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {});
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';

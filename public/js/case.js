@@ -1064,14 +1064,14 @@ function printExport(c, want) {
 // were quoted when they booked, which the case carries as addonRateCents.
 // Everyone booked before that field existed falls back to this, and since the
 // rate only moves upward that errs in their favour.
-const FOLLOWUP_PRICE_CENTS = 22500;
+const FOLLOWUP_PRICE_CENTS = 27500;
 const followUpPrice = (c) =>
   (Number(c?.addonRateCents) > 0 ? Number(c.addonRateCents) : FOLLOWUP_PRICE_CENTS) / 100;
 
 // The Full Access list price, in CENTS, corrected from /api/rates the moment
 // it answers. The upgrade card subtracts what this case already paid, so the
 // number on the button is the difference and never the list price.
-let fullAccessCents = 260000;
+let fullAccessCents = 340000;
 const fullAccessPrice = () => fullAccessCents;
 // Named, because the upgrade card has to know when this has landed. It used
 // to be fire-and-forget, so a slow or failed fetch left the compiled-in price
@@ -1127,7 +1127,7 @@ function addAboutButton(host, id) {
  * monthly all the way down. A flat price the Worker also holds, so the
  * compiled-in number here and the number Stripe charges are the same.
  */
-const EXTEND_PRICE_CENTS = 260000;
+const EXTEND_PRICE_CENTS = 340000;
 function windowEndOf(c) {
   // The Worker's fullAccessWindowEnd, mirrored: purchase start (first-call
   // fallback), plus extensions, plus every stretch spent on hold.
@@ -1282,7 +1282,7 @@ function renderAddons(el, c) {
  * confirms or declines every one; a decline - his or the clinic's - refunds
  * the payment in full, and the card says so before they type a thing.
  */
-const TELEHEALTH_PRICE_CENTS = 37500;
+const TELEHEALTH_PRICE_CENTS = 45000;
 function telehealthCard(c) {
   const p = c.pendingTelehealth;
   const visits = (Array.isArray(c.telehealthVisits) ? c.telehealthVisits : [])
