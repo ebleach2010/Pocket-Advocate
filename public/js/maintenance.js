@@ -24,13 +24,16 @@
 // Eric, 2026-08-24: "gray out the onboarding screen... nothing can be done
 // from the landing page. Current client unaffected."
 
-// 1PM MST on 2026-08-25. MST is a fixed UTC-7 here (no DST, matching
-// MOUNTAIN_TZ = 'Etc/GMT+7' everywhere else), so 13:00 MST is 20:00Z.
+// 6PM MST on 2026-08-25 (Eric, 2026-08-25: moved out from 1PM). MST is a
+// fixed UTC-7 here (no DST, matching MOUNTAIN_TZ = 'Etc/GMT+7' everywhere
+// else), so 18:00 MST is 01:00Z the NEXT day - which is why the date on this
+// timestamp reads 08-26 while the window is still "same day" to a reader in
+// Mountain time.
 // MUST match MAINTENANCE_UNTIL in worker/index.js.
-export const MAINTENANCE_UNTIL = '2026-08-25T20:00:00Z';
+export const MAINTENANCE_UNTIL = '2026-08-26T01:00:00Z';
 
 /** The words Eric asked for, verbatim. */
-export const MAINTENANCE_TEXT = 'Under Maintenance Until 1PM MST 8/25/26';
+export const MAINTENANCE_TEXT = 'Under Maintenance Until 6PM MST 8/25/26';
 
 /** Whether the window is open right now. */
 export function underMaintenance(now = Date.now()) {
@@ -107,8 +110,8 @@ export function initMaintenance() {
   el.innerHTML = `
     <div class="pa-maint-box">
       <h1>${MAINTENANCE_TEXT}</h1>
-      <p>I am checking over an update before anyone books on top of it.
-        Nothing can be bought until then.</p>
+      <p><strong>Big update in progress.</strong> I am sorry for the
+        inconvenience. Nothing can be booked until then.</p>
       <p class="last"><strong>If you are already a client, nothing has changed.</strong>
         Your case, your files and your chat are open as normal.</p>
       <a href="/signin.html">Sign in to your case</a>
