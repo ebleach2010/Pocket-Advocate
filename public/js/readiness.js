@@ -20,7 +20,13 @@ export function handsOffReadiness(c, authorityItems = []) {
     {
       id: 'records',
       label: 'A records authorisation signed for at least one clinic',
-      done: live.some((i) => i.kind === 'records'),
+      // It has to actually authorise something. A records form with every
+      // communication box unticked is a piece of paper, not permission, and
+      // reading it as "ready" told Eric he could pick up the phone.
+      // Documents signed before scopes existed have no scopes field at all
+      // and did authorise the full set, so undefined counts and [] does not.
+      done: live.some((i) => i.kind === 'records'
+        && (!Array.isArray(i.scopes) || i.scopes.length > 0)),
     },
     {
       id: 'representative',

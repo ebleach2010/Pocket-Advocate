@@ -1,40 +1,14 @@
-// Full Access: the scope note the client acknowledges before buying the tier.
+// Hands-Off Case Management: the scope note the client acknowledges before
+// buying the tier. Rendered by the booking flow and by the case page.
 //
-// Written 2026-08-23, PENDING ERIC'S SIGN-OFF, and flagged in the PR. It is a
-// NEW file rather than a fourth entry in waivers.js, because that file is
-// frozen by the repo's standing instructions, and this copy has not been
-// through the legal review the three original forms have.
+// It sits beside public/js/waivers.js rather than inside it, because that
+// file is frozen by the repo's standing instructions.
 //
-// Two hard constraints on the wording, both from the frozen file it sits
-// beside, and neither may be contradicted here:
-//
-//   1. waivers.js states "This service is not a HIPAA covered entity." That
-//      stays true under Full Access. Eric receives records as the client's
-//      own authorised recipient, not as a provider, a plan, a clearinghouse,
-//      or anyone's business associate. Nothing below implies otherwise.
-//   2. The disclaimer's framing is advocacy only: never diagnosis, treatment
-//      plan, or medical advice. Full Access widens what Eric DOES, never what
-//      he claims to be.
-//
-// Every number in here drives a real limit in the code. If one changes, both
-// change together, or the document is lying.
-//
-// That claim used to be false, and an audit caught it: the previous version
-// promised five clinics, three calls, two appeals and ninety days, and NOT
-// ONE of those was counted anywhere. The rewrite removes every number the
-// code does not enforce and keeps two that it does:
-//
-//   60 days  -> fullAccessWindowEnd() in worker/index.js, which gates
-//               check-in scheduling and the automatic closure.
-//   2 appeal -> appealsUsed() in worker/index.js, checked before a letter is
-//   letters     written. Filed letters are what count; redrafting is free.
-//
-// "Every two weeks" is enforced as a FLAG, not an automation, and the copy
-// says "runs on a rhythm" rather than promising a machine: Eric schedules
-// each check-in himself, and his dashboard marks any tier case that has
-// gone 14 days without one (CHECKIN_DAYS in worker/index.js, checkInDue in
-// admin.js). "As many calls as the case needs" is deliberately uncounted,
-// which is why it is phrased as a promise rather than an allowance.
+// This file is downloaded by every client, so it holds the document and
+// nothing else. Open questions about the wording live in the repo's own
+// instructions file, never here - a client reading the source of an
+// agreement they are about to sign should find the agreement, not a note
+// about it.
 
 /**
  * The scope note, in the shape the booking flow already renders:

@@ -67,7 +67,11 @@ check('C13 every auto-close writes a closedReason the client reads',
 check('C14 a hand close REQUIRES the reason',
   /if \(!reason\)\s*\n\s*return json\(\{ error: 'Write the reason for closing\. The client reads it word for word\.' \}, 400\);/.test(SRC));
 check('C15 the reason lands on the case doc, in the write mask',
-  /mask: \['status', 'closedAt', 'closedBy', 'closedReason', 'hold'\]/.test(SRC));
+  /mask: \['status', 'closedAt', 'closedBy', 'closedReason', 'hold', 'pendingExtend'\]/.test(SRC));
+check('C15b closing a case also kills any open extension checkout',
+  (SRC.match(/pendingExtend: null,\n\s*\}, \{ mask: \['status'/g) || []).length >= 1
+  || /'closedReason', 'pendingExtend'\]/.test(SRC),
+  'an open Stripe session on a closed case was still payable');
 check('C16 the old private closedNote write is gone',
   !/closedNote:/.test(SRC));
 check('C17 the legacy reasonless close action is retired, not silently kept',
@@ -146,8 +150,11 @@ check('E1 the extend route exists and is tier-only',
 check('E2 the webhook stacks 30 days, idempotent by sessionId',
   /async function confirmExtensionPurchase/.test(SRC)
   && /fullAccessExtraDays: newDays/.test(SRC)
-  && /\(Number\(c\.data\.fullAccessExtraDays\) \|\| 0\) \+ 30/.test(SRC)
+  && /\(Number\(c\.data\.fullAccessExtraDays\) \|\| 0\) \+ lapsedDays \+ 30/.test(SRC)
   && /payments\.some\(\(x\) => x\.sessionId === session\.id\)\) return;/.test(SRC));
+check('E2b a lapsed window is credited first, so 30 days really is 30 days',
+  /const lapsedDays = prevEnd/.test(SRC)
+  && /Math\.ceil\(\(Date\.now\(\) - prevEnd\.getTime\(\)\) \/ 86_400_000\)/.test(SRC));
 check('E3 an abandoned extension checkout clears itself',
   /kind === 'extend' && session\.metadata\.caseId/.test(SRC)
   && /pendingExtend: null/.test(SRC));

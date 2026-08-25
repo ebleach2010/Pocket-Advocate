@@ -20,6 +20,8 @@ const WORKER = readFileSync(__j(__REPO, 'worker/index.js'), 'utf8');
 const CASE = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
 const ADMIN = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
 const DEMO = readFileSync(__j(__REPO, 'public/js/demo/api.js'), 'utf8');
+const AUTH = readFileSync(__j(__REPO, 'public/js/authority.js'), 'utf8');
+const W = WORKER;
 
 const results = [];
 function check(name, cond, detail = '') {
@@ -156,9 +158,43 @@ check('S11 the signature prints on paper, outside the document text',
 check('S12 and it is re-checked before it is ever written into a document',
   (CASE.match(/data:image\\\/\(png\|jpe\?g\);base64/g) || []).length >= 1
   && (ADMIN.match(/data:image\\\/\(png\|jpe\?g\);base64/g) || []).length >= 1);
+// Was: "the demo stores both new fields". Strengthened on 2026-08-25 - the
+// demo used to store whatever scopes array arrived and refuse a missing
+// signature FIRST, so the same bad POST got a different answer depending on
+// which side you were driving. It now mirrors the Worker's filter, its
+// signature shape check, and its refusal ORDER.
 check('S13 the demo stores both new fields, so it cannot silently drop them',
-  /scopes: Array\.isArray\(body\.scopes\)/.test(DEMO)
-  && /signatureImage: body\.signatureImage/.test(DEMO));
+  /scopes,/.test(DEMO) && /signatureImage: body\.signatureImage/.test(DEMO));
+check('S14 the demo filters scopes against the same allowlist the Worker has',
+  /\['discuss', 'records', 'admin'\]\.includes\(x\)/.test(DEMO));
+check('S15 the demo validates the signature shape, not just its presence',
+  /data:image\\\/\(png\|jpe\?g\);base64/.test(DEMO));
+check('S16 the demo refuses in the Worker order: kind, name, subject, then signature',
+  DEMO.indexOf("fail(400, 'Type your full name to sign.')")
+    < DEMO.indexOf("fail(400, 'Name the clinic this authorisation is for.')")
+  && DEMO.indexOf("fail(400, 'Name the clinic this authorisation is for.')")
+    < DEMO.indexOf("Sign the document with your finger"));
+check('S17 a withdrawn authorisation in the demo survives a reload',
+  /revokedAt: new Date\(\) \}\);\n\s*store\.persist\?\.\(\)/.test(DEMO));
+// The two document-correctness bugs the 2026-08-25 audit found.
+check('S18 a bare YYYY-MM-DD is read as a wall date, not as UTC midnight',
+  /T12:00:00Z/.test(AUTH),
+  'new Date("2024-01-01") is UTC midnight; rendering in Etc/GMT+7 walked it back a day');
+check('S19 unticking every scope prints as unticked, not as all three',
+  recordsAuthorisation({ scopes: [] }).includes('I have not authorised any of the items above')
+  && !recordsAuthorisation({ scopes: [] }).includes('[X]'));
+check('S20 a document with no scopes field at all is still the legacy full set',
+  (recordsAuthorisation({}).match(/\[X\]/g) || []).length === 3);
+check('S21 the Worker refuses a records form that authorises nothing',
+  /kind === 'records' && !item\.scopes\.length/.test(W));
+check('S22 the Worker parses dates instead of storing whatever arrives',
+  /fromDate: wallDate\(body\?\.fromDate\)/.test(W) && /function wallDate/.test(W));
+check('S23 the Worker checks the image bytes, not just the data-url wrapper',
+  /looksLikeImage/.test(W) && /0x89 && b\[1\] === 0x50/.test(W));
+check('S24 the list GET omits the signature blobs unless one is asked for by id',
+  /hasSignature: !!signatureImage/.test(W) && /url\.searchParams\.get\('id'\)/.test(W));
+check('S25 a signature nobody can draw is not the only route',
+  /data-sig-typed/.test(CASE), 'pointer-only would lock out the whole tier');
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

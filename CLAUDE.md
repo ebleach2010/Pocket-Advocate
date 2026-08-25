@@ -84,3 +84,34 @@ suite's expectation in the same commit and say so — never delete the check.
   silent and its description stays out of client-served files.
 - No model identifiers in anything pushed to the repo.
 - The demo/test suites run on preview hosts only (`docs/SUITES.md`).
+
+## Open flags on the tier copy (kept OUT of the served files)
+
+These were written as comment headers in `public/js/tier-terms.js`,
+`service-about.js` and `readiness.js` and moved here on 2026-08-25: those
+three files are downloaded by every client, so a client reading the source
+of the agreement they are about to sign was being told it was unreviewed
+and which of its promises are unenforced. The blindness rule covers prose
+comments; this is the same breach `service-terms.js` had.
+
+- **`tier-terms.js` has not had a legal review.** It is a NEW file rather
+  than a fourth entry in the frozen `waivers.js`, and it is PENDING ERIC'S
+  SIGN-OFF. Flagged on the PR; do not treat it as settled copy.
+- **Two hard constraints carry over from `waivers.js` and may not be
+  contradicted:** (1) "This service is not a HIPAA covered entity" stays
+  true — Eric receives records as the client's own authorised recipient,
+  never as a provider, plan, clearinghouse or business associate; (2) the
+  framing is advocacy only, never diagnosis, treatment plan or medical
+  advice. The tier widens what Eric DOES, never what he claims to be.
+- **Every number in the agreement must drive a real limit.** An audit once
+  caught it promising five clinics, three calls, two appeals and ninety
+  days with not one of them counted anywhere. Two survive because the code
+  enforces them: the 60-day window (`fullAccessWindowEnd()`) and the two
+  appeal letters (`appealsUsed()`).
+- **"Every two weeks" is a FLAG, not an automation.** Eric schedules each
+  check-in himself; the dashboard marks any tier case 14 days without one
+  (`CHECKIN_DAYS`, `checkInDue`). The copy says "runs on a rhythm" for that
+  reason. "As many calls as the case needs" is deliberately uncounted.
+- **About-sheet prices are compiled-in against a live ratchet.** The sheets
+  in `service-about.js` state prices as text while the case price ratchets
+  +$10 a booking; they need re-checking whenever the ratchet moves.

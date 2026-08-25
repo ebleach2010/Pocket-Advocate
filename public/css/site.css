@@ -33,6 +33,16 @@
   --glow-g: 0 0 16px rgba(62, 224, 138, .30);
   --glow-b: 0 0 18px rgba(124, 140, 255, .34);
   --glow-o: 0 0 16px rgba(255, 162, 62, .35);
+  /* The peak frame of the Book-a-case pulse. It needs its own token: built
+     from --cyan-dim it was fully opaque, so contrast and paper both got a
+     bloom they had switched off. */
+  --glow-c-peak: 0 0 26px rgba(55, 225, 255, .75), 0 0 46px rgba(55, 225, 255, .40);
+  --wash-b: rgba(124, 140, 255, .05);
+  --chip-wash: rgba(124, 140, 255, .12);
+  /* A signature is ink on paper on every scheme - a document surface, like
+     --manila, not chrome. Named so the five places that draw it agree. */
+  --sig-paper: #FFFFFF;
+  --sig-ink: #101828;
   /* The translucent ground under every sticky bar. A scheme cannot reach a
      baked rgba, and a bar that stays near-black under a pale scheme takes the
      whole top of the app with it. */
@@ -73,6 +83,11 @@
   --glow-g: 0 0 12px rgba(111, 196, 154, .16);
   --glow-b: 0 0 12px rgba(138, 168, 220, .16);
   --glow-o: 0 0 12px rgba(221, 164, 112, .18);
+  --glow-c-peak: 0 0 18px rgba(111, 199, 216, .32);
+  --wash-b: rgba(138, 168, 220, .04);
+  --chip-wash: rgba(138, 168, 220, .10);
+  --sig-paper: #FFFFFF;
+  --sig-ink: #101828;
   --bar: rgba(11, 14, 20, .88);
   --on-accent: #06131A;
 }
@@ -100,6 +115,11 @@
   --glow-g: 0 0 0 1px rgba(30, 122, 77, .18);
   --glow-b: 0 0 0 1px rgba(43, 91, 168, .18);
   --glow-o: 0 0 0 1px rgba(162, 90, 21, .18);
+  --glow-c-peak: 0 0 0 2px rgba(14, 110, 134, .30);
+  --wash-b: transparent;
+  --chip-wash: rgba(34, 72, 138, .06);
+  --sig-paper: #FFFFFF;
+  --sig-ink: #101828;
   --bar: rgba(243, 238, 227, .92);
   /* Pale ink on a dark accent, which is the way round this scheme needs. */
   --on-accent: #FBF8F2;
@@ -124,6 +144,9 @@
   --gold: #FFD86B;
   --orange: #FFB259;
   --glow-c: none; --glow-m: none; --glow-g: none; --glow-b: none; --glow-o: none;
+  --glow-c-peak: none; --wash-b: transparent; --chip-wash: transparent;
+  --sig-paper: #FFFFFF;
+  --sig-ink: #101828;
   --bar: rgba(0, 0, 0, .95);
   --on-accent: #000000;
 }
@@ -399,12 +422,17 @@ label:has(> input[type="checkbox"]):not([class]) {
    keyboard up there is not 3.5rem to spare, so this one sheet takes it back:
    the card starts near the top and gets the whole screen minus its own margin,
    which is what puts both buttons inside the viewport. */
-.settings-overlay:has(> .rename-card) { padding-top: 1.1rem; align-items: flex-start; }
-.rename-card { max-height: calc(100dvh - 2.2rem); overflow-y: auto; }
-.rename-card .actions {
+.settings-overlay:has(> .rename-card),
+.settings-overlay:has(> .sig-sheet) { padding-top: 1.1rem; align-items: flex-start; }
+.rename-card,
+.sig-sheet { max-height: calc(100dvh - 2.2rem); overflow-y: auto; }
+.rename-card .actions,
+.sig-sheet .actions {
   position: sticky; bottom: -1.1rem; padding: .6rem 0 .2rem; margin-bottom: -.2rem;
   background: var(--panel); box-shadow: 0 -14px 16px -6px var(--panel);
 }
+/* Sign has further to fall than Rename ever did: the records sheet runs to
+   roughly 1800px on a 390px phone before the document itself is expanded. */
 
 /* Long-form content: cap the height and scroll inside the card so the close
    button never leaves the screen on a short phone. */
@@ -465,6 +493,10 @@ label.inline { display: inline-flex; align-items: center; gap: .4rem; margin: 0;
   position: relative; display: grid; grid-template-columns: 1fr auto; gap: .4rem .8rem;
   background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
   padding: 1.25rem 1.3rem; text-decoration: none; color: var(--ink); margin: 0;
+  /* One of these cards is a <button> (it opens a sheet rather than
+     navigating), so the three have to be indistinguishable: a button brings
+     its own font, centres its text and shrink-wraps. */
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
 }
 .pack h3 { margin: 0; font-size: 1.2rem; }
 .pack .desc { grid-column: 1 / -1; color: var(--soft); font-size: 1rem; margin: 0; line-height: 1.5; }
@@ -501,20 +533,11 @@ summary.btn::-webkit-details-marker { display: none; }
   box-shadow: var(--glow-b), inset 0 0 30px rgba(108,158,255,.05);
 }
 .pack.rec-m .price { color: var(--blue); }
-/* PR 69 calm pass: the breathe animations are retired. The cards hold a
-   steady inset glow instead; keyframes kept below for reference only. */
-@keyframes neon-breathe-c {
-  0%, 100% { box-shadow: 0 0 12px rgba(45,226,255,.27), inset 0 0 34px rgba(45,226,255,.05); }
-  50%      { box-shadow: 0 0 29px rgba(45,226,255,.66), inset 0 0 40px rgba(45,226,255,.11); }
-}
-@keyframes neon-breathe-b {
-  0%, 100% { box-shadow: 0 0 12px rgba(108,158,255,.24), inset 0 0 34px rgba(108,158,255,.05); }
-  50%      { box-shadow: 0 0 29px rgba(108,158,255,.62), inset 0 0 40px rgba(108,158,255,.11); }
-}
-@media (prefers-reduced-motion: reduce) {
-.pack.rec-c,
-.pack.rec-m { animation: none; }
-}
+/* PR 69 calm pass: the breathe animations are retired - the cards hold a
+   steady inset glow instead. The keyframes and their reduced-motion pair
+   were kept "for reference" and deleted on 2026-08-25: nothing referenced
+   them, so the media block overrode nothing, and they shipped to every
+   visitor on every page. */
 /* The mockup frames the hero and the closing call in glowing cards rather
    than letting them float on the ground. Same token glow as the pricing
    cards, so all three schemes follow. */
@@ -522,7 +545,12 @@ summary.btn::-webkit-details-marker { display: none; }
 .land-sec.closing {
   background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
   padding: 1.15rem 1rem;
-  box-shadow: var(--glow-b), inset 0 0 40px rgba(124, 140, 255, .05);
+  /* Two declarations, not one list: "none, inset ..." is invalid CSS
+     grammar, so on contrast (--glow-b: none) the browser was discarding the
+     whole thing. The wash is a token now, so contrast turns it transparent
+     on purpose instead of by parse failure. */
+  box-shadow: var(--glow-b);
+  background-image: radial-gradient(circle at 50% 0%, var(--wash-b), transparent 70%);
 }
 .land-sec.closing { text-align: center; }
 
@@ -531,15 +559,17 @@ summary.btn::-webkit-details-marker { display: none; }
    .pulse, on that one button only - the one-glow-per-screen rule holds. */
 @keyframes glow-pulse {
   0%, 100% { box-shadow: var(--glow-c); }
-  50%      { box-shadow: 0 0 26px var(--cyan-dim), 0 0 46px var(--cyan-dim); }
+  50%      { box-shadow: var(--glow-c-peak); }
 }
 .btn.pulse { animation: glow-pulse 3.2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .btn.pulse { animation: none; }
 }
 /* The About sheets (service-about.js): TL;DR first, depth underneath. */
-.about-card { max-width: 34rem; }
-.about-card .about-body { max-height: min(68vh, 34rem); }
+.settings-card.about-card { max-width: 34rem; }
+/* dvh, not vh: on iOS vh is the LARGE viewport, so this ran ~10% taller than
+   intended with the URL bar showing. The rest of the file already uses dvh. */
+.settings-card.about-card .about-body { max-height: min(68dvh, 34rem); }
 .about-tldr {
   border: 1px solid var(--cyan-dim); border-radius: 12px;
   background: var(--panel-2); padding: .7rem .85rem; margin: 0 0 .8rem;
@@ -547,6 +577,9 @@ summary.btn::-webkit-details-marker { display: none; }
 .about-list { margin: .2rem 0 .4rem; padding-left: 1.15rem; }
 .about-list li { margin: .3rem 0; }
 .pack-about { text-align: center; margin: -.3rem 0 1rem; }
+/* .pack has margin:0 and the About buttons only sit under two of the three
+   cards, so without this the Hands-Off and chat cards butt borders. */
+.pack + .pack { margin-top: 1rem; }
 /* The signing sheet: the finger-signature box, its pad, and the red a
    field wears when the completeness gate sends them back to it. */
 .sig-box {
@@ -555,18 +588,22 @@ summary.btn::-webkit-details-marker { display: none; }
   border: 1px dashed var(--line); border-radius: 12px;
   background: var(--panel-2); color: var(--dim); cursor: pointer;
 }
-.sig-box:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 .sig-canvas {
   display: block; width: 100%; border: 1px solid var(--line);
-  border-radius: 10px; background: #fff;
+  border-radius: 10px; background: var(--sig-paper); padding: 0;
   /* Without this the first stroke scrolls the sheet instead of drawing. */
   touch-action: none;
 }
 .field-bad,
-.field-bad:focus { border-color: var(--danger) !important; }
+.field-bad:focus {
+  border-color: var(--danger) !important;
+  /* A 1px hue shift was the only signal, which on contrast is a luminance
+     step of one pixel. Width carries it for a red-deficient reader too. */
+  border-width: 2px !important;
+}
 /* The Hands-Off readiness checklist (readiness.js), both sides. */
 .ready-list { list-style: none; margin: .2rem 0 .6rem; padding: 0; }
-.ready-list li { margin: .3rem 0; color: var(--soft); }
+.ready-list li { display: flex; gap: .4rem; margin: .3rem 0; color: var(--soft); }
 .ready-list li.is-done { color: var(--green); }
 .tag {
   position: absolute; top: -.6rem; left: .9rem;
@@ -843,7 +880,11 @@ button:focus-visible,
   width: 100%; resize: vertical; min-height: 6rem; line-height: 1.5;
   font: inherit; font-size: .95rem;
 }
-.btn.tiny { font-size: .7rem; padding: .6rem .75rem; min-height: 44px; }
+/* One declaration. It used to be two - this one and a second at the authority
+   rules ~300 lines down - and the shipped button was an accident of the
+   cascade: padding and font from the later rule, min-height from this one.
+   The tap target is 44px on purpose; the padding is small on purpose. */
+.btn.tiny { font-size: .72rem; padding: .2rem .5rem; min-height: 44px; }
 .btn.tiny.on { border-color: var(--magenta); color: var(--magenta); }
 
 /* Full-screen chat. The ⤢/✕ button sits in the top-right corner of the
@@ -1049,7 +1090,7 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
   flex: none; width: 2.1rem; height: 2.1rem; border-radius: 10px;
   display: flex; align-items: center; justify-content: center; font-size: 1rem;
   background: var(--panel-2); border: 1px solid var(--line);
-  box-shadow: inset 0 0 18px rgba(124, 140, 255, .12);
+  box-shadow: inset 0 0 18px var(--chip-wash);
 }
 
 /* "What happens after you book": a plain list, cyan markers. */
@@ -1131,7 +1172,7 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
    this is the most consequential thing they will do here, and a form that
    looks like a sales card is a form people skim. */
 .authority h3 { margin: 0 0 .3rem; }
-.auth-row { padding: .8rem 0; border-top: 1px solid rgba(255, 255, 255, .1); }
+.auth-row { padding: .8rem 0; border-top: 1px solid var(--line); }
 .auth-row:first-of-type { border-top: 0; }
 .auth-head { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; }
 .auth-on { font: 600 .72rem/1 ui-monospace, monospace; color: var(--cyan); }
@@ -1141,7 +1182,6 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
   flex-wrap: wrap; margin: .45rem 0; font-size: .85rem;
 }
 .auth-item-acts { display: flex; gap: .35rem; flex: none; }
-.btn.tiny { padding: .2rem .5rem; font-size: .72rem; }
 /* The full form, as it will actually read. Monospace because it is a
    document, not prose, and wrapped because a phone is 390px wide. */
 .auth-doc {
@@ -1449,10 +1489,16 @@ body.lightbox-open { overflow: hidden; }
   border-radius: 6px; border: 1px solid var(--line);
 }
 .scheme-chip i { flex: 1; height: 100%; border-radius: 2px; }
-.sc-neon { background: #07090F; border-color: #1C2542; }
-.sc-neon i:nth-child(1) { background: #2DE2FF; }
-.sc-neon i:nth-child(2) { background: #FF4FD8; }
-.sc-neon i:nth-child(3) { background: #EAF0FF; }
+/* THESE LITERALS ARE LOAD-BEARING AND MUST BE UPDATED BY HAND. A preview
+   has to show a scheme you are not currently in, so it cannot read tokens.
+   Change any scheme's --bg/--line/--cyan/--magenta/--ink above and change
+   its swatch here in the same commit. (Missed once already: after the
+   2026-08-25 restyle this block still advertised the old near-black and hot
+   magenta for a scheme that is now deep navy and violet.) */
+.sc-neon { background: #060A1C; border-color: #242F63; }
+.sc-neon i:nth-child(1) { background: #37E1FF; }
+.sc-neon i:nth-child(2) { background: #A97BFF; }
+.sc-neon i:nth-child(3) { background: #EDF1FF; }
 .sc-calm { background: #0B0E14; border-color: #232C3F; }
 .sc-calm i:nth-child(1) { background: #6FC7D8; }
 .sc-calm i:nth-child(2) { background: #D98BC4; }

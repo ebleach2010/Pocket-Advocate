@@ -25,8 +25,15 @@ const lift = (names) => {
     if (!m) throw new Error(`could not lift ${n}`);
     return m[0];
   }).join('\n');
+  // The cutover constant is READ from the Worker, not typed here: if it ever
+  // moves, these checks move with it rather than quietly asserting a date the
+  // product no longer uses.
+  const cutover = Number(W.match(/FULL_WINDOW_FROM_PURCHASE_AT = Date\.parse\('([^']+)'\)/)
+    ? Date.parse(W.match(/FULL_WINDOW_FROM_PURCHASE_AT = Date\.parse\('([^']+)'\)/)[1]) : NaN);
+  if (!Number.isFinite(cutover)) throw new Error('could not read FULL_WINDOW_FROM_PURCHASE_AT');
   return new Function('Date', 'FULL_WINDOW_DAYS', 'FOLLOWUP_EXPIRY_DAYS',
-    `${src}\n return { ${names.filter((n) => !n.includes('=')).join(', ')} };`)(FakeDate, 60, 30);
+    'FULL_WINDOW_FROM_PURCHASE_AT',
+    `${src}\n return { ${names.filter((n) => !n.includes('=')).join(', ')} };`)(FakeDate, 60, 30, cutover);
 };
 const { heldMs, onHold, fullAccessWindowEnd, followUpBase, followUpExpiry } =
   lift(['heldMs', 'onHold', 'fullAccessWindowEnd', 'followUpBase', 'followUpExpiry']);
@@ -47,16 +54,29 @@ ck('onHold reads the pause, not the bank',
    && onHold({ hold: { pausedAt: null, totalMs: 9 * DAY } }) === false);
 
 // ---- his clocks move ----------------------------------------------------
-const call = '2026-08-01T17:00:00Z';
-// The window runs from PURCHASE now (Eric, 2026-08-25), with the first call
-// as the legacy fallback for cases stamped before the rule.
-const bought = '2026-07-28T17:00:00Z';
+// The window runs from PURCHASE for anything bought on or after the cutover
+// (Eric, 2026-08-25). A case bought BEFORE it keeps the first-call window its
+// scope note sold, because every full case carries a fullAccessAt stamp - so
+// a naive "prefer the purchase date" would have taken days off live clients
+// rather than falling back to anything. Both sides are pinned here.
+const call = '2026-09-05T17:00:00Z';
+const bought = '2026-08-30T17:00:00Z';           // after the cutover
 const plain = { fullAccessAt: bought, appointment: { start: call } };
 const held = { fullAccessAt: bought, appointment: { start: call }, hold: { pausedAt: null, totalMs: 11 * DAY } };
 ck('the tier window is 60 days from the purchase',
    fullAccessWindowEnd(plain).getTime() === Date.parse(bought) + 60 * DAY);
+const oldCall = '2026-08-01T17:00:00Z';
+const oldBought = '2026-07-28T17:00:00Z';        // before the cutover
+ck('a case bought before the cutover keeps the first-call window it was sold',
+   fullAccessWindowEnd({ fullAccessAt: oldBought, appointment: { start: oldCall } }).getTime()
+     === Date.parse(oldCall) + 60 * DAY);
 ck('a legacy case with no purchase stamp falls back to the first call',
-   fullAccessWindowEnd({ appointment: { start: call } }).getTime() === Date.parse(call) + 60 * DAY);
+   fullAccessWindowEnd({ appointment: { start: oldCall } }).getTime() === Date.parse(oldCall) + 60 * DAY);
+ck('a post-cutover case with no first call still runs from purchase',
+   fullAccessWindowEnd({ fullAccessAt: bought }).getTime() === Date.parse(bought) + 60 * DAY);
+ck('thirty bought days extend the window and nothing else does',
+   fullAccessWindowEnd({ ...plain, fullAccessExtraDays: 30 }).getTime()
+     === Date.parse(bought) + 90 * DAY);
 ck('an 11-day pause puts 11 days back on the tier window',
    fullAccessWindowEnd(held).getTime() - fullAccessWindowEnd(plain).getTime() === 11 * DAY);
 const fu = { addOnFollowUpAt: '2026-08-20T17:00:00Z' };

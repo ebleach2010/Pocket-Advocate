@@ -99,6 +99,10 @@ const FULL_PRICE_CENTS = 350000;
 // how frantic each case feels; the concurrency cap governs how many he
 // carries. Long window, low cap.
 const FULL_WINDOW_DAYS = 60;
+// The moment the window started running from purchase instead of from the
+// first call. Cases stamped before this keep the rule they were sold under;
+// see fullAccessWindowEnd.
+const FULL_WINDOW_FROM_PURCHASE_AT = Date.parse('2026-08-25T00:00:00Z');
 // Every two weeks: the check-in cadence the tier promises. Enforced as a
 // FLAG, not an automation - the dashboard marks a tier case that has gone
 // this long without a check-in on the books, and Eric schedules the call.
@@ -1488,7 +1492,11 @@ async function closeDeliveredCases(env) {
         : 'The report was delivered and the 48-hour question window ended, so the case wrapped up on schedule.';
       await patchDoc(env, `cases/${row.id}`, {
         status: 'closed', closedAt: new Date(), closedBy: 'automatic', closedReason,
-      }, { mask: ['status', 'closedAt', 'closedBy', 'closedReason'] });
+        // A closed case has nothing to extend. Left in place, an open Stripe
+        // session was still payable and confirmed thirty days onto a case
+        // that had already wrapped.
+        pendingExtend: null,
+      }, { mask: ['status', 'closedAt', 'closedBy', 'closedReason', 'pendingExtend'] });
       await sendEmail(env, {
         to: row.data.clientEmail,
         subject: 'Your case file is yours to keep',
@@ -1799,7 +1807,10 @@ async function handleCloseCase(request, env) {
     closedReason: reason,
     // A closed case has no running clock to bill.
     hold: { pausedAt: null, totalMs: Math.max(0, Number(doc.data.hold?.totalMs) || 0), reason: '', backBy: null },
-  }, { mask: ['status', 'closedAt', 'closedBy', 'closedReason', 'hold'] });
+    // And nothing to extend: an open extension checkout would otherwise stay
+    // payable and put thirty days onto a case that has already wrapped.
+    pendingExtend: null,
+  }, { mask: ['status', 'closedAt', 'closedBy', 'closedReason', 'hold', 'pendingExtend'] });
   if (doc.data.clientUid) {
     await notifyUser(env, doc.data.clientUid, {
       title: 'Pocket Advocate',
@@ -1813,7 +1824,14 @@ async function handleCloseCase(request, env) {
 function fullAccessWindowEnd(c) {
   const bought = c?.fullAccessAt ? new Date(c.fullAccessAt).getTime() : 0;
   const firstCall = c?.appointment?.start ? new Date(c.appointment.start).getTime() : 0;
-  const start = Number.isFinite(bought) && bought ? bought : firstCall;
+  // A case bought BEFORE the rule changed keeps the window it was sold: its
+  // scope note said sixty days from the first call, and moving the start
+  // under a live client would silently take days off a thing they already
+  // acknowledged. Preferring fullAccessAt unconditionally did exactly that,
+  // because every full case has that stamp - the "legacy fallback" could
+  // never fire. New cases run from purchase, as ordered.
+  const boughtUnderNewRule = bought && bought >= FULL_WINDOW_FROM_PURCHASE_AT;
+  const start = boughtUnderNewRule ? bought : (firstCall || bought);
   if (!Number.isFinite(start) || !start) return null;
   const days = FULL_WINDOW_DAYS + (Number(c.fullAccessExtraDays) || 0);
   return new Date(start + days * 86_400_000 + heldMs(c));
@@ -3139,6 +3157,45 @@ const AUTHORITY_SCOPE_IDS = ['discuss', 'records', 'admin'];
 // A downscaled signature is 15-40KB; this leaves room without letting a
 // document grow into something the GET has to ship on every paint.
 const AUTHORITY_SIG_MAX = 80_000;
+
+/**
+ * A wall date from <input type="date">, or ''. Refuses anything that is not
+ * exactly YYYY-MM-DD, anything that does not round-trip (2026-02-30 rolls to
+ * March 2 if you let Date have it), and anything in the future in MST - the
+ * zone the documents are executed and printed in.
+ */
+function wallDate(v) {
+  const d = typeof v === 'string' ? v.trim() : '';
+  if (!d) return '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return '';
+  const t = new Date(`${d}T12:00:00Z`);
+  if (Number.isNaN(t.getTime())) return '';
+  if (t.toISOString().slice(0, 10) !== d) return '';
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Etc/GMT+7', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  return d > today ? '' : d;
+}
+
+/**
+ * The bytes, not just the wrapper. "data:image/png;base64,====" satisfies
+ * the regex and is neither valid base64 nor a PNG; stored, it printed as a
+ * broken-image icon directly under "Signature of the person named above."
+ */
+function looksLikeImage(dataUrl) {
+  const b64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+  let head;
+  try {
+    head = atob(b64.slice(0, 16));
+  } catch {
+    return false;
+  }
+  const b = [...head].map((ch) => ch.charCodeAt(0));
+  const png = b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47;
+  const jpg = b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF;
+  return png || jpg;
+}
+
 async function handleAuthority(request, env, url) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in required' }, 401);
@@ -3150,10 +3207,25 @@ async function handleAuthority(request, env, url) {
 
   if (request.method === 'GET') {
     const rows = await listDocs(env, coll, { pageSize: 100 }).catch(() => []);
-    return json({
-      items: rows.map((r) => ({ id: r.id, ...r.data }))
-        .sort((a, b) => new Date(b.signedAt || 0) - new Date(a.signedAt || 0)),
-    });
+    const want = String(url.searchParams.get('id') || '');
+    // The list ships everything EXCEPT the signature blobs. Both sides
+    // refetch this on every paint, and the UI encourages one document per
+    // clinic, so six clinics meant a quarter of a megabyte of base64 on
+    // every render of a card that displays a clinic name. The two print
+    // paths ask for one document by id and get its ink with it.
+    const items = rows
+      .map((r) => {
+        const { signatureImage, ...rest } = r.data;
+        const keep = want && r.id === want;
+        return {
+          id: r.id,
+          ...rest,
+          hasSignature: !!signatureImage,
+          ...(keep ? { signatureImage } : {}),
+        };
+      })
+      .sort((a, b) => new Date(b.signedAt || 0) - new Date(a.signedAt || 0));
+    return json({ items });
   }
   if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
 
@@ -3207,8 +3279,8 @@ async function handleAuthority(request, env, url) {
     clinicName: str(body?.clinicName, 200),
     clinicAddress: str(body?.clinicAddress, 400),
     clinicPhone: str(body?.clinicPhone, 40),
-    fromDate: str(body?.fromDate, 20),
-    toDate: str(body?.toDate, 20),
+    fromDate: wallDate(body?.fromDate),
+    toDate: wallDate(body?.toDate),
     purpose: str(body?.purpose, 600),
     memberId: str(body?.memberId, 80),
     planName: str(body?.planName, 200),
@@ -3233,11 +3305,25 @@ async function handleAuthority(request, env, url) {
   const sig = typeof body?.signatureImage === 'string' ? body.signatureImage.trim() : '';
   if (sig) {
     if (sig.length > AUTHORITY_SIG_MAX
-      || !/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(sig))
+      || !/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(sig)
+      || !looksLikeImage(sig))
       return json({ error: 'That signature did not come through. Sign it again.' }, 400);
     item.signatureImage = sig;
   }
 
+  // The page checks these too; this is the half that enforces. Without it a
+  // POST straight at the route stored an unparseable or future range on a
+  // signed legal document, and the printed form rendered it as written.
+  if ((body?.fromDate && !item.fromDate) || (body?.toDate && !item.toDate))
+    return json({ error: 'Use a real date, on or before today.' }, 400);
+  if (item.fromDate && item.toDate && item.fromDate > item.toDate)
+    return json({ error: 'The "from" date has to come before the "through" date.' }, 400);
+  // A records authorisation that authorises nothing is not an instrument.
+  // The boxes arrive ticked, so this only refuses somebody who cleared all
+  // three - and refusing beats storing a document whose own text then said
+  // they had authorised everything.
+  if (kind === 'records' && !item.scopes.length)
+    return json({ error: 'Tick at least one thing you are authorising me to do.' }, 400);
   if (kind === 'records' && !item.clinicName)
     return json({ error: 'Name the clinic this authorisation is for.' }, 400);
   if (kind === 'representative' && !item.planName)
@@ -4433,29 +4519,51 @@ async function handleExtendCheckout(request, env) {
     return json({ ok: true, url: pending.url });
 
   const cents = FULL_EXTEND[30];
+  // The same honesty check /api/checkout and /api/upgrade run. The price is
+  // off the ratchet so it cannot move on its own, but it can move because
+  // Eric edits the constant, and a card that read $1,750 must never charge
+  // anything else.
+  const quoted = Number(body?.quotedCents) || 0;
+  if (quoted && quoted !== cents)
+    return json({ error: 'rate-changed', extendCents: cents }, 409);
+
   const expiresAt = new Date(Date.now() + 23 * 3600_000);
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: c.data.clientEmail || undefined,
     line_items: extendLineItems(cents),
+    // Same reason the tier itself offers it: a four-figure charge to
+    // somebody already paying for being ill.
+    automatic_payment_methods: { enabled: true },
     success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&extended=1`,
     cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),
     metadata: { kind: 'extend', caseId, uid: c.data.clientUid, days: '30' },
   });
-  await patchDoc(env, `cases/${caseId}`, {
+  // Locked: two tabs racing here would each mint a payable session, and the
+  // second write would hide the first - two live links, two webhooks with
+  // different ids, so the sessionId dedup cannot save them from paying
+  // twice. The loser re-reads and is handed the winner's link.
+  const wrote = await patchDoc(env, `cases/${caseId}`, {
     pendingExtend: { sessionId: session.id, url: session.url, cents, createdAt: new Date(), expiresAt },
-  }, { mask: ['pendingExtend'] });
+  }, { mask: ['pendingExtend'], ifUpdateTime: c.updateTime });
+  if (wrote === false) {
+    const again = await getDoc(env, `cases/${caseId}`).catch(() => null);
+    const live = again?.data.pendingExtend;
+    if (live?.url) return json({ ok: true, url: live.url });
+  }
   return json({ ok: true, url: session.url });
 }
 
 /** Paid: thirty days onto the window, stacking, idempotent by sessionId. */
 async function confirmExtensionPurchase(env, session, attempt = 0) {
-  if (attempt > 3) return;
+  // Throw rather than return: a silent give-up answers Stripe 200, so it
+  // never retries and $1,750 lands with no days, no row and nobody told.
+  if (attempt > 3) throw new Error(`extend: lock contention on ${session.id}`);
   const caseId = session.metadata?.caseId;
   if (!caseId) return;
   const c = await getDoc(env, `cases/${caseId}`);
-  if (!c) return;
+  if (!c) throw new Error(`extend: no case for ${session.id}`);
   const now = new Date();
   const payments = Array.isArray(c.data.extraPayments) ? c.data.extraPayments : [];
   // Stripe retries webhooks; the same session must never stack twice.
@@ -4480,7 +4588,15 @@ async function confirmExtensionPurchase(env, session, attempt = 0) {
   }
 
   payments.push({ kind: 'extend', amountCents, sessionId: session.id, at: now, days: 30 });
-  const newDays = (Number(c.data.fullAccessExtraDays) || 0) + 30;
+  // Thirty days of USE, not thirty days on a date that has already passed.
+  // A tier case can legitimately outlive its window (the close sweep waits
+  // on an undecided appeal), and adding 30 to an end date three weeks gone
+  // sold the client nothing at all. Whatever the window has already lost is
+  // credited first, so the new end is always today plus thirty at worst.
+  const prevEnd = fullAccessWindowEnd(c.data);
+  const lapsedDays = prevEnd
+    ? Math.max(0, Math.ceil((Date.now() - prevEnd.getTime()) / 86_400_000)) : 0;
+  const newDays = (Number(c.data.fullAccessExtraDays) || 0) + lapsedDays + 30;
   const okBuy = await patchDoc(env, `cases/${caseId}`, {
     fullAccessExtraDays: newDays,
     pendingExtend: null,

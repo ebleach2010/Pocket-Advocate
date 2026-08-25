@@ -495,9 +495,21 @@ export function demoApi(role, store) {
       const cid = body.caseId || q.get('caseId') || '';
       const prefix = `demoAuthority/${cid}/items/`;
       if ((init.method || 'GET').toUpperCase() === 'GET') {
+        // Mirrors the Worker: the list omits the signature blobs, and one
+        // document's ink comes back only when it is asked for by id.
+        const want = q.get('id') || '';
         const items = [...store.docs.entries()]
           .filter(([k]) => k.startsWith(prefix))
-          .map(([k, v]) => ({ id: k.slice(prefix.length), ...v }))
+          .map(([k, v]) => {
+            const { signatureImage, ...rest } = v;
+            const rowId = k.slice(prefix.length);
+            return {
+              id: rowId,
+              ...rest,
+              hasSignature: !!signatureImage,
+              ...(want && rowId === want ? { signatureImage } : {}),
+            };
+          })
           .sort((a, b) => new Date(b.signedAt || 0) - new Date(a.signedAt || 0));
         return ok({ items });
       }
@@ -506,10 +518,30 @@ export function demoApi(role, store) {
         const k = prefix + body.id;
         const cur = store.docs.get(k);
         if (cur) store.docs.set(k, { ...cur, revokedAt: new Date() });
+        store.persist?.(); // without this a withdrawn authorisation came back on reload
         return ok({ ok: true });
       }
-      // The Worker's own gate, mirrored: no drawn signature, no document.
-      if (!body.signatureImage)
+      // The Worker's gates, in the Worker's ORDER - the demo used to refuse a
+      // missing signature first, so the same bad POST got two different
+      // answers depending on which side you were driving.
+      const kinds = ['records', 'representative'];
+      if (!kinds.includes(body.kind)) return fail(400, 'Bad request');
+      const typed = String(body.signedName || '').trim();
+      if (typed.length < 2) return fail(400, 'Type your full name to sign.');
+      const flat = (v) => String(v || '').toLowerCase().replace(/[^a-z]+/g, '');
+      const onCase = store.docs.get(`cases/${cid}`)?.clientName;
+      if (onCase && flat(typed) !== flat(onCase))
+        return fail(400, 'Sign with the same name that is on this case.');
+      const scopes = Array.isArray(body.scopes)
+        ? body.scopes.filter((x) => ['discuss', 'records', 'admin'].includes(x)).slice(0, 8) : [];
+      if (body.kind === 'records' && !body.clinicName)
+        return fail(400, 'Name the clinic this authorisation is for.');
+      if (body.kind === 'representative' && !body.planName)
+        return fail(400, 'Name your insurance plan.');
+      if (body.kind === 'records' && !scopes.length)
+        return fail(400, 'Tick at least one thing you are authorising me to do.');
+      if (!body.signatureImage
+        || !/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(String(body.signatureImage).trim()))
         return fail(400, 'Sign the document with your finger before sending it.');
       const id = `demo-${Math.random().toString(36).slice(2, 8)}`;
       // The field list is hardcoded here, so anything new on the real
@@ -520,7 +552,7 @@ export function demoApi(role, store) {
         clinicPhone: body.clinicPhone || '', fromDate: body.fromDate || '', toDate: body.toDate || '',
         planName: body.planName || '', memberId: body.memberId || '',
         categories: Array.isArray(body.categories) ? body.categories : [],
-        scopes: Array.isArray(body.scopes) ? body.scopes : [],
+        scopes,
         signatureImage: body.signatureImage || '',
       });
       store.persist?.();

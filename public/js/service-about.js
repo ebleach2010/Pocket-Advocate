@@ -3,12 +3,11 @@
 // There is a comprehensive paragraph section, a bullet point section
 // breaking down main points, and a TL;DR").
 //
-// PURE DATA plus one renderer. The copy deck extracts these objects verbatim
-// and the suites pin the load-bearing phrases, so what Eric marks up in the
-// PDF is exactly what ships. Every claim here is backed by something the
-// code enforces; nothing is promised that the product does not do.
+// PURE DATA plus one renderer. Every claim here is backed by something the
+// code does; nothing is promised that the product does not do.
 //
-// This file is served to clients as written, comments included.
+// This file is downloaded by every client, so it holds the copy and nothing
+// else. Notes about the copy live in the repo's own instructions file.
 
 export const SERVICE_ABOUT = {
   case: {
@@ -160,10 +159,22 @@ export function openServiceAbout(id) {
         ${a.cta ? `<p style="margin:1rem 0 .2rem;"><a class="btn glow" href="${esc(a.cta.href)}">${esc(a.cta.label)}</a></p>` : ''}
       </div>
     </div>`;
-  const close = () => overlay.remove();
+  // Escape closes it, like every other overlay in the app, and focus moves
+  // in and comes back out to whatever opened it. Without the focus move the
+  // sheet is appended at the end of <body>, so Tab walked the whole page to
+  // reach it and a screen reader was never told it had opened.
+  const opener = document.activeElement;
+  const close = () => {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+    if (opener?.isConnected) opener.focus();
+  };
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  document.addEventListener('keydown', onKey);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   overlay.querySelector('[data-x]').addEventListener('click', close);
   document.body.appendChild(overlay);
+  overlay.querySelector('[data-x]').focus();
 }
 
 /** Wire every [data-about] trigger under `root` to its sheet. */

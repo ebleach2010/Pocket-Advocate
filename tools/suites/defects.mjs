@@ -150,7 +150,9 @@ const AU = f('public/js/authority.js');
 ck('authority: dates are MST, so one signature is one date',
    /timeZone: 'Etc\/GMT\+7', year: 'numeric'/.test(AU));
 ck('authority: a missing stamp says so instead of "Invalid Date"',
-   /return '\(not yet signed\)';/.test(AU));
+   /fallback = '\(not yet signed\)'/.test(AU) && /return fallback;/.test(AU));
+ck('authority: a bad date in a RANGE does not borrow signature-block wording',
+   /'\(date not recorded\)'/.test(AU));
 
 // ---- 11. the scope note only claims what the code counts ----------------
 const TT = f('public/js/tier-terms.js');

@@ -1976,6 +1976,9 @@ async function paintAuthorityStatus(pane) {
   const rep = live.find((i) => i.kind === 'representative');
   const revoked = items.filter((i) => i.revokedAt);
   const days = fullAccessDaysLeft(data);
+  // Extensions and holds both stretch the window, so "75 days left in the 60
+  // day window" was a sentence this card could print. Name the extra instead.
+  const extra = Number(data.fullAccessExtraDays) || 0;
   const paused = !!data.hold?.pausedAt;
   // The same derived checklist the client sees, from the same helper - the
   // two views cannot drift, and this card is where Eric reads "may I begin".
@@ -1999,7 +2002,7 @@ async function paintAuthorityStatus(pane) {
           ? `${esc(rep.planName || 'plan')}${rep.memberId ? ` · ${esc(rep.memberId)}` : ''}`
           : '<span style="color:var(--orange)">not signed</span>'}</p>
       ${days !== null ? `<p class="dim small" style="margin:.35rem 0 0;">
-        ${days} day${days === 1 ? '' : 's'} left in the ${FULL_WINDOW_DAYS} day window${paused ? ', paused' : ''}.</p>` : ''}
+        ${days} day${days === 1 ? '' : 's'} left in the window${extra ? ` (${FULL_WINDOW_DAYS} + ${extra} bought)` : ''}${paused ? ', paused' : ''}.</p>` : ''}
       ${revoked.length ? `<p class="dim small" style="margin:.35rem 0 0; color:var(--orange);">
         ${revoked.length} withdrawn. Do not act on ${revoked.length === 1 ? 'it' : 'them'}.</p>` : ''}
       ${live.length ? `<p class="row" style="gap:.4rem; flex-wrap:wrap; margin:.5rem 0 0;">
@@ -2009,9 +2012,26 @@ async function paintAuthorityStatus(pane) {
     </div>`;
 
   for (const b of host.querySelectorAll('[data-auth-print]')) {
-    b.addEventListener('click', () => {
-      const item = items.find((i) => i.id === b.dataset.authPrint);
-      if (item) printAuthorityDoc(item);
+    b.addEventListener('click', async () => {
+      let item = items.find((i) => i.id === b.dataset.authPrint);
+      if (!item) return;
+      // The list GET omits the signature blobs - this card paints on every
+      // overview repaint and would otherwise re-download all of them. Ask
+      // for this one document's ink now that it is actually being printed.
+      if (item.hasSignature && !item.signatureImage) {
+        try {
+          const idToken = await user.getIdToken();
+          const res = await fetch(
+            `/api/authority?caseId=${encodeURIComponent(id)}&id=${encodeURIComponent(item.id)}`,
+            { headers: { authorization: `Bearer ${idToken}` } },
+          );
+          if (res.ok) {
+            const found = ((await res.json()).items || []).find((i) => i.id === item.id);
+            if (found?.signatureImage) item = found;
+          }
+        } catch { /* the form still prints, just without the mark */ }
+      }
+      printAuthorityDoc(item);
     });
   }
 }
@@ -2072,7 +2092,7 @@ function checkInState(c) {
 function signatureInk(item) {
   const src = typeof item?.signatureImage === 'string' ? item.signatureImage.trim() : '';
   if (!src || !/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(src)) return '';
-  return `<figure class="sig-ink"><img src="${src}" alt="Signature">
+  return `<figure class="sig-ink"><img src="${esc(src)}" alt="Signature">
     <figcaption>Signature of the person named above.</figcaption></figure>`;
 }
 

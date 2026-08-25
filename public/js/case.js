@@ -1110,9 +1110,21 @@ function renderPageFooter(host, c) {
  * always used - nothing here is typed.
  */
 /**
- * Thirty more days on a Hands-Off window, stacking (Eric, 2026-08-25: "they
- * can choose to add 30 days at a time under the same tab"). Flat price, off
- * the ratchet, so the compiled-in number IS the number.
+ * Every enhancement card carries its About sheet (Eric, 2026-08-25) -
+ * appended after each paint, because a repaint that rebuilds a host's
+ * innerHTML would otherwise silently eat the button.
+ */
+function addAboutButton(host, id) {
+  if (!host || !host.innerHTML.trim() || host.querySelector('[data-about]')) return;
+  host.insertAdjacentHTML('beforeend',
+    `<p style="margin:.2rem 0 .9rem;"><button type="button" class="btn quiet tiny" data-about="${id}">About this enhancement</button></p>`);
+  wireAboutButtons(host);
+}
+
+/**
+ * Thirty more days on a Hands-Off window, stacking as many times as a case
+ * needs. A flat price the Worker also holds, so the compiled-in number here
+ * and the number Stripe charges are the same number.
  */
 const EXTEND_PRICE_CENTS = 175000;
 function windowEndOf(c) {
@@ -1126,23 +1138,55 @@ function windowEndOf(c) {
   const days = 60 + (Number(c.fullAccessExtraDays) || 0);
   return new Date(start + days * 86_400_000 + held);
 }
+// Stripe's success URL comes back as ?extended=1. Read it ONCE, at load, and
+// strip it from the address bar. Left in place it made every later repaint
+// claim success unconditionally - including for an extension that had not
+// been confirmed yet - and it hid the buy button for the rest of the session,
+// so a client who wanted a second thirty days could not buy one (audit,
+// 2026-08-25).
+let extendJustPaid = new URLSearchParams(location.search).get('extended') === '1';
+if (extendJustPaid) {
+  const u = new URL(location.href);
+  u.searchParams.delete('extended');
+  history.replaceState(null, '', u.pathname + u.search + u.hash);
+}
+function livePendingExtend(c) {
+  // An expired Stripe session is not a checkout you can finish. Mirror the
+  // Worker's own expiry rather than offering a dead link forever.
+  const p = c?.pendingExtend;
+  if (!p?.url) return null;
+  if (p.expiresAt && toDate(p.expiresAt).getTime() <= Date.now()) return null;
+  return p;
+}
 function extendOffer(c) {
   if (!c.fullAccess || c.status === 'closed') return '';
   const dateFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
-  // Straight back from Stripe: say thank you from the URL rather than a flag
-  // that might still be false for another second.
-  if (new URLSearchParams(location.search).get('extended') === '1')
+  const pending = livePendingExtend(c);
+  if (extendJustPaid) {
+    // Paid, but Stripe's webhook confirms it and can land a moment after the
+    // browser does. While the pending session is still on the case, say what
+    // is true right now instead of promising days it does not yet carry.
+    if (pending) return `
+      <div class="followup-offer">
+        <h3>Payment received — putting the days on your case.</h3>
+        <p>This takes a moment. Refresh in a minute if it hasn't updated;
+          nothing is charged twice.</p>
+      </div>`;
+    const to = windowEndOf(c);
     return `
       <div class="followup-offer is-done">
         <h3><span class="fu-tick" aria-hidden="true">✓</span> Thirty more days are on your case.</h3>
-        <p>Same case, same file, same rhythm. Your case page shows the new dates.</p>
+        <p>Same case, same file, same rhythm. Your coordination window now runs
+          through <strong style="color:var(--ink)">${to ? esc(dateFmt.format(to)) : 'its new end date'}</strong>.</p>
+        <p><button type="button" class="btn quiet" data-extend-again>Add another 30 days</button></p>
       </div>`;
-  if (c.pendingExtend?.url)
+  }
+  if (pending)
     return `
       <div class="followup-offer">
         <h3>Your extension checkout is still open</h3>
         <p>Finish it or let it lapse; nothing is charged until you do.</p>
-        <p><a class="btn glow" href="${esc(c.pendingExtend.url)}">Finish checkout</a></p>
+        <p><a class="btn glow" href="${esc(pending.url)}">Finish checkout</a></p>
       </div>`;
   const end = windowEndOf(c);
   return `
@@ -1160,6 +1204,15 @@ function extendOffer(c) {
     </div>`;
 }
 function wireExtendOffer(el, c) {
+  const again = el.querySelector('[data-extend-again]');
+  if (again) again.addEventListener('click', () => {
+    // Clearing the return flag is what un-blocks a second purchase; without
+    // this the thank-you card owned the slot until a full reload.
+    extendJustPaid = false;
+    el.innerHTML = extendOffer(c);
+    wireExtendOffer(el, c);
+    addAboutButton(el, 'extension');
+  });
   const btn = el.querySelector('[data-buy-extend]');
   if (!btn) return;
   btn.addEventListener('click', async () => {
@@ -1193,15 +1246,7 @@ function renderAddons(el, c) {
     <div data-followup></div>
     <div data-upgrade></div>
     <div data-extend></div>`;
-  // Every card carries its About sheet (Eric, 2026-08-25) - appended after
-  // each paint, because a repaint that rebuilds a host's innerHTML would
-  // otherwise silently eat the button.
-  const addAbout = (host, id) => {
-    if (!host || !host.innerHTML.trim() || host.querySelector('[data-about]')) return;
-    host.insertAdjacentHTML('beforeend',
-      `<p style="margin:.2rem 0 .9rem;"><button type="button" class="btn quiet tiny" data-about="${id}">About this enhancement</button></p>`);
-    wireAboutButtons(host);
-  };
+  const addAbout = addAboutButton;
   const th = el.querySelector('[data-telehealth]');
   if (th) { th.innerHTML = telehealthCard(c); wireTelehealthCard(th, c); addAbout(th, 'telehealth'); }
   const ex = el.querySelector('[data-extend]');
@@ -1501,9 +1546,9 @@ function wireUpgradeOffer(el, c) {
         // The number the card is SHOWING, so a stale one is refused rather
         // than silently charged. The card paints once from a compiled-in
         // price and a fire-and-forget /api/rates; with that fetch slow or
-        // failing, and the ratchet having moved the tier, Stripe would have
-        // taken a different figure from the one he read. Booking has had this
-        // handshake since the $150 experiment; the upgrade never did.
+        // failing, Stripe could otherwise have taken a different figure from
+        // the one on screen. Booking has had this handshake for a while; the
+        // upgrade never did.
         body: JSON.stringify({
           caseId: c.id,
           quotedCents: upgradeQuoteCents(c),
@@ -1698,6 +1743,10 @@ async function mountAuthority(host, c) {
     // clock, which runs from purchase however fast this list is finished.
     const ready = handsOffReadiness(c, items);
     const boughtAt = c.fullAccessAt ? toDate(c.fullAccessAt) : null;
+    // Not "your 60 days": extensions and holds both move the end, so say the
+    // date the window actually runs to rather than a number that goes stale
+    // the moment somebody buys another thirty days.
+    const dayFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
     host.innerHTML = `
       <div class="panel authority" data-auth-panel>
         <h3>Before I can act for you</h3>
@@ -1708,7 +1757,7 @@ async function mountAuthority(host, c) {
         <p class="dim small">${ready.ready
     ? 'Your checklist is done. The legwork is mine from here.'
     : 'These are two separate permissions, and you can withdraw either one at any time. How fast you finish is up to you.'}
-          ${boughtAt ? `Your 60 days started ${esc(new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(boughtAt))}, the day you bought Hands-Off — the clock runs whether or not this list is done.` : ''}</p>
+          ${boughtAt ? `Your window started ${esc(dayFmt.format(boughtAt))}, the day you bought Hands-Off${windowEndOf(c) ? `, and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''} — the clock runs whether or not this list is done.` : ''}</p>
 
         <div class="auth-row">
           <div class="auth-head">
@@ -1793,13 +1842,42 @@ async function mountAuthority(host, c) {
   load();
 }
 
+/**
+ * What a signature data URL is allowed to look like, in one place. The
+ * Worker enforces the same shape independently; this is the copy the page
+ * uses before it stores one and before it writes one into a print window.
+ */
+const SIG_DATA_URL = /^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/;
+
+/**
+ * Today, in the zone the documents are executed in. The forms print in MST
+ * (see authority.js) precisely because two zones produced two execution
+ * dates on one document; the gate that refuses a future date has to read the
+ * same clock, or a client in Honolulu is refused a date that is already
+ * today on the paper they are signing.
+ */
+function mstToday() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Etc/GMT+7', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+/**
+ * The Worker's name check, mirrored: case, spacing and punctuation are all
+ * forgiven, everything else has to be the name on the case.
+ */
+function nameMatches(typed, onCase) {
+  const flat = (v) => String(v || '').toLowerCase().replace(/[^a-z]+/g, '');
+  return flat(typed) === flat(onCase);
+}
+
 /** The signing sheet. Same overlay furniture as everything else on this page. */
 function openAuthoritySheet(c, kind, onDone) {
   const isRecords = kind === 'records';
   const overlay = document.createElement('div');
   overlay.className = 'settings-overlay';
   overlay.innerHTML = `
-    <div class="settings-card" role="dialog" aria-modal="true" aria-label="Sign">
+    <div class="settings-card sig-sheet" role="dialog" aria-modal="true" aria-label="Sign">
       <h3 style="margin:0 0 .3rem;">${isRecords ? 'Records authorisation' : 'Insurance representative'}</h3>
       <p class="dim small" style="margin:0 0 .8rem;">${isRecords
         ? 'One clinic per form. Fill in what you know; I can chase the rest.'
@@ -1813,9 +1891,9 @@ function openAuthoritySheet(c, kind, onDone) {
           <input type="tel" data-f="clinicPhone" maxlength="40"></label>
         <div class="row" style="gap:.5rem;">
           <label class="dim small" style="flex:1;">Records from
-            <input type="date" data-f="fromDate"></label>
+            <input type="date" data-f="fromDate" max="${esc(mstToday())}"></label>
           <label class="dim small" style="flex:1;">Through
-            <input type="date" data-f="toDate"></label>
+            <input type="date" data-f="toDate" max="${esc(mstToday())}"></label>
         </div>
         <p class="dim small" style="margin:.8rem 0 .3rem;">Some records need your
           specific permission and are left out unless you tick them. Nothing here
@@ -1886,14 +1964,22 @@ function openAuthoritySheet(c, kind, onDone) {
   // box for them to sign with their finger").
   overlay.querySelector('[data-sig-open]').addEventListener('click', () => {
     openSignaturePad((dataUrl) => {
+      // A degenerate canvas returns "data:," and the Worker would then
+      // answer "That signature did not come through" with nothing marked.
+      // Refuse it here, where the pad is still open to try again.
+      if (!SIG_DATA_URL.test(String(dataUrl || '').trim())) return false;
       signatureImage = dataUrl;
       const img = overlay.querySelector('[data-sig-img]');
       const hint = overlay.querySelector('[data-sig-hint]');
+      const box = overlay.querySelector('[data-sig-open]');
       img.src = dataUrl;
       img.hidden = false;
       if (hint) hint.textContent = 'Tap to sign again';
-      overlay.querySelector('[data-sig-open]').classList.remove('field-bad');
-    });
+      box.classList.remove('field-bad');
+      box.removeAttribute('aria-invalid');
+      box.setAttribute('aria-label', 'Signature captured. Tap to sign again.');
+      return true;
+    }, val('signedName') || c.clientName || '');
   });
 
   // Every field clears its own red the moment it is corrected.
@@ -1908,25 +1994,63 @@ function openAuthoritySheet(c, kind, onDone) {
    */
   const validateSheet = () => {
     const bad = [];
-    const mark = (sel) => { const el = overlay.querySelector(sel); if (el) { el.classList.add('field-bad'); bad.push(el); } };
+    // Clear first, then re-mark. It only ever added red, so resolving a
+    // from > to conflict by editing one date left the OTHER one red through
+    // a successful submit.
+    for (const el of overlay.querySelectorAll('.field-bad')) {
+      el.classList.remove('field-bad');
+      el.removeAttribute('aria-invalid');
+    }
+    const mark = (sel) => {
+      const el = overlay.querySelector(sel);
+      if (!el) return;
+      el.classList.add('field-bad');
+      // Colour alone is not an error message. On contrast the border is a
+      // one-pixel luminance step, and a screen reader saw nothing at all.
+      el.setAttribute('aria-invalid', 'true');
+      bad.push(el);
+    };
     const need = isRecords ? ['clinicName', 'signedName'] : ['planName', 'memberId', 'signedName'];
     for (const f of need) if (!val(f)) mark(`[data-f="${f}"]`);
+    // The Worker requires the typed name to match the name on the case, and
+    // requires two characters. Mirror both here: without them the button
+    // disabled, the POST 400ed, and the message landed as plain text with
+    // nothing reddened and nothing scrolled to - the dead end this gate
+    // exists to remove.
+    const typed = val('signedName');
+    if (typed && (typed.length < 2 || (c.clientName && !nameMatches(typed, c.clientName))))
+      mark('[data-f="signedName"]');
     if (isRecords) {
-      const today = new Date(); today.setHours(23, 59, 59, 999);
+      // MST, the same clock the document prints in. Comparing YYYY-MM-DD
+      // strings keeps Date parsing out of the gate entirely, and stops a
+      // client in Honolulu being refused a date that is already today in the
+      // zone the document is executed in.
+      const today = mstToday();
       for (const f of ['fromDate', 'toDate']) {
         const v = val(f);
         if (!v) continue;
-        const t = new Date(`${v}T12:00:00`);
-        if (Number.isNaN(t.getTime()) || t.getTime() > today.getTime()) mark(`[data-f="${f}"]`);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || v > today) mark(`[data-f="${f}"]`);
       }
       const from = val('fromDate'); const to = val('toDate');
       if (from && to && from > to) { mark('[data-f="fromDate"]'); mark('[data-f="toDate"]'); }
+      // A document that authorises nothing is not a document. The boxes
+      // arrive ticked, so this only fires for someone who deliberately
+      // cleared all three - and it tells them so rather than silently
+      // signing them up to all of it.
+      if (!scopesOf().length) mark('[data-scope="discuss"]');
     }
     if (!signatureImage) mark('[data-sig-open]');
     return bad;
   };
 
-  const close = () => overlay.remove();
+  const opener = document.activeElement;
+  const close = () => {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+    if (opener?.isConnected) opener.focus();
+  };
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  document.addEventListener('keydown', onKey);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   overlay.querySelector('[data-x]').addEventListener('click', close);
   overlay.querySelector('[data-sign]').addEventListener('click', async () => {
@@ -1972,13 +2096,18 @@ function openAuthoritySheet(c, kind, onDone) {
 }
 
 /**
- * The drawing pad itself. Pointer events cover finger, stylus and mouse;
- * the canvas is scaled for the device's pixel ratio so a signature drawn on
+ * The drawing pad itself. Pointer events cover finger, stylus and mouse, and
+ * a keyboard route renders the typed name instead - a signature nobody can
+ * make is not an accessible product, and both gates hard-require this mark.
+ * The canvas is scaled for the device's pixel ratio so a signature drawn on
  * a phone is not a staircase; Done downsamples to at most 600px wide and
- * hands back a JPEG dataURL small enough to live on the stored document.
+ * hands back a PNG dataURL small enough to live on the stored document.
+ *
+ * onDone returns false if it refuses the image, and the pad stays open.
  */
-function openSignaturePad(onDone) {
+function openSignaturePad(onDone, typedName = '') {
   if (document.getElementById('pa-sigpad')) return;
+  const opener = document.activeElement;
   const overlay = document.createElement('div');
   overlay.id = 'pa-sigpad';
   overlay.className = 'settings-overlay';
@@ -1987,7 +2116,9 @@ function openSignaturePad(onDone) {
       <h3 style="margin:0 0 .3rem;">Sign with your finger</h3>
       <p class="dim small" style="margin:0 0 .5rem;">Sign the way you would on
         paper. Clear starts over.</p>
-      <canvas data-sig-canvas class="sig-canvas"></canvas>
+      <canvas data-sig-canvas class="sig-canvas" tabindex="0"
+        aria-label="Signature area. Draw with a finger, a stylus or a mouse."></canvas>
+      ${typedName ? `<p style="margin:.5rem 0 0;"><button type="button" class="btn quiet tiny" data-sig-typed>Can't draw? Use my typed name as my mark</button></p>` : ''}
       <div class="actions" style="margin-top:.7rem;">
         <button class="btn quiet" data-sig-clear>Clear</button>
         <button class="btn quiet" data-sig-cancel>Cancel</button>
@@ -1999,57 +2130,114 @@ function openSignaturePad(onDone) {
   const canvas = overlay.querySelector('[data-sig-canvas]');
   const doneBtn = overlay.querySelector('[data-sig-done]');
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
-  const cssW = Math.min(overlay.querySelector('.settings-card').clientWidth - 20, 480) || 320;
+  // Measured, not arithmetic. The old line subtracted a hardcoded 20px for
+  // card padding that is actually 42px, and under border-box clientWidth had
+  // already accounted for it - so the canvas ran ~22px wider than the card
+  // that held it and the overlay grew a horizontal scrollbar. Letting the
+  // stylesheet's width:100% size it and reading the result back also means
+  // it survives a rotation and any future padding change.
   const cssH = 180;
-  canvas.style.width = `${cssW}px`;
   canvas.style.height = `${cssH}px`;
+  const cssW = Math.max(200, Math.round(canvas.clientWidth) || 320);
   canvas.width = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
+  // The document colours, from the tokens, so the five places that draw this
+  // surface cannot drift apart.
+  const css = getComputedStyle(document.documentElement);
+  const PAPER = css.getPropertyValue('--sig-paper').trim() || '#FFFFFF';
+  const INK = css.getPropertyValue('--sig-ink').trim() || '#101828';
   const g = canvas.getContext('2d');
-  g.fillStyle = '#ffffff';
-  g.fillRect(0, 0, canvas.width, canvas.height);
-  g.strokeStyle = '#101828';
+  const blank = () => {
+    g.fillStyle = PAPER;
+    g.fillRect(0, 0, canvas.width, canvas.height);
+    g.strokeStyle = INK;
+  };
+  blank();
   g.lineWidth = 2.2 * dpr;
   g.lineCap = 'round';
   g.lineJoin = 'round';
 
-  let drawing = false;
+  // One pointer owns the stroke. Tracking a bare boolean meant a second
+  // finger's pointerdown moved the pen, and the first finger's next move drew
+  // a line from wherever the second one landed.
+  let activeId = null;
   let drew = false;
+  let last = null;
   const pos = (e) => {
     const r = canvas.getBoundingClientRect();
     return [(e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr];
   };
   canvas.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    drawing = true;
-    canvas.setPointerCapture(e.pointerId);
+    if (activeId !== null) return;
+    activeId = e.pointerId;
     const [x, y] = pos(e);
     g.beginPath();
     g.moveTo(x, y);
     // A dot is a mark too: a tap without a drag still leaves ink.
     g.lineTo(x + 0.1, y + 0.1);
     g.stroke();
+    last = [x, y];
     drew = true;
     doneBtn.disabled = false;
+    // After the state flags, not before: a NotFoundError on an already-ended
+    // pointer used to throw away the whole stroke, Done included.
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* capture is a nicety */ }
   });
   canvas.addEventListener('pointermove', (e) => {
-    if (!drawing) return;
+    if (e.pointerId !== activeId || !last) return;
     const [x, y] = pos(e);
+    // One segment per move. beginPath ran once per stroke, so segment n was
+    // re-rasterising all n before it - at 120 events a second that is a
+    // visibly laggy signature on a mid-range phone.
+    g.beginPath();
+    g.moveTo(last[0], last[1]);
     g.lineTo(x, y);
     g.stroke();
+    last = [x, y];
   });
-  const stop = () => { drawing = false; };
+  const stop = (e) => { if (!e || e.pointerId === activeId) { activeId = null; last = null; } };
   canvas.addEventListener('pointerup', stop);
   canvas.addEventListener('pointercancel', stop);
 
-  const close = () => overlay.remove();
+  const close = () => {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+    if (opener?.isConnected) opener.focus();
+  };
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  document.addEventListener('keydown', onKey);
+  // The backdrop deliberately does NOT close this one. Every other overlay in
+  // the app closes on a backdrop tap, but here a stray tap beside the pad
+  // would throw away a signature somebody just drew.
   overlay.querySelector('[data-sig-cancel]').addEventListener('click', close);
   overlay.querySelector('[data-sig-clear]').addEventListener('click', () => {
-    g.fillStyle = '#ffffff';
-    g.fillRect(0, 0, canvas.width, canvas.height);
-    g.strokeStyle = '#101828';
+    blank();
+    // The in-flight stroke has to end too. Without this, a second finger
+    // tapping Clear left the first one's path alive, and its next move
+    // re-stroked everything back onto the cleared canvas while Done stayed
+    // disabled: visible ink you could not submit.
+    activeId = null;
+    last = null;
+    g.beginPath();
     drew = false;
     doneBtn.disabled = true;
+  });
+  // The keyboard and no-motor-control route. The sheet already collected the
+  // legal name; rendering it in a script face is a mark the client chose to
+  // apply, which is what an electronic signature is.
+  overlay.querySelector('[data-sig-typed]')?.addEventListener('click', () => {
+    blank();
+    g.fillStyle = INK;
+    g.textBaseline = 'middle';
+    const size = Math.min(canvas.height * 0.42, (canvas.width * 0.85) / Math.max(6, typedName.length) * 1.9);
+    g.font = `italic ${Math.round(size)}px "Snell Roundhand", "Apple Chancery", "Segoe Script", cursive`;
+    g.fillText(typedName, canvas.width * 0.08, canvas.height * 0.55, canvas.width * 0.84);
+    g.strokeStyle = INK;
+    activeId = null;
+    last = null;
+    drew = true;
+    doneBtn.disabled = false;
   });
   doneBtn.addEventListener('click', () => {
     if (!drew) return;
@@ -2059,20 +2247,39 @@ function openSignaturePad(onDone) {
     small.width = outW;
     small.height = outH;
     const sg = small.getContext('2d');
-    sg.fillStyle = '#ffffff';
+    sg.imageSmoothingQuality = 'high';
+    sg.fillStyle = PAPER;
     sg.fillRect(0, 0, outW, outH);
     sg.drawImage(canvas, 0, 0, outW, outH);
-    const dataUrl = small.toDataURL('image/jpeg', 0.8);
+    // PNG, not JPEG. This is two-tone line art on white: JPEG rings around
+    // every stroke on a document a records department reads, and for flat
+    // white it is usually the LARGER file of the two.
+    const dataUrl = small.toDataURL('image/png');
+    if (onDone(dataUrl) === false) return; // refused - stay open, try again
     close();
-    onDone(dataUrl);
   });
+  canvas.focus();
 }
 
 /**
- * A paper copy, on demand, for either side. Same window.open + print pattern
- * the case export and the prep sheet already use; there is no PDF library in
- * this stack and none is being added for this.
+ * One document, with its signature. The list GET omits the blobs; passing an
+ * id asks for that one back with its ink attached.
  */
+async function withSignature(c, item) {
+  try {
+    const idToken = await user.getIdToken();
+    const res = await fetch(
+      `/api/authority?caseId=${encodeURIComponent(c.id)}&id=${encodeURIComponent(item.id)}`,
+      { headers: { authorization: `Bearer ${idToken}` } },
+    );
+    if (!res.ok) return item;
+    const found = ((await res.json()).items || []).find((i) => i.id === item.id);
+    return found?.signatureImage ? found : item;
+  } catch {
+    return item; // the form still prints, just without the mark
+  }
+}
+
 /**
  * The drawn signature, as printable HTML - or nothing at all.
  *
@@ -2084,13 +2291,22 @@ function openSignaturePad(onDone) {
  */
 function signatureInk(item) {
   const src = typeof item?.signatureImage === 'string' ? item.signatureImage.trim() : '';
-  if (!src || !/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(src)) return '';
-  return `<figure class="sig-ink"><img src="${src}" alt="Signature">
+  if (!src || !SIG_DATA_URL.test(src)) return '';
+  return `<figure class="sig-ink"><img src="${esc(src)}" alt="Signature">
     <figcaption>Signature of the person named above.</figcaption></figure>`;
 }
 
-function printAuthority(c, item) {
+/**
+ * A paper copy, on demand, for either side. Same window.open + print pattern
+ * the case export and the prep sheet already use; there is no PDF library in
+ * this stack and none is being added for this.
+ */
+async function printAuthority(c, item) {
   if (!item) return;
+  // The list no longer carries the signature blobs, so the one document
+  // being printed asks for its own. A failed fetch prints the form without
+  // the ink rather than not printing at all.
+  if (item.hasSignature && !item.signatureImage) item = await withSignature(c, item);
   const o = {
     ...item,
     clientName: c.clientName, clientDob: c.clientDob,

@@ -94,9 +94,17 @@ export const COMMUNICATION_SCOPES = [
 // document, two execution dates, on a record a clinic and an insurer both
 // read. An unparseable or missing stamp says so rather than rendering
 // "Invalid Date" onto a form somebody is about to sign.
-const fmt = (d) => {
-  const t = d ? new Date(d) : null;
-  if (!t || Number.isNaN(t.getTime())) return '(not yet signed)';
+const fmt = (d, fallback = '(not yet signed)') => {
+  // A bare YYYY-MM-DD from <input type="date"> is a WALL date, not an
+  // instant. new Date() parses it as UTC midnight, which this formatter then
+  // walks back seven hours - so every dated range printed a day early at both
+  // ends, on the face of a legal document. Noon UTC lands safely inside the
+  // MST day. Full timestamps (signedAt, expiresAt) are instants and parse as
+  // they always did.
+  const t = d
+    ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(String(d).trim()) ? `${String(d).trim()}T12:00:00Z` : d)
+    : null;
+  if (!t || Number.isNaN(t.getTime())) return fallback;
   return t.toLocaleDateString('en-US', {
     timeZone: 'Etc/GMT+7', year: 'numeric', month: 'long', day: 'numeric',
   });
@@ -156,12 +164,12 @@ export function recordsAuthorisation(o = {}) {
   // Ticked scopes, or the whole set: for a legacy record with none stored,
   // and for a blank being filled in by hand, all three print (the blank with
   // boxes to tick on paper).
-  const scopes = Array.isArray(o.scopes) && o.scopes.length
+  const scopes = Array.isArray(o.scopes)
     ? COMMUNICATION_SCOPES.filter((s) => o.scopes.includes(s.id))
     : COMMUNICATION_SCOPES;
   const scopeMark = o.blank ? '[ ]' : '[X]';
   const range = o.fromDate || o.toDate
-    ? `Records dated ${o.fromDate ? fmt(o.fromDate) : 'the beginning of my care'} through ${o.toDate ? fmt(o.toDate) : 'today'}.`
+    ? `Records dated ${o.fromDate ? fmt(o.fromDate, '(date not recorded)') : 'the beginning of my care'} through ${o.toDate ? fmt(o.toDate, '(date not recorded)') : 'today'}.`
     : 'Records covering the whole period of my care.';
   return `AUTHORISATION FOR RELEASE OF PROTECTED HEALTH INFORMATION
 AND FOR COMMUNICATION WITH MY PATIENT ADVOCATE
@@ -183,8 +191,10 @@ ${o.advocateName || 'Eric Bleach'}, patient advocate, Pocket Advocate.
 WHAT I AUTHORISE MY ADVOCATE TO DO
 I have involved the person named above in my care. I authorise each item
 marked below, and only those:
-${scopes.map((s) => `  ${scopeMark} ${s.label}
-      ${s.note}`).join('\n')}
+${scopes.length
+    ? scopes.map((s) => `  ${scopeMark} ${s.label}
+      ${s.note}`).join('\n')
+    : '  I have not authorised any of the items above.'}
 
 WHAT MAY BE RELEASED
 ${range}
