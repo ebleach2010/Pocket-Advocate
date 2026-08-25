@@ -61,15 +61,28 @@ check('M7 shut one second before the deadline', run(until - 1000) === until);
 check('M8 open again one second after — it lifts itself', run(until + 1000) === 0);
 check('M9 shut well inside the window', run(until - 6 * 3600_000) === until);
 
-// The words Eric asked for, exactly.
+// The words Eric asked for, exactly. Changed 2026-08-25 from "Under
+// Maintenance Until 8PM MST 8/25/26" on his word - "Eric is prepping
+// documents…" - because the old line is what a BROKEN site says, and this
+// one says what is going on. The time moved into the body, so M12 still
+// requires it to be answered somewhere rather than dropped.
 check('M10 the page carries his sentence verbatim',
-  CLIENT.includes("'Under Maintenance Until 8PM MST 8/25/26'"));
-check('M11 it apologises and says why, in his words',
-  /Big update in progress/.test(CLIENT)
+  CLIENT.includes("'Eric is prepping documents…'"));
+check('M11 it apologises, and still answers when he is back',
+  /Back at 8PM MST/.test(CLIENT)
   && /sorry for the\s*\n?\s*inconvenience/.test(CLIENT));
 check('M12 the Worker refusal says the same thing as the page',
-  /Big update in /.test(SRC) && /sorry for the inconvenience/.test(SRC)
-  && /8PM MST on August 25/.test(SRC));
+  /Eric is prepping documents\./.test(SRC) && /sorry for the inconvenience/.test(SRC)
+  && /8PM MST on\s*\n?\s*'?\s*\+?\s*'?August 25/.test(SRC));
+// Neither half may go back to calling it maintenance in copy a person reads.
+// Comments stripped first: a first pass tripped on the word inside a comment
+// explaining this very change.
+{
+  const bare = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  check('M12b nothing SERVED still calls it maintenance',
+    !/under maintenance/i.test(bare(CLIENT)) && !/under maintenance/i.test(bare(SRC)));
+}
 
 // Wired to the front door, and NOWHERE a current client goes.
 const has = (f) => readFileSync(`${ROOT}/public/${f}`, 'utf8').includes('/js/maintenance.js');

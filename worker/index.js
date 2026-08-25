@@ -1169,8 +1169,8 @@ function maintenanceUntil() {
   return Number.isFinite(t) && Date.now() < t ? t : 0;
 }
 function maintenanceMessage() {
-  return 'Under maintenance until 8PM MST on August 25. Big update in '
-    + 'progress, and I am sorry for the inconvenience. Existing clients are '
+  return 'Eric is prepping documents. Booking reopens at 8PM MST on '
+    + 'August 25, and I am sorry for the inconvenience. Existing clients are '
     + 'unaffected: your case, your files and your chat are open as normal.';
 }
 
