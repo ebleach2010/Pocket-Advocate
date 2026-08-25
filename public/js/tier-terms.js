@@ -24,13 +24,17 @@
 // ONE of those was counted anywhere. The rewrite removes every number the
 // code does not enforce and keeps two that it does:
 //
-//   60 days  -> fullAccessWindowEnd() in worker/index.js, which gates the
-//               second call and the automatic closure.
+//   60 days  -> fullAccessWindowEnd() in worker/index.js, which gates
+//               check-in scheduling and the automatic closure.
 //   2 appeal -> appealsUsed() in worker/index.js, checked before a letter is
 //   letters     written. Filed letters are what count; redrafting is free.
 //
-// "As many calls as the case needs" is deliberately uncounted, which is why
-// it is phrased as a promise rather than an allowance.
+// "Every two weeks" is enforced as a FLAG, not an automation, and the copy
+// says "runs on a rhythm" rather than promising a machine: Eric schedules
+// each check-in himself, and his dashboard marks any tier case that has
+// gone 14 days without one (CHECKIN_DAYS in worker/index.js, checkInDue in
+// admin.js). "As many calls as the case needs" is deliberately uncounted,
+// which is why it is phrased as a promise rather than an allowance.
 
 /**
  * The scope note, in the shape the booking flow already renders:
@@ -46,14 +50,15 @@ export const FULL_ACCESS_TERMS = {
 <h3>What is different about Full Access</h3>
 <p>In a standard case I work <strong>beside</strong> you: I read, I explain, and I prepare you to carry it to your own doctors and your insurer. With Full Access I work <strong>inside</strong> the case. I speak to your clinics and your insurance company myself, either with you on the line or alone once you have authorised it, and I write your insurance appeals.</p>
 <h3>What is included</h3>
-<p>Everything in a standard Advocacy Case, at no separate charge, which is our first call, my review of your records, and the written report. Then:</p>
-<p>• A <strong>second call</strong> with you, included rather than sold on afterwards, which is where we close the case.<br>
+<p>Everything in a standard Advocacy Case, at no separate charge, which is our initial case overview call, my review of your records, and the written report. Then:</p>
+<p>• <strong>A check-in call with you every two weeks</strong> through the window, so the case runs on a rhythm instead of going quiet. If something moves between check-ins, I can add extra ones at my discretion, at no charge.<br>
 • Calls to your clinics and your insurer on your behalf, <strong>as many as the case needs</strong>. I do not count them and you will never be told you have used them up.<br>
 • <strong>Two insurance appeal letters</strong>: a first-level internal appeal, and one escalation after it if the first is denied.<br>
+• <strong>Telehealth appointment advocacy, included</strong>: I can join a telehealth visit with one of your own providers by video and advocate live. I confirm each one, and I never record your provider's visit.<br>
 • An active window of <strong>60 days</strong>, starting on the day of our first call.</p>
 <h3>About that 60 days, and the two appeals</h3>
-<p>The window governs the <strong>coordination</strong>: the calls I make for you, the records I chase, the first appeal I file. Our second call happens inside it and closes the case.</p>
-<p>The <strong>second appeal letter does not expire with the window</strong>, and it cannot, because it does not exist until your insurer denies the first one. They generally take 30 to 60 days to answer, which is well past our second call. Whenever that denial arrives, I write the escalation. That obligation outlives the 60 days and I am not going to pretend otherwise in order to make the paperwork tidier.</p>
+<p>The window governs the <strong>coordination</strong>: the check-ins, the calls I make for you, the records I chase, the first appeal I file. When the window ends, the case wraps up - not at any particular call, and never by surprise, because we will have spoken every two weeks on the way there.</p>
+<p>The <strong>second appeal letter does not expire with the window</strong>, and it cannot, because it does not exist until your insurer denies the first one. They generally take 30 to 60 days to answer, which can be past the window itself. Whenever that denial arrives, I write the escalation. That obligation outlives the 60 days and I am not going to pretend otherwise in order to make the paperwork tidier.</p>
 <p>If you want more coordination time than 60 days, another month is available, and so is another two. You will be told the price before anything is charged, and you are never obliged to take it.</p>
 <h3>What I need from you before anything starts</h3>
 <p>Two separate documents, because they do two different legal jobs and neither one covers the other:</p>

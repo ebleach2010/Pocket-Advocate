@@ -28,10 +28,11 @@ export const SERVICE_TERMS = {
   body: `
 <h3>No guarantees</h3>
 <p>I cannot promise you an outcome, and I will not. Not that a denial gets overturned, not that a referral comes through, not that a clinic returns a call, not that anything I find changes what your doctors decide. Those are other people's decisions and other people's systems, and anyone who tells you they can guarantee a result there is selling you something.</p>
-<p>What I promise is the work: that I will read what you give me properly, tell you the truth about what I see, meet the deadlines that are mine to meet, and say so plainly when something is not going your way. You are paying for effort and judgement, carefully applied. You are not paying for a result, and you are not buying insurance against a bad one.</p>
+<p><strong>Guarantees of any sort are not part of this agreement.</strong> What I owe you is the work of this agreement, fulfilled to the best of my ability: I will read what you give me properly, tell you the truth about what I see, meet the deadlines that are mine to meet, and say so plainly when something is not going your way. You are paying for effort and judgement, carefully applied. You are not paying for a result, and you are not buying insurance against a bad one.</p>
 <h3>I may close a case</h3>
 <p>I reserve the right to end a case at my discretion, for any reason. In practice that means things like: the work turns out to need a lawyer or a clinician rather than an advocate, I cannot get the access I need to be useful, the relationship stops being a workable one, or my own circumstances change.</p>
-<p>If I close your case, <strong>everything in it stays yours</strong>. Your file, your report, your documents, our whole message history: all of it remains on your case page to read and download, and none of it is deleted or hidden.</p>
+<p>If I close your case, <strong>the reason is written into your case</strong>, where both of us can see it, in the same words I would say to your face.</p>
+<p>And <strong>everything in it stays yours</strong>. Your file, your report, your documents, our whole message history: all of it remains on your case page to read and download, and none of it is deleted or hidden.</p>
 <p><strong>You can still leave a review</strong>, and I would rather you did. A closed case is exactly the situation where somebody's honest account is worth the most, and a service that only collects feedback from the people it kept happy is not collecting feedback at all.</p>
 <h3>If I have to pause</h3>
 <p>I am one person. My health, my family, or something else may occasionally make me unable to work for a stretch, and I would rather say that now than go quiet on you later.</p>

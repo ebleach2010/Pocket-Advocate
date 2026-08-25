@@ -75,35 +75,51 @@ const SUB_PRICE_CENTS = 9500;
 // signed release, three-way calls with clinics, and insurance appeals he
 // drafts and files himself.
 //
-// Rescoped 2026-08-24 on Eric's word. It is no longer an open-ended 90-day
-// engagement with capped clinics and calls; it is the SAME shape as a
-// standard case - one call, one follow-up call, no separate charge for the
-// second - plus unlimited calls he makes to clinics and insurers on the
-// client's behalf, plus two appeal letters. $1,500 all in.
+// Reshaped 2026-08-25 on Eric's word. Not "one call, one follow-up call,
+// case closed" - he called that framing misleading. The shape is: an initial
+// case overview call, then a check-in call every two weeks through the
+// window, plus PRN check-ins on top at his discretion, all included, plus
+// unlimited calls he makes to clinics and insurers on the client's behalf,
+// plus two appeal letters. The case closes when the WINDOW ends - never "at
+// the second call"; there is no second call, there is a cadence.
 //
-// The window is 60 days, and the reasoning is worth keeping. He first set it
-// at two weeks to protect his own bandwidth, then talked himself out of it: a
-// short clock does not reduce the work, it converts delays he does not
-// control - a records department that will not answer, a nurse who calls back
-// Thursday - into deadline pressure he cannot escape. Records requests alone
-// run 2-4 weeks and providers get 30 days by law, so a first-level appeal is
-// realistically filed in week 3-5. Window length governs how frantic each
-// case feels; FULL_MAX_OPEN_DEFAULT governs how many he carries. Long window,
-// low cap.
-const FULL_PRICE_CENTS = 150000;
+// $3,500. Priced 2026-08-25 against the market at his direction, twice
+// researched: independent advocates bill $100-500/hr ($150-200 typical
+// solo); appeal engagements alone run $500-2,500 each and two are included;
+// the tier is realistically 25-35 hours, so $3,500 is $100-140/hr. He holds
+// at most FULL_MAX_OPEN_DEFAULT of these at once with health that varies,
+// so each slot has to carry its weight - price above the floor, not at it.
+const FULL_PRICE_CENTS = 350000;
 // From the FIRST CALL, not from purchase or from the signed authorisation:
 // one date both sides know, which cannot stall because somebody is slow to
-// sign. The second call must land inside it and closes the case.
+// sign. The 60-day reasoning is worth keeping: he first set two weeks to
+// protect his own bandwidth, then talked himself out of it - a short clock
+// converts delays he does not control into deadline pressure he cannot
+// escape, and records requests alone run 2-4 weeks. Window length governs
+// how frantic each case feels; the concurrency cap governs how many he
+// carries. Long window, low cap.
 const FULL_WINDOW_DAYS = 60;
-// Extensions, bought from inside an open tier case. Half the base price for
-// half the base duration, which is a ratio he can explain in a sentence, and
-// about $100-200/hr against the 3-8 hours a quiet extra month actually costs.
-const FULL_EXTEND = { 30: 75000, 60: 125000 };
+// Every two weeks: the check-in cadence the tier promises. Enforced as a
+// FLAG, not an automation - the dashboard marks a tier case that has gone
+// this long without a check-in on the books, and Eric schedules the call.
+const CHECKIN_DAYS = 14;
+// Extensions, bought from inside an open tier case. Scaled with the $3,500
+// base: half the base for half the duration stays the sentence he can say.
+const FULL_EXTEND = { 30: 175000, 60: 275000 };
 // Case chat opens this many days before the booked call; opening it sooner
 // costs a one-time fee at the direct-line price. Eric, 2026-08-22:
 // "explicitly for avoiding chat abuse by booking two months in advance."
 const CHAT_OPEN_DAYS = 7;
 const CHAT_OPEN_CENTS = 5000;
+// Telehealth Appointment Advocacy: Eric joins the client's own telehealth
+// visit by video to advocate live. $250 flat per appointment (Eric,
+// 2026-08-25, priced against advocate hourly rates of $100-500 for the
+// realistic 1.5-2h of prep + visit + written debrief). NOT on the ratchet -
+// a flat number he can say in a sentence. Included free on the tier: he
+// confirms or denies every appointment either way, so volume stays his.
+// If he denies, or the clinic refuses him entry, this exact amount refunds -
+// the case fee is never part of it.
+const TELEHEALTH_PRICE_CENTS = 25000;
 
 // The ratchet, v2 (Eric, 2026-08-23: "Pricing will now scale exponentially
 // until it hits $1000/case without add-on and $500 cap for f/u add-on. Chat
@@ -129,9 +145,10 @@ const SUB_CAP_CENTS = 15000;
 // which is the honest top for non-attorney advocacy.
 const FULL_GROWTH = 1.05;
 const FULL_ROUND_CENTS = 2500;
-// Scaled with the base: about ten bookings from $1,500 to the ceiling, where
-// the scope still pays a defensible hourly for non-attorney advocacy.
-const FULL_CAP_CENTS = 250000;
+// Scaled with the base: about seven bookings from $3,500 to the ceiling,
+// where the scope pays $145-200/hr - the honest top for non-attorney
+// advocacy. Also the manual setter's hard max (RATE_MAX_CENTS), on purpose.
+const FULL_CAP_CENTS = 500000;
 // Sanity rails on the manual setter, not on the ratchet. A typo that sets the
 // case rate to $5 or $50,000 should bounce rather than take a booking.
 const RATE_MIN_CENTS = 5000;
@@ -380,7 +397,14 @@ const FULL_ACCESS_ACK = 'fullAccess';
 // case, and what a pause does to their deadlines. Enforced here as well as in
 // the page, because the page is not the trust boundary - a booking that
 // arrives without it is refused.
-const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording', 'service'];
+//
+// 'phoneConsent' added 2026-08-25 (Eric: "They should check a box that says
+// that they allow me to contact them via phone for continuity of care"). A
+// step-1 checkbox, not a fourth accordion document - it rides the same acks
+// object and lands on the case's forms map with a timestamp like the rest.
+// New bookings only by construction: this list is read at checkout and at
+// case creation, never back-validated over existing cases.
+const REQUIRED_ACKS = ['disclaimer', 'privacy', 'recording', 'service', 'phoneConsent'];
 // A chat message this old with no in-app read gets an email nudge (spec: batched).
 const DIGEST_MIN_AGE_MS = 10 * 60_000;
 
@@ -650,6 +674,10 @@ export default {
         return await handleUpgradeCheckout(request, env);
       if (url.pathname === '/api/followup' && request.method === 'POST')
         return await handleFollowUpCheckout(request, env);
+      if (url.pathname === '/api/telehealth' && request.method === 'POST')
+        return await handleTelehealthRequest(request, env);
+      if (url.pathname === '/api/admin/telehealth' && request.method === 'POST')
+        return await handleTelehealthDecide(request, env);
       if (url.pathname === '/api/changelog' && request.method === 'GET')
         return await handleChangelog(request, env);
       if (url.pathname === '/api/reviews/admin')
@@ -1403,7 +1431,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-31-terms';
+const BUILD_TAG = 'v2026-09-01-checkins';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1411,7 +1439,7 @@ const BUILD_TAG = 'v2026-08-31-terms';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.35';
+const VERSION = '2.36';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -1435,29 +1463,30 @@ async function closeDeliveredCases(env) {
       // No delivery stamp means an older case that predates the field. Leave
       // it alone rather than closing a chat on a guess.
       if (!at || at > cutoff) continue;
-      // Full Access does not end when the report lands - that is roughly when
-      // the appeals begin, and they run for months. Closing would shut the
-      // chat and block uploads by rule, mid-fight. Eric closes these by hand
-      // when the work is genuinely finished.
-      // A tier case does not close on the 48-hour report clock. It closes at
-      // the second call - or, if that call never gets booked, when its
-      // coordination window runs out. Either way it waits for an appeal that
-      // has been filed and not yet answered, because a closed case blocks
-      // chat and uploads by rule, and the client would have no way to send
-      // the denial letter the second appeal is written from.
+      // A tier case does not close on the 48-hour report clock, and it does
+      // NOT close "at the second call" - Eric called that framing misleading
+      // and removed it (2026-08-25). The tier is a cadence of check-in calls
+      // through the window, so the ONLY automatic end is the window running
+      // out. Even then it waits for an appeal that has been filed and not
+      // yet answered, because a closed case blocks chat and uploads by rule,
+      // and the client would have no way to send the denial letter the
+      // second appeal is written from.
       if (row.data.fullAccess) {
         const until = fullAccessWindowEnd(row.data);
-        const windowOver = until && Date.now() > until.getTime();
-        const wrapped = !!row.data.followUp?.start
-          && Date.now() > new Date(row.data.followUp.start).getTime() + 48 * 3600_000;
-        if (!windowOver && !wrapped) continue;
+        if (!(until && Date.now() > until.getTime())) continue;
         const st = await getDoc(env, `cases/${row.id}/advisor/state`).catch(() => null);
         const appeal = st?.data.appealMeta;
         if (appeal?.filedAt && !appeal.decidedAt) continue;
       }
+      // The reason is written where the client reads it, the same as a
+      // hand-closed case (Eric, 2026-08-25: "Reason for closure is
+      // documented in the case for both parties to see").
+      const closedReason = row.data.fullAccess
+        ? 'The coordination window reached its end, so the case wrapped up on schedule.'
+        : 'The report was delivered and the 48-hour question window ended, so the case wrapped up on schedule.';
       await patchDoc(env, `cases/${row.id}`, {
-        status: 'closed', closedAt: new Date(), closedBy: 'automatic',
-      }, { mask: ['status', 'closedAt', 'closedBy'] });
+        status: 'closed', closedAt: new Date(), closedBy: 'automatic', closedReason,
+      }, { mask: ['status', 'closedAt', 'closedBy', 'closedReason'] });
       await sendEmail(env, {
         to: row.data.clientEmail,
         subject: 'Your case file is yours to keep',
@@ -1723,12 +1752,19 @@ async function handleHold(request, env) {
 }
 
 /**
- * POST /api/admin/close-case  Body: { caseId, note }   admin only
+ * POST /api/admin/close-case  Body: { caseId, reason }   admin only
  *
  * Eric, 2026-08-24: "I reserve the right to close a case for whatever reason.
  * After which, they still have the right to leave a review."
  *
- * So this closes the case and nothing else. It does not touch the review, and
+ * Eric, 2026-08-25: "Reason for closure is documented in the case for both
+ * parties to see." So the reason is REQUIRED and lands on the case document,
+ * which is client-readable by rule - the admin UI says "the client sees this
+ * word for word" before he types a letter. This deliberately replaces the
+ * earlier private closedNote design; the PAUSE reason stays private, because
+ * he only changed closure.
+ *
+ * This closes the case and nothing else. It does not touch the review, and
  * the review surface is deliberately not gated on an open case - somebody
  * whose case he ended is exactly the person whose account of it should still
  * be publishable. Muzzling that would be the wrong instinct and would read,
@@ -1740,6 +1776,9 @@ async function handleCloseCase(request, env) {
   const body = await request.json().catch(() => ({}));
   const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
   if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+  const reason = typeof body?.reason === 'string' ? body.reason.trim().slice(0, 500) : '';
+  if (!reason)
+    return json({ error: 'Write the reason for closing. The client reads it word for word.' }, 400);
   const doc = await getDoc(env, `cases/${caseId}`);
   if (!doc) return json({ error: 'Not found' }, 404);
   if (doc.data.status === 'closed') return json({ ok: true, alreadyClosed: true });
@@ -1747,11 +1786,12 @@ async function handleCloseCase(request, env) {
     status: 'closed',
     closedAt: new Date(),
     closedBy: 'advocate',
-    // His note, for his own record. Never rendered on a client surface.
-    closedNote: typeof body?.note === 'string' ? body.note.slice(0, 500) : '',
+    // Documented for both parties: rendered on the client's closed case and
+    // on his chart, verbatim.
+    closedReason: reason,
     // A closed case has no running clock to bill.
     hold: { pausedAt: null, totalMs: Math.max(0, Number(doc.data.hold?.totalMs) || 0), reason: '', backBy: null },
-  }, { mask: ['status', 'closedAt', 'closedBy', 'closedNote', 'hold'] });
+  }, { mask: ['status', 'closedAt', 'closedBy', 'closedReason', 'hold'] });
   if (doc.data.clientUid) {
     await notifyUser(env, doc.data.clientUid, {
       title: 'Pocket Advocate',
@@ -2116,6 +2156,7 @@ async function handleWebhook(request, env) {
     else if (obj.metadata?.kind === 'chatunlock') await confirmChatUnlock(env, obj);
     else if (obj.metadata?.kind === 'extra') await confirmExtraSession(env, obj);
     else if (obj.metadata?.kind === 'followup') await confirmFollowUpPurchase(env, obj);
+    else if (obj.metadata?.kind === 'telehealth') await confirmTelehealthPurchase(env, obj);
     else if (obj.metadata?.kind === 'fullaccess') await confirmFullAccessPurchase(env, obj);
     else await createCaseFromSession(env, obj);
   } else if (event.type === 'checkout.session.async_payment_failed') {
@@ -4282,6 +4323,224 @@ async function confirmFollowUpPurchase(env, session) {
   }
 }
 
+// ---- Telehealth Appointment Advocacy ----
+//
+// The client asks; Eric decides; only then does he appear in anyone's
+// waiting room. The request names the appointment time, the clinic and the
+// provider, and carries the client's attestation that they are inviting
+// their advocate into their own visit - which is what makes his presence a
+// disclosure to a person involved in their care with the patient present
+// and agreeing (45 CFR 164.510(b)), not a HIPAA problem. The provider still
+// controls the visit and can refuse him entry; the copy says so, and a
+// refusal refunds the $250 for that appointment in full.
+//
+// He never records a clinic's visit. His own calls are recorded under his
+// own consent form; a provider's telehealth session is theirs, under their
+// rules, and his role on that screen is notes only.
+
+/**
+ * POST /api/telehealth  Body: { caseId, when, clinicName, provider, attestAt }
+ *
+ * Standard case: opens a Stripe checkout at the flat price; the webhook
+ * turns the paid session into a pending request. Tier case: no charge, the
+ * request is pending immediately. Either way nothing is promised until Eric
+ * confirms it from the chart.
+ */
+async function handleTelehealthRequest(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c || c.data.clientUid !== user.uid) return json({ error: 'Not found' }, 404);
+  if (c.data.status === 'closed') return json({ error: 'This case is closed.' }, 409);
+
+  const when = body?.when ? new Date(body.when) : null;
+  if (!when || Number.isNaN(when.getTime()))
+    return json({ error: 'Pick the date and time of your appointment.' }, 400);
+  if (when.getTime() < Date.now() + 3600_000)
+    return json({ error: 'That appointment is too soon - I need at least an hour of notice.' }, 400);
+  if (when.getTime() > Date.now() + 365 * 86_400_000)
+    return json({ error: 'Pick a date within the next year.' }, 400);
+  const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+  const clinicName = str(body?.clinicName, 200);
+  const provider = str(body?.provider, 200);
+  if (!clinicName) return json({ error: 'Name the clinic.' }, 400);
+  if (!provider) return json({ error: "Name the provider we'll be seeing." }, 400);
+  // The attestation is the consent record. Refusing without it is the point.
+  if (typeof body?.attestAt !== 'number')
+    return json({ error: 'Tick the box confirming you are inviting me into your appointment.' }, 400);
+
+  const pending = c.data.pendingTelehealth;
+  if (pending?.state === 'requested')
+    return json({ error: 'You already have an appointment request waiting on my confirmation.' }, 409);
+  // A live checkout still in play: hand back the same link rather than
+  // opening a second one they could pay twice.
+  if (pending?.state === 'checkout' && pending.url
+    && new Date(pending.expiresAt || 0).getTime() > Date.now())
+    return json({ ok: true, url: pending.url });
+
+  const req = {
+    when, clinicName, provider,
+    attestAt: new Date(body.attestAt),
+    requestedAt: new Date(),
+  };
+
+  // Included in the tier: no charge, straight to pending-confirmation.
+  if (c.data.fullAccess) {
+    await patchDoc(env, `cases/${caseId}`, {
+      pendingTelehealth: { ...req, state: 'requested', paidCents: 0, sessionId: null },
+    }, { mask: ['pendingTelehealth'] });
+    await pingAdmins(env, `${firstName(c.data.clientName)} asked me to join a telehealth appointment. Confirm or decline it.`,
+      `/admin-case.html?id=${caseId}`);
+    return json({ ok: true, requested: true });
+  }
+
+  const expiresAt = new Date(Date.now() + 23 * 3600_000);
+  const session = await stripePost(env, '/checkout/sessions', {
+    mode: 'payment',
+    customer_email: c.data.clientEmail || undefined,
+    line_items: telehealthLineItems(TELEHEALTH_PRICE_CENTS),
+    success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&telehealth=1`,
+    cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
+    expires_at: Math.floor(expiresAt.getTime() / 1000),
+    metadata: {
+      kind: 'telehealth', caseId, uid: c.data.clientUid,
+      when: when.toISOString(), clinicName, provider, attestAt: String(body.attestAt),
+    },
+  });
+  await patchDoc(env, `cases/${caseId}`, {
+    pendingTelehealth: {
+      ...req, state: 'checkout', paidCents: 0,
+      sessionId: session.id, url: session.url, expiresAt,
+    },
+  }, { mask: ['pendingTelehealth'] });
+  return json({ ok: true, url: session.url });
+}
+
+function telehealthLineItems(cents) {
+  return [{
+    quantity: 1,
+    price_data: {
+      currency: 'usd', unit_amount: cents,
+      product_data: {
+        name: 'Telehealth Appointment Advocacy',
+        description: 'Your advocate joins your telehealth appointment by video to advocate on your behalf. Fully refunded if he cannot attend or your provider does not allow it.',
+      },
+    },
+  }];
+}
+
+/** Paid. The request now waits on Eric's confirmation, and the money is written down. */
+async function confirmTelehealthPurchase(env, session) {
+  const caseId = session.metadata?.caseId;
+  if (!caseId) return;
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c) return;
+  const payments = Array.isArray(c.data.extraPayments) ? c.data.extraPayments : [];
+  if (payments.some((x) => x.sessionId === session.id)) return;
+  const paid = session.amount_total || TELEHEALTH_PRICE_CENTS;
+  payments.push({ kind: 'telehealth', amountCents: paid, sessionId: session.id, at: new Date() });
+  // Rebuilt from the SESSION's metadata, not from pendingTelehealth: the
+  // checkout carried everything, so a pending field that was cleared or
+  // overwritten between pay and webhook cannot lose the request.
+  const ok = await patchDoc(env, `cases/${caseId}`, {
+    pendingTelehealth: {
+      when: new Date(session.metadata.when),
+      clinicName: session.metadata.clinicName || '',
+      provider: session.metadata.provider || '',
+      attestAt: Number(session.metadata.attestAt) ? new Date(Number(session.metadata.attestAt)) : null,
+      requestedAt: new Date(),
+      state: 'requested', paidCents: paid, sessionId: session.id,
+    },
+    extraPayments: payments,
+  }, { mask: ['pendingTelehealth', 'extraPayments'], ifUpdateTime: c.updateTime });
+  if (ok === false) return confirmTelehealthPurchase(env, session);
+  await pingAdmins(env, `${firstName(c.data.clientName)} paid for telehealth appointment advocacy. Confirm or decline it.`,
+    `/admin-case.html?id=${caseId}`);
+}
+
+/**
+ * POST /api/admin/telehealth  Body: { caseId, action: 'confirm' | 'deny' }
+ *
+ * Confirm: the visit lands on the case, the client is told, and Eric shows
+ * up. Deny: the request clears, the client is told, and - when money moved -
+ * Eric is pinged to refund that exact payment from Stripe, the same one-tap
+ * pattern as a duplicate payment. Refunds are his tap, never automatic.
+ */
+async function handleTelehealthDecide(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+  const action = body?.action;
+  if (!['confirm', 'deny'].includes(action)) return json({ error: 'Bad action' }, 400);
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c) return json({ error: 'Not found' }, 404);
+  const p = c.data.pendingTelehealth;
+  if (!p || p.state !== 'requested')
+    return json({ error: 'No telehealth request is waiting on this case.' }, 409);
+
+  if (action === 'confirm') {
+    const visits = Array.isArray(c.data.telehealthVisits) ? c.data.telehealthVisits : [];
+    await patchDoc(env, `cases/${caseId}`, {
+      telehealthVisits: [...visits, {
+        when: p.when, clinicName: p.clinicName, provider: p.provider,
+        paidCents: p.paidCents || 0, sessionId: p.sessionId || null,
+        attestAt: p.attestAt || null, confirmedAt: new Date(),
+      }],
+      pendingTelehealth: null,
+    }, { mask: ['telehealthVisits', 'pendingTelehealth'] });
+    const start = new Date(p.when);
+    await sendEmail(env, {
+      to: c.data.clientEmail,
+      subject: "I'll be at your appointment",
+      html: `<p>Confirmed - I am joining your telehealth appointment to advocate for you:</p>
+        ${whenHtml(start, c.data.clientTz)}
+        <p>${escHtml(p.clinicName)}${p.provider ? ` - ${escHtml(p.provider)}` : ''}</p>
+        <p>Send me the visit link in your case chat as soon as you have it, and
+        tell your provider's office you are bringing your patient advocate.</p>
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
+    }).catch(() => {});
+    await notifyUser(env, c.data.clientUid, {
+      title: 'Pocket Advocate',
+      body: 'Your appointment request is confirmed. Open the app for what happens next.',
+      link: `/case.html?id=${caseId}`,
+    }).catch(() => {});
+    return json({ ok: true, confirmed: true });
+  }
+
+  // Deny.
+  await patchDoc(env, `cases/${caseId}`, {
+    pendingTelehealth: null,
+    telehealthDenied: {
+      when: p.when, clinicName: p.clinicName, at: new Date(),
+      refundCents: p.paidCents || 0,
+    },
+  }, { mask: ['pendingTelehealth', 'telehealthDenied'] });
+  if (p.paidCents > 0) {
+    await pingAdmins(env,
+      `You declined ${firstName(c.data.clientName)}'s telehealth request. Refund the $${(p.paidCents / 100).toFixed(0)} from Stripe - the copy promises it in full.`,
+      `/admin-case.html?id=${caseId}`);
+  }
+  await notifyUser(env, c.data.clientUid, {
+    title: 'Pocket Advocate',
+    body: 'An update on your appointment request. Open the app.',
+    link: `/case.html?id=${caseId}`,
+  }).catch(() => {});
+  return json({ ok: true, denied: true });
+}
+
+/** Every admin, one line, one link. The fan-out idiom used all over this file. */
+async function pingAdmins(env, body, link) {
+  const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  for (const a of admins) {
+    await notifyUser(env, a.id, { title: 'Pocket Advocate', body, link }).catch(() => {});
+  }
+}
+
 /** How long a case chat stays open after the report lands. */
 const REVIEW_WINDOW_MS = 48 * 3600_000;
 
@@ -5542,9 +5801,11 @@ async function handleCaseUpdate(request, env) {
       link: '/case.html',
     });
   } else if (action === 'close') {
-    await patchDoc(env, `cases/${caseId}`, { status: 'closed', closedAt: now }, {
-      mask: ['status', 'closedAt'],
-    });
+    // Retired 2026-08-25. This older path closed a case with no reason and
+    // no closedBy, which now violates the rule that the reason is documented
+    // in the case for both parties. Refusing (rather than deleting the
+    // branch) keeps a stale admin tab from silently closing a case wrong.
+    return json({ error: 'Closing moved: use the Pause / close card, which requires the reason the client will read.' }, 410);
   } else {
     return json({ error: 'Unknown action' }, 400);
   }
@@ -5581,6 +5842,14 @@ async function releaseHold(env, session) {
     if (caseDoc?.data.pendingFullAccess?.sessionId === session.id)
       await patchDoc(env, `cases/${session.metadata.caseId}`, { pendingFullAccess: null }, {
         mask: ['pendingFullAccess'],
+      });
+  }
+  // A telehealth request that was never paid: clear it so they can try again.
+  if (session.metadata?.kind === 'telehealth' && session.metadata.caseId) {
+    const caseDoc = await getDoc(env, `cases/${session.metadata.caseId}`);
+    if (caseDoc?.data.pendingTelehealth?.sessionId === session.id)
+      await patchDoc(env, `cases/${session.metadata.caseId}`, { pendingTelehealth: null }, {
+        mask: ['pendingTelehealth'],
       });
   }
   // An admin-priced session that was never paid: clear the client's pay prompt.
@@ -5664,7 +5933,7 @@ async function handleAdminSchedule(request, env) {
   const { caseId, customStart, customDurationMin, mode, pct, tagline } = body;
   if (typeof caseId !== 'string' || !/^[\w-]{1,64}$/.test(caseId))
     return json({ error: 'Bad case id' }, 400);
-  if (!['reschedule', 'followup', 'charge'].includes(mode))
+  if (!['reschedule', 'followup', 'checkin', 'charge'].includes(mode))
     return json({ error: 'Bad mode' }, 400);
 
   const caseDoc = await getDoc(env, `cases/${caseId}`);
@@ -5762,6 +6031,32 @@ async function handleAdminSchedule(request, env) {
       to: c.clientEmail,
       subject: 'Your follow-up session is booked',
       html: `<p>Your follow-up discussion with me is scheduled:</p>
+        ${whenHtml(start, c.clientTz)}
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+    });
+    return json({ ok: true, scheduled: when });
+  }
+
+  if (mode === 'checkin') {
+    // The tier's cadence: a check-in call every two weeks, included in the
+    // price, plus PRN extras at Eric's discretion. He books each one; there
+    // is no automation and no charge. Unlike followUp - a single object,
+    // deliberately, because a standard case gets exactly one - check-ins are
+    // an append-only array: the whole point is that there are several.
+    if (!c.fullAccess) return json({ error: 'Check-ins are part of Full Access. Use "charge" for a standard case.' }, 409);
+    if (c.status === 'closed') return json({ error: 'This case is closed.' }, 409);
+    const until = fullAccessWindowEnd(c);
+    if (until && start.getTime() > until.getTime())
+      return json({ error: `That lands after the window ends ${MT_FMT.format(until)}. Extend the case first.` }, 409);
+    await bookSlot();
+    const checkIns = Array.isArray(c.checkIns) ? c.checkIns : [];
+    await patchDoc(env, `cases/${caseId}`, {
+      checkIns: [...checkIns, { start, durationMin, slotId, scheduledAt: now }],
+    }, { mask: ['checkIns'] });
+    await sendEmail(env, {
+      to: c.clientEmail,
+      subject: 'Your check-in call is booked',
+      html: `<p>Our next check-in call is scheduled:</p>
         ${whenHtml(start, c.clientTz)}
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
     });

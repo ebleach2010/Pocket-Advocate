@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.35';
+export const VERSION = '2.36';
 
 /**
  * Newest first.
@@ -51,6 +51,15 @@ export const VERSION = '2.35';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // The reshaped tier (check-ins, $3,500), telehealth appointment
+    // advocacy, the Add-ons tab, phone consent at booking, and closure
+    // reasons shown to the client. None of it is live for clients until the
+    // release that turns the tier on, so the notes wait with it.
+    version: '2.36',
+    quiet: true,
+    client: [],
+  },
   {
     // The tip jar's removal is client-visible and worth saying: something they
     // could see on their page every visit is simply gone, and silence about

@@ -1269,6 +1269,21 @@ function paintOverview(pane) {
       <button class="btn" data-action="confirm-request">Confirm this time</button>
       <button class="btn quiet" data-action="deny-request">Can't make it</button>
     </div>` : ''}
+    ${c.pendingTelehealth?.state === 'requested' ? `
+    <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
+      <h3 style="margin:0 0 .3rem; color:var(--orange);">Telehealth appointment — they want you there</h3>
+      <p class="small" style="margin:0 0 .2rem;">
+        <strong>${esc(mtFmt.format(toDate(c.pendingTelehealth.when)))} MST</strong>
+        · ${esc(c.pendingTelehealth.clinicName || '(clinic)')}
+        ${c.pendingTelehealth.provider ? ` · ${esc(c.pendingTelehealth.provider)}` : ''}</p>
+      <p class="dim small" style="margin:0 0 .7rem;">
+        ${c.pendingTelehealth.paidCents
+          ? `Paid $${(c.pendingTelehealth.paidCents / 100).toFixed(0)}. Declining pings you to refund it — the copy promises every dollar back.`
+          : 'Included in their Full Access — no payment moved.'}
+        They attested to inviting you in. You never record their clinic's visit.</p>
+      <button class="btn" data-telehealth="confirm">I'll be there</button>
+      <button class="btn quiet" data-telehealth="deny">Can't make it</button>
+    </div>` : ''}
 
     <details class="mgmt" data-k="sched">
       <summary>📅 Schedule a session</summary>
@@ -1288,6 +1303,8 @@ function paintOverview(pane) {
             Reschedule the main appointment <span class="dim">(no charge)</span></label>
           <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="followup" ${followUpAvailable(c) ? '' : 'disabled'}>
             Book their paid follow-up ${followUpAvailable(c) ? '' : `<span class="dim">(${followUpUnavailableReason(c)})</span>`}</label>
+          ${c.fullAccess ? `<label class="small" style="display:block;"><input type="radio" name="sched-mode" value="checkin" ${c.status === 'closed' ? 'disabled' : ''}>
+            Book a check-in <span class="dim">(included in Full Access, no charge)</span></label>` : ''}
           <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="charge">
             Charge for a session:</label>
           <div id="sched-charge" style="margin:.35rem 0 0 1.4rem;" hidden>
@@ -1345,8 +1362,8 @@ function paintOverview(pane) {
           <p class="dim small" style="margin:.2rem 0 .6rem;">Closing ends the
             case at your discretion, for any reason. They keep everything in
             it, and they can still leave a review.</p>
-          <label class="dim small" style="display:block; margin-bottom:.6rem;">Note, for your record only
-            <input type="text" data-close-note maxlength="500" placeholder="never shown to them"
+          <label class="dim small" style="display:block; margin-bottom:.6rem;">Why — <strong style="color:var(--orange)">the client reads this, word for word</strong>
+            <input type="text" data-close-reason maxlength="500" placeholder="required — shown on their case page"
               style="width:100%; margin-top:.2rem;"></label>
           <div class="actions"><button class="btn quiet" data-close-case>Close this case</button></div>`}
         <p class="error" data-hold-error hidden style="margin:.5rem 0 0;"></p>
@@ -1372,13 +1389,7 @@ function paintOverview(pane) {
       </div>
     </details>
 
-    ${c.status !== 'closed' ? `
-    <details class="mgmt" data-k="close">
-      <summary>⛔ Close case</summary>
-      <div class="mgmt-body">
-        <button class="btn danger" data-action="close">Close case</button>
-      </div>
-    </details>` : ''}`;
+`;
 
   paintCaseReview(pane);
   pane.querySelector('#save-link').addEventListener('click', saveLink);
@@ -1390,16 +1401,35 @@ function paintOverview(pane) {
   // those all post a milestone to the server, and this one is just paper.
   pane.querySelectorAll('[data-blank]').forEach((b) =>
     b.addEventListener('click', () => printAuthorityDoc({ kind: b.dataset.blank, blank: true })));
+  pane.querySelectorAll('[data-telehealth]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const action = b.dataset.telehealth;
+      if (action === 'deny' && !confirm('Decline this appointment? They are told, and if they paid you are pinged to refund it in full.')) return;
+      b.disabled = true;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/admin/telehealth', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ caseId, action }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+        load();
+      } catch (err) { alert(err.message); b.disabled = false; }
+    }));
   wireHoldAndClose(pane);
 }
 
 /**
  * Pausing a case, resuming it, and ending it at his discretion.
  *
- * Both routes are admin-gated and both 404 to anyone else. The reason and the
- * closing note are stored for his record and never reach a client surface;
- * the client is told the case is paused, and roughly when he expects to be
- * back, and nothing about why.
+ * Both routes are admin-gated and both 404 to anyone else. The PAUSE reason
+ * is his record alone - the client is told the case is paused and roughly
+ * when he expects to be back, never why. The CLOSING reason is the opposite
+ * on purpose (Eric, 2026-08-25): it is documented in the case for both
+ * parties, rendered on the client's page word for word, and the form says so
+ * before he types a letter.
  */
 function wireHoldAndClose(pane) {
   const errEl = pane.querySelector('[data-hold-error]');
@@ -1439,10 +1469,10 @@ function wireHoldAndClose(pane) {
     post('/api/admin/hold', { on: false }, e.currentTarget));
 
   pane.querySelector('[data-close-case]')?.addEventListener('click', (e) => {
-    if (!confirm('Close this case? They keep every file and can still leave a review. This is not reversible from here.')) return;
-    post('/api/admin/close-case', {
-      note: pane.querySelector('[data-close-note]')?.value || '',
-    }, e.currentTarget);
+    const reason = (pane.querySelector('[data-close-reason]')?.value || '').trim();
+    if (!reason) { say('Write the reason first — the client reads it word for word.'); return; }
+    if (!confirm(`Close this case? They will read, word for word:\n\n"${reason}"\n\nThey keep every file and can still leave a review. This is not reversible from here.`)) return;
+    post('/api/admin/close-case', { reason }, e.currentTarget);
   });
 }
 
@@ -1786,6 +1816,14 @@ function infoBar(c, mtFmt, start, due) {
   if (c.pendingExtra)
     row('UNPAID', `${esc(c.pendingExtra.label)} · $${(c.pendingExtra.amountCents / 100).toLocaleString()} · ${fmt.format(toDate(c.pendingExtra.start))} MST`,
       'var(--magenta)');
+  {
+    const ci = checkInState(c);
+    if (ci?.next) row('CHECK-IN', `${fmt.format(ci.next)} MST`, 'var(--cyan)');
+    else if (ci?.due) row('CHECK-IN', `<strong>DUE — ${ci.days}d since the last call</strong>`, 'var(--orange)');
+  }
+  if (c.pendingTelehealth?.state === 'requested')
+    row('TELEHEALTH', `<strong>AWAITING YOUR CONFIRM</strong> · ${fmt.format(toDate(c.pendingTelehealth.when))} MST · ${esc(c.pendingTelehealth.clinicName || '')}`,
+      'var(--orange)');
   if (c.needsReschedule) row('ALERT', 'NEEDS RESCHEDULE', 'var(--danger)');
 
   return `<div class="panel" style="display:grid; grid-template-columns:max-content 1fr;
@@ -1978,6 +2016,28 @@ function fullAccessDaysLeft(c) {
     + (c?.hold?.pausedAt ? Math.max(0, Date.now() - toDate(c.hold.pausedAt).getTime()) : 0);
   const end = start + (FULL_WINDOW_DAYS + (Number(c.fullAccessExtraDays) || 0)) * 86_400_000 + held;
   return Math.max(0, Math.ceil((end - Date.now()) / 86_400_000));
+}
+
+/**
+ * The tier's cadence, as a state the shelf and the chart can both say:
+ * the next booked check-in if there is one, or how long the case has gone
+ * without one. "Due" means 14+ days since the last call of any kind with
+ * nothing on the books - the promise is a check-in every two weeks, and
+ * this flag is the enforcement Eric chose: a quiet marker, not automation.
+ */
+const CHECKIN_DAYS = 14;
+function checkInState(c) {
+  if (!c?.fullAccess || c.status === 'closed') return null;
+  const now = Date.now();
+  const all = Array.isArray(c.checkIns) ? c.checkIns : [];
+  const future = all.map((x) => toDate(x.start).getTime()).filter((t) => t > now).sort((a, b) => a - b);
+  if (future.length) return { next: new Date(future[0]), due: false };
+  const past = all.map((x) => toDate(x.start).getTime()).filter((t) => t <= now);
+  const first = c.appointment?.start ? toDate(c.appointment.start).getTime() : 0;
+  const last = Math.max(first, ...past, 0);
+  if (!last || last > now) return { next: null, due: false };
+  const days = Math.floor((now - last) / 86_400_000);
+  return { next: null, due: days >= CHECKIN_DAYS && !c.hold?.pausedAt, days };
 }
 
 /** A paper copy for the clinic or the plan. Same print path as the prep sheet. */

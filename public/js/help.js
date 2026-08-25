@@ -17,7 +17,35 @@ export const HELP_BUTTON = helpButton('case', 'What is stored here, and how to i
 /** Wire every [data-help] inside `root`. */
 export function wireHelp(root) {
   root.querySelectorAll('[data-help]').forEach((b) =>
-    b.addEventListener('click', () => (b.dataset.help === 'app' ? openAppHelp() : openCaseHelp())));
+    b.addEventListener('click', () => (
+      b.dataset.help === 'app' ? openAppHelp()
+        : b.dataset.help === 'telehealth' ? openTelehealthHelp()
+          : openCaseHelp())));
+}
+
+/**
+ * The ground rules for appointment advocacy, stated before anyone pays:
+ * who controls the visit, what happens if the answer is no, and the one
+ * thing that never happens (recording). Plain enough to read in the
+ * waiting room.
+ */
+export function openTelehealthHelp() {
+  openPanel('Bringing me to your appointment', `
+    <p><strong>What it is.</strong> You have a telehealth visit with one of
+      your own providers; I join it by video as your patient advocate. I make
+      sure your questions actually get asked, I take notes so nothing is lost,
+      and afterwards the notes land in your case file.</p>
+    <p><strong>It is your invitation.</strong> You have every right to have a
+      support person in your own appointment. Tell the clinic's office your
+      advocate is joining when you confirm the visit, and send me the visit
+      link in chat once you have it.</p>
+    <p><strong>Your provider runs the visit.</strong> They may ask who I am,
+      and a clinic can decline a third person on the call. If that happens,
+      or if I can't attend, anything you paid for that appointment comes back
+      to you in full.</p>
+    <p><strong>I never record it.</strong> Your provider's visit is theirs.
+      My role on that screen is notes and advocacy only, and nothing about
+      the visit is a diagnosis or medical advice from me.</p>`);
 }
 
 // ---- the shell ----

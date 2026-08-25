@@ -30,7 +30,7 @@ async function load() {
   if (!sub) {
     page.innerHTML = `
       <h1>No subscription yet</h1>
-      <p class="dim">24/7 Priority Chat, <span data-rate="sub">$50</span>/mo: chat, case files, photos, and labs all in one on-the-go priority chat. Cancel anytime.</p>
+      <p class="dim">24/7 Priority Chat, <span data-rate="sub">$95</span>/mo: chat, case files, photos, and labs all in one on-the-go priority chat. Cancel anytime.</p>
       <div class="actions"><a class="btn mag" href="/subscribe.html">Get 24/7 Priority Chat →</a></div>`;
     // Painted after the markup exists: this page builds its body at runtime.
     paintRates(page).catch(() => {});

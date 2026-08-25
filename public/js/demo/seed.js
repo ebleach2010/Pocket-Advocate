@@ -348,7 +348,7 @@ export function seed({ set, file }) {
     addonRateCents: 17500,
     fullAccess: true,
     fullAccessAt: days(38),
-    fullAccessRateCents: 150000,
+    fullAccessRateCents: 350000,
     // The 90 day window runs from the SIGNATURE, so it is stamped here to
     // match the authorisation seeded below.
     authorityAt: days(31),

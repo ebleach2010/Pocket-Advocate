@@ -125,7 +125,7 @@ async function load() {
       <p class="dim small" style="margin:.5rem 0 .6rem;">Follow-up
         <strong style="color:var(--ink)">$${dollars(rate.addonCents)}</strong>,
         Priority Chat <strong style="color:var(--ink)">$${dollars(rate.subCents || 9500)}/mo</strong>,
-        Full Access <strong style="color:var(--ink)">$${dollars(rate.fullCents || 150000)}</strong>.
+        Full Access <strong style="color:var(--ink)">$${dollars(rate.fullCents || 350000)}</strong>.
         Case and follow-up grow 10% per booking (to $1,400 and $400 caps); chat
         climbs $5 per new client of any type (to $150); Full Access grows 5% to
         the nearest $25 (to $5,000). ${rate.bookings} booking${rate.bookings === 1 ? ' has' : 's have'}
@@ -141,7 +141,7 @@ async function load() {
           <input type="number" id="rate-sub" min="10" max="150" step="1" value="${((rate.subCents || 9500) / 100)}"
             style="width:5rem;"></label>
         <label class="dim small">Full Access $
-          <input type="number" id="rate-full" min="50" step="25" value="${((rate.fullCents || 150000) / 100)}"
+          <input type="number" id="rate-full" min="50" step="25" value="${((rate.fullCents || 350000) / 100)}"
             style="width:7rem;"></label>
       </div>
       <p class="dim small" style="margin:.7rem 0 .35rem;">Tell me when a case
@@ -196,7 +196,10 @@ async function load() {
     const badges = unseenBadges(c.id, cover.at, {
       // The overview flag is not an activity stamp, it is a state: a case that
       // needs rescheduling wants his attention whether or not anything moved.
-      overview: c.needsReschedule || dueSoon(c),
+      // A stale check-in cadence and a telehealth request waiting on his
+      // confirm are the same kind of state.
+      overview: c.needsReschedule || dueSoon(c) || checkInDue(c)
+        || c.pendingTelehealth?.state === 'requested',
     });
     // The clock as it stands right now, so a card can paint "running" the
     // moment the shelf does rather than after a round trip.
@@ -230,6 +233,8 @@ async function load() {
       badgeClass: `${c.status === 'closed' ? 'closed' : ''} ${dueSoon(c) ? 'due' : ''}`.trim(),
       flags: `<span class="folder-note">${detail}${
         c.needsReschedule ? '· <strong style="color:var(--danger)">NEEDS RESCHEDULE</strong>' : ''
+      }${checkInDue(c) ? ' · <strong style="color:var(--orange)">CHECK-IN DUE</strong>' : ''
+      }${c.pendingTelehealth?.state === 'requested' ? ' · <strong style="color:var(--orange)">TELEHEALTH — CONFIRM</strong>' : ''
       }</span>${badges ? `<span class="folder-badges" title="Not looked at yet">${badges}</span>` : ''}`,
     });
   };
@@ -350,6 +355,23 @@ function followUpFlag(c) {
   const days = Math.ceil((base + 30 * 86_400_000 - Date.now()) / 86_400_000);
   if (days <= 0) return '· <strong style="color:var(--danger)">FOLLOW-UP EXPIRED</strong>';
   return `· <strong style="color:var(--magenta)">FOLLOW-UP PAID · ${days}d left</strong>`;
+}
+
+/**
+ * The tier's every-two-weeks promise, as a shelf flag. Same rule as
+ * checkInState in admin-case.js (keep the two in step): 14+ days since the
+ * last call of any kind, nothing booked ahead, case open and not paused.
+ */
+function checkInDue(c) {
+  if (!c?.fullAccess || c.status === 'closed' || c.hold?.pausedAt) return false;
+  const now = Date.now();
+  const all = Array.isArray(c.checkIns) ? c.checkIns : [];
+  if (all.some((x) => toDate(x.start).getTime() > now)) return false;
+  const past = all.map((x) => toDate(x.start).getTime()).filter((t) => t <= now);
+  const first = c.appointment?.start ? toDate(c.appointment.start).getTime() : 0;
+  const last = Math.max(first, ...past, 0);
+  if (!last || last > now) return false;
+  return now - last >= 14 * 86_400_000;
 }
 
 function dueSoon(c) {

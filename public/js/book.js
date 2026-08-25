@@ -1,11 +1,12 @@
 // The booking flow (PR 69): three visible steps under a persistent step
-// rail. Step 1 takes the time, the meeting method, and (when missing) the
-// client's name and date of birth; step 2 is the one agreement in three
-// scroll-to-end parts; step 3 takes payment. Sign-in folds into the page
-// via inline-auth.js instead of bouncing new visitors to /signin.html.
-// The follow-up session is included in the case price now; the paid add-on
-// is gone from the UI. The Worker re-validates everything; this UI is not
-// trusted.
+// rail. Step 1 takes the time, the meeting method, the continuity-of-care
+// phone consent, and (when missing) the client's name and date of birth;
+// step 2 is the one agreement in four scroll-to-end parts; step 3 takes
+// payment and previews the add-ons a running case can buy. The follow-up
+// session is a separate $-priced add-on sold from the case page after the
+// report lands - NOT included in the case price (an older version of this
+// comment said otherwise and was wrong). The Worker re-validates
+// everything; this UI is not trusted.
 
 import { db, doc, getDoc, setDoc, collection, getDocs, query, where } from './firebase.js';
 import { currentUser, hydrateNav } from './auth.js';
@@ -35,7 +36,7 @@ let caseCents = CASE_PRICE_CENTS;
 // already weighing what this is worth, and because making every visitor pick
 // between two products before they can even see a calendar taxes the common
 // path for the sake of the rare one.
-const FULL_PRICE_CENTS = 150000;
+const FULL_PRICE_CENTS = 350000;
 let fullCents = FULL_PRICE_CENTS;
 // Whether he has room for another Full Access client at all. False closes the
 // door honestly instead of taking money for work that cannot be started.
@@ -164,7 +165,7 @@ function stripUnwiredStep1(el, { keepIntro = false } = {}) {
   el.querySelector('#after-times')?.remove();
   el.querySelector('#continue')?.remove();
   if (!keepIntro) el.querySelector('#time-intro')?.remove();
-  for (const sel of ['#chips', '#phone-row', '#video-note', '#method-error', '#profile-block'])
+  for (const sel of ['#chips', '#phone-row', '#video-note', '#phone-consent-row', '#method-error', '#profile-block'])
     el.querySelector(sel)?.remove();
   el.querySelectorAll('h3').forEach((h) => {
     if (/How should we talk/.test(h.textContent)) h.remove();
@@ -215,6 +216,10 @@ async function renderTime() {
     <p class="muted small" id="video-note" ${state.method === 'video' ? '' : 'hidden'} style="margin-top:.7rem;">
       I'll send you a join link before the call, and it appears on your case page too. Nothing to install.
     </p>
+    <label class="agreement-check" id="phone-consent-row" style="margin-top:.7rem; align-items:flex-start;">
+      <input type="checkbox" id="phone-consent" ${state.acks.phoneConsent ? 'checked' : ''}>
+      You may contact me by phone between sessions for continuity of care. <span style="color:var(--magenta)">*</span>
+    </label>
     <p class="error" id="method-error" hidden></p>
     ${needsProfile() ? `
     <div class="card" id="profile-block">
@@ -449,6 +454,14 @@ async function renderTime() {
         return;
       }
     }
+    // Continuity-of-care phone consent (Eric, 2026-08-25). Required for every
+    // booking, video included - he calls clients back between sessions
+    // whatever the session method. Enforced by the Worker too (REQUIRED_ACKS).
+    if (!state.acks.phoneConsent) {
+      err.textContent = 'Tick the consent box so I can call you between sessions.';
+      err.hidden = false;
+      return;
+    }
     // Name + DOB before money moves. The save must land before the pay call
     // because the Worker re-checks the profile at checkout. Same strings and
     // setDoc shape as profile.js's ensureFullProfile.
@@ -492,6 +505,13 @@ async function renderTime() {
       }
     }
     next();
+  });
+
+  // The consent tick is an acknowledgment like the agreement boxes: stamped
+  // the moment it happens, cleared if they untick, sent in the same acks map.
+  el.querySelector('#phone-consent')?.addEventListener('change', (e) => {
+    if (e.target.checked) state.acks.phoneConsent = Date.now();
+    else delete state.acks.phoneConsent;
   });
 }
 
@@ -602,7 +622,7 @@ function renderPayment() {
         <span class="tier-name">Full Access</span>
         <span class="tier-price" data-tier-price-full>$${money(fullCents)}</span>
         <span class="tier-what">${fullOpen
-          ? 'Everything above, and I deal with your clinics and your insurer myself, including writing and filing your appeals.'
+          ? 'Everything above, plus 60 days of me dealing with your clinics and insurer myself: a check-in call every two weeks, unlimited calls on your behalf, and two written appeals.'
           : 'I am at capacity for this right now and cannot take another one honestly. Book a case and ask me about it; I will tell you when a place opens.'}</span>
       </button>
     </div>
@@ -617,6 +637,20 @@ function renderPayment() {
     <div class="price-line">
       <span class="included" data-included>This includes our call and your written report within 7 days.</span>
     </div>
+    <details class="faq" id="addons-preview" style="margin:.6rem 0 0;">
+      <summary>Add-ons, once your case starts</summary>
+      <div class="faq-a">
+        <p class="muted small" style="margin:.3rem 0 .5rem;">Nothing to decide
+          now, and nothing here is charged today. Once your case is open,
+          these are available from your case page whenever you want them:</p>
+        <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Follow-up session · $<span data-rate="addon">175</span></strong><br>
+          A second full discussion on the same case after your report lands. Same case, same file, no starting over.</p>
+        <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Telehealth appointment advocacy · $250</strong><br>
+          I join a telehealth visit with one of your own providers by video and advocate live. I confirm every appointment personally; if I can't attend, or your provider doesn't allow it, you get every dollar back. Included with Full Access.</p>
+        <p class="muted small" style="margin:0;"><strong style="color:var(--ink)">Full Access upgrade</strong><br>
+          Move an open case up to the full coordination tier later; you pay the difference, never twice.</p>
+      </div>
+    </details>
     <p class="muted small">${isRequest ? 'Requested times are not held while you complete payment.' : 'Your selected time is held while you complete payment.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once your slot is booked. If I reschedule you more than once, you're entitled to a full refund on request.</p>
     <p class="error" id="pay-error" hidden></p>
     <p>

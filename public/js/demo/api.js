@@ -169,8 +169,11 @@ export function demoApi(role, store) {
       const c = store.docs.get(key) || {};
       const hold = c.hold || {};
       if (path === '/api/admin/close-case') {
+        // Same rule as the Worker: no reason, no close. The client reads it.
+        const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 500) : '';
+        if (!reason) return fail(400, 'Write the reason for closing. The client reads it word for word.');
         store.docs.set(key, {
-          ...c, status: 'closed', closedAt: new Date(), closedBy: 'advocate',
+          ...c, status: 'closed', closedAt: new Date(), closedBy: 'advocate', closedReason: reason,
           hold: { pausedAt: null, totalMs: Number(hold.totalMs) || 0, reason: '', backBy: null },
         });
         store.persist?.();
@@ -196,6 +199,53 @@ export function demoApi(role, store) {
       store.persist?.();
       return ok({ ok: true, paused: false, addedMs: stretch });
     }
+    // Telehealth appointment advocacy, both sides, so the whole loop drives.
+    if (path === '/api/telehealth') {
+      const key = `cases/${body.caseId || DEMO_CASE_ID}`;
+      const c = store.docs.get(key) || {};
+      if (c.status === 'closed') return fail(409, 'This case is closed.');
+      if (!body.when || Number.isNaN(new Date(body.when).getTime()))
+        return fail(400, 'Pick the date and time of your appointment.');
+      if (!body.clinicName) return fail(400, 'Name the clinic.');
+      if (!body.provider) return fail(400, "Name the provider we'll be seeing.");
+      if (typeof body.attestAt !== 'number')
+        return fail(400, 'Tick the box confirming you are inviting me into your appointment.');
+      const req = {
+        when: new Date(body.when), clinicName: body.clinicName, provider: body.provider,
+        attestAt: new Date(body.attestAt), requestedAt: new Date(),
+      };
+      if (c.fullAccess) {
+        store.docs.set(key, { ...c, pendingTelehealth: { ...req, state: 'requested', paidCents: 0 } });
+        store.persist?.();
+        return ok({ ok: true, requested: true });
+      }
+      // Standard case: straight past Stripe, landing as a paid request.
+      store.docs.set(key, { ...c, pendingTelehealth: { ...req, state: 'requested', paidCents: 25000 } });
+      store.persist?.();
+      await beat(600);
+      return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&telehealth=1&demo=${role}` });
+    }
+    if (path === '/api/admin/telehealth') {
+      const key = `cases/${body.caseId || DEMO_CASE_ID}`;
+      const c = store.docs.get(key) || {};
+      const p = c.pendingTelehealth;
+      if (!p || p.state !== 'requested') return fail(409, 'No telehealth request is waiting on this case.');
+      if (body.action === 'confirm') {
+        const visits = Array.isArray(c.telehealthVisits) ? c.telehealthVisits : [];
+        store.docs.set(key, {
+          ...c, pendingTelehealth: null,
+          telehealthVisits: [...visits, { ...p, state: undefined, confirmedAt: new Date() }],
+        });
+        store.persist?.();
+        return ok({ ok: true, confirmed: true });
+      }
+      store.docs.set(key, {
+        ...c, pendingTelehealth: null,
+        telehealthDenied: { when: p.when, clinicName: p.clinicName, at: new Date(), refundCents: p.paidCents || 0 },
+      });
+      store.persist?.();
+      return ok({ ok: true, denied: true });
+    }
     if (path === '/api/admin/effort') {
       if (init.method === 'POST') demoEffort = body.effort === 'max' ? 'max' : 'high';
       return ok({ effort: demoEffort });
@@ -216,6 +266,12 @@ export function demoApi(role, store) {
       // teaches the wrong thing about the one screen that has to hold.
       if (path === '/api/upgrade' && typeof body?.acks?.fullAccess !== 'number')
         return fail(400, 'Read the scope note and acknowledge it first.');
+      // Same five the Worker requires, phoneConsent included - the demo
+      // refuses the same way so the booking drive proves the gate.
+      if (path === '/api/checkout'
+        && !['disclaimer', 'privacy', 'recording', 'service', 'phoneConsent']
+          .every((f) => typeof body?.acks?.[f] === 'number'))
+        return fail(400, 'All acknowledgment forms must be completed first.');
       await beat(600);
       // Straight past Stripe to where paying would have landed him.
       const to = path === '/api/followup'

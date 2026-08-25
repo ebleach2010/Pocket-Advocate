@@ -13,7 +13,7 @@ import { mountChat, watchPresence } from './chat.js';
 import { mountSaved } from './saved.js';
 import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
-import { HELP_BUTTON, wireHelp, openCaseHelp } from './help.js';
+import { HELP_BUTTON, helpButton, wireHelp, openCaseHelp } from './help.js';
 import {
   recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
 } from './authority.js';
@@ -177,6 +177,11 @@ function render() {
       // and a tab hanging half off the edge reads as a broken page rather than
       // as more to scroll to. The 📄 carries the rest of the word.
       { id: 'docs', title: 'Docs', icon: '📄', render: (pane) => renderDocs(pane, c) },
+      // Everything purchasable, in one place with a ? beside each (Eric,
+      // 2026-08-25: "an entire separate tab for add-ons"). The follow-up and
+      // upgrade cards moved here from the bottom of Docs, where they were
+      // easy to scroll past and crowded the file list.
+      { id: 'addons', title: 'Add-ons', icon: '➕', render: (pane) => renderAddons(pane, c) },
       {
         // Messages they bookmarked, each with a note of their own. Private:
         // Eric is not told what they save, and nothing is written back to the
@@ -293,6 +298,8 @@ function refreshSections() {
   // authorisation buttons a tier client cannot start without.
   if (progress && !busyInside(progress)) renderProgress(progress, c);
   if (docs && !busyInside(docs)) renderDocs(docs, c);
+  const addons = folder?.el('addons');
+  if (addons && !busyInside(addons)) renderAddons(addons, c);
 }
 
 /** Is the client mid-interaction in here? Then leave it alone. */
@@ -387,6 +394,44 @@ function pausedNotice(c) {
     </div>`;
 }
 
+/**
+ * Why a closed case closed, in Eric's own words - documented in the case for
+ * both parties (his rule, 2026-08-25). Every close writes one: his hand
+ * closes carry what he typed, the automatic sweep writes its plain sentence.
+ * Older cases closed before the field existed simply have nothing to show.
+ */
+function closedNotice(c) {
+  if (c.status !== 'closed' || !c.closedReason) return '';
+  return `
+    <div class="panel" style="margin:0 0 1rem;">
+      <h3 style="margin:0 0 .35rem;">Why this case closed</h3>
+      <p style="margin:0;">${esc(c.closedReason)}</p>
+      <p class="dim small" style="margin:.5rem 0 0;">Everything in the case
+        stays yours to read and download, for as long as you want it. If you
+        would like to leave a review, that stays open too.</p>
+    </div>`;
+}
+
+/**
+ * The tier's cadence, on the client's own card: the next check-in call if
+ * one is booked, or the standing promise if not. Standard cases show
+ * nothing - their shape is one call and a report.
+ */
+function checkInLine(c, localFmt) {
+  if (!c.fullAccess || c.status === 'closed') return '';
+  const now = Date.now();
+  const future = (Array.isArray(c.checkIns) ? c.checkIns : [])
+    .map((x) => toDate(x.start).getTime()).filter((t) => t > now).sort((a, b) => a - b);
+  if (future.length) {
+    const next = new Date(future[0]);
+    return `<p class="dim" style="margin:.4rem 0 0;">🗓 Next check-in:
+      <strong style="color:var(--ink)">${esc(localFmt.format(next))}</strong> your time.</p>`;
+  }
+  return `<p class="dim small" style="margin:.4rem 0 0;">🗓 Your case includes a
+    check-in call every two weeks. None is on the books right now — message me
+    in chat and we'll set the next one.</p>`;
+}
+
 function renderProgress(el, c) {
   const start = c.appointment && toDate(c.appointment.start);
   const closed = c.status === 'closed';
@@ -425,6 +470,7 @@ function renderProgress(el, c) {
   el.innerHTML = `
     ${confirmationBanner(c, start, localFmt)}
     ${pausedNotice(c)}
+    ${closedNotice(c)}
     <h2 class="case-sec-h">Progress</h2>
     <div class="panel">
       ${start ? `
@@ -437,6 +483,7 @@ function renderProgress(el, c) {
           ${start ? '<a href="#" class="btn ghost" style="text-align:center;" data-ics>📅 Add to calendar</a>' : ''}
         </p>` : ''}
       ${requestedNote}
+      ${checkInLine(c, localFmt)}
       ${workLine(c)}
       <ul class="timeline">
         ${STEPS.map(([, label], i) => `
@@ -702,32 +749,11 @@ function renderDocs(el, c) {
          <progress data-progress max="100" value="0" hidden></progress>
          <p class="error" data-upload-error hidden></p>`}
     <ul class="filelist" data-files><li class="dim small">Loading files…</li></ul>
-    <div data-review hidden></div>
-    <div data-upgrade></div>
-    <div data-followup></div>`;
+    <div data-review hidden></div>`;
   const input = el.querySelector('[data-file-input]');
   input?.addEventListener('change', () => uploadFiles(c, el, [...input.files]));
   refreshFiles(c, el);
   renderReview(el, c);
-  const offer = el.querySelector('[data-followup]');
-  if (offer) {
-    offer.innerHTML = followUpOffer(c);
-    wireFollowUpOffer(offer, c);
-  }
-  const up = el.querySelector('[data-upgrade]');
-  if (up) {
-    up.innerHTML = upgradeOffer(c);
-    wireUpgradeOffer(up, c);
-    // Repaint once the live price answers. Without this the card kept
-    // whatever was compiled in, and the handshake would then bounce a buyer
-    // who had done nothing wrong. The chat-unlock price two hundred lines up
-    // already does exactly this.
-    ratesReady.then(() => {
-      if (!up.isConnected || up.querySelector('[data-upgrade-ack]:checked')) return;
-      up.innerHTML = upgradeOffer(c);
-      wireUpgradeOffer(up, c);
-    }).catch(() => {});
-  }
   // Chat saves refresh this list via the permanent pa-saved-file listener at the top.
 }
 
@@ -1041,7 +1067,7 @@ const followUpPrice = (c) =>
 // The Full Access list price, in CENTS, corrected from /api/rates the moment
 // it answers. The upgrade card subtracts what this case already paid, so the
 // number on the button is the difference and never the list price.
-let fullAccessCents = 150000;
+let fullAccessCents = 350000;
 const fullAccessPrice = () => fullAccessCents;
 // Named, because the upgrade card has to know when this has landed. It used
 // to be fire-and-forget, so a slow or failed fetch left the compiled-in price
@@ -1072,6 +1098,163 @@ function renderPageFooter(host, c) {
   // node, click wiring intact. Idempotent across repaints.
   const verline = document.getElementById('pa-verline');
   if (verline) host.before(verline);
+}
+
+/**
+ * The Add-ons page: everything purchasable on a running case, in one place,
+ * each with a ? explainer. The prices are the same live ones the cards have
+ * always used - nothing here is typed.
+ */
+function renderAddons(el, c) {
+  el.innerHTML = `
+    <h2 class="case-sec-h">Add-ons</h2>
+    <p class="dim small" style="margin:.2rem 0 .8rem;">Extras you can put on
+      this case whenever you need them. Nothing here is required, and nothing
+      is charged until you choose it.</p>
+    <div data-telehealth></div>
+    <div data-followup></div>
+    <div data-upgrade></div>`;
+  const th = el.querySelector('[data-telehealth]');
+  if (th) { th.innerHTML = telehealthCard(c); wireTelehealthCard(th, c); }
+  const offer = el.querySelector('[data-followup]');
+  if (offer) {
+    offer.innerHTML = followUpOffer(c);
+    wireFollowUpOffer(offer, c);
+  }
+  const up = el.querySelector('[data-upgrade]');
+  if (up) {
+    up.innerHTML = upgradeOffer(c);
+    wireUpgradeOffer(up, c);
+    // Repaint once the live price answers. Without this the card kept
+    // whatever was compiled in, and the handshake would then bounce a buyer
+    // who had done nothing wrong.
+    ratesReady.then(() => {
+      if (!up.isConnected || up.querySelector('[data-upgrade-ack]:checked')) return;
+      up.innerHTML = upgradeOffer(c);
+      wireUpgradeOffer(up, c);
+    }).catch(() => {});
+  }
+}
+
+/**
+ * Telehealth Appointment Advocacy: Eric joins the client's own telehealth
+ * visit by video and advocates live. The client names the appointment; he
+ * confirms or declines every one; a decline - his or the clinic's - refunds
+ * the payment in full, and the card says so before they type a thing.
+ */
+const TELEHEALTH_PRICE_CENTS = 25000;
+function telehealthCard(c) {
+  const p = c.pendingTelehealth;
+  const visits = (Array.isArray(c.telehealthVisits) ? c.telehealthVisits : [])
+    .filter((v) => toDate(v.when).getTime() > Date.now() - 3600_000)
+    .sort((a, b) => toDate(a.when) - toDate(b.when));
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+  const upcoming = visits.length ? `
+    <p class="dim small" style="margin:.4rem 0 0;">Confirmed:
+      ${visits.map((v) => `<strong style="color:var(--ink)">${esc(fmt.format(toDate(v.when)))}</strong> · ${esc(v.clinicName || '')}`).join('<br>')}</p>` : '';
+
+  // Straight back from Stripe: paid, on Eric's desk to confirm.
+  if (new URLSearchParams(location.search).get('telehealth') === '1' && (!p || p.state !== 'requested') && !visits.length)
+    return `
+      <div class="followup-offer is-done">
+        <h3><span class="fu-tick" aria-hidden="true">✓</span> Paid — your appointment is on my desk.</h3>
+        <p>I confirm every appointment personally. You'll hear from me shortly,
+          and if I can't make it, every dollar comes straight back.</p>
+      </div>`;
+  if (p?.state === 'requested') return `
+    <div class="followup-offer">
+      <h3>Appointment advocacy — waiting on my confirmation</h3>
+      <p><strong>${esc(fmt.format(toDate(p.when)))}</strong> · ${esc(p.clinicName || '')}${p.provider ? ` · ${esc(p.provider)}` : ''}</p>
+      <p class="dim small">I confirm every appointment personally. If I can't
+        make it${p.paidCents ? ', your payment comes back in full' : ''}.</p>
+      ${upcoming}
+    </div>`;
+  if (p?.state === 'checkout' && p.url && toDate(p.expiresAt).getTime() > Date.now()) return `
+    <div class="followup-offer">
+      <h3>Your appointment advocacy checkout is still open</h3>
+      <p>Pick up where you left off, or ignore this and it expires on its own.</p>
+      <div class="fu-buy"><a class="btn glow" href="${esc(p.url)}">Finish that</a></div>
+    </div>`;
+
+  if (c.status === 'closed') return '';
+  const denied = c.telehealthDenied && !visits.length ? `
+    <p class="dim small" style="margin:0 0 .6rem;">I couldn't make your last
+      request${Number(c.telehealthDenied.refundCents) > 0 ? ' — your refund is on its way' : ''}.
+      You're welcome to ask again for another appointment.</p>` : '';
+  const price = c.fullAccess
+    ? '<span class="price" style="font-size:1rem;">Included</span>'
+    : `<span class="price">$${(TELEHEALTH_PRICE_CENTS / 100).toFixed(0)}</span>`;
+  return `
+    <div class="followup-offer">
+      <h3>Bring me to your appointment ${helpButton('telehealth', 'What appointment advocacy is, and the ground rules')}</h3>
+      <p>Have a telehealth visit coming up? I join it with you by video and
+        advocate on your behalf, live — the questions get asked, the answers
+        get written down, and you are not in that room alone.</p>
+      ${denied}${upcoming}
+      <div style="margin:.6rem 0 0;">
+        <label class="dim small" style="display:block; margin-bottom:.4rem;">When is the appointment? <span style="color:var(--magenta)">*</span>
+          <input type="datetime-local" data-th-when style="display:block; width:100%; margin-top:.2rem;"></label>
+        <label class="dim small" style="display:block; margin-bottom:.4rem;">Clinic <span style="color:var(--magenta)">*</span>
+          <input type="text" data-th-clinic maxlength="200" placeholder="e.g. Riverside Neurology" style="width:100%; margin-top:.2rem;"></label>
+        <label class="dim small" style="display:block; margin-bottom:.5rem;">Provider we're seeing <span style="color:var(--magenta)">*</span>
+          <input type="text" data-th-provider maxlength="200" placeholder="e.g. Dr. Alvarez" style="width:100%; margin-top:.2rem;"></label>
+        <label class="agreement-check" style="margin:.2rem 0 .6rem;">
+          <input type="checkbox" data-th-attest> I am inviting my advocate into my appointment, and I'll tell my provider's office he is joining.</label>
+      </div>
+      <div class="fu-buy">
+        ${price}
+        <button class="btn glow" data-th-request>${c.fullAccess ? 'Request it' : 'Pay and request'}</button>
+      </div>
+      <p class="fu-fine">${c.fullAccess
+        ? 'Included in your Full Access. I confirm every appointment personally.'
+        : 'I confirm every appointment personally. If I can\'t attend, or your provider doesn\'t allow it, you get every dollar back.'}
+        I never record your provider's visit — my role on that screen is notes and advocacy only.</p>
+      <p class="error" data-th-error hidden></p>
+    </div>`;
+}
+
+function wireTelehealthCard(el, c) {
+  wireHelp(el);
+  const btn = el.querySelector('[data-th-request]');
+  if (!btn) return;
+  const errEl = el.querySelector('[data-th-error]');
+  const say = (m) => { errEl.textContent = m; errEl.hidden = !m; };
+  btn.addEventListener('click', async () => {
+    say('');
+    const whenRaw = el.querySelector('[data-th-when]')?.value || '';
+    const when = whenRaw ? new Date(whenRaw) : null;
+    const clinicName = (el.querySelector('[data-th-clinic]')?.value || '').trim();
+    const provider = (el.querySelector('[data-th-provider]')?.value || '').trim();
+    const attest = el.querySelector('[data-th-attest]')?.checked;
+    if (!when || Number.isNaN(when.getTime())) return say('Pick the date and time of your appointment.');
+    if (!clinicName) return say('Name the clinic.');
+    if (!provider) return say("Name the provider we'll be seeing.");
+    if (!attest) return say('Tick the box - it is your invitation, and your provider will want to know.');
+    btn.disabled = true;
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/telehealth', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          caseId: c.id, when: when.toISOString(), clinicName, provider, attestAt: Date.now(),
+        }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Couldn't send that (${res.status})`);
+      if (out.url) { location.assign(out.url); return; }
+      // Tier: requested directly. Repaint into the waiting state.
+      el.innerHTML = telehealthCard({ ...c, pendingTelehealth: {
+        state: 'requested', when, clinicName, provider, paidCents: 0,
+      } });
+      wireTelehealthCard(el, c);
+    } catch (err) {
+      say(err.message);
+      btn.disabled = false;
+    }
+  });
 }
 
 function justBoughtFollowUp() {
