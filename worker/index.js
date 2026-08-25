@@ -4434,8 +4434,12 @@ async function handleChangelog(request, env) {
  */
 function upgradeCents(c, liveFullCents) {
   // MONTH ONE, not a 60-day total. The case fee they already paid is credited
-  // against it, so a $950 case makes the first month $1,650 - never twice for
-  // the same work. Every month after this one is the plain monthly rate.
+  // against it, so a $1,200 case makes the first month $2,200 - never twice
+  // for the same work. Every month after this one is the plain monthly rate.
+  //
+  // Worth stating because the ladder LOOKS like it climbs: $1,200, then
+  // $2,200, then $3,400. Nothing is getting more expensive. Month one costs
+  // the same $3,400 as every other month; $1,200 of it was already paid.
   const alreadyPaid = Number(c.caseRateCents) || 0;
   return Math.max(100, liveFullCents - alreadyPaid);
 }
