@@ -3989,6 +3989,31 @@ async function runWorkClockNudges(env) {
           link: `/admin-case.html?id=${id}&clock=ask`,
         }).catch(() => {});
       }
+
+      // AND EMAIL, once the clock has been running an hour.
+      //
+      // notifyUser is a silent no-op when there is no push subscription
+      // (`if (!subs.length) return`), and on iOS push needs the site added to
+      // the Home Screen with notifications granted - so the whole reminder
+      // ladder can be firing into nothing without ever saying so. That is the
+      // failure it was built to prevent, arriving one layer down.
+      //
+      // Email depends on none of that. It is deliberately hourly-only rather
+      // than on every rung: the five and ten minute rungs are a routine "are
+      // you still there?" and do not deserve an inbox.
+      if (mins >= WORK_NUDGE_REPEAT_MINUTES && env.ADMIN_EMAIL) {
+        await sendEmail(env, {
+          to: env.ADMIN_EMAIL,
+          subject: `The clock is still running on ${firstName(c.data.clientName) || 'a case'} (${ran})`,
+          html: `<p>The work clock on <strong>${escHtml(c.data.clientName || 'a case')}</strong>
+              has been running for <strong>${ran}</strong>.</p>
+            <p>If you are not working on this case right now, stop it - this is
+              billable time going onto their case.</p>
+            <p>If it ran by mistake, tap the time on their chart to add or
+              subtract hours and put the total back.</p>
+            <p><a href="${env.PUBLIC_BASE_URL}/admin-case.html?id=${id}&clock=ask">Open the case</a></p>`,
+        }).catch(() => {});
+      }
     }
   } catch (err) {
     console.warn('work clock nudges:', err.message || err);

@@ -49,7 +49,7 @@ const LIFTED = [
 ].join('\n');
 
 // ---- the world it runs in ------------------------------------------------
-let docs, pushes, NOW;
+let docs, pushes, emails, NOW;
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 
 const deps = {
@@ -69,6 +69,10 @@ const deps = {
   firstName: (v) => String(v || '').trim().split(/\s+/)[0] || '',
   json: (data, status = 200) => ({ status, body: data }),
   requireAdmin: async () => ({ uid: 'eric' }),
+  // The email backstop. notifyUser is a silent no-op with no push
+  // subscription, so this is the path that still reaches him.
+  sendEmail: async (env2, msg) => { emails.push(msg); },
+  escHtml: (v) => String(v ?? ''),
 };
 
 // The lifted code stamps times with `new Date()`, which does NOT route through
@@ -90,7 +94,10 @@ const build = new Function(
 );
 const W = build(...Object.values(deps), FakeDate);
 
-const env = {};
+// ADMIN_EMAIL is set, because the email backstop only exists when it is - and
+// the checks below assert both halves: that it fires past an hour, and that a
+// deployment without it degrades to push alone rather than throwing.
+const env = { ADMIN_EMAIL: 'eric@example.com', PUBLIC_BASE_URL: 'https://example.com' };
 const req = (body) => ({ json: async () => body });
 const work = (id) => docs.get(`cases/${id}`)?.work || {};
 const running = () => (docs.get(W.CLOCK_DOC)?.running || []).slice().sort();
@@ -98,6 +105,7 @@ const running = () => (docs.get(W.CLOCK_DOC)?.running || []).slice().sort();
 function reset() {
   docs = new Map();
   pushes = [];
+  emails = [];
   NOW = Date.parse('2026-08-25T18:00:00Z');
   docs.set('cases/a', { clientName: 'Jordan Avery', work: { seconds: 3600 } });
   docs.set('cases/b', { clientName: 'Sam Rivera', work: { seconds: 600 } });
@@ -228,6 +236,16 @@ check('C22 past the fixed rungs it keeps reminding, by the hour',
   pushes.length === 4, `${pushes.length} pushes`);
 check('C22b and by then it says what it costs, not "still working?"',
   /billable time on their case/.test(pushes[3]?.body || ''), pushes[3]?.body);
+
+// The backstop. notifyUser returns silently when there is no push
+// subscription (`if (!subs.length) return`), and on iOS push needs the site
+// on the Home Screen with notifications granted - so the entire ladder can be
+// firing into nothing. Email depends on none of that.
+check('C22e past an hour it ALSO emails, so a device without push still hears',
+  emails.length === 1 && /clock is still running/i.test(emails[0]?.subject || ''),
+  JSON.stringify(emails.map((e) => e.subject)));
+check('C22f the email says how to put the total back, not just to stop it',
+  /tap the time on their chart to add or\s+subtract hours/.test(emails[0]?.html || ''));
 await W.runWorkClockNudges(env);
 check('C22c an hour still fires once, not once a minute', pushes.length === 4);
 advance(60); // into the third hour
@@ -308,6 +326,18 @@ check('C32 a beacon with nothing running only writes the beacon',
 reset();
 const bad = await W.handleWork(req({ caseId: '../../users/eric', on: true }), env);
 check('C33 the case id is still validated', bad.status === 400, JSON.stringify(bad));
+
+// The backstop is conditional on ADMIN_EMAIL being configured, so a
+// deployment without it has to fall back to push alone rather than throw
+// inside the cron and take the rest of the nudges down with it.
+reset();
+await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
+docs.set(W.CLOCK_DOC, { running: ['a'], seenAt: new Date(NOW).toISOString(), atCaseId: '' });
+advance(90);
+await W.runWorkClockNudges({});
+check('C22g with no ADMIN_EMAIL it still pushes and does not throw',
+  pushes.length === 1 && emails.length === 0,
+  `${pushes.length} pushes, ${emails.length} emails`);
 
 // ---- correcting a total --------------------------------------------------
 // The answer to a clock left running by mistake. Start and stop were the only
