@@ -32,8 +32,9 @@
 // MUST match MAINTENANCE_UNTIL in worker/index.js.
 export const MAINTENANCE_UNTIL = '2026-08-26T03:00:00Z';
 
-/** The words Eric asked for, verbatim. */
-export const MAINTENANCE_TEXT = 'Under Maintenance Until 8PM MST 8/25/26';
+/** The words Eric asked for, verbatim (2026-08-25). "Under Maintenance" is
+ *  what a broken site says; this says what is actually happening. */
+export const MAINTENANCE_TEXT = 'Eric is prepping documents…';
 
 /** Whether the window is open right now. */
 export function underMaintenance(now = Date.now()) {
@@ -110,8 +111,8 @@ export function initMaintenance() {
   el.innerHTML = `
     <div class="pa-maint-box">
       <h1>${MAINTENANCE_TEXT}</h1>
-      <p><strong>Big update in progress.</strong> I am sorry for the
-        inconvenience. Nothing can be booked until then.</p>
+      <p><strong>Back at 8PM MST.</strong> I am sorry for the inconvenience.
+        Nothing can be booked until then.</p>
       <p class="last"><strong>If you are already a client, nothing has changed.</strong>
         Your case, your files and your chat are open as normal.</p>
       <a href="/signin.html">Sign in to your case</a>
