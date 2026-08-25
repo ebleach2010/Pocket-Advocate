@@ -27,7 +27,7 @@ import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 import {
   getAdvisorEffort, setAdvisorEffort,
-  runAnalysis, runQuestion, runDraft, runAppeal, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
+  runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
 
@@ -2713,6 +2713,13 @@ const CHAT_REACTIONS = {
   thinking: { label: 'Eric is thinking about your situation…' },
   history: { label: 'Eric is reviewing your history…' },
   labs: { label: 'Eric is reviewing your labs / chart notes' },
+  // The six added on Eric's word, 2026-08-25, labels verbatim.
+  local: { label: 'Eric is looking into local resources…' },
+  vetting: { label: 'Eric is doing background checks on providers…' },
+  coordinating: { label: 'Eric is coordinating with providers…' },
+  insurance: { label: 'Eric is writing to insurance…' },
+  documents: { label: 'Eric is preparing documents…' },
+  notes: { label: 'Eric is taking personal notes on the case…' },
 };
 
 /**
@@ -2839,7 +2846,16 @@ async function handleChatReact(request, env) {
 
   const msg = await getDoc(env, ctx.path);
   if (!msg) return json({ error: 'No such message' }, 404);
-  if (msg.data.from === user.uid)
+  // Nobody reacts to their own message - with ONE carve-out (Eric,
+  // 2026-08-25): a STATUS on his own message is not a reaction to himself,
+  // it is a broadcast of what he is doing that happens to hang on the
+  // newest bubble, and the ▾ above the chat depends on it. Emoji stay
+  // other-person-only in both directions. Clearing a status he hung there
+  // rides the same carve-out, or the broadcast could be set but never
+  // taken down: a clear carries reaction null, which is not "a status".
+  const clearingOwnStatus = reaction === null
+    && Object.hasOwn(CHAT_REACTIONS, msg.data.reaction ?? '');
+  if (msg.data.from === user.uid && !((isStatus || clearingOwnStatus) && ctx.isAdmin))
     return json({ error: 'You can only react to the other person\'s messages.' }, 403);
 
   if (!reaction) {
@@ -2871,8 +2887,10 @@ async function handleChatReact(request, env) {
   if (!wrote) return json({ error: 'Could not set that reaction. Try again.' }, 409);
 
   // Re-applying the same reaction is not news — their phone already said it.
-  // Changing it is, so that one notifies. Notify whoever wrote the message.
-  const target = msg.data.from;
+  // Changing it is, so that one notifies. An emoji notifies whoever wrote
+  // the message; a status always tells the CLIENT, because a status hung on
+  // Eric's own bubble would otherwise notify Eric about Eric.
+  const target = isStatus ? ctx.clientUid : msg.data.from;
   // A client gets told what Eric is DOING, and nothing else. An emoji on their
   // message is a small kindness on a screen, not a thing worth buzzing a
   // phone for (Eric, 2026-08-21: "send clients a notification of my reactions.
@@ -5259,6 +5277,27 @@ async function handleAdvisor(request, env, ctx) {
     const revise = body?.revise === true;
     const base = revise && typeof body?.base === 'string' ? body.base.slice(0, 30000) : '';
     return keepaliveRun(ctx, runAppeal(env, kind, id, appeal, revise, base), { raw: true });
+  }
+
+  if (action === 'clear-call-notes') {
+    // Discarding his own working notes clears the document and its error
+    // state; nothing else on the case moves.
+    await patchDoc(env, statePath, {
+      callNotes: null, callNotesStatus: null, callNotesError: null, callNotesAt: null,
+    }, { mask: ['callNotes', 'callNotesStatus', 'callNotesError', 'callNotesAt'] });
+    return json({ ok: true });
+  }
+
+  if (action === 'call-notes') {
+    // Eric's pre-call working document (2026-08-25): action plan first, the
+    // upsell pitch written out, nearby resources, his personal notes taken
+    // into account. Long model turn, same keepalive shape as the others.
+    return keepaliveRun(ctx, runCallNotes(
+      env, kind, id,
+      typeof body?.instruction === 'string' ? body.instruction.slice(0, 1000) : '',
+      !!body?.revise,
+      typeof body?.base === 'string' ? body.base.slice(0, 30000) : '',
+    ), { raw: true });
   }
 
   if (action === 'clear-appeal') {

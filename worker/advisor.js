@@ -2226,6 +2226,8 @@ const draftQueuePath = (kind, id) => `advisorQueue/draft_${kind}_${id}`;
 // screen lock must not lose a document that is being written against a legal
 // deadline.
 const appealQueuePath = (kind, id) => `advisorQueue/appeal_${kind}_${id}`;
+// Call notes in flight: same reasoning as the two above.
+const callNotesQueuePath = (kind, id) => `advisorQueue/callnotes_${kind}_${id}`;
 
 async function setState(env, kind, id, fields) {
   await patchDoc(env, statePath(kind, id), fields, { mask: Object.keys(fields) });
@@ -2475,6 +2477,30 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
         }
         await patchDoc(env, `advisorQueue/${row.id}`, { tries }, { mask: ['tries'] }).catch(() => {});
         await runAppeal(env, kind, id, req.appeal || {}, !!req.revise, req.base || '', true);
+        return true; // one model job per firing
+      }
+      if (row.data.callNotes) {
+        const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+        const req = st?.data.callNotesReq;
+        if (st?.data.callNotesStatus !== 'running' || !req) {
+          await deleteDoc(env, `advisorQueue/${row.id}`);
+          continue;
+        }
+        const cs = st.data.callNotesStartedAt ? new Date(st.data.callNotesStartedAt).getTime() : 0;
+        const cBeat = Math.max(cs, st.data.callNotesProgressAt ? new Date(st.data.callNotesProgressAt).getTime() : 0);
+        if (cBeat && Date.now() - cBeat < 5 * 60_000
+          && (!cs || Date.now() - cs < 20 * 60_000)) continue;
+        const tries = Number(row.data.tries || 0) + 1;
+        if (tries > 2) {
+          await setState(env, kind, id, {
+            callNotesStatus: 'error', callNotesReq: null,
+            callNotesError: 'The notes kept getting interrupted. Try the draft again.',
+          }).catch(() => {});
+          await deleteDoc(env, `advisorQueue/${row.id}`);
+          continue;
+        }
+        await patchDoc(env, `advisorQueue/${row.id}`, { tries }, { mask: ['tries'] }).catch(() => {});
+        await runCallNotes(env, kind, id, req.instruction || '', !!req.revise, req.base || '', true);
         return true; // one model job per firing
       }
       if (row.data.draft) {
@@ -3887,5 +3913,140 @@ ${baseLetter ? `\n<current_letter>\n${baseLetter}\n</current_letter>\n\nRevise t
       appealReq: null, appealStartedAt: null, appealProgressAt: null,
     }).catch(() => {});
     await deleteDoc(env, appealQueuePath(kind, id)).catch(() => {});
+  }
+}
+
+
+/**
+ * Call notes: a working document for ERIC'S OWN REFERENCE before a call,
+ * never sent to the client. Deliberate sibling of runDraft/runAppeal rather
+ * than a branch inside either - a third document type earns a third runner.
+ *
+ * The shape Eric specified (2026-08-25, condensed from his words):
+ *   - The ACTION PLAN comes first, short and sweet, highest priority first -
+ *     "best plan of action" for the first call.
+ *   - Then the UPSELL PITCH, written out so he can deliver it himself
+ *     without the client having to reason through it - his clients are often
+ *     cognitively declining, so the pitch carries its own weight.
+ *   - Then RESOURCES: university hospitals and academic centers within
+ *     practical reach of the client, and feasible providers there worth a
+ *     referral, with their specialty. Suggestions from model knowledge are
+ *     marked to verify - a hallucinated referral in a call is worse than a
+ *     blank line.
+ *   - His PERSONAL IN-APP NOTES are context and are taken seriously.
+ *   - Anything that wants a chart or graphic is written [in brackets] on
+ *     its own line; the PDF renders those as visual frames.
+ */
+export async function runCallNotes(env, kind, id, instruction, revise = false, base = '', noStream = false) {
+  try {
+    await setState(env, kind, id, {
+      callNotesStatus: 'running', callNotesError: null,
+      callNotesStartedAt: new Date(), callNotesProgressAt: null,
+      callNotesReq: { instruction: instruction || '', revise: !!revise, base: base || '', at: new Date() },
+    });
+    await patchDoc(env, callNotesQueuePath(kind, id), { kind, id, callNotes: true, at: new Date() },
+      { mask: ['kind', 'id', 'callNotes', 'at'] }).catch(() => {});
+
+    const parent = kind === 'sub' ? 'subscriptions' : 'cases';
+    const [rows, state, caseDoc, notesDoc, agendaRows, qa, style] = await Promise.all([
+      recentMessages(env, kind, id),
+      getDoc(env, statePath(kind, id)),
+      getDoc(env, `${parent}/${id}`).catch(() => null),
+      getDoc(env, `${parent}/${id}/private/notes`).catch(() => null),
+      listDocs(env, `${parent}/${id}/agenda`, { pageSize: 100 }).catch(() => []),
+      loadQa(env, kind, id, { full: true }),
+      loadStyle(env),
+    ]);
+    const p = state?.data || {};
+    const c = caseDoc?.data || {};
+    const baseNotes = revise ? (base || p.callNotes || '') : '';
+    // The rich-text notes editor stores HTML; the model wants prose.
+    const personalNotes = String(notesDoc?.data.html || '')
+      .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+    const agenda = (agendaRows || [])
+      .map((r) => `${r.data.done ? '[covered] ' : ''}${r.data.text}`)
+      .filter(Boolean).join('\n');
+
+    const out = await ask(env, {
+      effort: 'high',
+      noStream,
+      onBeat: () => setState(env, kind, id, { callNotesProgressAt: new Date() }).catch(() => {}),
+      maxTokens: 16000,
+      system: [{
+        type: 'text',
+        cache: true,
+        text: `${VOICE}
+
+Write CALL NOTES for Eric: a working document for his own eyes only, to have open during his next call with this client. It is never sent to the client, but write nothing you would be ashamed for the client to read over his shoulder.
+
+Structure, in this exact order:
+
+1. "ACTION PLAN" - short and sweet. The highest-priority item first, then the next, at most five items, each one line of what to do and one line of why now. This is the best plan of action for the call, not a literature review.
+
+2. "THE PITCH" - if an upsell genuinely fits this case (Full Access coordination, a follow-up, telehealth accompaniment), write the pitch out in Eric's voice, word for word, so he can say it as written. Two or three sentences, concrete to THIS case, no pressure tactics. His clients are often cognitively declining, so the pitch must carry its own weight: what it is, what it costs, what it changes for them. If no upsell fits, write "No pitch this call" and one line of why.
+
+3. "RESOURCES NEARBY" - university hospitals and academic medical centers within practical reach of where this client is, and the kind of provider there worth a referral, with specialty. Use the client's location from the case; be honest about uncertainty. Anything from your own knowledge rather than the case record gets "(verify)" after it. Never invent a named physician; name departments and programs, and only name a person if the case record itself does.
+
+4. "WORTH REMEMBERING" - at most three lines of context he must not forget mid-call (allergies, a deadline, a sore subject, a promise already made).
+
+Rules:
+- Where a chart or graphic would serve better than words, write a single line [in square brackets] describing exactly the visual, e.g. [Line chart: TSH results across the last six months] or [Timeline: symptom onset against medication changes]. The bracketed line stands alone; the PDF turns it into a visual frame.
+- Eric's personal notes are part of the case record. Take them seriously; where they conflict with the assessment, say so plainly.
+- Plain text with the section headers above in capitals. No markdown headings, no asterisks.
+- Never use an em dash or an en dash anywhere. Use a comma, a colon, or a period.`,
+      }, {
+        // His stances ride their own block after the cached one, the same
+        // reason as runDraft: the nightly study must not bust the cache.
+        type: 'text',
+        text: stanceNote(style) || ' ',
+      }],
+      messages: [{
+        role: 'user',
+        content: `<case>
+Client: ${c.clientName || 'unknown'} (${c.clientTz || 'timezone unknown'})
+Status: ${c.status || 'unknown'}; tier: ${c.fullAccess ? 'Full Access' : 'standard'}
+Next call: ${c.checkIns?.length ? 'check-in booked' : c.appointment?.start ? String(c.appointment.start) : 'unscheduled'}
+</case>
+
+<assessment>
+${p.analysis || '(no assessment yet)'}
+</assessment>
+
+<erics_personal_notes>
+${personalNotes || '(none)'}
+</erics_personal_notes>
+
+<next_call_list>
+${agenda || '(empty)'}
+</next_call_list>
+
+${qaBlock(qa)}
+
+<transcript>
+${transcript(rows)}
+</transcript>
+${baseNotes ? `\n<current_notes>\n${baseNotes}\n</current_notes>\n` : ''}
+${revise && instruction
+    ? `Revise the current notes. Eric asked: ${instruction}\nKeep everything he did not ask to change.`
+    : instruction
+      ? `Write the call notes. Eric added: ${instruction}`
+      : 'Write the call notes.'}`,
+      }],
+    });
+
+    const notes = (out || '').trim();
+    if (!notes) throw new Error('empty call notes');
+    await setState(env, kind, id, {
+      callNotes: notes, callNotesAt: new Date(), callNotesStatus: 'ready',
+      callNotesReq: null, callNotesStartedAt: null, callNotesProgressAt: null, callNotesError: null,
+    });
+    await deleteDoc(env, callNotesQueuePath(kind, id)).catch(() => {});
+  } catch (err) {
+    console.error('advisor call notes:', err.stack || err);
+    await setState(env, kind, id, {
+      callNotesStatus: 'error', callNotesError: friendly(err),
+      callNotesReq: null, callNotesStartedAt: null, callNotesProgressAt: null,
+    }).catch(() => {});
+    await deleteDoc(env, callNotesQueuePath(kind, id)).catch(() => {});
   }
 }

@@ -15,6 +15,11 @@
 // other. It is flagged for him rather than fudged here.
 //
 // Written 2026-08-24, PENDING ERIC'S SIGN-OFF, and flagged in the PR.
+//
+// The AI note-taking clause was added 2026-08-25 on Eric's explicit
+// instruction, in his words: privacy top priority, nobody but him and the
+// client sees call notes, notes as soon as possible after the call, and the
+// action plan in writing within a week of the call's end.
 
 /**
  * The scope note, in the shape the booking flow already renders:
@@ -29,6 +34,10 @@ export const SERVICE_TERMS = {
 <h3>No guarantees</h3>
 <p>I cannot promise you an outcome, and I will not. Not that a denial gets overturned, not that a referral comes through, not that a clinic returns a call, not that anything I find changes what your doctors decide. Those are other people's decisions and other people's systems, and anyone who tells you they can guarantee a result there is selling you something.</p>
 <p><strong>Guarantees of any sort are not part of this agreement.</strong> What I owe you is the work of this agreement, fulfilled to the best of my ability: I will read what you give me properly, tell you the truth about what I see, meet the deadlines that are mine to meet, and say so plainly when something is not going your way. You are paying for effort and judgement, carefully applied. You are not paying for a result, and you are not buying insurance against a bad one.</p>
+<h3>AI note taking on our calls</h3>
+<p>When we talk, an AI tool takes notes for me, so I can stay in the conversation instead of writing while you speak. By agreeing to these terms you accept that our calls are noted this way.</p>
+<p><strong>Your privacy is the top priority.</strong> Nobody but you and me ever sees our call notes. They are not shared with anyone else, and they live on your case where only the two of us can read them.</p>
+<p>You get the notes as soon as possible after each call. If a call produces an action plan, you have it in writing within a week of the call's end.</p>
 <h3>I may close a case</h3>
 <p>I reserve the right to end a case at my discretion, for any reason. In practice that means things like: the work turns out to need a lawyer or a clinician rather than an advocate, I cannot get the access I need to be useful, the relationship stops being a workable one, or my own circumstances change.</p>
 <p>If I close your case, <strong>the reason is written into your case</strong>, where both of us can see it, in the same words I would say to your face.</p>

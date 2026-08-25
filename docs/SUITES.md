@@ -27,22 +27,42 @@ Every push builds a preview. The per-commit preview URL is posted by the
 cloudflare-workers-and-pages bot on the commit's pull request, so the link
 changes with every build; the entries below are the stable part.
 
-## The suites
+## The seamless demo (Eric, 2026-08-25: "No weird 4 room suites")
 
-On any preview host:
+**One door: `/?demo=1` — the landing page with the demo on.** From there the
+whole thing runs as one flow, which is how Eric drives it:
 
-| suite | url | code |
+1. Land on the front page, tap the normal Book button. Demo mode rides
+   sessionStorage, so no more demo params are ever needed in that tab.
+2. Book like normal. There is no email step — the demo user is already
+   signed in — and Pay skips Stripe entirely.
+3. **The booking becomes a real case in the demo store**
+   (`demo-case-booked`): the return page lands on it, the normal client case
+   view renders, and add-ons are purchasable from its Add-ons tab (the
+   follow-up correctly waits for the report; telehealth and the upgrade
+   offer immediately).
+4. The demo banner's **Advocate side / Client side** buttons switch sides
+   both ways. The new case is on the shelf, and anything bought client-side
+   (a telehealth request, the upgrade) is already on the chart. Start over
+   reseeds the world.
+
+`book.html` and `signin.html` on a preview host show the **▶ Start the
+demo** button, which is this door.
+
+### Side doors, by typed code
+
+The old rooms still answer, as codes typed into either sign-in box - useful
+for jumping straight to a fixture:
+
+| where | url | code |
 |---|---|---|
-| **Booking** | `/book.html?demo=1` | 3456 |
-| **Client**, standard case | `/case.html?demo=1&tour=1` | 1234 |
-| **Client**, Full Access case | `/case.html?demo=1&id=demo-case-full` | 4567 |
-| **Advocate** | `/admin.html?demo=admin&tour=1` | 2345 |
+| Booking step 1 | `/book.html?demo=1` | 3456 |
+| Client, standard case | `/case.html?demo=1&tour=1` | 1234 |
+| Client, Full Access case | `/case.html?demo=1&id=demo-case-full` | 4567 |
+| Advocate | `/admin.html?demo=admin&tour=1` | 2345 |
 
-Or the human doors, same host: `book.html` and `signin.html` show the
-buttons, and typing the code above into either sign-in box goes to the same
-place. No email is sent anywhere in the demo.
-
-Drop `&tour=1` to skip the update tour.
+No email is sent anywhere in the demo. Drop `&tour=1` to skip the update
+tour.
 
 ## What each one is for
 
@@ -89,7 +109,13 @@ Open the Full Access case and there is a fifth tab group, **Act**, holding
 Appeals and Clinic calls, plus the authority status card on Overview and the
 margin badge beside the work clock. The appeal is drafted and sitting
 against a live deadline; Write, Revise, Print and Mark it filed all work
-against the local store.
+against the local store. On the **Drafts** page, **📞 Notes for the call**
+drafts the reference sheet for the next call - action plan first, then the
+pitch, then nearby resources - revises through the overlay, and Sends to
+PDF with every `[bracketed]` line rendered as a framed visual placeholder.
+Above the chat, the **▾ What I'm doing** button posts a status line onto the
+newest message - his own included - and the same list rides the long-press
+menu.
 
 ## What is invented
 

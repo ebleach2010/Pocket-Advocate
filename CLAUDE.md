@@ -51,11 +51,27 @@ because a one-line hotfix once broke the admin dashboard and nothing caught
 it. When a suite fails because the DESIGN changed on Eric's word, update the
 suite's expectation in the same commit and say so — never delete the check.
 
+## Eric's working defaults (2026-08-25, his words — commit to memory)
+
+- **"Build suites" means the seamless demo, always.** One flow, not four
+  rooms: start at the landing page, book like normal, "Next" skips the email
+  requirement, "Pay" skips payment, the booking becomes a real case in the
+  demo store, normal client case view, add-ons purchasable. The ADMIN side
+  updates live from it — the new case populates the shelf, add-ons populate
+  the chart, and the demo banner switches sides both ways. He drives it
+  himself and checks for bugs manually.
+- **"Run agents for X" means four agents** unless he says a number.
+- **Nothing is pushed to main until he says so.** No exceptions for
+  hotfixes; ask, or hold.
+
 ## Iron rules (long-standing, do not relax)
 
 - Clients must be completely blind to admin information and tools. Admin
   pages 404 byte-identically to strangers.
-- Never mention AI on any client surface.
+- Never mention AI on any client surface. ONE ordered exception
+  (Eric, 2026-08-25): the AI note-taking consent clause in
+  `public/js/service-terms.js` — the blindness audit carries a documented
+  allowance for that clause alone, and nothing else may lean on it.
 - The advisor never uses em or en dashes in its output.
 - `public/js/waivers.js` is frozen.
 - Prices only change on Eric's explicit word; the +$10 booking ratchet is

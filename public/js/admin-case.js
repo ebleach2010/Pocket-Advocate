@@ -339,6 +339,9 @@ function render(el) {
         render: (pane) => {
           pane.innerHTML = [
             '<div class="panel draft-panel advisor-draft" id="draft-panel" hidden></div>',
+            // The call-notes workbench paints itself into this host from the
+            // advisor's state poll, exactly like the appeals page does.
+            '<div data-callnotes-host></div>',
             '<div class="panel">',
             '  <h3>Before a call</h3>',
             '  <p class="dim small">Nothing here decides anything for you.</p>',
@@ -377,6 +380,7 @@ function render(el) {
             tz: data.clientTz || '',
             onSend: (text) => chatSend?.(text),
           }));
+          paintCallNotes(pane.querySelector('[data-callnotes-host]'));
         },
       },
     ],
@@ -1196,6 +1200,8 @@ document.addEventListener('pa-panel-state', (e) => {
   if (d.id && d.id !== caseId) return;
   panelState = d;
   if (folder?.el('appeals')) folder.el('appeals')._reload?.();
+  // The call-notes workbench on Drafts reads from the same broadcast.
+  folder?.el('drafts')?.querySelector('[data-callnotes-host]')?._reload?.();
 
   // The saved notes ride the same poll. setHtml refuses to overwrite work in
   // progress, so this is safe to call on every tick.
@@ -2229,6 +2235,165 @@ function paintAppeals(pane) {
   };
   pane._reload = load;
   load();
+}
+
+/**
+ * Notes for the next call, on the Drafts page. Same bones as the appeals
+ * workbench: paint from the advisor's state broadcast, a key guard so a poll
+ * that changed nothing cannot steal a tap or wipe a hand edit, and revisions
+ * that carry the box's CURRENT text so they build on manual edits.
+ *
+ * The sheet is for Eric's eyes on a call: resources nearby, the action plan
+ * with the top priority first, then the pitch written so he can read it out
+ * as is. A line that is nothing but [square brackets] is a visual - the PDF
+ * renders it as a framed placeholder with the caption, per his rule that
+ * anything in brackets is a chart or graphic.
+ */
+let callNotesKey = null;
+function paintCallNotes(host) {
+  if (!host) return;
+  const load = () => {
+    const st = panelState || {};
+    const running = st.callNotesStatus === 'running';
+    const ready = st.callNotesStatus === 'ready' && st.callNotes;
+    const key = JSON.stringify([st.callNotesStatus, st.callNotesAt,
+      (st.callNotes || '').length, st.callNotesError || '']);
+    if (key === callNotesKey && host.querySelector('[data-cn-root]')) return;
+    callNotesKey = key;
+
+    host.innerHTML = `
+      <div class="panel" data-cn-root>
+        <h3 style="margin:0 0 .3rem;">📞 Notes for the call</h3>
+        <p class="dim small" style="margin:0 0 .6rem;">A sheet to have open while
+          you talk: nearby resources worth naming, the action plan with the top
+          priority first, then the pitch written out so you can read it as is.
+          Your in-app personal notes are read before it drafts.</p>
+        <p class="row" style="gap:.5rem; flex-wrap:wrap; margin:0;">
+          <button class="btn${ready ? ' quiet' : ' glow'}" data-cn-write ${running ? 'disabled' : ''}>
+            ${running ? '📞 Drafting…' : ready ? 'Redraft from scratch' : 'Draft notes for call'}</button>
+          ${ready ? '<button class="btn quiet" data-cn-revise>🔁 Revise…</button>' : ''}
+          ${ready ? '<button class="btn quiet" data-cn-print>🖨 Send to PDF</button>' : ''}
+          ${ready ? '<button class="btn quiet" data-cn-discard>Discard</button>' : ''}
+        </p>
+        ${st.callNotesError ? `<p class="error" style="margin:.5rem 0 0;">${esc(st.callNotesError)}</p>` : ''}
+        <p class="error" data-cn-err hidden style="margin:.5rem 0 0;"></p>
+        ${ready ? `
+          <textarea class="draft-box" data-cn-text rows="18" style="margin-top:.7rem;">${esc(st.callNotes)}</textarea>
+          <p class="dim small" style="margin:.3rem 0 0;">Edit anything by hand before
+            printing. A line that is only [square brackets] prints as a framed
+            visual with that caption. "(verify)" marks a fact to confirm before
+            you say it out loud.</p>` : ''}
+      </div>`;
+
+    const post = async (payload, btn) => {
+      const err = host.querySelector('[data-cn-err]');
+      if (btn) btn.disabled = true;
+      err.hidden = true;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/advisor', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ kind: 'case', id: caseId, ...payload }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok || out.ok === false) throw new Error(out.error || `Failed (${res.status})`);
+        callNotesKey = null; // let the next poll rebuild from truth
+      } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+        if (btn) btn.disabled = false;
+      }
+    };
+
+    host.querySelector('[data-cn-write]')?.addEventListener('click', (e) => {
+      // Say so at once: the state poll that repaints this panel runs on its
+      // own clock, and a button that just sits there reads as a broken tap.
+      e.currentTarget.textContent = '📞 Drafting…';
+      post({ action: 'call-notes' }, e.currentTarget);
+    });
+    // The overlay, never prompt(): window.prompt() silently does nothing in
+    // iOS Home-Screen apps, and this page lives on Eric's home screen.
+    host.querySelector('[data-cn-revise]')?.addEventListener('click', () => {
+      if (document.getElementById('pa-cn-revise')) return;
+      const overlay = document.createElement('div');
+      overlay.id = 'pa-cn-revise';
+      overlay.className = 'settings-overlay';
+      overlay.innerHTML = `
+        <div class="settings-card" role="dialog" aria-modal="true" aria-label="Revise the call notes">
+          <div class="row"><h3 style="margin:0;">🔁 Revise the notes</h3>
+            <button class="btn quiet" data-x>Cancel</button></div>
+          <p class="dim small" style="margin:.2rem 0 .5rem;">What should change?
+            Add a resource, cut a step, sharpen the pitch — say it plainly.</p>
+          <textarea class="edit-box" data-inst rows="3" maxlength="1000" style="min-height:4rem;"></textarea>
+          <div class="actions" style="margin-top:.7rem;"><button class="btn" data-go>Revise it</button></div>
+        </div>`;
+      const closeOv = () => overlay.remove();
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) closeOv(); });
+      overlay.querySelector('[data-x]').addEventListener('click', closeOv);
+      overlay.querySelector('[data-go]').addEventListener('click', () => {
+        const instruction = overlay.querySelector('[data-inst]').value.trim();
+        if (!instruction) return;
+        closeOv();
+        const wb = host.querySelector('[data-cn-write]');
+        if (wb) { wb.disabled = true; wb.textContent = '📞 Drafting…'; }
+        post({
+          action: 'call-notes', instruction, revise: true,
+          base: host.querySelector('[data-cn-text]')?.value || '',
+        });
+      });
+      document.body.appendChild(overlay);
+      overlay.querySelector('[data-inst]').focus();
+    });
+    host.querySelector('[data-cn-discard]')?.addEventListener('click', (e) => {
+      if (confirm('Discard these notes?')) post({ action: 'clear-call-notes' }, e.currentTarget);
+    });
+    host.querySelector('[data-cn-print]')?.addEventListener('click', () => {
+      printCallNotes(host.querySelector('[data-cn-text]')?.value || '');
+    });
+  };
+  host._reload = load;
+  load();
+}
+
+/**
+ * The paper copy. Same print path as everything else here - a window, a
+ * write, print after a beat - but the body is built line by line so a
+ * bracket-only line becomes a framed visual placeholder instead of text.
+ * An inline bracket mid-sentence stays text; only a line that IS the
+ * bracket is a visual, which matches how the drafts come out.
+ */
+function printCallNotes(text) {
+  const escP = (s) => s.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+  const blocks = [];
+  let run = [];
+  const flush = () => {
+    if (run.length) blocks.push(`<pre>${escP(run.join('\n').replace(/^\n+|\n+$/g, ''))}</pre>`);
+    run = [];
+  };
+  for (const line of String(text).split('\n')) {
+    const m = line.match(/^\s*\[([^\][]{2,200})\]\s*$/);
+    if (m) {
+      flush();
+      blocks.push(`<figure class="viz"><div class="frame">▦</div><figcaption>${escP(m[1])}</figcaption></figure>`);
+    } else run.push(line);
+  }
+  flush();
+  const win = window.open('', '_blank');
+  if (!win) { alert('Allow pop-ups to print this.'); return; }
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Call notes</title>
+    <style>@page { margin: 18mm; }
+      body { font: 12.5px/1.6 Georgia, "Times New Roman", serif; color:#000; }
+      pre { white-space: pre-wrap; word-wrap: break-word; margin:0 0 .6em; font: inherit; }
+      .viz { margin: .8em 0; page-break-inside: avoid; }
+      .viz .frame { border: 1.5px dashed #888; border-radius: 6px; min-height: 110px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 26px; color: #aaa; }
+      .viz figcaption { text-align: center; font-style: italic; color: #444;
+        font-size: 11px; margin-top: .35em; }</style>
+    </head><body>${blocks.join('')}</body></html>`);
+  win.document.close();
+  setTimeout(() => win.print(), 350);
 }
 
 /**

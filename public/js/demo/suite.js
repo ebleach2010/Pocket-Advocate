@@ -1,6 +1,6 @@
-// The test suite's front door: the two buttons, and the typed codes on the
-// sign-in page. Loaded by book.html and signin.html through a host-gated
-// dynamic import.
+// The demo's front door: one button into the seamless demo, and the typed
+// codes on the sign-in page. Loaded by book.html and signin.html through a
+// host-gated dynamic import.
 //
 // THIS FILE IS THE POINT. The buttons and codes used to sit inline in the
 // pages themselves, which meant the live site served HTML whose source spelled
@@ -15,9 +15,12 @@
 // No imports, deliberately: the suite has to open even on a day Firebase or
 // the app itself cannot. (See the header of store.js for the other traps.)
 
-// Four doors, three suites. The client side has two because the tier added a
-// second thing worth seeing: a standard case (which offers the upgrade) and a
-// Full Access case (which carries the authorisations).
+// ONE door (Eric, 2026-08-25: "No weird 4 room suites. Just seamless
+// demo."): the landing page with the demo switched on. From there he books
+// like normal, the booking becomes a real case in the store, and the demo
+// banner switches him between the client and advocate sides. The old rooms
+// stay reachable by typed code below - side doors, not the entrance.
+const SEAMLESS = '/?demo=1';
 const BOOKING = '/book.html?demo=1';
 const CLIENT = '/case.html?demo=1&tour=1';
 const CLIENT_FULL = '/case.html?demo=1&id=demo-case-full';
@@ -27,20 +30,14 @@ export function mount(page) {
   const box = document.createElement('div');
   box.style.marginTop = '1rem';
   box.innerHTML = `
-    <p class="muted small" style="margin:0 0 .4rem;">Test suite — no email needed:</p>
-    <p style="display:flex; gap:.5rem; flex-wrap:wrap; margin:0 0 .4rem;">
-      <button type="button" class="btn glow" data-suite-book>Booking suite</button>
-      <button type="button" class="btn" data-suite-client>Client suite</button>
-      <button type="button" class="btn quiet" data-suite-admin>Advocate suite</button>
-    </p>
+    <p class="muted small" style="margin:0 0 .4rem;">Demo — no email, no payment:</p>
     <p style="display:flex; gap:.5rem; flex-wrap:wrap; margin:0;">
-      <button type="button" class="btn quiet" data-suite-full>Client suite, Full Access case</button>
-    </p>`;
+      <button type="button" class="btn glow" data-suite-go>▶ Start the demo</button>
+    </p>
+    <p class="muted small" style="margin:.4rem 0 0;">Starts at the landing page.
+      Book like normal; the demo banner switches you between sides.</p>`;
   const go = (sel, to) => box.querySelector(sel)?.addEventListener('click', () => { location.href = to; });
-  go('[data-suite-book]', BOOKING);
-  go('[data-suite-client]', CLIENT);
-  go('[data-suite-full]', CLIENT_FULL);
-  go('[data-suite-admin]', ADMIN);
+  go('[data-suite-go]', SEAMLESS);
   const anchor = page === 'signin'
     ? document.getElementById('email-form')
     : document.getElementById('step');

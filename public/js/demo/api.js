@@ -9,6 +9,7 @@
 // UI, not AI: nothing in the demo calls a model.
 
 import { DEMO_CASE_ID } from './seed.js';
+import { STATUS_REACTIONS } from '../msg-actions.js';
 
 /** A little delay, so states that only exist while something is in flight
  *  (the button disabling, the progress bar, "Reading…") are visible. */
@@ -84,8 +85,8 @@ export function demoApi(role, store) {
     if (path === '/api/admin/session') return ok({ ok: true });
 
     // ---- money, without any -----------------------------------------------
-    if (path === '/api/rates') return ok({ caseCents: 65000, addonCents: 17500, subCents: 9500, fullCents: 150000, chatOpenCents: 5000 });
-    if (path === '/api/admin/rates') return ok({ caseCents: 65000, addonCents: 17500, subCents: 9500, fullCents: 150000, floorCents: 7500, bookings: 0, changed: false });
+    if (path === '/api/rates') return ok({ caseCents: 65000, addonCents: 17500, subCents: 9500, fullCents: 350000, chatOpenCents: 5000 });
+    if (path === '/api/admin/rates') return ok({ caseCents: 65000, addonCents: 17500, subCents: 9500, fullCents: 350000, floorCents: 7500, bookings: 0, changed: false });
     // The nightly study, with a plausible history so the card on the dashboard
     // shows what it shows on a real night.
     if (path === '/api/work') {
@@ -355,13 +356,98 @@ export function demoApi(role, store) {
           .every((f) => typeof body?.acks?.[f] === 'number'))
         return fail(400, 'All acknowledgment forms must be completed first.');
       await beat(600);
-      // Straight past Stripe to where paying would have landed him.
-      const to = path === '/api/followup'
-        ? `/case.html?id=${DEMO_CASE_ID}&followup=1&demo=1`
-        : path === '/api/upgrade'
-          ? `/case.html?id=${DEMO_CASE_ID}&upgraded=1&demo=1`
-          : `/return.html?session_id=demo&demo=${role}`;
-      return ok({ ok: true, url: to });
+
+      // THE SEAMLESS DEMO (Eric, 2026-08-25): "your booking becomes a real
+      // case in the demo store." The checkout writes the same case document
+      // the Stripe webhook would, so the return page lands him on the case
+      // he just booked, the client view is the normal one, and the advocate
+      // shelf grows the new card the moment he switches sides.
+      if (path === '/api/checkout') {
+        const profile = store.docs.get('users/demo-client') || {};
+        const slot = body.slotId ? store.docs.get(`availability/${body.slotId}`) : null;
+        const isRequest = !body.slotId && !!body.requestedStart;
+        const start = isRequest ? new Date(body.requestedStart)
+          : slot ? new Date(slot.start) : new Date();
+        const isFull = body.tier === 'full';
+        const now = new Date();
+        const id = 'demo-case-booked';
+        store.docs.set(`cases/${id}`, {
+          clientUid: 'demo-client',
+          clientEmail: profile.email || 'jordan@example.demo',
+          clientName: profile.name || 'Jordan Avery',
+          clientDob: profile.dob || null,
+          clientTz: body.tz || 'America/Denver',
+          status: 'confirmed',
+          createdAt: now,
+          appointment: {
+            start, durationMin: slot?.durationMin || 60, method: body.method || 'video',
+            phone: body.phone || null, joinLink: null, requested: isRequest,
+          },
+          publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] },
+          addOnFollowUp: false,
+          forms: Object.fromEntries(Object.entries(body.acks || {})
+            .map(([k, v]) => [k, new Date(v)])),
+          files: [],
+          reportDueAt: null,
+          caseRateCents: 65000,
+          addonRateCents: 17500,
+          fullAccess: isFull,
+          fullAccessAt: isFull ? now : null,
+          fullAccessRateCents: isFull ? 350000 : null,
+          stripe: {
+            sessionId: 'cs_demo_booked', paymentIntentId: 'pi_demo_booked',
+            amountTotal: isFull ? 350000 : 65000,
+          },
+          work: { seconds: 0, startedAt: null },
+        });
+        if (slot) store.docs.set(`availability/${body.slotId}`, { ...slot, state: 'booked', caseId: id });
+        store.persist?.();
+        store.fire?.(`cases/${id}`);
+        return ok({ ok: true, url: '/return.html?session_id=cs_demo_booked' });
+      }
+
+      // Add-on purchases write the case the way the webhook's confirmers do,
+      // so the client card flips AND the advocate chart shows the purchase.
+      if (path === '/api/followup') {
+        const key = `cases/${body.caseId || DEMO_CASE_ID}`;
+        const c = store.docs.get(key);
+        if (c) {
+          store.docs.set(key, {
+            ...c, addOnFollowUp: true, addOnFollowUpAt: new Date(), pendingFollowUp: null,
+            extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), {
+              kind: 'followup', amountCents: Number(c.addonRateCents) || 17500,
+              sessionId: `cs_demo_fu_${Date.now()}`, at: new Date(),
+            }],
+          });
+          store.persist?.();
+          store.fire?.(key);
+        }
+        return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&followup=1&demo=1` });
+      }
+      if (path === '/api/upgrade') {
+        const key = `cases/${body.caseId || DEMO_CASE_ID}`;
+        const c = store.docs.get(key);
+        if (c) {
+          // Priced at the difference, like the real card; the total-paid field
+          // still lands on the full tier price.
+          const amount = Math.max(0, 350000 - (Number(c.caseRateCents) || 0));
+          store.docs.set(key, {
+            ...c, fullAccess: true, fullAccessAt: new Date(),
+            fullAccessRateCents: (Number(c.caseRateCents) || 0) + amount,
+            pendingFullAccess: null,
+            forms: { ...(c.forms || {}), fullAccess: new Date(body.acks.fullAccess) },
+            extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), {
+              kind: 'fullaccess', amountCents: amount,
+              sessionId: `cs_demo_up_${Date.now()}`, at: new Date(),
+            }],
+          });
+          store.persist?.();
+          store.fire?.(key);
+        }
+        return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&upgraded=1&demo=1` });
+      }
+      // /api/subscribe: straight past Stripe to where paying would have landed.
+      return ok({ ok: true, url: `/return.html?session_id=demo&demo=${role}` });
     }
     // ready, not just the id: the return page polls on that flag, and without
     // it the demo sat on "opening your case now" until it gave up.
@@ -421,7 +507,13 @@ export function demoApi(role, store) {
       }
       return ok({ ok: true });
     }
-    if (path === '/api/case-for-session') return ok({ ready: true, caseId: DEMO_CASE_ID });
+    if (path === '/api/case-for-session') {
+      // The seamless walk returns from its own checkout marker and lands on
+      // the case that booking just created; anything else keeps the fixture.
+      const sid = q.get('session_id') || '';
+      const booked = sid === 'cs_demo_booked' && store.docs.get('cases/demo-case-booked');
+      return ok({ ready: true, caseId: booked ? 'demo-case-booked' : DEMO_CASE_ID });
+    }
     if (path === '/api/portal') return ok({ url: `/subscription.html?demo=${role}` });
     // Retired with the jar itself. The ledger branch below still reports
     // tips, because a real ledger still has to reconcile ones already given.
@@ -537,6 +629,50 @@ export function demoApi(role, store) {
           : { ...cur, appealMeta: { ...(cur.appealMeta || {}), filedAt: new Date() } });
         return ok({ ok: true });
       }
+      // Notes for the call. Same reason as the appeal: without a branch the
+      // Draft button answers a bare ok, the state never moves, and the panel
+      // looks broken rather than demonstrative. The bracket line is there on
+      // purpose so the PDF's visual frame can be seen from the demo too.
+      if (body.action === 'call-notes') {
+        await beat(900);
+        const path = `cases/${body.id || DEMO_CASE_ID}/advisor/state`;
+        const cur = store.docs.get(path) || {};
+        const notes = body.revise
+          ? `${body.base || cur.callNotes || ''}\n\n(Revised for the demo per your note: "${String(body.instruction || '').slice(0, 120)}")`
+          : [
+            'ACTION PLAN',
+            '1. Get the endocrinology referral moving at the university center. Highest impact, longest wait.',
+            '2. Ask the PCP office to resend the February labs with the fax confirmation attached.',
+            '3. Book the blood draw before the visit so the results arrive first.',
+            '',
+            '[Line chart: TSH results across the last six months]',
+            '',
+            'THE PITCH',
+            '"Jordan, the next sixty days are the heavy lift on this case. If you want me on every call and every portal message while that happens, the Full Access tier covers exactly that. You have seen this week what it looks like."',
+            '',
+            'RESOURCES NEARBY',
+            'University Medical Center, endocrinology and rheumatology, about 15 minutes out (verify current wait times).',
+            'The teaching hospital second opinion clinic takes outside records by portal upload (verify).',
+            '',
+            'WORTH REMEMBERING',
+            'He answers fastest by text before noon.',
+            'This is demonstration text.',
+          ].join('\n');
+        store.docs.set(path, {
+          ...cur, callNotes: notes, callNotesStatus: 'ready',
+          callNotesAt: new Date(), callNotesError: null,
+        });
+        return ok({ ok: true });
+      }
+      if (body.action === 'clear-call-notes') {
+        const path = `cases/${body.id || DEMO_CASE_ID}/advisor/state`;
+        const cur = store.docs.get(path) || {};
+        store.docs.set(path, {
+          ...cur, callNotes: null, callNotesStatus: null,
+          callNotesAt: null, callNotesError: null,
+        });
+        return ok({ ok: true });
+      }
       await beat(700);
       return ok({ ok: true });
     }
@@ -644,10 +780,23 @@ export function demoApi(role, store) {
     if (path === '/api/uploaded' || path === '/api/notify' || path === '/api/push/test') return ok({ ok: true });
     if (path === '/api/chat/react' || path === '/api/chat/pass' || path === '/api/chat/edit') {
       // These write to the message, and in the demo the store is the message.
-      const msgPath = `cases/${DEMO_CASE_ID}/chat/${body.msgId}`;
+      // The caller names its case: hardcoding DEMO_CASE_ID here sent the Full
+      // Access case's reactions (and the booked case's) to a path that does
+      // not exist, which answered 404 for a message plainly on the screen.
+      const msgPath = `cases/${body.id || DEMO_CASE_ID}/chat/${body.msgId}`;
       const msg = store.docs.get(msgPath);
       if (!msg) return fail(404, 'No such message');
-      if (path === '/api/chat/react') store.docs.set(msgPath, { ...msg, reaction: body.reaction || null });
+      if (path === '/api/chat/react') {
+        // The Worker's own-message rule, mirrored: reacting to yourself is
+        // refused, EXCEPT an admin hanging (or clearing) a status broadcast
+        // on his own newest bubble - the ▾ above the chat depends on it.
+        const isStatus = STATUS_REACTIONS.some((r) => r.id === body.reaction);
+        const wasStatus = STATUS_REACTIONS.some((r) => r.id === msg.reaction);
+        const mine = (msg.role || 'client') === (role === 'admin' ? 'admin' : 'client');
+        if (mine && !((isStatus || (!body.reaction && wasStatus)) && role === 'admin'))
+          return fail(403, "You can only react to the other person's messages.");
+        store.docs.set(msgPath, { ...msg, reaction: body.reaction || null });
+      }
       if (path === '/api/chat/pass') store.docs.set(msgPath, { ...msg, pass: body.pass ? { by: 'demo-client', at: new Date() } : null });
       if (path === '/api/chat/edit') store.docs.set(msgPath, { ...msg, text: body.text, editedAt: new Date() });
       store.fire?.(msgPath);

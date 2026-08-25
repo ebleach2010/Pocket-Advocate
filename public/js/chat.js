@@ -14,7 +14,7 @@ import {
   ref, uploadBytesResumable, getDownloadURL,
 } from './firebase.js';
 import {
-  emojiById, statusById, openMessageMenu, openEditor, openNote, EDIT_WINDOW_MS,
+  emojiById, statusById, openMessageMenu, openStatusSheet, openEditor, openNote, EDIT_WINDOW_MS,
 } from './msg-actions.js';
 import { askName, safeName } from './rename.js';
 
@@ -68,6 +68,12 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     ${disabled
       ? '<button class="chat-expand" data-expand type="button" title="Full screen" aria-label="Full screen">⤢</button>'
       : ''}
+    ${myRole === 'admin' && !disabled ? `
+      <p style="margin:0 0 .25rem; text-align:right;">
+        <button type="button" class="btn quiet" data-status-arrow
+          title="Tell them what you're doing" aria-label="Tell them what you're doing"
+          style="font-size:.72rem; padding:.28rem .7rem;">▾ What I'm doing</button>
+      </p>` : ''}
     <div class="chat-log" data-log><p class="dim small">Loading messages…</p></div>
     ${disabled
       ? `<p class="dim small chat-notice">${esc(notice)}</p>`
@@ -97,6 +103,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   // message takes you to the bottom even if you were reading back through the
   // history, because you asked for it. Nobody else's does.
   let followNext = false;
+  let latestMsgId = null;
   const parentRef = doc(db, ...parentPath);
   const messagesRef = collection(db, ...parentPath, 'chat');
 
@@ -132,6 +139,8 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       const tb = b.data().ts?.toDate?.()?.getTime?.() ?? Infinity;
       return ta - tb;
     });
+    // The ▾ status button hangs its pick on whatever is newest right now.
+    latestMsgId = ordered.length ? ordered[ordered.length - 1].id : null;
     for (const m of ordered) {
       const data = m.data();
       const mine = data.from === user.uid;
@@ -229,7 +238,9 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         messageLongPress(div, {
           msgId: m.id,
           canReact: !mine,
-          canUseStatus: !mine && myRole === 'admin',
+          // His own messages take a status too (Eric, 2026-08-25): the
+          // client is still the one notified, with the exact words.
+          canUseStatus: myRole === 'admin',
           canEdit: !!editable,
           canPass: myRole === 'client' && !mine && !!data.text && !data.pass,
           // Either side, either person's message. Saving is private and tells
@@ -446,6 +457,17 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   // Full-screen chat: the whole thread takes the viewport so long messages
   // read comfortably; ✕ puts it back. Same control both sides of the chat.
   const expandBtn = container.querySelector('[data-expand]');
+  // The ▾ above the log (admin only): pick a status without hunting for a
+  // message to long-press. It lands on the newest message in the thread,
+  // and the client is pushed the exact words, same as the long-press path.
+  container.querySelector('[data-status-arrow]')?.addEventListener('click', async () => {
+    if (!latestMsgId) { alert('No messages yet to hang a status on.'); return; }
+    const choice = await openStatusSheet();
+    if (!choice) return;
+    await post('/api/chat/react', {
+      kind: kindOf(), id: parentPath[1], msgId: latestMsgId, reaction: choice.id,
+    }, "Couldn't set that");
+  });
   expandBtn.addEventListener('click', () => {
     const full = container.classList.toggle('chat-full');
     expandBtn.textContent = full ? '✕' : '⤢';

@@ -733,6 +733,12 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           appealAt: out.state?.appealAt || null,
           appealError: out.state?.appealError || '',
           appealMeta: out.state?.appealMeta || null,
+          // The call-notes panel on the Drafts page rides the poll the same
+          // way. Same whitelist rule: name the field or the page never sees it.
+          callNotes: out.state?.callNotes || '',
+          callNotesStatus: out.state?.callNotesStatus || null,
+          callNotesAt: out.state?.callNotesAt || null,
+          callNotesError: out.state?.callNotesError || '',
         };
         renderDiff(detail);
         renderRead(out.mediaReport, out.queuedFiles, d.running, out.state?.mediaPlan || []);

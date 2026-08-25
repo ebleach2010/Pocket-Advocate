@@ -51,6 +51,18 @@ const HARD = [
   /from a model/i,
 ];
 
+// THE ONE ALLOWANCE (Eric, 2026-08-25, his order): the AI note-taking
+// consent clause in service-terms.js names AI to the client on purpose —
+// "There must be a clause that they accept to AI note taking during calls."
+// Scoped as tightly as it will go: that one file, the \bAI\b pattern only,
+// and only on a line about the note taking itself. An "AI" anywhere else in
+// that file, or any other forbidden term in it, still fails the audit —
+// nothing else may lean on this.
+const ALLOWED = (pathname, re, line) =>
+  pathname === '/js/service-terms.js'
+  && String(re) === String(/\bAI\b/)
+  && /AI (note[- ]taking|note taking|tool takes notes)/.test(line);
+
 // Internal identifiers. None of these belong in a file a client downloads, and
 // unlike the words above they never appear in copy, so they can be matched
 // bare without drowning the run in false positives.
@@ -125,15 +137,21 @@ async function get(path) {
 }
 
 function scan(path, rec) {
-  const isCode = /\.(js|css)$/.test(new URL(rec.url || path, ORIGIN).pathname);
+  const pathname = new URL(rec.url || path, ORIGIN).pathname;
+  const isCode = /\.(js|css)$/.test(pathname);
   const terms = isCode ? [...HARD, ...CODE_ONLY] : HARD;
   const lines = rec.body.split('\n');
   const hits = [];
+  let allowed = 0;
   for (const re of terms) {
     for (let i = 0; i < lines.length; i++) {
-      if (re.test(lines[i])) hits.push({ re: String(re), n: i + 1, text: lines[i].trim().slice(0, 120) });
+      if (!re.test(lines[i])) continue;
+      if (ALLOWED(pathname, re, lines[i])) { allowed++; continue; }
+      hits.push({ re: String(re), n: i + 1, text: lines[i].trim().slice(0, 120) });
     }
   }
+  // Say so every run: an allowance that runs silently stops being documented.
+  if (allowed) console.log(`  note  ${path} — ${allowed} allowed mention${allowed === 1 ? '' : 's'} (the AI note-taking clause)`);
   if (hits.length) {
     fail(`${path} — ${hits.length} forbidden ${hits.length === 1 ? 'match' : 'matches'}`);
     for (const h of hits.slice(0, 8)) console.log(`        ${h.re} @${h.n}: ${h.text}`);

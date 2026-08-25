@@ -365,7 +365,7 @@ export function seed({ set, file }) {
     },
     reportDueAt: days(13),
     files: [],
-    stripe: { sessionId: 'cs_demo_full', paymentIntentId: 'pi_demo_full', amountTotal: 150000 },
+    stripe: { sessionId: 'cs_demo_full', paymentIntentId: 'pi_demo_full', amountTotal: 350000 },
     // 26 hours against $3,500 is about $134/hr, which is what the tier is
     // priced to earn. The standard case above is deliberately the opposite
     // number, so the margin badge shows both of its states across the demo.

@@ -73,7 +73,14 @@
    being folded into the paragraph around it. */
 .advisor-body p.md-raw {
   margin: .1rem 0; font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: .76rem; white-space: pre-wrap; overflow-x: auto; color: var(--ink);
+  font-size: .76rem; white-space: pre-wrap; color: var(--ink);
+  /* Wrap, never scroll sideways. overflow-x:auto here made every long lab
+     line a horizontal pan area, and on iOS a pannable element eats the
+     drag that text selection needs - Eric literally could not select the
+     advisor's text to copy it into his notes (2026-08-25). A monospace
+     column that wraps is still readable; one that cannot be copied is
+     furniture. */
+  overflow-wrap: anywhere;
 }
 .advisor-body ul { margin: .3rem 0 .3rem 1.05rem; padding: 0; }
 .advisor-body li { font-size: .85rem; line-height: 1.5; color: var(--soft); margin-bottom: .25rem; overflow-wrap: anywhere; }

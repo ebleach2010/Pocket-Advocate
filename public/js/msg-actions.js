@@ -22,6 +22,13 @@ export const STATUS_REACTIONS = [
   { id: 'thinking', emoji: '💭', label: 'Eric is thinking about your situation…' },
   { id: 'history', emoji: '🗂', label: 'Eric is reviewing your history…' },
   { id: 'labs', emoji: '🧪', label: 'Eric is reviewing your labs / chart notes' },
+  // The six added on Eric's word, 2026-08-25, labels verbatim.
+  { id: 'local', emoji: '🏥', label: 'Eric is looking into local resources…' },
+  { id: 'vetting', emoji: '🕵️', label: 'Eric is doing background checks on providers…' },
+  { id: 'coordinating', emoji: '📞', label: 'Eric is coordinating with providers…' },
+  { id: 'insurance', emoji: '📨', label: 'Eric is writing to insurance…' },
+  { id: 'documents', emoji: '📑', label: 'Eric is preparing documents…' },
+  { id: 'notes', emoji: '📝', label: 'Eric is taking personal notes on the case…' },
 ];
 
 /** How long a message stays editable. Mirrors EDIT_WINDOW_MS in the Worker. */
@@ -90,6 +97,47 @@ export function openMessageMenu(opts) {
       b.addEventListener('click', () => done({ action: 'react', id: b.dataset.react })));
     overlay.querySelectorAll('[data-act]').forEach((b) =>
       b.addEventListener('click', () => done(b.dataset.act === 'cancel' ? undefined : { action: b.dataset.act })));
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+  });
+}
+
+/**
+ * The status sheet on its own, no message required: the ▾ above the chat
+ * opens this, the pick lands on the thread's newest message, and the client
+ * gets the exact words as a push. Same list as the long-press menu so the
+ * two can never drift.
+ * Resolves to { id } or undefined.
+ */
+export function openStatusSheet() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'msg-menu-overlay';
+    overlay.innerHTML = `
+      <div class="msg-menu" role="dialog" aria-modal="true" aria-label="Tell them what you're doing">
+        <div class="msg-menu-sheet">
+          <p class="msg-menu-head">Let them know what you're doing</p>
+          ${STATUS_REACTIONS.map((r) => `
+            <button class="msg-menu-row" data-react="${r.id}">
+              <span class="react-emoji">${r.emoji}</span><span>${r.label}</span>
+            </button>`).join('')}
+          <p class="msg-menu-note">They get a notification saying exactly this. Nothing else is included.</p>
+          <button class="msg-menu-row cancel" data-act="cancel"><span>Cancel</span></button>
+        </div>
+      </div>`;
+    let settled = false;
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    function onKey(e) { if (e.key === 'Escape') done(undefined); }
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(undefined); });
+    overlay.querySelectorAll('[data-react]').forEach((b) =>
+      b.addEventListener('click', () => done({ id: b.dataset.react })));
+    overlay.querySelector('[data-act="cancel"]').addEventListener('click', () => done(undefined));
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
   });
