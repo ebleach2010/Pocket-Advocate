@@ -5,31 +5,38 @@
  */
 /* Pocket Advocate neon system — single-theme by design (approved 2026-07-11).
    Same tokens as PROTOTYPE.html so the shipped app matches the prototype. */
+/* Eric's mockup, 2026-08-25 (visual reference only, his copy untouched):
+   deep navy ground with a violet cast, indigo panels, cyan and violet
+   accents, and card edges that glow rather than merely outline. Only these
+   VALUES moved - no rule names a colour, so the whole app follows, and the
+   other three schemes keep their own values and stay coherent.
+   --magenta keeps its NAME and takes a violet value: renaming a token would
+   touch every rule that reads it, for nothing. */
 :root {
-  --bg: #07090F;
-  --panel: #0D1220;
-  --panel-2: #111830;
-  --ink: #EAF0FF;
-  --dim: #A9B2C8;
-  --soft: #C9D0E2;
-  --line: #1C2542;
-  --cyan: #2DE2FF;
-  --cyan-dim: #1596B0;
-  --magenta: #FF4FD8;
+  --bg: #060A1C;
+  --panel: #0C1330;
+  --panel-2: #141C42;
+  --ink: #EDF1FF;
+  --dim: #A7B0D0;
+  --soft: #C8D0EC;
+  --line: #242F63;
+  --cyan: #37E1FF;
+  --cyan-dim: #1E7FA8;
+  --magenta: #A97BFF;
   --green: #3EE08A;
-  --blue: #6C9EFF;
+  --blue: #7C8CFF;
   --danger: #FF6B6B;
   --gold: #FFCC55;
   --orange: #FFA23E;
-  --glow-c: 0 0 18px rgba(45, 226, 255, .35);
-  --glow-m: 0 0 18px rgba(255, 79, 216, .30);
+  --glow-c: 0 0 20px rgba(55, 225, 255, .38);
+  --glow-m: 0 0 22px rgba(169, 123, 255, .40);
   --glow-g: 0 0 16px rgba(62, 224, 138, .30);
-  --glow-b: 0 0 16px rgba(108, 158, 255, .30);
+  --glow-b: 0 0 18px rgba(124, 140, 255, .34);
   --glow-o: 0 0 16px rgba(255, 162, 62, .35);
   /* The translucent ground under every sticky bar. A scheme cannot reach a
      baked rgba, and a bar that stays near-black under a pale scheme takes the
      whole top of the app with it. */
-  --bar: rgba(7, 9, 15, .85);
+  --bar: rgba(6, 10, 28, .86);
   /* The ink that sits ON an accent fill (a cyan button, a booked calendar
      day). It is not --bg and it is not --ink: it has to contrast with the
      accent, which is dark on some schemes and bright on others. */
@@ -508,6 +515,17 @@ summary.btn::-webkit-details-marker { display: none; }
 .pack.rec-c,
 .pack.rec-m { animation: none; }
 }
+/* The mockup frames the hero and the closing call in glowing cards rather
+   than letting them float on the ground. Same token glow as the pricing
+   cards, so all three schemes follow. */
+.land-sec.hero,
+.land-sec.closing {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  padding: 1.15rem 1rem;
+  box-shadow: var(--glow-b), inset 0 0 40px rgba(124, 140, 255, .05);
+}
+.land-sec.closing { text-align: center; }
+
 /* The one breathing element on the landing page (Eric, 2026-08-25: "A soft
    glow should ease in and out in intensity over book a case"). Opt-in via
    .pulse, on that one button only - the one-glow-per-screen rule holds. */
@@ -1014,6 +1032,25 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
 }
 .hiw h3 { margin: 0 0 .25rem; font-size: 1.06rem; }
 .hiw p { margin: 0; color: var(--soft); font-size: .98rem; line-height: 1.6; }
+
+/* The mockup's step rows (Eric, 2026-08-25): each step is a panel with an
+   icon chip on the left, hung off the same numbered rail. Structure and
+   colour only - not one word of the copy moved. */
+.hiw li.step-row { padding-left: 2rem; }
+/* The chip lives INSIDE the card, as in the mockup: on a 390px phone every
+   pixel the chip takes outside the card comes off the text column. */
+.hiw .step-card {
+  display: flex; gap: .6rem; align-items: flex-start;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: .7rem .8rem; margin: 0;
+}
+.hiw .step-card .step-text { flex: 1; min-width: 0; margin: 0; }
+.icon-chip {
+  flex: none; width: 2.1rem; height: 2.1rem; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; font-size: 1rem;
+  background: var(--panel-2); border: 1px solid var(--line);
+  box-shadow: inset 0 0 18px rgba(124, 140, 255, .12);
+}
 
 /* "What happens after you book": a plain list, cyan markers. */
 .after-list { margin: .6rem 0 0; padding-left: 1.15rem; color: var(--soft); }

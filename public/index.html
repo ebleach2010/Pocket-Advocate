@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
-<meta name="theme-color" content="#07090F">
+<meta name="theme-color" content="#060A1C">
 <title>Pocket Advocate</title>
 <script>
 // Paint in the stored colour scheme before the stylesheet lands, so a scheme
@@ -22,13 +22,13 @@
     if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
       s = localStorage.getItem('pa-admin-device') === '1' ? 'neon' : 'calm';
     if (s !== 'neon') document.documentElement.dataset.scheme = s;
-    var c = { neon: '#07090F', calm: '#0B0E14', paper: '#F3EEE3', contrast: '#000000' }[s];
+    var c = { neon: '#060A1C', calm: '#0B0E14', paper: '#F3EEE3', contrast: '#000000' }[s];
     var m = document.querySelector('meta[name="theme-color"]');
     if (m && c) m.setAttribute('content', c);
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat87">
+<link rel="stylesheet" href="/css/site.css?v=stat88">
 <script>
 // A returning account holder skips the booking page. Inline in <head> so there
 // is no flash of it first; the marker is set at sign-in and cleared at
@@ -90,14 +90,23 @@
   <section class="land-sec">
     <h2>How it works</h2>
     <ol class="hiw">
-      <li>
-        <p>Choose a time for a phone or video call and give me the basics about your case. Booking takes about two minutes.</p>
+      <li class="step-row">
+        <div class="step-card">
+          <span class="icon-chip" aria-hidden="true">📅</span>
+          <p class="step-text">Choose a time for a phone or video call and give me the basics about your case. Booking takes about two minutes.</p>
+        </div>
       </li>
-      <li>
-        <p>Review one agreement covering the service, privacy, and recording. It is written to be read, not buried in legal language.</p>
+      <li class="step-row">
+        <div class="step-card">
+          <span class="icon-chip" aria-hidden="true">📄</span>
+          <p class="step-text">Review one agreement covering the service, privacy, and recording. It is written to be read, not buried in legal language.</p>
+        </div>
       </li>
-      <li>
-        <p>Pay <span data-rate="case">$650</span>. Your case includes our call, review of the records you share, and a written report within 7 days. A follow-up session is <span data-rate="addon">$175</span> if you need one.</p>
+      <li class="step-row">
+        <div class="step-card">
+          <span class="icon-chip" aria-hidden="true">☁️</span>
+          <p class="step-text">Pay <span data-rate="case">$650</span>. Your case includes our call, review of the records you share, and a written report within 7 days. A follow-up session is <span data-rate="addon">$175</span> if you need one.</p>
+        </div>
       </li>
     </ol>
     <h3>What happens after you book</h3>
@@ -188,7 +197,7 @@
     <p class="dim small"><a href="/reviews.html">Read all reviews</a></p>
   </section>
 
-  <section class="land-sec">
+  <section class="land-sec closing">
     <h2>Ready when you are.</h2>
     <div class="actions">
       <a class="btn" href="/book.html">Book a case, <span data-rate="case">$650</span></a>

@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
-<meta name="theme-color" content="#07090F">
+<meta name="theme-color" content="#060A1C">
 <title>Your subscription · Pocket Advocate</title>
 <script>
 // Paint in the stored colour scheme before the stylesheet lands, so a scheme
@@ -22,13 +22,13 @@
     if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
       s = localStorage.getItem('pa-admin-device') === '1' ? 'neon' : 'calm';
     if (s !== 'neon') document.documentElement.dataset.scheme = s;
-    var c = { neon: '#07090F', calm: '#0B0E14', paper: '#F3EEE3', contrast: '#000000' }[s];
+    var c = { neon: '#060A1C', calm: '#0B0E14', paper: '#F3EEE3', contrast: '#000000' }[s];
     var m = document.querySelector('meta[name="theme-color"]');
     if (m && c) m.setAttribute('content', c);
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat87">
+<link rel="stylesheet" href="/css/site.css?v=stat88">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
