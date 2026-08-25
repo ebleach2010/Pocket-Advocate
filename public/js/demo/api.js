@@ -356,6 +356,24 @@ export function demoApi(role, store) {
       }
       return ok({ ...demoVoice });
     }
+    // Thirty more days on a Hands-Off window, stacking. Straight past
+    // Stripe, written down, so the demo's window guard actually moves.
+    if (path === '/api/extend') {
+      const key = `cases/${body.caseId || DEMO_CASE_ID}`;
+      const c = store.docs.get(key) || {};
+      if (!c.fullAccess) return fail(409, 'Extensions are part of Hands-Off Case Management.');
+      if (c.status === 'closed') return fail(409, 'This case is closed.');
+      await beat(600);
+      store.docs.set(key, {
+        ...c,
+        fullAccessExtraDays: (Number(c.fullAccessExtraDays) || 0) + 30,
+        extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), {
+          kind: 'extend', amountCents: 175000, sessionId: `cs_demo_ext_${Date.now()}`, at: new Date(), days: 30,
+        }],
+      });
+      store.fire?.(key);
+      return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&extended=1&demo=1` });
+    }
     if (path === '/api/checkout' || path === '/api/subscribe' || path === '/api/followup'
       || path === '/api/upgrade') {
       // The scope note is a real gate, not decoration, so the demo refuses

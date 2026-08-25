@@ -136,6 +136,31 @@ check('T15 the admin card carries confirm and deny, wired to the route',
 check('T16 the demo drives the whole loop',
   /'\/api\/telehealth'/.test(DEMO) && /'\/api\/admin\/telehealth'/.test(DEMO));
 
+// ---- extensions: 30 days at a time, finally purchasable ----
+// (Eric, 2026-08-25: "Once THIS is booked, they can choose to add 30 days
+// at a time under the same tab." Until this round FULL_EXTEND was a priced
+// constant with no route and fullAccessExtraDays had no writer.)
+check('E1 the extend route exists and is tier-only',
+  /async function handleExtendCheckout/.test(SRC)
+  && /Extensions are part of Hands-Off Case Management\./.test(SRC));
+check('E2 the webhook stacks 30 days, idempotent by sessionId',
+  /async function confirmExtensionPurchase/.test(SRC)
+  && /fullAccessExtraDays: newDays/.test(SRC)
+  && /\(Number\(c\.data\.fullAccessExtraDays\) \|\| 0\) \+ 30/.test(SRC)
+  && /payments\.some\(\(x\) => x\.sessionId === session\.id\)\) return;/.test(SRC));
+check('E3 an abandoned extension checkout clears itself',
+  /kind === 'extend' && session\.metadata\.caseId/.test(SRC)
+  && /pendingExtend: null/.test(SRC));
+check('E4 the card lives under Case Enhancements, states and all',
+  /data-extend/.test(CASE) && /function extendOffer/.test(CASE)
+  && /data-buy-extend/.test(CASE) && /extended=1/.test(SRC));
+check('E5 the client window mirror adds the bought days',
+  /function windowEndOf/.test(CASE)
+  && /60 \+ \(Number\(c\.fullAccessExtraDays\) \|\| 0\)/.test(CASE));
+check('E6 the demo drives the purchase and the days really stack',
+  /'\/api\/extend'/.test(DEMO)
+  && /fullAccessExtraDays: \(Number\(c\.fullAccessExtraDays\) \|\| 0\) \+ 30/.test(DEMO));
+
 // ---- the copy that had to change ----
 check('W1 tier terms no longer close the case at any call',
   !/which is where we close the case/.test(TIER) && !/closes the case/.test(TIER));

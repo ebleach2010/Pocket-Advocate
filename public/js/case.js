@@ -1106,6 +1106,80 @@ function renderPageFooter(host, c) {
  * each with a ? explainer. The prices are the same live ones the cards have
  * always used - nothing here is typed.
  */
+/**
+ * Thirty more days on a Hands-Off window, stacking (Eric, 2026-08-25: "they
+ * can choose to add 30 days at a time under the same tab"). Flat price, off
+ * the ratchet, so the compiled-in number IS the number.
+ */
+const EXTEND_PRICE_CENTS = 175000;
+function windowEndOf(c) {
+  // The Worker's fullAccessWindowEnd, mirrored: purchase start (first-call
+  // fallback), plus extensions, plus every stretch spent on hold.
+  const bought = c?.fullAccessAt ? toDate(c.fullAccessAt).getTime() : 0;
+  const start = bought || (c?.appointment?.start ? toDate(c.appointment.start).getTime() : 0);
+  if (!start) return null;
+  const held = Math.max(0, Number(c?.hold?.totalMs) || 0)
+    + (c?.hold?.pausedAt ? Math.max(0, Date.now() - toDate(c.hold.pausedAt).getTime()) : 0);
+  const days = 60 + (Number(c.fullAccessExtraDays) || 0);
+  return new Date(start + days * 86_400_000 + held);
+}
+function extendOffer(c) {
+  if (!c.fullAccess || c.status === 'closed') return '';
+  const dateFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
+  // Straight back from Stripe: say thank you from the URL rather than a flag
+  // that might still be false for another second.
+  if (new URLSearchParams(location.search).get('extended') === '1')
+    return `
+      <div class="followup-offer is-done">
+        <h3><span class="fu-tick" aria-hidden="true">✓</span> Thirty more days are on your case.</h3>
+        <p>Same case, same file, same rhythm. Your case page shows the new dates.</p>
+      </div>`;
+  if (c.pendingExtend?.url)
+    return `
+      <div class="followup-offer">
+        <h3>Your extension checkout is still open</h3>
+        <p>Finish it or let it lapse; nothing is charged until you do.</p>
+        <p><a class="btn glow" href="${esc(c.pendingExtend.url)}">Finish checkout</a></p>
+      </div>`;
+  const end = windowEndOf(c);
+  return `
+    <div class="followup-offer">
+      <h3>Need more time on the clock?</h3>
+      <p>Your coordination window ${end && end.getTime() < Date.now() ? 'ended' : 'runs through'}
+        <strong style="color:var(--ink)">${end ? esc(dateFmt.format(end)) : 'its end date'}</strong>.
+        Add 30 days at a time, as often as your case needs it — the check-ins,
+        the calls on your behalf, and the rest keep running exactly as they are.</p>
+      <div class="fu-buy">
+        <span class="price">$${(EXTEND_PRICE_CENTS / 100).toLocaleString()}</span>
+        <button class="btn glow" data-buy-extend>Add 30 days</button>
+      </div>
+      <p class="error" data-extend-error hidden></p>
+    </div>`;
+}
+function wireExtendOffer(el, c) {
+  const btn = el.querySelector('[data-buy-extend]');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const err = el.querySelector('[data-extend-error]');
+    btn.disabled = true;
+    if (err) err.hidden = true;
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/extend', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ caseId: c.id }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.url) throw new Error(out.error || `Couldn't start that (${res.status})`);
+      location.href = out.url;
+    } catch (e) {
+      if (err) { err.textContent = e.message; err.hidden = false; }
+      btn.disabled = false;
+    }
+  });
+}
+
 function renderAddons(el, c) {
   el.innerHTML = `
     <h2 class="case-sec-h">Case Enhancements</h2>
@@ -1114,9 +1188,12 @@ function renderAddons(el, c) {
       is charged until you choose it.</p>
     <div data-telehealth></div>
     <div data-followup></div>
-    <div data-upgrade></div>`;
+    <div data-upgrade></div>
+    <div data-extend></div>`;
   const th = el.querySelector('[data-telehealth]');
   if (th) { th.innerHTML = telehealthCard(c); wireTelehealthCard(th, c); }
+  const ex = el.querySelector('[data-extend]');
+  if (ex) { ex.innerHTML = extendOffer(c); wireExtendOffer(ex, c); }
   const offer = el.querySelector('[data-followup]');
   if (offer) {
     offer.innerHTML = followUpOffer(c);

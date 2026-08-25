@@ -674,6 +674,8 @@ export default {
         return await handleUpgradeCheckout(request, env);
       if (url.pathname === '/api/followup' && request.method === 'POST')
         return await handleFollowUpCheckout(request, env);
+      if (url.pathname === '/api/extend' && request.method === 'POST')
+        return await handleExtendCheckout(request, env);
       if (url.pathname === '/api/telehealth' && request.method === 'POST')
         return await handleTelehealthRequest(request, env);
       if (url.pathname === '/api/admin/telehealth' && request.method === 'POST')
@@ -2154,6 +2156,7 @@ async function handleWebhook(request, env) {
     else if (obj.metadata?.kind === 'chatunlock') await confirmChatUnlock(env, obj);
     else if (obj.metadata?.kind === 'extra') await confirmExtraSession(env, obj);
     else if (obj.metadata?.kind === 'followup') await confirmFollowUpPurchase(env, obj);
+    else if (obj.metadata?.kind === 'extend') await confirmExtensionPurchase(env, obj);
     else if (obj.metadata?.kind === 'telehealth') await confirmTelehealthPurchase(env, obj);
     else if (obj.metadata?.kind === 'fullaccess') await confirmFullAccessPurchase(env, obj);
     else await createCaseFromSession(env, obj);
@@ -4354,6 +4357,123 @@ async function confirmFollowUpPurchase(env, session) {
   }
 }
 
+/**
+ * POST /api/extend  Body: { caseId }
+ *
+ * Thirty more days on a Hands-Off coordination window, purchasable as many
+ * times as the case needs (Eric, 2026-08-25: "they can choose to add 30
+ * days at a time under the same tab"). Flat FULL_EXTEND[30], off the
+ * ratchet like telehealth, so no quote handshake: the price cannot move
+ * between paint and tap.
+ */
+function extendLineItems(cents) {
+  return [{
+    price_data: {
+      currency: 'usd',
+      product_data: {
+        name: '30 more days',
+        description: 'Thirty days added to the coordination window on this case.',
+      },
+      unit_amount: cents,
+    },
+    quantity: 1,
+  }];
+}
+
+async function handleExtendCheckout(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c || c.data.clientUid !== user.uid) return json({ error: 'Not found' }, 404);
+  if (!c.data.fullAccess)
+    return json({ error: 'Extensions are part of Hands-Off Case Management.' }, 409);
+  if (c.data.status === 'closed') return json({ error: 'This case is closed.' }, 409);
+  // A live checkout still in play: hand back the same link rather than
+  // opening a second one they could pay twice.
+  const pending = c.data.pendingExtend;
+  if (pending?.url && new Date(pending.expiresAt || 0).getTime() > Date.now())
+    return json({ ok: true, url: pending.url });
+
+  const cents = FULL_EXTEND[30];
+  const expiresAt = new Date(Date.now() + 23 * 3600_000);
+  const session = await stripePost(env, '/checkout/sessions', {
+    mode: 'payment',
+    customer_email: c.data.clientEmail || undefined,
+    line_items: extendLineItems(cents),
+    success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&extended=1`,
+    cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
+    expires_at: Math.floor(expiresAt.getTime() / 1000),
+    metadata: { kind: 'extend', caseId, uid: c.data.clientUid, days: '30' },
+  });
+  await patchDoc(env, `cases/${caseId}`, {
+    pendingExtend: { sessionId: session.id, url: session.url, cents, createdAt: new Date(), expiresAt },
+  }, { mask: ['pendingExtend'] });
+  return json({ ok: true, url: session.url });
+}
+
+/** Paid: thirty days onto the window, stacking, idempotent by sessionId. */
+async function confirmExtensionPurchase(env, session, attempt = 0) {
+  if (attempt > 3) return;
+  const caseId = session.metadata?.caseId;
+  if (!caseId) return;
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c) return;
+  const now = new Date();
+  const payments = Array.isArray(c.data.extraPayments) ? c.data.extraPayments : [];
+  // Stripe retries webhooks; the same session must never stack twice.
+  if (payments.some((x) => x.sessionId === session.id)) return;
+  const amountCents = session.amount_total || FULL_EXTEND[30];
+
+  // Money moved into a case that cannot take the days: written down and
+  // flagged for a hand refund, exactly like the sibling confirmers.
+  if (!c.data.fullAccess || c.data.status === 'closed') {
+    payments.push({ kind: 'extend', amountCents, sessionId: session.id, at: now, duplicate: true });
+    const okDup = await patchDoc(env, `cases/${caseId}`, { extraPayments: payments },
+      { mask: ['extraPayments'], ifUpdateTime: c.updateTime });
+    if (okDup === false) return confirmExtensionPurchase(env, session, attempt + 1);
+    for (const a of await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => [])) {
+      await notifyUser(env, a.id, {
+        title: 'Pocket Advocate',
+        body: `${firstName(c.data.clientName) || 'A client'} paid for an extension this case can't take. Refund it from Stripe.`,
+        link: `/admin-case.html?id=${caseId}`,
+      }).catch(() => {});
+    }
+    return;
+  }
+
+  payments.push({ kind: 'extend', amountCents, sessionId: session.id, at: now, days: 30 });
+  const newDays = (Number(c.data.fullAccessExtraDays) || 0) + 30;
+  const okBuy = await patchDoc(env, `cases/${caseId}`, {
+    fullAccessExtraDays: newDays,
+    pendingExtend: null,
+    extraPayments: payments,
+  }, { mask: ['fullAccessExtraDays', 'pendingExtend', 'extraPayments'], ifUpdateTime: c.updateTime });
+  // Lost the lock: re-run from the top; the sessionId dedup makes it idempotent.
+  if (okBuy === false) return confirmExtensionPurchase(env, session, attempt + 1);
+
+  const end = fullAccessWindowEnd({ ...c.data, fullAccessExtraDays: newDays });
+  if (c.data.clientEmail) {
+    await sendEmail(env, {
+      to: c.data.clientEmail,
+      subject: 'Thirty more days on your case',
+      html: `<p>Your coordination window now runs through <strong>${end ? MT_FMT.format(end) : 'the extended date'} MST</strong>.</p>
+        <p>Nothing else changes: same case, same file, same rhythm.</p>
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
+    }).catch(() => { /* the purchase still stands if the mail fails */ });
+  }
+  for (const a of await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => [])) {
+    await notifyUser(env, a.id, {
+      title: 'Pocket Advocate',
+      body: `${firstName(c.data.clientName) || 'A client'} added 30 days to their window.`,
+      link: `/admin-case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
+}
+
 // ---- Telehealth Appointment Advocacy ----
 //
 // The client asks; Eric decides; only then does he appear in anyone's
@@ -5886,6 +6006,14 @@ async function releaseHold(env, session) {
     if (caseDoc?.data.pendingFollowUp?.sessionId === session.id)
       await patchDoc(env, `cases/${session.metadata.caseId}`, { pendingFollowUp: null }, {
         mask: ['pendingFollowUp'],
+      });
+  }
+  // A window extension that was started and walked away from.
+  if (session.metadata?.kind === 'extend' && session.metadata.caseId) {
+    const caseDoc = await getDoc(env, `cases/${session.metadata.caseId}`);
+    if (caseDoc?.data.pendingExtend?.sessionId === session.id)
+      await patchDoc(env, `cases/${session.metadata.caseId}`, { pendingExtend: null }, {
+        mask: ['pendingExtend'],
       });
   }
   // An upgrade to Full Access that was started and walked away from.
