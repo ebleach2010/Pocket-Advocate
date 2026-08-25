@@ -110,6 +110,21 @@
 }
 .work-rate.under { color: #FFB454; opacity: 1; }
 
+/* The running total is a BUTTON: tapping it opens the add/subtract sheet
+   (Eric, 2026-08-25). It has to read as tappable without shouting - it sits
+   beside the start/stop control and must not compete with it - so it keeps
+   the quiet type of the label it replaced and earns a dotted underline. */
+.work-total-btn {
+  padding: .2rem .3rem; min-height: 0;
+  font-size: .84rem; font-weight: 400;
+  color: var(--dim); background: none; border: 0;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.work-total-btn:hover { color: var(--ink); }
+.work-total-btn.on { color: var(--cyan); }
+
 .gloss-item { display: flex; gap: .55rem; align-items: flex-start; margin: 0 0 .55rem; }
 .gloss-item input[type=checkbox] { width: 1.05rem; height: 1.05rem; margin-top: .15rem; flex: none; accent-color: var(--cyan); }
 .gloss-item .gloss-text { font-size: .85rem; line-height: 1.5; color: var(--soft); overflow-wrap: anywhere; }

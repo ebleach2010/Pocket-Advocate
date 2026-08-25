@@ -230,10 +230,9 @@ function render(el) {
               <h3>Chat with the client</h3>
               <div class="row" data-workclock style="gap:.5rem; align-items:center; margin:.1rem 0 .5rem;">
                 <button class="btn quiet" data-work-toggle style="flex:none;">▶ Start working</button>
-                <span class="dim small" data-work-total></span>
+                <button class="btn quiet work-total-btn" data-work-total
+                  title="Tap to add or subtract time"></button>
                 <span class="work-rate" data-work-rate hidden></span>
-                <button class="btn quiet tiny" data-work-fix style="flex:none;"
-                  title="Correct the total, for a clock left running by mistake">Fix total</button>
               </div>
               <p class="dim small" data-client-gate style="margin:.1rem 0 .4rem;" hidden></p>
               <div id="chat"></div>
@@ -905,72 +904,125 @@ function startWorkClock(c) {
   paint();
   armClockTick();
   wireClockToggle(btn);
-  wireClockFix(row.querySelector('[data-work-fix]'));
+  // The time itself opens the sheet (Eric, 2026-08-25: "tap on the time").
+  wireClockFix(totalEl);
 }
 
 /**
  * Correcting a total, for a clock left running by mistake.
  *
- * Start and stop were the only two things that could move this number, so a
- * forgotten toggle was permanent (Eric, 2026-08-25: ten hours banked onto his
- * only client). He is asked for the total the case SHOULD read, in hours and
- * minutes, because that is the number he can see on the card in front of him
- * - working out what to subtract is arithmetic he should not have to do while
- * annoyed.
+ * Eric, 2026-08-25: "I should be able to tap on the time and subtract time or
+ * add time (hours + minutes with the iOS scroll wheel widget)."
+ *
+ * So the TIME ITSELF is the control, and the amount is picked rather than
+ * typed. Two <select>s, because on iOS that is precisely the native wheel he
+ * means - a text box asking for "2h 15m" is the wrong shape on a phone and
+ * makes him do arithmetic while annoyed.
+ *
+ * He adds or subtracts an AMOUNT rather than setting a total, which is how
+ * the mistake actually presents: "that ran about ten hours too long". The
+ * page does the arithmetic and sends the finished total, so the Worker still
+ * takes one absolute number and a retry cannot double-apply.
  */
 function wireClockFix(btn) {
   if (!btn) return;
-  btn.addEventListener('click', async () => {
+  btn.addEventListener('click', () => {
+    if (document.getElementById('pa-clock-fix')) return;
     const now = liveClockSeconds();
-    const h = Math.floor(now / 3600);
-    const m = Math.floor((now % 3600) / 60);
-    const answer = prompt(
-      `This case reads ${h}h ${m}m.\n\n`
-      + 'What should it be? Type hours and minutes, like "2h 15m" or "45m" or "0".\n\n'
-      + 'The client can see this total, so the change is recorded on the case.',
-      `${h}h ${m}m`,
-    );
-    if (answer === null) return;
-    const want = parseHoursMinutes(answer);
-    if (want === null) {
-      alert('I could not read that. Try something like "2h 15m", "45m", or "0".');
-      return;
+    const opt = (n, sel) => `<option value="${n}"${n === sel ? ' selected' : ''}>${n}</option>`;
+    const hours = Array.from({ length: 25 }, (_, n) => opt(n, 0)).join('');
+    const mins = Array.from({ length: 60 }, (_, n) => opt(n, 0)).join('');
+
+    const overlay = document.createElement('div');
+    overlay.id = 'pa-clock-fix';
+    overlay.className = 'settings-overlay';
+    overlay.innerHTML = `
+      <div class="settings-card" role="dialog" aria-modal="true" aria-label="Fix the clock">
+        <div class="row"><h3 style="margin:0;">⏱ Fix the clock</h3>
+          <button class="btn quiet" data-x>Cancel</button></div>
+        <p class="dim small" style="margin:.2rem 0 .8rem;">This case reads
+          <strong style="color:var(--ink)" data-cur>${fmtHm(now)}</strong>.
+          Your client can see this number, so the change is written onto the case.</p>
+        <div class="row" style="gap:.5rem; align-items:flex-end;">
+          <label class="dim small" style="flex:1;">Hours
+            <select data-h>${hours}</select></label>
+          <label class="dim small" style="flex:1;">Minutes
+            <select data-m>${mins}</select></label>
+        </div>
+        <p class="dim small" style="margin:.7rem 0 .2rem;">New total:
+          <strong style="color:var(--ink)" data-preview>${fmtHm(now)}</strong></p>
+        <p class="error" data-err hidden></p>
+        <div class="actions" style="margin-top:.5rem;">
+          <button class="btn" data-sub>− Subtract</button>
+          <button class="btn" data-add>+ Add</button>
+        </div>
+      </div>`;
+
+    const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', onKey);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('[data-x]').addEventListener('click', close);
+
+    const picked = () => (Number(overlay.querySelector('[data-h]').value) * 3600)
+      + (Number(overlay.querySelector('[data-m]').value) * 60);
+    const preview = overlay.querySelector('[data-preview]');
+    const err = overlay.querySelector('[data-err]');
+    // Which button he is heading for decides the preview, so hovering or
+    // focusing one shows what it would do before he commits.
+    let sign = -1;
+    const repaint = () => {
+      const next = Math.max(0, liveClockSeconds() + (sign * picked()));
+      preview.textContent = fmtHm(next);
+      if (err) err.hidden = true;
+    };
+    for (const el of overlay.querySelectorAll('select')) el.addEventListener('change', repaint);
+    for (const [sel, s2] of [['[data-sub]', -1], ['[data-add]', 1]]) {
+      const b = overlay.querySelector(sel);
+      b.addEventListener('pointerenter', () => { sign = s2; repaint(); });
+      b.addEventListener('focus', () => { sign = s2; repaint(); });
     }
-    if (clock.startedAt && !confirm(
-      'The clock is still RUNNING. Correcting the total does not stop it, and '
-      + 'the time since it started will still be added when you do.\n\nCarry on?')) return;
-    btn.disabled = true;
-    try {
-      // postWork banks the answer into `clock` and repaints every switch on
-      // the page, so there is nothing to paint by hand here.
-      await postWork({ setSeconds: want });
-    } catch (err) {
-      alert(err.message || 'That did not save. Try again.');
-    } finally {
-      btn.disabled = false;
-    }
+
+    const apply = async (direction, button) => {
+      const amount = picked();
+      if (!amount) {
+        if (err) { err.textContent = 'Pick an amount first.'; err.hidden = false; }
+        return;
+      }
+      const live = liveClockSeconds();
+      const next = live + (direction * amount);
+      if (next < 0) {
+        if (err) {
+          err.textContent = `That is more than the ${fmtHm(live)} on the clock. `
+            + 'Subtract that much or less, or set it to zero.';
+          err.hidden = false;
+        }
+        return;
+      }
+      button.disabled = true;
+      try {
+        // postWork banks the answer and repaints every switch on the page.
+        await postWork({ setSeconds: next });
+        close();
+      } catch (e2) {
+        if (err) { err.textContent = e2.message || 'That did not save. Try again.'; err.hidden = false; }
+        button.disabled = false;
+      }
+    };
+    overlay.querySelector('[data-sub]').addEventListener('click', (e) => apply(-1, e.currentTarget));
+    overlay.querySelector('[data-add]').addEventListener('click', (e) => apply(1, e.currentTarget));
+
+    document.body.appendChild(overlay);
+    overlay.querySelector('[data-h]').focus();
   });
 }
 
-/**
- * "2h 15m", "45m", "1.5h", "90" (minutes), "0" -> seconds. null if unreadable.
- *
- * Deliberately forgiving about how it is typed and deliberately strict about
- * nonsense: this sets a billable number, so a string it cannot understand has
- * to be refused rather than guessed at as zero.
- */
-function parseHoursMinutes(raw) {
-  const s = String(raw || '').trim().toLowerCase();
-  if (!s) return null;
-  if (/^0+$/.test(s)) return 0;
-  const hm = s.match(/^(?:(\d+(?:\.\d+)?)\s*h)?\s*(?:(\d+(?:\.\d+)?)\s*m)?$/);
-  if (hm && (hm[1] || hm[2])) {
-    return Math.round((Number(hm[1] || 0) * 3600) + (Number(hm[2] || 0) * 60));
-  }
-  // A bare number is minutes, which is what "90" means to somebody correcting
-  // a clock.
-  if (/^\d+(?:\.\d+)?$/.test(s)) return Math.round(Number(s) * 60);
-  return null;
+/** Seconds as "10h 40m", the same shape the clock card shows. */
+function fmtHm(sec) {
+  const t = Math.max(0, Math.floor(sec));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  return `${h ? `${h}h ` : ''}${m}m`;
 }
 
 // ---- the old automatic chat meter (retired; kept for reference) ----
