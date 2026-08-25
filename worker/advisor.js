@@ -2494,7 +2494,7 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
         if (tries > 2) {
           await setState(env, kind, id, {
             callNotesStatus: 'error', callNotesReq: null,
-            callNotesError: 'The notes kept getting interrupted. Try the draft again.',
+            callNotesError: 'The notes kept getting interrupted. Tap "Draft notes for call" to try again.',
           }).catch(() => {});
           await deleteDoc(env, `advisorQueue/${row.id}`);
           continue;
@@ -3954,18 +3954,25 @@ export async function runCallNotes(env, kind, id, instruction, revise = false, b
       getDoc(env, `${parent}/${id}`).catch(() => null),
       getDoc(env, `${parent}/${id}/private/notes`).catch(() => null),
       listDocs(env, `${parent}/${id}/agenda`, { pageSize: 100 }).catch(() => []),
-      loadQa(env, kind, id, { full: true }),
+      loadQa(env, kind, id, { full: true }).catch(() => []),
       loadStyle(env),
     ]);
     const p = state?.data || {};
     const c = caseDoc?.data || {};
     const baseNotes = revise ? (base || p.callNotes || '') : '';
-    // The rich-text notes editor stores HTML; the model wants prose.
+    // The rich-text notes editor stores HTML; the model wants prose. The
+    // note route caps the doc at 200k characters, so bound what rides the
+    // (uncached) user turn - the TAIL, which is where the newest notes are.
     const personalNotes = String(notesDoc?.data.html || '')
-      .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+      .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
+      .slice(-20000);
     const agenda = (agendaRows || [])
       .map((r) => `${r.data.done ? '[covered] ' : ''}${r.data.text}`)
-      .filter(Boolean).join('\n');
+      .filter(Boolean).join('\n').slice(0, 8000);
+    // "Check-in booked" must mean a FUTURE one; any tier case that has ever
+    // had a check-in would otherwise hide its real next appointment.
+    const nextCheckIn = (Array.isArray(c.checkIns) ? c.checkIns : [])
+      .some((x) => new Date(x.start).getTime() > Date.now());
 
     const out = await ask(env, {
       effort: 'high',
@@ -3985,7 +3992,7 @@ Structure, in this exact order:
 
 2. "THE PITCH" - if an upsell genuinely fits this case (Full Access coordination, a follow-up, telehealth accompaniment), write the pitch out in Eric's voice, word for word, so he can say it as written. Two or three sentences, concrete to THIS case, no pressure tactics. His clients are often cognitively declining, so the pitch must carry its own weight: what it is, what it costs, what it changes for them. If no upsell fits, write "No pitch this call" and one line of why.
 
-3. "RESOURCES NEARBY" - university hospitals and academic medical centers within practical reach of where this client is, and the kind of provider there worth a referral, with specialty. Use the client's location from the case; be honest about uncertainty. Anything from your own knowledge rather than the case record gets "(verify)" after it. Never invent a named physician; name departments and programs, and only name a person if the case record itself does.
+3. "RESOURCES NEARBY" - university hospitals and academic medical centers within practical reach of where this client is, and the kind of provider there worth a referral, with specialty. The client's location comes ONLY from what the record actually states: the case, Eric's notes, or the conversation. If none of them says where the client is, open the section with "Location not in the record" and name no place; a plausible city guessed from a timezone is worse than a blank line. Anything from your own knowledge rather than the case record gets "(verify)" after it. Never invent a named physician; name departments and programs, and only name a person if the case record itself does.
 
 4. "WORTH REMEMBERING" - at most three lines of context he must not forget mid-call (allergies, a deadline, a sore subject, a promise already made).
 
@@ -4005,7 +4012,7 @@ Rules:
         content: `<case>
 Client: ${c.clientName || 'unknown'} (${c.clientTz || 'timezone unknown'})
 Status: ${c.status || 'unknown'}; tier: ${c.fullAccess ? 'Full Access' : 'standard'}
-Next call: ${c.checkIns?.length ? 'check-in booked' : c.appointment?.start ? String(c.appointment.start) : 'unscheduled'}
+Next call: ${nextCheckIn ? 'check-in booked' : c.appointment?.start ? String(c.appointment.start) : 'unscheduled'}
 </case>
 
 <assessment>

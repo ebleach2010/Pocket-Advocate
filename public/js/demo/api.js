@@ -9,7 +9,7 @@
 // UI, not AI: nothing in the demo calls a model.
 
 import { DEMO_CASE_ID } from './seed.js';
-import { STATUS_REACTIONS } from '../msg-actions.js';
+import { EMOJI_REACTIONS, STATUS_REACTIONS } from '../msg-actions.js';
 
 /** A little delay, so states that only exist while something is in flight
  *  (the button disabling, the progress bar, "Reading…") are visible. */
@@ -96,15 +96,22 @@ export function demoApi(role, store) {
       const key = `cases/${body.caseId || DEMO_CASE_ID}`;
       const c = store.docs.get(key) || {};
       const w = c.work || { seconds: 0, startedAt: null };
+      // MANUAL ONLY, mirroring the Worker (Eric, 2026-08-25): an `auto`
+      // start answers with the current truth and changes nothing.
+      if (body.on === true && body.auto === true) {
+        return ok({
+          seconds: w.seconds || 0, running: !!w.startedAt,
+          auto: w.auto === true, startedAt: w.startedAt || null,
+        });
+      }
       if (body.on === true) {
         const startedAt = w.startedAt ? new Date(w.startedAt) : new Date();
-        const auto = w.startedAt ? (body.auto === true && w.auto === true) : body.auto === true;
-        store.docs.set(key, { ...c, work: { ...w, startedAt, auto, nudged: 0 } });
+        store.docs.set(key, { ...c, work: { ...w, startedAt, auto: false, nudged: 0 } });
         store.persist?.();
         // The ORIGINAL start comes back, matching the Worker: a caller that
         // assumed "running now means started now" would paint a long stretch
         // as nothing.
-        return ok({ seconds: w.seconds || 0, running: true, auto, startedAt });
+        return ok({ seconds: w.seconds || 0, running: true, auto: false, startedAt });
       }
       // The real one can bank to the last beacon when he answers "no, I
       // finished a while ago". The demo never pushes, so that answer never
@@ -277,7 +284,12 @@ export function demoApi(role, store) {
       }
       store.docs.set(key, {
         ...c,
-        pendingExtra: { label, amountCents, start, durationMin, slotId, sessionId: 'demo' },
+        // `url` included: the client card renders it as the Pay link, and
+        // without one the button read href="undefined".
+        pendingExtra: {
+          label, amountCents, start, durationMin, slotId, sessionId: 'demo',
+          url: `/case.html?id=${key.slice(6)}&demo=1`,
+        },
       });
       store.persist?.();
       return ok({ ok: true, checkoutUrl: `/case.html?id=${key.slice(6)}&demo=client` });
@@ -365,6 +377,10 @@ export function demoApi(role, store) {
       if (path === '/api/checkout') {
         const profile = store.docs.get('users/demo-client') || {};
         const slot = body.slotId ? store.docs.get(`availability/${body.slotId}`) : null;
+        // The Worker refuses a slot taken out from under the buyer; a stale
+        // tab re-paying here must not silently re-point a booked one.
+        if (body.slotId && slot && slot.state !== 'open')
+          return fail(409, 'That time was just taken. Pick another.');
         const isRequest = !body.slotId && !!body.requestedStart;
         const start = isRequest ? new Date(body.requestedStart)
           : slot ? new Date(slot.start) : new Date();
@@ -401,8 +417,7 @@ export function demoApi(role, store) {
           work: { seconds: 0, startedAt: null },
         });
         if (slot) store.docs.set(`availability/${body.slotId}`, { ...slot, state: 'booked', caseId: id });
-        store.persist?.();
-        store.fire?.(`cases/${id}`);
+                store.fire?.(`cases/${id}`);
         return ok({ ok: true, url: '/return.html?session_id=cs_demo_booked' });
       }
 
@@ -419,8 +434,7 @@ export function demoApi(role, store) {
               sessionId: `cs_demo_fu_${Date.now()}`, at: new Date(),
             }],
           });
-          store.persist?.();
-          store.fire?.(key);
+                    store.fire?.(key);
         }
         return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&followup=1&demo=1` });
       }
@@ -441,8 +455,7 @@ export function demoApi(role, store) {
               sessionId: `cs_demo_up_${Date.now()}`, at: new Date(),
             }],
           });
-          store.persist?.();
-          store.fire?.(key);
+                    store.fire?.(key);
         }
         return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&upgraded=1&demo=1` });
       }
@@ -518,7 +531,18 @@ export function demoApi(role, store) {
     // Retired with the jar itself. The ledger branch below still reports
     // tips, because a real ledger still has to reconcile ones already given.
     if (path === '/api/tip') return fail(404, 'Not found');
-    if (path === '/api/chat-unlock') return ok({ url: `/case.html?demo=1&chatopen=1` });
+    if (path === '/api/chat-unlock') {
+      // Straight past Stripe AND written down: ?chatopen=1 only fakes the
+      // unlock for one paint, so without the flag on the case doc a reload
+      // re-locked the chat the demo just sold.
+      const key = `cases/${body.caseId || DEMO_CASE_ID}`;
+      const c = store.docs.get(key);
+      if (c) {
+        store.docs.set(key, { ...c, chatUnlocked: true, chatUnlockedAt: new Date() });
+        store.persist?.();
+      }
+      return ok({ url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&demo=1&chatopen=1` });
+    }
 
     // ---- the advisor, from a fixture -------------------------------------
     if (path === '/api/advisor/state') {
@@ -557,29 +581,35 @@ export function demoApi(role, store) {
       });
     }
     if (path === '/api/advisor') {
-      const state = store.docs.get(`cases/${DEMO_CASE_ID}/advisor/state`) || {};
+      // Whichever case the caller named. The state ROUTE reads per-case and
+      // the appeal/call-notes branches write per-case; these five writing to
+      // the fixture regardless meant that on the freshly booked case,
+      // Analyze kicked the wrong doc (the button read as broken) and Eric's
+      // private notes saved onto the wrong client.
+      const cid = body.id || DEMO_CASE_ID;
+      const state = store.docs.get(`cases/${cid}/advisor/state`) || {};
       if (body.action === 'analyze') {
         // A visible run, so the progress bar and the running state are real
         // things he can watch, then the same sections settle back.
-        store.docs.set(`cases/${DEMO_CASE_ID}/advisor/state`, {
+        store.docs.set(`cases/${cid}/advisor/state`, {
           ...state, status: 'running', startedAt: new Date(), progressAt: new Date(),
         });
         setTimeout(() => {
-          store.docs.set(`cases/${DEMO_CASE_ID}/advisor/state`, {
+          store.docs.set(`cases/${cid}/advisor/state`, {
             ...state, status: 'idle', updatedAt: new Date(),
           });
         }, 4000);
         return ok({ ok: true });
       }
       if (body.action === 'dx') {
-        store.docs.set(`cases/${DEMO_CASE_ID}/advisor/state`, {
+        store.docs.set(`cases/${cid}/advisor/state`, {
           ...state, dxOverride: body.text || null, dxOverrideAt: new Date(),
         });
         return ok({ ok: true });
       }
       if (body.action === 'unanswered-answered') {
         const flat = (v) => String(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-        store.docs.set(`cases/${DEMO_CASE_ID}/advisor/state`, {
+        store.docs.set(`cases/${cid}/advisor/state`, {
           ...state,
           unanswered: (state.unanswered || []).map((r) => ({
             ...r, answered: flat(r.ask) === flat(body.ask) ? true : r.answered,
@@ -588,7 +618,7 @@ export function demoApi(role, store) {
         return ok({ ok: true });
       }
       if (body.action === 'correction-dismiss') {
-        store.docs.set(`cases/${DEMO_CASE_ID}/advisor/state`, {
+        store.docs.set(`cases/${cid}/advisor/state`, {
           ...state,
           corrections: (state.corrections || []).map((c) => ({
             ...c, dismissed: c.msgId === body.msgId ? true : c.dismissed,
@@ -597,7 +627,7 @@ export function demoApi(role, store) {
         return ok({ ok: true });
       }
       if (body.action === 'note') {
-        store.docs.set(`cases/${DEMO_CASE_ID}/private/notes/doc`, {
+        store.docs.set(`cases/${cid}/private/notes/doc`, {
           html: body.html || '', updatedAt: new Date(),
         });
         return ok({ ok: true });
@@ -619,6 +649,7 @@ export function demoApi(role, store) {
             dueAt: new Date(Date.now() + 21 * 86_400_000).toISOString().slice(0, 10),
           },
         });
+        store.fire?.(path);
         return ok({ ok: true });
       }
       if (body.action === 'clear-appeal' || body.action === 'appeal-filed') {
@@ -627,6 +658,7 @@ export function demoApi(role, store) {
         store.docs.set(path, body.action === 'clear-appeal'
           ? { ...cur, appeal: null, appealStatus: null, appealMeta: null }
           : { ...cur, appealMeta: { ...(cur.appealMeta || {}), filedAt: new Date() } });
+        store.fire?.(path);
         return ok({ ok: true });
       }
       // Notes for the call. Same reason as the appeal: without a branch the
@@ -662,6 +694,9 @@ export function demoApi(role, store) {
           ...cur, callNotes: notes, callNotesStatus: 'ready',
           callNotesAt: new Date(), callNotesError: null,
         });
+        // fire() persists too - without it the drafted notes lived only in
+        // this tab's memory and vanished on the next navigation.
+        store.fire?.(path);
         return ok({ ok: true });
       }
       if (body.action === 'clear-call-notes') {
@@ -671,6 +706,7 @@ export function demoApi(role, store) {
           ...cur, callNotes: null, callNotesStatus: null,
           callNotesAt: null, callNotesError: null,
         });
+        store.fire?.(path);
         return ok({ ok: true });
       }
       await beat(700);
@@ -688,9 +724,12 @@ export function demoApi(role, store) {
     }
 
     // ---- saved messages ---------------------------------------------------
+    // Per-case, like the routes it serves: hardcoding the fixture id meant a
+    // save on the booked case landed under the fixture and listed there.
     if (path === '/api/saved') {
       const uid = role === 'admin' ? 'demo-admin' : 'demo-client';
-      const base = `cases/${DEMO_CASE_ID}/private/saved/${uid}`;
+      const sc = body.id || q.get('id') || DEMO_CASE_ID;
+      const base = `cases/${sc}/private/saved/${uid}`;
       if (!init.method || init.method === 'GET') {
         return ok({
           saved: [...store.docs.entries()]
@@ -700,7 +739,7 @@ export function demoApi(role, store) {
       }
       const at = `${base}/${body.msgId}`;
       if (body.delete) { store.docs.delete(at); return ok({ ok: true }); }
-      const msg = store.docs.get(`cases/${DEMO_CASE_ID}/chat/${body.msgId}`) || {};
+      const msg = store.docs.get(`cases/${sc}/chat/${body.msgId}`) || {};
       store.docs.set(at, {
         text: msg.text || '', role: msg.role || 'client',
         sentAt: msg.ts || null, note: body.note || '',
@@ -711,7 +750,7 @@ export function demoApi(role, store) {
 
     // ---- the next-call agenda + the chat-hours meter ----------------------
     if (path === '/api/agenda') {
-      const base = `cases/${DEMO_CASE_ID}/agenda`;
+      const base = `cases/${body.id || q.get('id') || DEMO_CASE_ID}/agenda`;
       const list = () => [...store.docs.entries()]
         .filter(([p]) => p.startsWith(`${base}/`))
         .map(([p, d]) => ({ id: p.split('/').pop(), ...d }))
@@ -722,7 +761,10 @@ export function demoApi(role, store) {
         const item = {
           text: String(body.text || '').slice(0, 500),
           by: role === 'admin' ? 'demo-admin' : 'demo-client',
-          role, at: new Date(), done: false, doneAt: null,
+          // Normalised: the seamless door's role string is '1', and storing
+          // it raw hid the Remove button (case.js gates on role === 'client').
+          role: role === 'admin' ? 'admin' : 'client',
+          at: new Date(), done: false, doneAt: null,
         };
         store.docs.set(`${base}/${id}`, item);
         return ok({ ok: true, item: { id, ...item } });
@@ -750,18 +792,31 @@ export function demoApi(role, store) {
 
     // ---- the ledger + file deletion ---------------------------------------
     if (path === '/api/admin/ledger') {
-      const c = store.docs.get(`cases/${DEMO_CASE_ID}`) || {};
-      let paid = Number(c.stripe?.amountTotal) || Number(c.caseRateCents) || 0;
-      let tips = 0;
-      for (const pmt of (Array.isArray(c.extraPayments) ? c.extraPayments : [])) {
-        if (pmt?.kind === 'tip') tips += Number(pmt.amountCents) || 0;
-        else paid += Number(pmt.amountCents) || 0;
+      // Every case, not the one fixture: the shelf's revenue tile sums them
+      // all, and two money numbers on adjacent screens must not disagree.
+      const byClient = new Map();
+      for (const [key, c] of store.docs) {
+        if (!key.startsWith('cases/') || key.slice(6).includes('/')) continue;
+        let paid = Number(c.stripe?.amountTotal) || Number(c.caseRateCents) || 0;
+        let tips = 0;
+        for (const pmt of (Array.isArray(c.extraPayments) ? c.extraPayments : [])) {
+          if (pmt?.kind === 'tip') tips += Number(pmt.amountCents) || 0;
+          else paid += Number(pmt.amountCents) || 0;
+        }
+        const name = c.clientName || 'Client';
+        const row = byClient.get(name) || { name, paidCents: 0, tipCents: 0, cases: 0 };
+        row.paidCents += paid; row.tipCents += tips; row.cases += 1;
+        byClient.set(name, row);
       }
+      const clients = [...byClient.values()];
       // A little tip on the demo books, so the column shows its job.
-      if (!tips) tips = 2500;
+      if (clients.length && !clients.some((r) => r.tipCents)) clients[0].tipCents = 2500;
       return ok({
-        clients: [{ name: c.clientName || 'Jordan Avery', paidCents: paid, tipCents: tips, cases: 1 }],
-        totals: { paidCents: paid, tipCents: tips },
+        clients,
+        totals: {
+          paidCents: clients.reduce((s, r) => s + r.paidCents, 0),
+          tipCents: clients.reduce((s, r) => s + r.tipCents, 0),
+        },
       });
     }
     if (path === '/api/file/delete') {
@@ -787,15 +842,30 @@ export function demoApi(role, store) {
       const msg = store.docs.get(msgPath);
       if (!msg) return fail(404, 'No such message');
       if (path === '/api/chat/react') {
-        // The Worker's own-message rule, mirrored: reacting to yourself is
-        // refused, EXCEPT an admin hanging (or clearing) a status broadcast
-        // on his own newest bubble - the ▾ above the chat depends on it.
-        const isStatus = STATUS_REACTIONS.some((r) => r.id === body.reaction);
-        const wasStatus = STATUS_REACTIONS.some((r) => r.id === msg.reaction);
-        const mine = (msg.role || 'client') === (role === 'admin' ? 'admin' : 'client');
-        if (mine && !((isStatus || (!body.reaction && wasStatus)) && role === 'admin'))
+        // The Worker's rules, mirrored - INCLUDING the record shape the
+        // pages render ({ id, kind, label/emoji, by, at }). A bare id string
+        // here meant no chip ever drew in the demo, so the feature the demo
+        // exists to show was invisible in it.
+        const myUid = role === 'admin' ? 'demo-admin' : 'demo-client';
+        const reaction = body.reaction ?? null;
+        const emo = EMOJI_REACTIONS.find((r) => r.id === reaction);
+        const stat = STATUS_REACTIONS.find((r) => r.id === reaction);
+        if (reaction !== null && !emo && !stat) return fail(400, 'Unknown reaction');
+        if (stat && role !== 'admin') return fail(403, 'That reaction is not available.');
+        // Live demo messages carry `from`; seeded fixtures always do too,
+        // but the role fallback keeps any stray legacy doc behaving.
+        const mine = msg.from ? msg.from === myUid
+          : (msg.role || 'client') === (role === 'admin' ? 'admin' : 'client');
+        if (mine && !(role === 'admin' && (stat || reaction === null)))
           return fail(403, "You can only react to the other person's messages.");
-        store.docs.set(msgPath, { ...msg, reaction: body.reaction || null });
+        if (msg.reaction?.kind === 'status' && role !== 'admin')
+          return fail(403, 'That message is showing a status note.');
+        const rec = emo
+          ? { id: reaction, emoji: emo.emoji, kind: 'emoji', by: myUid, at: new Date() }
+          : stat
+            ? { id: reaction, label: stat.label, kind: 'status', by: myUid, at: new Date() }
+            : null;
+        store.docs.set(msgPath, { ...msg, reaction: rec });
       }
       if (path === '/api/chat/pass') store.docs.set(msgPath, { ...msg, pass: body.pass ? { by: 'demo-client', at: new Date() } : null });
       if (path === '/api/chat/edit') store.docs.set(msgPath, { ...msg, text: body.text, editedAt: new Date() });

@@ -55,13 +55,17 @@ const HARD = [
 // consent clause in service-terms.js names AI to the client on purpose —
 // "There must be a clause that they accept to AI note taking during calls."
 // Scoped as tightly as it will go: that one file, the \bAI\b pattern only,
-// and only on a line about the note taking itself. An "AI" anywhere else in
-// that file, or any other forbidden term in it, still fails the audit —
+// and counted per OCCURRENCE — a line carrying one allowed mention and one
+// stray would otherwise be exempted wholesale, since the clause's whole
+// paragraph is a single line of the served template literal. Returns how
+// many mentions on the line are allowed, or 0 if ANY of them is not —
 // nothing else may lean on this.
-const ALLOWED = (pathname, re, line) =>
-  pathname === '/js/service-terms.js'
-  && String(re) === String(/\bAI\b/)
-  && /AI (note[- ]taking|note taking|tool takes notes)/.test(line);
+const ALLOWED = (pathname, re, line) => {
+  if (pathname !== '/js/service-terms.js' || String(re) !== String(/\bAI\b/)) return 0;
+  const total = (line.match(/\bAI\b/g) || []).length;
+  const okd = (line.match(/AI (note[- ]taking|tool takes notes)/g) || []).length;
+  return okd >= total ? total : 0;
+};
 
 // Internal identifiers. None of these belong in a file a client downloads, and
 // unlike the words above they never appear in copy, so they can be matched
@@ -109,8 +113,11 @@ const ADMIN_ASSETS = [
   '/js/drawer.js', '/js/seen.js', '/js/panel-bridge.js', '/css/admin.css',
   // The demo's fixtures are advisor output, so they are gated the same way. A
   // browser that never asked for the demo, which is what this audit is,
-  // should not be able to read them either.
+  // should not be able to read them either. suite.js is the demo's front
+  // door and names the admin route by design — the host gate IS its
+  // protection, so the audit asserts the gate holds.
   '/js/demo/store.js', '/js/demo/seed.js', '/js/demo/api.js', '/js/demo/banner.js',
+  '/js/demo/suite.js',
 ];
 
 let failures = 0;
@@ -146,7 +153,8 @@ function scan(path, rec) {
   for (const re of terms) {
     for (let i = 0; i < lines.length; i++) {
       if (!re.test(lines[i])) continue;
-      if (ALLOWED(pathname, re, lines[i])) { allowed++; continue; }
+      const okd = ALLOWED(pathname, re, lines[i]);
+      if (okd) { allowed += okd; continue; }
       hits.push({ re: String(re), n: i + 1, text: lines[i].trim().slice(0, 120) });
     }
   }
@@ -160,14 +168,15 @@ function scan(path, rec) {
   return hits.length;
 }
 
-/** Static imports and tag references inside one file. */
+/** Static imports and tag references inside one file. Every matcher runs on
+ *  every body: HTML pages carry inline <script type="module"> blocks whose
+ *  import() calls the src/href matcher alone never followed, which is how a
+ *  served file can dodge the crawl entirely. */
 function referencesIn(text, isHtml) {
   const out = new Set();
   if (isHtml) for (const m of text.matchAll(/(?:src|href)="([^"]+)"/g)) out.add(m[1]);
-  else {
-    for (const m of text.matchAll(/from\s+['"]([^'"]+)['"]/g)) out.add(m[1]);
-    for (const m of text.matchAll(/import\(\s*['"]([^'"]+)['"]/g)) out.add(m[1]);
-  }
+  for (const m of text.matchAll(/from\s+['"]([^'"]+)['"]/g)) out.add(m[1]);
+  for (const m of text.matchAll(/import\(\s*['"]([^'"]+)['"]/g)) out.add(m[1]);
   return [...out];
 }
 

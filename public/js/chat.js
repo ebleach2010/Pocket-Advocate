@@ -139,8 +139,12 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       const tb = b.data().ts?.toDate?.()?.getTime?.() ?? Infinity;
       return ta - tb;
     });
-    // The ▾ status button hangs its pick on whatever is newest right now.
-    latestMsgId = ordered.length ? ordered[ordered.length - 1].id : null;
+    // The ▾ status button hangs its pick on whatever is newest right now -
+    // preferring the newest COMMITTED message: a just-sent local echo has no
+    // server timestamp yet, and the Worker answers "No such message" for a
+    // write it has not seen.
+    const committed = ordered.filter((m) => m.data().ts);
+    latestMsgId = (committed.length ? committed[committed.length - 1] : ordered[ordered.length - 1])?.id ?? null;
     for (const m of ordered) {
       const data = m.data();
       const mine = data.from === user.uid;
@@ -237,7 +241,9 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       if (!mine || editable || data.text || canStage) {
         messageLongPress(div, {
           msgId: m.id,
-          canReact: !mine,
+          // Same rule as hasReaction below: no emoji bar over a bubble that
+          // is carrying the advocate's status note, except for the advocate.
+          canReact: !mine && (myRole === 'admin' || data.reaction?.kind !== 'status'),
           // His own messages take a status too (Eric, 2026-08-25): the
           // client is still the one notified, with the exact words.
           canUseStatus: myRole === 'admin',
@@ -250,7 +256,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
           extraRows: bridge ? bridge.extraMenuRows({ canStage }) : [],
           attachment: canStage ? att : null,
           passedByMe: data.pass?.by === user.uid,
-          hasReaction: !!data.reaction?.id,
+          // A status note is the advocate's broadcast, not a reaction the
+          // client may remove - the Worker refuses, so the menu must not
+          // offer the row that would only ever answer with an error.
+          hasReaction: !!data.reaction?.id
+            && (myRole === 'admin' || data.reaction?.kind !== 'status'),
           hasText: !!data.text,
           current: data.reaction?.id || null,
           text: data.text || '',

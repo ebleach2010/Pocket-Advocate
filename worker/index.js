@@ -2849,14 +2849,22 @@ async function handleChatReact(request, env) {
   // Nobody reacts to their own message - with ONE carve-out (Eric,
   // 2026-08-25): a STATUS on his own message is not a reaction to himself,
   // it is a broadcast of what he is doing that happens to hang on the
-  // newest bubble, and the ▾ above the chat depends on it. Emoji stay
-  // other-person-only in both directions. Clearing a status he hung there
-  // rides the same carve-out, or the broadcast could be set but never
-  // taken down: a clear carries reaction null, which is not "a status".
-  const clearingOwnStatus = reaction === null
-    && Object.hasOwn(CHAT_REACTIONS, msg.data.reaction ?? '');
-  if (msg.data.from === user.uid && !((isStatus || clearingOwnStatus) && ctx.isAdmin))
+  // newest bubble, and the ▾ above the chat depends on it. The admin may
+  // also CLEAR anything hanging on his own bubble - his status when he is
+  // done, or an emoji the client left there - or the broadcast could be set
+  // but never taken down. Emoji stay other-person-only to SET, both ways.
+  //
+  // The stored reaction is a RECORD ({ id, kind, by, at }), never a bare id:
+  // an earlier version of this check ran Object.hasOwn over the record
+  // itself, which coerces to "[object Object]" and matches nothing, so the
+  // carve-out it guarded was dead code.
+  if (msg.data.from === user.uid && !(ctx.isAdmin && (isStatus || reaction === null)))
     return json({ error: 'You can only react to the other person\'s messages.' }, 403);
+  // And a status is his broadcast wherever it hangs: the client reads it,
+  // but clearing it or painting an emoji over it would silently erase what
+  // Eric is telling them he is doing.
+  if (msg.data.reaction?.kind === 'status' && !ctx.isAdmin)
+    return json({ error: 'That message is showing a status note.' }, 403);
 
   if (!reaction) {
     // Eric, 2026-08-21: "Remove reaction isn't working for chat."
@@ -3395,33 +3403,27 @@ async function handleFileDelete(request, env) {
 }
 
 /**
- * The work clock's two kinds of running, and why there are two.
+ * The work clock is MANUAL, both directions (Eric, 2026-08-25, superseding
+ * his earlier chart-entry auto-start order: "All clocks in/clock out buttons
+ * are manual. Nothing automatic."). A clock starts when he taps a toggle -
+ * on the shelf, in the chart header, or in the chat - and stops when he taps
+ * it again. Any number may run at once: he works several cases in parallel.
  *
- * Eric, 2026-08-25: "If I enter their chart it automatically clocks on. If I
- * exit their chart it automatically clocks off unless I turn the toggle back
- * on. If I exit the app, whatever state it was in remains with a prompt after
- * 5, 10, and 30 min pushed to me asking if I'm still working."
+ * What remains of the old automatic kind:
  *
- * That is two different claims wearing one button, so the record keeps them
- * apart:
+ *   - `auto: true` on a start is now a NO-OP answered with the current
+ *     state, so a stale open tab from before this rule cannot start a clock
+ *     by itself.
+ *   - The presence beacon still reaps any LEGACY auto stretch it finds
+ *     running, which is how a clock started under the old rule ends.
+ *   - `auto` stays on the record schema so old stretches stay readable.
  *
- *   AUTO   - "I am looking at this chart right now." Started by opening the
- *            chart. At most one at a time, and it dies the moment he is
- *            demonstrably somewhere else in the app.
- *   PINNED - "I am working on this, wherever I happen to be." Started by
- *            tapping a toggle, on the shelf or in the chart. Any number may
- *            run at once, which is the whole point: he works several cases in
- *            parallel and the shelf is where he says so.
- *
- * Leaving the APP is not evidence of either. A locked phone looks exactly
- * like a closed tab, and both look exactly like reading a denial letter on
- * paper with the app in the background - which is real work on that case. So
- * nothing stops on its own when the app goes away; he is asked instead, per
- * client, at five, ten and thirty minutes.
- *
- * The ladder is measured from when the app was last open, not from when the
- * clock started, because a two hour stretch with him in front of it needs no
- * prompt at all.
+ * Leaving the app stops nothing - a locked phone looks exactly like reading
+ * a denial letter on paper with the app in the background, which is real
+ * work. He is ASKED instead, per client, at five, ten and thirty minutes:
+ * a question, never an automation. The ladder is measured from when the app
+ * was last open, not from when the clock started, because a two hour
+ * stretch with him in front of it needs no prompt at all.
  */
 const WORK_NUDGE_MINUTES = [5, 10, 30];
 /**
@@ -3505,6 +3507,17 @@ async function handleWork(request, env) {
   const seconds = Math.max(0, Number(w.seconds) || 0);
   const on = body?.on === true;
   const auto = body?.auto === true;
+
+  // MANUAL ONLY (Eric, 2026-08-25: "All clocks in/clock out buttons are
+  // manual. Nothing automatic."). An `auto` start - the retired chart-entry
+  // kind - is answered with the current truth and changes NOTHING, so a
+  // stale tab from before this rule cannot start a clock by itself. Only a
+  // deliberate tap starts one; stopping was always allowed.
+  if (on && auto)
+    return json({
+      seconds, running: !!startedAt, auto: w.auto === true,
+      startedAt: startedAt ? new Date(startedAt) : null,
+    });
 
   if (on) {
     if (!startedAt) {
@@ -3955,7 +3968,9 @@ async function handleAdvisorState(request, env, url) {
   // readFiles and pendingMedia are bookkeeping: up to 500 storage paths that
   // would ride on every poll for no reason. The report built from them is what
   // the panel actually draws.
-  const { readFiles, pendingMedia, ...panelState } = state?.data || {};
+  // callNotesReq carries the revise request's base text (up to 30k) so the
+  // queue rescue can re-run it; the page never reads it, so it stays here.
+  const { readFiles, pendingMedia, callNotesReq, ...panelState } = state?.data || {};
   return json({
     state: panelState,
     qa: qa.map((r) => r.data),

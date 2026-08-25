@@ -115,8 +115,15 @@ ck('the terms are a required acknowledgment, enforced by the Worker',
    /REQUIRED_ACKS = \['disclaimer', 'privacy', 'recording', 'service', 'phoneConsent'\]/.test(W));
 ck('and the page cannot continue without all four',
    /AGREEMENT_PARTS\.every\(\(w\) => state\.acks\[w\.id\]\)/.test(f('public/js/book.js')));
-ck('the reschedule-refund contradiction is flagged, not fudged',
-   /waivers\.js still\n\/\/ says/.test(ST));
+// The flag MOVED (2026-08-25 audit): service-terms.js is served to clients
+// byte for byte, and a comment discussing a refund right Eric wants removed
+// was internal deliberation published to the person it is adverse to. The
+// flag lives in CLAUDE.md now; the served file must neither carry the
+// deliberation NOR write a sentence contradicting the frozen waiver.
+ck('the reschedule-refund contradiction is flagged in CLAUDE.md, not fudged',
+   /reschedule-refund/.test(f('CLAUDE.md'))
+   && !/full refund on request/.test(ST)
+   && !/waivers\.js still/.test(ST));
 
 // ---- the review outlives the close --------------------------------------
 const CJ = f('public/js/case.js');

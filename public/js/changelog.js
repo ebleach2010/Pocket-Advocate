@@ -54,8 +54,11 @@ export const CHANGELOG = [
   {
     // The reshaped tier (check-ins, $3,500), telehealth appointment
     // advocacy, the Add-ons tab, phone consent at booking, and closure
-    // reasons shown to the client. None of it is live for clients until the
-    // release that turns the tier on, so the notes wait with it.
+    // reasons shown to the client. Plus the second build round on this
+    // branch: more "Eric is…" status lines in chat, and the note-taking
+    // clause in the agreement (new bookings only). None of it is live for
+    // clients until the release that turns the tier on, so the client
+    // bullets wait with it and are written at push time.
     version: '2.36',
     quiet: true,
     client: [],

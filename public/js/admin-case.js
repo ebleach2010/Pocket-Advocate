@@ -83,12 +83,10 @@ const CUSTOM_OPTION = `<option value="${CUSTOM}">A time not on the calendar…</
 
 hydrateNav();
 const user = await requireAdmin();
-// autoClockOn is called from inside load(), not here. Launched alongside it,
-// a Worker POST routinely beat the Firestore read, so `data` was still null
-// when the closed-case guard needed it - and the "Still working?" card was
-// prepended to #case moments before render() replaced that element's
-// innerHTML, so the prompt Eric taps from a push notification flashed and
-// vanished. It is the safety valve on over-billing; it has to survive.
+// askIfStillWorking is called from inside load(), not here: prepending its
+// card moments before render() replaced #case's innerHTML made the prompt
+// Eric taps from a push notification flash and vanish. It is the safety
+// valve on over-billing; it has to survive.
 if (user && caseId) { loadFloor(); load(); }
 
 let data = null;
@@ -149,12 +147,13 @@ async function load() {
     render(el);
   }
   refreshFiles();
-  // Now that the case is loaded and the shell exists: start the clock if this
-  // chart should start one, and put up the "Still working?" prompt if a push
-  // sent him here to answer it. Once per page load, never on a refresh.
+  // Now that the case is loaded and the shell exists: put up the "Still
+  // working?" prompt if a push sent him here to answer it. Once per page
+  // load, never on a refresh. Nothing starts a clock here - the clock is
+  // manual, and its switches are on the page.
   if (!autoClockTried) {
     autoClockTried = true;
-    autoClockOn();
+    askIfStillWorking();
   }
 }
 
@@ -166,10 +165,16 @@ function render(el) {
       <div class="row">
         <h1 style="margin:0;" data-client>${esc(c.clientName || c.clientEmail || c.clientUid)}</h1>
         <span class="status-pill" data-status>${(c.status || '?').replace('_', ' ').toUpperCase()}</span>
+        ${c.status === 'closed' ? '' : `
+        <button class="btn quiet tiny" data-work-head style="flex:none;"
+          aria-label="Clock in or out of this case">⏱</button>`}
       </div>
       <p class="dim small working-line" data-working hidden style="margin:.2rem 0 0;"></p>
     </div>
     <div data-folder></div>`;
+  // The clock-in switch above the tabs (Eric, 2026-08-25: "Three places for
+  // this, all linked"). Mounted here so it works without ever opening Chat.
+  startHeadClock(c);
 
   folder = mountFolder({
     // Tappable furniture that must not turn the page. These selectors used to
@@ -696,21 +701,39 @@ function paintAgendaPage(pane) {
  * The work clock. The client sees the total on their own page (Eric,
  * 2026-08-22: "the cost is a toggle per client... They can see this").
  *
- * It starts itself when he opens this chart, because that is the one moment
- * the app can be certain about (Eric, 2026-08-25: "If I enter their chart it
- * automatically clocks on"). Stopping is the interesting half, and it lives
- * in the Worker: leaving for anywhere else in the app stops an automatic
- * stretch, while leaving the APP stops nothing and asks him instead.
+ * MANUAL, both directions (Eric, 2026-08-25: "All clocks in/clock out
+ * buttons are manual. Nothing automatic." - superseding his earlier
+ * chart-entry auto-start order). Three switches, one clock: the shelf card,
+ * the button beside the status pill in this chart's header, and the row in
+ * the Chat pane. They all talk to /api/work through postWork and paint from
+ * ONE module-level state object, so no two of them can ever disagree.
  *
- * Two things follow from that here. The start is fired at page level rather
- * than from this row, because the row lives in the Chat pane and he
- * explicitly does not want the clock to require loading the chat. And the
- * live state is held in one module-level object, so the automatic start and
- * this toggle can never end up painting different totals.
+ * The painters live in a Set keyed by their root element: the header button
+ * exists from page load, the chat row only once that pane renders, and a
+ * poll that repainted only one of them showed two different clocks.
  */
 let workTick = null;
 const clock = { seconds: 0, startedAt: 0, loaded: false };
-let paintClock = () => {};
+const clockPaints = new Set();
+const paintClock = () => {
+  for (const f of [...clockPaints]) {
+    if (f.root && !f.root.isConnected) { clockPaints.delete(f); continue; }
+    f();
+  }
+};
+/** Banked plus the live stretch, clamped like every sibling renderer:
+ *  clock.startedAt is the SERVER's clock (a phone seconds behind it rendered
+ *  "-1h -1m · running"), and a stretch forgotten over a weekend banks at most
+ *  twelve hours, so all three switches and the bank agree on one number. */
+const liveClockSeconds = () => Math.max(0, clock.seconds
+  + (clock.startedAt
+    ? Math.min(Math.floor((Date.now() - clock.startedAt) / 1000), 12 * 3600)
+    : 0));
+/** One ticking repaint for however many switches exist. A minute is plenty. */
+function armClockTick() {
+  clearInterval(workTick);
+  workTick = setInterval(() => { if (clock.startedAt) paintClock(); }, 30_000);
+}
 
 /** One place that talks to /api/work, so every path updates the same state. */
 async function postWork(payload) {
@@ -732,41 +755,11 @@ async function postWork(payload) {
   return out;
 }
 
-/**
- * Entering the chart is the start. Quiet on failure on purpose: an offline
- * moment should not throw an alert over a page he came here to read, and the
- * toggle is right there if it did not take.
- */
-const noAutoKey = (id) => `pa-noauto-${id}`;
-/** He stopped it by hand in this session: entering the chart must not undo that. */
-function suppressAuto(on) {
-  try {
-    if (on) sessionStorage.setItem(noAutoKey(caseId), '1');
-    else sessionStorage.removeItem(noAutoKey(caseId));
-  } catch { /* private mode: auto-start simply keeps its old behaviour */ }
-}
-function autoSuppressed() {
-  try { return sessionStorage.getItem(noAutoKey(caseId)) === '1'; } catch { return false; }
-}
-
-async function autoClockOn() {
-  // Eric asked for this ("if I enter their chart it automatically clocks on"),
-  // and shipping it alone is what broke the feature for him: with the clock
-  // always already running, the only labelled control could never say "Start
-  // working", and re-entering the chart undid every stop. So auto-start now
-  // yields to two things.
-  //
-  // One: a stop he made by hand, remembered for this browser session, so
-  // walking out to the shelf and back does not restart it behind him.
-  // Two: a closed case, which has no more work to bill and whose former client
-  // can still see "working on it right now" on their own page.
-  if (!autoSuppressed() && data?.status !== 'closed') {
-    try {
-      await postWork({ on: true, auto: true });
-    } catch { /* the toggle still works */ }
-  }
-  askIfStillWorking();
-}
+// The chart-entry auto-start that used to live here is retired (Eric,
+// 2026-08-25: "All clocks in/clock out buttons are manual. Nothing
+// automatic."), along with the per-session suppress flag whose only job was
+// stopping the auto-start from undoing a hand stop. The Worker refuses
+// `auto` starts too, so a stale tab running the old code changes nothing.
 
 /**
  * The answer half of the 5 / 10 / 30 minute prompt. The push lands on
@@ -824,32 +817,65 @@ function askIfStillWorking() {
   });
 }
 
+/** Seed the shared state from the case doc, once. */
+function seedClock(c) {
+  if (clock.loaded) return;
+  const w = c?.work || {};
+  clock.seconds = Math.max(0, Number(w.seconds) || 0);
+  clock.startedAt = w.startedAt ? toDate(w.startedAt).getTime() : 0;
+}
+
+/** The tap every switch shares: flip, tell the Worker, repaint them all. */
+function wireClockToggle(btn) {
+  btn.addEventListener('click', async () => {
+    const want = !clock.startedAt;
+    btn.disabled = true;
+    try {
+      await postWork({ on: want, auto: false });
+    } catch (err) {
+      alert(`Couldn't change the clock: ${err.message}`);
+    }
+    btn.disabled = false;
+  });
+}
+
+/**
+ * The switch beside the status pill, above all the tabs (Eric, 2026-08-25,
+ * with the spot circled in red on a screenshot). Compact: the glyph, the
+ * total, and a running glow; the chat row below carries the words and the
+ * margin badge.
+ */
+function startHeadClock(c) {
+  const btn = document.querySelector('[data-work-head]');
+  if (!btn) return;
+  seedClock(c);
+  const paint = () => {
+    const t = liveClockSeconds();
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    btn.textContent = `${clock.startedAt ? '⏸' : '▶'} ${h ? `${h}h ` : ''}${m}m`;
+    btn.classList.toggle('glow', !!clock.startedAt);
+    btn.title = clock.startedAt
+      ? 'On the clock for this case. Tap to clock out.'
+      : 'Tap to clock in on this case.';
+  };
+  paint.root = btn;
+  clockPaints.add(paint);
+  paint();
+  armClockTick();
+  wireClockToggle(btn);
+}
+
 function startWorkClock(c) {
   const row = document.querySelector('[data-workclock]');
   if (!row) return;
   const btn = row.querySelector('[data-work-toggle]');
   const totalEl = row.querySelector('[data-work-total]');
-  // Only seed from the case doc if the automatic start has not already said
-  // something newer. It usually has: it fires on load, this row is built
-  // when the Chat pane renders.
-  if (!clock.loaded) {
-    const w = c?.work || {};
-    clock.seconds = Math.max(0, Number(w.seconds) || 0);
-    clock.startedAt = w.startedAt ? toDate(w.startedAt).getTime() : 0;
-  }
+  seedClock(c);
 
-  // Clamped and capped, like every sibling renderer. clock.startedAt is the
-  // SERVER's clock, so a phone a few seconds behind it rendered "-1h -1m ·
-  // running" (Math.floor(-5/3600) is -1, which is truthy). And a stretch left
-  // running over a weekend showed 64h here while the client's page showed 12h
-  // and the bank stored 12h - three numbers for one clock.
-  const live = () => Math.max(0, clock.seconds
-    + (clock.startedAt
-      ? Math.min(Math.floor((Date.now() - clock.startedAt) / 1000), 12 * 3600)
-      : 0));
   const rateEl = row.querySelector('[data-work-rate]');
   const paint = () => {
-    const t = live();
+    const t = liveClockSeconds();
     const h = Math.floor(t / 3600);
     const m = Math.floor((t % 3600) / 60);
     totalEl.textContent = `${h ? `${h}h ` : ''}${m}m on this case${clock.startedAt ? ' · running' : ''}`;
@@ -869,28 +895,11 @@ function startWorkClock(c) {
     btn.textContent = clock.startedAt ? '⏸ Stop working' : '▶ Start working';
     btn.classList.toggle('glow', !!clock.startedAt);
   };
-  paintClock = paint;
+  paint.root = row;
+  clockPaints.add(paint);
   paint();
-  clearInterval(workTick);
-  // A minute is plenty: this is hours, not a stopwatch.
-  workTick = setInterval(() => { if (clock.startedAt) paint(); }, 30_000);
-
-  btn.addEventListener('click', async () => {
-    const want = !clock.startedAt;
-    btn.disabled = true;
-    try {
-      // A tap is always a pin. Turning it back on after the automatic start
-      // stopped is exactly how he keeps a clock running while he works on
-      // this case from somewhere else.
-      await postWork({ on: want, auto: false });
-      // And a tap is the last word on whether this case is being timed:
-      // stopping suppresses auto-start for the session, starting clears it.
-      suppressAuto(!want);
-    } catch (err) {
-      alert(`Couldn't change the clock: ${err.message}`);
-    }
-    btn.disabled = false;
-  });
+  armClockTick();
+  wireClockToggle(btn);
 }
 
 // ---- the old automatic chat meter (retired; kept for reference) ----
@@ -2254,9 +2263,20 @@ function paintCallNotes(host) {
   if (!host) return;
   const load = () => {
     const st = panelState || {};
-    const running = st.callNotesStatus === 'running';
+    // A run is only "running" while its heartbeat is fresh. The worker beats
+    // callNotesProgressAt as tokens stream; a run that died between writes
+    // would otherwise hold this button disabled until a reload, since the
+    // queue rescue takes minutes to notice. Five minutes of silence hands
+    // the button back (the rescue still cleans up the record behind it).
+    const beat = Math.max(
+      st.callNotesStartedAt ? new Date(st.callNotesStartedAt).getTime() : 0,
+      st.callNotesProgressAt ? new Date(st.callNotesProgressAt).getTime() : 0,
+    );
+    const stalled = st.callNotesStatus === 'running' && beat
+      && Date.now() - beat > 5 * 60_000;
+    const running = st.callNotesStatus === 'running' && !stalled;
     const ready = st.callNotesStatus === 'ready' && st.callNotes;
-    const key = JSON.stringify([st.callNotesStatus, st.callNotesAt,
+    const key = JSON.stringify([st.callNotesStatus, st.callNotesAt, !!stalled,
       (st.callNotes || '').length, st.callNotesError || '']);
     if (key === callNotesKey && host.querySelector('[data-cn-root]')) return;
     callNotesKey = key;
@@ -2276,6 +2296,7 @@ function paintCallNotes(host) {
           ${ready ? '<button class="btn quiet" data-cn-discard>Discard</button>' : ''}
         </p>
         ${st.callNotesError ? `<p class="error" style="margin:.5rem 0 0;">${esc(st.callNotesError)}</p>` : ''}
+        ${stalled ? '<p class="error" style="margin:.5rem 0 0;">The last run went quiet. Tap the draft button to try again.</p>' : ''}
         <p class="error" data-cn-err hidden style="margin:.5rem 0 0;"></p>
         ${ready ? `
           <textarea class="draft-box" data-cn-text rows="18" style="margin-top:.7rem;">${esc(st.callNotes)}</textarea>
@@ -2286,9 +2307,9 @@ function paintCallNotes(host) {
       </div>`;
 
     const post = async (payload, btn) => {
-      const err = host.querySelector('[data-cn-err]');
       if (btn) btn.disabled = true;
-      err.hidden = true;
+      const err0 = host.querySelector('[data-cn-err]');
+      if (err0) err0.hidden = true;
       try {
         const token = await user.getIdToken();
         const res = await fetch('/api/advisor', {
@@ -2300,9 +2321,14 @@ function paintCallNotes(host) {
         if (!res.ok || out.ok === false) throw new Error(out.error || `Failed (${res.status})`);
         callNotesKey = null; // let the next poll rebuild from truth
       } catch (e) {
-        err.textContent = e.message;
-        err.hidden = false;
-        if (btn) btn.disabled = false;
+        // Rebuild from the current truth FIRST: the tap flipped a label to
+        // "Drafting…" that no run backs, and with the state unchanged the
+        // key guard would otherwise hold that lie until a reload. Then say
+        // what failed on the FRESH node - the pre-repaint one is detached.
+        callNotesKey = null;
+        load();
+        const err = host.querySelector('[data-cn-err]');
+        if (err) { err.textContent = e.message; err.hidden = false; }
       }
     };
 
@@ -2336,11 +2362,13 @@ function paintCallNotes(host) {
         if (!instruction) return;
         closeOv();
         const wb = host.querySelector('[data-cn-write]');
-        if (wb) { wb.disabled = true; wb.textContent = '📞 Drafting…'; }
+        if (wb) wb.textContent = '📞 Drafting…';
+        // wb rides along so a FAILED revise re-enables it - without that,
+        // one offline moment wedged the button until a full reload.
         post({
           action: 'call-notes', instruction, revise: true,
           base: host.querySelector('[data-cn-text]')?.value || '',
-        });
+        }, wb);
       });
       document.body.appendChild(overlay);
       overlay.querySelector('[data-inst]').focus();
@@ -2368,12 +2396,18 @@ function printCallNotes(text) {
   const blocks = [];
   let run = [];
   const flush = () => {
-    if (run.length) blocks.push(`<pre>${escP(run.join('\n').replace(/^\n+|\n+$/g, ''))}</pre>`);
+    const body = run.join('\n').replace(/^\n+|\n+$/g, '');
+    // Text, not array length: a stretch of blank lines between two visuals
+    // is nothing, not an empty box with a margin.
+    if (body.trim()) blocks.push(`<pre>${escP(body)}</pre>`);
     run = [];
   };
   for (const line of String(text).split('\n')) {
+    // A [NEEDS: …] marker is a gap to fill, not a visual - it stays text so
+    // it cannot hide inside a decorative frame if appeal prose is ever
+    // pasted into this box.
     const m = line.match(/^\s*\[([^\][]{2,200})\]\s*$/);
-    if (m) {
+    if (m && !/^NEEDS\b/i.test(m[1])) {
       flush();
       blocks.push(`<figure class="viz"><div class="frame">▦</div><figcaption>${escP(m[1])}</figcaption></figure>`);
     } else run.push(line);

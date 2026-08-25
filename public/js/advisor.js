@@ -734,11 +734,15 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           appealError: out.state?.appealError || '',
           appealMeta: out.state?.appealMeta || null,
           // The call-notes panel on the Drafts page rides the poll the same
-          // way. Same whitelist rule: name the field or the page never sees it.
+          // way. Same whitelist rule: name the field or the page never sees
+          // it. The two heartbeat stamps ride along so the panel can tell a
+          // LIVE run from a dead one and hand the button back.
           callNotes: out.state?.callNotes || '',
           callNotesStatus: out.state?.callNotesStatus || null,
           callNotesAt: out.state?.callNotesAt || null,
           callNotesError: out.state?.callNotesError || '',
+          callNotesStartedAt: out.state?.callNotesStartedAt || null,
+          callNotesProgressAt: out.state?.callNotesProgressAt || null,
         };
         renderDiff(detail);
         renderRead(out.mediaReport, out.queuedFiles, d.running, out.state?.mediaPlan || []);

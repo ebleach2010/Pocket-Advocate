@@ -97,7 +97,10 @@ a request goes straight to the advocate with no payment.
 **Advocate.** The shelf shows both cases and today's rate. Each card carries
 its **work clock** on the folder tab, top right: tap to start or stop that
 client's clock without opening the case, and start both at once to see them
-keep separate totals. The Full Access card wears **CHECK-IN DUE** while its
+keep separate totals. The clock is **manual, both directions** (Eric,
+2026-08-25) - it never starts or stops itself, and it has three linked
+switches: the shelf card, the **⏱ beside the status pill** at the top of the
+chart, and the row above the chat. Flip any one and the others repaint. The Full Access card wears **CHECK-IN DUE** while its
 cadence is stale; book a check-in from the chart's scheduler (the new radio,
 tier-only, no charge - a date past the 60-day window is refused) and the
 flag clears, the client's Progress page shows the call. Request telehealth

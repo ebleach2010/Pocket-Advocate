@@ -73,7 +73,13 @@ suite's expectation in the same commit and say so — never delete the check.
   `public/js/service-terms.js` — the blindness audit carries a documented
   allowance for that clause alone, and nothing else may lean on it.
 - The advisor never uses em or en dashes in its output.
-- `public/js/waivers.js` is frozen.
+- `public/js/waivers.js` is frozen. It still contains the reschedule-refund
+  clause ("If I reschedule your discussion more than once, you are entitled
+  to a full refund on request"); Eric's answers about removing it conflicted
+  (2026-08-25), so it stays until he decides — flag it, never fudge it, and
+  never discuss internal deliberation like this in comments of files that
+  are SERVED to clients (service-terms.js once did; the blindness rule
+  covers prose comments too).
 - Prices only change on Eric's explicit word; the +$10 booking ratchet is
   silent and its description stays out of client-served files.
 - No model identifiers in anything pushed to the repo.

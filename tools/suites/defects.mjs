@@ -94,10 +94,12 @@ ck('ceilings: every ping interpolates its own constant, none are typed',
 
 // ---- 8. the work clock ---------------------------------------------------
 const AC = f('public/js/admin-case.js');
+// Renamed live() -> liveClockSeconds() when the three-switch refactor hoisted
+// it to module level (2026-08-25); same body, same assertions.
 const liveOf = new Function('clock', 'now',
   `const Date = { now: () => now };
-   ${AC.match(/const live = \(\) => Math\.max\(0, clock\.seconds[\s\S]*?\);\n/)[0]}
-   return live();`);
+   ${AC.match(/const liveClockSeconds = \(\) => Math\.max\(0, clock\.seconds[\s\S]*?: 0\)\);\n/)[0]}
+   return liveClockSeconds();`);
 ck('clock: a phone behind the server never renders a negative',
    liveOf({ seconds: 0, startedAt: 1000 }, 995) === 0, String(liveOf({ seconds: 0, startedAt: 1000 }, 995)));
 ck('clock: one stretch banks at most twelve hours on his screen too',
@@ -113,10 +115,16 @@ ck('clock: the badge carries the state its ticker reads',
    && /data-banked="\$\{Number\(clock\.banked\) \|\| 0\}"/.test(f('public/js/drawer.js')));
 ck('clock: the shelf tap no longer depends on listener order',
    !/\[data-clock\]'\)\) \{\n\s*e\.preventDefault\(\);\n\s*e\.stopPropagation\(\);/.test(f('public/js/drawer.js')));
-ck('clock: a hand stop survives walking out and back',
-   /function suppressAuto\(on\)/.test(AC) && /if \(!autoSuppressed\(\) && data\?\.status !== 'closed'\)/.test(AC));
-ck('clock: auto-start runs after the case loads, not racing it',
-   /if \(!autoClockTried\) \{/.test(AC) && !/load\(\); autoClockOn\(\); \}/.test(AC));
+// These two used to pin the auto-start machinery (suppressAuto, autoClockOn
+// racing load()). The defects they guarded - "re-entering the chart undid
+// every stop", the ask card racing render - are now impossible or covered
+// differently: nothing starts a clock but a tap (Eric, 2026-08-25: "All
+// clocks in/clock out buttons are manual. Nothing automatic."), so the
+// checks now pin the ABSENCE of the machinery and the ask card's survival.
+ck('clock: a hand stop cannot be undone, because nothing auto-starts',
+   !/suppressAuto|autoSuppressed/.test(AC) && !/postWork\(\{ on: true, auto: true \}\)/.test(AC));
+ck('clock: the "still working?" ask runs after the case loads, not racing it',
+   /if \(!autoClockTried\) \{/.test(AC) && /askIfStillWorking\(\);\n  \}/.test(AC));
 ck('clock: the "still working?" card outlives the render it used to sit in',
    /const el = document\.querySelector\('main'\) \|\| document\.body;/.test(AC));
 
@@ -155,6 +163,40 @@ ck('scope note: it says the second letter outlives the window',
    /second appeal letter does not expire with the window/.test(TT));
 ck('scope note: it says the clock runs from the first call regardless',
    /the 60 days runs from our first call whether or not you have signed/.test(TT));
+
+// ---- 12. chat reactions: the record shape and who may touch what ---------
+// (Audit, 2026-08-25.) The stored reaction is a RECORD ({ id, kind, ... }),
+// never a bare id. The first clear-own-status carve-out ran Object.hasOwn
+// over the record itself, which coerces to "[object Object]" and matches
+// nothing - dead code that let a status be set but never taken down.
+ck('react: no hasOwn over the reaction record (the dead-carve-out shape)',
+   !/Object\.hasOwn\(CHAT_REACTIONS, msg\.data\.reaction \?\?/.test(W));
+ck('react: the admin may clear anything on his own bubble, status included',
+   /msg\.data\.from === user\.uid && !\(ctx\.isAdmin && \(isStatus \|\| reaction === null\)\)/.test(W));
+ck('react: a status note is protected from the client, wherever it hangs',
+   /msg\.data\.reaction\?\.kind === 'status' && !ctx\.isAdmin/.test(W));
+const CHJ = f('public/js/chat.js');
+ck('react: the client menu withholds rows the Worker would refuse',
+   /myRole === 'admin' \|\| data\.reaction\?\.kind !== 'status'/.test(CHJ));
+ck('react: the ▾ targets the newest COMMITTED message, not a local echo',
+   /const committed = ordered\.filter\(\(m\) => m\.data\(\)\.ts\);/.test(CHJ));
+const DAPI = f('public/js/demo/api.js');
+ck('react: the demo writes the record shape the pages render',
+   /kind: 'status', by: myUid/.test(DAPI) && /kind: 'emoji', by: myUid/.test(DAPI)
+   && !/reaction: body\.reaction \|\| null/.test(DAPI));
+
+// ---- 13. the clock is manual, nothing automatic --------------------------
+// (Eric, 2026-08-25: "All clocks in/clock out buttons are manual. Nothing
+// automatic." clock.mjs drives the behaviour; these pin the source.)
+ck('clock: the Worker answers an auto start with the truth and no write',
+   /if \(on && auto\)\n\s*return json\(\{/.test(W));
+const ACJ = f('public/js/admin-case.js');
+ck('clock: nothing in the chart auto-starts a clock any more',
+   !/autoClockOn|auto: true/.test(ACJ));
+ck('clock: the header switch above the tabs exists on open cases',
+   /data-work-head/.test(ACJ) && /startHeadClock/.test(ACJ));
+ck('clock: all switches share one painter set, so no two can disagree',
+   /const clockPaints = new Set\(\)/.test(ACJ) && /clockPaints\.add\(paint\)/.test(ACJ));
 
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);

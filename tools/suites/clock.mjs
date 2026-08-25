@@ -1,10 +1,16 @@
-// clock.mjs — the automatic work clock, driven against the REAL worker
-// functions lifted out of worker/index.js, over an in-memory Firestore.
+// clock.mjs — the work clock, driven against the REAL worker functions
+// lifted out of worker/index.js, over an in-memory Firestore.
 //
 // The point of lifting rather than reimplementing: these assertions are about
-// Eric's rules ("enter the chart it clocks on, leave the chart it clocks off
-// unless pinned, leave the app and it asks"), and a hand-copied clone of the
-// logic would keep passing after the real one broke.
+// Eric's rules, and a hand-copied clone of the logic would keep passing after
+// the real one broke.
+//
+// THE RULE CHANGED 2026-08-25 ("All clocks in/clock out buttons are manual.
+// Nothing automatic."), and this suite's expectations changed with it in the
+// same commit: an automatic start is now asserted to be a NO-OP, the beacon
+// is asserted to never stop a hand-started clock, and the old auto behaviour
+// survives only as the LEGACY-reap checks. The ask ladder stays: a question
+// is not an automation.
 //
 // Run: node clock.mjs
 // Repo-rooted: this file runs from tools/suites/ inside the repository, so
@@ -99,65 +105,83 @@ const realNow = Date.now;
 Date.now = () => NOW;
 const advance = (mins) => { NOW += mins * 60_000; };
 
-// ---- entering and leaving a chart ---------------------------------------
+// ---- manual only ---------------------------------------------------------
 reset();
-await W.handleWork(req({ caseId: 'a', on: true, auto: true }), env);
-check('C1 opening a chart starts that case and marks the stretch automatic',
-  !!work('a').startedAt && work('a').auto === true);
-check('C2 a running clock is registered so the cron costs one read',
+const noop = await W.handleWork(req({ caseId: 'a', on: true, auto: true }), env);
+check('C1 an automatic start is a NO-OP: nothing starts (manual only, 2026-08-25)',
+  !work('a').startedAt && noop.body.running === false, JSON.stringify(noop.body));
+check('C2 and the running list stays empty', running().length === 0, running().join());
+
+await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
+check('C3 a deliberate tap starts the clock, pinned',
+  !!work('a').startedAt && work('a').auto === false);
+check('C4 a running clock is registered so the cron costs one read',
   running().join() === 'a', running().join());
 
-// Re-entering mid-stretch must not restart it.
+// A double tap mid-stretch must not restart it.
 advance(30);
-const again = await W.handleWork(req({ caseId: 'a', on: true, auto: true }), env);
-check('C3 re-entering keeps the original start rather than resetting it',
+const again = await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
+check('C5 a second start keeps the original start rather than resetting it',
   new Date(again.body.startedAt).getTime() === NOW - 30 * 60_000,
   `${again.body.startedAt} vs now ${new Date(NOW).toISOString()}`);
-check('C4 the banked total is untouched by a re-entry', work('a').seconds === 3600);
+check('C6 the banked total is untouched by it', work('a').seconds === 3600);
+const noop2 = await W.handleWork(req({ caseId: 'a', on: true, auto: true }), env);
+check('C7 an auto start over a running clock changes nothing and reports the truth',
+  noop2.body.running === true
+  && new Date(noop2.body.startedAt).getTime() === NOW - 30 * 60_000,
+  JSON.stringify(noop2.body));
 
-// Walking to the shelf is proof he left the chart.
-const beacon = await W.handleWorkPresence(req({ caseId: '' }), env);
-check('C5 leaving the chart for anywhere else in the app stops the automatic clock',
-  !work('a').startedAt);
-check('C5b the beacon reports the stop AND the new total, so the page it came '
-  + 'from can correct the card it already painted',
-  beacon.body.stopped?.[0]?.id === 'a' && beacon.body.stopped[0].seconds === 3600 + 30 * 60,
-  JSON.stringify(beacon.body.stopped));
-check('C6 and banks the time it ran for', work('a').seconds === 3600 + 30 * 60,
-  String(work('a').seconds));
-check('C7 the running list empties with it', running().length === 0, running().join());
-
-// ---- pinning ------------------------------------------------------------
-reset();
-await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env); // a shelf tap
-check('C8 a deliberate tap pins the clock', work('a').auto === false);
+// Walking around the app stops NOTHING he started by hand.
 await W.handleWorkPresence(req({ caseId: '' }), env);
-check('C9 a pinned clock survives leaving the chart', !!work('a').startedAt);
+check('C8 a manual clock survives leaving the chart', !!work('a').startedAt);
 await W.handleWorkPresence(req({ caseId: 'b' }), env);
-check('C10 and survives opening somebody else', !!work('a').startedAt);
+check('C9 and survives opening somebody else', !!work('a').startedAt);
 
 // Two at once is the whole reason the shelf control exists.
 await W.handleWork(req({ caseId: 'b', on: true, auto: false }), env);
-check('C11 two pinned clocks run at once with their own totals',
+check('C10 two clocks run at once with their own totals',
   !!work('a').startedAt && !!work('b').startedAt && running().join() === 'a,b');
 
-// "unless I turn the toggle back on" arriving without a stop in between.
+// ---- the legacy auto stretch ---------------------------------------------
+// A clock started under the retired chart-entry rule can still exist on a
+// case doc. The beacon reaps it; a tap over it pins it. This is cleanup of
+// old state, not a live behaviour - nothing can CREATE one any more (C1).
 reset();
-await W.handleWork(req({ caseId: 'a', on: true, auto: true }), env);
+docs.set('cases/a', {
+  clientName: 'Jordan Avery',
+  work: { seconds: 3600, startedAt: new Date(NOW).toISOString(), auto: true },
+});
+docs.set(W.CLOCK_DOC, { running: ['a'], seenAt: new Date(NOW).toISOString(), atCaseId: 'a' });
+advance(30);
+const beacon = await W.handleWorkPresence(req({ caseId: '' }), env);
+check('C11 a LEGACY auto stretch is reaped by the beacon and banked',
+  !work('a').startedAt && work('a').seconds === 3600 + 30 * 60,
+  String(work('a').seconds));
+check('C11b the beacon reports the stop AND the new total, so the page it came '
+  + 'from can correct the card it already painted',
+  beacon.body.stopped?.[0]?.id === 'a' && beacon.body.stopped[0].seconds === 3600 + 30 * 60,
+  JSON.stringify(beacon.body.stopped));
+check('C11c the running list empties with it', running().length === 0, running().join());
+
+reset();
+docs.set('cases/a', {
+  clientName: 'Jordan Avery',
+  work: { seconds: 3600, startedAt: new Date(NOW).toISOString(), auto: true },
+});
+docs.set(W.CLOCK_DOC, { running: ['a'] });
 await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
-check('C12 tapping the toggle over an automatic stretch pins it',
-  work('a').auto === false);
+check('C12 a tap over a legacy auto stretch pins it', work('a').auto === false);
 await W.handleWorkPresence(req({ caseId: '' }), env);
-check('C13 so leaving the chart no longer stops it', !!work('a').startedAt);
+check('C13 so the beacon no longer stops it', !!work('a').startedAt);
 
 // ---- leaving the app ----------------------------------------------------
 reset();
-await W.handleWork(req({ caseId: 'a', on: true, auto: true }), env);
+await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
 await W.handleWorkPresence(req({ caseId: 'a' }), env);
 advance(2);
 await W.runWorkClockNudges(env);
 check('C14 nothing is asked while the app is open', pushes.length === 0);
-check('C15 and an automatic clock is NOT stopped by the app closing',
+check('C15 and a running clock is NOT stopped by the app closing',
   !!work('a').startedAt);
 
 advance(4); // 6 minutes since the last beacon
@@ -235,7 +259,7 @@ check('C29 a clock left running for days still banks at most twelve hours',
 
 // ---- state hygiene ------------------------------------------------------
 reset();
-await W.handleWork(req({ caseId: 'a', on: true, auto: true }), env);
+await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
 await W.handleWork(req({ caseId: 'a', on: false }), env);
 check('C30 stopping clears auto and the ladder',
   work('a').auto === false && Number(work('a').nudged) === 0 && running().length === 0);

@@ -1,25 +1,12 @@
-// How the service runs: no guarantees, when Eric can stop, and what happens
-// to a case if his own life gets in the way.
+// How the service runs: no guarantees, when a case can close, what happens
+// if a pause is needed, and how notes are taken on calls.
 //
-// A NEW module rather than a fourth entry in waivers.js, which is frozen by
-// the repo's standing instructions. These clauses are additive - they do not
-// contradict anything in the three original forms - so they can stand beside
-// them without either document having to be reopened.
+// A separate module rather than a fourth entry in waivers.js. These clauses
+// are additive: they do not contradict anything in the three original
+// forms, so they stand beside them.
 //
-// One thing here is deliberately NOT stated, and it matters: waivers.js still
-// says "If I reschedule your discussion more than once, you are entitled to a
-// full refund on request", and Eric has asked for that to go. Removing it
-// means editing the frozen, reviewed document, and it cannot be done by
-// writing a contradicting sentence in a second file - a client who ticks both
-// would have been handed a refund right in one and had it taken away in the
-// other. It is flagged for him rather than fudged here.
-//
-// Written 2026-08-24, PENDING ERIC'S SIGN-OFF, and flagged in the PR.
-//
-// The AI note-taking clause was added 2026-08-25 on Eric's explicit
-// instruction, in his words: privacy top priority, nobody but him and the
-// client sees call notes, notes as soon as possible after the call, and the
-// action plan in writing within a week of the call's end.
+// This file is served to clients as written, comments included. Nothing
+// goes in it that is not meant for the person reading it.
 
 /**
  * The scope note, in the shape the booking flow already renders:

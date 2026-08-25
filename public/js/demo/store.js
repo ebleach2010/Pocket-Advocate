@@ -112,11 +112,28 @@ function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || 'null');
     if (!raw?.docs) return false;
-    docs = new Map(raw.docs);
-    files = new Map(raw.files || []);
+    // In place, never rebound: demoApi captured THESE Map objects at mount,
+    // so a cross-tab storage event that rebound them would leave the whole
+    // API layer reading and writing an orphan - a booking made after that
+    // event landed in a Map nothing persisted or repainted.
+    docs.clear();
+    for (const [k, v] of raw.docs) docs.set(k, v);
+    files.clear();
+    for (const [k, v] of raw.files || []) files.set(k, v);
     if (!clientSide) {
       const adm = JSON.parse(localStorage.getItem(KEY_ADMIN) || 'null');
       for (const [k, v] of adm?.docs || []) docs.set(k, v);
+      // The seamless door enters through the CLIENT side, whose reset() no
+      // longer writes the advocate half to disk (see reset). So the first
+      // advocate tab after a client-side seed finds its half missing and
+      // fills it in from the fixtures here - without this, the advisor
+      // panel, glossary and notes were blank on that first visit.
+      if (!adm?.docs?.length) {
+        const tmp = new Map();
+        seed({ set: (p, v) => tmp.set(p, v), file: () => {} });
+        for (const [k, v] of tmp) if (ADMIN_ONLY(k) && !docs.has(k)) docs.set(k, v);
+        persist();
+      }
     }
     return true;
   } catch { return false; }
@@ -160,18 +177,24 @@ function seedLastSeenVersion() {
 }
 
 export function reset() {
-  docs = new Map();
-  files = new Map();
+  // Same rule as load(): empty in place, never rebind (demoApi holds these).
+  docs.clear();
+  files.clear();
   seed({ set: (p, v) => docs.set(p, v), file: (p, v) => files.set(p, v) });
   persist();
-  // Seeding is fixture data, not anything a client produced, so the advocate
-  // half is written here even from a client tab - otherwise entering through
-  // the client suite first left the admin suite empty.
-  try {
-    localStorage.setItem(KEY_ADMIN, JSON.stringify({
-      docs: [...docs.entries()].filter(([path]) => ADMIN_ONLY(path)),
-    }));
-  } catch { /* quota or private mode */ }
+  // The advocate half is written to disk only from an advocate tab. It used
+  // to be written from client tabs too (fixture data, so no real secret),
+  // but with the seamless door entering through the client side that meant
+  // EVERY demo browser kept advisor fixtures on disk - the exact shape of
+  // blob the client/advocate key split exists to keep off a client machine.
+  // A later advocate tab that finds its half missing re-seeds it in load().
+  if (!clientSide) {
+    try {
+      localStorage.setItem(KEY_ADMIN, JSON.stringify({
+        docs: [...docs.entries()].filter(([path]) => ADMIN_ONLY(path)),
+      }));
+    } catch { /* quota or private mode */ }
+  }
   fire('');
 }
 
