@@ -20,6 +20,11 @@ import { askName, safeName } from './rename.js';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const LONG_PRESS_MS = 550;
+// How far a pointer may wobble during a held press before it stops counting
+// as one. Mirrors MOVE_TOLERANCE in drawer.js, which already had this right.
+// Without it, any pointermove at all cancelled the press - fine for a finger,
+// fatal for a mouse, which jitters from the click itself.
+const MOVE_TOLERANCE = 12;
 
 // Everything that only happens on an admin thread lives in its own module,
 // which is not served to a client at all. Loaded on demand when one mounts;
@@ -342,14 +347,27 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     const skip = ['.msg-img', '.file-chip', 'a', ...(bridge?.noLongPress || [])].join(', ');
     const onAttachment = (e) => !!e.target.closest?.(skip);
     const open = () => runMenu(opts);
+    // Where the press began, so a MOVE can be judged rather than merely
+    // noticed. Eric, 2026-08-25, on a PC: the menu would not open for him.
+    // Cancelling on any pointermove at all is fine for a finger, which either
+    // rests or swipes - but a mouse jitters a pixel or two just from the click
+    // itself, and a trackpad worse, so the timer was being killed before it
+    // could ever fire. Right-click still worked, and nobody would guess that.
+    let x0 = 0, y0 = 0;
     const start = (e) => {
       if (onAttachment(e)) return;
+      x0 = e.clientX; y0 = e.clientY;
       timer = setTimeout(() => { timer = null; open(); }, LONG_PRESS_MS);
     };
     const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    const moved = (e) => {
+      if (!timer) return;
+      if (Math.hypot(e.clientX - x0, e.clientY - y0) > MOVE_TOLERANCE) cancel();
+    };
     el.addEventListener('pointerdown', start);
-    ['pointerup', 'pointerleave', 'pointercancel', 'pointermove'].forEach((ev) =>
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) =>
       el.addEventListener(ev, cancel));
+    el.addEventListener('pointermove', moved);
     el.addEventListener('contextmenu', (e) => {
       if (onAttachment(e)) return;
       e.preventDefault();
@@ -721,14 +739,24 @@ function renderAttachment(att, saveUid) {
 
 function attachLongPress(el, att, saveUid) {
   let timer = null;
-  const start = () => {
+  let x0 = 0, y0 = 0;
+  const start = (e) => {
     delete el.dataset.lp;
+    x0 = e.clientX; y0 = e.clientY;
     timer = setTimeout(() => { timer = null; el.dataset.lp = '1'; promptSave(att, saveUid); }, LONG_PRESS_MS);
   };
   const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  // Same wobble allowance as the message press and the drawer: a mouse moves
+  // a pixel or two just from being clicked, and cancelling on that meant a
+  // held press never completed on a computer.
+  const moved = (e) => {
+    if (!timer) return;
+    if (Math.hypot(e.clientX - x0, e.clientY - y0) > MOVE_TOLERANCE) cancel();
+  };
   el.addEventListener('pointerdown', start);
-  ['pointerup', 'pointerleave', 'pointercancel', 'pointermove'].forEach((ev) =>
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) =>
     el.addEventListener(ev, cancel));
+  el.addEventListener('pointermove', moved);
   el.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     cancel();
