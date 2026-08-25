@@ -104,14 +104,22 @@ export function demoApi(role, store) {
         if (!Number.isFinite(want) || want < 0 || want > 4000 * 3600)
           return fail(400, 'Give a whole number of seconds, zero or more.');
         const next = Math.floor(want);
+        // Re-anchor a running clock, mirroring the Worker: the number the page
+        // sends is what the page SHOWS, so leaving the start where it was
+        // counts the running stretch twice and the correction reads as a no-op.
+        const stillRunning = !!w.startedAt;
+        const anchor = new Date();
         store.docs.set(key, {
           ...c,
-          work: { ...w, seconds: next, correction: { from: w.seconds || 0, to: next, at: new Date() } },
+          work: {
+            ...w, seconds: next, startedAt: stillRunning ? anchor : null,
+            correction: { from: w.seconds || 0, to: next, at: new Date() },
+          },
         });
         store.persist?.();
         return ok({
-          seconds: next, running: !!w.startedAt, auto: w.auto === true,
-          startedAt: w.startedAt || null, correctedFrom: w.seconds || 0,
+          seconds: next, running: stillRunning, auto: w.auto === true,
+          startedAt: stillRunning ? anchor : null, correctedFrom: w.seconds || 0,
         });
       }
       // MANUAL ONLY, mirroring the Worker (Eric, 2026-08-25): an `auto`

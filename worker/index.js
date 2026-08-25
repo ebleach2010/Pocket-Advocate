@@ -3782,21 +3782,30 @@ async function handleWork(request, env) {
     if (!Number.isFinite(want) || want < 0 || want > 4000 * 3600)
       return json({ error: 'Give a whole number of seconds, zero or more.' }, 400);
     const next = Math.floor(want);
+    // A correction does not decide whether the clock is running - if it is, he
+    // can stop it separately. But it DOES have to move where the running
+    // stretch is measured from, because the number the page sent is what the
+    // page SHOWS, which is the banked total plus the stretch running right
+    // now. Bank that and leave the start where it was and the stretch gets
+    // counted a second time: subtract ten hours from a clock still running and
+    // the display comes back reading the same ten hours, so the fix looks like
+    // it did nothing at all. Re-anchoring keeps the clock running and loses
+    // nothing, because everything up to this moment is already inside `next`.
+    const stillRunning = !!startedAt;
+    const anchor = new Date();
     const wrote = await patchDoc(env, `cases/${caseId}`, {
       work: {
         ...w,
         seconds: next,
-        // A correction does not decide whether the clock is running. If it is
-        // running he can stop it separately, and the stretch since its start
-        // is untouched by this.
+        startedAt: stillRunning ? anchor : null,
         updatedAt: new Date(),
         correction: { from: seconds, to: next, at: new Date() },
       },
     }, { mask: ['work'] });
     if (wrote === false) return json({ error: 'Try that once more.' }, 409);
     return json({
-      seconds: next, running: !!startedAt, auto: w.auto === true,
-      startedAt: startedAt ? new Date(startedAt) : null,
+      seconds: next, running: stillRunning, auto: w.auto === true,
+      startedAt: stillRunning ? anchor : null,
       correctedFrom: seconds,
     });
   }

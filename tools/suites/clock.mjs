@@ -371,6 +371,39 @@ check('C36 a correction mid-stretch leaves the clock running',
   midRun.body.running === true && !!work('a').startedAt, JSON.stringify(midRun.body));
 check('C36b and the banked total is the corrected one', work('a').seconds === 120);
 
+// C36c-C36f pin the thing that made this whole feature a no-op, found while
+// grafting it onto main (2026-08-25). The number the PAGE sends is what the
+// page SHOWS - banked plus the stretch running right now. Bank that and leave
+// the start where it was and the stretch is counted a second time, so taking
+// ten hours off a running clock came straight back reading ten hours. Which
+// is precisely the case this was built for.
+const shown = () => work('a').seconds
+  + Math.floor((Date.now() - new Date(work('a').startedAt).getTime()) / 1000);
+check('C36c the start is re-anchored to the correction, not left where it was',
+  Math.abs(new Date(work('a').startedAt).getTime() - Date.now()) < 1000,
+  `${Math.round((Date.now() - new Date(work('a').startedAt).getTime()) / 1000)}s back`);
+check('C36d and the reply hands the page the new anchor, not the old one',
+  !!midRun.body.startedAt
+  && Math.abs(new Date(midRun.body.startedAt).getTime() - Date.now()) < 1000,
+  JSON.stringify(midRun.body.startedAt));
+check('C36e so the page reads what he asked for, not the stretch back again',
+  shown() === 120, `${shown()}s`);
+
+// The same thing said in his numbers: ten hours, on a clock still running.
+reset();
+await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
+advance(10 * 3600);
+await W.handleWork(req({ caseId: 'a', setSeconds: 0 }), env);  // page showed 10h; he took 10h off
+check('C36f ten hours come off a clock still running, and stay off',
+  shown() === 0, `${(shown() / 3600).toFixed(2)}h still on it`);
+
+// And a correction is not a way to start a clock by accident.
+reset();
+docs.set('cases/a', { clientName: 'Jordan Avery', work: { seconds: 5 * 3600, startedAt: null } });
+const stoppedFix = await W.handleWork(req({ caseId: 'a', setSeconds: 60 }), env);
+check('C36g correcting a stopped clock leaves it stopped',
+  stoppedFix.body.running === false && !work('a').startedAt, JSON.stringify(stoppedFix.body));
+
 Date.now = realNow;
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
