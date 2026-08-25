@@ -1156,14 +1156,14 @@ async function readBookingClosure(env) {
  * client touches - their case, chat, uploads, files, sign-in - is untouched,
  * which was the condition Eric set.
  */
-const MAINTENANCE_UNTIL = '2026-08-25T20:00:00Z';   // 1PM MST, 2026-08-25
+const MAINTENANCE_UNTIL = '2026-08-26T01:00:00Z';   // 6PM MST, 2026-08-25
 function maintenanceUntil() {
   const t = Date.parse(MAINTENANCE_UNTIL);
   return Number.isFinite(t) && Date.now() < t ? t : 0;
 }
 function maintenanceMessage() {
-  return 'Under maintenance until 1PM MST on August 25. I am checking over an '
-    + 'update before taking anything new on top of it. Existing clients are '
+  return 'Under maintenance until 6PM MST on August 25. Big update in '
+    + 'progress, and I am sorry for the inconvenience. Existing clients are '
     + 'unaffected: your case, your files and your chat are open as normal.';
 }
 

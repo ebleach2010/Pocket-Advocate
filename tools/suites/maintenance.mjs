@@ -27,8 +27,12 @@ const clientUntil = (CLIENT.match(/MAINTENANCE_UNTIL = '([^']+)'/) || [])[1];
 
 check('M1 the Worker and the page name the SAME instant',
   !!workerUntil && workerUntil === clientUntil, `worker=${workerUntil} client=${clientUntil}`);
-check('M2 that instant is 1PM MST on 2026-08-25 (MST is a fixed UTC-7)',
-  workerUntil === '2026-08-25T20:00:00Z', workerUntil);
+// Moved out from 1PM on Eric's word (2026-08-25). MST is a fixed UTC-7, so
+// 6PM MST is 01:00Z the NEXT calendar day - the 08-26 in this timestamp is
+// still the same evening to anyone reading it in Mountain time, and getting
+// that wrong by a day is exactly the mistake this check exists to catch.
+check('M2 that instant is 6PM MST on 2026-08-25 (MST is a fixed UTC-7)',
+  workerUntil === '2026-08-26T01:00:00Z', workerUntil);
 
 // The gate itself.
 check('M3 the Worker refuses checkout during the window',
@@ -57,7 +61,13 @@ check('M9 shut well inside the window', run(until - 6 * 3600_000) === until);
 
 // The words Eric asked for, exactly.
 check('M10 the page carries his sentence verbatim',
-  CLIENT.includes("'Under Maintenance Until 1PM MST 8/25/26'"));
+  CLIENT.includes("'Under Maintenance Until 6PM MST 8/25/26'"));
+check('M11 it apologises and says why, in his words',
+  /Big update in progress/.test(CLIENT)
+  && /sorry for the\s*\n?\s*inconvenience/.test(CLIENT));
+check('M12 the Worker refusal says the same thing as the page',
+  /Big update in /.test(SRC) && /sorry for the inconvenience/.test(SRC)
+  && /6PM MST on August 25/.test(SRC));
 
 // Wired to the front door, and NOWHERE a current client goes.
 const has = (f) => readFileSync(`${ROOT}/public/${f}`, 'utf8').includes('/js/maintenance.js');
