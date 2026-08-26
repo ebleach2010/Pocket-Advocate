@@ -111,6 +111,8 @@ const strandedState = {
     instruction: 'Lead with the insurance question.',
     revise: false,
     base: '',
+    // He ticked "look things up on the internet" on the build that died.
+    search: true,
     sources: [
       { name: 'prep.pdf', mine: true, path: 'cases/a/prep.pdf' },
       { name: 'photo.jpg', inline: true },
@@ -138,6 +140,12 @@ check('Q5 and runs without the stream, because no one is holding the connection'
 check('Q6 it retries only the Storage-backed sources, since the bytes are gone',
   JSON.stringify(calls.find((c) => c[0] === 'runCallDoc')?.[2]?.sources?.map((s) => s.name)) === '["prep.pdf"]',
   JSON.stringify(calls.find((c) => c[0] === 'runCallDoc')?.[2]?.sources));
+// His tick has to survive the retry in BOTH directions. Dropped, and the
+// rebuild quietly loses the internet section he asked for and cannot see why.
+// Assumed, and a rebuild he never watched spends money he never agreed to.
+check('Q6b the retry carries his internet tick through, rather than guessing',
+  calls.find((c) => c[0] === 'runCallDoc')?.[2]?.search === true,
+  JSON.stringify(calls.find((c) => c[0] === 'runCallDoc')?.[2]?.search));
 check('Q7 and the row records the attempt, so it cannot retry forever',
   patched.some(([p, dta]) => /calldoc_case_a/.test(p) && dta.tries === 1),
   JSON.stringify(patched));

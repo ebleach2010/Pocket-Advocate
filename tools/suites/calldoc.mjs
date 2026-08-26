@@ -22,13 +22,18 @@ const check = (name, cond, detail = '') => {
 };
 
 // ---- lift ----
-function fn(name) {
+function fn(name, decl = `export async function ${name}(`) {
   // Brace-counted, not regex-matched. /\n\}/ stops at the first brace in
   // column 0, and this function's system prompt is a template literal with
   // plenty of text in it - the lifted body came out truncated and unbalanced,
   // which surfaced as "Unexpected token 'return'" rather than as anything
   // resembling the real problem.
-  const start = SRC.indexOf(`export async function ${name}(`);
+  //
+  // `decl` exists because the turn machinery this suite now also drives - ask,
+  // turnRequest, extractText - is module-private and unexported. Nothing can
+  // import it, so it gets lifted the same way runCallDoc does, and pass the
+  // leading newline in the declaration to keep the match unambiguous.
+  const start = SRC.indexOf(decl);
   if (start < 0) throw new Error(`could not lift ${name}`);
   // The BODY's opening brace, which is not the first brace: runCallDoc takes a
   // destructured options object, so `{ instruction = '', ... }` opens one
@@ -61,7 +66,14 @@ function konst(name) {
   if (!m) throw new Error(`could not lift const ${name}`);
   return m[0];
 }
-const LIFTED = [konst('MAX_CALLDOC_SOURCES'), konst('escAttr'), fn('runCallDoc')].join('\n');
+// WEB_SEARCH_* are lifted rather than stubbed on purpose. The tool block the
+// suite asserts on has to be the REAL one out of advisor.js, or this file
+// happily proves that a constant it wrote itself has the right shape.
+const LIFTED = [
+  konst('MAX_CALLDOC_SOURCES'), konst('escAttr'),
+  konst('WEB_SEARCH_MAX_USES'), konst('WEB_SEARCH_TOOL'), konst('WEB_SEARCH_RULES'),
+  fn('runCallDoc'),
+].join('\n');
 
 // ---- the world ----
 let state, queue, asked, attachCalls;
@@ -98,7 +110,7 @@ const deps = {
   },
   VOICE: 'You are Eric.',
   ask: async (env, opts) => { asked = opts; return 'REVIEW BEFORE YOU CALL\n1. *Creatinine read off a chart, check it.\n\nTHE CALL, IN ORDER\nOpen with the March panel.'; },
-  console: { error: () => {} },
+  console: { error: () => {}, warn: () => {} },
 };
 const build = new Function(...Object.keys(deps), `${LIFTED}\n return runCallDoc;`);
 const runCallDoc = build(...Object.values(deps));
@@ -311,6 +323,297 @@ reset();
 await runCallDoc(env, 'sub', 'a', { sources: [{ name: 'prep.pdf', mine: true }] });
 check('D41 and a subscription does not stamp a case that is not there',
   !queue.get('caseMeta/a'), JSON.stringify([...queue.keys()]));
+
+// ---- looking things up on the internet ----------------------------------
+// Eric, 2026-08-26: "any internet searches for providers mentioned or other
+// providers/paths of action that may be useful."
+//
+// Web search is a SERVER tool: it runs on Anthropic's side, so there is no
+// execution loop here to test. What there IS to test is everything around it,
+// and all of it is the kind of thing that fails silently. A tool declared on
+// every build spends his money forever. A tool error arrives inside an HTTP
+// 200 rather than as a throw, so the crash it causes lands only on the day a
+// search actually fails, in production, on the one document he needs. And a
+// document that mixes a web page into the case sections gets read aloud to a
+// frightened person as though the case file said it.
+//
+// So: assert on written state, and drive the REAL turn machinery, not a mock
+// of it.
+
+// The tool constant itself, lifted rather than re-typed. A suite that writes
+// its own copy of the thing it is checking proves only that it can type.
+const WEB_SEARCH_TOOL = new Function(
+  `${konst('WEB_SEARCH_MAX_USES')}${konst('WEB_SEARCH_TOOL')}\n return WEB_SEARCH_TOOL;`)();
+
+// ---- off unless he ticks it ----
+reset();
+await runCallDoc(env, 'case', 'a', { sources: [{ name: 'prep.pdf', mine: true }] });
+check('D42 searching is OFF by default, so an ordinary build declares no tools',
+  asked?.tools === undefined, JSON.stringify(asked?.tools));
+check('D43 and a default build is still a finished document', state.callDocStatus === 'ready');
+check('D44 nothing claims it searched', state.callDocSearched === false && !state.callDocSearchNote,
+  `${state.callDocSearched} / ${state.callDocSearchNote}`);
+const sysOff = (asked?.system || []).map((b) => b.text).join('\n');
+check('D45 and the internet rules are absent from the prompt entirely, so the cached prefix an ordinary build sends is unchanged',
+  !/FROM THE INTERNET, NOT FROM THE CASE/.test(sysOff));
+
+// ---- on, when he ticks it ----
+reset();
+await runCallDoc(env, 'case', 'a', { sources: [{ name: 'prep.pdf', mine: true }], search: true });
+check('D46 ticking it declares exactly one tool', (asked?.tools || []).length === 1,
+  JSON.stringify(asked?.tools));
+check('D47 and it is the web search server tool, by the type the API expects',
+  asked?.tools?.[0]?.type === 'web_search_20260209' && asked?.tools?.[0]?.name === 'web_search',
+  JSON.stringify(asked?.tools?.[0]));
+check('D48 bounded by max_uses, because every use is billed on the most expensive turn in the app',
+  Number(asked?.tools?.[0]?.max_uses) > 0 && Number(asked?.tools?.[0]?.max_uses) <= 10,
+  String(asked?.tools?.[0]?.max_uses));
+check('D49 code_execution is NOT declared beside it: this variant runs it underneath already, and a second execution environment confuses the model',
+  !(asked?.tools || []).some((t) => /code_execution/.test(t?.type || '') || t?.name === 'code_execution'),
+  JSON.stringify(asked?.tools));
+check('D50 allowed_domains and blocked_domains are never both set, which is a request error',
+  !(asked?.tools?.[0]?.allowed_domains && asked?.tools?.[0]?.blocked_domains));
+check('D51 a sink rides with it, so the run can tell "searched and found nothing" from "never searched"',
+  asked?.toolMeta && typeof asked.toolMeta === 'object');
+check('D52 the finished document records that the internet was consulted at all',
+  state.callDocSearched === true && !!state.callDocSearchNote,
+  `${state.callDocSearched} / ${state.callDocSearchNote}`);
+
+// The request the RETRY reads. Captured from the first write, before success
+// clears it, which is the only moment it exists.
+reset();
+let reqSeen = null;
+const capture = build(...Object.values({
+  ...deps,
+  setState: async (e2, k2, i2, fields) => {
+    if (fields.callDocReq) reqSeen = fields.callDocReq;
+    Object.assign(state, fields);
+  },
+}));
+await capture(env, 'case', 'a', { sources: [{ name: 'prep.pdf', mine: true }], search: true });
+check('D53 the stored request carries the tick, not a guess', reqSeen?.search === true,
+  JSON.stringify(reqSeen?.search));
+
+// ---- what the prompt is allowed to do with what it finds ----
+reset();
+await runCallDoc(env, 'case', 'a', { sources: [{ name: 'prep.pdf', mine: true }], search: true });
+const sysOn = (asked?.system || []).map((b) => b.text).join('\n');
+for (const [n, re] of [
+  ['what may be searched for is providers and programmes THE RECORD names', /THE RECORD ITSELF NAMES/],
+  ['and other paths of action worth knowing about', /appeal route[\s\S]{0,120}patient assistance/],
+  ['it is not for diagnosis', /Not diagnosis/],
+  ['not for treatment advice', /Not treatment advice/],
+  ['and never a recommendation to start, stop or change anything', /Never a recommendation to start, stop or change/],
+  ['it may not invent a clinician, a clinic or a phone number', /Never invent a clinician, a clinic, a programme, an address or a phone number/],
+  ['and a search result does not license naming a doctor the record does not name', /a search result does not lift it/],
+  ['a name may appear only if a page actually says it, with that page URL', /only on a line that carries that page's URL/],
+  ['internet material may not be mixed into the case sections', /Nothing from the internet may be mixed into sections 1 to 5/],
+  ['it gets its own labelled section', /"FROM THE INTERNET, NOT FROM THE CASE"/],
+  ['opening with an unmistakable line about where it came from', /NOT FROM THE CASE FILE\. NOT VERIFIED\. CHECK BEFORE YOU SAY IT\./],
+  ['every item starred, because the asterisk already means "verify this"', /Every item is starred, without exception/],
+  ['every item carrying its source URL', /the source URL on its own line directly beneath it/],
+  ['and section 1 pointing at it without drowning the flags from the case', /\* Section 6 is from the internet, none of it verified\./],
+  ['finding nothing is a normal build, not a failure', /nothing useful came back/i],
+]) check(`D54 ${n}`, re.test(sysOn), 'missing from the system prompt');
+
+// ---- THE TRAP: a tool error is an HTTP 200 with an error OBJECT ----------
+// This is the whole reason the section exists. On success, a
+// web_search_tool_result carries a LIST. On failure it carries a single error
+// OBJECT in the SAME field, and the request succeeded, so nothing raises.
+// Anything that indexes, maps or spreads that field crashes on the failure
+// path only. So the REAL extractText is lifted and driven with both shapes.
+const ASK_LIFTED = [
+  konst('MODEL'), konst('MAX_PAUSE_RESUMES'),
+  fn('withCacheBp', '\nfunction withCacheBp('),
+  fn('turnRequest', '\nfunction turnRequest('),
+  fn('stripDashes', '\nfunction stripDashes('),
+  fn('extractText', '\nfunction extractText('),
+  fn('ask', '\nasync function ask('),
+].join('\n');
+let carried = [];
+let finals = [];
+const askEnv = new Function('carryTurn', 'console',
+  `${ASK_LIFTED}\n return { ask, turnRequest, extractText };`)(
+  async (e2, turn) => { carried.push(turn); return finals.shift(); },
+  { warn: () => {}, error: () => {} },
+);
+const { ask: realAsk, turnRequest, extractText } = askEnv;
+const oneTurn = (opts = {}) => ({ system: [{ type: 'text', text: 'sys' }], messages: [{ role: 'user', content: 'go' }], effort: 'max', maxTokens: 32000, ...opts });
+
+const errBlock = { type: 'web_search_tool_result', tool_use_id: 'srv_1', content: { type: 'web_search_tool_result_error', error_code: 'max_uses_exceeded' } };
+check('D55 the fixture really is the failure shape: an object where success sends a list',
+  !Array.isArray(errBlock.content) && !!errBlock.content.error_code);
+
+let tmeta = { queries: 0, results: 0, errors: [] };
+let text = '';
+let threw = null;
+try {
+  text = extractText({
+    stop_reason: 'end_turn',
+    content: [
+      { type: 'server_tool_use', id: 'srv_1', name: 'web_search', input: { query: 'x' } },
+      errBlock,
+      { type: 'text', text: 'REVIEW BEFORE YOU CALL\n1. *Check this.' },
+    ],
+  }, tmeta);
+} catch (e) { threw = e; }
+check('D56 an error OBJECT in a 200 does not crash the text pull', !threw, String(threw && threw.message));
+check('D57 the document text is still returned', /REVIEW BEFORE YOU CALL/.test(text), text);
+check('D58 and the failure is counted rather than swallowed in silence',
+  tmeta.errors.join() === 'max_uses_exceeded' && tmeta.results === 0, JSON.stringify(tmeta));
+
+tmeta = { queries: 0, results: 0, errors: [] };
+text = extractText({
+  stop_reason: 'end_turn',
+  content: [
+    { type: 'server_tool_use', id: 'srv_2', name: 'web_search', input: { query: 'y' } },
+    { type: 'web_search_tool_result', tool_use_id: 'srv_2', content: [{ type: 'web_search_result', url: 'https://example.org/a', title: 'A' }, { type: 'web_search_result', url: 'https://example.org/b', title: 'B' }] },
+    { type: 'text', text: 'FROM THE INTERNET, NOT FROM THE CASE' },
+  ],
+}, tmeta);
+check('D59 a LIST is the success shape and its results are counted',
+  tmeta.results === 2 && tmeta.queries === 1 && !tmeta.errors.length, JSON.stringify(tmeta));
+check('D60 with the text still pulled out from beside the tool blocks',
+  /FROM THE INTERNET/.test(text), text);
+
+// ---- the request body the real turnRequest builds ----
+const bodyOn = turnRequest({ system: [{ type: 'text', text: 's' }], messages: [], effort: 'max', maxTokens: 32000, tools: [WEB_SEARCH_TOOL] });
+check('D61 the tool reaches the request body under `tools`',
+  bodyOn.tools?.[0]?.type === 'web_search_20260209', JSON.stringify(bodyOn.tools));
+check('D62 with no beta header machinery bolted on, it is an ordinary request',
+  !('betas' in bodyOn) && !('anthropic_beta' in bodyOn), JSON.stringify(Object.keys(bodyOn)));
+const bodyOff = turnRequest({ system: [{ type: 'text', text: 's' }], messages: [], effort: 'max', maxTokens: 32000 });
+check('D63 and a caller that passes no tools sends no `tools` key at all, so the other five callers are byte-identical',
+  !('tools' in bodyOff), JSON.stringify(Object.keys(bodyOff)));
+
+// ---- pause_turn ----
+carried = [];
+finals = [
+  { stop_reason: 'pause_turn', content: [{ type: 'text', text: 'first half' }, { type: 'server_tool_use', id: 's', name: 'web_search', input: {} }] },
+  { stop_reason: 'end_turn', content: [{ type: 'text', text: 'second half' }] },
+];
+tmeta = { queries: 0, results: 0, errors: [] };
+let joined = await realAsk({}, oneTurn({ tools: [WEB_SEARCH_TOOL], toolMeta: tmeta }));
+check('D64 pause_turn is handed back to the model rather than treated as the end',
+  carried.length === 2, `${carried.length} requests`);
+check('D65 and the text from BOTH halves survives, so a paused turn is not a truncated document',
+  /first half/.test(joined) && /second half/.test(joined), joined);
+check('D66 the resumed request carries what was written so far',
+  carried[1]?.messages?.length === 2 && carried[1].messages[1].role === 'assistant',
+  JSON.stringify((carried[1]?.messages || []).map((m) => m.role)));
+check('D67 and still declares the tool, or the model loses it mid turn',
+  carried[1]?.tools?.[0]?.type === 'web_search_20260209');
+
+carried = [];
+finals = [{ stop_reason: 'pause_turn', content: [{ type: 'text', text: 'only half' }] }];
+joined = await realAsk({}, oneTurn());
+check('D68 a caller with no tools never enters the resume loop, whatever stop_reason says',
+  carried.length === 1 && joined === 'only half', `${carried.length} / ${joined}`);
+
+carried = [];
+finals = Array.from({ length: 9 }, () => ({ stop_reason: 'pause_turn', content: [{ type: 'text', text: 'more' }] }));
+joined = await realAsk({}, oneTurn({ tools: [WEB_SEARCH_TOOL] }));
+check('D69 resuming is bounded, so a turn that never settles cannot spend forever',
+  carried.length > 1 && carried.length <= 5, `${carried.length} requests`);
+check('D70 and what was written is kept rather than thrown away at the cap', /more/.test(joined));
+
+// ---- a search failure never costs him the document ----------------------
+// Three ways it can go wrong, and all three must end with a document on the
+// page. Asserted on WRITTEN STATE, because runCallDoc ends in a catch and a
+// crash in here would otherwise read as a quiet 'error' nobody noticed.
+reset();
+const errored = build(...Object.values({
+  ...deps,
+  ask: async (e2, opts) => {
+    asked = opts;
+    // The real extractText over a real failure payload, so this is the whole
+    // path and not a stub agreeing with itself.
+    return extractText({
+      stop_reason: 'end_turn',
+      content: [errBlock, { type: 'text', text: 'REVIEW BEFORE YOU CALL\n1. *Check this.' }],
+    }, opts.toolMeta);
+  },
+}));
+await errored(env, 'case', 'a', { sources: [{ name: 'prep.pdf', mine: true }], search: true });
+check('D71 a tool error inside a 200 still yields a finished document',
+  state.callDocStatus === 'ready' && /REVIEW BEFORE YOU CALL/.test(state.callDoc || ''),
+  `${state.callDocStatus}: ${String(state.callDocError || '').slice(0, 120)}`);
+check('D72 and it says so, rather than implying the internet was consulted successfully',
+  /max_uses_exceeded/.test(state.callDocSearchNote || ''), state.callDocSearchNote);
+
+// A REQUEST-LEVEL rejection of the tool block does raise. That must cost him
+// the search, never the document.
+reset();
+let toolTries = 0;
+const rejected = build(...Object.values({
+  ...deps,
+  ask: async (e2, opts) => {
+    asked = opts;
+    if (opts.tools) { toolTries += 1; const e = new Error('invalid_request_error: unsupported tool'); e.status = 400; throw e; }
+    return 'REVIEW BEFORE YOU CALL\n1. *Check this.\n\nTHE CALL, IN ORDER\nOpen with the March panel.';
+  },
+}));
+await rejected(env, 'case', 'a', { sources: [{ name: 'prep.pdf', mine: true }], search: true });
+check('D73 a rejected tool block falls back to a plain build instead of losing the document',
+  state.callDocStatus === 'ready' && /THE CALL, IN ORDER/.test(state.callDoc || ''),
+  `${state.callDocStatus}: ${String(state.callDocError || '').slice(0, 160)}`);
+check('D74 the fallback ran WITHOUT tools, or it would just fail again',
+  toolTries === 1 && asked?.tools === undefined, `${toolTries} tool attempts`);
+check('D75 and he is told the lookups did not happen', /did not|failed/i.test(state.callDocSearchNote || ''),
+  state.callDocSearchNote);
+
+// But a stall or an overload must NOT be retried: the second turn fails the
+// same way, costs another max-effort run, and delays the error he needs.
+reset();
+let calls = 0;
+const stalled = build(...Object.values({
+  ...deps,
+  ask: async () => { calls += 1; throw new Error('The model went quiet mid-read and the run was stopped.'); },
+}));
+await stalled(env, 'case', 'a', { sources: [{ name: 'prep.pdf', mine: true }], search: true });
+check('D76 a stall is not retried as though it were a tool problem', calls === 1, `${calls} turns`);
+check('D77 and it lands as a recorded error, not a silent nothing',
+  state.callDocStatus === 'error' && /went quiet/.test(state.callDocError || ''),
+  `${state.callDocStatus}: ${state.callDocError}`);
+
+// Searching and finding nothing is an ordinary build.
+reset();
+const nothing = build(...Object.values({
+  ...deps,
+  ask: async (e2, opts) => {
+    asked = opts;
+    return extractText({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'REVIEW BEFORE YOU CALL\n1. *Check this.' }] }, opts.toolMeta);
+  },
+}));
+await nothing(env, 'case', 'a', { sources: [{ name: 'prep.pdf', mine: true }], search: true });
+check('D78 a search that returns nothing is still a finished document',
+  state.callDocStatus === 'ready' && !state.callDocError, state.callDocError);
+check('D79 and says nothing came back rather than staying silent about it',
+  /Nothing useful came back/i.test(state.callDocSearchNote || ''), state.callDocSearchNote);
+
+// ---- the wiring, panel to route to runCallDoc ---------------------------
+// Read as TEXT, and the header of this file is right that text is the weaker
+// check. It is used here because the two ends cannot be lifted: admin-case.js
+// is a browser module that imports the Firebase SDK at load, and the route is
+// a 7000 line request handler. What is pinned is only the join between them,
+// which is the part that silently comes apart: a panel that sends `search`
+// against a route that reads `websearch` is two green files and a control
+// that does nothing, forever, with no error anywhere.
+const PANEL = readFileSync(j(ROOT, 'public/js/admin-case.js'), 'utf8');
+const ROUTE = readFileSync(j(ROOT, 'worker/index.js'), 'utf8');
+check('D80 the panel has a tick for it', /data-cd-search/.test(PANEL));
+check('D81 held in a flag that starts false, so it is never on unless he asks',
+  /let callDocSearch = false;/.test(PANEL));
+check('D82 the tick is sent with the build', /action: 'call-doc', sources, search: callDocSearch/.test(PANEL));
+check('D83 and with a revise, so the two paths cannot drift apart',
+  /action: 'call-doc', revise: true[^\n]*search: callDocSearch/.test(PANEL));
+check('D84 the route reads that exact field, strictly true, and passes it on',
+  /search: body\?\.search === true/.test(ROUTE));
+check('D85 discarding a document clears what it said about the internet too',
+  /callDocSearched: null, callDocSearchNote: null/.test(ROUTE));
+check('D86 nothing on the panel names a model, an AI or automation, because that language never goes on a page',
+  !/\b(AI|A\.I\.|model|Claude|Anthropic|automated|automation)\b/i
+    .test((PANEL.match(/data-cd-search[\s\S]{0,900}/) || [''])[0]));
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

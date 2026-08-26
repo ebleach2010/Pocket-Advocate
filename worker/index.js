@@ -5992,6 +5992,7 @@ async function handleAdvisor(request, env, ctx) {
     const fields = {
       callDoc: null, callDocStatus: null, callDocError: null, callDocAt: null,
       callDocSources: null, callDocSkipped: null,
+      callDocSearched: null, callDocSearchNote: null,
       callDocReq: null, callDocStartedAt: null, callDocProgressAt: null,
     };
     await patchDoc(env, statePath, fields, { mask: Object.keys(fields) });
@@ -6044,6 +6045,11 @@ async function handleAdvisor(request, env, ctx) {
       revise: !!body?.revise,
       base: typeof body?.base === 'string' ? body.base.slice(0, 60000) : '',
       sources,
+      // Looking things up on the internet, and ONLY when the panel's tick came
+      // with this request. `=== true` rather than a truthy test, because this
+      // one spends money per use and a stray "0" or "no" in a hand-made body
+      // must not turn it on.
+      search: body?.search === true,
     }), { raw: true });
   }
 

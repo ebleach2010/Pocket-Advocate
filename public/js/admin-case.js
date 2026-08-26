@@ -3037,6 +3037,20 @@ const CALLDOC_MAX_FILES = 12;
 let callDocPicked = [];
 let callDocKey = null;
 
+/**
+ * LOOK THINGS UP ON THE INTERNET, per build, and OFF unless he ticks it.
+ *
+ * Eric, 2026-08-26: "any internet searches for providers mentioned or other
+ * providers/paths of action that may be useful."
+ *
+ * Off by default, because every lookup is billed on top of the most expensive
+ * run in the app and most rebuilds are a reformat of material already in the
+ * room. A default of ON would charge him on every revise for a section he did
+ * not ask for. So it is a deliberate tick, and the tick rides with that one
+ * request rather than being remembered as a setting.
+ */
+let callDocSearch = false;
+
 const readAsBase64 = (file) => new Promise((resolve, reject) => {
   const r = new FileReader();
   r.onerror = () => reject(new Error(`Could not read ${file.name}`));
@@ -3086,7 +3100,8 @@ function paintCallDoc(host) {
     // just-started run rendered nothing until the poll caught up, which is
     // the whole gap the flag exists to close.
     const key = JSON.stringify([st.callDocStatus, running, st.callDocAt, !!stalled,
-      (st.callDoc || '').length, st.callDocError || '', callDocPicked.map((f) => f.name)]);
+      (st.callDoc || '').length, st.callDocError || '', callDocPicked.map((f) => f.name),
+      callDocSearch]);
     if (key === callDocKey && host.querySelector('[data-cd-root]')) return;
     callDocKey = key;
 
@@ -3172,7 +3187,17 @@ function paintCallDoc(host) {
                        <span class="dim">${esc(f.kindLabel)}</span>
                      </label>`).join('')}`
                 : '<p class="dim small" style="margin:0 0 .5rem;">Nothing on this case it can read yet.</p>'}
-          </div>`}
+          </div>
+          <label class="cd-case-row" style="margin:.4rem 0 .1rem;">
+            <input type="checkbox" data-cd-search ${callDocSearch ? 'checked' : ''}>
+            <span>🌐 Look things up on the internet for this one</span>
+          </label>
+          <p class="dim small" style="margin:0 0 .6rem;">Off unless you tick it, because each build
+            that does it costs more. When it is on, providers, programmes and insurers named in the
+            record get looked up, along with other paths worth knowing about. Anything found lands in
+            its own section at the end, <strong style="color:var(--gold)">marked as not from the case
+            file and not verified</strong>, with the link beside every line. Never treat that section
+            as part of the record.</p>`}
 
         <p class="row" style="gap:.5rem; flex-wrap:wrap; margin:0;">
           <button class="btn${hasDoc ? ' quiet' : ' glow'}" data-cd-build ${running ? 'disabled' : ''}>
@@ -3195,6 +3220,8 @@ function paintCallDoc(host) {
           <p class="dim small" style="margin:.6rem 0 .2rem;">
             ${stars ? `<strong style="color:var(--gold)">${stars} thing${stars === 1 ? '' : 's'} to check</strong> before you rely on them.` : 'Nothing flagged.'}
             ${(st.callDocSources || []).length ? ` Built from: ${(st.callDocSources || []).map(esc).join(', ')}.` : ''}</p>
+          ${st.callDocSearchNote ? `<p class="dim small" style="margin:-.1rem 0 .2rem; color:var(--gold);">
+            🌐 ${esc(st.callDocSearchNote)}</p>` : ''}
           <textarea class="draft-box" data-cd-text rows="24" ${running ? 'readonly' : ''}>${esc(st.callDoc)}</textarea>
           <p class="dim small" style="margin:.3rem 0 0;">Edit anything by hand before
             printing. A line that is only [square brackets] prints as a framed
@@ -3335,6 +3362,13 @@ function paintCallDoc(host) {
       });
     }
 
+    // No repaint on tick. Rebuilding innerHTML here would take the checkbox
+    // out from under his finger, and the tick is already drawn on screen; the
+    // flag is in the repaint key so any LATER repaint renders it correctly.
+    host.querySelector('[data-cd-search]')?.addEventListener('change', (ev) => {
+      callDocSearch = ev.currentTarget.checked === true;
+    });
+
     host.querySelector('[data-cd-clearfiles]')?.addEventListener('click', () => {
       callDocPicked = [];
       callDocKey = null;
@@ -3411,7 +3445,10 @@ function paintCallDoc(host) {
       // only ever sets .disabled on it, which is harmless on a dead node.
       callDocKey = null;
       load();
-      await post({ action: 'call-doc', sources }, btn);
+      // The tick as it stands at the moment he taps build, sent with this one
+      // request. The Worker defaults it off, so an old page that does not send
+      // the field builds without searching rather than spending on a surprise.
+      await post({ action: 'call-doc', sources, search: callDocSearch }, btn);
     });
 
     // The overlay, never prompt(): window.prompt() does nothing at all inside
@@ -3444,7 +3481,7 @@ function paintCallDoc(host) {
         callDocPending = { at: Date.now(), wasAt: String((panelState || {}).callDocAt || '') };
         callDocKey = null;
         load();
-        post({ action: 'call-doc', revise: true, instruction, base });
+        post({ action: 'call-doc', revise: true, instruction, base, search: callDocSearch });
       });
       document.body.appendChild(overlay);
       overlay.querySelector('[data-inst]').focus();
