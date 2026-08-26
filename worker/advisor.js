@@ -194,8 +194,14 @@ function withCacheBp(system) {
     : system;
 }
 
-/** One request body, whoever carries it: stream, create, and batch alike. */
-function turnRequest({ system, messages, effort, maxTokens = 64000 }) {
+/**
+ * One request body, whoever carries it: stream, create, and batch alike.
+ *
+ * `tools` is left OFF the body entirely when a caller passes none, so the five
+ * callers that never wanted a tool send exactly the bytes they always sent,
+ * cache prefix included.
+ */
+function turnRequest({ system, messages, effort, maxTokens = 64000, tools }) {
   return {
     model: MODEL,
     max_tokens: maxTokens,
@@ -203,21 +209,68 @@ function turnRequest({ system, messages, effort, maxTokens = 64000 }) {
     output_config: { effort },
     system: withCacheBp(system),
     messages,
+    ...(tools && tools.length ? { tools } : {}),
   };
 }
 
-/** The checks and the text pull, shared by every way a final Message arrives. */
-function extractText(final) {
+/**
+ * The checks and the text pull, shared by every way a final Message arrives.
+ *
+ * SERVER TOOL RESULTS RIDE IN THE SAME content ARRAY. Web search executes on
+ * Anthropic's side, so a turn with searching on comes back with
+ * `server_tool_use` and `web_search_tool_result` blocks interleaved among the
+ * text blocks. The text filter below already ignores anything that is not
+ * text, which is why the new block types cannot break the pull. But ignoring
+ * them in SILENCE would mean a search that failed looked identical to a
+ * search that was never asked for, so `meta`, when a caller passes one, is
+ * filled in with what the tools actually did and the caller can say so.
+ *
+ * THE TRAP, and it bites only on the failure path, only in production, only
+ * under load: a server tool error does NOT raise. The HTTP status is 200 and
+ * the failure arrives as a `web_search_tool_result` whose `content` is a
+ * single error OBJECT, for example { error_code: 'max_uses_exceeded' }, where
+ * a success carries a LIST of results. Code that indexes, spreads or maps
+ * that field without checking which one it is holding crashes on the first
+ * day the cap is hit and never once in testing. Hence Array.isArray first,
+ * every time, before anything touches it.
+ */
+function extractText(final, meta) {
   if (final.stop_reason === 'refusal')
     throw new Error('The model declined this request.');
   if (final.stop_reason === 'max_tokens')
     console.warn('advisor: response truncated at max_tokens');
-  const text = final.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+  const content = Array.isArray(final.content) ? final.content : [];
+  if (meta) {
+    for (const b of content) {
+      if (b?.type === 'server_tool_use') { meta.queries = (meta.queries || 0) + 1; continue; }
+      if (b?.type !== 'web_search_tool_result') continue;
+      if (Array.isArray(b.content)) meta.results = (meta.results || 0) + b.content.length;
+      else {
+        const code = b.content?.error_code || 'unknown';
+        (meta.errors = meta.errors || []).push(String(code));
+        console.warn('advisor: web search failed:', code);
+      }
+    }
+  }
+  const text = content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
   return stripDashes(text);
 }
 
-async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, initialStage = 'sending', deadlineAt = 0, noStream = false }) {
-  const turn = turnRequest({ system, messages, effort, maxTokens });
+/**
+ * Carry ONE request to a final Message: the stream or the create, the
+ * heartbeat, and the watchdog that kills a run nothing else would.
+ *
+ * This used to be the whole of ask(). It was split out when server tools
+ * arrived, because a turn with tools in it can come back `pause_turn`, which
+ * means "there is more to do, send it back to me" and needs a SECOND request
+ * with the same machinery around it. `runStartedAt` is threaded in so the
+ * fifteen minute budget covers the whole of ask() rather than restarting for
+ * each segment; with one segment, which is every caller that passes no tools,
+ * it is the same clock it always was.
+ */
+async function carryTurn(env, turn, {
+  onBeat, initialStage = 'sending', deadlineAt = 0, noStream = false, runStartedAt = Date.now(),
+} = {}) {
   // Heartbeat, on a WALL CLOCK, not on stream events - and it is a WATCHDOG.
   //
   // Event-driven beats told the truth only once tokens were flowing. Before
@@ -297,7 +350,7 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, i
         stalledWhy = 'This read ran out of background time and was stopped partway.';
       else if (!noStream && now - lastEvent > STREAM_QUIET_MS)
         stalledWhy = 'The model went quiet mid-read and the run was stopped.';
-      else if (now - dispatched > RUN_BUDGET_MS)
+      else if (now - runStartedAt > RUN_BUDGET_MS)
         stalledWhy = 'This read hit its fifteen minute budget and was stopped.';
       if (stalledWhy) {
         running = false;
@@ -319,7 +372,50 @@ async function ask(env, { system, messages, effort, maxTokens = 64000, onBeat, i
   } finally {
     running = false;
   }
-  return extractText(final);
+  return final;
+}
+
+/**
+ * How many times a paused turn may be handed back to the model before ask()
+ * gives up and keeps what it has. `pause_turn` happens when server tools are
+ * in play and the model wants to keep going past a natural break; each resume
+ * is a fresh request carrying everything written so far, so this bounds an
+ * unbounded spend as much as it bounds a loop. Three is well past what a
+ * bounded six search turn needs, and the text already written is returned
+ * either way, so hitting the cap costs him a slightly shorter document, never
+ * the document.
+ */
+const MAX_PAUSE_RESUMES = 3;
+
+/**
+ * `tools`: server tools only (they execute on Anthropic's side, so there is no
+ * client-side execution loop here and never should be). Omit it and every
+ * behaviour below is exactly what it was before tools existed.
+ * `toolMeta`: an object ask() fills in with what the server tools did, so the
+ * caller can tell "searched and found nothing" from "never searched" from
+ * "searched and the tool errored". Never populated when no tools are passed.
+ */
+async function ask(env, {
+  system, messages, effort, maxTokens = 64000, onBeat,
+  initialStage = 'sending', deadlineAt = 0, noStream = false, tools, toolMeta,
+}) {
+  const runStartedAt = Date.now();
+  const carryOpts = { onBeat, initialStage, deadlineAt, noStream, runStartedAt };
+  let convo = messages;
+  let final = await carryTurn(env, turnRequest({ system, messages: convo, effort, maxTokens, tools }), carryOpts);
+  const parts = [extractText(final, toolMeta)];
+  // pause_turn: the turn is not finished, it is parked. Hand the model back
+  // everything it has produced so far, tool results included, and it carries
+  // on from there. Only reachable with server tools in play, and gated on
+  // `tools` as well so no existing caller can ever enter this loop.
+  for (let i = 0; tools && tools.length && final.stop_reason === 'pause_turn' && i < MAX_PAUSE_RESUMES; i++) {
+    convo = [...convo, { role: 'assistant', content: final.content }];
+    final = await carryTurn(env, turnRequest({ system, messages: convo, effort, maxTokens, tools }), {
+      ...carryOpts, initialStage: 'writing',
+    });
+    parts.push(extractText(final, toolMeta));
+  }
+  return parts.filter(Boolean).join('\n').trim();
 }
 
 /**
@@ -2239,6 +2335,73 @@ const MAX_CALLDOC_SOURCES = 12;
 const escAttr = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')
   .replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+/**
+ * THE SEARCH BUDGET, and why it is this number.
+ *
+ * Eric ticks "look things up" per build, and every use is billed on top of a
+ * turn that is already the most expensive in the app. Six is what a real call
+ * document needs: a case names two or three providers, programmes or insurers
+ * worth a current look, and that leaves two or three for the other paths of
+ * action he asked for, an appeal route, a financial assistance programme, a
+ * registry. Past that the model is not learning more about THIS call, it is
+ * browsing, and every extra page it reads dilutes a sheet whose whole value is
+ * that it is short. It is also the cap that makes a runaway bounded: the worst
+ * case is six searches, a known and small amount of money, not an open tab.
+ *
+ * Hitting the cap is not an error he ever sees. The seventh search comes back
+ * as a `max_uses_exceeded` error OBJECT inside a 200, which extractText counts
+ * and the document goes out regardless.
+ */
+const WEB_SEARCH_MAX_USES = 6;
+
+/**
+ * The server tool itself. It runs on Anthropic's infrastructure, so there is
+ * nothing to execute here and no result to feed back by hand.
+ *
+ * NO `code_execution` ALONGSIDE IT. This variant already runs code execution
+ * underneath; declaring a second execution environment next to it confuses the
+ * model about which one it is in.
+ *
+ * NO allowed_domains AND NO blocked_domains. Passing both at once is a request
+ * error, and neither one is right here: a named clinic's own site is exactly
+ * the page he needs, and no allowlist could enumerate the clinics in every
+ * case he will ever open. The bound that matters is max_uses plus the prompt
+ * rules on what may be searched for at all.
+ *
+ * NO user_location either. A malformed location is a request level 400, and a
+ * 400 raises, which would cost him the whole document to make a search result
+ * slightly more local. Not a trade worth making on this document.
+ */
+const WEB_SEARCH_TOOL = {
+  type: 'web_search_20260209',
+  name: 'web_search',
+  max_uses: WEB_SEARCH_MAX_USES,
+};
+
+/**
+ * The extra prompt that ships ONLY on a build he ticked. Kept out of the
+ * static block otherwise so an ordinary build sends the same cached prefix it
+ * always sent, byte for byte.
+ */
+const WEB_SEARCH_RULES = `
+
+YOU CAN LOOK THINGS UP ON THE INTERNET ON THIS BUILD. There are hard limits on what that is for.
+
+What to look up: a provider, clinic, hospital, programme, insurer or scheme THE RECORD ITSELF NAMES, so he knows what is publicly true about it before he says the name out loud on a call. Other paths of action worth knowing exist: an appeal route, a patient assistance or financial aid programme, a second opinion pathway, a registry, a patient organisation. Public, checkable, current facts only.
+
+What it is NOT for. Not diagnosis. Not treatment advice. Never a recommendation to start, stop or change any treatment, medication, dose or provider. Do not search for what is wrong with this client, and if a page volunteers an answer to that, do not carry it into the document. Do not look up the client, their family, or any private person.
+
+Never invent a clinician, a clinic, a programme, an address or a phone number. The rule that you may not name a doctor this record does not name still holds, and a search result does not lift it: a name, a number or an address may appear only if a page you actually opened states it, and only on a line that carries that page's URL. If you did not open a page that says it, it does not go in.
+
+WHERE IT GOES, and this one is not negotiable. Nothing from the internet may be mixed into sections 1 to 5. Those sections are his document and this case file, and he reads them down the page to a frightened person believing exactly that. Anything found on the internet goes in section 6 under its own header, or it does not go in the document at all.
+
+6. "FROM THE INTERNET, NOT FROM THE CASE" - what you looked up, if any of it is worth his time.
+Open the section with this line exactly: NOT FROM THE CASE FILE. NOT VERIFIED. CHECK BEFORE YOU SAY IT.
+Then each item as: * one line saying what it is and why it matters to THIS call, the source URL on its own line directly beneath it, and the date the page carries if it carries one. Every item is starred, without exception, because not one line of this section has been verified by anyone.
+Say plainly where a page looks out of date, where two pages disagree, and where something was too vague to rely on. A hedge he can see is worth more than a clean line he cannot check.
+Do not repeat these items up into section 1. Put ONE line in section 1 reading: * Section 6 is from the internet, none of it verified. That way the flags in section 1 stay the flags that came from the case, and he still knows section 6 is there.
+If you searched and nothing useful came back, write the header and one line saying nothing useful came back. If a search was not worth making at all, leave the section out. Never pad it, and never let it grow longer than the call itself.`;
+
 async function setState(env, kind, id, fields) {
   await patchDoc(env, statePath(kind, id), fields, { mask: Object.keys(fields) });
 }
@@ -2551,6 +2714,10 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
           instruction: req.instruction || '',
           revise: !!req.revise,
           base: req.base || '',
+          // His tick, carried across the retry. A rebuild that quietly dropped
+          // the internet section would leave him wondering where it went, and
+          // one that quietly added it would spend money he did not agree to.
+          search: req.search === true,
           sources: (req.sources || []).filter((s) => s?.path || s?.url),
           noStream: true,
         });
@@ -4147,7 +4314,18 @@ ${revise && instruction
  */
 export async function runCallDoc(env, kind, id, {
   instruction = '', revise = false, base = '', sources = [], noStream = false,
+  // OFF unless he ticked it on this build. Every search is billed on top of
+  // the most expensive turn in the app, and most rebuilds are a reformat of
+  // material that is already in the room, so the internet has nothing to add
+  // to them. Opt in, never a default.
+  search = false,
 } = {}) {
+  const wantSearch = search === true;
+  // What the server tools actually did, filled in by extractText. Read after
+  // the turn so the panel can tell him "looked things up and found nothing"
+  // apart from "never looked", which are very different facts on a document
+  // he is about to read to a patient.
+  const toolMeta = { queries: 0, results: 0, errors: [] };
   try {
     await setState(env, kind, id, {
       callDocStatus: 'running', callDocError: null,
@@ -4168,6 +4346,9 @@ export async function runCallDoc(env, kind, id, {
       // a retry can say which upload it needs again rather than guessing.
       callDocReq: {
         instruction: instruction || '', revise: !!revise, base: base || '',
+        // His tick rides with the request so a retry after a closed lid
+        // rebuilds the document he asked for, not a quietly different one.
+        search: wantSearch,
         sources: (sources || []).slice(0, MAX_CALLDOC_SOURCES).map((s) => ({
           name: s?.name || '',
           contentType: s?.contentType || '',
@@ -4228,11 +4409,17 @@ export async function runCallDoc(env, kind, id, {
       .map((r) => `${r.data.done ? '[covered] ' : ''}${r.data.text}`)
       .filter(Boolean).join('\n').slice(0, 8000);
 
-    const out = await ask(env, {
+    const askOpts = (withTools) => ({
       effort: 'max',
       noStream,
       onBeat: () => setState(env, kind, id, { callDocProgressAt: new Date() }).catch(() => {}),
       maxTokens: 32000,
+      // The tool runs on Anthropic's side. Nothing is executed here, and
+      // `code_execution` is deliberately NOT declared next to it: this search
+      // variant already runs code execution underneath, and a second
+      // execution environment in the same request muddles which one the model
+      // thinks it is in.
+      ...(withTools ? { tools: [WEB_SEARCH_TOOL], toolMeta } : {}),
       system: [{
         type: 'text',
         cache: true,
@@ -4269,7 +4456,7 @@ NEVER:
 - Never use an em dash or an en dash. Use a comma, a colon, or a period.
 - No markdown headings and no bold markers. Section headers in capitals, exactly as named above. Plain text he can read in any light.
 
-Where a chart or a graphic would serve him better than a sentence, write one line [in square brackets] describing exactly the visual, for example [Line chart: creatinine across the last four draws]. The bracketed line stands alone.`,
+Where a chart or a graphic would serve him better than a sentence, write one line [in square brackets] describing exactly the visual, for example [Line chart: creatinine across the last four draws]. The bracketed line stands alone.${withTools ? WEB_SEARCH_RULES : ''}`,
       }, {
         type: 'text',
         text: stanceNote(style) || ' ',
@@ -4315,6 +4502,48 @@ ${revise && instruction
       }],
     });
 
+    // A SEARCH MUST NEVER COST HIM THE DOCUMENT.
+    //
+    // Tool errors do not raise, they come back inside a 200 as an error
+    // object, so the ordinary failure of a search is already survivable and
+    // extractText counts it. What is NOT survivable that way is the request
+    // being rejected for the shape of the tool block itself: a variant this
+    // account cannot use, a parameter combination the API refuses. That is a
+    // 400, it raises, and it would land him in the catch below with status
+    // error and no document at all, for a feature he ticked as an extra.
+    //
+    // So the tool turn gets exactly one fallback: run it again with no tools,
+    // which is precisely the build he would have got had he not ticked the
+    // box. Narrowed to request rejections on purpose. A stall, an overload or
+    // a watchdog abort must NOT be retried here: those fail the same way the
+    // second time, cost another max effort turn, and delay the error he needs
+    // to see.
+    let searchNote = '';
+    let out;
+    if (!wantSearch) {
+      out = await ask(env, askOpts(false));
+    } else {
+      try {
+        out = await ask(env, askOpts(true));
+      } catch (err) {
+        const msg = String(err?.message || err);
+        const rejected = err?.status === 400 || /invalid_request|web_search|unsupported tool/i.test(msg);
+        if (!rejected) throw err;
+        console.warn('advisor call doc: web search refused, building without it:', msg);
+        toolMeta.errors.push('tool_rejected');
+        out = await ask(env, askOpts(false));
+      }
+      // Said plainly, because "it searched" and "it tried to search" look
+      // identical on the page otherwise, and the difference decides how much
+      // of section 6 he can expect to be there.
+      const found = toolMeta.results
+        ? `Looked things up: ${toolMeta.queries} search${toolMeta.queries === 1 ? '' : 'es'}, ${toolMeta.results} result${toolMeta.results === 1 ? '' : 's'}. None of it is verified, check anything you say out loud.`
+        : 'Nothing useful came back from the internet. This document is from the case.';
+      searchNote = toolMeta.errors.length
+        ? `${found} ${toolMeta.errors.length} lookup${toolMeta.errors.length === 1 ? '' : 's'} failed (${toolMeta.errors.slice(0, 3).join(', ')}).`
+        : found;
+    }
+
     const doc = (out || '').trim();
     if (!doc) throw new Error('empty call document');
     await setState(env, kind, id, {
@@ -4325,6 +4554,11 @@ ${revise && instruction
       // which upload this was built from.
       callDocSources: readNames,
       callDocSkipped: skipped,
+      // Whether the internet was consulted at all, and what came of it. Null
+      // when he did not tick the box, so the panel says nothing rather than
+      // saying "no searches" on every ordinary build.
+      callDocSearched: wantSearch,
+      callDocSearchNote: searchNote || null,
       callDocReq: null, callDocStartedAt: null, callDocProgressAt: null, callDocError: null,
     });
     await deleteDoc(env, callDocQueuePath(kind, id)).catch(() => {});
