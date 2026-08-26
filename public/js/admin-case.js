@@ -162,21 +162,7 @@ async function load() {
 function render(el) {
   const c = data;
 
-  el.innerHTML = `
-    <div class="case-head">
-      <div class="row">
-        <h1 style="margin:0;" data-client>${esc(c.clientName || c.clientEmail || c.clientUid)}</h1>
-        <span class="status-pill" data-status>${(c.status || '?').replace('_', ' ').toUpperCase()}</span>
-        ${c.status === 'closed' ? '' : `
-        <button class="btn quiet tiny" data-work-head style="flex:none;"
-          aria-label="Clock in or out of this case">⏱</button>`}
-      </div>
-      <p class="dim small working-line" data-working hidden style="margin:.2rem 0 0;"></p>
-    </div>
-    <div data-folder></div>`;
-  // The clock-in switch above the tabs (Eric, 2026-08-25: "Three places for
-  // this, all linked"). Mounted here so it works without ever opening Chat.
-  startHeadClock(c);
+  el.innerHTML = '<div data-folder></div>';
 
   folder = mountFolder({
     // Tappable furniture that must not turn the page. These selectors used to
@@ -190,14 +176,30 @@ function render(el) {
     //
     // Four per group is the constraint, not a coincidence. Four tabs fit
     // across a 320px screen with their labels whole; five do not.
+    //
+    // GROUPED BY WHEN HE USES IT, not by which module builds it. 'Track' and
+    // 'Mine' named a source (a tracker; a storage prefix) rather than a
+    // moment, so the page he wanted was filed under a word he was not
+    // thinking of. The two standing groups keep their positions and their
+    // names, because he already knows where Case and Advisor are:
+    //   Case     the client, the conversation, what he flagged in it, files
+    //   Advisor  its read, its differential, asking it, what it knows of him
+    //   Before   what he does to get ready for a call
+    //   After    what he does once the call is over
     groups: [
-      { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files'] },
-      { id: 'read', label: 'Advisor', icon: '👨‍⚕️', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
-      { id: 'track', label: 'Track', icon: '🗒', pages: ['summary', 'unanswered', 'agenda', 'about'] },
-      // 'calldoc' sits in Mine, beside Notes: both start from something Eric
-      // wrote himself. A page absent from every group renders no tab at all,
-      // which is how the call document first shipped invisible.
-      { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'calldoc', 'drafts', 'saved'] },
+      { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'saved', 'files'] },
+      // 'about' is the advisor's read on ERIC, so it belongs with the rest of
+      // the advisor rather than in a tracker. 'education' leaves for Before:
+      // reading up on this case's terms is preparation, and it is the page he
+      // opens the night before a call.
+      { id: 'read', label: 'Advisor', icon: '👨‍⚕️', pages: ['advisor', 'dx', 'advisor-chat', 'about'] },
+      // Everything he touches before he dials: the document he brings, his own
+      // notes, the list of what to cover, the words he needs to know. 'calldoc'
+      // sits first because it is the one he could not find twice.
+      { id: 'before', label: 'Before', icon: '📋', pages: ['calldoc', 'notes', 'agenda', 'education'] },
+      // Everything he touches once he hangs up: the day read back, the drafts
+      // he sends, and what the client still owes him.
+      { id: 'after', label: 'After', icon: '📤', pages: ['summary', 'drafts', 'unanswered'] },
       // A FIFTH group rather than a fifth page in an existing one: four per
       // group is the width constraint, and 'read' and 'track' are both full.
       // Only rendered for a Full Access case; on a standard case these pages
@@ -248,8 +250,14 @@ function render(el) {
               </div>
               <div class="row" data-workclock style="gap:.5rem; align-items:center; margin:.1rem 0 .5rem;">
                 <button class="btn quiet" data-work-toggle style="flex:none;">▶ Start working</button>
+                <!-- The total is a BUTTON and it did not look like one: 30px
+                     tall, dim, a dotted underline, and a title attribute a
+                     phone never shows. That is the same failure as the clock
+                     switch he could not see - a control that reads as a
+                     readout. It now carries the word for what it does, on the
+                     face, at 44px. -->
                 <button class="btn quiet work-total-btn" data-work-total
-                  style="flex:none;" title="Tap to add or subtract time"></button>
+                  style="flex:none;" title="Add or subtract time on this case"></button>
                 <span class="work-rate" data-work-rate hidden></span>
               </div>
               <p class="dim small" data-client-gate style="margin:.1rem 0 .4rem;" hidden></p>
@@ -287,7 +295,12 @@ function render(el) {
       {
         // Talking to the advisor, out of the bottom of Read and onto its own
         // page. mountAdvisor moves its Q&A here when given the container.
-        id: 'advisor-chat', title: 'Chat', icon: '💬',
+        //
+        // "Ask", not "Chat". Two tabs in this workspace were both called Chat
+        // with the same 💬, one for the client and one for the advisor, and
+        // nothing on either said which was which. The client one keeps the
+        // word, because that is the one a client conversation is called.
+        id: 'advisor-chat', title: 'Ask', icon: '🗣',
         render: (pane) => { pane.innerHTML = '<div id="advisor-chat"></div>'; },
       },
       {
@@ -297,13 +310,61 @@ function render(el) {
         render: (pane) => paintFiles(pane),
       },
       {
-        id: 'education', title: 'Education', icon: '📚',
-        // Painted from the advisor's state poll, same as the differential.
-        render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
-      },
-      {
         id: 'about', title: 'About you', icon: '🪞',
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
+      },
+      // THE STRIP RENDERS IN THIS ARRAY'S ORDER, not in the order a group
+      // lists its pages, so the array is what decides which tab a group opens
+      // on. 'calldoc' therefore comes first in Before: it is the page he asked
+      // for twice and could not find, and it should be the one already open
+      // when he taps the group.
+      {
+        // Eric, 2026-08-26. Beside Notes, because this is the other page that
+        // starts from something HE wrote rather than something the app made.
+        // "My doc". It is the page where HE uploads what he wrote, and that
+        // is the sentence he used when he asked for it twice. "Call doc"
+        // named the output; the thing he was hunting for was the input.
+        id: 'calldoc', title: 'My doc', icon: '📄',
+        render: (pane) => {
+          pane.innerHTML = [
+            '<div data-calldoc-host></div>',
+            // ALSO MOVED HERE FROM DRAFTS, and for the same reason as the
+            // printable below it: its own first line is "a sheet to have open
+            // while you talk". That is this page's subject. It was filed on
+            // the page he opens after a call, next to the drafts he sends.
+            '<div data-callnotes-host></div>',
+            // MOVED HERE FROM DRAFTS. All three of these end up as the sheet
+            // in his hand on the call, so all three belong on the page named
+            // for it. On Drafts, three tabs and a group away, this button was
+            // the one he kept finding when he was hunting for the upload.
+            '<div class="panel">',
+            '  <h3>Print a plain prep sheet</h3>',
+            '  <p class="dim small">No upload needed. Built from the read the advisor',
+            '    already has, laid out to print. Nothing here decides anything for you.</p>',
+            '  <button class="btn quiet" data-prep-sheet>🖨 Print a prep sheet</button>',
+            '</div>',
+          ].join('');
+          // Built from the advisor's own sections rather than a fresh model
+          // call: that read already exists and is already the one he trusts,
+          // and asking twice would produce a second version to reconcile.
+          pane.querySelector('[data-prep-sheet]').addEventListener('click', () => {
+            const c2 = data;
+            const at = c2.appointment?.start ? toDate(c2.appointment.start) : null;
+            openPrepSheet({
+              name: c2.clientName || c2.clientEmail || 'Call prep',
+              when: at
+                ? new Intl.DateTimeFormat('en-US', {
+                  timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric',
+                  hour: 'numeric', minute: '2-digit',
+                }).format(at) + ' MST'
+                : '',
+              analysis: lastAnalysis,
+              differential: lastDifferential,
+            });
+          });
+          paintCallNotes(pane.querySelector('[data-callnotes-host]'));
+        },
+        onShow: (pane) => paintCallDoc(pane.querySelector('[data-calldoc-host]')),
       },
       {
         // fade, and so opted out of tap-to-flip: on the notes sheet a tap has
@@ -330,30 +391,20 @@ function render(el) {
         },
       },
       {
-        // Eric, 2026-08-26. Beside Notes, because this is the other page that
-        // starts from something HE wrote rather than something the app made.
-        id: 'calldoc', title: 'Call doc', icon: '📄',
-        render: (pane) => { pane.innerHTML = '<div data-calldoc-host></div>'; },
-        onShow: (pane) => paintCallDoc(pane.querySelector('[data-calldoc-host]')),
-      },
-      {
-        // One day of the thread, read back to him. His side only: he took this
-        // off the client's side deliberately.
-        id: 'summary', title: 'Summary', icon: '🗒',
-        render: (pane) => paintSummary(pane),
-      },
-      {
-        // What he asked the client for and never got. Painted from the poll.
-        id: 'unanswered', title: 'Unanswered', icon: '⚠️',
-        render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
-      },
-      {
         // The next call's plan, built from the queue the chat lanes feed.
         // Re-fetched every time the page opens: the client adds to the list
         // from their side and a stale agenda defeats the point.
         id: 'agenda', title: 'Agenda', icon: '🗓',
         render: (pane) => paintAgendaPage(pane),
         onShow: (pane) => pane._reload?.(),
+      },
+      {
+        // "Terms", not "Education". Education is what a syllabus is called;
+        // what this page holds is the terms in THIS case, which is the thing
+        // he goes looking for.
+        id: 'education', title: 'Terms', icon: '📚',
+        // Painted from the advisor's state poll, same as the differential.
+        render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
       {
         // His bookmarks on this thread, each with a note. Private by path: a
@@ -365,80 +416,94 @@ function render(el) {
         },
       },
       {
+        // One day of the thread, read back to him. His side only: he took this
+        // off the client's side deliberately.
+        id: 'summary', title: 'Summary', icon: '🗒',
+        render: (pane) => paintSummary(pane),
+      },
+      {
         id: 'drafts', title: 'Drafts', icon: '✍️',
         // Today's draft panel, relocated. The advisor renders into it and
         // owns its heading and its hidden state.
         render: (pane) => {
           pane.innerHTML = [
+            // The draft panel below is hidden until there is a draft, which
+            // left this page reading as nothing but "Duty of care" and told
+            // him nothing about why the tab is called Drafts. One line, always
+            // true whether or not a draft is showing.
+            '<p class="dim small" style="margin:0 0 .9rem;">Text you edit and then send.',
+            '  A reply the advisor writes for you lands at the top of this page,',
+            '  and you are walked here the moment it does.</p>',
             '<div class="panel draft-panel advisor-draft" id="draft-panel" hidden></div>',
-            // The call-notes workbench paints itself into this host from the
-            // advisor's state poll, exactly like the appeals page does.
-            '<div data-callnotes-host></div>',
-            // TWO DIFFERENT THINGS USED TO SHARE ONE WORD, and it cost him the
-            // feature. This button generates a PRINTABLE sheet out of the
-            // advisor's existing sections. The place where he uploads his own
-            // notes to be blended with the case is a different thing entirely,
-            // on the Call doc page. Both were called "prep", so he tapped this
-            // one looking for the upload, got a printable, and concluded the
-            // upload had never been built: "I said this ages ago and it never
-            // happened" (2026-08-26). It had been built. It was unfindable.
+            // THE PRINTABLE PREP SHEET USED TO LIVE HERE, on the page he opens
+            // AFTER a call, three tabs away from the place he uploads his own
+            // notes. Two different things sharing the word "prep" is what cost
+            // him the notes upload for weeks; two things doing the same job on
+            // two different pages is the same fault one step later. Both now
+            // sit together on My doc, which is the page for the sheet he holds
+            // during the call. Nothing was dropped: the same button, the same
+            // openPrepSheet, one tab to the left of where it was.
             //
-            // So this one says printable, and the upload gets a signpost of its
-            // own, in the words he used for it.
-            '<div class="panel">',
-            '  <h3>Before a call</h3>',
-            '  <p class="dim small">Nothing here decides anything for you.</p>',
-            '  <button class="btn" data-prep-sheet>🎬 Printable prep sheet</button>',
-            '  <p class="dim small" style="margin:.7rem 0 .35rem;">Or upload what you wrote yourself and',
-            '    have it blended with the case, on your private shelf that the client cannot see:</p>',
-            '  <button class="btn ghost" data-go-calldoc>📄 My notes, blended with the case</button>',
-            '</div>',
+            // What is left on this page is one thing, said once: text you edit
+            // and then send.
             '<div class="panel">',
             '  <h3>Duty of care</h3>',
             '  <p class="dim small">A draft you can edit before it goes anywhere. Also on the',
             '    composer in Chat, so it is one tap away when you want it.</p>',
-            '  <button class="btn" data-duty>⚕️ Draft it</button>',
+            // "Draft it" only means anything if you have already read the
+            // heading above it, and he scans buttons, not headings.
+            '  <button class="btn" data-duty>⚕️ Draft a duty of care note</button>',
             '</div>',
           ].join('');
           // Always present, never suggested. It says nothing about this client
           // and looks identical on every case; Eric decides when he is
           // obligated, and this only saves him writing the same thing under
           // pressure at the moment he is least able to.
-          // Built from the advisor's own sections rather than a fresh model
-          // call: that read already exists and is already the one he trusts,
-          // and asking twice would produce a second version to reconcile.
-          // The signpost. It clicks the real tab rather than reaching into the
-          // folder's internals, so page switching keeps exactly one
-          // implementation and this cannot drift away from it.
-          pane.querySelector('[data-go-calldoc]')?.addEventListener('click', () => {
-            const tab = document.querySelector('.folder-tabs > a[data-page="calldoc"]');
-            if (tab) { tab.click(); tab.scrollIntoView({ inline: 'center', block: 'nearest' }); }
-          });
-
-          pane.querySelector('[data-prep-sheet]').addEventListener('click', () => {
-            const c = data;
-            const start = c.appointment?.start ? toDate(c.appointment.start) : null;
-            openPrepSheet({
-              name: c.clientName || c.clientEmail || 'Call prep',
-              when: start
-                ? new Intl.DateTimeFormat('en-US', {
-                  timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric',
-                  hour: 'numeric', minute: '2-digit',
-                }).format(start) + ' MST'
-                : '',
-              analysis: lastAnalysis,
-              differential: lastDifferential,
-            });
-          });
           pane.querySelector('[data-duty]').addEventListener('click', () => openDutyDraft({
             tz: data.clientTz || '',
             onSend: (text) => chatSend?.(text),
           }));
-          paintCallNotes(pane.querySelector('[data-callnotes-host]'));
         },
+      },
+      {
+        // What he asked the client for and never got. Painted from the poll.
+        id: 'unanswered', title: 'Unanswered', icon: '⚠️',
+        render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
     ],
   });
+
+  // ---- who this is, and whether the clock is running -----------------------
+  //
+  // THIS USED TO SIT ABOVE THE TAB STRIP AND WAS NEVER ON SCREEN. folder.js
+  // brings the tab strip up under the header on every page flip, and on the
+  // first mount too, so anything above the strip is scrolled off before he
+  // has looked at the page once. Measured at 390x844 on the demo case: the
+  // header sat at y = -40 the moment the page settled. The client's name, the
+  // status, and the clock switch he circled in red on a screenshot were all
+  // above the fold he never sees.
+  //
+  // That is the whole of the "it exists but I cannot find it" complaint, in
+  // one element. So it moves BELOW the strip, where the folder's own dock
+  // puts it first in view, on arrival and after every single tab tap.
+  const head = document.createElement('div');
+  head.className = 'case-head';
+  head.innerHTML = `
+    <div class="case-who">
+      <span class="case-name" data-client>${esc(c.clientName || c.clientEmail || c.clientUid)}</span>
+      <span class="status-pill" data-status>${(c.status || '?').replace('_', ' ').toUpperCase()}</span>
+    </div>
+    ${c.status === 'closed' ? '' : `
+    <button type="button" class="btn quiet work-head" data-work-head
+      aria-label="Clock in or out of this case">⏱</button>`}
+    <p class="dim small working-line" data-working hidden></p>`;
+  const strip = el.querySelector('[data-folder] .folder-tabs');
+  if (strip) strip.after(head);
+  else el.prepend(head);          // no strip is not a reason to lose the clock
+  // The clock-in switch beside the client's name (Eric, 2026-08-25: "Three
+  // places for this, all linked"). Mounted here so it works without ever
+  // opening Chat.
+  startHeadClock(c);
 
   // The dropdown beside the heading. Built from STATUS_REACTIONS so it can
   // never drift from the long-press menu or from the Worker's wording.
@@ -1000,7 +1065,10 @@ function startWorkClock(c) {
     const t = liveClockSeconds();
     const h = Math.floor(t / 3600);
     const m = Math.floor((t % 3600) / 60);
-    totalEl.textContent = `${h ? `${h}h ` : ''}${m}m on this case${clock.startedAt ? ' · running' : ''}`;
+    const total = `${h ? `${h}h ` : ''}${m}m`;
+    totalEl.innerHTML = `${esc(total)} on this case${clock.startedAt ? ' · running' : ''}<span class="fixit">✎ fix</span>`;
+    totalEl.setAttribute('aria-label',
+      `${total} banked on this case. Tap to add or subtract time.`);
     totalEl.classList.toggle('on', !!clock.startedAt);
     // The margin line, live beside the clock that produces it.
     if (rateEl) {
@@ -1286,8 +1354,8 @@ function paintUnanswered(pane, rows, readAt) {
           Check it before you lean on it.</p>`
         : readAt
           ? `<p class="dim small">Nothing outstanding as of the last read, ${esc(new Date(readAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}.
-             This list is rebuilt each time the advisor reads the thread; if you have asked for things since, run an Update on the Advisor tab and check back.</p>`
-          : `<p class="dim small">No completed read yet, so there is nothing to show. Run an Update on the Advisor tab; this list is built from it.</p>`}
+             This list is rebuilt each time the advisor reads the thread; if you have asked for things since, press Update on the Read page and check back.</p>`
+          : `<p class="dim small">No completed read yet, so there is nothing to show. Press Update on the Read page; this list is built from it.</p>`}
     </div>`;
 
   pane.querySelectorAll('[data-again]').forEach((b) => {
@@ -1347,7 +1415,7 @@ function paintEducation(pane, glossary) {
 
   pane.innerHTML = `
     <div class="panel">
-      <h3>📚 Education</h3>
+      <h3>📚 Terms in this case</h3>
       <p class="dim small">Tick a term once you own it. It stops being highlighted, it is never explained to you again, and the advisor pitches everything after that to what you actually know.</p>
       ${byCat.size
         ? [...byCat.entries()]
@@ -1451,8 +1519,9 @@ document.addEventListener('pa-panel-state', (e) => {
   if (d.id && d.id !== caseId) return;
   panelState = d;
   if (folder?.el('appeals')) folder.el('appeals')._reload?.();
-  // The call-notes workbench on Drafts reads from the same broadcast.
-  folder?.el('drafts')?.querySelector('[data-callnotes-host]')?._reload?.();
+  // The call-notes workbench reads from the same broadcast. It moved to the
+  // My doc page, beside the other two sheets he holds on a call.
+  folder?.el('calldoc')?.querySelector('[data-callnotes-host]')?._reload?.();
   // So does the call document, which is a long run: without this the panel
   // would sit on "Building…" until he changed pages, for a document that had
   // been ready for minutes.
@@ -1492,8 +1561,57 @@ document.addEventListener('pa-panel-state', (e) => {
 });
 
 /**
- * The Overview page: the info bar, the booking-request panel when one is
- * waiting, then the management levers folded into tight rows.
+ * SAYING SO. Eric, 2026-08-26, on a live case: "I put meeting link in but it
+ * didn't visually confirm that it saved. So idk if my client is seeing it."
+ *
+ * Every lever on this page posted, called load(), and said nothing. load()
+ * repaints the whole Overview, so anything written onto the panel at the
+ * moment of a save was destroyed a few hundred milliseconds later by the very
+ * repaint that proved it had worked. A successful save and a dead button
+ * looked identical, which is the worst possible pair to make identical.
+ *
+ * So a confirmation cannot live in the DOM: it has to live OUTSIDE the paint
+ * and be re-rendered BY it. This map is that. paintOverview asks for each
+ * panel's line as it builds, refreshOverview re-opens any panel holding one,
+ * and the line ages out on its own so a stale "Saved" is not still sitting
+ * there half an hour later making a claim about the current state.
+ *
+ * The second half of his sentence is the half that matters. He does not want
+ * to be told a write succeeded; he wants to know WHAT THE CLIENT NOW SEES.
+ * Every message below answers that, or says plainly that the client sees
+ * nothing.
+ */
+const said = new Map();
+const SAID_MS = 30_000;
+let saidTimer = null;
+/** `html` is only ever markup this file built and escaped itself. */
+function say(key, text, { tone = 'ok', html = '' } = {}) {
+  said.set(key, { text, html, tone, at: Date.now() });
+  clearTimeout(saidTimer);
+  // One repaint when the line expires, so it clears itself rather than
+  // waiting for whatever he happens to do next.
+  saidTimer = setTimeout(() => { said.clear(); refreshOverview(); }, SAID_MS + 500);
+}
+function saidHtml(key) {
+  const s = said.get(key);
+  if (!s) return '';
+  if (Date.now() - s.at > SAID_MS) { said.delete(key); return ''; }
+  // The tick is a CSS ::before, so a plain-text confirmation set with
+  // textContent elsewhere in this file gets the same mark without markup.
+  return `<p class="saved-note ${s.tone === 'ok' ? 'ok' : 'warn'}" role="status">
+    <span>${esc(s.text)}${s.html || ''}</span></p>`;
+}
+
+/**
+ * The Overview page: the info bar, whatever is waiting on his answer, then
+ * every lever on the case.
+ *
+ * THE LEVERS ARE ORDERED BY WHEN HE REACHES FOR THEM, not by which route they
+ * post to. Six identical rows, every one the same size and the same weight,
+ * is a list you have to read end to end every time to find one thing; the
+ * eyebrows below turn it into three short lists with a moment attached to
+ * each. Nothing moved out of reach, nothing was dropped: the same six rows,
+ * under three headings and with air between them.
  */
 function paintOverview(pane) {
   const c = data;
@@ -1505,23 +1623,10 @@ function paintOverview(pane) {
     ? Math.ceil((toDate(c.reportDueAt) - Date.now()) / 86_400_000)
     : null;
 
-  pane.innerHTML = `
-    ${infoBar(c, mtFmt, start, due)}
-    ${c.fullAccess ? '<div data-authority-status></div>' : ''}
-    <details class="mgmt" data-k="auth">
-      <summary>📄 Authorisation forms</summary>
-      <div class="mgmt-body">
-        <p class="dim small" style="margin:0 0 .6rem;">A blank copy to print or
-          send, with ${esc(c.clientName || 'the client')}'s name already on it and
-          ruled lines to sign by hand. Use this to get a form into their hands
-          before a case is running${c.fullAccess ? '' : ' — signing in the app opens when they upgrade'}.
-          Records requests take weeks, so the form going out early is the whole game.</p>
-        <p class="row" style="gap:.4rem; flex-wrap:wrap; margin:0;">
-          <button class="btn quiet tiny" data-blank="records">Records authorisation</button>
-          <button class="btn quiet tiny" data-blank="representative">Insurance representative</button>
-        </p>
-      </div>
-    </details>
+  // Anything a client is waiting on him for. It goes ABOVE every standing
+  // lever, because it is the only part of this page with someone else's clock
+  // attached to it, and it used to sit fourth in a stack of identical rows.
+  const waiting = `
     ${c.appointment?.requested ? `
     <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
       <h3 style="margin:0 0 .3rem; color:var(--orange);">Booking request — not on your calendar</h3>
@@ -1563,7 +1668,28 @@ function paintOverview(pane) {
         They attested to inviting you in. You never record their clinic's visit.</p>
       <button class="btn" data-telehealth="confirm">I'll be there</button>
       <button class="btn quiet" data-telehealth="deny">Can't make it</button>
-    </div>` : ''}
+    </div>` : ''}`;
+
+  pane.innerHTML = `
+    ${infoBar(c, mtFmt, start, due)}
+    ${c.fullAccess ? '<div data-authority-status></div>' : ''}
+    ${waiting.trim() ? `<p class="eyebrow mgmt-when hot">Waiting on you</p>${waiting}` : ''}
+
+    <p class="eyebrow mgmt-when">Before the call</p>
+    <details class="mgmt" data-k="auth">
+      <summary>📄 Print a form to sign</summary>
+      <div class="mgmt-body">
+        <p class="dim small" style="margin:0 0 .6rem;">A blank copy to print or
+          send, with ${esc(c.clientName || 'the client')}'s name already on it and
+          ruled lines to sign by hand. Use this to get a form into their hands
+          before a case is running${c.fullAccess ? '' : ' — signing in the app opens when they upgrade'}.
+          Records requests take weeks, so the form going out early is the whole game.</p>
+        <p class="row" style="gap:.4rem; flex-wrap:wrap; margin:0;">
+          <button class="btn quiet tiny" data-blank="records">Records authorisation</button>
+          <button class="btn quiet tiny" data-blank="representative">Insurance representative</button>
+        </p>
+      </div>
+    </details>
 
     <details class="mgmt" data-k="sched">
       <summary>📅 Schedule a session</summary>
@@ -1599,6 +1725,7 @@ function paintOverview(pane) {
         <p class="error" id="sched-err" hidden></p>
         <div id="sched-result" class="dim small" style="margin-top:.4rem;"></div>
         <div class="actions"><button class="btn secondary" id="sched-go">Schedule</button></div>
+        ${saidHtml('sched')}
       </div>
     </details>
 
@@ -1611,11 +1738,36 @@ function paintOverview(pane) {
         <input type="url" id="joinlink" placeholder="${c.appointment?.method === 'phone' ? 'Calling from +1 …' : 'https://…'}"
           value="${esc(c.appointment?.joinLink || '')}">
         <div class="actions"><button class="btn secondary" id="save-link">Save</button></div>
+        ${saidHtml('link')}
       </div>
     </details>
 
-    <details class="mgmt" data-k="hold">
-      <summary>${c.hold?.pausedAt ? '⏸ Paused' : '⏸ Pause / close'}</summary>
+    <p class="eyebrow mgmt-when">After the call</p>
+
+    <details class="mgmt" data-k="miles">
+      <summary>✓ Call done, report sent</summary>
+      <div class="mgmt-body">
+        <div class="actions" style="margin-top:.3rem;">
+          <button class="btn secondary" data-action="recording-uploaded">Call done — start 7-day report clock</button>
+          <button class="btn secondary" data-action="report-uploaded">Report delivered</button>
+          ${c.status === 'closed' ? '<span class="dim small">Case closed.</span>' : ''}
+        </div>
+        ${saidHtml('miles')}
+        <p class="dim small" style="margin-top:.6rem;">Uploading a recording or report triggers its milestone automatically; the buttons cover manual corrections.</p>
+      </div>
+    </details>
+
+    <details class="mgmt" data-k="review">
+      <summary>⭐ Their review</summary>
+      <div class="mgmt-body" data-case-review>
+        <p class="dim small">Loading…</p>
+      </div>
+    </details>
+
+    <p class="eyebrow mgmt-when">Ending it</p>
+
+    <details class="mgmt mgmt-grave" data-k="hold">
+      <summary>${c.hold?.pausedAt ? '⏸ Paused' : '⏸ Pause or close'}</summary>
       <div class="mgmt-body">
         ${c.hold?.pausedAt ? `
           <p class="dim small" style="margin:.2rem 0 .6rem;">Paused since
@@ -1647,28 +1799,9 @@ function paintOverview(pane) {
               style="width:100%; margin-top:.2rem;"></label>
           <div class="actions"><button class="btn quiet" data-close-case>Close this case</button></div>`}
         <p class="error" data-hold-error hidden style="margin:.5rem 0 0;"></p>
+        ${saidHtml('hold')}
       </div>
     </details>
-
-    <details class="mgmt" data-k="miles">
-      <summary>✓ Milestones</summary>
-      <div class="mgmt-body">
-        <div class="actions" style="margin-top:.3rem;">
-          <button class="btn secondary" data-action="recording-uploaded">Call done — start 7-day report clock</button>
-          <button class="btn secondary" data-action="report-uploaded">Report delivered</button>
-          ${c.status === 'closed' ? '<span class="dim small">Case closed.</span>' : ''}
-        </div>
-        <p class="dim small" style="margin-top:.6rem;">Uploading a recording or report triggers its milestone automatically; the buttons cover manual corrections.</p>
-      </div>
-    </details>
-
-    <details class="mgmt" data-k="review">
-      <summary>⭐ Their review</summary>
-      <div class="mgmt-body" data-case-review>
-        <p class="dim small">Loading…</p>
-      </div>
-    </details>
-
 `;
 
   paintCaseReview(pane);
@@ -1764,10 +1897,17 @@ function paintOverview(pane) {
  */
 function wireHoldAndClose(pane) {
   const errEl = pane.querySelector('[data-hold-error]');
-  const say = (msg) => { if (errEl) { errEl.textContent = msg; errEl.hidden = !msg; } };
-  const post = async (path, payload, btn) => {
+  // Renamed from `say` when the module gained a say() of its own for the
+  // confirmations. This one is only ever the red line; the module's say() is
+  // the one that survives a repaint.
+  const fail = (msg) => { if (errEl) { errEl.textContent = msg; errEl.hidden = !msg; } };
+  // `note` is what the CLIENT will see once this lands, which is the only
+  // thing he actually wants to know after pressing one of these. `landed`
+  // reads the freshly loaded case and answers "did it": same rule as the
+  // meeting link, a 200 is not the same claim as a case that changed.
+  const post = async (path, payload, btn, note, landed) => {
     btn.disabled = true;
-    say('');
+    fail('');
     try {
       const token = await user.getIdToken();
       const res = await fetch(path, {
@@ -1777,9 +1917,15 @@ function wireHoldAndClose(pane) {
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
-      load();
+      await load();
+      if (note) {
+        say('hold', landed && !landed(data)
+          ? 'That went through, but the case has not moved. Try once more.'
+          : note, { tone: landed && !landed(data) ? 'warn' : 'ok' });
+        refreshOverview();
+      }
     } catch (err) {
-      say(err.message);
+      fail(err.message);
       btn.disabled = false;
     }
   };
@@ -1793,17 +1939,23 @@ function wireHoldAndClose(pane) {
       // app uses; without the offset it would mean UTC midnight and land a
       // day early on his own screen.
       backBy: back ? `${back}T12:00:00-07:00` : null,
-    }, e.currentTarget);
+    }, e.currentTarget,
+    'Paused. Their page now says the case is on hold and that their dates moved with it.',
+    (c2) => !!c2?.hold?.pausedAt);
   });
 
   pane.querySelector('[data-hold-off]')?.addEventListener('click', (e) =>
-    post('/api/admin/hold', { on: false }, e.currentTarget));
+    post('/api/admin/hold', { on: false }, e.currentTarget,
+      'Resumed. Their page is back to normal and every clock has the paused time back on it.',
+      (c2) => !c2?.hold?.pausedAt));
 
   pane.querySelector('[data-close-case]')?.addEventListener('click', (e) => {
     const reason = (pane.querySelector('[data-close-reason]')?.value || '').trim();
-    if (!reason) { say('Write the reason first — the client reads it word for word.'); return; }
+    if (!reason) { fail('Write the reason first — the client reads it word for word.'); return; }
     if (!confirm(`Close this case? They will read, word for word:\n\n"${reason}"\n\nThey keep every file and can still leave a review. This is not reversible from here.`)) return;
-    post('/api/admin/close-case', { reason }, e.currentTarget);
+    post('/api/admin/close-case', { reason }, e.currentTarget,
+      'Closed. Their page now shows your reason word for word, and they can still leave a review.',
+      (c2) => c2?.status === 'closed');
   });
 }
 
@@ -1813,6 +1965,10 @@ function refreshOverview() {
   if (!pane) return;
   const open = new Set(
     [...pane.querySelectorAll('details[data-k][open]')].map((d) => d.dataset.k));
+  // A panel holding a fresh confirmation is opened whether or not it was open
+  // before. Without this, a save made from a panel could be answered inside a
+  // panel that the repaint had shut, which is the silence all over again.
+  for (const k of said.keys()) open.add(k);
   paintOverview(pane);
   // paintOverview rewrites the pane, so the authority card has to be re-served
   // after it, not before.
@@ -1828,7 +1984,11 @@ function paintFiles(pane) {
   pane.innerHTML = `
     <div class="panel">
       <h3>📎 Uploads</h3>
-      <p class="dim small">Everything shared on this case, newest day first. Tap 👨‍⚕️ on a file to stage it, then Analyze in the advisor.</p>
+      <!-- This line used to end "then Analyze in the advisor". There is no
+           Analyze button on the advisor and has not been one for a while; the
+           button is Update. An instruction naming a control that does not
+           exist is worse than no instruction. -->
+      <p class="dim small">Everything shared on this case, newest day first. Tap 👨‍⚕️ on a file to hand it to the advisor, then press Update on the Read page.</p>
       <div class="uploads" id="files"><p class="dim small">Loading…</p></div>
       <label class="small" style="margin-top:.7rem;">Upload the recording
         <input type="file" id="up-recording" accept="video/*,audio/*,.mp4,.m4a,.mp3,.mkv,.webm">
@@ -1838,6 +1998,7 @@ function paintFiles(pane) {
       </label>
       <progress id="bar" max="100" value="0" hidden></progress>
       <p class="error" id="err" hidden></p>
+      <p class="saved-note ok" id="up-said" role="status" hidden></p>
     </div>`;
   pane.querySelector('#up-recording').addEventListener('change', (e) =>
     upload(e.target.files[0], 'recording', 'recording-uploaded'));
@@ -1857,12 +2018,53 @@ async function api(body) {
   return out;
 }
 
+/**
+ * Eric, 2026-08-26: "I put meeting link in but it didn't visually confirm
+ * that it saved. So idk if my client is seeing it."
+ *
+ * The answer he needs is not "saved", it is what is on their screen now. For
+ * a video call that is a Join button; clearing the field puts their page back
+ * to the sentence that says the link is coming. For a PHONE case it is
+ * neither: case.js renders `I call you at <their number>` and never renders
+ * this field at all, so what he types here is a note to himself. Telling him
+ * "your client can see it" on a phone case would be a lie about the exact
+ * thing he asked about, so it says the true thing instead.
+ */
 async function saveLink() {
+  const btn = document.getElementById('save-link');
   const value = document.getElementById('joinlink').value.trim();
+  const phone = data?.appointment?.method === 'phone';
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
     await api({ action: 'join-link', joinLink: value });
-    load();
-  } catch (err) { alert(err.message); }
+    // RE-READ THE CASE BEFORE CLAIMING ANYTHING. A 200 means the request was
+    // accepted, and what he asked for is whether his client can SEE it, which
+    // is a question about the stored document and not about the response
+    // code. So load() first, then check the case actually holds what he
+    // typed, and only then say it is live. A route that quietly accepts and
+    // does not write now shows up here instead of shipping a confident lie.
+    await load();
+    const stored = data?.appointment?.joinLink || '';
+    if (stored !== value) {
+      say('link', 'That went through, but the case still does not show it. '
+        + 'Do not rely on your client seeing it yet: try once more.', { tone: 'warn' });
+    } else {
+      say('link', phone
+        ? (value
+          ? 'Saved on the case. Their page shows the number I call YOU at, not this one, so this is a note to yourself.'
+          : 'Cleared. Their page was never showing this, so nothing changed for them.')
+        : (value
+          ? 'Saved. Your client now sees a "Join the video call" button on their case page.'
+          : 'Cleared. Their page is back to saying the join link appears there before the call.'));
+    }
+    refreshOverview();
+  } catch (err) {
+    // Onto the panel, not into an alert: an alert is dismissed and gone, and
+    // this is the one place where he needs the words still there when he
+    // looks back at the field.
+    say('link', `Not saved: ${err.message}`, { tone: 'warn' });
+    refreshOverview();
+  }
 }
 
 async function milestone(action, btn) {
@@ -1870,10 +2072,26 @@ async function milestone(action, btn) {
   btn.disabled = true;
   try {
     await api({ action });
-    load();
+    // Same rule as the meeting link: re-read, then name what moved on THEIR
+    // page, and only if it actually moved.
+    await load();
+    const landed = action === 'recording-uploaded' ? !!data?.reportDueAt
+      : action === 'report-uploaded' ? (data?.status === 'delivered' || data?.status === 'closed')
+        : true;
+    if (!landed) {
+      say('miles', 'That went through, but the case has not moved. Try once more.', { tone: 'warn' });
+    } else {
+      say('miles', action === 'recording-uploaded'
+        ? 'Marked. Their page now shows the report as due, and the seven days are running.'
+        : action === 'report-uploaded'
+          ? 'Marked. Their page now says the report is delivered.'
+          : 'Done.');
+    }
+    refreshOverview();
   } catch (err) {
     btn.disabled = false;
-    alert(err.message);
+    say('miles', `Not saved: ${err.message}`, { tone: 'warn' });
+    refreshOverview();
   }
 }
 
@@ -1881,7 +2099,9 @@ async function upload(file, kind, milestoneAction) {
   if (!file) return;
   const bar = document.getElementById('bar');
   const err = document.getElementById('err');
+  const done = document.getElementById('up-said');
   err.hidden = true;
+  if (done) done.hidden = true;
   bar.hidden = false;
   const safe = file.name.replace(/[^\w.\- ]+/g, '_');
   const task = uploadBytesResumable(ref(storage, `cases/${caseId}/${kind}/${safe}`), file);
@@ -1892,6 +2112,16 @@ async function upload(file, kind, milestoneAction) {
         reject, resolve);
     });
     await api({ action: milestoneAction });
+    // The bar hides and the list repaints, which up to now was the whole of
+    // the feedback: he could not tell an upload that landed from one that
+    // silently did not. The Uploads page is not repainted wholesale by load(),
+    // so this line can simply stay put.
+    if (done) {
+      done.textContent = kind === 'report'
+        ? `“${file.name}” is up. Your client can open it on their case page now, and their page says the report is delivered.`
+        : `“${file.name}” is up. Your client can open it on their case page now.`;
+      done.hidden = false;
+    }
     load();
   } catch (e) {
     err.textContent = `Upload failed: ${e.message}`;
@@ -1938,10 +2168,29 @@ function dayLabel(d) {
  * Pulled out of refreshFiles so the call document's picker can offer the same
  * list. Two readers, one listing: a second copy of these five paths is how the
  * two pages start disagreeing about what exists on a case.
+ *
+ * THIS USED TO LOOK HUNG, and on a real case it nearly was. Eric, 2026-08-26,
+ * with a screenshot: "Looking for files on this case…" sitting there while the
+ * file he had just uploaded was on the screen above it. It was not hung, it
+ * was serial. Five folders, one after another with `await listAll`, and then
+ * inside each folder's loop another awaited round trip PER FILE for the url
+ * and the metadata. On a case with a dozen files that is seventeen round trips
+ * end to end, on a phone, before a single row can be drawn.
+ *
+ * Everything that does not depend on anything else now runs at once: the five
+ * folders together, and within each folder every file's url and metadata
+ * together. The wall time becomes the slowest single round trip plus change,
+ * instead of the sum of all of them.
+ *
+ * `onProgress` is the other half of the fix and it is not decoration. Even a
+ * fast listing is a moment of nothing, and a screen that says nothing while it
+ * waits is the same screen as a screen that has died. The caller gets a count
+ * as folders land and a `failed` count if any of them did not, so it can say
+ * which of those two things is happening rather than leaving one sentence up
+ * forever and letting him guess.
  */
-async function listCaseFiles() {
-  const rows = [];
-  for (const [kind, path] of [
+async function listCaseFiles({ onProgress } = {}) {
+  const places = [
     ['report', `cases/${caseId}/report`],
     ['recording', `cases/${caseId}/recording`],
     ['upload', `cases/${caseId}/uploads`],
@@ -1950,19 +2199,41 @@ async function listCaseFiles() {
     // documents. They live under the case, so they belong on the case's page.
     ['chat', `cases/${caseId}/chat-files`],
     ['saved', `profiles/${data.clientUid}/saved`],
-  ]) {
+  ];
+  let done = 0;
+  let files = 0;
+  let failed = 0;
+  const tick = () => {
+    try { onProgress?.({ done, total: places.length, files, failed }); }
+    catch { /* a progress line must never be able to fail a listing */ }
+  };
+  tick();
+
+  const perPlace = await Promise.all(places.map(async ([kind, path]) => {
     try {
       const res = await listAll(ref(storage, path));
-      for (const item of res.items) {
+      return await Promise.all(res.items.map(async (item) => {
         const [url, meta] = await Promise.all([getDownloadURL(item), getMetadata(item)]);
-        rows.push({
+        files += 1;
+        tick();
+        return {
           kind, name: item.name, url, ts: new Date(meta.timeCreated),
           size: meta.size, contentType: meta.contentType || '', path: item.fullPath,
-        });
-      }
-    } catch { /* empty */ }
-  }
-  return rows;
+        };
+      }));
+    } catch {
+      // One unreadable folder is not an empty case. It is counted so the
+      // caller can say so instead of quietly showing a short list.
+      failed += 1;
+      return [];
+    } finally {
+      done += 1;
+      tick();
+    }
+  }));
+  // Flattened in the order of `places`, so the same case always lists the same
+  // way however the five requests happen to finish.
+  return perPlace.flat();
 }
 
 /**
@@ -2005,12 +2276,44 @@ async function listPrep() {
   return prepFiles;
 }
 
+/**
+ * How far along a listing is, in a sentence. Shared by the Uploads page and
+ * the call document's picker so the two cannot describe the same wait
+ * differently. A count that moves is the difference between waiting and
+ * wondering whether it has died.
+ */
+function listingLine({ done, total, files, failed }) {
+  if (done < total) {
+    return `Looking for files on this case… ${done} of ${total} places`
+      + (files ? `, ${files} file${files === 1 ? '' : 's'} so far` : '');
+  }
+  if (failed) {
+    return `Couldn't read ${failed} of ${total} places on this case`
+      + (files ? `, so this list may be short. ${files} file${files === 1 ? '' : 's'} found.` : '.');
+  }
+  return '';
+}
+
 async function refreshFiles() {
   const listEl = document.getElementById('files');
   if (!listEl) return;
-  const rows = await listCaseFiles();
+  let last = null;
+  const rows = await listCaseFiles({
+    onProgress: (p) => {
+      last = p;
+      // Only while it is still working. Once it is done the list itself is
+      // the answer, and a progress line under a list of files is noise.
+      if (p.done < p.total && document.getElementById('files') === listEl) {
+        listEl.innerHTML = `<p class="dim small">${esc(listingLine(p))}</p>`;
+      }
+    },
+  });
+  const short = last && last.failed
+    ? `<p class="saved-note warn" role="status"><span>${esc(listingLine(last))}
+         Try opening this page again.</span></p>`
+    : '';
   if (!rows.length) {
-    listEl.innerHTML = '<p class="dim small">No files yet.</p>';
+    listEl.innerHTML = short || '<p class="dim small">No files yet.</p>';
     return;
   }
   const reviewable = advisorReadable;
@@ -2048,12 +2351,14 @@ async function refreshFiles() {
         <span class="fmeta">${time.format(r.ts)} · ${prettySize(r.size)}</span>
       </span>
       ${reviewable(r)
-        ? `<button class="btn quiet file-review" data-review="${i}" title="Select for the advisor to read, then press Analyze in the advisor panel">👨‍⚕️</button>`
+        ? `<button class="btn quiet file-review" data-review="${i}"
+             aria-label="Hand ${esc(String(r.name).replace(/^\d{10,}-/, ''))} to the advisor to read"
+             title="Hand this to the advisor to read, then press Update on the Read page">👨‍⚕️</button>`
         : ''}
     </li>`;
   };
 
-  listEl.innerHTML = [...days.values()].map((day) => `
+  listEl.innerHTML = short + [...days.values()].map((day) => `
     <section class="up-day">
       <h4 class="up-date">${esc(day.label)}</h4>
       ${FILE_GROUPS.filter((g) => day.groups.has(g)).map((g) => `
@@ -2152,9 +2457,13 @@ function infoBar(c, mtFmt, start, due) {
     hour: 'numeric', minute: '2-digit',
   });
   const rows = [];
+  // The label was set at .62rem, which is two steps under the smallest size in
+  // the type scale and the smallest text anywhere in the app. It is the column
+  // he reads down to find the one row he wants, so it goes back onto the
+  // scale, in a class rather than an inline font shorthand.
   const row = (label, value, color) => rows.push(`
-    <span style="font:600 .62rem/1.7 ui-monospace,monospace; letter-spacing:.13em; color:var(--dim); white-space:nowrap;">${label}</span>
-    <span class="small" style="color:${color || 'var(--ink)'}; font-weight:600; min-width:0; overflow-wrap:anywhere;">${value}</span>`);
+    <span class="fact-k">${label}</span>
+    <span class="fact-v" style="color:${color || 'var(--ink)'};">${value}</span>`);
 
   if (c.clientName || c.clientDob) {
     const age = c.clientDob ? Math.floor((Date.now() - new Date(c.clientDob + 'T00:00:00').getTime()) / 31_557_600_000) : null;
@@ -2203,9 +2512,7 @@ function infoBar(c, mtFmt, start, due) {
       'var(--orange)');
   if (c.needsReschedule) row('ALERT', 'NEEDS RESCHEDULE', 'var(--danger)');
 
-  return `<div class="panel" style="display:grid; grid-template-columns:max-content 1fr;
-    column-gap:1.1rem; row-gap:.5rem; align-items:baseline;
-    margin:.7rem 0 1rem; padding:.85rem 1rem;">${rows.join('')}</div>`;
+  return `<div class="panel facts">${rows.join('')}</div>`;
 }
 
 async function wireScheduler(el) {
@@ -2285,12 +2592,24 @@ async function wireScheduler(el) {
       });
       const out = await res.json();
       if (!res.ok) throw new Error(out.error || `Request failed (${res.status})`);
+      // THIS PANEL DID CONFIRM, AND THEN DELETED ITS OWN CONFIRMATION. It
+      // wrote the result into #sched-result and then called load() 1.2s later,
+      // which repaints Overview and takes that element with it. The words were
+      // on screen for about a second. So the result goes through say(), which
+      // survives the repaint, and #sched-result keeps only the copyable link.
       if (out.checkoutUrl) {
-        resultEl.innerHTML = `Scheduled pending payment ($${(out.amountCents / 100).toLocaleString()}).
-          The client got an email and a pay button on their case page — or send this link in chat:
-          <input type="text" readonly value="${esc(out.checkoutUrl)}" onclick="this.select()" style="margin-top:.3rem;">`;
+        resultEl.textContent = '';
+        // The link rides INSIDE the confirmation rather than beside it, so the
+        // repaint below cannot separate the two. Built and escaped here.
+        say('sched', `Scheduled, pending payment of $${(out.amountCents / 100).toLocaleString()}. `
+          + 'Your client has an email and a pay button on their case page, and the slot holds for 24 hours. '
+          + 'Or send them this link in chat:', {
+          html: `<input type="text" readonly value="${esc(out.checkoutUrl)}" onclick="this.select()" style="margin-top:.35rem;">`,
+        });
+        refreshOverview();
       } else {
-        resultEl.textContent = `Booked: ${out.scheduled}. The client has been emailed.`;
+        resultEl.textContent = '';
+        say('sched', `Booked: ${out.scheduled}. Your client has been emailed, and the time is on their case page now.`);
         setTimeout(load, 1200);
       }
     } catch (err) {
@@ -2652,7 +2971,7 @@ function paintAppeals(pane) {
 }
 
 /**
- * Notes for the next call, on the Drafts page. Same bones as the appeals
+ * Notes for the next call, on the My doc page. Same bones as the appeals
  * workbench: paint from the advisor's state broadcast, a key guard so a poll
  * that changed nothing cannot steal a tap or wipe a hand edit, and revisions
  * that carry the box's CURRENT text so they build on manual edits.
@@ -2694,7 +3013,10 @@ function paintCallNotes(host) {
           priority first, then the pitch written out so you can read it as is.
           Your in-app personal notes are read before it drafts.</p>
         <p class="row" style="gap:.5rem; flex-wrap:wrap; margin:0;">
-          <button class="btn${ready ? ' quiet' : ' glow'}" data-cn-write ${running ? 'disabled' : ''}>
+          <!-- Plain, not glow. This panel moved onto My doc, where the call
+               document already owns the one lit action. Three lit buttons on
+               one page is three things shouting and none of them heard. -->
+          <button class="btn${ready ? ' quiet' : ''}" data-cn-write ${running ? 'disabled' : ''}>
             ${running ? '📞 Drafting…' : ready ? 'Redraft from scratch' : 'Draft notes for call'}</button>
           ${ready ? '<button class="btn quiet" data-cn-revise>🔁 Revise…</button>' : ''}
           ${ready ? '<button class="btn quiet" data-cn-print>🖨 Send to PDF</button>' : ''}
@@ -3043,6 +3365,12 @@ let callDocPending = null;
  */
 let callDocCaseFiles = null;      // null = not listed yet
 let callDocCasePicked = new Set(); // storage paths he ticked
+// How the listing is going, so the panel can say so. `null` until one starts.
+// Eric watched "Looking for files on this case…" sit unchanged with his own
+// upload on the screen above it; one sentence that never moves is
+// indistinguishable from a dead page.
+let callDocListProgress = null;
+let callDocListing = false;
 
 /**
  * ERIC'S OWN SHELF. cases/{id}/prep/ — his pre-call documents, working notes,
@@ -3175,7 +3503,10 @@ function paintCallDoc(host) {
 
     host.innerHTML = `
       <div class="panel" data-cd-root>
-        <h3 style="margin:0 0 .3rem;">📄 Call document</h3>
+        <!-- The tab says "My doc", so the heading under it says the same
+             thing. A page whose tab and heading use different words for it is
+             a page you can look straight at and still not be sure you found. -->
+        <h3 style="margin:0 0 .3rem;">📄 My call document</h3>
         <p class="dim small" style="margin:0 0 .6rem;">Upload what you have written
           for this call. It comes back reformatted so you can read it down the
           page while you talk, with what the case adds, the questions your
@@ -3184,6 +3515,7 @@ function paintCallDoc(host) {
           spine: your order, your priorities, your words.</p>
 
         ${running ? '' : `
+          <p class="eyebrow cd-step">1 · Your document</p>
           <label class="small" style="display:block; margin:0 0 .5rem;">Your document, plus any charts or labs
             <input type="file" data-cd-files multiple
               accept=".pdf,.jpg,.jpeg,.png">
@@ -3217,11 +3549,20 @@ function paintCallDoc(host) {
                     </label>`).join('')
                 : '<p class="dim small" style="margin:0 0 .5rem;">Nothing on your shelf yet.</p>'}
           </div>
+          <p class="eyebrow cd-step">2 · Add from this case</p>
           <div class="cd-case" data-cd-case>
             ${callDocCaseFiles === null
-              ? '<p class="dim small" style="margin:0 0 .5rem;">Looking for files on this case…</p>'
+              // A COUNT THAT MOVES, not one sentence that sits there. And a
+              // way out: if it did not work he can press again rather than
+              // stare at a line that is never going to change on its own.
+              ? `<p class="dim small" data-cd-listing style="margin:0 0 .5rem;">${
+                esc(listingLine(callDocListProgress || { done: 0, total: 5, files: 0, failed: 0 }))
+                || 'Looking for files on this case…'}</p>
+                 <button class="btn quiet tiny" data-cd-relist>Try again</button>`
               : callDocCaseFiles.length
-                ? `<p class="dim small" style="margin:0 0 .3rem;">And from this case, so it can read across
+                ? `${callDocListProgress?.failed
+                    ? `<p class="saved-note warn" role="status"><span>${esc(listingLine(callDocListProgress))}</span></p>` : ''}
+                   <p class="dim small" style="margin:0 0 .3rem;">And from this case, so it can read across
                      them rather than only summarising what you already have:</p>
                    ${callDocCaseFiles.map((f) => `
                      <label class="cd-case-row">
@@ -3230,7 +3571,10 @@ function paintCallDoc(host) {
                        <span>${esc(String(f.name).replace(/^\d{10,}-/, ''))}</span>
                        <span class="dim">${esc(f.kindLabel)}</span>
                      </label>`).join('')}`
-                : '<p class="dim small" style="margin:0 0 .5rem;">Nothing on this case it can read yet.</p>'}
+                : `${callDocListProgress?.failed
+                    ? `<p class="saved-note warn" role="status"><span>${esc(listingLine(callDocListProgress))}</span></p>
+                       <button class="btn quiet tiny" data-cd-relist>Try again</button>`
+                    : '<p class="dim small" style="margin:0 0 .5rem;">Nothing on this case it can read yet.</p>'}`}
           </div>
           <label class="cd-case-row" style="margin:.4rem 0 .1rem;">
             <input type="checkbox" data-cd-search ${callDocSearch ? 'checked' : ''}>
@@ -3243,6 +3587,7 @@ function paintCallDoc(host) {
             file and not verified</strong>, with the link beside every line. Never treat that section
             as part of the record.</p>`}
 
+        ${running ? '' : '<p class="eyebrow cd-step">3 · Build it</p>'}
         <p class="row" style="gap:.5rem; flex-wrap:wrap; margin:0;">
           <button class="btn${hasDoc ? ' quiet' : ' glow'}" data-cd-build ${running ? 'disabled' : ''}>
             ${running ? '📄 Building…' : hasDoc ? 'Build a new one' : 'Build the call document'}</button>
@@ -3575,8 +3920,23 @@ function paintCallDoc(host) {
   if (prepFiles === null) {
     listPrep().finally(() => { callDocKey = null; load(); });
   }
-  if (callDocCaseFiles === null) {
-    listCaseFiles()
+  // `callDocListing` stops a second run piling on top of a first. paintCallDoc
+  // runs on every onShow, so flipping to this page twice while a slow listing
+  // was in flight used to start it again from scratch.
+  const listCaseFilesIntoPicker = () => {
+    if (callDocListing) return;
+    callDocListing = true;
+    callDocListProgress = { done: 0, total: 5, files: 0, failed: 0 };
+    listCaseFiles({
+      onProgress: (p) => {
+        callDocListProgress = p;
+        // Write straight onto the line rather than repainting the whole
+        // panel: a repaint mid-listing would drop whatever he has already
+        // ticked and re-run the file input's markup underneath his finger.
+        const line = host.querySelector('[data-cd-listing]');
+        if (line && p.done < p.total) line.textContent = listingLine(p);
+      },
+    })
       .then((rows) => {
         callDocCaseFiles = rows
           .filter(advisorReadable)
@@ -3592,7 +3952,30 @@ function paintCallDoc(host) {
                 : r.kind === 'recording' ? 'recording' : 'uploaded',
           }));
       })
-      .catch(() => { callDocCaseFiles = []; })
-      .finally(() => { callDocKey = null; load(); });
+      // A listing that throws outright still has to END. Leaving
+      // callDocCaseFiles at null was the state that put one unchanging
+      // sentence on the screen with nothing after it.
+      .catch(() => {
+        callDocCaseFiles = [];
+        callDocListProgress = { done: 5, total: 5, files: 0, failed: 5 };
+      })
+      .finally(() => { callDocListing = false; callDocKey = null; load(); });
+  };
+
+  // Delegated onto the host, which load() never replaces, and bound ONCE:
+  // paintCallDoc runs on every onShow, and a listener added per visit would
+  // fire the retry once per time he had opened the page.
+  if (!host.dataset.relistBound) {
+    host.dataset.relistBound = '1';
+    host.addEventListener('click', (e) => {
+      if (!e.target.closest('[data-cd-relist]')) return;
+      callDocCaseFiles = null;
+      callDocListProgress = null;
+      callDocKey = null;
+      load();
+      listCaseFilesIntoPicker();
+    });
   }
+
+  if (callDocCaseFiles === null) listCaseFilesIntoPicker();
 }
