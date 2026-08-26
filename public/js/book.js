@@ -57,7 +57,7 @@ const state = {
   acks: {}, // formId -> ms timestamp, captured the moment the box is ticked
   read: {}, // formId -> true once a body has been opened and read to the end
   slot: null, // { id, start: Date, durationMin }
-  requestedStart: null, // Date — a time asked for that isn't on the calendar
+  requestedStart: null, // Date: a time asked for that isn't on the calendar
   method: 'phone',
   phone: '',
 };
@@ -142,6 +142,84 @@ function mount(html) {
 
 const needsProfile = () => !(profile.firstName && profile.lastName && profile.dob);
 
+// ---- the flow's furniture ----
+
+/**
+ * Line icons, drawn from the same set as the rest of the app's mockup: one
+ * weight, round caps, no fills, and `currentColor` throughout so a medallion's
+ * colour comes from the scheme token on its container rather than from here.
+ * Nothing in this file may name a colour: there are four schemes and a literal
+ * is wrong in three of them.
+ */
+const SVG = (d) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICON = {
+  calendar: SVG('<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/><circle cx="8.5" cy="14.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="14.5" r="1.1" fill="currentColor" stroke="none"/>'),
+  clock: SVG('<circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/>'),
+  phone: SVG('<path d="M6.2 3.5h3l1.6 4-2 1.4a12 12 0 0 0 5.3 5.3l1.4-2 4 1.6v3a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.2 5.7a2 2 0 0 1 2-2.2Z"/>'),
+  video: SVG('<rect x="2.5" y="6" width="13" height="12" rx="3"/><path d="m15.5 11 6-3.2v8.4l-6-3.2z"/>'),
+  doc: SVG('<path d="M6 3h7l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M13 3v5h5M8.5 13h7M8.5 17h5"/>'),
+  shield: SVG('<path d="M12 3 5 6v6c0 4.2 2.9 7.7 7 9 4.1-1.3 7-4.8 7-9V6l-7-3Z"/><path d="m9 12 2.2 2.2L15.5 10"/>'),
+  brief: SVG('<rect x="3" y="7" width="18" height="13" rx="3"/><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M3 12h18"/>'),
+  card: SVG('<rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M2.5 10h19M6.5 15h3"/>'),
+};
+
+/**
+ * Refuse in a way the client can actually find.
+ *
+ * The defect this replaces: Continue was pressed, one `<p class="error">`
+ * somewhere on a page three screens tall was un-hidden, and nothing else
+ * happened. On a phone that is indistinguishable from a dead button, and it is
+ * exactly where a walk-through of the flow got stuck. Now the reason is
+ * printed against the control that is blocking, that control is marked,
+ * the message is scrolled into the middle of the screen, and the caret lands
+ * in the field so the fix is one tap away.
+ */
+function refuse(errEl, msg, { field = null, block = null } = {}) {
+  if (!errEl) return;
+  errEl.textContent = msg;
+  errEl.hidden = false;
+  if (field) {
+    field.classList.add('is-invalid');
+    field.setAttribute('aria-invalid', 'true');
+  }
+  if (block) block.classList.add('is-invalid');
+  errEl.scrollIntoView({ block: 'center' });
+  // Focus after the scroll has been asked for, not before: focusing a field
+  // scrolls the page on its own and would fight the position just requested.
+  setTimeout(() => {
+    try { field?.focus({ preventScroll: true }); } catch { /* not focusable */ }
+  }, 260);
+}
+
+/** Wipe every refusal on the current step before re-checking it. */
+function clearRefusals(el) {
+  el.querySelectorAll('.field-error').forEach((e) => {
+    e.hidden = true;
+    e.textContent = '';
+  });
+  el.querySelectorAll('.is-invalid').forEach((e) => {
+    e.classList.remove('is-invalid');
+    e.removeAttribute('aria-invalid');
+  });
+}
+
+/**
+ * The one line above the action bar that says what is still outstanding, so
+ * the answer is on screen BEFORE the button is pressed rather than after.
+ * `ready` turns the dot green: nothing is left to do here.
+ */
+function setReady(el, msg, ready = false) {
+  const note = el.querySelector('#ready-note');
+  if (!note) return;
+  note.textContent = msg || '';
+  note.hidden = !msg;
+  note.classList.toggle('go', !!ready);
+}
+
+const PHONE_RE = /^\+?[\d\s().-]{7,20}$/;
+
 /**
  * Take away every step-1 control that is rendered above an early return and
  * wired below it.
@@ -155,8 +233,11 @@ function stripUnwiredStep1(el, { keepIntro = false } = {}) {
   el.querySelector('#request-box')?.remove();
   el.querySelector('#after-times')?.remove();
   el.querySelector('#continue')?.remove();
+  // The sentence beside Continue describes a form that is no longer there.
+  el.querySelector('#ready-note')?.remove();
   if (!keepIntro) el.querySelector('#time-intro')?.remove();
-  for (const sel of ['#chips', '#phone-row', '#video-note', '#phone-consent-row', '#method-error', '#profile-block'])
+  for (const sel of ['#chips', '#phone-row', '#video-note', '#phone-consent-row',
+    '#phone-err', '#consent-err', '#profile-block'])
     el.querySelector(sel)?.remove();
   el.querySelectorAll('h3').forEach((h) => {
     if (/How should we talk/.test(h.textContent)) h.remove();
@@ -169,68 +250,102 @@ async function renderTime() {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
   const today = new Date().toISOString().slice(0, 10);
   const el = mount(`
-    <h2>When should we talk?</h2>
-    <p class="muted small" id="time-intro">All times are shown in <strong>your</strong> time zone (${zone.replace(/_/g, ' ')}), with my MST time underneath. Appointments must be at least 72 hours out.</p>
+    <section class="bk-sec lit bk-hero">
+      <div class="bk-sec-h">
+        <span class="bk-ic">${ICON.calendar}</span>
+        <div>
+          <h2>When should we talk?</h2>
+          <p class="bk-sub" id="time-intro">Shown in <strong>your</strong> time zone (${zone.replace(/_/g, ' ')}), with my MST time underneath. The earliest booking is 72 hours out.</p>
+        </div>
+      </div>
+    </section>
     <div id="days"><p class="muted">Loading available times…</p></div>
 
-    <details id="request-box" style="margin-top:1rem;">
-      <summary class="btn quiet" style="cursor:pointer;">
-        None of these work? Request a time →
+    <details id="request-box">
+      <summary class="btn quiet">
+        ${ICON.clock}<span>None of these work? Request a time</span><span class="chev" aria-hidden="true">›</span>
       </summary>
-      <div class="card" style="margin-top:.7rem;">
-        <p class="muted small" style="margin-top:0;">Choose any date and time that works for you. I will review the request and confirm it before the appointment. Times are shown in your time zone.</p>
-        <label for="req-date">Date</label>
-        <input type="date" id="req-date">
-        <label for="req-time" style="margin-top:.6rem;">Time</label>
-        <input type="time" id="req-time" step="900">
-        <p class="muted small" id="req-mst" style="margin:.6rem 0 0;">Choose a date and time below; the app will handle the time-zone conversion.</p>
-        <p class="error" id="req-error" hidden></p>
+      <div class="card">
+        <p class="bk-sub" style="margin:0 0 .6rem;">Pick any date and time. I will confirm it before the appointment.</p>
+        <div class="bk-field" style="margin-top:0;">
+          <label for="req-date">Date</label>
+          <input type="date" id="req-date">
+        </div>
+        <div class="bk-field">
+          <label for="req-time">Time</label>
+          <input type="time" id="req-time" step="900">
+        </div>
+        <p class="bk-sub" id="req-mst" style="margin:.6rem 0 0;">Choose a date and time and I will show it in my time zone.</p>
+        <p class="error field-error" id="req-error" hidden></p>
       </div>
     </details>
 
     <div id="after-times">
-    <h3 style="margin:1.4rem 0 .5rem;">How should we talk?</h3>
-    <div id="chips">
-      <label class="chip-label ${state.method === 'phone' ? 'selected' : ''}">
-        <input type="radio" name="method" value="phone" hidden ${state.method === 'phone' ? 'checked' : ''}>
-        Phone call
+    <section class="bk-sec">
+      <div class="bk-sec-h">
+        <span class="bk-ic m">${ICON.phone}</span>
+        <div>
+          <h3>How should we talk?</h3>
+          <p class="bk-sub">One private session, on the line that suits you.</p>
+        </div>
+      </div>
+      <div id="chips">
+        <label class="chip-label ${state.method === 'phone' ? 'selected' : ''}">
+          <input type="radio" name="method" value="phone" hidden ${state.method === 'phone' ? 'checked' : ''}>
+          ${ICON.phone}Phone call
+        </label>
+        <label class="chip-label ${state.method === 'video' ? 'selected' : ''}">
+          <input type="radio" name="method" value="video" hidden ${state.method === 'video' ? 'checked' : ''}>
+          ${ICON.video}Video call
+        </label>
+      </div>
+      <div id="phone-row" class="bk-field" ${state.method === 'phone' ? '' : 'hidden'}>
+        <label for="phone">Best phone number for the call</label>
+        <input type="tel" id="phone" inputmode="tel" autocomplete="tel" placeholder="+1 555 555 5555" value="${state.phone}">
+        <p class="error field-error" id="phone-err" hidden></p>
+      </div>
+      <p class="bk-sub" id="video-note" ${state.method === 'video' ? '' : 'hidden'}>
+        I'll send a join link before the call, and it is on your case page too. Nothing to install.
+      </p>
+      <label class="agreement-check" id="phone-consent-row">
+        <input type="checkbox" id="phone-consent" ${state.acks.phoneConsent ? 'checked' : ''}>
+        You may contact me by phone between sessions for continuity of care. <span style="color:var(--magenta)">*</span>
       </label>
-      <label class="chip-label ${state.method === 'video' ? 'selected' : ''}">
-        <input type="radio" name="method" value="video" hidden ${state.method === 'video' ? 'checked' : ''}>
-        Video call
-      </label>
-    </div>
-    <div id="phone-row" ${state.method === 'phone' ? '' : 'hidden'} style="margin-top:.7rem;">
-      <label for="phone">Best phone number for the call</label>
-      <input type="tel" id="phone" placeholder="+1 555 555 5555" value="${state.phone}">
-    </div>
-    <p class="muted small" id="video-note" ${state.method === 'video' ? '' : 'hidden'} style="margin-top:.7rem;">
-      I'll send you a join link before the call, and it appears on your case page too. Nothing to install.
-    </p>
-    <label class="agreement-check" id="phone-consent-row" style="margin-top:.7rem; align-items:flex-start;">
-      <input type="checkbox" id="phone-consent" ${state.acks.phoneConsent ? 'checked' : ''}>
-      You may contact me by phone between sessions for continuity of care. <span style="color:var(--magenta)">*</span>
-    </label>
-    <p class="error" id="method-error" hidden></p>
+      <p class="error field-error" id="consent-err" hidden></p>
+    </section>
     ${needsProfile() ? `
-    <div class="card" id="profile-block">
-      <h3>Who am I working with?</h3>
-      <p class="muted small">Please use your real name so I know whose case I am reviewing. Your information stays private, like the rest of your case file.</p>
-      <label for="pf-first">First name</label>
-      <input type="text" id="pf-first" autocomplete="given-name" value="${esc(profile.firstName || '')}">
-      <label for="pf-last" style="margin-top:.6rem;">Last name</label>
-      <input type="text" id="pf-last" autocomplete="family-name" value="${esc(profile.lastName || '')}">
-      <label for="pf-dob" style="margin-top:.6rem;">Date of birth</label>
-      <input type="date" id="pf-dob" max="${today}" value="${esc(profile.dob || '')}">
-      <p class="muted small" style="margin-top:.6rem;">Pocket Advocate serves adults. If the client is under 18,
+    <section class="bk-sec" id="profile-block">
+      <div class="bk-sec-h">
+        <span class="bk-ic g">${ICON.shield}</span>
+        <div>
+          <h3>Who am I working with?</h3>
+          <p class="bk-sub">Your real name, so I know whose case I am reviewing. It stays private, like the rest of your file.</p>
+        </div>
+      </div>
+      <div class="bk-field">
+        <label for="pf-first">First name</label>
+        <input type="text" id="pf-first" autocomplete="given-name" value="${esc(profile.firstName || '')}">
+      </div>
+      <div class="bk-field">
+        <label for="pf-last">Last name</label>
+        <input type="text" id="pf-last" autocomplete="family-name" value="${esc(profile.lastName || '')}">
+      </div>
+      <div class="bk-field">
+        <label for="pf-dob">Date of birth</label>
+        <input type="date" id="pf-dob" max="${today}" value="${esc(profile.dob || '')}">
+      </div>
+      <p class="bk-sub" style="margin-top:.55rem;">Pocket Advocate serves adults. If the client is under 18,
         a parent or guardian needs to reach out first, through the site or the About page's call button.</p>
-      <p class="error" id="pf-err" hidden></p>
-    </div>` : ''}
+      <p class="error field-error" id="pf-err" hidden></p>
+    </section>` : ''}
     </div>
-    <p>
-      <a class="btn quiet" href="/">← Back</a>
-      <button class="btn glow" id="continue" disabled>Continue</button>
-    </p>`);
+    <div class="bk-actions">
+      <p class="bk-ready" id="ready-note" hidden></p>
+      <div class="bk-actions-row">
+        <a class="btn quiet" href="/">Back</a>
+        <button class="btn glow" id="continue" disabled>Continue</button>
+      </div>
+    </div>`);
 
   let slots = [];
   // When the books are shut, say so. An empty calendar with no explanation
@@ -331,6 +446,30 @@ async function renderTime() {
     )
     .join('');
 
+  /**
+   * What is still outstanding on this step, in the order Continue checks it.
+   * Printed above the button so the answer is on screen BEFORE it is pressed;
+   * the same order is used by the refusal below so the two never disagree.
+   */
+  const stillNeeded = () => {
+    if (!state.slot && !state.requestedStart) return 'Choose a time above to continue.';
+    if (state.method === 'phone' && !PHONE_RE.test((el.querySelector('#phone')?.value || '').trim()))
+      return 'Add the best phone number for the call.';
+    if (!state.acks.phoneConsent) return 'Tick the consent box under the number.';
+    if (needsProfile()) {
+      const first = el.querySelector('#pf-first')?.value.trim();
+      const last = el.querySelector('#pf-last')?.value.trim();
+      const dob = el.querySelector('#pf-dob')?.value;
+      if (!first || !last) return 'Add your first and last name.';
+      if (!dob) return 'Add your date of birth.';
+    }
+    return '';
+  };
+  const syncReady = () => {
+    const left = stillNeeded();
+    setReady(el, left || 'Everything I need. Next is the agreement.', !left);
+  };
+
   daysEl.querySelectorAll('.slot').forEach((btn) =>
     btn.addEventListener('click', () => {
       daysEl.querySelectorAll('.slot').forEach((b) => b.classList.remove('selected'));
@@ -340,6 +479,7 @@ async function renderTime() {
       const rb = el.querySelector('#request-box');
       if (rb) rb.open = false;
       el.querySelector('#continue').disabled = false;
+      syncReady();
     })
   );
   // Coming back from a later step: re-mark the slot they already picked.
@@ -389,6 +529,7 @@ async function renderTime() {
     state.slot = null;
     el.querySelectorAll('.slot').forEach((b) => b.classList.remove('selected'));
     el.querySelector('#continue').disabled = false;
+    syncReady();
   };
   reqDate.addEventListener('change', syncRequest);
   reqTime.addEventListener('change', syncRequest);
@@ -397,6 +538,7 @@ async function renderTime() {
     state.requestedStart = null;
     reqMst.textContent = 'Choose a date and time to see it in my time zone.';
     el.querySelector('#continue').disabled = !state.slot;
+    syncReady();
   });
   // Coming back from a later step: re-fill the time they already requested.
   if (state.requestedStart) {
@@ -415,33 +557,35 @@ async function renderTime() {
       input.closest('.chip-label').classList.add('selected');
       el.querySelector('#phone-row').hidden = input.value !== 'phone';
       el.querySelector('#video-note').hidden = input.value !== 'video';
+      syncReady();
     })
   );
 
   el.querySelector('#continue').addEventListener('click', async () => {
     if (!state.slot && !state.requestedStart) return;
-    const err = el.querySelector('#method-error');
-    err.hidden = true;
+    clearRefusals(el);
     if (state.requestedStart) {
       const reqErr = el.querySelector('#req-error');
-      reqErr.hidden = true;
       const lead = state.requestedStart.getTime() - Date.now();
       if (lead < LEAD_TIME_MS) {
-        reqErr.textContent = 'Please choose a time at least 72 hours from now.';
-        reqErr.hidden = false;
+        refuse(reqErr, 'Please choose a time at least 72 hours from now.', { field: reqDate });
         return;
       }
       if (lead > MAX_LEAD_MS) {
-        reqErr.textContent = 'Please choose a time within the next 10 days.';
-        reqErr.hidden = false;
+        refuse(reqErr, 'Please choose a time within the next 10 days.', { field: reqDate });
         return;
       }
     }
     if (state.method === 'phone') {
-      state.phone = el.querySelector('#phone').value.trim();
-      if (!/^\+?[\d\s().-]{7,20}$/.test(state.phone)) {
-        err.textContent = 'Enter a valid phone number so I can reach you for the call.';
-        err.hidden = false;
+      const phoneField = el.querySelector('#phone');
+      state.phone = phoneField.value.trim();
+      if (!PHONE_RE.test(state.phone)) {
+        // THE refusal that used to happen off screen. It is now printed under
+        // the field it is about, scrolled into the middle of the viewport, and
+        // the caret is put in the box.
+        refuse(el.querySelector('#phone-err'),
+          'Enter a valid phone number so I can reach you for the call.',
+          { field: phoneField });
         return;
       }
     }
@@ -449,8 +593,9 @@ async function renderTime() {
     // booking, video included - he calls clients back between sessions
     // whatever the session method. Enforced by the Worker too (REQUIRED_ACKS).
     if (!state.acks.phoneConsent) {
-      err.textContent = 'Tick the consent box so I can call you between sessions.';
-      err.hidden = false;
+      refuse(el.querySelector('#consent-err'),
+        'Tick the consent box so I can call you between sessions.',
+        { block: el.querySelector('#phone-consent-row') });
       return;
     }
     // Name + DOB before money moves. The save must land before the pay call
@@ -458,19 +603,21 @@ async function renderTime() {
     // setDoc shape as profile.js's ensureFullProfile.
     if (needsProfile()) {
       const pfErr = el.querySelector('#pf-err');
-      const firstName = el.querySelector('#pf-first').value.trim();
-      const lastName = el.querySelector('#pf-last').value.trim();
-      const dob = el.querySelector('#pf-dob').value;
-      pfErr.hidden = true;
+      const firstField = el.querySelector('#pf-first');
+      const lastField = el.querySelector('#pf-last');
+      const dobField = el.querySelector('#pf-dob');
+      const firstName = firstField.value.trim();
+      const lastName = lastField.value.trim();
+      const dob = dobField.value;
       if (!firstName || !lastName) {
-        pfErr.textContent = 'First and last name, please, so I know whose case I am reviewing.';
-        pfErr.hidden = false;
+        refuse(pfErr, 'First and last name, please, so I know whose case I am reviewing.',
+          { field: firstName ? lastField : firstField, block: el.querySelector('#profile-block') });
         return;
       }
       const age = ageFromDob(dob);
       if (age === null) {
-        pfErr.textContent = 'Enter your date of birth.';
-        pfErr.hidden = false;
+        refuse(pfErr, 'Enter your date of birth.',
+          { field: dobField, block: el.querySelector('#profile-block') });
         return;
       }
       if (age < MIN_AGE) {
@@ -490,8 +637,8 @@ async function renderTime() {
         }, { merge: true });
         profile = { ...profile, firstName, lastName, dob };
       } catch (e) {
-        pfErr.textContent = `Couldn't save: ${e.message}`;
-        pfErr.hidden = false;
+        refuse(pfErr, `Couldn't save: ${e.message}`,
+          { block: el.querySelector('#profile-block') });
         return;
       }
     }
@@ -503,7 +650,28 @@ async function renderTime() {
   el.querySelector('#phone-consent')?.addEventListener('change', (e) => {
     if (e.target.checked) state.acks.phoneConsent = Date.now();
     else delete state.acks.phoneConsent;
+    el.querySelector('#consent-err').hidden = true;
+    el.querySelector('#phone-consent-row')?.classList.remove('is-invalid');
+    syncReady();
   });
+
+  // Typing into a field that was just refused clears its mark straight away,
+  // so the red does not outlive the problem.
+  for (const sel of ['#phone', '#pf-first', '#pf-last', '#pf-dob']) {
+    const field = el.querySelector(sel);
+    if (!field) continue;
+    field.addEventListener('input', () => {
+      field.classList.remove('is-invalid');
+      field.removeAttribute('aria-invalid');
+      const box = field.closest('.bk-sec');
+      if (box) {
+        box.classList.remove('is-invalid');
+        box.querySelectorAll('.field-error').forEach((e) => { e.hidden = true; });
+      }
+      syncReady();
+    });
+  }
+  syncReady();
 }
 
 // ---- Step 2: One agreement ----
@@ -514,27 +682,79 @@ async function renderTime() {
 // fourth chance to leave one unwired.
 const AGREEMENT_PARTS = [...WAIVERS, SERVICE_TERMS];
 
+// How long each part is. Not a word of the agreement can go and the scroll
+// gate stays, so the only honest thing left to change is how much of it the
+// client can SEE they have done: 1,425 words behind four identical closed
+// drawers, with no sense of progress, is what people abandon.
+const wordsIn = (html) => String(html).replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length;
+// 200 words a minute is a fair pace for a document somebody is actually
+// reading rather than skimming, and a minute is the smallest useful unit.
+const minutesFor = (words) => Math.max(1, Math.round(words / 200));
+
 function renderAgreement() {
+  const parts = AGREEMENT_PARTS.map((w) => ({ ...w, words: wordsIn(w.body) }));
+  const totalWords = parts.reduce((n, p) => n + p.words, 0);
   const el = mount(`
-    <h2>One agreement, four short parts</h2>
-    <p class="muted small">Open each part and read it through. Once you have reached the end of all four, you can acknowledge the agreement.</p>
-    ${AGREEMENT_PARTS.map(
-      (w) => `
+    <section class="bk-sec lit">
+      <div class="bk-sec-h">
+        <span class="bk-ic">${ICON.doc}</span>
+        <div>
+          <h2>One agreement, four short parts</h2>
+          <p class="bk-sub">Open each part and read it through. Once you have reached the end of all four, you can acknowledge the agreement.</p>
+        </div>
+      </div>
+      <div class="agree-meter">
+        <ol class="agree-dots" id="agree-dots">${parts.map((p) => `<li data-dot="${p.id}"></li>`).join('')}</ol>
+        <p class="agree-count" id="agree-count"></p>
+      </div>
+    </section>
+    ${parts.map(
+      (w, i) => `
       <details class="agreement" data-id="${w.id}">
         <summary>
           <span class="agreement-title">${esc(w.title)}</span>
           <span class="agreement-plain">${AGREEMENT_PLAIN[w.id] || ''}</span>
+          <span class="agree-tag"><span class="len">Part ${i + 1} of ${parts.length} · about ${minutesFor(w.words)} min</span><span class="pill" data-pill>Not read</span></span>
         </summary>
         <div class="agreement-body">${w.body}</div>
+        <div class="read-bar" data-bar><i></i></div>
+        <p class="read-hint" data-hint>Read to the end of this part and the box below unlocks.</p>
         <label class="agreement-check"><input type="checkbox" ${state.acks[w.id] ? 'checked' : ''} ${state.acks[w.id] || state.read[w.id] ? '' : 'disabled'}> I have read and acknowledge this</label>
       </details>`
     ).join('')}
-    <p>
-      <button class="btn quiet" id="back">Back</button>
-      <button class="btn glow" id="continue" ${AGREEMENT_PARTS.every((w) => state.acks[w.id]) ? '' : 'disabled'}>Continue</button>
-    </p>`);
+    <div class="bk-actions">
+      <p class="bk-ready" id="ready-note" hidden></p>
+      <div class="bk-actions-row">
+        <button class="btn quiet" id="back">Back</button>
+        <button class="btn glow" id="continue" ${AGREEMENT_PARTS.every((w) => state.acks[w.id]) ? '' : 'disabled'}>Continue</button>
+      </div>
+    </div>`);
 
   const continueBtn = el.querySelector('#continue');
+  const countEl = el.querySelector('#agree-count');
+
+  /** The headline count, the four segments, and the line above Continue. */
+  const paintTotals = () => {
+    const done = (p) => !!state.acks[p.id] || !!state.read[p.id];
+    const readCount = parts.filter(done).length;
+    const ackCount = parts.filter((p) => state.acks[p.id]).length;
+    const leftWords = parts.filter((p) => !done(p)).reduce((n, p) => n + p.words, 0);
+    countEl.innerHTML = ackCount === parts.length
+      ? `All ${parts.length} acknowledged<span class="rest">nothing left to read</span>`
+      : `${readCount} of ${parts.length} read<span class="rest">${
+          leftWords
+            ? `about ${minutesFor(leftWords)} min left`
+            : `${parts.length - ackCount} box${parts.length - ackCount === 1 ? '' : 'es'} to tick`
+        }</span>`;
+    // Whichever part is open and not yet finished is the one thing to say.
+    const open = [...el.querySelectorAll('details.agreement[open]')]
+      .find((d) => !state.read[d.dataset.id] && !state.acks[d.dataset.id]);
+    if (ackCount === parts.length) setReady(el, 'All four acknowledged. Next is payment.', true);
+    else if (readCount === parts.length) setReady(el, 'Tick the box in each part to acknowledge it.');
+    else if (open) setReady(el, 'Keep going to the end of the part you have open.');
+    else setReady(el, `Open the next part and read it to the end. About ${minutesFor(leftWords)} min left.`);
+  };
+
   const syncContinue = () => {
     continueBtn.disabled = !AGREEMENT_PARTS.every((w) => state.acks[w.id]);
   };
@@ -543,6 +763,41 @@ function renderAgreement() {
     const id = d.dataset.id;
     const body = d.querySelector('.agreement-body');
     const box = d.querySelector('.agreement-check input');
+    const bar = d.querySelector('[data-bar]');
+    const hint = d.querySelector('[data-hint]');
+    const pill = d.querySelector('[data-pill]');
+    const dot = el.querySelector(`[data-dot="${id}"]`);
+
+    /** This part's state, on its pill, its hint and its segment of the meter. */
+    const paintPart = () => {
+      const acked = !!state.acks[id];
+      const done = acked || !!state.read[id];
+      pill.textContent = acked ? 'Acknowledged' : done ? 'Read' : d.open ? 'Reading' : 'Not read';
+      pill.className = `pill${acked ? ' ack' : done ? ' read' : d.open ? ' at' : ''}`;
+      hint.textContent = acked
+        ? 'Acknowledged. Nothing else to do in this part.'
+        : done
+          ? 'You have reached the end. Tick the box to acknowledge this part.'
+          : 'Read to the end of this part and the box below unlocks.';
+      hint.classList.toggle('done', done);
+      dot.className = acked ? 'ack' : done ? 'read' : d.open ? 'at' : '';
+      if (done) {
+        bar.style.setProperty('--p', '1');
+        dot.style.setProperty('--p', '1');
+      }
+    };
+
+    /** How far down this part the client has got, live, as they scroll it. */
+    const paintProgress = () => {
+      if (!d.open) return;
+      const seen = body.scrollHeight > 0
+        ? Math.min(1, (body.scrollTop + body.clientHeight) / body.scrollHeight)
+        : 1;
+      const p = state.read[id] ? 1 : seen;
+      bar.style.setProperty('--p', p.toFixed(3));
+      dot.style.setProperty('--p', p.toFixed(3));
+    };
+
     // Proof of exposure: the box unlocks only after this part has been opened
     // AND its body scrolled to the end. Checked once on open too, because a
     // short body may not need to scroll at all. Never measure while closed:
@@ -554,9 +809,20 @@ function renderAgreement() {
         box.disabled = false;
       }
     };
-    body.addEventListener('scroll', checkScrolled);
+    body.addEventListener('scroll', () => {
+      checkScrolled();
+      paintProgress();
+      paintPart();
+      paintTotals();
+    });
     d.addEventListener('toggle', () => {
-      if (d.open) requestAnimationFrame(checkScrolled);
+      if (d.open) requestAnimationFrame(() => {
+        checkScrolled();
+        paintProgress();
+        paintPart();
+        paintTotals();
+      });
+      else { paintPart(); paintTotals(); }
     });
     box.addEventListener('change', () => {
       // The ack timestamp is the moment the box is ticked (the Worker stores
@@ -564,8 +830,12 @@ function renderAgreement() {
       if (box.checked) state.acks[id] = Date.now();
       else delete state.acks[id];
       syncContinue();
+      paintPart();
+      paintTotals();
     });
+    paintPart();
   });
+  paintTotals();
 
   el.querySelector('#back').addEventListener('click', back);
   continueBtn.addEventListener('click', next);
@@ -588,14 +858,20 @@ function renderPayment() {
 
   const el = mount(`
     <h2>Lock it in</h2>
-    <div class="card">
-      <div class="row"><h3>Advocacy Case</h3></div>
-      <p class="muted small">
-        <strong style="color:var(--ink)">${localLong.format(when)}</strong> (your time)<br>
-        ${mtFmt.format(when)} MST my time<br>
-        ${methodLabel} · Private session${isRequest ? ' · <span style="color:var(--orange)">Time requested. Awaiting confirmation.</span>' : ''}
-      </p>
-    </div>
+    <section class="bk-sec">
+      <div class="bk-sec-h">
+        <span class="bk-ic">${ICON.brief}</span>
+        <div>
+          <h3>Advocacy Case</h3>
+          <p class="bk-sub">Private session, one to one.</p>
+        </div>
+      </div>
+      <div class="bk-lines">
+        <p class="bk-line">${ICON.calendar}<span><strong>${localLong.format(when)}</strong> (your time)<br>${mtFmt.format(when)} MST my time</span></p>
+        <p class="bk-line">${state.method === 'phone' ? ICON.phone : ICON.video}<span>${methodLabel}</span></p>
+        ${isRequest ? `<p class="bk-line">${ICON.clock}<span class="pend">Time requested. Awaiting confirmation.</span></p>` : ''}
+      </div>
+    </section>
     ${isRequest ? `<p class="notice-box pending">
       <strong>This time is a request.</strong> It isn't on my calendar yet. Your case opens and
       your payment is taken as normal, and I'll confirm this time, or offer you the nearest one
@@ -605,7 +881,7 @@ function renderPayment() {
       <span class="price" data-case-price>$${money(caseCents)}</span>
       <span class="included" data-included>This includes our call and your written report within 7 days.</span>
     </div>
-    <details class="faq" id="addons-preview" style="margin:.6rem 0 0;">
+    <details class="faq" id="addons-preview">
       <summary>Case Enhancements, once your case starts</summary>
       <div class="faq-a">
         <p class="muted small" style="margin:.3rem 0 .5rem;">Nothing to decide
@@ -623,12 +899,15 @@ function renderPayment() {
           I join a telehealth visit with one of your own providers by video and advocate live. I confirm every appointment personally; if I can't attend, or your provider doesn't allow it, you get every dollar back. Included with Hands-Off Case Management.</p>
       </div>
     </details>
-    <p class="muted small">${isRequest ? 'Requested times are not held while you complete payment.' : 'Your selected time is held while you complete payment.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once your slot is booked. If I reschedule you more than once, you're entitled to a full refund on request.</p>
-    <p class="error" id="pay-error" hidden></p>
-    <p>
-      <button class="btn quiet" id="back">Back</button>
-      <button class="btn glow" id="pay">Pay $${money(caseCents)} and book</button>
-    </p>`);
+    <p class="bk-fine">${isRequest ? 'Requested times are not held while you complete payment.' : 'Your selected time is held while you complete payment.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once your slot is booked. If I reschedule you more than once, you're entitled to a full refund on request.</p>
+    <p class="error field-error" id="pay-error" hidden></p>
+    <div class="bk-actions">
+      <p class="bk-ready go" id="ready-note">Card details go to Stripe, never to this site.</p>
+      <div class="bk-actions-row">
+        <button class="btn quiet" id="back">Back</button>
+        <button class="btn glow" id="pay">Pay $${money(caseCents)} and book</button>
+      </div>
+    </div>`);
 
   el.querySelector('#back').addEventListener('click', back);
 
@@ -680,8 +959,9 @@ function renderPayment() {
       if (!res.ok) throw new Error(data.error || `Checkout failed (${res.status})`);
       location.href = data.url;
     } catch (err) {
-      errEl.textContent = err.message;
-      errEl.hidden = false;
+      // A refused payment is the one refusal a client is certain to be looking
+      // for, so it gets the same treatment as the rest: boxed, and scrolled to.
+      refuse(errEl, err.message);
       payBtn.disabled = false;
     }
   });

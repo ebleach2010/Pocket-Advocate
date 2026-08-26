@@ -1,0 +1,674 @@
+/* Pocket Advocate: the booking flow's own stylesheet.
+ *
+ * Loaded by book.html AFTER site.css and by nothing else, so every rule here
+ * is scoped to `main.book` and cannot reach another screen. site.css owns the
+ * tokens and the shared components; this file only restyles them for the one
+ * page where a client is deciding whether to pay.
+ *
+ * COLOUR RULE, and it is not a style preference: there are four schemes (neon,
+ * calm, paper, contrast) and a literal colour breaks three of them. Every
+ * colour below resolves from a custom property already defined in site.css.
+ * Where a tint or a blend is wanted it is mixed FROM a token with color-mix()
+ * rather than written out, so paper stays light and contrast stays black.
+ *
+ * What it is trying to look like: Eric's mockup. Solid panels that glow at the
+ * edge rather than fade out, a numbered rail with the stops joined up, icons
+ * that commit, and a tight ladder of type instead of an even grey wash.
+ */
+
+main.book {
+  padding-top: .7rem;
+  padding-bottom: 1.2rem;
+}
+
+/* ---------------------------------------------------------------- page head
+   "Book your case" was set at the full h1 scale, which on a 390px phone is
+   two lines of display type above a form the client came here to fill in. */
+main.book > h1 {
+  font-size: clamp(1.45rem, 5.2vw, 1.8rem);
+  margin: 0 0 .6rem;
+}
+main.book h2 {
+  font-size: 1.12rem;
+  margin: 0 0 .2rem;
+}
+
+/* --------------------------------------------------------------- step rail
+   Three stops, joined by a rule that fills in behind you. The connector is
+   drawn on each stop after the first and runs from the previous badge's
+   centre to this one's, so the rail reads as one track rather than three
+   separate underlines. */
+main.book .step-rail {
+  gap: 0;
+  margin: 0 0 .85rem;
+  padding: .55rem .25rem .5rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+main.book .step-rail li {
+  position: relative;
+  flex-direction: column;
+  align-items: center;
+  gap: .3rem;
+  padding: .1rem .2rem;
+  text-align: center;
+  border-bottom: 0;
+}
+main.book .step-rail li + li::before {
+  content: '';
+  position: absolute;
+  left: -50%;
+  right: 50%;
+  top: calc(.1rem + .95rem - 1px);
+  height: 2px;
+  background: var(--line);
+}
+main.book .step-rail li.now::before,
+main.book .step-rail li.done::before { background: var(--cyan-dim); }
+main.book .step-rail .n {
+  position: relative;
+  z-index: 1;
+  width: 1.9rem;
+  height: 1.9rem;
+  font-size: .82rem;
+  background: var(--panel);
+}
+main.book .step-rail .t {
+  font-size: .72rem;
+  line-height: 1.2;
+  letter-spacing: .01em;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+/* The stop you are standing on is filled, not merely ringed: on a phone a
+   1px cyan outline and a 1px grey one are the same thing at arm's length. */
+main.book .step-rail li.now .n {
+  background: var(--cyan);
+  border-color: var(--cyan);
+  color: var(--on-accent);
+  box-shadow: var(--glow-c);
+}
+main.book .step-rail li.done .n {
+  background: color-mix(in srgb, var(--cyan-dim) 22%, var(--panel));
+  border-color: var(--cyan-dim);
+  color: var(--cyan-dim);
+}
+
+/* ------------------------------------------------------------------ panels
+   The one surface this flow is built from: a solid panel with a lit edge.
+   `.lit` is the mockup's glowing card and is spent sparingly: the thing on
+   the screen that matters most, and nothing else. */
+main.book .bk-sec {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: .8rem .85rem .85rem;
+  margin: 0 0 .65rem;
+}
+main.book .bk-sec.lit {
+  border-color: color-mix(in srgb, var(--cyan) 50%, var(--line));
+  box-shadow: var(--glow-c);
+}
+main.book .bk-sec.lit-m {
+  border-color: color-mix(in srgb, var(--magenta) 50%, var(--line));
+  box-shadow: var(--glow-m);
+}
+main.book .bk-sec > :last-child { margin-bottom: 0; }
+/* The step's opening card carries only its heading, so its header row is the
+   whole card and needs no gap under it. */
+main.book .bk-hero .bk-sec-h { margin-bottom: 0; }
+main.book .bk-hero { padding-bottom: .8rem; }
+
+/* Header row inside a panel: medallion, then a two-line title stack. */
+main.book .bk-sec-h {
+  display: flex;
+  align-items: flex-start;
+  gap: .65rem;
+  margin: 0 0 .6rem;
+}
+main.book .bk-sec-h > div { min-width: 0; flex: 1; }
+main.book .bk-sec-h h2,
+main.book .bk-sec-h h3 { margin: 0; }
+main.book .bk-sub {
+  margin: .15rem 0 0;
+  font-size: .86rem;
+  line-height: 1.45;
+  color: var(--dim);
+}
+main.book .bk-sub strong { color: var(--soft); font-weight: 700; }
+
+/* The medallion. Confident, not decorative: a filled tile with the icon in
+   the accent it is ringed with. */
+main.book .bk-ic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 45%, var(--line));
+  background: color-mix(in srgb, var(--cyan) 14%, var(--panel-2));
+  color: var(--cyan);
+  box-shadow: var(--glow-c);
+}
+main.book .bk-ic svg { width: 1.15rem; height: 1.15rem; display: block; }
+main.book .bk-ic.m {
+  border-color: color-mix(in srgb, var(--magenta) 45%, var(--line));
+  background: color-mix(in srgb, var(--magenta) 14%, var(--panel-2));
+  color: var(--magenta);
+  box-shadow: var(--glow-m);
+}
+main.book .bk-ic.g {
+  border-color: color-mix(in srgb, var(--green) 45%, var(--line));
+  background: color-mix(in srgb, var(--green) 14%, var(--panel-2));
+  color: var(--green);
+  box-shadow: var(--glow-g);
+}
+
+/* ------------------------------------------------------------ step 1: time
+   Four days of twelve times used one full-width row each: a whole screen and
+   a half of nothing but buttons. Two to a row on a phone, and the day cards
+   pulled in around them. */
+main.book .day {
+  margin-bottom: .5rem;
+  padding: .6rem .6rem .65rem;
+  border-radius: 14px;
+}
+main.book .day:last-child { margin-bottom: 0; }
+main.book .day h3 {
+  font-size: .88rem;
+  margin: 0 0 .45rem;
+  padding-bottom: .4rem;
+  gap: .45rem;
+}
+main.book .day h3::before { height: .9rem; }
+main.book .day h3 .count { font-size: .72rem; font-weight: 600; }
+main.book #days { margin: 0 0 .55rem; }
+/* Loading, closed books, a calendar that would not load: with no day cards in
+   it, #days is a message and gets a panel of its own. Naked on the page
+   background it reads as something that failed to render. */
+main.book #days:not(:has(.day)) {
+  padding: .8rem .85rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+}
+main.book #days:not(:has(.day)):has(.error) {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+main.book #days > p:last-child { margin-bottom: 0; }
+main.book .slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  gap: .4rem;
+}
+main.book .slot {
+  width: auto;
+  padding: .45rem .55rem;
+  font-size: .92rem;
+  min-height: 46px;
+  border-radius: 11px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+main.book .slot .local {
+  font-size: .68rem;
+  margin-top: .1rem;
+  line-height: 1.25;
+}
+main.book .slot.selected {
+  background: color-mix(in srgb, var(--cyan) 14%, var(--panel-2));
+  color: var(--cyan);
+}
+main.book .slot.selected .local { color: var(--cyan-dim); }
+
+/* "None of these work?": a full-width quiet row with a chevron, matching the
+   two action rows on the mockup rather than a stray pill. */
+main.book #request-box { margin: .6rem 0 0; }
+main.book #request-box > summary.btn {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  width: 100%;
+  padding: .6rem .8rem;
+  border-radius: 12px;
+  font-size: .88rem;
+  color: var(--soft);
+  background: var(--panel-2);
+  border-color: var(--line);
+}
+main.book #request-box > summary.btn svg { width: 1.05rem; height: 1.05rem; flex: none; }
+main.book #request-box > summary.btn .chev {
+  margin-left: auto;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--cyan);
+}
+main.book #request-box[open] > summary.btn .chev { transform: rotate(90deg); }
+main.book #request-box[open] > summary.btn {
+  border-color: color-mix(in srgb, var(--cyan) 45%, var(--line));
+  color: var(--cyan);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+main.book #request-box .card {
+  margin: 0;
+  border-radius: 12px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-top: 0;
+  padding: .75rem .8rem;
+}
+
+/* Method: two solid cards rather than two pills adrift on the background. */
+main.book #chips {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .45rem;
+  margin: 0;
+}
+main.book #chips .chip-label {
+  display: flex;
+  justify-content: center;
+  gap: .4rem;
+  margin: 0;
+  padding: .5rem .6rem;
+  border-radius: 12px;
+  background: var(--panel-2);
+  font-size: .92rem;
+  font-weight: 600;
+}
+main.book #chips .chip-label.selected {
+  background: color-mix(in srgb, var(--cyan) 14%, var(--panel-2));
+}
+main.book #chips .chip-label svg { width: 1.05rem; height: 1.05rem; flex: none; }
+
+main.book .bk-field { margin: .6rem 0 0; }
+main.book .bk-field > label { margin-bottom: .25rem; font-size: .84rem; }
+main.book .bk-field input { min-height: 46px; }
+/* site.css dresses email, tel, text, date, url and datetime-local, but not
+   `time`, so the request picker's Time box shipped as a raw white UA control
+   on a dark page, 24px tall, beside a styled Date box. Same box as its twin. */
+main.book input[type=time] {
+  width: 100%;
+  padding: .6rem .75rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--ink);
+  font: inherit;
+}
+/* The native picker glyph inside a date or time field is drawn by the browser
+   and takes no colour from us; `color-scheme` is the only lever, and it is a
+   keyword rather than a colour, so it stays inside the no-literals rule.
+   Three of the four schemes are dark grounds; paper is the exception. */
+main.book input[type=date],
+main.book input[type=time] { color-scheme: dark; }
+:root[data-scheme="paper"] main.book input[type=date],
+:root[data-scheme="paper"] main.book input[type=time] { color-scheme: light; }
+main.book #video-note { margin: .6rem 0 0; font-size: .86rem; }
+
+/* The continuity-of-care consent. Its wording is fixed; only its box moved. */
+main.book #phone-consent-row {
+  margin: .6rem 0 0;
+  padding: .55rem .6rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+  font-size: .88rem;
+  line-height: 1.45;
+  align-items: flex-start;
+}
+main.book #phone-consent-row:has(input:checked) {
+  border-color: color-mix(in srgb, var(--cyan) 45%, var(--line));
+}
+
+main.book #profile-block { margin: 0 0 .65rem; }
+main.book #profile-block .bk-field:first-of-type { margin-top: 0; }
+
+/* ------------------------------------------------------- errors you can see
+   The defect this pass exists to kill: Continue refused, and the reason
+   printed as a lone red paragraph somewhere on a three-screen page. An error
+   now sits ON the control that is blocking, is boxed so it reads as an
+   interruption rather than a caption, and the JS scrolls it into the middle
+   of the screen and puts the caret in the field. */
+main.book .field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: .45rem;
+  margin: .4rem 0 0;
+  padding: .45rem .6rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  font-size: .85rem;
+  line-height: 1.4;
+  scroll-margin: 30vh 0;
+}
+main.book .field-error::before {
+  content: '!';
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-top: .05rem;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  font-weight: 800;
+  font-size: .72rem;
+  line-height: 1;
+}
+/* Author rules beat the UA sheet, so a hidden error has to be told twice. */
+main.book .field-error[hidden],
+main.book .error[hidden] { display: none; }
+
+main.book input.is-invalid,
+main.book textarea.is-invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 50%, transparent);
+}
+/* The fields get the same magenta keyboard ring the rest of the app uses; a
+   field that is being refused keeps its own colour instead, because the caret
+   is put there deliberately and the ring is the second half of the message. */
+main.book input:focus-visible,
+main.book select:focus-visible,
+main.book textarea:focus-visible {
+  outline: 2px solid var(--magenta);
+  outline-offset: 2px;
+}
+main.book input.is-invalid:focus-visible { outline-color: var(--danger); }
+/* A whole block can be the thing at fault (name and date of birth together),
+   not just one field. */
+main.book .bk-sec.is-invalid,
+main.book .card.is-invalid {
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--line));
+}
+
+/* -------------------------------------------------------------- action bar
+   Pinned to the bottom of the step for as long as the step is on screen, so
+   the one button that moves the client forward is never three swipes away,
+   and so the sentence saying what is still missing is read before the button
+   is pressed rather than after. */
+main.book .bk-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  margin: .8rem -1.1rem 0;
+  padding: .55rem 1.1rem calc(.55rem + env(safe-area-inset-bottom));
+  background: var(--bar);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line);
+}
+main.book .bk-actions-row {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+}
+main.book .bk-actions .btn { min-height: 48px; }
+main.book .bk-actions .btn.glow,
+main.book .bk-actions [id='continue'],
+main.book .bk-actions [id='pay'] { flex: 1; }
+main.book .bk-ready {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin: 0 0 .45rem;
+  font-size: .82rem;
+  line-height: 1.35;
+  color: var(--dim);
+}
+main.book .bk-ready::before {
+  content: '';
+  flex: none;
+  width: .5rem;
+  height: .5rem;
+  border-radius: 50%;
+  background: var(--dim);
+}
+main.book .bk-ready.go { color: var(--green); }
+main.book .bk-ready.go::before { background: var(--green); box-shadow: var(--glow-g); }
+main.book .bk-ready[hidden] { display: none; }
+
+/* --------------------------------------------------- step 2: the agreement
+   Not one word of it can go and the scroll gate stays, so the only honest
+   thing to change is how much of it the client can SEE they have done. Four
+   segments across the top, a state on every part, and a fill bar under the
+   part that is open. */
+main.book .agree-meter { margin: .1rem 0 0; }
+main.book .agree-dots {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: .3rem;
+  margin: 0 0 .4rem;
+  padding: 0;
+  list-style: none;
+}
+main.book .agree-dots li {
+  height: .4rem;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+/* The part being read fills in live from its own scroll position. */
+main.book .agree-dots li.at::after {
+  content: '';
+  display: block;
+  height: 100%;
+  width: calc(var(--p, 0) * 100%);
+  border-radius: 999px;
+  background: var(--cyan);
+  box-shadow: var(--glow-c);
+}
+main.book .agree-dots li.read { background: var(--cyan-dim); }
+main.book .agree-dots li.ack { background: var(--cyan); box-shadow: var(--glow-c); }
+main.book .agree-count {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem .5rem;
+  margin: 0;
+  font-weight: 700;
+  font-size: .8rem;
+  line-height: 1.3;
+  color: var(--cyan);
+}
+main.book .agree-count .rest { font-weight: 400; color: var(--dim); }
+
+main.book .agreement {
+  margin-bottom: .5rem;
+  border-radius: 14px;
+}
+main.book .agreement > summary {
+  grid-template-columns: 1fr auto;
+  padding: .65rem .8rem;
+  column-gap: .5rem;
+}
+main.book .agreement-title { font-size: .98rem; }
+main.book .agreement-plain {
+  font-size: .82rem;
+  line-height: 1.4;
+  margin-top: .1rem;
+}
+/* Third row of the summary grid: how long this part is on the left, where it
+   stands on the right. One line, always: two lines here cost fifty pixels a
+   part and this is a step that is already too long. */
+main.book .agree-tag {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin-top: .4rem;
+  font-weight: 600;
+  font-size: .74rem;
+  line-height: 1.2;
+  color: var(--dim);
+}
+main.book .agree-tag .len { min-width: 0; }
+main.book .agree-tag .pill {
+  margin-left: auto;
+  flex: none;
+  padding: .25rem .5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--dim);
+  font-weight: 700;
+}
+main.book .agree-tag .pill.at { border-color: var(--cyan-dim); color: var(--cyan); }
+main.book .agree-tag .pill.read { border-color: var(--cyan-dim); color: var(--cyan); }
+main.book .agree-tag .pill.ack {
+  border-color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 16%, var(--panel-2));
+  color: var(--cyan);
+}
+main.book .agreement:has(.agreement-check input:checked) {
+  border-color: color-mix(in srgb, var(--cyan) 45%, var(--line));
+}
+main.book .agreement[open] {
+  border-color: color-mix(in srgb, var(--cyan) 40%, var(--line));
+  box-shadow: var(--glow-c);
+}
+main.book .agreement-body {
+  margin: .6rem .8rem 0;
+  padding: .85rem .9rem;
+  font-size: .92rem;
+  line-height: 1.6;
+}
+/* How far through THIS part, directly under the window it is read in. */
+main.book .read-bar {
+  height: .3rem;
+  margin: .4rem .8rem 0;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+main.book .read-bar i {
+  display: block;
+  height: 100%;
+  width: calc(var(--p, 0) * 100%);
+  border-radius: 999px;
+  background: var(--cyan);
+  box-shadow: var(--glow-c);
+  transition: width .12s linear;
+}
+main.book .read-hint {
+  margin: .35rem .8rem 0;
+  font-size: .78rem;
+  line-height: 1.4;
+  color: var(--dim);
+}
+main.book .read-hint.done { color: var(--green); }
+main.book .agreement:not([open]) .read-bar,
+main.book .agreement:not([open]) .read-hint { display: none; }
+main.book .agreement-check {
+  margin: .5rem .8rem .6rem;
+  padding: .5rem .55rem;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel-2);
+  font-size: .88rem;
+}
+main.book .agreement-check:has(input:checked) {
+  border-color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 12%, var(--panel-2));
+}
+
+/* ----------------------------------------------------- step 3: the payment
+   The number is the headline and the booking sits above it as a receipt.
+   Nothing about the price, the terms or the refund wording is touched here;
+   they are only laid out so they can be read. */
+main.book .bk-lines { margin: 0; }
+main.book .bk-line {
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  padding: .45rem 0;
+  border-top: 1px solid var(--line);
+  font-size: .9rem;
+  line-height: 1.45;
+  color: var(--soft);
+}
+main.book .bk-line:first-child { border-top: 0; padding-top: 0; }
+main.book .bk-line svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  margin-top: .18rem;
+  color: var(--cyan);
+}
+main.book .bk-line strong { color: var(--ink); font-weight: 700; }
+main.book .bk-line .pend { color: var(--orange); }
+
+main.book .price-line {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin: 0 0 .65rem;
+  padding: .85rem .9rem;
+  border-color: color-mix(in srgb, var(--cyan) 55%, var(--line));
+  background: color-mix(in srgb, var(--cyan) 8%, var(--panel));
+  box-shadow: var(--glow-c);
+  border-radius: 16px;
+}
+main.book .price-line .price {
+  margin: 0;
+  font-size: 1.9rem;
+  line-height: 1.1;
+}
+main.book .price-line .included {
+  font-size: .86rem;
+  line-height: 1.45;
+  color: var(--soft);
+}
+
+main.book .faq#addons-preview {
+  margin: 0 0 .65rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+main.book .faq#addons-preview > summary {
+  padding: .7rem .85rem;
+  font-size: .92rem;
+  min-height: 46px;
+}
+main.book .faq#addons-preview .faq-a { padding: 0 .85rem .75rem; }
+
+main.book .bk-fine {
+  margin: 0;
+  padding: .65rem .75rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+  font-size: .8rem;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
+main.book .notice-box { font-size: .88rem; margin: 0 0 .65rem; }
+
+/* 360px Androids: two columns still fit, but "3:00 AM MST my time" lands
+   within a pixel or two of the column and wraps to a second line, which makes
+   one time in a row twice the height of its neighbour. Trim the padding and
+   the second line rather than give up the column. */
+@media (max-width: 380px) {
+  main.book .slot { padding: .45rem .45rem; }
+  main.book .slot .local { font-size: .64rem; }
+}
+
+/* Narrow phones: one time per row again rather than two cramped ones. */
+@media (max-width: 340px) {
+  main.book .slots { grid-template-columns: 1fr; }
+  main.book #chips { grid-template-columns: 1fr; }
+}
+
+/* Someone who has asked for less movement gets none of the bar animations. */
+@media (prefers-reduced-motion: reduce) {
+  main.book .read-bar i { transition: none; }
+}
