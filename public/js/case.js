@@ -1226,15 +1226,33 @@ function addAboutButton(host, id) {
  * compiled-in number here and the number Stripe charges are the same.
  */
 const EXTEND_PRICE_CENTS = 340000;
+// The Worker's rule, and the Worker's numbers. These are not decoration: this
+// function tells a client the date their month runs to, and until now it said
+// SIXTY DAYS for every case, hardcoded, while the Worker gives a case bought
+// after the monthly reshape THIRTY. The advocate's own page said thirty too.
+// So a client on the current tier was shown an end date a month later than
+// the one the close sweep actually enforces, on the most expensive thing the
+// app sells. A case sold before the reshape really did buy sixty days and
+// keeps them, which is the only reason the legacy number is still here.
+const FULL_WINDOW_DAYS = 30;
+const FULL_LEGACY_WINDOW_DAYS = 60;
+const FULL_MONTHLY_FROM_AT = Date.parse('2026-08-26T00:00:00Z');
+const FULL_WINDOW_FROM_PURCHASE_AT = Date.parse('2026-08-25T00:00:00Z');
 function windowEndOf(c) {
-  // The Worker's fullAccessWindowEnd, mirrored: purchase start (first-call
-  // fallback), plus extensions, plus every stretch spent on hold.
+  // Mirrors worker/index.js fullAccessWindowEnd line for line, including the
+  // start it measures from: a case bought before the rule changed was sold
+  // sixty days FROM THE FIRST CALL, and moving that start under a live client
+  // would silently take days off something they already acknowledged.
   const bought = c?.fullAccessAt ? toDate(c.fullAccessAt).getTime() : 0;
-  const start = bought || (c?.appointment?.start ? toDate(c.appointment.start).getTime() : 0);
+  const firstCall = c?.appointment?.start ? toDate(c.appointment.start).getTime() : 0;
+  const boughtUnderNewRule = bought && bought >= FULL_WINDOW_FROM_PURCHASE_AT;
+  const start = boughtUnderNewRule ? bought : (firstCall || bought);
   if (!start) return null;
   const held = Math.max(0, Number(c?.hold?.totalMs) || 0)
     + (c?.hold?.pausedAt ? Math.max(0, Date.now() - toDate(c.hold.pausedAt).getTime()) : 0);
-  const days = 60 + (Number(c.fullAccessExtraDays) || 0);
+  const base = bought && bought >= FULL_MONTHLY_FROM_AT
+    ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS;
+  const days = base + (Number(c.fullAccessExtraDays) || 0);
   return new Date(start + days * 86_400_000 + held);
 }
 // Stripe's success URL comes back as ?extended=1. Read it ONCE, at load, and
@@ -1918,6 +1936,13 @@ async function mountAuthority(host, c) {
     // date the window actually runs to rather than a number that goes stale
     // the moment somebody buys another thirty days.
     const dayFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
+    // A month can now be set to BEGIN LATER than the day it was arranged: a
+    // case agreed on a call in August for a September start. fullAccessAt is
+    // the start, so on such a case this date is in the future and the old
+    // sentence, "Your window started ... the day you bought Hands-Off", was
+    // two lies at once. It also cannot say "the day you bought" any more,
+    // because a hand-opened case may never have gone through a checkout.
+    const startsLater = !!boughtAt && boughtAt.getTime() > Date.now();
     // Two framings, because this panel now appears on every case. The
     // readiness checklist and the window sentence are Hands-Off furniture and
     // would be nonsense on a standard case, which has no checklist and no
@@ -1935,7 +1960,9 @@ async function mountAuthority(host, c) {
         <p class="dim small">${ready.ready
     ? 'Your checklist is done. The legwork is mine from here.'
     : 'These are two separate permissions, and you can withdraw either one at any time. How fast you finish is up to you.'}
-          ${boughtAt ? `Your window started ${esc(dayFmt.format(boughtAt))}, the day you bought Hands-Off${windowEndOf(c) ? `, and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. The clock runs whether or not this list is done.` : ''}</p>`
+          ${boughtAt ? (startsLater
+    ? `Your month starts ${esc(dayFmt.format(boughtAt))}${windowEndOf(c) ? ` and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. Signing before then is worth doing: a records request can take weeks to come back, so the sooner these are in, the more of your month is spent on your case instead of on waiting.`
+    : `Your window started ${esc(dayFmt.format(boughtAt))}${windowEndOf(c) ? `, and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. The clock runs whether or not this list is done.`) : ''}</p>`
     : `<p class="dim small">You can upload records yourself at any time. This form
           is the other way: it lets a clinic send them to me directly, and lets me
           call and ask for what is missing, so you are not chasing a fax machine.

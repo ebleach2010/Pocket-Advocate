@@ -168,9 +168,22 @@ check('E3 an abandoned extension checkout clears itself',
 check('E4 the card lives under Case Enhancements, states and all',
   /data-extend/.test(CASE) && /function extendOffer/.test(CASE)
   && /data-buy-extend/.test(CASE) && /extended=1/.test(SRC));
-check('E5 the client window mirror adds the bought days',
+// UPDATED 2026-08-26, not deleted. This check's intent is that a bought
+// extension really stretches the window the CLIENT is shown, and that still
+// holds and is still checked below. What it ALSO pinned, by accident, was the
+// literal `60 +`. The mirror hardcoded sixty days for every case while the
+// Worker gives a case bought after the monthly reshape thirty, so a client on
+// the current tier was shown an end date a month later than the close sweep
+// actually enforces. Pinning the source text of a number is how a wrong
+// number acquires a guard.
+//
+// The base now comes from the same rule the Worker uses. The real check is
+// U1 to U6 in pricing.mjs, which RUNS all three implementations of this window
+// against the same cases instead of reading them.
+check('E5 the client window mirror adds the bought days on top of the month',
   /function windowEndOf/.test(CASE)
-  && /60 \+ \(Number\(c\.fullAccessExtraDays\) \|\| 0\)/.test(CASE));
+  && /const days = base \+ \(Number\(c\.fullAccessExtraDays\) \|\| 0\);/.test(CASE)
+  && /\? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS;/.test(CASE));
 check('E6 the demo drives the purchase and the days really stack',
   /'\/api\/extend'/.test(DEMO)
   && /fullAccessExtraDays: \(Number\(c\.fullAccessExtraDays\) \|\| 0\) \+ 30/.test(DEMO));

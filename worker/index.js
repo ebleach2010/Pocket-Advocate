@@ -1572,7 +1572,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-26-charge';
+const BUILD_TAG = 'v2026-08-26-openfull';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -6609,11 +6609,18 @@ async function handleDeleteSlot(request, env, url) {
   return json({ ok: true });
 }
 
-// POST /api/admin/case-update  Body: { caseId, action, joinLink? }
+// POST /api/admin/case-update  Body: { caseId, action, joinLink?, paidCents?, tierCents? }
 async function handleCaseUpdate(request, env) {
   const admin = await requireAdmin(request, env);
   if (!admin) return json({ error: 'Not found' }, 404);
-  const { caseId, action, joinLink } = await request.json().catch(() => ({}));
+  // The whole body is kept, not just the three fields the first actions
+  // needed. `set-paid` read `body?.paidCents` against a `body` that was never
+  // declared, so the route threw a ReferenceError before it could record
+  // anything: the rate pill on the case page had never once worked. Every
+  // action below reads from this one object now, so a new action cannot
+  // reintroduce that by naming a field the destructure does not list.
+  const body = await request.json().catch(() => ({}));
+  const { caseId, action, joinLink } = body;
   if (typeof caseId !== 'string' || !/^[\w-]{1,64}$/.test(caseId))
     return json({ error: 'Bad case id' }, 400);
   const doc = await getDoc(env, `cases/${caseId}`);
@@ -6645,6 +6652,115 @@ async function handleCaseUpdate(request, env) {
       paidOverrideCents: cents,
       paidOverrideAt: now,
     }, { mask: ['paidOverrideCents', 'paidOverrideAt'] });
+  } else if (action === 'open-full') {
+    // HANDS-OFF, TURNED ON BY HAND (Eric, 2026-08-26: "where to start the
+    // clock and send forms as if he paid for the enhancement through the
+    // app").
+    //
+    // Until now the only thing on earth that could set fullAccess was a
+    // Stripe webhook. A client who agreed the tier on a call and paid another
+    // way could not be given the thing he had bought: the authorisation
+    // forms, the readiness checklist and the check-in booking are all gated
+    // on this flag, so the case sat looking exactly like a standard one.
+    //
+    // This opens the same case the webhook opens, writes the same fields, and
+    // sends the same email. It is not a discount and not a price: it records
+    // what he says he collected, and the money is his to have collected
+    // however he collected it.
+    const c = doc.data;
+    if (c.fullAccess)
+      return json({ error: 'This case is already on Hands-Off Case Management.' }, 409);
+    if (c.status === 'closed') return json({ error: 'Case is closed.' }, 409);
+    // Zero is allowed on purpose: if he already took the money through the
+    // charge panel it is in extraPayments, and entering it again here would
+    // count it twice on the one figure built to reveal a loss.
+    const tier = Math.round(Number(body?.tierCents));
+    if (!Number.isFinite(tier) || tier < 0 || tier > 100_000_00)
+      return json({ error: 'Give an amount between $0 and $100,000.' }, 400);
+    // WHEN THE MONTH STARTS, chosen rather than assumed (Eric, 2026-08-26:
+    // "I want to be prompted to set the clock or when the start time is. This
+    // one is going to be delayed slightly.").
+    //
+    // fullAccessAt IS the start: fullAccessWindowEnd reads it as the window's
+    // origin, and every other reader of it either does the same arithmetic
+    // (the admin and client mirrors) or only formats it. A future date is
+    // therefore correct on all of them, and both consumers of the window end
+    // behave: the close sweep waits longer before wrapping the case up, and
+    // check-in booking gets a later ceiling. The one thing it breaks is a
+    // sentence on the client's page that says the window "started", which is
+    // fixed in public/js/case.js in the same change.
+    //
+    // fullAccessOpenedAt records the day he pressed the button, so the record
+    // still knows the difference between agreeing and beginning.
+    let startAt = now;
+    if (body?.startAt) {
+      const t = new Date(body.startAt);
+      if (Number.isNaN(t.getTime()))
+        return json({ error: 'That start date did not make sense.' }, 400);
+      const YEAR = 365 * 86_400_000;
+      if (t.getTime() < now.getTime() - YEAR || t.getTime() > now.getTime() + YEAR)
+        return json({ error: 'Pick a start date within a year either side of today.' }, 400);
+      startAt = t;
+    }
+    const startsLater = startAt.getTime() > now.getTime() + 12 * 3600_000;
+    // The same shape the webhook writes: the case fee this client actually
+    // paid, plus what they paid for the tier. caseRateCents is the standard
+    // rate kept as the base for percentage charges, so an old case with no
+    // rate on it falls back to what Stripe charged rather than to today's
+    // price list.
+    const paidForCase = Number(c.caseRateCents) > 0
+      ? Number(c.caseRateCents)
+      : (Number(c.stripe?.amountTotal) || 0);
+    const payments = Array.isArray(c.extraPayments) ? c.extraPayments : [];
+    if (tier > 0) {
+      payments.push({
+        kind: 'fullaccess', amountCents: tier, at: now,
+        // Says on the ledger line where the money came from, because a
+        // payment with no Stripe session against it looks like a mistake to
+        // anybody reading it later, including him.
+        byHand: true, label: 'Hands-Off Case Management, paid outside the app',
+      });
+    }
+    const req = c.fullAccessRequest;
+    await patchDoc(env, `cases/${caseId}`, {
+      fullAccess: true,
+      fullAccessAt: startAt,
+      fullAccessOpenedAt: now,
+      fullAccessRateCents: paidForCase + tier,
+      fullAccessMonths: 1,
+      fullAccessByHand: true,
+      pendingFullAccess: null,
+      fullAccessRequest: req ? { ...req, state: 'started', startedAt: now } : null,
+      extraPayments: payments,
+    }, {
+      mask: ['fullAccess', 'fullAccessAt', 'fullAccessOpenedAt', 'fullAccessRateCents',
+        'fullAccessMonths', 'fullAccessByHand', 'pendingFullAccess', 'fullAccessRequest',
+        'extraPayments'],
+    });
+    // The email the webhook sends, with one sentence added when the month has
+    // not begun yet. The client should not be able to tell which way the
+    // money reached him, and the only thing that matters to them either way is
+    // the sentence about signing: the forms go out NOW even when the month
+    // starts later, because a records request takes weeks and the paperwork
+    // moving early is the whole point of asking for it early.
+    if (c.clientEmail) {
+      // 'Etc/GMT+7', the literal every other formatter in this file uses.
+      // MOUNTAIN_TZ is a constant in the browser modules and does NOT exist
+      // here, and node --check does not catch an undeclared identifier: it
+      // would have thrown at send time, which is the same ReferenceError this
+      // very route was fixed for two hours ago.
+      const dayFmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Etc/GMT+7', month: 'long', day: 'numeric',
+      });
+      await sendEmail(env, {
+        to: c.clientEmail,
+        subject: 'Hands-Off Case Management is open on your case',
+        html: `<p>Your case is now on Hands-Off Case Management. I do the legwork from here: I work directly with your clinics and your insurer rather than alongside you.</p>
+        ${startsLater ? `<p>Your month runs from ${dayFmt.format(startAt)}. Please sign before then anyway: a records request can take weeks to come back, so the sooner the paperwork is in, the more of your month is spent on your case instead of on waiting.</p>` : ''}
+        <p>The next thing I need is your authorisation, which is waiting on your case page. Nothing can start until that is signed.</p>
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
+      }).catch(() => {});
+    }
   } else if (action === 'recording-uploaded') {
     // The call happened: start the report clock. Admin-side the deadline is a
     // strict 7 calendar days; the client is told "7 business days, some take

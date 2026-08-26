@@ -219,6 +219,54 @@ export function demoApi(role, store) {
       } else if (body.action === 'report-uploaded') {
         if (c.status === 'closed') return fail(409, 'Case is closed.');
         store.docs.set(key, { ...c, status: 'delivered', reportDeliveredAt: now });
+      } else if (body.action === 'set-paid') {
+        // Missing entirely until now, which is how a demo can agree with a
+        // Worker that was itself throwing: neither one recorded anything.
+        const cents = Math.round(Number(body.paidCents));
+        if (!Number.isFinite(cents) || cents <= 0 || cents > 100000 * 100)
+          return fail(400, 'Give an amount between $1 and $100,000.');
+        store.docs.set(key, { ...c, paidOverrideCents: cents, paidOverrideAt: now });
+      } else if (body.action === 'open-full') {
+        // The tier, opened by hand. Same rules as the Worker, so the demo
+        // cannot show a case the live app would refuse to make.
+        if (c.fullAccess) return fail(409, 'This case is already on Hands-Off Case Management.');
+        if (c.status === 'closed') return fail(409, 'Case is closed.');
+        const tier = Math.round(Number(body.tierCents));
+        if (!Number.isFinite(tier) || tier < 0 || tier > 100000 * 100)
+          return fail(400, 'Give an amount between $0 and $100,000.');
+        // The month can begin later than the day it is arranged. fullAccessAt
+        // IS the start: it is what fullAccessWindowEnd and both its mirrors
+        // read as the window's origin.
+        let startAt = now;
+        if (body.startAt) {
+          const t = new Date(body.startAt);
+          if (Number.isNaN(t.getTime())) return fail(400, 'That start date did not make sense.');
+          if (Math.abs(t.getTime() - now.getTime()) > 365 * 86400000)
+            return fail(400, 'Pick a start date within a year either side of today.');
+          startAt = t;
+        }
+        const paidForCase = Number(c.caseRateCents) > 0
+          ? Number(c.caseRateCents) : (Number(c.stripe?.amountTotal) || 0);
+        const payments = Array.isArray(c.extraPayments) ? [...c.extraPayments] : [];
+        if (tier > 0) {
+          payments.push({
+            kind: 'fullaccess', amountCents: tier, at: now, byHand: true,
+            label: 'Hands-Off Case Management, paid outside the app',
+          });
+        }
+        store.docs.set(key, {
+          ...c,
+          fullAccess: true,
+          fullAccessAt: startAt,
+          fullAccessOpenedAt: now,
+          fullAccessRateCents: paidForCase + tier,
+          fullAccessMonths: 1,
+          fullAccessByHand: true,
+          pendingFullAccess: null,
+          fullAccessRequest: c.fullAccessRequest
+            ? { ...c.fullAccessRequest, state: 'started', startedAt: now } : null,
+          extraPayments: payments,
+        });
       } else {
         return fail(400, 'Bad request');
       }

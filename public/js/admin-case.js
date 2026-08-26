@@ -49,7 +49,18 @@ const CASE_PRICE_CENTS = 120000;
  * ACTUALLY paid is paidCents() below, which refuses to guess.
  */
 const caseRate = (c) => (c && c.caseRateCents) || CASE_PRICE_CENTS;
-const dollars = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
+// Money, grouped. Without the separator a four-figure sum renders "$4600",
+// while the charge panel three inches away renders "$3,400" because it reaches
+// for toLocaleString itself: two formatters on one screen, on the numbers he
+// is least able to check at a glance. Cents show only when there are any,
+// which is the behaviour this already had and the reason it is not plain
+// toLocaleString. Every caller adds its own "$", and none of them puts the
+// result inside an input value or a data attribute, so the comma is
+// display-only and can never reach a parser.
+const dollars = (cents) => (cents / 100).toLocaleString('en-US', {
+  minimumFractionDigits: cents % 100 ? 2 : 0,
+  maximumFractionDigits: cents % 100 ? 2 : 0,
+});
 
 /**
  * What this case has actually paid, tips excluded. A tip is a gift, and
@@ -77,12 +88,20 @@ function paidCents(c) {
   //    moved outside it.
   const recorded = Number(c?.paidOverrideCents);
   if (recorded > 0) return recorded + addOns();
-  // 2. WHAT STRIPE ACTUALLY CHARGED. This was sitting on the case the whole
+  // 2. THE TIER TOTAL, on a case that is on the tier. This has to come before
+  //    the Stripe receipt below, and did not: `stripe.amountTotal` is the
+  //    ORIGINAL booking, so an upgraded case answered with the case fee and
+  //    dropped the whole Hands-Off payment. A $1,200 booking that then paid
+  //    $3,400 for the tier read as $1,200 paid, which is the direction that
+  //    HIDES a loss on the one figure built to reveal one.
+  if (c?.fullAccess && Number(c.fullAccessRateCents) > 0)
+    return Number(c.fullAccessRateCents) + addOns();
+  // 3. WHAT STRIPE ACTUALLY CHARGED. This was sitting on the case the whole
   //    time and this file never read it, while worker/advisor.js did. The
   //    hourly was inferred from a price list when the receipt was right there.
   const charged = Number(c?.stripe?.amountTotal);
   if (charged > 0) return charged + addOns();
-  // 3. The rate recorded at checkout.
+  // 4. The rate recorded at checkout.
   const known = c?.fullAccess ? Number(c.fullAccessRateCents) > 0 : Number(c.caseRateCents) > 0;
   if (!known) return null;
   // A Full Access case paid its own price, which INCLUDES everything in the
@@ -1772,7 +1791,50 @@ function paintOverview(pane) {
     ${c.fullAccess ? '<div data-authority-status></div>' : ''}
     ${waiting.trim() ? `<p class="eyebrow mgmt-when hot">Waiting on you</p>${waiting}` : ''}
 
+    <!-- OUTSIDE the panel below on purpose: the panel is gone the moment the
+         tier is on, which is exactly when this line has something to say. -->
+    ${saidHtml('openfull')}
     <p class="eyebrow mgmt-when">Before the call</p>
+    ${c.fullAccess ? '' : `
+    <!-- OPENING THE TIER BY HAND. Until now the only thing that could set
+         fullAccess was a Stripe webhook, so a client who agreed on a call and
+         paid another way could not be given what he had bought: the
+         authorisation forms, the readiness checklist and the check-in booking
+         are all gated on that flag. Eric, 2026-08-26: "where to start the
+         clock and send forms as if he paid for the enhancement through the
+         app." -->
+    <details class="mgmt" data-k="openfull">
+      <summary>🤝 Open Hands-Off by hand</summary>
+      <div class="mgmt-body">
+        <p class="dim small" style="margin:0 0 .6rem;">For a client who agreed
+          it on a call. This opens exactly the case a payment opens: their
+          authorisation forms, the readiness checklist, and the email telling
+          them to sign. They cannot tell which way the money reached you.</p>
+        <p class="small" style="margin:0 0 .5rem;">This case shows
+          <strong>${paidCents(c) === null ? 'no payment recorded' : '$' + dollars(paidCents(c))}</strong>
+          paid so far.</p>
+        <label class="small" style="display:block; margin-bottom:.3rem;">
+          Paid you for Hands-Off, outside the app
+          <span class="sched-amt">
+            <span aria-hidden="true">$</span>
+            <input type="text" inputmode="decimal" id="openfull-amt"
+              placeholder="0" aria-label="Amount in dollars">
+          </span>
+        </label>
+        <p class="dim small" style="margin:0 0 .5rem;">Leave it at zero if you
+          already took the money through the charge panel. It is on the case
+          once already, and entering it twice inflates your hourly.</p>
+        <p class="small" id="openfull-total" style="margin:0 0 .7rem;"></p>
+        <label class="small" style="display:block; margin-bottom:.3rem;">
+          Their month starts
+          <input type="date" id="openfull-start" style="margin-left:.35rem;">
+        </label>
+        <p class="dim small" id="openfull-when" style="margin:0 0 .5rem;"></p>
+        <p class="error" id="openfull-err" hidden></p>
+        <div class="actions"><button class="btn secondary" id="openfull-go">Open Hands-Off and send the forms</button></div>
+      </div>
+    </details>`}
+
     <details class="mgmt" data-k="auth">
       <summary>📄 Print a form to sign</summary>
       <div class="mgmt-body">
@@ -1851,9 +1913,9 @@ function paintOverview(pane) {
             <p class="dim small" style="margin:0 0 .45rem;">Leave it empty to use a share of their case fee instead.</p>
             <select id="sched-pct">
               ${[0, 25, 50, 75, 100, 125, 150].map((p) =>
-                `<option value="${p}" ${p === 50 ? 'selected' : ''}>${p}% — ${p === 0 ? 'no charge' : '$' + dollars((p * caseRate(c)) / 100)}</option>`).join('')}
+                `<option value="${p}" ${p === 50 ? 'selected' : ''}>${p}%: ${p === 0 ? 'no charge' : '$' + dollars((p * caseRate(c)) / 100)}</option>`).join('')}
             </select>
-            <input type="text" id="sched-tag" maxlength="120" placeholder="Invoice line (optional) — e.g. Records deep-dive session" style="margin-top:.35rem;">
+            <input type="text" id="sched-tag" maxlength="120" placeholder="Invoice line (optional), e.g. Records deep-dive session" style="margin-top:.35rem;">
             <p class="dim small" style="margin:.3rem 0 0;">A share of <strong>$${dollars(caseRate(c))}</strong>, the rate this client booked at. They pay through Stripe to confirm; the slot holds for 24 hours. Your tagline is the line item on their receipt.</p>
           </div>
         </div>
@@ -1942,6 +2004,7 @@ function paintOverview(pane) {
   paintCaseReview(pane);
   pane.querySelector('#save-link').addEventListener('click', saveLink);
   wireScheduler(pane);
+  wireOpenFull(pane, c);
   pane.querySelectorAll('[data-action]').forEach((b) =>
     b.addEventListener('click', () => milestone(b.dataset.action, b)));
   // Blank forms print straight from the pure functions — nothing is written
@@ -2797,6 +2860,152 @@ function infoBar(c, mtFmt, start, due) {
   return `<div class="panel facts">${rows.join('')}</div>`;
 }
 
+/**
+ * Opening Hands-Off Case Management by hand.
+ *
+ * Eric, 2026-08-26: "I need to charge a client 3400 (verbally agreed to on
+ * call)... where to start the clock and send forms as if he paid for the
+ * enhancement through the app."
+ *
+ * The money is the easy half and the charge panel already does it. The hard
+ * half was that the tier flag had exactly one writer in the whole system, a
+ * Stripe webhook, so a client who paid any other way could not be given the
+ * forms he had bought.
+ *
+ * Two rules, both learned the expensive way:
+ *
+ *   THE TOTAL IS SHOWN BEFORE HE COMMITS, worked out by the same paidCents()
+ *   the rate pill uses, so the number he is about to create is the number he
+ *   reads. Guessing at this is how a case that had paid $175 came to claim
+ *   $76.12/hr.
+ *
+ *   THE CASE IS RE-READ AFTERWARDS and only then does the panel say what
+ *   happened. Same rule as the meeting link and the reschedule.
+ */
+function wireOpenFull(el, c) {
+  const box = el.querySelector('#openfull-amt');
+  if (!box) return;                       // already on the tier: no panel
+  const totalEl = el.querySelector('#openfull-total');
+  const errEl = el.querySelector('#openfull-err');
+  const go = el.querySelector('#openfull-go');
+
+  // The same arithmetic the Worker does, so the preview cannot promise a
+  // figure the server would not write: the case fee this client actually
+  // paid, plus what they paid for the tier.
+  const paidForCase = Number(c.caseRateCents) > 0
+    ? Number(c.caseRateCents) : (Number(c.stripe?.amountTotal) || 0);
+  const typedCents = () => {
+    const raw = (box.value || '').trim();
+    if (!raw) return 0;
+    const n = Number(raw.replace(/[^0-9.]/g, ''));
+    return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
+  };
+  const preview = () => {
+    const cents = typedCents();
+    if (cents === null || cents > 100_000_00) {
+      totalEl.textContent = '';
+      return;
+    }
+    const after = paidCents({ ...c, fullAccess: true, fullAccessRateCents: paidForCase + cents });
+    totalEl.innerHTML = after === null
+      ? 'This case will still show no payment recorded.'
+      : `This case will show <strong>$${dollars(after)}</strong> paid.`;
+  };
+  box.addEventListener('input', preview);
+  preview();
+
+  // WHEN THE MONTH STARTS. Eric, 2026-08-26: "I want to be prompted to set the
+  // clock or when the start time is. This one is going to be delayed
+  // slightly." A tier agreed in August for a September start was, until now,
+  // forced to begin the moment he pressed the button, which quietly took the
+  // difference out of the month he had sold.
+  //
+  // A DATE, not a datetime: a month that begins at 2:15pm is noise, and it is
+  // one fewer wheel to spin on a phone. Noon Mountain on the chosen day, so
+  // no timezone rounding can shunt it to the day before or after.
+  const startEl = el.querySelector('#openfull-start');
+  const whenEl = el.querySelector('#openfull-when');
+  const todayMT = () => new Intl.DateTimeFormat('en-CA', {
+    timeZone: MOUNTAIN_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  const startInstant = () => {
+    const day = (startEl?.value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+    // Noon Mountain. -07:00 is the offset every formatter in the Worker uses
+    // and it does not shift under daylight saving, so the day he picked is
+    // the day that gets stored.
+    const t = new Date(`${day}T12:00:00-07:00`);
+    return Number.isNaN(t.getTime()) ? null : t;
+  };
+  if (startEl && !startEl.value) startEl.value = todayMT();
+  const dayFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, month: 'long', day: 'numeric',
+  });
+  const previewWhen = () => {
+    const t = startInstant();
+    if (!whenEl) return;
+    if (!t) { whenEl.textContent = 'Pick the day their month begins.'; return; }
+    const end = new Date(t.getTime() + 30 * 86_400_000);
+    whenEl.textContent = t.getTime() > Date.now()
+      ? `Their month runs ${dayFmt.format(t)} to ${dayFmt.format(end)}. Their forms go live today either way, so records requests can start moving now.`
+      : `Their month runs ${dayFmt.format(t)} to ${dayFmt.format(end)}.`;
+  };
+  startEl?.addEventListener('change', previewWhen);
+  startEl?.addEventListener('input', previewWhen);
+  previewWhen();
+
+  go.addEventListener('click', async () => {
+    const cents = typedCents();
+    errEl.hidden = true;
+    if (cents === null || cents > 100_000_00) {
+      errEl.textContent = 'Give an amount between $0 and $100,000, or leave it empty.';
+      errEl.hidden = false;
+      return;
+    }
+    const startAt = startInstant();
+    if (!startAt) {
+      errEl.textContent = 'Pick the day their month begins.';
+      errEl.hidden = false;
+      return;
+    }
+    const YEAR = 365 * 86_400_000;
+    if (Math.abs(startAt.getTime() - Date.now()) > YEAR) {
+      errEl.textContent = 'Pick a start date within a year either side of today.';
+      errEl.hidden = false;
+      return;
+    }
+    const after = paidCents({ ...c, fullAccess: true, fullAccessRateCents: paidForCase + cents });
+    // The figure is named out loud. An upgrade that emails the client and
+    // unlocks the signing surfaces is not a thing to do on a mis-tap.
+    if (!confirm(`Open Hands-Off Case Management on ${c.clientName || 'this case'}?\n\n`
+      + `${cents > 0 ? `Recording $${dollars(cents)} paid outside the app.` : 'No new payment recorded.'}\n`
+      + `${after === null ? 'The case will show no payment recorded.' : `The case will show $${dollars(after)} paid.`}\n`
+      + `Their month starts ${dayFmt.format(startAt)}.\n\n`
+      + 'They get an email asking them to sign their authorisation.')) return;
+    go.disabled = true;
+    try {
+      await api({ action: 'open-full', tierCents: cents, startAt: startAt.toISOString() });
+      // Re-read before claiming, same rule as the meeting link: a 200 says
+      // the request was accepted, and what he needs to know is whether the
+      // case is actually on the tier now.
+      await load();
+      // The date comes back off the RE-READ case, not off the variable that
+      // was sent. If the server stored a different day, this says the day the
+      // server stored.
+      const stored = data?.fullAccessAt ? toDate(data.fullAccessAt) : null;
+      say('openfull', data?.fullAccess
+        ? `Open. Their authorisation forms are live on their case page and the email has gone.${stored ? ` Their month ${stored.getTime() > Date.now() ? 'starts' : 'started'} ${dayFmt.format(stored)}.` : ''}`
+        : 'That went through, but the case still does not show Hands-Off. Do not send them to sign yet: try once more.',
+      { tone: data?.fullAccess ? 'ok' : 'warn' });
+      refreshOverview();
+    } catch (err) {
+      say('openfull', `Not opened: ${err.message}`, { tone: 'warn' });
+      go.disabled = false;
+      refreshOverview();
+    }
+  });
+}
+
 async function wireScheduler(el) {
   const slotSel = el.querySelector('#sched-slot');
   const chargeBox = el.querySelector('#sched-charge');
@@ -3153,17 +3362,33 @@ async function paintAuthorityStatus(pane) {
  * spent on hold. First-call fallback for legacy cases with no purchase
  * stamp, matching the Worker exactly — two copies, kept in step.
  */
+// The Worker's numbers, copied rather than guessed. worker/index.js is the
+// authority; tools/suites/pricing.mjs pins all three copies against it.
 const FULL_WINDOW_DAYS = 30;
+const FULL_LEGACY_WINDOW_DAYS = 60;
+const FULL_MONTHLY_FROM_AT = Date.parse('2026-08-26T00:00:00Z');
+const FULL_WINDOW_FROM_PURCHASE_AT = Date.parse('2026-08-25T00:00:00Z');
 function fullAccessDaysLeft(c) {
+  // Mirrors worker/index.js fullAccessWindowEnd line for line. It did not:
+  // it measured from fullAccessAt whenever that was set, and it applied the
+  // thirty-day month to EVERY case. A case sold before the monthly reshape
+  // bought sixty days from the first call, so this card was quietly telling
+  // him a legacy client had a month less than they had actually paid for,
+  // while the client's own page said sixty. Three implementations of one
+  // window, three different answers.
   const bought = c?.fullAccessAt ? toDate(c.fullAccessAt).getTime() : 0;
-  const start = bought || (c?.appointment?.start ? toDate(c.appointment.start).getTime() : 0);
+  const firstCall = c?.appointment?.start ? toDate(c.appointment.start).getTime() : 0;
+  const boughtUnderNewRule = bought && bought >= FULL_WINDOW_FROM_PURCHASE_AT;
+  const start = boughtUnderNewRule ? bought : (firstCall || bought);
   if (!start) return null;
   // Same as heldMs(): what is banked, plus the stretch still running if the
   // case is paused right now. While paused these two grow together, so the
   // number on the card holds still, which is the point of a pause.
   const held = Math.max(0, Number(c?.hold?.totalMs) || 0)
     + (c?.hold?.pausedAt ? Math.max(0, Date.now() - toDate(c.hold.pausedAt).getTime()) : 0);
-  const end = start + (FULL_WINDOW_DAYS + (Number(c.fullAccessExtraDays) || 0)) * 86_400_000 + held;
+  const base = bought && bought >= FULL_MONTHLY_FROM_AT
+    ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS;
+  const end = start + (base + (Number(c.fullAccessExtraDays) || 0)) * 86_400_000 + held;
   return Math.max(0, Math.ceil((end - Date.now()) / 86_400_000));
 }
 
