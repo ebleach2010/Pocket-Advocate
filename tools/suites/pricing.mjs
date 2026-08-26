@@ -709,6 +709,44 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   }
 }
 
+// ---- V1-V4: the shelf's one honest number stays honest -------------------
+// The card says "Case revenue (paid via Stripe)" and, underneath, "every one
+// backed by a confirmed payment". Its own comment calls it "the one number
+// here that must stay honest", which is why it already excludes tips.
+//
+// Opening the tier by hand pushes a payment into extraPayments that Stripe
+// never saw. Summed into that card it would have made both those sentences
+// false, and it would have done it silently, on the number he uses to know
+// what he has actually been paid. Counted on its own line instead.
+{
+  const ADMIN = readFileSync(__j(__REPO, 'public/js/admin.js'), 'utf8');
+  const fn = (ADMIN.match(/const byKind = \(want\) =>[\s\S]*?: 0\), 0\);/) || [''])[0];
+  check('V1 the shelf splits Stripe money from hand-recorded money', fn.length > 0);
+  // Built AND called inside the try. A lift that comes back half a function
+  // throws on the call, not on the construction, and an uncaught throw here
+  // would take every check after it down with it.
+  let out = null;
+  try {
+    out = new Function('cases', `${fn}\nreturn { stripe: byKind('stripe'), hand: byKind('hand') };`)([{
+      stripe: { amountTotal: 17500 },
+      extraPayments: [
+        { kind: 'fullaccess', amountCents: 340000, byHand: true },
+        { kind: 'tip', amountCents: 5000 },
+      ],
+    }]);
+  } catch (e) { /* V2 reports it */ }
+  check('V2 and that split lifts and runs', !!out);
+  if (out) {
+    // The fixture above is Christopher's shelf the day after the tier is
+    // opened by hand: $175 of real Stripe money, $3,400 he took another way,
+    // and a $50 tip that must not be counted either way.
+    check('V3 the Stripe headline still says only what Stripe took',
+      out.stripe === 17500, `$${(out.stripe / 100).toLocaleString()}`);
+    check('V4 and the money he recorded by hand is counted, separately',
+      out.hand === 340000, `$${(out.hand / 100).toLocaleString()}`);
+  }
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 process.exit(failed.length ? 1 : 0);
