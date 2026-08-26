@@ -573,9 +573,20 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
 // page, about the thing they paid for.
 {
   const CASESRC = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  // UPDATED 2026-08-26, not deleted. This check's intent is the WORDING: the
+  // client's page must carry a future-start sentence and must choose between
+  // it and the past-tense one. That still holds and is still checked.
+  //
+  // What it also pinned was the inline predicate,
+  // `!!boughtAt && boughtAt.getTime() > Date.now()`, which has since moved
+  // into readiness.js so the Worker, the client page and his confirmation
+  // answer one question one way. Pinning where a decision is made, rather
+  // than that it is made, is what makes a check fight a correct refactor.
+  // Y1 to Y8 below now cover the predicate itself, and they RUN it.
   check('T9g the client page has a future-start wording and picks between them',
-    /const startsLater = !!boughtAt && boughtAt\.getTime\(\) > Date\.now\(\);/.test(CASESRC)
+    /const startsLater = handsOffStartsLater\(c\);/.test(CASESRC)
     && /Your month starts \$\{esc\(dayFmt\.format\(boughtAt\)\)\}/.test(CASESRC)
+    && /Your window started \$\{esc\(dayFmt\.format\(boughtAt\)\)\}/.test(CASESRC)
     && /startsLater\s*\n?\s*\?/.test(CASESRC));
 }
 
@@ -745,6 +756,75 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
     check('V4 and the money he recorded by hand is counted, separately',
       out.hand === 340000, `$${(out.hand / 100).toLocaleString()}`);
   }
+}
+
+// ---- Y1-Y6: three parties, one sentence about when the month begins ------
+// The Worker decides whether the client's email mentions a future month. The
+// client's case page decides whether it says the month "starts" or "started".
+// His confirmation says the same thing back to him. All three describe one
+// fact, and all three were computing it differently.
+//
+// The panel stores NOON Mountain on the day he picks, so a case opened at
+// nine in the morning to start TODAY lands three hours in the future. The
+// Worker allows twelve hours of grace and sent the ordinary email; both
+// browser halves used a bare `> Date.now()` and announced a month that starts
+// later. For three hours, on every same-day opening, which is the common one.
+//
+// AND the predicate is RUN against a Firestore Timestamp, which is how both
+// browser halves actually receive this field. `new Date(stamp)` is Invalid
+// Date, so a naive implementation returns false on every real case while
+// every source-text check stays green. That is the exact silent pass this
+// block exists to catch, so the naive version is asserted to be broken too.
+{
+  const R = readFileSync(__j(__REPO, 'public/js/readiness.js'), 'utf8');
+  const fn = (R.match(/export function handsOffStartsLater[\s\S]*?\n\}/) || [''])[0];
+  const grace = (R.match(/export const HANDS_OFF_START_GRACE_MS = ([^;]+);/) || [])[1] || '';
+  check('Y1 the shared predicate exists and carries the Worker\'s grace',
+    fn.length > 0 && /12 \* 3600_000/.test(grace), grace);
+  // The Worker's own number, read from the Worker, so the two cannot drift.
+  check('Y2 and the Worker really does allow twelve hours',
+    /startAt\.getTime\(\) > now\.getTime\(\) \+ 12 \* 3600_000/.test(SRC));
+
+  let starts = null;
+  try {
+    starts = new Function(`${fn.replace('export function', 'function')}
+      const HANDS_OFF_START_GRACE_MS = 12 * 3600_000;
+      return handsOffStartsLater;`)();
+  } catch (e) { /* Y3 reports it */ }
+  check('Y3 it lifts and runs', typeof starts === 'function');
+
+  if (starts) {
+    // A Firestore Timestamp as the browser SDK hands it over: toDate() works,
+    // valueOf() is a zero-padded sort key, new Date(it) is Invalid Date.
+    const stamp = (d) => ({ toDate: () => d, valueOf() { return '0639235968.000'; } });
+    const NOW = Date.parse('2026-09-09T16:00:00Z');            // 9am Mountain
+    const noonToday = new Date(Date.parse('2026-09-09T19:00:00Z'));
+    check('Y4 a same-day opening is NOT "starts later", grace included',
+      starts({ fullAccessAt: stamp(noonToday) }, NOW) === false,
+      String(starts({ fullAccessAt: stamp(noonToday) }, NOW)));
+    const fortnight = new Date(NOW + 14 * 86_400_000);
+    check('Y5 a genuinely delayed month IS, read off a Timestamp',
+      starts({ fullAccessAt: stamp(fortnight) }, NOW) === true,
+      String(starts({ fullAccessAt: stamp(fortnight) }, NOW)));
+    check('Y5b and off a plain string too, which is what the demo stores',
+      starts({ fullAccessAt: fortnight.toISOString() }, NOW) === true);
+    // The trap, asserted as a trap: if this ever stops being NaN the comment
+    // in readiness.js is stale and the guard below is no longer needed.
+    check('Y6 new Date(stamp) really is NaN, which is why toDate comes first',
+      Number.isNaN(new Date(stamp(fortnight)).getTime()));
+  }
+
+  // Both browser halves must USE it rather than rolling their own.
+  const CJ = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  const AJ = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
+  check('Y7 the client page and his panel both call the shared predicate',
+    /const startsLater = handsOffStartsLater\(c\);/.test(CJ)
+    && /const later = handsOffStartsLater\(data\);/.test(AJ)
+    && /handsOffStartsLater/.test(CJ.split('\n').find((l) => /^import .*readiness\.js/.test(l)) || '')
+    && /handsOffStartsLater/.test(AJ.split('\n').find((l) => /^import .*readiness\.js/.test(l)) || ''));
+  check('Y8 and neither has a bare Date.now() comparison left for this',
+    !/boughtAt\.getTime\(\) > Date\.now\(\)/.test(CJ)
+    && !/stored\.getTime\(\) > Date\.now\(\) \? 'starts'/.test(AJ));
 }
 
 const failed = results.filter((r) => !r.pass);

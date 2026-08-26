@@ -20,7 +20,7 @@ import {
 } from './authority.js';
 import { FULL_ACCESS_TERMS, FULL_ACCESS_PLAIN } from './tier-terms.js';
 import { wireAboutButtons } from './service-about.js';
-import { handsOffReadiness } from './readiness.js';
+import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
 import { mountFolder, folderEnter } from './folder.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
@@ -1942,7 +1942,15 @@ async function mountAuthority(host, c) {
     // sentence, "Your window started ... the day you bought Hands-Off", was
     // two lies at once. It also cannot say "the day you bought" any more,
     // because a hand-opened case may never have gone through a checkout.
-    const startsLater = !!boughtAt && boughtAt.getTime() > Date.now();
+    //
+    // The SHARED predicate, not a bare `> Date.now()`. The Worker decides
+    // whether the client's email mentions a future month using a twelve-hour
+    // grace, and the panel stores NOON Mountain, so a case opened at nine in
+    // the morning to start today sits three hours ahead: this page announced
+    // a month that "starts" while the email that had just gone out said
+    // nothing of the kind, for three hours, on every same-day opening. Three
+    // parties to one sentence, one predicate between them.
+    const startsLater = handsOffStartsLater(c);
     // Two framings, because this panel now appears on every case. The
     // readiness checklist and the window sentence are Hands-Off furniture and
     // would be nonsense on a standard case, which has no checklist and no

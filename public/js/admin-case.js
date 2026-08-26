@@ -22,7 +22,7 @@ import { mountFolder } from './folder.js';
 import {
   recordsAuthorisation, representativeDesignation, APPEAL_DEADLINES, appealDueAt,
 } from './authority.js';
-import { handsOffReadiness } from './readiness.js';
+import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
@@ -2993,8 +2993,12 @@ function wireOpenFull(el, c) {
       // was sent. If the server stored a different day, this says the day the
       // server stored.
       const stored = data?.fullAccessAt ? toDate(data.fullAccessAt) : null;
+      // Same predicate the client's page and the Worker use, so his
+      // confirmation cannot say "starts" about a month their email treated as
+      // already running.
+      const later = handsOffStartsLater(data);
       say('openfull', data?.fullAccess
-        ? `Open. Their authorisation forms are live on their case page and the email has gone.${stored ? ` Their month ${stored.getTime() > Date.now() ? 'starts' : 'started'} ${dayFmt.format(stored)}.` : ''}`
+        ? `Open. Their authorisation forms are live on their case page and the email has gone.${stored ? ` Their month ${later ? 'starts' : 'started'} ${dayFmt.format(stored)}.` : ''}`
         : 'That went through, but the case still does not show Hands-Off. Do not send them to sign yet: try once more.',
       { tone: data?.fullAccess ? 'ok' : 'warn' });
       refreshOverview();
