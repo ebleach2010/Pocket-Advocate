@@ -2703,7 +2703,15 @@ function paintCallNotes(host) {
  * An inline bracket mid-sentence stays text; only a line that IS the
  * bracket is a visual, which matches how the drafts come out.
  */
-function printCallNotes(text) {
+/**
+ * Print a call sheet.
+ *
+ * `title` names the window, and iOS names the SAVED FILE from the window
+ * title. Both the call notes and the call document came through here with
+ * "Call notes" hardcoded, so his call document landed in Files as
+ * "Call notes.pdf", colliding with the other feature one tab over.
+ */
+function printCallNotes(text, title = 'Call notes') {
   const escP = (s) => s.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
   const blocks = [];
   let run = [];
@@ -2727,7 +2735,7 @@ function printCallNotes(text) {
   flush();
   const win = window.open('', '_blank');
   if (!win) { alert('Allow pop-ups to print this.'); return; }
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Call notes</title>
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escP(title)}</title>
     <style>@page { margin: 18mm; }
       body { font: 12.5px/1.6 Georgia, "Times New Roman", serif; color:#000; }
       pre { white-space: pre-wrap; word-wrap: break-word; margin:0 0 .6em; font: inherit; }
@@ -2859,8 +2867,24 @@ function paintClinicCalls(pane) {
 // not put on the case, and making him upload it to the client's file shelf
 // first would be a worse product and a privacy question he never asked for.
 
+/**
+ * A run THIS PAGE just started that the state poll has not reported yet.
+ *
+ * The poll owns the truth, but it can be a whole interval behind: he taps
+ * build, the Worker accepts it, and until the next tick the panel still
+ * believes nothing is running. That gap is exactly where the document he is
+ * reading would stay editable through a rebuild and the button would look
+ * tappable a second time. The panel knows it started a run, so this is it
+ * saying so until the poll agrees. `at` is here so a run that never reports
+ * back cannot leave the button disabled forever.
+ */
+let callDocPending = null;
+
 /** Inline cap. The Worker refuses larger, and saying so here saves the trip. */
 const CALLDOC_MAX_BYTES = 8 * 1024 * 1024;
+/** Mirrors MAX_IMAGE_BYTES in worker/advisor.js. A photo over this is refused
+ *  by the advisor, so refusing it here saves an upload and a wait. */
+const CALLDOC_MAX_IMAGE_BYTES = 4.5 * 1024 * 1024;
 const CALLDOC_MAX_FILES = 12;
 /** Chosen but not yet sent. Cleared once a build starts. */
 let callDocPicked = [];
@@ -2888,17 +2912,60 @@ function paintCallDoc(host) {
       st.callDocStartedAt ? new Date(st.callDocStartedAt).getTime() : 0,
       st.callDocProgressAt ? new Date(st.callDocProgressAt).getTime() : 0,
     );
+    // The poll has caught up (it reports running, or the document changed, or
+    // it failed) - or the optimistic flag has simply been up too long to be
+    // believed any more.
+    if (callDocPending && (st.callDocStatus === 'running'
+      || st.callDocStatus === 'error'
+      || String(st.callDocAt || '') !== callDocPending.wasAt
+      || Date.now() - callDocPending.at > 30_000)) callDocPending = null;
+
     const stalled = st.callDocStatus === 'running' && beat && Date.now() - beat > 5 * 60_000;
-    const running = st.callDocStatus === 'running' && !stalled;
-    const ready = st.callDocStatus === 'ready' && st.callDoc;
-    const key = JSON.stringify([st.callDocStatus, st.callDocAt, !!stalled,
+    const running = (st.callDocStatus === 'running' || !!callDocPending) && !stalled;
+    // A DOCUMENT HE ALREADY HAS MUST NEVER VANISH. `ready` used to gate both
+    // the controls AND the document text, so the moment he tapped "Build a
+    // new one" or "Revise", the sheet he was about to read on the call was
+    // removed from the page for the whole multi-minute run - and if that run
+    // errored, status stayed 'error' and the good document, still intact on
+    // the server, was never rendered again. Not on reload either. A dropped
+    // connection destroyed his access to a working document with no way back
+    // but a successful rebuild.
+    //
+    // So: hasDoc decides what he can READ, and ready decides what he can DO.
+    const hasDoc = !!st.callDoc;
+    const ready = st.callDocStatus === 'ready' && hasDoc;
+    // `running` rather than st.callDocStatus, so the optimistic flag is part
+    // of what decides a repaint. Keying off the server status alone meant a
+    // just-started run rendered nothing until the poll caught up, which is
+    // the whole gap the flag exists to close.
+    const key = JSON.stringify([st.callDocStatus, running, st.callDocAt, !!stalled,
       (st.callDoc || '').length, st.callDocError || '', callDocPicked.map((f) => f.name)]);
     if (key === callDocKey && host.querySelector('[data-cd-root]')) return;
     callDocKey = key;
 
-    // The starred lines, pulled out for the count. He asked for them flagged;
-    // saying HOW MANY before he opens it is what makes the flag do its job.
-    const stars = ready ? (st.callDoc.match(/^[^\n]*\*[^\n]*$/gm) || []).length : 0;
+    // How many things there are to check. Counted from the numbered list in
+    // REVIEW BEFORE YOU CALL, which the prompt guarantees holds every flag
+    // exactly once.
+    //
+    // It used to count every LINE containing a *, and every flag appears
+    // twice by design - gathered at the top and marked in place - so the
+    // number came out roughly double. On the shipped demo fixture it said
+    // "5 lines flagged" for 3 real concerns, and the better the document
+    // obeyed its own instructions the more wrong the number got. He would
+    // read 5, find the 3 in the list, then hunt a 30-line sheet for two
+    // flags that do not exist, with the phone ringing.
+    const stars = (() => {
+      if (!hasDoc) return 0;
+      const sec = String(st.callDoc).split(/^REVIEW BEFORE YOU CALL\s*$/m)[1];
+      if (sec === undefined) {
+        // No section: fall back to distinct starred lines rather than a lie.
+        return new Set((String(st.callDoc).match(/^[^\n]*\*[^\n]*$/gm) || [])
+          .map((s) => s.trim())).size;
+      }
+      const body = sec.split(/\n(?=[A-Z][A-Z ,'-]{6,}$)/m)[0] || '';
+      if (/nothing flagged/i.test(body)) return 0;
+      return (body.match(/^\s*\d+[.)]\s+\S/gm) || []).length;
+    })();
 
     host.innerHTML = `
       <div class="panel" data-cd-root>
@@ -2910,21 +2977,24 @@ function paintCallDoc(host) {
           on anything worth checking before you say it. Your document stays the
           spine: your order, your priorities, your words.</p>
 
-        ${ready ? '' : `
+        ${running ? '' : `
           <label class="small" style="display:block; margin:0 0 .5rem;">Your document, plus any charts or labs
             <input type="file" data-cd-files multiple
-              accept=".pdf,.jpg,.jpeg,.png,.heic" ${running ? 'disabled' : ''}>
+              accept=".pdf,.jpg,.jpeg,.png">
           </label>
           ${callDocPicked.length ? `<p class="dim small" style="margin:0 0 .5rem;">
             ${callDocPicked.map((f, i) => `<span class="chip-label">${i === 0 ? '📄 ' : '📎 '}${esc(f.name)}</span>`).join(' ')}
-            <button class="btn quiet" data-cd-clearfiles style="font-size:.7rem; padding:.2rem .5rem;">clear</button></p>` : ''}`}
+            <button class="btn quiet" data-cd-clearfiles style="font-size:.7rem; padding:.2rem .5rem;">clear</button></p>` : ''}
+          ${hasDoc ? `<p class="dim small" style="margin:-.25rem 0 .5rem;">📄 is the one treated as
+            <strong style="color:var(--ink)">your</strong> document, 📎 are charts and labs. Pick again to
+            build a new one; your current document stays until the new one lands.</p>` : ''}`}
 
         <p class="row" style="gap:.5rem; flex-wrap:wrap; margin:0;">
-          <button class="btn${ready ? ' quiet' : ' glow'}" data-cd-build ${running ? 'disabled' : ''}>
-            ${running ? '📄 Building…' : ready ? 'Build a new one' : 'Build the call document'}</button>
-          ${ready ? '<button class="btn quiet" data-cd-revise>🔁 Revise…</button>' : ''}
-          ${ready ? '<button class="btn quiet" data-cd-print>🖨 Send to PDF</button>' : ''}
-          ${ready ? '<button class="btn quiet" data-cd-discard>Discard</button>' : ''}
+          <button class="btn${hasDoc ? ' quiet' : ' glow'}" data-cd-build ${running ? 'disabled' : ''}>
+            ${running ? '📄 Building…' : hasDoc ? 'Build a new one' : 'Build the call document'}</button>
+          ${hasDoc && !running ? '<button class="btn quiet" data-cd-revise>🔁 Revise…</button>' : ''}
+          ${hasDoc ? '<button class="btn quiet" data-cd-print>🖨 Send to PDF</button>' : ''}
+          ${hasDoc && !running ? '<button class="btn quiet" data-cd-discard>Discard</button>' : ''}
         </p>
 
         ${running ? '<p class="dim small" style="margin:.5rem 0 0;">This one thinks hard and takes a few minutes. You can leave the page; it keeps going.</p>' : ''}
@@ -2934,11 +3004,12 @@ function paintCallDoc(host) {
         ${(st.callDocSkipped || []).length ? `<p class="dim small" style="margin:.5rem 0 0; color:var(--gold);">
           Could not read: ${(st.callDocSkipped || []).map(esc).join('; ')}</p>` : ''}
 
-        ${ready ? `
+        ${hasDoc ? `
+          ${running ? '<p class="dim small" style="margin:.6rem 0 .2rem; color:var(--gold);">This is your current document. It stays exactly as it is until the new one lands.</p>' : ''}
           <p class="dim small" style="margin:.6rem 0 .2rem;">
-            ${stars ? `<strong style="color:var(--gold)">${stars} line${stars === 1 ? '' : 's'} flagged with *</strong> to check before you rely on them.` : 'Nothing flagged.'}
+            ${stars ? `<strong style="color:var(--gold)">${stars} thing${stars === 1 ? '' : 's'} to check</strong> before you rely on them.` : 'Nothing flagged.'}
             ${(st.callDocSources || []).length ? ` Built from: ${(st.callDocSources || []).map(esc).join(', ')}.` : ''}</p>
-          <textarea class="draft-box" data-cd-text rows="24">${esc(st.callDoc)}</textarea>
+          <textarea class="draft-box" data-cd-text rows="24" ${running ? 'readonly' : ''}>${esc(st.callDoc)}</textarea>
           <p class="dim small" style="margin:.3rem 0 0;">Edit anything by hand before
             printing. A line that is only [square brackets] prints as a framed
             visual with that caption.</p>` : ''}
@@ -2971,17 +3042,30 @@ function paintCallDoc(host) {
 
     host.querySelector('[data-cd-files]')?.addEventListener('change', async (e) => {
       const chosen = [...(e.target.files || [])].slice(0, CALLDOC_MAX_FILES);
-      const err = host.querySelector('[data-cd-err]');
-      const tooBig = chosen.filter((f) => f.size > CALLDOC_MAX_BYTES);
-      if (tooBig.length && err) {
-        err.textContent = `${tooBig.map((f) => f.name).join(', ')} ${tooBig.length === 1 ? 'is' : 'are'} over 8 MB. `
-          + 'Split it, or put it on the case and stage it instead.';
-        err.hidden = false;
-      }
-      callDocPicked = chosen.filter((f) => f.size <= CALLDOC_MAX_BYTES)
+      // The cap that actually applies. An image is refused by the advisor
+      // over 4.5 MB while everything else has 8 MB, and the panel used to
+      // wave through anything under 8 - so a 6 MB photo was accepted, base64'd,
+      // uploaded, and dropped server-side minutes later with "too large to
+      // read". Refusing it here is instant and costs him nothing.
+      const capFor = (f) => (/^image\//.test(f.type || '') ? CALLDOC_MAX_IMAGE_BYTES : CALLDOC_MAX_BYTES);
+      const tooBig = chosen.filter((f) => f.size > capFor(f));
+      const msg = tooBig.length
+        ? `${tooBig.map((f) => f.name).join(', ')} ${tooBig.length === 1 ? 'is' : 'are'} too big`
+          + ` (${tooBig.some((f) => /^image\//.test(f.type || '')) ? 'photos up to 4.5 MB, other files' : 'up to'} 8 MB).`
+          + ' Send one page, or a smaller photo.'
+        : '';
+      callDocPicked = chosen.filter((f) => f.size <= capFor(f))
         .map((f, i) => ({ file: f, name: f.name, contentType: f.type, size: f.size, mine: i === 0 }));
       callDocKey = null;
+      // Repaint FIRST, then write the message onto the fresh node. Writing it
+      // before load() put it on a node that load() then destroyed, so an
+      // oversize pick was dropped in complete silence: he saw one chip where
+      // he chose two, no error, and a document built without his labs.
       load();
+      if (msg) {
+        const fresh = host.querySelector('[data-cd-err]');
+        if (fresh) { fresh.textContent = msg; fresh.hidden = false; }
+      }
     });
 
     host.querySelector('[data-cd-clearfiles]')?.addEventListener('click', () => {
@@ -2993,8 +3077,20 @@ function paintCallDoc(host) {
     host.querySelector('[data-cd-build]')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget;
       const err = host.querySelector('[data-cd-err]');
-      if (!callDocPicked.length && !(panelState || {}).callDoc) {
-        if (err) { err.textContent = 'Choose your document first.'; err.hidden = false; }
+      // A BUILD ALWAYS NEEDS A DOCUMENT. This used to pass whenever a call
+      // document already existed - and in that state the file picker was not
+      // even on the page - so "Build a new one" posted sources: [] and spent
+      // a max-effort turn against a prompt whose first instruction is "He has
+      // uploaded a document he prepared himself. THAT DOCUMENT IS THE SPINE."
+      // What came back looked exactly like a real one and silently replaced
+      // his. The picker is always shown now, and this is the matching guard.
+      if (!callDocPicked.length) {
+        if (err) {
+          err.textContent = (panelState || {}).callDoc
+            ? 'Choose the document to build from. To change the one you have, use Revise.'
+            : 'Choose your document first.';
+          err.hidden = false;
+        }
         return;
       }
       btn.textContent = '📄 Reading your document…';
@@ -3014,6 +3110,16 @@ function paintCallDoc(host) {
       }
       btn.textContent = '📄 Building…';
       callDocPicked = [];
+      // Remember what the state looked like BEFORE the run, so load() can
+      // tell "the poll has not caught up yet" from "the new document landed".
+      callDocPending = { at: Date.now(), wasAt: String((panelState || {}).callDocAt || '') };
+      // Repaint NOW, on this page's own knowledge. post() only clears the key
+      // and waits for the poll, which can be a whole interval away - and the
+      // running state is what makes his current document read-only and takes
+      // the picker off the screen. `btn` is detached by this repaint; post()
+      // only ever sets .disabled on it, which is harmless on a dead node.
+      callDocKey = null;
+      load();
       await post({ action: 'call-doc', sources }, btn);
     });
 
@@ -3044,6 +3150,9 @@ function paintCallDoc(host) {
         // The edited text, not the stored one: if he has changed it by hand,
         // that is the document he means.
         const base = host.querySelector('[data-cd-text]')?.value || '';
+        callDocPending = { at: Date.now(), wasAt: String((panelState || {}).callDocAt || '') };
+        callDocKey = null;
+        load();
         post({ action: 'call-doc', revise: true, instruction, base });
       });
       document.body.appendChild(overlay);
@@ -3057,7 +3166,7 @@ function paintCallDoc(host) {
 
     host.querySelector('[data-cd-print]')?.addEventListener('click', () => {
       const text = host.querySelector('[data-cd-text]')?.value || '';
-      if (text) printCallNotes(text);
+      if (text) printCallNotes(text, 'Call document');
     });
   };
   load();

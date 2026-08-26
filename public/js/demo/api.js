@@ -841,41 +841,79 @@ export function demoApi(role, store) {
       // sources. The asterisks are the point of the feature, so the fixture
       // carries several.
       if (body.action === 'call-doc') {
-        await beat(1400);
         const path = `cases/${body.id || DEMO_CASE_ID}/advisor/state`;
-        const cur = store.docs.get(path) || {};
         const names = (body.sources || []).map((a) => a.name).filter(Boolean);
+        // THROUGH 'running' FIRST, which this used to skip entirely: it waited
+        // 1400ms and wrote 'ready'. So the running state, the stall rule, the
+        // heartbeat and "your current document stays up while the new one
+        // builds" had never been exercised by any test in the repo - the one
+        // path where a real run spends minutes was the one the demo could not
+        // show. Keep the wait short; the point is that the state EXISTS.
+        {
+          const cur0 = store.docs.get(path) || {};
+          store.docs.set(path, {
+            ...cur0,
+            callDocStatus: 'running',
+            callDocStartedAt: new Date(),
+            callDocProgressAt: new Date(),
+            callDocError: null,
+          });
+          store.fire?.(path);
+        }
+        // Longer than one poll of the panel (2.5s while busy), so the
+        // running state is actually OBSERVABLE. At 1400ms the demo finished
+        // before the panel ever looked, so "your document stays up while the
+        // new one builds" could not be seen or tested even once the state
+        // existed. A real run takes minutes; four seconds is the smallest
+        // number that tells the truth about the shape of it.
+        await beat(4000);
+        const cur = store.docs.get(path) || {};
+        // THE SEEDED CASE, not another one. This fixture used to describe a
+        // thyroid patient - TSH 6.8, levothyroxine, an endocrinology referral,
+        // a February panel - while the demo client is Jordan Avery: two years
+        // of moving joint pain, a MARCH serology panel, a rash on the hands,
+        // and a RHEUMATOLOGY referral. It was the only worked example of this
+        // feature anywhere in the repo, and it was about somebody else.
+        //
+        // It also carried the error it was demonstrating: it claimed "the week
+        // after my birthday" resolved to March 11, while the seeded date of
+        // birth is 1988-03-14. The sample proving the feature catches drifting
+        // dates had a drifting date in it.
+        //
+        // Exactly three numbered flags, which is what the panel's count reads.
         const doc = body.revise
           ? `${body.base || cur.callDoc || ''}\n\n(Revised for the demo per your note: "${String(body.instruction || '').slice(0, 120)}")`
           : [
             'REVIEW BEFORE YOU CALL',
-            '1. *TSH of 6.8 read off the February chart image, the scan is faint, confirm the value before you quote it.',
-            '2. *Your document dates the infusion to March 4; the chat says "the week after my birthday", which is March 11. One of them is wrong.',
-            '3. *No start date anywhere for the levothyroxine, so the six week recheck window is a guess.',
+            '1. *The March panel result is quoted from her memory of a phone call, not from the panel. She has never been sent it. Do not repeat a number back to her as fact.',
+            '2. *Your document dates the hospital visit to March 4; the chat says "the week after my birthday", and her birthday is March 14. One of the two is wrong.',
+            '3. *"Referral was made" is your inference. The record says the second doctor mentioned it, and nothing says it was sent.',
             '',
             'THE CALL, IN ORDER',
             'Open with the referral, because it is the longest clock.',
-            '  Endocrinology referral, mentioned by the second doctor, never confirmed sent.',
-            '  Ask: "Did anyone ever call you to book endocrinology?"',
+            '  Rheumatology, raised by the second doctor, never confirmed sent.',
+            '  Ask: "Did anyone ever call you to book rheumatology?"',
+            '  If no: the practice sends it again, and you want the referral number.',
             '',
-            'Then the February panel.',
-            '  Requested twice by phone, not received.',
-            '  TSH 6.8 (*verify), free T4 not in the record at all.',
+            'Then the March panel.',
+            '  She was told it was normal. She has never seen it.',
+            '  What you want is the values AND the reference ranges, not the word normal.',
             '',
-            '[Line chart: TSH across the last six months against the medication changes]',
+            '[Line chart: her recorded joint pain against the dates of each appointment]',
             '',
             'QUESTIONS THAT ARE MISSING',
-            '"When exactly did you start the levothyroxine?" Without it the recheck date is guesswork, and your document assumes six weeks from the infusion.',
-            '"Has anyone ever repeated the antibody panel?" It is mentioned once in the intake and never again.',
+            '"When the rash comes up, does anything else change with it, the same week?" The photographs are dated but nothing says what else was happening.',
+            '"Has anyone repeated the panel since March?" It is mentioned once at intake and never again.',
             '',
             'FROM THE CASE, NOT IN YOUR DOCUMENT',
-            'The rash photographs are dated before the infusion, which cuts against the reaction theory in your notes.',
-            'She told you in chat on Aug 23 that she has been photographing it herself. That is the strongest evidence in the file and your document does not mention it.',
+            'She has been photographing the rash herself since before the March visit. Your document does not mention the photographs at all, and they are the only dated evidence in the file.',
+            'The discharge summary she uploaded covers the March visit your document dates to the 4th. It is the document that settles flag 2.',
             '',
             'SOURCES',
-            'TSH 6.8: February panel image, page 1 (*faint scan).',
-            'Infusion date: your document, page 1; contradicted by chat, Aug 24.',
-            'Rash photographs: case uploads, Aug 19 and Aug 21.',
+            'March panel: her account in chat, 4 days ago. No document in the file.',
+            'Hospital visit date: your document, page 1; contradicted by chat, 2 days ago.',
+            'Rash photographs: case uploads, staged with the discharge summary.',
+            'Referral: chat, 4 days ago, "the second doctor mentioned".',
             '',
             'This is demonstration text.',
           ].join('\n');
@@ -885,6 +923,8 @@ export function demoApi(role, store) {
           callDocStatus: 'ready',
           callDocAt: new Date(),
           callDocError: null,
+          callDocStartedAt: null,
+          callDocProgressAt: null,
           callDocSources: names,
           callDocSkipped: [],
         });

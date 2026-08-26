@@ -5984,10 +5984,17 @@ async function handleAdvisor(request, env, ctx) {
   }
 
   if (action === 'clear-call-doc') {
-    await patchDoc(env, statePath, {
+    // Clear the WHOLE thing, including the in-flight bookkeeping. It used to
+    // leave callDocReq, callDocStartedAt and callDocProgressAt behind along
+    // with the queue row, so a discard during a run left a marker the cron
+    // would keep picking up and a request nothing would ever finish.
+    const fields = {
       callDoc: null, callDocStatus: null, callDocError: null, callDocAt: null,
       callDocSources: null, callDocSkipped: null,
-    }, { mask: ['callDoc', 'callDocStatus', 'callDocError', 'callDocAt', 'callDocSources', 'callDocSkipped'] });
+      callDocReq: null, callDocStartedAt: null, callDocProgressAt: null,
+    };
+    await patchDoc(env, statePath, fields, { mask: Object.keys(fields) });
+    await deleteDoc(env, `advisorQueue/calldoc_${kind}_${id}`).catch(() => {});
     return json({ ok: true });
   }
 
@@ -6003,16 +6010,34 @@ async function handleAdvisor(request, env, ctx) {
     // straight from Storage to the model and never touch this Worker) and
     // anything he uploaded inline. Bounded here as well as in runCallDoc,
     // because the trust boundary is the route, not the caller.
+    // The same 8MB inline budget the analysis route learned to apply, and for
+    // the same reason: inline base64 is parsed into this Worker's memory as
+    // JSON and copied again on the way out, and twelve sources at the panel's
+    // 8MB each would be ~128MB of base64 in one body - past Cloudflare's
+    // request limit and past what the isolate can hold. This route had NO
+    // bound at all, which made it the one place a big enough pick could take
+    // the isolate down before anything was read. Storage-backed sources carry
+    // a path or a url instead of bytes and are unaffected.
+    let inlineBudget = 8_000_000;
     const src = Array.isArray(body?.sources) ? body.sources.slice(0, 12) : [];
-    const sources = src.map((a) => ({
-      name: str(a?.name, 200),
-      url: typeof a?.url === 'string' ? a.url.slice(0, 2000) : '',
-      path: typeof a?.path === 'string' ? a.path.slice(0, 500) : '',
-      contentType: str(a?.contentType, 120),
-      size: Number(a?.size) > 0 ? Number(a.size) : 0,
-      data: typeof a?.data === 'string' ? a.data : '',
-      mine: a?.mine === true,
-    })).filter((a) => a.name || a.url || a.path || a.data);
+    const sources = src.map((a) => {
+      const raw = typeof a?.data === 'string' ? a.data : '';
+      const fits = raw && raw.length <= inlineBudget;
+      if (fits) inlineBudget -= raw.length;
+      return {
+        name: str(a?.name, 200),
+        url: typeof a?.url === 'string' ? a.url.slice(0, 2000) : '',
+        path: typeof a?.path === 'string' ? a.path.slice(0, 500) : '',
+        contentType: str(a?.contentType, 120),
+        size: Number(a?.size) > 0 ? Number(a.size) : 0,
+        data: fits ? raw : '',
+        // Dropped for size rather than never sent. runCallDoc says so on the
+        // page instead of building a document that is quietly missing a file
+        // he watched himself choose.
+        overBudget: !!raw && !fits,
+        mine: a?.mine === true,
+      };
+    }).filter((a) => a.name || a.url || a.path || a.data);
     return keepaliveRun(ctx, runCallDoc(env, kind, id, {
       instruction: typeof body?.instruction === 'string' ? body.instruction.slice(0, 2000) : '',
       revise: !!body?.revise,

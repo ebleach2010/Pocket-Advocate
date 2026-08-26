@@ -74,11 +74,54 @@ for (const [n,re] of [
 ]) ok(n, re.test(built.text));
 ok('things to check are starred', (built.text.match(/\*/g)||[]).length >= 3,
   `${(built.text.match(/\*/g)||[]).length} asterisks`);
-ok('and the count is shown before he opens it', /line[s]? flagged with \*/.test(built.chrome),
-  (built.chrome.match(/\d+ lines? flagged with \*/)||[])[0] || 'no count');
+// EXPECTATION UPDATED 2026-08-26, and made stricter. This used to accept any
+// "N lines flagged with *", which the panel produced by counting every line
+// containing an asterisk. Every flag appears TWICE by design - gathered in
+// REVIEW BEFORE YOU CALL and marked in place - so the number came out roughly
+// double: the shipped fixture has 3 real concerns and the panel said 5. The
+// count now comes from the numbered list in REVIEW, and this pins the VALUE
+// rather than the wording, so an off-by-double cannot pass again.
+const flagged = (built.chrome.match(/(\d+) things? to check/) || [])[1];
+ok('and the count is shown before he opens it', !!flagged,
+  flagged ? `${flagged} to check` : 'no count');
+ok('and it counts real concerns, not doubled lines', flagged === '3',
+  `panel says ${flagged}; the fixture carries 3 numbered flags`);
 ok('it says which document it was built from', /Built from: prep-notes\.pdf/.test(built.chrome));
 ok('the document is editable by hand', await page.evaluate(() =>
   document.querySelector('[data-cd-text]')?.tagName === 'TEXTAREA'));
+
+// --- THE DOCUMENT MUST SURVIVE A REBUILD -----------------------------------
+// He has a good sheet and ninety seconds before the call. Tapping "Build a
+// new one" used to remove it from the page for the whole multi-minute run,
+// because one flag gated both the controls and the text. This is the case
+// that could not be driven at all until the demo learned to pass through
+// 'running' - it used to jump straight to 'ready'.
+console.log('\n--- a rebuild must not take away the sheet he is reading ---');
+const before = await page.evaluate(() => document.querySelector('[data-cd-text]')?.value || '');
+ok('he has a document to start with', before.length > 200, `${before.length} chars`);
+// Choose again, because a build now requires a pick - which is the other half
+// of this fix: with no picker on screen, "Build a new one" used to post an
+// EMPTY source list and spend a max-effort turn inventing a replacement.
+await page.setInputFiles('[data-cd-files]', {
+  name: 'prep-notes-v2.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 second draft'),
+});
+await page.waitForTimeout(400);
+await page.evaluate(() => document.querySelector('[data-cd-build]')?.click());
+await page.waitForTimeout(3000); // mid-run: past one poll, before the demo's beat lands
+const during = await page.evaluate(() => {
+  const ta = document.querySelector('[data-cd-text]');
+  const b = document.querySelector('[data-cd-build]');
+  return { text: ta?.value || '', readonly: !!ta?.readOnly, label: (b?.textContent || '').trim() };
+});
+ok('the build is actually running', /Building|Reading/.test(during.label), during.label);
+ok('and his current document is STILL on the page', during.text.length > 200,
+  `${during.text.length} chars while building`);
+ok('shown read-only, so a stray keystroke cannot edit it mid-call', during.readonly);
+await page.waitForFunction(() => !/Building|Reading/.test(
+  document.querySelector('[data-cd-build]')?.textContent || ''), null, { timeout: 20000 });
+await page.waitForTimeout(500);
+ok('and the new one replaces it when it lands', await page.evaluate(() =>
+  (document.querySelector('[data-cd-text]')?.value || '').length > 200));
 
 console.log('\n--- revise, and discard ---');
 ok('revise opens an overlay, not a prompt()', await page.evaluate(async () => {

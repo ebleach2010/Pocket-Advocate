@@ -691,8 +691,19 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         // run read without a second lookup.
         const d = apply({ ...(out.state || {}), mediaReport: out.mediaReport || null },
           out.qa || [], out.glossary || []);
-        busy = d.running || d.draftAlive ||
-          (out.qa || []).some((q) => q.status === 'running');
+        // callDocStatus and callNotesStatus belong here as much as the rest.
+        // Without them the poll stayed on its 12-SECOND idle cadence for the
+        // whole of a run that takes minutes, so the panel could be up to
+        // twelve seconds behind its own state: the document he is reading
+        // would not go read-only, a finish would not show, and a failure
+        // would sit invisible. Every other long turn in this file is here.
+        // Read off out.state, not off `d`: `d` is what apply() returns, and
+        // these two are not part of it. Lines below take them from out.state
+        // for the same reason.
+        busy = d.running || d.draftAlive
+          || out.state?.callDocStatus === 'running'
+          || out.state?.callNotesStatus === 'running'
+          || (out.qa || []).some((q) => q.status === 'running');
         // The folder pages (differential, notes, the header line) and the
         // chat's correction marks all feed off this one poll. This panel only
         // ever mounts on admin pages, so the event stays admin-side.

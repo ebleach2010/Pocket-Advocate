@@ -183,6 +183,61 @@ await empty(env, 'case', 'a', { sources: [] });
 check('D23 an empty answer is an error, never a blank document saved as ready',
   state.callDocStatus === 'error' && !state.callDoc, `${state.callDocStatus}/${state.callDoc}`);
 
+// ---- the write that never fit -------------------------------------------
+// THE BLIND SPOT THIS SUITE HAD. `deps.setState` above accepts anything, so
+// nothing in this file could ever see a document too big to STORE - and the
+// first thing runCallDoc does is write callDocReq, which used to carry each
+// source's base64 verbatim. Base64 is 4/3 of the file and a Firestore
+// document is capped at 1 MiB, so any upload over about 786 KB failed with a
+// raw 400 before the model was called at all. That is a phone photo. That is
+// a scanned page. That is what he uploads.
+//
+// So this section swaps in a setState that enforces the REAL limit and drives
+// the same function with a realistically sized document.
+const FIRESTORE_DOC_MAX = 1_048_576;
+const sizedDeps = (rec) => ({
+  ...deps,
+  setState: async (envx, kind, id, fields) => {
+    // What goes over the wire before Firestore's own field encoding, which
+    // only ADDS to it. An under-count that still exceeds the cap is proof.
+    const bytes = new TextEncoder().encode(JSON.stringify(fields)).length;
+    rec.max = Math.max(rec.max || 0, bytes);
+    if (bytes > FIRESTORE_DOC_MAX) {
+      throw new Error(`firestore patch: 400 INVALID_ARGUMENT: the value of property "callDocReq" is longer than ${FIRESTORE_DOC_MAX} bytes`);
+    }
+    Object.assign(state, fields);
+  },
+});
+
+// A 3 MB photo of a lab printout: an ordinary iPhone picture, and well inside
+// the panel's own 8 MB cap.
+const bigB64 = 'A'.repeat(Math.ceil((3 * 1024 * 1024 * 4) / 3));
+reset();
+const rec = { max: 0 };
+const sized = build(...Object.values(sizedDeps(rec)));
+await sized(env, 'case', 'a', {
+  sources: [{ name: 'chart-photo.jpg', contentType: 'image/jpeg', size: 3 * 1024 * 1024, mine: true, data: bigB64 }],
+});
+check('D24 a 3 MB upload does not blow the 1 MiB document limit',
+  state.callDocStatus === 'ready',
+  `${state.callDocStatus}: ${String(state.callDocError || '').slice(0, 120)}`);
+check('D25 because the request stores descriptors, never the bytes',
+  rec.max > 0 && rec.max < FIRESTORE_DOC_MAX, `largest write was ${rec.max} bytes`);
+check('D26 and the upload still reached the model',
+  attachCalls.includes('chart-photo.jpg'), attachCalls.join());
+
+// The route drops anything past its inline budget. runCallDoc must SAY so
+// rather than build a document quietly missing a file he watched himself pick.
+reset();
+await runCallDoc(env, 'case', 'a', {
+  sources: [{ name: 'prep.pdf', mine: true }, { name: 'huge-scan.pdf', overBudget: true }],
+});
+check('D27 a file dropped for size is named, not silently missing',
+  (state.callDocSkipped || []).some((s) => /huge-scan\.pdf/.test(s)),
+  JSON.stringify(state.callDocSkipped));
+check('D28 and the rest of the document is still built',
+  state.callDocStatus === 'ready', state.callDocStatus);
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

@@ -2513,6 +2513,49 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
         await runCallNotes(env, kind, id, req.instruction || '', !!req.revise, req.base || '', true);
         return true; // one model job per firing
       }
+      // THE CALL DOCUMENT. This branch did not exist, and its absence was
+      // expensive in both directions: an advisorQueue/calldoc_* row fell
+      // through to the generic analysis claim below, so every firing of a
+      // per-minute cron bought a full max-effort ANALYSIS off it - and after
+      // three of those, the give-up path wrote "this read kept stopping
+      // partway" onto the ASSESSMENT, a document Eric reads as the advisor
+      // failing at a different job entirely. Meanwhile the call document that
+      // actually died was never retried once. It sorts before `case_` too, so
+      // it was drained first and took the one model job per firing with it.
+      if (row.data.callDoc) {
+        const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+        const req = st?.data.callDocReq;
+        if (st?.data.callDocStatus !== 'running' || !req) {
+          await deleteDoc(env, `advisorQueue/${row.id}`);
+          continue;
+        }
+        const ds = st.data.callDocStartedAt ? new Date(st.data.callDocStartedAt).getTime() : 0;
+        const dBeat = Math.max(ds, st.data.callDocProgressAt ? new Date(st.data.callDocProgressAt).getTime() : 0);
+        if (dBeat && Date.now() - dBeat < 5 * 60_000
+          && (!ds || Date.now() - ds < 20 * 60_000)) continue;
+        const tries = Number(row.data.tries || 0) + 1;
+        if (tries > 2) {
+          await setState(env, kind, id, {
+            callDocStatus: 'error', callDocReq: null,
+            callDocError: 'The call document kept getting interrupted. Tap build to try again.',
+          }).catch(() => {});
+          await deleteDoc(env, `advisorQueue/${row.id}`);
+          continue;
+        }
+        await patchDoc(env, `advisorQueue/${row.id}`, { tries }, { mask: ['tries'] }).catch(() => {});
+        // The RETRY carries no inline bytes: callDocReq stores descriptors
+        // only (see runCallDoc), so a rebuild uses whatever is Storage-backed
+        // and the skipped list names what it could not get back. That is the
+        // honest half of a retry, and better than the nothing it did before.
+        await runCallDoc(env, kind, id, {
+          instruction: req.instruction || '',
+          revise: !!req.revise,
+          base: req.base || '',
+          sources: (req.sources || []).filter((s) => s?.path || s?.url),
+          noStream: true,
+        });
+        return true; // one model job per firing
+      }
       if (row.data.draft) {
         const st = await getDoc(env, statePath(kind, id)).catch(() => null);
         const req = st?.data.draftReq;
@@ -4109,9 +4152,32 @@ export async function runCallDoc(env, kind, id, {
     await setState(env, kind, id, {
       callDocStatus: 'running', callDocError: null,
       callDocStartedAt: new Date(), callDocProgressAt: null,
+      // THE DESCRIPTORS ONLY, NEVER THE BYTES.
+      //
+      // This used to store `sources` verbatim, and an inline upload carries
+      // its file as base64 - 4/3 of the file's real size. A Firestore
+      // document is capped at 1 MiB, so any upload over about 786 KB made
+      // this write fail with a raw 400 INVALID_ARGUMENT. Which is to say a
+      // phone photo or a scanned page: the things he actually uploads. And
+      // because this is the FIRST thing the function does, the model was
+      // never called at all - he waited, then got Firestore's own error text.
+      //
+      // What it costs: a run stranded by a closed lid can no longer be
+      // replayed from inline bytes. It can be replayed from anything
+      // Storage-backed, and the descriptor still records what was there, so
+      // a retry can say which upload it needs again rather than guessing.
       callDocReq: {
         instruction: instruction || '', revise: !!revise, base: base || '',
-        sources: (sources || []).slice(0, MAX_CALLDOC_SOURCES), at: new Date(),
+        sources: (sources || []).slice(0, MAX_CALLDOC_SOURCES).map((s) => ({
+          name: s?.name || '',
+          contentType: s?.contentType || '',
+          size: Number(s?.size) || 0,
+          mine: s?.mine === true,
+          path: s?.path || '',
+          url: s?.url || '',
+          inline: typeof s?.data === 'string' && s.data.length > 0,
+        })),
+        at: new Date(),
       },
     });
     await patchDoc(env, callDocQueuePath(kind, id), { kind, id, callDoc: true, at: new Date() },
@@ -4138,6 +4204,13 @@ export async function runCallDoc(env, kind, id, {
     const readNames = [];
     const skipped = [];
     for (const att of (sources || []).slice(0, MAX_CALLDOC_SOURCES)) {
+      // Dropped by the route's inline budget before it ever got here. Named
+      // rather than silently absent: a document built without a file he
+      // watched himself pick is worse than one that says which file is gone.
+      if (att?.overBudget) {
+        skipped.push(`${att?.name || 'a file'}: too large to send with the others (put it on the case and pick it there, or send one page)`);
+        continue;
+      }
       const made = await attachmentBlock(env, att, kind, id).catch(
         (e) => ({ skip: friendly(e) }));
       if (made?.skip) { skipped.push(`${att?.name || 'a file'}: ${made.skip}`); continue; }
