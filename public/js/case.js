@@ -326,13 +326,18 @@ function confirmationBanner(c, start, localFmt) {
     ? `, $${(cents / 100).toFixed(2).replace(/\.00$/, '')} received`
     : '';
   const requested = !!c.appointment?.requested;
+  // Same two sentences, given a mark and a column of their own so the answer
+  // to "did it go through" is a shape you recognise before you read a word.
   return `
-    <div class="panel confirm-banner">
-      <p style="margin:0;"><strong>Payment confirmed${paid}.</strong>
-        ${requested
-          ? 'Your case file is open. The time you asked for still needs my confirmation. See below.'
-          : `You're booked for <strong>${localFmt.format(start)}</strong>.`}</p>
-      <p class="dim small" style="margin:.35rem 0 0;">A copy is in your email. Nothing else is needed from you before the call, though labs and imaging help if you have them.</p>
+    <div class="panel confirm-banner cs-confirm">
+      <span class="cs-confirm-ic" aria-hidden="true">✓</span>
+      <div class="cs-confirm-body">
+        <p style="margin:0;"><strong>Payment confirmed${paid}.</strong>
+          ${requested
+            ? 'Your case file is open. The time you asked for still needs my confirmation. See below.'
+            : `You're booked for <strong>${localFmt.format(start)}</strong>.`}</p>
+        <p class="dim small" style="margin:.35rem 0 0;">A copy is in your email. Nothing else is needed from you before the call, though labs and imaging help if you have them.</p>
+      </div>
     </div>`;
 }
 
@@ -357,9 +362,16 @@ function workLine(c) {
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
   const spent = `${h ? `${h}h ` : ''}${m}m`;
-  return `<p class="dim small" style="margin:.6rem 0 0;">⏱ Time I have worked on your case: <strong style="color:var(--ink);">${spent}</strong>${
-    w.startedAt ? ' <span style="color:var(--cyan);">· working on it right now</span>' : ''
-  }</p>`;
+  // A tile in the fact grid rather than a line of small print. Same sentence,
+  // split into the label and the number, because the number is the part
+  // somebody scanning this page is looking for.
+  return `
+    <div class="cs-fact">
+      <span class="cs-fact-ic" aria-hidden="true">⏱</span>
+      <span class="cs-fact-k">Time I have worked on your case</span>
+      <span class="cs-fact-v">${spent}</span>
+      ${w.startedAt ? '<span class="cs-fact-live">Working on it right now</span>' : ''}
+    </div>`;
 }
 
 /**
@@ -454,16 +466,26 @@ function renderProgress(el, c) {
   // (Eric, 2026-08-21: "make the hyperlink section text larger... line it
   // up.") They are two matching buttons on one row now; what stays a sentence
   // is only what is not tappable.
-  const methodLine = method === 'phone'
-    ? `Phone. I call you at <strong>${esc(c.appointment.phone || 'your number')}</strong>.`
+  // The same sentence, split at its full stop: the method is the fact, the
+  // rest is the note under it. Nothing here is new wording.
+  const methodValue = method === 'phone' ? 'Phone' : 'Video call';
+  const methodNote = method === 'phone'
+    ? `I call you at <strong>${esc(c.appointment.phone || 'your number')}</strong>.`
     : c.appointment?.joinLink
       ? ''
-      : 'Video call. Your join link appears here before the call.';
+      : 'Your join link appears here before the call.';
+  const methodFact = method || start ? `
+    <div class="cs-fact">
+      <span class="cs-fact-ic" aria-hidden="true">${method === 'phone' ? '📞' : '🎥'}</span>
+      <span class="cs-fact-k">How we'll talk</span>
+      <span class="cs-fact-v">${methodValue}</span>
+      ${methodNote ? `<span class="cs-fact-s">${methodNote}</span>` : ''}
+    </div>` : '';
   const joinBtn = method !== 'phone' && c.appointment?.joinLink
-    ? `<a class="btn ghost" style="text-align:center;" href="${esc(c.appointment.joinLink)}" rel="noopener">🎥 Join the video call</a>`
+    ? `<a class="btn ghost" href="${esc(c.appointment.joinLink)}" rel="noopener">🎥 Join the video call</a>`
     : '';
   const requestedNote = requested
-    ? `<p class="small" style="margin:.4rem 0 0; color:var(--orange);">
+    ? `<p class="cs-note is-warn">
          <strong>Awaiting confirmation.</strong> You asked for this time and it wasn't on my
          calendar. I'll confirm it, or offer you the nearest time that works, before the date.</p>`
     : '';
@@ -476,23 +498,35 @@ function renderProgress(el, c) {
     ${pausedNotice(c)}
     ${closedNotice(c)}
     <h2 class="case-sec-h">Progress</h2>
-    <div class="panel">
-      ${start ? `
-        <p style="margin:0 0 .3rem;"><strong>${mtFmt.format(start)} MST</strong><br>
-        <span class="dim small">${localFmt.format(start)} your time</span></p>` : ''}
-      ${methodLine ? `<p class="dim" style="margin:.2rem 0 0;">${methodLine}</p>` : ''}
+    <div class="panel cs-facts-panel">
+      <div class="cs-facts">
+        ${start ? `
+          <div class="cs-fact">
+            <span class="cs-fact-ic" aria-hidden="true">📅</span>
+            <span class="cs-fact-k">Your discussion</span>
+            <span class="cs-fact-v">${mtFmt.format(start)} MST</span>
+            <span class="cs-fact-s">${localFmt.format(start)} your time</span>
+          </div>` : ''}
+        ${methodFact}
+        ${workLine(c)}
+      </div>
       ${start || joinBtn ? `
-        <p class="actions" style="margin:.7rem 0 .2rem; flex-direction:column; align-items:stretch; gap:.5rem; max-width:22rem;">
+        <p class="actions cs-acts">
           ${joinBtn}
-          ${start ? '<a href="#" class="btn ghost" style="text-align:center;" data-ics>📅 Add to calendar</a>' : ''}
+          ${start ? '<a href="#" class="btn ghost" data-ics>📅 Add to calendar</a>' : ''}
         </p>` : ''}
-      ${requestedNote}
-      ${checkInLine(c, localFmt)}
-      ${workLine(c)}
+      ${requestedNote || checkInLine(c, localFmt) ? `
+        <div class="cs-notes">${requestedNote}${checkInLine(c, localFmt)}</div>` : ''}
+    </div>
+    <div class="panel cs-rail-panel">
+      <div class="cs-rail-head">
+        <h3 class="cs-rail-h">Where things stand</h3>
+        <span class="cs-rail-count">Step ${Math.min(rank, STEPS.length)} of ${STEPS.length}</span>
+      </div>
       <ul class="timeline">
         ${STEPS.map(([, label], i) => `
           <li class="${i + 1 < rank ? 'done' : i + 1 === rank ? (closed ? 'done' : 'now') : ''}">
-            <span class="t-dot"></span>${label}</li>`).join('')}
+            <span class="t-dot"></span><span class="t-label">${label}</span></li>`).join('')}
       </ul>
     </div>
     <div data-authority></div>
@@ -573,8 +607,8 @@ function renderChat(el, c) {
   }).format(new Date(startMs - 7 * 86_400_000)) : '';
   el.innerHTML = `
     <h2 class="case-sec-h">Chat</h2>
-    <p class="dim small" style="margin:.1rem 0 .3rem;">Chat keeps your case moving between calls: records, scheduling, and anything new or urgent with your health. The analysis itself happens on our calls, and everything else goes on the list for the next one.</p>
-    <p style="margin:.2rem 0 .3rem;"><span class="p-dot"></span><span class="p-label">Checking…</span></p>
+    <p class="cs-lead">Chat keeps your case moving between calls: records, scheduling, and anything new or urgent with your health. The analysis itself happens on our calls, and everything else goes on the list for the next one.</p>
+    <p class="cs-presence"><span class="p-dot"></span><span class="p-label">Checking…</span></p>
     <div class="panel" data-chat></div>
     ${chatLocked ? `
     <div class="panel" data-chat-unlock style="margin-top:.7rem;">
@@ -744,10 +778,11 @@ function renderDocs(el, c) {
   el.innerHTML = `
     <h2 class="case-sec-h">Documents</h2>
     ${closed
-      ? '<p class="dim small">This case is closed. Your documents stay here forever. Download or print any of them.</p>'
-      : `<label class="dropzone" data-drop>
-           Tap to add labs, imaging, or records<br>
-           <span class="small">PDF · JPEG · PNG · HEIC · DICOM · ZIP, 25 MB max each</span>
+      ? '<p class="cs-note">This case is closed. Your documents stay here forever. Download or print any of them.</p>'
+      : `<label class="dropzone cs-drop" data-drop>
+           <span class="cs-drop-ic" aria-hidden="true">＋</span>
+           <span class="cs-drop-t">Tap to add labs, imaging, or records</span>
+           <span class="cs-drop-s small">PDF · JPEG · PNG · HEIC · DICOM · ZIP, 25 MB max each</span>
            <input type="file" accept="${ACCEPT}" multiple hidden data-file-input>
          </label>
          <progress data-progress max="100" value="0" hidden></progress>
@@ -807,8 +842,11 @@ async function refreshFiles(c, el) {
   // they have been waiting for, and "is this the final one" should not be a
   // question they have to work out from the filename.
   const delivered = c.status === 'delivered' || c.status === 'closed';
+  // data-kind is decoration only: the stylesheet reads it to give each row the
+  // right icon and rim. Nothing selects on it, and the row's real wiring is
+  // still data-frow.
   listEl.innerHTML = rows.map((r, i) => `
-    <li data-frow="${i}">
+    <li data-frow="${i}" data-kind="${r.kind}">
       <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' || r.kind === 'chat' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
         ${r.kind === 'report' && delivered ? '<span class="delivered-tick" title="Delivered" role="img" aria-label="Delivered">✅</span>' : ''}
         <a href="${r.url}" target="_blank" rel="noopener">${esc(shownName(r.name))}</a></span>
@@ -1117,7 +1155,7 @@ function renderPageFooter(host, c) {
 function addAboutButton(host, id) {
   if (!host || !host.innerHTML.trim() || host.querySelector('[data-about]')) return;
   host.insertAdjacentHTML('beforeend',
-    `<p style="margin:.2rem 0 .9rem;"><button type="button" class="btn quiet tiny" data-about="${id}">About this enhancement</button></p>`);
+    `<p class="ao-about"><button type="button" class="btn quiet tiny" data-about="${id}">About this enhancement</button></p>`);
   wireAboutButtons(host);
 }
 
@@ -1238,32 +1276,107 @@ function wireExtendOffer(el, c) {
   });
 }
 
+/**
+ * The four things a running case can have added to it, each in its own card.
+ *
+ * The shell is presentation: an icon, the enhancement's own name as a kicker,
+ * and an accent so four offers stacked on a phone read as four distinct
+ * things rather than one long list of boxes. The BODY of each card is
+ * untouched - the same offer functions, the same copy, the same prices, the
+ * same data- hooks the buy handlers are wired to.
+ */
+const ADDONS = [
+  { slot: 'telehealth', icon: '🎥', kicker: 'Appointment advocacy', about: 'telehealth', tone: 'c' },
+  { slot: 'followup', icon: '🔁', kicker: 'A second session', about: 'followup', tone: 'm' },
+  { slot: 'upgrade', icon: '🤝', kicker: 'Hands-Off Case Management', about: 'handsOff', tone: 'b' },
+  { slot: 'extend', icon: '📆', kicker: 'Another month', about: 'extension', tone: 'g' },
+];
+
+/**
+ * What to say when an offer's own function returns nothing.
+ *
+ * An empty slot used to mean an invisible card, so the page silently changed
+ * shape from one case to the next and a client could not tell whether a thing
+ * had been withdrawn or had never existed. Every one of these is read straight
+ * off the condition the offer already tests, so it states a fact about THIS
+ * case and never promises anything the offer does not.
+ */
+function addonState(slot, c) {
+  const closed = c.status === 'closed';
+  if (slot === 'telehealth')
+    return closed ? { state: 'soon', why: 'Available while your case is open.' } : null;
+  if (slot === 'followup') {
+    if (c.addOnFollowUp || c.followUp || c.pendingExtra)
+      return { state: 'on', why: 'A second session is already on this case.' };
+    return { state: 'soon', why: 'Opens once we have had your discussion.' };
+  }
+  if (slot === 'upgrade') {
+    if (c.fullAccess)
+      return { state: 'on', why: 'Hands-Off Case Management is already running here.' };
+    return closed ? { state: 'soon', why: 'Available while your case is open.' } : null;
+  }
+  // extend
+  if (c.fullAccess) return closed ? { state: 'soon', why: 'Available while your case is open.' } : null;
+  return { state: 'soon', why: 'Part of Hands-Off Case Management.' };
+}
+
+function addonPlaceholder(slot, c) {
+  const s = addonState(slot, c);
+  if (!s) return '';
+  return `
+    <div class="ao-quiet is-${s.state}">
+      <p class="ao-quiet-t">${s.state === 'on' ? '✓ On your case' : 'Not available yet'}</p>
+      <p class="ao-quiet-w">${esc(s.why)}</p>
+    </div>`;
+}
+
 function renderAddons(el, c) {
   el.innerHTML = `
     <h2 class="case-sec-h">Case Enhancements</h2>
-    <p class="dim small" style="margin:.2rem 0 .8rem;">Extras you can put on
+    <p class="cs-lead">Extras you can put on
       this case whenever you need them. Nothing here is required, and nothing
       is charged until you choose it.</p>
-    <div data-telehealth></div>
-    <div data-followup></div>
-    <div data-upgrade></div>
-    <div data-extend></div>`;
-  const addAbout = addAboutButton;
+    <div class="ao-deck">
+      ${ADDONS.map((a) => `
+        <article class="ao-card ao-${a.tone}" data-ao="${a.slot}">
+          <header class="ao-head">
+            <span class="ao-ic" aria-hidden="true">${a.icon}</span>
+            <span class="ao-kicker">${a.kicker}</span>
+          </header>
+          <div class="ao-body" data-${a.slot}></div>
+        </article>`).join('')}
+    </div>`;
+
+  // Empty body, filled body, same treatment: paint, wire, then let the shell
+  // mark itself quiet if the offer had nothing to show.
+  const settle = (host, slot) => {
+    if (!host) return;
+    const card = host.closest('.ao-card');
+    if (!host.innerHTML.trim()) host.innerHTML = addonPlaceholder(slot, c);
+    // A slot with nothing to say at all still must not leave a headed but
+    // bodyless card sitting on the page.
+    if (card) {
+      card.hidden = !host.innerHTML.trim();
+      card.classList.toggle('is-quiet', !!host.querySelector('.ao-quiet'));
+    }
+    addAboutButton(host, ADDONS.find((a) => a.slot === slot).about);
+  };
+
   const th = el.querySelector('[data-telehealth]');
-  if (th) { th.innerHTML = telehealthCard(c); wireTelehealthCard(th, c); addAbout(th, 'telehealth'); }
+  if (th) { th.innerHTML = telehealthCard(c); wireTelehealthCard(th, c); settle(th, 'telehealth'); }
   const ex = el.querySelector('[data-extend]');
-  if (ex) { ex.innerHTML = extendOffer(c); wireExtendOffer(ex, c); addAbout(ex, 'extension'); }
+  if (ex) { ex.innerHTML = extendOffer(c); wireExtendOffer(ex, c); settle(ex, 'extend'); }
   const offer = el.querySelector('[data-followup]');
   if (offer) {
     offer.innerHTML = followUpOffer(c);
     wireFollowUpOffer(offer, c);
-    addAbout(offer, 'followup');
+    settle(offer, 'followup');
   }
   const up = el.querySelector('[data-upgrade]');
   if (up) {
     up.innerHTML = upgradeOffer(c);
     wireUpgradeOffer(up, c);
-    addAbout(up, 'handsOff');
+    settle(up, 'upgrade');
     // Repaint once the live price answers. Without this the card kept
     // whatever was compiled in, and the handshake would then bounce a buyer
     // who had done nothing wrong.
@@ -1271,7 +1384,7 @@ function renderAddons(el, c) {
       if (!up.isConnected || up.querySelector('[data-upgrade-ack]:checked')) return;
       up.innerHTML = upgradeOffer(c);
       wireUpgradeOffer(up, c);
-      addAbout(up, 'handsOff');
+      settle(up, 'upgrade');
     }).catch(() => {});
   }
 }
@@ -1324,7 +1437,7 @@ function telehealthCard(c) {
       request${Number(c.telehealthDenied.refundCents) > 0 ? ' — your refund is on its way' : ''}.
       You're welcome to ask again for another appointment.</p>` : '';
   const price = c.fullAccess
-    ? '<span class="price" style="font-size:1rem;">Included</span>'
+    ? '<span class="price is-word">Included</span>'
     : `<span class="price">$${(TELEHEALTH_PRICE_CENTS / 100).toFixed(0)}</span>`;
   return `
     <div class="followup-offer">
@@ -1333,14 +1446,14 @@ function telehealthCard(c) {
         advocate on your behalf, live — the questions get asked, the answers
         get written down, and you are not in that room alone.</p>
       ${denied}${upcoming}
-      <div style="margin:.6rem 0 0;">
-        <label class="dim small" style="display:block; margin-bottom:.4rem;">When is the appointment? <span style="color:var(--magenta)">*</span>
-          <input type="datetime-local" data-th-when style="display:block; width:100%; margin-top:.2rem;"></label>
-        <label class="dim small" style="display:block; margin-bottom:.4rem;">Clinic <span style="color:var(--magenta)">*</span>
-          <input type="text" data-th-clinic maxlength="200" placeholder="e.g. Riverside Neurology" style="width:100%; margin-top:.2rem;"></label>
-        <label class="dim small" style="display:block; margin-bottom:.5rem;">Provider we're seeing <span style="color:var(--magenta)">*</span>
-          <input type="text" data-th-provider maxlength="200" placeholder="e.g. Dr. Alvarez" style="width:100%; margin-top:.2rem;"></label>
-        <label class="agreement-check" style="margin:.2rem 0 .6rem;">
+      <div class="ao-form">
+        <label class="ao-field">When is the appointment? <span class="ao-req">*</span>
+          <input type="datetime-local" data-th-when></label>
+        <label class="ao-field">Clinic <span class="ao-req">*</span>
+          <input type="text" data-th-clinic maxlength="200" placeholder="e.g. Riverside Neurology"></label>
+        <label class="ao-field">Provider we're seeing <span class="ao-req">*</span>
+          <input type="text" data-th-provider maxlength="200" placeholder="e.g. Dr. Alvarez"></label>
+        <label class="agreement-check ao-attest">
           <input type="checkbox" data-th-attest> I am inviting my advocate into my appointment, and I'll tell my provider's office he is joining.</label>
       </div>
       <div class="fu-buy">
