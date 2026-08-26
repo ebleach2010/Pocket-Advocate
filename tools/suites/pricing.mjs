@@ -330,6 +330,67 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
     /data-rate="tele"/.test(readFileSync(__j(__REPO, 'public/js/book.js'), 'utf8')));
 }
 
+// ---- R1-R6: the hourly must never invent what a client paid -------------
+// Eric, 2026-08-26, on a live case: "Current client pricing is incorrect for
+// the hours I've spent. He paid 175 from the old pricing."
+//
+// The case read $76.12/hr at 15h 45m. The truth was $11.11/hr. paidCents()
+// fell back to today's CASE_PRICE_CENTS for any case with no caseRateCents,
+// on the argument, written in the comment, that rates had only ever come
+// down. They had not: $175, $265, $1,200 inside a year. So the fallback
+// inflated a legacy client's payment sevenfold, and it did it on the ONE
+// figure built to reveal a loss, in the direction that hides one. It reported
+// comfortably above the $75 floor for a case running at a seventh of it.
+//
+// The functions are LIFTED from the shipped file and run, not pattern
+// matched: this is arithmetic about his money and a regex would pass on a
+// version that computed the wrong number.
+{
+  const ADMINSRC = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
+  const lift = (name, src) => {
+    const m = src.match(new RegExp(`(?:function ${name}\\([\\s\\S]*?\\n\\}|const ${name} = [^;]+;)`));
+    return m ? m[0] : '';
+  };
+  const body = [
+    `const CASE_PRICE_CENTS = ${CASE};`,
+    lift('caseRate', ADMINSRC),
+    lift('paidCents', ADMINSRC),
+    lift('effectiveHourly', ADMINSRC),
+    'return { caseRate, paidCents, effectiveHourly };',
+  ].join('\n');
+  let api = null;
+  try { api = new Function(body)(); } catch (e) { /* reported below */ }
+  check('R1 the three money functions still lift and run', !!api && typeof api.paidCents === 'function');
+
+  if (api) {
+    const HOURS = 15.75, SECS = Math.round(HOURS * 3600);
+    // The real shape of Christopher's case: no recorded rate, paid $175.
+    const legacy = { clientName: 'C', extraPayments: [] };
+    check('R2 a case with no recorded rate reports NOTHING paid, not today\'s price',
+      api.paidCents(legacy) === null, String(api.paidCents(legacy)));
+    check('R3 and therefore no hourly at all, rather than a confident wrong one',
+      api.effectiveHourly(legacy, SECS) === null, String(api.effectiveHourly(legacy, SECS)));
+    // The exact number he was shown, which must now be impossible.
+    const wrong = Math.round(CASE / HOURS);
+    check('R4 the figure he was shown is no longer reachable from that case',
+      api.effectiveHourly(legacy, SECS) !== wrong, `$${(wrong / 100).toFixed(2)}/hr`);
+
+    // Once he records it, the truth.
+    const fixed = { ...legacy, paidOverrideCents: 17500 };
+    const hourly = api.effectiveHourly(fixed, SECS);
+    check('R5 a recorded payment gives the real hourly',
+      hourly === Math.round(17500 / HOURS), `$${(hourly / 100).toFixed(2)}/hr`);
+    check('R6 and it lands under the floor, which is the whole point',
+      hourly < num('HOURLY_FLOOR_CENTS'),
+      `$${(hourly / 100).toFixed(2)}/hr vs a $${(num('HOURLY_FLOOR_CENTS') / 100).toFixed(0)}/hr floor`);
+
+    // A modern case is untouched: it has a recorded rate and still reports it.
+    const modern = { caseRateCents: 120000, extraPayments: [] };
+    check('R7 a case booked at a recorded rate is unaffected',
+      api.paidCents(modern) === 120000, String(api.paidCents(modern)));
+  }
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 process.exit(failed.length ? 1 : 0);

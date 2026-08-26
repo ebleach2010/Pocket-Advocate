@@ -1572,7 +1572,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-26-resched';
+const BUILD_TAG = 'v2026-08-26-money';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -4102,8 +4102,42 @@ async function runWorkClockNudges(env) {
       if (Number(w.nudged || 0) >= rung) continue;
       await patchDoc(env, `cases/${id}`, { work: { ...w, nudged: rung } }, { mask: ['work'] }).catch(() => {});
       const started = new Date(w.startedAt).getTime();
-      const mins = Math.max(0, Math.floor((Date.now() - started) / 60_000));
-      const ran = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+      // THE NUMBER HE SEES ON THE CASE, not the current stretch (Eric,
+      // 2026-08-26: a push said "the clock has been running 0m" while the case
+      // read 15h 45m). This used to measure Date.now() - startedAt alone,
+      // which is the CURRENT stretch and not the case total. Correcting a
+      // running total re-anchors startedAt to now, so the moment after a
+      // correction the stretch is zero while the case holds fifteen hours, and
+      // the push asked "still working?" about a clock it claimed had not run.
+      //
+      // Same arithmetic as liveClockSeconds() in admin-case.js, twelve-hour
+      // cap on the single stretch included, so the push and the page can never
+      // report two different numbers for one clock again.
+      // TWO NUMBERS, TWO JOBS, and conflating them is what broke this twice.
+      //
+      // `stretchMins` is how long THIS run has been going. It decides: the
+      // ladder is about a clock left running unattended, and a case carrying
+      // fifteen banked hours from last week is not accruing anything right now.
+      //
+      // `totalMins` is what the case shows him, banked plus this run, the same
+      // arithmetic as liveClockSeconds() in admin-case.js with the same
+      // twelve-hour cap on a single stretch. It REPORTS.
+      //
+      // Reporting the stretch alone sent "the clock has been running 0m. Still
+      // working?" about a case reading 15h 45m, because correcting a running
+      // total re-anchors startedAt to now (Eric, 2026-08-26). Deciding on the
+      // total alone would email on every rung for any case with hours already
+      // banked, which is the regression the clock suite caught when this was
+      // first fixed.
+      const stretch = Math.min(Math.floor((Date.now() - started) / 1000), 12 * 3600);
+      const stretchMins = Math.max(0, Math.floor(stretch / 60));
+      const totalMins = Math.max(0, Math.floor(((Number(w.seconds) || 0) + stretch) / 60));
+      const fmtMins = (n) => (n >= 60 ? `${Math.floor(n / 60)}h ${n % 60}m` : `${n}m`);
+      const ran = fmtMins(totalMins);
+      // Only worth saying when the two differ, which is exactly when the bare
+      // total would read as a surprise.
+      const thisRun = totalMins - stretchMins >= 1 ? ` (${fmtMins(stretchMins)} this run)` : '';
+      const mins = stretchMins;
       const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
       for (const a of admins) {
         await notifyUser(env, a.id, {
@@ -4112,9 +4146,9 @@ async function runWorkClockNudges(env) {
           // being "this is costing your client money". The soft wording is
           // what let ten hours go by feeling like a routine ping.
           body: mins >= WORK_NUDGE_REPEAT_MINUTES
-            ? `${firstName(c.data.clientName)}: the clock has been running ${ran}. `
+            ? `${firstName(c.data.clientName)}: the clock has been running ${ran}${thisRun}. `
               + `If you are not working, stop it now - this is billable time on their case.`
-            : `${firstName(c.data.clientName)}: the clock has been running ${ran}${
+            : `${firstName(c.data.clientName)}: the clock has been running ${ran}${thisRun}${
               awayMin === null ? '' : ` and the app has been closed for ${Math.floor(awayMin)} minutes`
             }. Still working?`,
           link: `/admin-case.html?id=${id}&clock=ask`,
@@ -6592,6 +6626,25 @@ async function handleCaseUpdate(request, env) {
     await patchDoc(env, `cases/${caseId}`, { appointment: { joinLink: joinLink || null } }, {
       mask: ['appointment.joinLink'],
     });
+  } else if (action === 'set-paid') {
+    // WHAT THEY ACTUALLY PAID, recorded by hand (Eric, 2026-08-26). A case
+    // from before caseRateCents existed has no price on it, and the app used
+    // to infer today's price for it: a client who paid $175 read as $1,200,
+    // and the hourly built to reveal a loss reported $76/hr where the truth
+    // was $11/hr. There is no way to infer this correctly, because the price
+    // has been $175, $265 and $1,200 inside a year, so it is entered instead.
+    //
+    // Stored separately from caseRateCents rather than overwriting it: that
+    // field is what a percentage charge is a share of and what the ratchet
+    // recorded, and a hand-entered figure is a different fact with a different
+    // provenance. paidCents() on the client prefers this when it is set.
+    const cents = Math.round(Number(body?.paidCents));
+    if (!Number.isFinite(cents) || cents <= 0 || cents > 100_000_00)
+      return json({ error: 'Give an amount between $1 and $100,000.' }, 400);
+    await patchDoc(env, `cases/${caseId}`, {
+      paidOverrideCents: cents,
+      paidOverrideAt: now,
+    }, { mask: ['paidOverrideCents', 'paidOverrideAt'] });
   } else if (action === 'recording-uploaded') {
     // The call happened: start the report clock. Admin-side the deadline is a
     // strict 7 calendar days; the client is told "7 business days, some take

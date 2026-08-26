@@ -33,8 +33,20 @@ const CASE_PRICE_CENTS = 120000;
  * The rate a given client booked at. Recorded on the case at checkout, so a
  * percentage charge later is a share of what they actually paid rather than of
  * whatever the rate has moved to since (Eric: "current client gets
- * grandfathered in", 2026-08-20). Cases from before the field existed fall back
- * to today's rate, which since rates have only come down errs in their favour.
+ * grandfathered in", 2026-08-20).
+ *
+ * A case from before the field existed has NO recorded rate, and today's price
+ * is the wrong guess for it. This used to fall back to CASE_PRICE_CENTS with a
+ * comment saying rates had only ever come down, so the fallback erred in the
+ * client's favour. That stopped being true: $175, then $265, then $1,200. On
+ * a real case (Eric, 2026-08-26) it read a client who paid $175 as having paid
+ * $1,200, which is 7x, and it did it on the ONE number in this file built to
+ * reveal a loss.
+ *
+ * So it is used for two different questions now, and they get different
+ * answers. This one is "what is a percentage charge a share of", where today's
+ * rate is a defensible base for a case with nothing recorded. What they
+ * ACTUALLY paid is paidCents() below, which refuses to guess.
  */
 const caseRate = (c) => (c && c.caseRateCents) || CASE_PRICE_CENTS;
 const dollars = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
@@ -42,9 +54,37 @@ const dollars = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cent
 /**
  * What this case has actually paid, tips excluded. A tip is a gift, and
  * counting it would flatter the one number here that has to stay honest.
+ *
+ * RETURNS NULL WHEN IT DOES NOT KNOW. A case with no caseRateCents predates
+ * the field, and there is no honest way to infer what that client paid: the
+ * price has been $175, $265 and $1,200 within the year. Guessing today's rate
+ * turned a $175 client at fifteen hours into "$76.19/hr, comfortably above
+ * your floor" when the truth was $11.11/hr, which is the exact error this
+ * figure exists to catch, running in the direction that hides it.
+ *
+ * Null means the caller says so instead of printing a number. There is a
+ * control on the Overview to record what they paid, which turns the unknown
+ * into a fact rather than a better guess.
  */
 function paidCents(c) {
   const extras = Array.isArray(c?.extraPayments) ? c.extraPayments : [];
+  const addOns = () => extras.filter((x) => x.kind !== 'tip' && x.kind !== 'fullaccess')
+    .reduce((n, x) => n + (Number(x.amountCents) || 0), 0);
+  // In order of how much the source actually knows.
+  //
+  // 1. What Eric recorded by hand. His explicit correction beats every
+  //    inference, including Stripe, because only he knows about money that
+  //    moved outside it.
+  const recorded = Number(c?.paidOverrideCents);
+  if (recorded > 0) return recorded + addOns();
+  // 2. WHAT STRIPE ACTUALLY CHARGED. This was sitting on the case the whole
+  //    time and this file never read it, while worker/advisor.js did. The
+  //    hourly was inferred from a price list when the receipt was right there.
+  const charged = Number(c?.stripe?.amountTotal);
+  if (charged > 0) return charged + addOns();
+  // 3. The rate recorded at checkout.
+  const known = c?.fullAccess ? Number(c.fullAccessRateCents) > 0 : Number(c.caseRateCents) > 0;
+  if (!known) return null;
   // A Full Access case paid its own price, which INCLUDES everything in the
   // standard case. caseRateCents on such a case is the standard-case rate
   // kept as the base for percentage charges, so the two are never summed.
@@ -75,7 +115,12 @@ let floorCents = 7500;
 function effectiveHourly(c, liveSeconds) {
   const secs = Math.max(0, Number(liveSeconds) || 0);
   if (secs < 360) return null;
-  return Math.round(paidCents(c) / (secs / 3600));
+  // No recorded payment, no hourly. A confident wrong number here is worse
+  // than none: it is the figure he uses to decide whether a case is worth
+  // continuing.
+  const paid = paidCents(c);
+  if (paid === null) return null;
+  return Math.round(paid / (secs / 3600));
 }
 
 const caseId = new URLSearchParams(location.search).get('id');
@@ -1092,6 +1137,31 @@ function startWorkClock(c) {
   wireClockToggle(btn);
   // The time itself opens the sheet (Eric, 2026-08-25: "tap on the time").
   wireClockFix(totalEl);
+  // And the rate pill records what they actually paid. Deliberately on the
+  // pill: it is the thing showing the wrong answer, so it is the thing to
+  // press. Writes paidOverrideCents, which paidCents() prefers over any
+  // inference from today's price.
+  rateEl?.addEventListener('click', async () => {
+    const cur = Number(c.paidOverrideCents) > 0 ? (c.paidOverrideCents / 100).toFixed(2) : '';
+    const typed = prompt(
+      'What did this client actually pay for the case itself, in dollars?\n\n'
+      + 'Add-ons and follow-ups are counted separately and do not go here.', cur);
+    if (typed === null) return;
+    const amount = Number(String(typed).replace(/[^0-9.]/g, ''));
+    if (!(amount > 0)) {
+      say('paid', 'That did not look like an amount. Nothing changed.', { tone: 'warn' });
+      refreshOverview();
+      return;
+    }
+    try {
+      await api({ action: 'set-paid', paidCents: Math.round(amount * 100) });
+      await load();
+      say('paid', `Recorded. This case shows $${dollars(Math.round(amount * 100))} paid, and the hourly is worked out from that.`);
+    } catch (err) {
+      say('paid', `Not recorded: ${err.message}`, { tone: 'warn' });
+    }
+    refreshOverview();
+  });
 }
 
 /**

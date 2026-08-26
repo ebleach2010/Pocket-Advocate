@@ -2942,7 +2942,12 @@ async function loadEconomics(env, kind, id) {
   const c = doc?.data || {};
   // A Full Access case paid its own price, which already covers the standard
   // case; caseRateCents on one of those is only the percentage-charge base.
-  let paidCents = (c.fullAccess && Number(c.fullAccessRateCents) > 0 ? Number(c.fullAccessRateCents) : 0)
+  // paidOverrideCents first: a figure Eric recorded by hand beats every
+  // inference, because only he knows about money that moved outside Stripe.
+  // Kept in the same order as paidCents() in public/js/admin-case.js so the
+  // advisor and the page can never quote two different numbers for one case.
+  let paidCents = Number(c.paidOverrideCents) > 0 ? Number(c.paidOverrideCents)
+    : (c.fullAccess && Number(c.fullAccessRateCents) > 0 ? Number(c.fullAccessRateCents) : 0)
     || Number(c.stripe?.amountTotal)
     || Number(c.caseRateCents) || 0;
   let tipCents = 0;

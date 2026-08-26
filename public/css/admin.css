@@ -1122,3 +1122,14 @@ main > p > a.small[href="/admin.html"] {
   margin: .5rem 0 .6rem;
 }
 .sched-nudge .btn.tiny { min-height: 44px; padding: .4rem .7rem; }
+
+/* The rate pill's third state: no recorded payment, so no hourly. It must not
+   look like a number, because the whole defect was a number that looked
+   trustworthy and was not. Amber, not red: nothing is wrong with the case, the
+   app simply does not know what they paid and is saying so. */
+.work-rate.unknown {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+  cursor: pointer;
+}
