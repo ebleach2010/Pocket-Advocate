@@ -63,6 +63,17 @@ export const CHANGELOG = [
     // in the agreement (new bookings only), and the call document. None of
     // it is live for clients until the release that turns the tier on, so
     // the client bullets wait with it and are written at push time.
+    //
+    // And the third round: the visual pass. The landing page, the three
+    // booking steps and the five client case pages were rebuilt to look like
+    // the mockup, each on its own sheet layered over site.css, which stays
+    // byte-identical to main's. Two things in that pass are behaviour rather
+    // than paint and need client bullets of their own at push time: a
+    // booking refusal now prints against the control that is blocking and
+    // scrolls to it, instead of a message a client had to hunt for; and an
+    // enhancement a case cannot use yet says which of the two true things it
+    // is, rather than vanishing and quietly changing the shape of the page
+    // from one case to the next.
     version: '2.38',
     quiet: true,
     client: [],

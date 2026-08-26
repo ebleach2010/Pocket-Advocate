@@ -432,9 +432,25 @@ const ASK_LIFTED = [
 ].join('\n');
 let carried = [];
 let finals = [];
+// WHEN THE SCRIPT RUNS OUT, SAY SO - DO NOT HAND BACK undefined.
+//
+// This dispenser used to be a bare `finals.shift()`. Every check here scripts
+// exactly the turns it expects, so a defect that makes ask() take ONE MORE
+// turn than the script allows got `undefined` back, and extractText died on
+// `undefined.stop_reason`. The suite then exited mid-file: the check that
+// caught the defect never printed, and every check after it never ran. That
+// is how D68 behaved when the pause_turn guard was removed - it detected the
+// bug and took eighteen later checks down with it, reporting neither.
+//
+// The battery still went red (run.mjs greps the crash output for /Error/), so
+// the gate held. But a check that dies instead of failing tells you nothing
+// about WHAT broke, and it hides everything behind it. So an over-draw now
+// returns a well-formed Message that no assertion will accept, and the run
+// carries on to the end with one honest FAIL on the line that caught it.
+const overDrawn = { stop_reason: 'end_turn', content: [{ type: 'text', text: '<<UNSCRIPTED EXTRA TURN>>' }] };
 const askEnv = new Function('carryTurn', 'console',
   `${ASK_LIFTED}\n return { ask, turnRequest, extractText };`)(
-  async (e2, turn) => { carried.push(turn); return finals.shift(); },
+  async (e2, turn) => { carried.push(turn); return finals.length ? finals.shift() : overDrawn; },
   { warn: () => {}, error: () => {} },
 );
 const { ask: realAsk, turnRequest, extractText } = askEnv;

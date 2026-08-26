@@ -185,12 +185,35 @@ check('AB2 Hands-Off says he does the legwork, in those words',
   /I do the legwork/.test(ABOUT));
 check('AB3 and that he writes appeals when a doctor will not cooperate',
   /If a doctor will not cooperate/.test(ABOUT) && /I write the appeal/.test(ABOUT));
+// WHY THIS CHECK CHANGED (2026-08-26, with the client-page visual pass).
+// It used to end in /addAbout\(/ against case.js. That matched an ALIAS -
+// `const addAbout = addAboutButton` - and so it was really only proving that
+// a particular short name still appeared in the file. The visual pass rebuilt
+// the four enhancement cards from a table and dropped the alias, so the old
+// line went red while every About button on the page still worked.
+//
+// The check is not deleted, it is aimed at the thing that actually matters:
+// every enhancement slot must name an About sheet, that name must be a sheet
+// that EXISTS, and the wiring call must still be made. That is a stronger
+// assertion than the old one - a typo'd or missing `about:` key now fails
+// here instead of shipping a button that opens nothing.
 check('AB4 the About buttons are wired on the landing page and every enhancement card',
   (() => {
     const idx = readFileSync(`${ROOT}/public/index.html`, 'utf8');
-    return /data-about="case"/.test(idx) && /data-about="handsOff"/.test(idx)
-      && /data-about="chat"/.test(idx) && /wireAboutButtons/.test(idx)
-      && /addAbout\(/.test(CASE);
+    const onLanding = /data-about="case"/.test(idx) && /data-about="handsOff"/.test(idx)
+      && /data-about="chat"/.test(idx) && /wireAboutButtons/.test(idx);
+    // Every slot in the enhancement table names a sheet, and every named
+    // sheet is one the About module actually carries.
+    const table = CASE.slice(CASE.indexOf('const ADDONS = ['));
+    const named = [...table.slice(0, table.indexOf('];')).matchAll(/about:\s*'([^']+)'/g)]
+      .map((m) => m[1]);
+    const wired = named.length === 4 && named.every((k) => SERVICE_ABOUT[k]);
+    // Anchored on the CALL, table lookup and all. An earlier draft of this
+    // line said /addAboutButton\(host,/ and passed against a renamed call
+    // site, because that also matches the function's own DECLARATION on the
+    // line `function addAboutButton(host, id)`. It was reading the definition
+    // and reporting the wiring. `ADDONS.find` cannot appear in a declaration.
+    return onLanding && wired && /addAboutButton\(host, ADDONS\.find/.test(CASE);
   })());
 check('AB5 the readiness checklist is DERIVED on both sides, never stored',
   /export function handsOffReadiness/.test(READY)
