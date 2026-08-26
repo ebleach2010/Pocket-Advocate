@@ -137,24 +137,25 @@
       <path d="M33 34v18M24 43h18" stroke="#37E1FF" stroke-width="3.4" stroke-linecap="round"/>
       <g fill="#A97BFF"><circle cx="104" cy="26" r="1.4"/><circle cx="112" cy="46" r="1.1"/><circle cx="98" cy="76" r="1.2"/></g>
     </svg>
-    <div class="hero-eyebrow">PATIENT ADVOCACY</div>
-    <h1>Go into your next appointment with a plan.</h1>
-    <p class="hero-sub">I review your labs, imaging, records, and history, then help you sort out what deserves attention, what questions to ask next, and how to present the case clearly to your care team.</p>
-    <p class="hero-cred">I'm a professional patient advocate with 5 years' worth of boots on the ground experience, and an autoimmune encephalitis survivor. I know what it is like to have a complicated case that does not fit neatly into a box. Board certification (BCPA) is in progress.</p>
+    <div class="stack">
+      <div class="hero-eyebrow eyebrow">PATIENT ADVOCACY</div>
+      <h1>Go into your next appointment with a plan.</h1>
+      <p class="hero-sub measure">I review your labs, imaging, records, and history, then help you sort out what deserves attention, what questions to ask next, and how to present the case clearly to your care team.</p>
+      <p class="hero-cred measure">I'm a professional patient advocate with 5 years' worth of boots on the ground experience, and an autoimmune encephalitis survivor. I know what it is like to have a complicated case that does not fit neatly into a box.</p>
+    </div>
     <div class="acts">
       <!-- Eric, 2026-08-21: two solid buttons, equal weight, neither one
            fading into the page. Eric, 2026-08-25: they were flat rectangles
            with nothing to look at. Now each carries its own icon and a
-           chevron, so the pair reads as two doors rather than two labels -
-           and the row is a full-width card, which is what a thumb aims at. -->
-      <a class="act act-c pulse" href="/book.html">
+           chevron - and the row is a full-width card, which is what a thumb
+           aims at. 2026-08-26: ONE door, not two. The chat line is still
+           sold, three screens down under "What I do" and on the services
+           page; a hero with two equal buttons was the "confusing" half of
+           Eric's complaint, and the second one was taking the weight off
+           the first. -->
+      <a class="act act-c pulse cta" href="/book.html">
         <span class="act-ico"><svg class="ico" aria-hidden="true"><use href="#i-brief"/></svg></span>
         <span class="act-label">Book a case, <span data-rate="case">$1,200</span></span>
-        <svg class="ico act-chev" aria-hidden="true"><use href="#i-chev"/></svg>
-      </a>
-      <a class="act act-m" href="/subscribe.html">
-        <span class="act-ico"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg></span>
-        <span class="act-label">24/7 Priority Chat, <span data-rate="sub">$50</span>/mo</span>
         <svg class="ico act-chev" aria-hidden="true"><use href="#i-chev"/></svg>
       </a>
     </div>
@@ -177,35 +178,17 @@
     <li><svg class="ico" aria-hidden="true"><use href="#i-award"/></svg><span>BCPA<br>In Progress</span></li>
   </ul>
 
-  <section class="land-sec">
-    <h2>How it works</h2>
-    <ol class="hiw">
-      <li class="step-row">
-        <div class="step-card">
-          <span class="icon-chip"><svg class="ico" aria-hidden="true"><use href="#i-cal"/></svg></span>
-          <p class="step-text">Choose a time for a phone or video call and give me the basics about your case. Booking takes about two minutes.</p>
-        </div>
-      </li>
-      <li class="step-row">
-        <div class="step-card">
-          <span class="icon-chip"><svg class="ico" aria-hidden="true"><use href="#i-doc"/></svg></span>
-          <p class="step-text">Review one agreement covering the service, privacy, and recording. It is written to be read, not buried in legal language.</p>
-        </div>
-      </li>
-      <li class="step-row">
-        <div class="step-card">
-          <span class="icon-chip"><svg class="ico" aria-hidden="true"><use href="#i-cloud"/></svg></span>
-          <p class="step-text">Pay <span data-rate="case">$1,200</span>. Your case includes our call, review of the records you share, and a written report within 7 days. A follow-up session is <span data-rate="addon">$275</span> if you need one.</p>
-        </div>
-      </li>
-    </ol>
-    <p class="dim small"><a href="/services.html">What happens after you book, step by step</a></p>
-  </section>
+  <!-- "How it works" lived here as three step cards and was, word for word,
+       the same three steps as "How a case runs" on about.html. Two copies of
+       the same sequence on the two pages a stranger reads first is the
+       "long-winded" half of Eric's complaint; the copy is untouched and still
+       on about.html, and the step-by-step link below still lands on the page
+       that carries the detail. Not one word was rewritten. -->
 
   <section class="land-sec">
     <h2>What I do</h2>
-    <p class="dim">Three ways to work with me, each a flat price you see before
-      you pay. The full detail of what each one includes is on the services page.</p>
+    <p class="dim measure">Three ways to work with me, each a flat price you see before
+      you pay.</p>
     <div class="svc-grid">
       <a class="svc-card" href="/services.html">
         <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="#i-brief"/></svg></span>
@@ -229,29 +212,40 @@
         <span class="svc-go">What is included</span>
       </a>
     </div>
+    <p class="dim small"><a class="pill" href="/services.html">What happens after you book, step by step</a></p>
   </section>
 
   <section class="land-sec meet">
     <h2>Who you're hiring</h2>
     <div class="mission">
-      <p class="dim">I work with patients facing complicated neurological conditions
+      <p class="dim measure">I work with patients facing complicated neurological conditions
         across the US and Canada. I came to advocacy after living through autoimmune
         encephalitis myself. My mission statement is simply this:
         <strong>earlier diagnosis and treatment leads to better outcome.</strong></p>
     </div>
+    <!-- One way out of this section. "Watch on YouTube" is still in the site
+         footer on every page and has its own section on about.html; sitting
+         it beside "More about me" made two links of equal weight and neither
+         one read as the next step. -->
     <div class="actions">
       <a class="btn ghost" href="/about.html">More about me</a>
-      <a class="btn quiet" href="https://youtube.com/@the_broscientist" rel="noopener" target="_blank">Watch on YouTube</a>
     </div>
   </section>
 
   <section class="land-sec">
     <h2>What clients say</h2>
-    <p class="reviews-label">★ GOOGLE REVIEWS</p>
+    <p class="reviews-label eyebrow">★ GOOGLE REVIEWS</p>
     <div class="reviews-strip"><div class="reviews-track" id="reviews-track"></div></div>
-    <p class="dim small"><a href="/reviews.html">Read all reviews</a></p>
+    <p class="dim small"><a class="pill" href="/reviews.html">Read all reviews</a></p>
   </section>
 
+  <hr class="divide">
+
+  <!-- The closing ends on ONE action. The phone number is in the footer
+       directly below and has its own section on the contact page, and the
+       disclaimer that used to be repeated here is printed word for word in
+       that same footer, a few lines further down the page. Both are still
+       on this page; neither is on it twice any more. -->
   <section class="land-sec closing">
     <p class="close-line">
       <span class="close-ico"><svg class="ico" aria-hidden="true"><use href="#i-heart"/></svg></span>
@@ -261,10 +255,8 @@
     </p>
     <h2>Ready when you are.</h2>
     <div class="actions">
-      <a class="btn" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
-      <span id="call-slot"></span>
+      <a class="btn glow cta" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
     </div>
-    <p class="fine"><strong>Pocket Advocate provides patient advocacy, not medical care.</strong> I do not diagnose, treat, or prescribe, and this service does not replace your care team. If you are having a medical emergency, call 911. Pocket Advocate currently serves clients in the United States and Canada.</p>
   </section>
 </main>
 
@@ -299,7 +291,7 @@
   // Reviews strip: the same embed as reviews.html (same imports, container,
   // and init call). Kept in its own module with no Firebase dependency, so
   // the reviews render even if the auth module fails to load.
-  import { GOOGLE_REVIEWS_URL, BUSINESS_PHONE, REVIEWS, loadReviews } from '/js/reviews-config.js';
+  import { GOOGLE_REVIEWS_URL, REVIEWS, loadReviews } from '/js/reviews-config.js';
   import { enhanceReviewsStrip } from '/js/reviews-strip.js';
 
   const esc = (s) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -321,11 +313,6 @@
   };
   paint(REVIEWS);
   loadReviews().then((all) => { if (all.length !== REVIEWS.length) paint(all); });
-
-  // Footer call button, same guard as about.html: only when a number is set.
-  if (BUSINESS_PHONE)
-    document.getElementById('call-slot').outerHTML =
-      `<a class="btn quiet" href="tel:${BUSINESS_PHONE}">📞 Call me</a>`;
 </script>
 <script type="module">
   // THE EXPLAINER FIRST, AND WITHOUT AUTH. These two lines used to sit below a

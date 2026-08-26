@@ -48,14 +48,20 @@
   </div>
 </header>
 <main>
-  <h1>What clients say</h1>
-  <p class="reviews-label" id="reviews-label">★ GOOGLE REVIEWS</p>
-  <div class="reviews-strip"><div class="reviews-track" id="reviews-track"></div></div>
+  <!-- The draggable teaser strip used to sit here, printing the same reviews
+       in clamped form directly above the full ones. Same words twice on one
+       screen is what made this page read as cramped; the strip is still the
+       teaser it was built to be, on the landing page. Nothing a reader could
+       see here is gone: every review below is uncropped. -->
+  <div class="stack">
+    <p class="eyebrow" id="reviews-label">★ GOOGLE REVIEWS</p>
+    <h1>What clients say</h1>
+  </div>
 
-  <div id="reviews-full" style="margin-top:1.4rem;"></div>
+  <div id="reviews-full" class="stack"></div>
   <p class="dim small" id="google-link-slot"></p>
 
-  <div class="actions"><a class="btn" href="/book.html">Book a case →</a></div>
+  <div class="actions"><a class="btn glow cta" href="/book.html">Book a case →</a></div>
   <footer class="footer-disclaimer">
     Pocket Advocate is a patient-advocacy service, offered to residents of the United States and Canada. It does not provide diagnosis, treatment, prescriptions, or medical advice, and does not create a doctor-patient relationship. If this is an emergency, call 911.
   </footer>
@@ -84,28 +90,16 @@
 
 <script type="module">
   import { GOOGLE_REVIEWS_URL, BUSINESS_PHONE, REVIEWS, loadReviews } from '/js/reviews-config.js';
-  import { enhanceReviewsStrip } from '/js/reviews-strip.js';
   // Nav auth state rides the Firebase CDN — load it soft so the reviews
   // themselves never depend on it.
   import('/js/auth.js').then((m) => m.hydrateNav()).catch(() => {});
 
   const esc = (s) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
-  // the draggable strip (clamped teasers)
-  const card = (r) => `
-    <${GOOGLE_REVIEWS_URL ? `a href="${GOOGLE_REVIEWS_URL}" target="_blank" rel="noopener"` : 'div'} class="review">
-      <span class="stars">${'★'.repeat(r.stars)}</span>
-      ${r.text ? `<span class="rv-text">${esc(r.text)}</span>` : ''}
-      <span class="rv-name">${esc(r.name)}</span>
-    </${GOOGLE_REVIEWS_URL ? 'a' : 'div'}>`;
+  // Painting twice is still safe: the Google baseline shows immediately and
+  // the fuller list swaps in when it lands, rather than the page sitting
+  // empty on a network call.
   const paint = (list) => {
-    const cards = list.map(card).join('');
-    document.getElementById('reviews-track').innerHTML = cards + cards;
-    // enhanceReviewsStrip tears its previous self down, so painting twice is
-    // safe: the Google baseline shows immediately and the fuller list swaps in
-    // when it lands, rather than the page sitting empty on a network call.
-    enhanceReviewsStrip(document.querySelector('.reviews-strip'));
-
     // the full, uncropped reviews
     document.getElementById('reviews-full').innerHTML = list.map((r) => `
       <div class="panel review-full">
