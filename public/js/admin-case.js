@@ -3341,14 +3341,31 @@ async function paintAuthorityStatus(pane) {
         try {
           const idToken = await user.getIdToken();
           const res = await fetch(
-            `/api/authority?caseId=${encodeURIComponent(id)}&id=${encodeURIComponent(item.id)}`,
+            // `caseId`, the binding this module actually has (:145). It said
+            // `id`, which is declared nowhere, so this threw a ReferenceError
+            // BEFORE the fetch was made, every single time. The catch below
+            // swallowed it under a comment about printing without the mark,
+            // so every signed authority form printed with a blank signature
+            // and nothing anywhere said so. The sibling call at :3287 had it
+            // right the whole time.
+            `/api/authority?caseId=${encodeURIComponent(caseId)}&id=${encodeURIComponent(item.id)}`,
             { headers: { authorization: `Bearer ${idToken}` } },
           );
           if (res.ok) {
             const found = ((await res.json()).items || []).find((i) => i.id === item.id);
             if (found?.signatureImage) item = found;
           }
-        } catch { /* the form still prints, just without the mark */ }
+        } catch {
+          // It still prints, because a form without the mark beats no form at
+          // all when he is stood at a clinic desk. But it SAYS so now: a
+          // silent fallback is exactly how the ReferenceError above survived.
+          //
+          // An alert rather than a panel line, deliberately. This one is
+          // act-now and he is about to be looking at a print dialog, not at
+          // this card, so it has to interrupt or it is not read at all.
+          alert('Printing without the signature: it could not be fetched just now.\n\n'
+            + 'The signature is still on file. Try again in a moment if the clinic needs it on the page.');
+        }
       }
       printAuthorityDoc(item);
     });
@@ -3407,8 +3424,15 @@ function checkInState(c) {
   const future = all.map((x) => toDate(x.start).getTime()).filter((t) => t > now).sort((a, b) => a - b);
   if (future.length) return { next: new Date(future[0]), due: false };
   const past = all.map((x) => toDate(x.start).getTime()).filter((t) => t <= now);
+  // THE MONTH IS THE FLOOR, the same as checkInDue on the shelf. A cadence the
+  // tier promises cannot be overdue before the tier has begun, and the anchor
+  // below is the advocacy call, which on a hand-opened case is usually weeks
+  // old. Kept in step with public/js/admin.js:392 on purpose: two copies of
+  // one rule, and tools/suites/checkins.mjs runs both against the same cases.
+  const started = c.fullAccessAt ? toDate(c.fullAccessAt).getTime() : 0;
+  if (started > now) return { next: null, due: false, days: 0 };
   const first = c.appointment?.start ? toDate(c.appointment.start).getTime() : 0;
-  const last = Math.max(first, ...past, 0);
+  const last = Math.max(first, started, ...past, 0);
   if (!last || last > now) return { next: null, due: false };
   const days = Math.floor((now - last) / 86_400_000);
   return { next: null, due: days >= CHECKIN_DAYS && !c.hold?.pausedAt, days };

@@ -301,6 +301,79 @@ check('W7 the landing sells with his phrase, and the value math is on the servic
     return hisPhrase && valueMath && onLanding;
   })());
 
+// ---- X1-X6: a cadence cannot be overdue before the month begins ---------
+// Eric, 2026-08-26, opening Hands-Off by hand for a client whose month starts
+// later: "This one is going to be delayed slightly."
+//
+// Both copies of the cadence anchored on c.appointment.start, the original
+// advocacy call, which on a hand-opened case is usually weeks old. So the
+// moment he pressed the button, the shelf painted CHECK-IN DUE and pulled the
+// case into the overview list, and it stayed there for the entire wait,
+// telling him to book a check-in for an engagement that had not started.
+//
+// LIFTED AND RUN, both copies, against the same cases. The rule lives in two
+// files and a regex cannot tell whether they agree.
+{
+  const TO_DATE = 'function toDate(v){ if(!v) return new Date(0); if(v.toDate) return v.toDate(); return new Date(v); }';
+  const lift = (src, sig) => {
+    const m = src.match(new RegExp(`${sig}[\\s\\S]*?\\n\\}`));
+    return m ? m[0] : '';
+  };
+  let shelf = null, chart = null;
+  try {
+    shelf = new Function(`${TO_DATE}\n${lift(SHELF, 'function checkInDue\\(c\\) \\{')}\nreturn checkInDue;`)();
+    chart = new Function(`${TO_DATE}\nconst CHECKIN_DAYS = 14;\n${lift(ADMIN, 'function checkInState\\(c\\) \\{')}\nreturn checkInState;`)();
+  } catch (e) { /* W1 reports it */ }
+  check('X1 both copies of the cadence lift and run',
+    typeof shelf === 'function' && typeof chart === 'function');
+
+  if (shelf && chart) {
+    const DAY = 86_400_000;
+    const base = {
+      fullAccess: true, status: 'awaiting_report', checkIns: [],
+      appointment: { start: new Date(Date.now() - 20 * DAY) },
+    };
+    // The case he is actually opening: agreed today, month starts in a
+    // fortnight, one advocacy call three weeks back.
+    const notYet = { ...base, fullAccessAt: new Date(Date.now() + 14 * DAY) };
+    check('X2 the shelf does not flag a month that has not started',
+      shelf(notYet) === false, String(shelf(notYet)));
+    check('X3 and neither does the chart',
+      chart(notYet)?.due === false, JSON.stringify(chart(notYet)));
+
+    // Once it HAS started and run two weeks with no check-in, it is due, or
+    // the fix would have turned the flag off altogether.
+    const running = { ...base, fullAccessAt: new Date(Date.now() - 20 * DAY) };
+    check('X4 a month that has run a fortnight with no check-in IS due',
+      shelf(running) === true, String(shelf(running)));
+    check('X5 and the two copies agree about that',
+      chart(running)?.due === true, JSON.stringify(chart(running)));
+
+    // A booked check-in in the future still silences it, on both.
+    const booked = { ...running, checkIns: [{ start: new Date(Date.now() + 3 * DAY) }] };
+    check('X6 a booked check-in silences both copies',
+      shelf(booked) === false && chart(booked)?.due === false,
+      `${shelf(booked)} / ${JSON.stringify(chart(booked))}`);
+  }
+}
+
+// ---- X7: the signed form prints WITH the signature ----------------------
+// public/js/admin-case.js asked the Worker for the ink with
+// `encodeURIComponent(id)`. `id` is declared nowhere in that module; the
+// binding is `caseId` (:145). It is an ES module, so that threw a
+// ReferenceError before the fetch was ever made, EVERY time, and the catch
+// below it swallowed the throw under a comment about printing without the
+// mark. So every signed authority form printed with a blank signature and
+// nothing said so. The sibling call fifty lines up had it right all along.
+{
+  check('X7 the print handler asks for the ink with a binding that exists',
+    !/caseId=\$\{encodeURIComponent\(id\)\}/.test(ADMIN)
+    && /caseId=\$\{encodeURIComponent\(caseId\)\}&id=\$\{encodeURIComponent\(item\.id\)\}/.test(ADMIN));
+  // And it no longer fails silently, which is the half that let it live.
+  check('X7b and a failure to fetch the ink is said out loud, not swallowed',
+    /Printing without the signature/.test(ADMIN));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 process.exit(failed.length ? 1 : 0);

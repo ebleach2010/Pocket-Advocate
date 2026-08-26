@@ -395,8 +395,16 @@ function checkInDue(c) {
   const all = Array.isArray(c.checkIns) ? c.checkIns : [];
   if (all.some((x) => toDate(x.start).getTime() > now)) return false;
   const past = all.map((x) => toDate(x.start).getTime()).filter((t) => t <= now);
+  // THE MONTH IS THE FLOOR. The two-week cadence is a promise the TIER makes,
+  // so it cannot start running before the tier does. The anchor here is the
+  // advocacy call, which on a case opened by hand is usually weeks old: with a
+  // month set to begin later, this lit CHECK-IN DUE the instant he pressed the
+  // button and kept the case in the overview list for the whole wait, telling
+  // him to book a check-in for an engagement that had not started.
+  const started = c.fullAccessAt ? toDate(c.fullAccessAt).getTime() : 0;
+  if (started > now) return false;
   const first = c.appointment?.start ? toDate(c.appointment.start).getTime() : 0;
-  const last = Math.max(first, ...past, 0);
+  const last = Math.max(first, started, ...past, 0);
   if (!last || last > now) return false;
   return now - last >= 14 * 86_400_000;
 }
