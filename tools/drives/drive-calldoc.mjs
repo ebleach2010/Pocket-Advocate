@@ -241,6 +241,83 @@ await page.evaluate(() => document.querySelector('#pa-cd-revise [data-x]')?.clic
 await page.waitForTimeout(300);
 ok('discard is offered', await page.evaluate(() => !!document.querySelector('[data-cd-discard]')));
 
+// --- THE PRINTED DOCUMENT NEEDS A WAY OUT ----------------------------------
+// Eric, 2026-08-26: "when I open the prep document there's no way to exit
+// out." He runs this as a Home Screen app, where the print window has no
+// address bar and no back arrow, so once the print sheet is dismissed the
+// document owned the screen until he force-quit. Both features print through
+// the one function, so this covers the call notes too.
+console.log('\n--- the print window has to let him out ---');
+const [sheet] = await Promise.all([
+  page.waitForEvent('popup', { timeout: 15000 }),
+  page.evaluate(() => document.querySelector('[data-cd-print]')?.click()),
+]);
+// Errors inside the print window count too: the exit is wired by a script in
+// that document, and a throw there is exactly the failure this guards.
+sheet.on('pageerror', (e) => errs.push(`print window: ${e.message}`));
+// Past the 350ms auto-print beat, so this is the state he is actually left in.
+await sheet.waitForTimeout(1500);
+ok('the print window is still open after it prints', !sheet.isClosed());
+const exit = await sheet.evaluate(() => {
+  const btn = document.querySelector('[data-pa-close]');
+  const r = btn?.getBoundingClientRect();
+  return { found: !!btn, label: (btn?.textContent || '').trim(),
+    top: r?.top ?? -1, h: r?.height ?? 0, w: r?.width ?? 0,
+    doc: !!document.querySelector('pre'), scroll: window.scrollY };
+});
+ok('there is a close control in it', exit.found, JSON.stringify(exit));
+ok('and it says so in words, not just a glyph', /close/i.test(exit.label), exit.label);
+ok('it is reachable without scrolling', exit.found && exit.top >= 0 && exit.top < 700,
+  `top ${exit.top}`);
+ok('and it is a 44px tap target at least', exit.h >= 44 && exit.w >= 44,
+  `${Math.round(exit.w)}x${Math.round(exit.h)}`);
+ok('playwright agrees it is visible', await sheet.locator('[data-pa-close]').isVisible());
+
+// The saved PDF and the paper copy must carry no button. Ask the page what it
+// lays out under print media rather than trusting the stylesheet by eye, and
+// count boxes rather than reading display: a button inside a display:none bar
+// still reports its own inline-block, so only the rects say what is on paper.
+await sheet.emulateMedia({ media: 'print' });
+const onPaper = await sheet.evaluate(() => {
+  const bar = document.getElementById('pa-exit');
+  const btn = document.querySelector('[data-pa-close]');
+  const pre = document.querySelector('pre');
+  // Reported, not thrown: a missing control has to read as a FAIL line, not
+  // as a stack trace that takes the rest of the drive down with it.
+  return { bar: bar ? getComputedStyle(bar).display : 'no bar',
+    btnBoxes: btn ? btn.getClientRects().length : -1,
+    docBoxes: pre ? pre.getClientRects().length : 0 };
+});
+await sheet.emulateMedia({ media: 'screen' });
+ok('the control does NOT print', onPaper.bar === 'none' && onPaper.btnBoxes === 0,
+  JSON.stringify(onPaper));
+ok('but the document still does', onPaper.docBoxes > 0, `${onPaper.docBoxes} boxes`);
+
+// window.close() on a script-opened window usually works. When it does not,
+// he must not be left staring at a document he cannot leave. Stub it out and
+// prove the fallback: a plain page, and the control still under his thumb.
+const stuck = await sheet.evaluate(async () => {
+  Object.defineProperty(window, 'close', { value() {}, configurable: true });
+  document.querySelector('[data-pa-close]')?.click();
+  await new Promise((r) => setTimeout(r, 1200));
+  return { text: document.body.textContent.trim(),
+    stillThere: !!document.querySelector('[data-pa-close]') };
+});
+ok('and if the window refuses to close he is told he can leave',
+  /can close this tab/i.test(stuck.text), stuck.text.slice(0, 80));
+ok('with the control still on screen to try again', stuck.stillThere);
+
+// Now the real thing, on a fresh window: a tap closes it.
+const [sheet2] = await Promise.all([
+  page.waitForEvent('popup', { timeout: 15000 }),
+  page.evaluate(() => document.querySelector('[data-cd-print]')?.click()),
+]);
+await sheet2.waitForTimeout(1200);
+await sheet2.locator('[data-pa-close]').click().catch(() => {});
+await page.waitForTimeout(1200);
+ok('tapping close actually closes the print window', sheet2.isClosed());
+if (!sheet.isClosed()) await sheet.close();
+
 console.log('\n--- and a client can never see it ---');
 const client = await ctx.newPage();
 await client.goto(`${P}/case.html?demo=1`, {waitUntil:'networkidle'});

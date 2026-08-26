@@ -2793,8 +2793,60 @@ function printCallNotes(text, title = 'Call notes') {
         display: flex; align-items: center; justify-content: center;
         font-size: 26px; color: #aaa; }
       .viz figcaption { text-align: center; font-style: italic; color: #444;
-        font-size: 11px; margin-top: .35em; }</style>
-    </head><body>${blocks.join('')}</body></html>`);
+        font-size: 11px; margin-top: .35em; }
+      /* AN EXIT. Eric, 2026-08-26: "when I open the prep document there's no
+         way to exit out." On the Home Screen app this window carries no
+         browser chrome at all: no address bar, no back arrow. Once the print
+         sheet is dismissed the document owns the screen and the only way out
+         was force-quitting. The bar is sticky so it is still under his thumb
+         at the moment he is stuck, and it never prints. */
+      #pa-exit { position: sticky; top: 0; z-index: 9; background: #fff;
+        border-bottom: 1px solid #ddd; padding: 6px 0 8px; margin: 0 0 .9em; }
+      #pa-exit button { min-height: 44px; min-width: 44px; padding: 0 20px;
+        font: 600 16px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        color: #111; background: #f1f1f1; border: 1px solid #b5b5b5;
+        border-radius: 8px; cursor: pointer; -webkit-appearance: none; }
+      #pa-done { font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        color: #333; margin: 2.5em 0; }
+      @media print { #pa-exit, #pa-done { display: none !important; } }</style>
+    </head><body><div id="pa-exit"><button type="button" data-pa-close
+      aria-label="Close this document">&#10005; Close</button></div>${blocks.join('')}
+    <script>(function () {
+      try {
+        var bar = document.getElementById('pa-exit');
+        var btn = bar && bar.querySelector('[data-pa-close]');
+        if (!btn) return;
+        // Last resort, and it keeps the button: window.close() failing once
+        // will fail again, so leaving him a live control plus a plain page is
+        // better than a blank screen he still cannot read his way out of.
+        var plain = function () {
+          try {
+            var kids = [].slice.call(document.body.childNodes);
+            for (var i = 0; i < kids.length; i++) {
+              if (kids[i] !== bar) document.body.removeChild(kids[i]);
+            }
+            var p = document.createElement('p');
+            p.id = 'pa-done';
+            p.textContent = 'Done. You can close this tab.';
+            document.body.appendChild(p);
+          } catch (e) { /* nothing further this page can do */ }
+        };
+        var exit = function () {
+          try { window.close(); } catch (e) { /* the checks below still run */ }
+          setTimeout(function () {
+            if (window.closed) return;
+            try { if (history.length > 1) { history.back(); } } catch (e) { /* no history here */ }
+            setTimeout(function () { if (!window.closed) plain(); }, 400);
+          }, 300);
+        };
+        btn.addEventListener('click', exit);
+        // The moment he is stuck is the moment the print sheet closes, so put
+        // the exit back at the top of the screen right then.
+        window.addEventListener('afterprint', function () {
+          try { window.scrollTo(0, 0); btn.focus(); } catch (e) { /* a nicety */ }
+        });
+      } catch (e) { /* the document still reads without the control */ }
+    })();<\/script></body></html>`);
   win.document.close();
   setTimeout(() => win.print(), 350);
 }
