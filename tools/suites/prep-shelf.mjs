@@ -81,9 +81,24 @@ ck('P9 and it builds that path under this case, not a guessable one',
 // ---- the shelf is NOT folded into the client-facing listing --------------
 // listCaseFiles feeds the Uploads page, which mirrors what a client sees. If
 // prep ever appears in its folder list, his private documents surface there.
-const listBody = (ADMIN.match(/async function listCaseFiles\(\)[\s\S]*?\n}/) || [''])[0];
+//
+// The match was pinned to `listCaseFiles()` with an EMPTY argument list, and
+// went red on 2026-08-26 when the function correctly grew an options argument
+// (`{ onProgress }`, so a slow listing can say how far along it is instead of
+// looking hung). A signature it could not match made `listBody` the empty
+// string, which the length guard below reported as a failure. That is the
+// right outcome for a check that has lost sight of its target, and the reason
+// the guard is there.
+//
+// The RULE is unchanged and the check is unchanged: this listing must never
+// walk prep/. Only the way the body is LOCATED is looser, so the next honest
+// signature change does not read as a privacy regression. It still fails
+// loudly if the function is renamed or removed, and the detail now says which
+// of the two things went wrong.
+const listBody = (ADMIN.match(/async function listCaseFiles\b[\s\S]*?\n}/) || [''])[0];
 ck('P10 the client-facing file listing never walks prep/',
-  listBody.length > 0 && !/prep/.test(listBody), 'prep found in listCaseFiles');
+  listBody.length > 0 && !/prep/.test(listBody),
+  listBody.length ? 'prep found in listCaseFiles' : 'could not find listCaseFiles at all');
 ck('P11 and the private listing is a separate function',
   /async function listPrep\(\)/.test(ADMIN));
 

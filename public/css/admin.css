@@ -45,25 +45,203 @@
   font-size: 1.05rem; line-height: 1; cursor: pointer;
 }
 
+/* ------------------------------------------------------- the case workspace
+   Everything from here to the end of this block is the admin case folder, and
+   admin.css is only ever served on an admin page, so a bare selector here can
+   never reach a client screen.
+
+   The spacing scale is the brief's, by token, with the brief's own value as
+   the fallback so this file is correct whether or not the system sheet has
+   landed yet. No arbitrary pixels. */
+:root {
+  --adm-1: var(--s-1, .35rem);
+  --adm-2: var(--s-2, .6rem);
+  --adm-3: var(--s-3, .9rem);
+  --adm-4: var(--s-4, 1.35rem);
+  --adm-5: var(--s-5, 2rem);
+  /* The group row's own height, in one place: the tab strip's padding and its
+     compensating pull are both derived from it, and the two have to agree to
+     the pixel or the two rows overlap. */
+  --adm-grp-h: 3.6rem;
+  --adm-nav-band: calc(var(--adm-grp-h) + var(--demo-bar-h, 0px));
+}
+
 /* Schedule a session, Meeting link, Milestones, Their review, Close case: the
    whole case toolbar, and until now five unstyled <summary> rows 28px tall.
    They are what he reaches for on every case. */
 .mgmt {
   border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
-  margin-bottom: .5rem;
+  margin-bottom: var(--adm-2);
 }
 .mgmt > summary {
-  display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--adm-2);
   cursor: pointer; list-style: none; padding: .75rem .9rem; min-height: 44px;
-  font-weight: 600; color: var(--ink); font-size: .92rem;
+  font-weight: 600; color: var(--ink); font-size: 1rem;
 }
 .mgmt > summary::-webkit-details-marker { display: none; }
 .mgmt > summary::after { content: '\25B8'; color: var(--cyan); flex: none; font-size: .75rem; }
 .mgmt[open] > summary { color: var(--cyan); border-bottom: 1px solid var(--line); }
 .mgmt[open] > summary::after { transform: rotate(90deg); }
-.mgmt-body { padding: .75rem .9rem .9rem; }
+.mgmt-body { padding: var(--adm-3) .9rem var(--adm-4); }
 /* Close case is the one that cannot be taken back. */
 .mgmt[data-k="close"] > summary { color: var(--soft); }
+
+/* The facts panel at the top of Overview: label column, value column. Air
+   between the rows rather than a rule, and the label back on the type scale. */
+.facts {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--adm-4); row-gap: var(--adm-2); align-items: baseline;
+  margin: 0 0 var(--adm-4); padding: var(--adm-3) var(--adm-3) var(--adm-4);
+}
+.facts .fact-k {
+  font: 600 var(--t-micro, .78rem)/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: .1em; color: var(--dim); white-space: nowrap;
+}
+.facts .fact-v {
+  font-size: var(--t-small, .9rem); font-weight: 600; line-height: 1.5;
+  min-width: 0; overflow-wrap: anywhere;
+}
+
+/* Scheduling is a column of radio choices, and a native radio is 20px. The
+   ROW is what he aims at, so the row is the target. */
+#sched-modes > label { display: flex; align-items: center; gap: var(--adm-1); min-height: 44px; }
+#sched-modes > label > input { flex: none; width: 20px; height: 20px; }
+
+/* The way back to the shelf, which was a 19px line of text. */
+main > p > a.small[href="/admin.html"] {
+  display: inline-flex; align-items: center; min-height: 44px;
+}
+
+/* WHEN HE REACHES FOR IT, over the rows he reaches for then. Six identical
+   rows in a column is a list with no shape; three short lists with a moment
+   named over each is a map. The heading is the hierarchy, so the rows
+   themselves need no colour to separate them. */
+.mgmt-when {
+  margin: var(--adm-5) 0 var(--adm-2);
+  color: var(--dim);
+}
+.mgmt-when:first-of-type { margin-top: var(--adm-3); }
+/* The one heading with someone else's clock attached to it. */
+.mgmt-when.hot { color: var(--orange); }
+/* Ending a case is not a peer of booking a time. It recedes, and it stays
+   exactly where it has always been, at the bottom. */
+.mgmt-grave { border-color: color-mix(in srgb, var(--line) 60%, transparent); }
+.mgmt-grave > summary { color: var(--soft); font-weight: 500; }
+
+/* --- it said nothing when it saved ----------------------------------------
+   Eric, 2026-08-26: "I put meeting link in but it didn't visually confirm
+   that it saved. So idk if my client is seeing it."
+
+   Loud enough to be unmissable at a glance, quiet enough that it is not read
+   as an error. Green, because in this workspace green already means one
+   thing and one thing only: this is live for the client. */
+.saved-note {
+  display: flex; align-items: flex-start; gap: var(--adm-2);
+  margin: var(--adm-3) 0 0; padding: var(--adm-2) var(--adm-3);
+  font-size: var(--t-small, .9rem); line-height: 1.5;
+  border-radius: 10px;
+  border: 1px solid var(--green);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+  color: var(--ink);
+}
+/* The tick as a ::before, so a line set with textContent gets it too and no
+   caller has to remember to build the mark itself. */
+.saved-note::before { flex: none; font-weight: 700; line-height: 1.5; }
+.saved-note.ok::before { content: '\2713'; color: var(--green); }
+.saved-note.warn {
+  border-color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 12%, transparent);
+}
+.saved-note.warn::before { content: '\0021'; color: var(--orange); }
+.saved-note[hidden] { display: none; }
+.saved-note input { display: block; width: 100%; margin-top: var(--adm-1); min-height: 44px; }
+
+/* --- who this is, and whether the clock is running ------------------------
+   Sits directly under the tab strip, which is where folder.js parks the
+   viewport on every page flip, so it is the first thing in view on arrival
+   and after every tab tap. It used to sit ABOVE the strip and was therefore
+   never on screen at all. */
+.case-head {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--adm-2);
+  margin: 0 0 var(--adm-4);
+  padding-bottom: var(--adm-2);
+  border-bottom: 1px solid var(--line);
+}
+.case-who {
+  display: flex; align-items: baseline; flex-wrap: wrap;
+  gap: var(--adm-2); flex: 1 1 10rem; min-width: 0;
+}
+.case-name {
+  font-size: var(--t-h2, 1.3rem); font-weight: 700; line-height: 1.2;
+  color: var(--ink); min-width: 0; overflow-wrap: anywhere;
+}
+.case-head .working-line { flex: 1 1 100%; margin: 0; }
+
+/* THE SWITCH HE CIRCLED IN RED. It has been in this spot the whole time; what
+   it lacked was being on screen and looking like a switch rather than a
+   readout. It is now a full-height control with the state in a word, and it
+   never scrolls out of reach on arrival. */
+.work-head {
+  flex: none; min-height: 44px;
+  padding: 0 var(--adm-3);
+  font-weight: 700; font-size: .92rem; white-space: nowrap;
+}
+
+/* --- the two nav rows -----------------------------------------------------
+   THE GROUP ROW IS THE MAP OF THIS WORKSPACE and it used to leave the screen
+   the moment he used it: folder.js docks the PAGE row against the header on
+   every flip, and the group row lives above it. So the group row sticks under
+   the header, and the page row carries a transparent band the exact height of
+   the group row, pulled back by the same amount. folder.js measures the page
+   row's border box, so its docking maths is untouched and the two rows land
+   flush, one under the other, every time. */
+.case-folder .folder-groups {
+  /* Under the header, wherever the header actually is. The demo strip pushes
+     it down (site.css: body.has-demo-bar .bar { top: var(--demo-bar-h) }), and
+     both numbers are published by the code that owns them, so this is the sum
+     rather than a guess. Unset off the demo, where it reads as zero. */
+  position: sticky; top: calc(var(--demo-bar-h, 0px) + var(--bar-h, 3rem)); z-index: 5;
+  height: var(--adm-grp-h);
+  margin: 0; padding: var(--adm-1) 0;
+  background: var(--bar); backdrop-filter: blur(8px);
+}
+.case-folder .folder-groups .fgrp { min-height: 44px; }
+.case-folder .folder-groups.many .fgrp { gap: .1rem; padding: .3rem .25rem; }
+.case-folder .folder-tabs {
+  /* The band. folder.js docks this row's BORDER BOX against --bar-h, and knows
+     nothing about the demo strip or about the group row above it, so the row
+     carries a transparent band of exactly the height of both and is pulled
+     back by the same amount. Content lands flush under the group row when
+     docked, and does not move at all when it is not. */
+  margin: calc(-1 * var(--adm-nav-band)) 0 var(--adm-4);
+  padding: var(--adm-nav-band) .1rem 0;
+  background: none; backdrop-filter: none;
+  /* Never a scroll trap: one group's four tabs share the row, so there is
+     nothing to scroll sideways to and nothing hiding off the right edge. */
+  overflow-x: visible;
+  /* The band is empty space that overlaps whatever is above the strip, so it
+     must not swallow a tap meant for that. Clicks still reach folder.js: the
+     tabs themselves take pointer events and the event bubbles to the row. */
+  pointer-events: none;
+}
+.case-folder .folder-tabs > a { pointer-events: auto; min-height: 44px; padding: .4rem .55rem; }
+
+/* --- numbered steps on the call document ---------------------------------
+   Four stacked file pickers and a tick, all the same size, read as one wall.
+   Numbering them costs nothing, hides nothing, and turns the wall into three
+   things to do in order. */
+.cd-step { margin: var(--adm-4) 0 var(--adm-1); color: var(--cyan); }
+.cd-step:first-of-type { margin-top: var(--adm-2); }
+
+/* The system sheet owns .eyebrow, and admin.html does not load the system
+   sheet: it links site.css and this file only. So the class is defined here
+   to the same recipe rather than invented, and cannot collide with the
+   system's copy because the two are never on the same page. */
+.eyebrow {
+  font-size: var(--t-micro, .78rem); font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase;
+}
 .pg-btn:disabled { opacity: .3; cursor: default; }
 .pg-count { font-size: .68rem; color: var(--dim); white-space: nowrap; }
 .advisor-page-body { margin-top: .35rem; }
@@ -108,22 +286,11 @@
   padding: .2rem .4rem; border-radius: 999px;
   color: var(--dim); border: 1px solid currentColor; opacity: .8;
 }
-.work-rate.under { color: #FFB454; opacity: 1; }
-
-/* The running total is a BUTTON: tapping it opens the add/subtract sheet
-   (Eric, 2026-08-25). It has to read as tappable without shouting - it sits
-   beside the start/stop control and must not compete with it - so it keeps
-   the quiet type of the label it replaced and earns a dotted underline. */
-.work-total-btn {
-  padding: .2rem .3rem; min-height: 0;
-  font-size: .84rem; font-weight: 400;
-  color: var(--dim); background: none; border: 0;
-  text-decoration: underline dotted;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-.work-total-btn:hover { color: var(--ink); }
-.work-total-btn.on { color: var(--cyan); }
+/* Was a raw #FFB454, which is a colour the paper and contrast schemes have no
+   answer for. --orange is the token for exactly this: a warning that is not
+   yet a failure. The duplicate .work-total-btn block that used to sit here is
+   gone; the live one is beside the sheet it opens, further down. */
+.work-rate.under { color: var(--orange); opacity: 1; }
 
 .gloss-item { display: flex; gap: .55rem; align-items: flex-start; margin: 0 0 .55rem; }
 .gloss-item input[type=checkbox] { width: 1.05rem; height: 1.05rem; margin-top: .15rem; flex: none; accent-color: var(--cyan); }
@@ -265,7 +432,9 @@
 }
 .uploads .file-review {
   flex: 0 0 auto; justify-self: end;
-  width: 40px; height: 40px; min-width: 0;
+  /* 44px, because this is the control that hands a file to the advisor and it
+     is the only thing on the row that is not text. */
+  width: 44px; height: 44px; min-width: 0;
   padding: 0; display: grid; place-items: center; font-size: 1.05rem;
 }
 
@@ -318,16 +487,26 @@
   /* Tapping a painted term opens the dictionary at that term. */
   cursor: pointer;
 }
-.tm-0 { color: #6FE3FF; }
-.tm-1 { color: #FF8FE0; }
-.tm-2 { color: #7BE8A8; }
-.tm-3 { color: #FFC978; }
-.tm-4 { color: #B9A6FF; }
-.tm-5 { color: #6FF0DC; }
-.tm-6 { color: #FF9E8A; }
-.tm-7 { color: #C6E36F; }
-.tm-8 { color: #8FB8FF; }
-.tm-9 { color: #FFA7C4; }
+/* TEN LITERAL HEXES USED TO LIVE HERE, and they were ten pale tints picked
+   for the dark schemes. On paper they are pale ink on cream: he could see
+   that a word was marked and could not read which word. Painted terms are on
+   the Read page, which is a page of this workspace, so this is a four-scheme
+   defect on my surface rather than someone else's.
+
+   The replacement is five scheme tokens and one derived variant of each,
+   which is ten distinguishable colours in every scheme and no literal
+   anywhere. The mix is toward --ink, so the second five stay legible on a
+   light ground as well as a dark one. */
+.tm-0 { color: var(--cyan); }
+.tm-1 { color: var(--magenta); }
+.tm-2 { color: var(--green); }
+.tm-3 { color: var(--gold); }
+.tm-4 { color: var(--blue, var(--cyan)); }
+.tm-5 { color: color-mix(in srgb, var(--cyan) 62%, var(--ink)); }
+.tm-6 { color: color-mix(in srgb, var(--magenta) 62%, var(--ink)); }
+.tm-7 { color: color-mix(in srgb, var(--green) 62%, var(--ink)); }
+.tm-8 { color: color-mix(in srgb, var(--gold) 62%, var(--ink)); }
+.tm-9 { color: var(--orange); }
 .tm-0,
 .tm-1,
 .tm-2,
@@ -796,18 +975,28 @@
 
 /* ---- the work clock's correction sheet ----
    Eric, 2026-08-25: "I should be able to tap on the time and subtract time or
-   add time." So the total is a button, not a label: quiet enough that it
-   still reads as the number it is, with a dotted underline as the only hint
-   that it presses. Cyan while the clock is running, matching the toggle. */
+   add time." So the total is a button, not a label.
+
+   It was 30px tall, dim, and its only affordance was a dotted underline plus
+   a title attribute an iPhone never shows. That is the exact shape of the
+   complaint he has made twice: a control that reads as a readout. So it keeps
+   the quiet type, because it must not compete with the start/stop switch
+   beside it, and gains the two things that were missing: a 44px target, and
+   the word for what it does printed on its face. */
 .work-total-btn {
-  background: none; border: 0; padding: .1rem .15rem;
-  font-size: .8rem; color: var(--dim); font-weight: 400;
-  text-decoration: underline dotted; text-underline-offset: 3px;
-  cursor: pointer; font-variant-numeric: tabular-nums;
+  display: inline-flex; align-items: center; gap: .4rem;
+  min-height: 44px; padding: .2rem var(--adm-2);
+  background: none; color: var(--dim); font-weight: 400;
+  font-size: .84rem; font-variant-numeric: tabular-nums;
+  border: 1px dashed var(--line); border-radius: 999px;
+  text-decoration: none; cursor: pointer;
 }
-.work-total-btn:hover { color: var(--soft); }
-.work-total-btn.on { color: var(--cyan); }
-.work-total-btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 4px; }
+.work-total-btn .fixit {
+  flex: none; font-size: .72rem; letter-spacing: .04em; color: var(--cyan);
+}
+.work-total-btn:hover { color: var(--soft); border-color: var(--cyan-dim); }
+.work-total-btn.on { color: var(--cyan); border-color: var(--cyan-dim); }
+.work-total-btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 
 /* The sheet itself. site.css has no overlay of its own on this branch, so it
    is defined here beside the one thing that opens it. */
@@ -897,3 +1086,20 @@
 @media (prefers-reduced-motion: reduce) {
   [data-work-head].clock-on { animation: none; }
 }
+
+/* --- 44px, everywhere he actually aims ------------------------------------
+   Swept at 390x844 with every disclosure forced open. These are the ones that
+   came back short; each is aimed at with a thumb, on a phone, usually while
+   something else is happening. At the end of the file on purpose: each one
+   overrides an earlier rule in this same sheet, and specificity ties here
+   are settled by order. */
+.status-pick select { min-height: 44px; }
+.pg-btn { width: 44px; height: 44px; min-width: 44px; }
+.advisor-read summary { display: flex; align-items: center; min-height: 44px; }
+.advisor-ask textarea { min-height: 44px; }
+.cd-case-row { min-height: 44px; }
+.gloss-known summary { display: flex; align-items: center; min-height: 44px; }
+/* A file name IS the way to open the file, and it was a 19px line of text
+   with a 44px button beside it. The padding grows the target without moving
+   the words, which also gives the list the air the rest of the page got. */
+.uploads .fname a { display: inline-block; padding: .65rem 0; }
