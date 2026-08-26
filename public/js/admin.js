@@ -232,9 +232,9 @@ async function load() {
       badge: badge(c),
       badgeClass: `${c.status === 'closed' ? 'closed' : ''} ${dueSoon(c) ? 'due' : ''}`.trim(),
       flags: `<span class="folder-note">${detail}${
-        c.needsReschedule ? '· <strong style="color:var(--manila-alert)">NEEDS RESCHEDULE</strong>' : ''
-      }${checkInDue(c) ? ' · <strong style="color:var(--manila-alert)">CHECK-IN DUE</strong>' : ''
-      }${c.pendingTelehealth?.state === 'requested' ? ' · <strong style="color:var(--manila-alert)">TELEHEALTH, CONFIRM</strong>' : ''
+        c.needsReschedule ? '<strong class="fld-alert">NEEDS RESCHEDULE</strong>' : ''
+      }${checkInDue(c) ? ' <strong class="fld-alert">CHECK-IN DUE</strong>' : ''
+      }${c.pendingTelehealth?.state === 'requested' ? ' <strong class="fld-alert">TELEHEALTH, CONFIRM</strong>' : ''
       }</span>${badges ? `<span class="folder-badges" title="Not looked at yet">${badges}</span>` : ''}`,
     });
   };

@@ -2347,3 +2347,30 @@ input[type="checkbox"],
 input[type="radio"] { min-width: 24px; min-height: 24px; }
 .bar .brand,
 #google-link-slot a { display: inline-flex; align-items: center; min-height: 44px; }
+
+/* ---- THE ALERT BADGE ------------------------------------------------------
+   CHECK-IN DUE, TELEHEALTH and NEEDS RESCHEDULE are the three things on the
+   shelf that mean act now, and they were coloured ink on card stock: the
+   loudest state in the app rendered as the quietest thing on it. Measured
+   before this, CHECK-IN DUE was 1.28:1 against the stock.
+
+   It is a badge now, deliberately NOT made of the folder's own materials,
+   because a warning that looks like part of the paper is not a warning.
+
+   The literals are the one allowed exception alongside the manila palette.
+   This red is a fixed alert colour and must not follow a scheme: under paper
+   it would tint the single thing that has to look identical every time he
+   glances at the shelf. Measured 9.82:1, white on #7A271F.
+
+   Appended at the end of the file on purpose. The folder chrome is being
+   reworked in another worktree, and a block at the tail of a stylesheet is the
+   one place a merge cannot tangle. */
+.fld-alert {
+  display: inline-flex; align-items: center;
+  min-height: 36px; padding: .2rem .55rem;
+  border-radius: 8px;
+  background: #7A271F; color: #FFFFFF;
+  border: 1px solid #52140F;
+  font-weight: 800; letter-spacing: .045em;
+  box-shadow: 0 4px 12px rgba(80, 20, 15, .28);
+}

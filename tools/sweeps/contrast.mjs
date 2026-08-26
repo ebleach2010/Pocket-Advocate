@@ -52,6 +52,12 @@ for (const path of PAGES) {
     for (const el of document.querySelectorAll('*')) {
       const txt = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join(' ').trim();
       if (!txt || txt.length < 2) continue;
+      // An emoji takes its colour from the font, not from CSS, so the `color`
+      // this script reads has nothing to do with what is painted. Reporting it
+      // is worse than useless: a permanent 1.07:1 at the bottom of every run
+      // is where a real hit goes to hide. Skip anything with no letters or
+      // digits in it at all.
+      if (!/[\p{L}\p{N}]/u.test(txt)) continue;
       const s = getComputedStyle(el);
       if (s.visibility === 'hidden' || s.display === 'none' || Number(s.opacity) < .1) continue;
       const r = el.getBoundingClientRect();
