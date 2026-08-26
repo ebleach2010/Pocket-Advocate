@@ -628,11 +628,21 @@ main > p > a.small[href="/admin.html"] {
 .dx-pen { flex: none; align-self: flex-start; margin-top: .18rem; font-size: .82rem; opacity: .85; }
 
 .folder-meta { grid-column: 1; font-size: .82rem; color: var(--manila-ink); opacity: .74; }
+/* Dimmed by COLOUR, not by opacity. `opacity: .78` here composited the whole
+   row at 78%, flags included, so every point of contrast won back on
+   CHECK-IN DUE was handed straight back on the way out - and a child cannot
+   undo it, because opacity applies to the rendered subtree, not to the text.
+   The quiet prose gets the softened ink; a flag sets its own and keeps it.
+   The literal is the fallback for a browser without color-mix; the mix keeps
+   the paper and contrast schemes right, since both retint these two. */
 .folder-flags {
   grid-column: 1 / -1;
   display: flex; flex-wrap: wrap; align-items: center; gap: .3rem;
-  font-size: .74rem; color: var(--manila-ink); opacity: .78;
+  font-size: .74rem;
+  color: #52462F;
+  color: color-mix(in srgb, var(--manila-ink) 78%, var(--manila));
 }
+.folder-flags strong { font-weight: 800; }
 .folder-note { flex: 1 1 10rem; min-width: 0; }
 .folder-badges {
   flex: none; align-self: flex-start;

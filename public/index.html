@@ -28,7 +28,7 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=stat96">
+<link rel="stylesheet" href="/css/site.css?v=stat99">
 <link rel="stylesheet" href="/css/glowup.css?v=glow6">
 <script>
 // A returning account holder skips the booking page. Inline in <head> so there
@@ -303,8 +303,17 @@
       ${r.text ? `<span class="rv-text">${esc(r.text)}</span>` : ''}
       <span class="rv-name">${esc(r.name)}</span>
     </${GOOGLE_REVIEWS_URL ? 'a' : 'div'}>`;
+  // A rating-only Google review (stars, a name, no words) is real data and it
+  // belongs on the reviews page. In a strip headed "What clients say" it
+  // renders as a card with nothing said on it, which reads as broken rather
+  // than as a five-star rating. So the strip carries the ones with words, and
+  // falls back to the whole list rather than going empty.
+  const withWords = (list) => {
+    const said = list.filter((r) => r.text && r.text.trim());
+    return said.length ? said : list;
+  };
   const paint = (list) => {
-    const cards = list.map(card).join('');
+    const cards = withWords(list).map(card).join('');
     document.getElementById('reviews-track').innerHTML = cards + cards;
     // enhanceReviewsStrip tears its previous self down, so painting twice is
     // safe: the Google baseline shows immediately and the fuller list swaps in

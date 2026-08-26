@@ -103,8 +103,24 @@ check('W4 the signing time is stamped by the Worker, never taken from the browse
   /signedAt: new Date\(\),/.test(WORKER) && /a client-sent timestamp is/.test(WORKER));
 check('W5 signing requires the name on the case',
   /Sign with the same name that is on this case/.test(WORKER));
-check('W6 only a Full Access case can hold authorisations',
-  /if \(!c\?\.data\.fullAccess\)/.test(WORKER));
+// W6 said "only a Full Access case can hold authorisations" and pinned the one
+// blanket gate that made it true. Eric changed the rule on 2026-08-26: the
+// records release is what gets a clinic to send records and lets him ring and
+// ask for the rest, which is the standard case, and gating it hid the form
+// from exactly the clients who needed it. The gate is per DOCUMENT now, so
+// this pins the new rule and its two halves rather than being deleted.
+check('W6a a records release can be signed on any case',
+  !/if \(!c\?\.data\.fullAccess\)\n\s*return json/.test(WORKER)
+  && /THE TIER GATE IS PER DOCUMENT/.test(WORKER));
+check('W6b the insurance designation is still Hands-Off only',
+  /if \(kind === 'representative' && !c\.data\.fullAccess\)\n\s*return json\(\{ error: 'This case is not on Hands-Off Case Management\.' \}, 409\);/.test(WORKER));
+// The half that is easy to lose when a gate moves: somebody who signed while
+// on Hands-Off must still be able to withdraw afterwards. The old blanket gate
+// sat above the revoke branch and answered 409, which left them holding a
+// permission they could not take back.
+check('W6c withdrawing is never gated on the tier',
+  WORKER.indexOf("if (body?.action === 'revoke')")
+    < WORKER.indexOf("if (kind === 'representative' && !c.data.fullAccess)"));
 check('W7 both sides read through threadContext, so a stranger gets a 404 or 403',
   /const ctx = await threadContext\(env, user, 'case', id\);\n  if \(ctx\.error\) return json\(\{ error: ctx\.error \}, ctx\.code\);\n  const coll = `cases\/\$\{id\}\/private\/authority/.test(WORKER));
 // authorityAt is stamped at the first signature and is NOT the window any

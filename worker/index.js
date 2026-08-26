@@ -3400,9 +3400,22 @@ async function handleAuthority(request, env, url) {
   if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
 
   const c = await getDoc(env, `cases/${id}`);
-  if (!c?.data.fullAccess)
-    return json({ error: 'This case is not on Hands-Off Case Management.' }, 409);
+  if (!c) return json({ error: 'No such case' }, 404);
 
+  // THE TIER GATE IS PER DOCUMENT, not per case (Eric, 2026-08-26: "we have UI
+  // elements missing like the form for them to fill out for me to speak to
+  // clinics on their behalf"). One blanket `fullAccess` check used to sit
+  // here, and it hid the records release from every standard case. But
+  // reviewing records IS the standard case, it is the first line of the
+  // landing page, and this release is the instrument that gets them and that
+  // lets him speak to the clinic. Gating it meant the core service had no
+  // lawful way to start. Only the insurance representative designation is
+  // Hands-Off work, and only it is gated now, below, once `kind` is known.
+  //
+  // Revocation is deliberately OUTSIDE any tier check. A client who signs
+  // while on Hands-Off and whose case later is not must still be able to
+  // withdraw; the old gate answered 409 and left them holding a permission
+  // they could not take back.
   if (body?.action === 'revoke') {
     // Revocation is the client's right and is not negotiable, so it is one
     // field and no conditions beyond owning the case. It stops future use; it
@@ -3427,6 +3440,11 @@ async function handleAuthority(request, env, url) {
   if (ctx.isAdmin) return json({ error: 'Only the client can sign this.' }, 403);
   const kind = String(body?.kind || '');
   if (!AUTHORITY_KINDS.includes(kind)) return json({ error: 'Bad request' }, 400);
+  // The half that is genuinely Hands-Off work. Filing appeals and speaking to
+  // a plan on somebody's behalf is what the monthly fee buys; the records
+  // release above is not, and any case can sign one.
+  if (kind === 'representative' && !c.data.fullAccess)
+    return json({ error: 'This case is not on Hands-Off Case Management.' }, 409);
   const typed = typeof body?.signedName === 'string' ? body.signedName.trim().slice(0, 120) : '';
   if (typed.length < 2) return json({ error: 'Type your full name to sign.' }, 400);
   // The typed name has to be the name on the case. Not signature matching,

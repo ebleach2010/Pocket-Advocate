@@ -295,5 +295,59 @@ ck('clock: all switches share one painter set, so no two can disagree',
   }
 }
 
+// ---- 15. no em dash, no en dash, in anything anybody reads ---------------
+// Eric's rule, and it kept being broken because it kept being checked wrong.
+// A scan for the literal codepoints missed `&mdash;` and `&ndash;`, which
+// render as exactly the character the rule forbids: three sat in the pricing
+// copy on the services page for a week. So the check unescapes first.
+//
+// Scope, stated honestly: the visible text of the static pages. Scripts,
+// styles and HTML comments are stripped, because a code comment is not
+// something anybody reads on a screen. That does mean copy built inside a JS
+// module is NOT covered here - grep those by codepoint when they change.
+{
+  const DASH = /[—–]/;
+  const ENT = {
+    '&mdash;': '—', '&ndash;': '–',
+    '&#8212;': '—', '&#8211;': '–',
+    '&#x2014;': '—', '&#x2013;': '–',
+  };
+  const visible = (html) => html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/&(?:mdash|ndash|#8212|#8211|#x2014|#x2013);/gi, (m) => ENT[m.toLowerCase()]);
+  for (const page of readdirSync(`${R}/public`).filter((n) => n.endsWith('.html')).sort()) {
+    const bad = visible(f(`public/${page}`)).split('\n')
+      .map((l, i) => [i + 1, l]).filter(([, l]) => DASH.test(l));
+    ck(`dashes: ${page} has no em or en dash where it shows`,
+       bad.length === 0,
+       bad.length ? `line ${bad[0][0]}: ${bad[0][1].trim().slice(0, 80)}` : '');
+  }
+}
+
+// ---- 16. the case workspace groups are HIS, and do not move -------------
+// Asked and answered on 2026-08-26: leave them as Track and Mine. Nothing
+// pinned them before, which is exactly how a pass renamed them to Before and
+// After and moved six pages with them. The names are what he says out loud
+// ("under mine"), so they are a fact about him and not a design opinion.
+//
+// `calldoc` is pinned to `mine` on purpose. A page in no group renders no tab
+// at all, which is how the call document first shipped invisible, and he then
+// failed to find it twice more.
+{
+  const AC = f('public/js/admin-case.js');
+  const block = (AC.match(/groups: \[([\s\S]*?)\n    \],/) || [])[1] || '';
+  const labels = [...block.matchAll(/label: '([^']+)'/g)].map((m) => m[1]);
+  const ids = [...block.matchAll(/id: '([^']+)'/g)].map((m) => m[1]);
+  ck('groups: the five names are Case, Advisor, Track, Mine and Act',
+     labels.join('|') === 'Case|Advisor|Track|Mine|Act', labels.join('|'));
+  ck('groups: their ids match, so nothing renamed only the visible half',
+     ids.join('|') === 'case|read|track|mine|act', ids.join('|'));
+  const mine = (block.match(/id: 'mine'[^}]*pages: \[([^\]]+)\]/) || [])[1] || '';
+  ck('groups: the call document is in Mine, so it renders a tab at all',
+     /'calldoc'/.test(mine), mine.trim());
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);

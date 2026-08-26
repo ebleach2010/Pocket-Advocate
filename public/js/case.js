@@ -571,11 +571,18 @@ function renderProgress(el, c) {
   wireHelp(el);
   navHint(el.querySelector('[data-nav-hint]'));
 
-  // Full Access cannot start until this is signed, so it sits directly under
-  // the timeline rather than behind a tab: the client tab strip is already at
-  // four and three pills barely fit a 390px phone.
+  // Sits directly under the timeline rather than behind a tab: the client tab
+  // strip is already at four and three pills barely fit a 390px phone.
+  //
+  // On EVERY case, not just Full Access (Eric, 2026-08-26: the form was
+  // missing). Reviewing records is the standard case, and the records release
+  // is what gets a clinic to send them and lets him ring and ask for the rest.
+  // Gated on the tier, it was invisible to exactly the clients who needed it.
+  // The panel decides internally which of the two documents to offer; the
+  // insurance designation stays Hands-Off, and the Worker enforces that
+  // rather than trusting this.
   const auth = el.querySelector('[data-authority]');
-  if (auth && c.fullAccess) mountAuthority(auth, c);
+  if (auth) mountAuthority(auth, c);
 
   el.querySelector('[data-ics]')?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -1911,9 +1918,16 @@ async function mountAuthority(host, c) {
     // date the window actually runs to rather than a number that goes stale
     // the moment somebody buys another thirty days.
     const dayFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
+    // Two framings, because this panel now appears on every case. The
+    // readiness checklist and the window sentence are Hands-Off furniture and
+    // would be nonsense on a standard case, which has no checklist and no
+    // month running down. A standard case gets the one thing it needs said:
+    // this is how your records reach me.
+    const full = !!c.fullAccess;
     host.innerHTML = `
       <div class="panel authority" data-auth-panel>
-        <h3>Before I can act for you</h3>
+        <h3>${full ? 'Before I can act for you' : 'Getting your records to me'}</h3>
+        ${full ? `
         <ul class="ready-list" data-ready-list>
           ${ready.rows.map((r) => `
             <li class="${r.done ? 'is-done' : ''}">${r.done ? '✓' : '○'} ${esc(r.label)}</li>`).join('')}
@@ -1921,7 +1935,11 @@ async function mountAuthority(host, c) {
         <p class="dim small">${ready.ready
     ? 'Your checklist is done. The legwork is mine from here.'
     : 'These are two separate permissions, and you can withdraw either one at any time. How fast you finish is up to you.'}
-          ${boughtAt ? `Your window started ${esc(dayFmt.format(boughtAt))}, the day you bought Hands-Off${windowEndOf(c) ? `, and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''} — the clock runs whether or not this list is done.` : ''}</p>
+          ${boughtAt ? `Your window started ${esc(dayFmt.format(boughtAt))}, the day you bought Hands-Off${windowEndOf(c) ? `, and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. The clock runs whether or not this list is done.` : ''}</p>`
+    : `<p class="dim small">You can upload records yourself at any time. This form
+          is the other way: it lets a clinic send them to me directly, and lets me
+          call and ask for what is missing, so you are not chasing a fax machine.
+          You can withdraw it at any time.</p>`}
 
         <div class="auth-row">
           <div class="auth-head">
@@ -1944,6 +1962,7 @@ async function mountAuthority(host, c) {
             ${recs.length ? 'Add another clinic' : 'Sign a records authorisation'}</button></p>
         </div>
 
+        ${full || rep ? `
         <div class="auth-row">
           <div class="auth-head">
             <strong>Your insurer</strong>
@@ -1961,7 +1980,7 @@ async function mountAuthority(host, c) {
               </span>
             </p>` : `
             <p><button class="btn glow" data-auth-add="representative">Sign the insurance form</button></p>`}
-        </div>
+        </div>` : ''}
         <p class="error" data-auth-error hidden></p>
       </div>`;
 

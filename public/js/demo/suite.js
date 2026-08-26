@@ -30,7 +30,7 @@ export function mount(page) {
   const box = document.createElement('div');
   box.style.marginTop = '1rem';
   box.innerHTML = `
-    <p class="muted small" style="margin:0 0 .4rem;">Demo — no email, no payment:</p>
+    <p class="muted small" style="margin:0 0 .4rem;">Demo: no email, no payment.</p>
     <p style="display:flex; gap:.5rem; flex-wrap:wrap; margin:0;">
       <button type="button" class="btn glow" data-suite-go>▶ Start the demo</button>
     </p>

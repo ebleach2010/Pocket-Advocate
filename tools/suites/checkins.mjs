@@ -228,8 +228,11 @@ check('AB5 the readiness checklist is DERIVED on both sides, never stored',
   && /from '\.\/readiness\.js'/.test(CASE)
   && /from '\.\/readiness\.js'/.test(ADMIN)
   && !/handsOffChecklist/.test(SRC));
+// The em dash before it became a full stop (2026-08-26, the no-dash rule), so
+// the sentence now starts with a capital. Same words; the article is matched
+// either way so punctuation can move again without this going red.
 check('AB6 the client reads the honest clock sentence beside the checklist',
-  /the clock runs whether or not this list is done/.test(CASE));
+  /[Tt]he clock runs whether or not this list is done/.test(CASE));
 
 // ---- the copy that had to change ----
 check('W1 tier terms no longer close the case at any call',

@@ -232,9 +232,9 @@ async function load() {
       badge: badge(c),
       badgeClass: `${c.status === 'closed' ? 'closed' : ''} ${dueSoon(c) ? 'due' : ''}`.trim(),
       flags: `<span class="folder-note">${detail}${
-        c.needsReschedule ? '· <strong style="color:var(--danger)">NEEDS RESCHEDULE</strong>' : ''
-      }${checkInDue(c) ? ' · <strong style="color:var(--orange)">CHECK-IN DUE</strong>' : ''
-      }${c.pendingTelehealth?.state === 'requested' ? ' · <strong style="color:var(--orange)">TELEHEALTH — CONFIRM</strong>' : ''
+        c.needsReschedule ? '· <strong style="color:var(--manila-alert)">NEEDS RESCHEDULE</strong>' : ''
+      }${checkInDue(c) ? ' · <strong style="color:var(--manila-alert)">CHECK-IN DUE</strong>' : ''
+      }${c.pendingTelehealth?.state === 'requested' ? ' · <strong style="color:var(--manila-alert)">TELEHEALTH, CONFIRM</strong>' : ''
       }</span>${badges ? `<span class="folder-badges" title="Not looked at yet">${badges}</span>` : ''}`,
     });
   };
@@ -243,14 +243,14 @@ async function load() {
     : '';
 
   listEl.innerHTML = rateBlock + voiceBlock + summary +
-    section('CURRENT CLIENTS — REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
-      `${c.reportDueAt ? `report due <strong style="color:var(--ink)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
+    section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
+      `${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
        ${followUpFlag(c)}`))) +
-    section('BOOKED — UPCOMING CALLS', 'var(--green)', future.map((c) => rowFor(c,
-      `<strong style="color:var(--ink)">${mtFmt.format(toDate(c.appointment.start))} MST</strong> · ${esc(c.appointment.method)}
+    section('BOOKED: UPCOMING CALLS', 'var(--green)', future.map((c) => rowFor(c,
+      `<strong style="color:var(--manila-strong)">${mtFmt.format(toDate(c.appointment.start))} MST</strong> · ${esc(c.appointment.method)}
        ${followUpFlag(c)}`))) +
-    section('FORMER CLIENTS — CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
-      `closed <strong style="color:var(--ink)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : '—'}</strong>`)));
+    section('FORMER CLIENTS: CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
+      `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`)));
 
   const voiceSay = listEl.querySelector('#voice-said');
   const voicePost = async (btn, body, done) => {
@@ -342,19 +342,19 @@ function badge(c) {
 function followUpFlag(c) {
   if (c.followUp) {
     const fmt = new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric' });
-    return `· <strong style="color:var(--cyan)">FOLLOW-UP ${fmt.format(toDate(c.followUp.start))}</strong>`;
+    return `· <strong style="color:var(--manila-note)">FOLLOW-UP ${fmt.format(toDate(c.followUp.start))}</strong>`;
   }
-  if (c.pendingExtra) return '· <strong style="color:var(--magenta)">AWAITING PAYMENT</strong>';
+  if (c.pendingExtra) return '· <strong style="color:var(--manila-flag)">AWAITING PAYMENT</strong>';
   if (!c.addOnFollowUp) return '';
   // Same base the Worker enforces (followUpBase): purchase date first, the
   // call as fallback. Counting from the appointment marked every follow-up
   // expired early, since one is always bought after the call.
   const bought = c.addOnFollowUpAt ? toDate(c.addOnFollowUpAt).getTime() : null;
   const base = bought || (c.appointment?.start ? toDate(c.appointment.start).getTime() : null);
-  if (!base) return '· <strong style="color:var(--magenta)">FOLLOW-UP PAID</strong>';
+  if (!base) return '· <strong style="color:var(--manila-flag)">FOLLOW-UP PAID</strong>';
   const days = Math.ceil((base + 30 * 86_400_000 - Date.now()) / 86_400_000);
-  if (days <= 0) return '· <strong style="color:var(--danger)">FOLLOW-UP EXPIRED</strong>';
-  return `· <strong style="color:var(--magenta)">FOLLOW-UP PAID · ${days}d left</strong>`;
+  if (days <= 0) return '· <strong style="color:var(--manila-alert)">FOLLOW-UP EXPIRED</strong>';
+  return `· <strong style="color:var(--manila-flag)">FOLLOW-UP PAID · ${days}d left</strong>`;
 }
 
 /**

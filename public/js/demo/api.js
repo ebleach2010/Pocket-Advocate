@@ -599,6 +599,12 @@ export function demoApi(role, store) {
       // answers depending on which side you were driving.
       const kinds = ['records', 'representative'];
       if (!kinds.includes(body.kind)) return fail(400, 'Bad request');
+      // Per DOCUMENT, matching the Worker as of 2026-08-26. A records release
+      // can be signed on any case; the insurance designation is the Hands-Off
+      // half. The demo never checked the tier at all, so it would happily sign
+      // a designation a real case would have refused.
+      if (body.kind === 'representative' && !store.docs.get(`cases/${cid}`)?.fullAccess)
+        return fail(409, 'This case is not on Hands-Off Case Management.');
       const typed = String(body.signedName || '').trim();
       if (typed.length < 2) return fail(400, 'Type your full name to sign.');
       const flat = (v) => String(v || '').toLowerCase().replace(/[^a-z]+/g, '');

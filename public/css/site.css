@@ -203,6 +203,10 @@
   --manila-ink: #2A2113;
   --manila-edge: #9C8551;
   --manila-fold: rgba(60, 45, 15, .45);
+  --manila-strong: #14100A;
+  --manila-alert: #8A2B00;
+  --manila-note: #14432F;
+  --manila-flag: #4A1D6E;
 }
 :root[data-scheme="contrast"] {
   --manila: #F2E3B8;
@@ -210,6 +214,13 @@
   --manila-ink: #000000;
   --manila-edge: #000000;
   --manila-fold: rgba(0, 0, 0, .8);
+  /* Still four distinct states, all of them far past the ratio this scheme
+     exists for. Flattening them to black would cost the state, not gain
+     contrast. */
+  --manila-strong: #000000;
+  --manila-alert: #5E1B00;
+  --manila-note: #00301F;
+  --manila-flag: #2E0B4A;
 }
 
 * { box-sizing: border-box; }
@@ -1297,7 +1308,12 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
   border-radius: 10px; cursor: pointer; font-size: .95rem; color: var(--dim);
 }
 .agreement-check input[type=checkbox] {
-  width: 1.3rem; height: 1.3rem; min-width: 1.3rem; margin: 0; accent-color: var(--cyan);
+  /* 1.3rem is 22.75px at the 17.5px root, and the `min-width: 1.3rem` here
+     was more specific than the 24px floor further down, so this one box stayed
+     under it while every other checkbox grew. It is the box that gates paying
+     for the chat line. */
+  width: 1.4rem; height: 1.4rem; min-width: 24px; min-height: 24px;
+  margin: 0; accent-color: var(--cyan);
 }
 .agreement-check:has(input:disabled) { cursor: not-allowed; opacity: .75; }
 .agreement-check:has(input:checked) { color: var(--cyan); background: rgba(45,226,255,.07); }
@@ -1606,6 +1622,16 @@ body.lightbox-open { overflow: hidden; }
   --manila-ink: #2A2113;    /* type printed on the stock */
   --manila-edge: #A98F5F;   /* cut edges, rims, the back cover */
   --manila-fold: rgba(10, 7, 2, .7); /* the crease where a flap meets a body */
+  /* Ink for EMPHASIS on the stock. The dashboard was writing the app's own
+     dark-ground tokens straight onto a light folder: measured on the shelf,
+     the report-due date came out rgb(228,233,242) on rgb(222,199,145), which
+     is 1.35:1, and CHECK-IN DUE came out 1.28:1. A flag whose entire job is to
+     be noticed was the least readable thing on the screen. These four are the
+     same four states in ink that belongs on paper. */
+  --manila-strong: #14100A; /* a date, a time, anything emphasised   ~11:1 */
+  --manila-alert: #8A2B00;  /* act now: CHECK-IN DUE, TELEHEALTH      ~6:1 */
+  --manila-note: #14432F;   /* settled and good: a booked follow-up   ~8:1 */
+  --manila-flag: #4A1D6E;   /* money in flight: awaiting, paid        ~7:1 */
 }
 
 /* The work clock on a case card. Sits on the tab band, top right, where the
@@ -1641,8 +1667,13 @@ body.lightbox-open { overflow: hidden; }
 /* Running: filled, coloured, and quietly pulsing, so a shelf of eight cards
    answers "what am I on right now" from across the room. */
 .folder-clock.on {
-  opacity: 1; color: #0B6E4F;
-  background: rgba(16, 185, 129, .18);
+  /* Measured on the tab band, #0B6E4F came out at 2.02:1, on the one badge
+     whose whole job is to answer "am I on the clock right now" from across
+     the room. Same green family, dark enough to read on card stock, and the
+     wash carries a little more colour so the pill reads as running before
+     the number does. */
+  opacity: 1; color: var(--manila-note);
+  background: rgba(16, 185, 129, .26);
 }
 .folder-clock.on .fc-dot { background: currentColor; animation: fc-pulse 2.4s ease-in-out infinite; }
 .folder-clock.busy { opacity: .4; pointer-events: none; }
@@ -1872,11 +1903,19 @@ button.attach-btn {
   background: #07090F;
 }
 .demo-acts { display: flex; gap: .4rem; flex: none; }
-.demo-bar .btn {
+/* The doubled class is deliberate. This strip is the one LIGHT surface in a
+   dark app, so its buttons carry near-black ink while every other button in
+   the app carries near-white. `.demo-bar .btn` and `.btn.ghost` have the same
+   specificity, so the winner was decided by which sheet came last, and the day
+   the glow-up sheet landed after site.css the demo buttons went to var(--ink):
+   measured at rgb(228,233,242) on rgb(220,187,120), about 1.3:1, which is not
+   readable. Doubling the class puts this at (0,3,0) so a generic button rule
+   in a later sheet cannot take the strip's ink with it. */
+.demo-bar.demo-bar .btn {
   padding: .22rem .6rem; font-size: .75rem;
   color: #07090F; border-color: rgba(7, 9, 15, .45); background: rgba(255, 255, 255, .35);
 }
-.demo-bar .btn:hover { background: rgba(255, 255, 255, .6); }
+.demo-bar.demo-bar .btn:hover { background: rgba(255, 255, 255, .6); }
 /* Scrolled: the sentence goes and the word, the dot and the buttons close up
    onto one row. Same strip, a third of the height. */
 .demo-bar.slim { align-items: center; }
@@ -2279,3 +2318,14 @@ body.has-demo-bar .bar { top: var(--demo-bar-h, 2.4rem); }
 }
 .close-line > span:nth-child(2) { flex: 1; }
 .close-arrow { color: var(--cyan); }
+
+/* ---- 24px is the floor for anything a finger has to hit ------------------
+   Measured at 390px on the pages the earlier sweep never opened: the US
+   residency box that GATES SIGN-IN was 13x20, the subscribe terms box 23x23,
+   the wordmark 161x21, and the Google reviews link 77x19. min-, not fixed:
+   this only grows the ones that are too small and leaves every control that
+   already clears the floor exactly where it is. */
+input[type="checkbox"],
+input[type="radio"] { min-width: 24px; min-height: 24px; }
+.bar .brand,
+#google-link-slot a { display: inline-flex; align-items: center; min-height: 44px; }

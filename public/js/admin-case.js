@@ -177,29 +177,29 @@ function render(el) {
     // Four per group is the constraint, not a coincidence. Four tabs fit
     // across a 320px screen with their labels whole; five do not.
     //
-    // GROUPED BY WHEN HE USES IT, not by which module builds it. 'Track' and
-    // 'Mine' named a source (a tracker; a storage prefix) rather than a
-    // moment, so the page he wanted was filed under a word he was not
-    // thinking of. The two standing groups keep their positions and their
-    // names, because he already knows where Case and Advisor are:
-    //   Case     the client, the conversation, what he flagged in it, files
-    //   Advisor  its read, its differential, asking it, what it knows of him
-    //   Before   what he does to get ready for a call
-    //   After    what he does once the call is over
+    // ASKED AND ANSWERED (Eric, 2026-08-26): leave them as Track and Mine.
+    //
+    // A pass had renamed these to Before and After and moved six pages while
+    // it was in there, on the argument that 'Track' and 'Mine' name a source
+    // rather than a moment. The argument is not wrong. It is also not his: he
+    // refers to "under mine" by name, he knows where everything is, and the
+    // last time his furniture moved without asking, the answer was that the
+    // result was a wall of confusion. Putting the old words back on the new
+    // contents would have been the worst of both, because "Mine" would no
+    // longer have meant his own notes. So the whole block is as it was.
+    //
+    //   Case     the client, the conversation, files
+    //   Advisor  its read, its differential, asking it, the terms in play
+    //   Track    where the case stands and what is outstanding
+    //   Mine     the things he wrote himself
     groups: [
-      { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'saved', 'files'] },
-      // 'about' is the advisor's read on ERIC, so it belongs with the rest of
-      // the advisor rather than in a tracker. 'education' leaves for Before:
-      // reading up on this case's terms is preparation, and it is the page he
-      // opens the night before a call.
-      { id: 'read', label: 'Advisor', icon: '👨‍⚕️', pages: ['advisor', 'dx', 'advisor-chat', 'about'] },
-      // Everything he touches before he dials: the document he brings, his own
-      // notes, the list of what to cover, the words he needs to know. 'calldoc'
-      // sits first because it is the one he could not find twice.
-      { id: 'before', label: 'Before', icon: '📋', pages: ['calldoc', 'notes', 'agenda', 'education'] },
-      // Everything he touches once he hangs up: the day read back, the drafts
-      // he sends, and what the client still owes him.
-      { id: 'after', label: 'After', icon: '📤', pages: ['summary', 'drafts', 'unanswered'] },
+      { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files'] },
+      { id: 'read', label: 'Advisor', icon: '👨‍⚕️', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
+      { id: 'track', label: 'Track', icon: '🗒', pages: ['summary', 'unanswered', 'agenda', 'about'] },
+      // 'calldoc' sits in Mine, beside Notes: both start from something Eric
+      // wrote himself. A page absent from every group renders no tab at all,
+      // which is how the call document first shipped invisible.
+      { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'calldoc', 'drafts', 'saved'] },
       // A FIFTH group rather than a fifth page in an existing one: four per
       // group is the width constraint, and 'read' and 'track' are both full.
       // Only rendered for a Full Access case; on a standard case these pages
