@@ -1082,3 +1082,203 @@ select:focus {
     min-height: 52px;
   }
 }
+
+/* ==========================================================================
+   PATCH 1, 2026-08-26. Eric, from a screenshot of his own phone:
+   "make sure buttons have a glow/enhancement to show they're tappable. And
+   that the contents stay within the button borders."
+
+   THE OVERFLOW, measured rather than guessed. On the client case page the tab
+   row goes into site.css's `.folder-tabs.tight` mode once there are five tabs.
+   Tight mode makes every tab `flex: 1 1 auto`, so they SHARE one fixed row and
+   shrink to fit. Measured at 390px with the sheet above loaded: "Progress"
+   needed 73px of label inside a 71px pill and hung 0.7px over each edge, and
+   "Enhance" landed flush at exactly 0.0px of margin. Without this sheet the
+   same tabs measured 77px and 75px and the labels sat inside. So the squeeze
+   is this sheet's to fix, and the fix is not another round of nudging a font
+   size until five words happen to fit.
+
+   A shared row that shrinks can only ever be tuned for the labels that exist
+   today. Add a sixth tab, or rename one to something longer, and the slicing
+   comes straight back. So the row scrolls instead: every pill takes its own
+   natural width, and the label cannot be squeezed out of its border no matter
+   how many tabs there are or what they are called.
+   ========================================================================== */
+
+.case-folder .folder-tabs {
+  /* Tight mode set this to visible, which is what turned a row too long to fit
+     into a row that shrinks its contents instead of scrolling. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  /* Room for the lit ring on the selected pill, which a tight row clipped. */
+  padding-bottom: .7rem;
+  scroll-padding-inline: .6rem;
+}
+.case-folder .folder-tabs::-webkit-scrollbar { display: none; }
+
+.case-folder .folder-tabs > a {
+  /* Natural width, never a share of the row. This is the line that keeps the
+     word inside the border. */
+  flex: 0 0 auto;
+  min-width: max-content;
+  padding: .5rem .95rem;
+  gap: .25rem;
+  border-radius: 999px;
+  /* A pill reads as a pill, not as a stack, and a single row of text cannot
+     wrap out of its own container. */
+  flex-direction: row;
+  align-items: center;
+  white-space: nowrap;
+}
+.case-folder .folder-tabs > a .ftab-t {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+/* ---------- Tappable means it looks tappable ---------- */
+
+/* Every one of these is something a finger is meant to land on. They get a
+   lifted edge and a soft outer glow so they read as raised off the page
+   rather than printed on it, and they press IN when touched, which is the
+   part that actually says "that did something" on a phone with no hover. */
+.btn,
+.act,
+.slot,
+.chip-label,
+.pack-cta,
+.case-folder .folder-tabs > a,
+.case-picker .btn,
+.attach-btn,
+.chat-expand,
+.nav-toggle,
+.cog-btn {
+  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+
+.btn,
+.pack-cta,
+.slot,
+.chip-label,
+.case-folder .folder-tabs > a {
+  box-shadow:
+    inset 0 1px 0 var(--pa-line-ink),
+    0 0 0 1px color-mix(in srgb, var(--cyan) 12%, transparent),
+    0 .18rem .5rem color-mix(in srgb, var(--bg) 45%, transparent);
+}
+
+/* The press. No hover on a phone, so the affordance has to be in the tap. */
+.btn:active,
+.act:active,
+.slot:active,
+.chip-label:active,
+.pack-cta:active,
+.case-folder .folder-tabs > a:active,
+.attach-btn:active,
+.chat-expand:active,
+.nav-toggle:active,
+.cog-btn:active {
+  transform: translateY(1px) scale(.985);
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--bg) 60%, transparent);
+}
+
+/* The selected tab is lit, and the ring sits OUTSIDE the pill so it never
+   eats into the room the word needs. */
+.case-folder .folder-tabs > a.on {
+  border-color: var(--cyan);
+  box-shadow:
+    inset 0 1px 0 var(--pa-line-ink),
+    0 0 0 2px color-mix(in srgb, var(--cyan) 30%, transparent),
+    var(--glow-c);
+}
+
+/* A primary action should be unmistakable. */
+.btn.glow,
+.act-c,
+.act-m {
+  box-shadow:
+    inset 0 1px 0 var(--pa-line-ink),
+    0 0 0 1px color-mix(in srgb, var(--cyan) 24%, transparent),
+    0 .3rem .9rem color-mix(in srgb, var(--bg) 55%, transparent),
+    var(--glow-c);
+}
+.act-m,
+.btn.mag.glow {
+  box-shadow:
+    inset 0 1px 0 var(--pa-line-ink),
+    0 0 0 1px color-mix(in srgb, var(--magenta) 24%, transparent),
+    0 .3rem .9rem color-mix(in srgb, var(--bg) 55%, transparent),
+    var(--glow-m);
+}
+
+/* Disabled must NOT look tappable. Otherwise the glow above turns every dead
+   control into a promise the page cannot keep. */
+.btn:disabled,
+.btn[aria-disabled="true"],
+.slot[disabled],
+.slot[aria-disabled="true"] {
+  box-shadow: none;
+  transform: none;
+  opacity: .38;
+}
+
+/* ---------- Nothing escapes its own border ---------- */
+
+/* The general form of the bug above. Anything with a border and a label keeps
+   its label inside, and grows rather than letting the text hang over the rim.
+   min-width:0 lets a flex child shrink to its container; max-content stops it
+   shrinking past the word. */
+.btn,
+.act,
+.pack-cta,
+.chip-label,
+.case-folder .folder-tabs > a {
+  overflow: visible;
+  min-width: 0;
+  text-overflow: clip;
+}
+.act,
+.btn {
+  /* A long label wraps inside the button rather than running past its edge. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.act > span,
+.btn > span {
+  min-width: 0;
+}
+
+/* The contrast scheme keeps hard edges: glows there reduce contrast rather
+   than adding information. The press and the ring stay, the bloom goes. */
+:root[data-scheme="contrast"] .btn,
+:root[data-scheme="contrast"] .pack-cta,
+:root[data-scheme="contrast"] .slot,
+:root[data-scheme="contrast"] .chip-label,
+:root[data-scheme="contrast"] .case-folder .folder-tabs > a {
+  box-shadow: none;
+  border-width: 2px;
+}
+:root[data-scheme="contrast"] .case-folder .folder-tabs > a.on {
+  box-shadow: 0 0 0 3px var(--cyan);
+}
+
+/* Tighter, and it says it scrolls.
+
+   Natural-width pills mean about two and a half fit at 390px. Site.css warned
+   about exactly this in its own comment: "a tab half off the edge reads as a
+   broken page rather than as more to scroll to." That worry is right, and the
+   answer is to make the scroll legible rather than to go back to squeezing the
+   words. So the padding comes back in a little, and the right edge fades, which
+   is the ordinary way a row says there is more of it past the rim. */
+.case-folder .folder-tabs > a { padding-inline: .72rem; }
+.case-folder .folder-tabs {
+  -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 1.4rem), transparent 100%);
+  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 1.4rem), transparent 100%);
+}
+/* HONEST LIMITATION. The fade does not switch off when the row is scrolled to
+   its end, so the last tab keeps a soft right edge. Turning it off at the end
+   needs a scroll listener, and this sheet adds no behaviour by design, which is
+   the whole reason it is safe to drop in and safe to pull back out. The fade is
+   kept narrow, 1.4rem, so it reads as a soft rim rather than as a tab being
+   hidden. If it ever annoys you, deleting these two mask lines is the fix and
+   costs nothing else. */
