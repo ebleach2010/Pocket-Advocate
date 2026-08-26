@@ -416,12 +416,39 @@ function render(el) {
         // to place the cursor, never turn the page.
         id: 'notes', title: 'Notes', icon: '📝', fade: true,
         render: (pane) => {
+          // COMPILE THE CASE FILE (Eric, 2026-08-26). He asked for this "on
+          // the Mine page", and Mine already holds four tabs, which is the
+          // hard width constraint at 320px: a fifth slices its own label, and
+          // that is a defect he has already photographed once. So it is a card
+          // at the top of Notes, which is the page in this group he opens most
+          // and the one that is already his own working space, rather than a
+          // tab that would break the strip to exist.
+          const compileCard = document.createElement('div');
+          compileCard.className = 'panel compile-card';
+          compileCard.innerHTML = `
+            <h3>📚 The whole case file, as one PDF</h3>
+            <p class="dim small">Every file on this case in one document, grouped
+              by type and then by date inside each type. Images print in full.
+              A PDF, a recording or a Word file is listed with a link instead:
+              a browser cannot print one document inside another.</p>
+            <p><button type="button" class="btn" data-compile>Compile it</button></p>
+            ${saidHtml('compile')}`;
+          pane.appendChild(compileCard);
+          compileCard.querySelector('[data-compile]')?.addEventListener('click', async (ev) => {
+            const b = ev.currentTarget;
+            b.disabled = true;
+            const was = b.textContent;
+            b.textContent = 'Gathering…';
+            try { await compileCaseFile(); } finally { b.disabled = false; b.textContent = was; }
+          });
+          const notesHost = document.createElement('div');
+          pane.appendChild(notesHost);
           // Private to Eric: stored under `private/`, which is browser-denied
           // in both directions, so it only ever moves through the admin-gated
           // Worker route. The saved html arrives with the advisor state poll
           // and lands via setHtml, which refuses to clobber live typing.
           notes = mountNotes({
-            container: pane,
+            container: notesHost,
             initialHtml: notesHtml,
             onSave: async (html) => {
               const token = await user.getIdToken();
@@ -2074,6 +2101,124 @@ function refreshOverview() {
 }
 
 /** The Uploads page shell. Painted once; refreshFiles fills the list. */
+/**
+ * EVERY FILE ON THE CASE, AS ONE DOCUMENT (Eric, 2026-08-26: "there should be
+ * a place where all the uploads can get compiled into one PDF, by type first
+ * and then date second").
+ *
+ * By type first, then date within type, using the SAME fileGroup() and the
+ * same date ordering as the Uploads page, so the compiled document and the
+ * screen he compiled it from can never disagree about what goes where.
+ *
+ * WHAT IT CAN AND CANNOT CONTAIN, said plainly here and on the cover page,
+ * because a compilation that quietly drops half a case file is worse than no
+ * compilation at all.
+ *
+ * There is no PDF library in this app and no build step to add one, so this
+ * goes through the same print path everything else does: build a document,
+ * let the browser render it to PDF. That means IMAGES ARE EMBEDDED and print
+ * in full, and a PDF, a recording or a Word file cannot be: a browser will
+ * not inline one document inside another it is printing. Those are listed in
+ * place, in their right group and date order, with their name, size and a
+ * link, so the compiled file is a complete index of the case and a complete
+ * rendering of everything that can be rendered.
+ *
+ * Merging real PDFs would have to happen server side, and the Worker's CPU
+ * ceiling is the same one that already killed the call document once.
+ */
+async function compileCaseFile() {
+  const said = (m, bad) => { say('compile', m, { tone: bad ? 'warn' : 'ok' }); refreshOverview(); };
+  said('Gathering every file on the case…');
+  let rows;
+  try {
+    rows = await listCaseFiles();
+  } catch (err) {
+    said(`Could not read the files: ${err.message}`, true);
+    return;
+  }
+  if (!rows.length) { said('There are no files on this case yet.', true); return; }
+
+  // Type first, date second. ORDER IS THE FEATURE, so it is explicit rather
+  // than left to whatever listCaseFiles happened to return.
+  const ORDER = ['Reports', 'Documents', 'Images', 'Recordings', 'Other'];
+  const byGroup = new Map();
+  for (const r of rows) {
+    const g = fileGroup(r);
+    if (!byGroup.has(g)) byGroup.set(g, []);
+    byGroup.get(g).push(r);
+  }
+  for (const list of byGroup.values()) list.sort((a, b) => a.ts - b.ts);
+  const groups = ORDER.filter((g) => byGroup.has(g)).map((g) => [g, byGroup.get(g)]);
+
+  const isImg = (r) => {
+    const ct = (r.contentType || '').toLowerCase();
+    // HEIC is an image that browsers will not render, so it is listed rather
+    // than embedded as a broken box.
+    return ct.startsWith('image/') && !/heic|heif/.test(ct);
+  };
+  const size = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB`
+    : n > 1024 ? `${Math.round(n / 1024)} KB` : `${n || 0} B`);
+  const when = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, year: 'numeric', month: 'long', day: 'numeric',
+  });
+
+  const embedded = rows.filter(isImg).length;
+  const listed = rows.length - embedded;
+  const win = window.open('', '_blank');
+  if (!win) { said('Your browser blocked the print window. Allow pop-ups and try again.', true); return; }
+
+  const body = groups.map(([g, list]) => `
+    <section class="grp">
+      <h2>${esc(g)}<span class="n">${list.length} file${list.length === 1 ? '' : 's'}</span></h2>
+      ${list.map((r) => `
+        <article class="item">
+          <p class="meta"><strong>${esc(r.name)}</strong><br>
+            ${esc(when.format(r.ts))} · ${esc(size(r.size))} · ${esc(r.kindLabel || r.kind || '')}</p>
+          ${isImg(r)
+            ? `<img src="${esc(r.url)}" alt="${esc(r.name)}">`
+            : `<p class="not-shown">Not rendered here: a ${esc((r.contentType || 'file').split('/').pop())}
+                 cannot be printed inside another document.
+                 <a href="${esc(r.url)}">Open the original</a></p>`}
+        </article>`).join('')}
+    </section>`).join('');
+
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
+    <title>${esc(data?.clientName || 'Case')} case file</title>
+    <style>
+      @page { margin: 14mm; }
+      body { font: 12px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #111; }
+      h1 { font-size: 20px; margin: 0 0 2mm; }
+      .cover { border-bottom: 2px solid #111; padding-bottom: 4mm; margin-bottom: 6mm; }
+      .cover p { margin: 1mm 0; color: #444; }
+      .grp { page-break-before: always; }
+      .grp:first-of-type { page-break-before: avoid; }
+      h2 { font-size: 15px; border-bottom: 1px solid #bbb; padding-bottom: 1.5mm; margin: 0 0 4mm; }
+      h2 .n { float: right; font-weight: 400; color: #666; font-size: 12px; }
+      .item { page-break-inside: avoid; margin: 0 0 7mm; }
+      .meta { margin: 0 0 2mm; }
+      .meta strong { font-size: 13px; }
+      img { max-width: 100%; max-height: 210mm; display: block; border: 1px solid #ddd; }
+      .not-shown { margin: 0; padding: 3mm; background: #f4f4f4; border-left: 3px solid #999; color: #444; }
+      a { color: #14508c; }
+    </style></head><body>
+    <div class="cover">
+      <h1>${esc(data?.clientName || 'Case')} &mdash; complete case file</h1>
+      <p>Compiled ${esc(when.format(new Date()))} &middot; ${rows.length} file${rows.length === 1 ? '' : 's'}, by type then by date.</p>
+      <p>${embedded} image${embedded === 1 ? '' : 's'} printed in full.
+         ${listed} other file${listed === 1 ? '' : 's'} listed with a link: a PDF, a recording or a
+         Word file cannot be printed inside another document.</p>
+    </div>
+    ${body}</body></html>`);
+  win.document.close();
+  // Images have to finish loading or the print runs on empty boxes. Waiting on
+  // the window's own load event rather than a fixed delay, which is the
+  // difference between a compiled case file and a stack of grey rectangles.
+  const go = () => setTimeout(() => win.print(), 400);
+  if (win.document.readyState === 'complete') go();
+  else win.addEventListener('load', go, { once: true });
+  said(`Compiled ${rows.length} file${rows.length === 1 ? '' : 's'}. Choose Save to Files in the share sheet to keep the PDF.`);
+}
+
 function paintFiles(pane) {
   pane.innerHTML = `
     <div class="panel">

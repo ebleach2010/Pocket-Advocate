@@ -1146,3 +1146,8 @@ main > p > a.small[href="/admin.html"] {
   border-color: var(--cyan); color: var(--cyan);
   background: color-mix(in srgb, var(--cyan) 12%, transparent);
 }
+
+/* The compile card sits above the notes editor and must not compete with it:
+   the editor is the page, this is one action at the top of it. */
+.compile-card { margin: 0 0 var(--s-4, 1.5rem); }
+.compile-card h3 { margin: 0 0 .4rem; }
