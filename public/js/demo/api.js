@@ -190,6 +190,43 @@ export function demoApi(role, store) {
     }
     // Pausing a case and closing one, mirrored so both are drivable in the
     // demo rather than dead buttons.
+    // THE SHIM USED TO FALL THROUGH TO ok({ ok: true }) HERE, writing nothing.
+    // That is the route behind "I put meeting link in but it didn't visually
+    // confirm that it saved" (Eric, 2026-08-26). The fix for that re-reads the
+    // case and only claims the client can see the link once the case really
+    // holds it - so against a route that accepts and does not write, the fix
+    // correctly reports failure, and the demo could not show him it working.
+    // Mirrors handleCaseUpdate in worker/index.js.
+    if (path === '/api/admin/case-update') {
+      const key = `cases/${body.caseId || DEMO_CASE_ID}`;
+      const c = store.docs.get(key);
+      if (!c) return fail(404, 'No such case');
+      const now = new Date();
+      if (body.action === 'join-link') {
+        const link = typeof body.joinLink === 'string' ? body.joinLink : '';
+        if (link.length > 500) return fail(400, 'Bad link');
+        store.docs.set(key, {
+          ...c,
+          appointment: { ...(c.appointment || {}), joinLink: link || null },
+        });
+      } else if (body.action === 'recording-uploaded') {
+        if (c.status === 'closed') return fail(409, 'Case is closed.');
+        const next = { ...c, reportDueAt: new Date(now.getTime() + 7 * 86400000) };
+        // Delivered stays delivered: a second recording on a finished case
+        // restarts the clock without undoing the delivery, same as the Worker.
+        if (c.status !== 'delivered') next.status = 'awaiting_report';
+        store.docs.set(key, next);
+      } else if (body.action === 'report-uploaded') {
+        if (c.status === 'closed') return fail(409, 'Case is closed.');
+        store.docs.set(key, { ...c, status: 'delivered', reportDeliveredAt: now });
+      } else {
+        return fail(400, 'Bad request');
+      }
+      store.persist?.();
+      store.fire?.(key);
+      return ok({ ok: true });
+    }
+
     if (path === '/api/admin/hold' || path === '/api/admin/close-case') {
       const key = `cases/${body.caseId || DEMO_CASE_ID}`;
       const c = store.docs.get(key) || {};
