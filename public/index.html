@@ -29,7 +29,7 @@
 })();
 </script>
 <link rel="stylesheet" href="/css/site.css?v=stat95">
-<link rel="stylesheet" href="/css/glowup.css?v=glow3">
+<link rel="stylesheet" href="/css/glowup.css?v=glow4">
 <script>
 // A returning account holder skips the booking page. Inline in <head> so there
 // is no flash of it first; the marker is set at sign-in and cleared at
@@ -58,9 +58,12 @@
   <div class="bar-inner">
     <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
     <nav class="tabs">
-      <a href="/" class="active">Book</a>
+      <a href="/book.html">Book</a>
+      <a href="/services.html">Services</a>
       <a href="/about.html">About</a>
+      <a href="/faq.html">Questions</a>
       <a href="/reviews.html">Reviews</a>
+      <a href="/contact.html">Contact</a>
       <span data-nav-auth></span>
     </nav>
   </div>
@@ -196,85 +199,50 @@
         </div>
       </li>
     </ol>
-    <h3>What happens after you book</h3>
-    <ul class="after-list">
-      <li>Upload the records you want me to review, including labs, imaging, visit notes, or anything else that helps me understand the case.</li>
-      <li>We go through your history together, including what has been tried, what has helped, what has not, and where you are stuck. The call is recorded and saved in your case file for you.</li>
-      <li>Within 7 days, I send you a written case report that organizes the history, the open questions, and the next steps worth discussing with your care team.</li>
-      <li>If you want to go back over the same case after the report is delivered, you can add a <span data-rate="addon">$275</span> follow-up session from your case page and use it within 30 days.</li>
-    </ul>
-    <p class="dim">Chat keeps your case moving between calls: records, scheduling, and anything new or urgent with your health. The analysis itself happens on our calls, where it gets my full attention instead of a rushed reply.</p>
+    <p class="dim small"><a href="/services.html">What happens after you book, step by step</a></p>
   </section>
 
   <section class="land-sec">
+    <h2>What I do</h2>
+    <p class="dim">Three ways to work with me, each a flat price you see before
+      you pay. The full detail of what each one includes is on the services page.</p>
+    <div class="svc-grid">
+      <a class="svc-card" href="/services.html">
+        <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="#i-brief"/></svg></span>
+        <h3>Advocacy Case</h3>
+        <span class="svc-price" data-rate="case">$1,200</span>
+        <span class="svc-line">The call, every record you share reviewed, and a written report within 7 days.</span>
+        <span class="svc-go">What is included</span>
+      </a>
+      <a class="svc-card" href="/services.html">
+        <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg></span>
+        <h3>Hands-Off Case Management</h3>
+        <span class="svc-price"><span data-rate="full">$3,400</span><span class="svc-per">/month</span></span>
+        <span class="svc-line">I deal with the system myself: your clinics, your insurer, your appeals.</span>
+        <span class="svc-go">What is included</span>
+      </a>
+      <a class="svc-card" href="/services.html">
+        <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg></span>
+        <h3>24/7 Priority Chat</h3>
+        <span class="svc-price"><span data-rate="sub">$50</span><span class="svc-per">/month</span></span>
+        <span class="svc-line">A private line to me from your phone. Cancel anytime.</span>
+        <span class="svc-go">What is included</span>
+      </a>
+    </div>
+  </section>
+
+  <section class="land-sec meet">
     <h2>Who you're hiring</h2>
     <div class="mission">
-      <p class="dim">I work with patients facing complicated neurological conditions across the US and Canada. I came to advocacy after living through autoimmune encephalitis myself and learning how hard it is to make a complicated medical story understandable to the people treating you. My role is to stay on your side of the table and help you make the strongest use of the care you already have.</p>
+      <p class="dim">I work with patients facing complicated neurological conditions
+        across the US and Canada. I came to advocacy after living through autoimmune
+        encephalitis myself. My mission statement is simply this:
+        <strong>earlier diagnosis and treatment leads to better outcome.</strong></p>
     </div>
-    <div class="mission">
-      <p class="dim">I've spoken to hundreds of patients struggling in the medical system, and I have firsthand experience of how debilitating these diseases are, and how disheartening the process can be. My mission statement is simply this: <strong>earlier diagnosis and treatment leads to better outcome.</strong> My one job is to get you to the finish line faster, so you suffer less and have a better and more robust recovery.</p>
+    <div class="actions">
+      <a class="btn ghost" href="/about.html">More about me</a>
+      <a class="btn quiet" href="https://youtube.com/@the_broscientist" rel="noopener" target="_blank">Watch on YouTube</a>
     </div>
-  </section>
-
-  <section class="land-sec">
-    <h2>Pricing, in plain terms</h2>
-    <p class="dim">No hidden fees, no hourly meter running. Independent advocates
-      typically bill $150&ndash;$300 an hour; everything here is a flat price you
-      see before you pay, and the work behind each one is spelled out.</p>
-    <a class="pack rec-c" href="/book.html">
-      <span class="tag c">COMPREHENSIVE</span>
-      <h3>Advocacy Case</h3><span class="price" data-rate="case">$1,200</span>
-      <p class="desc">One flat price for real depth: our full case overview call, my review of every record you share, and a written report within 7 days that organizes the history, the open questions, and the next steps. A follow-up discussion on the same case is <span data-rate="addon">$275</span>.</p>
-      <span class="pack-cta">Book a case</span>
-    </a>
-    <p class="pack-about"><button type="button" class="btn ghost" data-about="case">About the Advocacy Case</button></p>
-    <button type="button" class="pack rec-c" data-about="handsOff">
-      <span class="tag c">HANDS-OFF</span>
-      <h3>Hands-Off Case Management</h3><span class="price"><span data-rate="full">$3,400</span><span style="font-size:.6em; font-weight:400;">/month</span></span>
-      <p class="desc">Everything in a case, then I deal with the system myself, a month at a time: check-in calls with you at least twice a month, unlimited calls to your clinics and insurer on your behalf, me joining your telehealth appointments to advocate live, and two written insurance appeals. Appeal help alone typically runs $500&ndash;$2,500 <em>per appeal</em> elsewhere; two are included here, plus everything around them. I take two of these at a time, so you ask and I answer personally &mdash; asking costs nothing. Requested from inside an open case, and your case fee comes off your first month.</p>
-      <span class="pack-cta">About this service</span>
-    </button>
-    <a class="pack rec-m" href="/subscribe.html">
-      <span class="tag o"><span>ON THE GO</span></span>
-      <h3>24/7 Priority Chat</h3><span class="price"><span data-rate="sub">$50</span>/mo</span>
-      <p class="desc">A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime; your message history stays available to you.</p>
-      <span class="pack-cta">Start chatting</span>
-    </a>
-    <p class="pack-about"><button type="button" class="btn ghost" data-about="chat">About the chat line</button></p>
-  </section>
-
-  <section class="land-sec">
-    <h2>See how I work</h2>
-    <p class="dim">Real cases, real conversations, on YouTube. Watch before you spend a dollar.</p>
-    <p><a class="btn ghost" href="https://youtube.com/@the_broscientist" rel="noopener" target="_blank">▶ Watch on YouTube</a></p>
-  </section>
-
-  <section class="land-sec">
-    <h2>Straight answers</h2>
-    <details class="faq">
-      <summary>Is this medical advice?</summary>
-      <div class="faq-a"><p>No. I do not diagnose, treat, or prescribe. I help you understand the information already in front of you, organize the case, and prepare for conversations with the clinicians who are treating you. If this is an emergency, call 911.</p></div>
-    </details>
-    <details class="faq">
-      <summary>What happens on the first call?</summary>
-      <div class="faq-a"><p>You walk me through the case in your own words. I ask questions, take notes, and start building the structure of your report. The call is recorded and saved in your private case file for you to keep.</p></div>
-    </details>
-    <details class="faq">
-      <summary>What if you ask me something I don't want to answer?</summary>
-      <div class="faq-a"><p>You can skip it. In chat, long-press a message and tap the flag if you do not want to answer. No explanation is required; we just move on.</p></div>
-    </details>
-    <details class="faq">
-      <summary>What do you need from me?</summary>
-      <div class="faq-a"><p>An email address to sign in, plus your name and date of birth so I know whose case I am reviewing. Labs, records, imaging, and other documents are optional and only shared if you choose.</p></div>
-    </details>
-    <details class="faq">
-      <summary>Can I stop?</summary>
-      <div class="faq-a"><p>Priority Chat can be canceled anytime, with access continuing through the period you already paid for. Advocacy Case fees are non-refundable once your time is booked, except if I reschedule you more than once; in that situation, you can request a full refund.</p></div>
-    </details>
-    <details class="faq">
-      <summary>Is my information private?</summary>
-      <div class="faq-a"><p>Yes. Your data is encrypted, stored in the United States, and accessible only to you and me through the app. Sessions are private, and you can request deletion of your account and case data at any time.</p></div>
-    </details>
   </section>
 
   <section class="land-sec">
@@ -299,6 +267,29 @@
     <p class="fine"><strong>Pocket Advocate provides patient advocacy, not medical care.</strong> I do not diagnose, treat, or prescribe, and this service does not replace your care team. If you are having a medical emergency, call 911. Pocket Advocate currently serves clients in the United States and Canada.</p>
   </section>
 </main>
+
+<footer class="site-foot">
+  <div class="foot-cols">
+    <nav class="foot-col" aria-label="Explore">
+      <h2>Explore</h2>
+      <a href="/book.html">Book a case</a>
+      <a href="/services.html">Services and pricing</a>
+      <a href="/about.html">About</a>
+      <a href="/faq.html">Questions</a>
+      <a href="/reviews.html">Reviews</a>
+    </nav>
+    <nav class="foot-col" aria-label="Reach me">
+      <h2>Reach me</h2>
+      <a href="/contact.html">Contact</a>
+      <a href="tel:+12086708608">208 670 8608</a>
+      <a href="/signin.html">Client sign in</a>
+      <a href="https://youtube.com/@the_broscientist" rel="noopener" target="_blank">Watch on YouTube</a>
+    </nav>
+  </div>
+  <p class="foot-serving">Serving patients across the United States and Canada.</p>
+  <p class="fine"><strong>Pocket Advocate provides patient advocacy, not medical care.</strong> I do not diagnose, treat, or prescribe, and this service does not replace your care team. If you are having a medical emergency, call 911. Pocket Advocate currently serves clients in the United States and Canada.</p>
+</footer>
+
 <script type="module">
   // The case and follow-up prices move on their own, so nothing on this page
   // quotes a number that is only true at deploy time. Loaded soft: a failed
@@ -337,23 +328,32 @@
       `<a class="btn quiet" href="tel:${BUSINESS_PHONE}">📞 Call me</a>`;
 </script>
 <script type="module">
-  import { hydrateNav, currentUser } from '/js/auth.js';
-  import { initSetupGuide } from '/js/onboarding.js';
+  // THE EXPLAINER FIRST, AND WITHOUT AUTH. These two lines used to sit below a
+  // STATIC import of the auth module, which meant a day when the auth module
+  // failed to load took the "What a web app means" explainer down with it, on
+  // the one page a stranger arrives at. It is the wrong dependency: the
+  // explainer needs nothing signed in to be worth reading. So it runs first,
+  // off a module that has no auth in it, and everything that genuinely needs
+  // an account is soft-loaded underneath.
   import { helpButton, wireHelp } from '/js/help.js';
-  hydrateNav();
-
-  // The "This is a web app ?" note in the hero: the install/notifications/
-  // sign-in explainer, reachable before anyone has paid a cent.
   const note = document.getElementById('webapp-note');
   note.insertAdjacentHTML('beforeend', ' ' + helpButton('app', 'What a web app means, and how to add it to your Home Screen'));
   wireHelp(note);
-  // Offer the Home Screen install once, before booking rather than after
-  // paying. Signed-in only, once per device, and skippable. Never a gate:
-  // the Book button stays live behind it.
-  const u = await currentUser();
-  // No welcome card here: this is the booking page, and "you're in, this is
-  // your case" is not true of anyone reading it.
-  if (u) initSetupGuide(u, document.querySelector('main'), { welcome: false });
+
+  // Soft, the way about.html has always done it. Nav hydration and the Home
+  // Screen offer are both nice to have; neither is worth the page for.
+  import('/js/auth.js').then(async (auth) => {
+    auth.hydrateNav();
+    // Offer the Home Screen install once, before booking rather than after
+    // paying. Signed-in only, once per device, and skippable. Never a gate:
+    // the Book button stays live behind it.
+    const u = await auth.currentUser();
+    // No welcome card here: this is the landing page, and "you're in, this is
+    // your case" is not true of anyone reading it.
+    if (!u) return;
+    const { initSetupGuide } = await import('/js/onboarding.js');
+    initSetupGuide(u, document.querySelector('main'), { welcome: false });
+  }).catch(() => {});
 </script>
 <script type="module">
   // The About sheets (Eric, 2026-08-25). Its own module with no Firebase

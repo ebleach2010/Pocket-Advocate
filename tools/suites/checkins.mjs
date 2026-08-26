@@ -201,9 +201,14 @@ check('AB3 and that he writes appeals when a doctor will not cooperate',
 // `function addAboutButton(host, id)` - it was reading the definition and
 // reporting it as the wiring. A declaration carries no string argument, so
 // requiring one cannot make that mistake again.
-check('AB4 the About buttons are wired on the landing page and every enhancement card',
+check('AB4 the About buttons are wired on the services page and every enhancement card',
   (() => {
-    const idx = readFileSync(`${ROOT}/public/index.html`, 'utf8');
+    // MOVED 2026-08-26 with the site split: the three service About buttons
+    // were cut out of index.html and now live on services.html, beside the
+    // packs they explain. wireAboutButtons has to be on that same page or the
+    // buttons render and open nothing, which is the exact failure this line
+    // exists to catch.
+    const idx = readFileSync(`${ROOT}/public/services.html`, 'utf8');
     const onLanding = /data-about="case"/.test(idx) && /data-about="handsOff"/.test(idx)
       && /data-about="chat"/.test(idx) && /wireAboutButtons/.test(idx);
     // Every id handed to an About call, however the call is spelled.
@@ -250,12 +255,30 @@ check('W6 the one client fallback left moved with it; booking compiles no tier p
   // 2026-08-26, matching FULL_MONTH_CENTS in the Worker.
   /let fullAccessCents = 340000;/.test(CASE)
   && !/FULL_PRICE_CENTS/.test(BOOK));
-check('W7 the landing page sells with the value math and his phrase',
+// WHY THIS CHECK MOVED (2026-08-26, with the split into a real site).
+// It read all three of these off index.html, because until now index.html WAS
+// the whole marketing site: one page, eight screens, eight topics. Eric asked
+// for "more website like territory", so Services, Questions and Contact each
+// got their own page and the pricing blocks were cut out of the landing and
+// moved to services.html VERBATIM.
+//
+// So the check follows the copy rather than being deleted or loosened to "is
+// this string anywhere on the site". It still names which page each thing must
+// be on, which is the stronger assertion: his own line has to survive on the
+// page a stranger lands on, and the value math has to survive on the page that
+// actually sells. A move to the wrong page still fails here.
+check('W7 the landing sells with his phrase, and the value math is on the services page',
   (() => {
     const idx = readFileSync(`${ROOT}/public/index.html`, 'utf8');
-    return /5 years' worth of boots on the ground experience/.test(idx)
-      && /per appeal<\/em> elsewhere/.test(idx)
-      && /data-rate="full"/.test(idx);
+    const svc = readFileSync(`${ROOT}/public/services.html`, 'utf8');
+    // His words, on the page a stranger arrives at.
+    const hisPhrase = /5 years' worth of boots on the ground experience/.test(idx);
+    // The comparison that justifies the tier price, where the tier is sold.
+    const valueMath = /per appeal<\/em> elsewhere/.test(svc) && /data-rate="full"/.test(svc);
+    // And the landing still has to NAME the tier and its live price, or the
+    // split would have quietly hidden the most expensive thing he sells.
+    const onLanding = /data-rate="full"/.test(idx) && /Hands-Off Case Management/.test(idx);
+    return hisPhrase && valueMath && onLanding;
   })());
 
 const failed = results.filter((r) => !r.pass);

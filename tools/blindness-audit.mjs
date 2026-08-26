@@ -93,6 +93,12 @@ const CODE_ONLY = [
 const CLIENT_PAGES = [
   '/', '/about', '/book', '/case', '/chat', '/signin', '/subscribe',
   '/subscription', '/return', '/reviews',
+  // 2026-08-26: the landing split into a real site. These three are new public
+  // pages, and a public page this list does not name is a page nobody ever
+  // checks for leaked admin language. Added in the same commit that creates
+  // them, deliberately: the gap between "shipped" and "audited" is exactly
+  // where a leak would sit unnoticed.
+  '/services', '/faq', '/contact',
 ];
 
 // Reachable without any page linking to them.
