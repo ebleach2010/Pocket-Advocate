@@ -11,6 +11,7 @@ import {
 } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { mountChat, openLightbox } from './chat.js';
+import { STATUS_REACTIONS } from './msg-actions.js';
 import { mountAdvisor, sendToClient } from './advisor.js';
 import { mountNotes } from './notes.js';
 import { mountSaved } from './saved.js';
@@ -226,7 +227,22 @@ function render(el) {
         render: (pane) => {
           pane.innerHTML = `
             <div class="panel">
-              <h3>Chat with the client</h3>
+              <!-- Eric, 2026-08-25: the statuses "should sit to the right of
+                   'chat with client' as a dropdown so I can have it be the
+                   status of what I'm working on." They were reachable only by
+                   long-pressing a message, or by a 0.72rem "▾ What I'm doing"
+                   floating above the log that he never found. A standing
+                   state belongs where the state is, not inside a menu you
+                   have to know about. -->
+              <div class="chat-head">
+                <h3>Chat with the client</h3>
+                <label class="status-pick">
+                  <span class="dim small">Working on</span>
+                  <select data-status-pick aria-label="What you are working on">
+                    <option value="">Nothing right now</option>
+                  </select>
+                </label>
+              </div>
               <div class="row" data-workclock style="gap:.5rem; align-items:center; margin:.1rem 0 .5rem;">
                 <button class="btn quiet" data-work-toggle style="flex:none;">▶ Start working</button>
                 <button class="btn quiet work-total-btn" data-work-total
@@ -392,8 +408,23 @@ function render(el) {
     ],
   });
 
+  // The dropdown beside the heading. Built from STATUS_REACTIONS so it can
+  // never drift from the long-press menu or from the Worker's wording.
+  const statusPick = folder.el('chat').querySelector('[data-status-pick]');
+  if (statusPick) {
+    for (const r of STATUS_REACTIONS) {
+      const o = document.createElement('option');
+      o.value = r.id;
+      o.textContent = `${r.emoji} ${r.label}`;
+      statusPick.appendChild(o);
+    }
+  }
+
   const chat = mountChat({
     container: folder.el('chat').querySelector('#chat'),
+    // Show what is already set, so the control reads as a state rather than
+    // as a button that fires and forgets.
+    onStatus: (id) => { if (statusPick && statusPick.value !== id) statusPick.value = id; },
     parentPath: ['cases', caseId],
     user,
     myRole: 'admin',
@@ -412,6 +443,21 @@ function render(el) {
         onSend: (text) => chatSend?.(text),
       }),
     },
+  });
+
+  // Setting it: the chat module owns the write, because it knows which
+  // message is newest and the status still lands there.
+  statusPick?.addEventListener('change', async () => {
+    const want = statusPick.value;
+    const was = chat.currentStatus();
+    statusPick.disabled = true;
+    try {
+      await chat.setStatus(want);
+    } catch (err) {
+      statusPick.value = was;          // put it back rather than lie
+      alert(err.message || "Couldn't set that");
+    }
+    statusPick.disabled = false;
   });
 
   chatSend = (text) => chat.send(text);

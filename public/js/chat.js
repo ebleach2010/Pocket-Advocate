@@ -58,11 +58,14 @@ export function watchPresence(el) {
  * }
  */
 /**
+ * onStatus: called with the status id sitting on the newest message whenever
+ *   the thread repaints, so a control OUTSIDE this chat (the dropdown beside
+ *   "Chat with the client") can show what is currently set.
  * composerButton: an optional { icon, title, onClick } the caller can put in
  * the composer row, left of the text box. The caller owns what it means; this
  * file only knows where it goes.
  */
-export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null }) {
+export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null, onStatus = null }) {
   container.classList.add('chat-root');
   // The lane chips lived and died on 2026-08-22 (Eric: "Just get rid of all
   // of them. They're pointless. Have it just be a chat."). Do not rebuild a
@@ -73,12 +76,6 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     ${disabled
       ? '<button class="chat-expand" data-expand type="button" title="Full screen" aria-label="Full screen">⤢</button>'
       : ''}
-    ${myRole === 'admin' && !disabled ? `
-      <p style="margin:0 0 .25rem; text-align:right;">
-        <button type="button" class="btn quiet" data-status-arrow
-          title="Tell them what you're doing" aria-label="Tell them what you're doing"
-          style="font-size:.72rem; padding:.28rem .7rem;">▾ What I'm doing</button>
-      </p>` : ''}
     <div class="chat-log" data-log><p class="dim small">Loading messages…</p></div>
     ${disabled
       ? `<p class="dim small chat-notice">${esc(notice)}</p>`
@@ -109,6 +106,9 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   // history, because you asked for it. Nobody else's does.
   let followNext = false;
   let latestMsgId = null;
+  // The status on the newest message, mirrored so the panel's dropdown can
+  // show what is set without re-reading Firestore.
+  let currentStatusId = '';
   const parentRef = doc(db, ...parentPath);
   const messagesRef = collection(db, ...parentPath, 'chat');
 
@@ -144,12 +144,20 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       const tb = b.data().ts?.toDate?.()?.getTime?.() ?? Infinity;
       return ta - tb;
     });
-    // The ▾ status button hangs its pick on whatever is newest right now -
+    // The status dropdown hangs its pick on whatever is newest right now -
     // preferring the newest COMMITTED message: a just-sent local echo has no
     // server timestamp yet, and the Worker answers "No such message" for a
     // write it has not seen.
     const committed = ordered.filter((m) => m.data().ts);
-    latestMsgId = (committed.length ? committed[committed.length - 1] : ordered[ordered.length - 1])?.id ?? null;
+    const newest = committed.length ? committed[committed.length - 1] : ordered[ordered.length - 1];
+    latestMsgId = newest?.id ?? null;
+    // What the dropdown should be showing. Only a STATUS counts: a plain emoji
+    // is the client reacting to him and is nobody's working state.
+    {
+      const rid = newest?.data()?.reaction?.id || '';
+      currentStatusId = rid && statusById(rid) ? rid : '';
+      onStatus?.(currentStatusId);
+    }
     for (const m of ordered) {
       const data = m.data();
       const mine = data.from === user.uid;
@@ -492,17 +500,6 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   // Full-screen chat: the whole thread takes the viewport so long messages
   // read comfortably; ✕ puts it back. Same control both sides of the chat.
   const expandBtn = container.querySelector('[data-expand]');
-  // The ▾ above the log (admin only): pick a status without hunting for a
-  // message to long-press. It lands on the newest message in the thread,
-  // and the client is pushed the exact words, same as the long-press path.
-  container.querySelector('[data-status-arrow]')?.addEventListener('click', async () => {
-    if (!latestMsgId) { alert('No messages yet to hang a status on.'); return; }
-    const choice = await openStatusSheet();
-    if (!choice) return;
-    await post('/api/chat/react', {
-      kind: kindOf(), id: parentPath[1], msgId: latestMsgId, reaction: choice.id,
-    }, "Couldn't set that");
-  });
   expandBtn.addEventListener('click', () => {
     const full = container.classList.toggle('chat-full');
     expandBtn.textContent = full ? '✕' : '⤢';
@@ -662,7 +659,26 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   });
 
   // Handed back so the admin panel can post an approved message as me.
-  return { send: (text) => send({ text }) };
+  // What the panel around this chat can drive. `setStatus` exists because the
+  // status belongs beside the heading, not floating above the log where it
+  // spent its life as a 0.72rem "▾ What I'm doing" nobody ever found.
+  //
+  // It still lands on the newest message, which is what the client is pushed
+  // and what the thread shows - the dropdown is a better door onto the same
+  // room, not a second mechanism.
+  return {
+    send: (text) => send({ text }),
+    setStatus: async (id) => {
+      if (!latestMsgId) throw new Error('No messages yet to hang a status on.');
+      const ok2 = await post('/api/chat/react', {
+        kind: kindOf(), id: parentPath[1], msgId: latestMsgId, reaction: id || null,
+      }, '');
+      if (!ok2) throw new Error('That did not save. Try again.');
+      return true;
+    },
+    /** Whatever status is on the newest message right now, or '' for none. */
+    currentStatus: () => currentStatusId,
+  };
 }
 
 // ---- links inside message text ----

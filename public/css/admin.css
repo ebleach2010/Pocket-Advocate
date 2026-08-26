@@ -793,3 +793,22 @@
   text-transform: uppercase; color: var(--cyan);
 }
 .sum-sec p { margin: 0; font-size: .92rem; line-height: 1.6; color: var(--soft); white-space: pre-wrap; }
+
+/* The heading row of the chat page: the title, and on its right the standing
+   status. Wraps rather than squeezing, because the labels are sentences. */
+.chat-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: .6rem; flex-wrap: wrap; margin-bottom: .3rem;
+}
+.chat-head h3 { margin: 0; }
+.status-pick { display: flex; align-items: center; gap: .4rem; margin: 0; min-width: 0; }
+.status-pick select {
+  max-width: 15rem; min-height: 36px; padding: .3rem .5rem;
+  background: var(--panel-2); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 9px; font-size: .84rem;
+}
+/* Set means set: a live status is cyan, so a glance at the heading answers
+   "does she think I am doing something right now". */
+.status-pick select:not([value=""]) { border-color: var(--cyan); color: var(--cyan); }
+.status-pick select:disabled { opacity: .5; }
+@media (max-width: 26rem) { .status-pick select { max-width: 11rem; } }
