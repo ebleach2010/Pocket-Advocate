@@ -3341,6 +3341,31 @@ function looksLikeImage(dataUrl) {
   return png || jpg;
 }
 
+/**
+ * Trim a value to a string, or to nothing, capped at n characters.
+ *
+ * MODULE LEVEL, AND THAT IS THE WHOLE POINT. This existed three times as an
+ * identical local const inside handleAuthority, handleClinicCalls and
+ * handleTelehealthRequest. When the call-document route was written it called
+ * `str(...)` the same way, from handleAdvisor, where none of those three are
+ * in scope. The result was `ReferenceError: str is not defined` thrown
+ * SYNCHRONOUSLY, which the router's catch-all turned into a flat
+ * `{ error: 'Internal error' }` 500.
+ *
+ * So the call document could never build. Not once. It failed before
+ * runCallDoc was reached, which means before the state was set, before the
+ * model was called, before any of the machinery the suites cover. Eric saw
+ * "Building..." (the panel's own optimistic flag) and then "Internal error",
+ * with the real reason only ever visible in a Cloudflare log.
+ *
+ * Hoisted rather than copied a fourth time, and the three locals are deleted
+ * with it, because a helper that has to be redefined per route is a helper
+ * that will eventually be missing from one.
+ */
+function str(v, n) {
+  return typeof v === 'string' ? v.trim().slice(0, n) : '';
+}
+
 async function handleAuthority(request, env, url) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in required' }, 401);
@@ -3411,7 +3436,6 @@ async function handleAuthority(request, env, url) {
   if (c.data.clientName && flat(typed) !== flat(c.data.clientName))
     return json({ error: 'Sign with the same name that is on this case.' }, 400);
 
-  const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
   const item = {
     kind,
     signedName: typed,
@@ -3529,7 +3553,6 @@ async function handleClinicCalls(request, env, url) {
   }
   if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
 
-  const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
   if (body?.action === 'add') {
     const clinic = str(body?.clinic, 200);
     if (!clinic) return json({ error: 'Name the clinic.' }, 400);
@@ -5064,7 +5087,6 @@ async function handleTelehealthRequest(request, env) {
     return json({ error: 'That appointment is too soon - I need at least an hour of notice.' }, 400);
   if (when.getTime() > Date.now() + 365 * 86_400_000)
     return json({ error: 'Pick a date within the next year.' }, 400);
-  const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
   const clinicName = str(body?.clinicName, 200);
   const provider = str(body?.provider, 200);
   if (!clinicName) return json({ error: 'Name the clinic.' }, 400);
