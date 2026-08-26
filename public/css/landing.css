@@ -1,0 +1,341 @@
+/* Pocket Advocate: the landing page's own layer.
+ *
+ * Linked from index.html ONLY, after site.css. site.css owns the four colour
+ * schemes and the shared components and is not touched by this file; every
+ * value below is composed from tokens that already exist there, so neon,
+ * calm, paper and contrast all follow. No literal colour appears in this
+ * file: a hex here would look correct on one scheme and wrong on three.
+ *
+ * Written against a 390x844 phone and a root font of 17.5px, so every rem
+ * below is about 9% larger than it reads.
+ *
+ * What it fixes (Eric, 2026-08-26, against his mockup):
+ *   1. a headline that wrapped to four lines and ran through the artwork
+ *   2. twelve lines of prose between the top of the page and a button
+ *   3. line art thin enough to read as unfinished
+ *   4. a wordmark with no mark beside it
+ *   5. "How it works" with no numbered rail
+ *   6. type sized for a wider container than it has
+ */
+
+/* ------------------------------------------------------------------ rhythm */
+/* Tighter than the shared 2.8rem. The landing page is a sequence of cards,
+   not a document, and the gaps were doing the work of a page break. */
+.land-sec { margin-top: 2.1rem; }
+/* The hero is the first thing under the bar and does not need a run-up. */
+.land-sec.hero { margin-top: .5rem; padding: 1.05rem .95rem 1.1rem; }
+
+/* Section headings get a mark, so the eye finds them at a glance while
+   scrolling rather than reading its way to them. Drawn in CSS from the two
+   accent tokens: no extra element, no extra request. */
+.land-sec > h2 {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: 1.12rem; margin-bottom: .7rem;
+}
+.land-sec > h2::before {
+  content: ''; flex: none; width: .95rem; height: .95rem;
+  background: linear-gradient(135deg, var(--cyan), var(--magenta));
+  clip-path: polygon(50% 0%, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0% 50%, 39% 39%);
+}
+.land-sec.closing > h2 { justify-content: center; }
+/* The one-paragraph lead under a heading. Smaller and dimmer than body copy:
+   it sets up the section, it is not the section. */
+.sec-lead {
+  color: var(--dim); font-size: .86rem; line-height: 1.55; margin: 0 0 .9rem;
+}
+
+/* ------------------------------------------------------------------- brand */
+.brand { display: inline-flex; align-items: center; gap: .5rem; }
+.brand-word { display: inline-block; }
+.brand-mark {
+  display: grid; place-items: center; flex: none;
+  width: 1.9rem; height: 1.9rem; border-radius: 10px;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--panel-2), var(--panel)) padding-box,
+    linear-gradient(140deg, var(--cyan), var(--magenta)) border-box;
+  box-shadow: var(--glow-m);
+}
+.brand-mark .ico { width: 1.3rem; height: 1.3rem; vertical-align: 0; }
+.brand-mark .bm-shield { stroke: var(--cyan); stroke-width: 1.5; fill: none; }
+.brand-mark .bm-heart { stroke: var(--magenta); stroke-width: 2.6; fill: none; }
+
+/* -------------------------------------------------------------- hero: band */
+/* The artwork used to float into the headline. Measured on a 390px phone, the
+   headline then had about 180px of measure and took four lines, and the word
+   "next" printed over a shield. The art has its own band across the top now:
+   the headline below it gets the full column and lands on two lines. */
+.land-sec.hero .hero-top {
+  position: relative; display: flex; align-items: center; gap: .6rem;
+  min-height: 5rem; margin-bottom: .15rem;
+}
+.land-sec.hero .hero-badge {
+  display: grid; place-items: center; flex: none;
+  width: 2.5rem; height: 2.5rem; border-radius: 13px;
+  color: var(--cyan); border: 1px solid transparent;
+  background:
+    linear-gradient(var(--panel-2), var(--panel)) padding-box,
+    linear-gradient(140deg, var(--cyan), var(--magenta)) border-box;
+  box-shadow: var(--glow-c);
+}
+.land-sec.hero .hero-badge .ico { width: 1.45rem; height: 1.45rem; vertical-align: 0; }
+.land-sec.hero .hero-eyebrow {
+  margin: 0; font-size: .58rem; letter-spacing: .22em;
+  text-align: left; text-indent: 0; line-height: 1.2;
+  /* Stops where the shield in the artwork starts. Without the cap, a 320px
+     phone printed ADVOCACY straight through it. Below about 380px the label
+     wraps to two short lines instead, which the band has room for. */
+  max-width: calc(100% - 10.2rem);
+}
+
+/* --------------------------------------------------------------- hero: art */
+/* Absolute, so the band's height is set by the badge row and the art can sit
+   over the card's own padding instead of adding to it. */
+/* The float, its shape-outside, its float margins and its 55% opacity all
+   come from site.css and all have to go: the art is not squeezing text any
+   more, and at 55% a lit illustration is a smudge. This is the rule that
+   makes it look finished rather than faint. */
+.land-sec.hero .hero-art {
+  position: absolute; right: -.35rem; top: -.9rem;
+  float: none; shape-outside: none; margin: 0; opacity: 1;
+  width: 7.9rem; height: auto; pointer-events: none;
+}
+/* Every stop is a token. Fills and a halo rather than hairlines: the old one
+   was 1.6px of stroke on a dark ground, which reads as a sketch. */
+.hero-art .hg0 { stop-color: var(--cyan); stop-opacity: .28; }
+.hero-art .hg1 { stop-color: var(--magenta); stop-opacity: .14; }
+.hero-art .hg2 { stop-color: var(--cyan); stop-opacity: 0; }
+/* Cyan into blue, not cyan into violet: the violet end of the sweep landed on
+   the bottom of both silhouettes and turned them grey against the panel. The
+   violet stays where the mockup keeps it, in the halo and the sparks. */
+.hero-art .hs0 { stop-color: var(--cyan); }
+.hero-art .hs1 { stop-color: var(--blue); }
+.hero-art .hf0 { stop-color: var(--cyan); stop-opacity: .18; }
+.hero-art .hf1 { stop-color: var(--blue); stop-opacity: .1; }
+.hero-art .hd0 { stop-color: var(--panel-2); }
+.hero-art .hd1 { stop-color: var(--bg); }
+.hero-art .ha-folds { stroke: var(--cyan); opacity: .85; }
+.hero-art .ha-folds-2 { opacity: .5; }
+.hero-art .ha-cross { stroke: var(--cyan); }
+.hero-art .ha-cross-glow { stroke: var(--cyan); opacity: .26; }
+.hero-art .ha-plate-glow { stroke: var(--cyan); opacity: .18; }
+.hero-art .ha-body-glow { stroke: var(--cyan); opacity: .16; }
+.hero-art .ha-spark circle { fill: var(--magenta); }
+.hero-art .ha-spark circle:nth-child(2),
+.hero-art .ha-spark circle:nth-child(4) { fill: var(--cyan); }
+
+/* ---------------------------------------------------------- hero: headline */
+/* Measured, not guessed. At 23.5px the line "Go into your next appointment"
+   needs 377px and a 390px phone gives the headline 316px, so it fell to
+   three lines and ran into the artwork. 22.2px is the largest size that fits,
+   and the ceiling below is exactly that.
+   Fluid underneath it, because the break is what matters and the break
+   depends on the column: the column is the viewport less 74px of main and
+   card padding, and that headline needs about 14.2 characters' worth of
+   font-size per line. Two lines from a small phone up, and `balance` puts
+   the break where a person would. */
+.land-sec.hero h1 {
+  font-size: clamp(.95rem, calc(7.04vw - 5.2px), 1.27rem);
+  line-height: 1.2; letter-spacing: -.02em;
+  margin: 0 0 .5rem; text-wrap: balance;
+}
+/* The credential quote. Same place in the order as the mockup, above the
+   buttons, at a size that leaves both of them on the first screen. */
+.land-sec.hero .hero-cred {
+  margin: 0; padding: .05rem 0 .05rem .7rem;
+  border-left: 2px solid var(--cyan);
+  color: var(--soft); font-size: .74rem; line-height: 1.5;
+}
+
+/* ------------------------------------------------------------- hero: doors */
+.acts { margin-top: .85rem; gap: .5rem; }
+.act { min-height: 58px; padding: .7rem .8rem; font-size: .95rem; }
+.act-ico { width: 2.2rem; height: 2.2rem; border-radius: 11px; }
+.act-label { line-height: 1.25; }
+/* Each door wears its own colour, as in the mockup: the case is cyan, the
+   chat line is violet. Both were a cyan-to-violet sweep, which made them a
+   matched pair with nothing to tell them apart at a glance. */
+.act-c {
+  background:
+    linear-gradient(var(--panel-2), var(--panel-2)) padding-box,
+    linear-gradient(150deg, var(--cyan), var(--cyan-dim)) border-box;
+}
+.act-m {
+  background:
+    linear-gradient(var(--panel-2), var(--panel-2)) padding-box,
+    linear-gradient(150deg, var(--magenta), var(--blue)) border-box;
+  /* One glow per screen belongs to Book a case; the chat row keeps its edge
+     and drops the bloom, so the pair does not read as two primaries. */
+  box-shadow: none;
+}
+.act-c:hover, .act-c:focus-visible {
+  background:
+    linear-gradient(var(--panel), var(--panel)) padding-box,
+    linear-gradient(150deg, var(--cyan), var(--cyan-dim)) border-box;
+}
+.act-m:hover, .act-m:focus-visible {
+  background:
+    linear-gradient(var(--panel), var(--panel)) padding-box,
+    linear-gradient(150deg, var(--magenta), var(--blue)) border-box;
+}
+
+/* The About sheet and the web-app note shared two stacked rows and a centred
+   button that lined up with nothing. One row, left aligned, under the pair. */
+.hero-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  /* Wrap, but sized so it does not have to above about 380px: at 320 the two
+     of them cannot share a line and the help dot went off the screen edge. */
+  gap: .4rem; flex-wrap: wrap; margin-top: .65rem;
+}
+.hero-foot .btn.ghost {
+  flex: none; padding: .4rem .6rem; font-size: .71rem; min-height: 44px;
+  border-color: var(--line); color: var(--dim); white-space: nowrap;
+}
+.hero-foot .btn.ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+.hero-foot .webapp-note {
+  margin: 0; font-size: .68rem; white-space: nowrap; min-width: 0;
+}
+
+/* --------------------------------------------------------------- trust bar */
+/* Four facts in the width of a paragraph. Dividers rather than gaps: at this
+   size the eye needs the column edges to know there are four of anything. */
+.trust {
+  margin-top: .75rem; padding: .7rem .2rem; gap: 0;
+  background: linear-gradient(var(--panel), var(--panel-2));
+}
+.trust li { padding: 0 .15rem; font-size: .6rem; letter-spacing: .01em; }
+.trust li + li { border-left: 1px solid var(--line); }
+.trust .ico { width: 1.25rem; height: 1.25rem; }
+
+/* --------------------------------------------------- how it works: the rail */
+/* Three numbers on one connecting line, which is what turns three cards into
+   a sequence you can read in a glance. The rail is drawn on the row, so the
+   last step has no tail hanging off the bottom of the section. */
+.hiw { margin-top: .2rem; }
+.hiw li.step-row {
+  border-left: 0; margin-left: 0; padding: 0 0 .6rem 2.85rem;
+  min-height: 3.6rem;
+}
+/* The rail itself: a gradient hairline from the first number to the last. */
+.hiw li.step-row::after {
+  content: ''; position: absolute; left: 1.02rem; top: 1.9rem; bottom: -.3rem;
+  width: 2px; border-radius: 2px;
+  background: linear-gradient(var(--cyan), var(--magenta)); opacity: .45;
+}
+.hiw li.step-row:last-child::after { display: none; }
+.hiw li.step-row::before {
+  left: 0; top: .25rem; width: 2.1rem; height: 2.1rem;
+  font-size: .82rem; border-width: 2px;
+}
+.hiw li.step-row:nth-child(2)::before {
+  color: var(--magenta); border-color: var(--magenta); box-shadow: var(--glow-m);
+}
+/* The tick from the number to the card, so the rail visibly feeds each step. */
+.hiw .step-card { position: relative; padding: .65rem .75rem; gap: .55rem; }
+.hiw .step-card::before {
+  content: ''; position: absolute; left: -.85rem; top: 1.15rem;
+  width: .85rem; height: 1px; background: var(--line);
+}
+.hiw .step-text { font-size: .85rem; line-height: 1.5; color: var(--ink); }
+/* The trailing sentence of each step, set back. Same words, second voice. */
+.step-note { display: block; color: var(--dim); }
+.hiw .icon-chip { width: 2rem; height: 2rem; border-radius: 10px; }
+.hiw .icon-chip .ico { width: 1.15rem; height: 1.15rem; }
+.hiw li.step-row:nth-child(2) .icon-chip { color: var(--magenta); }
+
+/* "What happens after you book": a quieter list, hung off its own rail so it
+   reads as the detail under the three steps rather than a second sequence. */
+.land-sec > h3 { font-size: .98rem; margin: 1.2rem 0 .5rem; }
+.after-list {
+  margin: 0; padding: .1rem 0 .1rem 1.5rem; list-style: none;
+  border-left: 1px solid var(--line);
+}
+.after-list li {
+  position: relative; margin-bottom: .5rem; font-size: .82rem; line-height: 1.55;
+  color: var(--dim);
+}
+.after-list li::before {
+  content: ''; position: absolute; left: -1.63rem; top: .5rem;
+  width: .4rem; height: .4rem; border-radius: 50%;
+  background: var(--cyan); box-shadow: var(--glow-c);
+}
+.land-sec > p.dim { font-size: .82rem; line-height: 1.55; }
+
+/* ------------------------------------------------------------ who you hire */
+.mission { font-size: .84rem; }
+.mission p.dim { font-size: .84rem; line-height: 1.6; }
+
+/* --------------------------------------------------------------- the packs */
+/* Same cards, sized for the column they are actually in. The price led at
+   1.5rem while the name it belonged to was 1.2rem, so the number arrived
+   before the thing it was the price of. */
+.pack { padding: .95rem 1rem; border-radius: 16px; }
+.pack h3 { font-size: 1.05rem; }
+.pack .price { font-size: 1.28rem; }
+.pack .desc { font-size: .84rem; line-height: 1.55; color: var(--dim); }
+.pack .tag { font-size: .58rem; letter-spacing: .16em; }
+.pack .pack-cta {
+  width: 100%; justify-content: center; margin-top: .7rem;
+  font-size: .86rem; min-height: 46px;
+}
+.pack-about { margin: .45rem 0 1rem; }
+.pack-about .btn.ghost {
+  padding: .4rem .8rem; font-size: .76rem; min-height: 44px;
+  border-color: var(--line); color: var(--dim);
+}
+.pack-about .btn.ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+
+/* ------------------------------------------------------------------- faq */
+.faq { border-radius: 14px; margin-bottom: .45rem; }
+.faq > summary { padding: .7rem .9rem; font-size: .88rem; }
+.faq-a { padding: 0 .9rem .8rem; font-size: .84rem; }
+
+/* --------------------------------------------------------------- reviews */
+.reviews-label { letter-spacing: .18em; }
+
+/* --------------------------------------------------------------- closing */
+.close-line { padding: .8rem .85rem; font-size: .86rem; }
+.closing-acts { margin-top: 1rem; text-align: left; }
+.closing-acts .act { font-size: .95rem; }
+/* The call button, when there is a number, sits under the door rather than
+   beside it: two buttons of different widths on one row read as an accident. */
+.closing-acts .btn.quiet {
+  display: block; width: 100%; margin-top: .5rem; text-align: center;
+  font-size: .86rem;
+}
+.land-sec.closing .fine { font-size: .74rem; line-height: 1.55; margin-top: 1rem; }
+
+/* ------------------------------------------------------------------ wide */
+/* Above 46rem the hero has room for the two-column shape the mockup implies:
+   words on the left, the illustration standing beside them at a size where
+   the detail in it is worth drawing. */
+@media (min-width: 46rem) {
+  .land-sec.hero { padding: 1.7rem 1.6rem 1.6rem; }
+  /* The badge and the label stack, the headline runs the full card, and the
+     art drops to the lower right beside the quote and the two doors. On a
+     phone the art has to share the top band; here there is room to give the
+     headline the whole measure and still stand the illustration next to
+     something. */
+  /* static, so the art below is positioned against the CARD rather than
+     against this row: on a phone it is pinned inside the top band, here it
+     hangs off the bottom right of the whole hero. */
+  .land-sec.hero .hero-top { min-height: 0; display: block; position: static; margin-bottom: .8rem; }
+  .land-sec.hero .hero-badge { margin-bottom: .55rem; }
+  .land-sec.hero .hero-art {
+    top: auto; bottom: 1.1rem; right: .4rem; width: 16.5rem;
+  }
+  .land-sec.hero h1 { font-size: 2.35rem; margin-bottom: .8rem; max-width: 24ch; }
+  .land-sec.hero .hero-cred { font-size: .86rem; max-width: 21.5rem; }
+  .land-sec.hero .acts { max-width: 21.5rem; }
+  .land-sec.hero .hero-foot { max-width: 21.5rem; }
+  .trust li { font-size: .72rem; }
+  .trust .ico { width: 1.5rem; height: 1.5rem; }
+  .hiw .step-text { font-size: .92rem; }
+  .sec-lead { font-size: .95rem; }
+  .pack .desc { font-size: .92rem; }
+  .pack .pack-cta { width: auto; padding-inline: 2rem; }
+  .closing-acts { max-width: 24rem; margin-inline: auto; }
+}
+
+/* Nothing above moves on its own; the one glow that breathes is inherited
+   from site.css and already stops for a reduced-motion preference. */
