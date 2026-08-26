@@ -102,6 +102,28 @@ ck('P10 the client-facing file listing never walks prep/',
 ck('P11 and the private listing is a separate function',
   /async function listPrep\(\)/.test(ADMIN));
 
+// ---- P12-P13: a ticked document can never be silently dropped -----------
+// Eric, 2026-08-26: "Prep file did not populate after I attached my own
+// document and selected uploaded file."
+//
+// Two ways his tick used to evaporate, both ending in a confident document
+// built from nothing he chose:
+//
+//   prepFiles is null until listPrep() has run, and the assembly reads
+//   `(prepFiles || [])`, so "not listed yet" read as "you have no files".
+//   Uploading sets it back to null, which is exactly when he ticks and taps.
+//
+//   a path ticked but no longer on the shelf, including after listPrep()
+//   answers [] on ANY Storage error, which leaves the ticks on screen.
+//
+// The build guard above only counts `prepPicked.size`, so it happily let both
+// through. These pin the two halves of the fix.
+ck('P12 the shelf is listed before it is read, not assumed empty',
+  /if \(prepPicked\.size && prepFiles === null\) await listPrep\(\);/.test(ADMIN));
+ck('P13 a build refuses rather than dropping a document he ticked',
+  /if \(fromShelf\.length < prepPicked\.size\)/.test(ADMIN)
+  && /so nothing was built/.test(ADMIN));
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

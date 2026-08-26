@@ -3814,6 +3814,19 @@ function paintCallDoc(host) {
       }
       btn.textContent = '📄 Reading your document…';
       btn.disabled = true;
+      // HIS SHELF MUST BE LISTED BEFORE WE READ IT (Eric, 2026-08-26: "Prep
+      // file did not populate after I attached my own document and selected
+      // uploaded file").
+      //
+      // `prepFiles` is null until listPrep() has run, and the assembly below
+      // reads `(prepFiles || [])`. So "not listed yet" silently became "you
+      // have no files", his ticked document vanished from the sources, and the
+      // guard above still let the build through because `prepPicked` was not
+      // empty. He got a document built from nothing he chose, which is the
+      // exact failure he photographed. Uploading sets prepFiles back to null,
+      // so the window between his upload and the relist is precisely when he
+      // is most likely to tick something and press build.
+      if (prepPicked.size && prepFiles === null) await listPrep();
       let sources;
       try {
         const mine = await Promise.all(callDocPicked.map(async (p) => ({
@@ -3836,6 +3849,9 @@ function paintCallDoc(host) {
           .map((f, i) => ({
             name: f.name, contentType: f.contentType, size: f.size,
             url: f.url, mine: !mine.length && i === 0,
+            // Carried only so the guard below can name what went missing. The
+            // Worker ignores it.
+            path: f.path,
           }));
         const fromCase = (callDocCaseFiles || [])
           .filter((f) => callDocCasePicked.has(f.path))
@@ -3843,6 +3859,22 @@ function paintCallDoc(host) {
             name: f.name, contentType: f.contentType, size: f.size,
             url: f.url, mine: false,
           }));
+        // NEVER BUILD WITH FEWER OF HIS FILES THAN HE TICKED. Above is one way
+        // a tick can evaporate; a file renamed or removed between the tick and
+        // the tap is another, and listPrep() answers [] on any Storage error
+        // at all, so a permission blip empties the shelf while the ticks stay
+        // on screen. Every one of those used to end the same way: a confident
+        // document built without the thing he chose. If anything he asked for
+        // is not in hand, stop and name it.
+        if (fromShelf.length < prepPicked.size) {
+          const got = new Set(fromShelf.map((f) => f.path));
+          const lost = [...prepPicked]
+            .filter((x) => !got.has(x))
+            .map((x) => String(x).split('/').pop().replace(/^\d{10,}-/, ''));
+          throw new Error(
+            `Could not read ${lost.join(', ')} from your shelf, so nothing was built. `
+            + 'Your document is still there. Try again in a moment.');
+        }
         sources = [...mine, ...fromShelf, ...fromCase].slice(0, CALLDOC_MAX_FILES);
       } catch (e2) {
         callDocKey = null;
