@@ -13,7 +13,7 @@ import { mountChat, watchPresence } from './chat.js';
 import { mountSaved } from './saved.js';
 import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
-import { HELP_BUTTON, helpButton, wireHelp, openCaseHelp } from './help.js';
+import { helpButton, wireHelp, openCaseHelp } from './help.js';
 import {
   recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
   COMMUNICATION_SCOPES,
@@ -69,7 +69,17 @@ if (user) {
   boot();
   // Introductory setup guide (install + notifications) for any signed-in
   // client — not gated on having a case.
-  initSetupGuide(user, document.querySelector('main'));
+  //
+  // MOUNTED AT THE FOOT OF THE PAGE (2026-08-26). The guide prepends its
+  // standing "Finish setup" reminder to whatever it is handed, and it was
+  // handed <main>, so a nudge about installing the app to a home screen sat
+  // above the page's own heading and above the case. It is a reminder about
+  // this device, not news about this case. Same component, same words,
+  // untouched: only the host it is given has changed.
+  const setupHost = document.createElement('div');
+  const mainEl = document.querySelector('main');
+  mainEl?.insertBefore(setupHost, mainEl.querySelector('.footer-disclaimer'));
+  initSetupGuide(user, setupHost);
 }
 
 async function boot() {
@@ -118,33 +128,24 @@ async function boot() {
 function render() {
   const container = document.getElementById('cases');
   const c = cases.find((x) => x.id === currentId);
-  const mtFmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: MOUNTAIN_TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-  });
 
+  // NOTHING ABOVE THE TABS ANY MORE (2026-08-26).
+  //
+  // This page used to open with a case picker, a title, a "?" dot, a status
+  // badge, a navigation hint and a payment banner stacked above the tab strip,
+  // all at roughly one weight, before a frightened person reached a single
+  // fact about their own case. Twenty-two things on one phone screen.
+  //
+  // The title and the badge moved INTO the appointment card, which is the one
+  // thing the page is for; the picker moved below the folder, because
+  // switching cases is rare and almost nobody has two; the "?" became a
+  // labelled button at the foot of the first page rather than a glyph. Nothing
+  // was deleted. All of it is one scroll or one tap away.
   container.innerHTML = `
-    ${cases.length > 1 ? `
-      <div class="case-picker">
-        ${cases.map((x) => `
-          <button class="chip-label ${x.id === currentId ? 'selected' : ''}" data-case="${x.id}">
-            ${x.appointment?.start ? mtFmt.format(toDate(x.appointment.start)) : 'Case'}
-            ${x.status === 'closed' ? ' · closed' : ''}
-          </button>`).join('')}
-      </div>` : ''}
-    <div class="row">
-      <h2 style="margin:0;">Advocacy Case ${HELP_BUTTON}</h2>
-      <span class="status-pill ${c.status === 'closed' ? 'closed' : ''}" data-status-pill>${STATUS_LABEL[c.status] || c.status}</span>
-    </div>
     <div data-folder></div>
     <div data-page-footer></div>`;
 
   wireHelp(container);
-  container.querySelectorAll('[data-case]').forEach((b) =>
-    b.addEventListener('click', () => {
-      if (b.dataset.case === currentId) return;
-      currentId = b.dataset.case;
-      render();
-    }));
 
   // Same engine as Eric's side, and now the same manila. He looked at the
   // plain version and said the client side was still one long scroll; the card
@@ -202,7 +203,6 @@ function render() {
       },
     ],
   });
-  showNavHint(container.querySelector('[data-folder]'));
   folderEnter(container.querySelector('[data-folder]'));
   renderPageFooter(container.querySelector('[data-page-footer]'), c);
   renderedFor = currentId;
@@ -214,11 +214,19 @@ function render() {
  * The tabs are a real interface and nobody arrives knowing that tapping the
  * paper turns the page. Dismissed permanently the same way the version card
  * is, because a hint that comes back is not a hint.
+ *
+ * MOVED 2026-08-26, from a two-part block above the tab strip to a single
+ * dismissible line at the FOOT of the first page. The words are Eric's and
+ * are unchanged. It used to be the first thing on the screen, above the fact
+ * that the case exists, and it is one tap from gone forever, so it had no
+ * business there. At the foot of page one it lands exactly where somebody
+ * finishes reading and wonders whether that is all there is - and the tabs it
+ * describes are still on screen above it.
  */
 const NAV_HINT_KEY = 'pa-seen-nav-hint';
 
-function showNavHint(folderEl) {
-  if (!folderEl) return;
+function navHint(host) {
+  if (!host) return;
   try { if (localStorage.getItem(NAV_HINT_KEY)) return; } catch { return; }
   const note = document.createElement('p');
   note.className = 'nav-hint';
@@ -228,8 +236,8 @@ function showNavHint(folderEl) {
   // below are unchanged.
   note.innerHTML = 'Your case has tabs. Tap one to switch pages, or swipe '
     + 'left and right to move between them. '
-    + '<button type="button" class="btn ghost" data-hint-ok>Got it</button>';
-  folderEl.parentElement?.insertBefore(note, folderEl);
+    + '<button type="button" class="btn ghost pill" data-hint-ok>Got it</button>';
+  host.append(note);
   note.querySelector('[data-hint-ok]').addEventListener('click', () => {
     try { localStorage.setItem(NAV_HINT_KEY, '1'); } catch { /* blocked */ }
     note.remove();
@@ -324,22 +332,21 @@ function busyInside(pane) {
  * A paying client who lands here and sees only a status timeline has no plain
  * statement that their money arrived and their slot is theirs — one asked for
  * exactly that on day one. Closed cases don't need it.
+ *
+ * It used to be a panel of its own, a second heavy box between the tabs and
+ * the date. It is a line inside the appointment card now: same sentence, same
+ * amount, small print under the time it is confirming. "You're booked for
+ * <date>" went because the date is the headline of that card, and the emailed
+ * copy and the labs and imaging moved into the fold below, because that is
+ * what those sentences are.
  */
-function confirmationBanner(c, start, localFmt) {
-  if (c.status === 'closed' || !start) return '';
+function confirmedLine(c) {
+  if (c.status === 'closed') return '';
   const cents = c.stripe?.amountTotal;
   const paid = typeof cents === 'number'
     ? `, $${(cents / 100).toFixed(2).replace(/\.00$/, '')} received`
     : '';
-  const requested = !!c.appointment?.requested;
-  return `
-    <div class="panel confirm-banner">
-      <p style="margin:0;"><strong>Payment confirmed${paid}.</strong>
-        ${requested
-          ? 'Your case file is open. The time you asked for still needs my confirmation. See below.'
-          : `You're booked for <strong>${localFmt.format(start)}</strong>.`}</p>
-      <p class="dim small" style="margin:.35rem 0 0;">A copy is in your email. Nothing else is needed from you before the call, though labs and imaging help if you have them.</p>
-    </div>`;
+  return `Payment confirmed${paid}`;
 }
 
 // ---- Progress section ----
@@ -465,8 +472,19 @@ function renderProgress(el, c) {
     : c.appointment?.joinLink
       ? ''
       : 'Video call. Your join link appears here before the call.';
-  const joinBtn = method !== 'phone' && c.appointment?.joinLink
-    ? `<a class="btn ghost" style="text-align:center;" href="${esc(c.appointment.joinLink)}" rel="noopener">🎥 Join the video call</a>`
+  // ONE primary action, and it is whichever one the moment calls for. Joining
+  // the call beats saving the date; with no link to join, saving the date is
+  // the only thing there is to do, and it becomes the primary. When both
+  // exist the calendar link keeps its full-width button (Eric, 2026-08-21:
+  // "make the hyperlink section text larger... line it up.") but sits inside
+  // the fold below, so the two are no longer twins competing for one tap.
+  const joinHref = method !== 'phone' && c.appointment?.joinLink ? esc(c.appointment.joinLink) : '';
+  const icsHtml = start ? '<a href="#" data-ics>📅 Add to calendar</a>' : '';
+  const primaryAction = joinHref
+    ? `<a class="btn cta" href="${joinHref}" rel="noopener">🎥 Join the video call</a>`
+    : (start ? icsHtml.replace('<a href="#"', '<a class="btn cta" href="#"') : '');
+  const secondAction = joinHref && start
+    ? icsHtml.replace('<a href="#"', '<a class="btn quiet pill" href="#"')
     : '';
   const requestedNote = requested
     ? `<p class="small" style="margin:.4rem 0 0; color:var(--orange);">
@@ -476,41 +494,82 @@ function renderProgress(el, c) {
   const election = c.publicElection || { choice: 'private' };
   const revocable = election.choice === 'public' && !closed &&
     (!election.revocableUntil || toDate(election.revocableUntil) > new Date());
+  const confirmed = confirmedLine(c);
+  // The money and the method are the same kind of fact: small print under the
+  // date, in one sentence rather than two paragraphs. An eyebrow is a label,
+  // and "REPORT READY ADVOCACY CASE · PAYMENT CONFIRMED, $1200 RECEIVED" set
+  // in micro-caps ran to three lines and read as shouting.
+  // The banner's own sentence for a requested time is kept word for word, and
+  // "See below" still points at the right thing: the awaiting-confirmation
+  // note is the next line inside this same card.
+  const requestedIntro = requested && !closed
+    ? 'Your case file is open. The time you asked for still needs my confirmation. See below.'
+    : '';
+  const underLine = [confirmed ? `${confirmed}.` : '', requestedIntro, methodLine]
+    .filter(Boolean).join(' ');
+  const stepNow = STEPS[Math.min(Math.max(rank, 1), STEPS.length) - 1][1];
 
+  // THE WHOLE FIRST SCREEN IS ONE CARD.
+  //
+  // Everything a frightened person opens this page to learn is on it: that
+  // the money arrived, where the case stands, when we speak, and the one
+  // button worth pressing today. The timeline, the paperwork note and the
+  // session settings are all still here, one line lower, folded.
   el.innerHTML = `
-    ${confirmationBanner(c, start, localFmt)}
+    <div class="stack">
     ${pausedNotice(c)}
     ${closedNotice(c)}
-    <h2 class="case-sec-h">Progress</h2>
-    <div class="panel">
+    <section class="card card-lit stack-tight" data-appt>
+      <p class="eyebrow">
+        <span class="status-pill ${closed ? 'closed' : ''}" data-status-pill>${STATUS_LABEL[c.status] || c.status}</span>
+        Advocacy Case
+      </p>
       ${start ? `
-        <p style="margin:0 0 .3rem;"><strong>${mtFmt.format(start)} MST</strong><br>
-        <span class="dim small">${localFmt.format(start)} your time</span></p>` : ''}
-      ${methodLine ? `<p class="dim" style="margin:.2rem 0 0;">${methodLine}</p>` : ''}
-      ${start || joinBtn ? `
-        <p class="actions" style="margin:.7rem 0 .2rem; flex-direction:column; align-items:stretch; gap:.5rem; max-width:22rem;">
-          ${joinBtn}
-          ${start ? '<a href="#" class="btn ghost" style="text-align:center;" data-ics>📅 Add to calendar</a>' : ''}
-        </p>` : ''}
+        <h2 class="appt-when">${mtFmt.format(start)} MST<br>
+        <span class="dim small">${localFmt.format(start)} your time</span></h2>`
+    : '<h2 class="appt-when">Your case is open<br><span class="dim small">No call is on the books yet.</span></h2>'}
+      ${underLine ? `<p class="dim small">${underLine}</p>` : ''}
+      ${primaryAction}
       ${requestedNote}
-      ${checkInLine(c, localFmt)}
-      ${workLine(c)}
-      <ul class="timeline">
-        ${STEPS.map(([, label], i) => `
-          <li class="${i + 1 < rank ? 'done' : i + 1 === rank ? (closed ? 'done' : 'now') : ''}">
-            <span class="t-dot"></span>${label}</li>`).join('')}
-      </ul>
-    </div>
-    <div data-authority></div>
-    <details class="faq" data-more>
-      <summary>Session details</summary>
+    </section>
+    ${checkInLine(c, localFmt)}
+    <hr class="divide">
+    <!-- ONE fold, not two. "Progress" and "Session details" were two identical
+         grey boxes sitting one under the other, and a person who had just
+         been told where their case stands had to guess which of them held the
+         rest of it. Everything that is not the appointment is in here, in the
+         order it matters: where the case is, then the detail of how it runs.
+         Both data hooks stay on this one element. -->
+    <details class="faq card-quiet" data-steps data-more>
+      <summary>Where your case is: ${esc(stepNow)}</summary>
       <div class="faq-a">
+        <ul class="timeline">
+          ${STEPS.map(([, label], i) => `
+            <li class="${i + 1 < rank ? 'done' : i + 1 === rank ? (closed ? 'done' : 'now') : ''}">
+              <span class="t-dot"></span>${label}</li>`).join('')}
+        </ul>
+        ${workLine(c)}
+        ${closed ? '' : '<p class="dim small">A copy is in your email. Nothing else is needed from you before the call, though labs and imaging help if you have them.</p>'}
+        ${secondAction ? `<p class="back-row">${secondAction}</p>` : ''}
+        <hr class="divide">
         <p class="dim small">Session: <strong style="color:${election.choice === 'public' ? 'var(--magenta)' : 'var(--cyan)'};">
           ${election.choice === 'public' ? 'PUBLIC, streams live on YouTube' : 'PRIVATE'}</strong></p>
-        ${revocable ? `<p><button class="btn ghost" data-private>Make it private</button></p>` : ''}
+        ${revocable ? `<p><button class="btn ghost pill" data-private>Make it private</button></p>` : ''}
         ${followUpSection(c)}
       </div>
-    </details>`;
+    </details>
+    <div data-authority></div>
+    <hr class="divide">
+    <!-- The "?" dot was a bare glyph beside a heading at the top of the page,
+         and Eric could not find the things it explained. It is a labelled
+         button at the foot of page one now, beside the one-time hint about
+         how the folder works. -->
+    <p class="back-row"><button type="button" class="btn quiet pill" data-help="case">What is kept in this file</button></p>
+    <div data-nav-hint></div>
+    </div>`;
+
+  wireHelp(el);
+  navHint(el.querySelector('[data-nav-hint]'));
 
   // Full Access cannot start until this is signed, so it sits directly under
   // the timeline rather than behind a tab: the client tab strip is already at
@@ -1103,6 +1162,32 @@ function renderPageFooter(host, c) {
   // card twice, each independently wired, so answering one left the other
   // still asking.
   host.innerHTML = '';
+  // The case picker lives here now, under the folder rather than above it.
+  // Almost every client has exactly one case and the newest one is already
+  // open; for the few with two, switching is a thing you go looking for, not
+  // a thing that should cost the first screen two buttons before the case
+  // itself appears.
+  if (cases.length > 1) {
+    const mtFmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: MOUNTAIN_TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+    host.insertAdjacentHTML('beforeend', `
+      <hr class="divide">
+      <p class="eyebrow">Your cases</p>
+      <div class="case-picker">
+        ${cases.map((x) => `
+          <button class="chip-label pill ${x.id === currentId ? 'selected' : ''}" data-case="${x.id}">
+            ${x.appointment?.start ? mtFmt.format(toDate(x.appointment.start)) : 'Case'}
+            ${x.status === 'closed' ? ' · closed' : ''}
+          </button>`).join('')}
+      </div>`);
+    host.querySelectorAll('[data-case]').forEach((b) =>
+      b.addEventListener('click', () => {
+        if (b.dataset.case === currentId) return;
+        currentId = b.dataset.case;
+        render();
+      }));
+  }
   // The version line rides just above the jar (Eric, 2026-08-21). It mounts
   // itself at the end of main before this footer exists; before() MOVES the
   // node, click wiring intact. Idempotent across repaints.

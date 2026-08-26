@@ -158,9 +158,28 @@ function stripUnwiredStep1(el, { keepIntro = false } = {}) {
   if (!keepIntro) el.querySelector('#time-intro')?.remove();
   for (const sel of ['#chips', '#phone-row', '#video-note', '#phone-consent-row', '#method-error', '#profile-block'])
     el.querySelector(sel)?.remove();
-  el.querySelectorAll('h3').forEach((h) => {
+  // h2 since 2026-08-26: the second half of step 1 is a section of the step,
+  // not a sub-heading of the calendar. Both are matched so a heading level
+  // that moves again cannot leave this behind.
+  el.querySelectorAll('h2, h3').forEach((h) => {
     if (/How should we talk/.test(h.textContent)) h.remove();
   });
+}
+
+/**
+ * The second half of step 1, which only exists once there is a time.
+ *
+ * Everything below the calendar - the call method, the number to ring, the
+ * consent, the name and date of birth - is a decision ABOUT an appointment
+ * that has not been chosen yet. Showing it all at once put fifteen things on
+ * the first screen of a page whose only question is "when", and buried the
+ * times themselves under a form. It stays folded until a time is picked, and
+ * then it is the only thing left to do.
+ */
+function revealAfterTimes(el) {
+  const after = el.querySelector('#after-times');
+  if (!after || !after.hidden) return;
+  after.hidden = false;
 }
 
 // ---- Step 1: Your time ----
@@ -169,68 +188,74 @@ async function renderTime() {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
   const today = new Date().toISOString().slice(0, 10);
   const el = mount(`
-    <h2>When should we talk?</h2>
-    <p class="muted small" id="time-intro">All times are shown in <strong>your</strong> time zone (${zone.replace(/_/g, ' ')}), with my MST time underneath. Appointments must be at least 72 hours out.</p>
-    <div id="days"><p class="muted">Loading available times…</p></div>
+    <h1>When should we talk?</h1>
+    <p class="muted small measure" id="time-intro">All times are shown in <strong>your</strong> time zone (${zone.replace(/_/g, ' ')}), with my MST time underneath. Appointments must be at least 72 hours out.</p>
+    <div id="days" class="stack-tight"><p class="muted">Loading available times…</p></div>
 
-    <details id="request-box" style="margin-top:1rem;">
-      <summary class="btn quiet" style="cursor:pointer;">
-        None of these work? Request a time →
+    <details id="request-box" class="card-quiet">
+      <summary class="btn quiet pill">
+        None of these work? Request a time
       </summary>
-      <div class="card" style="margin-top:.7rem;">
-        <p class="muted small" style="margin-top:0;">Choose any date and time that works for you. I will review the request and confirm it before the appointment. Times are shown in your time zone.</p>
+      <div class="stack-tight">
+        <p class="muted small measure">Choose any date and time that works for you. I will review the request and confirm it before the appointment. Times are shown in your time zone.</p>
         <label for="req-date">Date</label>
         <input type="date" id="req-date">
-        <label for="req-time" style="margin-top:.6rem;">Time</label>
+        <label for="req-time">Time</label>
         <input type="time" id="req-time" step="900">
-        <p class="muted small" id="req-mst" style="margin:.6rem 0 0;">Choose a date and time below; the app will handle the time-zone conversion.</p>
+        <p class="muted small" id="req-mst">Choose a date and time below; the app will handle the time-zone conversion.</p>
         <p class="error" id="req-error" hidden></p>
       </div>
     </details>
 
-    <div id="after-times">
-    <h3 style="margin:1.4rem 0 .5rem;">How should we talk?</h3>
+    <!-- The hidden attribute lives on a PLAIN wrapper and .stack on the box
+         inside it. .stack lays out with gap, which means display:flex, and a
+         class selector beats the user-agent rule that makes hidden work, so
+         .stack and hidden on the same element would have quietly un-hidden
+         this whole half of the step the day the stylesheet landed. -->
+    <div id="after-times" hidden>
+    <div class="stack">
+    <hr class="divide">
+    <h2>How should we talk?</h2>
     <div id="chips">
-      <label class="chip-label ${state.method === 'phone' ? 'selected' : ''}">
+      <label class="chip-label pill ${state.method === 'phone' ? 'selected' : ''}">
         <input type="radio" name="method" value="phone" hidden ${state.method === 'phone' ? 'checked' : ''}>
         Phone call
       </label>
-      <label class="chip-label ${state.method === 'video' ? 'selected' : ''}">
+      <label class="chip-label pill ${state.method === 'video' ? 'selected' : ''}">
         <input type="radio" name="method" value="video" hidden ${state.method === 'video' ? 'checked' : ''}>
         Video call
       </label>
     </div>
-    <div id="phone-row" ${state.method === 'phone' ? '' : 'hidden'} style="margin-top:.7rem;">
+    <div id="phone-row" ${state.method === 'phone' ? '' : 'hidden'}>
       <label for="phone">Best phone number for the call</label>
       <input type="tel" id="phone" placeholder="+1 555 555 5555" value="${state.phone}">
     </div>
-    <p class="muted small" id="video-note" ${state.method === 'video' ? '' : 'hidden'} style="margin-top:.7rem;">
+    <p class="muted small measure" id="video-note" ${state.method === 'video' ? '' : 'hidden'}>
       I'll send you a join link before the call, and it appears on your case page too. Nothing to install.
     </p>
-    <label class="agreement-check" id="phone-consent-row" style="margin-top:.7rem; align-items:flex-start;">
+    <label class="agreement-check" id="phone-consent-row">
       <input type="checkbox" id="phone-consent" ${state.acks.phoneConsent ? 'checked' : ''}>
       You may contact me by phone between sessions for continuity of care. <span style="color:var(--magenta)">*</span>
     </label>
     <p class="error" id="method-error" hidden></p>
     ${needsProfile() ? `
-    <div class="card" id="profile-block">
-      <h3>Who am I working with?</h3>
-      <p class="muted small">Please use your real name so I know whose case I am reviewing. Your information stays private, like the rest of your case file.</p>
+    <div class="card stack-tight" id="profile-block">
+      <h2>Who am I working with?</h2>
+      <p class="muted small measure">Please use your real name so I know whose case I am reviewing. Your information stays private, like the rest of your case file.</p>
       <label for="pf-first">First name</label>
       <input type="text" id="pf-first" autocomplete="given-name" value="${esc(profile.firstName || '')}">
-      <label for="pf-last" style="margin-top:.6rem;">Last name</label>
+      <label for="pf-last">Last name</label>
       <input type="text" id="pf-last" autocomplete="family-name" value="${esc(profile.lastName || '')}">
-      <label for="pf-dob" style="margin-top:.6rem;">Date of birth</label>
+      <label for="pf-dob">Date of birth</label>
       <input type="date" id="pf-dob" max="${today}" value="${esc(profile.dob || '')}">
-      <p class="muted small" style="margin-top:.6rem;">Pocket Advocate serves adults. If the client is under 18,
+      <p class="muted small measure">Pocket Advocate serves adults. If the client is under 18,
         a parent or guardian needs to reach out first, through the site or the About page's call button.</p>
       <p class="error" id="pf-err" hidden></p>
     </div>` : ''}
+    <button class="btn cta" id="continue" disabled>Continue</button>
     </div>
-    <p>
-      <a class="btn quiet" href="/">← Back</a>
-      <button class="btn glow" id="continue" disabled>Continue</button>
-    </p>`);
+    </div>
+    <p class="back-row"><a class="btn quiet pill" href="/">← Back</a></p>`);
 
   let slots = [];
   // When the books are shut, say so. An empty calendar with no explanation
@@ -340,6 +365,7 @@ async function renderTime() {
       const rb = el.querySelector('#request-box');
       if (rb) rb.open = false;
       el.querySelector('#continue').disabled = false;
+      revealAfterTimes(el);
     })
   );
   // Coming back from a later step: re-mark the slot they already picked.
@@ -348,6 +374,7 @@ async function renderTime() {
     if (picked) {
       picked.classList.add('selected');
       el.querySelector('#continue').disabled = false;
+      revealAfterTimes(el);
     } else {
       state.slot = null; // it vanished while they were away
     }
@@ -389,6 +416,7 @@ async function renderTime() {
     state.slot = null;
     el.querySelectorAll('.slot').forEach((b) => b.classList.remove('selected'));
     el.querySelector('#continue').disabled = false;
+    revealAfterTimes(el);
   };
   reqDate.addEventListener('change', syncRequest);
   reqTime.addEventListener('change', syncRequest);
@@ -516,8 +544,9 @@ const AGREEMENT_PARTS = [...WAIVERS, SERVICE_TERMS];
 
 function renderAgreement() {
   const el = mount(`
-    <h2>One agreement, four short parts</h2>
-    <p class="muted small">Open each part and read it through. Once you have reached the end of all four, you can acknowledge the agreement.</p>
+    <h1>One agreement, four short parts</h1>
+    <p class="muted small measure">Open each part and read it through. Once you have reached the end of all four, you can acknowledge the agreement.</p>
+    <div class="stack-tight">
     ${AGREEMENT_PARTS.map(
       (w) => `
       <details class="agreement" data-id="${w.id}">
@@ -529,15 +558,24 @@ function renderAgreement() {
         <label class="agreement-check"><input type="checkbox" ${state.acks[w.id] ? 'checked' : ''} ${state.acks[w.id] || state.read[w.id] ? '' : 'disabled'}> I have read and acknowledge this</label>
       </details>`
     ).join('')}
-    <p>
-      <button class="btn quiet" id="back">Back</button>
-      <button class="btn glow" id="continue" ${AGREEMENT_PARTS.every((w) => state.acks[w.id]) ? '' : 'disabled'}>Continue</button>
-    </p>`);
+    </div>
+    <p class="dim small" data-agree-count></p>
+    <button class="btn cta" id="continue" ${AGREEMENT_PARTS.every((w) => state.acks[w.id]) ? '' : 'disabled'}>Continue</button>
+    <p class="back-row"><button class="btn quiet pill" id="back">Back</button></p>`);
 
   const continueBtn = el.querySelector('#continue');
+  const tally = el.querySelector('[data-agree-count]');
+  // One number instead of four states to hold in your head. A grey Continue
+  // with no explanation is the most abandonable moment in the flow, and the
+  // reason it is grey was previously invisible.
   const syncContinue = () => {
-    continueBtn.disabled = !AGREEMENT_PARTS.every((w) => state.acks[w.id]);
+    const done = AGREEMENT_PARTS.filter((w) => state.acks[w.id]).length;
+    continueBtn.disabled = done < AGREEMENT_PARTS.length;
+    tally.textContent = done === AGREEMENT_PARTS.length
+      ? `All ${AGREEMENT_PARTS.length} parts acknowledged.`
+      : `${done} of ${AGREEMENT_PARTS.length} parts acknowledged.`;
   };
+  syncContinue();
 
   el.querySelectorAll('details.agreement').forEach((d) => {
     const id = d.dataset.id;
@@ -586,26 +624,42 @@ function renderPayment() {
   const when = state.slot ? state.slot.start : state.requestedStart;
   const isRequest = !state.slot && !!state.requestedStart;
 
+  // ONE lit thing, not three stacked ones. The service, the time and the
+  // price were a heading, a bordered card and a bordered price strip in a
+  // row, all at the same weight, so nothing on the screen said "this is what
+  // you are buying". The price block is the one lit surface now, the time
+  // sits under it as plain text, and the button below is the only other
+  // control above the fold. (A card around the price box put a box inside a
+  // box, which is the same flattening in a different shape.)
   const el = mount(`
-    <h2>Lock it in</h2>
-    <div class="card">
-      <div class="row"><h3>Advocacy Case</h3></div>
+    <h1>Lock it in</h1>
+    <section class="stack-tight">
+      <p class="price-line">
+        <span class="eyebrow">Advocacy Case</span>
+        <span class="price" data-case-price>$${money(caseCents)}</span>
+        <span class="included" data-included>This includes our call and your written report within 7 days.</span>
+      </p>
       <p class="muted small">
         <strong style="color:var(--ink)">${localLong.format(when)}</strong> (your time)<br>
         ${mtFmt.format(when)} MST my time<br>
         ${methodLabel} · Private session${isRequest ? ' · <span style="color:var(--orange)">Time requested. Awaiting confirmation.</span>' : ''}
       </p>
-    </div>
+    </section>
     ${isRequest ? `<p class="notice-box pending">
       <strong>This time is a request.</strong> It isn't on my calendar yet. Your case opens and
       your payment is taken as normal, and I'll confirm this time, or offer you the nearest one
       that works, before the date. Nothing is lost either way.
     </p>` : ''}
-    <div class="price-line">
-      <span class="price" data-case-price>$${money(caseCents)}</span>
-      <span class="included" data-included>This includes our call and your written report within 7 days.</span>
-    </div>
-    <details class="faq" id="addons-preview" style="margin:.6rem 0 0;">
+    <p class="error" id="pay-error" hidden></p>
+    <button class="btn cta" id="pay">Pay $${money(caseCents)} and book</button>
+    <!-- The terms sit under the button rather than over it. They are what
+         pressing it agrees to, they are still on screen before any card is,
+         and above it they were a paragraph of small print standing between a
+         person and the only thing this step is for. -->
+    <p class="muted small measure">${isRequest ? 'Requested times are not held while you complete payment.' : 'Your selected time is held while you complete payment.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once your slot is booked. If I reschedule you more than once, you're entitled to a full refund on request.</p>
+    <!-- Nothing in here is decided today, so it is context for after the
+         decision, not a fourth thing competing with it. -->
+    <details class="faq card-quiet" id="addons-preview">
       <summary>Case Enhancements, once your case starts</summary>
       <div class="faq-a">
         <p class="muted small" style="margin:.3rem 0 .5rem;">Nothing to decide
@@ -623,12 +677,7 @@ function renderPayment() {
           I join a telehealth visit with one of your own providers by video and advocate live. I confirm every appointment personally; if I can't attend, or your provider doesn't allow it, you get every dollar back. Included with Hands-Off Case Management.</p>
       </div>
     </details>
-    <p class="muted small">${isRequest ? 'Requested times are not held while you complete payment.' : 'Your selected time is held while you complete payment.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once your slot is booked. If I reschedule you more than once, you're entitled to a full refund on request.</p>
-    <p class="error" id="pay-error" hidden></p>
-    <p>
-      <button class="btn quiet" id="back">Back</button>
-      <button class="btn glow" id="pay">Pay $${money(caseCents)} and book</button>
-    </p>`);
+    <p class="back-row"><button class="btn quiet pill" id="back">Back</button></p>`);
 
   el.querySelector('#back').addEventListener('click', back);
 

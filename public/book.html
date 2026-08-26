@@ -51,10 +51,14 @@
   </div>
 </header>
 <main>
-  <h1>Book your case</h1>
+  <!-- No page title above the rail any more. "Book your case" sat on top of
+       "When should we talk?", two headings deep before the first thing a
+       person can actually do, and it cost the first screen a line it could
+       not spare. Each step now owns the page's one heading, which is also
+       the promise the type scale makes: one display line per page. -->
   <ol class="step-rail" id="crumbs"></ol>
   <p class="error" id="page-error" hidden></p>
-  <div id="step"></div>
+  <div id="step" class="stack"></div>
 
   <script>
   // Extras that exist only where a demo can: a versioned preview build or a
