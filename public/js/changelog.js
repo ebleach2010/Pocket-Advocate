@@ -74,9 +74,29 @@ export const CHANGELOG = [
     // enhancement a case cannot use yet says which of the two true things it
     // is, rather than vanishing and quietly changing the shape of the page
     // from one case to the next.
+    //
+    // THAT VISUAL PASS WAS REVERTED. It rewrote the markup of three pages at
+    // once and did not look like what he asked for. What shipped instead is a
+    // stylesheet layered after site.css that changes no markup, no copy, no
+    // prices and no behaviour, so the two bullets above about the refusal and
+    // the unavailable card are NOT in this release and are not listed below.
+    //
+    // WRITTEN AT PUSH TIME, 2026-08-26, on his word "push to main". He did not
+    // say "full update", and an unspecified push is silent, so this stays
+    // quiet: footer only, no card, no tour. The list below is his side of the
+    // rule: client-visible only, nothing from his own half of the app.
     version: '2.38',
     quiet: true,
-    client: [],
+    client: [
+      'The app has a new look. Everything is where it was, and nothing you had has moved or been removed.',
+      'Your case page groups its extras under Case Enhancements. Tap the Enhance tab on your case to see what you can add.',
+      'New: appointment advocacy. I can sit in on a telehealth appointment with you. It is on the Enhance tab.',
+      'New: Hands Off Case Management, billed a month at a time. You ask for it from your open case and nothing is charged until I accept. If I cannot take it on, you get my reason in writing.',
+      'When your case window is running out you can add another month from the Enhance tab rather than starting again.',
+      'While your case is open we speak on a regular check in call, so you are never waiting to hear where things stand.',
+      'If I close a case, the reason is written on your page rather than the case simply ending.',
+      'The price of a follow up session has changed. What you were quoted the day you booked is what you pay, so an open case keeps its own rate.',
+    ],
   },
   {
     version: '2.37',
