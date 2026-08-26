@@ -160,6 +160,33 @@ await page.waitForTimeout(500);
 ok('and the new one replaces it when it lands', await page.evaluate(() =>
   (document.querySelector('[data-cd-text]')?.value || '').length > 200));
 
+// --- IT HAS TO SAY IT FINISHED --------------------------------------------
+// The panel says "you can leave the page; it keeps going" - and until now,
+// when it landed, nothing anywhere lit up. Leave the tab, let one land, come
+// back to the strip: the Call doc tab must be wearing a dot.
+console.log('\n--- and it says so when it lands ---');
+await page.evaluate(() => document.querySelector('.folder-tabs .ftab[data-page="chat"]')?.click());
+// Wait for the POLL, not a stopwatch. The dot is set from the advisor's state
+// broadcast, which is up to a full interval away; a fixed 1.2s beat it and
+// reported a working badge as missing.
+await page.waitForFunction(() => {
+  const d = document.querySelector('.folder-tabs .ftab[data-page="calldoc"] [data-dot]');
+  return !!d && !d.hidden;
+}, null, { timeout: 20000 }).catch(() => {});
+// A dot is hidden on the page you are ON, which is why we left first.
+const dot = await page.evaluate(() => {
+  const tab = document.querySelector('.folder-tabs .ftab[data-page="calldoc"]');
+  const d = tab?.querySelector('[data-dot]');
+  return { tab: !!tab, dot: !!d, shown: !!d && !d.hidden };
+});
+ok('the Call doc tab carries a dot once a document is ready', dot.shown, JSON.stringify(dot));
+await page.evaluate(() => document.querySelector('.folder-tabs .ftab[data-page="calldoc"]')?.click());
+await page.waitForTimeout(1200);
+ok('and opening it clears the dot', await page.evaluate(() => {
+  const d = document.querySelector('.folder-tabs .ftab[data-page="calldoc"] [data-dot]');
+  return !d || d.hidden;
+}));
+
 console.log('\n--- revise, and discard ---');
 ok('revise opens an overlay, not a prompt()', await page.evaluate(async () => {
   document.querySelector('[data-cd-revise]')?.click();

@@ -4328,6 +4328,18 @@ ${revise && instruction
       callDocReq: null, callDocStartedAt: null, callDocProgressAt: null, callDocError: null,
     });
     await deleteDoc(env, callDocQueuePath(kind, id)).catch(() => {});
+    // Mirror the stamp onto caseMeta so the SHELF can badge the folder too,
+    // the way an analysis does. The panel's own poll covers the tab dot inside
+    // an open case; this is what tells him from the dashboard, which is where
+    // he actually is when a run he walked away from finishes.
+    //
+    // caseMeta is Worker-only by rule, and this is a bare timestamp with no
+    // case content in it. Cases only: a subscription has no folder on the
+    // shelf to badge.
+    if (kind === 'case') {
+      await patchDoc(env, `caseMeta/${id}`, { callDocAt: new Date() }, { mask: ['callDocAt'] })
+        .catch((err) => console.warn('caseMeta call-doc stamp:', err.message || err));
+    }
   } catch (err) {
     console.error('advisor call doc:', err.stack || err);
     await setState(env, kind, id, {

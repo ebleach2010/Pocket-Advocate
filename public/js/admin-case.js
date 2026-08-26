@@ -1426,6 +1426,9 @@ document.addEventListener('pa-panel-state', (e) => {
   const stamps = {
     chat: d.clientMsgAt, advisor: d.advisorAt, dx: d.diffAt,
     drafts: d.draftAt, files: d.fileAt,
+    // Only a FINISHED one. callDocAt is written when the document lands, so a
+    // run still going does not sit there wearing a "ready" dot.
+    calldoc: d.callDocStatus === 'ready' ? d.callDocAt : null,
   };
   for (const { page } of PAGE_BADGES) {
     if (page in stamps) folder?.mark(page, isUnseen(caseId, page, stamps[page]));

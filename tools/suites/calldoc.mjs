@@ -66,6 +66,11 @@ const LIFTED = [konst('MAX_CALLDOC_SOURCES'), konst('escAttr'), fn('runCallDoc')
 // ---- the world ----
 let state, queue, asked, attachCalls;
 const reset = () => { state = {}; queue = new Map(); asked = null; attachCalls = []; };
+// `queue` records EVERY patchDoc, not just advisorQueue rows, so asking
+// whether it is empty is not the same as asking whether the retry row is
+// gone. It broke the moment runCallDoc started stamping caseMeta on
+// success - a legitimate write failing a check that meant something else.
+const queueRows = () => [...queue.keys()].filter((k) => k.startsWith('advisorQueue/'));
 
 const deps = {
   setState: async (env, kind, id, fields) => { Object.assign(state, fields); },
@@ -112,7 +117,8 @@ check('D3 the document was stored', /REVIEW BEFORE YOU CALL/.test(state.callDoc 
 check('D4 it names what it was built from', (state.callDocSources || []).join() === 'prep.pdf,labs.pdf',
   (state.callDocSources || []).join());
 check('D5 the in-flight request was cleared', state.callDocReq === null);
-check('D6 and the queue entry removed, so nothing reruns it forever', queue.size === 0);
+check('D6 and the queue entry removed, so nothing reruns it forever',
+  queueRows().length === 0, queueRows().join());
 
 // ---- Eric's explicit ask: Opus Max ----
 check('D7 it runs at MAX effort, which is what he asked for', asked?.effort === 'max', asked?.effort);
@@ -174,7 +180,8 @@ await boom(env, 'case', 'a', { sources: [] });
 check('D20 a dead turn writes status error', state.callDocStatus === 'error', state.callDocStatus);
 check('D21 with the reason, so the panel can say it', /provider exploded/.test(state.callDocError || ''),
   state.callDocError);
-check('D22 and lets go of the queue, so it does not retry forever', queue.size === 0);
+check('D22 and lets go of the queue, so it does not retry forever',
+  queueRows().length === 0, queueRows().join());
 
 // ---- an empty answer is a failure, not a document ----
 reset();
@@ -276,6 +283,34 @@ check('D36 and tells it to read ACROSS them',
   /Read ACROSS the case documents he ticked/.test(sys2));
 check('D37 with a defined behaviour when nothing came from him',
   /BUILT FROM THE CASE, NOT FROM YOUR DOCUMENT/.test(sys2));
+
+// ---- it has to SAY it finished ------------------------------------------
+// The longest turn in the app used to land in silence: no dot on the tab, the
+// group or the shelf, while the panel told him he could leave the page. The
+// shelf badge reads caseMeta.callDocAt, so if nothing writes it the badge is
+// wired to a field that never exists - which is exactly what a UI-only fix
+// would have shipped.
+reset();
+await runCallDoc(env, 'case', 'a', { sources: [{ name: 'prep.pdf', mine: true }] });
+const meta = queue.get('caseMeta/a');
+check('D38 a finished document stamps caseMeta, so the shelf can badge it',
+  !!meta?.callDocAt, JSON.stringify([...queue.keys()]));
+check('D39 and the stamp is the only thing written there - no case content',
+  meta && Object.keys(meta).join() === 'callDocAt', JSON.stringify(meta));
+
+// A FAILED run must not stamp: a dot promising a ready document he does not
+// have is worse than no dot.
+reset();
+const boom2 = build(...Object.values({ ...deps, ask: async () => { throw new Error('nope'); } }));
+await boom2(env, 'case', 'a', { sources: [] });
+check('D40 a failed run stamps nothing', !queue.get('caseMeta/a'),
+  JSON.stringify([...queue.keys()]));
+
+// A subscription has no folder on the shelf to badge.
+reset();
+await runCallDoc(env, 'sub', 'a', { sources: [{ name: 'prep.pdf', mine: true }] });
+check('D41 and a subscription does not stamp a case that is not there',
+  !queue.get('caseMeta/a'), JSON.stringify([...queue.keys()]));
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

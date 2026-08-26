@@ -19,12 +19,17 @@ export const PAGE_BADGES = [
   { page: 'advisor', emoji: '👨‍🔬', label: 'new read' },
   { page: 'dx', emoji: '🧬', label: 'differential moved' },
   { page: 'drafts', emoji: '✍️', label: 'draft waiting' },
+  // The longest turn in the app, and until now the only one that landed
+  // in silence: no dot on the tab, the group or the shelf. The panel told
+  // him he could leave the page, then never said it was done.
+  { page: 'calldoc', emoji: '📄', label: 'call document ready' },
   { page: 'files', emoji: '📎', label: 'new file' },
   { page: 'overview', emoji: '⚠️', label: 'needs you' },
 ];
 
 /** Every page's activity stamp, keyed the way the shelf's payload delivers it. */
-const STAMP_KEY = { chat: 'chat', advisor: 'advisor', dx: 'diff', drafts: 'draft', files: 'files' };
+const STAMP_KEY = { chat: 'chat', advisor: 'advisor', dx: 'diff', drafts: 'draft',
+  files: 'files', calldoc: 'calldoc' };
 
 function all() {
   try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; }

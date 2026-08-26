@@ -5527,6 +5527,7 @@ async function handleAdvisorCovers(request, env) {
         draft: r.data.draftAt || null,
         chat: r.data.clientMsgAt || null,
         files: r.data.fileAt || null,
+        calldoc: r.data.callDocAt || null,
       },
     };
   }
