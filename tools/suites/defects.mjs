@@ -7,7 +7,7 @@
 import { fileURLToPath as __f } from 'node:url';
 import { dirname as __d, join as __j } from 'node:path';
 const __REPO = __j(__d(__f(import.meta.url)), '..', '..');
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 const R = __REPO;
 const W = readFileSync(`${R}/worker/index.js`, 'utf8');
 const ADV = readFileSync(`${R}/worker/advisor.js`, 'utf8');
@@ -244,6 +244,56 @@ ck('clock: the header switch above the tabs exists on open cases',
    /data-work-head/.test(ACJ) && /startHeadClock/.test(ACJ));
 ck('clock: all switches share one painter set, so no two can disagree',
    /const clockPaints = new Set\(\)/.test(ACJ) && /clockPaints\.add\(paint\)/.test(ACJ));
+
+// ---- 14. a stylesheet may not overrule the `hidden` attribute -------------
+// Found where two rewrites met: the design system gave `.stack` a display, the
+// booking flow had `<div class="stack" hidden>`, and a class selector outranks
+// the UA rule that makes `hidden` work. Rendered, the whole second half of
+// booking step 1 was on the page. `hidden` is used 146 times across case.js,
+// book.js and admin-case.js, so this is not one element's problem.
+//
+// The check is per PAGE, not per stylesheet, because that is the unit the
+// browser resolves the cascade in. A guard sitting in a sheet the admin pages
+// never load protects nothing there - which is how the first version of this
+// fix was wrong, and admin-case.js is the heaviest user of `hidden` in the
+// repo. So: read each page's own <link> tags, and if anything it loads sets a
+// class display, something it loads must also carry the absolute guard.
+{
+  // Strip comments first: the guard's own explanation quotes `display:grid`,
+  // and a prose mention is not a rule.
+  const bare = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '');
+  const displayers = (css) => {
+    const out = [];
+    for (const m of bare(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const sel = m[1].trim();
+      const disp = (m[2].match(/(?:^|;)\s*display\s*:\s*([a-z-]+)/) || [])[1];
+      if (!disp || disp === 'none') continue;
+      if (!/(^|[\s,>+~])\.[a-zA-Z]/.test(sel)) continue;   // class-carrying selector
+      if (/\[hidden\]/.test(sel)) continue;                 // already exempts itself
+      out.push(sel.split('\n')[0].trim());
+    }
+    return out;
+  };
+  // The selector must be BARE `[hidden]`. `.fpage[hidden] { display:none
+  // !important }` matched a looser pattern and made this check pass for the
+  // wrong reason: a per-element patch is exactly the thing being replaced.
+  const guards = (css) => /(^|\})\s*\[hidden\]\s*\{[^}]*display\s*:\s*none\s*!important/m.test(bare(css));
+
+  const pages = readdirSync(`${R}/public`).filter((n) => n.endsWith('.html')).sort();
+  for (const page of pages) {
+    const html = f(`public/${page}`);
+    const sheets = [...html.matchAll(/href="\/css\/([^"?]+)/g)].map((m) => m[1]);
+    let risky = [], guarded = false;
+    for (const s of sheets) {
+      const css = f(`public/css/${s}`);
+      risky = risky.concat(displayers(css));
+      if (guards(css)) guarded = true;
+    }
+    ck(`hidden: nothing ${page} loads can un-hide an element`,
+       risky.length === 0 || guarded,
+       `sheets=${sheets.join('+') || 'none'} ${risky.length} class rules set a display; guard ${guarded ? 'present' : 'MISSING'} (e.g. ${risky[0]})`);
+  }
+}
 
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);

@@ -3,6 +3,43 @@
  * is served behind a role check. Keep it that way: a selector added here is
  * downloadable by anyone who visits the site, comments included.
  */
+
+/* ---- [hidden] IS NOT NEGOTIABLE ------------------------------------------
+
+   PROVEN, not theorised. Rendered with the glow-up sheet attached, an element
+   carrying BOTH `hidden` and a layout class was still on the page:
+
+     .stack        hidden -> display:grid          VISIBLE
+     .stack-tight  hidden -> display:grid          VISIBLE
+     .pill         hidden -> display:inline-flex   VISIBLE
+     .cta          hidden -> display:flex          VISIBLE
+
+   Any author `display` beats the UA stylesheet's `[hidden] { display:none }`,
+   because a class selector outranks it. So every class that sets a display
+   quietly un-hides anything the markup asked to hide. The booking flow found
+   it first: `<div class="stack" hidden>` would have revealed the whole second
+   half of step 1. case.js, book.js and admin-case.js use the `hidden`
+   attribute 146 times between them.
+
+   This sheet had already been patching it one element at a time, five times
+   over - see the comment above `.folder-tabs > a[hidden]` further down, which
+   explains the mechanism. That is a bug being fixed wherever it is noticed
+   rather than where it lives. Those five rules are left in place; they cost
+   nothing and they are still correct.
+
+   It belongs HERE and not in glowup.css because the admin pages load
+   site.css + admin.css and never load glowup.css - and admin-case.js is the
+   heaviest user of `hidden` in the repo. A guard that skips the admin half
+   is not a guard.
+
+   `hidden` is the markup saying this is not on the page; no stylesheet gets
+   to disagree, which is exactly what `!important` is for. Checked before
+   making it absolute: `style.display` is assigned nowhere in any served
+   script, so there is no inline display for this to overrule, and nothing in
+   the repo deliberately displays a hidden element.
+   ------------------------------------------------------------------------ */
+[hidden] { display: none !important; }
+
 /* Pocket Advocate neon system — single-theme by design (approved 2026-07-11).
    Same tokens as PROTOTYPE.html so the shipped app matches the prototype. */
 /* Eric's mockup, 2026-08-25 (visual reference only, his copy untouched):

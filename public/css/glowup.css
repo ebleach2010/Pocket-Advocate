@@ -254,6 +254,11 @@ summary:focus-visible,
    stack zeroes the block margins of its own children, so a heading's
    margin-bottom and a paragraph's margin-top can neither collapse into one
    another nor stack on top of the gap. One number controls the rhythm. */
+/* `hidden` outranking: settled once, at the top of site.css, which every
+   page loads including the admin half that never loads this sheet. The
+   classes below set displays, so without that guard they would un-hide
+   anything the markup marked `hidden`. */
+
 .stack,
 .stack-tight {
   display: grid;
