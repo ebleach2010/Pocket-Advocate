@@ -647,11 +647,25 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   return {
     send: (text) => send({ text }),
     setStatus: async (id) => {
-      if (!latestMsgId) throw new Error('No messages yet to hang a status on.');
-      const done = await post('/api/chat/react', {
-        kind: kindOf(), id: parentPath[1], msgId: latestMsgId, reaction: id || null,
-      }, '');
-      if (!done) throw new Error('That did not save. Try again.');
+      if (!latestMsgId) throw new Error('There are no messages here yet to hang a status on. Send one first.');
+      // The Worker's OWN words, not a generic apology. The first version
+      // passed an empty failMsg to post(), which swallows the reason and
+      // returns false, so a real refusal ("You can only react to the other
+      // person's messages", "Unknown reaction", a 401 from an expired token)
+      // all reached Eric as "That did not save. Try again." - which told him
+      // nothing and told me less.
+      const token = await user.getIdToken();
+      const res = await fetch('/api/chat/react', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: kindOf(), id: parentPath[1], msgId: latestMsgId, reaction: id || null,
+        }),
+      });
+      if (!res.ok) {
+        const out = await res.json().catch(() => ({}));
+        throw new Error(out.error ? `${out.error} (${res.status})` : `That did not save (${res.status}).`);
+      }
       return true;
     },
     currentStatus: () => currentStatusId,

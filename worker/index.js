@@ -1236,7 +1236,7 @@ const BUILD_TAG = 'v2026-08-25-chatfixes';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.35';
+const VERSION = '2.36';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

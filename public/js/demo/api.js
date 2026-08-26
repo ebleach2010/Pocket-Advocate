@@ -9,6 +9,9 @@
 // UI, not AI: nothing in the demo calls a model.
 
 import { DEMO_CASE_ID } from './seed.js';
+// The same two vocabularies the pages read, so the demo cannot answer with a
+// reaction the UI has no name for.
+import { EMOJI_REACTIONS, STATUS_REACTIONS } from '../msg-actions.js';
 
 /** A little delay, so states that only exist while something is in flight
  *  (the button disabling, the progress bar, "Reading…") are visible. */
@@ -339,10 +342,38 @@ export function demoApi(role, store) {
     if (path === '/api/uploaded' || path === '/api/notify' || path === '/api/push/test') return ok({ ok: true });
     if (path === '/api/chat/react' || path === '/api/chat/pass' || path === '/api/chat/edit') {
       // These write to the message, and in the demo the store is the message.
-      const msgPath = `cases/${DEMO_CASE_ID}/chat/${body.msgId}`;
+      // The caller names its case: hardcoding DEMO_CASE_ID here sent the Full
+      // Access case's reactions (and the booked case's) to a path that does
+      // not exist, which answered 404 for a message plainly on the screen.
+      const msgPath = `cases/${body.id || DEMO_CASE_ID}/chat/${body.msgId}`;
       const msg = store.docs.get(msgPath);
       if (!msg) return fail(404, 'No such message');
-      if (path === '/api/chat/react') store.docs.set(msgPath, { ...msg, reaction: body.reaction || null });
+      if (path === '/api/chat/react') {
+        // The Worker's rules, mirrored - INCLUDING the record shape the
+        // pages render ({ id, kind, label/emoji, by, at }). A bare id string
+        // here meant no chip ever drew in the demo, so the feature the demo
+        // exists to show was invisible in it.
+        const myUid = role === 'admin' ? 'demo-admin' : 'demo-client';
+        const reaction = body.reaction ?? null;
+        const emo = EMOJI_REACTIONS.find((r) => r.id === reaction);
+        const stat = STATUS_REACTIONS.find((r) => r.id === reaction);
+        if (reaction !== null && !emo && !stat) return fail(400, 'Unknown reaction');
+        if (stat && role !== 'admin') return fail(403, 'That reaction is not available.');
+        // Live demo messages carry `from`; seeded fixtures always do too,
+        // but the role fallback keeps any stray legacy doc behaving.
+        const mine = msg.from ? msg.from === myUid
+          : (msg.role || 'client') === (role === 'admin' ? 'admin' : 'client');
+        if (mine && !(role === 'admin' && (stat || reaction === null)))
+          return fail(403, "You can only react to the other person's messages.");
+        if (msg.reaction?.kind === 'status' && role !== 'admin')
+          return fail(403, 'That message is showing a status note.');
+        const rec = emo
+          ? { id: reaction, emoji: emo.emoji, kind: 'emoji', by: myUid, at: new Date() }
+          : stat
+            ? { id: reaction, label: stat.label, kind: 'status', by: myUid, at: new Date() }
+            : null;
+        store.docs.set(msgPath, { ...msg, reaction: rec });
+      }
       if (path === '/api/chat/pass') store.docs.set(msgPath, { ...msg, pass: body.pass ? { by: 'demo-client', at: new Date() } : null });
       if (path === '/api/chat/edit') store.docs.set(msgPath, { ...msg, text: body.text, editedAt: new Date() });
       store.fire?.(msgPath);

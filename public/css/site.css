@@ -716,8 +716,11 @@ button:focus-visible,
    press opens the menu instead of Copy/Look Up. "Copy text" in the menu gives
    that back. */
 /* Selection is blocked ONLY where a finger is the pointer.
-   Eric, 2026-08-25: "Selecting and copying text in advisor chat and elsewhere
+   Eric, 2026-08-25: "Selecting and copying text in [a wide page] and elsewhere
    for copying and pasting is damned near impossible."
+   (The bracket replaces one word of his. Every client browser downloads this
+   file, so the admin-only vocabulary must not appear in it even inside a
+   comment; tools/blindness-audit.mjs is what catches it.)
 
    It was impossible, not nearly: every message carries .react-target, so this
    rule made every word in every chat unselectable on every device. It exists

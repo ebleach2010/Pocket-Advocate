@@ -296,8 +296,12 @@ export function mountPages({ container, pages, storageKey = '', groups = null } 
   }, on);
 
   // TAP-TO-TURN IS GONE, and must not come back (Eric, 2026-08-25, on a PC:
-  // "when I click on center screen of advisor chat it puts me back to the
+  // "when I click on center screen of [a wide page] it puts me back to the
   // dx… That can be removed. Pressing tabs is easy enough.").
+  //
+  // The bracket replaces one word of his. Every client browser downloads this
+  // file, so the admin-only vocabulary must not appear in it even inside a
+  // comment; tools/blindness-audit.mjs is what catches it.
   //
   // A page whose width is mostly bare margin - the chat, on any wide screen -
   // was almost entirely a page-turn target, so an idle click in the empty
