@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.34';
+export const VERSION = '2.35';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '2.34';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    version: '2.35',
+    quiet: true,
+    // Selecting text in chat, a held mouse press opening the message menu,
+    // tapping a page no longer turning it, and Eric's status dropdown. The
+    // one thing a CLIENT can see is more status notes from him - which is
+    // him telling them what he is doing, not a change to their app - so
+    // under his scope rule (2026-08-23) this list stays empty.
+    client: [],
+  },
   {
     version: '2.34',
     quiet: true,

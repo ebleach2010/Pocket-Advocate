@@ -715,7 +715,19 @@ button:focus-visible,
 /* Long-pressable messages suppress the iOS callout and selection so a held
    press opens the menu instead of Copy/Look Up. "Copy text" in the menu gives
    that back. */
-.msg.react-target { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+/* Selection is blocked ONLY where a finger is the pointer.
+   Eric, 2026-08-25: "Selecting and copying text in advisor chat and elsewhere
+   for copying and pasting is damned near impossible."
+
+   It was impossible, not nearly: every message carries .react-target, so this
+   rule made every word in every chat unselectable on every device. It exists
+   because on a touchscreen a long press must open the message menu without
+   iOS throwing its own selection callout over the top - a real problem, but
+   only a touchscreen's. On a mouse the menu opens on right-click and on a
+   held press, neither of which is how you drag out a selection. */
+@media (pointer: coarse) {
+  .msg.react-target { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+}
 
 /* ---- long-press message menu (Messenger-style: emoji bar, then a sheet) ---- */
 /* margin:auto on the child rather than align-items:center on the box: centred

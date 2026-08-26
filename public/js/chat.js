@@ -20,6 +20,12 @@ import { askName, safeName } from './rename.js';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const LONG_PRESS_MS = 550;
+// How far a pointer may wobble during a held press before it stops counting
+// as one. Mirrors MOVE_TOLERANCE in drawer.js, which already had this right.
+// Without it ANY pointermove cancelled the press - fine for a finger, fatal
+// for a mouse, which jitters from the click itself. On a computer the menu
+// could only be opened by right-click, which nobody would guess.
+const MOVE_TOLERANCE = 12;
 
 // Everything that only happens on an admin thread lives in its own module,
 // which is not served to a client at all. Loaded on demand when one mounts;
@@ -57,7 +63,11 @@ export function watchPresence(el) {
  * the composer row, left of the text box. The caller owns what it means; this
  * file only knows where it goes.
  */
-export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null }) {
+export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null, onStatus = null }) {
+  // The newest message and whatever status sits on it, so a control OUTSIDE
+  // this chat can show and set what he is working on.
+  let latestMsgId = null;
+  let currentStatusId = '';
   container.classList.add('chat-root');
   // The lane chips lived and died on 2026-08-22 (Eric: "Just get rid of all
   // of them. They're pointless. Have it just be a chat."). Do not rebuild a
@@ -132,6 +142,19 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       const tb = b.data().ts?.toDate?.()?.getTime?.() ?? Infinity;
       return ta - tb;
     });
+    // The newest message, which is where a status hangs. Prefer the newest
+    // COMMITTED one: a just-sent local echo has no server timestamp yet and
+    // the Worker answers "No such message" for a write it has not seen.
+    {
+      const committed = ordered.filter((m) => m.data().ts);
+      const newest = committed.length ? committed[committed.length - 1] : ordered[ordered.length - 1];
+      latestMsgId = newest?.id ?? null;
+      // Only a STATUS counts: a plain emoji is the client reacting to him and
+      // is nobody's working state.
+      const rid = newest?.data()?.reaction?.id || '';
+      currentStatusId = rid && statusById(rid) ? rid : '';
+      onStatus?.(currentStatusId);
+    }
     for (const m of ordered) {
       const data = m.data();
       const mine = data.from === user.uid;
@@ -321,14 +344,26 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     const skip = ['.msg-img', '.file-chip', 'a', ...(bridge?.noLongPress || [])].join(', ');
     const onAttachment = (e) => !!e.target.closest?.(skip);
     const open = () => runMenu(opts);
+    let x0 = 0, y0 = 0;
     const start = (e) => {
       if (onAttachment(e)) return;
-      timer = setTimeout(() => { timer = null; open(); }, LONG_PRESS_MS);
+      x0 = e.clientX; y0 = e.clientY;
+      timer = setTimeout(() => {
+        timer = null;
+        // He was dragging out a selection, not asking for the menu.
+        if (window.getSelection && String(window.getSelection())) return;
+        open();
+      }, LONG_PRESS_MS);
     };
     const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    const moved = (e) => {
+      if (!timer) return;
+      if (Math.hypot(e.clientX - x0, e.clientY - y0) > MOVE_TOLERANCE) cancel();
+    };
     el.addEventListener('pointerdown', start);
-    ['pointerup', 'pointerleave', 'pointercancel', 'pointermove'].forEach((ev) =>
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) =>
       el.addEventListener(ev, cancel));
+    el.addEventListener('pointermove', moved);
     el.addEventListener('contextmenu', (e) => {
       if (onAttachment(e)) return;
       e.preventDefault();
@@ -605,7 +640,22 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   });
 
   // Handed back so the admin panel can post an approved message as me.
-  return { send: (text) => send({ text }) };
+  // Eric, 2026-08-25: the statuses "should sit to the right of 'chat with
+  // client' as a dropdown so I can have it be the status of what I'm working
+  // on." The panel owns the control; this owns the write, because it knows
+  // which message is newest. Same write the long-press menu makes.
+  return {
+    send: (text) => send({ text }),
+    setStatus: async (id) => {
+      if (!latestMsgId) throw new Error('No messages yet to hang a status on.');
+      const done = await post('/api/chat/react', {
+        kind: kindOf(), id: parentPath[1], msgId: latestMsgId, reaction: id || null,
+      }, '');
+      if (!done) throw new Error('That did not save. Try again.');
+      return true;
+    },
+    currentStatus: () => currentStatusId,
+  };
 }
 
 // ---- links inside message text ----
@@ -689,14 +739,22 @@ function renderAttachment(att, saveUid) {
 
 function attachLongPress(el, att, saveUid) {
   let timer = null;
-  const start = () => {
+  let x0 = 0, y0 = 0;
+  const start = (e) => {
     delete el.dataset.lp;
+    x0 = e.clientX; y0 = e.clientY;
     timer = setTimeout(() => { timer = null; el.dataset.lp = '1'; promptSave(att, saveUid); }, LONG_PRESS_MS);
   };
   const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  // Same wobble allowance as the message press and the drawer.
+  const moved = (e) => {
+    if (!timer) return;
+    if (Math.hypot(e.clientX - x0, e.clientY - y0) > MOVE_TOLERANCE) cancel();
+  };
   el.addEventListener('pointerdown', start);
-  ['pointerup', 'pointerleave', 'pointercancel', 'pointermove'].forEach((ev) =>
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) =>
     el.addEventListener(ev, cancel));
+  el.addEventListener('pointermove', moved);
   el.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     cancel();

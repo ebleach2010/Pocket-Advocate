@@ -1228,7 +1228,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-25-clockfix';
+const BUILD_TAG = 'v2026-08-25-chatfixes';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1236,7 +1236,7 @@ const BUILD_TAG = 'v2026-08-25-clockfix';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.34';
+const VERSION = '2.35';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2208,6 +2208,13 @@ const CHAT_REACTIONS = {
   thinking: { label: 'Eric is thinking about your situation…' },
   history: { label: 'Eric is reviewing your history…' },
   labs: { label: 'Eric is reviewing your labs / chart notes' },
+  // The six added on Eric's word, 2026-08-25, labels verbatim.
+  local: { label: 'Eric is looking into local resources…' },
+  vetting: { label: 'Eric is doing background checks on providers…' },
+  coordinating: { label: 'Eric is coordinating with providers…' },
+  insurance: { label: 'Eric is writing to insurance…' },
+  documents: { label: 'Eric is prepping documents…' },
+  notes: { label: 'Eric is taking personal notes on the case…' },
 };
 
 /**

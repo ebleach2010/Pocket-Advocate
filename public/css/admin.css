@@ -405,7 +405,12 @@
   display: flex; align-items: center; gap: .35rem; min-height: 44px;
   font-size: .96rem; font-weight: 600; line-height: 1.35; color: var(--manila-ink);
   overflow-wrap: anywhere;
-  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+}
+/* Same reasoning as .msg.react-target: this row has its own long press, which
+   only needs protecting from the touch callout. A diagnosis is exactly the
+   kind of text that gets pasted into a portal. */
+@media (pointer: coarse) {
+  .folder-dx { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 }
 .folder-dx.empty { font-weight: 500; font-style: italic; opacity: .72; }
 .folder-dx.mine { font-weight: 700; }
@@ -794,3 +799,23 @@
   background: var(--panel-2); color: var(--ink);
   border: 1px solid var(--line); border-radius: 10px; font-size: 1rem;
 }
+
+/* The heading row of the chat page: the title, and on its right the standing
+   status Eric sets while he works. Wraps rather than squeezing, because the
+   labels are sentences. */
+.chat-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: .6rem; flex-wrap: wrap; margin-bottom: .3rem;
+}
+.chat-head h3 { margin: 0; }
+.status-pick { display: flex; align-items: center; gap: .4rem; margin: 0; min-width: 0; }
+.status-pick select {
+  max-width: 15rem; min-height: 36px; padding: .3rem .5rem;
+  background: var(--panel-2); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 9px; font-size: .84rem;
+}
+/* Set means set: a live status is cyan, so a glance answers "does she think
+   I am doing something right now". */
+.status-pick select:not([value=""]) { border-color: var(--cyan); color: var(--cyan); }
+.status-pick select:disabled { opacity: .5; }
+@media (max-width: 26rem) { .status-pick select { max-width: 11rem; } }

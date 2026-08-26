@@ -22,6 +22,13 @@ export const STATUS_REACTIONS = [
   { id: 'thinking', emoji: '💭', label: 'Eric is thinking about your situation…' },
   { id: 'history', emoji: '🗂', label: 'Eric is reviewing your history…' },
   { id: 'labs', emoji: '🧪', label: 'Eric is reviewing your labs / chart notes' },
+  // The six added on Eric's word, 2026-08-25, labels verbatim.
+  { id: 'local', emoji: '🏥', label: 'Eric is looking into local resources…' },
+  { id: 'vetting', emoji: '🕵️', label: 'Eric is doing background checks on providers…' },
+  { id: 'coordinating', emoji: '📞', label: 'Eric is coordinating with providers…' },
+  { id: 'insurance', emoji: '📨', label: 'Eric is writing to insurance…' },
+  { id: 'documents', emoji: '📑', label: 'Eric is prepping documents…' },
+  { id: 'notes', emoji: '📝', label: 'Eric is taking personal notes on the case…' },
 ];
 
 /** How long a message stays editable. Mirrors EDIT_WINDOW_MS in the Worker. */
