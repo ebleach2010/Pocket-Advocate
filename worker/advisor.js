@@ -2228,6 +2228,16 @@ const draftQueuePath = (kind, id) => `advisorQueue/draft_${kind}_${id}`;
 const appealQueuePath = (kind, id) => `advisorQueue/appeal_${kind}_${id}`;
 // Call notes in flight: same reasoning as the two above.
 const callNotesQueuePath = (kind, id) => `advisorQueue/callnotes_${kind}_${id}`;
+// The call document (runCallDoc): the longest and most expensive turn in the
+// app, so if anything survives a closed lid it is this one.
+const callDocQueuePath = (kind, id) => `advisorQueue/calldoc_${kind}_${id}`;
+// How many documents one call document may be built from. The cap is about
+// the model's attention as much as the bytes: past a point another chart does
+// not make the sheet better, it makes every line of it vaguer.
+const MAX_CALLDOC_SOURCES = 12;
+/** Safe inside a double-quoted XML-ish attribute in the prompt. */
+const escAttr = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+  .replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 async function setState(env, kind, id, fields) {
   await patchDoc(env, statePath(kind, id), fields, { mask: Object.keys(fields) });
@@ -4055,5 +4065,196 @@ ${revise && instruction
       callNotesReq: null, callNotesStartedAt: null, callNotesProgressAt: null,
     }).catch(() => {});
     await deleteDoc(env, callNotesQueuePath(kind, id)).catch(() => {});
+  }
+}
+
+/**
+ * THE CALL DOCUMENT.
+ *
+ * Eric, 2026-08-26: "I would like to have a tab/section where I can upload a
+ * document and the advisor can format it, add in other useful information
+ * regarding his uploaded charts and labs, list questions that need to be
+ * asked that were missed, and highlight anything and note with a * if there
+ * is anything that I need to review that may be incorrect. It should format
+ * it neatly, professionally, and in a flow I can use in the call."
+ *
+ * What makes this different from runCallNotes, which is a short working sheet
+ * generated FROM the case: this one starts from a document Eric has already
+ * written, and the case is the enrichment rather than the source. His
+ * structure survives. The advisor reformats it, fills the gaps the case can
+ * fill, names the questions he did not think to ask, and flags what it thinks
+ * he should check.
+ *
+ * THE ASTERISK IS THE POINT. He is going to read this on a call while a sick
+ * person waits, so anything the advisor is not certain of has to announce
+ * itself rather than sit quietly inside a confident sentence. Every starred
+ * item is also collected at the top, because a flag you only meet by
+ * scrolling is a flag you miss.
+ *
+ * SOURCES, for the same reason. Every claim that did not come from Eric's own
+ * document says where it came from, so he can check it in ten seconds instead
+ * of trusting it.
+ *
+ * Effort is MAX on his explicit word. It is the most expensive setting in the
+ * app and this is the turn he asked for it on.
+ *
+ * ADMIN ONLY. The route is admin-gated, the output lives on the advisor state
+ * document (which no client can read), and nothing here is ever shown to or
+ * sent to a client.
+ */
+export async function runCallDoc(env, kind, id, {
+  instruction = '', revise = false, base = '', sources = [], noStream = false,
+} = {}) {
+  try {
+    await setState(env, kind, id, {
+      callDocStatus: 'running', callDocError: null,
+      callDocStartedAt: new Date(), callDocProgressAt: null,
+      callDocReq: {
+        instruction: instruction || '', revise: !!revise, base: base || '',
+        sources: (sources || []).slice(0, MAX_CALLDOC_SOURCES), at: new Date(),
+      },
+    });
+    await patchDoc(env, callDocQueuePath(kind, id), { kind, id, callDoc: true, at: new Date() },
+      { mask: ['kind', 'id', 'callDoc', 'at'] }).catch(() => {});
+
+    const parent = kind === 'sub' ? 'subscriptions' : 'cases';
+    const [rows, state, caseDoc, notesDoc, agendaRows, qa, style] = await Promise.all([
+      recentMessages(env, kind, id),
+      getDoc(env, statePath(kind, id)),
+      getDoc(env, `${parent}/${id}`).catch(() => null),
+      getDoc(env, `${parent}/${id}/private/notes`).catch(() => null),
+      listDocs(env, `${parent}/${id}/agenda`, { pageSize: 100 }).catch(() => []),
+      loadQa(env, kind, id, { full: true }).catch(() => []),
+      loadStyle(env),
+    ]);
+    const p = state?.data || {};
+    const c = caseDoc?.data || {};
+    const baseDoc = revise ? (base || p.callDoc || '') : '';
+
+    // The documents themselves. Eric's own upload comes first and is named as
+    // his, because everything downstream depends on the model knowing which
+    // words are already his and must be preserved.
+    const blocks = [];
+    const readNames = [];
+    const skipped = [];
+    for (const att of (sources || []).slice(0, MAX_CALLDOC_SOURCES)) {
+      const made = await attachmentBlock(env, att, kind, id).catch(
+        (e) => ({ skip: friendly(e) }));
+      if (made?.skip) { skipped.push(`${att?.name || 'a file'}: ${made.skip}`); continue; }
+      if (!made?.block) continue;
+      blocks.push({ type: 'text', text: `<document name="${escAttr(att?.name || 'untitled')}"${att?.mine ? ' from="Eric"' : ''}>` });
+      blocks.push(made.block);
+      blocks.push({ type: 'text', text: '</document>' });
+      readNames.push(att?.name || 'untitled');
+    }
+
+    const personalNotes = String(notesDoc?.data.html || '')
+      .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
+      .slice(-20000);
+    const agenda = (agendaRows || [])
+      .map((r) => `${r.data.done ? '[covered] ' : ''}${r.data.text}`)
+      .filter(Boolean).join('\n').slice(0, 8000);
+
+    const out = await ask(env, {
+      effort: 'max',
+      noStream,
+      onBeat: () => setState(env, kind, id, { callDocProgressAt: new Date() }).catch(() => {}),
+      maxTokens: 32000,
+      system: [{
+        type: 'text',
+        cache: true,
+        text: `${VOICE}
+
+Build Eric a CALL DOCUMENT: the single sheet he will have open, and read from, while he is on the phone with this client. He is a patient advocate, not a clinician. It is for his eyes only and is never sent to anyone.
+
+He has uploaded a document he prepared himself. THAT DOCUMENT IS THE SPINE. Keep his structure, his order and his priorities. You are reformatting and enriching it, not replacing it with your own. Where you keep his words, keep them; do not paraphrase him into blandness.
+
+Write it in this order:
+
+1. "REVIEW BEFORE YOU CALL" - every starred item from the whole document, gathered here as a numbered list, each one line. If there are none, write "Nothing flagged." A flag he has to scroll to find is a flag he misses, which is why they are collected here as well as marked in place.
+
+2. "THE CALL, IN ORDER" - his document, reformatted into something a person can actually read aloud from under pressure. Short headed sections. Short lines. The thing he says or asks in plain language, with the supporting detail indented beneath it, so his eye can find the next thing to say without reading a paragraph. Numbers, dates and values that matter go on their own line where he can see them at a glance.
+
+3. "QUESTIONS THAT ARE MISSING" - questions this case plainly needs answered that his document does not ask. Each one written as he would actually say it to the client, not as a topic. Say in one clause why it matters, and where the gap shows (a lab with no follow-up, a medication with no start date, a symptom mentioned once and never revisited). Do not pad this list; three real questions beat ten obvious ones.
+
+4. "FROM THE CASE, NOT IN YOUR DOCUMENT" - what the case file, the charts, the labs, the chat and the assessment add that his document does not have. This is the section that earns its keep: trends across results, a contradiction between two documents, something the client said in chat that bears on what he wrote, a date that does not line up.
+
+5. "SOURCES" - for every claim in sections 3 and 4, the document name, and the page or date where it is found. Anything that came from your own knowledge rather than this case says so outright.
+
+THE ASTERISK. Put * immediately before anything Eric should personally verify before he relies on it: a value you read off a chart that could be misread, an inference rather than a stated fact, a contradiction between two documents, a date you calculated, anything you are less than confident about, and anything in his own document that looks wrong to you. Say in the same line what specifically to check. Being wrong on a call in front of a frightened person costs more than an extra asterisk, so when it is close, star it.
+
+NEVER:
+- Never invent a value, a date, a name or a result. If it is not in what you were given, say it is not in the record.
+- Never diagnose, and never write anything that reads as medical advice to the client. Questions to ask a doctor are the shape this takes.
+- Never soften something that matters to make the document flow better.
+- Never use an em dash or an en dash. Use a comma, a colon, or a period.
+- No markdown headings and no bold markers. Section headers in capitals, exactly as named above. Plain text he can read in any light.
+
+Where a chart or a graphic would serve him better than a sentence, write one line [in square brackets] describing exactly the visual, for example [Line chart: creatinine across the last four draws]. The bracketed line stands alone.`,
+      }, {
+        type: 'text',
+        text: stanceNote(style) || ' ',
+      }],
+      messages: [{
+        role: 'user',
+        content: [
+          ...blocks,
+          {
+            type: 'text',
+            text: `<case>
+Client: ${c.clientName || 'unknown'} (${c.clientTz || 'timezone unknown'})
+Status: ${c.status || 'unknown'}; tier: ${c.fullAccess ? 'Hands-Off Case Management' : 'standard'}
+Next call: ${c.appointment?.start ? String(c.appointment.start) : 'unscheduled'}
+</case>
+
+<assessment>
+${p.analysis || '(no assessment yet)'}
+</assessment>
+
+<erics_personal_notes>
+${personalNotes || '(none)'}
+</erics_personal_notes>
+
+<next_call_list>
+${agenda || '(empty)'}
+</next_call_list>
+
+${qaBlock(qa)}
+
+<transcript>
+${transcript(rows)}
+</transcript>
+${skipped.length ? `\n<files_that_could_not_be_read>\n${skipped.join('\n')}\n</files_that_could_not_be_read>\n` : ''}
+${baseDoc ? `\n<current_call_document>\n${baseDoc}\n</current_call_document>\n` : ''}
+${revise && instruction
+  ? `Revise the current call document. Eric asked: ${instruction}\nKeep everything he did not ask you to change, including his own wording.`
+  : instruction
+    ? `Build the call document. Eric added: ${instruction}`
+    : 'Build the call document.'}`,
+          },
+        ],
+      }],
+    });
+
+    const doc = (out || '').trim();
+    if (!doc) throw new Error('empty call document');
+    await setState(env, kind, id, {
+      callDoc: doc,
+      callDocAt: new Date(),
+      callDocStatus: 'ready',
+      // What went into it, so the panel can say so and he is never guessing
+      // which upload this was built from.
+      callDocSources: readNames,
+      callDocSkipped: skipped,
+      callDocReq: null, callDocStartedAt: null, callDocProgressAt: null, callDocError: null,
+    });
+    await deleteDoc(env, callDocQueuePath(kind, id)).catch(() => {});
+  } catch (err) {
+    console.error('advisor call doc:', err.stack || err);
+    await setState(env, kind, id, {
+      callDocStatus: 'error', callDocError: friendly(err),
+      callDocReq: null, callDocStartedAt: null, callDocProgressAt: null,
+    }).catch(() => {});
+    await deleteDoc(env, callDocQueuePath(kind, id)).catch(() => {});
   }
 }

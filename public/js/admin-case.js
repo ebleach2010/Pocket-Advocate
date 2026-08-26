@@ -194,7 +194,10 @@ function render(el) {
       { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files'] },
       { id: 'read', label: 'Advisor', icon: '👨‍⚕️', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
       { id: 'track', label: 'Track', icon: '🗒', pages: ['summary', 'unanswered', 'agenda', 'about'] },
-      { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'drafts', 'saved'] },
+      // 'calldoc' sits in Mine, beside Notes: both start from something Eric
+      // wrote himself. A page absent from every group renders no tab at all,
+      // which is how the call document first shipped invisible.
+      { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'calldoc', 'drafts', 'saved'] },
       // A FIFTH group rather than a fifth page in an existing one: four per
       // group is the width constraint, and 'read' and 'track' are both full.
       // Only rendered for a Full Access case; on a standard case these pages
@@ -325,6 +328,13 @@ function render(el) {
             },
           });
         },
+      },
+      {
+        // Eric, 2026-08-26. Beside Notes, because this is the other page that
+        // starts from something HE wrote rather than something the app made.
+        id: 'calldoc', title: 'Call doc', icon: '📄',
+        render: (pane) => { pane.innerHTML = '<div data-calldoc-host></div>'; },
+        onShow: (pane) => paintCallDoc(pane.querySelector('[data-calldoc-host]')),
       },
       {
         // One day of the thread, read back to him. His side only: he took this
@@ -1371,6 +1381,11 @@ function refreshHeader() {
 // The advisor panel's own poll broadcasts the whole state; the appeals page
 // reads its letter and status from here rather than running a second poll.
 let panelState = {};
+/** paintCallDoc's repainter, set while that page is mounted so the state poll
+ *  can drive it. Declared up here beside panelState rather than under the
+ *  function that assigns it: the poll listener below reads it, and a reader
+ *  should not have to scroll 1,600 lines to find out whether that is safe. */
+let callDocRepaint = null;
 
 document.addEventListener('pa-panel-state', (e) => {
   const d = e.detail || {};
@@ -1379,6 +1394,10 @@ document.addEventListener('pa-panel-state', (e) => {
   if (folder?.el('appeals')) folder.el('appeals')._reload?.();
   // The call-notes workbench on Drafts reads from the same broadcast.
   folder?.el('drafts')?.querySelector('[data-callnotes-host]')?._reload?.();
+  // So does the call document, which is a long run: without this the panel
+  // would sit on "Building…" until he changed pages, for a document that had
+  // been ready for minutes.
+  if (folder?.el('calldoc')?.querySelector('[data-calldoc-host]')) callDocRepaint?.();
 
   // The saved notes ride the same poll. setHtml refuses to overwrite work in
   // progress, so this is safe to call on every tick.
@@ -2806,4 +2825,226 @@ function paintClinicCalls(pane) {
   };
   pane._reload = load;
   load();
+}
+
+// ---- the call document ----------------------------------------------------
+//
+// Eric, 2026-08-26: "a tab/section where I can upload a document and the
+// advisor can format it, add in other useful information regarding his
+// uploaded charts and labs, list questions that need to be asked that were
+// missed, and highlight anything and note with a * if there is anything that
+// I need to review that may be incorrect."
+//
+// Different from the call NOTES panel above, which generates a short sheet
+// from the case. This one starts from a document he wrote, keeps his
+// structure, and enriches it. Admin only, like everything on this page.
+//
+// The files ride inline as base64 rather than through Storage: this is a
+// document he has on the device in his hand, often one he has not and will
+// not put on the case, and making him upload it to the client's file shelf
+// first would be a worse product and a privacy question he never asked for.
+
+/** Inline cap. The Worker refuses larger, and saying so here saves the trip. */
+const CALLDOC_MAX_BYTES = 8 * 1024 * 1024;
+const CALLDOC_MAX_FILES = 12;
+/** Chosen but not yet sent. Cleared once a build starts. */
+let callDocPicked = [];
+let callDocKey = null;
+
+const readAsBase64 = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onerror = () => reject(new Error(`Could not read ${file.name}`));
+  r.onload = () => {
+    const s = String(r.result || '');
+    const comma = s.indexOf(',');
+    resolve(comma < 0 ? '' : s.slice(comma + 1));
+  };
+  r.readAsDataURL(file);
+});
+
+function paintCallDoc(host) {
+  if (!host) return;
+  const load = () => {
+    const st = panelState || {};
+    // Same heartbeat rule as the call notes: a run whose beat has gone quiet
+    // for five minutes hands the button back, so a dead turn cannot hold the
+    // panel hostage until a reload.
+    const beat = Math.max(
+      st.callDocStartedAt ? new Date(st.callDocStartedAt).getTime() : 0,
+      st.callDocProgressAt ? new Date(st.callDocProgressAt).getTime() : 0,
+    );
+    const stalled = st.callDocStatus === 'running' && beat && Date.now() - beat > 5 * 60_000;
+    const running = st.callDocStatus === 'running' && !stalled;
+    const ready = st.callDocStatus === 'ready' && st.callDoc;
+    const key = JSON.stringify([st.callDocStatus, st.callDocAt, !!stalled,
+      (st.callDoc || '').length, st.callDocError || '', callDocPicked.map((f) => f.name)]);
+    if (key === callDocKey && host.querySelector('[data-cd-root]')) return;
+    callDocKey = key;
+
+    // The starred lines, pulled out for the count. He asked for them flagged;
+    // saying HOW MANY before he opens it is what makes the flag do its job.
+    const stars = ready ? (st.callDoc.match(/^[^\n]*\*[^\n]*$/gm) || []).length : 0;
+
+    host.innerHTML = `
+      <div class="panel" data-cd-root>
+        <h3 style="margin:0 0 .3rem;">📄 Call document</h3>
+        <p class="dim small" style="margin:0 0 .6rem;">Upload what you have written
+          for this call. It comes back reformatted so you can read it down the
+          page while you talk, with what the case adds, the questions your
+          document does not ask, and a <strong style="color:var(--gold)">*</strong>
+          on anything worth checking before you say it. Your document stays the
+          spine: your order, your priorities, your words.</p>
+
+        ${ready ? '' : `
+          <label class="small" style="display:block; margin:0 0 .5rem;">Your document, plus any charts or labs
+            <input type="file" data-cd-files multiple
+              accept=".pdf,.jpg,.jpeg,.png,.heic" ${running ? 'disabled' : ''}>
+          </label>
+          ${callDocPicked.length ? `<p class="dim small" style="margin:0 0 .5rem;">
+            ${callDocPicked.map((f, i) => `<span class="chip-label">${i === 0 ? '📄 ' : '📎 '}${esc(f.name)}</span>`).join(' ')}
+            <button class="btn quiet" data-cd-clearfiles style="font-size:.7rem; padding:.2rem .5rem;">clear</button></p>` : ''}`}
+
+        <p class="row" style="gap:.5rem; flex-wrap:wrap; margin:0;">
+          <button class="btn${ready ? ' quiet' : ' glow'}" data-cd-build ${running ? 'disabled' : ''}>
+            ${running ? '📄 Building…' : ready ? 'Build a new one' : 'Build the call document'}</button>
+          ${ready ? '<button class="btn quiet" data-cd-revise>🔁 Revise…</button>' : ''}
+          ${ready ? '<button class="btn quiet" data-cd-print>🖨 Send to PDF</button>' : ''}
+          ${ready ? '<button class="btn quiet" data-cd-discard>Discard</button>' : ''}
+        </p>
+
+        ${running ? '<p class="dim small" style="margin:.5rem 0 0;">This one thinks hard and takes a few minutes. You can leave the page; it keeps going.</p>' : ''}
+        ${st.callDocError ? `<p class="error" style="margin:.5rem 0 0;">${esc(st.callDocError)}</p>` : ''}
+        ${stalled ? '<p class="error" style="margin:.5rem 0 0;">The last run went quiet. Tap build to try again.</p>' : ''}
+        <p class="error" data-cd-err hidden style="margin:.5rem 0 0;"></p>
+        ${(st.callDocSkipped || []).length ? `<p class="dim small" style="margin:.5rem 0 0; color:var(--gold);">
+          Could not read: ${(st.callDocSkipped || []).map(esc).join('; ')}</p>` : ''}
+
+        ${ready ? `
+          <p class="dim small" style="margin:.6rem 0 .2rem;">
+            ${stars ? `<strong style="color:var(--gold)">${stars} line${stars === 1 ? '' : 's'} flagged with *</strong> to check before you rely on them.` : 'Nothing flagged.'}
+            ${(st.callDocSources || []).length ? ` Built from: ${(st.callDocSources || []).map(esc).join(', ')}.` : ''}</p>
+          <textarea class="draft-box" data-cd-text rows="24">${esc(st.callDoc)}</textarea>
+          <p class="dim small" style="margin:.3rem 0 0;">Edit anything by hand before
+            printing. A line that is only [square brackets] prints as a framed
+            visual with that caption.</p>` : ''}
+      </div>`;
+
+    const post = async (payload, btn) => {
+      if (btn) btn.disabled = true;
+      const err0 = host.querySelector('[data-cd-err]');
+      if (err0) err0.hidden = true;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/advisor', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ kind: 'case', id: caseId, ...payload }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok || out.ok === false) throw new Error(out.error || `Failed (${res.status})`);
+        callDocKey = null;
+      } catch (e) {
+        // Repaint from truth first, then say what failed on the FRESH node:
+        // the tap flipped a label to "Building…" that no run backs, and the
+        // pre-repaint error node is detached.
+        callDocKey = null;
+        load();
+        const err = host.querySelector('[data-cd-err]');
+        if (err) { err.textContent = e.message; err.hidden = false; }
+      }
+    };
+
+    host.querySelector('[data-cd-files]')?.addEventListener('change', async (e) => {
+      const chosen = [...(e.target.files || [])].slice(0, CALLDOC_MAX_FILES);
+      const err = host.querySelector('[data-cd-err]');
+      const tooBig = chosen.filter((f) => f.size > CALLDOC_MAX_BYTES);
+      if (tooBig.length && err) {
+        err.textContent = `${tooBig.map((f) => f.name).join(', ')} ${tooBig.length === 1 ? 'is' : 'are'} over 8 MB. `
+          + 'Split it, or put it on the case and stage it instead.';
+        err.hidden = false;
+      }
+      callDocPicked = chosen.filter((f) => f.size <= CALLDOC_MAX_BYTES)
+        .map((f, i) => ({ file: f, name: f.name, contentType: f.type, size: f.size, mine: i === 0 }));
+      callDocKey = null;
+      load();
+    });
+
+    host.querySelector('[data-cd-clearfiles]')?.addEventListener('click', () => {
+      callDocPicked = [];
+      callDocKey = null;
+      load();
+    });
+
+    host.querySelector('[data-cd-build]')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const err = host.querySelector('[data-cd-err]');
+      if (!callDocPicked.length && !(panelState || {}).callDoc) {
+        if (err) { err.textContent = 'Choose your document first.'; err.hidden = false; }
+        return;
+      }
+      btn.textContent = '📄 Reading your document…';
+      btn.disabled = true;
+      let sources;
+      try {
+        sources = await Promise.all(callDocPicked.map(async (p) => ({
+          name: p.name, contentType: p.contentType, size: p.size, mine: p.mine,
+          data: await readAsBase64(p.file),
+        })));
+      } catch (e2) {
+        callDocKey = null;
+        load();
+        const err2 = host.querySelector('[data-cd-err]');
+        if (err2) { err2.textContent = e2.message; err2.hidden = false; }
+        return;
+      }
+      btn.textContent = '📄 Building…';
+      callDocPicked = [];
+      await post({ action: 'call-doc', sources }, btn);
+    });
+
+    // The overlay, never prompt(): window.prompt() does nothing at all inside
+    // an iOS Home-Screen app, and this page lives on Eric's home screen.
+    host.querySelector('[data-cd-revise]')?.addEventListener('click', () => {
+      if (document.getElementById('pa-cd-revise')) return;
+      const overlay = document.createElement('div');
+      overlay.id = 'pa-cd-revise';
+      overlay.className = 'settings-overlay';
+      overlay.innerHTML = `
+        <div class="settings-card" role="dialog" aria-modal="true" aria-label="Revise the call document">
+          <div class="row"><h3 style="margin:0;">🔁 Revise the document</h3>
+            <button class="btn quiet" data-x style="margin-left:auto;">Cancel</button></div>
+          <p class="dim small" style="margin:.2rem 0 .5rem;">What should change? Cut a
+            section, add a question, put the insurance part first. Everything you do
+            not mention stays as it is.</p>
+          <textarea class="edit-box" data-inst rows="3" maxlength="2000" style="min-height:4rem;"></textarea>
+          <div class="actions" style="margin-top:.7rem;"><button class="btn" data-go>Revise it</button></div>
+        </div>`;
+      const closeOv = () => overlay.remove();
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) closeOv(); });
+      overlay.querySelector('[data-x]').addEventListener('click', closeOv);
+      overlay.querySelector('[data-go]').addEventListener('click', () => {
+        const instruction = overlay.querySelector('[data-inst]').value.trim();
+        if (!instruction) return;
+        closeOv();
+        // The edited text, not the stored one: if he has changed it by hand,
+        // that is the document he means.
+        const base = host.querySelector('[data-cd-text]')?.value || '';
+        post({ action: 'call-doc', revise: true, instruction, base });
+      });
+      document.body.appendChild(overlay);
+      overlay.querySelector('[data-inst]').focus();
+    });
+
+    host.querySelector('[data-cd-discard]')?.addEventListener('click', () => {
+      if (!confirm('Discard this call document?')) return;
+      post({ action: 'clear-call-doc' });
+    });
+
+    host.querySelector('[data-cd-print]')?.addEventListener('click', () => {
+      const text = host.querySelector('[data-cd-text]')?.value || '';
+      if (text) printCallNotes(text);
+    });
+  };
+  load();
+  callDocRepaint = load;
 }

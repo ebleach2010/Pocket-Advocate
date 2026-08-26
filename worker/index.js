@@ -27,7 +27,7 @@ import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
 import {
   getAdvisorEffort, setAdvisorEffort,
-  runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
+  runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
 
@@ -4325,7 +4325,10 @@ async function handleAdvisorState(request, env, url) {
   // the panel actually draws.
   // callNotesReq carries the revise request's base text (up to 30k) so the
   // queue rescue can re-run it; the page never reads it, so it stays here.
-  const { readFiles, pendingMedia, callNotesReq, ...panelState } = state?.data || {};
+  // callDocReq is the same thing at twice the size, plus the source list, so
+  // it is stripped for the same reason: the panel reads callDocStatus and
+  // callDocSources, never the request that produced them.
+  const { readFiles, pendingMedia, callNotesReq, callDocReq, ...panelState } = state?.data || {};
   return json({
     state: panelState,
     qa: qa.map((r) => r.data),
@@ -5933,6 +5936,44 @@ async function handleAdvisor(request, env, ctx) {
       !!body?.revise,
       typeof body?.base === 'string' ? body.base.slice(0, 30000) : '',
     ), { raw: true });
+  }
+
+  if (action === 'clear-call-doc') {
+    await patchDoc(env, statePath, {
+      callDoc: null, callDocStatus: null, callDocError: null, callDocAt: null,
+      callDocSources: null, callDocSkipped: null,
+    }, { mask: ['callDoc', 'callDocStatus', 'callDocError', 'callDocAt', 'callDocSources', 'callDocSkipped'] });
+    return json({ ok: true });
+  }
+
+  if (action === 'call-doc') {
+    // The call document (Eric, 2026-08-26): he uploads what he has written,
+    // and it comes back reformatted for the call, enriched from the case,
+    // with the questions he missed and a * on anything he should check.
+    //
+    // ADMIN ONLY, like every action on this route. It lives on the advisor
+    // state document, which no client can read, and is never sent anywhere.
+    //
+    // The sources are whatever he ticked: files already on the case (which go
+    // straight from Storage to the model and never touch this Worker) and
+    // anything he uploaded inline. Bounded here as well as in runCallDoc,
+    // because the trust boundary is the route, not the caller.
+    const src = Array.isArray(body?.sources) ? body.sources.slice(0, 12) : [];
+    const sources = src.map((a) => ({
+      name: str(a?.name, 200),
+      url: typeof a?.url === 'string' ? a.url.slice(0, 2000) : '',
+      path: typeof a?.path === 'string' ? a.path.slice(0, 500) : '',
+      contentType: str(a?.contentType, 120),
+      size: Number(a?.size) > 0 ? Number(a.size) : 0,
+      data: typeof a?.data === 'string' ? a.data : '',
+      mine: a?.mine === true,
+    })).filter((a) => a.name || a.url || a.path || a.data);
+    return keepaliveRun(ctx, runCallDoc(env, kind, id, {
+      instruction: typeof body?.instruction === 'string' ? body.instruction.slice(0, 2000) : '',
+      revise: !!body?.revise,
+      base: typeof body?.base === 'string' ? body.base.slice(0, 60000) : '',
+      sources,
+    }), { raw: true });
   }
 
   if (action === 'clear-appeal') {

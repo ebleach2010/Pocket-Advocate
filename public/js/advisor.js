@@ -743,6 +743,19 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           callNotesError: out.state?.callNotesError || '',
           callNotesStartedAt: out.state?.callNotesStartedAt || null,
           callNotesProgressAt: out.state?.callNotesProgressAt || null,
+          // The call document (Eric, 2026-08-26) rides the same poll under the
+          // same whitelist rule, which is exactly what caught me out: the
+          // Worker wrote it, the state route returned it, the panel read
+          // panelState.callDoc - and the field was dropped here, in between,
+          // so the tab sat on "Building…" for a document that was ready.
+          callDoc: out.state?.callDoc || '',
+          callDocStatus: out.state?.callDocStatus || null,
+          callDocAt: out.state?.callDocAt || null,
+          callDocError: out.state?.callDocError || '',
+          callDocStartedAt: out.state?.callDocStartedAt || null,
+          callDocProgressAt: out.state?.callDocProgressAt || null,
+          callDocSources: out.state?.callDocSources || [],
+          callDocSkipped: out.state?.callDocSkipped || [],
         };
         renderDiff(detail);
         renderRead(out.mediaReport, out.queuedFiles, d.running, out.state?.mediaPlan || []);

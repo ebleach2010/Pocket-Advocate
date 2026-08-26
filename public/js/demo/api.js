@@ -833,6 +833,72 @@ export function demoApi(role, store) {
         store.fire?.(path);
         return ok({ ok: true });
       }
+      // The call document (Eric, 2026-08-26). Mirrored so the demo shows the
+      // real shape: the flagged lines gathered first, his document reformatted
+      // into call order, the questions he did not ask, what the case adds, and
+      // sources. The asterisks are the point of the feature, so the fixture
+      // carries several.
+      if (body.action === 'call-doc') {
+        await beat(1400);
+        const path = `cases/${body.id || DEMO_CASE_ID}/advisor/state`;
+        const cur = store.docs.get(path) || {};
+        const names = (body.sources || []).map((a) => a.name).filter(Boolean);
+        const doc = body.revise
+          ? `${body.base || cur.callDoc || ''}\n\n(Revised for the demo per your note: "${String(body.instruction || '').slice(0, 120)}")`
+          : [
+            'REVIEW BEFORE YOU CALL',
+            '1. *TSH of 6.8 read off the February chart image, the scan is faint, confirm the value before you quote it.',
+            '2. *Your document dates the infusion to March 4; the chat says "the week after my birthday", which is March 11. One of them is wrong.',
+            '3. *No start date anywhere for the levothyroxine, so the six week recheck window is a guess.',
+            '',
+            'THE CALL, IN ORDER',
+            'Open with the referral, because it is the longest clock.',
+            '  Endocrinology referral, mentioned by the second doctor, never confirmed sent.',
+            '  Ask: "Did anyone ever call you to book endocrinology?"',
+            '',
+            'Then the February panel.',
+            '  Requested twice by phone, not received.',
+            '  TSH 6.8 (*verify), free T4 not in the record at all.',
+            '',
+            '[Line chart: TSH across the last six months against the medication changes]',
+            '',
+            'QUESTIONS THAT ARE MISSING',
+            '"When exactly did you start the levothyroxine?" Without it the recheck date is guesswork, and your document assumes six weeks from the infusion.',
+            '"Has anyone ever repeated the antibody panel?" It is mentioned once in the intake and never again.',
+            '',
+            'FROM THE CASE, NOT IN YOUR DOCUMENT',
+            'The rash photographs are dated before the infusion, which cuts against the reaction theory in your notes.',
+            'She told you in chat on Aug 23 that she has been photographing it herself. That is the strongest evidence in the file and your document does not mention it.',
+            '',
+            'SOURCES',
+            'TSH 6.8: February panel image, page 1 (*faint scan).',
+            'Infusion date: your document, page 1; contradicted by chat, Aug 24.',
+            'Rash photographs: case uploads, Aug 19 and Aug 21.',
+            '',
+            'This is demonstration text.',
+          ].join('\n');
+        store.docs.set(path, {
+          ...cur,
+          callDoc: doc,
+          callDocStatus: 'ready',
+          callDocAt: new Date(),
+          callDocError: null,
+          callDocSources: names,
+          callDocSkipped: [],
+        });
+        store.fire?.(path);
+        return ok({ ok: true });
+      }
+      if (body.action === 'clear-call-doc') {
+        const path = `cases/${body.id || DEMO_CASE_ID}/advisor/state`;
+        const cur = store.docs.get(path) || {};
+        store.docs.set(path, {
+          ...cur, callDoc: null, callDocStatus: null, callDocAt: null,
+          callDocError: null, callDocSources: null, callDocSkipped: null,
+        });
+        store.fire?.(path);
+        return ok({ ok: true });
+      }
       if (body.action === 'clear-call-notes') {
         const path = `cases/${body.id || DEMO_CASE_ID}/advisor/state`;
         const cur = store.docs.get(path) || {};
