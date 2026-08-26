@@ -184,7 +184,13 @@ function render() {
       // 2026-08-25: "an entire separate tab for add-ons"). The follow-up and
       // upgrade cards moved here from the bottom of Docs, where they were
       // easy to scroll past and crowded the file list.
-      { id: 'addons', title: 'Enhance', icon: '➕', render: (pane) => renderAddons(pane, c) },
+      // A DIAMOND, NOT A PLUS (Eric, 2026-08-26: "enhancements need to be
+      // their own shiny special diamond category. It's so plain Jane with a
+      // gray cross"). A grey + is the language of a form, "add a row". This is
+      // the only tab on the page where anything is offered, so it is also
+      // styled apart from its four neighbours in glowup.css rather than being
+      // one more identical pill.
+      { id: 'addons', title: 'Enhance', icon: '💎', render: (pane) => renderAddons(pane, c) },
       {
         // Messages they bookmarked, each with a note of their own. Private:
         // Eric is not told what they save, and nothing is written back to the

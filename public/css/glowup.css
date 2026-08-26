@@ -1434,3 +1434,67 @@ select:focus {
   .svc-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .foot-cols { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* ==========================================================================
+   PATCH 3, 2026-08-26. The Enhance tab is the only one that sells.
+
+   Eric: "enhancements need to be their own shiny special diamond category.
+   It's so plain Jane with a gray cross."
+
+   Four of the five client tabs are places to READ something he already has.
+   One is the place where something is offered. Making all five identical
+   pills was tidy and wrong: the tab that carries the offers looked exactly
+   like the tab that carries the file list, so it read as filing rather than
+   as an invitation.
+
+   The diamond itself is the icon in case.js. This is the setting for it.
+   ========================================================================== */
+
+.case-folder .folder-tabs > a[data-page="addons"] {
+  border-color: color-mix(in srgb, var(--magenta) 45%, var(--line));
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--magenta) 16%, transparent),
+      color-mix(in srgb, var(--cyan) 12%, transparent));
+  color: var(--ink);
+  font-weight: 700;
+}
+.case-folder .folder-tabs > a[data-page="addons"] .ftab-ic {
+  /* The stone catches the light rather than sitting flat next to the word. */
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--magenta) 70%, transparent));
+}
+/* Selected, it is unmistakably the lit one. */
+.case-folder .folder-tabs > a[data-page="addons"].on {
+  border-color: var(--magenta);
+  box-shadow:
+    inset 0 1px 0 var(--pa-line-ink),
+    0 0 0 2px color-mix(in srgb, var(--magenta) 32%, transparent),
+    var(--glow-m);
+}
+
+/* The section heading on that page gets the same treatment, so arriving there
+   feels like arriving somewhere rather than scrolling into another list. */
+#addons .case-sec-h,
+[data-page-pane="addons"] .case-sec-h {
+  background: linear-gradient(100deg, var(--magenta), var(--cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Contrast keeps its hard edges: a gradient headline there is a legibility
+   cost with no information in it, so the tab is marked by weight and border
+   instead of by light. */
+:root[data-scheme="contrast"] .case-folder .folder-tabs > a[data-page="addons"] {
+  background: none;
+  border-width: 3px;
+  border-color: var(--magenta);
+}
+:root[data-scheme="contrast"] .case-folder .folder-tabs > a[data-page="addons"] .ftab-ic {
+  filter: none;
+}
+:root[data-scheme="contrast"] #addons .case-sec-h,
+:root[data-scheme="contrast"] [data-page-pane="addons"] .case-sec-h {
+  background: none;
+  color: var(--ink);
+}

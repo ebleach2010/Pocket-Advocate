@@ -872,3 +872,28 @@
 }
 .cd-case-row .dim { flex: none; font-size: .72rem; }
 .cd-case > div, .cd-case { max-height: 15rem; overflow-y: auto; overscroll-behavior: contain; }
+
+/* The envelope clock, when it is ON.
+   Eric, 2026-08-26: "a toggle on/off switch for working on a client from their
+   Manila envelope." The switch was already there, in the spot he circled. What
+   it lacked was a state you could read without interpreting a glyph, which is
+   how ten hours once ran on his only client unnoticed. Running is now loud on
+   purpose: this is the one control in the app where a wrong reading costs a
+   client real money. */
+[data-work-head].clock-on {
+  border-color: var(--green);
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  font-weight: 700;
+  letter-spacing: .02em;
+  animation: clock-on-pulse 2.4s ease-in-out infinite;
+}
+@keyframes clock-on-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 42%, transparent); }
+  50%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 0%, transparent); }
+}
+/* A pulse is an attention device, not a decoration. Anyone who has asked for
+   less motion still gets the colour, the weight and the word. */
+@media (prefers-reduced-motion: reduce) {
+  [data-work-head].clock-on { animation: none; }
+}

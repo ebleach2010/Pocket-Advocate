@@ -374,10 +374,24 @@ function render(el) {
             // The call-notes workbench paints itself into this host from the
             // advisor's state poll, exactly like the appeals page does.
             '<div data-callnotes-host></div>',
+            // TWO DIFFERENT THINGS USED TO SHARE ONE WORD, and it cost him the
+            // feature. This button generates a PRINTABLE sheet out of the
+            // advisor's existing sections. The place where he uploads his own
+            // notes to be blended with the case is a different thing entirely,
+            // on the Call doc page. Both were called "prep", so he tapped this
+            // one looking for the upload, got a printable, and concluded the
+            // upload had never been built: "I said this ages ago and it never
+            // happened" (2026-08-26). It had been built. It was unfindable.
+            //
+            // So this one says printable, and the upload gets a signpost of its
+            // own, in the words he used for it.
             '<div class="panel">',
             '  <h3>Before a call</h3>',
             '  <p class="dim small">Nothing here decides anything for you.</p>',
-            '  <button class="btn" data-prep-sheet>🎬 Video prep sheet</button>',
+            '  <button class="btn" data-prep-sheet>🎬 Printable prep sheet</button>',
+            '  <p class="dim small" style="margin:.7rem 0 .35rem;">Or upload what you wrote yourself and',
+            '    have it blended with the case, on your private shelf that the client cannot see:</p>',
+            '  <button class="btn ghost" data-go-calldoc>📄 My notes, blended with the case</button>',
             '</div>',
             '<div class="panel">',
             '  <h3>Duty of care</h3>',
@@ -393,6 +407,14 @@ function render(el) {
           // Built from the advisor's own sections rather than a fresh model
           // call: that read already exists and is already the one he trusts,
           // and asking twice would produce a second version to reconcile.
+          // The signpost. It clicks the real tab rather than reaching into the
+          // folder's internals, so page switching keeps exactly one
+          // implementation and this cannot drift away from it.
+          pane.querySelector('[data-go-calldoc]')?.addEventListener('click', () => {
+            const tab = document.querySelector('.folder-tabs > a[data-page="calldoc"]');
+            if (tab) { tab.click(); tab.scrollIntoView({ inline: 'center', block: 'nearest' }); }
+          });
+
           pane.querySelector('[data-prep-sheet]').addEventListener('click', () => {
             const c = data;
             const start = c.appointment?.start ? toDate(c.appointment.start) : null;
@@ -927,13 +949,35 @@ function startHeadClock(c) {
   const btn = document.querySelector('[data-work-head]');
   if (!btn) return;
   seedClock(c);
+  // IT HAS TO SAY WHICH WAY IT IS, IN A WORD (Eric, 2026-08-26: "a toggle
+  // on/off switch for working on a client from their Manila envelope").
+  //
+  // This control was already here, in the spot he circled in red. What it was
+  // not was legible as a SWITCH. It read `▶ 15h 25m`, and a play glyph beside
+  // a running total is genuinely ambiguous: it can be read as "this is
+  // playing" just as easily as "tap to play". Fifteen hours on the face makes
+  // the wrong reading the natural one.
+  //
+  // That ambiguity has already cost him once. Ten hours ran on his only client
+  // because a toggle was left on and nothing on the screen said so loudly
+  // enough. So the state is now a word, not a glyph to interpret: WORKING when
+  // it is on, Start when it is not, with the total kept beside it either way
+  // because the total is the number a client can see.
   const paint = () => {
     const t = liveClockSeconds();
     const h = Math.floor(t / 3600);
     const m = Math.floor((t % 3600) / 60);
-    btn.textContent = `${clock.startedAt ? '⏸' : '▶'} ${h ? `${h}h ` : ''}${m}m`;
-    btn.classList.toggle('glow', !!clock.startedAt);
-    btn.title = clock.startedAt
+    const total = `${h ? `${h}h ` : ''}${m}m`;
+    const on = !!clock.startedAt;
+    btn.textContent = on ? `● WORKING · ${total}` : `▶ Start · ${total}`;
+    btn.classList.toggle('glow', on);
+    btn.classList.toggle('clock-on', on);
+    btn.setAttribute('role', 'switch');
+    btn.setAttribute('aria-checked', on ? 'true' : 'false');
+    btn.setAttribute('aria-label', on
+      ? `On the clock for this case, ${total} so far. Tap to clock out.`
+      : `Off the clock. ${total} banked. Tap to clock in.`);
+    btn.title = on
       ? 'On the clock for this case. Tap to clock out.'
       : 'Tap to clock in on this case.';
   };
