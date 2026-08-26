@@ -2189,6 +2189,29 @@ function dayLabel(d) {
  * which of those two things is happening rather than leaving one sentence up
  * forever and letting him guess.
  */
+/**
+ * Every file on the case, from Storage.
+ *
+ * WHY THIS IS PARALLEL, AND WHY IT REPORTS PROGRESS (Eric, 2026-08-26). He
+ * photographed the call document panel sitting on "Looking for files on this
+ * case..." while his own uploaded document waited above it. It was not hung.
+ * It was SERIAL: five folders listed one after another with `await` in a for
+ * loop, and then, for every single file found, another awaited round trip for
+ * its URL and its metadata, one file at a time. On a real case that is dozens
+ * of sequential requests over a phone connection, which is indistinguishable
+ * from broken.
+ *
+ * Now the five folders list at once, every file's url and metadata are fetched
+ * together, and `onProgress` lets the caller say what it has found so far. The
+ * wall clock becomes the slowest single request instead of the sum of all of
+ * them, and while it runs the panel counts up instead of sitting on one
+ * sentence.
+ *
+ * What is deliberately NOT changed: which folders are read. The private `prep`
+ * shelf is still absent, and the comment above listPrep explains why that is a
+ * client-visibility rule and not a style preference. Adding it here is the day
+ * his working notes appear on a page a client can open.
+ */
 async function listCaseFiles({ onProgress } = {}) {
   const places = [
     ['report', `cases/${caseId}/report`],
@@ -2213,13 +2236,19 @@ async function listCaseFiles({ onProgress } = {}) {
     try {
       const res = await listAll(ref(storage, path));
       return await Promise.all(res.items.map(async (item) => {
-        const [url, meta] = await Promise.all([getDownloadURL(item), getMetadata(item)]);
-        files += 1;
-        tick();
-        return {
-          kind, name: item.name, url, ts: new Date(meta.timeCreated),
-          size: meta.size, contentType: meta.contentType || '', path: item.fullPath,
-        };
+        try {
+          const [url, meta] = await Promise.all([getDownloadURL(item), getMetadata(item)]);
+          files += 1;
+          tick();
+          return {
+            kind, name: item.name, url, ts: new Date(meta.timeCreated),
+            size: meta.size, contentType: meta.contentType || '', path: item.fullPath,
+          };
+        } catch {
+          // One unreadable object must not lose the other nineteen, which is
+          // what a single rejection inside a Promise.all would do.
+          return null;
+        }
       }));
     } catch {
       // One unreadable folder is not an empty case. It is counted so the
@@ -2233,7 +2262,7 @@ async function listCaseFiles({ onProgress } = {}) {
   }));
   // Flattened in the order of `places`, so the same case always lists the same
   // way however the five requests happen to finish.
-  return perPlace.flat();
+  return perPlace.flat().filter(Boolean);
 }
 
 /**

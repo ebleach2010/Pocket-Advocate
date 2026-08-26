@@ -188,14 +188,53 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
         body: JSON.stringify({ kind, id, ...payload }),
       });
-      const out = await res.json();
+      // WHY THIS IS NOT `await res.json()` ANY MORE (Eric, 2026-08-26).
+      //
+      // The comment below is still true and is the whole design: a long action
+      // streams keepalive whitespace and answers 200, with failure in the body.
+      // What that design did not survive was the connection dying BEFORE the
+      // Worker answered at all. Then the reply is Cloudflare's own HTML error
+      // page, `res.json()` throws a parse error on it, and the catch below put
+      // the raw fragment on his screen. He photographed the result: a call
+      // document that said "524 error code: 524".
+      //
+      // A 524 is the CONNECTION giving up, not the build. The run is inside
+      // ctx.waitUntil, so it keeps going after the socket closes, and the queue
+      // row means the cron finishes or retries it. Telling him it failed is
+      // therefore not just ugly, it is WRONG: the document is very often still
+      // on its way. So a gateway status says exactly that, and the panel keeps
+      // polling instead of treating it as the end.
+      const raw = await res.text();
+      let out = null;
+      try { out = raw ? JSON.parse(raw) : null; } catch { /* not JSON: handled below */ }
+
+      if (!out) {
+        // 502 bad gateway, 504 gateway timeout, 524 origin timeout. Cloudflare
+        // sends HTML for all three and none of them means the work stopped.
+        if ([502, 504, 524].includes(res.status)) {
+          showErr('The connection to the server dropped, which does not stop the build. '
+            + 'It keeps running and this page will show it when it lands. Leave it open, '
+            + 'or come back to this tab in a few minutes.');
+          setTimeout(refresh, 2000);
+          return null;
+        }
+        throw new Error(res.ok
+          ? 'The server answered with something this page could not read.'
+          : `The server refused that (${res.status}).`);
+      }
+
       // Long actions stream keepalive whitespace and always return HTTP 200 —
       // failure arrives as { ok: false } in the body, not as a status code.
       if (!res.ok || out.ok === false) throw new Error(out.error || `Failed (${res.status})`);
       setTimeout(refresh, 400);
       return out;
     } catch (err) {
-      showErr(err.message);
+      // A dropped fetch is the same story as a 524 and reaches here instead:
+      // TypeError "Failed to fetch" when the phone changes network mid-build.
+      showErr(/failed to fetch|networkerror|load failed/i.test(err.message || '')
+        ? 'The connection dropped, which does not stop the build. It keeps running and '
+          + 'this page will show it when it lands.'
+        : err.message);
       return null;
     }
   };
