@@ -1,4 +1,9 @@
 node_modules/
+# Without the bare form too, a node_modules SYMLINK is not ignored:
+# "node_modules/" matches a directory only. Linking the real one in to
+# run playwright from a worktree left it showing as untracked, and one
+# `git add -A` from committing a link to a path outside the repo.
+node_modules
 .wrangler/
 .dev.vars
 *.log
