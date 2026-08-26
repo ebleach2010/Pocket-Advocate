@@ -361,9 +361,14 @@ export function demoApi(role, store) {
         if (stat && role !== 'admin') return fail(403, 'That reaction is not available.');
         // Live demo messages carry `from`; seeded fixtures always do too,
         // but the role fallback keeps any stray legacy doc behaving.
+        // handleChatReact's rules, mirrored line for line. Where this file
+        // has ever been KINDER than the Worker it has hidden a real refusal:
+        // an invented admin carve-out here is what let drive-status.mjs run
+        // green while Eric's own dropdown was refusing him live.
         const mine = msg.from ? msg.from === myUid
           : (msg.role || 'client') === (role === 'admin' ? 'admin' : 'client');
-        if (mine && !(role === 'admin' && (stat || reaction === null)))
+        const adminStatus = role === 'admin' && (stat || reaction === null);
+        if (mine && !adminStatus)
           return fail(403, "You can only react to the other person's messages.");
         if (msg.reaction?.kind === 'status' && role !== 'admin')
           return fail(403, 'That message is showing a status note.');

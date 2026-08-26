@@ -1236,7 +1236,7 @@ const BUILD_TAG = 'v2026-08-25-chatfixes';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.36';
+const VERSION = '2.37';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2341,8 +2341,31 @@ async function handleChatReact(request, env) {
 
   const msg = await getDoc(env, ctx.path);
   if (!msg) return json({ error: 'No such message' }, 404);
-  if (msg.data.from === user.uid)
+
+  // A STATUS IS NOT A REACTION, and this is where that distinction was
+  // missing. An emoji is a response to somebody else's words, so reacting to
+  // yourself is meaningless and stays refused. A status is Eric annotating
+  // his own thread with what he is doing right now, and the dropdown hangs it
+  // on the NEWEST message in the thread whoever wrote it (chat.js). Working a
+  // case, the newest message is his own most of the time.
+  //
+  // So without this carve-out his own status control refuses him, which is
+  // exactly what he hit (Eric, 2026-08-25, two screenshots: "After selecting
+  // a new option" -> "That did not save. Try again."). It was not
+  // intermittent and it was not his account: the seeded demo thread also ends
+  // on a message of his, and once the demo was made to mirror this function
+  // honestly it failed on the very first attempt, the same way.
+  const ownMessage = msg.data.from === user.uid;
+  const adminStatus = ctx.isAdmin && (isStatus || reaction === null);
+  if (ownMessage && !adminStatus)
     return json({ error: 'You can only react to the other person\'s messages.' }, 403);
+
+  // And a status is his alone. Once one is on a message, the client cannot
+  // clear it or paint an emoji over it - which mattered little while statuses
+  // only ever sat on the client's own messages (where this function already
+  // refused them), and matters now that they sit on his.
+  if (msg.data.reaction?.kind === 'status' && !ctx.isAdmin)
+    return json({ error: 'That message is showing a status note.' }, 403);
 
   if (!reaction) {
     // Eric, 2026-08-21: "Remove reaction isn't working for chat."
@@ -2373,8 +2396,15 @@ async function handleChatReact(request, env) {
   if (!wrote) return json({ error: 'Could not set that reaction. Try again.' }, 409);
 
   // Re-applying the same reaction is not news — their phone already said it.
-  // Changing it is, so that one notifies. Notify whoever wrote the message.
-  const target = msg.data.from;
+  // Changing it is, so that one notifies.
+  //
+  // An emoji goes back to whoever wrote the message, because that is who is
+  // being reacted to. A STATUS is addressed to the client of this thread and
+  // always was: it says what Eric is doing on their case. Sending it to the
+  // message's author instead meant a status on one of his OWN messages
+  // notified nobody at all, so the client would only ever learn of it by
+  // happening to have the thread open.
+  const target = isStatus ? ctx.clientUid : msg.data.from;
   // A client gets told what Eric is DOING, and nothing else. An emoji on their
   // message is a small kindness on a screen, not a thing worth buzzing a
   // phone for (Eric, 2026-08-21: "send clients a notification of my reactions.

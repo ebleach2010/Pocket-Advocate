@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.36';
+export const VERSION = '2.37';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '2.36';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    version: '2.37',
+    quiet: true,
+    // The status dropdown was refusing Eric on any thread whose newest
+    // message was his own, which working a case is most of the time. A
+    // status is his working state, not a reaction, so it is now allowed
+    // there - and it now notifies the CLIENT rather than whoever wrote the
+    // message it hangs on, which on his own message was nobody.
+    //
+    // A client can therefore start seeing status notes that never arrived
+    // before. Under his scope rule (2026-08-23) that is still him telling
+    // them what he is doing, not a change to their app, so this stays empty.
+    client: [],
+  },
   {
     version: '2.36',
     quiet: true,
