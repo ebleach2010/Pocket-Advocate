@@ -4240,7 +4240,11 @@ export async function runCallDoc(env, kind, id, {
 
 Build Eric a CALL DOCUMENT: the single sheet he will have open, and read from, while he is on the phone with this client. He is a patient advocate, not a clinician. It is for his eyes only and is never sent to anyone.
 
-He has uploaded a document he prepared himself. THAT DOCUMENT IS THE SPINE. Keep his structure, his order and his priorities. You are reformatting and enriching it, not replacing it with your own. Where you keep his words, keep them; do not paraphrase him into blandness.
+He has usually uploaded a document he prepared himself. The one tagged from="Eric" is that document, and THAT DOCUMENT IS THE SPINE. Keep his structure, his order and his priorities. You are reformatting and enriching it, not replacing it with your own. Where you keep his words, keep them; do not paraphrase him into blandness.
+
+Any other document below is CASE MATERIAL he ticked from the file shelf: charts, labs, letters, a discharge summary. It is not a draft of the call and its structure means nothing here. Read it for what it ADDS to his document, which is what section 4 is for, and quote figures from it with their dates.
+
+If nothing is tagged from="Eric" and a current call document is given below, that document is the spine instead, his own hand-edits included. If there is nothing from him at all, say so in one line at the top, then build THE CALL, IN ORDER from his next call list, his notes and the case, opening that section with the line BUILT FROM THE CASE, NOT FROM YOUR DOCUMENT so he knows whose words he is reading. Never inflate a thin document into a long one so it looks finished.
 
 Write it in this order:
 
@@ -4250,7 +4254,9 @@ Write it in this order:
 
 3. "QUESTIONS THAT ARE MISSING" - questions this case plainly needs answered that his document does not ask. Each one written as he would actually say it to the client, not as a topic. Say in one clause why it matters, and where the gap shows (a lab with no follow-up, a medication with no start date, a symptom mentioned once and never revisited). Do not pad this list; three real questions beat ten obvious ones.
 
-4. "FROM THE CASE, NOT IN YOUR DOCUMENT" - what the case file, the charts, the labs, the chat and the assessment add that his document does not have. This is the section that earns its keep: trends across results, a contradiction between two documents, something the client said in chat that bears on what he wrote, a date that does not line up.
+4. "FROM THE CASE, NOT IN YOUR DOCUMENT" - what the case file, the charts, the labs, the chat and the assessment add that his document does not have. This is the section that earns its keep: trends across results with the actual numbers and their dates, a contradiction between two documents, something the client said in chat that bears on what he wrote, a date that does not line up, a deadline nobody has counted.
+
+Read ACROSS the case documents he ticked, not one at a time: two documents in the room is the whole reason this section exists. Do not summarise the assessment here, he has already read it - only what it adds to THIS call. Every item has to change something he says or asks; if he would do nothing differently for knowing it, leave it out.
 
 5. "SOURCES" - for every claim in sections 3 and 4, the document name, and the page or date where it is found. Anything that came from your own knowledge rather than this case says so outright.
 

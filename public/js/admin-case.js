@@ -1885,9 +1885,14 @@ function dayLabel(d) {
   });
 }
 
-async function refreshFiles() {
-  const listEl = document.getElementById('files');
-  if (!listEl) return;
+/**
+ * Every file on this case, from Storage.
+ *
+ * Pulled out of refreshFiles so the call document's picker can offer the same
+ * list. Two readers, one listing: a second copy of these five paths is how the
+ * two pages start disagreeing about what exists on a case.
+ */
+async function listCaseFiles() {
   const rows = [];
   for (const [kind, path] of [
     ['report', `cases/${caseId}/report`],
@@ -1910,17 +1915,29 @@ async function refreshFiles() {
       }
     } catch { /* empty */ }
   }
+  return rows;
+}
+
+/**
+ * The files the advisor can actually read. Images and PDFs go straight to it
+ * for a real read; HEIC it refuses outright, and "saved" copies are the
+ * client's own profile shelf, outside the advisor's fence.
+ */
+function advisorReadable(r) {
+  const ct = (r.contentType || '').toLowerCase();
+  return r.kind !== 'saved' && !/heic|heif/.test(ct)
+    && (ct.startsWith('image/') || ct === 'application/pdf' || /\.pdf$/i.test(r.name));
+}
+
+async function refreshFiles() {
+  const listEl = document.getElementById('files');
+  if (!listEl) return;
+  const rows = await listCaseFiles();
   if (!rows.length) {
     listEl.innerHTML = '<p class="dim small">No files yet.</p>';
     return;
   }
-  // Images and PDFs can go straight to the advisor for a real read. "Saved"
-  // copies are the client's own profile shelf, outside the advisor's fence.
-  const reviewable = (r) => {
-    const ct = (r.contentType || '').toLowerCase();
-    return r.kind !== 'saved' && !/heic|heif/.test(ct) &&
-      (ct.startsWith('image/') || ct === 'application/pdf' || /\.pdf$/i.test(r.name));
-  };
+  const reviewable = advisorReadable;
   // Image rows get a real thumbnail; tapping it opens the same lightbox the
   // chat uses. HEIC won't render in an <img>, so it stays a plain link.
   const thumbable = (r) => {
@@ -2880,6 +2897,25 @@ function paintClinicCalls(pane) {
  */
 let callDocPending = null;
 
+/**
+ * The case's own files, listed once and offered beside the device upload.
+ *
+ * WHY THIS EXISTS. The call document's fourth section is "FROM THE CASE, NOT
+ * IN YOUR DOCUMENT", and it is the one the prompt calls the section that
+ * earns its keep: a trend across results, a contradiction between two
+ * documents, a date that does not line up. All of that needs two documents in
+ * the room. Until now there was one - his - because the picker was a bare
+ * device <input type="file"> and runCallDoc read nothing else. So the section
+ * had only the assessment to work from, and restated the assessment he had
+ * already read that morning. A max-effort turn spent on a summary.
+ *
+ * These go as URLs, which is the cheap path: Storage to the model, the bytes
+ * never passing through the Worker, and a far larger size ceiling than an
+ * inline upload gets.
+ */
+let callDocCaseFiles = null;      // null = not listed yet
+let callDocCasePicked = new Set(); // storage paths he ticked
+
 /** Inline cap. The Worker refuses larger, and saying so here saves the trip. */
 const CALLDOC_MAX_BYTES = 8 * 1024 * 1024;
 /** Mirrors MAX_IMAGE_BYTES in worker/advisor.js. A photo over this is refused
@@ -2987,7 +3023,22 @@ function paintCallDoc(host) {
             <button class="btn quiet" data-cd-clearfiles style="font-size:.7rem; padding:.2rem .5rem;">clear</button></p>` : ''}
           ${hasDoc ? `<p class="dim small" style="margin:-.25rem 0 .5rem;">📄 is the one treated as
             <strong style="color:var(--ink)">your</strong> document, 📎 are charts and labs. Pick again to
-            build a new one; your current document stays until the new one lands.</p>` : ''}`}
+            build a new one; your current document stays until the new one lands.</p>` : ''}
+          <div class="cd-case" data-cd-case>
+            ${callDocCaseFiles === null
+              ? '<p class="dim small" style="margin:0 0 .5rem;">Looking for files on this case…</p>'
+              : callDocCaseFiles.length
+                ? `<p class="dim small" style="margin:0 0 .3rem;">And from this case, so it can read across
+                     them rather than only summarising what you already have:</p>
+                   ${callDocCaseFiles.map((f) => `
+                     <label class="cd-case-row">
+                       <input type="checkbox" data-cd-case-file value="${esc(f.path)}"
+                         ${callDocCasePicked.has(f.path) ? 'checked' : ''}>
+                       <span>${esc(String(f.name).replace(/^\d{10,}-/, ''))}</span>
+                       <span class="dim">${esc(f.kindLabel)}</span>
+                     </label>`).join('')}`
+                : '<p class="dim small" style="margin:0 0 .5rem;">Nothing on this case it can read yet.</p>'}
+          </div>`}
 
         <p class="row" style="gap:.5rem; flex-wrap:wrap; margin:0;">
           <button class="btn${hasDoc ? ' quiet' : ' glow'}" data-cd-build ${running ? 'disabled' : ''}>
@@ -3068,6 +3119,16 @@ function paintCallDoc(host) {
       }
     });
 
+    for (const cb of host.querySelectorAll('[data-cd-case-file]')) {
+      cb.addEventListener('change', (ev) => {
+        const v = ev.currentTarget.value;
+        if (ev.currentTarget.checked) callDocCasePicked.add(v);
+        else callDocCasePicked.delete(v);
+        // No repaint: rebuilding innerHTML here would drop the checkbox he is
+        // still tapping down the list, and the ticks are already on screen.
+      });
+    }
+
     host.querySelector('[data-cd-clearfiles]')?.addEventListener('click', () => {
       callDocPicked = [];
       callDocKey = null;
@@ -3097,10 +3158,23 @@ function paintCallDoc(host) {
       btn.disabled = true;
       let sources;
       try {
-        sources = await Promise.all(callDocPicked.map(async (p) => ({
+        const mine = await Promise.all(callDocPicked.map(async (p) => ({
           name: p.name, contentType: p.contentType, size: p.size, mine: p.mine,
           data: await readAsBase64(p.file),
         })));
+        // The case's files ride as URLs: Storage straight to the model, no
+        // bytes through the Worker, and a much larger ceiling than an inline
+        // upload gets. None of them is ever marked `mine` - his own document
+        // is the thing he just picked off this device, and mistaking a lab
+        // report for the spine makes the model faithfully preserve the wrong
+        // document's structure.
+        const fromCase = (callDocCaseFiles || [])
+          .filter((f) => callDocCasePicked.has(f.path))
+          .map((f) => ({
+            name: f.name, contentType: f.contentType, size: f.size,
+            url: f.url, mine: false,
+          }));
+        sources = [...mine, ...fromCase].slice(0, CALLDOC_MAX_FILES);
       } catch (e2) {
         callDocKey = null;
         load();
@@ -3171,4 +3245,28 @@ function paintCallDoc(host) {
   };
   load();
   callDocRepaint = load;
+
+  // List the case's files ONCE per mount, then repaint so they appear. Doing
+  // it inside load() would re-list on every poll tick, which is five Storage
+  // calls a time for a list that barely changes.
+  if (callDocCaseFiles === null) {
+    listCaseFiles()
+      .then((rows) => {
+        callDocCaseFiles = rows
+          .filter(advisorReadable)
+          .sort((a, b) => b.ts - a.ts)
+          .map((r) => ({
+            name: r.name,
+            path: r.path,
+            url: r.url,
+            contentType: r.contentType,
+            size: r.size,
+            kindLabel: r.kind === 'chat' ? 'shared in chat'
+              : r.kind === 'report' ? 'your report'
+                : r.kind === 'recording' ? 'recording' : 'uploaded',
+          }));
+      })
+      .catch(() => { callDocCaseFiles = []; })
+      .finally(() => { callDocKey = null; load(); });
+  }
 }

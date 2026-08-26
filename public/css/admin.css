@@ -851,3 +851,24 @@
 .status-pick select:not([value=""]) { border-color: var(--cyan); color: var(--cyan); }
 .status-pick select:disabled { opacity: .5; }
 @media (max-width: 26rem) { .status-pick select { max-width: 11rem; } }
+
+/* ---- the call document's case-file picker ----
+   A tick list of what is already on the case, offered beside the device
+   upload so the document can read ACROSS files rather than only reformatting
+   the one in his hand. Kept to a bounded scroll: a long-running case can
+   carry thirty files, and thirty rows would push the build button off a
+   phone screen entirely. */
+.cd-case { margin: 0 0 .6rem; }
+.cd-case-row {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .35rem .1rem; min-height: 34px;
+  font-size: .82rem; color: var(--soft);
+  border-bottom: 1px solid var(--line);
+}
+.cd-case-row:last-child { border-bottom: 0; }
+.cd-case-row input { width: 18px; height: 18px; flex: none; accent-color: var(--cyan); }
+.cd-case-row > span:first-of-type {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cd-case-row .dim { flex: none; font-size: .72rem; }
+.cd-case > div, .cd-case { max-height: 15rem; overflow-y: auto; overscroll-behavior: contain; }

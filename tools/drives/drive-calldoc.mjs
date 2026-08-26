@@ -43,6 +43,31 @@ ok('it refuses and says what to do', await page.evaluate(() => {
   return !!e && !e.hidden && /Choose your document first/.test(e.textContent);
 }));
 
+// --- THE CASE'S OWN FILES -------------------------------------------------
+// Section 4 is "FROM THE CASE, NOT IN YOUR DOCUMENT", and it needs two
+// documents in the room. Until this existed there was one - his - so the
+// section restated the assessment he had already read.
+console.log('\n--- the case files it can read across ---');
+const caseFiles = await page.evaluate(() => ({
+  block: !!document.querySelector('[data-cd-case]'),
+  boxes: [...document.querySelectorAll('[data-cd-case-file]')].map((c) => c.value),
+  // Whitespace-normalised: the copy wraps across lines in the template, so
+  // a literal match against raw textContent fails on the newline.
+  says: /read across them/.test(
+    (document.querySelector('[data-cd-case]')?.textContent || '').replace(/\s+/g, ' ')),
+}));
+ok('the case files are offered beside the device upload', caseFiles.block);
+ok('and it says why they are worth ticking', caseFiles.says);
+ok('the seeded case files are listed', caseFiles.boxes.length >= 3, caseFiles.boxes.join(' '));
+ok('including the rash photographs the assessment leans on',
+  caseFiles.boxes.some((v) => /hand-rash/.test(v)), caseFiles.boxes.join(' '));
+ok('and the discharge summary',
+  caseFiles.boxes.some((v) => /discharge-summary/.test(v)), caseFiles.boxes.join(' '));
+// The client's own saved shelf is outside the advisor's fence and must never
+// be offered here.
+ok('but never the client\'s private saved shelf',
+  !caseFiles.boxes.some((v) => /\/saved\//.test(v)), caseFiles.boxes.join(' '));
+
 console.log('\n--- choose a document and build ---');
 await page.setInputFiles('[data-cd-files]', {
   name:'prep-notes.pdf', mimeType:'application/pdf',
@@ -51,6 +76,15 @@ await page.setInputFiles('[data-cd-files]', {
 await page.waitForTimeout(700);
 ok('the chosen file shows before he commits', await page.evaluate(() =>
   /prep-notes\.pdf/.test(document.querySelector('[data-calldoc-host]')?.textContent||'')));
+// Tick two of the case's own files, so the build carries his document AND
+// something to read it against.
+await page.evaluate(() => {
+  for (const cb of [...document.querySelectorAll('[data-cd-case-file]')].slice(0, 2)) {
+    cb.checked = true;
+    cb.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+});
+await page.waitForTimeout(300);
 await page.evaluate(() => document.querySelector('[data-cd-build]')?.click());
 // The panel repaints off the advisor's state poll, which ticks every 2.5s
 // when busy. Wait for the document rather than for a stopwatch: a fixed
@@ -87,6 +121,9 @@ ok('and the count is shown before he opens it', !!flagged,
 ok('and it counts real concerns, not doubled lines', flagged === '3',
   `panel says ${flagged}; the fixture carries 3 numbered flags`);
 ok('it says which document it was built from', /Built from: prep-notes\.pdf/.test(built.chrome));
+ok('and the case files went with it, so section 4 has something to read across',
+  /discharge-summary|hand-rash|advocacy-case-review/.test(built.chrome),
+  (built.chrome.match(/Built from: [^.]*/) || [])[0] || 'no source line');
 ok('the document is editable by hand', await page.evaluate(() =>
   document.querySelector('[data-cd-text]')?.tagName === 'TEXTAREA'));
 

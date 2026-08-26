@@ -238,6 +238,45 @@ check('D27 a file dropped for size is named, not silently missing',
 check('D28 and the rest of the document is still built',
   state.callDocStatus === 'ready', state.callDocStatus);
 
+// ---- the case's own files ------------------------------------------------
+// Section 4 needs two documents in the room. A case file arrives with a URL
+// and no bytes, is never his document, and must be tagged so the model can
+// tell "the spine" from "material to read it against".
+reset();
+await runCallDoc(env, 'case', 'a', {
+  sources: [
+    { name: 'prep.pdf', mine: true, data: 'AAAA' },
+    { name: 'discharge-summary.pdf', url: 'https://storage/x/discharge.pdf', size: 900000 },
+    { name: 'hand-rash.jpg', url: 'https://storage/x/rash.jpg', size: 400000 },
+  ],
+});
+const blocks = asked?.messages?.[0]?.content || [];
+const tags = blocks.filter((b) => b.type === 'text' && /^<document /.test(b.text || ''))
+  .map((b) => b.text);
+check('D29 all three documents ride the turn', tags.length === 3, JSON.stringify(tags));
+check('D30 only HIS is tagged as his', tags.filter((t) => /from="Eric"/.test(t)).length === 1,
+  JSON.stringify(tags));
+check('D31 and it is the one he picked off the device',
+  /prep\.pdf/.test(tags.find((t) => /from="Eric"/.test(t)) || ''),
+  tags.find((t) => /from="Eric"/.test(t)));
+check('D32 the case files are named but NOT marked his',
+  tags.some((t) => /discharge-summary/.test(t) && !/from="Eric"/.test(t))
+  && tags.some((t) => /hand-rash/.test(t) && !/from="Eric"/.test(t)), JSON.stringify(tags));
+check('D33 and all three are recorded as what it was built from',
+  (state.callDocSources || []).length === 3, JSON.stringify(state.callDocSources));
+
+// The prompt has to SAY what a case document is for, or the model treats a
+// lab report's structure as a call plan.
+const sys2 = (asked?.system || []).map((b) => b.text).join('\n');
+check('D34 the prompt names the other documents as case material',
+  /CASE MATERIAL he ticked from the file shelf/.test(sys2));
+check('D35 and says their structure means nothing here',
+  /its structure means nothing here/.test(sys2));
+check('D36 and tells it to read ACROSS them',
+  /Read ACROSS the case documents he ticked/.test(sys2));
+check('D37 with a defined behaviour when nothing came from him',
+  /BUILT FROM THE CASE, NOT FROM YOUR DOCUMENT/.test(sys2));
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }
