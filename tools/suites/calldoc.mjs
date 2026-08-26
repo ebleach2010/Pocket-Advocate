@@ -631,6 +631,72 @@ check('D86 nothing on the panel names a model, an AI or automation, because that
   !/\b(AI|A\.I\.|model|Claude|Anthropic|automated|automation)\b/i
     .test((PANEL.match(/data-cd-search[\s\S]{0,900}/) || [''])[0]));
 
+// ---- THE ROUTE ITSELF, which nothing had ever driven ------------------------
+//
+// WHY THIS BLOCK EXISTS. Every check above this line drives runCallDoc, lifted
+// out of advisor.js. Not one of them touched the ROUTE that calls it, and the
+// route is where the call document actually died: it mapped his ticked sources
+// with a helper, `str`, that was defined as a local const inside three OTHER
+// route handlers and was not in scope here. That is a synchronous
+// ReferenceError, thrown before runCallDoc is ever reached, which the router's
+// catch-all flattens into `{ error: 'Internal error' }`.
+//
+// So the feature returned "Internal error" on every single build, the state was
+// never set, the model was never called, and 110 green checks said nothing was
+// wrong, because they all started one function too late. This is the third time
+// in this directory that a suite has been kinder than production by testing the
+// half that works.
+//
+// The fix is to lift the route's own mapping and RUN it, with only the module
+// level helpers it is allowed to see. If a future edit reaches for something
+// that is not in scope there, this goes red instead of Eric finding out.
+const WSRC = readFileSync(j(ROOT, 'worker/index.js'), 'utf8');
+
+function liftCallDocMapping() {
+  const cd = WSRC.indexOf("if (action === 'call-doc')");
+  if (cd < 0) throw new Error('the call-doc action is gone');
+  const a = WSRC.indexOf('let inlineBudget', cd);
+  const tail = ".filter((a) => a.name || a.url || a.path || a.data);";
+  const b = WSRC.indexOf(tail, a);
+  if (a < 0 || b < 0) throw new Error('could not find the source mapping');
+  return WSRC.slice(a, b) + tail;
+}
+
+// Only what the route may legitimately see: helpers defined at MODULE level in
+// the Worker. A local from another handler must NOT be handed in here, or this
+// check would paper over exactly the bug it exists to catch.
+function moduleLevel(name) {
+  const re = new RegExp('^function ' + name + '\\([^)]*\\) \\{[\\s\\S]*?\\n\\}', 'm');
+  const m = WSRC.match(re);
+  if (!m) return null;
+  return m[0];
+}
+
+let routeThrew = null;
+let routeOut = null;
+try {
+  const strDef = moduleLevel('str');
+  if (!strDef) throw new Error('str is not defined at module level in worker/index.js');
+  const src = strDef + '\n' + liftCallDocMapping() + '\n return sources;';
+  routeOut = new Function('body', src)({
+    sources: [
+      { name: '  prep.pdf  ', contentType: 'application/pdf', size: 4096, path: 'cases/a/prep/x.pdf', mine: true },
+      { name: 'photo.jpg', contentType: 'image/jpeg', size: 900, data: 'AAAA' },
+    ],
+  });
+} catch (e) { routeThrew = e; }
+
+check('D87 the ROUTE maps his ticked sources without throwing, which is what "Internal error" was',
+  !routeThrew, routeThrew && (routeThrew.constructor.name + ': ' + routeThrew.message));
+check('D88 every helper the route reaches for is defined at MODULE level, not inside another handler',
+  !!moduleLevel('str'),
+  'str must be a module level function, or handleAdvisor cannot see it');
+check('D89 and the mapping keeps both a Storage-backed pick and an inline one',
+  Array.isArray(routeOut) && routeOut.length === 2, JSON.stringify(routeOut));
+check('D90 with the name trimmed and the private tick carried through',
+  routeOut?.[0]?.name === 'prep.pdf' && routeOut[0].mine === true && routeOut[0].path === 'cases/a/prep/x.pdf',
+  JSON.stringify(routeOut?.[0]));
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }
