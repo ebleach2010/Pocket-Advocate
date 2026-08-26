@@ -31,6 +31,7 @@ export function rates() {
  *   <span data-rate="addon">$175</span>
  *   <span data-rate="sub">$95</span>
  *   <span data-rate="full">$1500</span>
+ *   <span data-rate="tele">$450</span>
  *
  * `data-rate-fmt="bare"` drops the dollar sign, for a spot that supplies its own.
  *
@@ -44,7 +45,7 @@ export async function paintRates(root = document) {
   const r = await rates();
   if (!r) return;
   for (const el of spots) {
-    const cents = { addon: r.addonCents, sub: r.subCents, full: r.fullCents }[el.dataset.rate] ?? r.caseCents;
+    const cents = { addon: r.addonCents, sub: r.subCents, full: r.fullCents, tele: r.teleCents }[el.dataset.rate] ?? r.caseCents;
     if (!(Number(cents) > 0)) continue;
     const text = el.dataset.rateFmt === 'bare' ? money(cents) : `$${money(cents)}`;
     if (el.textContent !== text) el.textContent = text;

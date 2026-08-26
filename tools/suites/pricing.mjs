@@ -266,6 +266,70 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   /so this case is now under it/.test(ADVJS)
   && !/(losing money|too cheap|should stop|unpaid labou?r)/i.test(ADVJS));
 
+// ---- Q1-Q4: no page may quote a price the Worker disagrees with ---------
+// Found live on 2026-08-26: the booking page's enhancements panel had
+// "Telehealth appointment advocacy · $250" typed straight into the copy while
+// TELEHEALTH_PRICE_CENTS was 45000. It had been under-quoting by $200 to
+// every client who opened that panel, and nothing was correcting it, because
+// rates.js only knew case / addon / sub / full so the spot was never a
+// [data-rate] at all.
+//
+// The rule this pins: a client-facing price is either a [data-rate] spot the
+// Worker fills, or it matches the constant exactly. A number typed into prose
+// that nothing can update is the whole defect.
+{
+  const { readdirSync } = await import('node:fs');
+  const TELE = num('TELEHEALTH_PRICE_CENTS');
+  const RATES = readFileSync(__j(__REPO, 'public/js/rates.js'), 'utf8');
+  // Anchored on the /api/rates RESPONSE, not on any function that happens to
+  // build a rate object. currentRates() is not what the pages read, and adding
+  // the field there alone left the new spot permanently on its fallback: a
+  // spot that looks plumbed and is not. The check has to name the payload.
+  check('Q1 the Worker serves the telehealth price on /api/rates itself',
+    /fullOpen: cap\.room !== false, chatOpenCents: CHAT_OPEN_CENTS,\n(?:\s*\/\/[^\n]*\n)*\s*teleCents: TELEHEALTH_PRICE_CENTS,/.test(SRC));
+  check('Q2 and rates.js knows the key, so a spot can be filled',
+    /tele: r\.teleCents/.test(RATES));
+
+  // Every dollar figure a client can read, against the four constants. A page
+  // may name a price only as the CURRENT value or inside a data-rate spot.
+  const LIVE = new Set([CASE / 100, ADDON / 100, TELE / 100,
+    num('SUB_PRICE_CENTS') / 100, num('FULL_MONTH_CENTS') / 100]);
+  // Superseded values, each one a real price this product used to charge.
+  // Any of these still on a client page is a page nobody updated.
+  const STALE = [250, 175, 265, 275.00, 650, 1500, 95, 3700];
+  const pages = [];
+  for (const d of ['public', 'public/js']) {
+    for (const n of readdirSync(__j(__REPO, d))) {
+      if (!/\.(html|js)$/.test(n)) continue;
+      if (d === 'public/js' && /^(admin|advisor|notes|duty|prep|drawer|seen|panel-bridge)/.test(n)) continue;
+      pages.push(`${d}/${n}`);
+    }
+  }
+  // Comments are stripped first. waivers.js keeps a dated change log naming
+  // every rate this product has ever charged, which is exactly the record a
+  // frozen legal file should keep, and it is not a quote to anybody.
+  const noComments = (t) => t
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .split('\n').map((l) => l.replace(/(^|[^:'"\\])\/\/.*$/, '$1')).join('\n');
+  const hits = [];
+  for (const rel of pages) {
+    const body = noComments(readFileSync(__j(__REPO, rel), 'utf8'));
+    for (const m of body.matchAll(/\$(\d[\d,]*)(?![\d,]*\s*(?:<\/span>))/g)) {
+      const v = Number(m[1].replace(/,/g, ''));
+      if (!STALE.includes(v) || LIVE.has(v)) continue;
+      // A stale number is fine as the SHIPPED TEXT of a data-rate spot: that
+      // is the documented fallback and rates.js overwrites it.
+      const before = body.slice(Math.max(0, m.index - 120), m.index);
+      if (/data-rate=/.test(before)) continue;
+      hits.push(`${rel}: $${m[1]}`);
+    }
+  }
+  check('Q3 no client page quotes a superseded price outside a data-rate spot',
+    hits.length === 0, hits.slice(0, 6).join('  |  '));
+  check('Q4 the booking page quotes telehealth as a fillable spot',
+    /data-rate="tele"/.test(readFileSync(__j(__REPO, 'public/js/book.js'), 'utf8')));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 process.exit(failed.length ? 1 : 0);

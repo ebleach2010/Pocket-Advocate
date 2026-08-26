@@ -277,6 +277,13 @@ async function readRates(env) {
     addonCents: priced(d.addonCents, ADDON_PRICE_CENTS),
     subCents: priced(d.subCents, SUB_PRICE_CENTS),
     fullCents: priced(d.fullCents, FULL_MONTH_CENTS),
+    // Telehealth is a FIXED price, not one of the ratcheting ones, so it is
+    // the constant rather than a stored rate. It is served anyway because the
+    // booking page had it typed into the copy as $250 while this said 45000,
+    // and nothing was correcting it: rates.js only knew case, addon, sub and
+    // full, so the spot was never a [data-rate] at all. A page that quotes a
+    // price it cannot be told is a price that goes stale silently.
+    teleCents: TELEHEALTH_PRICE_CENTS,
     // The floor below which a case is being worked at a loss. Eric's own
     // number, set from the dashboard; the default is the bottom of the
     // national independent-advocacy band.
@@ -493,6 +500,11 @@ async function handleRates(env) {
   return json({
     caseCents: r.caseCents, addonCents: r.addonCents, subCents: r.subCents,
     fullCents: r.fullCents, fullOpen: cap.room !== false, chatOpenCents: CHAT_OPEN_CENTS,
+    // THIS is the payload the pages read, not currentRates(). Adding teleCents
+    // to that one alone left the booking page's new [data-rate="tele"] spot
+    // permanently on its fallback text, which is a spot that looks plumbed and
+    // is not. Caught by curling /api/rates instead of trusting the edit.
+    teleCents: TELEHEALTH_PRICE_CENTS,
   });
 }
 // Follow-up sessions expire one month after the first discussion (Eric,

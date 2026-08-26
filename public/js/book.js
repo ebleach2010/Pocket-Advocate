@@ -667,13 +667,15 @@ function renderPayment() {
           these are available from the Case Enhancements tab on your case page
           whenever you want them:</p>
         <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Hands-Off Case Management</strong><br>
-          I take over the legwork for 60 days: check-in calls at least twice a
-          month, unlimited calls to your clinics and insurer on your behalf,
-          your telehealth visits attended, and two written insurance appeals.
-          You pay what is owed minus what you have already paid, never twice.</p>
+          I take over the legwork, a month at a time: check-in calls at least
+          twice a month, unlimited calls to your clinics and insurer on your
+          behalf, your telehealth visits attended, and two written insurance
+          appeals. Most cases take about two months, and every month after the
+          first is your choice, not a commitment. You pay what is owed minus
+          what you have already paid, never twice.</p>
         <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Follow-up session · $<span data-rate="addon">175</span></strong><br>
           A second full discussion on the same case after your report lands. Same case, same file, no starting over.</p>
-        <p class="muted small" style="margin:0;"><strong style="color:var(--ink)">Telehealth appointment advocacy · $250</strong><br>
+        <p class="muted small" style="margin:0;"><strong style="color:var(--ink)">Telehealth appointment advocacy · $<span data-rate="tele">450</span></strong><br>
           I join a telehealth visit with one of your own providers by video and advocate live. I confirm every appointment personally; if I can't attend, or your provider doesn't allow it, you get every dollar back. Included with Hands-Off Case Management.</p>
       </div>
     </details>
