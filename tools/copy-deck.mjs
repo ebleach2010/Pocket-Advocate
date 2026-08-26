@@ -14,8 +14,21 @@
 //
 // Not in public/, so it is never served.
 import fs from 'fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
-const R = '/workspace/pocket-advocate';
+// THE TREE THIS SCRIPT LIVES IN, not a hardcoded one.
+//
+// It used to read a fixed /workspace/pocket-advocate. Run from a git worktree
+// - which is how every branch is now checked out - it silently produced a
+// deck of a DIFFERENT branch's copy: the labels, the file:line references and
+// the words themselves would all describe code Eric was not looking at, and
+// nothing about the output would say so. A copy deck that quietly documents
+// the wrong tree is worse than no copy deck.
+//
+// PA_ROOT still overrides, for generating a deck of some other checkout on
+// purpose.
+const R = process.env.PA_ROOT || join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (f) => fs.readFileSync(`${R}/${f}`, 'utf8');
 const lines = (f) => read(f).split('\n');
 
