@@ -1133,3 +1133,16 @@ main > p > a.small[href="/admin.html"] {
   background: color-mix(in srgb, var(--gold) 10%, transparent);
   cursor: pointer;
 }
+
+/* Today's remaining hours, as chips. Wraps rather than scrolls: a row that
+   scrolls sideways hides half its own options, and the whole point of this row
+   is that the hour he wants is visible without hunting. */
+.sched-today {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .35rem;
+  margin: 0 0 .5rem;
+}
+.sched-today .btn.tiny { min-height: 44px; padding: .35rem .6rem; }
+.sched-today .btn.tiny.on {
+  border-color: var(--cyan); color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 12%, transparent);
+}

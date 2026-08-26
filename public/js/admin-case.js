@@ -1786,6 +1786,11 @@ function paintOverview(pane) {
         ${saidHtml('sched')}` : ''}
         <select id="sched-slot"><option value="">Loading open slots…</option></select>
         <div id="sched-custom" style="margin-top:.5rem;" hidden>
+          <!-- TODAY, in one tap. The picker below reaches any time at all, but
+               the case this panel keeps failing is "we agreed on 2pm, today",
+               and that should not cost four wheel spins. Built at render from
+               the hours left in the MST day. -->
+          <div class="sched-today" data-today-row></div>
           <input type="datetime-local" id="sched-when">
           <select id="sched-dur" style="margin-top:.35rem;">
             ${[30, 45, 60, 90, 120].map((m) =>
@@ -2654,9 +2659,18 @@ async function wireScheduler(el) {
     // Custom time goes last when there's real inventory (an open slot is the
     // common case) and first when there isn't — with no slots open, typing a
     // time is the only thing left to do.
-    slotSel.innerHTML = slots.length
-      ? slots.map((s) => `<option value="${s.id}">${mtFmt.format(s.start)} MST</option>`).join('') + CUSTOM_OPTION
-      : CUSTOM_OPTION;
+    // TYPING A TIME COMES FIRST, ALWAYS (Eric, 2026-08-26: "I still can't
+    // reschedule the time today to what I want. We're meeting 2pm MST").
+    //
+    // It used to go last whenever there was open inventory, on the reasoning
+    // that picking an existing slot is the common path. But open slots are
+    // never sooner than the 72h lead window, so the list he actually sees is
+    // next week, and the one option that can reach TODAY was under all of it
+    // behind a scroll. Rescheduling to this afternoon is the single most
+    // urgent thing this panel does and it was the hardest thing to find in it.
+    slotSel.innerHTML = CUSTOM_OPTION
+      + slots.map((s) => `<option value="${s.id}">${mtFmt.format(s.start)} MST</option>`).join('');
+    slotSel.value = CUSTOM;
   } catch (err) {
     slotSel.innerHTML = CUSTOM_OPTION;
     console.warn("couldn't load open slots:", err.message);
@@ -2729,6 +2743,61 @@ async function wireScheduler(el) {
   const whenInput = el.querySelector('#sched-when');
   const syncCustom = () => { customBox.hidden = slotSel.value !== CUSTOM; };
   slotSel.addEventListener('change', syncCustom);
+  // Prefilled to the next round hour TODAY, in MST wall clock, which is what
+  // the submit below parses. An empty picker on a phone means spinning four
+  // wheels from whatever the OS defaults to; prefilled, "2pm today" is one
+  // spin. Never prefills a time that has already gone.
+  if (whenInput && !whenInput.value) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: MOUNTAIN_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date()).reduce((o, x) => { o[x.type] = x.value; return o; }, {});
+    let h = Number(parts.hour) + 1;
+    let day = `${parts.year}-${parts.month}-${parts.day}`;
+    if (h > 23) {
+      // Past 11pm the next round hour is tomorrow. Roll the MST date properly
+      // rather than doing string arithmetic on the day.
+      h = 8;
+      const t = new Date(`${day}T12:00:00Z`);
+      t.setUTCDate(t.getUTCDate() + 1);
+      day = t.toISOString().slice(0, 10);
+    }
+    whenInput.value = `${day}T${String(h).padStart(2, '0')}:00`;
+  }
+  // The remaining hours of today, as chips. Rendered here rather than in the
+  // template because "today" is only known at paint time and a stale chip is
+  // worse than no chip.
+  {
+    const row = el.querySelector('[data-today-row]');
+    if (row) {
+      const p = new Intl.DateTimeFormat('en-CA', {
+        timeZone: MOUNTAIN_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', hour12: false,
+      }).formatToParts(new Date()).reduce((o, x) => { o[x.type] = x.value; return o; }, {});
+      const day = `${p.year}-${p.month}-${p.day}`;
+      const from = Number(p.hour) + 1;
+      const hours = [];
+      for (let h = Math.max(from, 7); h <= 21; h++) hours.push(h);
+      const label = (h) => {
+        const ampm = h >= 12 ? 'pm' : 'am';
+        const twelve = h % 12 === 0 ? 12 : h % 12;
+        return `${twelve}${ampm}`;
+      };
+      row.innerHTML = hours.length
+        ? `<span class="dim small">Today</span>`
+          + hours.map((h) => `<button type="button" class="btn quiet tiny" data-today="${day}T${String(h).padStart(2, '0')}:00">${label(h)}</button>`).join('')
+        : '<span class="dim small">Nothing left today. Pick a time below.</span>';
+      for (const btn of row.querySelectorAll('[data-today]')) {
+        btn.addEventListener('click', () => {
+          slotSel.value = CUSTOM;
+          syncCustom();
+          whenInput.value = btn.dataset.today;
+          for (const other of row.querySelectorAll('[data-today]')) other.classList.remove('on');
+          btn.classList.add('on');
+        });
+      }
+    }
+  }
   syncCustom();
 
   el.querySelector('#sched-go').addEventListener('click', async () => {

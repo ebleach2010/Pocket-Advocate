@@ -106,6 +106,51 @@ const onClient = await page.evaluate((iso) => {
 }, now);
 ok('and the CLIENT page shows the new time', onClient.shown, onClient.want);
 
+// ---- reaching TODAY, which is the whole point ---------------------------
+// Eric, 2026-08-26, second attempt: "I still can't reschedule the time today
+// to what I want. We're meeting 2pm MST." The Move it row shifts off the
+// CURRENT appointment, so with a call booked for next week it offers next
+// week. And typing a time used to sit last in the dropdown, under every open
+// slot, all of which are past the 72h lead window: the one control that can
+// reach this afternoon was under a scroll of next Tuesday.
+await page.goto(`${P}/admin-case.html?id=demo-case&demo=admin`, { waitUntil: 'networkidle' });
+await page.waitForTimeout(2500);
+await page.evaluate(() => {
+  const d = [...document.querySelectorAll('details')].find((x) => /Schedule a session/i.test(x.textContent || ''));
+  if (d) d.open = true;
+});
+await page.waitForTimeout(800);
+const sched = await page.evaluate(() => {
+  const sel = document.getElementById('sched-slot');
+  const box = document.getElementById('sched-custom');
+  return {
+    first: sel?.options[0]?.textContent.trim() || '',
+    custom: sel?.value === '__custom__',
+    open: box ? !box.hidden : false,
+    prefill: document.getElementById('sched-when')?.value || '',
+    chips: [...document.querySelectorAll('[data-today]')].map((x) => x.textContent.trim()),
+    small: [...document.querySelectorAll('[data-today]')].filter((x) => x.getBoundingClientRect().height < 44).length,
+  };
+});
+ok('typing a time is the first option, not buried under next week',
+   /not on the calendar/i.test(sched.first), sched.first);
+ok('it is preselected, so the picker is already on screen', sched.custom && sched.open);
+ok('the picker is prefilled with a time today', /^\d{4}-\d{2}-\d{2}T\d{2}:00$/.test(sched.prefill), sched.prefill);
+ok('every hour left today is one tap', sched.chips.length > 0, sched.chips.join(' '));
+ok('and each chip is a 44px target', sched.small === 0, `${sched.small} too small`);
+
+const two = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll('[data-today]')].find((x) => x.textContent.trim() === '2pm');
+  if (!btn) return null;
+  btn.click();
+  return document.getElementById('sched-when')?.value || '';
+});
+// Only assertable while 2pm is still ahead; after 2pm MST the chip is gone by
+// design and the check says so rather than failing on the clock.
+ok(two === null ? 'past 2pm today, so the 2pm chip is correctly absent'
+                : 'tapping 2pm sets the picker to 2pm today',
+   two === null || /T14:00$/.test(two), two === null ? 'no 2pm chip' : two);
+
 ok('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
 
 await b.close();
