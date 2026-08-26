@@ -29,10 +29,6 @@
 })();
 </script>
 <link rel="stylesheet" href="/css/site.css?v=stat95">
-<!-- The booking flow's own sheet. AFTER site.css, because it restyles shared
-     components (the step rail, the day cards, the agreement) for this page
-     only, and it is scoped to main.book so it cannot reach another screen. -->
-<link rel="stylesheet" href="/css/booking.css?v=bk1">
 <script type="module" src="/js/nav-menu.js"></script>
 <!-- Maintenance notice. The Worker refuses /api/checkout and /api/subscribe
      for the same window; this only greys the page and says when it lifts. -->
@@ -50,7 +46,7 @@
     </nav>
   </div>
 </header>
-<main class="book">
+<main>
   <h1>Book your case</h1>
   <ol class="step-rail" id="crumbs"></ol>
   <p class="error" id="page-error" hidden></p>
