@@ -5,7 +5,11 @@
 // both the tab strip and the panels - 14 of each - which made a first pass
 // read a tab and call it the open page.
 import { chromium } from 'playwright';
-const P='http://127.0.0.1:8795', CASE='demo-case';
+// PA_PORT overrides the default, so a drive can be pointed at a server
+// serving THIS tree. A shared 8795 that another session has repointed at a
+// frozen checkout is how a drive reports on code that is not the code.
+const PORT = process.env.PA_PORT || 8795;
+const P = `http://127.0.0.1:${PORT}`, CASE='demo-case';
 let pass=0, fail=0; const errs=[];
 const ok=(n,c,d='')=>{ if(c){pass++;console.log('  ok   ',n,d?`— ${d}`:'');} else {fail++;console.log('  FAIL ',n,d?`— ${d}`:'');} };
 

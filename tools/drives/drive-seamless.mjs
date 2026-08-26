@@ -11,7 +11,11 @@
 //  F. the call-notes panel on the Full Access case: draft, revise via the
 //     overlay (never prompt()), discard.
 import { chromium } from 'playwright';
-const P = 'http://127.0.0.1:8795';
+// PA_PORT overrides the default, so a drive can be pointed at a server
+// serving THIS tree. A shared 8795 that another session has repointed at a
+// frozen checkout is how a drive reports on code that is not the code.
+const PORT = process.env.PA_PORT || 8795;
+const P = `http://127.0.0.1:${PORT}`;
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const ctx = await b.newContext({ viewport: { width: 390, height: 844 } });
 await ctx.addCookies([{ name: 'pa_demo', value: '1', domain: '127.0.0.1', path: '/' }]);

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.36';
+export const VERSION = '2.38';
 
 /**
  * Newest first.
@@ -52,14 +52,66 @@ export const VERSION = '2.36';
  */
 export const CHANGELOG = [
   {
+    // THIS BRANCH'S ENTRY. It sat at 2.36 while the branch was open, and
+    // 2.36 and 2.37 shipped to main underneath it, so it moves up rather
+    // than colliding with a version a client has already been shown.
+    //
     // The reshaped tier (check-ins, $3,500), telehealth appointment
     // advocacy, the Add-ons tab, phone consent at booking, and closure
     // reasons shown to the client. Plus the second build round on this
-    // branch: more "Eric is…" status lines in chat, and the note-taking
-    // clause in the agreement (new bookings only). None of it is live for
-    // clients until the release that turns the tier on, so the client
-    // bullets wait with it and are written at push time.
+    // branch: more "Eric is…" status lines in chat, the note-taking clause
+    // in the agreement (new bookings only), and the call document. None of
+    // it is live for clients until the release that turns the tier on, so
+    // the client bullets wait with it and are written at push time.
+    version: '2.38',
+    quiet: true,
+    client: [],
+  },
+  {
+    version: '2.37',
+    quiet: true,
+    // The status dropdown was refusing Eric on any thread whose newest
+    // message was his own, which working a case is most of the time. A
+    // status is his working state, not a reaction, so it is now allowed
+    // there - and it now notifies the CLIENT rather than whoever wrote the
+    // message it hangs on, which on his own message was nobody.
+    //
+    // A client can therefore start seeing status notes that never arrived
+    // before. Under his scope rule (2026-08-23) that is still him telling
+    // them what he is doing, not a change to their app, so this stays empty.
+    client: [],
+  },
+  {
     version: '2.36',
+    quiet: true,
+    // A failed status now says WHY it failed, in the Worker's own words, and
+    // two comments that named an admin-only tool are out of the files a
+    // client's browser downloads. Nothing on a client's screen moves.
+    client: [],
+  },
+  {
+    version: '2.35',
+    quiet: true,
+    // Selecting text in chat, a held mouse press opening the message menu,
+    // tapping a page no longer turning it, and Eric's status dropdown. The
+    // one thing a CLIENT can see is more status notes from him - which is
+    // him telling them what he is doing, not a change to their app - so
+    // under his scope rule (2026-08-23) this list stays empty.
+    client: [],
+  },
+  {
+    version: '2.34',
+    quiet: true,
+    // The work clock gains a correction, and the maintenance window moves to
+    // 8PM. Both are Eric's side of the app: the clock correction is a control
+    // on his chart, and the window is the front door, which a client who
+    // already has a case never meets. A client CAN see the hours total change
+    // as a result, but the change itself is admin machinery, so under his
+    // scope rule (2026-08-23) this list stays empty.
+    client: [],
+  },
+  {
+    version: '2.33',
     quiet: true,
     client: [],
   },

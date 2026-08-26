@@ -659,21 +659,32 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   });
 
   // Handed back so the admin panel can post an approved message as me.
-  // What the panel around this chat can drive. `setStatus` exists because the
-  // status belongs beside the heading, not floating above the log where it
-  // spent its life as a 0.72rem "▾ What I'm doing" nobody ever found.
-  //
-  // It still lands on the newest message, which is what the client is pushed
-  // and what the thread shows - the dropdown is a better door onto the same
-  // room, not a second mechanism.
+  // Eric, 2026-08-25: the statuses "should sit to the right of 'chat with
+  // client' as a dropdown so I can have it be the status of what I'm working
+  // on." The panel owns the control; this owns the write, because it knows
+  // which message is newest. Same write the long-press menu makes.
   return {
     send: (text) => send({ text }),
     setStatus: async (id) => {
-      if (!latestMsgId) throw new Error('No messages yet to hang a status on.');
-      const ok2 = await post('/api/chat/react', {
-        kind: kindOf(), id: parentPath[1], msgId: latestMsgId, reaction: id || null,
-      }, '');
-      if (!ok2) throw new Error('That did not save. Try again.');
+      if (!latestMsgId) throw new Error('There are no messages here yet to hang a status on. Send one first.');
+      // The Worker's OWN words, not a generic apology. The first version
+      // passed an empty failMsg to post(), which swallows the reason and
+      // returns false, so a real refusal ("You can only react to the other
+      // person's messages", "Unknown reaction", a 401 from an expired token)
+      // all reached Eric as "That did not save. Try again." - which told him
+      // nothing and told me less.
+      const token = await user.getIdToken();
+      const res = await fetch('/api/chat/react', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: kindOf(), id: parentPath[1], msgId: latestMsgId, reaction: id || null,
+        }),
+      });
+      if (!res.ok) {
+        const out = await res.json().catch(() => ({}));
+        throw new Error(out.error ? `${out.error} (${res.status})` : `That did not save (${res.status}).`);
+      }
       return true;
     },
     /** Whatever status is on the newest message right now, or '' for none. */

@@ -209,8 +209,17 @@ ck('scope note: it says the clock runs regardless of the checklist',
 // nothing - dead code that let a status be set but never taken down.
 ck('react: no hasOwn over the reaction record (the dead-carve-out shape)',
    !/Object\.hasOwn\(CHAT_REACTIONS, msg\.data\.reaction \?\?/.test(W));
+// EXPECTATION UPDATED 2026-08-26, not relaxed. This pinned the single-line
+// form of the carve-out. The same carve-out was written independently on main
+// (where its absence was refusing Eric his own status dropdown) as two named
+// conditions, and the merge kept that form because the names are what make it
+// readable. The behaviour is identical, so the check now pins all three parts
+// instead of one line - dropping ANY of them turns this red, which is stricter
+// than what it replaced.
 ck('react: the admin may clear anything on his own bubble, status included',
-   /msg\.data\.from === user\.uid && !\(ctx\.isAdmin && \(isStatus \|\| reaction === null\)\)/.test(W));
+   /const ownMessage = msg\.data\.from === user\.uid;/.test(W)
+   && /const adminStatus = ctx\.isAdmin && \(isStatus \|\| reaction === null\);/.test(W)
+   && /if \(ownMessage && !adminStatus\)/.test(W));
 ck('react: a status note is protected from the client, wherever it hangs',
    /msg\.data\.reaction\?\.kind === 'status' && !ctx\.isAdmin/.test(W));
 const CHJ = f('public/js/chat.js');

@@ -249,7 +249,7 @@ function render(el) {
               <div class="row" data-workclock style="gap:.5rem; align-items:center; margin:.1rem 0 .5rem;">
                 <button class="btn quiet" data-work-toggle style="flex:none;">▶ Start working</button>
                 <button class="btn quiet work-total-btn" data-work-total
-                  title="Tap to add or subtract time"></button>
+                  style="flex:none;" title="Tap to add or subtract time"></button>
                 <span class="work-rate" data-work-rate hidden></span>
               </div>
               <p class="dim small" data-client-gate style="margin:.1rem 0 .4rem;" hidden></p>
@@ -431,6 +431,9 @@ function render(el) {
   }
 
   const chat = mountChat({
+    // Show what is already set, so it reads as a state and not as a button
+    // that fires and forgets.
+    onStatus: (id) => { if (statusPick && statusPick.value !== id) statusPick.value = id; },
     container: folder.el('chat').querySelector('#chat'),
     // Show what is already set, so the control reads as a state rather than
     // as a button that fires and forgets.
@@ -896,6 +899,22 @@ function wireClockToggle(btn) {
     }
     btn.disabled = false;
   });
+
+
+  // The tap-to-correct sheet is NOT wired here. It belongs to the total,
+  // not the toggle, and lives in wireClockFix below. Merging main into this
+  // branch dropped main's older copy of that sheet into this function, where
+  // its totalEl / live() / paint() bindings do not exist - the page threw
+  // "totalEl is not defined" and rendered nothing at all. Removed, not moved:
+  // wireClockFix already does the same job against the shared clock state.
+}
+
+/** Seconds as "10h 40m", the one shape the clock is written in. */
+function fmtHm(sec) {
+  const t = Math.max(0, Math.floor(sec));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  return `${h ? `${h}h ` : ''}${m}m`;
 }
 
 /**
@@ -1072,13 +1091,9 @@ function wireClockFix(btn) {
   });
 }
 
-/** Seconds as "10h 40m", the same shape the clock card shows. */
-function fmtHm(sec) {
-  const t = Math.max(0, Math.floor(sec));
-  const h = Math.floor(t / 3600);
-  const m = Math.floor((t % 3600) / 60);
-  return `${h ? `${h}h ` : ''}${m}m`;
-}
+// fmtHm lived here until the work clock grew three linked switches and moved
+// it up beside them. The merge from main brought main's copy back alongside
+// the moved one; this is the stale duplicate, removed.
 
 // ---- the old automatic chat meter (retired; kept for reference) ----
 // 30 seconds at a time, only while the chat page is the open page in a

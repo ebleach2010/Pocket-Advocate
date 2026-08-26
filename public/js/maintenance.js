@@ -24,11 +24,11 @@
 // Eric, 2026-08-24: "gray out the onboarding screen... nothing can be done
 // from the landing page. Current client unaffected."
 
-// 8PM MST on 2026-08-25 (Eric, 2026-08-25: moved out from 1PM, then again to
-// 8PM). MST is a fixed UTC-7 here (no DST, matching MOUNTAIN_TZ = 'Etc/GMT+7' everywhere
-// else), so 20:00 MST is 03:00Z the NEXT day - which is why the date on this
-// timestamp reads 08-26 while the window is still "same day" to a reader in
-// Mountain time.
+// 8PM MST on 2026-08-25 (Eric, 2026-08-25: moved out from 1PM, then again
+// from 6PM). MST is a fixed UTC-7 here (no DST, matching MOUNTAIN_TZ =
+// 'Etc/GMT+7' everywhere else), so 20:00 MST is 03:00Z the NEXT day - which
+// is why the date on this timestamp reads 08-26 while the window is still
+// "same day" to a reader in Mountain time.
 // MUST match MAINTENANCE_UNTIL in worker/index.js.
 export const MAINTENANCE_UNTIL = '2026-08-26T03:00:00Z';
 

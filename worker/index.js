@@ -1560,7 +1560,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-01-checkins';
+const BUILD_TAG = 'v2026-08-26-calldoc';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1568,7 +1568,7 @@ const BUILD_TAG = 'v2026-09-01-checkins';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.36';
+const VERSION = '2.38';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2994,23 +2994,34 @@ async function handleChatReact(request, env) {
 
   const msg = await getDoc(env, ctx.path);
   if (!msg) return json({ error: 'No such message' }, 404);
-  // Nobody reacts to their own message - with ONE carve-out (Eric,
-  // 2026-08-25): a STATUS on his own message is not a reaction to himself,
-  // it is a broadcast of what he is doing that happens to hang on the
-  // newest bubble, and the ▾ above the chat depends on it. The admin may
-  // also CLEAR anything hanging on his own bubble - his status when he is
-  // done, or an emoji the client left there - or the broadcast could be set
-  // but never taken down. Emoji stay other-person-only to SET, both ways.
+
+  // A STATUS IS NOT A REACTION, and this is where that distinction was
+  // missing. An emoji is a response to somebody else's words, so reacting to
+  // yourself is meaningless and stays refused. A status is Eric annotating
+  // his own thread with what he is doing right now, and the dropdown hangs it
+  // on the NEWEST message in the thread whoever wrote it (chat.js). Working a
+  // case, the newest message is his own most of the time.
   //
-  // The stored reaction is a RECORD ({ id, kind, by, at }), never a bare id:
-  // an earlier version of this check ran Object.hasOwn over the record
-  // itself, which coerces to "[object Object]" and matches nothing, so the
-  // carve-out it guarded was dead code.
-  if (msg.data.from === user.uid && !(ctx.isAdmin && (isStatus || reaction === null)))
+  // So without this carve-out his own status control refuses him, which is
+  // exactly what he hit (Eric, 2026-08-25, two screenshots: "After selecting
+  // a new option" -> "That did not save. Try again."). It was not
+  // intermittent and it was not his account: the seeded demo thread also ends
+  // on a message of his, and once the demo was made to mirror this function
+  // honestly it failed on the very first attempt, the same way.
+  //
+  // Written as two named conditions on purpose. An earlier attempt at this
+  // carve-out ran Object.hasOwn over the stored REACTION RECORD rather than
+  // its id - and a record coerces to "[object Object]", which matches
+  // nothing - so the carve-out it guarded was dead code that read as live.
+  const ownMessage = msg.data.from === user.uid;
+  const adminStatus = ctx.isAdmin && (isStatus || reaction === null);
+  if (ownMessage && !adminStatus)
     return json({ error: 'You can only react to the other person\'s messages.' }, 403);
   // And a status is his broadcast wherever it hangs: the client reads it,
   // but clearing it or painting an emoji over it would silently erase what
-  // Eric is telling them he is doing.
+  // Eric is telling them he is doing. That mattered little while statuses
+  // could only sit on the client's own messages, where the check above
+  // already refused them, and matters now that they sit on his.
   if (msg.data.reaction?.kind === 'status' && !ctx.isAdmin)
     return json({ error: 'That message is showing a status note.' }, 403);
 
@@ -3043,9 +3054,14 @@ async function handleChatReact(request, env) {
   if (!wrote) return json({ error: 'Could not set that reaction. Try again.' }, 409);
 
   // Re-applying the same reaction is not news — their phone already said it.
-  // Changing it is, so that one notifies. An emoji notifies whoever wrote
-  // the message; a status always tells the CLIENT, because a status hung on
-  // Eric's own bubble would otherwise notify Eric about Eric.
+  // Changing it is, so that one notifies.
+  //
+  // An emoji goes back to whoever wrote the message, because that is who is
+  // being reacted to. A STATUS is addressed to the client of this thread and
+  // always was: it says what Eric is doing on their case. Sending it to the
+  // message's author instead meant a status on one of his OWN messages
+  // notified nobody at all, so the client would only ever learn of it by
+  // happening to have the thread open.
   const target = isStatus ? ctx.clientUid : msg.data.from;
   // A client gets told what Eric is DOING, and nothing else. An emoji on their
   // message is a small kindness on a screen, not a thing worth buzzing a
@@ -3739,7 +3755,8 @@ async function stopWorkClock(env, caseId, w, until = Date.now()) {
 }
 
 /**
- * POST /api/work  Body: { caseId, on, auto, backdate }   admin only
+ * POST /api/work
+ * Body: { caseId, on, auto, backdate } or { caseId, setSeconds }   admin only
  *
  * The work clock. Eric, 2026-08-22: "the cost is a toggle per client. I
  * toggle it on if I'm working on their case. I toggle it off if I'm not
@@ -3827,6 +3844,34 @@ async function handleWork(request, env) {
       seconds, running: !!startedAt, auto: w.auto === true,
       startedAt: startedAt ? new Date(startedAt) : null,
     });
+
+  // Correcting the total, for a clock left running by mistake. Eric,
+  // 2026-08-25: "Please undo 10hrs of accidental running work I did on this
+  // client." Absolute, not a delta: the page does the arithmetic and sends
+  // the finished number, so a retry on a flaky phone connection cannot
+  // subtract the same ten hours twice.
+  if (body?.setSeconds !== undefined) {
+    const want = Number(body.setSeconds);
+    if (!Number.isFinite(want) || want < 0 || want > 4000 * 3600)
+      return json({ error: 'Give a whole number of seconds, zero or more.' }, 400);
+    const next = Math.floor(want);
+    // The number he sent is what the page SHOWS, which is the banked total
+    // plus the stretch running right now. So if the clock is running, the
+    // stretch is already inside it and re-anchoring the start is what keeps
+    // it from being counted a second time - subtract ten hours from a clock
+    // still running and the display has to read ten hours less, not the same
+    // ten hours back. It keeps running; only its starting point moves.
+    const stillRunning = !!startedAt;
+    await patchDoc(env, `cases/${caseId}`, {
+      work: {
+        seconds: next,
+        startedAt: stillRunning ? new Date() : null,
+        updatedAt: new Date(),
+        correction: { from: seconds, to: next, at: new Date() },
+      },
+    }, { mask: ['work'] });
+    return json({ seconds: next, running: stillRunning, correctedFrom: seconds });
+  }
 
   if (on) {
     if (!startedAt) {
