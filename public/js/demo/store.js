@@ -467,6 +467,14 @@ async function listAll(ref) {
   };
 }
 
+async function deleteObject(ref) {
+  // Eric's own prep shelf can be cleared, so the demo has to be able to
+  // clear it too - otherwise the one control that removes a private document
+  // is the one control no drive can exercise.
+  files.delete(ref.path);
+  fire(ref.path);
+}
+
 async function getDownloadURL(ref) {
   const f = files.get(ref.path);
   if (!f) throw new Error('demo: no such file');
@@ -587,6 +595,7 @@ export function mountDemo(role) {
     listAll,
     getDownloadURL,
     getMetadata,
+    deleteObject,
 
     rtdbRef,
     onValue,

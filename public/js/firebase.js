@@ -63,6 +63,7 @@ export const {
   listAll,
   getDownloadURL,
   getMetadata,
+  deleteObject,
   rtdbRef,
   onValue,
   rtdbSet,

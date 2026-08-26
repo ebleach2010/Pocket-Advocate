@@ -43,6 +43,50 @@ ok('it refuses and says what to do', await page.evaluate(() => {
   return !!e && !e.hidden && /Choose your document first/.test(e.textContent);
 }));
 
+// --- ERIC'S PRIVATE SHELF --------------------------------------------------
+// Eric, 2026-08-26: "I can't just upload my precall document for him to see.
+// There needs to be an uploads section under Mine that only me and the
+// advisor see." cases/{id}/prep/ is that shelf, and it is client-denied by a
+// storage rule that already existed - the one whose own comment says "one
+// manual upload of working notes or a prep sheet into that prefix and it
+// would be on their screen".
+console.log('\n--- his own shelf ---');
+const shelf0 = await page.evaluate(() => ({
+  block: !!document.querySelector('[data-cd-prep]'),
+  add: !!document.querySelector('[data-prep-add]'),
+  says: /between you and the advisor/.test(
+    (document.querySelector('[data-cd-prep]')?.textContent || '').replace(/\s+/g, ' ')),
+}));
+ok('the shelf is on the Call doc page', shelf0.block, JSON.stringify(shelf0));
+ok('with a way to add to it', shelf0.add);
+ok('and it says plainly that the client cannot see it', shelf0.says);
+
+await page.setInputFiles('[data-prep-add]', {
+  name: 'my-precall-sheet.pdf', mimeType: 'application/pdf',
+  buffer: Buffer.from('%PDF-1.4 Eric private prep sheet'),
+});
+await page.waitForFunction(() => [...document.querySelectorAll('[data-prep-file]')]
+  .some((c) => /my-precall-sheet/.test(c.value)), null, { timeout: 15000 }).catch(() => {});
+const shelf1 = await page.evaluate(() => ({
+  rows: [...document.querySelectorAll('[data-prep-file]')].map((c) => c.value),
+  removable: !!document.querySelector('[data-prep-del]'),
+}));
+ok('an uploaded document appears on the shelf', shelf1.rows.some((v) => /my-precall-sheet/.test(v)),
+  shelf1.rows.join(' '));
+ok('it lands under prep/, not anywhere a client can read',
+  shelf1.rows.every((v) => /\/prep\//.test(v)), shelf1.rows.join(' '));
+ok('and he can take it off again', shelf1.removable);
+
+// It must NOT show up on the case's own Uploads page either: that page is
+// what the client's Files view mirrors, and the two listings are separate on
+// purpose.
+await page.evaluate(() => document.querySelector('.folder-tabs .ftab[data-page="files"]')?.click());
+await page.waitForTimeout(2500);
+ok('and it is NOT on the case Uploads page', await page.evaluate(() =>
+  !/my-precall-sheet/.test(document.getElementById('files')?.textContent || '')));
+await page.evaluate(() => document.querySelector('.folder-tabs .ftab[data-page="calldoc"]')?.click());
+await page.waitForTimeout(1500);
+
 // --- THE CASE'S OWN FILES -------------------------------------------------
 // Section 4 is "FROM THE CASE, NOT IN YOUR DOCUMENT", and it needs two
 // documents in the room. Until this existed there was one - his - so the
@@ -204,10 +248,13 @@ await client.waitForTimeout(3000);
 const leak = await client.evaluate(() => {
   const t=document.body.innerText;
   return { calldoc: /REVIEW BEFORE YOU CALL|QUESTIONS THAT ARE MISSING/.test(t),
-    tab: !!document.querySelector('[data-page="calldoc"]') };
+    tab: !!document.querySelector('[data-page="calldoc"]'),
+    // The private shelf, by the name of the file that was put on it.
+    prep: /my-precall-sheet/.test(t) };
 });
 ok('the client page shows no call document', !leak.calldoc);
 ok('and has no Call doc tab', !leak.tab);
+ok('and NOTHING from his private shelf reaches the client page', !leak.prep);
 
 console.log(`\n${pass} ok, ${fail} FAIL`);
 if (errs.length) console.log('page errors:\n  ' + errs.join('\n  '));

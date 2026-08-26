@@ -7,7 +7,7 @@
 import './admin-ledger.js';
 import {
   db, storage, doc, getDoc, collection, getDocs, query, where,
-  ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata,
+  ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata, deleteObject,
 } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { mountChat, openLightbox } from './chat.js';
@@ -1932,6 +1932,35 @@ function advisorReadable(r) {
     && (ct.startsWith('image/') || ct === 'application/pdf' || /\.pdf$/i.test(r.name));
 }
 
+/**
+ * Eric's private shelf, listed straight from Storage.
+ *
+ * Deliberately NOT folded into listCaseFiles: that function feeds the client-
+ * visible Uploads page, and the day someone adds `prep` to its folder list is
+ * the day his working notes appear on a page a client can read. Two readers,
+ * two lists, and the private one is the one nothing else calls.
+ */
+async function listPrep() {
+  try {
+    const res = await listAll(ref(storage, `cases/${caseId}/${PREP_DIR}`));
+    const rows = await Promise.all(res.items.map(async (item) => {
+      const [url, meta] = await Promise.all([getDownloadURL(item), getMetadata(item)]);
+      return {
+        name: String(item.name).replace(/^\d{10,}-/, ''),
+        path: item.fullPath,
+        url,
+        contentType: meta.contentType || '',
+        size: meta.size || 0,
+        ts: new Date(meta.timeCreated),
+      };
+    }));
+    prepFiles = rows.sort((a, b) => b.ts - a.ts);
+  } catch {
+    prepFiles = [];
+  }
+  return prepFiles;
+}
+
 async function refreshFiles() {
   const listEl = document.getElementById('files');
   if (!listEl) return;
@@ -2919,6 +2948,33 @@ let callDocPending = null;
 let callDocCaseFiles = null;      // null = not listed yet
 let callDocCasePicked = new Set(); // storage paths he ticked
 
+/**
+ * ERIC'S OWN SHELF. cases/{id}/prep/ — his pre-call documents, working notes,
+ * anything he wants the advisor to have and the client never to see.
+ *
+ * Eric, 2026-08-26: "I can't just upload my precall document for him to see.
+ * There needs to be an uploads section under Mine that only me and the
+ * advisor see, and he pairs it with the rest of the context of the case,
+ * invisible to the client."
+ *
+ * NO STORAGE RULE CHANGE WAS NEEDED, and that is worth knowing rather than
+ * assuming. storage.rules already allows a client to read only four named
+ * folders under a case - report, recording, uploads, chat-files - and grants
+ * everything else under cases/{id}/ to the admin alone. Its own comment says
+ * why the rule was written that way: "one manual upload of working notes or a
+ * prep sheet into that prefix and it would be on their screen." So `prep/` is
+ * client-denied by a rule that already exists and is already deployed, not by
+ * one shipped tonight and hoped about.
+ *
+ * It lives on the Call doc page rather than as a sixth tab because a group
+ * holds four tabs before the strip wraps, and Mine is full. Beside the thing
+ * that consumes it is also simply where it belongs.
+ */
+const PREP_DIR = 'prep';
+let prepFiles = null;              // null = not listed yet
+const prepPicked = new Set();      // storage paths he ticked
+let prepBusy = '';                 // a filename mid-upload, for the progress line
+
 /** Inline cap. The Worker refuses larger, and saying so here saves the trip. */
 const CALLDOC_MAX_BYTES = 8 * 1024 * 1024;
 /** Mirrors MAX_IMAGE_BYTES in worker/advisor.js. A photo over this is refused
@@ -3027,6 +3083,29 @@ function paintCallDoc(host) {
           ${hasDoc ? `<p class="dim small" style="margin:-.25rem 0 .5rem;">📄 is the one treated as
             <strong style="color:var(--ink)">your</strong> document, 📎 are charts and labs. Pick again to
             build a new one; your current document stays until the new one lands.</p>` : ''}
+          <div class="cd-case" data-cd-prep>
+            <p class="dim small" style="margin:.2rem 0 .3rem;">
+              <strong style="color:var(--ink)">🔒 Your shelf.</strong> Documents you put here stay
+              between you and the advisor. The client cannot see them, cannot list them, and they
+              never appear on their Files page. Put your pre-call sheet here once and it is on
+              every device you sign in on.</p>
+            <label class="small" style="display:block; margin:0 0 .4rem;">Add to your shelf
+              <input type="file" data-prep-add multiple accept=".pdf,.jpg,.jpeg,.png">
+            </label>
+            ${prepBusy ? `<p class="dim small" style="margin:0 0 .4rem; color:var(--cyan);">Uploading ${esc(prepBusy)}…</p>` : ''}
+            ${prepFiles === null
+              ? '<p class="dim small" style="margin:0 0 .5rem;">Opening your shelf…</p>'
+              : prepFiles.length
+                ? prepFiles.map((f) => `
+                    <label class="cd-case-row">
+                      <input type="checkbox" data-prep-file value="${esc(f.path)}"
+                        ${prepPicked.has(f.path) ? 'checked' : ''}>
+                      <span>🔒 ${esc(f.name)}</span>
+                      <button class="btn quiet" data-prep-del="${esc(f.path)}"
+                        style="font-size:.68rem; padding:.15rem .45rem;">remove</button>
+                    </label>`).join('')
+                : '<p class="dim small" style="margin:0 0 .5rem;">Nothing on your shelf yet.</p>'}
+          </div>
           <div class="cd-case" data-cd-case>
             ${callDocCaseFiles === null
               ? '<p class="dim small" style="margin:0 0 .5rem;">Looking for files on this case…</p>'
@@ -3049,6 +3128,7 @@ function paintCallDoc(host) {
           ${hasDoc && !running ? '<button class="btn quiet" data-cd-revise>🔁 Revise…</button>' : ''}
           ${hasDoc ? '<button class="btn quiet" data-cd-print>🖨 Send to PDF</button>' : ''}
           ${hasDoc && !running ? '<button class="btn quiet" data-cd-discard>Discard</button>' : ''}
+          ${running ? '<button class="btn quiet" data-cd-stop>✕ Stop waiting</button>' : ''}
         </p>
 
         ${running ? '<p class="dim small" style="margin:.5rem 0 0;">This one thinks hard and takes a few minutes. You can leave the page; it keeps going.</p>' : ''}
@@ -3122,6 +3202,77 @@ function paintCallDoc(host) {
       }
     });
 
+    // ---- the private shelf ----
+    host.querySelector('[data-prep-add]')?.addEventListener('change', async (ev) => {
+      const chosen = [...(ev.target.files || [])];
+      if (!chosen.length) return;
+      for (const file of chosen) {
+        // The same two caps the advisor applies, refused here so he learns in
+        // a second rather than after a build.
+        const cap = /^image\//.test(file.type || '') ? CALLDOC_MAX_IMAGE_BYTES : CALLDOC_MAX_BYTES;
+        if (file.size > cap) {
+          prepBusy = '';
+          callDocKey = null;
+          load();
+          const e2 = host.querySelector('[data-cd-err]');
+          if (e2) {
+            e2.textContent = `${file.name} is too big (photos up to 4.5 MB, other files 8 MB).`;
+            e2.hidden = false;
+          }
+          continue;
+        }
+        prepBusy = file.name;
+        callDocKey = null;
+        load();
+        try {
+          const safe = file.name.replace(/[^\w.\- ]+/g, '_');
+          const task = uploadBytesResumable(
+            ref(storage, `cases/${caseId}/${PREP_DIR}/${Date.now()}-${safe}`), file);
+          await new Promise((res, rej) => task.on('state_changed', null, rej, res));
+        } catch (e3) {
+          prepBusy = '';
+          callDocKey = null;
+          load();
+          const e4 = host.querySelector('[data-cd-err]');
+          if (e4) { e4.textContent = `Could not add ${file.name}: ${e3.message}`; e4.hidden = false; }
+          continue;
+        }
+      }
+      prepBusy = '';
+      prepFiles = null;
+      callDocKey = null;
+      load();
+      listPrep().then(() => { callDocKey = null; load(); });
+    });
+
+    for (const cb of host.querySelectorAll('[data-prep-file]')) {
+      cb.addEventListener('change', (ev) => {
+        const v = ev.currentTarget.value;
+        if (ev.currentTarget.checked) prepPicked.add(v); else prepPicked.delete(v);
+      });
+    }
+
+    for (const btn of host.querySelectorAll('[data-prep-del]')) {
+      btn.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        const path = ev.currentTarget.getAttribute('data-prep-del');
+        const nice = String(path).split('/').pop().replace(/^\d{10,}-/, '');
+        if (!confirm(`Remove ${nice} from your shelf? This deletes the file.`)) return;
+        try {
+          await deleteObject(ref(storage, path));
+        } catch (e5) {
+          const e6 = host.querySelector('[data-cd-err]');
+          if (e6) { e6.textContent = `Could not remove it: ${e5.message}`; e6.hidden = false; }
+          return;
+        }
+        prepPicked.delete(path);
+        prepFiles = null;
+        callDocKey = null;
+        load();
+        listPrep().then(() => { callDocKey = null; load(); });
+      });
+    }
+
     for (const cb of host.querySelectorAll('[data-cd-case-file]')) {
       cb.addEventListener('change', (ev) => {
         const v = ev.currentTarget.value;
@@ -3148,11 +3299,11 @@ function paintCallDoc(host) {
       // uploaded a document he prepared himself. THAT DOCUMENT IS THE SPINE."
       // What came back looked exactly like a real one and silently replaced
       // his. The picker is always shown now, and this is the matching guard.
-      if (!callDocPicked.length) {
+      if (!callDocPicked.length && !prepPicked.size) {
         if (err) {
           err.textContent = (panelState || {}).callDoc
-            ? 'Choose the document to build from. To change the one you have, use Revise.'
-            : 'Choose your document first.';
+            ? 'Tick the document to build from, on your shelf or from this device. To change the one you have, use Revise.'
+            : 'Choose your document first, from your shelf or from this device.';
           err.hidden = false;
         }
         return;
@@ -3171,13 +3322,24 @@ function paintCallDoc(host) {
         // is the thing he just picked off this device, and mistaking a lab
         // report for the spine makes the model faithfully preserve the wrong
         // document's structure.
+        // His shelf. These ARE his documents, so the first one is the spine
+        // when he has not also picked something off the device this minute.
+        // They ride as URLs like the case files: Storage to the model, no
+        // bytes through the Worker. The URL is fenced to this case on the
+        // Worker side, and the object itself is admin-only in storage.rules.
+        const fromShelf = (prepFiles || [])
+          .filter((f) => prepPicked.has(f.path))
+          .map((f, i) => ({
+            name: f.name, contentType: f.contentType, size: f.size,
+            url: f.url, mine: !mine.length && i === 0,
+          }));
         const fromCase = (callDocCaseFiles || [])
           .filter((f) => callDocCasePicked.has(f.path))
           .map((f) => ({
             name: f.name, contentType: f.contentType, size: f.size,
             url: f.url, mine: false,
           }));
-        sources = [...mine, ...fromCase].slice(0, CALLDOC_MAX_FILES);
+        sources = [...mine, ...fromShelf, ...fromCase].slice(0, CALLDOC_MAX_FILES);
       } catch (e2) {
         callDocKey = null;
         load();
@@ -3241,6 +3403,31 @@ function paintCallDoc(host) {
       post({ action: 'clear-call-doc' });
     });
 
+    // AN EXIT. Eric, 2026-08-26: "There's nowhere to exit draft for video prep
+    // sheet." He was right, and the read-only-while-building fix made it
+    // worse: during a run every control was gone, so a run that was going to
+    // take ten minutes owned the page until it finished or the stall rule
+    // fired at five. This hands the panel back immediately.
+    //
+    // It stops WAITING, not the run. The turn keeps going on the Worker and
+    // the document still lands, which is the honest thing to say on the
+    // button: there is no cancel to send, and pretending otherwise would have
+    // him tap it and believe nothing was still running.
+    host.querySelector('[data-cd-stop]')?.addEventListener('click', () => {
+      callDocPending = null;
+      // Discard the local optimism only. The server's own 'running' is left
+      // alone; if it is still going, the next poll puts the panel back into
+      // the running state, which is correct, and the stall rule still covers
+      // a run that has actually died.
+      callDocKey = null;
+      load();
+      const e7 = host.querySelector('[data-cd-err]');
+      if (e7) {
+        e7.textContent = 'Stopped waiting. The document is still being built and will appear here when it lands.';
+        e7.hidden = false;
+      }
+    });
+
     host.querySelector('[data-cd-print]')?.addEventListener('click', () => {
       const text = host.querySelector('[data-cd-text]')?.value || '';
       if (text) printCallNotes(text, 'Call document');
@@ -3252,6 +3439,9 @@ function paintCallDoc(host) {
   // List the case's files ONCE per mount, then repaint so they appear. Doing
   // it inside load() would re-list on every poll tick, which is five Storage
   // calls a time for a list that barely changes.
+  if (prepFiles === null) {
+    listPrep().finally(() => { callDocKey = null; load(); });
+  }
   if (callDocCaseFiles === null) {
     listCaseFiles()
       .then((rows) => {

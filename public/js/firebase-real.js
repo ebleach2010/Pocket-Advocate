@@ -35,6 +35,7 @@ import {
   listAll,
   getDownloadURL,
   getMetadata,
+  deleteObject,
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js';
 import {
   getDatabase,
@@ -76,6 +77,7 @@ export {
   listAll,
   getDownloadURL,
   getMetadata,
+  deleteObject,
   rtdbRef,
   onValue,
   rtdbSet,
