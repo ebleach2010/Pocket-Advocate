@@ -48,26 +48,28 @@
   </div>
 </header>
 <main class="about">
-  <h1>What I can do for you</h1>
-  <hr class="title-rule">
-
-  <section class="land-sec">
-    <h2>The mission</h2>
+  <!-- The page opens on ONE block instead of three headed paragraphs that all
+       said "who I am". "The mission" kept its words and lost its heading: it
+       is the lead now, which is the job it was already doing. -->
+  <div class="stack">
+    <p class="eyebrow">ABOUT</p>
+    <h1>What I can do for you</h1>
+    <hr class="title-rule divide">
     <div class="mission">
-      <p class="dim">I work with patients facing complicated neurological conditions across the US and Canada. I came to advocacy after living through autoimmune encephalitis myself and learning how hard it is to make a complicated medical story understandable to the people treating you. My role is to stay on your side of the table and help you make the strongest use of the care you already have.</p>
+      <p class="dim measure">I work with patients facing complicated neurological conditions across the US and Canada. I came to advocacy after living through autoimmune encephalitis myself and learning how hard it is to make a complicated medical story understandable to the people treating you. My role is to stay on your side of the table and help you make the strongest use of the care you already have.</p>
     </div>
-  </section>
+  </div>
 
   <section class="land-sec">
     <h2>From me</h2>
     <div class="mission">
-      <p class="dim">I've spoken to hundreds of patients struggling in the medical system, and I have firsthand experience of how debilitating these diseases are, and how disheartening the process can be. My mission statement is simply this: <strong>earlier diagnosis and treatment leads to better outcome.</strong> My one job is to get you to the finish line faster, so you suffer less and have a better and more robust recovery.</p>
+      <p class="dim measure">My mission statement is simply this: <strong>earlier diagnosis and treatment leads to better outcome.</strong> My one job is to get you to the finish line faster, so you suffer less and have a better and more robust recovery.</p>
     </div>
   </section>
 
   <section class="land-sec">
     <h2>The purpose</h2>
-    <p class="dim small">I'm a patient advocate with 5 years' worth of boots on the ground experience — not a doctor. I do not diagnose or treat. I help you <strong style="color:var(--ink)">make sense of what your records actually say</strong>, identify the questions that still need answers, and prepare for the next conversation with your care team. When it is useful, I can also <strong style="color:var(--ink)">research physicians, programs, and other resources</strong> that fit your case and your travel limits. I serve clients in the US and Canada.</p>
+    <p class="dim small measure">I'm a patient advocate with 5 years' worth of boots on the ground experience — not a doctor. I do not diagnose or treat. I help you <strong style="color:var(--ink)">make sense of what your records actually say</strong>, identify the questions that still need answers, and prepare for the next conversation with your care team. When it is useful, I can also <strong style="color:var(--ink)">research physicians, programs, and other resources</strong> that fit your case and your travel limits.</p>
   </section>
 
   <section class="land-sec">
@@ -83,41 +85,43 @@
         <p>Pay <span data-rate="case">$1,200</span>. Your case includes our call, review of the records you share, and a written report within 7 days. A follow-up session is <span data-rate="addon">$275</span> if you need one.</p>
       </li>
     </ol>
-    <h3>What happens after you book</h3>
-    <ul class="after-list">
-      <li>Upload the records you want me to review, including labs, imaging, visit notes, or anything else that helps me understand the case.</li>
-      <li>We go through your history together, including what has been tried, what has helped, what has not, and where you are stuck. The call is recorded and saved in your case file for you.</li>
-      <li>Within 7 days, I send you a written case report that organizes the history, the open questions, and the next steps worth discussing with your care team.</li>
-      <li>If you want to go back over the same case after the report is delivered, you can add a <span data-rate="addon">$275</span> follow-up session from your case page and use it within 30 days.</li>
-      <li>Your case chat opens a week before our call — or right away for a one-time $50 — and from then on you can send questions, updates, or new documents without starting over.</li>
-    </ul>
+    <!-- "What happens after you book" was five bullets, four of them word for
+         word the same list that services.html carries, and the fifth (chat
+         opening early) is in the About the Advocacy Case sheet that opens
+         from the landing and services pages. The list is not gone from the
+         site, it is on the page that sells; this one links to it. -->
+    <p class="dim small"><a class="pill" href="/services.html">What happens after you book, step by step</a></p>
   </section>
 
   <section class="land-sec">
     <h2>What you get out of it</h2>
-    <p class="dim small">A second set of eyes on a complicated case, a clear summary of the history, the questions that still need answers, and a plan for what to bring to your next appointment. Instead of carrying the whole story in your head, you leave with one organized file you can use with any specialist.</p>
+    <p class="dim small measure">Instead of carrying the whole story in your head, you leave with one organized file you can use with any specialist.</p>
   </section>
 
   <section class="land-sec">
     <h2>24/7 Priority Chat</h2>
-    <p class="dim small">Priority Chat is <span data-rate="sub">$50</span> a month and is separate from case work. You can message me from your phone and see when I am online. I answer as I am available, so response time is not guaranteed. Cancel anytime; your history remains available to you.</p>
+    <p class="dim small measure">Priority Chat is <span data-rate="sub">$50</span> a month and is separate from case work. You can message me from your phone and see when I am online. I answer as I am available, so response time is not guaranteed. Cancel anytime; your history remains available to you.</p>
   </section>
 
   <section class="land-sec">
     <h2>See how I work before you book</h2>
-    <p class="dim small">I talk through real cases and the medical system on YouTube, including
+    <p class="dim small measure">I talk through real cases and the medical system on YouTube, including
       full interviews with people navigating complex neurological illness and live discussions
       where we work through a case in real time. If you want to know who you are hiring, watch
       before you spend a dollar.</p>
-    <p><a class="btn ghost" href="https://youtube.com/@the_broscientist" rel="noopener" target="_blank">▶ Watch on YouTube</a></p>
+    <p><a class="btn quiet" href="https://youtube.com/@the_broscientist" rel="noopener" target="_blank">▶ Watch on YouTube</a></p>
   </section>
+
+  <hr class="divide">
 
   <section class="land-sec">
     <h2>The legal basics</h2>
-    <p class="dim small">This is patient advocacy, not medical care. There is no diagnosis, treatment, prescribing, doctor-patient relationship, or emergency service. If this is an emergency, call 911. Your data is encrypted, stored in the United States, accessible only to you and me through the app, and deletable on request.</p>
+    <p class="dim small measure">This is patient advocacy, not medical care. There is no diagnosis, treatment, prescribing, doctor-patient relationship, or emergency service. If this is an emergency, call 911. Your data is encrypted, stored in the United States, accessible only to you and me through the app, and deletable on request.</p>
   </section>
 
-  <div class="actions"><a class="btn glow" href="/book.html">Go book a case →</a><span id="call-slot"></span></div>
+  <!-- One primary action. The call button stays, at quiet weight, because a
+       frightened person on a phone should still have a number to press. -->
+  <div class="actions"><a class="btn glow cta" href="/book.html">Go book a case →</a><span id="call-slot"></span></div>
 
   <footer class="legal">Pocket Advocate is a patient-advocacy service, offered to residents of the United States and Canada. It does not provide diagnosis, treatment, prescriptions, or medical advice, and does not create a doctor-patient relationship. If this is an emergency, call 911.</footer>
 </main>
@@ -155,7 +159,7 @@
   import('/js/auth.js').then((m) => m.hydrateNav()).catch(() => {});
   if (BUSINESS_PHONE)
     document.getElementById('call-slot').outerHTML =
-      `<a class="btn ghost" href="tel:${BUSINESS_PHONE}">📞 Call</a>`;
+      `<a class="btn quiet" href="tel:${BUSINESS_PHONE}">📞 Call</a>`;
 </script>
 </body>
 </html>

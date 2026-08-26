@@ -120,45 +120,53 @@
 </svg>
 
 <main>
-  <section class="land-sec page-head">
+  <section class="land-sec page-head stack">
+    <p class="eyebrow">CONTACT</p>
     <h1>Get in touch</h1>
-    <p class="hero-sub">You do not have to book anything to ask me a question.</p>
+    <p class="hero-sub measure">You do not have to book anything to ask me a question.</p>
   </section>
 
-  <section class="land-sec">
+  <!-- The page has one job, so it has one lit block and one action. Everything
+       under the hairline is the answer to a question, not another offer. -->
+  <section class="land-sec card-lit stack-tight">
     <h2>By phone</h2>
-    <p class="dim">The fastest way to reach me before you are a client. If I am on
+    <p class="dim measure">The fastest way to reach me before you are a client. If I am on
       a call with someone, leave a message and say it is about a case.</p>
-    <p><a class="btn glow" href="tel:+12086708608">Call 208 670 8608</a></p>
+    <p><a class="btn glow cta" href="tel:+12086708608">Call 208 670 8608</a></p>
   </section>
 
-  <section class="land-sec">
+  <hr class="divide">
+
+  <section class="land-sec card-quiet stack-tight">
     <h2>Already a client</h2>
-    <p class="dim">Everything about your case lives in your case file: your report,
+    <p class="dim measure">Everything about your case lives in your case file: your report,
       your recording, your documents, and the chat with me. Sign in and it is all
       on one page.</p>
-    <p><a class="btn ghost" href="/signin.html">Client sign in</a></p>
+    <p><a class="btn quiet" href="/signin.html">Client sign in</a></p>
   </section>
 
-  <section class="land-sec">
+  <section class="land-sec card-quiet stack-tight">
     <h2>Where I work</h2>
-    <p class="dim">I work with patients across the United States and Canada. Calls
+    <p class="dim measure">I work with patients across the United States and Canada. Calls
       are by phone or video, so where you live does not limit whether I can take
       your case. Times are shown in your own time zone when you book.</p>
   </section>
 
-  <section class="land-sec">
+  <section class="land-sec card-quiet stack-tight">
     <h2>If this is an emergency</h2>
-    <p class="dim">Call 911, or go to your nearest emergency department. I am an
+    <p class="dim measure">Call 911, or go to your nearest emergency department. I am an
       advocate, not a clinician, and I am not a substitute for emergency care.</p>
   </section>
 
+  <!-- Not a second offer: the call above is this page's action, so the two
+       buttons that used to sit here are one button and one link. Both labels
+       are Eric's, unchanged. -->
   <section class="land-sec closing">
     <h2>Ready when you are.</h2>
     <div class="actions">
-      <a class="btn glow" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
-      <a class="btn quiet" href="/services.html">See what it costs</a>
+      <a class="btn quiet" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
     </div>
+    <p class="dim small"><a class="pill" href="/services.html">See what it costs</a></p>
   </section>
 </main>
 
