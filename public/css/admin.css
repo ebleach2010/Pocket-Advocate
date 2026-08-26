@@ -1113,3 +1113,12 @@ main > p > a.small[href="/admin.html"] {
    with a 44px button beside it. The padding grows the target without moving
    the words, which also gives the list the air the rest of the page got. */
 .uploads .fname a { display: inline-block; padding: .65rem 0; }
+
+/* The reschedule nudge row. Four one-tap shifts off the current appointment,
+   wrapping rather than scrolling, because at 320px four buttons and a label do
+   not fit on one line and a row that scrolls sideways hides its own options. */
+.sched-nudge {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+  margin: .5rem 0 .6rem;
+}
+.sched-nudge .btn.tiny { min-height: 44px; padding: .4rem .7rem; }

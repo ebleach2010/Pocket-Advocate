@@ -1572,7 +1572,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-26-spec-1';
+const BUILD_TAG = 'v2026-08-26-resched';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1657,17 +1657,34 @@ async function closeDeliveredCases(env) {
 }
 
 // Open, unbooked slots whose start is already past — or inside the booking
-// lead window — can never be booked. The cron sweeps them out of the database
-// so the admin calendar and the client picker never show dead inventory.
-// Booked and actively-held slots are never touched. Deletions are capped per
-// run: Workers limit outbound calls per invocation, and the cron comes back
-// every 15 minutes anyway.
+// lead window — can never be booked BY A CLIENT. The cron sweeps them out of
+// the database so the admin calendar and the client picker never show dead
+// inventory. Booked and actively-held slots are never touched. Deletions are
+// capped per run: Workers limit outbound calls per invocation, and the cron
+// comes back every 15 minutes anyway.
+//
+// EXCEPT THE ONES I OPENED MYSELF (Eric, 2026-08-26: "let me reschedule
+// sessions without the scheduling blocks stopping me"). An `adminCreated`
+// slot inside the lead window is not dead inventory, it is a time I chose on
+// purpose, usually because a client and I agreed on it just now. This sweep
+// used to take those too, so a slot opened for 3pm today was gone within
+// fifteen minutes and the reschedule dropdown was empty again. The client
+// picker filters the lead window itself, so leaving these alone cannot put an
+// odd-hour opening in front of a client.
+//
+// Past is still past: a slot whose start has already gone is swept whoever
+// made it, or the shelf fills with yesterday.
 async function cleanupStaleSlots(env) {
   try {
     const open = await queryDocs(env, 'availability', [['state', 'EQUAL', 'open']], 300);
     const cutoff = Date.now() + LEAD_TIME_HOURS * 3600_000;
     const stale = open
-      .filter((s) => new Date(s.data.start).getTime() < cutoff)
+      .filter((s) => {
+        const at = new Date(s.data.start).getTime();
+        if (at < Date.now()) return true;              // gone is gone
+        if (s.data.adminCreated) return false;         // mine, on purpose
+        return at < cutoff;                            // dead client inventory
+      })
       .slice(0, 40);
     for (const s of stale) await deleteDoc(env, `availability/${s.id}`);
     if (stale.length) console.log(`slot cleanup: deleted ${stale.length} unbookable open slots`);
@@ -6518,14 +6535,22 @@ async function handleCreateSlots(request, env) {
   const entries = [];
   for (const iso of starts) {
     const start = new Date(iso);
-    // A slot inside the booking lead window can never be booked by a client,
-    // so opening one would only create dead inventory for the cron to sweep.
     if (Number.isNaN(start.getTime())) { invalid++; continue; }
-    if (start.getTime() < Date.now() + LEAD_TIME_HOURS * 3600_000) { invalid++; continue; }
-    if (windowProblem(iso, durationMin)) { invalid++; continue; }
+    // The past is the only hard no. Everything else he is allowed to open.
+    if (start.getTime() < Date.now()) { invalid++; continue; }
+    // INSIDE THE LEAD WINDOW IS HIS TO OPEN (Eric, 2026-08-26). It used to be
+    // skipped as dead inventory, which meant the one time he most needs to
+    // open a slot, an hour from now because a client just asked to move, was
+    // the one time he could not. The client picker filters the lead window on
+    // its own, so these are invisible there; `adminCreated` marks them his so
+    // the cron leaves them alone too. Business hours and the booking horizon
+    // stop applying at the same moment and for the same reason: they are
+    // client self-service rules.
+    const soon = start.getTime() < Date.now() + LEAD_TIME_HOURS * 3600_000;
+    if (!soon && windowProblem(iso, durationMin)) { invalid++; continue; }
     entries.push({
       path: `availability/${slotIdFor(start)}`,
-      data: { start, durationMin, state: 'open' },
+      data: { start, durationMin, state: 'open', ...(soon ? { adminCreated: true } : {}) },
     });
   }
   const { created, skipped } = await batchCreate(env, entries);

@@ -1694,7 +1694,26 @@ function paintOverview(pane) {
     <details class="mgmt" data-k="sched">
       <summary>📅 Schedule a session</summary>
       <div class="mgmt-body">
-        <p class="dim small">Book this client at any time at all — pick an open slot, or type a time that isn't on the calendar. Lead time, booking horizon and business hours don't apply to you.</p>
+        <p class="dim small">Book this client at any time at all, or nudge the
+          appointment they already have. Lead time, booking horizon and
+          business hours do not apply to you.</p>
+        ${c.appointment?.start ? `
+        <!-- MOVE IT, do not re-book it (Eric, 2026-08-26: "let me reschedule
+             sessions without the scheduling blocks stopping me... reschedule
+             for an hour later on the same day"). The common reschedule is a
+             nudge from where it already is, and doing that through the slot
+             list was impossible: the cron deletes every open slot inside 72
+             hours, so the dropdown had nothing sooner than three days out and
+             the only way through was knowing the custom field existed and
+             typing a date. These do the arithmetic off the CURRENT
+             appointment, so one tap is the whole job. -->
+        <div class="sched-nudge" data-nudge-row>
+          <span class="dim small">Move it</span>
+          ${[['+1 hour', 60], ['+2 hours', 120], ['+1 day', 1440], ['+1 week', 10080]]
+            .map(([label, mins]) =>
+              `<button type="button" class="btn quiet tiny" data-nudge="${mins}">${label}</button>`).join('')}
+        </div>
+        ${saidHtml('sched')}` : ''}
         <select id="sched-slot"><option value="">Loading open slots…</option></select>
         <div id="sched-custom" style="margin-top:.5rem;" hidden>
           <input type="datetime-local" id="sched-when">
@@ -2571,6 +2590,69 @@ async function wireScheduler(el) {
   } catch (err) {
     slotSel.innerHTML = CUSTOM_OPTION;
     console.warn("couldn't load open slots:", err.message);
+  }
+
+  // The nudge buttons. Each one moves the CURRENT appointment by its own
+  // number of minutes and books it, in one tap, with no date typing and no
+  // dependence on there being an open slot. The Worker's admin schedule route
+  // already accepts any wall-clock time and creates the slot on demand, so
+  // this is the arithmetic and the confirmation, nothing more.
+  for (const b of el.querySelectorAll('[data-nudge]')) {
+    b.addEventListener('click', async () => {
+      const from = data?.appointment?.start ? toDate(data.appointment.start) : null;
+      // THE MODULE-LEVEL say(), not a line written into this panel. A local
+      // element is destroyed by the load() below, which is exactly how this
+      // panel used to confirm a save and then delete its own confirmation.
+      // say() stores the sentence and every repaint renders it back.
+      const tell = (msg, bad) => {
+        say('sched', msg, { tone: bad ? 'warn' : 'ok' });
+        refreshOverview();
+      };
+      if (!from) { tell('There is no appointment to move yet.', true); return; }
+      const mins = Number(b.dataset.nudge);
+      // MEASURE FROM NOW WHEN THE OLD TIME HAS ALREADY GONE. A call that did
+      // not happen is the single most likely thing he is rescheduling, and
+      // adding an hour to last Tuesday lands in the past and refuses. Off a
+      // future appointment "+1 hour" means an hour later than planned; off a
+      // missed one it means an hour from now, which is the same sentence a
+      // person would say out loud in both cases.
+      const past = from.getTime() < Date.now();
+      const base = past ? new Date() : from;
+      const to = new Date(base.getTime() + mins * 60000);
+      const row = el.querySelector('[data-nudge-row]');
+      row?.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+      const was = b.textContent;
+      b.textContent = 'Moving…';
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch('/api/admin/schedule', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({
+            caseId, mode: 'reschedule',
+            customStart: to.toISOString(),
+            customDurationMin: Number(data?.appointment?.durationMin) || 60,
+          }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || `Request failed (${res.status})`);
+        // RE-READ BEFORE CLAIMING IT MOVED. Same rule as the meeting link: a
+        // 200 says the request was accepted, and what he needs to know is
+        // where his client's page now says the call is.
+        await load();
+        const now = data?.appointment?.start ? toDate(data.appointment.start) : null;
+        if (!now || Math.abs(now.getTime() - to.getTime()) > 60000) {
+          tell('That went through, but the case still shows the old time. Check before you tell them.', true);
+        } else {
+          tell(`Moved to ${mtFmt.format(now)} MST${past ? ', measured from now because the old time had already gone' : ''}. Their case page shows the new time.`);
+        }
+      } catch (err) {
+        tell(`Not moved: ${err.message}`, true);
+      } finally {
+        b.textContent = was;
+        row?.querySelectorAll('button').forEach((x) => { x.disabled = false; });
+      }
+    });
   }
 
   const customBox = el.querySelector('#sched-custom');
