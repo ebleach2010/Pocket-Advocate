@@ -1682,7 +1682,7 @@ function paintOverview(pane) {
         <p class="dim small" style="margin:0 0 .6rem;">A blank copy to print or
           send, with ${esc(c.clientName || 'the client')}'s name already on it and
           ruled lines to sign by hand. Use this to get a form into their hands
-          before a case is running${c.fullAccess ? '' : ' — signing in the app opens when they upgrade'}.
+          before a case is running${c.fullAccess ? '' : ', and signing in the app opens when they upgrade'}.
           Records requests take weeks, so the form going out early is the whole game.</p>
         <p class="row" style="gap:.4rem; flex-wrap:wrap; margin:0;">
           <button class="btn quiet tiny" data-blank="records">Records authorisation</button>
@@ -1748,7 +1748,7 @@ function paintOverview(pane) {
       <summary>✓ Call done, report sent</summary>
       <div class="mgmt-body">
         <div class="actions" style="margin-top:.3rem;">
-          <button class="btn secondary" data-action="recording-uploaded">Call done — start 7-day report clock</button>
+          <button class="btn secondary" data-action="recording-uploaded">Call done: start the 7-day report clock</button>
           <button class="btn secondary" data-action="report-uploaded">Report delivered</button>
           ${c.status === 'closed' ? '<span class="dim small">Case closed.</span>' : ''}
         </div>
@@ -1951,7 +1951,7 @@ function wireHoldAndClose(pane) {
 
   pane.querySelector('[data-close-case]')?.addEventListener('click', (e) => {
     const reason = (pane.querySelector('[data-close-reason]')?.value || '').trim();
-    if (!reason) { fail('Write the reason first — the client reads it word for word.'); return; }
+    if (!reason) { fail('Write the reason first. The client reads it word for word.'); return; }
     if (!confirm(`Close this case? They will read, word for word:\n\n"${reason}"\n\nThey keep every file and can still leave a review. This is not reversible from here.`)) return;
     post('/api/admin/close-case', { reason }, e.currentTarget,
       'Closed. Their page now shows your reason word for word, and they can still leave a review.',

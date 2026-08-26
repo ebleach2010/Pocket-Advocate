@@ -76,9 +76,13 @@ check('C16 the old private closedNote write is gone',
   !/closedNote:/.test(SRC));
 check('C17 the legacy reasonless close action is retired, not silently kept',
   /Closing moved: use the Pause \/ close card/.test(SRC));
+// The refusal sentence lost its em dash and became two sentences (2026-08-26,
+// the no-em-dash rule). Same words, same two claims: write it, and the client
+// reads it. Pinned as two halves so the punctuation between them can move
+// again without this going red over something nobody cares about.
 check('C18 the admin form says the client reads it, and refuses empty',
   /the client reads this, word for word/i.test(ADMIN)
-  && /Write the reason first — the client reads it word for word\./.test(ADMIN));
+  && /Write the reason first[.:,]?\s+[Tt]he client reads it word for word\./.test(ADMIN));
 check('C19 the client page renders the reason on a closed case',
   /function closedNotice\(c\)/.test(CASE) && /Why this case closed/.test(CASE)
   && /esc\(c\.closedReason\)/.test(CASE));
