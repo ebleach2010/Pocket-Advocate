@@ -1813,12 +1813,55 @@ async function api(body) {
   return out;
 }
 
+/**
+ * Save the link, and SAY SO.
+ *
+ * Eric, 2026-08-26: "I put meeting link in but it didn't visually confirm that
+ * it saved. So idk if my client is seeing it."
+ *
+ * The old version saved and then called load(). On failure it alerted; on
+ * SUCCESS it said nothing at all, and load() repainted the whole chart, which
+ * closes the disclosure he had open. So a save that worked and a tap that did
+ * nothing looked identical, on the one field whose entire job is to be visible
+ * to somebody else.
+ *
+ * The second half of his sentence is the more important half: he does not want
+ * the word "Saved", he wants to know THE CLIENT CAN SEE IT. So the line says
+ * what is on their page now. Clearing the field says that too, because removing
+ * a link is exactly as consequential as adding one and is just as invisible.
+ *
+ * There is deliberately no load() on the success path. The only thing that
+ * changed is this one field, the input in front of him already shows it, and
+ * repainting is what threw the confirmation away in the first place.
+ */
 async function saveLink() {
-  const value = document.getElementById('joinlink').value.trim();
+  const input = document.getElementById('joinlink');
+  const btn = document.getElementById('save-link');
+  const value = input ? input.value.trim() : '';
+  const say = (msg, ok) => {
+    let line = document.getElementById('joinlink-said');
+    if (!line) {
+      line = document.createElement('p');
+      line.id = 'joinlink-said';
+      line.className = 'small';
+      line.style.margin = '.55rem 0 0';
+      (btn && btn.parentElement ? btn.parentElement : input).after(line);
+    }
+    line.style.color = ok ? 'var(--green)' : 'var(--danger)';
+    line.textContent = msg;
+  };
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
     await api({ action: 'join-link', joinLink: value });
-    load();
-  } catch (err) { alert(err.message); }
+    say(value
+      ? 'Saved. Your client now sees a Join the video call button on their case page.'
+      : 'Cleared. The Join button is gone from your client\'s case page.', true);
+  } catch (err) {
+    say(err.message, false);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+  }
 }
 
 async function milestone(action, btn) {
@@ -1895,9 +1938,28 @@ function dayLabel(d) {
  * list. Two readers, one listing: a second copy of these five paths is how the
  * two pages start disagreeing about what exists on a case.
  */
+/**
+ * Every file on the case, from Storage.
+ *
+ * WHY THIS IS PARALLEL NOW (Eric, 2026-08-26). He photographed the call
+ * document panel sitting on "Looking for files on this case..." while his own
+ * uploaded document waited above it. It was not hung. It was SERIAL: five
+ * folders listed one after another with `await` in a for loop, and then, for
+ * every single file found, another awaited round trip for its URL and its
+ * metadata, one file at a time. On a real case that is dozens of sequential
+ * requests over a phone connection, which is indistinguishable from broken.
+ *
+ * Now the five folders list at once, and every file's url and metadata are
+ * fetched together rather than in a queue. The wall clock becomes the slowest
+ * single request instead of the sum of all of them.
+ *
+ * What is deliberately NOT changed: which folders are read. The private `prep`
+ * shelf is still absent, and the comment above listPrep explains why that is a
+ * client-visibility rule and not a style preference. Adding it here is the day
+ * his working notes appear on a page a client can open.
+ */
 async function listCaseFiles() {
-  const rows = [];
-  for (const [kind, path] of [
+  const folders = [
     ['report', `cases/${caseId}/report`],
     ['recording', `cases/${caseId}/recording`],
     ['upload', `cases/${caseId}/uploads`],
@@ -1906,19 +1968,31 @@ async function listCaseFiles() {
     // documents. They live under the case, so they belong on the case's page.
     ['chat', `cases/${caseId}/chat-files`],
     ['saved', `profiles/${data.clientUid}/saved`],
-  ]) {
+  ];
+
+  // One folder failing is still one folder failing, exactly as before: its
+  // catch returns an empty list and the other four are unaffected. A missing
+  // folder is the normal case on a young case, not an error worth showing.
+  const perFolder = await Promise.all(folders.map(async ([kind, path]) => {
     try {
       const res = await listAll(ref(storage, path));
-      for (const item of res.items) {
-        const [url, meta] = await Promise.all([getDownloadURL(item), getMetadata(item)]);
-        rows.push({
-          kind, name: item.name, url, ts: new Date(meta.timeCreated),
-          size: meta.size, contentType: meta.contentType || '', path: item.fullPath,
-        });
-      }
-    } catch { /* empty */ }
-  }
-  return rows;
+      return await Promise.all(res.items.map(async (item) => {
+        try {
+          const [url, meta] = await Promise.all([getDownloadURL(item), getMetadata(item)]);
+          return {
+            kind, name: item.name, url, ts: new Date(meta.timeCreated),
+            size: meta.size, contentType: meta.contentType || '', path: item.fullPath,
+          };
+        } catch {
+          // One unreadable object must not lose the other nineteen, which is
+          // what a single rejection inside a Promise.all would do.
+          return null;
+        }
+      }));
+    } catch { return []; }
+  }));
+
+  return perFolder.flat().filter(Boolean);
 }
 
 /**
