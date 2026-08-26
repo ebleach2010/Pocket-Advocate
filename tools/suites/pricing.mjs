@@ -391,6 +391,35 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   }
 }
 
+// ---- S1-S6: he can charge an amount he agreed on a call ------------------
+// Eric, 2026-08-26: "I need to charge a client 3400 (verbally agreed to on
+// call). Is there a place I can do this manually." There was not. The only
+// manual charge was a percentage of the case rate capped at 150%, which
+// against a $1,200 case is $1,800, and $3,400 is 283%. No percentage in the
+// list expresses a figure agreed on a phone call, and none ever could.
+{
+  const PCTS = JSON.parse((SRC.match(/const CHARGE_PCTS = (\[[^\]]+\])/) || [])[1] || '[]');
+  const ceiling = Math.max(...PCTS) * CASE / 100;
+  check('S1 the percentage ladder genuinely could not reach $3,400',
+    ceiling < 340000, `ceiling $${(ceiling / 100).toLocaleString()}`);
+  check('S2 a typed amount is accepted and beats the percentage',
+    /const typedCents = body\?\.amountCents === undefined \? null : Math\.round\(Number\(body\.amountCents\)\);/.test(SRC)
+    && /const amountCents = typedCents !== null\n\s*\? typedCents/.test(SRC));
+  check('S3 it is bounded, because this moves somebody money',
+    /typedCents < 100 \|\| typedCents > 100_000_00/.test(SRC));
+  check('S4 the percentages still work when nothing is typed',
+    /if \(typedCents === null && !CHARGE_PCTS\.includes\(pct\)\)/.test(SRC));
+  // The half that stops this becoming the next $76/hr: the money has to land
+  // on the case by itself, or he is back to remembering.
+  check('S5 the confirmed payment records what STRIPE charged, not what was asked',
+    /amountCents: session\.amount_total \|\| 0,\n\s*label: m\.tagline/.test(SRC));
+  const ADMINSRC = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
+  check('S6 the page checks the amount and confirms it before sending',
+    /id="sched-amt"/.test(ADMINSRC)
+    && /n < 1 \|\| n > 100000/.test(ADMINSRC)
+    && /confirm\(`Charge \$\{data\?\.clientName/.test(ADMINSRC));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 process.exit(failed.length ? 1 : 0);

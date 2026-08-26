@@ -1835,6 +1835,20 @@ function paintOverview(pane) {
           <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="charge">
             Charge for a session:</label>
           <div id="sched-charge" style="margin:.35rem 0 0 1.4rem;" hidden>
+            <!-- AN AMOUNT HE TYPES BEATS A PERCENTAGE. The percentages stop at
+                 150%, which against a $1,200 case is $1,800, and a figure
+                 agreed on a call is not a share of a list price. It goes FIRST
+                 because when he is reaching for this panel at all it is usually
+                 because the dropdown could not say what he needs. -->
+            <label class="small" style="display:block; margin-bottom:.3rem;">
+              An amount you agreed
+              <span class="sched-amt">
+                <span aria-hidden="true">$</span>
+                <input type="text" inputmode="decimal" id="sched-amt"
+                  placeholder="3400" aria-label="Amount in dollars">
+              </span>
+            </label>
+            <p class="dim small" style="margin:0 0 .45rem;">Leave it empty to use a share of their case fee instead.</p>
             <select id="sched-pct">
               ${[0, 25, 50, 75, 100, 125, 150].map((p) =>
                 `<option value="${p}" ${p === 50 ? 'selected' : ''}>${p}% — ${p === 0 ? 'no charge' : '$' + dollars((p * caseRate(c)) / 100)}</option>`).join('')}
@@ -2970,6 +2984,24 @@ async function wireScheduler(el) {
       return;
     }
 
+    // The typed amount, read and checked before anything is sent. A charge is
+    // the one thing on this panel that moves somebody's money, so a fat finger
+    // has to be caught here rather than explained afterwards.
+    let amountCents;
+    if (mode === 'charge') {
+      const raw = (el.querySelector('#sched-amt')?.value || '').trim();
+      if (raw) {
+        const n = Number(raw.replace(/[$,\s]/g, ''));
+        if (!Number.isFinite(n) || n < 1 || n > 100000) {
+          errEl.textContent = 'Give an amount between $1 and $100,000, or leave it empty to use a percentage.';
+          errEl.hidden = false;
+          return;
+        }
+        amountCents = Math.round(n * 100);
+        if (!confirm(`Charge ${data?.clientName || 'this client'} $${(amountCents / 100).toLocaleString(undefined, { minimumFractionDigits: amountCents % 100 ? 2 : 0 })}?`)) return;
+      }
+    }
+
     btn.disabled = true;
     try {
       const idToken = await user.getIdToken();
@@ -2982,6 +3014,9 @@ async function wireScheduler(el) {
           customStart,
           customDurationMin: customStart ? Number(el.querySelector('#sched-dur').value) : undefined,
           pct: mode === 'charge' ? Number(el.querySelector('#sched-pct').value) : undefined,
+          // Sent only when he actually typed something, so an empty box leaves
+          // the percentage in charge rather than sending a zero.
+          amountCents: mode === 'charge' ? amountCents : undefined,
           tagline: mode === 'charge' ? el.querySelector('#sched-tag').value : undefined,
         }),
       });

@@ -329,7 +329,13 @@ export function demoApi(role, store) {
       // pay-to-confirm prompt so that side of the loop is drivable too.
       const pct = Number(body.pct) || 0;
       const caseRate = Number(c.caseRateCents) || 120000;
-      const amountCents = Math.round((pct * caseRate) / 100);
+      // A typed amount wins, matching the Worker. Without this the demo falls
+      // back to a percentage and shows the wrong number for the one thing this
+      // control exists to do.
+      const typed = body.amountCents === undefined ? null : Math.round(Number(body.amountCents));
+      if (typed !== null && (!Number.isFinite(typed) || typed < 100 || typed > 100000 * 100))
+        return fail(400, 'Give an amount between $1 and $100,000.');
+      const amountCents = typed !== null ? typed : Math.round((pct * caseRate) / 100);
       const label = (body.tagline || '').trim() || 'Additional session';
       if (amountCents === 0) {
         store.docs.set(key, {

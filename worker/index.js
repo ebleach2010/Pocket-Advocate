@@ -1572,7 +1572,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-26-compile';
+const BUILD_TAG = 'v2026-08-26-charge';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -6993,16 +6993,38 @@ async function handleAdminSchedule(request, env) {
     return json({ ok: true, scheduled: when });
   }
 
-  // mode === 'charge' — a custom-priced session (a percentage of their rate).
-  if (!CHARGE_PCTS.includes(pct)) return json({ error: 'Pick a rate (0–150% in 25% steps).' }, 400);
+  // mode === 'charge' — a custom-priced session.
+  //
+  // AN AMOUNT HE TYPES BEATS A PERCENTAGE (Eric, 2026-08-26: "I need to charge
+  // a client 3400, verbally agreed to on call. Is there a place I can do this
+  // manually"). There was not. The percentages stop at 150%, and against that
+  // client's rate the ceiling was $1,800 where he needed $3,400, which is 283%.
+  // A figure agreed on a call is not a share of a list price and there is no
+  // percentage that expresses it.
+  //
+  // The percentages stay, because a share of the case fee is the common case
+  // and a dropdown is faster than typing. `amountCents` simply wins when it is
+  // there. Stripe needs no new work either way: the line item below has always
+  // been price_data with unit_amount, so it has always been able to carry any
+  // number. The only thing missing was a way to say one.
+  const typedCents = body?.amountCents === undefined ? null : Math.round(Number(body.amountCents));
+  if (typedCents !== null
+      && (!Number.isFinite(typedCents) || typedCents < 100 || typedCents > 100_000_00))
+    return json({ error: 'Give an amount between $1 and $100,000.' }, 400);
+  if (typedCents === null && !CHARGE_PCTS.includes(pct))
+    return json({ error: 'Pick a rate (0–150% in 25% steps), or type an amount.' }, 400);
   const label =
     typeof tagline === 'string' && tagline.trim()
       ? tagline.trim().slice(0, 120)
       : 'Advocacy Session';
-  // A share of what THEY paid. A case from before this field existed falls
-  // back to the current rate, which since rates have only come down errs in the
-  // client's favour rather than against them.
-  const amountCents = Math.round((pct * (c.caseRateCents || CASE_PRICE_CENTS)) / 100);
+  // A share of what THEY paid. A case from before this field existed falls back
+  // to the current rate. Note this is the same fallback that made the hourly
+  // read $76/hr for a $175 client: acceptable HERE, because a percentage of a
+  // list price is a quote he is choosing to send, not a claim about money that
+  // already moved. When he knows the real figure he types it instead.
+  const amountCents = typedCents !== null
+    ? typedCents
+    : Math.round((pct * (c.caseRateCents || CASE_PRICE_CENTS)) / 100);
 
   if (amountCents === 0) {
     await bookSlot();

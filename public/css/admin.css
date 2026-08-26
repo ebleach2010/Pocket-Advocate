@@ -1151,3 +1151,20 @@ main > p > a.small[href="/admin.html"] {
    the editor is the page, this is one action at the top of it. */
 .compile-card { margin: 0 0 var(--s-4, 1.5rem); }
 .compile-card h3 { margin: 0 0 .4rem; }
+
+/* The typed amount. A money field wants to look like one: the dollar sign is
+   part of the control rather than a hint inside the box, so what he types is
+   only ever the number. */
+.sched-amt {
+  display: inline-flex; align-items: center; gap: .25rem;
+  padding: 0 .5rem; min-height: 48px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2); color: var(--ink);
+}
+.sched-amt input {
+  border: 0; background: none; color: inherit;
+  font: 700 1.05rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  width: 7ch; min-height: 44px; padding: 0;
+}
+.sched-amt input:focus { outline: none; }
+.sched-amt:focus-within { border-color: var(--cyan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cyan) 16%, transparent); }
