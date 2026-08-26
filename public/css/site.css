@@ -50,44 +50,39 @@
    --magenta keeps its NAME and takes a violet value: renaming a token would
    touch every rule that reads it, for nothing. */
 :root {
-  --bg: #060A1C;
-  --panel: #0C1330;
-  --panel-2: #141C42;
-  --ink: #EDF1FF;
-  --dim: #A7B0D0;
-  --soft: #C8D0EC;
-  --line: #242F63;
-  --cyan: #37E1FF;
-  --cyan-dim: #1E7FA8;
-  --magenta: #A97BFF;
-  --green: #3EE08A;
-  --blue: #7C8CFF;
-  --danger: #FF6B6B;
-  --gold: #FFCC55;
-  --orange: #FFA23E;
-  --glow-c: 0 0 20px rgba(55, 225, 255, .38);
-  --glow-m: 0 0 22px rgba(169, 123, 255, .40);
-  --glow-g: 0 0 16px rgba(62, 224, 138, .30);
-  --glow-b: 0 0 18px rgba(124, 140, 255, .34);
-  --glow-o: 0 0 16px rgba(255, 162, 62, .35);
-  /* The peak frame of the Book-a-case pulse. It needs its own token: built
-     from --cyan-dim it was fully opaque, so contrast and paper both got a
-     bloom they had switched off. */
-  --glow-c-peak: 0 0 26px rgba(55, 225, 255, .75), 0 0 46px rgba(55, 225, 255, .40);
-  --wash-b: rgba(124, 140, 255, .05);
-  --chip-wash: rgba(124, 140, 255, .12);
-  /* A signature is ink on paper on every scheme - a document surface, like
-     --manila, not chrome. Named so the five places that draw it agree. */
+  --bg: #050817;
+  --bg-deep: #03050E;
+  --panel: #0B1128;
+  --panel-2: #131C3E;
+  --ink: #F0F4FF;
+  --dim: #AAB4D3;
+  --muted: #7884AC;
+  --soft: #DCE2F3;
+  --line: #29386E;
+  --cyan: #52E4FF;
+  --cyan-dim: #3794AD;
+  --magenta: #A981FF;
+  --green: #48DB91;
+  --blue: #A981FF;
+  --danger: #FF7272;
+  --gold: #FFCA58;
+  --orange: #FFA962;
+  /* DEPTH, NOT GLOW. These five keep their names because forty rules read
+     them, and take shadow values instead of blooms: the spec's hierarchy
+     comes from elevation, and the only thing left that truly glows is the
+     one primary action (--el-cta). */
+  --glow-c: 0 8px 28px rgba(0, 0, 0, .18);
+  --glow-m: 0 8px 28px rgba(0, 0, 0, .18);
+  --glow-g: 0 6px 20px rgba(0, 0, 0, .16);
+  --glow-b: 0 6px 20px rgba(0, 0, 0, .16);
+  --glow-o: 0 6px 20px rgba(0, 0, 0, .16);
+  --glow-c-peak: 0 12px 34px rgba(82, 228, 255, .28), 0 0 0 1px rgba(82, 228, 255, .40);
+  --wash-b: rgba(169, 129, 255, .05);
+  --chip-wash: rgba(169, 129, 255, .12);
   --sig-paper: #FFFFFF;
   --sig-ink: #101828;
-  /* The translucent ground under every sticky bar. A scheme cannot reach a
-     baked rgba, and a bar that stays near-black under a pale scheme takes the
-     whole top of the app with it. */
-  --bar: rgba(6, 10, 28, .86);
-  /* The ink that sits ON an accent fill (a cyan button, a booked calendar
-     day). It is not --bg and it is not --ink: it has to contrast with the
-     accent, which is dark on some schemes and bright on others. */
-  --on-accent: #041018;
+  --bar: rgba(5, 8, 23, .86);
+  --on-accent: #071018;
 }
 
 /* ---------------------------------------------------------------- schemes
@@ -100,92 +95,115 @@
    softer glow, for reading in bed at 2am with a headache, which is when a lot
    of this gets read. */
 :root[data-scheme="calm"] {
-  --bg: #0B0E14;
-  --panel: #121722;
-  --panel-2: #171E2C;
-  --ink: #E4E9F2;
-  --dim: #98A1B4;
-  --soft: #BFC7D6;
-  --line: #232C3F;
-  --cyan: #6FC7D8;
-  --cyan-dim: #3D7C8A;
-  --magenta: #D98BC4;
-  --green: #6FC49A;
-  --blue: #8AA8DC;
-  --danger: #E08585;
-  --gold: #DCBB78;
-  --orange: #DDA470;
-  --glow-c: 0 0 12px rgba(111, 199, 216, .18);
-  --glow-m: 0 0 12px rgba(217, 139, 196, .16);
-  --glow-g: 0 0 12px rgba(111, 196, 154, .16);
-  --glow-b: 0 0 12px rgba(138, 168, 220, .16);
-  --glow-o: 0 0 12px rgba(221, 164, 112, .18);
-  --glow-c-peak: 0 0 18px rgba(111, 199, 216, .32);
-  --wash-b: rgba(138, 168, 220, .04);
-  --chip-wash: rgba(138, 168, 220, .10);
+  --bg: #090C12;
+  --bg-deep: #06080D;
+  --panel: #111720;
+  --panel-2: #19222E;
+  --ink: #F2F4F7;
+  --dim: #A9B1BE;
+  --muted: #7F8998;
+  --soft: #DEE1E7;
+  --line: #2A3442;
+  --cyan: #87A9FF;
+  --cyan-dim: #5A72AA;
+  --magenta: #A58DD7;
+  --green: #70CA9A;
+  --blue: #A58DD7;
+  --danger: #F07878;
+  --gold: #E6B95C;
+  --orange: #EAA067;
+  /* DEPTH, NOT GLOW. These five keep their names because forty rules read
+     them, and take shadow values instead of blooms: the spec's hierarchy
+     comes from elevation, and the only thing left that truly glows is the
+     one primary action (--el-cta). */
+  --glow-c: 0 8px 28px rgba(0, 0, 0, .18);
+  --glow-m: 0 8px 28px rgba(0, 0, 0, .18);
+  --glow-g: 0 6px 20px rgba(0, 0, 0, .16);
+  --glow-b: 0 6px 20px rgba(0, 0, 0, .16);
+  --glow-o: 0 6px 20px rgba(0, 0, 0, .16);
+  --glow-c-peak: 0 12px 34px rgba(135, 169, 255, .28), 0 0 0 1px rgba(135, 169, 255, .40);
+  --wash-b: rgba(165, 141, 215, .05);
+  --chip-wash: rgba(165, 141, 215, .12);
   --sig-paper: #FFFFFF;
   --sig-ink: #101828;
-  --bar: rgba(11, 14, 20, .88);
-  --on-accent: #06131A;
+  --bar: rgba(9, 12, 18, .86);
+  --on-accent: #071018;
 }
 
 /* Paper: light, warm, like the folder itself. The one scheme where ink is dark
    on a pale ground, so every token inverts rather than dims. */
 :root[data-scheme="paper"] {
-  --bg: #F3EEE3;
-  --panel: #FBF8F2;
-  --panel-2: #F0EADC;
-  --ink: #23201A;
-  --dim: #5B5548;
-  --soft: #3E392F;
-  --line: #DDD4C2;
-  --cyan: #0A5163;
-  --cyan-dim: #5C9AA8;
-  --magenta: #8A2868;
-  --green: #16613D;
-  --blue: #22488A;
-  --danger: #9A2C25;
-  --gold: #6D5310;
-  --orange: #834910;
-  --glow-c: 0 0 0 1px rgba(14, 110, 134, .18);
-  --glow-m: 0 0 0 1px rgba(168, 54, 127, .18);
-  --glow-g: 0 0 0 1px rgba(30, 122, 77, .18);
-  --glow-b: 0 0 0 1px rgba(43, 91, 168, .18);
-  --glow-o: 0 0 0 1px rgba(162, 90, 21, .18);
-  --glow-c-peak: 0 0 0 2px rgba(14, 110, 134, .30);
-  --wash-b: transparent;
-  --chip-wash: rgba(34, 72, 138, .06);
+  --bg: #F1ECE2;
+  --bg-deep: #E8E0D3;
+  --panel: #FAF7F0;
+  --panel-2: #E8E0D3;
+  --ink: #20252B;
+  --dim: #5F6871;
+  --muted: #7C817F;
+  --soft: #32383F;
+  --line: #D2C7B8;
+  --cyan: #35598D;
+  --cyan-dim: #6882A7;
+  --magenta: #70598F;
+  --green: #287250;
+  --blue: #70598F;
+  --danger: #A63F3F;
+  --gold: #9D6819;
+  --orange: #A05827;
+  /* DEPTH, NOT GLOW. These five keep their names because forty rules read
+     them, and take shadow values instead of blooms: the spec's hierarchy
+     comes from elevation, and the only thing left that truly glows is the
+     one primary action (--el-cta). */
+  --glow-c: 0 8px 28px rgba(0, 0, 0, .10);
+  --glow-m: 0 8px 28px rgba(0, 0, 0, .10);
+  --glow-g: 0 6px 20px rgba(0, 0, 0, .09);
+  --glow-b: 0 6px 20px rgba(0, 0, 0, .09);
+  --glow-o: 0 6px 20px rgba(0, 0, 0, .09);
+  --glow-c-peak: 0 12px 34px rgba(53, 89, 141, .28), 0 0 0 1px rgba(53, 89, 141, .40);
+  --wash-b: rgba(112, 89, 143, .05);
+  --chip-wash: rgba(112, 89, 143, .12);
   --sig-paper: #FFFFFF;
   --sig-ink: #101828;
-  --bar: rgba(243, 238, 227, .92);
-  /* Pale ink on a dark accent, which is the way round this scheme needs. */
-  --on-accent: #FBF8F2;
+  --bar: rgba(241, 236, 226, .86);
+  --on-accent: #FFFFFF;
 }
 
 /* High contrast: black ground, pure hues, no glow to blur an edge. For a bad
    vision day, or bright sun on a phone in a hospital car park. */
 :root[data-scheme="contrast"] {
   --bg: #000000;
-  --panel: #0A0A0A;
-  --panel-2: #141414;
+  --bg-deep: #000000;
+  --panel: #0D0D0D;
+  --panel-2: #1B1B1B;
   --ink: #FFFFFF;
-  --dim: #D6D6D6;
-  --soft: #EFEFEF;
-  --line: #6A6A6A;
-  --cyan: #4FE9FF;
-  --cyan-dim: #2AA8C0;
-  --magenta: #FF77E0;
-  --green: #4BF39A;
-  --blue: #8FB6FF;
-  --danger: #FF8A8A;
-  --gold: #FFD86B;
-  --orange: #FFB259;
-  --glow-c: none; --glow-m: none; --glow-g: none; --glow-b: none; --glow-o: none;
-  --glow-c-peak: none; --wash-b: transparent; --chip-wash: transparent;
+  --dim: #D2D2D2;
+  --muted: #B6B6B6;
+  --soft: #F2F2F2;
+  --line: #666666;
+  --cyan: #73E8FF;
+  --cyan-dim: #4C95A3;
+  --magenta: #C3A3FF;
+  --green: #76F1AC;
+  --blue: #C3A3FF;
+  --danger: #FF8C8C;
+  --gold: #FFD66A;
+  --orange: #FFBA77;
+  /* DEPTH, NOT GLOW. These five keep their names because forty rules read
+     them, and take shadow values instead of blooms: the spec's hierarchy
+     comes from elevation, and the only thing left that truly glows is the
+     one primary action (--el-cta). */
+  --glow-c: 0 8px 28px rgba(0, 0, 0, .18);
+  --glow-m: 0 8px 28px rgba(0, 0, 0, .18);
+  --glow-g: 0 6px 20px rgba(0, 0, 0, .16);
+  --glow-b: 0 6px 20px rgba(0, 0, 0, .16);
+  --glow-o: 0 6px 20px rgba(0, 0, 0, .16);
+  --glow-c-peak: 0 12px 34px rgba(115, 232, 255, .28), 0 0 0 1px rgba(115, 232, 255, .40);
+  --wash-b: rgba(195, 163, 255, .05);
+  --chip-wash: rgba(195, 163, 255, .12);
   --sig-paper: #FFFFFF;
   --sig-ink: #101828;
-  --bar: rgba(0, 0, 0, .95);
-  --on-accent: #000000;
+  --bar: rgba(0, 0, 0, .86);
+  --on-accent: #071018;
 }
 
 /* The body's two corner washes are baked rgba, not tokens, and on a pale or
