@@ -36,3 +36,38 @@ export function handsOffReadiness(c, authorityItems = []) {
   ];
   return { rows, ready: rows.every((r) => r.done) };
 }
+
+/**
+ * Has this case's Hands-Off month not begun yet?
+ *
+ * ONE PREDICATE, because there are three parties to this sentence and they
+ * were disagreeing. The Worker decides whether the client's email mentions a
+ * future month; the client's own case page decides whether it says the month
+ * "starts" or "started"; his confirmation line says the same thing back to
+ * him. All three describe one fact and all three must answer the same.
+ *
+ * TWELVE HOURS OF GRACE, matching worker/index.js (action 'open-full', where
+ * startsLater is startAt > now + 12 hours). This is not a rounding nicety.
+ * The panel stores NOON Mountain on the day he picks, so opening a case at
+ * nine in the morning to start TODAY lands three hours in the future. With a
+ * bare `> Date.now()` the Worker sent the ordinary email while both screens
+ * announced a month that "starts later", for three hours, on every same-day
+ * opening. Same-day is the common case.
+ *
+ * READS A FIRESTORE TIMESTAMP, not just a string. Both browser halves take
+ * this field straight off the SDK, where valueOf() is a zero-padded sort key
+ * and `new Date(stamp)` is Invalid Date. A bare `new Date()` here would
+ * return false on every real case while every source-text check stayed green,
+ * which is the silent pass this comment exists to prevent. The pattern is the
+ * one every other browser reader already uses (case.js:1900,
+ * admin-case.js:3262, admin-calendar.js:143).
+ */
+export const HANDS_OFF_START_GRACE_MS = 12 * 3600_000;
+
+export function handsOffStartsLater(c, now = Date.now()) {
+  const raw = c?.fullAccessAt;
+  if (!raw) return false;
+  const at = raw.toDate ? raw.toDate().getTime() : new Date(raw).getTime();
+  if (!Number.isFinite(at)) return false;
+  return at > now + HANDS_OFF_START_GRACE_MS;
+}

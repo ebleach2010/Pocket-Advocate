@@ -80,15 +80,29 @@ async function load() {
   former.sort((a, b) => toDate(b.closedAt || 0) - toDate(a.closedAt || 0));
   // Money at a glance: every case is created by a confirmed Stripe payment,
   // so the sum of amountTotal IS confirmed case revenue. Subscriptions renew
-  // monthly inside Stripe — the dashboard there is the source of truth.
+  // monthly inside Stripe, and the dashboard there is the source of truth.
+  //
+  // TWO NUMBERS NOW, because there are two kinds of money. This card says
+  // "paid via Stripe" and "every one backed by a confirmed payment", and it
+  // has to keep being true: a payment recorded by hand is neither, and quietly
+  // folding one in would make the sentence a lie on the one number here that
+  // must stay honest. So a hand-recorded payment is counted on its own line
+  // and the headline stays what Stripe actually took.
   const covers = await loadCovers();
-  const cents = cases.reduce((sum, c) =>
-    sum + (c.stripe?.amountTotal || 0) +
+  const byKind = (want) => cases.reduce((sum, c) => sum
+    + (want === 'stripe' ? (c.stripe?.amountTotal || 0) : 0)
     // Tips excluded, the way handleLedger already excludes them. A tip is a
-    // gift, and counting it flatters the one number here that must stay honest.
-    (Array.isArray(c.extraPayments)
-      ? c.extraPayments.reduce((x, p) => x + (p.kind === 'tip' ? 0 : (p.amountCents || 0)), 0)
+    // gift, and counting it flatters the same number.
+    + (Array.isArray(c.extraPayments)
+      ? c.extraPayments.reduce((x, p) => {
+        if (p.kind === 'tip') return x;
+        const hand = p.byHand === true;
+        if (want === 'stripe' ? hand : !hand) return x;
+        return x + (p.amountCents || 0);
+      }, 0)
       : 0), 0);
+  const cents = byKind('stripe');
+  const handCents = byKind('hand');
   // What a case costs right now. It rises by $10 on every completed booking,
   // silently, so this is the only place the current number is stated.
   let rate = null;
@@ -115,7 +129,15 @@ async function load() {
     if (res.ok) voice = await res.json();
   } catch { /* same */ }
 
-  const dollars = (c) => (c % 100 ? (c / 100).toFixed(2) : String(c / 100));
+  // Grouped, the same as the case page's. Without the separator the shelf's
+  // headline rate read "$1200" and "$3400", which is the one number on this
+  // screen he reads at a glance and the one where a missing digit costs the
+  // most. Display only: the rate inputs below take their value straight from
+  // the cents, so the comma never reaches a parser.
+  const dollars = (c) => (c / 100).toLocaleString('en-US', {
+    minimumFractionDigits: c % 100 ? 2 : 0,
+    maximumFractionDigits: c % 100 ? 2 : 0,
+  });
   const rateBlock = rate ? `
     <details class="panel" style="margin-bottom:1rem;">
       <summary class="row" style="cursor:pointer;">
@@ -187,6 +209,11 @@ async function load() {
         <span class="price" style="color:var(--cyan);">$${(cents / 100).toLocaleString()}</span></div>
       <p class="dim small" style="margin:.3rem 0 0;">${cases.length} case${cases.length === 1 ? '' : 's'}, every one backed by a confirmed payment.
         Subscriptions and refunds live in the <a href="https://dashboard.stripe.com" target="_blank" rel="noopener">Stripe dashboard</a>.</p>
+      ${handCents > 0 ? `
+      <div class="row" style="margin-top:.6rem;"><strong>Recorded by you, paid another way</strong>
+        <span class="price" style="color:var(--ink);">$${(handCents / 100).toLocaleString()}</span></div>
+      <p class="dim small" style="margin:.3rem 0 0;">Money you told the app about, so your hourly is right. Stripe never saw it, so it is not in the number above and it will not be in your Stripe records.
+        <strong style="color:var(--ink)">$${((cents + handCents) / 100).toLocaleString()}</strong> in total.</p>` : ''}
     </div>`;
   // A folder on the shelf. detail and the follow-up flag are markup the
   // caller built, so they ride in as `flags`; everything else is escaped by
@@ -368,8 +395,16 @@ function checkInDue(c) {
   const all = Array.isArray(c.checkIns) ? c.checkIns : [];
   if (all.some((x) => toDate(x.start).getTime() > now)) return false;
   const past = all.map((x) => toDate(x.start).getTime()).filter((t) => t <= now);
+  // THE MONTH IS THE FLOOR. The two-week cadence is a promise the TIER makes,
+  // so it cannot start running before the tier does. The anchor here is the
+  // advocacy call, which on a case opened by hand is usually weeks old: with a
+  // month set to begin later, this lit CHECK-IN DUE the instant he pressed the
+  // button and kept the case in the overview list for the whole wait, telling
+  // him to book a check-in for an engagement that had not started.
+  const started = c.fullAccessAt ? toDate(c.fullAccessAt).getTime() : 0;
+  if (started > now) return false;
   const first = c.appointment?.start ? toDate(c.appointment.start).getTime() : 0;
-  const last = Math.max(first, ...past, 0);
+  const last = Math.max(first, started, ...past, 0);
   if (!last || last > now) return false;
   return now - last >= 14 * 86_400_000;
 }

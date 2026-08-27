@@ -168,9 +168,32 @@ check('E3 an abandoned extension checkout clears itself',
 check('E4 the card lives under Case Enhancements, states and all',
   /data-extend/.test(CASE) && /function extendOffer/.test(CASE)
   && /data-buy-extend/.test(CASE) && /extended=1/.test(SRC));
-check('E5 the client window mirror adds the bought days',
+// UPDATED 2026-08-26, not deleted. This check's intent is that a bought
+// extension really stretches the window the CLIENT is shown, and that still
+// holds and is still checked below. What it ALSO pinned, by accident, was the
+// literal `60 +`. The mirror hardcoded sixty days for every case while the
+// Worker gives a case bought after the monthly reshape thirty, so a client on
+// the current tier was shown an end date a month later than the close sweep
+// actually enforces. Pinning the source text of a number is how a wrong
+// number acquires a guard.
+//
+// The base now comes from the same rule the Worker uses. The real check is
+// U1 to U6 in pricing.mjs, which RUNS all three implementations of this window
+// against the same cases instead of reading them.
+// UPDATED AGAIN 2026-08-26, and this is the second time, which is the tell.
+// Its intent is one thing: whatever the base window is, days a client BOUGHT
+// stack on top of it. That is checked below and has never changed. What keeps
+// breaking is the half that pinned the source text of how the base is chosen,
+// which has now moved twice: first when the hardcoded sixty became the
+// Worker's rule, and now because an agreed length (fullAccessDays) wins over
+// both. So that half is dropped rather than re-pinned to a third spelling.
+//
+// The base itself is covered where it belongs, by checks that RUN all three
+// window helpers against the same cases: pricing.mjs U1-U6 for the rule and
+// A1-A7 for the agreed length. A regex cannot tell 14 from 30 from 60.
+check('E5 the client window mirror adds the bought days on top of the base',
   /function windowEndOf/.test(CASE)
-  && /60 \+ \(Number\(c\.fullAccessExtraDays\) \|\| 0\)/.test(CASE));
+  && /const days = base \+ \(Number\(c\.fullAccessExtraDays\) \|\| 0\);/.test(CASE));
 check('E6 the demo drives the purchase and the days really stack',
   /'\/api\/extend'/.test(DEMO)
   && /fullAccessExtraDays: \(Number\(c\.fullAccessExtraDays\) \|\| 0\) \+ 30/.test(DEMO));
@@ -287,6 +310,183 @@ check('W7 the landing sells with his phrase, and the value math is on the servic
     const onLanding = /data-rate="full"/.test(idx) && /Hands-Off Case Management/.test(idx);
     return hisPhrase && valueMath && onLanding;
   })());
+
+// ---- X1-X6: a cadence cannot be overdue before the month begins ---------
+// Eric, 2026-08-26, opening Hands-Off by hand for a client whose month starts
+// later: "This one is going to be delayed slightly."
+//
+// Both copies of the cadence anchored on c.appointment.start, the original
+// advocacy call, which on a hand-opened case is usually weeks old. So the
+// moment he pressed the button, the shelf painted CHECK-IN DUE and pulled the
+// case into the overview list, and it stayed there for the entire wait,
+// telling him to book a check-in for an engagement that had not started.
+//
+// LIFTED AND RUN, both copies, against the same cases. The rule lives in two
+// files and a regex cannot tell whether they agree.
+{
+  const TO_DATE = 'function toDate(v){ if(!v) return new Date(0); if(v.toDate) return v.toDate(); return new Date(v); }';
+  const lift = (src, sig) => {
+    const m = src.match(new RegExp(`${sig}[\\s\\S]*?\\n\\}`));
+    return m ? m[0] : '';
+  };
+  let shelf = null, chart = null;
+  try {
+    shelf = new Function(`${TO_DATE}\n${lift(SHELF, 'function checkInDue\\(c\\) \\{')}\nreturn checkInDue;`)();
+    chart = new Function(`${TO_DATE}\nconst CHECKIN_DAYS = 14;\n${lift(ADMIN, 'function checkInState\\(c\\) \\{')}\nreturn checkInState;`)();
+  } catch (e) { /* W1 reports it */ }
+  check('X1 both copies of the cadence lift and run',
+    typeof shelf === 'function' && typeof chart === 'function');
+
+  if (shelf && chart) {
+    const DAY = 86_400_000;
+    const base = {
+      fullAccess: true, status: 'awaiting_report', checkIns: [],
+      appointment: { start: new Date(Date.now() - 20 * DAY) },
+    };
+    // The case he is actually opening: agreed today, month starts in a
+    // fortnight, one advocacy call three weeks back.
+    const notYet = { ...base, fullAccessAt: new Date(Date.now() + 14 * DAY) };
+    check('X2 the shelf does not flag a month that has not started',
+      shelf(notYet) === false, String(shelf(notYet)));
+    check('X3 and neither does the chart',
+      chart(notYet)?.due === false, JSON.stringify(chart(notYet)));
+
+    // Once it HAS started and run two weeks with no check-in, it is due, or
+    // the fix would have turned the flag off altogether.
+    const running = { ...base, fullAccessAt: new Date(Date.now() - 20 * DAY) };
+    check('X4 a month that has run a fortnight with no check-in IS due',
+      shelf(running) === true, String(shelf(running)));
+    check('X5 and the two copies agree about that',
+      chart(running)?.due === true, JSON.stringify(chart(running)));
+
+    // A booked check-in in the future still silences it, on both.
+    const booked = { ...running, checkIns: [{ start: new Date(Date.now() + 3 * DAY) }] };
+    check('X6 a booked check-in silences both copies',
+      shelf(booked) === false && chart(booked)?.due === false,
+      `${shelf(booked)} / ${JSON.stringify(chart(booked))}`);
+  }
+}
+
+// ---- X7: the signed form prints WITH the signature ----------------------
+// public/js/admin-case.js asked the Worker for the ink with
+// `encodeURIComponent(id)`. `id` is declared nowhere in that module; the
+// binding is `caseId` (:145). It is an ES module, so that threw a
+// ReferenceError before the fetch was ever made, EVERY time, and the catch
+// below it swallowed the throw under a comment about printing without the
+// mark. So every signed authority form printed with a blank signature and
+// nothing said so. The sibling call fifty lines up had it right all along.
+{
+  check('X7 the print handler asks for the ink with a binding that exists',
+    !/caseId=\$\{encodeURIComponent\(id\)\}/.test(ADMIN)
+    && /caseId=\$\{encodeURIComponent\(caseId\)\}&id=\$\{encodeURIComponent\(item\.id\)\}/.test(ADMIN));
+  // And it no longer fails silently, which is the half that let it live.
+  check('X7b and a failure to fetch the ink is said out loud, not swallowed',
+    /Printing without the signature/.test(ADMIN));
+}
+
+// ---- Z1-Z9: the renewal offer, and the notice the tier never had ---------
+// Eric, 2026-08-26, on the "Keep going another month?" card: "Shouldn't that
+// show maybe three days before their month ends?"
+//
+// It showed for the WHOLE month, from day one, with a four-figure price under
+// it, and on a case opened for a delayed start it showed before the month had
+// begun. But three days on its own would have cost him renewals, because
+// there was NO warning email when a Hands-Off month ended: the card was the
+// only notice and it worked by never going away. The follow-up session has
+// had a week's warning all along; the most expensive thing he sells had none.
+//
+// So both halves are pinned together, and the card is LIFTED AND RUN at four
+// points in the month rather than pattern matched, because "three days" is
+// arithmetic and a regex cannot check arithmetic.
+{
+  const DAY = 86_400_000;
+  const fn = (CASE.match(/function extendOffer\(c\) \{[\s\S]*?\n\}/) || [''])[0];
+  check('Z1 the renewal card lifts out of the shipped file', fn.length > 0);
+  let offer = null;
+  try {
+    offer = new Function(`
+      const EXTEND_PRICE_CENTS = 340000;
+      const EXTEND_OFFER_WITHIN_DAYS = 3;
+      const esc = (x) => String(x);
+      const toDate = (v) => (v && v.toDate ? v.toDate() : new Date(v));
+      const livePendingExtend = (c) => c.pendingExtend || null;
+      let extendJustPaid = false;
+      const windowEndOf = (c) => (c.__end ? new Date(c.__end) : null);
+      ${fn}
+      return extendOffer;`)();
+  } catch (e) { /* Z2 reports it */ }
+  check('Z2 and runs', typeof offer === 'function');
+
+  if (offer) {
+    const at = (days, extra = {}) => offer({
+      fullAccess: true, status: 'awaiting_report',
+      __end: Date.now() + days * DAY, ...extra,
+    });
+    const shows = (html) => /Keep going another month\?/.test(html);
+    check('Z3 twenty days out, the client is not being sold anything',
+      !shows(at(20)), at(20).slice(0, 60));
+    check('Z4 three days out, the offer is there',
+      shows(at(3)), at(3).slice(0, 60) || '(nothing rendered)');
+    // A delayed month has 44 days left, so his own rule hides it before the
+    // month has begun. No separate rule needed for that case.
+    check('Z5 a month that has not started yet shows nothing either',
+      !shows(at(44)));
+    // Renewing LATE has to keep working: the extension credits the lapsed
+    // days, so a month bought after the end is still a full thirty days.
+    check('Z6 after the window ends it is still offered, until the case closes',
+      shows(at(-2)), at(-2).slice(0, 60) || '(nothing rendered)');
+    // Fails OPEN: no computable end must never silently hide a renewal.
+    check('Z7 a case with no end date still gets the offer',
+      shows(offer({ fullAccess: true, status: 'awaiting_report' })));
+    // A checkout in flight is a real thing happening and outranks the gate.
+    check('Z8 a checkout already in flight still renders, twenty days out',
+      /Finish checkout/.test(at(20, { pendingExtend: { url: 'https://x.invalid' } })));
+  }
+}
+
+// ---- Z9-Z13: the week's notice itself ------------------------------------
+{
+  const DAY = 86_400_000;
+  const fn = (SRC.match(/export async function runWindowWarnings[\s\S]*?\n\}/) || [''])[0];
+  check('Z9 the warning pass exists', fn.length > 0);
+  check('Z10 and is registered on the cron, beside its sibling',
+    /ctx\.waitUntil\(runFollowUpWarnings\(env\)\);\s*\n\s*ctx\.waitUntil\(runWindowWarnings\(env\)\);/.test(SRC));
+  // A once-only flag that is never cleared warns the FIRST month and no other.
+  check('Z11 a renewal clears the flag, so every month gets its own notice',
+    /windowEndWarned: null,/.test(SRC) && /'pendingExtend', 'windowEndWarned', 'extraPayments'\]/.test(SRC));
+
+  const run = async (caseDoc) => {
+    const sent = [], wrote = [];
+    const harness = `
+      const FULL_WINDOW_WARN_DAYS = 7;
+      const queryDocs = async () => [{ id: 'c1', data: ${JSON.stringify(caseDoc)} }];
+      const fullAccessWindowEnd = (c) => (c.__end ? new Date(c.__end) : null);
+      const whenHtml = (d) => '<p>' + d.toISOString() + '</p>';
+      const sendEmail = async (env, m) => { __sent.push(m); };
+      const patchDoc = async (env, path, fields) => { __wrote.push(fields); };
+      ${fn.replace('export async function', 'async function')}
+      return runWindowWarnings;`;
+    const f = new Function('__sent', '__wrote', harness)(sent, wrote);
+    await f({ PUBLIC_BASE_URL: 'https://x.invalid' });
+    return { sent, wrote };
+  };
+  const base = { status: 'awaiting_report', clientEmail: 'c@x.invalid' };
+  const due = await run({ ...base, __end: Date.now() + 5 * DAY });
+  check('Z12 a month five days out is warned, once, with the real end date',
+    due.sent.length === 1 && /Hands-Off month ends next week/.test(due.sent[0].subject)
+    && due.wrote.some((w) => w.windowEndWarned === true),
+    `${due.sent.length} email(s)`);
+  const early = await run({ ...base, __end: Date.now() + 20 * DAY });
+  check('Z13 a month twenty days out is not warned yet', early.sent.length === 0);
+  const gone = await run({ ...base, __end: Date.now() - DAY });
+  check('Z14 a month already over gets no email after the fact', gone.sent.length === 0);
+  const held = await run({ ...base, __end: Date.now() + 5 * DAY, hold: { pausedAt: new Date() } });
+  check('Z15 a paused case is not running down, so it is not warned', held.sent.length === 0);
+  const mid = await run({ ...base, __end: Date.now() + 5 * DAY, pendingExtend: { url: 'x' } });
+  check('Z16 somebody mid-renewal is not told their month is ending', mid.sent.length === 0);
+  const already = await run({ ...base, __end: Date.now() + 5 * DAY, windowEndWarned: true });
+  check('Z17 and nobody is told twice', already.sent.length === 0);
+}
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

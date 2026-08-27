@@ -349,5 +349,56 @@ ck('clock: all switches share one painter set, so no two can disagree',
      /'calldoc'/.test(mine), mine.trim());
 }
 
+// ---- 17. the scheduling blocks are for clients, not for him -------------
+// Eric, 2026-08-26: "Let me reschedule sessions without the scheduling blocks
+// stopping me... reschedule for an hour later on the same day."
+//
+// Three rules compounded into one wall, and none of them was reachable from a
+// browser test, which is why they are pinned here:
+//
+//   cleanupStaleSlots ran every 15 minutes and deleted every OPEN slot inside
+//   the 72h lead window, including ones he had opened himself, so a slot for
+//   3pm today was gone before he could use it;
+//   handleCreateSlots refused outright to open a slot inside that window;
+//   so the reschedule dropdown, which lists open slots, had nothing sooner
+//   than three days out.
+//
+// The lead window, the horizon and business hours are CLIENT self-service
+// rules. The client picker filters the lead window itself, so none of this can
+// put an odd-hour opening in front of a client.
+{
+  const sweep = (W.match(/async function cleanupStaleSlots[\s\S]*?\n}/) || [''])[0];
+  ck('schedule: the sweep leaves a slot he opened himself alone',
+     sweep.length > 0 && /if \(s\.data\.adminCreated\) return false;/.test(sweep),
+     sweep.length ? 'adminCreated not exempted' : 'cleanupStaleSlots not found');
+  ck('schedule: but a slot whose time has gone is still swept, whoever made it',
+     /if \(at < Date\.now\(\)\) return true;/.test(sweep));
+  const create = (W.match(/async function handleCreateSlots[\s\S]*?\n}/) || [''])[0];
+  ck('schedule: he can open a slot inside the lead window',
+     create.length > 0
+     && !/if \(start\.getTime\(\) < Date\.now\(\) \+ LEAD_TIME_HOURS \* 3600_000\) \{ invalid\+\+; continue; \}/.test(create)
+     && /const soon = start\.getTime\(\) < Date\.now\(\) \+ LEAD_TIME_HOURS \* 3600_000;/.test(create),
+     create.length ? 'the lead-window skip is still there' : 'handleCreateSlots not found');
+  ck('schedule: and one he opens inside it is marked his, so the sweep spares it',
+     /\.\.\.\(soon \? \{ adminCreated: true \} : \{\}\)/.test(create));
+  ck('schedule: the past is still refused',
+     /if \(start\.getTime\(\) < Date\.now\(\)\) \{ invalid\+\+; continue; \}/.test(create));
+  // The one-tap path, which is what he actually asked for.
+  // Anchored on the SOURCE list, not on rendered markup: the buttons are built
+  // from a map, so `data-nudge="60"` never appears in the file and a check for
+  // it failed while the feature worked. drive-nudge.mjs asserts the rendered
+  // labels; this asserts the four shifts are still declared.
+  ck('schedule: the panel offers one-tap shifts off the current appointment',
+     /\['\+1 hour', 60\], \['\+2 hours', 120\], \['\+1 day', 1440\], \['\+1 week', 10080\]/.test(AC)
+     && /data-nudge="\$\{mins\}"/.test(AC));
+  ck('schedule: a missed call is measured from now, not from the time that passed',
+     /const past = from\.getTime\(\) < Date\.now\(\);/.test(AC)
+     && /const base = past \? new Date\(\) : from;/.test(AC));
+  // The confirmation has to outlive the repaint. This panel has already
+  // shipped a save that confirmed and then deleted its own confirmation.
+  ck('schedule: the confirmation survives the repaint that follows it',
+     /say\('sched', msg/.test(AC) && /\$\{saidHtml\('sched'\)\}/.test(AC));
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);

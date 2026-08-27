@@ -532,6 +532,10 @@ label:has(> input[type="checkbox"]):not([class]) {
 input[type=email],
 input[type=tel],
 input[type=text],
+/* password was missing from this list, so the one password field outside
+   signin.html (the ChatGPT key in Settings) painted as a bare browser box on
+   the admin pages, which do not load glowup.css. */
+input[type=password],
 input[type=date],
 input[type=url],
 input[type=datetime-local],
@@ -1267,13 +1271,66 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
   flex-wrap: wrap; margin: .45rem 0; font-size: .85rem;
 }
 .auth-item-acts { display: flex; gap: .35rem; flex: none; }
-/* The full form, as it will actually read. Monospace because it is a
-   document, not prose, and wrapped because a phone is 390px wide. */
+/* The full form, as it will actually read.
+   It WAS monospace, on the reasoning that a document is not prose. That was
+   wrong twice over: the thing a records department reads is typeset, and at
+   .74rem monospace on a 390px phone it read as a terminal dump, which is what
+   Eric said out loud on 2026-08-26. Same document model as the printed page
+   renders, so the preview and the paper cannot drift.
+   Tokens here, unlike the print window: this one is inside the app and has to
+   follow the scheme the reader chose. */
 .auth-doc {
-  white-space: pre-wrap; word-wrap: break-word; margin: 0;
-  font: .74rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin: 0;
+  font: .82rem/1.6 var(--font-body, ui-serif, Georgia, serif);
   color: var(--soft);
 }
+.auth-doc h1 {
+  font-size: .95rem; line-height: 1.35; margin: 0 0 .7rem;
+  text-transform: uppercase; letter-spacing: .02em;
+  border-bottom: 1px solid var(--line); padding-bottom: .4rem; color: var(--ink);
+}
+.auth-doc h2 {
+  font-size: .66rem; letter-spacing: .12em; text-transform: uppercase;
+  margin: 1rem 0 .25rem; color: var(--dim);
+}
+.auth-doc p { margin: 0 0 .45rem; }
+.auth-doc .doc-line { margin: 0 0 .15rem; }
+.auth-doc .doc-meta {
+  margin: 0 0 .8rem; display: grid; grid-template-columns: auto 1fr; gap: .1rem .5rem;
+}
+.auth-doc .doc-meta dt { color: var(--dim); }
+.auth-doc .doc-meta dd { margin: 0; color: var(--ink); font-weight: 600; }
+/* A run of underscores is somewhere to write on paper. On screen it is a
+   line, because forty-six underscore glyphs is not a form field. */
+.auth-doc .doc-rule {
+  display: inline-block; min-width: 9rem; height: 1.05em;
+  border-bottom: 1px solid var(--line); vertical-align: baseline;
+}
+.auth-doc .doc-checks, .auth-doc .doc-bullets { list-style: none; margin: .35rem 0 .5rem; padding: 0; }
+.auth-doc .doc-checks li { display: flex; gap: .5rem; margin: 0 0 .5rem; }
+.auth-doc .doc-box {
+  flex: none; width: .9rem; height: .9rem; margin-top: .18rem;
+  border: 1.5px solid var(--dim); border-radius: 2px; display: block; position: relative;
+}
+.auth-doc .doc-box.is-on { border-color: var(--ink); }
+.auth-doc .doc-box.is-on::after {
+  content: ''; position: absolute; left: .24rem; top: 0;
+  width: .26rem; height: .56rem; border: solid var(--ink);
+  border-width: 0 2px 2px 0; transform: rotate(42deg);
+}
+.auth-doc .doc-check-body { display: block; }
+.auth-doc .doc-check-body strong { color: var(--ink); }
+.auth-doc .doc-note { display: block; color: var(--dim); font-size: .95em; }
+/* Says the state to a screen reader, since the box itself is decoration. */
+.auth-doc .doc-sr {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+.auth-doc .doc-bullets li { margin: 0 0 .2rem .15rem; }
+.auth-doc .doc-bullets li::before { content: '\2022'; margin-right: .45rem; color: var(--dim); }
+.auth-doc .doc-rights { margin: .25rem 0 .5rem; padding-left: 1.15rem; }
+.auth-doc .doc-rights li { margin: 0 0 .35rem; }
+.auth-doc .doc-sig { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: .6rem; }
 
 .tier-pick { display: flex; gap: .6rem; margin: 0 0 .9rem; flex-wrap: wrap; }
 .tier-card {
@@ -1406,6 +1463,15 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
 }
 .lightbox-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60vw; }
 body.lightbox-open { overflow: hidden; }
+/* The signing sheet locks the page behind it, the same as the lightbox above
+   and the full chat. Eric, 2026-08-27, signing on a phone: "when signing the
+   screen moves around". The overlay already contains its own scroll
+   (overscroll-behavior: contain), but the DOCUMENT behind it was still free
+   to move, so a drag that started a hair outside the canvas scrolled the case
+   page under the sheet while he was trying to write his name. The canvas has
+   had touch-action: none all along, which is why it looked like a quirk of
+   whichever browser he happened to be in. */
+body.sheet-open { overflow: hidden; }
 .msg-img { cursor: zoom-in; }
 
 /* ------------------------------------------------------------- what's new
@@ -1665,7 +1731,14 @@ body.lightbox-open { overflow: hidden; }
   /* Legible, not decorative. At .62 with no label this read as part of the
      card stock, which is why Eric went looking for a toggle and found
      nothing. */
-  color: var(--manila-ink); opacity: .85;
+  /* Dimmed by COLOUR, never opacity. `opacity: .85` here blended the ink
+     toward the tab band and, on the paper scheme where that band is #9C8551,
+     pulled the clock to 3.05:1 measured in the rendered pixels. It is the same
+     mistake .folder-flags had, and the same fix: opacity composites the whole
+     element, so a child cannot undo it and the number is never what the token
+     says. --manila-strong on the paper band is 5.31:1 before the wash below
+     darkens it further. */
+  color: var(--manila-strong);
   background: rgba(0, 0, 0, .10);
   -webkit-tap-highlight-color: transparent;
 }
@@ -1677,7 +1750,7 @@ body.lightbox-open { overflow: hidden; }
   width: 100%; height: 44px; min-width: 44px;
   transform: translate(-50%, -50%);
 }
-.folder-clock:hover { opacity: 1; }
+.folder-clock:hover { background: rgba(0, 0, 0, .16); }
 .folder-clock .fc-dot {
   width: .5rem; height: .5rem; border-radius: 50%;
   border: 1.5px solid currentColor; flex: none;
@@ -1685,12 +1758,14 @@ body.lightbox-open { overflow: hidden; }
 /* Running: filled, coloured, and quietly pulsing, so a shelf of eight cards
    answers "what am I on right now" from across the room. */
 .folder-clock.on {
+  /* The running state set opacity:1 to undo the .85 above; with the dimming
+     gone there is nothing to undo. */
   /* Measured on the tab band, #0B6E4F came out at 2.02:1, on the one badge
      whose whole job is to answer "am I on the clock right now" from across
      the room. Same green family, dark enough to read on card stock, and the
      wash carries a little more colour so the pill reads as running before
      the number does. */
-  opacity: 1; color: var(--manila-note);
+  color: var(--manila-note);
   background: rgba(16, 185, 129, .26);
 }
 .folder-clock.on .fc-dot { background: currentColor; animation: fc-pulse 2.4s ease-in-out infinite; }

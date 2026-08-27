@@ -30,6 +30,7 @@ import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
+import { getOpenAiKeyState, setOpenAiKey, clearOpenAiKey } from './openai.js';
 
 /**
  * The advisor's model turns, out of harm's way. A Workflow step has no wall
@@ -511,6 +512,13 @@ async function handleRates(env) {
 // 2026-07-13); clients get one warning email a week before the deadline.
 const FOLLOWUP_EXPIRY_DAYS = 30;
 const FOLLOWUP_WARN_DAYS = 7;
+// A Hands-Off month gets the same week's notice the follow-up has always had.
+// It had NONE until now: the only thing telling a client their month was
+// ending was the renewal card on their case page, which worked by sitting
+// there all month. That card now appears three days out (his call,
+// 2026-08-26), so without this the notice would be a card in a three-day slot
+// that only reaches somebody who happens to open the app.
+const FULL_WINDOW_WARN_DAYS = 7;
 // Admin-priced sessions: a percentage of THAT CLIENT'S case rate, 25% steps.
 const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
 const METHODS = ['phone', 'video'];
@@ -875,6 +883,8 @@ export default {
         return await handleCloseCase(request, env);
       if (url.pathname === '/api/admin/effort')
         return await handleEffort(request, env);
+      if (url.pathname === '/api/admin/openai-key')
+        return await handleOpenAiKey(request, env);
       if (url.pathname === '/api/admin/voice')
         return await handleVoiceLoop(request, env, ctx);
       if (url.pathname === '/api/version' && request.method === 'GET')
@@ -1035,6 +1045,7 @@ export default {
     if (minute % 15 === 0) {
       ctx.waitUntil(runChatDigest(env));
       ctx.waitUntil(runFollowUpWarnings(env));
+      ctx.waitUntil(runWindowWarnings(env));
       ctx.waitUntil(runAppealWarnings(env));
       ctx.waitUntil(runChatOpenNotices(env));
       ctx.waitUntil(cleanupStaleSlots(env));
@@ -1572,7 +1583,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-26-spec-1';
+const BUILD_TAG = 'v2026-08-27-apikey';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1657,17 +1668,34 @@ async function closeDeliveredCases(env) {
 }
 
 // Open, unbooked slots whose start is already past — or inside the booking
-// lead window — can never be booked. The cron sweeps them out of the database
-// so the admin calendar and the client picker never show dead inventory.
-// Booked and actively-held slots are never touched. Deletions are capped per
-// run: Workers limit outbound calls per invocation, and the cron comes back
-// every 15 minutes anyway.
+// lead window — can never be booked BY A CLIENT. The cron sweeps them out of
+// the database so the admin calendar and the client picker never show dead
+// inventory. Booked and actively-held slots are never touched. Deletions are
+// capped per run: Workers limit outbound calls per invocation, and the cron
+// comes back every 15 minutes anyway.
+//
+// EXCEPT THE ONES I OPENED MYSELF (Eric, 2026-08-26: "let me reschedule
+// sessions without the scheduling blocks stopping me"). An `adminCreated`
+// slot inside the lead window is not dead inventory, it is a time I chose on
+// purpose, usually because a client and I agreed on it just now. This sweep
+// used to take those too, so a slot opened for 3pm today was gone within
+// fifteen minutes and the reschedule dropdown was empty again. The client
+// picker filters the lead window itself, so leaving these alone cannot put an
+// odd-hour opening in front of a client.
+//
+// Past is still past: a slot whose start has already gone is swept whoever
+// made it, or the shelf fills with yesterday.
 async function cleanupStaleSlots(env) {
   try {
     const open = await queryDocs(env, 'availability', [['state', 'EQUAL', 'open']], 300);
     const cutoff = Date.now() + LEAD_TIME_HOURS * 3600_000;
     const stale = open
-      .filter((s) => new Date(s.data.start).getTime() < cutoff)
+      .filter((s) => {
+        const at = new Date(s.data.start).getTime();
+        if (at < Date.now()) return true;              // gone is gone
+        if (s.data.adminCreated) return false;         // mine, on purpose
+        return at < cutoff;                            // dead client inventory
+      })
       .slice(0, 40);
     for (const s of stale) await deleteDoc(env, `availability/${s.id}`);
     if (stale.length) console.log(`slot cleanup: deleted ${stale.length} unbookable open slots`);
@@ -1972,8 +2000,18 @@ function fullAccessWindowEnd(c) {
   // keeps them. A case sold after buys thirty days at a time: month one at
   // approval, and every further month adds another thirty through
   // fullAccessExtraDays, which is the same field extensions always used.
-  const base = bought && bought >= FULL_MONTHLY_FROM_AT
-    ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS;
+  // THE LENGTH HE AGREED, when he agreed one. Eric, 2026-08-26: "I should be
+  // able to override with custom amounts/agreements me and the client make.
+  // Because that might vary per client and length of time." A month was the
+  // only shape on offer: thirty days, or sixty for a legacy case, and no way
+  // to record "we agreed six weeks" or "we agreed a fortnight".
+  //
+  // It is the BASE, not an extension. fullAccessExtraDays is what a client
+  // BUYS on top, thirty days at a time, and the two must stay separate or an
+  // agreed length would read on his own card as months somebody paid for.
+  const agreed = Number(c.fullAccessDays);
+  const base = agreed > 0 ? agreed
+    : (bought && bought >= FULL_MONTHLY_FROM_AT ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS);
   const days = base + (Number(c.fullAccessExtraDays) || 0);
   return new Date(start + days * 86_400_000 + heldMs(c));
 }
@@ -4085,8 +4123,42 @@ async function runWorkClockNudges(env) {
       if (Number(w.nudged || 0) >= rung) continue;
       await patchDoc(env, `cases/${id}`, { work: { ...w, nudged: rung } }, { mask: ['work'] }).catch(() => {});
       const started = new Date(w.startedAt).getTime();
-      const mins = Math.max(0, Math.floor((Date.now() - started) / 60_000));
-      const ran = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+      // THE NUMBER HE SEES ON THE CASE, not the current stretch (Eric,
+      // 2026-08-26: a push said "the clock has been running 0m" while the case
+      // read 15h 45m). This used to measure Date.now() - startedAt alone,
+      // which is the CURRENT stretch and not the case total. Correcting a
+      // running total re-anchors startedAt to now, so the moment after a
+      // correction the stretch is zero while the case holds fifteen hours, and
+      // the push asked "still working?" about a clock it claimed had not run.
+      //
+      // Same arithmetic as liveClockSeconds() in admin-case.js, twelve-hour
+      // cap on the single stretch included, so the push and the page can never
+      // report two different numbers for one clock again.
+      // TWO NUMBERS, TWO JOBS, and conflating them is what broke this twice.
+      //
+      // `stretchMins` is how long THIS run has been going. It decides: the
+      // ladder is about a clock left running unattended, and a case carrying
+      // fifteen banked hours from last week is not accruing anything right now.
+      //
+      // `totalMins` is what the case shows him, banked plus this run, the same
+      // arithmetic as liveClockSeconds() in admin-case.js with the same
+      // twelve-hour cap on a single stretch. It REPORTS.
+      //
+      // Reporting the stretch alone sent "the clock has been running 0m. Still
+      // working?" about a case reading 15h 45m, because correcting a running
+      // total re-anchors startedAt to now (Eric, 2026-08-26). Deciding on the
+      // total alone would email on every rung for any case with hours already
+      // banked, which is the regression the clock suite caught when this was
+      // first fixed.
+      const stretch = Math.min(Math.floor((Date.now() - started) / 1000), 12 * 3600);
+      const stretchMins = Math.max(0, Math.floor(stretch / 60));
+      const totalMins = Math.max(0, Math.floor(((Number(w.seconds) || 0) + stretch) / 60));
+      const fmtMins = (n) => (n >= 60 ? `${Math.floor(n / 60)}h ${n % 60}m` : `${n}m`);
+      const ran = fmtMins(totalMins);
+      // Only worth saying when the two differ, which is exactly when the bare
+      // total would read as a surprise.
+      const thisRun = totalMins - stretchMins >= 1 ? ` (${fmtMins(stretchMins)} this run)` : '';
+      const mins = stretchMins;
       const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
       for (const a of admins) {
         await notifyUser(env, a.id, {
@@ -4095,9 +4167,9 @@ async function runWorkClockNudges(env) {
           // being "this is costing your client money". The soft wording is
           // what let ten hours go by feeling like a routine ping.
           body: mins >= WORK_NUDGE_REPEAT_MINUTES
-            ? `${firstName(c.data.clientName)}: the clock has been running ${ran}. `
+            ? `${firstName(c.data.clientName)}: the clock has been running ${ran}${thisRun}. `
               + `If you are not working, stop it now - this is billable time on their case.`
-            : `${firstName(c.data.clientName)}: the clock has been running ${ran}${
+            : `${firstName(c.data.clientName)}: the clock has been running ${ran}${thisRun}${
               awayMin === null ? '' : ` and the app has been closed for ${Math.floor(awayMin)} minutes`
             }. Still working?`,
           link: `/admin-case.html?id=${id}&clock=ask`,
@@ -4150,6 +4222,32 @@ async function handleEffort(request, env) {
     return json(await setAdvisorEffort(env, body?.effort));
   }
   return json(await getAdvisorEffort(env));
+}
+
+/**
+ * GET/POST /api/admin/openai-key
+ *
+ * The spot for Eric's ChatGPT key. GET reports whether one is set and its
+ * last four characters; it NEVER returns the key, so a stolen admin session
+ * still cannot walk off with it. POST { key } stores one after asking OpenAI
+ * whether it works, and POST { clear: true } forgets it.
+ *
+ * Admin-gated by requireAdmin, and 404 rather than 403 on a miss, like every
+ * other advocate route: a 403 would confirm the route exists.
+ */
+async function handleOpenAiKey(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    if (body?.clear) return json(await clearOpenAiKey(env));
+    const out = await setOpenAiKey(env, body?.key);
+    // A refusal is a 400 so the panel's own !res.ok branch catches it and
+    // shows the reason, instead of painting a saved state over a save that
+    // did not happen.
+    return json(out, out.error ? 400 : 200);
+  }
+  return json(await getOpenAiKeyState(env));
 }
 
 /**
@@ -5049,10 +5147,15 @@ async function confirmExtensionPurchase(env, session, attempt = 0) {
     // the "what has this case paid" helpers stay true as it runs on.
     fullAccessRateCents: (Number(c.data.fullAccessRateCents) || 0) + amountCents,
     pendingExtend: null,
+    // A NEW MONTH GETS ITS OWN WARNING. windowEndWarned is a once-only flag,
+    // so leaving it set here would mean the first month was the only one ever
+    // warned about: every month after this would end in silence, on a case
+    // that renews as many times as it needs to.
+    windowEndWarned: null,
     extraPayments: payments,
   }, {
     mask: ['fullAccessExtraDays', 'fullAccessMonths', 'fullAccessRateCents',
-      'pendingExtend', 'extraPayments'],
+      'pendingExtend', 'windowEndWarned', 'extraPayments'],
     ifUpdateTime: c.updateTime,
   });
   // Lost the lock: re-run from the top; the sessionId dedup makes it idempotent.
@@ -6518,14 +6621,22 @@ async function handleCreateSlots(request, env) {
   const entries = [];
   for (const iso of starts) {
     const start = new Date(iso);
-    // A slot inside the booking lead window can never be booked by a client,
-    // so opening one would only create dead inventory for the cron to sweep.
     if (Number.isNaN(start.getTime())) { invalid++; continue; }
-    if (start.getTime() < Date.now() + LEAD_TIME_HOURS * 3600_000) { invalid++; continue; }
-    if (windowProblem(iso, durationMin)) { invalid++; continue; }
+    // The past is the only hard no. Everything else he is allowed to open.
+    if (start.getTime() < Date.now()) { invalid++; continue; }
+    // INSIDE THE LEAD WINDOW IS HIS TO OPEN (Eric, 2026-08-26). It used to be
+    // skipped as dead inventory, which meant the one time he most needs to
+    // open a slot, an hour from now because a client just asked to move, was
+    // the one time he could not. The client picker filters the lead window on
+    // its own, so these are invisible there; `adminCreated` marks them his so
+    // the cron leaves them alone too. Business hours and the booking horizon
+    // stop applying at the same moment and for the same reason: they are
+    // client self-service rules.
+    const soon = start.getTime() < Date.now() + LEAD_TIME_HOURS * 3600_000;
+    if (!soon && windowProblem(iso, durationMin)) { invalid++; continue; }
     entries.push({
       path: `availability/${slotIdFor(start)}`,
-      data: { start, durationMin, state: 'open' },
+      data: { start, durationMin, state: 'open', ...(soon ? { adminCreated: true } : {}) },
     });
   }
   const { created, skipped } = await batchCreate(env, entries);
@@ -6550,11 +6661,18 @@ async function handleDeleteSlot(request, env, url) {
   return json({ ok: true });
 }
 
-// POST /api/admin/case-update  Body: { caseId, action, joinLink? }
+// POST /api/admin/case-update  Body: { caseId, action, joinLink?, paidCents?, tierCents? }
 async function handleCaseUpdate(request, env) {
   const admin = await requireAdmin(request, env);
   if (!admin) return json({ error: 'Not found' }, 404);
-  const { caseId, action, joinLink } = await request.json().catch(() => ({}));
+  // The whole body is kept, not just the three fields the first actions
+  // needed. `set-paid` read `body?.paidCents` against a `body` that was never
+  // declared, so the route threw a ReferenceError before it could record
+  // anything: the rate pill on the case page had never once worked. Every
+  // action below reads from this one object now, so a new action cannot
+  // reintroduce that by naming a field the destructure does not list.
+  const body = await request.json().catch(() => ({}));
+  const { caseId, action, joinLink } = body;
   if (typeof caseId !== 'string' || !/^[\w-]{1,64}$/.test(caseId))
     return json({ error: 'Bad case id' }, 400);
   const doc = await getDoc(env, `cases/${caseId}`);
@@ -6567,6 +6685,180 @@ async function handleCaseUpdate(request, env) {
     await patchDoc(env, `cases/${caseId}`, { appointment: { joinLink: joinLink || null } }, {
       mask: ['appointment.joinLink'],
     });
+  } else if (action === 'set-paid') {
+    // WHAT THEY ACTUALLY PAID, recorded by hand (Eric, 2026-08-26). A case
+    // from before caseRateCents existed has no price on it, and the app used
+    // to infer today's price for it: a client who paid $175 read as $1,200,
+    // and the hourly built to reveal a loss reported $76/hr where the truth
+    // was $11/hr. There is no way to infer this correctly, because the price
+    // has been $175, $265 and $1,200 inside a year, so it is entered instead.
+    //
+    // Stored separately from caseRateCents rather than overwriting it: that
+    // field is what a percentage charge is a share of and what the ratchet
+    // recorded, and a hand-entered figure is a different fact with a different
+    // provenance. paidCents() on the client prefers this when it is set.
+    const cents = Math.round(Number(body?.paidCents));
+    if (!Number.isFinite(cents) || cents <= 0 || cents > 100_000_00)
+      return json({ error: 'Give an amount between $1 and $100,000.' }, 400);
+    await patchDoc(env, `cases/${caseId}`, {
+      paidOverrideCents: cents,
+      paidOverrideAt: now,
+    }, { mask: ['paidOverrideCents', 'paidOverrideAt'] });
+  } else if (action === 'open-full') {
+    // HANDS-OFF, TURNED ON BY HAND (Eric, 2026-08-26: "where to start the
+    // clock and send forms as if he paid for the enhancement through the
+    // app").
+    //
+    // Until now the only thing on earth that could set fullAccess was a
+    // Stripe webhook. A client who agreed the tier on a call and paid another
+    // way could not be given the thing he had bought: the authorisation
+    // forms, the readiness checklist and the check-in booking are all gated
+    // on this flag, so the case sat looking exactly like a standard one.
+    //
+    // This opens the same case the webhook opens, writes the same fields, and
+    // sends the same email. It is not a discount and not a price: it records
+    // what he says he collected, and the money is his to have collected
+    // however he collected it.
+    const c = doc.data;
+    if (c.fullAccess)
+      return json({ error: 'This case is already on Hands-Off Case Management.' }, 409);
+    if (c.status === 'closed') return json({ error: 'Case is closed.' }, 409);
+    // Zero is allowed on purpose: if he already took the money through the
+    // charge panel it is in extraPayments, and entering it again here would
+    // count it twice on the one figure built to reveal a loss.
+    const tier = Math.round(Number(body?.tierCents));
+    if (!Number.isFinite(tier) || tier < 0 || tier > 100_000_00)
+      return json({ error: 'Give an amount between $0 and $100,000.' }, 400);
+    // WHEN THE MONTH STARTS, chosen rather than assumed (Eric, 2026-08-26:
+    // "I want to be prompted to set the clock or when the start time is. This
+    // one is going to be delayed slightly.").
+    //
+    // fullAccessAt IS the start: fullAccessWindowEnd reads it as the window's
+    // origin, and every other reader of it either does the same arithmetic
+    // (the admin and client mirrors) or only formats it. A future date is
+    // therefore correct on all of them, and both consumers of the window end
+    // behave: the close sweep waits longer before wrapping the case up, and
+    // check-in booking gets a later ceiling. The one thing it breaks is a
+    // sentence on the client's page that says the window "started", which is
+    // fixed in public/js/case.js in the same change.
+    //
+    // fullAccessOpenedAt records the day he pressed the button, so the record
+    // still knows the difference between agreeing and beginning.
+    let startAt = now;
+    if (body?.startAt) {
+      const t = new Date(body.startAt);
+      if (Number.isNaN(t.getTime()))
+        return json({ error: 'That start date did not make sense.' }, 400);
+      const YEAR = 365 * 86_400_000;
+      if (t.getTime() < now.getTime() - YEAR || t.getTime() > now.getTime() + YEAR)
+        return json({ error: 'Pick a start date within a year either side of today.' }, 400);
+      startAt = t;
+    }
+    const startsLater = startAt.getTime() > now.getTime() + 12 * 3600_000;
+    // HOW LONG THEY AGREED. Default is the standard month, so leaving it alone
+    // behaves exactly as before. A fortnight, six weeks and ninety days are
+    // all things he has agreed on a call, and none of them was expressible.
+    const days = body?.days === undefined || body.days === null || body.days === ''
+      ? FULL_WINDOW_DAYS : Math.round(Number(body.days));
+    if (!Number.isFinite(days) || days < 1 || days > 365)
+      return json({ error: 'Give a length between 1 and 365 days.' }, 400);
+    // The same shape the webhook writes: the case fee this client actually
+    // paid, plus what they paid for the tier. caseRateCents is the standard
+    // rate kept as the base for percentage charges, so an old case with no
+    // rate on it falls back to what Stripe charged rather than to today's
+    // price list.
+    const paidForCase = Number(c.caseRateCents) > 0
+      ? Number(c.caseRateCents)
+      : (Number(c.stripe?.amountTotal) || 0);
+    const payments = Array.isArray(c.extraPayments) ? c.extraPayments : [];
+    if (tier > 0) {
+      payments.push({
+        kind: 'fullaccess', amountCents: tier, at: now,
+        // Says on the ledger line where the money came from, because a
+        // payment with no Stripe session against it looks like a mistake to
+        // anybody reading it later, including him.
+        byHand: true, label: 'Hands-Off Case Management, paid outside the app',
+      });
+    }
+    const req = c.fullAccessRequest;
+    await patchDoc(env, `cases/${caseId}`, {
+      fullAccess: true,
+      fullAccessAt: startAt,
+      fullAccessOpenedAt: now,
+      fullAccessDays: days,
+      fullAccessRateCents: paidForCase + tier,
+      fullAccessMonths: 1,
+      fullAccessByHand: true,
+      pendingFullAccess: null,
+      fullAccessRequest: req ? { ...req, state: 'started', startedAt: now } : null,
+      extraPayments: payments,
+    }, {
+      mask: ['fullAccess', 'fullAccessAt', 'fullAccessOpenedAt', 'fullAccessDays',
+        'fullAccessRateCents', 'fullAccessMonths', 'fullAccessByHand',
+        'pendingFullAccess', 'fullAccessRequest', 'extraPayments'],
+    });
+    // The email the webhook sends, with one sentence added when the month has
+    // not begun yet. The client should not be able to tell which way the
+    // money reached him, and the only thing that matters to them either way is
+    // the sentence about signing: the forms go out NOW even when the month
+    // starts later, because a records request takes weeks and the paperwork
+    // moving early is the whole point of asking for it early.
+    if (c.clientEmail) {
+      // 'Etc/GMT+7', the literal every other formatter in this file uses.
+      // MOUNTAIN_TZ is a constant in the browser modules and does NOT exist
+      // here, and node --check does not catch an undeclared identifier: it
+      // would have thrown at send time, which is the same ReferenceError this
+      // very route was fixed for two hours ago.
+      const dayFmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Etc/GMT+7', month: 'long', day: 'numeric',
+      });
+      await sendEmail(env, {
+        to: c.clientEmail,
+        subject: 'Hands-Off Case Management is open on your case',
+        html: `<p>Your case is now on Hands-Off Case Management. I do the legwork from here: I work directly with your clinics and your insurer rather than alongside you.</p>
+        ${startsLater ? `<p>Your month runs from ${dayFmt.format(startAt)}. Please sign before then anyway: a records request can take weeks to come back, so the sooner the paperwork is in, the more of your month is spent on your case instead of on waiting.</p>` : ''}
+        <p>The next thing I need is your authorisation, which is waiting on your case page. Nothing can start until that is signed.</p>
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
+      }).catch(() => {});
+    }
+  } else if (action === 'set-agreement') {
+    // CHANGING THE AGREEMENT AFTER IT IS OPEN. Eric, 2026-08-26: "that might
+    // vary per client and length of time". An agreement made on a call gets
+    // renegotiated on a later call, and until now the length and the start
+    // were set once and then frozen: a mistyped date or a fortnight that
+    // became six weeks meant a case that could never say the truth again.
+    //
+    // Deliberately NOT open-full. This moves no money, sends no email and
+    // does not touch fullAccess itself: it corrects the record of a deal.
+    // The amount is handled by the rate pill (set-paid), which is the one
+    // control for "what have they actually paid me".
+    const c = doc.data;
+    if (!c.fullAccess)
+      return json({ error: 'This case is not on Hands-Off Case Management.' }, 409);
+    const fields = {};
+    if (body?.days !== undefined && body.days !== null && body.days !== '') {
+      const days = Math.round(Number(body.days));
+      if (!Number.isFinite(days) || days < 1 || days > 365)
+        return json({ error: 'Give a length between 1 and 365 days.' }, 400);
+      fields.fullAccessDays = days;
+    }
+    if (body?.startAt) {
+      const t = new Date(body.startAt);
+      if (Number.isNaN(t.getTime()))
+        return json({ error: 'That start date did not make sense.' }, 400);
+      const YEAR = 365 * 86_400_000;
+      if (Math.abs(t.getTime() - now.getTime()) > YEAR)
+        return json({ error: 'Pick a start date within a year either side of today.' }, 400);
+      fields.fullAccessAt = t;
+    }
+    if (!Object.keys(fields).length)
+      return json({ error: 'Nothing to change.' }, 400);
+    // Moving the window means the week's notice is about a different date, so
+    // it gets to fire again. Otherwise a case whose month was extended by hand
+    // would have been warned about a deadline that no longer exists, once,
+    // and then never again.
+    fields.windowEndWarned = null;
+    await patchDoc(env, `cases/${caseId}`, fields, { mask: Object.keys(fields) });
   } else if (action === 'recording-uploaded') {
     // The call happened: start the report clock. Admin-side the deadline is a
     // strict 7 calendar days; the client is told "7 business days, some take
@@ -6915,16 +7207,38 @@ async function handleAdminSchedule(request, env) {
     return json({ ok: true, scheduled: when });
   }
 
-  // mode === 'charge' — a custom-priced session (a percentage of their rate).
-  if (!CHARGE_PCTS.includes(pct)) return json({ error: 'Pick a rate (0–150% in 25% steps).' }, 400);
+  // mode === 'charge' — a custom-priced session.
+  //
+  // AN AMOUNT HE TYPES BEATS A PERCENTAGE (Eric, 2026-08-26: "I need to charge
+  // a client 3400, verbally agreed to on call. Is there a place I can do this
+  // manually"). There was not. The percentages stop at 150%, and against that
+  // client's rate the ceiling was $1,800 where he needed $3,400, which is 283%.
+  // A figure agreed on a call is not a share of a list price and there is no
+  // percentage that expresses it.
+  //
+  // The percentages stay, because a share of the case fee is the common case
+  // and a dropdown is faster than typing. `amountCents` simply wins when it is
+  // there. Stripe needs no new work either way: the line item below has always
+  // been price_data with unit_amount, so it has always been able to carry any
+  // number. The only thing missing was a way to say one.
+  const typedCents = body?.amountCents === undefined ? null : Math.round(Number(body.amountCents));
+  if (typedCents !== null
+      && (!Number.isFinite(typedCents) || typedCents < 100 || typedCents > 100_000_00))
+    return json({ error: 'Give an amount between $1 and $100,000.' }, 400);
+  if (typedCents === null && !CHARGE_PCTS.includes(pct))
+    return json({ error: 'Pick a rate (0–150% in 25% steps), or type an amount.' }, 400);
   const label =
     typeof tagline === 'string' && tagline.trim()
       ? tagline.trim().slice(0, 120)
       : 'Advocacy Session';
-  // A share of what THEY paid. A case from before this field existed falls
-  // back to the current rate, which since rates have only come down errs in the
-  // client's favour rather than against them.
-  const amountCents = Math.round((pct * (c.caseRateCents || CASE_PRICE_CENTS)) / 100);
+  // A share of what THEY paid. A case from before this field existed falls back
+  // to the current rate. Note this is the same fallback that made the hourly
+  // read $76/hr for a $175 client: acceptable HERE, because a percentage of a
+  // list price is a quote he is choosing to send, not a claim about money that
+  // already moved. When he knows the real figure he types it instead.
+  const amountCents = typedCents !== null
+    ? typedCents
+    : Math.round((pct * (c.caseRateCents || CASE_PRICE_CENTS)) / 100);
 
   if (amountCents === 0) {
     await bookSlot();
@@ -7126,6 +7440,59 @@ export async function runFollowUpWarnings(env, now = Date.now()) {
     }
     await patchDoc(env, `cases/${row.id}`, { followUpExpiryWarned: true }, {
       mask: ['followUpExpiryWarned'],
+    });
+  }
+}
+
+/**
+ * A week's notice that a Hands-Off month is ending.
+ *
+ * Modelled on runFollowUpWarnings above, which is the shape every warning in
+ * this file uses: query, skip what is already handled, skip what has already
+ * lapsed, skip what is not yet due, send once, then stamp a flag so it is
+ * never sent twice.
+ *
+ * It reads fullAccessWindowEnd, the same function the auto-close sweep and
+ * the check-in ceiling read, so the date in the email is the date the system
+ * will actually act on. A deadline email with the wrong deadline is worse
+ * than none, which is the lesson written into its sibling.
+ *
+ * NOT a dunning notice. He sells this as a rhythm you stop whenever you like,
+ * so it says what happens if they do nothing and leaves it there.
+ */
+export async function runWindowWarnings(env, now = Date.now()) {
+  const rows = await queryDocs(env, 'cases', [['fullAccess', 'EQUAL', true]], 100);
+  for (const row of rows) {
+    const c = row.data;
+    if (c.status === 'closed' || c.windowEndWarned) continue;
+    // A paused case is not running its window down, so it is not ending.
+    if (c.hold?.pausedAt) continue;
+    // A checkout already in flight is somebody mid-renewal. Emailing them
+    // that their month is about to end reads as a bill they already paid.
+    if (c.pendingExtend) continue;
+    const end = fullAccessWindowEnd(c);
+    if (!end) continue;
+    const at = end.getTime();
+    // Already over: no email after the fact. The renewal card is still on
+    // their page and still works, which is the right way to find out late.
+    if (now >= at) continue;
+    if (at - now > FULL_WINDOW_WARN_DAYS * 86_400_000) continue;
+    if (c.clientEmail) {
+      await sendEmail(env, {
+        to: c.clientEmail,
+        subject: 'Your Hands-Off month ends next week',
+        html: `<p>Your coordination window is coming to an end:</p>
+          ${whenHtml(end, c.clientTz)}
+          <p>If you want me to carry on, you can add another month from your
+          case page. Same price, same rhythm, and the check-ins and the calls
+          on your behalf continue as they are.</p>
+          <p>If you would rather stop here, do nothing. Your case wraps up and
+          your whole file stays yours to keep.</p>
+          <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+      });
+    }
+    await patchDoc(env, `cases/${row.id}`, { windowEndWarned: true }, {
+      mask: ['windowEndWarned'],
     });
   }
 }

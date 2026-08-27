@@ -330,6 +330,603 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
     /data-rate="tele"/.test(readFileSync(__j(__REPO, 'public/js/book.js'), 'utf8')));
 }
 
+// ---- R1-R6: the hourly must never invent what a client paid -------------
+// Eric, 2026-08-26, on a live case: "Current client pricing is incorrect for
+// the hours I've spent. He paid 175 from the old pricing."
+//
+// The case read $76.12/hr at 15h 45m. The truth was $11.11/hr. paidCents()
+// fell back to today's CASE_PRICE_CENTS for any case with no caseRateCents,
+// on the argument, written in the comment, that rates had only ever come
+// down. They had not: $175, $265, $1,200 inside a year. So the fallback
+// inflated a legacy client's payment sevenfold, and it did it on the ONE
+// figure built to reveal a loss, in the direction that hides one. It reported
+// comfortably above the $75 floor for a case running at a seventh of it.
+//
+// The functions are LIFTED from the shipped file and run, not pattern
+// matched: this is arithmetic about his money and a regex would pass on a
+// version that computed the wrong number.
+{
+  const ADMINSRC = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
+  const lift = (name, src) => {
+    const m = src.match(new RegExp(`(?:function ${name}\\([\\s\\S]*?\\n\\}|const ${name} = [^;]+;)`));
+    return m ? m[0] : '';
+  };
+  const body = [
+    `const CASE_PRICE_CENTS = ${CASE};`,
+    lift('caseRate', ADMINSRC),
+    lift('paidCents', ADMINSRC),
+    lift('effectiveHourly', ADMINSRC),
+    'return { caseRate, paidCents, effectiveHourly };',
+  ].join('\n');
+  let api = null;
+  try { api = new Function(body)(); } catch (e) { /* reported below */ }
+  check('R1 the three money functions still lift and run', !!api && typeof api.paidCents === 'function');
+
+  if (api) {
+    const HOURS = 15.75, SECS = Math.round(HOURS * 3600);
+    // The real shape of Christopher's case: no recorded rate, paid $175.
+    const legacy = { clientName: 'C', extraPayments: [] };
+    check('R2 a case with no recorded rate reports NOTHING paid, not today\'s price',
+      api.paidCents(legacy) === null, String(api.paidCents(legacy)));
+    check('R3 and therefore no hourly at all, rather than a confident wrong one',
+      api.effectiveHourly(legacy, SECS) === null, String(api.effectiveHourly(legacy, SECS)));
+    // The exact number he was shown, which must now be impossible.
+    const wrong = Math.round(CASE / HOURS);
+    check('R4 the figure he was shown is no longer reachable from that case',
+      api.effectiveHourly(legacy, SECS) !== wrong, `$${(wrong / 100).toFixed(2)}/hr`);
+
+    // Once he records it, the truth.
+    const fixed = { ...legacy, paidOverrideCents: 17500 };
+    const hourly = api.effectiveHourly(fixed, SECS);
+    check('R5 a recorded payment gives the real hourly',
+      hourly === Math.round(17500 / HOURS), `$${(hourly / 100).toFixed(2)}/hr`);
+    check('R6 and it lands under the floor, which is the whole point',
+      hourly < num('HOURLY_FLOOR_CENTS'),
+      `$${(hourly / 100).toFixed(2)}/hr vs a $${(num('HOURLY_FLOOR_CENTS') / 100).toFixed(0)}/hr floor`);
+
+    // A modern case is untouched: it has a recorded rate and still reports it.
+    const modern = { caseRateCents: 120000, extraPayments: [] };
+    check('R7 a case booked at a recorded rate is unaffected',
+      api.paidCents(modern) === 120000, String(api.paidCents(modern)));
+  }
+}
+
+// ---- S1-S6: he can charge an amount he agreed on a call ------------------
+// Eric, 2026-08-26: "I need to charge a client 3400 (verbally agreed to on
+// call). Is there a place I can do this manually." There was not. The only
+// manual charge was a percentage of the case rate capped at 150%, which
+// against a $1,200 case is $1,800, and $3,400 is 283%. No percentage in the
+// list expresses a figure agreed on a phone call, and none ever could.
+{
+  const PCTS = JSON.parse((SRC.match(/const CHARGE_PCTS = (\[[^\]]+\])/) || [])[1] || '[]');
+  const ceiling = Math.max(...PCTS) * CASE / 100;
+  check('S1 the percentage ladder genuinely could not reach $3,400',
+    ceiling < 340000, `ceiling $${(ceiling / 100).toLocaleString()}`);
+  check('S2 a typed amount is accepted and beats the percentage',
+    /const typedCents = body\?\.amountCents === undefined \? null : Math\.round\(Number\(body\.amountCents\)\);/.test(SRC)
+    && /const amountCents = typedCents !== null\n\s*\? typedCents/.test(SRC));
+  check('S3 it is bounded, because this moves somebody money',
+    /typedCents < 100 \|\| typedCents > 100_000_00/.test(SRC));
+  check('S4 the percentages still work when nothing is typed',
+    /if \(typedCents === null && !CHARGE_PCTS\.includes\(pct\)\)/.test(SRC));
+  // The half that stops this becoming the next $76/hr: the money has to land
+  // on the case by itself, or he is back to remembering.
+  check('S5 the confirmed payment records what STRIPE charged, not what was asked',
+    /amountCents: session\.amount_total \|\| 0,\n\s*label: m\.tagline/.test(SRC));
+  const ADMINSRC = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
+  check('S6 the page checks the amount and confirms it before sending',
+    /id="sched-amt"/.test(ADMINSRC)
+    && /n < 1 \|\| n > 100000/.test(ADMINSRC)
+    && /confirm\(`Charge \$\{data\?\.clientName/.test(ADMINSRC));
+}
+
+// ---- T1-T9: recording what a client paid, and opening the tier by hand ----
+// Eric, 2026-08-26: "I fucked up the rate settings and idk where to change his
+// amount paid (totaling 3400). And then where to start the clock and send
+// forms as if he paid for the enhancement through the app."
+//
+// He could not find it because it was not there, twice over.
+//
+// ONE. `set-paid` read `body?.paidCents` inside handleCaseUpdate, which
+// destructured `{ caseId, action, joinLink }` and never declared `body`. The
+// Worker is an ESM module, so that is a ReferenceError thrown before anything
+// is written: the "rate not recorded" pill on the case page had NEVER once
+// worked, and the demo had never implemented the action at all, so the mirror
+// agreed with a Worker that was itself throwing.
+//
+// TWO. `fullAccess` had exactly two writers in the whole system and both were
+// behind a Stripe webhook. A client who agreed the tier on a call and paid
+// another way could not be given what he had bought, because the insurer
+// authorisation, the readiness checklist and check-in booking are all gated on
+// that flag.
+//
+// So the route is LIFTED AND RUN here, not pattern matched. A regex for
+// `const body` would have passed on the broken version the day it shipped, and
+// the only thing that catches a ReferenceError is calling the function.
+{
+  const fn = (SRC.match(/async function handleCaseUpdate\(request, env\) \{[\s\S]*?\n\}/) || [''])[0];
+  check('T1 handleCaseUpdate can be lifted out of the shipped Worker', fn.length > 0);
+
+  // Stubs for exactly what these two paths touch. patchDoc records rather
+  // than writes, so the assertions below are about the fields that would
+  // reach Firestore.
+  const writes = [];
+  const emails = [];
+  const harness = (caseDoc) => `
+    // Module-scope constants the lifted route reads. Their VALUES are read out
+    // of the Worker source above rather than typed here, so a stub can never
+    // quietly disagree with the constant it stands in for, which is the way a
+    // harness starts hiding the bug it exists to find.
+    const FULL_WINDOW_DAYS = ${num('FULL_WINDOW_DAYS')};
+    const json = (o, s) => ({ status: s || 200, body: o });
+    const requireAdmin = async () => ({ uid: 'admin' });
+    const getDoc = async () => (${JSON.stringify(caseDoc)} === null ? null : { data: ${JSON.stringify(caseDoc)} });
+    const patchDoc = async (env, path, fields) => { __writes.push({ path, fields }); return true; };
+    const sendEmail = async (env, m) => { __emails.push(m); };
+    const queryDocs = async () => [];
+    const notifyUser = async () => {};
+    const firstName = (n) => String(n || '').split(' ')[0];
+    ${fn}
+    return handleCaseUpdate;
+  `;
+  const run = async (caseDoc, body) => {
+    writes.length = 0; emails.length = 0;
+    const make = new Function('__writes', '__emails', harness(caseDoc));
+    const handler = make(writes, emails);
+    const request = { json: async () => ({ caseId: 'abc', ...body }) };
+    try {
+      const res = await handler(request, { PUBLIC_BASE_URL: 'https://example.invalid' });
+      return { res, writes: writes.slice(), emails: emails.slice() };
+    } catch (e) {
+      // Empty arrays, not undefined. A throw here is the exact failure T2
+      // exists to catch, and the first version of this let the throw take the
+      // whole suite down with a TypeError two checks later, which hid T3 to
+      // T13 behind it. A check that hides its neighbours when it fires is
+      // worth less than no check.
+      return { threw: `${e.constructor.name}: ${e.message}`, writes: [], emails: [] };
+    }
+  };
+
+  const CASEDOC = { status: 'open', clientEmail: 'c@example.invalid', clientName: 'Jordan Avery', caseRateCents: 120000 };
+
+  // T2 IS THE ONE. Before the fix this answered
+  // "ReferenceError: body is not defined".
+  const paid = await run(CASEDOC, { action: 'set-paid', paidCents: 340000 });
+  check('T2 set-paid RECORDS an amount instead of throwing before it can',
+    !paid.threw && paid.res?.status === 200,
+    paid.threw || `status ${paid.res?.status}: ${JSON.stringify(paid.res?.body)}`);
+  check('T3 and the amount it records is the amount it was given, to the cent',
+    !paid.threw && paid.writes.some((w) => w.fields.paidOverrideCents === 340000),
+    JSON.stringify(paid.writes.map((w) => w.fields)).slice(0, 120));
+  const silly = await run(CASEDOC, { action: 'set-paid', paidCents: 99_999_999_99 });
+  check('T4 an impossible amount is refused and nothing is written',
+    !silly.threw && silly.res?.status === 400 && silly.writes.length === 0,
+    silly.threw || `status ${silly.res?.status}, ${silly.writes.length} write(s)`);
+
+  const open = await run(CASEDOC, { action: 'open-full', tierCents: 340000 });
+  const of = open.writes.find((w) => w.fields.fullAccess === true);
+  check('T5 the tier can be opened by hand at all',
+    !open.threw && open.res?.status === 200 && !!of,
+    open.threw || `status ${open.res?.status}`);
+  // The two rate fields mean different things and must never be summed
+  // wrongly: fullAccessRateCents is what this client has paid IN TOTAL, so it
+  // is the case fee plus the tier money and nothing else.
+  check('T6 it records the case fee plus what he typed, and not today\'s price',
+    !!of && of.fields.fullAccessRateCents === 120000 + 340000,
+    of ? String(of.fields.fullAccessRateCents) : 'no write');
+  check('T7 the ledger line says the money arrived outside the app',
+    !!of && (of.fields.extraPayments || []).some((x) => x.kind === 'fullaccess' && x.byHand === true && x.amountCents === 340000),
+    JSON.stringify(of?.fields.extraPayments || []).slice(0, 120));
+  // "send forms as if he paid for the enhancement through the app": the
+  // client's email has to be the webhook's email, or they can tell.
+  check('T8 the client is emailed and told to sign, exactly as a payment would',
+    open.emails.length === 1 && /Hands-Off Case Management is open/.test(open.emails[0].subject || '')
+      && /authorisation/.test(open.emails[0].html || ''),
+    JSON.stringify(open.emails.map((e) => e.subject)));
+  const twice = await run({ ...CASEDOC, fullAccess: true }, { action: 'open-full', tierCents: 340000 });
+  check('T9 a case already on the tier is refused, so nobody is billed twice',
+    !twice.threw && twice.res?.status === 409 && twice.writes.length === 0,
+    twice.threw || `status ${twice.res?.status}, ${twice.writes.length} write(s)`);
+
+  // T9a-T9e: THE MONTH CAN START LATER THAN THE DAY IT IS ARRANGED.
+  // Eric, 2026-08-26: "I want to be prompted to set the clock or when the
+  // start time is. This one is going to be delayed slightly." Forcing the
+  // start to the moment he pressed the button took the delay out of the month
+  // he had sold, silently, at 30 days a month.
+  //
+  // fullAccessAt IS the start, because fullAccessWindowEnd reads it as the
+  // window's origin and both the admin and client mirrors do the same
+  // arithmetic. So a future value has to LAND ON THAT FIELD, not beside it.
+  const FUTURE = new Date(Date.now() + 14 * 86_400_000);
+  const later = await run(CASEDOC, {
+    action: 'open-full', tierCents: 340000, startAt: FUTURE.toISOString(),
+  });
+  const lw = later.writes.find((w) => w.fields.fullAccess === true);
+  check('T9a a start date he picks is what the window runs from',
+    !!lw && new Date(lw.fields.fullAccessAt).getTime() === FUTURE.getTime(),
+    lw ? String(lw.fields.fullAccessAt) : 'no write');
+  check('T9b and the day he actually opened it is still on the record',
+    !!lw && !!lw.fields.fullAccessOpenedAt
+      && new Date(lw.fields.fullAccessOpenedAt).getTime() !== FUTURE.getTime(),
+    lw ? String(lw.fields.fullAccessOpenedAt) : 'no write');
+  // Forms now, clock later: his answer, in as many words. The email goes out
+  // the same day whatever the start, because a records request takes weeks.
+  check('T9c the client is emailed TODAY even when the month starts later',
+    later.emails.length === 1, String(later.emails.length));
+  check('T9d and that email tells them when their month begins',
+    /Your month runs from/.test(later.emails[0]?.html || ''),
+    (later.emails[0]?.html || '').slice(0, 90));
+  const silly2 = await run(CASEDOC, {
+    action: 'open-full', tierCents: 0,
+    startAt: new Date(Date.now() + 5 * 365 * 86_400_000).toISOString(),
+  });
+  check('T9e a start five years out is refused, and nothing is written',
+    !silly2.threw && silly2.res?.status === 400 && silly2.writes.length === 0,
+    silly2.threw || `status ${silly2.res?.status}, ${silly2.writes.length} write(s)`);
+  // Omitting it must keep behaving: every existing caller sends no startAt.
+  const noStart = await run(CASEDOC, { action: 'open-full', tierCents: 0 });
+  const nw = noStart.writes.find((w) => w.fields.fullAccess === true);
+  check('T9f leaving it out still opens the month today',
+    !!nw && Math.abs(new Date(nw.fields.fullAccessAt).getTime() - Date.now()) < 60_000,
+    nw ? String(nw.fields.fullAccessAt) : 'no write');
+}
+
+// ---- T9g: the client is never told a future date already happened --------
+// The one sentence a future start breaks. It read "Your window started
+// [date], the day you bought Hands-Off", which on a case opened in August for
+// a September start is two false statements in one line, on the client's own
+// page, about the thing they paid for.
+{
+  const CASESRC = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  // UPDATED 2026-08-26, not deleted. This check's intent is the WORDING: the
+  // client's page must carry a future-start sentence and must choose between
+  // it and the past-tense one. That still holds and is still checked.
+  //
+  // What it also pinned was the inline predicate,
+  // `!!boughtAt && boughtAt.getTime() > Date.now()`, which has since moved
+  // into readiness.js so the Worker, the client page and his confirmation
+  // answer one question one way. Pinning where a decision is made, rather
+  // than that it is made, is what makes a check fight a correct refactor.
+  // Y1 to Y8 below now cover the predicate itself, and they RUN it.
+  check('T9g the client page has a future-start wording and picks between them',
+    /const startsLater = handsOffStartsLater\(c\);/.test(CASESRC)
+    && /Your month starts \$\{esc\(dayFmt\.format\(boughtAt\)\)\}/.test(CASESRC)
+    && /Your window started \$\{esc\(dayFmt\.format\(boughtAt\)\)\}/.test(CASESRC)
+    && /startsLater\s*\n?\s*\?/.test(CASESRC));
+}
+
+// ---- T10-T12: the tier total must beat the original receipt ---------------
+// Found while answering him. paidCents() read `stripe.amountTotal` BEFORE it
+// read the tier total, and stripe.amountTotal is the ORIGINAL booking. So a
+// case that booked at $1,200 and then paid $3,400 for Hands-Off reported
+// $1,200 paid, and the $3,400 vanished: the upgrade also pushes a
+// `kind: 'fullaccess'` line into extraPayments, which addOns() excludes on
+// purpose to stop it being counted twice.
+//
+// Same direction as the $76/hr: it hides a loss, on the one figure built to
+// reveal one. Lifted and run, because this is arithmetic about his money.
+{
+  const ADMINSRC2 = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
+  const lift2 = (name) => {
+    const m = ADMINSRC2.match(new RegExp(`(?:function ${name}\\([\\s\\S]*?\\n\\}|const ${name} = [^;]+;)`));
+    return m ? m[0] : '';
+  };
+  let pc = null;
+  try {
+    pc = new Function([
+      `const CASE_PRICE_CENTS = ${CASE};`,
+      lift2('caseRate'),
+      lift2('paidCents'),
+      'return paidCents;',
+    ].join('\n'))();
+  } catch (e) { /* reported by T10 */ }
+  check('T10 paidCents still lifts and runs', typeof pc === 'function');
+  if (typeof pc === 'function') {
+    const upgraded = {
+      caseRateCents: 120000,
+      stripe: { amountTotal: 120000 },
+      fullAccess: true,
+      fullAccessRateCents: 460000,
+      extraPayments: [{ kind: 'fullaccess', amountCents: 340000 }],
+    };
+    check('T11 an upgraded case reports the TIER total, not the first booking',
+      pc(upgraded) === 460000, String(pc(upgraded)));
+    // The exact wrong answer, named, so this cannot quietly come back.
+    check('T12 the figure the old branch order gave is no longer reachable',
+      pc(upgraded) !== 120000, `$${(120000 / 100).toFixed(0)} was what it said`);
+  }
+}
+
+// ---- T13: the demo cannot disagree with the Worker -----------------------
+// It did, silently, for both actions: the demo answered 'Bad request' for
+// set-paid while the Worker threw, so the two halves agreed that nothing
+// happened and neither said why.
+{
+  const DEMO = readFileSync(__j(__REPO, 'public/js/demo/api.js'), 'utf8');
+  check('T13 the demo implements both new actions under the same bounds',
+    /body\.action === 'set-paid'/.test(DEMO)
+    && /body\.action === 'open-full'/.test(DEMO)
+    && /already on Hands-Off Case Management/.test(DEMO));
+}
+
+// ---- U1-U6: one window, three copies of it, and they did not agree -------
+// Found by drive-openfull, which prints the sentence the client reads and so
+// showed a month running "September 9 to November 8". Sixty days. The tier is
+// sold thirty days at a time.
+//
+//   worker/index.js  fullAccessWindowEnd   30 days, 60 for a legacy case
+//   admin-case.js    fullAccessDaysLeft    30 days for EVERY case
+//   case.js          windowEndOf           60 days for EVERY case, hardcoded
+//
+// So a client on the current tier was shown an end date a MONTH later than
+// the one the close sweep enforces, on the most expensive thing the app
+// sells, while the advocate's own card showed the right number. And a legacy
+// client, who really did buy sixty days, had them shown correctly to the
+// client and a month short to him.
+//
+// All three are RUN here against the same cases, because this is a promise to
+// a client about a date and a regex cannot tell 30 from 60.
+{
+  const ADMINSRC3 = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
+  const CASESRC3 = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  const liftFrom = (src, name) => {
+    const m = src.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`));
+    return m ? m[0] : '';
+  };
+  const CONSTS = `
+    const FULL_WINDOW_DAYS = ${num('FULL_WINDOW_DAYS')};
+    const FULL_LEGACY_WINDOW_DAYS = ${num('FULL_LEGACY_WINDOW_DAYS')};
+    const FULL_MONTHLY_FROM_AT = Date.parse('2026-08-26T00:00:00Z');
+    const FULL_WINDOW_FROM_PURCHASE_AT = Date.parse('2026-08-25T00:00:00Z');
+    const toDate = (x) => new Date(x);
+    const heldMs = (c) => Math.max(0, Number(c?.hold?.totalMs) || 0);
+  `;
+  let W = null, A = null, C = null;
+  try {
+    W = new Function(`${CONSTS}\n${liftFrom(SRC, 'fullAccessWindowEnd')}\nreturn fullAccessWindowEnd;`)();
+    A = new Function(`${CONSTS}\n${liftFrom(ADMINSRC3, 'fullAccessDaysLeft')}\nreturn fullAccessDaysLeft;`)();
+    C = new Function(`${CONSTS}\n${liftFrom(CASESRC3, 'windowEndOf')}\nreturn windowEndOf;`)();
+  } catch (e) { /* U1 reports it */ }
+  check('U1 all three window helpers lift and run',
+    typeof W === 'function' && typeof A === 'function' && typeof C === 'function');
+
+  if (W && A && C) {
+    const DAY = 86_400_000;
+    const days = (end, from) => Math.round((end.getTime() - from) / DAY);
+
+    // A case on the CURRENT tier: bought today, thirty days.
+    const boughtAt = Date.parse('2026-09-09T12:00:00Z');
+    const modern = {
+      fullAccess: true, fullAccessAt: new Date(boughtAt),
+      appointment: { start: new Date(boughtAt - 20 * DAY) },
+    };
+    check('U2 the Worker gives a current-tier case thirty days',
+      days(W(modern), boughtAt) === 30, String(days(W(modern), boughtAt)));
+    check('U3 and the CLIENT is told thirty, not sixty',
+      days(C(modern), boughtAt) === 30, `${days(C(modern), boughtAt)} days`);
+    check('U4 the client and the Worker land on the same day, to the day',
+      C(modern).getTime() === W(modern).getTime(),
+      `${C(modern).toISOString().slice(0, 10)} vs ${W(modern).toISOString().slice(0, 10)}`);
+
+    // A case sold BEFORE the reshape: sixty days, from the first call, and it
+    // keeps them. Both mirrors must say so, including his.
+    const firstCall = Date.parse('2026-07-01T12:00:00Z');
+    const legacy = {
+      fullAccess: true, fullAccessAt: new Date('2026-07-05T12:00:00Z'),
+      appointment: { start: new Date(firstCall) },
+    };
+    check('U5 a legacy case keeps the sixty days it was sold, from its first call',
+      days(W(legacy), firstCall) === 60 && C(legacy).getTime() === W(legacy).getTime(),
+      `worker ${days(W(legacy), firstCall)}, client ${days(C(legacy), firstCall)}`);
+    // His card counts down in whole days, so compare it to the Worker's end.
+    const expect = Math.max(0, Math.ceil((W(legacy).getTime() - Date.now()) / DAY));
+    check('U6 and his own card counts the same days down as the Worker',
+      A(legacy) === expect, `${A(legacy)} vs ${expect}`);
+  }
+}
+
+// ---- V1-V4: the shelf's one honest number stays honest -------------------
+// The card says "Case revenue (paid via Stripe)" and, underneath, "every one
+// backed by a confirmed payment". Its own comment calls it "the one number
+// here that must stay honest", which is why it already excludes tips.
+//
+// Opening the tier by hand pushes a payment into extraPayments that Stripe
+// never saw. Summed into that card it would have made both those sentences
+// false, and it would have done it silently, on the number he uses to know
+// what he has actually been paid. Counted on its own line instead.
+{
+  const ADMIN = readFileSync(__j(__REPO, 'public/js/admin.js'), 'utf8');
+  const fn = (ADMIN.match(/const byKind = \(want\) =>[\s\S]*?: 0\), 0\);/) || [''])[0];
+  check('V1 the shelf splits Stripe money from hand-recorded money', fn.length > 0);
+  // Built AND called inside the try. A lift that comes back half a function
+  // throws on the call, not on the construction, and an uncaught throw here
+  // would take every check after it down with it.
+  let out = null;
+  try {
+    out = new Function('cases', `${fn}\nreturn { stripe: byKind('stripe'), hand: byKind('hand') };`)([{
+      stripe: { amountTotal: 17500 },
+      extraPayments: [
+        { kind: 'fullaccess', amountCents: 340000, byHand: true },
+        { kind: 'tip', amountCents: 5000 },
+      ],
+    }]);
+  } catch (e) { /* V2 reports it */ }
+  check('V2 and that split lifts and runs', !!out);
+  if (out) {
+    // The fixture above is Christopher's shelf the day after the tier is
+    // opened by hand: $175 of real Stripe money, $3,400 he took another way,
+    // and a $50 tip that must not be counted either way.
+    check('V3 the Stripe headline still says only what Stripe took',
+      out.stripe === 17500, `$${(out.stripe / 100).toLocaleString()}`);
+    check('V4 and the money he recorded by hand is counted, separately',
+      out.hand === 340000, `$${(out.hand / 100).toLocaleString()}`);
+  }
+}
+
+// ---- Y1-Y6: three parties, one sentence about when the month begins ------
+// The Worker decides whether the client's email mentions a future month. The
+// client's case page decides whether it says the month "starts" or "started".
+// His confirmation says the same thing back to him. All three describe one
+// fact, and all three were computing it differently.
+//
+// The panel stores NOON Mountain on the day he picks, so a case opened at
+// nine in the morning to start TODAY lands three hours in the future. The
+// Worker allows twelve hours of grace and sent the ordinary email; both
+// browser halves used a bare `> Date.now()` and announced a month that starts
+// later. For three hours, on every same-day opening, which is the common one.
+//
+// AND the predicate is RUN against a Firestore Timestamp, which is how both
+// browser halves actually receive this field. `new Date(stamp)` is Invalid
+// Date, so a naive implementation returns false on every real case while
+// every source-text check stays green. That is the exact silent pass this
+// block exists to catch, so the naive version is asserted to be broken too.
+{
+  const R = readFileSync(__j(__REPO, 'public/js/readiness.js'), 'utf8');
+  const fn = (R.match(/export function handsOffStartsLater[\s\S]*?\n\}/) || [''])[0];
+  const grace = (R.match(/export const HANDS_OFF_START_GRACE_MS = ([^;]+);/) || [])[1] || '';
+  check('Y1 the shared predicate exists and carries the Worker\'s grace',
+    fn.length > 0 && /12 \* 3600_000/.test(grace), grace);
+  // The Worker's own number, read from the Worker, so the two cannot drift.
+  check('Y2 and the Worker really does allow twelve hours',
+    /startAt\.getTime\(\) > now\.getTime\(\) \+ 12 \* 3600_000/.test(SRC));
+
+  let starts = null;
+  try {
+    starts = new Function(`${fn.replace('export function', 'function')}
+      const HANDS_OFF_START_GRACE_MS = 12 * 3600_000;
+      return handsOffStartsLater;`)();
+  } catch (e) { /* Y3 reports it */ }
+  check('Y3 it lifts and runs', typeof starts === 'function');
+
+  if (starts) {
+    // A Firestore Timestamp as the browser SDK hands it over: toDate() works,
+    // valueOf() is a zero-padded sort key, new Date(it) is Invalid Date.
+    const stamp = (d) => ({ toDate: () => d, valueOf() { return '0639235968.000'; } });
+    const NOW = Date.parse('2026-09-09T16:00:00Z');            // 9am Mountain
+    const noonToday = new Date(Date.parse('2026-09-09T19:00:00Z'));
+    check('Y4 a same-day opening is NOT "starts later", grace included',
+      starts({ fullAccessAt: stamp(noonToday) }, NOW) === false,
+      String(starts({ fullAccessAt: stamp(noonToday) }, NOW)));
+    const fortnight = new Date(NOW + 14 * 86_400_000);
+    check('Y5 a genuinely delayed month IS, read off a Timestamp',
+      starts({ fullAccessAt: stamp(fortnight) }, NOW) === true,
+      String(starts({ fullAccessAt: stamp(fortnight) }, NOW)));
+    check('Y5b and off a plain string too, which is what the demo stores',
+      starts({ fullAccessAt: fortnight.toISOString() }, NOW) === true);
+    // The trap, asserted as a trap: if this ever stops being NaN the comment
+    // in readiness.js is stale and the guard below is no longer needed.
+    check('Y6 new Date(stamp) really is NaN, which is why toDate comes first',
+      Number.isNaN(new Date(stamp(fortnight)).getTime()));
+  }
+
+  // Both browser halves must USE it rather than rolling their own.
+  const CJ = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  const AJ = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
+  check('Y7 the client page and his panel both call the shared predicate',
+    /const startsLater = handsOffStartsLater\(c\);/.test(CJ)
+    && /const later = handsOffStartsLater\(data\);/.test(AJ)
+    && /handsOffStartsLater/.test(CJ.split('\n').find((l) => /^import .*readiness\.js/.test(l)) || '')
+    && /handsOffStartsLater/.test(AJ.split('\n').find((l) => /^import .*readiness\.js/.test(l)) || ''));
+  check('Y8 and neither has a bare Date.now() comparison left for this',
+    !/boughtAt\.getTime\(\) > Date\.now\(\)/.test(CJ)
+    && !/stored\.getTime\(\) > Date\.now\(\) \? 'starts'/.test(AJ));
+}
+
+// ---- A1-A9: a custom length, and an agreement he can correct --------------
+// Eric, 2026-08-26: "My current client paid for a full month's case but not
+// through the app. So again, I should be able to override with custom
+// amounts/agreements me and the client make. Because that might vary per
+// client and length of time."
+//
+// The amount was already his to type. The LENGTH was not: the window was
+// thirty days, or sixty for a legacy case, and nothing anywhere could say "we
+// agreed a fortnight" or "we agreed six weeks". fullAccessExtraDays existed
+// but had exactly one writer, the paid extension, and it means a month
+// somebody BOUGHT, which is a different fact from a length he agreed.
+//
+// fullAccessDays is the base. All three window copies read it, so it is run
+// through all three here rather than pattern matched: U1-U6 above guard that
+// the three agree, and these guard that they agree about this too.
+{
+  const ADMINSRC4 = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
+  const CASESRC4 = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  const liftFrom = (src, name) => {
+    const m = src.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`));
+    return m ? m[0] : '';
+  };
+  const CONSTS = `
+    const FULL_WINDOW_DAYS = ${num('FULL_WINDOW_DAYS')};
+    const FULL_LEGACY_WINDOW_DAYS = ${num('FULL_LEGACY_WINDOW_DAYS')};
+    const FULL_MONTHLY_FROM_AT = Date.parse('2026-08-26T00:00:00Z');
+    const FULL_WINDOW_FROM_PURCHASE_AT = Date.parse('2026-08-25T00:00:00Z');
+    const toDate = (x) => new Date(x);
+    const heldMs = (c) => Math.max(0, Number(c?.hold?.totalMs) || 0);
+  `;
+  let W = null, A = null, C = null;
+  try {
+    W = new Function(`${CONSTS}\n${liftFrom(SRC, 'fullAccessWindowEnd')}\nreturn fullAccessWindowEnd;`)();
+    A = new Function(`${CONSTS}\n${liftFrom(ADMINSRC4, 'fullAccessDaysLeft')}\nreturn fullAccessDaysLeft;`)();
+    C = new Function(`${CONSTS}\n${liftFrom(CASESRC4, 'windowEndOf')}\nreturn windowEndOf;`)();
+  } catch (e) { /* A1 reports it */ }
+  check('A1 all three window helpers still lift and run', !!W && !!A && !!C);
+
+  if (W && A && C) {
+    const DAY = 86_400_000;
+    const boughtAt = Date.parse('2026-09-09T12:00:00Z');
+    const days = (end) => Math.round((end.getTime() - boughtAt) / DAY);
+    const withAgreed = (n, extra = {}) => ({
+      fullAccess: true, fullAccessAt: new Date(boughtAt), fullAccessDays: n,
+      appointment: { start: new Date(boughtAt - 20 * DAY) }, ...extra,
+    });
+    check('A2 a fortnight he agreed is a fortnight, in the Worker',
+      days(W(withAgreed(14))) === 14, String(days(W(withAgreed(14)))));
+    check('A3 and the CLIENT is told the same fortnight',
+      C(withAgreed(14)).getTime() === W(withAgreed(14)).getTime(),
+      `${C(withAgreed(14)).toISOString().slice(0, 10)} vs ${W(withAgreed(14)).toISOString().slice(0, 10)}`);
+    check('A4 six weeks works the same way, in both',
+      days(W(withAgreed(42))) === 42
+      && C(withAgreed(42)).getTime() === W(withAgreed(42)).getTime());
+    // A month somebody BUYS still stacks ON TOP of what was agreed. The two
+    // are different facts and summing them wrongly is how a client gets days
+    // he did not pay for, or loses days he did.
+    check('A5 a bought month stacks on top of an agreed fortnight',
+      days(W(withAgreed(14, { fullAccessExtraDays: 30 }))) === 44,
+      String(days(W(withAgreed(14, { fullAccessExtraDays: 30 })))));
+    // No agreed length: nothing changes for any case that already exists.
+    const plain = {
+      fullAccess: true, fullAccessAt: new Date(boughtAt),
+      appointment: { start: new Date(boughtAt - 20 * DAY) },
+    };
+    check('A6 a case with no agreed length is still a standard month',
+      days(W(plain)) === 30 && C(plain).getTime() === W(plain).getTime(),
+      String(days(W(plain))));
+    // And his own card counts the same days down.
+    const left = Math.max(0, Math.ceil((W(withAgreed(14)).getTime() - Date.now()) / DAY));
+    check('A7 his card counts an agreed length down the same as the Worker',
+      A(withAgreed(14)) === left, `${A(withAgreed(14))} vs ${left}`);
+  }
+
+  // The route: bounded, defaulted, and correctable afterwards.
+  check('A8 opening by hand takes a length, bounded, defaulting to a month',
+    /const days = body\?\.days === undefined[\s\S]{0,120}FULL_WINDOW_DAYS : Math\.round\(Number\(body\.days\)\)/.test(SRC)
+    && /days < 1 \|\| days > 365/.test(SRC)
+    && /fullAccessDays: days,/.test(SRC));
+  check('A9 and a running agreement can be corrected without moving money',
+    /action === 'set-agreement'/.test(SRC)
+    && /This case is not on Hands-Off Case Management\./.test(SRC)
+    // It must not email or charge: the whole point is that it only edits a record.
+    && !/set-agreement[\s\S]{0,1400}sendEmail/.test(SRC));
+  const agreeBlock = (SRC.match(/action === 'set-agreement'\) \{[\s\S]*?\n  \} else if/) || [''])[0];
+  check('A10 correcting it lets the week\'s notice fire again for the new date',
+    agreeBlock.length > 0 && /fields\.windowEndWarned = null;/.test(agreeBlock),
+    agreeBlock ? 'flag not cleared' : 'branch not found');
+  const DEMO2 = readFileSync(__j(__REPO, 'public/js/demo/api.js'), 'utf8');
+  check('A11 the demo mirrors both under the same bounds',
+    /body\.action === 'set-agreement'/.test(DEMO2)
+    && /Give a length between 1 and 365 days\./.test(DEMO2)
+    && /fullAccessDays: days,/.test(DEMO2));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 process.exit(failed.length ? 1 : 0);

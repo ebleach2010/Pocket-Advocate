@@ -15,12 +15,13 @@ import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
 import { helpButton, wireHelp, openCaseHelp } from './help.js';
 import {
-  recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
-  COMMUNICATION_SCOPES,
+  recordsAuthorisationModel, representativeDesignationModel, authorityHtml,
+  SENSITIVE_CATEGORIES, COMMUNICATION_SCOPES,
 } from './authority.js';
+import { openAuthorityDocument } from './authority-doc-window.js';
 import { FULL_ACCESS_TERMS, FULL_ACCESS_PLAIN } from './tier-terms.js';
 import { wireAboutButtons } from './service-about.js';
-import { handsOffReadiness } from './readiness.js';
+import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
 import { mountFolder, folderEnter } from './folder.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
@@ -583,6 +584,14 @@ function renderProgress(el, c) {
   // rather than trusting this.
   const auth = el.querySelector('[data-authority]');
   if (auth) mountAuthority(auth, c);
+  // The deep link, spent on use. mountAuthority paints asynchronously (it
+  // fetches the signed documents first), so this waits a beat rather than
+  // opening a sheet over a panel that is still empty.
+  if (auth && signOnLoad) {
+    const kind = signOnLoad;
+    signOnLoad = '';
+    setTimeout(() => openAuthoritySheet(c, kind, () => mountAuthority(auth, c)), 400);
+  }
 
   el.querySelector('[data-ics]')?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -1226,15 +1235,39 @@ function addAboutButton(host, id) {
  * compiled-in number here and the number Stripe charges are the same.
  */
 const EXTEND_PRICE_CENTS = 340000;
+// How close to the end the renewal card appears. His number (2026-08-26).
+// The warning email goes out earlier, at FULL_WINDOW_WARN_DAYS in the Worker,
+// because a card only reaches somebody who opens the app.
+const EXTEND_OFFER_WITHIN_DAYS = 3;
+// The Worker's rule, and the Worker's numbers. These are not decoration: this
+// function tells a client the date their month runs to, and until now it said
+// SIXTY DAYS for every case, hardcoded, while the Worker gives a case bought
+// after the monthly reshape THIRTY. The advocate's own page said thirty too.
+// So a client on the current tier was shown an end date a month later than
+// the one the close sweep actually enforces, on the most expensive thing the
+// app sells. A case sold before the reshape really did buy sixty days and
+// keeps them, which is the only reason the legacy number is still here.
+const FULL_WINDOW_DAYS = 30;
+const FULL_LEGACY_WINDOW_DAYS = 60;
+const FULL_MONTHLY_FROM_AT = Date.parse('2026-08-26T00:00:00Z');
+const FULL_WINDOW_FROM_PURCHASE_AT = Date.parse('2026-08-25T00:00:00Z');
 function windowEndOf(c) {
-  // The Worker's fullAccessWindowEnd, mirrored: purchase start (first-call
-  // fallback), plus extensions, plus every stretch spent on hold.
+  // Mirrors worker/index.js fullAccessWindowEnd line for line, including the
+  // start it measures from: a case bought before the rule changed was sold
+  // sixty days FROM THE FIRST CALL, and moving that start under a live client
+  // would silently take days off something they already acknowledged.
   const bought = c?.fullAccessAt ? toDate(c.fullAccessAt).getTime() : 0;
-  const start = bought || (c?.appointment?.start ? toDate(c.appointment.start).getTime() : 0);
+  const firstCall = c?.appointment?.start ? toDate(c.appointment.start).getTime() : 0;
+  const boughtUnderNewRule = bought && bought >= FULL_WINDOW_FROM_PURCHASE_AT;
+  const start = boughtUnderNewRule ? bought : (firstCall || bought);
   if (!start) return null;
   const held = Math.max(0, Number(c?.hold?.totalMs) || 0)
     + (c?.hold?.pausedAt ? Math.max(0, Date.now() - toDate(c.hold.pausedAt).getTime()) : 0);
-  const days = 60 + (Number(c.fullAccessExtraDays) || 0);
+  // The agreed length wins when there is one, exactly as in the Worker.
+  const agreed = Number(c.fullAccessDays);
+  const base = agreed > 0 ? agreed
+    : (bought && bought >= FULL_MONTHLY_FROM_AT ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS);
+  const days = base + (Number(c.fullAccessExtraDays) || 0);
   return new Date(start + days * 86_400_000 + held);
 }
 // Stripe's success URL comes back as ?extended=1. Read it ONCE, at load, and
@@ -1243,6 +1276,23 @@ function windowEndOf(c) {
 // been confirmed yet - and it hid the buy button for the rest of the session,
 // so a client who wanted a second thirty days could not buy one (audit,
 // 2026-08-25).
+// ?sign=records or ?sign=representative opens that form the moment the page
+// settles, so a link can put a client straight on the document instead of
+// "open your case, scroll down, find the panel, tap Sign".
+//
+// READ ONCE AND STRIPPED, exactly like ?extended=1 below and for the same
+// reason: the authority panel repaints whenever its documents change, so a
+// parameter left in the address bar would reopen the sheet on top of itself
+// after every signature, and again on a back-navigation.
+let signOnLoad = (() => {
+  const want = new URLSearchParams(location.search).get('sign');
+  if (want !== 'records' && want !== 'representative') return '';
+  const u = new URL(location.href);
+  u.searchParams.delete('sign');
+  history.replaceState(null, '', u.pathname + u.search + u.hash);
+  return want;
+})();
+
 let extendJustPaid = new URLSearchParams(location.search).get('extended') === '1';
 if (extendJustPaid) {
   const u = new URL(location.href);
@@ -1288,6 +1338,24 @@ function extendOffer(c) {
         <p><a class="btn glow" href="${esc(pending.url)}">Finish checkout</a></p>
       </div>`;
   const end = windowEndOf(c);
+  // NEAR THE END, not all month. Eric, 2026-08-26: "Shouldn't that show maybe
+  // three days before their month ends?"
+  //
+  // This card carried a four-figure price and sat on the client's page from
+  // day one of a thirty-day month, which reads as a hand out rather than an
+  // offer. On a case opened for a delayed start it appeared before the month
+  // had even begun, which is the same defect a month early.
+  //
+  // FAILS OPEN. A case with no computable end still shows the card: hiding a
+  // renewal because a date could not be worked out is a silent way to lose
+  // money, and the two branches above already handle the states where
+  // something is genuinely in flight.
+  //
+  // It also stays up AFTER the window ends, until the case closes. Renewing
+  // late is sound: confirmExtensionPurchase credits the lapsed days first
+  // (worker/index.js), so a month bought late is a full thirty days from
+  // today rather than thirty days added to a date three weeks gone.
+  if (end && end.getTime() - Date.now() > EXTEND_OFFER_WITHIN_DAYS * 86_400_000) return '';
   return `
     <div class="followup-offer">
       <h3>Keep going another month?</h3>
@@ -1918,6 +1986,21 @@ async function mountAuthority(host, c) {
     // date the window actually runs to rather than a number that goes stale
     // the moment somebody buys another thirty days.
     const dayFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
+    // A month can now be set to BEGIN LATER than the day it was arranged: a
+    // case agreed on a call in August for a September start. fullAccessAt is
+    // the start, so on such a case this date is in the future and the old
+    // sentence, "Your window started ... the day you bought Hands-Off", was
+    // two lies at once. It also cannot say "the day you bought" any more,
+    // because a hand-opened case may never have gone through a checkout.
+    //
+    // The SHARED predicate, not a bare `> Date.now()`. The Worker decides
+    // whether the client's email mentions a future month using a twelve-hour
+    // grace, and the panel stores NOON Mountain, so a case opened at nine in
+    // the morning to start today sits three hours ahead: this page announced
+    // a month that "starts" while the email that had just gone out said
+    // nothing of the kind, for three hours, on every same-day opening. Three
+    // parties to one sentence, one predicate between them.
+    const startsLater = handsOffStartsLater(c);
     // Two framings, because this panel now appears on every case. The
     // readiness checklist and the window sentence are Hands-Off furniture and
     // would be nonsense on a standard case, which has no checklist and no
@@ -1935,7 +2018,9 @@ async function mountAuthority(host, c) {
         <p class="dim small">${ready.ready
     ? 'Your checklist is done. The legwork is mine from here.'
     : 'These are two separate permissions, and you can withdraw either one at any time. How fast you finish is up to you.'}
-          ${boughtAt ? `Your window started ${esc(dayFmt.format(boughtAt))}, the day you bought Hands-Off${windowEndOf(c) ? `, and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. The clock runs whether or not this list is done.` : ''}</p>`
+          ${boughtAt ? (startsLater
+    ? `Your month starts ${esc(dayFmt.format(boughtAt))}${windowEndOf(c) ? ` and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. Signing before then is worth doing: a records request can take weeks to come back, so the sooner these are in, the more of your month is spent on your case instead of on waiting.`
+    : `Your window started ${esc(dayFmt.format(boughtAt))}${windowEndOf(c) ? `, and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. The clock runs whether or not this list is done.`) : ''}</p>`
     : `<p class="dim small">You can upload records yourself at any time. This form
           is the other way: it lets a clinic send them to me directly, and lets me
           call and ask for what is missing, so you are not chasing a fax machine.
@@ -2072,11 +2157,27 @@ function openAuthoritySheet(c, kind, onDone) {
           <input type="text" data-f="clinicAddress" maxlength="400"></label>
         <label class="dim small">Their phone, if you have it
           <input type="tel" data-f="clinicPhone" maxlength="40"></label>
-        <div class="row" style="gap:.5rem;">
-          <label class="dim small" style="flex:1;">Records from
-            <input type="date" data-f="fromDate" max="${esc(mstToday())}"></label>
-          <label class="dim small" style="flex:1;">Through
-            <input type="date" data-f="toDate" max="${esc(mstToday())}"></label>
+        <!-- ALL THE RECORDS, as the default and as an explicit choice.
+             Eric, 2026-08-27: "there should be a tick box for 'all available
+             records' that overrides the dates", and "the cramping of the
+             dates from/through fields". Both are the same fix: two date
+             inputs side by side at 390px squeeze their own labels, and most
+             clients want the whole file anyway, so the range is hidden until
+             somebody actually wants one.
+             Ticked, this sends no dates at all, and the document already
+             reads "Records covering the whole period of my care" when it has
+             none. No new wording, so the legal text is untouched. -->
+        <label class="agreement-check" style="align-items:flex-start;">
+          <input type="checkbox" data-all-records checked>
+          <span><strong>All the records they have</strong><br>
+            <span class="dim small">The whole period of your care. Untick this
+            if you only want a date range.</span></span>
+        </label>
+        <div data-date-range hidden>
+          <label class="dim small" style="display:block; margin-bottom:.45rem;">Records from
+            <input type="date" data-f="fromDate" max="${esc(mstToday())}" style="display:block; width:100%;"></label>
+          <label class="dim small" style="display:block;">Through
+            <input type="date" data-f="toDate" max="${esc(mstToday())}" style="display:block; width:100%;"></label>
         </div>
         <p class="dim small" style="margin:.8rem 0 .3rem;">Some records need your
           specific permission and are left out unless you tick them. Nothing here
@@ -2104,7 +2205,7 @@ function openAuthoritySheet(c, kind, onDone) {
       ` : ''}
       <details class="agreement" style="margin:.9rem 0 .6rem;">
         <summary><span class="agreement-title">Read the whole form</span></summary>
-        <div class="agreement-body"><pre class="auth-doc" data-preview></pre></div>
+        <div class="agreement-body"><div class="auth-doc" data-preview></div></div>
       </details>
       <label class="dim small">Type your full name to sign
         <input type="text" data-f="signedName" maxlength="120" placeholder="${esc(c.clientName || 'Your full name')}"></label>
@@ -2136,8 +2237,30 @@ function openAuthoritySheet(c, kind, onDone) {
       planName: val('planName'), memberId: val('memberId'),
       categories: cats(), scopes: scopesOf(), signedName: val('signedName'),
     };
-    preview.textContent = isRecords ? recordsAuthorisation(o) : representativeDesignation(o);
+    // The SAME renderer the printed page uses, so what they read before
+    // signing is what comes out afterwards. It was textContent of a monospace
+    // <pre>, which is what made a legal form look like a terminal log.
+    preview.innerHTML = authorityHtml(isRecords
+      ? recordsAuthorisationModel(o) : representativeDesignationModel(o));
   };
+  // The tick owns the range. Ticking it CLEARS the dates rather than merely
+  // hiding them, because a hidden field that still holds a value is a date on
+  // a legal document that nobody can see.
+  const allBox = overlay.querySelector('[data-all-records]');
+  const rangeWrap = overlay.querySelector('[data-date-range]');
+  const syncRange = () => {
+    if (!allBox || !rangeWrap) return;
+    rangeWrap.hidden = allBox.checked;
+    if (allBox.checked) {
+      for (const f of ['fromDate', 'toDate']) {
+        const el = overlay.querySelector(`[data-f="${f}"]`);
+        if (el) el.value = '';
+      }
+    }
+  };
+  allBox?.addEventListener('change', () => { syncRange(); repaint(); });
+  syncRange();
+
   overlay.addEventListener('input', repaint);
   overlay.addEventListener('change', repaint);
   repaint();
@@ -2183,26 +2306,47 @@ function openAuthoritySheet(c, kind, onDone) {
     for (const el of overlay.querySelectorAll('.field-bad')) {
       el.classList.remove('field-bad');
       el.removeAttribute('aria-invalid');
+      el.removeAttribute('aria-errormessage');
     }
-    const mark = (sel) => {
+    const reasons = [];
+    // EVERY MARK CARRIES ITS REASON. Eric, 2026-08-27: "Biggest issue is
+    // saying the form isn't filled out completely when it is." It was filled
+    // out. He had typed his own name on a case belonging to somebody else, so
+    // the name check failed, and the one generic sentence this gate showed for
+    // every possible failure called that "incomplete". A client who mistypes
+    // their own name would read the same thing and have no idea what to do.
+    const mark = (sel, why) => {
       const el = overlay.querySelector(sel);
       if (!el) return;
       el.classList.add('field-bad');
       // Colour alone is not an error message. On contrast the border is a
       // one-pixel luminance step, and a screen reader saw nothing at all.
       el.setAttribute('aria-invalid', 'true');
+      if (why) el.setAttribute('aria-errormessage', why);
       bad.push(el);
+      if (why && !reasons.includes(why)) reasons.push(why);
+    };
+    const LABEL = {
+      clinicName: 'the clinic or hospital name',
+      planName: 'your insurance plan or company',
+      memberId: 'your member or policy ID',
+      signedName: 'your full name',
     };
     const need = isRecords ? ['clinicName', 'signedName'] : ['planName', 'memberId', 'signedName'];
-    for (const f of need) if (!val(f)) mark(`[data-f="${f}"]`);
+    for (const f of need) if (!val(f)) mark(`[data-f="${f}"]`, `Fill in ${LABEL[f]}.`);
     // The Worker requires the typed name to match the name on the case, and
     // requires two characters. Mirror both here: without them the button
     // disabled, the POST 400ed, and the message landed as plain text with
     // nothing reddened and nothing scrolled to - the dead end this gate
     // exists to remove.
     const typed = val('signedName');
-    if (typed && (typed.length < 2 || (c.clientName && !nameMatches(typed, c.clientName))))
-      mark('[data-f="signedName"]');
+    if (typed && typed.length < 2) mark('[data-f="signedName"]', 'Type your full name.');
+    else if (typed && c.clientName && !nameMatches(typed, c.clientName)) {
+      // Name the name. "Incomplete" is what this used to say, and it sent him
+      // looking for an empty field that did not exist.
+      mark('[data-f="signedName"]',
+        `The name has to match the one on this case, ${c.clientName}. Type it the way it appears there.`);
+    }
     if (isRecords) {
       // MST, the same clock the document prints in. Comparing YYYY-MM-DD
       // strings keeps Date parsing out of the gate entirely, and stops a
@@ -2212,23 +2356,42 @@ function openAuthoritySheet(c, kind, onDone) {
       for (const f of ['fromDate', 'toDate']) {
         const v = val(f);
         if (!v) continue;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || v > today) mark(`[data-f="${f}"]`);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || v > today) {
+          mark(`[data-f="${f}"]`, 'A date cannot be in the future.');
+        }
       }
       const from = val('fromDate'); const to = val('toDate');
-      if (from && to && from > to) { mark('[data-f="fromDate"]'); mark('[data-f="toDate"]'); }
+      if (from && to && from > to) {
+        mark('[data-f="fromDate"]', 'The first date has to come before the second.');
+        mark('[data-f="toDate"]', 'The first date has to come before the second.');
+      }
+      // Asking for a range and naming no dates is not a request for a range.
+      // The tick above is the way to say "everything".
+      if (allBox && !allBox.checked && !from && !to) {
+        mark('[data-f="fromDate"]',
+          'Give at least one date, or tick "All the records they have".');
+      }
       // A document that authorises nothing is not a document. The boxes
       // arrive ticked, so this only fires for someone who deliberately
       // cleared all three - and it tells them so rather than silently
       // signing them up to all of it.
-      if (!scopesOf().length) mark('[data-scope="discuss"]');
+      if (!scopesOf().length) {
+        mark('[data-scope="discuss"]',
+          'Tick at least one thing you are allowing, or this form authorises nothing.');
+      }
     }
-    if (!signatureImage) mark('[data-sig-open]');
-    return bad;
+    if (!signatureImage) mark('[data-sig-open]', 'Tap the box and sign with your finger.');
+    return { bad, reasons };
   };
 
   const opener = document.activeElement;
+  // Lock the page behind the sheet while it is open, the same as the lightbox
+  // and the full chat. Removed in close(), including the Escape and
+  // click-outside routes, so a sheet can never leave the page frozen.
+  document.body.classList.add('sheet-open');
   const close = () => {
     overlay.remove();
+    document.body.classList.remove('sheet-open');
     document.removeEventListener('keydown', onKey);
     if (opener?.isConnected) opener.focus();
   };
@@ -2240,9 +2403,14 @@ function openAuthoritySheet(c, kind, onDone) {
     const btn = overlay.querySelector('[data-sign]');
     const err = overlay.querySelector('[data-sheet-error]');
     err.hidden = true;
-    const bad = validateSheet();
+    const { bad, reasons } = validateSheet();
     if (bad.length) {
-      err.textContent = 'Your document is incomplete. please review the full document and be sure you did not miss any areas requiring your selection or signature.';
+      // What is actually wrong, in the order it appears on the form. The old
+      // sentence was the same for every failure and sent him hunting for a
+      // blank field when the real problem was a name that did not match.
+      err.textContent = reasons.length
+        ? reasons.join(' ')
+        : 'Something on this form still needs your attention. The fields to fix are outlined below.';
       err.hidden = false;
       bad[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
@@ -2487,30 +2655,19 @@ function signatureInk(item) {
 async function printAuthority(c, item) {
   if (!item) return;
   // The list no longer carries the signature blobs, so the one document
-  // being printed asks for its own. A failed fetch prints the form without
-  // the ink rather than not printing at all.
+  // being printed asks for its own. A failed fetch shows the form without
+  // the ink rather than not showing it at all.
   if (item.hasSignature && !item.signatureImage) item = await withSignature(c, item);
   const o = {
     ...item,
     clientName: c.clientName, clientDob: c.clientDob,
     advocateName: 'Eric Bleach',
   };
-  const text = item.kind === 'records' ? recordsAuthorisation(o) : representativeDesignation(o);
-  const win = window.open('', '_blank');
-  if (!win) {
-    alert('Your browser blocked the print window. Allow pop-ups for this site and try again.');
-    return;
-  }
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
-    <title>${item.kind === 'records' ? 'Records authorisation' : 'Insurance representative'}</title>
-    <style>
-      @page { margin: 16mm; }
-      body { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: #000; }
-      pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
-      .sig-ink { margin: 6mm 0 0; page-break-inside: avoid; }
-      .sig-ink img { max-width: 78mm; max-height: 26mm; display: block; }
-      .sig-ink figcaption { font-size: 10px; color: #444; margin-top: 1mm; }
-    </style></head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre>${signatureInk(item)}</body></html>`);
-  win.document.close();
-  setTimeout(() => win.print(), 350);
+  // One opener, shared with the advocate's half. It renders the structure, adds a
+  // Done control, and does NOT print on its own.
+  openAuthorityDocument({
+    model: item.kind === 'records' ? recordsAuthorisationModel(o) : representativeDesignationModel(o),
+    title: item.kind === 'records' ? 'Records authorisation' : 'Insurance representative',
+    signatureHtml: signatureInk(item),
+  });
 }

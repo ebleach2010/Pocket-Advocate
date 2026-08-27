@@ -252,6 +252,7 @@ advance(60); // into the third hour
 await W.runWorkClockNudges(env);
 check('C22d and the hour after that fires too', pushes.length === 5);
 
+
 // Coming back re-arms it.
 await W.handleWorkPresence(req({ caseId: 'a' }), env);
 check('C23 returning to the app clears the ladder', Number(work('a').nudged) === 0);
@@ -405,6 +406,50 @@ check('C36g correcting a stopped clock leaves it stopped',
   stoppedFix.body.running === false && !work('a').startedAt, JSON.stringify(stoppedFix.body));
 
 Date.now = realNow;
+
+// ---- C40/41/42: the push reports the CASE TOTAL, not the current run --------
+// Eric, 2026-08-26, screenshot: a push read "the clock has been running 0m.
+// Still working?" while the case itself read 15h 45m. The nudge measured
+// Date.now() - startedAt, which is the current stretch, and correcting a
+// running total re-anchors startedAt to now: the moment after a correction the
+// stretch is zero while the case holds fifteen hours.
+//
+// The first fix reported the total everywhere and broke the email gate, which
+// reads the same variable: every rung then emailed for any case with banked
+// hours. C22e caught it. So the two are separate now, and both are pinned.
+{
+  // The fixture is SHARED and the checks after this one depend on the state
+  // this leaves behind. C24 failed the first time this block existed, for
+  // exactly that reason. Saved and restored.
+  const saved = { ...(docs.get('cases/a') || {}) };
+  const banked = work('a');
+  // The ladder only fires on an ABSENCE, so one has to exist. Advance first,
+  // then anchor the run relative to the new clock, or the two minutes this
+  // check is about become ninety.
+  advance(90);
+  docs.set('cases/a', {
+    ...(docs.get('cases/a') || {}),
+    // Fifteen hours banked from earlier work, running for two minutes now.
+    work: { ...banked, seconds: 15 * 3600 + 45 * 60, startedAt: new Date(NOW - 2 * 60_000), nudged: 0 },
+  });
+  // The ladder reads its own registry of running cases, and the correction
+  // checks above stopped this one. Put it back, and clear the presence stamp
+  // so the run counts as an absence.
+  const reg = docs.get('admin/clock') || {};
+  docs.set('admin/clock', { ...reg, running: ['a'], seenAt: new Date(NOW - 90 * 60_000) });
+  const before = pushes.length;
+  const emailsBefore = emails.length;
+  await W.runWorkClockNudges(env);
+  const body = pushes[pushes.length - 1]?.body || '';
+  check('C40 the push names the case total, not the two minutes of this run',
+    pushes.length > before && /15h 4\d?m/.test(body), body.slice(0, 120));
+  check('C41 and says which part is this run, so the number is not a surprise',
+    /this run\)/.test(body), body.slice(0, 120));
+  check('C42 but a two minute run does NOT trigger the hourly email',
+    emails.length === emailsBefore, `${emails.length - emailsBefore} new emails`);
+  docs.set('cases/a', saved);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) { for (const f of failed) console.log(`  FAILED: ${f.name}`); process.exit(1); }

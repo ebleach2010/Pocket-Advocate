@@ -20,9 +20,10 @@ import { openDutyDraft } from './duty.js';
 import { openPrepSheet } from './prep.js';
 import { mountFolder } from './folder.js';
 import {
-  recordsAuthorisation, representativeDesignation, APPEAL_DEADLINES, appealDueAt,
+  recordsAuthorisationModel, representativeDesignationModel, APPEAL_DEADLINES, appealDueAt,
 } from './authority.js';
-import { handsOffReadiness } from './readiness.js';
+import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
+import { openAuthorityDocument } from './authority-doc-window.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
@@ -33,18 +34,77 @@ const CASE_PRICE_CENTS = 120000;
  * The rate a given client booked at. Recorded on the case at checkout, so a
  * percentage charge later is a share of what they actually paid rather than of
  * whatever the rate has moved to since (Eric: "current client gets
- * grandfathered in", 2026-08-20). Cases from before the field existed fall back
- * to today's rate, which since rates have only come down errs in their favour.
+ * grandfathered in", 2026-08-20).
+ *
+ * A case from before the field existed has NO recorded rate, and today's price
+ * is the wrong guess for it. This used to fall back to CASE_PRICE_CENTS with a
+ * comment saying rates had only ever come down, so the fallback erred in the
+ * client's favour. That stopped being true: $175, then $265, then $1,200. On
+ * a real case (Eric, 2026-08-26) it read a client who paid $175 as having paid
+ * $1,200, which is 7x, and it did it on the ONE number in this file built to
+ * reveal a loss.
+ *
+ * So it is used for two different questions now, and they get different
+ * answers. This one is "what is a percentage charge a share of", where today's
+ * rate is a defensible base for a case with nothing recorded. What they
+ * ACTUALLY paid is paidCents() below, which refuses to guess.
  */
 const caseRate = (c) => (c && c.caseRateCents) || CASE_PRICE_CENTS;
-const dollars = (cents) => (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
+// Money, grouped. Without the separator a four-figure sum renders "$4600",
+// while the charge panel three inches away renders "$3,400" because it reaches
+// for toLocaleString itself: two formatters on one screen, on the numbers he
+// is least able to check at a glance. Cents show only when there are any,
+// which is the behaviour this already had and the reason it is not plain
+// toLocaleString. Every caller adds its own "$", and none of them puts the
+// result inside an input value or a data attribute, so the comma is
+// display-only and can never reach a parser.
+const dollars = (cents) => (cents / 100).toLocaleString('en-US', {
+  minimumFractionDigits: cents % 100 ? 2 : 0,
+  maximumFractionDigits: cents % 100 ? 2 : 0,
+});
 
 /**
  * What this case has actually paid, tips excluded. A tip is a gift, and
  * counting it would flatter the one number here that has to stay honest.
+ *
+ * RETURNS NULL WHEN IT DOES NOT KNOW. A case with no caseRateCents predates
+ * the field, and there is no honest way to infer what that client paid: the
+ * price has been $175, $265 and $1,200 within the year. Guessing today's rate
+ * turned a $175 client at fifteen hours into "$76.19/hr, comfortably above
+ * your floor" when the truth was $11.11/hr, which is the exact error this
+ * figure exists to catch, running in the direction that hides it.
+ *
+ * Null means the caller says so instead of printing a number. There is a
+ * control on the Overview to record what they paid, which turns the unknown
+ * into a fact rather than a better guess.
  */
 function paidCents(c) {
   const extras = Array.isArray(c?.extraPayments) ? c.extraPayments : [];
+  const addOns = () => extras.filter((x) => x.kind !== 'tip' && x.kind !== 'fullaccess')
+    .reduce((n, x) => n + (Number(x.amountCents) || 0), 0);
+  // In order of how much the source actually knows.
+  //
+  // 1. What Eric recorded by hand. His explicit correction beats every
+  //    inference, including Stripe, because only he knows about money that
+  //    moved outside it.
+  const recorded = Number(c?.paidOverrideCents);
+  if (recorded > 0) return recorded + addOns();
+  // 2. THE TIER TOTAL, on a case that is on the tier. This has to come before
+  //    the Stripe receipt below, and did not: `stripe.amountTotal` is the
+  //    ORIGINAL booking, so an upgraded case answered with the case fee and
+  //    dropped the whole Hands-Off payment. A $1,200 booking that then paid
+  //    $3,400 for the tier read as $1,200 paid, which is the direction that
+  //    HIDES a loss on the one figure built to reveal one.
+  if (c?.fullAccess && Number(c.fullAccessRateCents) > 0)
+    return Number(c.fullAccessRateCents) + addOns();
+  // 3. WHAT STRIPE ACTUALLY CHARGED. This was sitting on the case the whole
+  //    time and this file never read it, while worker/advisor.js did. The
+  //    hourly was inferred from a price list when the receipt was right there.
+  const charged = Number(c?.stripe?.amountTotal);
+  if (charged > 0) return charged + addOns();
+  // 4. The rate recorded at checkout.
+  const known = c?.fullAccess ? Number(c.fullAccessRateCents) > 0 : Number(c.caseRateCents) > 0;
+  if (!known) return null;
   // A Full Access case paid its own price, which INCLUDES everything in the
   // standard case. caseRateCents on such a case is the standard-case rate
   // kept as the base for percentage charges, so the two are never summed.
@@ -75,7 +135,12 @@ let floorCents = 7500;
 function effectiveHourly(c, liveSeconds) {
   const secs = Math.max(0, Number(liveSeconds) || 0);
   if (secs < 360) return null;
-  return Math.round(paidCents(c) / (secs / 3600));
+  // No recorded payment, no hourly. A confident wrong number here is worse
+  // than none: it is the figure he uses to decide whether a case is worth
+  // continuing.
+  const paid = paidCents(c);
+  if (paid === null) return null;
+  return Math.round(paid / (secs / 3600));
 }
 
 const caseId = new URLSearchParams(location.search).get('id');
@@ -371,12 +436,39 @@ function render(el) {
         // to place the cursor, never turn the page.
         id: 'notes', title: 'Notes', icon: '📝', fade: true,
         render: (pane) => {
+          // COMPILE THE CASE FILE (Eric, 2026-08-26). He asked for this "on
+          // the Mine page", and Mine already holds four tabs, which is the
+          // hard width constraint at 320px: a fifth slices its own label, and
+          // that is a defect he has already photographed once. So it is a card
+          // at the top of Notes, which is the page in this group he opens most
+          // and the one that is already his own working space, rather than a
+          // tab that would break the strip to exist.
+          const compileCard = document.createElement('div');
+          compileCard.className = 'panel compile-card';
+          compileCard.innerHTML = `
+            <h3>📚 The whole case file, as one PDF</h3>
+            <p class="dim small">Every file on this case in one document, grouped
+              by type and then by date inside each type. Images print in full.
+              A PDF, a recording or a Word file is listed with a link instead:
+              a browser cannot print one document inside another.</p>
+            <p><button type="button" class="btn" data-compile>Compile it</button></p>
+            ${saidHtml('compile')}`;
+          pane.appendChild(compileCard);
+          compileCard.querySelector('[data-compile]')?.addEventListener('click', async (ev) => {
+            const b = ev.currentTarget;
+            b.disabled = true;
+            const was = b.textContent;
+            b.textContent = 'Gathering…';
+            try { await compileCaseFile(); } finally { b.disabled = false; b.textContent = was; }
+          });
+          const notesHost = document.createElement('div');
+          pane.appendChild(notesHost);
           // Private to Eric: stored under `private/`, which is browser-denied
           // in both directions, so it only ever moves through the admin-gated
           // Worker route. The saved html arrives with the advisor state poll
           // and lands via setHtml, which refuses to clobber live typing.
           notes = mountNotes({
-            container: pane,
+            container: notesHost,
             initialHtml: notesHtml,
             onSave: async (html) => {
               const token = await user.getIdToken();
@@ -1092,6 +1184,31 @@ function startWorkClock(c) {
   wireClockToggle(btn);
   // The time itself opens the sheet (Eric, 2026-08-25: "tap on the time").
   wireClockFix(totalEl);
+  // And the rate pill records what they actually paid. Deliberately on the
+  // pill: it is the thing showing the wrong answer, so it is the thing to
+  // press. Writes paidOverrideCents, which paidCents() prefers over any
+  // inference from today's price.
+  rateEl?.addEventListener('click', async () => {
+    const cur = Number(c.paidOverrideCents) > 0 ? (c.paidOverrideCents / 100).toFixed(2) : '';
+    const typed = prompt(
+      'What did this client actually pay for the case itself, in dollars?\n\n'
+      + 'Add-ons and follow-ups are counted separately and do not go here.', cur);
+    if (typed === null) return;
+    const amount = Number(String(typed).replace(/[^0-9.]/g, ''));
+    if (!(amount > 0)) {
+      say('paid', 'That did not look like an amount. Nothing changed.', { tone: 'warn' });
+      refreshOverview();
+      return;
+    }
+    try {
+      await api({ action: 'set-paid', paidCents: Math.round(amount * 100) });
+      await load();
+      say('paid', `Recorded. This case shows $${dollars(Math.round(amount * 100))} paid, and the hourly is worked out from that.`);
+    } catch (err) {
+      say('paid', `Not recorded: ${err.message}`, { tone: 'warn' });
+    }
+    refreshOverview();
+  });
 }
 
 /**
@@ -1675,7 +1792,84 @@ function paintOverview(pane) {
     ${c.fullAccess ? '<div data-authority-status></div>' : ''}
     ${waiting.trim() ? `<p class="eyebrow mgmt-when hot">Waiting on you</p>${waiting}` : ''}
 
+    <!-- OUTSIDE the panel below on purpose: the panel is gone the moment the
+         tier is on, which is exactly when this line has something to say. -->
+    ${saidHtml('openfull')}
     <p class="eyebrow mgmt-when">Before the call</p>
+    ${!c.fullAccess ? '' : `
+    <!-- CORRECTING AN AGREEMENT THAT IS ALREADY RUNNING. An agreement made on
+         a call gets renegotiated on a later call, and the length and the start
+         were set once and then frozen: a mistyped date, or a fortnight that
+         became six weeks, left a case that could never say the truth again.
+         Moves no money and sends no email; the amount is the rate pill's job. -->
+    <details class="mgmt" data-k="agreement">
+      <summary>🤝 Their agreement</summary>
+      <div class="mgmt-body">
+        <p class="dim small" style="margin:0 0 .6rem;">What you and this client
+          agreed, and what the window runs on. Changing it moves no money and
+          sends them nothing. To correct what they paid, tap the rate beside
+          the work clock.</p>
+        <label class="small" style="display:block; margin-bottom:.3rem;">
+          Starts
+          <input type="date" id="agree-start" style="margin-left:.35rem;">
+        </label>
+        <label class="small" style="display:block; margin-bottom:.3rem;">
+          and runs for
+          <input type="number" id="agree-days" min="1" max="365" step="1"
+            style="width:5rem; margin:0 .35rem;">days
+        </label>
+        <p class="dim small" id="agree-when" style="margin:0 0 .5rem;"></p>
+        <p class="error" id="agree-err" hidden></p>
+        <div class="actions"><button class="btn secondary" id="agree-go">Save the agreement</button></div>
+      </div>
+    </details>`}
+    ${saidHtml('agree')}
+
+    ${c.fullAccess ? '' : `
+    <!-- OPENING THE TIER BY HAND. Until now the only thing that could set
+         fullAccess was a Stripe webhook, so a client who agreed on a call and
+         paid another way could not be given what he had bought: the
+         authorisation forms, the readiness checklist and the check-in booking
+         are all gated on that flag. Eric, 2026-08-26: "where to start the
+         clock and send forms as if he paid for the enhancement through the
+         app." -->
+    <details class="mgmt" data-k="openfull">
+      <summary>🤝 Open Hands-Off by hand</summary>
+      <div class="mgmt-body">
+        <p class="dim small" style="margin:0 0 .6rem;">For a client who agreed
+          it on a call. This opens exactly the case a payment opens: their
+          authorisation forms, the readiness checklist, and the email telling
+          them to sign. They cannot tell which way the money reached you.</p>
+        <p class="small" style="margin:0 0 .5rem;">This case shows
+          <strong>${paidCents(c) === null ? 'no payment recorded' : '$' + dollars(paidCents(c))}</strong>
+          paid so far.</p>
+        <label class="small" style="display:block; margin-bottom:.3rem;">
+          Paid you for Hands-Off, outside the app
+          <span class="sched-amt">
+            <span aria-hidden="true">$</span>
+            <input type="text" inputmode="decimal" id="openfull-amt"
+              placeholder="0" aria-label="Amount in dollars">
+          </span>
+        </label>
+        <p class="dim small" style="margin:0 0 .5rem;">Leave it at zero if you
+          already took the money through the charge panel. It is on the case
+          once already, and entering it twice inflates your hourly.</p>
+        <p class="small" id="openfull-total" style="margin:0 0 .7rem;"></p>
+        <label class="small" style="display:block; margin-bottom:.3rem;">
+          Their month starts
+          <input type="date" id="openfull-start" style="margin-left:.35rem;">
+        </label>
+        <label class="small" style="display:block; margin-bottom:.3rem;">
+          and runs for
+          <input type="number" id="openfull-days" min="1" max="365" step="1" value="30"
+            style="width:5rem; margin:0 .35rem;">days
+        </label>
+        <p class="dim small" id="openfull-when" style="margin:0 0 .5rem;"></p>
+        <p class="error" id="openfull-err" hidden></p>
+        <div class="actions"><button class="btn secondary" id="openfull-go">Open Hands-Off and send the forms</button></div>
+      </div>
+    </details>`}
+
     <details class="mgmt" data-k="auth">
       <summary>📄 Print a form to sign</summary>
       <div class="mgmt-body">
@@ -1694,9 +1888,33 @@ function paintOverview(pane) {
     <details class="mgmt" data-k="sched">
       <summary>📅 Schedule a session</summary>
       <div class="mgmt-body">
-        <p class="dim small">Book this client at any time at all — pick an open slot, or type a time that isn't on the calendar. Lead time, booking horizon and business hours don't apply to you.</p>
+        <p class="dim small">Book this client at any time at all, or nudge the
+          appointment they already have. Lead time, booking horizon and
+          business hours do not apply to you.</p>
+        ${c.appointment?.start ? `
+        <!-- MOVE IT, do not re-book it (Eric, 2026-08-26: "let me reschedule
+             sessions without the scheduling blocks stopping me... reschedule
+             for an hour later on the same day"). The common reschedule is a
+             nudge from where it already is, and doing that through the slot
+             list was impossible: the cron deletes every open slot inside 72
+             hours, so the dropdown had nothing sooner than three days out and
+             the only way through was knowing the custom field existed and
+             typing a date. These do the arithmetic off the CURRENT
+             appointment, so one tap is the whole job. -->
+        <div class="sched-nudge" data-nudge-row>
+          <span class="dim small">Move it</span>
+          ${[['+1 hour', 60], ['+2 hours', 120], ['+1 day', 1440], ['+1 week', 10080]]
+            .map(([label, mins]) =>
+              `<button type="button" class="btn quiet tiny" data-nudge="${mins}">${label}</button>`).join('')}
+        </div>
+        ${saidHtml('sched')}` : ''}
         <select id="sched-slot"><option value="">Loading open slots…</option></select>
         <div id="sched-custom" style="margin-top:.5rem;" hidden>
+          <!-- TODAY, in one tap. The picker below reaches any time at all, but
+               the case this panel keeps failing is "we agreed on 2pm, today",
+               and that should not cost four wheel spins. Built at render from
+               the hours left in the MST day. -->
+          <div class="sched-today" data-today-row></div>
           <input type="datetime-local" id="sched-when">
           <select id="sched-dur" style="margin-top:.35rem;">
             ${[30, 45, 60, 90, 120].map((m) =>
@@ -1714,11 +1932,25 @@ function paintOverview(pane) {
           <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="charge">
             Charge for a session:</label>
           <div id="sched-charge" style="margin:.35rem 0 0 1.4rem;" hidden>
+            <!-- AN AMOUNT HE TYPES BEATS A PERCENTAGE. The percentages stop at
+                 150%, which against a $1,200 case is $1,800, and a figure
+                 agreed on a call is not a share of a list price. It goes FIRST
+                 because when he is reaching for this panel at all it is usually
+                 because the dropdown could not say what he needs. -->
+            <label class="small" style="display:block; margin-bottom:.3rem;">
+              An amount you agreed
+              <span class="sched-amt">
+                <span aria-hidden="true">$</span>
+                <input type="text" inputmode="decimal" id="sched-amt"
+                  placeholder="3400" aria-label="Amount in dollars">
+              </span>
+            </label>
+            <p class="dim small" style="margin:0 0 .45rem;">Leave it empty to use a share of their case fee instead.</p>
             <select id="sched-pct">
               ${[0, 25, 50, 75, 100, 125, 150].map((p) =>
-                `<option value="${p}" ${p === 50 ? 'selected' : ''}>${p}% — ${p === 0 ? 'no charge' : '$' + dollars((p * caseRate(c)) / 100)}</option>`).join('')}
+                `<option value="${p}" ${p === 50 ? 'selected' : ''}>${p}%: ${p === 0 ? 'no charge' : '$' + dollars((p * caseRate(c)) / 100)}</option>`).join('')}
             </select>
-            <input type="text" id="sched-tag" maxlength="120" placeholder="Invoice line (optional) — e.g. Records deep-dive session" style="margin-top:.35rem;">
+            <input type="text" id="sched-tag" maxlength="120" placeholder="Invoice line (optional), e.g. Records deep-dive session" style="margin-top:.35rem;">
             <p class="dim small" style="margin:.3rem 0 0;">A share of <strong>$${dollars(caseRate(c))}</strong>, the rate this client booked at. They pay through Stripe to confirm; the slot holds for 24 hours. Your tagline is the line item on their receipt.</p>
           </div>
         </div>
@@ -1807,6 +2039,8 @@ function paintOverview(pane) {
   paintCaseReview(pane);
   pane.querySelector('#save-link').addEventListener('click', saveLink);
   wireScheduler(pane);
+  wireOpenFull(pane, c);
+  wireAgreement(pane, c);
   pane.querySelectorAll('[data-action]').forEach((b) =>
     b.addEventListener('click', () => milestone(b.dataset.action, b)));
   // Blank forms print straight from the pure functions — nothing is written
@@ -1980,6 +2214,124 @@ function refreshOverview() {
 }
 
 /** The Uploads page shell. Painted once; refreshFiles fills the list. */
+/**
+ * EVERY FILE ON THE CASE, AS ONE DOCUMENT (Eric, 2026-08-26: "there should be
+ * a place where all the uploads can get compiled into one PDF, by type first
+ * and then date second").
+ *
+ * By type first, then date within type, using the SAME fileGroup() and the
+ * same date ordering as the Uploads page, so the compiled document and the
+ * screen he compiled it from can never disagree about what goes where.
+ *
+ * WHAT IT CAN AND CANNOT CONTAIN, said plainly here and on the cover page,
+ * because a compilation that quietly drops half a case file is worse than no
+ * compilation at all.
+ *
+ * There is no PDF library in this app and no build step to add one, so this
+ * goes through the same print path everything else does: build a document,
+ * let the browser render it to PDF. That means IMAGES ARE EMBEDDED and print
+ * in full, and a PDF, a recording or a Word file cannot be: a browser will
+ * not inline one document inside another it is printing. Those are listed in
+ * place, in their right group and date order, with their name, size and a
+ * link, so the compiled file is a complete index of the case and a complete
+ * rendering of everything that can be rendered.
+ *
+ * Merging real PDFs would have to happen server side, and the Worker's CPU
+ * ceiling is the same one that already killed the call document once.
+ */
+async function compileCaseFile() {
+  const said = (m, bad) => { say('compile', m, { tone: bad ? 'warn' : 'ok' }); refreshOverview(); };
+  said('Gathering every file on the case…');
+  let rows;
+  try {
+    rows = await listCaseFiles();
+  } catch (err) {
+    said(`Could not read the files: ${err.message}`, true);
+    return;
+  }
+  if (!rows.length) { said('There are no files on this case yet.', true); return; }
+
+  // Type first, date second. ORDER IS THE FEATURE, so it is explicit rather
+  // than left to whatever listCaseFiles happened to return.
+  const ORDER = ['Reports', 'Documents', 'Images', 'Recordings', 'Other'];
+  const byGroup = new Map();
+  for (const r of rows) {
+    const g = fileGroup(r);
+    if (!byGroup.has(g)) byGroup.set(g, []);
+    byGroup.get(g).push(r);
+  }
+  for (const list of byGroup.values()) list.sort((a, b) => a.ts - b.ts);
+  const groups = ORDER.filter((g) => byGroup.has(g)).map((g) => [g, byGroup.get(g)]);
+
+  const isImg = (r) => {
+    const ct = (r.contentType || '').toLowerCase();
+    // HEIC is an image that browsers will not render, so it is listed rather
+    // than embedded as a broken box.
+    return ct.startsWith('image/') && !/heic|heif/.test(ct);
+  };
+  const size = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB`
+    : n > 1024 ? `${Math.round(n / 1024)} KB` : `${n || 0} B`);
+  const when = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, year: 'numeric', month: 'long', day: 'numeric',
+  });
+
+  const embedded = rows.filter(isImg).length;
+  const listed = rows.length - embedded;
+  const win = window.open('', '_blank');
+  if (!win) { said('Your browser blocked the print window. Allow pop-ups and try again.', true); return; }
+
+  const body = groups.map(([g, list]) => `
+    <section class="grp">
+      <h2>${esc(g)}<span class="n">${list.length} file${list.length === 1 ? '' : 's'}</span></h2>
+      ${list.map((r) => `
+        <article class="item">
+          <p class="meta"><strong>${esc(r.name)}</strong><br>
+            ${esc(when.format(r.ts))} · ${esc(size(r.size))} · ${esc(r.kindLabel || r.kind || '')}</p>
+          ${isImg(r)
+            ? `<img src="${esc(r.url)}" alt="${esc(r.name)}">`
+            : `<p class="not-shown">Not rendered here: a ${esc((r.contentType || 'file').split('/').pop())}
+                 cannot be printed inside another document.
+                 <a href="${esc(r.url)}">Open the original</a></p>`}
+        </article>`).join('')}
+    </section>`).join('');
+
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
+    <title>${esc(data?.clientName || 'Case')} case file</title>
+    <style>
+      @page { margin: 14mm; }
+      body { font: 12px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #111; }
+      h1 { font-size: 20px; margin: 0 0 2mm; }
+      .cover { border-bottom: 2px solid #111; padding-bottom: 4mm; margin-bottom: 6mm; }
+      .cover p { margin: 1mm 0; color: #444; }
+      .grp { page-break-before: always; }
+      .grp:first-of-type { page-break-before: avoid; }
+      h2 { font-size: 15px; border-bottom: 1px solid #bbb; padding-bottom: 1.5mm; margin: 0 0 4mm; }
+      h2 .n { float: right; font-weight: 400; color: #666; font-size: 12px; }
+      .item { page-break-inside: avoid; margin: 0 0 7mm; }
+      .meta { margin: 0 0 2mm; }
+      .meta strong { font-size: 13px; }
+      img { max-width: 100%; max-height: 210mm; display: block; border: 1px solid #ddd; }
+      .not-shown { margin: 0; padding: 3mm; background: #f4f4f4; border-left: 3px solid #999; color: #444; }
+      a { color: #14508c; }
+    </style></head><body>
+    <div class="cover">
+      <h1>${esc(data?.clientName || 'Case')} &mdash; complete case file</h1>
+      <p>Compiled ${esc(when.format(new Date()))} &middot; ${rows.length} file${rows.length === 1 ? '' : 's'}, by type then by date.</p>
+      <p>${embedded} image${embedded === 1 ? '' : 's'} printed in full.
+         ${listed} other file${listed === 1 ? '' : 's'} listed with a link: a PDF, a recording or a
+         Word file cannot be printed inside another document.</p>
+    </div>
+    ${body}</body></html>`);
+  win.document.close();
+  // Images have to finish loading or the print runs on empty boxes. Waiting on
+  // the window's own load event rather than a fixed delay, which is the
+  // difference between a compiled case file and a stack of grey rectangles.
+  const go = () => setTimeout(() => win.print(), 400);
+  if (win.document.readyState === 'complete') go();
+  else win.addEventListener('load', go, { once: true });
+  said(`Compiled ${rows.length} file${rows.length === 1 ? '' : 's'}. Choose Save to Files in the share sheet to keep the PDF.`);
+}
+
 function paintFiles(pane) {
   pane.innerHTML = `
     <div class="panel">
@@ -2544,6 +2896,276 @@ function infoBar(c, mtFmt, start, due) {
   return `<div class="panel facts">${rows.join('')}</div>`;
 }
 
+/**
+ * Opening Hands-Off Case Management by hand.
+ *
+ * Eric, 2026-08-26: "I need to charge a client 3400 (verbally agreed to on
+ * call)... where to start the clock and send forms as if he paid for the
+ * enhancement through the app."
+ *
+ * The money is the easy half and the charge panel already does it. The hard
+ * half was that the tier flag had exactly one writer in the whole system, a
+ * Stripe webhook, so a client who paid any other way could not be given the
+ * forms he had bought.
+ *
+ * Two rules, both learned the expensive way:
+ *
+ *   THE TOTAL IS SHOWN BEFORE HE COMMITS, worked out by the same paidCents()
+ *   the rate pill uses, so the number he is about to create is the number he
+ *   reads. Guessing at this is how a case that had paid $175 came to claim
+ *   $76.12/hr.
+ *
+ *   THE CASE IS RE-READ AFTERWARDS and only then does the panel say what
+ *   happened. Same rule as the meeting link and the reschedule.
+ */
+/**
+ * Correcting an agreement that is already running.
+ *
+ * Eric, 2026-08-26: "I should be able to override with custom
+ * amounts/agreements me and the client make. Because that might vary per
+ * client and length of time."
+ *
+ * Deliberately three separate controls rather than one big one, because they
+ * are three different kinds of fact and two of them are dangerous:
+ *
+ *   what they PAID          the rate pill, beside the work clock
+ *   when it starts and how long it runs   here
+ *   whether they are on the tier at all   the opening panel, once
+ *
+ * This one moves no money and sends no email. It is a record of a deal.
+ */
+function wireAgreement(el, c) {
+  const startEl = el.querySelector('#agree-start');
+  if (!startEl) return;                   // not on the tier: no panel
+  const daysEl = el.querySelector('#agree-days');
+  const whenEl = el.querySelector('#agree-when');
+  const errEl = el.querySelector('#agree-err');
+  const go = el.querySelector('#agree-go');
+  const dayFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, month: 'long', day: 'numeric',
+  });
+  // Prefilled from the case, so the fields say what is true before he touches
+  // them. A blank form here would invite him to retype a date he had right.
+  const at = c.fullAccessAt ? toDate(c.fullAccessAt) : null;
+  if (at && !startEl.value) {
+    startEl.value = new Intl.DateTimeFormat('en-CA', {
+      timeZone: MOUNTAIN_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(at);
+  }
+  // The length actually in force: what he agreed, or the standard month.
+  if (daysEl && !daysEl.value) daysEl.value = String(Number(c.fullAccessDays) || FULL_WINDOW_DAYS);
+  const bought = Number(c.fullAccessExtraDays) || 0;
+
+  const readDays = () => {
+    const n = Math.round(Number((daysEl?.value || '').trim()));
+    return Number.isFinite(n) && n >= 1 && n <= 365 ? n : null;
+  };
+  const readStart = () => {
+    const day = (startEl.value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+    const t = new Date(`${day}T12:00:00-07:00`);
+    return Number.isNaN(t.getTime()) ? null : t;
+  };
+  const preview = () => {
+    const t = readStart();
+    const n = readDays();
+    if (!whenEl) return;
+    if (!t || n === null) { whenEl.textContent = 'Give a date and a length between 1 and 365 days.'; return; }
+    // Months they BOUGHT sit on top of what was agreed, and are named
+    // separately so a purchase never reads as something he typed.
+    const end = new Date(t.getTime() + (n + bought) * 86_400_000);
+    whenEl.textContent = `Their window would run ${dayFmt.format(t)} to ${dayFmt.format(end)}`
+      + `${bought ? `, including ${bought} days they bought` : ''}.`;
+  };
+  [startEl, daysEl].forEach((x) => {
+    x?.addEventListener('input', preview);
+    x?.addEventListener('change', preview);
+  });
+  preview();
+
+  go.addEventListener('click', async () => {
+    errEl.hidden = true;
+    const t = readStart();
+    const n = readDays();
+    if (!t || n === null) {
+      errEl.textContent = 'Give a date and a length between 1 and 365 days.';
+      errEl.hidden = false;
+      return;
+    }
+    const end = new Date(t.getTime() + (n + bought) * 86_400_000);
+    // Named out loud. Moving a window changes the day their case closes and
+    // the day their renewal notice goes out.
+    if (!confirm(`Change ${c.clientName || 'this client'}'s agreement?\n\n`
+      + `Their window runs ${dayFmt.format(t)} to ${dayFmt.format(end)}.\n\n`
+      + 'Nothing is charged and they are not emailed.')) return;
+    go.disabled = true;
+    try {
+      await api({ action: 'set-agreement', startAt: t.toISOString(), days: n });
+      // Re-read before claiming, and say the date the CASE now holds rather
+      // than the one that was typed.
+      await load();
+      const now = data?.fullAccessAt ? toDate(data.fullAccessAt) : null;
+      const held = Number(data?.fullAccessDays) || FULL_WINDOW_DAYS;
+      say('agree', now && held === n
+        ? `Saved. Their window runs ${dayFmt.format(now)} to ${dayFmt.format(end)}.`
+        : 'That went through, but the case does not show the change yet. Try once more.',
+      { tone: now && held === n ? 'ok' : 'warn' });
+      refreshOverview();
+    } catch (err) {
+      say('agree', `Not saved: ${err.message}`, { tone: 'warn' });
+      go.disabled = false;
+      refreshOverview();
+    }
+  });
+}
+
+function wireOpenFull(el, c) {
+  const box = el.querySelector('#openfull-amt');
+  if (!box) return;                       // already on the tier: no panel
+  const totalEl = el.querySelector('#openfull-total');
+  const errEl = el.querySelector('#openfull-err');
+  const go = el.querySelector('#openfull-go');
+
+  // The same arithmetic the Worker does, so the preview cannot promise a
+  // figure the server would not write: the case fee this client actually
+  // paid, plus what they paid for the tier.
+  const paidForCase = Number(c.caseRateCents) > 0
+    ? Number(c.caseRateCents) : (Number(c.stripe?.amountTotal) || 0);
+  const typedCents = () => {
+    const raw = (box.value || '').trim();
+    if (!raw) return 0;
+    const n = Number(raw.replace(/[^0-9.]/g, ''));
+    return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
+  };
+  const preview = () => {
+    const cents = typedCents();
+    if (cents === null || cents > 100_000_00) {
+      totalEl.textContent = '';
+      return;
+    }
+    const after = paidCents({ ...c, fullAccess: true, fullAccessRateCents: paidForCase + cents });
+    totalEl.innerHTML = after === null
+      ? 'This case will still show no payment recorded.'
+      : `This case will show <strong>$${dollars(after)}</strong> paid.`;
+  };
+  box.addEventListener('input', preview);
+  preview();
+
+  // WHEN THE MONTH STARTS. Eric, 2026-08-26: "I want to be prompted to set the
+  // clock or when the start time is. This one is going to be delayed
+  // slightly." A tier agreed in August for a September start was, until now,
+  // forced to begin the moment he pressed the button, which quietly took the
+  // difference out of the month he had sold.
+  //
+  // A DATE, not a datetime: a month that begins at 2:15pm is noise, and it is
+  // one fewer wheel to spin on a phone. Noon Mountain on the chosen day, so
+  // no timezone rounding can shunt it to the day before or after.
+  const startEl = el.querySelector('#openfull-start');
+  const daysEl = el.querySelector('#openfull-days');
+  const whenEl = el.querySelector('#openfull-when');
+  const agreedDays = () => {
+    const n = Math.round(Number((daysEl?.value || '').trim()));
+    return Number.isFinite(n) && n >= 1 && n <= 365 ? n : null;
+  };
+  const todayMT = () => new Intl.DateTimeFormat('en-CA', {
+    timeZone: MOUNTAIN_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  const startInstant = () => {
+    const day = (startEl?.value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+    // Noon Mountain. -07:00 is the offset every formatter in the Worker uses
+    // and it does not shift under daylight saving, so the day he picked is
+    // the day that gets stored.
+    const t = new Date(`${day}T12:00:00-07:00`);
+    return Number.isNaN(t.getTime()) ? null : t;
+  };
+  if (startEl && !startEl.value) startEl.value = todayMT();
+  const dayFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, month: 'long', day: 'numeric',
+  });
+  const previewWhen = () => {
+    const t = startInstant();
+    if (!whenEl) return;
+    if (!t) { whenEl.textContent = 'Pick the day their month begins.'; return; }
+    const n = agreedDays();
+    if (n === null) { whenEl.textContent = 'Give a length between 1 and 365 days.'; return; }
+    const end = new Date(t.getTime() + n * 86_400_000);
+    // The word "month" is dropped once it is not one. He can agree a
+    // fortnight, and calling that a month on his own screen is how the wrong
+    // date ends up in an email.
+    const what = n === 30 ? 'month' : `${n} days`;
+    whenEl.textContent = t.getTime() > Date.now()
+      ? `Their ${what} runs ${dayFmt.format(t)} to ${dayFmt.format(end)}. Their forms go live today either way, so records requests can start moving now.`
+      : `Their ${what} runs ${dayFmt.format(t)} to ${dayFmt.format(end)}.`;
+  };
+  startEl?.addEventListener('change', previewWhen);
+  startEl?.addEventListener('input', previewWhen);
+  daysEl?.addEventListener('input', previewWhen);
+  daysEl?.addEventListener('change', previewWhen);
+  previewWhen();
+
+  go.addEventListener('click', async () => {
+    const cents = typedCents();
+    errEl.hidden = true;
+    if (cents === null || cents > 100_000_00) {
+      errEl.textContent = 'Give an amount between $0 and $100,000, or leave it empty.';
+      errEl.hidden = false;
+      return;
+    }
+    const startAt = startInstant();
+    if (!startAt) {
+      errEl.textContent = 'Pick the day their month begins.';
+      errEl.hidden = false;
+      return;
+    }
+    const YEAR = 365 * 86_400_000;
+    if (Math.abs(startAt.getTime() - Date.now()) > YEAR) {
+      errEl.textContent = 'Pick a start date within a year either side of today.';
+      errEl.hidden = false;
+      return;
+    }
+    const days = agreedDays();
+    if (days === null) {
+      errEl.textContent = 'Give a length between 1 and 365 days.';
+      errEl.hidden = false;
+      return;
+    }
+    const after = paidCents({ ...c, fullAccess: true, fullAccessRateCents: paidForCase + cents });
+    // The figure is named out loud. An upgrade that emails the client and
+    // unlocks the signing surfaces is not a thing to do on a mis-tap.
+    if (!confirm(`Open Hands-Off Case Management on ${c.clientName || 'this case'}?\n\n`
+      + `${cents > 0 ? `Recording $${dollars(cents)} paid outside the app.` : 'No new payment recorded.'}\n`
+      + `${after === null ? 'The case will show no payment recorded.' : `The case will show $${dollars(after)} paid.`}\n`
+      + `Their ${days === 30 ? 'month' : `${days} days`} starts ${dayFmt.format(startAt)} and ends ${dayFmt.format(new Date(startAt.getTime() + days * 86_400_000))}.\n\n`
+      + 'They get an email asking them to sign their authorisation.')) return;
+    go.disabled = true;
+    try {
+      await api({ action: 'open-full', tierCents: cents, startAt: startAt.toISOString(), days });
+      // Re-read before claiming, same rule as the meeting link: a 200 says
+      // the request was accepted, and what he needs to know is whether the
+      // case is actually on the tier now.
+      await load();
+      // The date comes back off the RE-READ case, not off the variable that
+      // was sent. If the server stored a different day, this says the day the
+      // server stored.
+      const stored = data?.fullAccessAt ? toDate(data.fullAccessAt) : null;
+      // Same predicate the client's page and the Worker use, so his
+      // confirmation cannot say "starts" about a month their email treated as
+      // already running.
+      const later = handsOffStartsLater(data);
+      say('openfull', data?.fullAccess
+        ? `Open. Their authorisation forms are live on their case page and the email has gone.${stored ? ` Their month ${later ? 'starts' : 'started'} ${dayFmt.format(stored)}.` : ''}`
+        : 'That went through, but the case still does not show Hands-Off. Do not send them to sign yet: try once more.',
+      { tone: data?.fullAccess ? 'ok' : 'warn' });
+      refreshOverview();
+    } catch (err) {
+      say('openfull', `Not opened: ${err.message}`, { tone: 'warn' });
+      go.disabled = false;
+      refreshOverview();
+    }
+  });
+}
+
 async function wireScheduler(el) {
   const slotSel = el.querySelector('#sched-slot');
   const chargeBox = el.querySelector('#sched-charge');
@@ -2565,18 +3187,145 @@ async function wireScheduler(el) {
     // Custom time goes last when there's real inventory (an open slot is the
     // common case) and first when there isn't — with no slots open, typing a
     // time is the only thing left to do.
-    slotSel.innerHTML = slots.length
-      ? slots.map((s) => `<option value="${s.id}">${mtFmt.format(s.start)} MST</option>`).join('') + CUSTOM_OPTION
-      : CUSTOM_OPTION;
+    // TYPING A TIME COMES FIRST, ALWAYS (Eric, 2026-08-26: "I still can't
+    // reschedule the time today to what I want. We're meeting 2pm MST").
+    //
+    // It used to go last whenever there was open inventory, on the reasoning
+    // that picking an existing slot is the common path. But open slots are
+    // never sooner than the 72h lead window, so the list he actually sees is
+    // next week, and the one option that can reach TODAY was under all of it
+    // behind a scroll. Rescheduling to this afternoon is the single most
+    // urgent thing this panel does and it was the hardest thing to find in it.
+    slotSel.innerHTML = CUSTOM_OPTION
+      + slots.map((s) => `<option value="${s.id}">${mtFmt.format(s.start)} MST</option>`).join('');
+    slotSel.value = CUSTOM;
   } catch (err) {
     slotSel.innerHTML = CUSTOM_OPTION;
     console.warn("couldn't load open slots:", err.message);
+  }
+
+  // The nudge buttons. Each one moves the CURRENT appointment by its own
+  // number of minutes and books it, in one tap, with no date typing and no
+  // dependence on there being an open slot. The Worker's admin schedule route
+  // already accepts any wall-clock time and creates the slot on demand, so
+  // this is the arithmetic and the confirmation, nothing more.
+  for (const b of el.querySelectorAll('[data-nudge]')) {
+    b.addEventListener('click', async () => {
+      const from = data?.appointment?.start ? toDate(data.appointment.start) : null;
+      // THE MODULE-LEVEL say(), not a line written into this panel. A local
+      // element is destroyed by the load() below, which is exactly how this
+      // panel used to confirm a save and then delete its own confirmation.
+      // say() stores the sentence and every repaint renders it back.
+      const tell = (msg, bad) => {
+        say('sched', msg, { tone: bad ? 'warn' : 'ok' });
+        refreshOverview();
+      };
+      if (!from) { tell('There is no appointment to move yet.', true); return; }
+      const mins = Number(b.dataset.nudge);
+      // MEASURE FROM NOW WHEN THE OLD TIME HAS ALREADY GONE. A call that did
+      // not happen is the single most likely thing he is rescheduling, and
+      // adding an hour to last Tuesday lands in the past and refuses. Off a
+      // future appointment "+1 hour" means an hour later than planned; off a
+      // missed one it means an hour from now, which is the same sentence a
+      // person would say out loud in both cases.
+      const past = from.getTime() < Date.now();
+      const base = past ? new Date() : from;
+      const to = new Date(base.getTime() + mins * 60000);
+      const row = el.querySelector('[data-nudge-row]');
+      row?.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+      const was = b.textContent;
+      b.textContent = 'Moving…';
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch('/api/admin/schedule', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({
+            caseId, mode: 'reschedule',
+            customStart: to.toISOString(),
+            customDurationMin: Number(data?.appointment?.durationMin) || 60,
+          }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || `Request failed (${res.status})`);
+        // RE-READ BEFORE CLAIMING IT MOVED. Same rule as the meeting link: a
+        // 200 says the request was accepted, and what he needs to know is
+        // where his client's page now says the call is.
+        await load();
+        const now = data?.appointment?.start ? toDate(data.appointment.start) : null;
+        if (!now || Math.abs(now.getTime() - to.getTime()) > 60000) {
+          tell('That went through, but the case still shows the old time. Check before you tell them.', true);
+        } else {
+          tell(`Moved to ${mtFmt.format(now)} MST${past ? ', measured from now because the old time had already gone' : ''}. Their case page shows the new time.`);
+        }
+      } catch (err) {
+        tell(`Not moved: ${err.message}`, true);
+      } finally {
+        b.textContent = was;
+        row?.querySelectorAll('button').forEach((x) => { x.disabled = false; });
+      }
+    });
   }
 
   const customBox = el.querySelector('#sched-custom');
   const whenInput = el.querySelector('#sched-when');
   const syncCustom = () => { customBox.hidden = slotSel.value !== CUSTOM; };
   slotSel.addEventListener('change', syncCustom);
+  // Prefilled to the next round hour TODAY, in MST wall clock, which is what
+  // the submit below parses. An empty picker on a phone means spinning four
+  // wheels from whatever the OS defaults to; prefilled, "2pm today" is one
+  // spin. Never prefills a time that has already gone.
+  if (whenInput && !whenInput.value) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: MOUNTAIN_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date()).reduce((o, x) => { o[x.type] = x.value; return o; }, {});
+    let h = Number(parts.hour) + 1;
+    let day = `${parts.year}-${parts.month}-${parts.day}`;
+    if (h > 23) {
+      // Past 11pm the next round hour is tomorrow. Roll the MST date properly
+      // rather than doing string arithmetic on the day.
+      h = 8;
+      const t = new Date(`${day}T12:00:00Z`);
+      t.setUTCDate(t.getUTCDate() + 1);
+      day = t.toISOString().slice(0, 10);
+    }
+    whenInput.value = `${day}T${String(h).padStart(2, '0')}:00`;
+  }
+  // The remaining hours of today, as chips. Rendered here rather than in the
+  // template because "today" is only known at paint time and a stale chip is
+  // worse than no chip.
+  {
+    const row = el.querySelector('[data-today-row]');
+    if (row) {
+      const p = new Intl.DateTimeFormat('en-CA', {
+        timeZone: MOUNTAIN_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', hour12: false,
+      }).formatToParts(new Date()).reduce((o, x) => { o[x.type] = x.value; return o; }, {});
+      const day = `${p.year}-${p.month}-${p.day}`;
+      const from = Number(p.hour) + 1;
+      const hours = [];
+      for (let h = Math.max(from, 7); h <= 21; h++) hours.push(h);
+      const label = (h) => {
+        const ampm = h >= 12 ? 'pm' : 'am';
+        const twelve = h % 12 === 0 ? 12 : h % 12;
+        return `${twelve}${ampm}`;
+      };
+      row.innerHTML = hours.length
+        ? `<span class="dim small">Today</span>`
+          + hours.map((h) => `<button type="button" class="btn quiet tiny" data-today="${day}T${String(h).padStart(2, '0')}:00">${label(h)}</button>`).join('')
+        : '<span class="dim small">Nothing left today. Pick a time below.</span>';
+      for (const btn of row.querySelectorAll('[data-today]')) {
+        btn.addEventListener('click', () => {
+          slotSel.value = CUSTOM;
+          syncCustom();
+          whenInput.value = btn.dataset.today;
+          for (const other of row.querySelectorAll('[data-today]')) other.classList.remove('on');
+          btn.classList.add('on');
+        });
+      }
+    }
+  }
   syncCustom();
 
   el.querySelector('#sched-go').addEventListener('click', async () => {
@@ -2604,6 +3353,24 @@ async function wireScheduler(el) {
       return;
     }
 
+    // The typed amount, read and checked before anything is sent. A charge is
+    // the one thing on this panel that moves somebody's money, so a fat finger
+    // has to be caught here rather than explained afterwards.
+    let amountCents;
+    if (mode === 'charge') {
+      const raw = (el.querySelector('#sched-amt')?.value || '').trim();
+      if (raw) {
+        const n = Number(raw.replace(/[$,\s]/g, ''));
+        if (!Number.isFinite(n) || n < 1 || n > 100000) {
+          errEl.textContent = 'Give an amount between $1 and $100,000, or leave it empty to use a percentage.';
+          errEl.hidden = false;
+          return;
+        }
+        amountCents = Math.round(n * 100);
+        if (!confirm(`Charge ${data?.clientName || 'this client'} $${(amountCents / 100).toLocaleString(undefined, { minimumFractionDigits: amountCents % 100 ? 2 : 0 })}?`)) return;
+      }
+    }
+
     btn.disabled = true;
     try {
       const idToken = await user.getIdToken();
@@ -2616,6 +3383,9 @@ async function wireScheduler(el) {
           customStart,
           customDurationMin: customStart ? Number(el.querySelector('#sched-dur').value) : undefined,
           pct: mode === 'charge' ? Number(el.querySelector('#sched-pct').value) : undefined,
+          // Sent only when he actually typed something, so an empty box leaves
+          // the percentage in charge rather than sending a zero.
+          amountCents: mode === 'charge' ? amountCents : undefined,
           tagline: mode === 'charge' ? el.querySelector('#sched-tag').value : undefined,
         }),
       });
@@ -2731,14 +3501,31 @@ async function paintAuthorityStatus(pane) {
         try {
           const idToken = await user.getIdToken();
           const res = await fetch(
-            `/api/authority?caseId=${encodeURIComponent(id)}&id=${encodeURIComponent(item.id)}`,
+            // `caseId`, the binding this module actually has (:145). It said
+            // `id`, which is declared nowhere, so this threw a ReferenceError
+            // BEFORE the fetch was made, every single time. The catch below
+            // swallowed it under a comment about printing without the mark,
+            // so every signed authority form printed with a blank signature
+            // and nothing anywhere said so. The sibling call at :3287 had it
+            // right the whole time.
+            `/api/authority?caseId=${encodeURIComponent(caseId)}&id=${encodeURIComponent(item.id)}`,
             { headers: { authorization: `Bearer ${idToken}` } },
           );
           if (res.ok) {
             const found = ((await res.json()).items || []).find((i) => i.id === item.id);
             if (found?.signatureImage) item = found;
           }
-        } catch { /* the form still prints, just without the mark */ }
+        } catch {
+          // It still prints, because a form without the mark beats no form at
+          // all when he is stood at a clinic desk. But it SAYS so now: a
+          // silent fallback is exactly how the ReferenceError above survived.
+          //
+          // An alert rather than a panel line, deliberately. This one is
+          // act-now and he is about to be looking at a print dialog, not at
+          // this card, so it has to interrupt or it is not read at all.
+          alert('Printing without the signature: it could not be fetched just now.\n\n'
+            + 'The signature is still on file. Try again in a moment if the clinic needs it on the page.');
+        }
       }
       printAuthorityDoc(item);
     });
@@ -2752,17 +3539,35 @@ async function paintAuthorityStatus(pane) {
  * spent on hold. First-call fallback for legacy cases with no purchase
  * stamp, matching the Worker exactly — two copies, kept in step.
  */
+// The Worker's numbers, copied rather than guessed. worker/index.js is the
+// authority; tools/suites/pricing.mjs pins all three copies against it.
 const FULL_WINDOW_DAYS = 30;
+const FULL_LEGACY_WINDOW_DAYS = 60;
+const FULL_MONTHLY_FROM_AT = Date.parse('2026-08-26T00:00:00Z');
+const FULL_WINDOW_FROM_PURCHASE_AT = Date.parse('2026-08-25T00:00:00Z');
 function fullAccessDaysLeft(c) {
+  // Mirrors worker/index.js fullAccessWindowEnd line for line. It did not:
+  // it measured from fullAccessAt whenever that was set, and it applied the
+  // thirty-day month to EVERY case. A case sold before the monthly reshape
+  // bought sixty days from the first call, so this card was quietly telling
+  // him a legacy client had a month less than they had actually paid for,
+  // while the client's own page said sixty. Three implementations of one
+  // window, three different answers.
   const bought = c?.fullAccessAt ? toDate(c.fullAccessAt).getTime() : 0;
-  const start = bought || (c?.appointment?.start ? toDate(c.appointment.start).getTime() : 0);
+  const firstCall = c?.appointment?.start ? toDate(c.appointment.start).getTime() : 0;
+  const boughtUnderNewRule = bought && bought >= FULL_WINDOW_FROM_PURCHASE_AT;
+  const start = boughtUnderNewRule ? bought : (firstCall || bought);
   if (!start) return null;
   // Same as heldMs(): what is banked, plus the stretch still running if the
   // case is paused right now. While paused these two grow together, so the
   // number on the card holds still, which is the point of a pause.
   const held = Math.max(0, Number(c?.hold?.totalMs) || 0)
     + (c?.hold?.pausedAt ? Math.max(0, Date.now() - toDate(c.hold.pausedAt).getTime()) : 0);
-  const end = start + (FULL_WINDOW_DAYS + (Number(c.fullAccessExtraDays) || 0)) * 86_400_000 + held;
+  // The agreed length wins when there is one, exactly as in the Worker.
+  const agreed = Number(c.fullAccessDays);
+  const base = agreed > 0 ? agreed
+    : (bought && bought >= FULL_MONTHLY_FROM_AT ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS);
+  const end = start + (base + (Number(c.fullAccessExtraDays) || 0)) * 86_400_000 + held;
   return Math.max(0, Math.ceil((end - Date.now()) / 86_400_000));
 }
 
@@ -2781,8 +3586,15 @@ function checkInState(c) {
   const future = all.map((x) => toDate(x.start).getTime()).filter((t) => t > now).sort((a, b) => a - b);
   if (future.length) return { next: new Date(future[0]), due: false };
   const past = all.map((x) => toDate(x.start).getTime()).filter((t) => t <= now);
+  // THE MONTH IS THE FLOOR, the same as checkInDue on the shelf. A cadence the
+  // tier promises cannot be overdue before the tier has begun, and the anchor
+  // below is the advocacy call, which on a hand-opened case is usually weeks
+  // old. Kept in step with public/js/admin.js:392 on purpose: two copies of
+  // one rule, and tools/suites/checkins.mjs runs both against the same cases.
+  const started = c.fullAccessAt ? toDate(c.fullAccessAt).getTime() : 0;
+  if (started > now) return { next: null, due: false, days: 0 };
   const first = c.appointment?.start ? toDate(c.appointment.start).getTime() : 0;
-  const last = Math.max(first, ...past, 0);
+  const last = Math.max(first, started, ...past, 0);
   if (!last || last > now) return { next: null, due: false };
   const days = Math.floor((now - last) / 86_400_000);
   return { next: null, due: days >= CHECKIN_DAYS && !c.hold?.pausedAt, days };
@@ -2810,21 +3622,14 @@ function printAuthorityDoc(item) {
     ...item,
     clientName: data.clientName, clientDob: data.clientDob, advocateName: 'Eric Bleach',
   };
-  const text = item.kind === 'records' ? recordsAuthorisation(o) : representativeDesignation(o);
-  const win = window.open('', '_blank');
-  if (!win) { alert('Allow pop-ups to print this.'); return; }
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
-    <title>${item.kind === 'records' ? 'Records authorisation' : 'Insurance representative'}</title>
-    <style>@page { margin: 16mm; }
-      body { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color:#000; }
-      pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
-      .sig-ink { margin: 6mm 0 0; page-break-inside: avoid; }
-      .sig-ink img { max-width: 78mm; max-height: 26mm; display: block; }
-      .sig-ink figcaption { font-size: 10px; color: #444; margin-top: 1mm; }
-      </style>
-    </head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre>${signatureInk(item)}</body></html>`);
-  win.document.close();
-  setTimeout(() => win.print(), 350);
+  // The STRUCTURE, not the finished text. The window renders it; this file never
+  // touches the words, which is why the same document can be a printed page
+  // here and a preview on the client's phone without two copies of the words.
+  openAuthorityDocument({
+    model: item.kind === 'records' ? recordsAuthorisationModel(o) : representativeDesignationModel(o),
+    title: item.kind === 'records' ? 'Records authorisation' : 'Insurance representative',
+    signatureHtml: signatureInk(item),
+  });
 }
 
 /**

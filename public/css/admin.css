@@ -1113,3 +1113,58 @@ main > p > a.small[href="/admin.html"] {
    with a 44px button beside it. The padding grows the target without moving
    the words, which also gives the list the air the rest of the page got. */
 .uploads .fname a { display: inline-block; padding: .65rem 0; }
+
+/* The reschedule nudge row. Four one-tap shifts off the current appointment,
+   wrapping rather than scrolling, because at 320px four buttons and a label do
+   not fit on one line and a row that scrolls sideways hides its own options. */
+.sched-nudge {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+  margin: .5rem 0 .6rem;
+}
+.sched-nudge .btn.tiny { min-height: 44px; padding: .4rem .7rem; }
+
+/* The rate pill's third state: no recorded payment, so no hourly. It must not
+   look like a number, because the whole defect was a number that looked
+   trustworthy and was not. Amber, not red: nothing is wrong with the case, the
+   app simply does not know what they paid and is saying so. */
+.work-rate.unknown {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+  cursor: pointer;
+}
+
+/* Today's remaining hours, as chips. Wraps rather than scrolls: a row that
+   scrolls sideways hides half its own options, and the whole point of this row
+   is that the hour he wants is visible without hunting. */
+.sched-today {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .35rem;
+  margin: 0 0 .5rem;
+}
+.sched-today .btn.tiny { min-height: 44px; padding: .35rem .6rem; }
+.sched-today .btn.tiny.on {
+  border-color: var(--cyan); color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 12%, transparent);
+}
+
+/* The compile card sits above the notes editor and must not compete with it:
+   the editor is the page, this is one action at the top of it. */
+.compile-card { margin: 0 0 var(--s-4, 1.5rem); }
+.compile-card h3 { margin: 0 0 .4rem; }
+
+/* The typed amount. A money field wants to look like one: the dollar sign is
+   part of the control rather than a hint inside the box, so what he types is
+   only ever the number. */
+.sched-amt {
+  display: inline-flex; align-items: center; gap: .25rem;
+  padding: 0 .5rem; min-height: 48px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2); color: var(--ink);
+}
+.sched-amt input {
+  border: 0; background: none; color: inherit;
+  font: 700 1.05rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  width: 7ch; min-height: 44px; padding: 0;
+}
+.sched-amt input:focus { outline: none; }
+.sched-amt:focus-within { border-color: var(--cyan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cyan) 16%, transparent); }
