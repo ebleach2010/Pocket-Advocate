@@ -30,7 +30,6 @@ import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
-import { getOpenAiKeyState, setOpenAiKey, clearOpenAiKey } from './openai.js';
 
 /**
  * The advisor's model turns, out of harm's way. A Workflow step has no wall
@@ -512,13 +511,6 @@ async function handleRates(env) {
 // 2026-07-13); clients get one warning email a week before the deadline.
 const FOLLOWUP_EXPIRY_DAYS = 30;
 const FOLLOWUP_WARN_DAYS = 7;
-// A Hands-Off month gets the same week's notice the follow-up has always had.
-// It had NONE until now: the only thing telling a client their month was
-// ending was the renewal card on their case page, which worked by sitting
-// there all month. That card now appears three days out (his call,
-// 2026-08-26), so without this the notice would be a card in a three-day slot
-// that only reaches somebody who happens to open the app.
-const FULL_WINDOW_WARN_DAYS = 7;
 // Admin-priced sessions: a percentage of THAT CLIENT'S case rate, 25% steps.
 const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
 const METHODS = ['phone', 'video'];
@@ -883,8 +875,6 @@ export default {
         return await handleCloseCase(request, env);
       if (url.pathname === '/api/admin/effort')
         return await handleEffort(request, env);
-      if (url.pathname === '/api/admin/openai-key')
-        return await handleOpenAiKey(request, env);
       if (url.pathname === '/api/admin/voice')
         return await handleVoiceLoop(request, env, ctx);
       if (url.pathname === '/api/version' && request.method === 'GET')
@@ -1045,7 +1035,6 @@ export default {
     if (minute % 15 === 0) {
       ctx.waitUntil(runChatDigest(env));
       ctx.waitUntil(runFollowUpWarnings(env));
-      ctx.waitUntil(runWindowWarnings(env));
       ctx.waitUntil(runAppealWarnings(env));
       ctx.waitUntil(runChatOpenNotices(env));
       ctx.waitUntil(cleanupStaleSlots(env));
@@ -1583,7 +1572,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-27-apikey';
+const BUILD_TAG = 'v2026-08-26-grace';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2000,18 +1989,8 @@ function fullAccessWindowEnd(c) {
   // keeps them. A case sold after buys thirty days at a time: month one at
   // approval, and every further month adds another thirty through
   // fullAccessExtraDays, which is the same field extensions always used.
-  // THE LENGTH HE AGREED, when he agreed one. Eric, 2026-08-26: "I should be
-  // able to override with custom amounts/agreements me and the client make.
-  // Because that might vary per client and length of time." A month was the
-  // only shape on offer: thirty days, or sixty for a legacy case, and no way
-  // to record "we agreed six weeks" or "we agreed a fortnight".
-  //
-  // It is the BASE, not an extension. fullAccessExtraDays is what a client
-  // BUYS on top, thirty days at a time, and the two must stay separate or an
-  // agreed length would read on his own card as months somebody paid for.
-  const agreed = Number(c.fullAccessDays);
-  const base = agreed > 0 ? agreed
-    : (bought && bought >= FULL_MONTHLY_FROM_AT ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS);
+  const base = bought && bought >= FULL_MONTHLY_FROM_AT
+    ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS;
   const days = base + (Number(c.fullAccessExtraDays) || 0);
   return new Date(start + days * 86_400_000 + heldMs(c));
 }
@@ -4225,32 +4204,6 @@ async function handleEffort(request, env) {
 }
 
 /**
- * GET/POST /api/admin/openai-key
- *
- * The spot for Eric's ChatGPT key. GET reports whether one is set and its
- * last four characters; it NEVER returns the key, so a stolen admin session
- * still cannot walk off with it. POST { key } stores one after asking OpenAI
- * whether it works, and POST { clear: true } forgets it.
- *
- * Admin-gated by requireAdmin, and 404 rather than 403 on a miss, like every
- * other advocate route: a 403 would confirm the route exists.
- */
-async function handleOpenAiKey(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
-  if (request.method === 'POST') {
-    const body = await request.json().catch(() => ({}));
-    if (body?.clear) return json(await clearOpenAiKey(env));
-    const out = await setOpenAiKey(env, body?.key);
-    // A refusal is a 400 so the panel's own !res.ok branch catches it and
-    // shows the reason, instead of painting a saved state over a save that
-    // did not happen.
-    return json(out, out.error ? 400 : 200);
-  }
-  return json(await getOpenAiKeyState(env));
-}
-
-/**
  * GET /api/admin/ledger
  *
  * The running tally behind the admin hamburger: what each client has paid,
@@ -5147,15 +5100,10 @@ async function confirmExtensionPurchase(env, session, attempt = 0) {
     // the "what has this case paid" helpers stay true as it runs on.
     fullAccessRateCents: (Number(c.data.fullAccessRateCents) || 0) + amountCents,
     pendingExtend: null,
-    // A NEW MONTH GETS ITS OWN WARNING. windowEndWarned is a once-only flag,
-    // so leaving it set here would mean the first month was the only one ever
-    // warned about: every month after this would end in silence, on a case
-    // that renews as many times as it needs to.
-    windowEndWarned: null,
     extraPayments: payments,
   }, {
     mask: ['fullAccessExtraDays', 'fullAccessMonths', 'fullAccessRateCents',
-      'pendingExtend', 'windowEndWarned', 'extraPayments'],
+      'pendingExtend', 'extraPayments'],
     ifUpdateTime: c.updateTime,
   });
   // Lost the lock: re-run from the top; the sessionId dedup makes it idempotent.
@@ -6755,13 +6703,6 @@ async function handleCaseUpdate(request, env) {
       startAt = t;
     }
     const startsLater = startAt.getTime() > now.getTime() + 12 * 3600_000;
-    // HOW LONG THEY AGREED. Default is the standard month, so leaving it alone
-    // behaves exactly as before. A fortnight, six weeks and ninety days are
-    // all things he has agreed on a call, and none of them was expressible.
-    const days = body?.days === undefined || body.days === null || body.days === ''
-      ? FULL_WINDOW_DAYS : Math.round(Number(body.days));
-    if (!Number.isFinite(days) || days < 1 || days > 365)
-      return json({ error: 'Give a length between 1 and 365 days.' }, 400);
     // The same shape the webhook writes: the case fee this client actually
     // paid, plus what they paid for the tier. caseRateCents is the standard
     // rate kept as the base for percentage charges, so an old case with no
@@ -6785,7 +6726,6 @@ async function handleCaseUpdate(request, env) {
       fullAccess: true,
       fullAccessAt: startAt,
       fullAccessOpenedAt: now,
-      fullAccessDays: days,
       fullAccessRateCents: paidForCase + tier,
       fullAccessMonths: 1,
       fullAccessByHand: true,
@@ -6793,9 +6733,9 @@ async function handleCaseUpdate(request, env) {
       fullAccessRequest: req ? { ...req, state: 'started', startedAt: now } : null,
       extraPayments: payments,
     }, {
-      mask: ['fullAccess', 'fullAccessAt', 'fullAccessOpenedAt', 'fullAccessDays',
-        'fullAccessRateCents', 'fullAccessMonths', 'fullAccessByHand',
-        'pendingFullAccess', 'fullAccessRequest', 'extraPayments'],
+      mask: ['fullAccess', 'fullAccessAt', 'fullAccessOpenedAt', 'fullAccessRateCents',
+        'fullAccessMonths', 'fullAccessByHand', 'pendingFullAccess', 'fullAccessRequest',
+        'extraPayments'],
     });
     // The email the webhook sends, with one sentence added when the month has
     // not begun yet. The client should not be able to tell which way the
@@ -6821,44 +6761,6 @@ async function handleCaseUpdate(request, env) {
         <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
       }).catch(() => {});
     }
-  } else if (action === 'set-agreement') {
-    // CHANGING THE AGREEMENT AFTER IT IS OPEN. Eric, 2026-08-26: "that might
-    // vary per client and length of time". An agreement made on a call gets
-    // renegotiated on a later call, and until now the length and the start
-    // were set once and then frozen: a mistyped date or a fortnight that
-    // became six weeks meant a case that could never say the truth again.
-    //
-    // Deliberately NOT open-full. This moves no money, sends no email and
-    // does not touch fullAccess itself: it corrects the record of a deal.
-    // The amount is handled by the rate pill (set-paid), which is the one
-    // control for "what have they actually paid me".
-    const c = doc.data;
-    if (!c.fullAccess)
-      return json({ error: 'This case is not on Hands-Off Case Management.' }, 409);
-    const fields = {};
-    if (body?.days !== undefined && body.days !== null && body.days !== '') {
-      const days = Math.round(Number(body.days));
-      if (!Number.isFinite(days) || days < 1 || days > 365)
-        return json({ error: 'Give a length between 1 and 365 days.' }, 400);
-      fields.fullAccessDays = days;
-    }
-    if (body?.startAt) {
-      const t = new Date(body.startAt);
-      if (Number.isNaN(t.getTime()))
-        return json({ error: 'That start date did not make sense.' }, 400);
-      const YEAR = 365 * 86_400_000;
-      if (Math.abs(t.getTime() - now.getTime()) > YEAR)
-        return json({ error: 'Pick a start date within a year either side of today.' }, 400);
-      fields.fullAccessAt = t;
-    }
-    if (!Object.keys(fields).length)
-      return json({ error: 'Nothing to change.' }, 400);
-    // Moving the window means the week's notice is about a different date, so
-    // it gets to fire again. Otherwise a case whose month was extended by hand
-    // would have been warned about a deadline that no longer exists, once,
-    // and then never again.
-    fields.windowEndWarned = null;
-    await patchDoc(env, `cases/${caseId}`, fields, { mask: Object.keys(fields) });
   } else if (action === 'recording-uploaded') {
     // The call happened: start the report clock. Admin-side the deadline is a
     // strict 7 calendar days; the client is told "7 business days, some take
@@ -7440,59 +7342,6 @@ export async function runFollowUpWarnings(env, now = Date.now()) {
     }
     await patchDoc(env, `cases/${row.id}`, { followUpExpiryWarned: true }, {
       mask: ['followUpExpiryWarned'],
-    });
-  }
-}
-
-/**
- * A week's notice that a Hands-Off month is ending.
- *
- * Modelled on runFollowUpWarnings above, which is the shape every warning in
- * this file uses: query, skip what is already handled, skip what has already
- * lapsed, skip what is not yet due, send once, then stamp a flag so it is
- * never sent twice.
- *
- * It reads fullAccessWindowEnd, the same function the auto-close sweep and
- * the check-in ceiling read, so the date in the email is the date the system
- * will actually act on. A deadline email with the wrong deadline is worse
- * than none, which is the lesson written into its sibling.
- *
- * NOT a dunning notice. He sells this as a rhythm you stop whenever you like,
- * so it says what happens if they do nothing and leaves it there.
- */
-export async function runWindowWarnings(env, now = Date.now()) {
-  const rows = await queryDocs(env, 'cases', [['fullAccess', 'EQUAL', true]], 100);
-  for (const row of rows) {
-    const c = row.data;
-    if (c.status === 'closed' || c.windowEndWarned) continue;
-    // A paused case is not running its window down, so it is not ending.
-    if (c.hold?.pausedAt) continue;
-    // A checkout already in flight is somebody mid-renewal. Emailing them
-    // that their month is about to end reads as a bill they already paid.
-    if (c.pendingExtend) continue;
-    const end = fullAccessWindowEnd(c);
-    if (!end) continue;
-    const at = end.getTime();
-    // Already over: no email after the fact. The renewal card is still on
-    // their page and still works, which is the right way to find out late.
-    if (now >= at) continue;
-    if (at - now > FULL_WINDOW_WARN_DAYS * 86_400_000) continue;
-    if (c.clientEmail) {
-      await sendEmail(env, {
-        to: c.clientEmail,
-        subject: 'Your Hands-Off month ends next week',
-        html: `<p>Your coordination window is coming to an end:</p>
-          ${whenHtml(end, c.clientTz)}
-          <p>If you want me to carry on, you can add another month from your
-          case page. Same price, same rhythm, and the check-ins and the calls
-          on your behalf continue as they are.</p>
-          <p>If you would rather stop here, do nothing. Your case wraps up and
-          your whole file stays yours to keep.</p>
-          <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
-      });
-    }
-    await patchDoc(env, `cases/${row.id}`, { windowEndWarned: true }, {
-      mask: ['windowEndWarned'],
     });
   }
 }

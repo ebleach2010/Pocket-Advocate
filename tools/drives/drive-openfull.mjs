@@ -14,12 +14,6 @@
 // So the check that counts is the LAST one: the client's own page offering the
 // insurer authorisation. The admin panel saying a nice sentence proves
 // nothing if the forms did not actually open.
-// Observed 2026-08-27: 32 ok, 0 FAIL, driving a 45-day agreement with a start
-// a fortnight out.
-//
-// Negative control, run 2026-08-26: dropping the typed amount from the demo's
-// open-full write lands on $1,200, the case fee alone, with the $3,400
-// silently gone.
 import { chromium } from 'playwright';
 const P = `http://127.0.0.1:${process.env.PA_PORT || 8901}`;
 let pass = 0, fail = 0;
@@ -131,34 +125,14 @@ const startDay = await page.evaluate((d) => {
   return { was, next };
 }, DAY);
 ok('there is a field for the day their month begins', !!startDay);
-
-// HOW LONG THEY AGREED. Eric, 2026-08-26: "that might vary per client and
-// length of time." Driven at 45 days rather than the default 30, so a length
-// that is simply never read would show up instead of passing by accident.
-const AGREED = 45;
-const daysSet = await page.evaluate((n) => {
-  const el = document.getElementById('openfull-days');
-  if (!el) return null;
-  const was = el.value;
-  el.value = String(n);
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  return was;
-}, AGREED);
-ok('there is a field for how long it runs', daysSet !== null);
-ok('and it starts at the standard month, so the usual case is no taps',
-   daysSet === '30', String(daysSet));
 const todayMT = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Etc/GMT+7', year: 'numeric', month: '2-digit', day: '2-digit',
 }).format(new Date());
 ok('it is prefilled to today, so the common case is no taps',
    startDay?.was === todayMT, `${startDay?.was} vs ${todayMT}`);
 const whenLine = await page.evaluate(() => document.getElementById('openfull-when')?.textContent.trim() || '');
-ok('and it says the window it is about to create, both ends',
+ok('and it says the month it is about to create, both ends',
    /runs .+ to .+/.test(whenLine) && /forms go live today/.test(whenLine), whenLine.slice(0, 110));
-// It stops calling it a month once it is not one. Saying "month" over a
-// 45-day agreement on his own screen is how a wrong date reaches an email.
-ok('and it stops saying "month" when it is not one',
-   /Their 45 days runs/.test(whenLine), whenLine.slice(0, 80));
 
 // The real thing.
 await typed('3400');
@@ -176,8 +150,6 @@ ok('and the day he pressed it is still on the record',
    && String(after.fullAccessOpenedAt).slice(0, 10) !== startDay?.next,
    String(after?.fullAccessOpenedAt || 'missing').slice(0, 10));
 ok('month one of however many he takes', Number(after?.fullAccessMonths) === 1, `months=${after?.fullAccessMonths}`);
-ok('the agreed length is on the case, not rounded to a month',
-   Number(after?.fullAccessDays) === AGREED, `fullAccessDays=${after?.fullAccessDays}`);
 ok('what the case has paid is the case fee plus what he typed, to the cent',
    Number(after?.fullAccessRateCents) === 460000, `fullAccessRateCents=${after?.fullAccessRateCents}`);
 const line = (after?.extraPayments || []).find((x) => x.kind === 'fullaccess');
@@ -186,15 +158,9 @@ ok('the ledger line says the money came in outside the app',
    line ? JSON.stringify(line).slice(0, 90) : 'no ledger line');
 ok('he was asked to confirm, with the total named',
    dialogs.some((d) => /\$4,600/.test(d)), dialogs.join(' | ').slice(0, 120));
-// UPDATED with the agreed-length change, not deleted. Its intent is that the
-// confirm names the DATES and not only the money, and that still holds. What
-// it pinned was the word "month", which the panel now drops when the
-// agreement is not one: "Their 45 days starts September 9 and ends October
-// 24". Both shapes are accepted, and the end date is now demanded too, since
-// the length is the thing being confirmed.
-ok('and the confirm named the dates too, not just the money',
-   dialogs.some((d) => /Their (?:month|\d+ days) starts \w+ \d+ and ends \w+ \d+/.test(d)),
-   dialogs.join(' | ').slice(0, 200));
+ok('and the confirm named the start date too, not just the money',
+   dialogs.some((d) => /Their month starts \w+ \d+/.test(d)),
+   dialogs.join(' | ').slice(0, 160));
 
 const said = await page.evaluate(() =>
   [...document.querySelectorAll('.saved-note')].map((n) => n.textContent.trim()).join(' | '));
@@ -237,27 +203,6 @@ ok('the client is told their month STARTS, not that it already started',
    (windowLine.match(/Your (?:month|window) starte?s? [^.]*/) || ['(no window sentence)'])[0].slice(0, 110));
 ok('and is told why signing early is still worth it',
    /records request can take weeks/.test(windowLine));
-// The end date the CLIENT reads has to be the agreed one. This is the whole
-// chain: a length he typed, through the Worker, into the sentence they read.
-const wantEnd = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' })
-  .format(new Date(new Date(`${startDay.next}T12:00:00-07:00`).getTime() + AGREED * 86400000));
-ok('and the end date they are given is the length he agreed',
-   windowLine.includes(wantEnd), `${wantEnd} not in "${(windowLine.match(/Your month starts [^.]*/) || [''])[0]}"`);
-
-// AND THE UPSELL IS NOT IN THEIR FACE. Eric, 2026-08-26: "Shouldn't that show
-// maybe three days before their month ends?" This case was opened moments ago
-// for a month starting in a fortnight, so it has 44 days to run: the renewal
-// card must not be on the page, and the price must not be either. Checked on
-// the RENDERED page, because the arithmetic is pinned in checkins.mjs Z3-Z8
-// and a lift cannot prove the markup ever reaches the DOM.
-const upsell = await client.evaluate(() => ({
-  card: !!document.querySelector('[data-buy-extend]'),
-  words: /Keep going another month/.test(document.body.textContent || ''),
-  price: /\$3,400/.test(document.body.textContent || ''),
-}));
-ok('a month that has not started is not being sold another one',
-   upsell.card === false && upsell.words === false, JSON.stringify(upsell));
-ok('and no four-figure price is sitting on their page', upsell.price === false);
 
 ok('the client is asked for the authorisation the tier needs',
    seen.heading === 'Before I can act for you', seen.heading || '(no panel)');

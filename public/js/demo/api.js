@@ -55,11 +55,6 @@ the phone. The referral question is the one that changes the shape of the case.`
 let demoChatSecs = 3 * 3600 + 40 * 60;
 let demoEffort = 'high';
 
-// The ChatGPT key row, in the demo. It never holds a real key and never asks
-// OpenAI anything: the point is to show what the row DOES, so the shape check
-// is real and the "OpenAI accepted it" answer is invented. Demo only.
-let demoOpenAi = { set: false, tail: '', updatedAt: null, checked: false, viaSecret: false };
-
 // What the study looks like after a few nights. Demo only.
 const demoVoice = {
   enabled: true,
@@ -231,30 +226,6 @@ export function demoApi(role, store) {
         if (!Number.isFinite(cents) || cents <= 0 || cents > 100000 * 100)
           return fail(400, 'Give an amount between $1 and $100,000.');
         store.docs.set(key, { ...c, paidOverrideCents: cents, paidOverrideAt: now });
-      } else if (body.action === 'set-agreement') {
-        // Correcting a running agreement. Moves no money, sends nothing.
-        if (!c.fullAccess) return fail(409, 'This case is not on Hands-Off Case Management.');
-        const next = { ...c };
-        let touched = false;
-        if (body.days !== undefined && body.days !== null && body.days !== '') {
-          const d = Math.round(Number(body.days));
-          if (!Number.isFinite(d) || d < 1 || d > 365)
-            return fail(400, 'Give a length between 1 and 365 days.');
-          next.fullAccessDays = d;
-          touched = true;
-        }
-        if (body.startAt) {
-          const t = new Date(body.startAt);
-          if (Number.isNaN(t.getTime())) return fail(400, 'That start date did not make sense.');
-          if (Math.abs(t.getTime() - now.getTime()) > 365 * 86400000)
-            return fail(400, 'Pick a start date within a year either side of today.');
-          next.fullAccessAt = t;
-          touched = true;
-        }
-        if (!touched) return fail(400, 'Nothing to change.');
-        // A moved window is a different deadline, so the notice fires again.
-        next.windowEndWarned = null;
-        store.docs.set(key, next);
       } else if (body.action === 'open-full') {
         // The tier, opened by hand. Same rules as the Worker, so the demo
         // cannot show a case the live app would refuse to make.
@@ -274,12 +245,6 @@ export function demoApi(role, store) {
             return fail(400, 'Pick a start date within a year either side of today.');
           startAt = t;
         }
-        // How long they agreed. The default is the standard month, so leaving
-        // it alone behaves exactly as it did.
-        const days = body.days === undefined || body.days === null || body.days === ''
-          ? 30 : Math.round(Number(body.days));
-        if (!Number.isFinite(days) || days < 1 || days > 365)
-          return fail(400, 'Give a length between 1 and 365 days.');
         const paidForCase = Number(c.caseRateCents) > 0
           ? Number(c.caseRateCents) : (Number(c.stripe?.amountTotal) || 0);
         const payments = Array.isArray(c.extraPayments) ? [...c.extraPayments] : [];
@@ -294,7 +259,6 @@ export function demoApi(role, store) {
           fullAccess: true,
           fullAccessAt: startAt,
           fullAccessOpenedAt: now,
-          fullAccessDays: days,
           fullAccessRateCents: paidForCase + tier,
           fullAccessMonths: 1,
           fullAccessByHand: true,
@@ -528,29 +492,6 @@ export function demoApi(role, store) {
     if (path === '/api/admin/effort') {
       if (init.method === 'POST') demoEffort = body.effort === 'max' ? 'max' : 'high';
       return ok({ effort: demoEffort });
-    }
-    if (path === '/api/admin/openai-key') {
-      if (init.method === 'POST') {
-        if (body.clear) {
-          demoOpenAi = { set: false, tail: '', updatedAt: null, checked: false, viaSecret: false };
-          return ok({ ...demoOpenAi, message: 'Key removed.' });
-        }
-        const key = typeof body.key === 'string' ? body.key.trim() : '';
-        // The same shape check the Worker runs, so a bad paste is refused here
-        // too and the demo does not teach him something the real thing will
-        // not do.
-        if (!/^sk-[A-Za-z0-9_-]{16,500}$/.test(key)) {
-          return new Response(
-            JSON.stringify({ error: 'An OpenAI key starts with sk- and is one long line. That does not look like one.' }),
-            { status: 400, headers: { 'content-type': 'application/json' } });
-        }
-        demoOpenAi = {
-          set: true, tail: key.slice(-4), updatedAt: new Date().toISOString(),
-          checked: true, viaSecret: false,
-        };
-        return ok({ ...demoOpenAi, message: 'Saved. OpenAI accepted it.' });
-      }
-      return ok({ ...demoOpenAi });
     }
     if (path === '/api/admin/voice') {
       if (typeof body.enabled === 'boolean') demoVoice.enabled = body.enabled;

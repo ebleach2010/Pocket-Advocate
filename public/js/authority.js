@@ -152,156 +152,14 @@ the system at the moment of signing.`;
 }
 
 /**
- * THE DOCUMENT MODEL, and why there is one.
- *
- * Eric, 2026-08-26: "The forms are fucking horrendous. This? Really? Format it
- * neatly." He was right, and the words were never the problem: they are pinned
- * line by line by tools/suites/authority.mjs against the 45 CFR 164.508 core
- * elements. The problem was that every surface dumped the finished string into
- * a <pre> in a 12px monospace font, so a legal instrument a records department
- * has to accept looked like a terminal log.
- *
- * You cannot fix that by running a regex over the rendered text. A pattern
- * that turns ALL-CAPS lines into headings works right up until the day it
- * silently swallows a clause, on a document nobody reads closely because it
- * has always looked the same.
- *
- * So each document is built as a STRUCTURE, with two renderers over it:
- * `authorityText` produces exactly the string these functions always produced,
- * and `authorityHtml` produces a real document. The words exist once.
- *
- * Blocks are separated by one blank line. Inside a block nothing is blank, and
- * a heading is followed immediately by its own content. That is the entire
- * layout rule, and it is the rule the old template literals already followed.
- *
- * Hard line breaks inside a paragraph are kept in that structure because the text
- * form is wrapped for a fixed-width page and must come back byte for byte.
- * The HTML renderer unwraps them, since HTML reflows on its own.
- */
-const nl = (x) => String(x == null ? '' : x);
-
-/** One block, as text. Every part knows its own indentation and markers. */
-function partText(part) {
-  switch (part.t) {
-    case 'title': return part.lines.join('\n');
-    case 'meta': return part.rows.map(([k, v]) => `${k}: ${v}`).join('\n');
-    case 'p': return nl(part.text);
-    case 'lines': return part.lines.map(nl).join('\n');
-    case 'checks': return part.items.map((s) => `  ${part.mark} ${s.label}\n      ${s.note}`).join('\n');
-    case 'bullets': return part.items.map((x) => `  - ${x}`).join('\n');
-    case 'ol': return part.items.map((x, i) => `${i + 1}. ${x}`).join('\n');
-    default: return '';
-  }
-}
-function blockText(b) {
-  if (b.t === 'section') return [b.h, ...b.body.map(partText)].join('\n');
-  if (b.t === 'group') return b.body.map(partText).join('\n');
-  return partText(b);
-}
-
-/** The document, as the string these builders have always returned. */
-export function authorityText(model) {
-  return model.map(blockText).join('\n\n');
-}
-
-/**
- * The document, as a document.
- *
- * Deliberately semantic: h1, h2, ol, dl. A records clerk skims for the
- * signature and the expiry, and a screen reader has to be able to do the same.
- * Values that are missing render as a ruled span rather than as nothing, so a
- * printed blank has somewhere to write and a filled form shows what is filled.
- */
-const esc = (x) => String(x == null ? '' : x)
-  .replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
-// A paragraph is wrapped for the fixed-width text form. HTML reflows, so the
-// hard breaks come out; a blank line inside one would be a new paragraph and
-// there are none.
-const flow = (t) => esc(nl(t).replace(/\n\s*/g, ' ').trim());
-// A run of underscores is somewhere to write on paper. As HTML it is a line,
-// not forty-six underscore glyphs.
-//
-// ANYWHERE IN THE LINE, not only alone on one. The signature block is
-// "Signed: ______", "Print name: ______", "Date: ______", so a rule that only
-// matched a whole line left the signature page, the one part of the document
-// a person physically writes on, as rows of underscore characters.
-const ruled = (v) => esc(v).replace(/_{6,}/g, '<span class="doc-rule"></span>');
-const value = (v) => ruled(v);
-
-function partHtml(part) {
-  switch (part.t) {
-    case 'title': return `<h1>${part.lines.map(esc).join('<br>')}</h1>`;
-    case 'meta': return `<dl class="doc-meta">${part.rows
-      .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${value(v)}</dd>`).join('')}</dl>`;
-    case 'p': return `<p>${flow(part.text)}</p>`;
-    case 'lines': return part.lines
-      .filter((l) => String(l).trim() !== '')
-      .map((l) => `<p class="doc-line">${ruled(String(l).trim())}</p>`).join('');
-    case 'checks': return `<ul class="doc-checks">${part.items.map((s) => `
-      <li><span class="doc-box${part.mark === '[X]' ? ' is-on' : ''}" aria-hidden="true"></span>
-        <span class="doc-check-body"><strong>${esc(s.label)}</strong>
-        <span class="doc-note">${flow(s.note)}</span></span>
-        <span class="doc-sr">${part.mark === '[X]' ? 'Authorised' : 'Not marked'}</span></li>`).join('')}</ul>`;
-    case 'bullets': return `<ul class="doc-bullets">${part.items
-      .map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
-    case 'ol': return `<ol class="doc-rights">${part.items
-      .map((x) => `<li>${flow(x)}</li>`).join('')}</ol>`;
-    default: return '';
-  }
-}
-function blockHtml(b) {
-  if (b.t === 'section') {
-    const cls = b.sig ? ' class="doc-sig"' : '';
-    return `<section${cls}><h2>${esc(b.h)}</h2>${b.body.map(partHtml).join('')}</section>`;
-  }
-  if (b.t === 'group') return `<section>${b.body.map(partHtml).join('')}</section>`;
-  return partHtml(b);
-}
-
-/** The whole document as HTML. The caller supplies the page around it. */
-export function authorityHtml(model) {
-  return model.map(blockHtml).join('\n');
-}
-
-/**
- * The signature block, and there are two of them because there are two ways
- * these get signed. See signatureBlock above for the reasoning; this is the
- * same thing as a structured block.
- */
-function signatureModel(o, who) {
-  if (o.blank) {
-    return {
-      t: 'section',
-      h: 'SIGNATURE',
-      sig: true,
-      body: [{
-        t: 'lines',
-        lines: [`Signed: ${RULE}`, '', `Print name: ${o.clientName || RULE}`, '', 'Date: ______________________'],
-      }],
-    };
-  }
-  return {
-    t: 'section',
-    h: 'SIGNATURE',
-    sig: true,
-    body: [
-      { t: 'lines', lines: [`Signed: ${o.signedName || '(typed full name)'}`, `Date: ${o.signedAt ? fmt(o.signedAt) : '(date)'}`] },
-      {
-        t: 'p',
-        text: `Signed electronically by the ${who} through the Pocket Advocate case page.\nThe typed name above is the ${who}'s signature and the date is recorded by\nthe system at the moment of signing.`,
-      },
-    ],
-  };
-}
-
-/**
  * The records authorisation, as the client and the clinic both read it.
  *
  * `o`: { clientName, clientDob, advocateName, clinicName, clinicAddress,
  *        fromDate, toDate, categories: [id], purpose, signedName, signedAt,
  *        expiresAt }
+ * Everything is plain text; the caller escapes before rendering as HTML.
  */
-export function recordsAuthorisationModel(o = {}) {
+export function recordsAuthorisation(o = {}) {
   const cats = SENSITIVE_CATEGORIES.filter((c) => (o.categories || []).includes(c.id));
   // Ticked scopes, or the whole set: for a legacy record with none stored,
   // and for a blank being filled in by hand, all three print (the blank with
@@ -313,116 +171,71 @@ export function recordsAuthorisationModel(o = {}) {
   const range = o.fromDate || o.toDate
     ? `Records dated ${o.fromDate ? fmt(o.fromDate, '(date not recorded)') : 'the beginning of my care'} through ${o.toDate ? fmt(o.toDate, '(date not recorded)') : 'today'}.`
     : 'Records covering the whole period of my care.';
-  // A BLANK CAN NOW GRANT THEM TOO (Eric, 2026-08-26: "make sure it covers all
-  // bases"). A printed blank said only "I have NOT authorised release of
-  // separately protected categories", with nothing to tick, so a client
-  // filling one in on paper could not authorise mental-health records however
-  // much they wanted to: the in-app form offered the choice and the paper form
-  // silently refused it.
-  const catBlock = cats.length
-    ? {
-      t: 'group',
-      body: [
-        {
-          t: 'p',
-          text: `I SPECIFICALLY authorise release of the following, each of which is\nseparately protected and none of which may be released without the specific\npermission I am giving here:`,
-        },
-        { t: 'bullets', items: cats.map((c) => c.label) },
-      ],
-    }
-    : o.blank
-      ? {
-        t: 'group',
-        body: [
-          {
-            t: 'p',
-            text: `Each of the following is separately protected and is NOT released unless I\nmark it here. Nothing in this list is required, and leaving one unmarked\nnever affects the rest of this authorisation.`,
-          },
-          { t: 'checks', mark: '[ ]', items: SENSITIVE_CATEGORIES },
-        ],
-      }
-      : {
-        t: 'p',
-        text: `I have NOT authorised release of separately protected categories\n(mental health, substance use treatment, HIV and communicable disease, genetic\ntesting, or reproductive and sexual health records). Do not release them under\nthis authorisation.`,
-      };
-  return [
-    {
-      t: 'title',
-      lines: ['AUTHORISATION FOR RELEASE OF PROTECTED HEALTH INFORMATION', 'AND FOR COMMUNICATION WITH MY PATIENT ADVOCATE'],
-    },
-    {
-      t: 'meta',
-      rows: [
-        ['Patient', field(o, o.clientName, '(name)')],
-        ['Date of birth', field(o, o.clientDob, '(date of birth)', 24)],
-      ],
-    },
-    {
-      t: 'p',
-      text: `I authorise the provider named below to release my health information to the\nperson named below, and to communicate with him as a person I have involved\nin my care.`,
-    },
-    {
-      t: 'section',
-      h: 'RELEASING PROVIDER',
-      body: [{ t: 'lines', lines: [field(o, o.clinicName, '(clinic)'), field(o, o.clinicAddress, '', 46)] }],
-    },
-    {
-      t: 'section',
-      h: 'RECEIVING PERSON',
-      body: [{ t: 'p', text: `${o.advocateName || 'Eric Bleach'}, patient advocate, Pocket Advocate.` }],
-    },
-    {
-      t: 'section',
-      h: 'WHAT I AUTHORISE MY ADVOCATE TO DO',
-      body: [
-        { t: 'p', text: `I have involved the person named above in my care. I authorise each item\nmarked below, and only those:` },
-        scopes.length
-          ? { t: 'checks', mark: scopeMark, items: scopes }
-          : { t: 'lines', lines: ['  I have not authorised any of the items above.'] },
-      ],
-    },
-    {
-      t: 'section',
-      h: 'WHAT MAY BE RELEASED',
-      body: [
-        { t: 'p', text: range },
-        { t: 'p', text: `This includes office notes and consultation notes, laboratory and pathology\nresults, imaging reports and the images themselves, medication and prescription\nhistory, procedure and operative reports, discharge summaries, referral letters,\nand billing records and claim documentation for the same period.` },
-      ],
-    },
-    catBlock,
-    {
-      t: 'p',
-      text: `Psychotherapy notes maintained separately from the medical record are NOT\nauthorised by this form and require a separate authorisation.`,
-    },
-    {
-      t: 'section',
-      h: 'PURPOSE',
-      body: [{ t: 'p', text: o.purpose || 'At my own request, so that my patient advocate can review my care, speak with my providers on my behalf, and pursue insurance appeals for me.' }],
-    },
-    {
-      t: 'section',
-      h: 'MY RIGHTS, WHICH THIS FORM DOES NOT TAKE AWAY',
-      body: [{
-        t: 'ol',
-        items: [
-          `I may revoke this authorisation at any time by writing to the provider named\n   above and to my advocate. Revoking it stops future releases; it cannot undo a\n   release already made in reliance on it.`,
-          `The provider may not condition my treatment, payment, enrolment, or\n   eligibility for benefits on whether I sign this. Signing is my choice.`,
-          `Information released under this authorisation may be re-disclosed by the\n   person receiving it and may then no longer be protected by federal privacy\n   law. My advocate keeps it in my private case file and does not share it\n   except as I direct.`,
-          `I may inspect or copy the information described here, and I am entitled to a\n   copy of this authorisation.`,
-        ],
-      }],
-    },
-    {
-      t: 'section',
-      h: 'EXPIRY',
-      body: [{ t: 'p', text: `This authorisation expires on ${o.expiresAt ? fmt(o.expiresAt) : 'one year from the date signed'}, or when I revoke it in writing, whichever comes first.` }],
-    },
-    signatureModel(o, 'patient'),
-  ];
-}
+  return `AUTHORISATION FOR RELEASE OF PROTECTED HEALTH INFORMATION
+AND FOR COMMUNICATION WITH MY PATIENT ADVOCATE
 
-export function recordsAuthorisation(o = {}) {
-  return authorityText(recordsAuthorisationModel(o));
+Patient: ${field(o, o.clientName, '(name)')}
+Date of birth: ${field(o, o.clientDob, '(date of birth)', 24)}
+
+I authorise the provider named below to release my health information to the
+person named below, and to communicate with him as a person I have involved
+in my care.
+
+RELEASING PROVIDER
+${field(o, o.clinicName, '(clinic)')}
+${field(o, o.clinicAddress, '', 46)}
+
+RECEIVING PERSON
+${o.advocateName || 'Eric Bleach'}, patient advocate, Pocket Advocate.
+
+WHAT I AUTHORISE MY ADVOCATE TO DO
+I have involved the person named above in my care. I authorise each item
+marked below, and only those:
+${scopes.length
+    ? scopes.map((s) => `  ${scopeMark} ${s.label}
+      ${s.note}`).join('\n')
+    : '  I have not authorised any of the items above.'}
+
+WHAT MAY BE RELEASED
+${range}
+This includes office notes and consultation notes, laboratory and pathology
+results, imaging reports and the images themselves, medication and prescription
+history, procedure and operative reports, discharge summaries, referral letters,
+and billing records and claim documentation for the same period.
+
+${cats.length
+    ? `I SPECIFICALLY authorise release of the following, each of which is
+separately protected and none of which may be released without the specific
+permission I am giving here:
+${cats.map((c) => `  - ${c.label}`).join('\n')}`
+    : `I have NOT authorised release of separately protected categories
+(mental health, substance use treatment, HIV and communicable disease, genetic
+testing, or reproductive and sexual health records). Do not release them under
+this authorisation.`}
+
+Psychotherapy notes maintained separately from the medical record are NOT
+authorised by this form and require a separate authorisation.
+
+PURPOSE
+${o.purpose || 'At my own request, so that my patient advocate can review my care, speak with my providers on my behalf, and pursue insurance appeals for me.'}
+
+MY RIGHTS, WHICH THIS FORM DOES NOT TAKE AWAY
+1. I may revoke this authorisation at any time by writing to the provider named
+   above and to my advocate. Revoking it stops future releases; it cannot undo a
+   release already made in reliance on it.
+2. The provider may not condition my treatment, payment, enrolment, or
+   eligibility for benefits on whether I sign this. Signing is my choice.
+3. Information released under this authorisation may be re-disclosed by the
+   person receiving it and may then no longer be protected by federal privacy
+   law. My advocate keeps it in my private case file and does not share it
+   except as I direct.
+4. I may inspect or copy the information described here, and I am entitled to a
+   copy of this authorisation.
+
+EXPIRY
+This authorisation expires on ${o.expiresAt ? fmt(o.expiresAt) : 'one year from the date signed'}, or when I revoke it in writing, whichever comes first.
+
+${signatureBlock(o, 'patient')}`;
 }
 
 /**
@@ -433,43 +246,37 @@ export function recordsAuthorisation(o = {}) {
  * `o`: { clientName, clientDob, memberId, planName, advocateName, signedName,
  *        signedAt, expiresAt }
  */
-export function representativeDesignationModel(o = {}) {
-  return [
-    { t: 'title', lines: ['APPOINTMENT OF AUTHORISED REPRESENTATIVE'] },
-    {
-      t: 'meta',
-      rows: [
-        ['Member', field(o, o.clientName, '(name)')],
-        ['Date of birth', field(o, o.clientDob, '(date of birth)', 24)],
-        ['Member or policy ID', field(o, o.memberId, '(member ID)', 32)],
-        ['Plan', field(o, o.planName, '(plan or insurer)')],
-      ],
-    },
-    {
-      t: 'p',
-      text: `I appoint ${o.advocateName || 'Eric Bleach'}, patient advocate, Pocket Advocate,\nas my authorised representative in connection with claims and appeals under my\nhealth plan.`,
-    },
-    {
-      t: 'section',
-      h: 'WHAT THIS ALLOWS',
-      body: [{ t: 'p', text: `My representative may, on my behalf: request and receive claim and benefit\ninformation including denial notices and their reasons; request the plan\ndocuments, medical policies, and clinical criteria used to decide my claim, and\nthe credentials of the reviewer who decided it; file and pursue internal\nappeals at every level; request an external review by an independent review\norganisation; and communicate with the plan in writing, by telephone, and\nthrough its portal about my claims.` }],
-    },
-    {
-      t: 'section',
-      h: 'WHAT THIS DOES NOT ALLOW',
-      body: [{ t: 'p', text: `This does not let my representative make medical decisions for me, and it is\nnot a power of attorney, a healthcare proxy, or an appointment of legal\ncounsel. My representative is a patient advocate, not an attorney, and does not\nprovide legal representation.` }],
-    },
-    {
-      t: 'section',
-      h: 'DURATION',
-      body: [{ t: 'p', text: `This appointment stays in effect until ${o.expiresAt ? fmt(o.expiresAt) : 'one year from the date signed'}, or until I revoke it in writing, whichever comes first. I may revoke it at any time by writing to my plan and to my representative.` }],
-    },
-    signatureModel(o, 'member'),
-  ];
-}
-
 export function representativeDesignation(o = {}) {
-  return authorityText(representativeDesignationModel(o));
+  return `APPOINTMENT OF AUTHORISED REPRESENTATIVE
+
+Member: ${field(o, o.clientName, '(name)')}
+Date of birth: ${field(o, o.clientDob, '(date of birth)', 24)}
+Member or policy ID: ${field(o, o.memberId, '(member ID)', 32)}
+Plan: ${field(o, o.planName, '(plan or insurer)')}
+
+I appoint ${o.advocateName || 'Eric Bleach'}, patient advocate, Pocket Advocate,
+as my authorised representative in connection with claims and appeals under my
+health plan.
+
+WHAT THIS ALLOWS
+My representative may, on my behalf: request and receive claim and benefit
+information including denial notices and their reasons; request the plan
+documents, medical policies, and clinical criteria used to decide my claim, and
+the credentials of the reviewer who decided it; file and pursue internal
+appeals at every level; request an external review by an independent review
+organisation; and communicate with the plan in writing, by telephone, and
+through its portal about my claims.
+
+WHAT THIS DOES NOT ALLOW
+This does not let my representative make medical decisions for me, and it is
+not a power of attorney, a healthcare proxy, or an appointment of legal
+counsel. My representative is a patient advocate, not an attorney, and does not
+provide legal representation.
+
+DURATION
+This appointment stays in effect until ${o.expiresAt ? fmt(o.expiresAt) : 'one year from the date signed'}, or until I revoke it in writing, whichever comes first. I may revoke it at any time by writing to my plan and to my representative.
+
+${signatureBlock(o, 'member')}`;
 }
 
 /** Which document a stored record is. The pair is the whole vocabulary. */

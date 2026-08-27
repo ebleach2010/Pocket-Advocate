@@ -453,11 +453,6 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   const writes = [];
   const emails = [];
   const harness = (caseDoc) => `
-    // Module-scope constants the lifted route reads. Their VALUES are read out
-    // of the Worker source above rather than typed here, so a stub can never
-    // quietly disagree with the constant it stands in for, which is the way a
-    // harness starts hiding the bug it exists to find.
-    const FULL_WINDOW_DAYS = ${num('FULL_WINDOW_DAYS')};
     const json = (o, s) => ({ status: s || 200, body: o });
     const requireAdmin = async () => ({ uid: 'admin' });
     const getDoc = async () => (${JSON.stringify(caseDoc)} === null ? null : { data: ${JSON.stringify(caseDoc)} });
@@ -830,101 +825,6 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   check('Y8 and neither has a bare Date.now() comparison left for this',
     !/boughtAt\.getTime\(\) > Date\.now\(\)/.test(CJ)
     && !/stored\.getTime\(\) > Date\.now\(\) \? 'starts'/.test(AJ));
-}
-
-// ---- A1-A9: a custom length, and an agreement he can correct --------------
-// Eric, 2026-08-26: "My current client paid for a full month's case but not
-// through the app. So again, I should be able to override with custom
-// amounts/agreements me and the client make. Because that might vary per
-// client and length of time."
-//
-// The amount was already his to type. The LENGTH was not: the window was
-// thirty days, or sixty for a legacy case, and nothing anywhere could say "we
-// agreed a fortnight" or "we agreed six weeks". fullAccessExtraDays existed
-// but had exactly one writer, the paid extension, and it means a month
-// somebody BOUGHT, which is a different fact from a length he agreed.
-//
-// fullAccessDays is the base. All three window copies read it, so it is run
-// through all three here rather than pattern matched: U1-U6 above guard that
-// the three agree, and these guard that they agree about this too.
-{
-  const ADMINSRC4 = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
-  const CASESRC4 = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
-  const liftFrom = (src, name) => {
-    const m = src.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`));
-    return m ? m[0] : '';
-  };
-  const CONSTS = `
-    const FULL_WINDOW_DAYS = ${num('FULL_WINDOW_DAYS')};
-    const FULL_LEGACY_WINDOW_DAYS = ${num('FULL_LEGACY_WINDOW_DAYS')};
-    const FULL_MONTHLY_FROM_AT = Date.parse('2026-08-26T00:00:00Z');
-    const FULL_WINDOW_FROM_PURCHASE_AT = Date.parse('2026-08-25T00:00:00Z');
-    const toDate = (x) => new Date(x);
-    const heldMs = (c) => Math.max(0, Number(c?.hold?.totalMs) || 0);
-  `;
-  let W = null, A = null, C = null;
-  try {
-    W = new Function(`${CONSTS}\n${liftFrom(SRC, 'fullAccessWindowEnd')}\nreturn fullAccessWindowEnd;`)();
-    A = new Function(`${CONSTS}\n${liftFrom(ADMINSRC4, 'fullAccessDaysLeft')}\nreturn fullAccessDaysLeft;`)();
-    C = new Function(`${CONSTS}\n${liftFrom(CASESRC4, 'windowEndOf')}\nreturn windowEndOf;`)();
-  } catch (e) { /* A1 reports it */ }
-  check('A1 all three window helpers still lift and run', !!W && !!A && !!C);
-
-  if (W && A && C) {
-    const DAY = 86_400_000;
-    const boughtAt = Date.parse('2026-09-09T12:00:00Z');
-    const days = (end) => Math.round((end.getTime() - boughtAt) / DAY);
-    const withAgreed = (n, extra = {}) => ({
-      fullAccess: true, fullAccessAt: new Date(boughtAt), fullAccessDays: n,
-      appointment: { start: new Date(boughtAt - 20 * DAY) }, ...extra,
-    });
-    check('A2 a fortnight he agreed is a fortnight, in the Worker',
-      days(W(withAgreed(14))) === 14, String(days(W(withAgreed(14)))));
-    check('A3 and the CLIENT is told the same fortnight',
-      C(withAgreed(14)).getTime() === W(withAgreed(14)).getTime(),
-      `${C(withAgreed(14)).toISOString().slice(0, 10)} vs ${W(withAgreed(14)).toISOString().slice(0, 10)}`);
-    check('A4 six weeks works the same way, in both',
-      days(W(withAgreed(42))) === 42
-      && C(withAgreed(42)).getTime() === W(withAgreed(42)).getTime());
-    // A month somebody BUYS still stacks ON TOP of what was agreed. The two
-    // are different facts and summing them wrongly is how a client gets days
-    // he did not pay for, or loses days he did.
-    check('A5 a bought month stacks on top of an agreed fortnight',
-      days(W(withAgreed(14, { fullAccessExtraDays: 30 }))) === 44,
-      String(days(W(withAgreed(14, { fullAccessExtraDays: 30 })))));
-    // No agreed length: nothing changes for any case that already exists.
-    const plain = {
-      fullAccess: true, fullAccessAt: new Date(boughtAt),
-      appointment: { start: new Date(boughtAt - 20 * DAY) },
-    };
-    check('A6 a case with no agreed length is still a standard month',
-      days(W(plain)) === 30 && C(plain).getTime() === W(plain).getTime(),
-      String(days(W(plain))));
-    // And his own card counts the same days down.
-    const left = Math.max(0, Math.ceil((W(withAgreed(14)).getTime() - Date.now()) / DAY));
-    check('A7 his card counts an agreed length down the same as the Worker',
-      A(withAgreed(14)) === left, `${A(withAgreed(14))} vs ${left}`);
-  }
-
-  // The route: bounded, defaulted, and correctable afterwards.
-  check('A8 opening by hand takes a length, bounded, defaulting to a month',
-    /const days = body\?\.days === undefined[\s\S]{0,120}FULL_WINDOW_DAYS : Math\.round\(Number\(body\.days\)\)/.test(SRC)
-    && /days < 1 \|\| days > 365/.test(SRC)
-    && /fullAccessDays: days,/.test(SRC));
-  check('A9 and a running agreement can be corrected without moving money',
-    /action === 'set-agreement'/.test(SRC)
-    && /This case is not on Hands-Off Case Management\./.test(SRC)
-    // It must not email or charge: the whole point is that it only edits a record.
-    && !/set-agreement[\s\S]{0,1400}sendEmail/.test(SRC));
-  const agreeBlock = (SRC.match(/action === 'set-agreement'\) \{[\s\S]*?\n  \} else if/) || [''])[0];
-  check('A10 correcting it lets the week\'s notice fire again for the new date',
-    agreeBlock.length > 0 && /fields\.windowEndWarned = null;/.test(agreeBlock),
-    agreeBlock ? 'flag not cleared' : 'branch not found');
-  const DEMO2 = readFileSync(__j(__REPO, 'public/js/demo/api.js'), 'utf8');
-  check('A11 the demo mirrors both under the same bounds',
-    /body\.action === 'set-agreement'/.test(DEMO2)
-    && /Give a length between 1 and 365 days\./.test(DEMO2)
-    && /fullAccessDays: days,/.test(DEMO2));
 }
 
 const failed = results.filter((r) => !r.pass);
