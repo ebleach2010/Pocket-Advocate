@@ -820,8 +820,9 @@ export default {
       if (url.pathname === '/api/rates' && request.method === 'GET')
         return await handleRates(env);
       // Public on purpose, like /api/rates: it is the in/out light on the
-      // client's own chat, and it admits nothing a stranger could not read off
-      // the booking calendar.
+      // client's own chat. Two keys wide and no wider, for the reason set out
+      // on handleAvailability: anonymous and polled once a minute means every
+      // field it returns is a public timeline.
       if (url.pathname === '/api/availability' && request.method === 'GET')
         return await handleAvailability(env);
       // The flight recorder's read hatch. Temporary scaffolding for the
@@ -1244,20 +1245,29 @@ async function handleBookingClosure(request, env) {
  * with a switch he can flip either way from his phone, and the switch always
  * wins. Clients get a noticeable cue of which it is.
  *
- * `settings/officeHours` rather than a constant, for exactly the reason the
- * comment above readBookingClosure gives: this is a decision he changes from
- * his phone between deploys, several times a week, and a constant would mean
- * a deploy to say he is with his daughter. firestore.rules already makes all
- * of settings/ public-read and admin-write, so nothing there changes.
+ * A document rather than a constant, for exactly the reason the comment above
+ * readBookingClosure gives: this is a decision he changes from his phone
+ * between deploys, several times a week, and a constant would mean a deploy to
+ * say he is with his daughter.
+ *
+ * IT LIVES UNDER config/, NOT settings/, AND THAT IS THE POINT. firestore.rules
+ * makes every document under settings/ readable by anybody with the project id,
+ * and this one carries setAt: the exact minute he last flipped the switch. That
+ * is a public log of when he steps out and when he comes back, readable
+ * straight out of Firestore whatever this Worker chooses to send. config/ has
+ * no rule of its own, so the catch-all at the bottom of firestore.rules denies
+ * every browser, the same place config/advisor and config/rates already sit.
+ * Only the service account behind this Worker can read or write it, and the two
+ * handlers below decide what leaves the building.
  *
  * Stored shape:
  *   manual        'in' | 'out' | null    null means follow the schedule
  *   responseTime  string | null          only ever set by hand; see below
  *   setByHand     true                   same stamp settings/booking carries
- *   setAt         Date
+ *   setAt         Date                   never leaves this Worker
  */
 async function readOfficeHours(env) {
-  const doc = await getDoc(env, 'settings/officeHours').catch(() => null);
+  const doc = await getDoc(env, 'config/officeHours').catch(() => null);
   const raw = doc?.data || {};
   const manual = raw.manual === 'in' || raw.manual === 'out' ? raw.manual : null;
   // NEVER PROMISE A RESPONSE TIME UNLESS ONE HAS BEEN SET BY HAND (Eric,
@@ -1276,18 +1286,24 @@ async function readOfficeHours(env) {
  * beside the constants it reads, so the light and the booking calendar cannot
  * drift apart.
  *
- * It says nothing a stranger could not work out from the booking calendar.
- * No case, no client, no advocate-side state - "in" or "out" and the hours,
- * which are already printed on the booking page.
+ * TWO KEYS, AND NO MORE THAN TWO. This route is anonymous, uncached and cheap
+ * to poll once a minute, so whatever it returns is a public timeline. It used
+ * to also return `by`, saying whether the clock or his own hand decided the
+ * answer. Nothing on the client side ever read it, and what it told a stranger
+ * who kept the log was the shape of his week: which afternoons he takes off and
+ * which evenings he works late. "Out of office" is a door sign. "Out of office
+ * because he chose to be, at 2:14pm on a Tuesday" is his diary. The public
+ * answer is now the sign only.
+ *
+ * The advocate route below still returns manual/scheduled/overriding, because
+ * he is the one person entitled to know why his own door sign says what it
+ * says, and that route is behind requireAdmin.
  */
 async function handleAvailability(env) {
   const { manual, responseTime } = await readOfficeHours(env);
   const state = officeStatus(manual);
   return json({
     inOffice: state.inOffice,
-    // What decided it, so the client can say "out of office" without also
-    // claiming it is because of the clock when he shut the door himself.
-    by: state.manual ? 'manual' : 'schedule',
     responseTime,
   });
 }
@@ -1325,7 +1341,7 @@ async function handleOfficeHoursControl(request, env) {
     }
     // Masked, so setting the switch never wipes a response line he typed
     // yesterday and vice versa.
-    await patchDoc(env, 'settings/officeHours', patch, { mask });
+    await patchDoc(env, 'config/officeHours', patch, { mask });
   }
   const { manual, responseTime } = await readOfficeHours(env);
   const state = officeStatus(manual);
@@ -1674,7 +1690,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-27-hours';
+const BUILD_TAG = 'v2026-08-27-hours-2';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller

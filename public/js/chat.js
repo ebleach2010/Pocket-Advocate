@@ -37,24 +37,11 @@ const MOVE_TOLERANCE = 12;
 let bridge = null;
 
 /**
- * Shows whether Eric is in office in `el`. Kept under this name because five
- * client surfaces already call it; what it paints has changed.
+ * Paints the in office / out of office cue inside `el`, and keeps it painted.
  *
- * IT USED TO PAINT presence/eric, which is true whenever an advocate tab is
- * open anywhere and false otherwise, and said "I'm online" or "I'm away". Two
- * problems with that as the thing a client reads:
- *
- *   It contradicts the switch. Eric, 2026-08-27: the manual override always
- *   beats the schedule, both directions. A tab left open on his laptop while
- *   he is out with his daughter would have lit "I'm online" straight over the
- *   top of him having said he is out.
- *
- *   "I'm online" is a response-time promise in two words, and he asked for no
- *   response time to be shown unless he has set one by hand.
- *
- * So the client-facing light is now the office status, which he controls, and
- * presence/eric is no longer painted for clients at all. auth.js still writes
- * it; nothing client-side reads it.
+ * One line, because office.js owns all of it: what to ask for, how often, and
+ * what the pill says. The three chat surfaces call this so they cannot end up
+ * with three answers to one question.
  */
 export function watchPresence(el) {
   watchOffice(el);

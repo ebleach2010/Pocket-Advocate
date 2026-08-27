@@ -1,10 +1,9 @@
 // The admin chat inbox (SPEC §D): case chats and subscriber chats in one
 // list, newest activity first, with an unread hint when the last word was
-// the client's. Also holds the subscriber thread view (?sub=<uid>) and the
-// Eric-controlled expectation line.
+// the client's. Also holds the subscriber thread view (?sub=<uid>).
 
 import './admin-ledger.js';
-import { db, collection, getDocs, doc, getDoc, setDoc } from './firebase.js';
+import { db, collection, getDocs, doc, getDoc } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { mountChat } from './chat.js';
 
@@ -84,10 +83,11 @@ async function loadInbox() {
   page.innerHTML = `
     <h1>Chats</h1>
     <div class="panel">
-      <h3>Subscriber expectation line</h3>
-      <p class="dim small">Shown in every subscriber chat. Your shield for your time.</p>
-      <input type="text" id="expectation" maxlength="120" placeholder="I typically reply within a few days.">
-      <div class="actions"><button class="btn secondary" id="save-exp">Save</button><span class="ok" id="exp-ok" hidden>Saved.</span></div>
+      <h3>Response line</h3>
+      <p class="dim small">The line clients see about timing is set beside your
+        in/out switch, under <strong>Your status</strong> on the shelf. One line,
+        one place: it shows on the subscriber page and inside the "?" answer, and
+        clearing it clears it in both.</p>
     </div>
     <div id="threads">
       ${threads.length ? threads.map((t) => `
@@ -105,26 +105,12 @@ async function loadInbox() {
         </a>`).join('') : '<p class="dim">No conversations yet.</p>'}
     </div>`;
 
-  // expectation line editor
-  try {
-    const snapshot = await getDoc(doc(db, 'settings', 'subscriberChat'));
-    if (snapshot.exists()) document.getElementById('expectation').value = snapshot.data().expectationLine || '';
-  } catch { /* empty */ }
-  document.getElementById('save-exp').addEventListener('click', async () => {
-    try {
-      // MERGE. This was a bare setDoc, which is a FULL OVERWRITE: every save
-      // of this one line silently deleted every other field on
-      // settings/subscriberChat. Nothing else lived there yet, so it never
-      // showed - it was a trap laid for whoever added the second field.
-      await setDoc(doc(db, 'settings', 'subscriberChat'), {
-        expectationLine: document.getElementById('expectation').value.trim(),
-      }, { merge: true });
-      document.getElementById('exp-ok').hidden = false;
-      setTimeout(() => { document.getElementById('exp-ok').hidden = true; }, 2000);
-    } catch (err) {
-      alert(err.message);
-    }
-  });
+  // THE SECOND EDITOR FOR THE RESPONSE LINE USED TO LIVE HERE, writing
+  // settings/subscriberChat while the "?" sheet read a different document. Two
+  // stores for one promise meant a subscriber could be shown two different
+  // answers about how fast a reply comes, two taps apart, both of them current
+  // and neither of them wrong. The line is now edited in exactly one place,
+  // beside the in/out switch, and served from exactly one place.
 }
 
 function lmTime(t) {

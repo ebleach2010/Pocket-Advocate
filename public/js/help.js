@@ -8,7 +8,15 @@
 
 // office.js has no imports of its own, so this costs the landing page a few
 // hundred bytes and never drags the data layer onto it.
-import { officeNow, readOffice, watchOffice, officeLabel } from './office.js';
+import {
+  officeNow, readOffice, watchOffice, officeLabel, localHoursNote,
+} from './office.js';
+
+// His hours sentence, named once so it exists in exactly one place. The
+// paragraph a client reads and the string the local-time line is computed from
+// are THE SAME STRING, so "8:00 AM to 7:00 PM Mountain" and "X to Y your time"
+// cannot come to state two different windows however either is edited.
+const HOURS_LINE = 'Standard advocacy hours are Monday to Friday, 8:00 AM to 7:00 PM Mountain Time, unless my current status shows otherwise.';
 
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 const installed = () =>
@@ -48,20 +56,28 @@ export function wireHelp(root) {
  *
  * NO RESPONSE TIME IS PRINTED unless he has set one by hand. There is no
  * default, no "usually within", nothing computed from his hours.
+ *
+ * BOTH CLOCKS. Under his hours sentence sits the same window in the reader's
+ * own timezone, worked out in their browser from that same sentence. Most
+ * clients are not in Mountain time and "8:00 AM Mountain" is arithmetic they
+ * should not have to do while they are ill. If the browser cannot say where it
+ * is, the line is simply absent and the sheet reads exactly as it did before:
+ * Mountain alone, never a guess and never a blank pair of brackets.
  */
 export function openHoursHelp() {
   const s = officeNow();
   const rt = s?.responseTime;
+  const local = localHoursNote(HOURS_LINE);
+  const localLine = local ? `<p class="hours-local">That is ${esc(local)}.</p>` : '';
   openPanel('When will Eric respond?', `
     <p class="hours-now">
-      <span class="office-cue" data-office role="status"
+      <span class="office-cue${s ? '' : ' unknown'}" data-office role="status"
         ><span class="p-dot" aria-hidden="true"></span
         ><span class="p-label">${officeLabel(s)}</span></span>
     </p>
     ${rt ? `<p class="hours-set">${esc(rt)}</p>` : ''}
 
-    <p>Standard advocacy hours are Monday to Friday, 8:00 AM to 7:00 PM
-      Mountain Time, unless my current status shows otherwise.</p>
+    <p>${HOURS_LINE}</p>${localLine}
 
     <p>I check messages throughout the day, but responses are triaged based on
       urgency, time sensitivity, and what each case needs, not simply the order
@@ -94,7 +110,7 @@ export function openHoursHelp() {
     // The pill inside the sheet is live like every other one, and the sheet
     // may well be the first thing on the page to ask. Without the re-read, a
     // client who opened the sheet before the first answer landed would sit
-    // looking at "Office hours" with no status at all.
+    // looking at "Checking" with no status at all.
     watchOffice(overlay);
     readOffice();
   });

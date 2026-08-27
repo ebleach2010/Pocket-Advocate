@@ -51,7 +51,9 @@ export function mountOfficeControl(root, { getToken } = {}) {
     </div>
     <p class="dim small" style="margin:.5rem 0 0;">Clients see nothing about how
       long a reply takes unless you type it here. Leave it empty and no
-      response time is shown anywhere.</p>
+      response time is shown anywhere. This is the only place it is set: it
+      shows on the subscriber page and inside the "?" answer, and clearing it
+      clears it in both.</p>
     <p class="error" data-err hidden style="margin:.5rem 0 0;"></p>`;
   root.prepend(box);
 
@@ -77,7 +79,9 @@ export function mountOfficeControl(root, { getToken } = {}) {
       why.textContent = 'Set by hand, and it matches your hours.';
       why.classList.remove('overriding');
     } else {
-      why.textContent = 'Following your hours: Monday to Friday, 8am to 7pm MST.';
+      // "Mountain", not "MST". The light follows America/Boise, so it moves
+      // with daylight saving and 8am is 8am on your own clock all year.
+      why.textContent = 'Following your hours: Monday to Friday, 8am to 7pm Mountain.';
       why.classList.remove('overriding');
     }
     for (const b of box.querySelectorAll('[data-set]'))

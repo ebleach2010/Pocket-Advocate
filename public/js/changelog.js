@@ -55,17 +55,16 @@ export const CHANGELOG = [
     // Office hours and the "?" beside the chat (Eric, 2026-08-27).
     //
     // QUIET unless he says "push as full update": he has not said which yet,
-    // and an unspecified push is silent. The bullets are the client half only.
-    // His own half of it - the switch on the shelf, the response line, the
-    // long-press "Working on this client" - is not in this list and must not
-    // be added to it, per the scope rule above.
+    // and an unspecified push is silent. The bullets below are the client half
+    // of this release and only the client half, per the scope rule above.
     version: '2.39',
     quiet: true,
     client: [
       'Your chat now shows whether I am in office or out of office, as a pill above the messages.',
       'New: the small "?" beside that pill answers "When will Eric respond?" It explains my hours, how I decide what to answer first, and what is happening when you have not heard back yet.',
+      'The hours in that answer now also show in your own timezone, so you do not have to work out what Mountain time means where you are.',
       'You can always message me outside office hours. I see it when I am back in office.',
-      'Fixed: the subscriber chat used to print a reply time I had never actually set. It now shows a note about timing only when I have written one.',
+      'Fixed: the subscriber chat could show a reply time that had never been set. A note about timing now appears only when one has been written.',
     ],
   },
   {

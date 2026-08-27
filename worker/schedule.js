@@ -3,6 +3,10 @@
 // daylight-saving shift (Eric's call, 2026-07-11). Clients see their local
 // equivalent, but bookable windows never move with the client's timezone.
 // Note: the IANA 'Etc/GMT+7' zone IS UTC-7 (the sign is inverted by design).
+//
+// TWO ZONES LIVE HERE AND THEY ARE NOT THE SAME ZONE. MOUNTAIN_TZ anchors what
+// a client can book. OFFICE_TZ answers what time it is where Eric is standing,
+// which is the only thing the in-office light cares about. See OFFICE_TZ.
 
 export const LEAD_TIME_HOURS = 72;
 // Quiet booking horizon (Eric, 2026-07-13): cases can't be scheduled more
@@ -16,6 +20,33 @@ export const OPEN_HOUR = 8; // 8am MST
 // a given day is whatever slots exist.
 export const CLOSE_HOUR = 19; // 7pm MST
 export const MOUNTAIN_TZ = 'Etc/GMT+7';
+/**
+ * THE OFFICE-HOURS ZONE, AND IT IS DELIBERATELY NOT THE BOOKING ANCHOR ABOVE.
+ *
+ * Eric, 2026-08-27, his words: "I live in Boise, ID, MST. Booking can be done
+ * anytime. The only thing it does is says I'm out of office if it's 7am MST.
+ * Or 11pm MST. This is not a complicated concept. If there's something getting
+ * in the way of that, override it."
+ *
+ * This is that override, and it touches the in-office light only. One constant
+ * was being asked two different questions:
+ *
+ *   The booking calendar asks which INSTANTS a client may buy. Those are
+ *   anchored to MOUNTAIN_TZ, a fixed UTC-7 that never shifts, because a slot
+ *   has to mean the same moment whenever it was opened. Not changed here. He
+ *   said booking can be done anytime, and moving live slots is its own job.
+ *
+ *   The office light asks what time it is where ERIC IS STANDING. That is his
+ *   clock, not an offset. Boise keeps daylight saving; a fixed UTC-7 reads an
+ *   hour behind his kitchen wall from mid-March to early November, so for eight
+ *   months of the year the light came on at 9am and went out at 8pm. Naming the
+ *   place instead of the offset makes his 8am his 8am all year.
+ *
+ * The cost, said out loud rather than buried: for those eight months the light
+ * and the calendar no longer describe the same wall-clock window. He was asked
+ * and that is the trade he chose.
+ */
+export const OFFICE_TZ = 'America/Boise';
 // Spec asks for a ~15-minute hold; Stripe Checkout sessions cannot expire in
 // less than 30 minutes, so the hold matches the session's real lifetime.
 export const HOLD_MINUTES = 30;
@@ -57,22 +88,18 @@ export function windowProblem(startIso, durationMin) {
  * Saturday simply has no slots opened on it. The idiom is copied from
  * public/js/admin-availability.js, which is the only Mon-Fri test in the repo.
  *
- * MOUNTAIN_TZ is fixed UTC-7 with no daylight saving (see the header). From
- * mid-March to early November that means this window is 9am to 8pm on Eric's
- * real wall clock. That is a consequence of the 2026-07-11 decision to anchor
- * everything to one offset, and it is a decision, not a bug: the light and the
- * booking calendar agree with each other, which matters more than either
- * agreeing with a phone. The manual override below covers the hour at each end
- * until he says otherwise.
+ * The ZONE is OFFICE_TZ, not MOUNTAIN_TZ, and the comment on OFFICE_TZ says why
+ * in full: this window follows his real wall clock, on his explicit word, while
+ * the booking calendar stays on the fixed offset it was anchored to.
  */
 export function scheduledOpen(now = new Date()) {
   const when = now instanceof Date ? now : new Date(now);
   if (Number.isNaN(when.getTime())) return false;
   const weekday = new Intl.DateTimeFormat('en-US', {
-    timeZone: MOUNTAIN_TZ, weekday: 'short',
+    timeZone: OFFICE_TZ, weekday: 'short',
   }).format(when);
   if (weekday === 'Sat' || weekday === 'Sun') return false;
-  const { hour, minute } = mountainParts(when);
+  const { hour, minute } = officeParts(when);
   const minutes = hour * 60 + minute;
   // Open at the top of OPEN_HOUR, shut at the top of CLOSE_HOUR: 8:00 is in,
   // 19:00 is out. The last bookable slot ENDS at 19:00, so the office being
@@ -108,9 +135,9 @@ export function officeStatus(manual, now = new Date()) {
   };
 }
 
-function mountainParts(date) {
+function wallParts(date, zone) {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: MOUNTAIN_TZ,
+    timeZone: zone,
     hour: 'numeric',
     minute: 'numeric',
     hour12: false,
@@ -118,3 +145,9 @@ function mountainParts(date) {
   const get = (type) => Number(parts.find((p) => p.type === type).value);
   return { hour: get('hour') % 24, minute: get('minute') };
 }
+
+/** The booking anchor's wall clock: fixed UTC-7, no daylight saving. */
+function mountainParts(date) { return wallParts(date, MOUNTAIN_TZ); }
+
+/** Eric's own wall clock, daylight saving included. Office light only. */
+function officeParts(date) { return wallParts(date, OFFICE_TZ); }

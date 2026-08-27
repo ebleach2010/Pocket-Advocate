@@ -1,12 +1,15 @@
 {
   "rules": {
+    // NOTHING IN THE REALTIME DATABASE IS READABLE OR WRITABLE BY A BROWSER.
+    //
+    // It carried one world-readable flag, presence/eric, saying whether Eric
+    // had an advocate tab open anywhere. Nothing reads it any more: the in
+    // office / out of office answer comes from the Worker and he sets it
+    // himself. A live signal about him that any stranger could subscribe to is
+    // not something to leave switched on, so the write went from
+    // public/js/auth.js and the rule that published it went from here, in the
+    // same commit (2026-08-27).
     ".read": false,
-    ".write": false,
-    "presence": {
-      "eric": {
-        ".read": true,
-        ".write": "auth != null && auth.token.admin === true"
-      }
-    }
+    ".write": false
   }
 }

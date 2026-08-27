@@ -491,15 +491,17 @@ async function getMetadata(ref) {
   };
 }
 
-// ------------------------------------------------------------------- presence
+// ------------------------------------------------- the realtime database shim
 
+// Nothing in the app reads or writes the realtime database any more. These stay
+// only so this shim exports the same shape firebase.js does, and they answer
+// with nothing, which is what the real rules now answer with too.
 function rtdbRef(_rtdb, path) { return { __kind: 'rtdb', path: String(path) }; }
-function onValue(ref, cb) {
-  // He is online in the demo, so the client's status dot has something to say.
-  setTimeout(() => cb({ val: () => (ref.path === 'presence/eric' ? true : null) }), 0);
+function onValue(_ref, cb) {
+  setTimeout(() => cb({ val: () => null }), 0);
   return () => {};
 }
-async function rtdbSet() { /* presence is decoration here */ }
+async function rtdbSet() { /* nothing is stored there */ }
 function onDisconnect() { return { set: async () => {} }; }
 
 // ----------------------------------------------------------------- the person

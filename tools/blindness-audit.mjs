@@ -118,6 +118,12 @@ const ADMIN_PAGES = [
 const ADMIN_ASSETS = [
   '/js/admin.js', '/js/admin-case.js', '/js/admin-chats.js', '/js/admin-calendar.js',
   '/js/admin-availability.js', '/js/admin-dictionary.js', '/js/admin-settings.js',
+  // Every admin- module in public/js belongs in this list, in the commit that
+  // adds it. The gate in worker/index.js matches on the name and would have
+  // caught these anyway; what the list is for is PROVING it did, so a change
+  // to the gate's regex cannot quietly stop covering a module nobody thought
+  // to re-check.
+  '/js/admin-hours.js', '/js/admin-presence.js', '/js/admin-ledger.js',
   '/js/advisor.js', '/js/notes.js', '/js/duty.js', '/js/prep.js',
   '/js/drawer.js', '/js/seen.js', '/js/panel-bridge.js', '/css/admin.css',
   // The demo's fixtures are advisor output, so they are gated the same way. A

@@ -1109,22 +1109,50 @@ body.chat-full-open { overflow: hidden; }
 .office-cue.in { border-color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent); }
 .office-cue.in .p-label { color: var(--green); }
 .office-cue.in .p-dot { background: var(--green); }
-.office-cue.out { border-color: var(--line); }
+.office-cue.out { border-color: var(--line); background: transparent; }
 .office-cue.out .p-dot { background: var(--line); }
+/* NOT KNOWING IS NOT THE SAME AS BEING OUT, and it used to look identical:
+   the same solid grey ring and the same filled grey dot, so a dropped network
+   read as "he is out of office". Unknown gets a dashed ring and a hollow dot,
+   and the word on it is "Checking" rather than a state. No new colour: the
+   difference is in the line style, which reads at a glance and does not
+   depend on anybody seeing a hue. */
+.office-cue.unknown { border-style: dashed; background: transparent; }
+.office-cue.unknown .p-dot {
+  background: transparent; box-shadow: none;
+  border: 1.5px solid var(--dim);
+  width: .5rem; height: .5rem;
+}
 
-/* The status at the top of the "When will Eric respond?" sheet, the one
-   sentence he asked to have emphasised, and the emergency note. */
+/* The status at the top of the "When will Eric respond?" sheet, the reader's
+   own clock under his hours, the one sentence he asked to have emphasised, and
+   the emergency note. */
 .hours-now { margin: .1rem 0 .6rem; }
 .hours-set { margin: 0 0 .7rem; color: var(--soft); font-style: italic; }
+/* The same hours in the reader's timezone. Tucked under the sentence it
+   restates, and deliberately NOT dimmed or shrunk: it is the half of that
+   sentence most clients will actually use. */
+.help-card p.hours-local { margin: .15rem 0 .5rem; }
 .help-card p.hours-key {
   margin: 1rem 0 .35rem; padding: .6rem .8rem;
   border-left: 3px solid var(--cyan); border-radius: 0 8px 8px 0;
   background: var(--panel-2);
   font-size: 1.02rem; font-weight: 700; color: var(--ink);
 }
+/* THE EMERGENCY LINE. It keeps Eric's position, last, after everything else he
+   wrote, and it keeps the rule above it that sets it apart from the copy. What
+   it does NOT keep is the quiet: it was var(--dim) at .88rem, fainter and
+   smaller than every other paragraph in the sheet, which put the one sentence
+   about getting real medical help in the softest ink on a page two screens
+   long. Nobody asked for that. It now reads at the same weight and the same
+   size as the prose around it. */
 .help-card p.hours-safety {
   margin: 1.1rem 0 .2rem; padding-top: .8rem;
-  border-top: 1px solid var(--line); color: var(--dim); font-size: .88rem;
+  border-top: 1px solid var(--line);
+  /* --soft is exactly what .help-card p already sets, and there is no
+     font-size here on purpose: it inherits the body size rather than naming a
+     number that could drift below it. */
+  color: var(--soft);
 }
 .case-picker { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .8rem; }
 

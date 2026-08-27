@@ -323,6 +323,16 @@ export function wireFolderLongPress(root, handler) {
   root.addEventListener('pointerdown', (e) => {
     const card = target(e);
     if (!card) return;
+    // CLEAR THE MARK BEFORE ARMING, the same line wireDxLongPress has above.
+    //
+    // fire() sets `lp` so that the click trailing a fired press does not also
+    // open the case, and wireFolderOpen clears the mark when that click
+    // arrives. After a long press the sheet is on top of the shelf, so that
+    // click never arrives and the mark stayed on the card. The next ordinary
+    // tap then spent itself clearing a stale mark and did nothing at all:
+    // press, Cancel, tap, nothing, tap again, open. Clearing it here means a
+    // mark can only ever outlive the press that set it by one pointerdown.
+    delete card.dataset.lp;
     from = { x: e.clientX, y: e.clientY };
     timer = setTimeout(() => { timer = null; fire(card); }, LONG_PRESS_MS);
   });

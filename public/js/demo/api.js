@@ -188,9 +188,9 @@ export function demoApi(role, store) {
         message: live ? `I am not taking new cases until ${when}. Existing clients are unaffected.` : null,
       });
     }
-    // IN OFFICE / OUT OF OFFICE, both halves, off one settings document, so
-    // flipping the switch on the demo shelf really does change the pill on the
-    // demo case page.
+    // IN OFFICE / OUT OF OFFICE, both halves, off one document, so flipping the
+    // switch on the demo shelf really does change the pill on the demo case
+    // page.
     //
     // THE SCHEDULE IS REIMPLEMENTED HERE and that is worth naming out loud: it
     // is the one thing in the demo that is a copy rather than the real code,
@@ -199,8 +199,12 @@ export function demoApi(role, store) {
     // off the same OPEN/CLOSE numbers the availability editor above uses. A
     // suite check pins the two together so this cannot quietly drift; if it
     // ever does, the demo is what is wrong.
+    //
+    // The zone is Eric's own, America/Boise, and NOT the fixed offset the
+    // booking calendar above is anchored to. Same reason the real one changed:
+    // the light answers what time it is where he is standing.
     if (path === '/api/availability' || path === '/api/admin/office-hours') {
-      const key = 'settings/officeHours';
+      const key = 'config/officeHours';
       if (path === '/api/admin/office-hours' && init.method === 'POST') {
         const want = body.manual;
         if (want !== 'in' && want !== 'out' && want !== null && want !== undefined)
@@ -220,16 +224,19 @@ export function demoApi(role, store) {
       const typed = typeof raw.responseTime === 'string' ? raw.responseTime.trim() : '';
       const responseTime = typed ? typed.slice(0, 160) : null;
       const now = new Date();
-      const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'Etc/GMT+7', weekday: 'short' }).format(now);
+      const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Boise', weekday: 'short' }).format(now);
       const p = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'Etc/GMT+7', hour: 'numeric', minute: 'numeric', hour12: false,
+        timeZone: 'America/Boise', hour: 'numeric', minute: 'numeric', hour12: false,
       }).formatToParts(now);
       const num = (t) => Number(p.find((x) => x.type === t).value);
       const mins = (num('hour') % 24) * 60 + num('minute');
       const scheduled = wd !== 'Sat' && wd !== 'Sun' && mins >= 8 * 60 && mins < 19 * 60;
       const inOffice = manual ? manual === 'in' : scheduled;
+      // No `by` on the public answer, and the demo mirrors that: whether the
+      // clock or his hand decided it is not a stranger's business. See the
+      // comment on handleAvailability in worker/index.js.
       if (path === '/api/availability')
-        return ok({ inOffice, by: manual ? 'manual' : 'schedule', responseTime });
+        return ok({ inOffice, responseTime });
       return ok({
         inOffice, scheduled, manual, responseTime,
         overriding: !!manual && inOffice !== scheduled,

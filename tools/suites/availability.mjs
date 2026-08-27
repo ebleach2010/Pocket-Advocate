@@ -30,8 +30,14 @@
 //   >= OPEN_HOUR becomes >                           A Mon 08:00, both months
 //   < CLOSE_HOUR becomes <=                          A Mon 19:00, both months
 //   the Sat/Sun guard is dropped                     A all four weekend rows
-//   MOUNTAIN_TZ becomes America/Denver               A all six August rows,
-//                                                      plus the two zone rows
+//   OFFICE_TZ put back to Etc/GMT+7                  A all six August rows on
+//                                                      the clock reading alone,
+//                                                      2 January/August pairs,
+//                                                      3 zone rows, D "the demo
+//                                                      agrees", E "his own
+//                                                      clock" and E "office.js
+//                                                      converts from the same
+//                                                      zone" - 14 red
 //   CLOSE_HOUR moves to 18                           A Mon 18:59 x2, the
 //                                                      constants row, and
 //                                                      E "the hours the copy
@@ -47,9 +53,15 @@
 //   handleAvailability calls requireAdmin            C "never asks for an
 //                                                      admin"
 //   the route is renamed                             C "routed as a public GET"
-//   the settings doc moves out of settings/          C 4 rows incl. "every
-//                                                      document is inside
-//                                                      settings/"
+//   the doc moves back under settings/               C 8 rows incl. "no document
+//                                                      is under a world-readable
+//                                                      prefix" and every row
+//                                                      that reads the document
+//   a match /config/ block is added to the rules     C "opens no path under
+//                                                      config/"
+//   `by` is put back on the public answer            C "only the keys a
+//                                                      stranger may see", and
+//                                                      "will not say WHICH"
 //   an em dash goes back into his copy               E 4 rows
 //   one word of his copy is reworded                 E "block 5", plus the
 //                                                      whole-body row
@@ -63,10 +75,27 @@
 //   the cue builder stops emitting the "?"           F "built in one place"
 //   chat-page stops using the shared builder         F "chat-page.js uses that
 //                                                      one builder"
-//   the subscriber reply-time default returns        F "no built-in reply-time
-//                                                      promise left"
-//   .office-cue.in loses its green                   F "visibly different look
+//   the banned promise returns, double-quoted        F "no built-in reply-time
+//                                                      promise left in
+//                                                      subscription.js"
+//   .office-cue.out is emptied to `{ }`              F "visibly different look
 //                                                      in each state"
+//   .office-cue.unknown is made to match .out        F "we do not know yet does
+//                                                      not look like he is out"
+//   watchPresence(el) commented out in case.js       F "case.js starts the
+//                                                      painter"
+//   the lp CLEAR is removed from the folder press    H "clears any stale mark
+//                                                      when the next press
+//                                                      begins"
+//   `auto: false` flipped to `auto: true`            H "nothing starts a clock
+//                                                      without him"
+//   the presence write and its open rule return      G 3 rows: the write, the
+//                                                      rule, and "no client
+//                                                      module names it"
+//   admin-hours.js dropped from the audit list       G "every admin- module is
+//                                                      in the audit's list"
+//   the emergency line is dimmed and shrunk again    E "not dimmer than the
+//                                                      prose" + "not smaller"
 //   the no-store is dropped from the status fetch    F "never read from the
 //                                                      browser cache"
 //   the admin gate stops matching admin-*            G "admin-hours.js is 404"
@@ -85,8 +114,8 @@
 //   the demo schedule drifts an hour                 D "the demo agrees"
 //   the demo forgets the weekend                     D "the demo agrees"
 //
-// THREE OF THESE PASSED SILENTLY THE FIRST TIME and the checks were rewritten
-// until they did not. Each rewrite carries its own note at the check:
+// THREE PASSED SILENTLY ON THE FIRST BUILD and were rewritten until they did
+// not. Each rewrite carries its own note at the check:
 //   - the in-memory patchDoc merged whether or not a mask was given, so
 //     deleting the mask from the shipped handler broke nothing here;
 //   - "mounted on BOTH advocate pages" matched the call inside a `//` comment;
@@ -94,6 +123,52 @@
 //     one, so deleting the new one stayed green.
 // A fourth was a crash rather than a pass: one check dereferenced a null and
 // threw, which prints no FAIL line at all. It is optional-chained now.
+//
+// ===========================================================================
+// SIX MORE PASSED SILENTLY AND WERE FOUND BY REVIEW ON 2026-08-27. The pattern
+// behind all six is one thing: this file has a strong half that RUNS the code
+// and a weak half that GREPS it, and a grep over raw source cannot tell live
+// code from a comment. Each is fixed and each fix was watched going red.
+//
+//   what stayed green while broken                   what it reads now
+//   ---------------------------------------------------------------------
+//   the route registration matched the COMMENTED-OUT   comment-stripped source,
+//   registration. With GET /api/availability           and the handler it names
+//   commented out the route 404s, every client's       asserted to exist.
+//   pill sits on "Checking" for ever, and the          THE HEADLINE: the suite
+//   battery stayed 115/115.                            did not check that the
+//                                                      feature was switched on.
+//   the no-store check matched a commented-out         comment-stripped source
+//   `cache: 'no-store'`
+//   the lp-mark check matched a commented-out line     comment-stripped source
+//   AND PRINTED PASS BY NAME
+//   the reply-time ban was syntax-shaped:              the words of the promise,
+//   `!/expectation = '(?!')/` caught one variable      in any quoting, anywhere
+//   name in single quotes. The exact banned            in the file, across five
+//   sentence written back double-quoted stayed green.  client files
+//   "office.js imports nothing" missed                 the word `import`, so a
+//   `await import('./firebase.js')`                    dynamic one counts too
+//   "visibly different in each state" passed on        the DECLARATIONS in each
+//   an empty `.office-cue.out { }`                     rule, required to differ
+//
+// So: EVERY whole-file grep in this suite now reads code(), which strips
+// comments. The two deliberate exceptions are named where they sit - the dash
+// rules, which are about the served bytes and must see comments, and
+// "office.js never invents a response time", which is stricter with them in.
+//
+// Two checks also used to CRASH rather than fail: `SRC.match(...)[1]` on a
+// rename threw a TypeError, exiting 1 with no FAIL line, no tail and no count,
+// which reads to anything scanning the output as a clean run. Both report a
+// red line now and let the checks downstream of them fail too.
+//
+// One check was VACUOUS: `!/auto: true/` pinned the absence of a string that
+// has never existed in drawer.js and could not go red for any edit. It reads
+// the flags that are really there now and requires every one to say false.
+//
+// And one check was MISSING ENTIRELY: nothing asserted that a client surface
+// starts the painter. Commenting out watchPresence(el) in case.js froze the
+// pill on every client's chat and the battery stayed 115/115. Both the suite
+// and the drive check it now, the drive by looking at the page.
 // ===========================================================================
 import { fileURLToPath as __f } from 'node:url';
 import { dirname as __d, join as __j } from 'node:path';
@@ -103,8 +178,11 @@ import { readFileSync } from 'node:fs';
 // The real thing, imported rather than copied. If this import ever fails the
 // suite dies loudly, which is the correct outcome: there is nothing to test.
 import {
-  scheduledOpen, officeStatus, OPEN_HOUR, CLOSE_HOUR, MOUNTAIN_TZ,
+  scheduledOpen, officeStatus, OPEN_HOUR, CLOSE_HOUR, MOUNTAIN_TZ, OFFICE_TZ,
 } from '../../worker/schedule.js';
+// office.js is import-free by design, which means node can load it and this
+// suite can RUN the client-side timezone arithmetic instead of grepping at it.
+import { localHoursNote, officeLabel, officeCueHtml, officeLineHtml } from '../../public/js/office.js';
 
 const SRC = readFileSync(__j(__REPO, 'worker/index.js'), 'utf8');
 const f = (p) => readFileSync(__j(__REPO, p), 'utf8');
@@ -115,48 +193,89 @@ function check(name, cond, detail = '') {
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${cond || !detail ? '' : `  -- ${detail}`}`);
 }
 
+/**
+ * A file with its comments taken out.
+ *
+ * EVERY WHOLE-FILE GREP IN THIS SUITE GOES THROUGH THIS, and that is the single
+ * biggest change the 2026-08-27 review forced. A grep over raw source cannot
+ * tell live code from a comment, so six checks here passed while the feature
+ * they guard was commented out: the route registration, the no-store on the
+ * status fetch, the long-press mark, and three more. One of them printed PASS
+ * by name for a line that was not running.
+ *
+ * It removes line comments and block comments that OPEN AT THE START OF A
+ * LINE, which is every comment in this repo's style. A block comment opened
+ * mid-line is left alone deliberately: eating one of those could swallow a
+ * regex literal and quietly delete real code from what a check is reading.
+ *
+ * The exceptions are named where they are used, and there are two kinds: the
+ * dash rules, which are about the served BYTES and so must see comments, and
+ * the checks that assert a comment says something. Every other grep uses this.
+ */
+const strip = (s) => s
+  .replace(/^[ \t]*\/\*[\s\S]*?\*\/[ \t]*$/gm, '')
+  .replace(/^[ \t]*\/\/.*$/gm, '');
+const code = (p) => strip(f(p));
+const CODE = strip(SRC);
+
 // ---------------------------------------------------------------------------
 // 1. THE SCHEDULE, RUN AGAINST REAL INSTANTS
 //
-// MOUNTAIN_TZ is a FIXED UTC-7 offset with no daylight saving (Eric's call,
-// 2026-07-11, and every bookable slot is anchored to it). So an MST wall-clock
-// hour H is always UTC H+7, in January and in August alike, and each instant
-// below is built that way.
+// THE EXPECTATION IN THE AUGUST ROWS MOVED ON 2026-08-27, AND WHY IS THE POINT.
 //
-// EVERY CASE IS RUN IN BOTH JANUARY AND AUGUST on purpose. Not because the
-// answer should differ - it must NOT - but because "it must not" is the thing
-// worth pinning. If anybody ever swaps this zone for America/Denver, the
-// August rows go red and say so, instead of the office light quietly sliding
-// an hour away from the booking calendar for eight months of the year.
+// It used to read: the office hours are anchored to MOUNTAIN_TZ, a fixed UTC-7
+// with no daylight saving, so the same wall-clock hour is the same UTC instant
+// in January and in August, and the August rows pinned that sameness. Which it
+// did, faithfully - including the part where his in-office light came on an
+// hour after he started work for eight months of every year.
 //
-// The MST weekday and wall time of each instant are asserted alongside the
-// answer, so a mistyped date cannot make a check pass for the wrong reason.
+// Eric, 2026-08-27, ruling on it in his own words: "I live in Boise, ID, MST.
+// Booking can be done anytime. The only thing it does is says I'm out of office
+// if it's 7am MST. Or 11pm MST. This is not a complicated concept. If there's
+// something getting in the way of that, override it."
+//
+// So scheduledOpen now reads OFFICE_TZ, America/Boise, which keeps daylight
+// saving. NOT ONE CHECK WAS DELETED. Every row below is still here and still
+// runs; what changed is the UTC instant each August row is built from, because
+// 8:00 on his wall clock in August is 14:00Z rather than 15:00Z. The answers
+// are unchanged, which is the new truth stated as an assertion: the same
+// wall-clock time means the same thing to him in both months.
+//
+// The booking calendar is NOT changed and MOUNTAIN_TZ is still asserted below.
+// He said booking can be done anytime; those slots stay on the fixed offset.
+//
+// The weekday and wall time of each instant are asserted alongside the answer,
+// in his zone, so a mistyped date cannot make a check pass for the wrong
+// reason - and putting Etc/GMT+7 back turns all six August rows red on the
+// clock reading alone, before the predicate is even consulted.
 // ---------------------------------------------------------------------------
 const wallFmt = new Intl.DateTimeFormat('en-US', {
-  timeZone: MOUNTAIN_TZ, weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
+  timeZone: OFFICE_TZ, weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
 });
 // Commas stripped: ICU has spelled this "Mon, 08:00" and "Mon 08:00" in
 // different versions, and the suite is testing the office hours, not the
 // punctuation of a date formatter.
 const wall = (iso) => wallFmt.format(new Date(iso)).replace(/,/g, '');
 
-// [iso, what it should be in MST, expected in-office]
+// [iso, what it should read on HIS clock, expected in-office]
 const SCHEDULE_CASES = [
-  // January
+  // January. Boise is on MST, UTC-7, so these instants are unchanged.
   ['2026-01-05T14:59:00Z', 'Mon, 07:59', false],
   ['2026-01-05T15:00:00Z', 'Mon, 08:00', true],
   ['2026-01-06T01:59:00Z', 'Mon, 18:59', true],
   ['2026-01-06T02:00:00Z', 'Mon, 19:00', false],
   ['2026-01-10T19:00:00Z', 'Sat, 12:00', false],
   ['2026-01-11T19:00:00Z', 'Sun, 12:00', false],
-  // August. Same six, same answers, on the far side of where daylight saving
-  // would sit if this zone observed it.
-  ['2026-08-03T14:59:00Z', 'Mon, 07:59', false],
-  ['2026-08-03T15:00:00Z', 'Mon, 08:00', true],
-  ['2026-08-04T01:59:00Z', 'Mon, 18:59', true],
-  ['2026-08-04T02:00:00Z', 'Mon, 19:00', false],
-  ['2026-08-08T19:00:00Z', 'Sat, 12:00', false],
-  ['2026-08-09T19:00:00Z', 'Sun, 12:00', false],
+  // August. Same six wall-clock readings, same six answers, an hour earlier in
+  // UTC because Boise is on MDT, UTC-6. THIS IS THE MOVED EXPECTATION: these
+  // six instants used to be 15:00Z, 02:00Z and so on, pinning a fixed offset
+  // that put his light an hour behind him all summer.
+  ['2026-08-03T13:59:00Z', 'Mon, 07:59', false],
+  ['2026-08-03T14:00:00Z', 'Mon, 08:00', true],
+  ['2026-08-04T00:59:00Z', 'Mon, 18:59', true],
+  ['2026-08-04T01:00:00Z', 'Mon, 19:00', false],
+  ['2026-08-08T18:00:00Z', 'Sat, 12:00', false],
+  ['2026-08-09T18:00:00Z', 'Sun, 12:00', false],
 ];
 
 for (const [iso, expectWall, expectOpen] of SCHEDULE_CASES) {
@@ -166,20 +285,41 @@ for (const [iso, expectWall, expectOpen] of SCHEDULE_CASES) {
     `clock read ${wall(iso)}, predicate said ${scheduledOpen(new Date(iso))}`);
 }
 
-// The two halves of the pair must give the SAME answer, which is the fixed
-// offset stated as an assertion rather than as a comment.
+// The two halves of each pair must give the SAME answer. That used to be the
+// fixed offset stated as an assertion; it is now daylight saving stated as one.
+// Same reading on his wall, same answer, whatever month it is.
 for (let i = 0; i < 6; i += 1) {
   const [janIso, w] = SCHEDULE_CASES[i];
   const [augIso] = SCHEDULE_CASES[i + 6];
-  check(`A: ${w} answers the same in January and August (the zone has no DST)`,
+  check(`A: ${w} answers the same in January and August (his clock, not an offset)`,
     scheduledOpen(new Date(janIso)) === scheduledOpen(new Date(augIso)),
     `${scheduledOpen(new Date(janIso))} vs ${scheduledOpen(new Date(augIso))}`);
 }
 
 check('A: the predicate reads the hours off the shipped constants, 8 and 19',
   OPEN_HOUR === 8 && CLOSE_HOUR === 19, `${OPEN_HOUR}..${CLOSE_HOUR}`);
-check('A: and the zone is still the fixed UTC-7 the calendar is anchored to',
+// TWO ZONES, AND THEY ARE NOT THE SAME ZONE. Both are pinned, because the whole
+// of the 2026-08-27 decision is that one of them moved and the other did not.
+check('A: the office light is on HIS clock, America/Boise, on his explicit word',
+  OFFICE_TZ === 'America/Boise', OFFICE_TZ);
+check('A: the booking calendar is still anchored to the fixed UTC-7 it always was',
   MOUNTAIN_TZ === 'Etc/GMT+7', MOUNTAIN_TZ);
+check('A: and they are deliberately different, which is the whole change',
+  OFFICE_TZ !== MOUNTAIN_TZ, `${OFFICE_TZ} vs ${MOUNTAIN_TZ}`);
+// The property that made the change worth making, asserted rather than assumed:
+// his zone really does shift, and the booking anchor really does not.
+{
+  const off = (iso, tz) => new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, timeZoneName: 'longOffset',
+  }).formatToParts(new Date(iso)).find((p) => p.type === 'timeZoneName').value;
+  const janO = off('2026-01-15T18:00:00Z', OFFICE_TZ);
+  const augO = off('2026-08-15T18:00:00Z', OFFICE_TZ);
+  check('A: his zone observes daylight saving, so 8am tracks him all year',
+    janO !== augO, `${janO} in January, ${augO} in August`);
+  check('A: and the booking anchor still does not move, in either month',
+    off('2026-01-15T18:00:00Z', MOUNTAIN_TZ) === off('2026-08-15T18:00:00Z', MOUNTAIN_TZ),
+    `${off('2026-01-15T18:00:00Z', MOUNTAIN_TZ)} / ${off('2026-08-15T18:00:00Z', MOUNTAIN_TZ)}`);
+}
 check('A: rubbish in is OUT, not a crash and not a silent yes',
   scheduledOpen(new Date('not a date')) === false);
 
@@ -230,7 +370,16 @@ for (const junk of [null, undefined, '', 'IN', 'away', 0, true, {}]) {
 // ---------------------------------------------------------------------------
 function fn(name, kind = 'async function') {
   const m = SRC.match(new RegExp(`\\n${kind} ${name}\\([\\s\\S]*?\\n\\}`));
-  if (!m) throw new Error(`could not lift ${name}`);
+  // A LOUD RED LINE, NOT A THROW. A rename used to take this out with an
+  // uncaught exception: exit code 1, no FAIL line, no tail, no count - which
+  // reads to anything scanning the output as a suite that found nothing wrong.
+  // The bad lift is reported as a failure and an empty body is returned, so the
+  // checks that depend on it fail too and say which.
+  if (!m) {
+    check(`C: ${name} can still be found in worker/index.js to lift and run`, false,
+      'renamed, moved, or no longer an async function declaration');
+    return `async function ${name}() { return json({ lifted: false }, 500); }`;
+  }
   return m[0];
 }
 const LIFTED = [
@@ -273,27 +422,73 @@ const env = {};
 const req = (body, method = 'POST') => ({ json: async () => body, method });
 const reset = () => { docs = new Map(); ADMIN = true; };
 
+const DOC = 'config/officeHours';
+
 reset();
 const fresh = await W.handleAvailability(env);
-check('C: with no settings document at all, the schedule decides and nothing throws',
-  fresh.status === 200 && typeof fresh.body.inOffice === 'boolean' && fresh.body.by === 'schedule',
+check('C: with no document at all, the schedule decides and nothing throws',
+  fresh.status === 200 && typeof fresh.body.inOffice === 'boolean',
   JSON.stringify(fresh.body));
 check('C: and no response time is promised', fresh.body.responseTime === null,
   JSON.stringify(fresh.body));
 
+// WHAT A STRANGER MAY SEE, AS A CLOSED LIST.
+//
+// THE EXPECTATION MOVED, 2026-08-27. This route is anonymous, uncached and
+// cheap to poll once a minute, and it used to also return `by`: 'manual' or
+// 'schedule', saying whether the clock or his own hand had decided. Nothing on
+// the client side ever read it (office.js stored it and never used it). What it
+// gave anybody keeping the log was the shape of his week - which afternoons he
+// takes off, which evenings he works late. So `by` is gone from the public
+// answer, the two checks below that used to pin `by === 'manual'` now pin the
+// state itself and its absence, and the key list is asserted as a whole so the
+// next field somebody adds has to be argued for rather than merely added.
+const PUBLIC_KEYS = ['inOffice', 'responseTime'];
+check('C: the public answer carries only the keys a stranger may see',
+  Object.keys(fresh.body).sort().join(',') === PUBLIC_KEYS.join(','),
+  Object.keys(fresh.body).sort().join(','));
+
 await W.handleOfficeHoursControl(req({ manual: 'out' }), env);
 const afterOut = await W.handleAvailability(env);
-check('C: setting OUT is read back as out, by his hand rather than by the clock',
-  afterOut.body.inOffice === false && afterOut.body.by === 'manual',
+check('C: setting OUT is read back as out (was: and by his hand rather than '
+  + 'the clock, until `by` was taken off the public answer)',
+  afterOut.body.inOffice === false,
+  JSON.stringify(afterOut.body));
+check('C: and the public answer still will not say WHICH of the two it was',
+  Object.keys(afterOut.body).sort().join(',') === PUBLIC_KEYS.join(',')
+  && !JSON.stringify(afterOut.body).includes('manual'),
   JSON.stringify(afterOut.body));
 check('C: and is stamped setByHand, the same stamp settings/booking carries',
-  docs.get('settings/officeHours')?.setByHand === true,
-  JSON.stringify(docs.get('settings/officeHours')));
+  docs.get(DOC)?.setByHand === true,
+  JSON.stringify(docs.get(DOC)));
+// The stamp is the reason the document moved out of settings/. It records the
+// exact minute of his last flip, and settings/ is world-readable.
+check('C: the stamp that made the move necessary is really stored',
+  !!docs.get(DOC)?.setAt, JSON.stringify(docs.get(DOC)));
+check('C: and never leaves the building on the public answer',
+  !('setAt' in afterOut.body) && !('setByHand' in afterOut.body),
+  JSON.stringify(afterOut.body));
+
+// The advocate route keeps every field, because he is entitled to know why his
+// own door sign says what it says, and that route is behind requireAdmin.
+const mine = await W.handleOfficeHoursControl(req(undefined, 'GET'), env);
+check('C: his own route still tells him it is his hand and not the clock',
+  mine.body.manual === 'out' && typeof mine.body.scheduled === 'boolean'
+  && typeof mine.body.overriding === 'boolean',
+  JSON.stringify(mine.body));
 
 await W.handleOfficeHoursControl(req({ manual: null }), env);
+// Both halves read off ONE call, so nothing here can flake on the one second a
+// day when the office opens between two reads of the clock.
+const cleared = await W.handleOfficeHoursControl(req(undefined, 'GET'), env);
 check('C: clearing it hands the answer back to the schedule',
-  (await W.handleAvailability(env)).body.by === 'schedule',
-  JSON.stringify(docs.get('settings/officeHours')));
+  cleared.body.manual === null && cleared.body.inOffice === cleared.body.scheduled
+  && cleared.body.overriding === false,
+  JSON.stringify(cleared.body));
+check('C: and the public answer is still two keys and a boolean',
+  typeof (await W.handleAvailability(env)).body.inOffice === 'boolean'
+  && Object.keys((await W.handleAvailability(env)).body).sort().join(',') === PUBLIC_KEYS.join(','),
+  JSON.stringify((await W.handleAvailability(env)).body));
 
 // The masked-write property, which is the thing a bare setDoc would have
 // broken - see the same defect fixed in admin-chats.js in this commit.
@@ -301,22 +496,22 @@ reset();
 await W.handleOfficeHoursControl(req({ responseTime: 'I answer most messages the same day.' }), env);
 await W.handleOfficeHoursControl(req({ manual: 'out' }), env);
 check('C: flipping the switch does not wipe the response line he typed',
-  docs.get('settings/officeHours')?.responseTime === 'I answer most messages the same day.',
-  JSON.stringify(docs.get('settings/officeHours')));
+  docs.get(DOC)?.responseTime === 'I answer most messages the same day.',
+  JSON.stringify(docs.get(DOC)));
 await W.handleOfficeHoursControl(req({ responseTime: 'Back Monday.' }), env);
 check('C: and saving the line does not wipe the switch',
-  docs.get('settings/officeHours')?.manual === 'out',
-  JSON.stringify(docs.get('settings/officeHours')));
+  docs.get(DOC)?.manual === 'out',
+  JSON.stringify(docs.get(DOC)));
 
 // NEVER PROMISE A RESPONSE TIME UNLESS ONE HAS BEEN SET BY HAND.
 reset();
-docs.set('settings/officeHours', { responseTime: '   ' });
+docs.set(DOC, { responseTime: '   ' });
 check('C: a blank line is no line, not an empty promise on a client screen',
   (await W.handleAvailability(env)).body.responseTime === null);
-docs.set('settings/officeHours', { responseTime: '  Usually within a day.  ' });
+docs.set(DOC, { responseTime: '  Usually within a day.  ' });
 check('C: a real line comes back trimmed',
   (await W.handleAvailability(env)).body.responseTime === 'Usually within a day.');
-docs.set('settings/officeHours', { responseTime: 'x'.repeat(400) });
+docs.set(DOC, { responseTime: 'x'.repeat(400) });
 // Optional-chained on purpose. An earlier version read `.length` off the
 // answer directly, and when a broken build returned null the SUITE threw a
 // TypeError instead of printing a red line - which reads to anything parsing
@@ -329,7 +524,7 @@ reset();
 check('C: a nonsense status is refused rather than stored',
   (await W.handleOfficeHoursControl(req({ manual: 'maybe' }), env)).status === 400
   && (await W.handleOfficeHoursControl(req({ manual: 7 }), env)).status === 400
-  && !docs.has('settings/officeHours'));
+  && !docs.has(DOC));
 check('C: a response time that is not text is refused too',
   (await W.handleOfficeHoursControl(req({ responseTime: 42 }), env)).status === 400);
 
@@ -338,33 +533,75 @@ ADMIN = false;
 const stranger = await W.handleOfficeHoursControl(req({ manual: 'in' }), env);
 check('C: a stranger gets 404 from the control, like every other admin route',
   stranger.status === 404 && stranger.body.error === 'Not found', JSON.stringify(stranger));
-check('C: and changed nothing', !docs.has('settings/officeHours'));
+check('C: and changed nothing', !docs.has(DOC));
 ADMIN = true;
 
 // The public read is public: it must NOT be behind requireAdmin, or the pill
 // on a client's chat says "Checking" for ever.
-check('C: the public read never asks for an admin',
-  !/async function handleAvailability\([\s\S]*?\n\}/.exec(SRC)[0].includes('requireAdmin'));
-check('C: and is routed as a public GET, beside /api/rates',
-  /url\.pathname === '\/api\/availability' && request\.method === 'GET'/.test(SRC));
-check('C: the control is routed too',
-  /url\.pathname === '\/api\/admin\/office-hours'/.test(SRC));
-
-// The settings document lives under settings/, which firestore.rules already
-// makes public-read and admin-write. No rules change is needed, and this is
-// the check that says so out loud rather than leaving it to memory.
+//
+// A LOUD RED LINE, NOT A CRASH. This used to be `.exec(SRC)[0]`, which threw a
+// TypeError the moment the handler was renamed: exit 1 with no FAIL line and no
+// tail, which reads as a clean run to anything scanning the output.
 {
-  const RULES = f('firestore.rules');
-  check('C: settings/ is already public-read and admin-write, so no rules change',
-    /match \/settings\/\{doc\}[\s\S]*?allow read: if true;[\s\S]*?allow write: if isAdmin\(\);/.test(RULES));
-  // EVERY path the two handlers touch, not just the first one that happens to
-  // match. A first version of this looked for one literal, and moving the
-  // document out from under settings/ left that literal behind elsewhere in
-  // the file and the check stayed green on a document the rules do not cover.
+  const body = /async function handleAvailability\([\s\S]*?\n\}/.exec(CODE);
+  check('C: handleAvailability is still there to read', !!body,
+    'renamed, moved, or commented out');
+  check('C: the public read never asks for an admin',
+    !!body && !body[0].includes('requireAdmin'));
+}
+
+// IS THE FEATURE REACHABLE AT ALL. THIS IS THE HEADLINE OF THE 2026-08-27
+// REVIEW AND THE WORST SILENT PASS IN THE FILE.
+//
+// The route-registration check used to read the RAW source, so it matched the
+// registration whether it was live or commented out. With `/api/availability`
+// commented out the route 404s, office.js keeps whatever it last knew (which is
+// nothing), every client's pill sits on "Checking" for ever, and the whole
+// battery stayed 115/115. The suite did not verify that the feature was
+// switched on. Both route checks now read comment-stripped source, and the
+// handlers they name are asserted to exist beside them.
+check('C: the public read is routed as a live public GET, beside /api/rates',
+  /url\.pathname === '\/api\/availability' && request\.method === 'GET'/.test(CODE)
+  && /return await handleAvailability\(/.test(CODE),
+  'no LIVE registration of GET /api/availability in worker/index.js');
+check('C: the control is routed too, and to its own handler',
+  /url\.pathname === '\/api\/admin\/office-hours'/.test(CODE)
+  && /return await handleOfficeHoursControl\(/.test(CODE),
+  'no LIVE registration of /api/admin/office-hours');
+
+// WHERE THE DOCUMENT LIVES, AND WHY IT MOVED.
+//
+// THE EXPECTATION MOVED, 2026-08-27. It used to read: this lives under
+// settings/, which firestore.rules already makes public-read, so no rules
+// change is needed. That was true and it was the defect. The document carries
+// setAt, the minute of his last flip, and world-readable meant a browser could
+// read that stamp straight out of Firestore however carefully the Worker
+// stripped it from the answer. It is on config/officeHours now, which has no
+// rule of its own and so falls to the catch-all deny at the bottom of the file,
+// the same place config/advisor and config/rates sit. The checks below are the
+// same checks pointed at the new truth: nothing was dropped.
+{
+  const RULES = strip(f('firestore.rules'));
   const paths = [...LIFTED.matchAll(/(?:getDoc|patchDoc)\(env, '([^']+)'/g)].map((m) => m[1]);
-  check('C: and every document this feature touches is inside settings/',
-    paths.length > 0 && paths.every((p) => p.startsWith('settings/')),
-    paths.join(', ') || 'no document paths found at all');
+  check('C: the handlers name a document at all, so the checks below mean something',
+    paths.length > 0, 'no document paths found in the lifted handlers');
+  check('C: and no document this feature touches is under a world-readable prefix',
+    paths.length > 0 && paths.every((x) => !x.startsWith('settings/')),
+    paths.join(', '));
+  check('C: they are all under config/, which no rule opens',
+    paths.length > 0 && paths.every((x) => x.startsWith('config/')),
+    paths.join(', '));
+  // The prefix is only safe because nothing grants it. If somebody ever adds a
+  // match block for config/, this is the line that goes red.
+  check('C: firestore.rules opens no path under config/ to any browser',
+    !/match\s+\/config\//.test(RULES),
+    (RULES.match(/match\s+\/config\/.*/) || [''])[0]);
+  check('C: and the catch-all that denies it is still the last word',
+    /match \/\{document=\*\*\} \{\s*allow read, write: if false;\s*\}/.test(RULES));
+  // settings/ is still world-readable and still correct for what is left there.
+  // Pinned so that its being open stays a stated decision rather than a habit.
+  check('C: settings/ is still public-read and admin-write for the public copy',
+    /match \/settings\/\{doc\}[\s\S]*?allow read: if true;[\s\S]*?allow write: if isAdmin\(\);/.test(RULES));
 }
 
 // ---------------------------------------------------------------------------
@@ -376,7 +613,10 @@ check('C: the control is routed too',
 // as the real one. A drift of one hour anywhere shows up here.
 // ---------------------------------------------------------------------------
 {
-  const DEMO = f('public/js/demo/api.js');
+  // Comment-stripped: an expression sitting inside a commented-out block is
+  // not the demo's schedule, and lifting one would compare the real predicate
+  // against code that never runs.
+  const DEMO = code('public/js/demo/api.js');
   const m = DEMO.match(/const wd = new Intl[\s\S]*?const scheduled = [^;]+;/);
   check('D: the demo schedule can be lifted at all', !!m);
   if (m) {
@@ -401,7 +641,12 @@ check('C: the control is routed too',
 // "8:00 AM-7:00 PM" become "to", and the em dash before "not simply the order"
 // becomes a comma. Everything else is compared character for character.
 // ---------------------------------------------------------------------------
-const HELP = f('public/js/help.js');
+// Comment-stripped, like every other whole-file grep here. The doc comment
+// above openHoursHelp quotes his rules about the copy, and a check reading the
+// raw file could go green on the quotation after the copy itself had changed.
+// The dash rule below deliberately reads the raw bytes instead; it is about
+// what is served, comments included.
+const HELP = code('public/js/help.js');
 const ERICS_WORDS = [
   'Standard advocacy hours are Monday to Friday, 8:00 AM to 7:00 PM Mountain Time, unless my current status shows otherwise.',
   'I check messages throughout the day, but responses are triaged based on urgency, time sensitivity, and what each case needs, not simply the order messages arrive.',
@@ -412,18 +657,40 @@ const ERICS_WORDS = [
   "You're always welcome to send messages outside office hours. I'll see them when I'm back in office.",
   'This chat is not an emergency or real-time medical service. If something requires immediate medical attention, use the appropriate emergency or medical resources available to you.',
 ];
+// HIS FIRST SENTENCE IS NOW A NAMED CONSTANT, and that is deliberate: the
+// paragraph a client reads and the string the local-time line is computed from
+// have to be the same string, or the two halves of "8:00 AM to 7:00 PM
+// Mountain, which is X to Y where you are" could come to state two different
+// windows. The suite reads the constant and splices it back in where a client
+// reads it, so the comparison below is still against the rendered order.
+const SENTENCE = HELP.match(/^const HOURS_LINE = '(.+)';$/m);
+check('E: his hours sentence is one named constant, so the Mountain half and '
+  + 'the local half cannot state different times',
+  !!SENTENCE, 'no `const HOURS_LINE = ...` in help.js');
+
 // The prose block only: from his first sentence to his last. Everything before
 // it is the live status line, which is markup rather than copy.
+//
+// The two interpolations inside it are the sentence itself and the computed
+// local-time line. Both are named, and both are replaced by hand here rather
+// than stripped by a wildcard, so ANY OTHER interpolation or added prose breaks
+// the comparison instead of vanishing from it.
 const block = HELP.slice(
-  HELP.indexOf('<p>Standard advocacy hours'),
+  HELP.indexOf('<p>${HOURS_LINE}'),
   HELP.indexOf('available to you.') + 'available to you.'.length,
 );
-const prose = block.replace(/<[^>]+>/g, ' ')
+const prose = block
+  .replace('${HOURS_LINE}', SENTENCE ? SENTENCE[1] : '(no HOURS_LINE)')
+  .replace('${localLine}', '')
+  .replace(/<[^>]+>/g, ' ')
   .replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 
 check('E: the sheet body is his eight blocks and nothing else',
   prose === ERICS_WORDS.join(' '),
   `got: ${prose.slice(0, 160)}...`);
+check('E: and the computed local-time line really is in it, right under his hours',
+  /\$\{HOURS_LINE\}<\/p>\s*\$\{localLine\}/.test(block),
+  block.slice(0, 90));
 for (const [i, want] of ERICS_WORDS.entries()) {
   check(`E: block ${i + 1} is word for word what he wrote`, prose.includes(want),
     want.slice(0, 60));
@@ -441,12 +708,107 @@ for (const [i, want] of ERICS_WORDS.entries()) {
     /Mountain Time/.test(ERICS_WORDS[0]));
 }
 
+// ---------------------------------------------------------------------------
+// BOTH CLOCKS. Eric asked for the reader's own timezone beside his.
+//
+// RUN, NOT GREPPED. office.js has no imports, so node can load it and the
+// arithmetic is executed against named zones at fixed instants rather than
+// eyeballed. The two fallbacks are executed too: a check that a thing degrades
+// gracefully is worth nothing until the degrading has been watched.
+{
+  const SAY = SENTENCE ? SENTENCE[1] : '';
+  const AUG = new Date('2026-08-05T18:00:00Z');   // a Wednesday, Boise on MDT
+  const JAN = new Date('2026-01-07T18:00:00Z');   // a Wednesday, Boise on MST
+
+  // Whitespace normalised, for the same reason wall() strips commas above: ICU
+  // has put a plain space and a narrow no-break space before AM in different
+  // versions, and the office hours are what is being tested, not the width of
+  // a space character.
+  const said = (zone, now) => localHoursNote(SAY, { zone, now }).replace(/\s/g, ' ');
+
+  const east = said('America/New_York', AUG);
+  check('E: a reader in New York is told his hours in their own clock',
+    east === '10:00 AM to 9:00 PM your time', east || '(nothing printed)');
+  check('E: and gets the same answer in January, because both clocks move',
+    said('America/New_York', JAN) === east, said('America/New_York', JAN));
+  const tokyo = said('Asia/Tokyo', AUG);
+  check('E: a reader far enough away is told a time on the other side of midnight',
+    tokyo === '11:00 PM to 10:00 AM your time', tokyo || '(nothing printed)');
+
+  // The three ways it declines to guess. Mountain alone is the fallback, and
+  // the fallback is an empty string that renders no line at all.
+  check('E: a browser that reports no timezone gets Mountain alone, not nonsense',
+    localHoursNote(SAY, { zone: '', now: AUG }) === '',
+    localHoursNote(SAY, { zone: '', now: AUG }));
+  check('E: a browser that reports an unusable timezone gets Mountain alone too',
+    localHoursNote(SAY, { zone: 'Nowhere/Atlantis', now: AUG }) === '',
+    localHoursNote(SAY, { zone: 'Nowhere/Atlantis', now: AUG }));
+  check('E: and a sentence with no clock times in it prints nothing rather than guessing',
+    localHoursNote('Standard advocacy hours are whenever I am about.',
+      { zone: 'America/New_York', now: AUG }) === '');
+  // A reader already on his clock would be shown his hours twice. Nothing is
+  // said rather than something said pointlessly.
+  check('E: a reader on his own clock is not told his hours a second time',
+    localHoursNote(SAY, { zone: OFFICE_TZ, now: AUG }) === '',
+    localHoursNote(SAY, { zone: OFFICE_TZ, now: AUG }));
+
+  // The numbers it converts are read out of his sentence, not written down a
+  // second time. Change the sentence, the conversion follows it.
+  const moved = localHoursNote(
+    'Standard advocacy hours are Monday to Friday, 9:00 AM to 5:00 PM Mountain Time.',
+    { zone: 'America/New_York', now: AUG }).replace(/\s/g, ' ');
+  check('E: the local line is computed FROM his sentence, so it cannot state '
+    + 'different hours from the ones beside it',
+    moved === '11:00 AM to 7:00 PM your time', moved || '(nothing printed)');
+
+  // The zone office.js converts from must be the zone the Worker decides with.
+  const zoneInOffice = code('public/js/office.js').match(/OFFICE_ZONE = '([^']+)'/);
+  check('E: office.js converts from the same zone the shipped predicate uses',
+    !!zoneInOffice && zoneInOffice[1] === OFFICE_TZ,
+    `${zoneInOffice ? zoneInOffice[1] : 'no OFFICE_ZONE in office.js'} vs ${OFFICE_TZ}`);
+  check('E: and help.js actually renders the line rather than only computing it',
+    /localHoursNote\(HOURS_LINE\)/.test(code('public/js/help.js'))
+    && /class="hours-local"/.test(code('public/js/help.js')));
+  check('E: the local line is not dimmed or shrunk, being the half most '
+    + 'clients will use',
+    /\.help-card p\.hours-local \{[^}]*\}/.test(code('public/css/site.css'))
+    && !/\.help-card p\.hours-local \{[^}]*(var\(--dim\)|font-size)/.test(code('public/css/site.css')),
+    (code('public/css/site.css').match(/\.help-card p\.hours-local \{[^}]*\}/) || [''])[0]);
+}
+
 check('E: the sentence he asked to emphasise is the emphasised one',
   new RegExp(`class="hours-key"[^>]*>\\s*${ERICS_WORDS[3].slice(0, 30).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
     .test(HELP.replace(/\s+/g, ' ')),
   'the .hours-key block does not open with "If I haven\'t responded yet"');
 check('E: and .hours-key is actually styled to stand out',
-  /\.help-card p\.hours-key \{[^}]*font-weight: 700/.test(f('public/css/site.css')));
+  /\.help-card p\.hours-key \{[^}]*font-weight: 700/.test(code('public/css/site.css')));
+
+// THE SAFETY LINE IS NOT THE QUIETEST THING ON THE PAGE.
+//
+// THE EXPECTATION MOVED, 2026-08-27. It was var(--dim) at .88rem: fainter and
+// smaller than every other paragraph in a sheet 1576px tall on a phone, with
+// that line sitting about two screens down. The one sentence telling somebody
+// to call for real medical help was the softest ink on it, and nobody had asked
+// for that. It keeps Eric's position, last, and it keeps the rule above it that
+// sets it apart; what it does not keep is the whisper.
+{
+  const safety = (code('public/css/site.css')
+    .match(/\.help-card p\.hours-safety \{([^}]*)\}/) || [, ''])[1];
+  check('E: the emergency line is styled at all, so this check has something to read',
+    safety.trim().length > 0, 'no .help-card p.hours-safety rule');
+  check('E: it is not dimmer than the prose around it',
+    /color: var\(--soft\)/.test(safety) && !/var\(--dim\)/.test(safety),
+    safety.replace(/\s+/g, ' ').trim());
+  check('E: and not smaller either - no font-size at all, so it inherits',
+    !/font-size/.test(safety), safety.replace(/\s+/g, ' ').trim());
+  check('E: while keeping the rule that separates it from his copy',
+    /border-top/.test(safety));
+  // Position is his. The emergency note is the last thing he wrote and it stays
+  // the last thing on the sheet.
+  check('E: and its position in his order is unchanged, still last',
+    ERICS_WORDS[ERICS_WORDS.length - 1].startsWith('This chat is not an emergency')
+    && HELP.indexOf('hours-safety') > HELP.indexOf('hours-key'));
+}
 
 // THE DASH RULE, on the copy this commit adds.
 //
@@ -470,69 +832,223 @@ check('E: and .hours-key is actually styled to stand out',
 
 // ---------------------------------------------------------------------------
 // 6. THE CUE, THE "?", AND WHERE THEY ARE
+//
+// EVERY GREP BELOW READS code(), NOT f(). Three of the checks in this section
+// were proved to pass with the line they guard commented out: the no-store on
+// the status fetch, the "visibly different in each state" rule, and the import
+// ban. The exceptions are named where they sit, and there are two: the dash
+// rules above, which are about the served BYTES, and "never invents a response
+// time", which is stricter with comments left in.
 // ---------------------------------------------------------------------------
-const OFFICE = f('public/js/office.js');
+const OFFICE = code('public/js/office.js');
+const CSS = code('public/css/site.css');
 check('F: the cue and its "?" are built in one place, so the three chat '
   + 'surfaces cannot end up with three versions of it',
   /export function officeCueHtml/.test(OFFICE)
   && /data-help="hours"/.test(OFFICE));
+// RUN, not grepped: the builder is imported and its output inspected, so a
+// version of it that returns the wrong markup fails here rather than passing a
+// grep for its own name.
+{
+  const html = officeCueHtml();
+  check('F: what the builder actually returns is a pill and a "?"',
+    /class="office-cue[^"]*"/.test(html) && /data-office/.test(html)
+    && /data-help="hours"/.test(html), html);
+  check('F: and it starts in the third state, not silently in "out"',
+    /class="office-cue unknown"/.test(html) && />Checking</.test(html), html);
+  check('F: the response-line slot is empty markup, filled from the answer',
+    /data-office-line/.test(officeLineHtml()) && !/[A-Za-z]{3,}<\/span>/.test(officeLineHtml()),
+    officeLineHtml());
+  check('F: and the label really does say three different things',
+    officeLabel(null) === 'Checking'
+    && officeLabel({ inOffice: true }) === 'In office'
+    && officeLabel({ inOffice: false }) === 'Out of office',
+    [officeLabel(null), officeLabel({ inOffice: true }), officeLabel({ inOffice: false })].join(' / '));
+}
 for (const page of ['public/js/case.js', 'public/js/subscription.js', 'public/js/chat-page.js']) {
+  const PAGE = code(page);
   check(`F: ${page.split('/').pop()} uses that one builder`,
-    /officeCueHtml\(\)/.test(f(page)));
-  check(`F: and wires the "?" it just rendered`, /wireHelp\(/.test(f(page)));
+    /officeCueHtml\(\)/.test(PAGE));
+  check(`F: and wires the "?" it just rendered`, /wireHelp\(/.test(PAGE));
+  // THE CHECK THAT WAS MISSING ENTIRELY. Nothing asserted that any client
+  // surface actually STARTS the thing. Commenting out watchPresence(el) in
+  // case.js left the pill frozen on its first state on every client's chat and
+  // the whole battery stayed green. Rendering the markup is not painting it.
+  check(`F: and ${page.split('/').pop()} starts the painter, or the pill never `
+    + 'moves off "Checking"',
+    /watch(?:Presence|Office)\(/.test(PAGE),
+    'the markup is rendered but nothing ever paints it');
 }
 check('F: wireHelp knows the hours kind, or the button is a dead circle',
-  /dataset\.help === 'hours' \? openHoursHelp\(\)/.test(HELP));
+  /dataset\.help === 'hours' \? openHoursHelp\(\)/.test(code('public/js/help.js')));
 
 check('F: the "?" is a true 44px, not the 40 it used to be',
-  /\.help-dot \{ width: 2\.75rem; height: 2\.75rem; min-width: 2\.75rem/.test(f('public/css/site.css')));
-check('F: the pill has a visibly different look in each state',
-  /\.office-cue\.in \{[^}]*border-color: var\(--green\)/.test(f('public/css/site.css'))
-  && /\.office-cue\.out \{/.test(f('public/css/site.css')));
+  /\.help-dot \{ width: 2\.75rem; height: 2\.75rem; min-width: 2\.75rem/.test(CSS));
+// CONTENT, NOT AN EMPTY BRACE. The old form matched `.office-cue.out { }` with
+// nothing in it, so deleting every declaration from the out state left the
+// check green and the two states identical. Each state now has to declare
+// something, and the three have to differ from each other.
+{
+  const rule = (sel) => (CSS.match(new RegExp(`\\${sel} \\{([^}]*)\\}`)) || [, ''])[1].trim();
+  const inRule = rule('.office-cue.in');
+  const outRule = rule('.office-cue.out');
+  const unknownRule = rule('.office-cue.unknown');
+  check('F: the pill has a visibly different look in each state',
+    /border-color: var\(--green\)/.test(inRule)
+    && outRule.length > 0 && inRule !== outRule,
+    `in: [${inRule}]  out: [${outRule}]`);
+  // NOT KNOWING IS NOT BEING OUT. Cold, the pill used to be the out pill with
+  // different words: same solid grey ring, same filled grey dot. A dropped
+  // network read as "he is out of office".
+  check('F: and "we do not know yet" does not look like "he is out"',
+    unknownRule.length > 0 && unknownRule !== outRule
+    && /border-style: dashed/.test(unknownRule),
+    `unknown: [${unknownRule}]  out: [${outRule}]`);
+}
 
 // office.js is downloaded by the landing page through help.js. If it ever
 // grows an import, that page starts pulling whatever the import pulls.
-check('F: office.js still imports nothing',
-  !/^\s*import\s/m.test(OFFICE), (OFFICE.match(/^\s*import\s.*/m) || [''])[0]);
+//
+// THE WORD, NOT THE STATEMENT SHAPE. The old form was `^\s*import\s`, which
+// misses `await import('./firebase.js')` entirely - a dynamic import drags the
+// whole data layer onto the landing page just as surely, and sits mid-line.
+check('F: office.js still imports nothing, statically or dynamically',
+  !/\bimport\b/.test(OFFICE), (OFFICE.match(/.*\bimport\b.*/) || [''])[0]);
 
 // A cached "in office" outliving his tap on the switch is the one failure this
 // whole feature cannot have, and the route sends no cache-control of its own.
 check('F: the status is never read from the browser cache',
   /cache: 'no-store'/.test(OFFICE), 'office.js fetches /api/availability without no-store');
+// The public answer is two keys wide, and office.js must not be storing a third
+// that the route no longer sends and nothing reads.
+check('F: office.js reads nothing off the answer but the two public keys',
+  !/\bout\.by\b/.test(OFFICE) && !/\bby:/.test(OFFICE),
+  (OFFICE.match(/.*\bby\b.*/) || [''])[0]);
 
-// No response time may be invented anywhere on the client side.
+// NO RESPONSE TIME MAY BE INVENTED ANYWHERE ON THE CLIENT SIDE.
+//
+// Raw file on purpose, comments included: this one is stricter that way, and
+// office.js has no comment that would trip it.
 check('F: office.js never invents a response time',
-  !/typically|usually within|within a few|hours to reply/i.test(OFFICE));
-// The DEFAULT, not the word: the comment on that line records what the old
-// default said and why it went, and a check that could not tell the two apart
-// would forbid the repo from remembering its own bugs.
-check('F: and the subscriber page has no built-in reply-time promise left',
-  !/expectation = '(?!')/.test(f('public/js/subscription.js')),
-  (f('public/js/subscription.js').match(/expectation = '.*/) || [''])[0]);
+  !/typically|usually within|within a few|hours to reply/i.test(f('public/js/office.js')));
+// THE PROMISE ITSELF, ANYWHERE, HOWEVER QUOTED.
+//
+// THE EXPECTATION MOVED, 2026-08-27. The old form was `!/expectation = '(?!')/`
+// - syntax-shaped, matching only a single-quoted assignment to one particular
+// variable name. Writing the exact banned sentence back as
+// `expectation = line || "I typically reply within a few days.";` left it
+// green. It is content-shaped now: the words of the promise, in any quoting,
+// anywhere in the file. Comments are stripped first, so the note recording the
+// old default and why it went survives - the repo is still allowed to remember
+// its own bugs.
+const PROMISE = /typicall|usually within|within a few (?:days|hours)|reply within|respond within/i;
+for (const page of ['public/js/subscription.js', 'public/js/admin-chats.js',
+  'public/js/chat.js', 'public/js/help.js', 'public/js/case.js']) {
+  check(`F: no built-in reply-time promise left in ${page.split('/').pop()}`,
+    !PROMISE.test(code(page)),
+    (code(page).match(new RegExp(`.*${PROMISE.source}.*`, 'i')) || [''])[0].trim().slice(0, 90));
+}
+
+// ---------------------------------------------------------------------------
+// ONE RESPONSE LINE, ONE STORE.
+//
+// Two documents held a response-time promise and two surfaces read one each:
+// the subscriber page rendered settings/subscriberChat.expectationLine beside
+// the pill, and the "?" sheet two taps away rendered the office-hours line. A
+// subscriber could be shown two different promises, both current. There is one
+// now, it arrives on the same answer that paints the pill, and it is edited in
+// one place.
+// ---------------------------------------------------------------------------
+{
+  const SUB = code('public/js/subscription.js');
+  const CHATS = code('public/js/admin-chats.js');
+  check('F: the subscriber page no longer keeps its own response-line store',
+    !/subscriberChat/.test(SUB) && !/expectationLine/.test(SUB),
+    (SUB.match(/.*(subscriberChat|expectationLine).*/) || [''])[0]);
+  check('F: it takes the line off the same answer that paints its pill',
+    /officeLineHtml\(\)/.test(SUB));
+  check('F: and there is no second editor writing a second document',
+    !/expectationLine/.test(CHATS) && !/setDoc\(/.test(CHATS),
+    (CHATS.match(/.*(expectationLine|setDoc\().*/) || [''])[0]);
+  check('F: the one editor is the one beside his in/out switch',
+    /data-rt/.test(code('public/js/admin-hours.js'))
+    && /responseTime/.test(code('public/js/admin-hours.js')));
+  check('F: and office.js is what fills the slot, from the served answer',
+    /\[data-office-line\]/.test(OFFICE) && /state\.responseTime/.test(OFFICE));
+}
+
+// ---------------------------------------------------------------------------
+// THE FLAG THAT SAID WHETHER HE HAD A TAB OPEN.
+//
+// presence/eric was world-readable in database.rules.json and written on every
+// load of an advocate page, and nothing has read it since the pill replaced it.
+// A stranger could subscribe to it and watch him work. Both halves went in the
+// same commit, which is the only safe order to check them in: the write is gone
+// AND the rule that published it is gone.
+// ---------------------------------------------------------------------------
+{
+  // Comment-stripped, so the note explaining why the flag went cannot itself
+  // satisfy or trip a check about the rules.
+  const RTDB = strip(f('database.rules.json'));
+  check('G: nothing writes the tab-open flag any more',
+    !/presence\/eric/.test(code('public/js/auth.js')),
+    (code('public/js/auth.js').match(/.*presence\/eric.*/) || [''])[0]);
+  check('G: and the rule that published it is closed',
+    !/"presence"/.test(RTDB) && !/"\.read":\s*true/.test(RTDB),
+    (RTDB.match(/.*("presence"|"\.read":\s*true).*/) || [''])[0]);
+  check('G: the database is shut to browsers in both directions',
+    /"\.read":\s*false/.test(RTDB) && /"\.write":\s*false/.test(RTDB));
+  // Nothing may still be depending on it. Checked before it was removed and
+  // pinned here so it stays checked: the demo's own shim is gated behind the
+  // admin asset gate and is not a client surface.
+  const readers = ['public/js/chat.js', 'public/js/case.js', 'public/js/subscription.js',
+    'public/js/chat-page.js', 'public/js/office.js', 'public/js/help.js',
+    'public/js/auth.js', 'public/js/firebase.js'];
+  check('G: and no client-served module names it at all, comments included',
+    readers.every((x) => !/presence\/eric/.test(f(x))),
+    readers.filter((x) => /presence\/eric/.test(f(x))).join(', '));
+}
 
 // ---------------------------------------------------------------------------
 // 7. BLINDNESS: the advocate's half is behind the asset gate
 // ---------------------------------------------------------------------------
 {
-  const gate = SRC.match(/const ADMIN_ASSET =\s*([\s\S]*?);/)[1];
+  // A LOUD RED LINE, NOT A CRASH. This used to be `SRC.match(...)[1]`, which on
+  // a rename threw a TypeError: exit 1, no FAIL line, no tail, no count. A
+  // suite that cannot find the thing it is testing has FAILED, and has to say
+  // so in the same words as every other failure.
+  const gate = CODE.match(/const ADMIN_ASSET =\s*([\s\S]*?);/);
+  check('G: the asset gate can still be found in worker/index.js', !!gate,
+    'no `const ADMIN_ASSET = ...` - renamed, moved, or commented out');
   // Build the real regex from the real source and run paths through it, rather
   // than eyeballing that "admin-hours" looks like it matches.
   // eslint-disable-next-line no-new-func
-  const RE = new Function(`return ${gate.trim()}`)();
+  const RE = gate ? new Function(`return ${gate[1].trim()}`)() : /$^/;
   check('G: /js/admin-hours.js is 404 to a stranger', RE.test('/js/admin-hours.js'));
   check('G: /js/drawer.js still is too', RE.test('/js/drawer.js'));
   check('G: /js/office.js is NOT gated - clients need it',
     !RE.test('/js/office.js'));
   check('G: /css/admin.css, which carries the folder glow, is gated',
     RE.test('/css/admin.css'));
+  // The audit proves the gate holds against a live server, but only for the
+  // paths it is given. A module missing from its list is a module nobody is
+  // proving anything about.
+  const AUDIT = code('tools/blindness-audit.mjs');
+  check('G: every admin- module in public/js is in the audit\'s own list',
+    ['admin-hours.js', 'admin-presence.js', 'admin-ledger.js', 'admin.js',
+      'admin-case.js', 'admin-chats.js', 'admin-calendar.js',
+      'admin-availability.js', 'admin-dictionary.js', 'admin-settings.js']
+      .every((x) => AUDIT.includes(`/js/${x}`)),
+    ['admin-hours.js', 'admin-presence.js', 'admin-ledger.js']
+      .filter((x) => !AUDIT.includes(`/js/${x}`)).join(', ') || 'listed');
 }
 check('G: the advocate control lives in the admin-named file, not a served one',
-  /export function mountOfficeControl/.test(f('public/js/admin-hours.js'))
+  /export function mountOfficeControl/.test(code('public/js/admin-hours.js'))
   && !/mountOfficeControl\s*\(/.test(OFFICE));
-// Comments stripped first. Commenting the call out left the name and its
-// bracket sitting in the file, and this check went green on a page that had
-// stopped mounting the control at all.
-const code = (p) => f(p).replace(/^\s*\/\/.*$/gm, '');
+// Comments stripped, by code() at the top of this file. Commenting the call
+// out left the name and its bracket sitting in the file, and this check went
+// green on a page that had stopped mounting the control at all. That stripper
+// is now what EVERY whole-file grep in this suite reads through.
 check('G: and it is mounted on BOTH advocate pages, so they cannot disagree',
   /mountOfficeControl\(/.test(code('public/js/admin.js'))
   && /mountOfficeControl\(/.test(code('public/js/admin-availability.js')),
@@ -547,14 +1063,17 @@ check('G: and it is mounted on BOTH advocate pages, so they cannot disagree',
 // that client". The danger is a fifth clock rather than a fourth switch, so
 // what is pinned here is that the menu goes through the SAME toggle.
 // ---------------------------------------------------------------------------
-const DRAWER = f('public/js/drawer.js');
-const ADMINJS = f('public/js/admin.js');
+// code(), not f(). Both of these are whole-file greps and both were proved to
+// pass on commented-out lines.
+const DRAWER = code('public/js/drawer.js');
+const ADMINJS = code('public/js/admin.js');
 check('H: the long press exists and opens a menu',
   /export function wireFolderLongPress/.test(DRAWER)
   && /export function openWorkSheet/.test(DRAWER));
 // The ROW, not the prose. The doc comment above openWorkSheet quotes him
-// saying the words, so a check that matched anywhere in the file would go
+// saying the words, so a check that matched anywhere in the raw file would go
 // green on the quotation after the button had been renamed to something else.
+// Comments are stripped now as well, which is belt and braces on the same risk.
 check('H: the menu row says exactly what he asked it to say',
   /: 'Working on this client'\}<\/span>/.test(DRAWER.replace(/\s+/g, ' ')),
   'no "Working on this client" row in the sheet markup');
@@ -579,6 +1098,20 @@ check('H: the folder press function can be found at all', PRESS.length > 200);
 check('H: the press leaves the same lp mark, so the trailing click does not '
   + 'also open the case',
   /card\.dataset\.lp = '1';/.test(PRESS));
+// AND CLEARS IT AGAIN ON THE NEXT PRESS, which is the half that was missing.
+//
+// The mark is only ever consumed by a click reaching wireFolderOpen. After a
+// long press the sheet overlay is on top, so that click never arrives and the
+// mark stayed on the card: long press, Cancel, tap, nothing happens, tap again,
+// the case opens. wireDxLongPress has guarded exactly this with a `delete` on
+// pointerdown since it was written; the new function was missing the line.
+check('H: and clears any stale mark when the next press begins, so a tap after '
+  + 'a cancelled long press is not eaten',
+  /pointerdown[\s\S]*?delete card\.dataset\.lp;/.test(PRESS),
+  'wireFolderLongPress arms without clearing the mark its last press left');
+check('H: the older diagnosis press still does the same, which is where the '
+  + 'line was copied from',
+  /delete el\.dataset\.lp;/.test(DRAWER));
 check('H: it keeps its hands off the diagnosis line and the clock control, '
   + 'which already own the press and the tap',
   /closest\?\.\('\.folder-dx'\) \|\| e\.target\.closest\?\.\('\[data-clock\]'\)/.test(PRESS));
@@ -594,9 +1127,22 @@ check('H: and every path that moves the clock moves the glow with it',
   (DRAWER.match(/glow\(id, /g) || []).length >= 2,
   `${(DRAWER.match(/glow\(id, /g) || []).length} call sites`);
 check('H: the glow is green, and off is plain manila again',
-  /\.folder\.working \{[\s\S]*?outline: 2px solid var\(--green\)/.test(f('public/css/admin.css')));
-check('H: nothing in it starts a clock without him (the 2026-08-25 rule)',
-  !/auto: true/.test(DRAWER));
+  /\.folder\.working \{[\s\S]*?outline: 2px solid var\(--green\)/.test(code('public/css/admin.css')));
+// THE EXPECTATION MOVED, 2026-08-27, because the old one was vacuous.
+//
+// It was `!/auto: true/`, pinning the absence of a string that has never once
+// existed in drawer.js. It could not go red for any edit anybody could make: a
+// check that cannot fail is not evidence, it is decoration. What the rule
+// actually says (Eric, 2026-08-25: "All clocks in/clock out buttons are manual.
+// Nothing automatic.") is that every clock this file starts is flagged as a
+// deliberate tap, so this reads the flags that are really there and requires
+// them all to say so. Flip one to true, or delete the flag, and it goes red.
+{
+  const flags = [...DRAWER.matchAll(/auto:\s*(\w+)/g)].map((m) => m[1]);
+  check('H: nothing in it starts a clock without him (the 2026-08-25 rule)',
+    flags.length > 0 && flags.every((x) => x === 'false'),
+    flags.length ? flags.join(', ') : 'no auto flag in drawer.js at all');
+}
 
 // ---------------------------------------------------------------------------
 const failed = results.filter((r) => !r.pass);

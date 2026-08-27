@@ -28,11 +28,21 @@ const ok = (n, c, d = '') => {
 
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 // A real phone: 390x844, touch on, so a long press is a long press.
+//
+// PA_WIDTH drives the same script at 320, the narrowest phone anybody still
+// carries, because the sheet and the pill both wrap and the shelf control is a
+// row of three buttons.
+const WIDTH = Number(process.env.PA_WIDTH || 390);
+// A NAMED TIMEZONE, not the container's. The sheet now prints the reader's own
+// clock beside Eric's, and a drive run in UTC would be reading the one case
+// nobody is actually in. New York is a real client's phone and the answer is
+// arithmetic anybody can check by hand.
 const ctx = await b.newContext({
-  viewport: { width: 390, height: 844 },
+  viewport: { width: WIDTH, height: 844 },
   deviceScaleFactor: 2,
   hasTouch: true,
   isMobile: true,
+  timezoneId: 'America/New_York',
 });
 await ctx.addCookies([{ name: 'pa_demo', value: '1', domain: '127.0.0.1', path: '/' }]);
 const page = await ctx.newPage();
@@ -67,7 +77,7 @@ ok('it says in or out in words', /IN OFFICE|OUT OF OFFICE/.test(ctl.state || '')
 ok('it offers both switches and the way back to the schedule',
   ctl.buttons?.join('|') === 'In office|Out of office|Follow my hours', ctl.buttons?.join('|'));
 ok('every switch is a 44px target', ctl.smallest >= 44, `${ctl.smallest}px`);
-ok('and nothing on the shelf scrolls sideways at 390px',
+ok(`and nothing on the shelf scrolls sideways at ${WIDTH}px`,
   ctl.docWidth <= ctl.winWidth, `${ctl.docWidth} vs ${ctl.winWidth}`);
 await page.screenshot({ path: `${SHOT}/1-shelf-control.png` });
 
@@ -111,8 +121,14 @@ const readCue = () => page.evaluate(() => {
 
 const scheduled = await readCue();
 ok('the client case page carries the pill', scheduled.there, JSON.stringify(scheduled));
-ok('it has resolved to a real state rather than sitting on "Checking"',
-  /In office|Out of office/.test(scheduled.label || ''), scheduled.label);
+// THE CHECK THAT WAS MISSING. Nothing anywhere asserted that a client surface
+// really paints the cue: commenting out watchPresence(el) in case.js froze the
+// pill on its cold state on every client's chat and the whole battery stayed
+// green. This is the page being looked at rather than the source being read.
+ok('the client page really PAINTS the status, not just the empty pill',
+  /In office|Out of office/.test(scheduled.label || '')
+  && !/unknown/.test(scheduled.cls || ''),
+  `${scheduled.label} [${scheduled.cls}]`);
 ok('and it carries the matching class, so the styling is on',
   /\b(in|out)\b/.test(scheduled.cls || ''), scheduled.cls);
 
@@ -161,8 +177,23 @@ const sheet = await page.evaluate(() => {
     keyWeight: keyCs?.fontWeight,
     keySize: parseFloat(keyCs?.fontSize || '0'),
     bodySize: parseFloat(bodyCs.fontSize || '0'),
+    bodyColour: bodyCs.color,
     keyBorder: keyCs?.borderLeftWidth,
     scrollsSideways: document.documentElement.scrollWidth > window.innerWidth,
+    // The reader's own clock, beside his.
+    localText: card.querySelector('.hours-local')?.textContent?.replace(/\s+/g, ' ').trim() || '',
+    localSize: parseFloat(getComputedStyle(card.querySelector('.hours-local') || card).fontSize || '0'),
+    localColour: getComputedStyle(card.querySelector('.hours-local') || card).color,
+    // THE EMERGENCY LINE, MEASURED. It was var(--dim) at .88rem, the faintest
+    // and smallest paragraph on a sheet two screens long.
+    safetyText: card.querySelector('.hours-safety')?.textContent?.replace(/\s+/g, ' ').trim() || '',
+    safetySize: parseFloat(getComputedStyle(card.querySelector('.hours-safety') || card).fontSize || '0'),
+    safetyColour: getComputedStyle(card.querySelector('.hours-safety') || card).color,
+    safetyIsLast: (() => {
+      const ps = [...card.querySelectorAll('p')];
+      return ps.length > 0 && ps[ps.length - 1].classList.contains('hours-safety');
+    })(),
+    cardHeight: Math.round(card.scrollHeight),
   };
 });
 ok('the sheet opens', sheet.there);
@@ -201,6 +232,33 @@ ok('no em or en dash anywhere a person reads it',
 ok('no response time is promised, because none has been set',
   !/typically|usually within|within \d+ (hour|day)/i.test(sheet.text || ''));
 ok('the sheet does not push the page sideways', !sheet.scrollsSideways);
+
+// BOTH CLOCKS. He asked for the reader's own timezone beside Mountain. This
+// context is pinned to America/New_York, where his 8:00 to 19:00 Mountain is
+// 10:00 AM to 9:00 PM, in either half of the year.
+ok('the sheet shows the reader their own clock as well as his',
+  // Whitespace normalised: ICU puts a narrow no-break space before AM in some
+  // versions and a plain one in others, and neither is what is being tested.
+  /10:00 AM to 9:00 PM your time/.test((sheet.localText || '').replace(/\s/g, ' ')),
+  sheet.localText || '(no local line rendered)');
+ok('it sits directly under his hours sentence, and reads as one thought',
+  (sheet.paras || []).findIndex((x) => /your time/.test(x))
+    === (sheet.paras || []).findIndex((x) => /Standard advocacy hours/.test(x)) + 1,
+  (sheet.paras || []).slice(0, 3).join(' || '));
+ok('and it is not the quiet half: same size and colour as the prose',
+  sheet.localSize >= sheet.bodySize && sheet.localColour === sheet.bodyColour,
+  `${sheet.localSize}px ${sheet.localColour} vs body ${sheet.bodySize}px ${sheet.bodyColour}`);
+
+// THE EMERGENCY LINE. Eric's position for it is last and it stays last; what
+// changed is that it is no longer the faintest thing on the page.
+ok('the emergency line is still the last thing he wrote', sheet.safetyIsLast,
+  sheet.safetyText.slice(0, 60));
+ok('and it is NOT dimmer than the prose around it',
+  sheet.safetyColour === sheet.bodyColour,
+  `safety ${sheet.safetyColour} vs body ${sheet.bodyColour}`);
+ok('and NOT smaller than it either',
+  sheet.safetySize >= sheet.bodySize,
+  `${sheet.safetySize}px vs body ${sheet.bodySize}px`);
 await page.screenshot({ path: `${SHOT}/3-sheet-top.png` });
 await page.evaluate(() => {
   const c = document.querySelector('#pa-help .settings-card');
@@ -399,12 +457,21 @@ await page.screenshot({ path: `${SHOT}/9-folder-manila.png` });
 const dxBox = await page.evaluate(() => {
   const el = document.querySelector('.folder-dx');
   if (!el) return null;
-  el.scrollIntoView({ block: 'center' });
+  // Instant, and measured after a settle below. A smooth scroll here reports
+  // the rect the line is moving away from, and every event then lands on
+  // nothing, which reads exactly like the press not working.
+  el.scrollIntoView({ block: 'center', behavior: 'instant' });
+  return true;
+});
+await settle(900);
+const dxAt = dxBox && await page.evaluate(() => {
+  const el = document.querySelector('.folder-dx');
+  if (!el) return null;
   const r = el.getBoundingClientRect();
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 });
-if (dxBox) {
-  await page.mouse.move(dxBox.x, dxBox.y);
+if (dxAt) {
+  await page.mouse.move(dxAt.x, dxAt.y);
   await page.mouse.down();
   await page.waitForTimeout(900);
   await page.mouse.up();
@@ -422,6 +489,63 @@ if (dxBox) {
     false, 'no .folder-dx on the shelf to press');
 }
 
+// ---------------------------------------------------------------------------
+// THE LONG PRESS MUST NOT EAT THE NEXT TAP.
+//
+// fire() marks the card so the click trailing a fired press does not also open
+// the case. That mark is only ever consumed by a click reaching wireFolderOpen,
+// and after a long press the sheet is on top, so the click never arrives and
+// the mark stayed on the card. Reproduced before the fix: press, Cancel, tap,
+// nothing at all, tap again, the case opens. This is that sequence, driven.
+console.log('\n--- 5b. a tap straight after a cancelled long press ---');
+await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
+await settle(3000);
+const tapBox = await page.evaluate(() => {
+  const card = document.querySelector('.folder');
+  card?.scrollIntoView({ block: 'center', behavior: 'instant' });
+  return card?.dataset.id || null;
+});
+await settle(900);
+const tapAt = await page.evaluate((id) => {
+  const card = document.querySelector(`.folder[data-id="${id}"]`);
+  if (!card) return null;
+  const t = card.querySelector('.folder-name') || card;
+  const r = t.getBoundingClientRect();
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+}, tapBox);
+if (!tapAt) {
+  ok('a tap straight after a cancelled long press opens the case', false,
+    'no folder on the shelf to press');
+} else {
+  await page.mouse.move(tapAt.x, tapAt.y);
+  await page.mouse.down();
+  await page.waitForTimeout(900);
+  await page.mouse.up();
+  await settle(700);
+  ok('the long press opened its menu again', await page.evaluate(() => !!document.querySelector('.msg-menu')));
+  await page.click('.msg-menu-row[data-act="cancel"]');
+  await settle(600);
+  // The mark IS still on the card here, and that is fine: the click that would
+  // clear it never arrives, because the sheet was over the shelf. What matters
+  // is that the next press clears it before it can eat anything, which is the
+  // line wireDxLongPress has always had and this one was missing. So: press
+  // down, read the mark mid-press, release. That is one ordinary tap.
+  await page.mouse.move(tapAt.x, tapAt.y);
+  await page.mouse.down();
+  const midPress = await page.evaluate((id) =>
+    document.querySelector(`.folder[data-id="${id}"]`)?.dataset.lp ?? null, tapBox);
+  ok('the next press clears the mark its own last press left behind',
+    midPress === null, `lp is ${JSON.stringify(midPress)} at the start of the next tap`);
+  await page.mouse.up();
+  await settle(1600);
+  const where = await page.evaluate(() => location.pathname + location.search);
+  ok('ONE ordinary tap after a cancelled long press opens the case',
+    /admin-case/.test(where), `still at ${where} after a single tap`);
+  await page.screenshot({ path: `${SHOT}/10-tap-after-press.png` });
+  await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
+  await settle(2500);
+}
+
 // Put the demo back the way it was found.
 await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await settle(2500);
@@ -430,6 +554,78 @@ await settle(1200);
 const restored = await page.evaluate(() => document.querySelector('[data-why]')?.textContent?.trim());
 ok('"Follow my hours" hands the answer back to the schedule',
   /Following your hours/.test(restored || ''), restored);
+
+// ---------------------------------------------------------------------------
+console.log('\n--- 6. the cold state: the client page with no answer at all ---');
+//
+// UNKNOWN MUST NOT LOOK LIKE OUT. With the route unreachable the pill used to
+// read "OFFICE HOURS" in the same grey ring with the same filled grey dot as
+// "OUT OF OFFICE", so a dropped network told a client he was out when nobody
+// knew. It reads "CHECKING" now, with a dashed ring and a hollow dot.
+//
+// Breaking the route takes a little care: the demo answers fetch itself, from
+// inside the page, so there is no network request to intercept. This installs a
+// property on window.fetch BEFORE anything loads, so whatever the demo assigns
+// gets wrapped, and only /api/availability is refused.
+{
+  const cold = await b.newContext({
+    viewport: { width: WIDTH, height: 844 },
+    deviceScaleFactor: 2,
+    hasTouch: true,
+    isMobile: true,
+    timezoneId: 'America/New_York',
+  });
+  await cold.addCookies([{ name: 'pa_demo', value: '1', domain: '127.0.0.1', path: '/' }]);
+  const cp = await cold.newPage();
+  await cp.addInitScript(() => {
+    let current = window.fetch;
+    Object.defineProperty(window, 'fetch', {
+      configurable: true,
+      get() { return current; },
+      set(next) {
+        current = (input, init) => {
+          const u = String(typeof input === 'string' ? input : (input && input.url) || '');
+          if (u.includes('/api/availability')) return Promise.reject(new Error('drive: offline'));
+          return next(input, init);
+        };
+      },
+    });
+  });
+  await cp.goto(`${P}/case.html?id=demo-case&demo=1`, { waitUntil: 'networkidle' });
+  await cp.waitForTimeout(3000);
+  await cp.evaluate(() => {
+    try { localStorage.setItem('pa-intro-done', '1'); } catch { /* blocked */ }
+    document.getElementById('pa-intro')?.remove();
+  });
+  await cp.evaluate(() => document.querySelector('.folder-tabs a[data-page="chat"]')?.click());
+  await cp.waitForTimeout(2500);
+  const dead = await cp.evaluate(() => {
+    const cue = document.querySelector('.office-cue');
+    if (!cue) return { there: false };
+    const cs = getComputedStyle(cue);
+    const dot = cue.querySelector('.p-dot');
+    const dcs = dot ? getComputedStyle(dot) : null;
+    return {
+      there: true,
+      label: cue.querySelector('.p-label')?.textContent?.trim(),
+      cls: cue.className,
+      borderStyle: cs.borderTopStyle,
+      dotColour: dcs?.backgroundColor,
+      title: cue.getAttribute('title'),
+    };
+  });
+  ok('with no answer the pill is still on the page', dead.there, JSON.stringify(dead));
+  ok('it does NOT claim he is out of office',
+    dead.label !== 'Out of office' && !/\bout\b/.test(dead.cls || ''),
+    `${dead.label} [${dead.cls}]`);
+  ok('it says it does not know, in a word', dead.label === 'Checking', dead.label);
+  ok('and it LOOKS different from out: dashed ring, hollow dot',
+    dead.borderStyle === 'dashed'
+    && dead.dotColour !== clientOut.dotColour,
+    `${dead.borderStyle} ring, dot ${dead.dotColour} vs out ${clientOut.dotColour}`);
+  await cp.screenshot({ path: `${SHOT}/11-cold-unknown.png` });
+  await cold.close();
+}
 
 console.log(`\n${pass} ok, ${fail} FAIL`);
 if (errs.length) console.log('page errors:\n  ' + errs.join('\n  '));
