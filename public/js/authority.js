@@ -1,28 +1,36 @@
-// The two documents Full Access runs on, and they are not interchangeable.
+// The authority documents, and they are not interchangeable.
 //
-// Written 2026-08-23, PENDING ERIC'S SIGN-OFF, flagged in the PR. A NEW file,
-// not an addition to waivers.js, which is frozen.
+// Four documents come out of this module:
 //
-//   1. A RECORDS AUTHORISATION, one per clinic. This is what lets a provider
-//      hand your records to somebody who is not you. Its required elements
-//      come from 45 CFR 164.508(c): a specific description of the information,
-//      who may disclose it, who may receive it, the purpose, an expiry, the
-//      signature, and three statements the rule requires verbatim in substance
-//      (the right to revoke and how, that treatment cannot be conditioned on
-//      signing, and that re-disclosed information may no longer be protected).
-//      Miss one and the form is defective, which in practice means a records
-//      department rejects it and three weeks are gone.
+//   1. A UNIVERSAL RECORDS AUTHORISATION. This is what lets a provider hand
+//      your records to somebody who is not you, and it names a CLASS of
+//      providers rather than one clinic, so it is signed once. Its required
+//      elements come from 45 CFR 164.508(c): a specific description of the
+//      information, who may disclose it, who may receive it, the purpose, an
+//      expiry, the signature, and three statements the rule requires verbatim
+//      in substance (the right to revoke and how, that treatment cannot be
+//      conditioned on signing, and that re-disclosed information may no longer
+//      be protected). Miss one and the form is defective, which in practice
+//      means a records department rejects it and three weeks are gone.
 //
-//   2. An AUTHORISED REPRESENTATIVE DESIGNATION. This is what lets somebody
+//   2. A PATIENT DESIGNATION OF ADVOCATE: one page a front desk can scan into
+//      the chart, signed in the same sitting as the authorisation. It grants
+//      nothing on its own and says so on its face.
+//
+//   3. A PER-CLINIC RECORDS AUTHORISATION, the exception. Either a document
+//      signed before the universal form existed, or a narrowed copy made for
+//      an office that will only take a form naming itself.
+//
+//   4. An AUTHORISED REPRESENTATIVE DESIGNATION. This is what lets somebody
 //      argue with your insurer for you. ERISA plans must have a procedure for
 //      it (29 CFR 2560.503-1(b)(4)); Medicare uses its own appointment form.
 //      A records authorisation does NOT confer it, and clients conflate the
-//      two constantly, which is why they are two documents here and not one
-//      with a longer title.
+//      two constantly, which is why they are separate documents here and not
+//      one with a longer title.
 //
-// Both are PURE FUNCTIONS returning text, following duty.js: copy this
-// load-bearing gets a surface a test can pin, and a pure function is that
-// surface. Do not inline them into a template.
+// All are PURE FUNCTIONS returning the document as text or as a structure,
+// following duty.js: copy this load-bearing gets a surface a test can pin, and
+// a pure function is that surface. Do not inline them into a template.
 //
 // Nothing here makes the service a HIPAA covered entity, and waivers.js says
 // so. Eric receives records as the patient's own authorised recipient, which
@@ -146,9 +154,19 @@ export const PROVIDER_CLASS = `any ${PROVIDER_CLASS_TYPES.join(', ')}, or other`
  * expiration date or event, and a records department that reads "does not
  * expire" rejects the form. The outer bound exists so that a mistyped year
  * cannot put an expiry in the next century on a document nobody re-reads.
+ *
+ * THE CEILING IS TWELVE, NOT TWENTY-FOUR, and it is twelve because that is
+ * what the agreement promises. tier-terms.js says the authorisation "runs for
+ * twelve months unless you choose a shorter time"; the ceiling was 24, the
+ * date input offered two years, and the extra year appeared on no surface a
+ * client reads. A client could therefore be handed a form running to a date
+ * their own agreement says is impossible, and nothing anywhere would say so.
+ * The safe default is the promise. Widening it again is Eric's call and is
+ * flagged for him: raising this number alone reopens exactly that gap, so the
+ * agreement copy has to move with it.
  */
 export const AUTHORITY_DEFAULT_MONTHS = 12;
-export const AUTHORITY_MAX_MONTHS = 24;
+export const AUTHORITY_MAX_MONTHS = 12;
 
 /**
  * Signed date plus n calendar MONTHS, not plus 365 days.
@@ -184,7 +202,7 @@ export function authorityExpiry(signedAt, months = AUTHORITY_DEFAULT_MONTHS) {
 }
 
 /**
- * Is this stored document past its expiry?
+ * WHEN A STORED DOCUMENT ACTUALLY ENDS, or null if that cannot be established.
  *
  * THE MISSING FIELD IS THE TRAP. Documents signed before an expiry was stored
  * have no `expiresAt` at all, and the obvious `new Date(item.expiresAt) < now`
@@ -195,14 +213,25 @@ export function authorityExpiry(signedAt, months = AUTHORITY_DEFAULT_MONTHS) {
  *
  * So a document with no stored expiry falls back to twelve months from its own
  * signing date, which is what its own printed text has always said. A document
- * with neither an expiry nor a signing date is treated as EXPIRED, because a
- * document that cannot say when it was signed cannot be shown to be current.
+ * with neither an expiry nor a signing date has NO end date that can be shown,
+ * and every caller treats that as expired rather than as current.
+ *
+ * One function, because four surfaces were each recomputing this: the client
+ * panel's "runs to" line, the advocate card's, the cover sheet's, and
+ * authorityExpired itself. Four copies of one date is four chances to print a
+ * different end date for one document.
  */
-export function authorityExpired(item, now = Date.now()) {
+export function authorityEndsAt(item) {
   const at = item?.expiresAt
     ? new Date(item.expiresAt)
     : authorityExpiry(item?.signedAt, AUTHORITY_DEFAULT_MONTHS);
-  if (!at || Number.isNaN(at.getTime())) return true;
+  return at && !Number.isNaN(at.getTime()) ? at : null;
+}
+
+/** Is this stored document past its expiry? */
+export function authorityExpired(item, now = Date.now()) {
+  const at = authorityEndsAt(item);
+  if (!at) return true;
   return at.getTime() <= now;
 }
 
@@ -556,7 +585,14 @@ export function recordsAuthorisationModel(o = {}) {
       t: 'meta',
       rows: [
         ['Patient', field(o, o.clientName, '(name)')],
-        ['Date of birth', field(o, o.clientDob, '(date of birth)', 24)],
+        // ALWAYS A RULE WHEN UNSET, never "(date of birth)". See ruleOr. The
+        // date of birth is taken from the client's profile and is never asked
+        // for on the signing sheet, so a client whose profile has no date of
+        // birth signs this and hands it to a clinic with a bold "(date of
+        // birth)" sitting in the field a records clerk uses to match the
+        // patient. A placeholder there is worse than a blank, because it
+        // renders in the same weight and colour as a real value.
+        ['Date of birth', ruleOr(o.clientDob, 24)],
       ],
     },
     {
@@ -710,8 +746,40 @@ export function universalAuthorisation(o = {}) {
  * It also cannot touch the master: this reads `master` and returns a fresh
  * object. There is no code path from here to the stored record.
  */
+/**
+ * The end date a narrowed copy may carry: the master's, or an earlier one.
+ *
+ * Returned as an ISO instant so it renders identically to a stored expiry.
+ * A master with no establishable end date yields '' rather than a fabricated
+ * one: the caller refuses to narrow at all in that case (the Worker checks it
+ * too), and inventing a date on the face of a legal document is not a
+ * fallback, it is a false statement.
+ */
+export function narrowedExpiry(master = {}, asked = '') {
+  const ends = authorityEndsAt(master);
+  if (!ends) return '';
+  const raw = String(asked || '').trim();
+  const want = raw ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00Z` : raw) : null;
+  if (want && !Number.isNaN(want.getTime()) && want.getTime() < ends.getTime()) {
+    return want.toISOString();
+  }
+  return ends.toISOString();
+}
+
 export function narrowedAuthorisationOptions(master = {}, narrow = {}) {
   return {
+    // THE EXPIRY THE CLIENT ALREADY CHOSE, CARRIED ACROSS, AND NEVER EXTENDED.
+    //
+    // This returned no expiry at all, so the narrow sheet fell back to its
+    // twelve month default: a client who deliberately shortened the master to
+    // six months got a narrowed copy running the full twelve, on a sheet that
+    // told them it was "filled in from what you already gave me" while
+    // loosening the one field they had tightened. A narrowed copy is a copy of
+    // a permission, and a copy cannot outlive the thing it was copied from.
+    //
+    // An office may ask for LESS: `narrow.expiresAt` wins when it is earlier.
+    // It can never win when it is later.
+    expiresAt: narrowedExpiry(master, narrow.expiresAt),
     clientName: master.clientName || '',
     clientDob: master.clientDob || '',
     advocateName: master.advocateName || '',
@@ -753,7 +821,9 @@ export function representativeDesignationModel(o = {}) {
       t: 'meta',
       rows: [
         ['Member', field(o, o.clientName, '(name)')],
-        ['Date of birth', field(o, o.clientDob, '(date of birth)', 24)],
+        // A rule, never a placeholder: the same reason as the authorisation
+        // above. A plan matches a member on this line.
+        ['Date of birth', ruleOr(o.clientDob, 24)],
         ['Member or policy ID', field(o, o.memberId, '(member ID)', 32)],
         ['Plan', field(o, o.planName, '(plan or insurer)')],
       ],
@@ -820,7 +890,10 @@ export function advocateDesignationModel(o = {}) {
       t: 'meta',
       rows: [
         ['Patient', field(o, o.clientName, '(name)')],
-        ['Date of birth', field(o, o.clientDob, '(date of birth)', 24)],
+        // A rule, never a placeholder. This is the page a front desk scans
+        // into the chart, so this line is read by the person matching the
+        // patient to the record.
+        ['Date of birth', ruleOr(o.clientDob, 24)],
       ],
     },
     {
@@ -936,6 +1009,116 @@ export function authorityModelFor(item, o = {}) {
     case 'representative': return representativeDesignationModel(o);
     default: return recordsAuthorisationModel(o);
   }
+}
+
+/**
+ * WHAT ONE SIGNING SITTING SIGNS, and it lives here rather than in the page.
+ *
+ * The sign-once promise is that opening `universal` signs TWO documents on one
+ * mark: the authorisation and the one page that travels with it. That fact was
+ * expressed as two hand-written `post()` calls inside a click handler in
+ * case.js, which meant the only way to check it was to grep for the second
+ * call. Commenting that call out left the whole suite green while a sitting
+ * silently stored one document, because a regex over source text can see that
+ * a line is there and can never see that it runs.
+ *
+ * So the fact is a value here, the page reads it, and the suite RUNS it.
+ *
+ * An unknown kind yields an EMPTY list rather than a default, and every caller
+ * refuses on empty. There is deliberately no fallback: the page used to fall
+ * through to the representative form for any kind it did not recognise, which
+ * showed a client one legal instrument and stored another.
+ */
+export const AUTHORITY_SITTINGS = {
+  universal: ['universal', 'designation'],
+  designation: ['designation'],
+  records: ['records'],
+  representative: ['representative'],
+};
+
+export function sittingKinds(kind) {
+  const list = AUTHORITY_SITTINGS[kind];
+  return Array.isArray(list) ? [...list] : [];
+}
+
+/**
+ * The documents a sitting puts in front of the client BEFORE the signature.
+ *
+ * The same list as sittingKinds, through the same lookup the print path uses.
+ * A sitting that signs two documents while showing one is not consent to the
+ * second, and the only way to guarantee the two lists agree is for there to be
+ * one list.
+ */
+export function sittingModels(kind, o = {}) {
+  return sittingKinds(kind).map((k) => authorityModelFor({ kind: k }, o));
+}
+
+/**
+ * The render options for a sitting, built once from the sheet's raw fields.
+ *
+ * ONE BUILDER FOR THE PREVIEW AND FOR THE RECORD. `narrowedFrom` is the field
+ * that showed why this has to be shared: it is what puts the "this is a
+ * narrowed copy, not a replacement" clause on the page. Built separately for
+ * the preview and for the POST, it could be dropped from one and kept in the
+ * other, and the client would read a form WITHOUT that clause and sign one
+ * WITH it. Neither the suite nor the browser drive could see the difference,
+ * because both halves were spelled correctly in the source.
+ *
+ * `f` is the raw field values off the sheet, `ctx` is what the page knows that
+ * the client did not type: the patient's own details and the master a narrowed
+ * copy is derived from.
+ */
+export function sittingOptions(kind, f = {}, ctx = {}) {
+  const master = kind === 'records' ? (ctx.master || null) : null;
+  return {
+    clientName: ctx.clientName || '',
+    clientDob: ctx.clientDob || '',
+    advocateName: ctx.advocateName || '',
+    clinicName: f.clinicName || '',
+    clinicAddress: f.clinicAddress || '',
+    clinicPhone: f.clinicPhone || '',
+    fromDate: f.fromDate || '',
+    toDate: f.toDate || '',
+    planName: f.planName || '',
+    memberId: f.memberId || '',
+    categories: Array.isArray(f.categories) ? [...f.categories] : [],
+    scopes: Array.isArray(f.scopes) ? [...f.scopes] : [],
+    signedName: f.signedName || '',
+    // A bare YYYY-MM-DD is a WALL date. Noon UTC lands inside the MST day the
+    // document is executed in, the same trick the formatter uses.
+    expiresAt: /^\d{4}-\d{2}-\d{2}$/.test(String(f.expiresAt || '').trim())
+      ? `${String(f.expiresAt).trim()}T12:00:00Z` : '',
+    narrowedFrom: master?.id || '',
+  };
+}
+
+/**
+ * Run one signing sitting: post each document of it, in order.
+ *
+ * SEQUENTIAL, AND THE ORDER MATTERS ON FAILURE. The authorisation is the
+ * instrument and goes first, so if a later document fails the authorisation
+ * still stands and the panel shows it, which is a case Eric can finish.
+ * Posting both at once and having the FIRST fail would leave a designation on
+ * file pointing at an authorisation that does not exist.
+ *
+ * A failure of the FIRST document throws: nothing was signed. A failure of a
+ * later one is returned rather than thrown, because telling a client the
+ * signing failed when their authorisation is on file sends them to sign a
+ * second copy of a document they have already signed.
+ */
+export async function signSitting(kind, post) {
+  const kinds = sittingKinds(kind);
+  if (!kinds.length) throw new Error(`Unknown document kind: ${String(kind)}`);
+  await post(kinds[0]);
+  const partial = [];
+  for (const extra of kinds.slice(1)) {
+    try {
+      await post(extra);
+    } catch (e) {
+      partial.push({ kind: extra, message: e?.message || String(e) });
+    }
+  }
+  return partial;
 }
 
 /**

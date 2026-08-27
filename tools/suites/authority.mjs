@@ -388,28 +388,63 @@ check('S25 a signature nobody can draw is not the only route',
     && !/document\.write/.test(clientPrinter) && !/document\.write/.test(adminPrinter)
     && !/<pre>/.test(clientPrinter) && !/<pre>/.test(adminPrinter),
     `${clientPrinter.length}/${adminPrinter.length} chars lifted`);
-  // UPDATED 2026-08-27 for sign-once, not deleted. It pinned
-  // `preview.innerHTML = authorityHtml(`, which stopped matching when the
-  // sign-once sitting made the preview conditional: that sheet signs TWO
-  // documents on one signature, so it renders both.
+  // UPDATED TWICE, NEVER DELETED.
   //
-  // The intent is unchanged and is stronger now. What a client reads before
-  // signing has to be what they are signing, and a preview that showed only
-  // the authorisation would mean the patient designation was signed unseen,
-  // which is not consent. So this asserts the preview is still built by
-  // authorityHtml from the shared models, AND that the universal branch
-  // renders both documents rather than one.
-  check('F14 the in-app preview renders the same document as the paper one',
-    /preview\.innerHTML = isUniversal/.test(CASE2)
-    && /authorityHtml\(universalAuthorisationModel\(o\)\)/.test(CASE2)
-    && /authorityHtml\(advocateDesignationModel\(o\)\)/.test(CASE2)
-    && /authorityHtml\(isRecords\n\s*\? recordsAuthorisationModel\(o\) : representativeDesignationModel\(o\)\)/.test(CASE2)
-    && !/class="auth-doc" data-preview><\/pre>/.test(CASE2));
+  // 2026-08-27, sign-once: it pinned `preview.innerHTML = authorityHtml(`,
+  // which stopped matching when the sitting became conditional, so it was
+  // re-pointed at the two branches it had become.
+  //
+  // 2026-08-27, second pass: those branches are gone. The preview is built
+  // from sittingModels(), the one list the sitting itself signs from, so this
+  // is no longer four spellings of one idea. It now RUNS that shared builder
+  // and compares it to what the PRINT path renders for the same kinds, which
+  // is what this check has always been about: a client must read the document
+  // they are signing. The source-text version of it went green on a preview
+  // that dropped narrowedFrom, because both halves were spelled correctly.
+  //
+  // PROVEN TO FAIL, 2026-08-27: changing sittingModels to
+  // `sittingKinds(kind).slice(0, 1).map(...)` gave
+  //   F14 the in-app preview renders the same document as the paper one
+  //       -- universal shows 1 of 2
+  // which is the patient designation being signed unseen.
+  {
+    const AA = await import(`file://${__j(__REPO, 'public/js/authority.js')}`);
+    const o = {
+      clientName: 'Dana Reyes', clientDob: '1979-04-02', scopes: ['discuss'],
+      clinicName: 'Valley Neurology', planName: 'BCBS', memberId: 'Z1',
+      signedName: 'Dana Reyes', signedAt: '2026-08-27T12:00:00Z',
+      expiresAt: '2027-08-27T12:00:00Z',
+    };
+    const mismatch = [];
+    for (const kind of ['universal', 'designation', 'records', 'representative']) {
+      const shown = AA.sittingModels(kind, o);
+      const wanted = AA.sittingKinds(kind).map((k) => AA.authorityModelFor({ kind: k }, o));
+      if (shown.length !== wanted.length) {
+        mismatch.push(`${kind} shows ${shown.length} of ${wanted.length}`);
+        continue;
+      }
+      for (let i = 0; i < shown.length; i += 1) {
+        if (AA.authorityText(shown[i]) !== AA.authorityText(wanted[i])) mismatch.push(`${kind}[${i}]`);
+      }
+    }
+    check('F14 the in-app preview renders the same document as the paper one',
+      mismatch.length === 0
+      && AA.sittingModels('universal', o).length === 2
+      // And the page really does build its preview from that shared list
+      // rather than from a branch of its own.
+      && /preview\.innerHTML = sittingModels\(kind, optionsNow\(\)\)/.test(CASE2)
+      && !/class="auth-doc" data-preview><\/pre>/.test(CASE2),
+      mismatch.join(', ') || 'preview not built from sittingModels');
+  }
   // The gap this build closed while it was in here. The preview passed no
   // expiry at all, so the form a client read before signing said "one year
   // from the date signed" while the document they had just signed carried a
   // real date. Same words, two pages, which is the drift the shared renderer
   // exists to prevent.
+  //
+  // UPDATED 2026-08-27, second pass: the field values moved into one fields()
+  // builder that both the preview and the POST read, so the same spelling now
+  // appears once instead of twice. Same assertion.
   check('F14b and the preview shows the expiry date the client actually picked',
     /expiresAt: val\('expiresAt'\)/.test(CASE2));
 }
@@ -452,9 +487,30 @@ check('S25 a signature nobody can draw is not the only route',
   // against the whole list. `?sign=universal` is the link Eric will actually
   // put in an email from now on, and `?sign=records` still has to work because
   // links already sent must not break.
-  check('F18 the page reads ?sign= and accepts only the real documents',
-    /get\('sign'\)/.test(C)
-    && /\['universal', 'designation', 'records', 'representative'\]\.includes\(want\)/.test(C));
+  // UPDATED AGAIN 2026-08-27, second pass, not deleted. The list was retyped
+  // in three places (this parameter, the sheet's branches, the Worker's own
+  // AUTHORITY_KINDS), and a retyped list is a list that drifts. The page now
+  // asks sittingKinds, which is the same lookup the sheet branches on and the
+  // same one that refuses an unknown kind, so a document that cannot be opened
+  // cannot be linked to either. Asserted by RUNNING it as well as by reading
+  // the source, because "accepts only the real documents" is a claim about
+  // behaviour.
+  //
+  // PROVEN TO FAIL, 2026-08-27: adding `nonsense: ['representative']` to
+  // AUTHORITY_SITTINGS gave
+  //   F18 the page reads ?sign= and accepts only the real documents
+  //       -- accepts: nonsense
+  {
+    const AA = await import(`file://${__j(__REPO, 'public/js/authority.js')}`);
+    const real = ['universal', 'designation', 'records', 'representative'];
+    const junk = ['', 'nonsense', 'designations', 'REPRESENTATIVE', '__proto__', 'toString'];
+    const accepts = junk.filter((k) => AA.sittingKinds(k).length);
+    const refuses = real.filter((k) => !AA.sittingKinds(k).length);
+    check('F18 the page reads ?sign= and accepts only the real documents',
+      /get\('sign'\)/.test(C) && /if \(!sittingKinds\(want\)\.length\) return '';/.test(C)
+      && accepts.length === 0 && refuses.length === 0,
+      accepts.length ? `accepts: ${accepts.join(', ')}` : `refuses: ${refuses.join(', ')}`);
+  }
   // Spent on use, twice over: stripped from the address bar AND cleared in
   // memory. The authority panel repaints on every change to its documents, so
   // a parameter left behind would reopen the sheet on top of itself after a
@@ -521,16 +577,49 @@ check('S25 a signature nobody can draw is not the only route',
   // still removes the lock. Also asserted: the SECOND document's failure does
   // not skip the close, which is a new way this sheet could have been left on
   // screen with the page frozen behind it.
+  //
+  // UPDATED AGAIN 2026-08-27, second pass, not deleted. The two hand written
+  // posts became one `await signSitting(kind, post)` call, so `await
+  // post(kind);` no longer appears. Same assertion, re-pointed at the line
+  // that now stands between the signature and the close.
   check('F27 and released on every route out, including a successful signature',
     /document\.body\.classList\.remove\('sheet-open'\)/.test(C)
     && (C.match(/const close = \(\) => \{[\s\S]{0,300}?sheet-open/g) || []).length === 1
-    && /await post\(kind\);[\s\S]{0,900}?\n      close\(\);/.test(C));
-  check('F27b and a half-finished sign-once sitting still closes and still repaints',
-    // The designation is caught, never rethrown, so close() and onDone() are
-    // reached: the authorisation IS signed, and telling the client the signing
-    // failed would send them to sign a second copy of it.
-    /catch \(e3\) \{[\s\S]{0,400}?halfDone = e3\.message;/.test(C)
-    && /close\(\);\n      onDone\?\.\(\);/.test(C));
+    && /await signSitting\(kind, post\);[\s\S]{0,300}?\n      close\(\);/.test(C));
+  // UPDATED AGAIN 2026-08-27, second pass, not deleted, and it is stronger:
+  // the "catch the second document, never rethrow" behaviour moved out of the
+  // click handler into signSitting, where a suite can RUN it instead of
+  // matching a catch block by the name of its error variable.
+  //
+  // The property is unchanged. If the SECOND document fails, the first is
+  // signed, so the sheet closes and the panel repaints; telling the client the
+  // signing failed would send them to sign a second copy of a document they
+  // already signed. If the FIRST fails, nothing was signed, and it throws.
+  //
+  // PROVEN TO FAIL, 2026-08-27: removing the try/catch inside signSitting's
+  // loop gave
+  //   F27b a half-finished sign-once sitting still closes and still repaints
+  //        -- second failure escaped
+  {
+    const AA = await import(`file://${__j(__REPO, 'public/js/authority.js')}`);
+    let secondEscaped = false;
+    let sent = [];
+    try {
+      const partial = await AA.signSitting('universal', async (k) => {
+        sent.push(k);
+        if (k === 'designation') throw new Error('nope');
+      });
+      secondEscaped = !(partial.length === 1 && partial[0].kind === 'designation');
+    } catch { secondEscaped = true; }
+    let firstThrew = false;
+    try {
+      await AA.signSitting('universal', async () => { throw new Error('nope'); });
+    } catch { firstThrew = true; }
+    check('F27b and a half-finished sign-once sitting still closes and still repaints',
+      !secondEscaped && firstThrew && sent.join(',') === 'universal,designation'
+      && /close\(\);\n      onDone\?\.\(\);/.test(C),
+      secondEscaped ? 'second failure escaped' : `sent ${sent.join(',')}, first threw ${firstThrew}`);
+  }
 }
 
 const failed = results.filter((r) => !r.pass);

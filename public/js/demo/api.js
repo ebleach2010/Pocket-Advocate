@@ -15,7 +15,9 @@ import { EMOJI_REACTIONS, STATUS_REACTIONS } from '../msg-actions.js';
 // The expiry maths, imported rather than copied. The Worker has to keep its
 // own copy because it cannot import a client module; the demo runs in the
 // browser and has no such excuse, and a third copy is a third thing to drift.
-import { authorityExpiry, AUTHORITY_DEFAULT_MONTHS, AUTHORITY_MAX_MONTHS } from '../authority.js';
+import {
+  authorityExpiry, authorityEndsAt, AUTHORITY_DEFAULT_MONTHS, AUTHORITY_MAX_MONTHS,
+} from '../authority.js';
 
 /**
  * The Worker's authorityExpiresAt, mirrored: the client's chosen date when it
@@ -796,6 +798,21 @@ export function demoApi(role, store) {
         return fail(400, 'Name your insurance plan.');
       if ((body.kind === 'records' || body.kind === 'universal') && !scopes.length)
         return fail(400, 'Tick at least one thing you are authorising me to do.');
+      // THE NARROWING GATES, mirrored from the Worker. The demo had none of
+      // them, so the one route a browser drive can actually exercise was the
+      // one route that let a narrowed copy be generated against a master that
+      // was missing, not universal, withdrawn or expired.
+      let masterEnds = null;
+      if (body.kind === 'records' && String(body.narrowedFrom || '')) {
+        const master = store.docs.get(prefix + body.narrowedFrom);
+        if (!master || master.kind !== 'universal')
+          return fail(400, 'That universal authorisation is not on this case.');
+        if (master.revokedAt)
+          return fail(409, 'That universal authorisation has been withdrawn.');
+        masterEnds = authorityEndsAt(master);
+        if (!masterEnds || masterEnds.getTime() <= Date.now())
+          return fail(409, 'That universal authorisation has expired. Sign a fresh one first.');
+      }
       if (!body.signatureImage
         || !/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(String(body.signatureImage).trim()))
         return fail(400, 'Sign the document with your finger before sending it.');
@@ -803,6 +820,11 @@ export function demoApi(role, store) {
       // The field list is hardcoded here, so anything new on the real
       // document has to be added or the demo silently drops it.
       const signedAt = new Date();
+      // A copy cannot outlive what it was copied from. Same clamp as the
+      // Worker, and it is a clamp rather than a refusal because the client did
+      // not choose this number: the sheet carries it across for them.
+      let expiresAt = demoExpiresAt(signedAt, body.expiresAt);
+      if (masterEnds && expiresAt && expiresAt.getTime() > masterEnds.getTime()) expiresAt = masterEnds;
       store.docs.set(prefix + id, {
         kind: body.kind, signedName: body.signedName, signedAt,
         revokedAt: null, clinicName: body.clinicName || '', clinicAddress: body.clinicAddress || '',
@@ -817,7 +839,7 @@ export function demoApi(role, store) {
         // date, which is precisely the drift the demo exists to catch.
         universal: body.kind === 'universal',
         narrowedFrom: String(body.narrowedFrom || '').slice(0, 64),
-        expiresAt: demoExpiresAt(signedAt, body.expiresAt),
+        expiresAt,
         signatureImage: body.signatureImage || '',
       });
       store.persist?.();

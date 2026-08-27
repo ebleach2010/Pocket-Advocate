@@ -3377,8 +3377,12 @@ const AUTHORITY_SCOPE_IDS = ['discuss', 'records', 'admin'];
 // another date at signing; never open ended, and never further out than the
 // cap, so a mistyped year cannot put an expiry in the next century on a
 // document nobody re-reads.
+//
+// THE CAP IS TWELVE, matching the promise in tier-terms.js ("runs for twelve
+// months unless you choose a shorter time"). It was 24, and the extra year
+// appeared on no surface a client reads.
 const AUTHORITY_DEFAULT_MONTHS = 12;
-const AUTHORITY_MAX_MONTHS = 24;
+const AUTHORITY_MAX_MONTHS = 12;
 
 /**
  * Signed date plus n calendar MONTHS. Mirrored from authorityExpiry in
@@ -3429,6 +3433,23 @@ function authorityExpiresAt(signedAt, raw) {
   if (at.getTime() <= new Date(signedAt).getTime()) return fallback;
   if (cap && at.getTime() > cap.getTime()) return fallback;
   return at;
+}
+
+/**
+ * When a STORED document actually ends, or null when that cannot be shown.
+ *
+ * Mirrored from authorityEndsAt in public/js/authority.js, with the same
+ * fallback: a document signed before an expiry was stored carries none, and
+ * falls back to twelve months from its own signing date, which is what its own
+ * printed text has always said. A document with neither is not current.
+ *
+ * Firestore hands timestamps back as ISO strings, which new Date() parses.
+ */
+function authorityEndsAt(d) {
+  const at = d?.expiresAt
+    ? new Date(d.expiresAt)
+    : authorityExpiry(d?.signedAt, AUTHORITY_DEFAULT_MONTHS);
+  return at && !Number.isNaN(at.getTime()) ? at : null;
 }
 // A downscaled signature is 15-40KB; this leaves room without letting a
 // document grow into something the GET has to ship on every paint.
@@ -3682,6 +3703,22 @@ async function handleAuthority(request, env, url) {
       return json({ error: 'That universal authorisation is not on this case.' }, 400);
     if (master.data.revokedAt)
       return json({ error: 'That universal authorisation has been withdrawn.' }, 409);
+    // EXPIRY, CHECKED LIKE EXISTENCE AND WITHDRAWAL. It was not, and the
+    // resulting document told a clinic "I have already signed a universal
+    // authorisation which remains in force" months after that authorisation
+    // ran out. A false statement on the face of a legal instrument, generated
+    // by the app itself and signed by the patient.
+    const masterEnds = authorityEndsAt(master.data);
+    if (!masterEnds || masterEnds.getTime() <= Date.now())
+      return json({ error: 'That universal authorisation has expired. Sign a fresh one first.' }, 409);
+    // AND A COPY CANNOT OUTLIVE WHAT IT WAS COPIED FROM. The sheet already
+    // caps its own date field at the master's expiry; this is the half a POST
+    // straight at the route cannot skip. Clamped rather than refused, because
+    // the client is not choosing this number: the page carries it across for
+    // them, and refusing would be refusing them their own signature over an
+    // arithmetic detail.
+    if (item.expiresAt && item.expiresAt.getTime() > masterEnds.getTime())
+      item.expiresAt = masterEnds;
   }
   if (kind === 'representative' && !item.planName)
     return json({ error: 'Name your insurance plan.' }, 400);

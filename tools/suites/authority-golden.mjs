@@ -18,6 +18,57 @@
 // regenerate the golden file is a deliberate, reviewed wording change, and
 // then this comment gets the reason and the date.
 //
+// ===========================================================================
+// REGENERATED A THIRD TIME, 2026-08-27. FOUR CAPTURES, ONE LINE EACH: the
+// UNFILLED DATE OF BIRTH. Reason and date recorded here as this file's own
+// rule above requires.
+//
+// EXACTLY THESE FOUR MOVED, and every one of them is an UNSIGNED, UNEXECUTED
+// fixture: no signedName, no signedAt, so each renders "Signed: (typed full
+// name)" and is a form nobody has put their name to.
+//
+//     records-nocats    line 5
+//     records-noscopes  line 5
+//     records-bare      line 5
+//     rep-bare          line 4
+//
+// each of them, and only that line:
+//
+//     -  Date of birth: (date of birth)
+//     +  Date of birth: ________________________
+//
+// VERIFIED, not assumed, 2026-08-27, against both the base commit ffc6899 and
+// the sign-once commit that added the five new states:
+//   * thirteen keys before, thirteen after, in the same order. None added,
+//     none removed, none renamed.
+//   * NINE captures byte-identical, including EVERY SIGNED ONE
+//     (records-signed, rep-signed, universal-signed, designation-signed,
+//     narrowed-signed) and BOTH BLANKS (records-blank, rep-blank,
+//     designation-blank, universal-blank).
+//   * the four that moved differ by exactly one line each, with the same total
+//     line count, and that line is the date of birth.
+//
+// NO EXECUTED DOCUMENT CHANGED. The per-clinic authorisation clients have
+// already signed, including on a live case, renders byte for byte as it did.
+//
+// WHY, and it is a defect being fixed rather than a preference. The date of
+// birth comes off the client's profile. It is never asked for on the signing
+// sheet and never validated, so a client whose profile has no date of birth
+// signed the universal authorisation and the patient designation and handed
+// both to a clinic with a bold "(date of birth)" sitting in the field a
+// records clerk uses to match the patient to the chart. It renders in the same
+// weight and colour as a real value, so it looks filled in. That is the exact
+// hazard ruleOr was written for in authority.js on 2026-08-27, and applied
+// there to the advocate's phone, secure email and fax; the provider cover
+// sheet already did it correctly. The date of birth was the field that was
+// missed.
+//
+// A rule is somewhere to write. A placeholder is a guess that reads as a fact.
+// This is the same reasoning, and the same shape of change, as the reviewed
+// records-blank regeneration of 2026-08-26 recorded at the foot of this
+// comment: a form with nothing in a field needs a line to write on.
+// ===========================================================================
+//
 // REGENERATED A SECOND TIME, 2026-08-27, ADDITIVELY, for sign-once.
 //
 // Eric's spec 2A and 2B: one broad authorisation naming a CLASS of providers,
@@ -127,6 +178,33 @@ check('G0 the golden capture covers every state under test',
   Object.keys(CASES).every((k) => typeof GOLDEN[k] === 'string')
   && Object.keys(GOLDEN).length === Object.keys(CASES).length,
   `${Object.keys(GOLDEN).length} captured, ${Object.keys(CASES).length} tested`);
+// THE FOUR CAPTURES REGENERATED ON 2026-08-27 ARE UNSIGNED FIXTURES, and this
+// keeps the note at the top of this file honest. If a future edit ever needs a
+// SIGNED capture regenerated, this goes red first and that decision has to be
+// taken and recorded on its own terms rather than riding on the date-of-birth
+// note.
+//
+// PROVEN TO FAIL, 2026-08-27: adding signedName and signedAt to the
+// records-bare fixture gave
+//   G0b the captures regenerated for the date of birth are unsigned fixtures
+//       -- records-bare
+{
+  const REGENERATED_2026_08_27 = ['records-nocats', 'records-noscopes', 'records-bare', 'rep-bare'];
+  const executed = REGENERATED_2026_08_27.filter((k) => {
+    const arg = CASES[k]?.[1] || {};
+    return !!(arg.signedName || arg.signedAt)
+      || !/Signed: \(typed full name\)/.test(GOLDEN[k] || '');
+  });
+  check('G0b the captures regenerated for the date of birth are unsigned fixtures',
+    executed.length === 0, executed.join(', '));
+  // And the line that moved is the only thing that reads as unfilled on them:
+  // a rule to write on, never a parenthetical that looks like a value.
+  const stillPlaceholder = REGENERATED_2026_08_27
+    .filter((k) => /\(date of birth\)/.test(GOLDEN[k] || '')
+      || !/Date of birth: _{10,}/.test(GOLDEN[k] || ''));
+  check('G0c and each of them now carries a rule where the date of birth goes',
+    stillPlaceholder.length === 0, stillPlaceholder.join(', '));
+}
 
 let n = 0;
 for (const [key, [fn, arg]] of Object.entries(CASES)) {

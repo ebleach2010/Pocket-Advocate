@@ -70,14 +70,20 @@ tour.
 
 ### Straight onto a form
 
-`?sign=records` or `?sign=representative` on a client case opens that document
-with the sheet already up, so a link lands on the form rather than on a case
-page with a panel some way down it:
+`?sign=<document>` on a client case opens that document with the sheet already
+up, so a link lands on the form rather than on a case page with a panel some
+way down it. Four documents, and each opens ITSELF: the heading, the preview
+and the kind that gets stored all agree, and anything else opens nothing at
+all rather than falling back to whichever form is in the else branch.
 
 | where | url |
 |---|---|
-| Records authorisation | `/case.html?demo=1&id=demo-case&sign=records` |
+| The universal authorisation, plus the one page, on one signature | `/case.html?demo=1&id=demo-case&sign=universal` |
+| The one page your clinics keep, on its own | `/case.html?demo=1&id=demo-case&sign=designation` |
+| A form for one clinic | `/case.html?demo=1&id=demo-case&sign=records` |
 | Insurance representative | `/case.html?demo=1&id=demo-case&sign=representative` |
+
+`?sign=universal` is the one that goes in an email to a client.
 
 The parameter is spent on arrival: it is stripped from the address bar and
 cleared in memory, because the authority panel repaints whenever its documents

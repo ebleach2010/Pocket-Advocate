@@ -21,7 +21,7 @@ import { openPrepSheet } from './prep.js';
 import { mountFolder } from './folder.js';
 import {
   recordsAuthorisationModel, representativeDesignationModel, APPEAL_DEADLINES, appealDueAt,
-  authorityHtml, authorityModelFor, authorityExpired, AUTHORITY_KINDS,
+  authorityHtml, authorityModelFor, authorityExpired, authorityEndsAt, AUTHORITY_KINDS,
 } from './authority.js';
 import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
 import { openAuthorityDocument } from './authority-doc-window.js';
@@ -1899,8 +1899,16 @@ function paintOverview(pane) {
           ruled lines to sign by hand. Use this to get a form into their hands
           before a case is running${c.fullAccess ? '' : ', and signing in the app opens when they upgrade'}.
           Records requests take weeks, so the form going out early is the whole game.</p>
+        <!-- THE UNIVERSAL FORM AND THE PAGE THAT TRAVELS WITH IT COME FIRST,
+             because they are what a new client signs. Both blanks were written
+             and golden-tested this build and neither had a button, so the one
+             document sign-once exists to produce could not be printed for a
+             client at all, on the panel whose own copy says this is how a form
+             reaches somebody before a case exists. -->
         <p class="row" style="gap:.4rem; flex-wrap:wrap; margin:0;">
-          <button class="btn quiet tiny" data-blank="records">Records authorisation</button>
+          <button class="btn quiet tiny" data-blank="universal">Universal authorisation</button>
+          <button class="btn quiet tiny" data-blank="designation">The one page for clinics</button>
+          <button class="btn quiet tiny" data-blank="records">Records authorisation (one clinic)</button>
           <button class="btn quiet tiny" data-blank="representative">Insurance representative</button>
         </p>
       </div>
@@ -3493,9 +3501,45 @@ async function paintAuthorityStatus(pane) {
   const desig = live.find((i) => i.kind === 'designation');
   const recs = live.filter((i) => i.kind === 'records');
   const rep = live.find((i) => i.kind === 'representative');
-  // What goes in a packet: the master and the page that travels with it, or
-  // for a client still on the old per-clinic documents, whatever they signed.
-  const packetDocs = [master, desig].filter(Boolean);
+  // WHAT GOES IN A PACKET, AND THE RULE IS ABOUT THE AUTHORISATION, NOT ABOUT
+  // THE LENGTH OF A LIST.
+  //
+  // The cover sheet says, in its own words, "within the limits of the
+  // authorisation attached to this sheet", "Please send the records covered by
+  // the attached authorisation", and "This authorisation is valid to ...".
+  // Those sentences are true only when a live records authorisation really is
+  // attached.
+  //
+  // This was `[master, desig].filter(Boolean)` guarded only by `length === 0`.
+  // A client who signed both and then withdrew the AUTHORISATION alone left
+  // designation live and master revoked: length 1, so the guard never fired,
+  // Build packet stayed enabled, and a records request could go out under an
+  // authorisation the patient had revoked. Expiry produces the same state
+  // twelve months on with nobody doing anything at all.
+  //
+  // So the guard is the master itself. `live` already excludes withdrawn and
+  // expired documents, so `!master` covers every way this fails: never signed,
+  // withdrawn, run out.
+  const packetDocs = master ? [master, desig].filter(Boolean) : [];
+  // WHAT THE STATUS IS DERIVED FROM: the documents themselves, UNFILTERED.
+  //
+  // effectiveStatus exists to turn EXPIRED and REVOKED into facts about the
+  // authorisation rather than opinions about the provider, and it was being
+  // handed `live`, which has already removed every withdrawn and expired
+  // document. So it could never see one, and its whole derivation was dead
+  // from this call site while the suite's own direct calls to it passed.
+  const statusDocs = items.filter((i) => i.kind === 'universal' || i.kind === 'designation');
+  // WHY there is no packet, in his words, because "nothing is signed yet" was
+  // false in two of the three cases and told him to ask for a signature he had
+  // already been given.
+  const noPacketBecause = master ? ''
+    : items.some((i) => i.kind === 'universal' && i.revokedAt)
+      ? 'The universal authorisation has been WITHDRAWN by the client, so there is nothing to attach and no packet to build. Do not act on it.'
+      : expired.some((i) => i.kind === 'universal')
+        ? 'The universal authorisation has EXPIRED, so there is nothing valid to attach. Ask for a fresh signature; the button on their case page now offers one.'
+        : recs.length
+          ? 'This client is on the old per-clinic authorisations. A packet quotes "the attached authorisation" to whichever office it goes to, so it needs the universal one. Ask them to sign it on their case page.'
+          : 'Nothing is signed yet, so a packet would carry no authorisation. Ask for the signature first.';
   const revoked = items.filter((i) => i.revokedAt);
   const days = fullAccessDaysLeft(data);
   // Extensions and holds both stretch the window, so "75 days left in the 60
@@ -3554,11 +3598,15 @@ async function paintAuthorityStatus(pane) {
       <h3 style="margin:0 0 .35rem;">Providers, and where each packet got to</h3>
       <p class="dim small" style="margin:0 0 .5rem;">You assemble the packet here
         and send it yourself. Nothing is transmitted from this page.</p>
-      ${packetDocs.length ? '' : `<p class="dim small" style="margin:0 0 .5rem; color:var(--orange);">
-        Nothing is signed yet, so a packet would carry no authorisation. Ask for
-        the signature first.</p>`}
+      ${noPacketBecause ? `<p class="dim small" data-packet-blocked style="margin:0 0 .5rem; color:var(--orange);">
+        ${esc(noPacketBecause)}</p>` : ''}
+      ${!noPacketBecause && !data.clientDob ? `<p class="dim small" data-packet-nodob style="margin:0 0 .5rem; color:var(--orange);">
+        No date of birth on this case. The cover sheet and both signed
+        documents print a blank line where a records clerk matches the patient,
+        and nothing ever asks the client for it. Get it before you send
+        anything.</p>` : ''}
       ${providers.length ? providers.map((p) => {
-    const st = effectiveStatus(p, packetDocs);
+    const st = effectiveStatus(p, statusDocs);
     return `
         <div class="auth-item" style="display:block; padding:.4rem 0; border-top:1px solid var(--line);">
           <strong>${esc(p.name)}</strong>
@@ -3572,7 +3620,12 @@ async function paintAuthorityStatus(pane) {
               ${PROVIDER_REQUESTS.map((r) => `<option value="${esc(r.id)}"${r.id === (p.requestKind || 'records') ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}
             </select></label>
           <span class="auth-item-acts">
-            <button type="button" class="btn ghost tiny" data-provider-packet="${esc(p.id)}">Build packet</button>
+            <!-- REFUSED, not merely warned about. The orange line above was
+                 the only thing standing between a revoked authorisation and a
+                 cover sheet that says one is attached, and a line of text does
+                 not stop a tap. -->
+            <button type="button" class="btn ghost tiny" data-provider-packet="${esc(p.id)}"${
+  packetDocs.length ? '' : ' disabled aria-disabled="true" title="No live authorisation to attach"'}>Build packet</button>
             <button type="button" class="btn ghost tiny" data-provider-remove="${esc(p.id)}">Remove</button>
           </span>
         </div>`;
@@ -3649,8 +3702,11 @@ async function paintAuthorityStatus(pane) {
  * expired in March.
  */
 function masterExpiryText(item) {
-  const at = item?.expiresAt ? new Date(item.expiresAt) : null;
-  if (!at || Number.isNaN(at.getTime())) return '';
+  // Through the shared helper, so a legacy document with no stored expiry
+  // shows the date its own printed text has always implied rather than
+  // showing nothing at all on the card where he decides whether to ring.
+  const at = authorityEndsAt(item);
+  if (!at) return '';
   return `, runs to ${at.toLocaleDateString()}`;
 }
 
@@ -3731,6 +3787,16 @@ function wireProviders(host, pane, providers, packetDocs) {
     b.addEventListener('click', async () => {
       const p = providers.find((x) => x.id === b.dataset.providerPacket);
       if (!p) return;
+      // THE GUARD, not the styling. The button is disabled when there is no
+      // live master, and this is the half that holds if it is ever re-enabled
+      // by a repaint, a browser restoring a form, or devtools. Refusing to
+      // build beats building a cover sheet whose own words claim an
+      // authorisation that is not attached.
+      if (!packetDocs.length) {
+        say('No live authorisation to attach, so there is no packet to build. '
+          + 'The cover sheet would say one is attached and none would be.');
+        return;
+      }
       say('');
       // THE INK, FETCHED BEFORE THE WINDOW OPENS. The list GET omits the
       // signature blobs, so a packet built straight from `packetDocs` would

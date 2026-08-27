@@ -29,6 +29,152 @@ const ctx = await b.newContext({ viewport: { width: 390, height: 844 } });
 await ctx.addCookies([{ name: 'pa_demo', value: '1', domain: '127.0.0.1', path: '/' }]);
 const errs = [];
 
+/** A fresh browser at a chosen width, with its own empty demo store. */
+async function freshCtx(width = 390) {
+  const c = await b.newContext({ viewport: { width, height: 844 } });
+  await c.addCookies([{ name: 'pa_demo', value: '1', domain: '127.0.0.1', path: '/' }]);
+  return c;
+}
+/** Type the name, apply the mark, press Sign, wait for the sitting to land. */
+async function signSheet(page, name = 'Jordan Avery', wait = 3000) {
+  await page.fill('[data-f="signedName"]', name);
+  await page.evaluate(() => document.querySelector('[data-sig-open]').click());
+  await page.waitForSelector('[data-sig-typed]', { timeout: 10000 });
+  await page.evaluate(() => document.querySelector('[data-sig-typed]').click());
+  await page.evaluate(() => document.querySelector('[data-sig-done]').click());
+  await page.waitForTimeout(400);
+  await page.evaluate(() => document.querySelector('[data-sign]').click());
+  await page.waitForTimeout(wait);
+}
+const stored = (page) => page.evaluate(async () => {
+  const res = await fetch('/api/authority?caseId=demo-case');
+  return (await res.json()).items || [];
+});
+
+// ===========================================================================
+// 0. EVERY KIND OPENS ITSELF, AND AN UNKNOWN ONE OPENS NOTHING
+// ===========================================================================
+//
+// The sheet branched on isUniversal / isNarrow and let EVERYTHING ELSE fall
+// through to the representative branch. `designation` was "everything else":
+// the heading read "Insurance representative", the blurb was about dealing
+// with a plan, the preview showed the APPOINTMENT OF AUTHORISED
+// REPRESENTATIVE, and Sign refused until the client filled in a plan name and
+// a member ID. What was stored, and later printed into a provider packet, was
+// the PATIENT DESIGNATION OF ADVOCATE.
+//
+// So this asserts the three things that have to agree, per kind: the heading
+// the client reads, the title of the document in the preview they scroll
+// through, and the kind that ends up in the store. A source check cannot see
+// any of them.
+{
+  const c0 = await freshCtx(390);
+  const p0 = await c0.newPage();
+  p0.on('pageerror', (e) => errs.push(`kinds: ${e.message}`));
+  const WANT = [
+    ['universal', 'Your authorisation',
+      ['UNIVERSAL AUTHORISATION FOR RELEASE OF PROTECTED HEALTH INFORMATION', 'PATIENT DESIGNATION OF ADVOCATE'],
+      { clinic: false, plan: false }],
+    ['designation', 'The one page your clinics keep',
+      ['PATIENT DESIGNATION OF ADVOCATE'], { clinic: false, plan: false }],
+    ['records', 'A form for one clinic',
+      ['AUTHORISATION FOR RELEASE OF PROTECTED HEALTH INFORMATION'], { clinic: true, plan: false }],
+    ['representative', 'Insurance representative',
+      ['APPOINTMENT OF AUTHORISED REPRESENTATIVE'], { clinic: false, plan: true }],
+  ];
+  for (const [kind, heading, titles, fields] of WANT) {
+    await p0.goto(`${P}/case.html?id=demo-case&demo=1&sign=${kind}`, { waitUntil: 'networkidle' });
+    await p0.waitForSelector('.settings-card.sig-sheet', { timeout: 20000 });
+    await p0.evaluate(() => {
+      const d = document.querySelector('.sig-sheet details');
+      if (d) d.open = true;
+    });
+    await p0.waitForTimeout(500);
+    const got = await p0.evaluate(() => ({
+      heading: document.querySelector('.sig-sheet h3')?.textContent.trim() || '',
+      h1s: [...document.querySelectorAll('.auth-doc h1')].map((h) => h.textContent.replace(/\s+/g, ' ').trim()),
+      clinic: !!document.querySelector('[data-f="clinicName"]'),
+      plan: !!document.querySelector('[data-f="planName"]'),
+      blurb: document.querySelector('.sig-sheet p')?.textContent.replace(/\s+/g, ' ').trim() || '',
+    }));
+    ok(`${kind}: the heading names the document it opens`,
+      got.heading === heading, `${got.heading} (wanted ${heading})`);
+    ok(`${kind}: the preview shows that document and no other`,
+      got.h1s.length === titles.length && titles.every((t, i) => got.h1s[i].startsWith(t)),
+      got.h1s.join(' | ') || '(none)');
+    ok(`${kind}: it asks for that document's fields and no others`,
+      got.clinic === fields.clinic && got.plan === fields.plan,
+      `clinic=${got.clinic} plan=${got.plan}`);
+    if (kind === 'records') {
+      // The legacy link, on a case with nothing signed. Both of the old
+      // sentences were false there.
+      ok('records with no master claims neither a pre-fill nor a master',
+        !/filled in from what you already gave me/i.test(got.blurb)
+        && !/does not cancel the authorisation you already signed/i.test(got.blurb),
+        got.blurb.slice(0, 70));
+    }
+    await p0.screenshot({ path: `${SHOTS}/00-sheet-${kind}.png`, fullPage: true });
+  }
+  // AN UNKNOWN KIND OPENS NOTHING, and stores nothing.
+  await p0.goto(`${P}/case.html?id=demo-case&demo=1&sign=nonsense`, { waitUntil: 'networkidle' });
+  await p0.waitForSelector('[data-auth-panel]', { timeout: 20000 });
+  await p0.waitForTimeout(1200);
+  ok('an unknown ?sign= opens no sheet at all',
+    !(await p0.evaluate(() => !!document.querySelector('.settings-card.sig-sheet'))));
+  ok('and the panel behind it is intact', (await stored(p0)).length === 0);
+
+  // THE STORED KIND IS THE KIND THAT WAS SHOWN. Signed alone, through the
+  // deep link the recovery message and the "Add the one page" button both
+  // reach, and with no plan name or member ID anywhere in sight.
+  await p0.goto(`${P}/case.html?id=demo-case&demo=1&sign=designation`, { waitUntil: 'networkidle' });
+  await p0.waitForSelector('.settings-card.sig-sheet', { timeout: 20000 });
+  await signSheet(p0);
+  const desigOnly = await stored(p0);
+  ok('the designation signs ALONE, with no insurer details demanded',
+    desigOnly.length === 1 && desigOnly[0].kind === 'designation',
+    desigOnly.map((i) => i.kind).join(',') || 'nothing stored');
+  ok('and the sheet closed, so the signature was accepted rather than refused',
+    !(await p0.evaluate(() => !!document.querySelector('.settings-card.sig-sheet'))));
+  await p0.screenshot({ path: `${SHOTS}/00-designation-signed.png`, fullPage: true });
+  await c0.close();
+}
+
+// ===========================================================================
+// 0b. THE EMAILED LINK REPAINTS AFTER SIGNING, AT BOTH WIDTHS
+// ===========================================================================
+//
+// `?sign=universal` is the link that goes in the email telling a client to
+// sign. Both documents were stored and the panel behind still read "Not
+// signed" with a "Sign your authorisation" button under it, 4 times out of 4,
+// at 390 and at 320. renderProgress runs twice on every load (render, then the
+// case snapshot's first delivery), so the panel the deep link was holding was
+// detached before anything was signed.
+for (const width of [390, 320]) {
+  const cd = await freshCtx(width);
+  const pd = await cd.newPage();
+  pd.on('pageerror', (e) => errs.push(`deeplink${width}: ${e.message}`));
+  await pd.goto(`${P}/case.html?id=demo-case&demo=1&sign=universal`, { waitUntil: 'networkidle' });
+  await pd.waitForSelector('.settings-card.sig-sheet', { timeout: 20000 });
+  await signSheet(pd);
+  const after = await pd.evaluate(() => {
+    const t = document.querySelector('[data-auth-panel]')?.textContent.replace(/\s+/g, ' ') || '';
+    return {
+      text: t,
+      notSigned: /Not signed/.test(t),
+      offersToSign: !!document.querySelector('[data-auth-add="universal"]'),
+      rows: document.querySelectorAll('[data-auth-view]').length,
+    };
+  });
+  const items = await stored(pd);
+  ok(`${width}px: the emailed link stores both documents`,
+    items.length === 2, items.map((i) => i.kind).join(',') || 'none');
+  ok(`${width}px: and the panel says so WITHOUT a reload`,
+    !after.notSigned && !after.offersToSign && after.rows === 2,
+    `notSigned=${after.notSigned} signButton=${after.offersToSign} rows=${after.rows}`);
+  await pd.screenshot({ path: `${SHOTS}/00-deeplink-${width}.png`, fullPage: true });
+  await cd.close();
+}
+
 // ===========================================================================
 // 1. THE SIGNING SITTING: one name, one mark, two documents
 // ===========================================================================
@@ -244,6 +390,8 @@ const narrowSheet = await client.evaluate(() => ({
   cats: [...document.querySelectorAll('[data-cat]:checked')].map((x) => x.dataset.cat),
   // It must NOT arrive pre-signed. A narrowed copy is a document to be signed.
   signaturePrefilled: !document.querySelector('[data-sig-img]')?.hidden,
+  expiryValue: document.querySelector('[data-f="expiresAt"]')?.value || '',
+  expiryMax: document.querySelector('[data-f="expiresAt"]')?.max || '',
 }));
 ok('the narrow form asks for the one clinic', narrowSheet.clinic);
 ok('and says plainly that signing it cancels nothing',
@@ -253,6 +401,14 @@ ok('it is pre-filled from the master, not a second interview',
   narrowSheet.scopes.length === 3, narrowSheet.scopes.join(','));
 ok('but it arrives UNSIGNED: a signature is never carried across',
   !narrowSheet.signaturePrefilled);
+// THE EXPIRY THE CLIENT ALREADY SHORTENED. The master was set to six months
+// above. This sheet used to hard-code twelve months from today and offer a
+// max two years out, so the "filled in from what you already gave me" copy
+// sat over a field that had quietly loosened the one thing they tightened.
+ok('the narrowed copy inherits the master\'s end date, not a fresh twelve months',
+  narrowSheet.expiryValue === chosen, `${narrowSheet.expiryValue} vs master ${chosen}`);
+ok('and it cannot be pushed past the master\'s end date',
+  narrowSheet.expiryMax === chosen, narrowSheet.expiryMax);
 
 await client.fill('[data-f="clinicName"]', 'Valley Neurology');
 await client.fill('[data-f="signedName"]', 'Jordan Avery');
@@ -280,6 +436,9 @@ const masterNow = afterNarrow.items.find((i) => i.id === master.id);
 const narrow = afterNarrow.items.find((i) => i.kind === 'records');
 ok('the narrowed copy is stored as its own document',
   !!narrow && narrow.clinicName === 'Valley Neurology');
+ok('and it ends when the master ends, never later',
+  day(narrow?.expiresAt) === day(masterNow?.expiresAt),
+  `${day(narrow?.expiresAt)} vs master ${day(masterNow?.expiresAt)}`);
 ok('THE MASTER SURVIVES: still there, still not withdrawn',
   !!masterNow && !masterNow.revokedAt,
   masterNow ? `revokedAt=${masterNow.revokedAt}` : 'MASTER GONE');
@@ -361,6 +520,16 @@ for (let n = 0; n < 2; n += 1) {
     /does not appoint the advocate as the patient's health-care decision maker/.test(got.text));
   ok(`packet ${n + 1} names the document ids and the expiry`,
     /Document ID [A-Z0-9]{4,}/.test(got.text) && /valid to \w+ \d+, \d{4}/.test(got.text));
+  // AND CALLS EACH DOCUMENT WHAT IT IS. Every line said "This authorisation
+  // is valid to ...", the designation's included, which contradicts the
+  // designation's own page ("not a permission of its own") in the same
+  // envelope. That is how a clerk decides the designation IS the permission.
+  ok(`packet ${n + 1} does not call the designation an authorisation`,
+    /This designation grants no permission of its own and is valid to/.test(got.text)
+    // Exactly one line on the cover sheet says "This authorisation is valid
+    // to", and it is the authorisation's.
+    && (got.text.match(/This authorisation is valid to/g) || []).length === 1,
+    (got.text.match(/This [a-z]+ (grants no permission of its own and is|is) valid to[^.]*\./g) || []).join(' // '));
   ok(`packet ${n + 1} has the authorisation and the one page behind the cover`,
     got.h1s.length === 3, got.h1s.join(' | '));
   ok(`packet ${n + 1} CARRIES THE SIGNATURE`, got.inkSrc.length === 2,
@@ -397,6 +566,255 @@ const stuck = await admin.evaluate(() => {
   return s.options[s.selectedIndex].textContent;
 });
 ok('a status he sets survives the repaint', stuck === 'PROVIDER FORM REQUIRED', stuck);
+
+// ===========================================================================
+// 4. THE ADVOCATE SIDE: paper forms that exist, and the missing date of birth
+// ===========================================================================
+{
+  const mgmt = await admin.evaluate(() => {
+    const d = [...document.querySelectorAll('details.mgmt')].find((x) => x.dataset.k === 'auth');
+    if (d) d.open = true;
+    return {
+      blanks: [...document.querySelectorAll('[data-blank]')].map((x) => x.dataset.blank),
+      dobWarning: !!document.querySelector('[data-packet-nodob]'),
+      packetBlocked: !!document.querySelector('[data-packet-blocked]'),
+    };
+  });
+  // The universal blank was written and golden-tested and had no button, so
+  // the one document sign-once exists to produce could not be put on paper at
+  // all, on the panel whose own copy says this is how a form reaches somebody
+  // before a case exists.
+  ok('a blank of EVERY document can be printed, the universal one included',
+    ['universal', 'designation', 'records', 'representative'].every((k) => mgmt.blanks.includes(k)),
+    mgmt.blanks.join(',') || '(none)');
+  // demo-case carries no date of birth, which is the state this warns about:
+  // it comes off the profile, is never asked for at signing, and prints as a
+  // blank line on the page a clerk matches the patient on.
+  ok('a case with no date of birth says so before a packet goes out',
+    mgmt.dobWarning);
+  ok('and with a live authorisation the packet is not blocked', !mgmt.packetBlocked);
+
+  const wasB = ctx.pages().length;
+  await admin.evaluate(() => document.querySelector('[data-blank="universal"]').click());
+  await admin.waitForTimeout(1500);
+  if (ctx.pages().length > wasB) {
+    const bl = ctx.pages()[ctx.pages().length - 1];
+    bl.on('pageerror', (e) => errs.push(`blank: ${e.message}`));
+    await bl.waitForTimeout(500);
+    const blank = await bl.evaluate(() => ({
+      title: document.querySelector('h1')?.textContent.replace(/\s+/g, ' ').trim() || '',
+      text: document.body.textContent.replace(/\s+/g, ' '),
+      rules: document.querySelectorAll('.doc-rule').length,
+    }));
+    ok('the universal blank prints as the universal authorisation',
+      /UNIVERSAL AUTHORISATION/.test(blank.title), blank.title);
+    ok('with somewhere to write the expiry and the signature',
+      blank.rules > 2 && !/I chose that date when I signed/.test(blank.text),
+      `${blank.rules} ruled lines`);
+    await bl.screenshot({ path: `${SHOTS}/08-universal-blank.png`, fullPage: true });
+    await bl.close();
+    await admin.waitForTimeout(300);
+  } else {
+    ok('the universal blank opens', false, 'no window');
+  }
+}
+
+// ===========================================================================
+// 5. THE PRINTED PAGE ON A NARROW PHONE
+// ===========================================================================
+//
+// The document a clinic reads scrolled sideways at 320px: scrollWidth 338
+// against clientWidth 320, with "Date of birth" wrapped onto three lines
+// beside it. 390px was clean, which is why nobody saw it. The trigger is a
+// field with no value, which is now a ruled line 16rem wide, and demo-case has
+// no date of birth.
+{
+  const cn = await freshCtx(320);
+  const pn = await cn.newPage();
+  pn.on('pageerror', (e) => errs.push(`narrowprint: ${e.message}`));
+  await pn.goto(`${P}/case.html?id=demo-case&demo=1&sign=universal`, { waitUntil: 'networkidle' });
+  await pn.waitForSelector('.settings-card.sig-sheet', { timeout: 20000 });
+  await signSheet(pn);
+  const was = cn.pages().length;
+  await pn.evaluate(() => document.querySelector('[data-auth-view]').click());
+  await pn.waitForTimeout(1600);
+  if (cn.pages().length > was) {
+    const doc = cn.pages()[cn.pages().length - 1];
+    doc.on('pageerror', (e) => errs.push(`narrowdoc: ${e.message}`));
+    await doc.waitForTimeout(600);
+    const m = await doc.evaluate(() => {
+      const rows = [...document.querySelectorAll('.doc-meta dt')];
+      const one = rows.length ? Math.min(...rows.map((r) => r.getBoundingClientRect().height)) : 0;
+      return {
+        scrollWidth: Math.round(document.documentElement.scrollWidth),
+        clientWidth: Math.round(document.documentElement.clientWidth),
+        tallestLabel: Math.round(Math.max(...rows.map((r) => r.getBoundingClientRect().height), 0)),
+        oneLine: Math.round(one),
+        ruled: document.querySelectorAll('.doc-meta .doc-rule').length,
+      };
+    });
+    ok('320px: the printed document does not scroll sideways',
+      m.scrollWidth <= m.clientWidth, `${m.scrollWidth} vs ${m.clientWidth}`);
+    ok('320px: and no label wraps onto a third line',
+      m.tallestLabel < m.oneLine * 2.5, `${m.tallestLabel}px tallest, ${m.oneLine}px for one line`);
+    ok('320px: the unset date of birth is a ruled line, never a placeholder',
+      m.ruled >= 1 && !/\(date of birth\)/.test(await doc.evaluate(() => document.body.textContent)),
+      `${m.ruled} rules`);
+    await doc.screenshot({ path: `${SHOTS}/09-document-320.png`, fullPage: true });
+    await doc.close();
+  } else {
+    ok('320px: the document opens', false, 'no window');
+  }
+  await cn.close();
+}
+
+// ===========================================================================
+// 6. THE AUTHORISATION IS WITHDRAWN, AND THE PACKET GOES WITH IT
+// ===========================================================================
+//
+// The client signs both and then withdraws the AUTHORISATION only. The card
+// already said "none signed / 1 withdrawn. Do not act on it." But the packet
+// list was [master, desig].filter(Boolean), which is length 1 in that state,
+// and the only guard was length === 0. So Build packet stayed live and the
+// cover sheet went out saying "within the limits of the authorisation attached
+// to this sheet" with nothing attached.
+{
+  const masterId = master.id;
+  await client.evaluate(async (id) => {
+    await fetch('/api/authority', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ caseId: 'demo-case', action: 'revoke', id }),
+    });
+  }, masterId);
+  await client.waitForTimeout(1200);
+  await admin.reload({ waitUntil: 'networkidle' });
+  await admin.waitForSelector('[data-providers]', { timeout: 25000 });
+  await admin.waitForTimeout(1500);
+  const gone = await admin.evaluate(() => ({
+    blocked: document.querySelector('[data-packet-blocked]')?.textContent.replace(/\s+/g, ' ').trim() || '',
+    enabled: [...document.querySelectorAll('[data-provider-packet]')].filter((b) => !b.disabled).length,
+    buttons: document.querySelectorAll('[data-provider-packet]').length,
+    status: document.querySelector('[data-provider-status]')?.selectedOptions[0]?.textContent || '',
+  }));
+  ok('a withdrawn authorisation DISABLES Build packet, on every provider',
+    gone.buttons > 0 && gone.enabled === 0, `${gone.enabled} of ${gone.buttons} still enabled`);
+  ok('and says the authorisation was withdrawn rather than never signed',
+    /WITHDRAWN/.test(gone.blocked), gone.blocked.slice(0, 90) || '(no reason given)');
+  ok('the provider status derives REVOKED from the document',
+    /REVOKED/.test(gone.status), gone.status);
+  await admin.screenshot({ path: `${SHOTS}/10-withdrawn-no-packet.png`, fullPage: true });
+  // And the refusal holds if the button is re-enabled behind its back.
+  const forced = await admin.evaluate(async () => {
+    const btn = document.querySelector('[data-provider-packet]');
+    btn.disabled = false;
+    const before = document.querySelectorAll('.auth-item').length;
+    btn.click();
+    await new Promise((r) => setTimeout(r, 900));
+    return {
+      said: document.querySelector('[data-provider-error]')?.textContent.replace(/\s+/g, ' ').trim() || '',
+      before,
+    };
+  });
+  await admin.waitForTimeout(700);
+  ok('re-enabling the button by hand still does not build a packet',
+    /No live authorisation to attach/.test(forced.said), forced.said.slice(0, 80) || '(silent)');
+}
+
+// ===========================================================================
+// 7. TWELVE MONTHS LATER: a way to sign a fresh one, and no narrowing
+// ===========================================================================
+//
+// An expired master was simultaneously "signed", which suppressed the button
+// to sign a new one, and displayed as "EXPIRED, please sign a new one". The
+// only control left was Withdraw, behind a confirm that says it cannot undo
+// anything already sent. This lands on every client at month twelve.
+{
+  const ce = await freshCtx(390);
+  const pe = await ce.newPage();
+  pe.on('pageerror', (e) => errs.push(`expiry: ${e.message}`));
+  await pe.goto(`${P}/case.html?id=demo-case&demo=1&sign=universal`, { waitUntil: 'networkidle' });
+  await pe.waitForSelector('.settings-card.sig-sheet', { timeout: 20000 });
+  await signSheet(pe);
+  ok('the expiry case starts from a real signed pair',
+    (await stored(pe)).length === 2);
+  // The clock, moved by ageing the documents rather than the browser: the
+  // demo store is one JSON blob, and this is the state a real client reaches
+  // by doing nothing at all for a year.
+  await pe.evaluate(() => {
+    const raw = JSON.parse(localStorage.getItem('pa-demo-store'));
+    const ago = (d) => new Date(Date.now() - d * 86400000).toISOString();
+    for (const row of raw.docs) {
+      if (!row[0].startsWith('demoAuthority/')) continue;
+      row[1].signedAt = ago(400);
+      row[1].expiresAt = ago(35);
+    }
+    localStorage.setItem('pa-demo-store', JSON.stringify(raw));
+  });
+  await pe.reload({ waitUntil: 'networkidle' });
+  await pe.waitForSelector('[data-auth-panel]', { timeout: 25000 });
+  await pe.waitForTimeout(1200);
+  const lapsed = await pe.evaluate(() => {
+    const t = document.querySelector('[data-auth-panel]')?.textContent.replace(/\s+/g, ' ') || '';
+    return {
+      text: t,
+      renew: !!document.querySelector('[data-auth-add="universal"]'),
+      renewLabel: document.querySelector('[data-auth-add="universal"]')?.textContent.trim() || '',
+      stillListed: document.querySelectorAll('[data-auth-view]').length,
+      narrow: !!document.querySelector('[data-auth-narrow]'),
+      saysExpired: /EXPIRED/.test(t),
+    };
+  });
+  ok('an expired authorisation is STILL LISTED as something they signed',
+    lapsed.stillListed === 2, `${lapsed.stillListed} rows`);
+  ok('and is shown as expired rather than as current', lapsed.saysExpired);
+  ok('THERE IS A WAY TO SIGN A FRESH ONE', lapsed.renew, lapsed.renewLabel || '(no button)');
+  ok('the button says it is a fresh one, not a first one',
+    /fresh/i.test(lapsed.renewLabel), lapsed.renewLabel);
+  ok('and no narrowed copy can be made against a form that has run out',
+    !lapsed.narrow);
+  await pe.screenshot({ path: `${SHOTS}/11-expired-renewal.png`, fullPage: true });
+
+  // The route behind the button, not only the button. A POST straight at it
+  // has to be refused too.
+  const refused = await pe.evaluate(async () => {
+    const res = await fetch('/api/authority?caseId=demo-case');
+    const items = (await res.json()).items || [];
+    const m = items.find((i) => i.kind === 'universal');
+    const out = await fetch('/api/authority', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        caseId: 'demo-case', kind: 'records', signedName: 'Jordan Avery',
+        clinicName: 'Valley Neurology', scopes: ['discuss'], narrowedFrom: m.id,
+        signatureImage: 'data:image/png;base64,iVBORw0KGgo=',
+      }),
+    });
+    return { status: out.status, error: (await out.json().catch(() => ({}))).error || '' };
+  });
+  ok('the route refuses a narrowed copy of an EXPIRED master',
+    refused.status === 409 && /expired/i.test(refused.error),
+    `${refused.status} ${refused.error}`);
+
+  // Signing a fresh one restores the panel without withdrawing anything.
+  await pe.evaluate(() => document.querySelector('[data-auth-add="universal"]').click());
+  await pe.waitForSelector('.settings-card.sig-sheet', { timeout: 15000 });
+  await signSheet(pe);
+  const renewed = await pe.evaluate(() => ({
+    text: document.querySelector('[data-auth-panel]')?.textContent.replace(/\s+/g, ' ') || '',
+    rows: document.querySelectorAll('[data-auth-view]').length,
+    stillOffering: !!document.querySelector('[data-auth-add="universal"]'),
+    narrow: !!document.querySelector('[data-auth-narrow]'),
+  }));
+  const all = await stored(pe);
+  ok('signing a fresh one leaves the old one on file, withdrawn by nobody',
+    all.length === 4 && all.every((i) => !i.revokedAt), `${all.length} documents`);
+  ok('and the panel goes back to signed, with the narrow option back',
+    !renewed.stillOffering && renewed.narrow && renewed.rows === 4,
+    `rows=${renewed.rows} offering=${renewed.stillOffering} narrow=${renewed.narrow}`);
+  await pe.screenshot({ path: `${SHOTS}/12-renewed.png`, fullPage: true });
+  await ce.close();
+}
 
 ok('no page threw', errs.length === 0, errs.slice(0, 3).join(' | '));
 console.log(`\n${pass} ok, ${fail} FAIL`);

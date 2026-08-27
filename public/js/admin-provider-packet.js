@@ -24,7 +24,7 @@
 // of paper is how the two drift.
 
 import {
-  AUTHORITY_KINDS, authorityExpired, authorityExpiry, AUTHORITY_DEFAULT_MONTHS,
+  AUTHORITY_KINDS, authorityExpired, authorityEndsAt,
 } from './authority.js';
 
 /**
@@ -85,9 +85,22 @@ export const requestLabel = (id) =>
  * signature) restores his own status rather than having overwritten it.
  */
 export function effectiveStatus(provider, docs = []) {
-  const live = docs.filter((d) => !d.revokedAt);
-  if (docs.length && !live.length) return 'revoked';
-  if (live.length && live.every((d) => authorityExpired(d))) return 'expired';
+  // THE AUTHORISATION DECIDES, NOT THE PILE.
+  //
+  // A packet stands on the records authorisation. The patient designation is a
+  // notice that grants nothing of its own and says so on its face, so a live
+  // designation sitting beside a WITHDRAWN authorisation is not authority to
+  // act, and reading the pair as "one of them is still live" is how a provider
+  // stayed on ACCEPTED after the client revoked the only thing that mattered.
+  //
+  // A list with no authorisation in it at all (a designation on its own) falls
+  // back to the whole list rather than answering about nothing.
+  const auth = docs.filter((d) => d.kind !== 'designation');
+  const pool = auth.length ? auth : docs;
+  if (!pool.length) return provider?.status || 'notSent';
+  if (pool.every((d) => d.revokedAt)) return 'revoked';
+  const live = pool.filter((d) => !d.revokedAt);
+  if (live.every((d) => authorityExpired(d))) return 'expired';
   return provider?.status || 'notSent';
 }
 
@@ -201,17 +214,23 @@ export function providerPacketModel(o = {}) {
           t: 'bullets',
           items: docs.map((d) => {
             const title = AUTHORITY_KINDS[d.kind]?.title || 'Document';
-            const at = d.expiresAt
-              ? new Date(d.expiresAt)
-              : authorityExpiry(d.signedAt, AUTHORITY_DEFAULT_MONTHS);
-            const when = dateText(at);
+            const when = dateText(authorityEndsAt(d));
             // Say EXPIRED on the page rather than printing a date in the past
             // and letting the reader work it out. A packet that goes out on a
             // dead authorisation is the failure this whole build is about.
             const life = d.revokedAt ? 'WITHDRAWN by the patient'
               : authorityExpired(d) ? `EXPIRED on ${when || 'an unrecorded date'}`
                 : when ? `valid to ${when}` : 'expiry not recorded';
-            return `${title}. Document ID ${shortId(d.id)}. Signed ${dateText(d.signedAt) || 'not recorded'}. This authorisation is ${life}.`;
+            // CALL EACH DOCUMENT WHAT IT IS. Every line said "This
+            // authorisation is valid to ...", including the line for the
+            // patient designation, whose own page says in terms that it is
+            // "not a permission of its own". Two pages in one envelope
+            // contradicting each other is how a clerk decides the designation
+            // is the permission and files it as one.
+            const noun = d.kind === 'designation'
+              ? 'This designation grants no permission of its own and is'
+              : 'This authorisation is';
+            return `${title}. Document ID ${shortId(d.id)}. Signed ${dateText(d.signedAt) || 'not recorded'}. ${noun} ${life}.`;
           }),
         }]
         : [{
