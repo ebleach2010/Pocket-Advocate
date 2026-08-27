@@ -881,6 +881,8 @@ export default {
         return await handleHold(request, env);
       if (url.pathname === '/api/admin/close-case' && request.method === 'POST')
         return await handleCloseCase(request, env);
+      if (url.pathname === '/api/admin/providers')
+        return await handleProviders(request, env, url);
       if (url.pathname === '/api/admin/effort')
         return await handleEffort(request, env);
       if (url.pathname === '/api/admin/openai-key')
@@ -3344,11 +3346,111 @@ async function handleSaved(request, env, url) {
  * directions by the rules already deployed, and this route is the only way
  * in. Both sides read; only the client signs; only the Worker stamps time.
  */
-const AUTHORITY_KINDS = ['records', 'representative'];
+// SIGN ONCE (Eric's spec 2A and 2B). `universal` is the broad authorisation
+// naming a class of providers and `designation` is the one page a front desk
+// scans into the chart; a client signs both in one sitting and neither is ever
+// re-signed per clinic. `records` is still here and still carries its old
+// name, because every document already signed carries that kind string: it is
+// now the EXCEPTION, either a legacy document or a narrowed copy made for an
+// office that insists on its own form.
+const AUTHORITY_KINDS = ['universal', 'designation', 'records', 'representative'];
+// Neither `universal` nor `designation` is gated on the tier, and that is the
+// existing per-document rule rather than a new one: getting records and being
+// able to ring a clinic IS the standard case. Only `representative` is
+// Hands-Off work, and only it is gated, below, once `kind` is known.
+//
+// What the push notification calls each one. A map rather than a ternary,
+// because the ternary said "the insurance representative form" for every kind
+// that was not `records`, and two new kinds would have inherited that silently.
+const AUTHORITY_SIGNED_LABEL = {
+  universal: 'the universal records authorisation',
+  designation: 'the patient designation of advocate',
+  records: 'a records authorisation for one clinic',
+  representative: 'the insurance representative form',
+};
 // Mirrored from COMMUNICATION_SCOPES in public/js/authority.js. The Worker
 // cannot import a client module, so a suite check asserts the two lists
 // stay identical rather than trusting them to.
 const AUTHORITY_SCOPE_IDS = ['discuss', 'records', 'admin'];
+// Mirrored from AUTHORITY_DEFAULT_MONTHS / AUTHORITY_MAX_MONTHS in
+// public/js/authority.js, same reason. Twelve months unless the client picks
+// another date at signing; never open ended, and never further out than the
+// cap, so a mistyped year cannot put an expiry in the next century on a
+// document nobody re-reads.
+//
+// THE CAP IS TWELVE, matching the promise in tier-terms.js ("runs for twelve
+// months unless you choose a shorter time"). It was 24, and the extra year
+// appeared on no surface a client reads.
+const AUTHORITY_DEFAULT_MONTHS = 12;
+const AUTHORITY_MAX_MONTHS = 12;
+
+/**
+ * Signed date plus n calendar MONTHS. Mirrored from authorityExpiry in
+ * public/js/authority.js; tools/suites/signonce.mjs LIFTS both out of their
+ * shipped files and runs them against the same dates rather than eyeballing
+ * them, because the two halves disagreeing by a day is exactly what a
+ * source-text check sails past.
+ *
+ * Calendar months, not 365 days, and clamped to the end of the target month:
+ * 31 January plus one month is 28 or 29 February, never 3 March.
+ */
+function authorityExpiry(signedAt, months = AUTHORITY_DEFAULT_MONTHS) {
+  const t = signedAt instanceof Date ? new Date(signedAt.getTime()) : new Date(signedAt);
+  if (!signedAt || Number.isNaN(t.getTime())) return null;
+  const n = Number(months);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const day = t.getUTCDate();
+  const out = new Date(t.getTime());
+  out.setUTCDate(1);
+  out.setUTCMonth(out.getUTCMonth() + Math.round(n));
+  const lastDay = new Date(Date.UTC(out.getUTCFullYear(), out.getUTCMonth() + 1, 0)).getUTCDate();
+  out.setUTCDate(Math.min(day, lastDay));
+  return out;
+}
+
+/**
+ * The expiry the client asked for, or the twelve month default.
+ *
+ * A FUTURE wall date, unlike every other date on these forms, which is why it
+ * cannot go through wallDate(): that helper refuses anything after today,
+ * correctly, because a records range cannot cover records that do not exist
+ * yet. An expiry is the opposite and has to be ahead of the signature or the
+ * document is dead on arrival.
+ *
+ * Anything unparseable, in the past, or beyond the cap falls back to the
+ * default rather than being stored. There is no value of this field, and no
+ * absence of it, that means no expiry.
+ */
+function authorityExpiresAt(signedAt, raw) {
+  const fallback = authorityExpiry(signedAt, AUTHORITY_DEFAULT_MONTHS);
+  const d = typeof raw === 'string' ? raw.trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return fallback;
+  // Noon UTC lands safely inside the MST day, the same trick the document
+  // formatter uses so a date never renders as the day before.
+  const at = new Date(`${d}T12:00:00Z`);
+  if (Number.isNaN(at.getTime()) || at.toISOString().slice(0, 10) !== d) return fallback;
+  const cap = authorityExpiry(signedAt, AUTHORITY_MAX_MONTHS);
+  if (at.getTime() <= new Date(signedAt).getTime()) return fallback;
+  if (cap && at.getTime() > cap.getTime()) return fallback;
+  return at;
+}
+
+/**
+ * When a STORED document actually ends, or null when that cannot be shown.
+ *
+ * Mirrored from authorityEndsAt in public/js/authority.js, with the same
+ * fallback: a document signed before an expiry was stored carries none, and
+ * falls back to twelve months from its own signing date, which is what its own
+ * printed text has always said. A document with neither is not current.
+ *
+ * Firestore hands timestamps back as ISO strings, which new Date() parses.
+ */
+function authorityEndsAt(d) {
+  const at = d?.expiresAt
+    ? new Date(d.expiresAt)
+    : authorityExpiry(d?.signedAt, AUTHORITY_DEFAULT_MONTHS);
+  return at && !Number.isNaN(at.getTime()) ? at : null;
+}
 // A downscaled signature is 15-40KB; this leaves room without letting a
 // document grow into something the GET has to ship on every paint.
 const AUTHORITY_SIG_MAX = 80_000;
@@ -3511,8 +3613,25 @@ async function handleAuthority(request, env, url) {
     // a claim, and this one has to be a record.
     signedAt: new Date(),
     revokedAt: null,
-    // A year, which is what both documents say on their face.
-    expiresAt: new Date(Date.now() + 365 * 24 * 3600_000),
+    // EXPIRY IS THE CLIENT'S TO SET, defaulting to twelve months, and it is
+    // stored rather than implied. The document text has always fallen back to
+    // "one year from the date signed" when this field was missing, which was
+    // true but unreadable: a records clerk holding the paper could not work
+    // out the date without also knowing the signing date and doing the
+    // arithmetic. Every document now carries a real date on its face.
+    //
+    // This used to be `Date.now() + 365 days`, which is not twelve months
+    // across a leap year and is not what the client picked.
+    expiresAt: null,
+    // The disclosing party is a CLASS, not one named clinic (Eric's spec 2A,
+    // and 45 CFR 164.508(c)(1)(ii), which puts "class of persons" on the face
+    // of the rule). Stored per document so that a form signed under the old
+    // per-clinic wording keeps rendering the words its signer actually read.
+    universal: kind === 'universal',
+    // Set on a narrowed copy, and it is the id of the master it was derived
+    // from. Its only job is to prove, on the record and on the printed page,
+    // that the master was not replaced.
+    narrowedFrom: str(body?.narrowedFrom, 64),
     clinicName: str(body?.clinicName, 200),
     clinicAddress: str(body?.clinicAddress, 400),
     clinicPhone: str(body?.clinicPhone, 40),
@@ -3536,6 +3655,10 @@ async function handleAuthority(request, env, url) {
     // name-match above gates, and this is the mark that goes on the paper.
     signatureImage: '',
   };
+  // After the stamp, because it is measured FROM the stamp: the client picks a
+  // date, and the twelve month default and the cap are both counted from the
+  // moment the Worker recorded, never from a time the browser sent.
+  item.expiresAt = authorityExpiresAt(item.signedAt, body?.expiresAt);
   // Validated rather than trusted: this string is written into a document
   // that is later printed into an <img>, so anything that is not plainly a
   // base64 png or jpeg is refused here instead of stored and rendered.
@@ -3559,10 +3682,44 @@ async function handleAuthority(request, env, url) {
   // The boxes arrive ticked, so this only refuses somebody who cleared all
   // three - and refusing beats storing a document whose own text then said
   // they had authorised everything.
-  if (kind === 'records' && !item.scopes.length)
+  //
+  // The UNIVERSAL form is held to the same rule for the same reason: naming a
+  // class of providers widens who may disclose, and widens nothing about what
+  // he may do with it. All three boxes unticked is still a piece of paper.
+  if ((kind === 'records' || kind === 'universal') && !item.scopes.length)
     return json({ error: 'Tick at least one thing you are authorising me to do.' }, 400);
+  // A clinic name is required of the NARROW form only. The universal form has
+  // no clinic to name, which is the entire point of it, and requiring one here
+  // was the bug that would have made sign-once impossible to sign.
   if (kind === 'records' && !item.clinicName)
     return json({ error: 'Name the clinic this authorisation is for.' }, 400);
+  // A narrowed copy has to say which master it came from, so that "the master
+  // survives" is a fact on the record and not a claim in a comment. Refused
+  // rather than defaulted: a narrow form with a broken link back is a form
+  // that will one day be read as the only authorisation on file.
+  if (kind === 'records' && item.narrowedFrom) {
+    const master = await getDoc(env, `${coll}/${item.narrowedFrom}`);
+    if (!master || master.data.kind !== 'universal')
+      return json({ error: 'That universal authorisation is not on this case.' }, 400);
+    if (master.data.revokedAt)
+      return json({ error: 'That universal authorisation has been withdrawn.' }, 409);
+    // EXPIRY, CHECKED LIKE EXISTENCE AND WITHDRAWAL. It was not, and the
+    // resulting document told a clinic "I have already signed a universal
+    // authorisation which remains in force" months after that authorisation
+    // ran out. A false statement on the face of a legal instrument, generated
+    // by the app itself and signed by the patient.
+    const masterEnds = authorityEndsAt(master.data);
+    if (!masterEnds || masterEnds.getTime() <= Date.now())
+      return json({ error: 'That universal authorisation has expired. Sign a fresh one first.' }, 409);
+    // AND A COPY CANNOT OUTLIVE WHAT IT WAS COPIED FROM. The sheet already
+    // caps its own date field at the master's expiry; this is the half a POST
+    // straight at the route cannot skip. Clamped rather than refused, because
+    // the client is not choosing this number: the page carries it across for
+    // them, and refusing would be refusing them their own signature over an
+    // arithmetic detail.
+    if (item.expiresAt && item.expiresAt.getTime() > masterEnds.getTime())
+      item.expiresAt = masterEnds;
+  }
   if (kind === 'representative' && !item.planName)
     return json({ error: 'Name your insurance plan.' }, 400);
   // The page gates on this too; this is the half that cannot be skipped by
@@ -3584,7 +3741,7 @@ async function handleAuthority(request, env, url) {
   for (const a of admins) {
     await notifyUser(env, a.id, {
       title: 'Pocket Advocate',
-      body: `${firstName(c.data.clientName)} signed ${kind === 'records' ? 'a records authorisation' : 'the insurance representative form'}.`,
+      body: `${firstName(c.data.clientName)} signed ${AUTHORITY_SIGNED_LABEL[kind] || 'a document'}.`,
       link: `/admin-case.html?id=${id}`,
     }).catch(() => {});
   }
@@ -3639,6 +3796,133 @@ async function handleClinicCalls(request, env, url) {
     return json({ ok: true });
   }
   return json({ error: 'Bad request' }, 400);
+}
+
+/**
+ * GET/POST /api/admin/providers - who the packet went to, and where it got to
+ * (Eric's spec 4).
+ *
+ * ADMIN ONLY, IN BOTH DIRECTIONS, and that is not a convenience. This list is
+ * his working record of which clinics have accepted the authorisation, which
+ * bounced it to a privacy review, and which want their own form. A client
+ * reading "REJECTED PRIVACY REVIEW" against their own oncologist would be
+ * reading his notes on their care, and the standing rule is that clients are
+ * blind to advocate tooling. requireAdmin answers 404, not 403, so the route
+ * does not admit to existing.
+ *
+ * Under `cases/{id}/private/`, which no browser can read in either direction,
+ * for the same reason the authority documents live there.
+ *
+ * NOTHING IS EVER SENT FROM HERE. The route records that Eric sent a packet;
+ * it does not send one. That was settled with him and it is why there is no
+ * mail call anywhere in this handler: a clinic gets its packet from him, by
+ * the channel he chose, and this app never puts a client's health information
+ * into an email to a third party.
+ */
+const PROVIDER_STATUS_IDS = [
+  'notSent', 'sent', 'received', 'accepted', 'providerForm',
+  'verbal', 'rejected', 'expired', 'revoked',
+];
+const PROVIDER_REQUEST_IDS = [
+  'call', 'status', 'records', 'referral', 'priorAuth', 'other',
+];
+
+async function handleProviders(request, env, url) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = request.method === 'POST' ? await request.json().catch(() => null) : null;
+  const id = String(body?.caseId || url.searchParams.get('caseId') || '');
+  if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad request' }, 400);
+  const coll = `cases/${id}/private/providers/items`;
+
+  if (request.method === 'GET') {
+    const [rows, contact] = await Promise.all([
+      listDocs(env, coll, { pageSize: 200 }).catch(() => []),
+      getDoc(env, 'settings/advocate').catch(() => null),
+    ]);
+    return json({
+      items: rows.map((r) => ({ id: r.id, ...r.data }))
+        .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)),
+      // The contact block the cover sheet prints. Whatever is not set here
+      // prints as a ruled line to write on, never as an invented number: a
+      // wrong fax number on a page handed to a records department sends a
+      // client's chart to a stranger.
+      contact: contact?.data || {},
+    });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+
+  if (body?.action === 'contact') {
+    await patchDoc(env, 'settings/advocate', {
+      business: str(body?.business, 120),
+      phone: str(body?.phone, 40),
+      email: str(body?.email, 160),
+      fax: str(body?.fax, 40),
+    }, { mask: ['business', 'phone', 'email', 'fax'] });
+    return json({ ok: true });
+  }
+
+  if (body?.action === 'add') {
+    const name = str(body?.name, 200);
+    if (!name) return json({ error: 'Name the provider.' }, 400);
+    const itemId = crypto.randomUUID();
+    await patchDoc(env, `${coll}/${itemId}`, {
+      name,
+      address: str(body?.address, 400),
+      phone: str(body?.phone, 40),
+      fax: str(body?.fax, 40),
+      // Every provider starts at NOT SENT. There is no state meaning "we do
+      // not know": a provider Eric has not written to yet has not been sent
+      // to, and saying so is the point of the list.
+      status: 'notSent',
+      requestKind: PROVIDER_REQUEST_IDS.includes(body?.requestKind) ? body.requestKind : 'records',
+      requestNote: str(body?.requestNote, 600),
+      note: '',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }, { mustNotExist: true });
+    return json({ ok: true, id: itemId });
+  }
+
+  if (body?.action === 'update') {
+    const itemId = String(body?.id || '');
+    if (!/^[\w-]{1,64}$/.test(itemId)) return json({ error: 'Bad request' }, 400);
+    // Look before patching. patchDoc with a mask CREATES a missing document,
+    // so setting a status on a provider deleted a moment ago would resurrect
+    // it as a nameless row the panel painted as a blank line with a status.
+    // The agenda route learned this the hard way.
+    const row = await getDoc(env, `${coll}/${itemId}`);
+    if (!row) return json({ error: 'That provider is not on this case.' }, 404);
+    const patch = { updatedAt: new Date() };
+    const mask = ['updatedAt'];
+    if (body?.status !== undefined) {
+      if (!PROVIDER_STATUS_IDS.includes(body.status))
+        return json({ error: 'Bad request' }, 400);
+      patch.status = body.status;
+      mask.push('status');
+    }
+    if (body?.requestKind !== undefined) {
+      if (!PROVIDER_REQUEST_IDS.includes(body.requestKind))
+        return json({ error: 'Bad request' }, 400);
+      patch.requestKind = body.requestKind;
+      mask.push('requestKind');
+    }
+    for (const f of ['name', 'address', 'phone', 'fax', 'requestNote', 'note']) {
+      if (body?.[f] === undefined) continue;
+      patch[f] = str(body[f], f === 'note' || f === 'requestNote' ? 2000 : 400);
+      mask.push(f);
+    }
+    await patchDoc(env, `${coll}/${itemId}`, patch, { mask });
+    return json({ ok: true });
+  }
+
+  if (body?.action === 'remove') {
+    const itemId = String(body?.id || '');
+    if (!/^[\w-]{1,64}$/.test(itemId)) return json({ error: 'Bad request' }, 400);
+    await deleteDoc(env, `${coll}/${itemId}`).catch(() => {});
+    return json({ ok: true });
+  }
+  return json({ error: 'Unknown action' }, 400);
 }
 
 async function handleAgenda(request, env, url) {

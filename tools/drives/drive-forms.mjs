@@ -87,11 +87,18 @@ const client = await ctx.newPage();
 client.on('pageerror', (e) => errs.push(`client: ${e.message}`));
 await client.goto(`${P}/case.html?id=demo-case&demo=1`, { waitUntil: 'networkidle' });
 await client.waitForSelector('[data-auth-panel]', { timeout: 20000 });
-await client.evaluate(() => document.querySelector('[data-auth-add="records"]').click());
+// UPDATED 2026-08-27 for sign-once, not deleted. This opened
+// `[data-auth-add="records"]`, which was the only thing an unsigned case
+// offered. It now offers `universal`: one authorisation naming a class of
+// providers, signed once, with the per-clinic form kept as the exception for
+// an office that insists on its own. The INTENT of this block is unchanged and
+// is what is still asserted below, namely that what a client reads before
+// signing is a rendered document rather than a wall of preformatted text.
+await client.evaluate(() => document.querySelector('[data-auth-add="universal"]').click());
 await client.waitForTimeout(900);
 const sheet = await client.evaluate(() => {
   const d = [...document.querySelectorAll('.settings-card details')]
-    .find((x) => /Read the whole form/.test(x.textContent));
+    .find((x) => /Read both pages|Read the whole form/.test(x.textContent));
   if (d) d.open = true;
   const el = document.querySelector('.auth-doc');
   return {
@@ -135,8 +142,15 @@ const landed = await deep.evaluate(() => {
   };
 });
 ok('the link lands with the form already open', landed.open, landed.heading || '(shut)');
-ok('and it is the records authorisation, the one the link asked for',
-   /Records authorisation/.test(landed.heading), landed.heading);
+// UPDATED 2026-08-27, not deleted. It asserted the heading "Records
+// authorisation". `?sign=records` still opens the per-clinic form, because
+// links already sent must not break, but that sheet is now titled "A form for
+// one clinic": it is the narrow exception rather than the norm. The intent,
+// that the link opens the document it named and not some other one, is
+// unchanged. `?sign=universal` is driven separately below, because that is the
+// link Eric will actually send from now on.
+ok('and it is the per-clinic form, the one this old link asked for',
+   /A form for one clinic/.test(landed.heading), landed.heading);
 ok('the fields he types into are there', landed.clinic && landed.typedName);
 ok('the signature box is there and is a real target',
    landed.sigBox && landed.sigTall >= 44, `${landed.sigTall}px`);

@@ -7,14 +7,14 @@ building and re-finding this once cost a full day.
 
     node tools/suites/run.mjs
 
-Fifteen suites assert against the real Worker and page sources: pricing
+Sixteen suites assert against the real Worker and page sources: pricing
 constants, the tier window and closure rules, the maintenance gate, the
-acknowledgment flow, the authority documents and their golden text, the hold
-model, the check-in cadence, the work clock, the advisor queue, the Stripe
-parameters, the ChatGPT key store, and the defect regressions. (It said
-"nine" for months while the count climbed; the runner discovers the folder,
-so the number here is the only thing that can drift.) No server, no browser,
-no network.
+acknowledgment flow, the authority documents and their golden text, the
+sign-once authorisation and the provider packet, the hold model, the check-in
+cadence, the work clock, the advisor queue, the Stripe parameters, the ChatGPT
+key store, and the defect regressions. (It said "nine" for months while the
+count climbed; the runner discovers the folder, so the number here is the only
+thing that can drift.) No server, no browser, no network.
 Eric's rule (2026-08-25): this battery runs and passes before ANYTHING is
 pushed to main. See CLAUDE.md.
 
@@ -70,14 +70,20 @@ tour.
 
 ### Straight onto a form
 
-`?sign=records` or `?sign=representative` on a client case opens that document
-with the sheet already up, so a link lands on the form rather than on a case
-page with a panel some way down it:
+`?sign=<document>` on a client case opens that document with the sheet already
+up, so a link lands on the form rather than on a case page with a panel some
+way down it. Four documents, and each opens ITSELF: the heading, the preview
+and the kind that gets stored all agree, and anything else opens nothing at
+all rather than falling back to whichever form is in the else branch.
 
 | where | url |
 |---|---|
-| Records authorisation | `/case.html?demo=1&id=demo-case&sign=records` |
+| The universal authorisation, plus the one page, on one signature | `/case.html?demo=1&id=demo-case&sign=universal` |
+| The one page your clinics keep, on its own | `/case.html?demo=1&id=demo-case&sign=designation` |
+| A form for one clinic | `/case.html?demo=1&id=demo-case&sign=records` |
 | Insurance representative | `/case.html?demo=1&id=demo-case&sign=representative` |
+
+`?sign=universal` is the one that goes in an email to a client.
 
 The parameter is spent on arrival: it is stripped from the address bar and
 cleared in memory, because the authority panel repaints whenever its documents

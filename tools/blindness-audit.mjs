@@ -118,6 +118,12 @@ const ADMIN_PAGES = [
 const ADMIN_ASSETS = [
   '/js/admin.js', '/js/admin-case.js', '/js/admin-chats.js', '/js/admin-calendar.js',
   '/js/admin-availability.js', '/js/admin-dictionary.js', '/js/admin-settings.js',
+  // Added 2026-08-27. The gate already 404s it, because the filename is what
+  // does it, but an audit that never asks cannot prove that. This module holds
+  // the provider status vocabulary: REJECTED PRIVACY REVIEW and PATIENT VERBAL
+  // CONFIRMATION REQUIRED are Eric's working notes on a client's care, written
+  // against that client's own providers.
+  '/js/admin-provider-packet.js',
   '/js/advisor.js', '/js/notes.js', '/js/duty.js', '/js/prep.js',
   '/js/drawer.js', '/js/seen.js', '/js/panel-bridge.js', '/css/admin.css',
   // The demo's fixtures are advisor output, so they are gated the same way. A

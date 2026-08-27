@@ -1,28 +1,36 @@
-// The two documents Full Access runs on, and they are not interchangeable.
+// The authority documents, and they are not interchangeable.
 //
-// Written 2026-08-23, PENDING ERIC'S SIGN-OFF, flagged in the PR. A NEW file,
-// not an addition to waivers.js, which is frozen.
+// Four documents come out of this module:
 //
-//   1. A RECORDS AUTHORISATION, one per clinic. This is what lets a provider
-//      hand your records to somebody who is not you. Its required elements
-//      come from 45 CFR 164.508(c): a specific description of the information,
-//      who may disclose it, who may receive it, the purpose, an expiry, the
-//      signature, and three statements the rule requires verbatim in substance
-//      (the right to revoke and how, that treatment cannot be conditioned on
-//      signing, and that re-disclosed information may no longer be protected).
-//      Miss one and the form is defective, which in practice means a records
-//      department rejects it and three weeks are gone.
+//   1. A UNIVERSAL RECORDS AUTHORISATION. This is what lets a provider hand
+//      your records to somebody who is not you, and it names a CLASS of
+//      providers rather than one clinic, so it is signed once. Its required
+//      elements come from 45 CFR 164.508(c): a specific description of the
+//      information, who may disclose it, who may receive it, the purpose, an
+//      expiry, the signature, and three statements the rule requires verbatim
+//      in substance (the right to revoke and how, that treatment cannot be
+//      conditioned on signing, and that re-disclosed information may no longer
+//      be protected). Miss one and the form is defective, which in practice
+//      means a records department rejects it and three weeks are gone.
 //
-//   2. An AUTHORISED REPRESENTATIVE DESIGNATION. This is what lets somebody
+//   2. A PATIENT DESIGNATION OF ADVOCATE: one page a front desk can scan into
+//      the chart, signed in the same sitting as the authorisation. It grants
+//      nothing on its own and says so on its face.
+//
+//   3. A PER-CLINIC RECORDS AUTHORISATION, the exception. Either a document
+//      signed before the universal form existed, or a narrowed copy made for
+//      an office that will only take a form naming itself.
+//
+//   4. An AUTHORISED REPRESENTATIVE DESIGNATION. This is what lets somebody
 //      argue with your insurer for you. ERISA plans must have a procedure for
 //      it (29 CFR 2560.503-1(b)(4)); Medicare uses its own appointment form.
 //      A records authorisation does NOT confer it, and clients conflate the
-//      two constantly, which is why they are two documents here and not one
-//      with a longer title.
+//      two constantly, which is why they are separate documents here and not
+//      one with a longer title.
 //
-// Both are PURE FUNCTIONS returning text, following duty.js: copy this
-// load-bearing gets a surface a test can pin, and a pure function is that
-// surface. Do not inline them into a template.
+// All are PURE FUNCTIONS returning the document as text or as a structure,
+// following duty.js: copy this load-bearing gets a surface a test can pin, and
+// a pure function is that surface. Do not inline them into a template.
 //
 // Nothing here makes the service a HIPAA covered entity, and waivers.js says
 // so. Eric receives records as the patient's own authorised recipient, which
@@ -89,6 +97,144 @@ export const COMMUNICATION_SCOPES = [
   },
 ];
 
+/**
+ * THE DISCLOSING PARTY, AS A CLASS RATHER THAN AS ONE NAMED CLINIC.
+ *
+ * This is the whole of the sign-once change. Until now a client signed a
+ * separate authorisation for every clinic, which meant that the fifth clinic
+ * anybody discovered halfway through a case was a fresh signing, a fresh wait,
+ * and in practice a fortnight lost. 45 CFR 164.508(c)(1)(ii) asks for "the
+ * name or other specific identification of the person(s), or class of
+ * persons, authorized to make the requested use or disclosure" - a CLASS is
+ * on the face of the rule, and HHS FAQ 473 says so in as many words: an
+ * authorisation may name a class of providers rather than list every one.
+ *
+ * So the class is enumerated here, as a list rather than as one long string,
+ * for two reasons. A four hundred character sentence in a template literal is
+ * a sentence nobody can diff, and a suite check that asserts "the document
+ * names a class" is worth nothing unless it can assert WHICH members of the
+ * class survived an edit. Every entry below is pinned individually.
+ *
+ * It is deliberately wide on the SOURCE of the information and says nothing
+ * about widening what the advocate may DO with it: the communication scopes
+ * above still gate that, still tick one by one, and a universal authorisation
+ * with every scope unticked still authorises nothing.
+ */
+export const PROVIDER_CLASS_TYPES = [
+  'health plan',
+  'physician',
+  'health-care professional',
+  'hospital',
+  'clinic',
+  'laboratory',
+  'pharmacy',
+  'medical facility',
+  'behavioral-health provider',
+  'rehabilitation provider',
+  'pharmacy benefit manager',
+  'claims administrator',
+  'billing entity',
+];
+
+/**
+ * The class, as the sentence it appears as on the document. First person,
+ * because every other sentence on these forms is ("I authorise", "my care"),
+ * and a document that switches to "the patient" halfway down reads as though
+ * somebody else wrote it about you.
+ */
+export const PROVIDER_CLASS = `any ${PROVIDER_CLASS_TYPES.join(', ')}, or other`
+  + ' health-care source that has provided treatment, payment, or services to me'
+  + ' or on my behalf';
+
+/**
+ * HOW LONG AN AUTHORISATION LASTS, and the fact that it always does.
+ *
+ * Twelve months by default, set by the client at signing, and there is no
+ * option anywhere that means no expiry: 164.508(c)(1)(v) requires an
+ * expiration date or event, and a records department that reads "does not
+ * expire" rejects the form. The outer bound exists so that a mistyped year
+ * cannot put an expiry in the next century on a document nobody re-reads.
+ *
+ * THE CEILING IS TWELVE, NOT TWENTY-FOUR, and it is twelve because that is
+ * what the agreement promises. tier-terms.js says the authorisation "runs for
+ * twelve months unless you choose a shorter time"; the ceiling was 24, the
+ * date input offered two years, and the extra year appeared on no surface a
+ * client reads. A client could therefore be handed a form running to a date
+ * their own agreement says is impossible, and nothing anywhere would say so.
+ * The safe default is the promise. Widening it again is Eric's call and is
+ * flagged for him: raising this number alone reopens exactly that gap, so the
+ * agreement copy has to move with it.
+ */
+export const AUTHORITY_DEFAULT_MONTHS = 12;
+export const AUTHORITY_MAX_MONTHS = 12;
+
+/**
+ * Signed date plus n calendar MONTHS, not plus 365 days.
+ *
+ * Calendar months because that is what the document says on its face and what
+ * a client picking a date means. The two differ: 365 days from 1 March 2027
+ * lands on 29 February 2028 in a leap year, a day short of the anniversary,
+ * and an expiry that arrives a day early on a records request already in
+ * flight is a rejected request.
+ *
+ * The end-of-month clamp is the case that bites. 31 January plus one month is
+ * not 3 March: setMonth rolls the overflow forward, so the naive version
+ * silently moved an expiry two days past where the client set it. Clamped to
+ * the last day of the target month instead.
+ *
+ * Returns a Date, or null for an unparseable stamp - never a fabricated
+ * "today", which would stamp a real expiry onto a document whose signing date
+ * was never recorded.
+ */
+export function authorityExpiry(signedAt, months = AUTHORITY_DEFAULT_MONTHS) {
+  const t = signedAt instanceof Date ? new Date(signedAt.getTime()) : new Date(signedAt);
+  if (!signedAt || Number.isNaN(t.getTime())) return null;
+  const n = Number(months);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const day = t.getUTCDate();
+  const out = new Date(t.getTime());
+  out.setUTCDate(1);
+  out.setUTCMonth(out.getUTCMonth() + Math.round(n));
+  // The last day of the month we landed in: day 0 of the NEXT month.
+  const lastDay = new Date(Date.UTC(out.getUTCFullYear(), out.getUTCMonth() + 1, 0)).getUTCDate();
+  out.setUTCDate(Math.min(day, lastDay));
+  return out;
+}
+
+/**
+ * WHEN A STORED DOCUMENT ACTUALLY ENDS, or null if that cannot be established.
+ *
+ * THE MISSING FIELD IS THE TRAP. Documents signed before an expiry was stored
+ * have no `expiresAt` at all, and the obvious `new Date(item.expiresAt) < now`
+ * answers false for every one of them, which reads as "still valid, forever"
+ * on exactly the records that were signed under the old wording. That is the
+ * "never expires" this build exists to remove, arriving through the back door
+ * as an undefined rather than as a word on the page.
+ *
+ * So a document with no stored expiry falls back to twelve months from its own
+ * signing date, which is what its own printed text has always said. A document
+ * with neither an expiry nor a signing date has NO end date that can be shown,
+ * and every caller treats that as expired rather than as current.
+ *
+ * One function, because four surfaces were each recomputing this: the client
+ * panel's "runs to" line, the advocate card's, the cover sheet's, and
+ * authorityExpired itself. Four copies of one date is four chances to print a
+ * different end date for one document.
+ */
+export function authorityEndsAt(item) {
+  const at = item?.expiresAt
+    ? new Date(item.expiresAt)
+    : authorityExpiry(item?.signedAt, AUTHORITY_DEFAULT_MONTHS);
+  return at && !Number.isNaN(at.getTime()) ? at : null;
+}
+
+/** Is this stored document past its expiry? */
+export function authorityExpired(item, now = Date.now()) {
+  const at = authorityEndsAt(item);
+  if (!at) return true;
+  return at.getTime() <= now;
+}
+
 // MST, always. Without the zone a signature stamped near midnight UTC printed
 // as one date on Eric's copy and the next day on a client's - the same
 // document, two execution dates, on a record a clinic and an insurer both
@@ -113,12 +259,56 @@ const fmt = (d, fallback = '(not yet signed)') => {
 const RULE = '_'.repeat(46);
 
 /**
+ * Wrap a sentence for the fixed-width text form.
+ *
+ * Every other paragraph in this file is hand wrapped in its template literal,
+ * which is fine for prose somebody typed once. The provider class is BUILT
+ * from a list, so its length changes whenever a provider type is added, and
+ * hand wrapping it would mean re-wrapping thirteen entries by hand each time
+ * or shipping one 380 character line into a document that is otherwise 78
+ * columns wide. The HTML renderer collapses these breaks again (see `flow`),
+ * so this changes the paper form only.
+ */
+function wrap(text, width = 78) {
+  const out = [];
+  let line = '';
+  for (const word of String(text).split(/\s+/).filter(Boolean)) {
+    if (!line) line = word;
+    else if (`${line} ${word}`.length <= width) line += ` ${word}`;
+    else { out.push(line); line = word; }
+  }
+  if (line) out.push(line);
+  return out.join('\n');
+}
+
+/**
  * A field's value, or somewhere to write it. On screen an unfilled field reads
  * "(name)", which tells you what belongs there. On a blank being filled in by
  * hand, a parenthesis is not somewhere to write, so it becomes a rule.
  */
 function field(o, v, placeholder, n = 46) {
   return v || (o.blank ? '_'.repeat(n) : placeholder);
+}
+
+/**
+ * A value, or ALWAYS somewhere to write. Never a placeholder.
+ *
+ * `field` above is right for the patient's own details: "(name)" on screen
+ * tells a client which box they have not filled in yet, and they can see the
+ * box. It is wrong for the advocate's contact block on the patient
+ * designation, and the printed page showed why. A client signs that document
+ * and hands it to a clinic, so an unset fax number printed as "(fax)" on a
+ * SIGNED page, where there is no box to fill in and the reader is a records
+ * clerk. A placeholder is worse than a blank there, because it looks filled
+ * in and the clerk reads it as the value.
+ *
+ * A rule is a rule on any paper: somebody writes the number in, or Eric prints
+ * his own copy from the advocate side where the stored contact block fills it.
+ * What must never happen is an invented number, because a wrong fax number on
+ * a page a records department reads sends somebody's chart to a stranger.
+ */
+function ruleOr(v, n = 26) {
+  return String(v || '').trim() || '_'.repeat(n);
 }
 
 /**
@@ -188,7 +378,13 @@ function partText(part) {
     case 'p': return nl(part.text);
     case 'lines': return part.lines.map(nl).join('\n');
     case 'checks': return part.items.map((s) => `  ${part.mark} ${s.label}\n      ${s.note}`).join('\n');
-    case 'bullets': return part.items.map((x) => `  - ${x}`).join('\n');
+    // Hanging indent, and wrapped. Bullets used to be short labels ("Mental
+    // health records") so nothing ever reached the right margin; the patient
+    // designation's bullets are whole sentences, and unwrapped they ran to
+    // 110 columns on a page laid out for 78. HTML is unaffected: partHtml
+    // collapses the whitespace either way.
+    case 'bullets': return part.items
+      .map((x) => `  - ${wrap(x, 76).split('\n').join('\n    ')}`).join('\n');
     case 'ol': return part.items.map((x, i) => `${i + 1}. ${x}`).join('\n');
     default: return '';
   }
@@ -299,9 +495,27 @@ function signatureModel(o, who) {
  *
  * `o`: { clientName, clientDob, advocateName, clinicName, clinicAddress,
  *        fromDate, toDate, categories: [id], purpose, signedName, signedAt,
- *        expiresAt }
+ *        expiresAt, universal, narrowedFrom }
+ *
+ * TWO SHAPES OUT OF ONE SET OF WORDS, and it matters which way round the
+ * default sits.
+ *
+ * `universal: true` is the master (Eric's spec 2A): the disclosing party is
+ * the CLASS above rather than one named clinic, it is signed once, and it is
+ * what goes in every provider packet. Everything else on the form is
+ * unchanged, which is the point: the client is not being asked to agree to
+ * anything wider than they were, only to stop re-signing it per clinic.
+ *
+ * Without the flag this builds exactly the per-clinic document it always
+ * built, byte for byte, and that default is deliberate. A records
+ * authorisation signed months ago is a legal instrument somebody has already
+ * put their name to; re-rendering it under new wording because the app
+ * changed would mean the copy in a clinic's chart and the copy on the case
+ * page no longer say the same thing. tools/suites/authority-golden.mjs pins
+ * that eight ways and is the evidence, not this comment.
  */
 export function recordsAuthorisationModel(o = {}) {
+  const universal = !!o.universal;
   const cats = SENSITIVE_CATEGORIES.filter((c) => (o.categories || []).includes(c.id));
   // Ticked scopes, or the whole set: for a legacy record with none stored,
   // and for a blank being filled in by hand, all three print (the blank with
@@ -345,27 +559,69 @@ export function recordsAuthorisationModel(o = {}) {
         t: 'p',
         text: `I have NOT authorised release of separately protected categories\n(mental health, substance use treatment, HIV and communicable disease, genetic\ntesting, or reproductive and sexual health records). Do not release them under\nthis authorisation.`,
       };
+  // The one clause that exists only on a narrowed copy. It is the whole
+  // safety property of Eric's spec 2D said out loud on the paper itself: an
+  // office that will not take the universal form gets a form scoped to it,
+  // and neither the office nor a later reader can mistake that for the master
+  // having been cancelled. The app enforces the same thing structurally (a
+  // narrowed document is a separate stored record and touches nothing), but a
+  // records clerk reads the page, not the database.
+  const narrowNote = o.narrowedFrom ? {
+    t: 'section',
+    h: 'THIS IS A NARROWED COPY, NOT A REPLACEMENT',
+    body: [{
+      t: 'p',
+      text: `I have already signed a universal authorisation covering my providers\ngenerally. I am signing this narrower one as well, at this office's request,\nand only because this office prefers a form naming itself. It is IN ADDITION\nto the universal authorisation. It does not replace, cancel, narrow, or\nrevoke that authorisation, which remains in force until it expires or until I\nrevoke it in writing.`,
+    }],
+  } : null;
   return [
     {
       t: 'title',
-      lines: ['AUTHORISATION FOR RELEASE OF PROTECTED HEALTH INFORMATION', 'AND FOR COMMUNICATION WITH MY PATIENT ADVOCATE'],
+      lines: universal
+        ? ['UNIVERSAL AUTHORISATION FOR RELEASE OF PROTECTED HEALTH INFORMATION', 'AND FOR COMMUNICATION WITH MY PATIENT ADVOCATE']
+        : ['AUTHORISATION FOR RELEASE OF PROTECTED HEALTH INFORMATION', 'AND FOR COMMUNICATION WITH MY PATIENT ADVOCATE'],
     },
     {
       t: 'meta',
       rows: [
         ['Patient', field(o, o.clientName, '(name)')],
-        ['Date of birth', field(o, o.clientDob, '(date of birth)', 24)],
+        // ALWAYS A RULE WHEN UNSET, never "(date of birth)". See ruleOr. The
+        // date of birth is taken from the client's profile and is never asked
+        // for on the signing sheet, so a client whose profile has no date of
+        // birth signs this and hands it to a clinic with a bold "(date of
+        // birth)" sitting in the field a records clerk uses to match the
+        // patient. A placeholder there is worse than a blank, because it
+        // renders in the same weight and colour as a real value.
+        ['Date of birth', ruleOr(o.clientDob, 24)],
       ],
     },
     {
       t: 'p',
-      text: `I authorise the provider named below to release my health information to the\nperson named below, and to communicate with him as a person I have involved\nin my care.`,
+      text: universal
+        ? `I authorise the providers described below to release my health information to\nthe person named below, and to communicate with him as a person I have\ninvolved in my care.`
+        : `I authorise the provider named below to release my health information to the\nperson named below, and to communicate with him as a person I have involved\nin my care.`,
     },
-    {
-      t: 'section',
-      h: 'RELEASING PROVIDER',
-      body: [{ t: 'lines', lines: [field(o, o.clinicName, '(clinic)'), field(o, o.clinicAddress, '', 46)] }],
-    },
+    universal
+      ? {
+        t: 'section',
+        h: 'RELEASING PROVIDERS',
+        body: [
+          { t: 'p', text: wrap(`I authorise ${PROVIDER_CLASS}.`) },
+          {
+            t: 'p',
+            text: `I am naming a class of providers on purpose rather than listing them one by\none. Federal privacy law allows this: an authorisation may identify a class of\npersons authorised to disclose, and I intend every provider in the class above\nto be able to rely on this form as though it named them.`,
+          },
+          {
+            t: 'p',
+            text: `Any provider who prefers a form naming itself may ask for one, and I will sign\nit. Asking for one does not cancel this authorisation.`,
+          },
+        ],
+      }
+      : {
+        t: 'section',
+        h: 'RELEASING PROVIDER',
+        body: [{ t: 'lines', lines: [field(o, o.clinicName, '(clinic)'), field(o, o.clinicAddress, '', 46)] }],
+      },
     {
       t: 'section',
       h: 'RECEIVING PERSON',
@@ -399,13 +655,22 @@ export function recordsAuthorisationModel(o = {}) {
       h: 'PURPOSE',
       body: [{ t: 'p', text: o.purpose || 'At my own request, so that my patient advocate can review my care, speak with my providers on my behalf, and pursue insurance appeals for me.' }],
     },
+    narrowNote,
     {
       t: 'section',
       h: 'MY RIGHTS, WHICH THIS FORM DOES NOT TAKE AWAY',
       body: [{
         t: 'ol',
         items: [
-          `I may revoke this authorisation at any time by writing to the provider named\n   above and to my advocate. Revoking it stops future releases; it cannot undo a\n   release already made in reliance on it.`,
+          // A class-wide form has no single named provider to write to, so the
+          // revocation route has to be one a patient can actually carry out.
+          // 164.508(c)(2)(i) wants a description of HOW to revoke, and "write
+          // to the provider named above" describes nothing when the form names
+          // a class. Writing to the advocate is the route that always works,
+          // and he is the one holding the form.
+          universal
+            ? `I may revoke this authorisation at any time by writing to my advocate, and by\n   writing to any provider I have given a copy to. Revoking it stops future\n   releases; it cannot undo a release already made in reliance on it.`
+            : `I may revoke this authorisation at any time by writing to the provider named\n   above and to my advocate. Revoking it stops future releases; it cannot undo a\n   release already made in reliance on it.`,
           `The provider may not condition my treatment, payment, enrolment, or\n   eligibility for benefits on whether I sign this. Signing is my choice.`,
           `Information released under this authorisation may be re-disclosed by the\n   person receiving it and may then no longer be protected by federal privacy\n   law. My advocate keeps it in my private case file and does not share it\n   except as I direct.`,
           `I may inspect or copy the information described here, and I am entitled to a\n   copy of this authorisation.`,
@@ -415,10 +680,126 @@ export function recordsAuthorisationModel(o = {}) {
     {
       t: 'section',
       h: 'EXPIRY',
-      body: [{ t: 'p', text: `This authorisation expires on ${o.expiresAt ? fmt(o.expiresAt) : 'one year from the date signed'}, or when I revoke it in writing, whichever comes first.` }],
+      body: universal
+        ? [
+          // A PRINTED BLANK GETS SOMEWHERE TO WRITE THE DATE. Without the rule
+          // it read "expires on one year from the date signed" with nothing to
+          // fill in, so a client completing one on paper could not choose an
+          // expiry at all while the in-app form let them pick any date. That
+          // is the same shape as the sensitive-category bug of 2026-08-26: the
+          // screen offering a choice the paper silently refused.
+          { t: 'p', text: `This authorisation expires on ${o.expiresAt ? fmt(o.expiresAt) : (o.blank ? '______________________' : 'one year from the date signed')}, or when I revoke it in writing, whichever comes first.` },
+          // Said out loud because the whole point of one broad form is that it
+          // gets reused for months, and the failure this invites is the one
+          // where nobody ever looks at the date again.
+          //
+          // Worded for the form in hand. "I chose that date when I signed" is
+          // simply untrue on a blank, where nobody has chosen anything yet, and
+          // an untrue sentence on a legal instrument is not a small thing
+          // however harmless it looks.
+          {
+            t: 'p',
+            text: o.blank
+              ? `If no date is written above, this authorisation expires one year from the\ndate signed. It is never open ended, and no provider may treat it as though\nit were.`
+              : `I chose that date when I signed. This authorisation is never open ended, and\nno provider may treat it as though it were.`,
+          },
+        ]
+        : [{ t: 'p', text: `This authorisation expires on ${o.expiresAt ? fmt(o.expiresAt) : 'one year from the date signed'}, or when I revoke it in writing, whichever comes first.` }],
     },
     signatureModel(o, 'patient'),
-  ];
+    // Blocks that only exist in one shape arrive as null. Filtering here
+    // rather than at each renderer keeps both renderers ignorant of it.
+  ].filter(Boolean);
+}
+
+/**
+ * The master, by name. Same words, same builder, `universal` set - so there is
+ * no second copy of the document to drift, and a caller reading
+ * `universalAuthorisation(o)` does not have to know that a flag exists.
+ */
+export function universalAuthorisationModel(o = {}) {
+  return recordsAuthorisationModel({ ...o, universal: true });
+}
+
+export function universalAuthorisation(o = {}) {
+  return authorityText(universalAuthorisationModel(o));
+}
+
+/**
+ * The narrow per-clinic exception, derived from the master (Eric's spec 2D).
+ *
+ * An office that will not accept a class-wide form, or reads it as too wide,
+ * gets one scoped to itself, built from what the client already gave us rather
+ * than from a second interview. Categories, communication scopes, purpose and
+ * the patient's own details all carry across; the date range narrows to
+ * whatever the office asked for.
+ *
+ * WHAT DOES NOT CARRY ACROSS IS THE SIGNATURE, and that is not an oversight.
+ * The master's typed name, its signing timestamp and its drawn ink belong to
+ * the master. Copying them onto a differently worded document the patient has
+ * never seen would be applying somebody's signature to something they did not
+ * sign, which is forgery whatever the intent, and it would be undetectable
+ * afterwards because the two marks would be pixel identical. So this returns a
+ * document to be SIGNED, not a signed document, and both the route and the
+ * page treat it as a new signing.
+ *
+ * It also cannot touch the master: this reads `master` and returns a fresh
+ * object. There is no code path from here to the stored record.
+ */
+/**
+ * The end date a narrowed copy may carry: the master's, or an earlier one.
+ *
+ * Returned as an ISO instant so it renders identically to a stored expiry.
+ * A master with no establishable end date yields '' rather than a fabricated
+ * one: the caller refuses to narrow at all in that case (the Worker checks it
+ * too), and inventing a date on the face of a legal document is not a
+ * fallback, it is a false statement.
+ */
+export function narrowedExpiry(master = {}, asked = '') {
+  const ends = authorityEndsAt(master);
+  if (!ends) return '';
+  const raw = String(asked || '').trim();
+  const want = raw ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00Z` : raw) : null;
+  if (want && !Number.isNaN(want.getTime()) && want.getTime() < ends.getTime()) {
+    return want.toISOString();
+  }
+  return ends.toISOString();
+}
+
+export function narrowedAuthorisationOptions(master = {}, narrow = {}) {
+  return {
+    // THE EXPIRY THE CLIENT ALREADY CHOSE, CARRIED ACROSS, AND NEVER EXTENDED.
+    //
+    // This returned no expiry at all, so the narrow sheet fell back to its
+    // twelve month default: a client who deliberately shortened the master to
+    // six months got a narrowed copy running the full twelve, on a sheet that
+    // told them it was "filled in from what you already gave me" while
+    // loosening the one field they had tightened. A narrowed copy is a copy of
+    // a permission, and a copy cannot outlive the thing it was copied from.
+    //
+    // An office may ask for LESS: `narrow.expiresAt` wins when it is earlier.
+    // It can never win when it is later.
+    expiresAt: narrowedExpiry(master, narrow.expiresAt),
+    clientName: master.clientName || '',
+    clientDob: master.clientDob || '',
+    advocateName: master.advocateName || '',
+    categories: Array.isArray(master.categories) ? [...master.categories] : [],
+    scopes: Array.isArray(master.scopes) ? [...master.scopes] : undefined,
+    purpose: master.purpose || '',
+    clinicName: narrow.clinicName || '',
+    clinicAddress: narrow.clinicAddress || '',
+    clinicPhone: narrow.clinicPhone || '',
+    fromDate: narrow.fromDate || '',
+    toDate: narrow.toDate || '',
+    // The link back, and the reason the printed page carries the clause that
+    // says the master survives.
+    narrowedFrom: master.id || narrow.narrowedFrom || 'the universal authorisation',
+    universal: false,
+  };
+}
+
+export function narrowedAuthorisationModel(master = {}, narrow = {}) {
+  return recordsAuthorisationModel(narrowedAuthorisationOptions(master, narrow));
 }
 
 export function recordsAuthorisation(o = {}) {
@@ -440,7 +821,9 @@ export function representativeDesignationModel(o = {}) {
       t: 'meta',
       rows: [
         ['Member', field(o, o.clientName, '(name)')],
-        ['Date of birth', field(o, o.clientDob, '(date of birth)', 24)],
+        // A rule, never a placeholder: the same reason as the authorisation
+        // above. A plan matches a member on this line.
+        ['Date of birth', ruleOr(o.clientDob, 24)],
         ['Member or policy ID', field(o, o.memberId, '(member ID)', 32)],
         ['Plan', field(o, o.planName, '(plan or insurer)')],
       ],
@@ -472,11 +855,271 @@ export function representativeDesignation(o = {}) {
   return authorityText(representativeDesignationModel(o));
 }
 
-/** Which document a stored record is. The pair is the whole vocabulary. */
+/**
+ * THE ONE PAGE A FRONT DESK CAN ACTUALLY USE (Eric's spec 2B).
+ *
+ * The authorisation above is the legal instrument and it reads like one: five
+ * hundred words, four numbered rights, a class of providers, a redisclosure
+ * warning. A receptionist with six people queueing does not read it. What she
+ * needs is one page, in plain words, that says this man is involved, put him
+ * on the chart, and here is the form that backs it.
+ *
+ * So this is deliberately short and deliberately NOT a second authorisation.
+ * It grants nothing on its own: every disclosure still rests on the
+ * authorisation it travels with, and this page says so rather than implying it
+ * carries its own permission.
+ *
+ * IT IS SIGNED IN THE SAME SITTING as the universal authorisation, which is
+ * the whole "sign once" promise. Two documents, one signature session, one
+ * drawn mark applied to each as it is signed.
+ *
+ * THE SENTENCE THAT MATTERS MOST IS THE ONE ABOUT DECISIONS. "Designation of
+ * advocate" sounds close enough to "health-care agent" that a chart clerk can
+ * file it as one, and the consequence of that mistake is a hospital ringing a
+ * patient advocate for consent to a procedure. It is stated as its own
+ * section, in the negative, before anything else about scope.
+ *
+ * `o`: { clientName, clientDob, advocateName, advocateBusiness, advocatePhone,
+ *        advocateEmail, advocateFax, signedName, signedAt, expiresAt }
+ */
+export function advocateDesignationModel(o = {}) {
+  const who = o.advocateName || 'Eric Bleach';
+  return [
+    { t: 'title', lines: ['PATIENT DESIGNATION OF ADVOCATE'] },
+    {
+      t: 'meta',
+      rows: [
+        ['Patient', field(o, o.clientName, '(name)')],
+        // A rule, never a placeholder. This is the page a front desk scans
+        // into the chart, so this line is read by the person matching the
+        // patient to the record.
+        ['Date of birth', ruleOr(o.clientDob, 24)],
+      ],
+    },
+    {
+      t: 'p',
+      // Wrapped rather than hand broken: the advocate's name is interpolated,
+      // so the first line's length is not knowable when the sentence is
+      // written.
+      text: wrap(`I have asked ${who}, a patient advocate with Pocket Advocate, to help me with my medical care and with my health insurance. I am giving my providers this page so that they know he is acting with my knowledge and at my request.`),
+    },
+    {
+      t: 'section',
+      h: 'THIS DOES NOT MAKE HIM MY DECISION MAKER',
+      body: [
+        {
+          t: 'p',
+          text: `My advocate is NOT my health-care decision maker. This page is not a power of\nattorney, not a health-care proxy or agent appointment, not a guardianship,\nand not an advance directive. I make my own medical decisions. If a decision\never has to be made and I cannot make it, this page gives my advocate no\nauthority to make it for me and my providers must not treat him as though it\ndid.`,
+        },
+        {
+          t: 'p',
+          text: `He is also not my attorney and does not give me legal or medical advice.`,
+        },
+      ],
+    },
+    {
+      t: 'section',
+      h: 'WHAT I AM ASKING MY PROVIDERS TO DO',
+      body: [
+        {
+          t: 'bullets',
+          items: [
+            'Speak with my advocate about my care, my results, my referrals, and my billing, as you would speak with me.',
+            'Note him in my chart as an authorised contact, and keep this page with it.',
+            'Send him the records described in the authorisation that travels with this page.',
+            'Include him when you schedule, reschedule, or follow up on my appointments and referrals.',
+            'Let him attend or join my appointments when I ask him to.',
+          ],
+        },
+        {
+          t: 'p',
+          text: `Everything above is limited by the authorisation signed with this page. Where\nthat authorisation does not reach, this page does not either: it is a notice\nof who I have involved in my care, not a permission of its own.`,
+        },
+      ],
+    },
+    {
+      t: 'section',
+      h: 'HOW TO REACH HIM',
+      body: [{
+        t: 'meta',
+        rows: [
+          ['Advocate', who],
+          ['Business', o.advocateBusiness || 'Pocket Advocate'],
+          // ALWAYS a rule when unset, never a placeholder. See ruleOr: this
+          // block is read by a records clerk off a signed page, not filled in
+          // by a client looking at a form.
+          ['Phone', ruleOr(o.advocatePhone)],
+          ['Secure email', ruleOr(o.advocateEmail, 32)],
+          ['Fax', ruleOr(o.advocateFax)],
+        ],
+      }],
+    },
+    {
+      t: 'section',
+      h: 'HOW LONG THIS LASTS, AND TAKING IT BACK',
+      body: [{
+        t: 'p',
+        // Wrapped: the expiry date is interpolated and its rendered length
+        // changes with the month name.
+        text: wrap(`This designation stays in effect until ${o.expiresAt ? fmt(o.expiresAt) : 'one year from the date signed'}, or until I withdraw it, whichever comes first. It is never open ended. I may withdraw it at any time by telling my advocate or my provider in writing, and withdrawing it does not affect my care in any way.`),
+      }],
+    },
+    signatureModel(o, 'patient'),
+  ];
+}
+
+export function advocateDesignation(o = {}) {
+  return authorityText(advocateDesignationModel(o));
+}
+
+/**
+ * Which document a stored record is.
+ *
+ * `records` stays first and stays named that, because every document already
+ * signed carries that kind string and a rename would orphan them. It is now
+ * the EXCEPTION rather than the norm: `universal` is what a new client signs,
+ * and a `records` document is either one signed before this change or a
+ * narrowed copy made for an office that insisted on its own form.
+ */
 export const AUTHORITY_KINDS = {
-  records: { title: 'Records authorisation', build: recordsAuthorisation },
+  universal: { title: 'Universal records authorisation', build: universalAuthorisation },
+  designation: { title: 'Patient designation of advocate', build: advocateDesignation },
+  records: { title: 'Records authorisation (one clinic)', build: recordsAuthorisation },
   representative: { title: 'Insurance representative', build: representativeDesignation },
 };
+
+/**
+ * The right model for a stored document, in ONE place.
+ *
+ * There were two copies of `item.kind === 'records' ? A : B`, one in case.js
+ * and one in admin-case.js, and each was a ternary rather than a lookup. With
+ * two kinds that was merely repetitive. With four it is a bug waiting: every
+ * kind that is not the one named in the test falls to the else branch, so a
+ * patient designation of advocate would have printed as an appointment of
+ * authorised representative, on paper, at a clinic desk, with the patient's
+ * real signature under it.
+ *
+ * `o` is the render options, which the caller has already merged from the
+ * stored item and the case. This only chooses the shape.
+ */
+export function authorityModelFor(item, o = {}) {
+  switch (item?.kind) {
+    case 'universal': return universalAuthorisationModel(o);
+    case 'designation': return advocateDesignationModel(o);
+    case 'representative': return representativeDesignationModel(o);
+    default: return recordsAuthorisationModel(o);
+  }
+}
+
+/**
+ * WHAT ONE SIGNING SITTING SIGNS, and it lives here rather than in the page.
+ *
+ * The sign-once promise is that opening `universal` signs TWO documents on one
+ * mark: the authorisation and the one page that travels with it. That fact was
+ * expressed as two hand-written `post()` calls inside a click handler in
+ * case.js, which meant the only way to check it was to grep for the second
+ * call. Commenting that call out left the whole suite green while a sitting
+ * silently stored one document, because a regex over source text can see that
+ * a line is there and can never see that it runs.
+ *
+ * So the fact is a value here, the page reads it, and the suite RUNS it.
+ *
+ * An unknown kind yields an EMPTY list rather than a default, and every caller
+ * refuses on empty. There is deliberately no fallback: the page used to fall
+ * through to the representative form for any kind it did not recognise, which
+ * showed a client one legal instrument and stored another.
+ */
+export const AUTHORITY_SITTINGS = {
+  universal: ['universal', 'designation'],
+  designation: ['designation'],
+  records: ['records'],
+  representative: ['representative'],
+};
+
+export function sittingKinds(kind) {
+  const list = AUTHORITY_SITTINGS[kind];
+  return Array.isArray(list) ? [...list] : [];
+}
+
+/**
+ * The documents a sitting puts in front of the client BEFORE the signature.
+ *
+ * The same list as sittingKinds, through the same lookup the print path uses.
+ * A sitting that signs two documents while showing one is not consent to the
+ * second, and the only way to guarantee the two lists agree is for there to be
+ * one list.
+ */
+export function sittingModels(kind, o = {}) {
+  return sittingKinds(kind).map((k) => authorityModelFor({ kind: k }, o));
+}
+
+/**
+ * The render options for a sitting, built once from the sheet's raw fields.
+ *
+ * ONE BUILDER FOR THE PREVIEW AND FOR THE RECORD. `narrowedFrom` is the field
+ * that showed why this has to be shared: it is what puts the "this is a
+ * narrowed copy, not a replacement" clause on the page. Built separately for
+ * the preview and for the POST, it could be dropped from one and kept in the
+ * other, and the client would read a form WITHOUT that clause and sign one
+ * WITH it. Neither the suite nor the browser drive could see the difference,
+ * because both halves were spelled correctly in the source.
+ *
+ * `f` is the raw field values off the sheet, `ctx` is what the page knows that
+ * the client did not type: the patient's own details and the master a narrowed
+ * copy is derived from.
+ */
+export function sittingOptions(kind, f = {}, ctx = {}) {
+  const master = kind === 'records' ? (ctx.master || null) : null;
+  return {
+    clientName: ctx.clientName || '',
+    clientDob: ctx.clientDob || '',
+    advocateName: ctx.advocateName || '',
+    clinicName: f.clinicName || '',
+    clinicAddress: f.clinicAddress || '',
+    clinicPhone: f.clinicPhone || '',
+    fromDate: f.fromDate || '',
+    toDate: f.toDate || '',
+    planName: f.planName || '',
+    memberId: f.memberId || '',
+    categories: Array.isArray(f.categories) ? [...f.categories] : [],
+    scopes: Array.isArray(f.scopes) ? [...f.scopes] : [],
+    signedName: f.signedName || '',
+    // A bare YYYY-MM-DD is a WALL date. Noon UTC lands inside the MST day the
+    // document is executed in, the same trick the formatter uses.
+    expiresAt: /^\d{4}-\d{2}-\d{2}$/.test(String(f.expiresAt || '').trim())
+      ? `${String(f.expiresAt).trim()}T12:00:00Z` : '',
+    narrowedFrom: master?.id || '',
+  };
+}
+
+/**
+ * Run one signing sitting: post each document of it, in order.
+ *
+ * SEQUENTIAL, AND THE ORDER MATTERS ON FAILURE. The authorisation is the
+ * instrument and goes first, so if a later document fails the authorisation
+ * still stands and the panel shows it, which is a case Eric can finish.
+ * Posting both at once and having the FIRST fail would leave a designation on
+ * file pointing at an authorisation that does not exist.
+ *
+ * A failure of the FIRST document throws: nothing was signed. A failure of a
+ * later one is returned rather than thrown, because telling a client the
+ * signing failed when their authorisation is on file sends them to sign a
+ * second copy of a document they have already signed.
+ */
+export async function signSitting(kind, post) {
+  const kinds = sittingKinds(kind);
+  if (!kinds.length) throw new Error(`Unknown document kind: ${String(kind)}`);
+  await post(kinds[0]);
+  const partial = [];
+  for (const extra of kinds.slice(1)) {
+    try {
+      await post(extra);
+    } catch (e) {
+      partial.push({ kind: extra, message: e?.message || String(e) });
+    }
+  }
+  return partial;
+}
 
 /**
  * The appeal deadlines that actually decide cases. A missed filing window is

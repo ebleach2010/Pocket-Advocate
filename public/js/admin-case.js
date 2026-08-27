@@ -21,9 +21,23 @@ import { openPrepSheet } from './prep.js';
 import { mountFolder } from './folder.js';
 import {
   recordsAuthorisationModel, representativeDesignationModel, APPEAL_DEADLINES, appealDueAt,
+  authorityHtml, authorityModelFor, authorityExpired, authorityEndsAt, AUTHORITY_KINDS,
 } from './authority.js';
 import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
 import { openAuthorityDocument } from './authority-doc-window.js';
+import {
+  providerPacketModel, effectiveStatus,
+  PROVIDER_STATUSES, PROVIDER_REQUESTS,
+} from './admin-provider-packet.js';
+
+/**
+ * His own contact block, for the cover sheet and the patient designation.
+ * Loaded with the provider list and cached here so the packet does not have to
+ * fetch it at print time, when a failed fetch would mean a cover sheet with no
+ * way to reply on it. Empty until it loads, and every field renders as a ruled
+ * line rather than a placeholder when it is not set.
+ */
+let advocateContact = { business: '', phone: '', email: '', fax: '' };
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
@@ -1789,7 +1803,14 @@ function paintOverview(pane) {
 
   pane.innerHTML = `
     ${infoBar(c, mtFmt, start, due)}
-    ${c.fullAccess ? '<div data-authority-status></div>' : ''}
+    <!-- ON EVERY CASE, not only Hands-Off ones. The tier gate moved off the
+         records release on 2026-08-26 (any case can sign one, because
+         reviewing records IS the standard case) but this panel kept its own
+         copy of the old rule. So on a standard case the client could sign the
+         documents and Eric had nowhere to see them, print them, or build a
+         packet from them. The readiness checklist inside it is still drawn
+         only for a Hands-Off case, where it means something. -->
+    <div data-authority-status></div>
     ${waiting.trim() ? `<p class="eyebrow mgmt-when hot">Waiting on you</p>${waiting}` : ''}
 
     <!-- OUTSIDE the panel below on purpose: the panel is gone the moment the
@@ -1878,8 +1899,16 @@ function paintOverview(pane) {
           ruled lines to sign by hand. Use this to get a form into their hands
           before a case is running${c.fullAccess ? '' : ', and signing in the app opens when they upgrade'}.
           Records requests take weeks, so the form going out early is the whole game.</p>
+        <!-- THE UNIVERSAL FORM AND THE PAGE THAT TRAVELS WITH IT COME FIRST,
+             because they are what a new client signs. Both blanks were written
+             and golden-tested this build and neither had a button, so the one
+             document sign-once exists to produce could not be printed for a
+             client at all, on the panel whose own copy says this is how a form
+             reaches somebody before a case exists. -->
         <p class="row" style="gap:.4rem; flex-wrap:wrap; margin:0;">
-          <button class="btn quiet tiny" data-blank="records">Records authorisation</button>
+          <button class="btn quiet tiny" data-blank="universal">Universal authorisation</button>
+          <button class="btn quiet tiny" data-blank="designation">The one page for clinics</button>
+          <button class="btn quiet tiny" data-blank="records">Records authorisation (one clinic)</button>
           <button class="btn quiet tiny" data-blank="representative">Insurance representative</button>
         </p>
       </div>
@@ -3442,17 +3471,75 @@ async function paintAuthorityStatus(pane) {
   const host = pane?.querySelector('[data-authority-status]');
   if (!host) return;
   let items = [];
+  let providers = [];
   try {
     const token = await user.getIdToken();
-    const res = await fetch(`/api/authority?caseId=${encodeURIComponent(caseId)}`, {
-      headers: { authorization: `Bearer ${token}` },
-    });
+    const [res, pRes] = await Promise.all([
+      fetch(`/api/authority?caseId=${encodeURIComponent(caseId)}`, {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      fetch(`/api/admin/providers?caseId=${encodeURIComponent(caseId)}`, {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    ]);
     if (res.ok) items = (await res.json()).items || [];
+    if (pRes.ok) {
+      const out = await pRes.json();
+      providers = out.items || [];
+      advocateContact = { business: '', phone: '', email: '', fax: '', ...(out.contact || {}) };
+    }
   } catch { /* the card still says what it does not know */ }
 
-  const live = items.filter((i) => !i.revokedAt);
+  // LIVE MEANS NOT WITHDRAWN AND NOT EXPIRED. It used to mean only "not
+  // withdrawn", which was true when no document carried a real end date.
+  // Now they do, and a card that lists an expired authorisation under
+  // "Records:" without saying so is the card telling him he may ring a clinic
+  // on a permission that ended.
+  const live = items.filter((i) => !i.revokedAt && !authorityExpired(i));
+  const expired = items.filter((i) => !i.revokedAt && authorityExpired(i));
+  const master = live.find((i) => i.kind === 'universal');
+  const desig = live.find((i) => i.kind === 'designation');
   const recs = live.filter((i) => i.kind === 'records');
   const rep = live.find((i) => i.kind === 'representative');
+  // WHAT GOES IN A PACKET, AND THE RULE IS ABOUT THE AUTHORISATION, NOT ABOUT
+  // THE LENGTH OF A LIST.
+  //
+  // The cover sheet says, in its own words, "within the limits of the
+  // authorisation attached to this sheet", "Please send the records covered by
+  // the attached authorisation", and "This authorisation is valid to ...".
+  // Those sentences are true only when a live records authorisation really is
+  // attached.
+  //
+  // This was `[master, desig].filter(Boolean)` guarded only by `length === 0`.
+  // A client who signed both and then withdrew the AUTHORISATION alone left
+  // designation live and master revoked: length 1, so the guard never fired,
+  // Build packet stayed enabled, and a records request could go out under an
+  // authorisation the patient had revoked. Expiry produces the same state
+  // twelve months on with nobody doing anything at all.
+  //
+  // So the guard is the master itself. `live` already excludes withdrawn and
+  // expired documents, so `!master` covers every way this fails: never signed,
+  // withdrawn, run out.
+  const packetDocs = master ? [master, desig].filter(Boolean) : [];
+  // WHAT THE STATUS IS DERIVED FROM: the documents themselves, UNFILTERED.
+  //
+  // effectiveStatus exists to turn EXPIRED and REVOKED into facts about the
+  // authorisation rather than opinions about the provider, and it was being
+  // handed `live`, which has already removed every withdrawn and expired
+  // document. So it could never see one, and its whole derivation was dead
+  // from this call site while the suite's own direct calls to it passed.
+  const statusDocs = items.filter((i) => i.kind === 'universal' || i.kind === 'designation');
+  // WHY there is no packet, in his words, because "nothing is signed yet" was
+  // false in two of the three cases and told him to ask for a signature he had
+  // already been given.
+  const noPacketBecause = master ? ''
+    : items.some((i) => i.kind === 'universal' && i.revokedAt)
+      ? 'The universal authorisation has been WITHDRAWN by the client, so there is nothing to attach and no packet to build. Do not act on it.'
+      : expired.some((i) => i.kind === 'universal')
+        ? 'The universal authorisation has EXPIRED, so there is nothing valid to attach. Ask for a fresh signature; the button on their case page now offers one.'
+        : recs.length
+          ? 'This client is on the old per-clinic authorisations. A packet quotes "the attached authorisation" to whichever office it goes to, so it needs the universal one. Ask them to sign it on their case page.'
+          : 'Nothing is signed yet, so a packet would carry no authorisation. Ask for the signature first.';
   const revoked = items.filter((i) => i.revokedAt);
   const days = fullAccessDaysLeft(data);
   // Extensions and holds both stretch the window, so "75 days left in the 60
@@ -3473,9 +3560,18 @@ async function paintAuthorityStatus(pane) {
         clock runs from purchase either way. The forms are waiting on their case
         page; a nudge in chat is usually all it takes.</p>`}
       <p class="dim small" style="margin:.1rem 0;">
-        Records: ${recs.length
-          ? recs.map((r) => esc(r.clinicName || 'clinic')).join(', ')
-          : '<span style="color:var(--orange)">none signed</span>'}</p>
+        Authorisation: ${master
+          ? `universal, signed once${masterExpiryText(master)}`
+          : recs.length
+            ? `${esc(recs.map((r) => r.clinicName || 'clinic').join(', '))} (per clinic, old style)`
+            : '<span style="color:var(--orange)">none signed</span>'}</p>
+      <p class="dim small" style="margin:.1rem 0;">
+        Their one page: ${desig
+          ? 'signed'
+          : '<span style="color:var(--orange)">not signed</span>'}</p>
+      ${master && recs.length ? `<p class="dim small" style="margin:.1rem 0;">
+        Narrowed copies: ${esc(recs.map((r) => r.clinicName || 'clinic').join(', '))}.
+        The universal one is unaffected.</p>` : ''}
       <p class="dim small" style="margin:.1rem 0;">
         Insurer: ${rep
           ? `${esc(rep.planName || 'plan')}${rep.memberId ? ` · ${esc(rep.memberId)}` : ''}`
@@ -3484,11 +3580,79 @@ async function paintAuthorityStatus(pane) {
         ${days} day${days === 1 ? '' : 's'} left in the window${extra ? ` (${FULL_WINDOW_DAYS} + ${extra} bought)` : ''}${paused ? ', paused' : ''}.</p>` : ''}
       ${revoked.length ? `<p class="dim small" style="margin:.35rem 0 0; color:var(--orange);">
         ${revoked.length} withdrawn. Do not act on ${revoked.length === 1 ? 'it' : 'them'}.</p>` : ''}
+      ${expired.length ? `<p class="dim small" style="margin:.35rem 0 0; color:var(--orange);">
+        ${expired.length} expired. ${expired.length === 1 ? 'It has' : 'They have'} run out and
+        ${expired.length === 1 ? 'is' : 'are'} no longer authority to act. Ask for a fresh signature.</p>` : ''}
       ${live.length ? `<p class="row" style="gap:.4rem; flex-wrap:wrap; margin:.5rem 0 0;">
         ${live.map((i) => `<button class="btn ghost tiny" data-auth-print="${esc(i.id)}">
-          ${i.kind === 'records' ? esc(i.clinicName || 'Records') : 'Insurer form'}</button>`).join('')}
+          ${esc(AUTHORITY_KINDS[i.kind]?.title || 'Document')}${i.kind === 'records' && i.clinicName ? `: ${esc(i.clinicName)}` : ''}</button>`).join('')}
       </p>` : ''}
+    </div>
+
+    <!-- THE PROVIDER LIST AND WHERE EACH ONE GOT TO (Eric's spec 4).
+         Advocate only, and it has to be: REJECTED PRIVACY REVIEW against a
+         client's own oncologist is his working note on their care, not
+         something they should read on their case page. This whole module is
+         admin-*, so the asset gate 404s it to strangers. -->
+    <div class="panel" data-providers>
+      <h3 style="margin:0 0 .35rem;">Providers, and where each packet got to</h3>
+      <p class="dim small" style="margin:0 0 .5rem;">You assemble the packet here
+        and send it yourself. Nothing is transmitted from this page.</p>
+      ${noPacketBecause ? `<p class="dim small" data-packet-blocked style="margin:0 0 .5rem; color:var(--orange);">
+        ${esc(noPacketBecause)}</p>` : ''}
+      ${!noPacketBecause && !data.clientDob ? `<p class="dim small" data-packet-nodob style="margin:0 0 .5rem; color:var(--orange);">
+        No date of birth on this case. The cover sheet and both signed
+        documents print a blank line where a records clerk matches the patient,
+        and nothing ever asks the client for it. Get it before you send
+        anything.</p>` : ''}
+      ${providers.length ? providers.map((p) => {
+    const st = effectiveStatus(p, statusDocs);
+    return `
+        <div class="auth-item" style="display:block; padding:.4rem 0; border-top:1px solid var(--line);">
+          <strong>${esc(p.name)}</strong>
+          <span class="dim small">${p.phone ? ` · ${esc(p.phone)}` : ''}${p.fax ? ` · fax ${esc(p.fax)}` : ''}</span><br>
+          <label class="dim small" style="display:inline-block; margin:.25rem .5rem .25rem 0;">Status
+            <select data-provider-status="${esc(p.id)}">
+              ${PROVIDER_STATUSES.map((s) => `<option value="${esc(s.id)}"${s.id === st ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}
+            </select></label>
+          <label class="dim small" style="display:inline-block; margin:.25rem .5rem .25rem 0;">Asking for
+            <select data-provider-request="${esc(p.id)}">
+              ${PROVIDER_REQUESTS.map((r) => `<option value="${esc(r.id)}"${r.id === (p.requestKind || 'records') ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}
+            </select></label>
+          <span class="auth-item-acts">
+            <!-- REFUSED, not merely warned about. The orange line above was
+                 the only thing standing between a revoked authorisation and a
+                 cover sheet that says one is attached, and a line of text does
+                 not stop a tap. -->
+            <button type="button" class="btn ghost tiny" data-provider-packet="${esc(p.id)}"${
+  packetDocs.length ? '' : ' disabled aria-disabled="true" title="No live authorisation to attach"'}>Build packet</button>
+            <button type="button" class="btn ghost tiny" data-provider-remove="${esc(p.id)}">Remove</button>
+          </span>
+        </div>`;
+  }).join('') : '<p class="dim small" style="margin:0 0 .5rem;">No providers on the list yet.</p>'}
+      <p class="row" style="gap:.4rem; flex-wrap:wrap; margin:.6rem 0 0;">
+        <input type="text" data-provider-name placeholder="Add a provider" maxlength="200" style="flex:1; min-width:11rem;">
+        <button class="btn ghost tiny" data-provider-add>Add</button>
+      </p>
+      <details style="margin:.6rem 0 0;">
+        <summary class="dim small">Your contact block, as it prints on the cover sheet</summary>
+        <label class="dim small" style="display:block;">Business
+          <input type="text" data-contact="business" maxlength="120" value="${esc(advocateContact.business || '')}" style="width:100%;"></label>
+        <label class="dim small" style="display:block;">Phone
+          <input type="tel" data-contact="phone" maxlength="40" value="${esc(advocateContact.phone || '')}" style="width:100%;"></label>
+        <label class="dim small" style="display:block;">Secure email
+          <input type="email" data-contact="email" maxlength="160" value="${esc(advocateContact.email || '')}" style="width:100%;"></label>
+        <label class="dim small" style="display:block;">Fax
+          <input type="tel" data-contact="fax" maxlength="40" value="${esc(advocateContact.fax || '')}" style="width:100%;"></label>
+        <p class="dim small" style="margin:.3rem 0 0;">Anything left blank prints
+          as a line to write on, never as a guess. A wrong fax number here sends
+          a chart to a stranger.</p>
+        <button class="btn ghost tiny" data-contact-save style="margin-top:.4rem;">Save</button>
+      </details>
+      <p class="error" data-provider-error hidden style="margin:.4rem 0 0;"></p>
     </div>`;
+
+  wireProviders(host, pane, providers, packetDocs);
 
   for (const b of host.querySelectorAll('[data-auth-print]')) {
     b.addEventListener('click', async () => {
@@ -3528,6 +3692,137 @@ async function paintAuthorityStatus(pane) {
         }
       }
       printAuthorityDoc(item);
+    });
+  }
+}
+
+/**
+ * How long the master has left, on the card where he decides whether to ring
+ * somebody. A date, not a tick: "signed" was true of an authorisation that
+ * expired in March.
+ */
+function masterExpiryText(item) {
+  // Through the shared helper, so a legacy document with no stored expiry
+  // shows the date its own printed text has always implied rather than
+  // showing nothing at all on the card where he decides whether to ring.
+  const at = authorityEndsAt(item);
+  if (!at) return '';
+  return `, runs to ${at.toLocaleDateString()}`;
+}
+
+/**
+ * The provider list's controls.
+ *
+ * OPTIMISTIC NOTHING. Every control posts and then repaints from the server,
+ * rather than moving the row and posting behind it. A status that shows
+ * ACCEPTED / ON CHART because the select moved, while the write failed, is
+ * this panel lying to him about whether he may ring a clinic.
+ */
+function wireProviders(host, pane, providers, packetDocs) {
+  const errEl = host.querySelector('[data-provider-error]');
+  const say = (msg) => {
+    if (!errEl) return;
+    errEl.textContent = msg;
+    errEl.hidden = !msg;
+  };
+  const post = async (body) => {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/admin/providers', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ caseId, ...body }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Failed (${res.status})`);
+    return res.json().catch(() => ({}));
+  };
+  const again = () => paintAuthorityStatus(pane);
+
+  host.querySelector('[data-provider-add]')?.addEventListener('click', async () => {
+    const input = host.querySelector('[data-provider-name]');
+    const name = input?.value.trim();
+    if (!name) { say('Name the provider first.'); return; }
+    say('');
+    try { await post({ action: 'add', name }); again(); } catch (e) { say(e.message); }
+  });
+
+  for (const sel of host.querySelectorAll('[data-provider-status]')) {
+    sel.addEventListener('change', async () => {
+      say('');
+      try {
+        await post({ action: 'update', id: sel.dataset.providerStatus, status: sel.value });
+        again();
+      } catch (e) { say(e.message); again(); }
+    });
+  }
+  for (const sel of host.querySelectorAll('[data-provider-request]')) {
+    sel.addEventListener('change', async () => {
+      say('');
+      try {
+        await post({ action: 'update', id: sel.dataset.providerRequest, requestKind: sel.value });
+        again();
+      } catch (e) { say(e.message); again(); }
+    });
+  }
+  for (const b of host.querySelectorAll('[data-provider-remove]')) {
+    b.addEventListener('click', async () => {
+      if (!confirm('Remove this provider from the list? The packet you already sent them is unaffected.')) return;
+      say('');
+      try { await post({ action: 'remove', id: b.dataset.providerRemove }); again(); } catch (e) { say(e.message); }
+    });
+  }
+
+  host.querySelector('[data-contact-save]')?.addEventListener('click', async () => {
+    say('');
+    const v = (f) => host.querySelector(`[data-contact="${f}"]`)?.value.trim() || '';
+    try {
+      await post({
+        action: 'contact', business: v('business'), phone: v('phone'),
+        email: v('email'), fax: v('fax'),
+      });
+      again();
+    } catch (e) { say(e.message); }
+  });
+
+  for (const b of host.querySelectorAll('[data-provider-packet]')) {
+    b.addEventListener('click', async () => {
+      const p = providers.find((x) => x.id === b.dataset.providerPacket);
+      if (!p) return;
+      // THE GUARD, not the styling. The button is disabled when there is no
+      // live master, and this is the half that holds if it is ever re-enabled
+      // by a repaint, a browser restoring a form, or devtools. Refusing to
+      // build beats building a cover sheet whose own words claim an
+      // authorisation that is not attached.
+      if (!packetDocs.length) {
+        say('No live authorisation to attach, so there is no packet to build. '
+          + 'The cover sheet would say one is attached and none would be.');
+        return;
+      }
+      say('');
+      // THE INK, FETCHED BEFORE THE WINDOW OPENS. The list GET omits the
+      // signature blobs, so a packet built straight from `packetDocs` would
+      // print the authorisation with an empty signature block: the exact
+      // defect the single-document path already had once, arriving again
+      // through a new caller. Each document is asked for by id.
+      let docs = packetDocs;
+      try {
+        const token = await user.getIdToken();
+        docs = await Promise.all(packetDocs.map(async (d) => {
+          if (!d.hasSignature || d.signatureImage) return d;
+          const res = await fetch(
+            `/api/authority?caseId=${encodeURIComponent(caseId)}&id=${encodeURIComponent(d.id)}`,
+            { headers: { authorization: `Bearer ${token}` } },
+          );
+          if (!res.ok) return d;
+          const found = ((await res.json()).items || []).find((i) => i.id === d.id);
+          return found?.signatureImage ? found : d;
+        }));
+      } catch {
+        // It still builds, because a packet without the mark beats no packet
+        // when he is stood at a desk. It says so rather than failing quietly.
+        alert('Building the packet without the signature: it could not be fetched just now.\n\n'
+          + 'The signature is still on file. Try again in a moment if the clinic needs it on the page.');
+      }
+      printProviderPacket(p, docs);
     });
   }
 }
@@ -3621,14 +3916,62 @@ function printAuthorityDoc(item) {
   const o = {
     ...item,
     clientName: data.clientName, clientDob: data.clientDob, advocateName: 'Eric Bleach',
+    advocateBusiness: advocateContact.business, advocatePhone: advocateContact.phone,
+    advocateEmail: advocateContact.email, advocateFax: advocateContact.fax,
   };
   // The STRUCTURE, not the finished text. The window renders it; this file never
   // touches the words, which is why the same document can be a printed page
   // here and a preview on the client's phone without two copies of the words.
+  //
+  // A LOOKUP, NOT A TERNARY. It was `kind === 'records' ? A : B`, which with
+  // four kinds means every kind that is not `records` prints as the insurance
+  // designation: a patient designation of advocate would have come out of the
+  // printer as an appointment of authorised representative, with the
+  // patient's real signature under it, at a clinic desk.
   openAuthorityDocument({
-    model: item.kind === 'records' ? recordsAuthorisationModel(o) : representativeDesignationModel(o),
-    title: item.kind === 'records' ? 'Records authorisation' : 'Insurance representative',
+    model: authorityModelFor(item, o),
+    title: AUTHORITY_KINDS[item.kind]?.title || 'Document',
     signatureHtml: signatureInk(item),
+  });
+}
+
+/**
+ * The provider packet, as paper.
+ *
+ * ASSEMBLED HERE, SENT BY HIM. This opens a window with a cover sheet and the
+ * signed documents behind it, and stops. Nothing is transmitted: the app does
+ * not email a client's health information to a clinic, which was settled and
+ * is not a limitation to be worked around later.
+ *
+ * The signed documents are appended after the cover sheet in the same window,
+ * so what comes out of the printer is the packet in the order a records clerk
+ * reads it: cover sheet, then the authorisation it refers to, then the page
+ * they are asked to put on the chart.
+ */
+function printProviderPacket(provider, docs) {
+  const model = providerPacketModel({
+    patient: { name: data.clientName, dob: data.clientDob },
+    advocate: { name: 'Eric Bleach', ...advocateContact },
+    provider,
+    request: { kind: provider.requestKind, note: provider.requestNote },
+    docs,
+  });
+  // Each document keeps its own ink. signatureInk re-checks the data URL
+  // before it is written into a document, the same as the single-document
+  // path, so a malformed blob never reaches the page.
+  const tail = docs.map((d) => {
+    const o = {
+      ...d,
+      clientName: data.clientName, clientDob: data.clientDob, advocateName: 'Eric Bleach',
+      advocateBusiness: advocateContact.business, advocatePhone: advocateContact.phone,
+      advocateEmail: advocateContact.email, advocateFax: advocateContact.fax,
+    };
+    return `<hr>${authorityHtml(authorityModelFor(d, o))}${signatureInk(d)}`;
+  }).join('\n');
+  openAuthorityDocument({
+    model,
+    title: `Packet for ${provider.name || 'provider'}`,
+    signatureHtml: tail,
   });
 }
 

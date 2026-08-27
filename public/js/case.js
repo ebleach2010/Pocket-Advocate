@@ -15,8 +15,13 @@ import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
 import { helpButton, wireHelp, openCaseHelp } from './help.js';
 import {
-  recordsAuthorisationModel, representativeDesignationModel, authorityHtml,
+  authorityHtml,
+  narrowedAuthorisationOptions, narrowedExpiry,
+  authorityExpiry, authorityExpired, authorityEndsAt,
+  authorityModelFor, AUTHORITY_KINDS,
+  sittingKinds, sittingModels, sittingOptions, signSitting,
   SENSITIVE_CATEGORIES, COMMUNICATION_SCOPES,
+  AUTHORITY_DEFAULT_MONTHS, AUTHORITY_MAX_MONTHS,
 } from './authority.js';
 import { openAuthorityDocument } from './authority-doc-window.js';
 import { FULL_ACCESS_TERMS, FULL_ACCESS_PLAIN } from './tier-terms.js';
@@ -587,10 +592,27 @@ function renderProgress(el, c) {
   // The deep link, spent on use. mountAuthority paints asynchronously (it
   // fetches the signed documents first), so this waits a beat rather than
   // opening a sheet over a panel that is still empty.
+  //
+  // THE PANEL IT REPAINTS IS LOOKED UP WHEN THE SHEET CLOSES, NEVER CAPTURED
+  // HERE, and that is the whole of the fix.
+  //
+  // renderProgress runs at least TWICE on every load: once from render(), and
+  // again the instant the case's onSnapshot delivers its first value. The
+  // second run replaces this pane, `[data-authority]` included. The deep link
+  // is consumed by the FIRST run, so the `auth` node in this closure is
+  // detached by the time anything is signed, and repainting it painted a node
+  // no longer on the page: both documents were stored, and the panel behind
+  // the sheet still read "Not signed" with a "Sign your authorisation" button
+  // under it. Reproduced 4 times out of 4 at 390 and at 320.
+  //
+  // The click path never had this, because each paint re-wires its buttons and
+  // every handler closes over the host that is on screen at the time. Only the
+  // deep link outlives its own render, and this is the link that goes in the
+  // email telling a client to sign.
   if (auth && signOnLoad) {
     const kind = signOnLoad;
     signOnLoad = '';
-    setTimeout(() => openAuthoritySheet(c, kind, () => mountAuthority(auth, c)), 400);
+    setTimeout(() => openAuthoritySheet(c, kind, () => repaintAuthority(c)), 400);
   }
 
   el.querySelector('[data-ics]')?.addEventListener('click', (e) => {
@@ -1286,7 +1308,12 @@ function windowEndOf(c) {
 // after every signature, and again on a back-navigation.
 let signOnLoad = (() => {
   const want = new URLSearchParams(location.search).get('sign');
-  if (want !== 'records' && want !== 'representative') return '';
+  // The four real documents, and nothing else, taken from the one list the
+  // sheet itself branches on rather than retyped here. This is the link that
+  // goes in an email telling a client to sign, so `?sign=universal` is the one
+  // Eric will actually send from now on. `records` stays accepted: it opens
+  // the narrow per-clinic form, and old links must not break.
+  if (!sittingKinds(want).length) return '';
   const u = new URL(location.href);
   u.searchParams.delete('sign');
   history.replaceState(null, '', u.pathname + u.search + u.hash);
@@ -1972,11 +1999,70 @@ function esc(s) {
  * Everything is Worker-mediated: the records live under the case's private
  * subtree, which the browser cannot read or write directly by rule.
  */
+/**
+ * The expiry, said out loud on every signed document in the list.
+ *
+ * A permission with an end date the holder cannot see is a permission that
+ * quietly stops working. It reads "runs to March 3, 2027" while it is live and
+ * "EXPIRED" once it is not, and it says EXPIRED for a legacy document with no
+ * stored date whose implied year has passed, because authorityExpired treats a
+ * missing date as twelve months from signing rather than as forever.
+ */
+function expiryNote(item) {
+  if (!item) return '';
+  if (authorityExpired(item)) return ' · EXPIRED';
+  const at = authorityEndsAt(item);
+  if (!at) return '';
+  return ` · runs to ${at.toLocaleDateString()}`;
+}
+
+/**
+ * Repaint whichever authority panel is ON THE PAGE right now.
+ *
+ * Not the one a caller was holding a reference to. Anything that outlives one
+ * render of the Progress pane - a sheet opened from a deep link, a timer, a
+ * message - has to find the panel again rather than remember it, because the
+ * case document's own snapshot listener rebuilds that pane underneath it.
+ */
+function repaintAuthority(c) {
+  const host = document.querySelector('[data-authority]');
+  if (host) mountAuthority(host, c);
+}
+
 async function mountAuthority(host, c) {
   const paint = (items) => {
-    const signed = (kind) => items.find((i) => i.kind === kind && !i.revokedAt);
-    const rep = signed('representative');
-    const recs = items.filter((i) => i.kind === 'records' && !i.revokedAt);
+    // TWO QUESTIONS, NOT ONE, and conflating them is what left a client with
+    // no way to renew.
+    //
+    // `onFile` is "did they sign this": a withdrawn document is gone, an
+    // expired one is not - it was signed, it is history, and it stays listed
+    // with the date it ran out on. `current` is "does this still authorise
+    // anything today", which is the only question the Sign buttons may ask.
+    //
+    // They used to be the same filter. At twelve months an expired master was
+    // therefore simultaneously "signed" (which hid the button to sign a fresh
+    // one) and displayed as EXPIRED, so the panel told the client to sign a
+    // new one and offered no control that would. The only way out was
+    // Withdraw, behind a confirm that says it cannot undo anything already
+    // sent. This lands on every client at month twelve, which is the exact
+    // moment the twelve month expiry exists to create.
+    const onFile = (kind) => items.filter((i) => i.kind === kind && !i.revokedAt);
+    const currentOf = (kind) => onFile(kind).find((i) => !authorityExpired(i));
+    const lapsedOf = (kind) => onFile(kind).find((i) => authorityExpired(i));
+    const rep = currentOf('representative');
+    const repLapsed = !rep && lapsedOf('representative');
+    // The master and the page that travels with it. `records` documents are
+    // now the exception: a form signed before sign-once, or a narrowed copy
+    // made for an office that wanted its own name on one.
+    const master = currentOf('universal');
+    const masterLapsed = !master && lapsedOf('universal');
+    const desig = currentOf('designation');
+    const desigLapsed = !desig && lapsedOf('designation');
+    // Every universal and designation on file, current or run out, so an
+    // expired one is still listed, still viewable and still withdrawable.
+    const masterRows = onFile('universal');
+    const desigRows = onFile('designation');
+    const recs = onFile('records');
     // The readiness checklist frames the two documents (Eric, 2026-08-25):
     // what is done, what remains, and the one honest sentence about the
     // clock, which runs from purchase however fast this list is finished.
@@ -2022,55 +2108,120 @@ async function mountAuthority(host, c) {
     ? `Your month starts ${esc(dayFmt.format(boughtAt))}${windowEndOf(c) ? ` and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. Signing before then is worth doing: a records request can take weeks to come back, so the sooner these are in, the more of your month is spent on your case instead of on waiting.`
     : `Your window started ${esc(dayFmt.format(boughtAt))}${windowEndOf(c) ? `, and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. The clock runs whether or not this list is done.`) : ''}</p>`
     : `<p class="dim small">You can upload records yourself at any time. This form
-          is the other way: it lets a clinic send them to me directly, and lets me
-          call and ask for what is missing, so you are not chasing a fax machine.
+          is the other way: it lets the clinics, hospitals, labs and pharmacies
+          involved in your care send them to me directly, and lets me call and
+          ask for what is missing, so you are not chasing a fax machine.
           You can withdraw it at any time.</p>`}
 
         <div class="auth-row">
           <div class="auth-head">
-            <strong>Your clinics</strong>
-            ${recs.length
-              ? `<span class="auth-on">✓ ${recs.length} signed</span>`
-              : '<span class="auth-off">Not signed</span>'}
+            <strong>Your records and your care</strong>
+            ${master
+              ? `<span class="auth-on">✓ Signed${desig ? '' : ', one page still to add'}</span>`
+              : masterLapsed
+                ? '<span class="auth-off">Ran out, needs signing again</span>'
+                : '<span class="auth-off">Not signed</span>'}
           </div>
-          <p class="dim small">Lets a clinic release your records to me. One for
-            each clinic or hospital I need records from.</p>
+          <p class="dim small">You sign this once. It covers the clinics,
+            hospitals, labs, pharmacies and insurers involved in your care, so a
+            new doctor part way through does not mean a new form. It lets them
+            release your records to me and lets me speak to them about your
+            care.</p>
+          ${masterRows.map((m) => `
+            <p class="auth-item">
+              <span>Your authorisation<span class="dim small"> · signed ${new Date(m.signedAt).toLocaleDateString()}${expiryNote(m)}</span></span>
+              <span class="auth-item-acts">
+                <button type="button" class="btn ghost tiny" data-auth-view="${esc(m.id)}">View</button>
+                <button type="button" class="btn ghost tiny" data-auth-revoke="${esc(m.id)}">Withdraw</button>
+              </span>
+            </p>`).join('')}
+          ${desigRows.map((d) => `
+            <p class="auth-item">
+              <span>The one page your clinics keep<span class="dim small"> · signed ${new Date(d.signedAt).toLocaleDateString()}${expiryNote(d)}</span></span>
+              <span class="auth-item-acts">
+                <button type="button" class="btn ghost tiny" data-auth-view="${esc(d.id)}">View</button>
+                <button type="button" class="btn ghost tiny" data-auth-revoke="${esc(d.id)}">Withdraw</button>
+              </span>
+            </p>`).join('')}
+          <!-- THE WAY BACK IN, and there has to be one at twelve months.
+               An expired document keeps its row above, because it was signed
+               and that is a fact; what it stops doing is suppressing the
+               button. The old one stays on file either way, so nothing is
+               lost by signing a fresh one and nothing has to be withdrawn
+               first. -->
+          ${masterLapsed ? `
+            <p class="dim small">Your authorisation reached its end date on
+              ${esc(authorityEndsAt(masterLapsed)?.toLocaleDateString() || 'its end date')}, so I can no longer use
+              it. Signing a fresh one takes a moment and starts a new twelve
+              months. The one that ran out stays in your file.</p>
+            <p><button class="btn glow" data-auth-add="universal">Sign a fresh authorisation</button></p>`
+    : master && !desig ? `
+            <p><button class="btn ghost" data-auth-add="designation">${desigLapsed ? 'Sign a fresh one page for your clinics' : 'Add the one page for your clinics'}</button></p>`
+      : !master ? `
+            <p><button class="btn glow" data-auth-add="universal">Sign your authorisation</button></p>` : ''}
+        </div>
+
+        ${recs.length || master ? `
+        <div class="auth-row">
+          <div class="auth-head">
+            <strong>Forms for a single clinic</strong>
+            ${recs.length ? `<span class="auth-on">✓ ${recs.length} signed</span>` : ''}
+          </div>
+          <p class="dim small">Only when an office insists on a form with its
+            own name on it. These are extra. They never replace the
+            authorisation above, which stays in force either way.</p>
           ${recs.map((r) => `
             <p class="auth-item">
-              <span>${esc(r.clinicName || 'Clinic')}<span class="dim small"> · signed ${new Date(r.signedAt).toLocaleDateString()}</span></span>
+              <span>${esc(r.clinicName || 'Clinic')}<span class="dim small"> · signed ${new Date(r.signedAt).toLocaleDateString()}${expiryNote(r)}</span></span>
               <span class="auth-item-acts">
                 <button type="button" class="btn ghost tiny" data-auth-view="${esc(r.id)}">View</button>
                 <button type="button" class="btn ghost tiny" data-auth-revoke="${esc(r.id)}">Withdraw</button>
               </span>
             </p>`).join('')}
-          <p><button class="btn${recs.length ? ' ghost' : ' glow'}" data-auth-add="records">
-            ${recs.length ? 'Add another clinic' : 'Sign a records authorisation'}</button></p>
-        </div>
+          <!-- Only against a LIVE master. A narrowed copy asserts on its face
+               that the universal authorisation "remains in force", so there
+               is nothing to narrow once it has run out, and the Worker
+               refuses one anyway. -->
+          ${master ? `
+            <p><button class="btn ghost" data-auth-narrow="${esc(master.id)}">Add a form for one clinic</button></p>` : ''}
+        </div>` : ''}
 
-        ${full || rep ? `
+        ${full || rep || repLapsed ? `
         <div class="auth-row">
           <div class="auth-head">
             <strong>Your insurer</strong>
-            ${rep ? '<span class="auth-on">✓ Signed</span>' : '<span class="auth-off">Not signed</span>'}
+            ${rep ? '<span class="auth-on">✓ Signed</span>'
+    : repLapsed ? '<span class="auth-off">Ran out, needs signing again</span>'
+      : '<span class="auth-off">Not signed</span>'}
           </div>
           <p class="dim small">Lets me file appeals and speak to your plan on
             your behalf. It is not a power of attorney and it is not legal
             representation.</p>
-          ${rep ? `
+          ${(rep || repLapsed) ? `
             <p class="auth-item">
-              <span>${esc(rep.planName || 'Your plan')}<span class="dim small"> · signed ${new Date(rep.signedAt).toLocaleDateString()}</span></span>
+              <span>${esc((rep || repLapsed).planName || 'Your plan')}<span class="dim small"> · signed ${new Date((rep || repLapsed).signedAt).toLocaleDateString()}${expiryNote(rep || repLapsed)}</span></span>
               <span class="auth-item-acts">
-                <button type="button" class="btn ghost tiny" data-auth-view="${esc(rep.id)}">View</button>
-                <button type="button" class="btn ghost tiny" data-auth-revoke="${esc(rep.id)}">Withdraw</button>
+                <button type="button" class="btn ghost tiny" data-auth-view="${esc((rep || repLapsed).id)}">View</button>
+                <button type="button" class="btn ghost tiny" data-auth-revoke="${esc((rep || repLapsed).id)}">Withdraw</button>
               </span>
-            </p>` : `
-            <p><button class="btn glow" data-auth-add="representative">Sign the insurance form</button></p>`}
+            </p>` : ''}
+          ${!rep ? `
+            <p><button class="btn glow" data-auth-add="representative">${repLapsed ? 'Sign a fresh insurance form' : 'Sign the insurance form'}</button></p>` : ''}
         </div>` : ''}
         <p class="error" data-auth-error hidden></p>
       </div>`;
 
     for (const b of host.querySelectorAll('[data-auth-add]'))
       b.addEventListener('click', () => openAuthoritySheet(c, b.dataset.authAdd, load));
+    // The narrow per-clinic exception, opened FROM the master so the sheet can
+    // pre-fill from it. The master is passed by object, not by id, so there is
+    // no second fetch that could quietly come back empty and produce a narrow
+    // form with nothing carried across.
+    for (const b of host.querySelectorAll('[data-auth-narrow]')) {
+      b.addEventListener('click', () => openAuthoritySheet(c, 'records', load, {
+        master: items.find((i) => i.id === b.dataset.authNarrow),
+      }));
+    }
     for (const b of host.querySelectorAll('[data-auth-view]'))
       b.addEventListener('click', () => printAuthority(c, items.find((i) => i.id === b.dataset.authView)));
     for (const b of host.querySelectorAll('[data-auth-revoke]')) {
@@ -2139,24 +2290,135 @@ function nameMatches(typed, onCase) {
   return flat(typed) === flat(onCase);
 }
 
-/** The signing sheet. Same overlay furniture as everything else on this page. */
-function openAuthoritySheet(c, kind, onDone) {
-  const isRecords = kind === 'records';
+/**
+ * A wall date n calendar months from today, in MST, for <input type="date">.
+ * The same clamp as authorityExpiry, reached by handing it the wall date at
+ * noon rather than by repeating the arithmetic.
+ */
+function mstPlusMonths(n) {
+  const at = authorityExpiry(`${mstToday()}T12:00:00Z`, n);
+  return at ? at.toISOString().slice(0, 10) : '';
+}
+
+/**
+ * The earliest expiry the sheet will offer. TOMORROW, not today: the Worker
+ * refuses an expiry at or before the signature and falls back to the twelve
+ * month default, so a `min` of today would let the client pick a date the
+ * server silently overrode. A field that quietly does something else is worse
+ * than one that will not take the value.
+ */
+function mstTomorrow() {
+  const at = new Date(`${mstToday()}T12:00:00Z`);
+  at.setUTCDate(at.getUTCDate() + 1);
+  return at.toISOString().slice(0, 10);
+}
+
+/**
+ * The signing sheet. Same overlay furniture as everything else on this page.
+ *
+ * FOUR DOCUMENTS THROUGH ONE SHEET, and one of them signs two at once.
+ *
+ *   'universal'      the sign-once sitting (Eric's spec 2A and 2B). The client
+ *                    reads BOTH the universal authorisation and the patient
+ *                    designation, types their name once, draws one signature,
+ *                    and both are signed. This is the whole promise: the
+ *                    client signs once and the pair is reused everywhere.
+ *   'records'        the narrow per-clinic exception (2D), opened from a
+ *                    master via `opts.master`. Its fields arrive pre-filled
+ *                    from the master and it says on its face that the master
+ *                    survives it.
+ *   'designation'    the one page a front desk keeps, ON ITS OWN. It is
+ *                    normally signed as part of the 'universal' sitting, but
+ *                    it has three live routes of its own: the "Add the one
+ *                    page for your clinics" button, the recovery message when
+ *                    the second half of a sitting failed to save, and
+ *                    `?sign=designation`. So it has its own branch here.
+ *   'representative' the insurer designation, untouched.
+ *
+ * EVERY KIND HAS ITS OWN BRANCH AND AN UNKNOWN KIND REFUSES.
+ *
+ * The heading, the blurb, the preview, the fields and the completeness gate
+ * were four separate ternaries on isUniversal / isNarrow, with everything else
+ * falling through to the representative branch. `designation` was "everything
+ * else", so opening it showed the heading "Insurance representative", the
+ * blurb about dealing with a plan, a preview of the APPOINTMENT OF AUTHORISED
+ * REPRESENTATIVE, and two required fields for a plan name and a member ID that
+ * the designation does not have and Sign refused without. What was then stored
+ * and later printed was the PATIENT DESIGNATION OF ADVOCATE. A client read one
+ * legal instrument, was made to supply insurer details to get past it, drew
+ * their mark, and a different document was filed under it.
+ *
+ * The print path found and fixed the same ternary this commit
+ * (authorityModelFor). It was left here, where it is worse: a wrongly printed
+ * document is reprinted, a wrongly signed one is not.
+ *
+ * The two-at-once signature is NOT a stored mark being reapplied. Both
+ * documents are on screen, both are being signed now, and the mark is made
+ * during this sitting. Copying an OLD signature onto a document the client has
+ * not seen is forgery, and nothing here does it: narrowedAuthorisationOptions
+ * deliberately carries no signature across.
+ */
+function openAuthoritySheet(c, kind, onDone, opts = {}) {
+  // NO FALL-THROUGH. An unknown kind refuses out loud instead of quietly
+  // rendering whichever document happened to be in the else branch.
+  if (!sittingKinds(kind).length) {
+    // Not a client-facing sentence about "kinds": they did not choose one. It
+    // says nothing was signed, which is the fact that matters to them.
+    alert('I could not open that form, and nothing has been signed.\n\n'
+      + 'Open your case page and use the buttons there, or message me and I will send you a fresh link.');
+    return;
+  }
+  const isRep = kind === 'representative';
+  const isUniversal = kind === 'universal';
+  const isNarrow = kind === 'records';
+  const isDesig = kind === 'designation';
+  // The records-SHAPED fields: dates, sensitive categories, communication
+  // scopes. Both the universal form and the narrow one carry all of them; only
+  // the narrow one names a clinic. The designation has none of them: it grants
+  // nothing on its own, so there is nothing on it to scope.
+  const isRecords = isUniversal || isNarrow;
+  const master = opts.master || null;
+  // Pre-fill from the master, so a narrowed copy is generated from what the
+  // client already gave us rather than from a second interview.
+  const pre = isNarrow && master ? narrowedAuthorisationOptions(master, {}) : {};
+  // A NARROWED COPY MAY NOT OUTLIVE ITS MASTER. The default is the master's
+  // own end date rather than twelve months from today, and the field's `max`
+  // is that same date: the sheet said "filled in from what you already gave
+  // me" while quietly resetting the one field the client had tightened.
+  const narrowCap = isNarrow && master
+    ? String(narrowedExpiry(master)).slice(0, 10) : '';
+  const expiryValue = narrowCap || mstPlusMonths(AUTHORITY_DEFAULT_MONTHS);
+  const expiryMax = narrowCap || mstPlusMonths(AUTHORITY_MAX_MONTHS);
   const overlay = document.createElement('div');
   overlay.className = 'settings-overlay';
   overlay.innerHTML = `
     <div class="settings-card sig-sheet" role="dialog" aria-modal="true" aria-label="Sign">
-      <h3 style="margin:0 0 .3rem;">${isRecords ? 'Records authorisation' : 'Insurance representative'}</h3>
-      <p class="dim small" style="margin:0 0 .8rem;">${isRecords
-        ? 'One clinic per form. Fill in what you know; I can chase the rest.'
+      <h3 style="margin:0 0 .3rem;">${isUniversal ? 'Your authorisation'
+    : isNarrow ? 'A form for one clinic'
+      : isDesig ? 'The one page your clinics keep' : 'Insurance representative'}</h3>
+      <p class="dim small" style="margin:0 0 .8rem;">${isUniversal
+    ? 'You sign this once. It covers the clinics, hospitals, labs, pharmacies and insurers involved in your care, so you are not filling in a new form every time another one turns up. Two pages, one signature.'
+    : isNarrow
+      // TWO BLURBS, because both sentences below are false when there is no
+      // master. `?sign=records` is a legacy link that is deliberately still
+      // accepted, and on a case with nothing signed it asserted that the form
+      // was "filled in from what you already gave me" when nothing had been
+      // given, and that it "does not cancel the authorisation you already
+      // signed" when there was none.
+      ? (master
+        ? 'Some offices will only take a form with their own name on it. This is that form, filled in from what you already gave me. Signing it does not cancel the authorisation you already signed.'
+        : 'Some offices will only take a form with their own name on it. This is that form, for one office only. If you would rather sign one form that covers everybody involved in your care, close this and tap "Sign your authorisation" instead.')
+      : isDesig
+        ? 'One page your clinics can keep with your chart. It tells them who I am and that you have involved me in your care. It gives no permission of its own: everything on it is limited by the authorisation it travels with, and it does not make me your decision maker.'
         : 'This lets me deal with your plan about your claims and appeals.'}</p>
-      ${isRecords ? `
+      ${isNarrow ? `
         <label class="dim small">Clinic or hospital name
           <input type="text" data-f="clinicName" maxlength="200" placeholder="e.g. Valley Neurology"></label>
         <label class="dim small">Their address, if you have it
           <input type="text" data-f="clinicAddress" maxlength="400"></label>
         <label class="dim small">Their phone, if you have it
-          <input type="tel" data-f="clinicPhone" maxlength="40"></label>
+          <input type="tel" data-f="clinicPhone" maxlength="40"></label>` : ''}
+      ${isRecords ? `
         <!-- ALL THE RECORDS, as the default and as an explicit choice.
              Eric, 2026-08-27: "there should be a tick box for 'all available
              records' that overrides the dates", and "the cramping of the
@@ -2187,15 +2449,19 @@ function openAuthoritySheet(c, kind, onDone) {
             <input type="checkbox" data-cat="${cat.id}">
             <span><strong>${esc(cat.label)}</strong><br><span class="dim small">${esc(cat.note)}</span></span>
           </label>`).join('')}
-      ` : `
+      ` : isRep ? `
+        <!-- THE INSURER'S FIELDS, and only the insurer's. This used to be the
+             else branch of "is this a records-shaped form", so the patient
+             designation demanded a plan name and a member ID that appear
+             nowhere on it, and Sign refused until they were filled in. -->
         <label class="dim small">Insurance plan or company
           <input type="text" data-f="planName" maxlength="200" placeholder="e.g. Blue Cross of Arizona"></label>
         <label class="dim small">Member or policy ID
           <input type="text" data-f="memberId" maxlength="80"></label>
-      `}
+      ` : ''}
       ${isRecords ? `
         <p class="dim small" style="margin:.8rem 0 .3rem;">What you are letting
-          me do with this clinic. All three are usually what makes the case
+          me do ${isUniversal ? 'with the providers involved in your care' : 'with this clinic'}. All three are usually what makes the case
           work; untick anything you want left out.</p>
         ${COMMUNICATION_SCOPES.map((sc) => `
           <label class="agreement-check" style="align-items:flex-start;">
@@ -2203,8 +2469,31 @@ function openAuthoritySheet(c, kind, onDone) {
             <span><strong>${esc(sc.label)}</strong><br><span class="dim small">${esc(sc.note)}</span></span>
           </label>`).join('')}
       ` : ''}
+      <!-- HOW LONG IT LASTS, and the client sets it. Twelve months by
+           default because that is what the document has always said on its
+           face, editable because it is their permission and not mine, and
+           there is deliberately no "no expiry" option anywhere on this
+           sheet: 45 CFR 164.508(c)(1)(v) requires an expiry, and a records
+           department rejects a form that says otherwise. The Worker
+           recomputes all of this from its own clock, so a browser cannot
+           post a date the sheet would not offer.
+
+           A NARROWED COPY STARTS AND ENDS AT ITS MASTER'S DATE. It is a copy
+           of a permission, so it cannot outlive the permission it copies, and
+           the client already chose that date once. -->
+      <label class="dim small" style="display:block; margin-top:.8rem;">This permission ends on
+        <input type="date" data-f="expiresAt"
+          value="${esc(expiryValue)}"
+          min="${esc(mstTomorrow())}"
+          max="${esc(expiryMax)}"
+          style="display:block; width:100%;"></label>
+      <p class="dim small" style="margin:.25rem 0 0;">${narrowCap
+    ? 'The same end date as the authorisation this is copied from. You can bring it forward, but a copy cannot run longer than the form it came from.'
+    : `${AUTHORITY_DEFAULT_MONTHS} months from today, which is the longest this can run. Pick an earlier date if you want a shorter one.`}
+        You can withdraw it before then at any time, and I will ask you to sign
+        a fresh one when this runs out.</p>
       <details class="agreement" style="margin:.9rem 0 .6rem;">
-        <summary><span class="agreement-title">Read the whole form</span></summary>
+        <summary><span class="agreement-title">${isUniversal ? 'Read both pages' : 'Read the whole form'}</span></summary>
         <div class="agreement-body"><div class="auth-doc" data-preview></div></div>
       </details>
       <label class="dim small">Type your full name to sign
@@ -2220,7 +2509,7 @@ function openAuthoritySheet(c, kind, onDone) {
       <p class="error" data-sheet-error hidden></p>
       <div class="actions">
         <button class="btn quiet" data-x>Cancel</button>
-        <button class="btn glow" data-sign>Sign</button>
+        <button class="btn glow" data-sign>${isUniversal ? 'Sign both' : 'Sign'}</button>
       </div>
     </div>`;
 
@@ -2229,19 +2518,55 @@ function openAuthoritySheet(c, kind, onDone) {
   const scopesOf = () => [...overlay.querySelectorAll('[data-scope]:checked')].map((i) => i.dataset.scope);
   let signatureImage = '';
   const preview = overlay.querySelector('[data-preview]');
+  // Pre-fill a narrowed copy from the master, once, before the first paint.
+  // Everything the client already told us carries across; the office's own
+  // name and its date range are what they are being asked for.
+  if (isNarrow && master) {
+    for (const cat of pre.categories || []) {
+      const box = overlay.querySelector(`[data-cat="${cat}"]`);
+      if (box) box.checked = true;
+    }
+    if (Array.isArray(pre.scopes)) {
+      for (const box of overlay.querySelectorAll('[data-scope]')) {
+        box.checked = pre.scopes.includes(box.dataset.scope);
+      }
+    }
+  }
+  // THE RAW FIELDS, IN ONE PLACE, read by the preview and by the POST.
+  // THE PREVIEW SHOWS THE DATE THEY PICKED. It used to pass no expiry at all,
+  // so the form they read before signing said "one year from the date signed"
+  // while the document they had just signed carried a real date.
+  const fields = () => ({
+    clinicName: val('clinicName'), clinicAddress: val('clinicAddress'),
+    clinicPhone: val('clinicPhone'),
+    fromDate: val('fromDate'), toDate: val('toDate'),
+    planName: val('planName'), memberId: val('memberId'),
+    expiresAt: val('expiresAt'), signedName: val('signedName'),
+    categories: cats(), scopes: scopesOf(),
+  });
+  // ONE BUILDER FOR THE PAGE THEY READ AND THE RECORD THAT IS STORED, and it
+  // lives in authority.js so a suite can RUN it. Building the preview options
+  // and the POST body separately is what let `narrowedFrom` be dropped from
+  // one of them: the client would read a form without the "narrowed copy, not
+  // a replacement" clause and sign one with it, and both spellings would look
+  // right in the source.
+  const optionsNow = () => sittingOptions(kind, fields(), {
+    clientName: c.clientName, clientDob: c.clientDob, master,
+  });
   const repaint = () => {
-    const o = {
-      clientName: c.clientName, clientDob: c.clientDob,
-      clinicName: val('clinicName'), clinicAddress: val('clinicAddress'),
-      fromDate: val('fromDate'), toDate: val('toDate'),
-      planName: val('planName'), memberId: val('memberId'),
-      categories: cats(), scopes: scopesOf(), signedName: val('signedName'),
-    };
-    // The SAME renderer the printed page uses, so what they read before
-    // signing is what comes out afterwards. It was textContent of a monospace
-    // <pre>, which is what made a legal form look like a terminal log.
-    preview.innerHTML = authorityHtml(isRecords
-      ? recordsAuthorisationModel(o) : representativeDesignationModel(o));
+    // The SAME renderer the printed page uses, and the SAME list of documents
+    // the sitting will store, so what they read before signing is what comes
+    // out afterwards. It was textContent of a monospace <pre>, which is what
+    // made a legal form look like a terminal log.
+    //
+    // BOTH PAGES for the sign-once sitting. One signature covers two
+    // documents, so the client has to be shown two documents; a preview that
+    // showed only the authorisation would mean the designation was signed
+    // unseen, which is not consent. Driven by sittingKinds rather than by a
+    // second ternary, so the pages shown and the documents stored cannot
+    // disagree.
+    preview.innerHTML = sittingModels(kind, optionsNow())
+      .map(authorityHtml).join('\n<hr>\n');
   };
   // The tick owns the range. Ticking it CLEARS the dates rather than merely
   // hiding them, because a hidden field that still holds a value is a date on
@@ -2332,7 +2657,15 @@ function openAuthoritySheet(c, kind, onDone) {
       memberId: 'your member or policy ID',
       signedName: 'your full name',
     };
-    const need = isRecords ? ['clinicName', 'signedName'] : ['planName', 'memberId', 'signedName'];
+    // ONE ENTRY PER KIND, never an else. The universal form has NO clinic to
+    // name, which is the whole point of it, and the patient designation has
+    // neither a clinic nor a plan: it was in the else branch with the insurer
+    // form, so Sign refused it until the client filled in a plan name and a
+    // member ID for fields that do not appear on the document at all.
+    const need = isNarrow ? ['clinicName', 'signedName']
+      : isUniversal ? ['signedName']
+        : isDesig ? ['signedName']
+          : ['planName', 'memberId', 'signedName'];
     for (const f of need) if (!val(f)) mark(`[data-f="${f}"]`, `Fill in ${LABEL[f]}.`);
     // The Worker requires the typed name to match the name on the case, and
     // requires two characters. Mirror both here: without them the button
@@ -2380,6 +2713,23 @@ function openAuthoritySheet(c, kind, onDone) {
           'Tick at least one thing you are allowing, or this form authorises nothing.');
       }
     }
+    // THE EXPIRY, WHICH IS NEVER ALLOWED TO BE ABSENT. The Worker falls back
+    // to twelve months for anything it will not accept, so an empty or
+    // out-of-range box would be silently overridden rather than refused. Say
+    // so here, where the client can still choose.
+    const exp = val('expiresAt');
+    const expMax = expiryMax;
+    if (!exp) {
+      mark('[data-f="expiresAt"]', 'Give a date for this permission to end.');
+    } else if (!/^\d{4}-\d{2}-\d{2}$/.test(exp) || exp <= mstToday()) {
+      mark('[data-f="expiresAt"]', 'The end date has to be in the future.');
+    } else if (exp > expMax) {
+      mark('[data-f="expiresAt"]', narrowCap
+        // A copy cannot run longer than the form it was copied from, and the
+        // date it may not pass is the one the client already chose.
+        ? `A form for one clinic cannot run past the authorisation it is copied from, so ${expMax} at the latest.`
+        : `The furthest ahead this can run is ${AUTHORITY_MAX_MONTHS} months, so ${expMax} at the latest.`);
+    }
     if (!signatureImage) mark('[data-sig-open]', 'Tap the box and sign with your finger.');
     return { bad, reasons };
   };
@@ -2418,24 +2768,53 @@ function openAuthoritySheet(c, kind, onDone) {
     btn.disabled = true;
     try {
       const idToken = await user.getIdToken();
-      const res = await fetch('/api/authority', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({
-          caseId: c.id, kind,
-          signedName: val('signedName'),
-          clinicName: val('clinicName'), clinicAddress: val('clinicAddress'),
-          clinicPhone: val('clinicPhone'),
-          fromDate: val('fromDate'), toDate: val('toDate'),
-          planName: val('planName'), memberId: val('memberId'),
-          categories: cats(), scopes: scopesOf(),
-          signatureImage,
-        }),
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(out.error || `Couldn't sign that (${res.status})`);
+      // The SAME field values the preview was built from, and the same
+      // narrowedFrom, taken off the shared options object rather than
+      // recomputed here.
+      const f = fields();
+      const shared = optionsNow();
+      const post = async (thisKind) => {
+        const res = await fetch('/api/authority', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({
+            caseId: c.id, kind: thisKind,
+            signedName: f.signedName,
+            clinicName: f.clinicName, clinicAddress: f.clinicAddress,
+            clinicPhone: f.clinicPhone,
+            fromDate: f.fromDate, toDate: f.toDate,
+            planName: f.planName, memberId: f.memberId,
+            expiresAt: f.expiresAt,
+            narrowedFrom: shared.narrowedFrom,
+            categories: f.categories, scopes: f.scopes,
+            signatureImage,
+          }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || `Couldn't sign that (${res.status})`);
+        return out;
+      };
+      // ONE SITTING, ONE OR TWO DOCUMENTS, and which is which is
+      // signSitting's to say (authority.js) rather than a pair of hand
+      // written calls here. The authorisation goes first because it is the
+      // instrument; the designation is the page that travels with it and is
+      // meaningless without it. Sequential, so a failure of the second leaves
+      // the first standing rather than leaving a designation on file pointing
+      // at an authorisation that does not exist.
+      const partial = await signSitting(kind, post);
       close();
       onDone?.();
+      // After close and after the repaint, so the panel behind is already
+      // showing what they really have when they read this. An alert rather
+      // than a line in a sheet that is no longer on screen: the sheet's own
+      // error element goes with it when it closes, which is how a message like
+      // this gets written and never seen.
+      if (partial.length) {
+        alert('Your authorisation is signed and I can use it.\n\n'
+          + `The one page your clinics keep with it did not save: ${partial[0].message}\n\n`
+          + 'Tap "Add the one page for your clinics" on your case page to finish it. '
+          + 'Nothing needs signing twice.');
+      }
     } catch (e2) {
       err.textContent = e2.message;
       err.hidden = false;
@@ -2666,8 +3045,9 @@ async function printAuthority(c, item) {
   // One opener, shared with the advocate's half. It renders the structure, adds a
   // Done control, and does NOT print on its own.
   openAuthorityDocument({
-    model: item.kind === 'records' ? recordsAuthorisationModel(o) : representativeDesignationModel(o),
-    title: item.kind === 'records' ? 'Records authorisation' : 'Insurance representative',
+    model: authorityModelFor(item, o),
+    title: AUTHORITY_KINDS[item.kind]?.title || 'Document',
     signatureHtml: signatureInk(item),
   });
 }
+

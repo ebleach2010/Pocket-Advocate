@@ -92,6 +92,21 @@ const PAGE_CSS = `
   .sig-ink { margin: .9rem 0 0; page-break-inside: avoid; break-inside: avoid; }
   .sig-ink img { max-width: 78mm; max-height: 26mm; display: block; }
   .sig-ink figcaption { font-size: .8rem; color: #444; margin-top: .3rem; }
+  /* A NARROW PHONE, ON A PAGE A CLINIC READS.
+     The meta block is "label, value" side by side, and the value is a ruled
+     line 16rem wide whenever the field is unset. On a 320px screen that came
+     to scrollWidth 338 against clientWidth 320, so the document a records
+     clerk is handed scrolled sideways, and "Date of birth" wrapped to three
+     lines squeezing itself into what was left. 390px was always clean, which
+     is why it went unseen.
+     Screen only: paper is wide, and @media print below keeps the two-column
+     block exactly as it was. */
+  @media screen and (max-width: 360px) {
+    .doc-meta { grid-template-columns: 1fr; gap: 0; }
+    .doc-meta dt { margin-top: .45rem; }
+    .doc-meta dd { margin-bottom: .1rem; }
+    .doc-rule { min-width: 10rem; max-width: 100%; }
+  }
   @media print {
     .doc-bar { display: none !important; }
     .doc-wrap { max-width: none; padding: 0; }

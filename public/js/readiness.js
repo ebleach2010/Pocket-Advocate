@@ -8,9 +8,16 @@
 // with the documents themselves, needs no route of its own, and holds
 // nothing a client could tick past. Both sides render from this one
 // function, so the two views cannot drift.
+import { authorityExpired } from './authority.js';
 
 export function handsOffReadiness(c, authorityItems = []) {
-  const live = (authorityItems || []).filter((i) => !i.revokedAt);
+  // WITHDRAWN OR EXPIRED IS NOT LIVE. Withdrawal was always handled here.
+  // Expiry was not, because until sign-once no document carried a real end
+  // date and the checklist could pretend the question did not arise. It does
+  // arise: a twelve month authorisation signed for a case that runs long goes
+  // stale mid-case, and a checklist that still shows a tick against it is the
+  // checklist telling Eric he has authority he no longer has.
+  const live = (authorityItems || []).filter((i) => !i.revokedAt && !authorityExpired(i));
   const rows = [
     {
       id: 'scope',
@@ -19,13 +26,20 @@ export function handsOffReadiness(c, authorityItems = []) {
     },
     {
       id: 'records',
-      label: 'A records authorisation signed for at least one clinic',
-      // It has to actually authorise something. A records form with every
+      label: 'Your authorisation, signed',
+      // SIGN ONCE, so `universal` counts. Without it a client who signed the
+      // one broad authorisation and no per-clinic form read as NOT READY on
+      // both screens, which tells Eric he may not pick up the phone at exactly
+      // the moment he may. `records` still counts beside it: every document
+      // signed before this change carries that kind, and so does a narrowed
+      // copy made for an office that wanted its own form.
+      //
+      // It has to actually authorise something. A form with every
       // communication box unticked is a piece of paper, not permission, and
       // reading it as "ready" told Eric he could pick up the phone.
       // Documents signed before scopes existed have no scopes field at all
       // and did authorise the full set, so undefined counts and [] does not.
-      done: live.some((i) => i.kind === 'records'
+      done: live.some((i) => (i.kind === 'universal' || i.kind === 'records')
         && (!Array.isArray(i.scopes) || i.scopes.length > 0)),
     },
     {

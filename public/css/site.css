@@ -1303,8 +1303,19 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
 /* A run of underscores is somewhere to write on paper. On screen it is a
    line, because forty-six underscore glyphs is not a form field. */
 .auth-doc .doc-rule {
-  display: inline-block; min-width: 9rem; height: 1.05em;
+  display: inline-block; min-width: 9rem; max-width: 100%; height: 1.05em;
   border-bottom: 1px solid var(--line); vertical-align: baseline;
+}
+/* A NARROW PHONE. The preview lives inside a sheet inside an overlay, so at
+   320px the document itself is about 160px wide: the "auto" label column got
+   squeezed and "Date of birth" wrapped to three lines beside a ruled line for
+   the value. One column each, stacked, at that width only. The printed page
+   has the same rule in its own stylesheet, where it also stopped the document
+   scrolling sideways. */
+@media (max-width: 360px) {
+  .auth-doc .doc-meta { grid-template-columns: 1fr; gap: 0; }
+  .auth-doc .doc-meta dt { margin-top: .3rem; }
+  .auth-doc .doc-rule { min-width: 7rem; }
 }
 .auth-doc .doc-checks, .auth-doc .doc-bullets { list-style: none; margin: .35rem 0 .5rem; padding: 0; }
 .auth-doc .doc-checks li { display: flex; gap: .5rem; margin: 0 0 .5rem; }

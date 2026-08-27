@@ -12,6 +12,29 @@ import { DEMO_CASE_ID } from './seed.js';
 // The same two vocabularies the pages read, so the demo cannot answer with a
 // reaction the UI has no name for.
 import { EMOJI_REACTIONS, STATUS_REACTIONS } from '../msg-actions.js';
+// The expiry maths, imported rather than copied. The Worker has to keep its
+// own copy because it cannot import a client module; the demo runs in the
+// browser and has no such excuse, and a third copy is a third thing to drift.
+import {
+  authorityExpiry, authorityEndsAt, AUTHORITY_DEFAULT_MONTHS, AUTHORITY_MAX_MONTHS,
+} from '../authority.js';
+
+/**
+ * The Worker's authorityExpiresAt, mirrored: the client's chosen date when it
+ * is after the signature and inside the cap, twelve months otherwise. There is
+ * no input, and no absence of input, that yields no expiry.
+ */
+function demoExpiresAt(signedAt, raw) {
+  const fallback = authorityExpiry(signedAt, AUTHORITY_DEFAULT_MONTHS);
+  const d = typeof raw === 'string' ? raw.trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return fallback;
+  const at = new Date(`${d}T12:00:00Z`);
+  if (Number.isNaN(at.getTime()) || at.toISOString().slice(0, 10) !== d) return fallback;
+  const cap = authorityExpiry(signedAt, AUTHORITY_MAX_MONTHS);
+  if (at.getTime() <= new Date(signedAt).getTime()) return fallback;
+  if (cap && at.getTime() > cap.getTime()) return fallback;
+  return at;
+}
 
 /** A little delay, so states that only exist while something is in flight
  *  (the button disabling, the progress bar, "Reading…") are visible. */
@@ -747,7 +770,11 @@ export function demoApi(role, store) {
       // The Worker's gates, in the Worker's ORDER - the demo used to refuse a
       // missing signature first, so the same bad POST got two different
       // answers depending on which side you were driving.
-      const kinds = ['records', 'representative'];
+      // The four kinds, in the Worker's order. `universal` and `designation`
+      // are the sign-once pair; `records` is now the narrow per-clinic
+      // exception and keeps its id because every already-signed document
+      // carries it.
+      const kinds = ['universal', 'designation', 'records', 'representative'];
       if (!kinds.includes(body.kind)) return fail(400, 'Bad request');
       // Per DOCUMENT, matching the Worker as of 2026-08-26. A records release
       // can be signed on any case; the insurance designation is the Hands-Off
@@ -763,29 +790,120 @@ export function demoApi(role, store) {
         return fail(400, 'Sign with the same name that is on this case.');
       const scopes = Array.isArray(body.scopes)
         ? body.scopes.filter((x) => ['discuss', 'records', 'admin'].includes(x)).slice(0, 8) : [];
+      // The clinic name is required of the NARROW form only. The universal
+      // form has no clinic to name, which is the entire point of it.
       if (body.kind === 'records' && !body.clinicName)
         return fail(400, 'Name the clinic this authorisation is for.');
       if (body.kind === 'representative' && !body.planName)
         return fail(400, 'Name your insurance plan.');
-      if (body.kind === 'records' && !scopes.length)
+      if ((body.kind === 'records' || body.kind === 'universal') && !scopes.length)
         return fail(400, 'Tick at least one thing you are authorising me to do.');
+      // THE NARROWING GATES, mirrored from the Worker. The demo had none of
+      // them, so the one route a browser drive can actually exercise was the
+      // one route that let a narrowed copy be generated against a master that
+      // was missing, not universal, withdrawn or expired.
+      let masterEnds = null;
+      if (body.kind === 'records' && String(body.narrowedFrom || '')) {
+        const master = store.docs.get(prefix + body.narrowedFrom);
+        if (!master || master.kind !== 'universal')
+          return fail(400, 'That universal authorisation is not on this case.');
+        if (master.revokedAt)
+          return fail(409, 'That universal authorisation has been withdrawn.');
+        masterEnds = authorityEndsAt(master);
+        if (!masterEnds || masterEnds.getTime() <= Date.now())
+          return fail(409, 'That universal authorisation has expired. Sign a fresh one first.');
+      }
       if (!body.signatureImage
         || !/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(String(body.signatureImage).trim()))
         return fail(400, 'Sign the document with your finger before sending it.');
       const id = `demo-${Math.random().toString(36).slice(2, 8)}`;
       // The field list is hardcoded here, so anything new on the real
       // document has to be added or the demo silently drops it.
+      const signedAt = new Date();
+      // A copy cannot outlive what it was copied from. Same clamp as the
+      // Worker, and it is a clamp rather than a refusal because the client did
+      // not choose this number: the sheet carries it across for them.
+      let expiresAt = demoExpiresAt(signedAt, body.expiresAt);
+      if (masterEnds && expiresAt && expiresAt.getTime() > masterEnds.getTime()) expiresAt = masterEnds;
       store.docs.set(prefix + id, {
-        kind: body.kind, signedName: body.signedName, signedAt: new Date(),
+        kind: body.kind, signedName: body.signedName, signedAt,
         revokedAt: null, clinicName: body.clinicName || '', clinicAddress: body.clinicAddress || '',
         clinicPhone: body.clinicPhone || '', fromDate: body.fromDate || '', toDate: body.toDate || '',
         planName: body.planName || '', memberId: body.memberId || '',
         categories: Array.isArray(body.categories) ? body.categories : [],
         scopes,
+        // The same three fields the Worker stores, and the expiry is computed
+        // the same way: the client's date when it is usable, twelve months
+        // otherwise. A demo that stored no expiry would show every document as
+        // expiring "one year from the date signed" while the real one showed a
+        // date, which is precisely the drift the demo exists to catch.
+        universal: body.kind === 'universal',
+        narrowedFrom: String(body.narrowedFrom || '').slice(0, 64),
+        expiresAt,
         signatureImage: body.signatureImage || '',
       });
       store.persist?.();
       return ok({ ok: true, id, signedAt: new Date().toISOString() });
+    }
+    // The provider list and the packet status (Eric's spec 4), mirrored so the
+    // admin half of the seamless demo answers instead of painting an empty
+    // panel with an error under it. Same actions and the same allowlists as
+    // the Worker; a suite check keeps the status ids identical.
+    if (path === '/api/admin/providers') {
+      const cid = body.caseId || q.get('caseId') || '';
+      const prefix = `cases/${cid}/private/providers/items/`;
+      if ((init.method || 'GET').toUpperCase() === 'GET') {
+        const items = [...store.docs.entries()]
+          .filter(([k]) => k.startsWith(prefix))
+          .map(([k, v]) => ({ id: k.slice(prefix.length), ...v }))
+          .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+        return ok({ items, contact: store.docs.get('settings/advocate') || {} });
+      }
+      await beat(260);
+      const STATUSES = ['notSent', 'sent', 'received', 'accepted', 'providerForm',
+        'verbal', 'rejected', 'expired', 'revoked'];
+      const REQUESTS = ['call', 'status', 'records', 'referral', 'priorAuth', 'other'];
+      if (body.action === 'contact') {
+        store.docs.set('settings/advocate', {
+          business: String(body.business || '').trim(), phone: String(body.phone || '').trim(),
+          email: String(body.email || '').trim(), fax: String(body.fax || '').trim(),
+        });
+        store.persist?.();
+        return ok({ ok: true });
+      }
+      if (body.action === 'add') {
+        const name = String(body.name || '').trim();
+        if (!name) return fail(400, 'Name the provider.');
+        const pid = `demo-${Math.random().toString(36).slice(2, 8)}`;
+        store.docs.set(prefix + pid, {
+          name, address: '', phone: '', fax: '', status: 'notSent',
+          requestKind: REQUESTS.includes(body.requestKind) ? body.requestKind : 'records',
+          requestNote: '', note: '', createdAt: new Date(), updatedAt: new Date(),
+        });
+        store.persist?.();
+        return ok({ ok: true, id: pid });
+      }
+      if (body.action === 'update') {
+        const cur = store.docs.get(prefix + body.id);
+        // Look before patching, the same as the Worker: a status set on a
+        // provider removed a moment ago would otherwise create a nameless row.
+        if (!cur) return fail(404, 'That provider is not on this case.');
+        if (body.status !== undefined && !STATUSES.includes(body.status)) return fail(400, 'Bad request');
+        if (body.requestKind !== undefined && !REQUESTS.includes(body.requestKind)) return fail(400, 'Bad request');
+        const next = { ...cur, updatedAt: new Date() };
+        for (const f of ['status', 'requestKind', 'name', 'address', 'phone', 'fax', 'requestNote', 'note']) {
+          if (body[f] !== undefined) next[f] = body[f];
+        }
+        store.docs.set(prefix + body.id, next);
+        store.persist?.();
+        return ok({ ok: true });
+      }
+      if (body.action === 'remove') {
+        store.docs.delete(prefix + body.id);
+        store.persist?.();
+        return ok({ ok: true });
+      }
+      return fail(400, 'Unknown action');
     }
     if (path === '/api/clinic-calls') {
       const cid = body.caseId || q.get('caseId') || '';

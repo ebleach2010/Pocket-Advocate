@@ -16,6 +16,9 @@ const {
   recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
   COMMUNICATION_SCOPES,
 } = await import(__j(__REPO, 'public/js/authority.js'));
+// The same module, bound separately for the sign-once documents so the block
+// that re-points the 164.508 elements reads as its own thing.
+const A_UNIVERSAL = await import(__j(__REPO, 'public/js/authority.js'));
 const WORKER = readFileSync(__j(__REPO, 'worker/index.js'), 'utf8');
 const CASE = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
 const ADMIN = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
@@ -46,6 +49,50 @@ for (const [el, re] of [
   ['an expiry', /EXPIR(Y|ES)/i],
   ['a signature and date', /SIGNATURE[\s\S]*Signed:[\s\S]*Date:/],
 ]) check(`A1 core element present: ${el}`, re.test(full));
+
+// RE-POINTED AT THE UNIVERSAL DOCUMENT, 2026-08-27, and the per-clinic block
+// above is KEPT rather than replaced. Both documents are live: the universal
+// one is what every new client signs, and the narrow one is still issued to
+// an office that will not accept a class-wide form, so a core element could go
+// missing from either and both have to be pinned.
+//
+// The only element that reads differently is "who may disclose", because that
+// is the entire change: a CLASS of providers rather than one named clinic. 45
+// CFR 164.508(c)(1)(ii) asks for "the name or other specific identification of
+// the person(s), or class of persons, authorized to make the requested use or
+// disclosure", so a class satisfies the element on the face of the rule, and
+// HHS FAQ 473 says so in as many words. Everything else must still be there
+// verbatim, and is asserted against the same expressions.
+const universal = A_UNIVERSAL.universalAuthorisation({
+  clientName: 'Dana Reyes', clientDob: '1979-04-02',
+  fromDate: '2024-01-01', toDate: '2026-08-01',
+  categories: ['mentalHealth', 'genetic'],
+  scopes: ['discuss', 'records', 'admin'],
+  signedName: 'Dana Reyes', signedAt: '2026-08-23', expiresAt: '2027-08-23T12:00:00Z',
+});
+for (const [el, re] of [
+  ['a specific description of the information', /office notes and consultation notes/i],
+  ['who may disclose, as a CLASS', /RELEASING PROVIDERS[\s\S]*or other\s*\n?\s*health-care source/],
+  ['who may receive', /RECEIVING PERSON[\s\S]*patient advocate/],
+  ['a purpose', /PURPOSE/],
+  ['an expiry', /EXPIR(Y|ES)/i],
+  ['a signature and date', /SIGNATURE[\s\S]*Signed:[\s\S]*Date:/],
+]) check(`A1u universal: core element present: ${el}`, re.test(universal));
+// The three statements 164.508(c)(2) requires in substance, on the universal
+// form as well. A2-A5 below assert them on the per-clinic one.
+check('A1u universal: right to revoke, and a route a patient can actually take',
+  /revoke this authorisation at any time by writing to my advocate/i.test(universal)
+  // A class-wide form has no single named provider to write to, so "write to
+  // the provider named above" would have described nothing.
+  && !/writing to the provider named\s*\n?\s*above/i.test(universal));
+check('A1u universal: revocation cannot undo what was already relied on',
+  /cannot undo a\s*\n?\s*release already made/i.test(universal));
+check('A1u universal: treatment may not be conditioned on signing',
+  /may not condition my treatment, payment, enrolment, or\s*\n?\s*eligibility/i.test(universal));
+check('A1u universal: re-disclosure warning',
+  /may be re-disclosed[\s\S]*no longer be protected/i.test(universal));
+check('A1u universal: psychotherapy notes are still excluded',
+  /Psychotherapy notes maintained separately/.test(universal));
 
 // ---- the three required statements -----------------------------------------
 check('A2 right to revoke, and how',
@@ -235,8 +282,22 @@ check('S19 unticking every scope prints as unticked, not as all three',
   && !recordsAuthorisation({ scopes: [] }).includes('[X]'));
 check('S20 a document with no scopes field at all is still the legacy full set',
   (recordsAuthorisation({}).match(/\[X\]/g) || []).length === 3);
+// UPDATED 2026-08-27 for sign-once, not deleted, and the rule got WIDER
+// rather than narrower. It pinned `kind === 'records' && !item.scopes.length`.
+// The universal authorisation is held to exactly the same rule, for exactly
+// the same reason: naming a class of providers widens who may disclose and
+// widens nothing about what the advocate may do with it, so a universal form
+// with all three communication boxes cleared is still a piece of paper. The
+// intent is unchanged and both kinds are asserted below.
 check('S21 the Worker refuses a records form that authorises nothing',
-  /kind === 'records' && !item\.scopes\.length/.test(W));
+  /\(kind === 'records' \|\| kind === 'universal'\) && !item\.scopes\.length/.test(W));
+// The half that would have made sign-once unsignable, pinned so it cannot come
+// back: a clinic name is required of the NARROW form only. The universal form
+// has no clinic to name, and requiring one would have refused every attempt to
+// sign it with a message pointing at a field that is not on the sheet.
+check('S21b but a clinic name is demanded only of the narrow per-clinic form',
+  /if \(kind === 'records' && !item\.clinicName\)/.test(W)
+  && !/kind === 'universal' && !item\.clinicName/.test(W));
 check('S22 the Worker parses dates instead of storing whatever arrives',
   /fromDate: wallDate\(body\?\.fromDate\)/.test(W) && /function wallDate/.test(W));
 check('S23 the Worker checks the image bytes, not just the data-url wrapper',
@@ -327,9 +388,65 @@ check('S25 a signature nobody can draw is not the only route',
     && !/document\.write/.test(clientPrinter) && !/document\.write/.test(adminPrinter)
     && !/<pre>/.test(clientPrinter) && !/<pre>/.test(adminPrinter),
     `${clientPrinter.length}/${adminPrinter.length} chars lifted`);
-  check('F14 the in-app preview renders the same document as the paper one',
-    /preview\.innerHTML = authorityHtml\(/.test(CASE2)
-    && !/class="auth-doc" data-preview><\/pre>/.test(CASE2));
+  // UPDATED TWICE, NEVER DELETED.
+  //
+  // 2026-08-27, sign-once: it pinned `preview.innerHTML = authorityHtml(`,
+  // which stopped matching when the sitting became conditional, so it was
+  // re-pointed at the two branches it had become.
+  //
+  // 2026-08-27, second pass: those branches are gone. The preview is built
+  // from sittingModels(), the one list the sitting itself signs from, so this
+  // is no longer four spellings of one idea. It now RUNS that shared builder
+  // and compares it to what the PRINT path renders for the same kinds, which
+  // is what this check has always been about: a client must read the document
+  // they are signing. The source-text version of it went green on a preview
+  // that dropped narrowedFrom, because both halves were spelled correctly.
+  //
+  // PROVEN TO FAIL, 2026-08-27: changing sittingModels to
+  // `sittingKinds(kind).slice(0, 1).map(...)` gave
+  //   F14 the in-app preview renders the same document as the paper one
+  //       -- universal shows 1 of 2
+  // which is the patient designation being signed unseen.
+  {
+    const AA = await import(`file://${__j(__REPO, 'public/js/authority.js')}`);
+    const o = {
+      clientName: 'Dana Reyes', clientDob: '1979-04-02', scopes: ['discuss'],
+      clinicName: 'Valley Neurology', planName: 'BCBS', memberId: 'Z1',
+      signedName: 'Dana Reyes', signedAt: '2026-08-27T12:00:00Z',
+      expiresAt: '2027-08-27T12:00:00Z',
+    };
+    const mismatch = [];
+    for (const kind of ['universal', 'designation', 'records', 'representative']) {
+      const shown = AA.sittingModels(kind, o);
+      const wanted = AA.sittingKinds(kind).map((k) => AA.authorityModelFor({ kind: k }, o));
+      if (shown.length !== wanted.length) {
+        mismatch.push(`${kind} shows ${shown.length} of ${wanted.length}`);
+        continue;
+      }
+      for (let i = 0; i < shown.length; i += 1) {
+        if (AA.authorityText(shown[i]) !== AA.authorityText(wanted[i])) mismatch.push(`${kind}[${i}]`);
+      }
+    }
+    check('F14 the in-app preview renders the same document as the paper one',
+      mismatch.length === 0
+      && AA.sittingModels('universal', o).length === 2
+      // And the page really does build its preview from that shared list
+      // rather than from a branch of its own.
+      && /preview\.innerHTML = sittingModels\(kind, optionsNow\(\)\)/.test(CASE2)
+      && !/class="auth-doc" data-preview><\/pre>/.test(CASE2),
+      mismatch.join(', ') || 'preview not built from sittingModels');
+  }
+  // The gap this build closed while it was in here. The preview passed no
+  // expiry at all, so the form a client read before signing said "one year
+  // from the date signed" while the document they had just signed carried a
+  // real date. Same words, two pages, which is the drift the shared renderer
+  // exists to prevent.
+  //
+  // UPDATED 2026-08-27, second pass: the field values moved into one fields()
+  // builder that both the preview and the POST read, so the same spelling now
+  // appears once instead of twice. Same assertion.
+  check('F14b and the preview shows the expiry date the client actually picked',
+    /expiresAt: val\('expiresAt'\)/.test(CASE2));
 }
 
 // ---- F15: a blank can grant what the app can grant -----------------------
@@ -363,9 +480,37 @@ check('S25 a signature nobody can draw is not the only route',
 // telling a client to sign.
 {
   const C = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
-  check('F18 the page reads ?sign= and accepts only the two real documents',
-    /get\('sign'\)/.test(C)
-    && /want !== 'records' && want !== 'representative'/.test(C));
+  // UPDATED 2026-08-27 for sign-once, not deleted. There are FOUR real
+  // documents now, not two, so the pinned `want !== 'records' && want !==
+  // 'representative'` could not survive; the intent, that this parameter opens
+  // only a real document and nothing else, is unchanged and is asserted below
+  // against the whole list. `?sign=universal` is the link Eric will actually
+  // put in an email from now on, and `?sign=records` still has to work because
+  // links already sent must not break.
+  // UPDATED AGAIN 2026-08-27, second pass, not deleted. The list was retyped
+  // in three places (this parameter, the sheet's branches, the Worker's own
+  // AUTHORITY_KINDS), and a retyped list is a list that drifts. The page now
+  // asks sittingKinds, which is the same lookup the sheet branches on and the
+  // same one that refuses an unknown kind, so a document that cannot be opened
+  // cannot be linked to either. Asserted by RUNNING it as well as by reading
+  // the source, because "accepts only the real documents" is a claim about
+  // behaviour.
+  //
+  // PROVEN TO FAIL, 2026-08-27: adding `nonsense: ['representative']` to
+  // AUTHORITY_SITTINGS gave
+  //   F18 the page reads ?sign= and accepts only the real documents
+  //       -- accepts: nonsense
+  {
+    const AA = await import(`file://${__j(__REPO, 'public/js/authority.js')}`);
+    const real = ['universal', 'designation', 'records', 'representative'];
+    const junk = ['', 'nonsense', 'designations', 'REPRESENTATIVE', '__proto__', 'toString'];
+    const accepts = junk.filter((k) => AA.sittingKinds(k).length);
+    const refuses = real.filter((k) => !AA.sittingKinds(k).length);
+    check('F18 the page reads ?sign= and accepts only the real documents',
+      /get\('sign'\)/.test(C) && /if \(!sittingKinds\(want\)\.length\) return '';/.test(C)
+      && accepts.length === 0 && refuses.length === 0,
+      accepts.length ? `accepts: ${accepts.join(', ')}` : `refuses: ${refuses.join(', ')}`);
+  }
   // Spent on use, twice over: stripped from the address bar AND cleared in
   // memory. The authority panel repaints on every change to its documents, so
   // a parameter left behind would reopen the sheet on top of itself after a
@@ -419,10 +564,62 @@ check('S25 a signature nobody can draw is not the only route',
     && /document\.body\.classList\.add\('sheet-open'\)/.test(C));
   // Every exit goes through close(): Cancel, Escape, click-outside, and a
   // successful signature. A lock that outlives its sheet freezes the page.
+  //
+  // UPDATED 2026-08-27 for sign-once, not deleted. The third clause pinned
+  // `if (!res.ok) throw ... close();` within eighty characters, which was a
+  // proxy for "the success path reaches close()". Sign-once moved the POST
+  // into a `post()` helper so the sitting can send two documents on one
+  // signature, so the throw and the close are no longer neighbours: the throw
+  // is in the helper and the close is in the handler that calls it twice.
+  //
+  // The intent is unchanged, and the proxy is replaced with the thing itself:
+  // the signature path awaits its POST and then calls close(), and close()
+  // still removes the lock. Also asserted: the SECOND document's failure does
+  // not skip the close, which is a new way this sheet could have been left on
+  // screen with the page frozen behind it.
+  //
+  // UPDATED AGAIN 2026-08-27, second pass, not deleted. The two hand written
+  // posts became one `await signSitting(kind, post)` call, so `await
+  // post(kind);` no longer appears. Same assertion, re-pointed at the line
+  // that now stands between the signature and the close.
   check('F27 and released on every route out, including a successful signature',
     /document\.body\.classList\.remove\('sheet-open'\)/.test(C)
     && (C.match(/const close = \(\) => \{[\s\S]{0,300}?sheet-open/g) || []).length === 1
-    && /if \(!res\.ok\) throw[\s\S]{0,80}close\(\);/.test(C));
+    && /await signSitting\(kind, post\);[\s\S]{0,300}?\n      close\(\);/.test(C));
+  // UPDATED AGAIN 2026-08-27, second pass, not deleted, and it is stronger:
+  // the "catch the second document, never rethrow" behaviour moved out of the
+  // click handler into signSitting, where a suite can RUN it instead of
+  // matching a catch block by the name of its error variable.
+  //
+  // The property is unchanged. If the SECOND document fails, the first is
+  // signed, so the sheet closes and the panel repaints; telling the client the
+  // signing failed would send them to sign a second copy of a document they
+  // already signed. If the FIRST fails, nothing was signed, and it throws.
+  //
+  // PROVEN TO FAIL, 2026-08-27: removing the try/catch inside signSitting's
+  // loop gave
+  //   F27b a half-finished sign-once sitting still closes and still repaints
+  //        -- second failure escaped
+  {
+    const AA = await import(`file://${__j(__REPO, 'public/js/authority.js')}`);
+    let secondEscaped = false;
+    let sent = [];
+    try {
+      const partial = await AA.signSitting('universal', async (k) => {
+        sent.push(k);
+        if (k === 'designation') throw new Error('nope');
+      });
+      secondEscaped = !(partial.length === 1 && partial[0].kind === 'designation');
+    } catch { secondEscaped = true; }
+    let firstThrew = false;
+    try {
+      await AA.signSitting('universal', async () => { throw new Error('nope'); });
+    } catch { firstThrew = true; }
+    check('F27b and a half-finished sign-once sitting still closes and still repaints',
+      !secondEscaped && firstThrew && sent.join(',') === 'universal,designation'
+      && /close\(\);\n      onDone\?\.\(\);/.test(C),
+      secondEscaped ? 'second failure escaped' : `sent ${sent.join(',')}, first threw ${firstThrew}`);
+  }
 }
 
 const failed = results.filter((r) => !r.pass);
