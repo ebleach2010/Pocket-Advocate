@@ -511,6 +511,13 @@ async function handleRates(env) {
 // 2026-07-13); clients get one warning email a week before the deadline.
 const FOLLOWUP_EXPIRY_DAYS = 30;
 const FOLLOWUP_WARN_DAYS = 7;
+// A Hands-Off month gets the same week's notice the follow-up has always had.
+// It had NONE until now: the only thing telling a client their month was
+// ending was the renewal card on their case page, which worked by sitting
+// there all month. That card now appears three days out (his call,
+// 2026-08-26), so without this the notice would be a card in a three-day slot
+// that only reaches somebody who happens to open the app.
+const FULL_WINDOW_WARN_DAYS = 7;
 // Admin-priced sessions: a percentage of THAT CLIENT'S case rate, 25% steps.
 const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
 const METHODS = ['phone', 'video'];
@@ -1035,6 +1042,7 @@ export default {
     if (minute % 15 === 0) {
       ctx.waitUntil(runChatDigest(env));
       ctx.waitUntil(runFollowUpWarnings(env));
+      ctx.waitUntil(runWindowWarnings(env));
       ctx.waitUntil(runAppealWarnings(env));
       ctx.waitUntil(runChatOpenNotices(env));
       ctx.waitUntil(cleanupStaleSlots(env));
@@ -1572,7 +1580,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-26-grace';
+const BUILD_TAG = 'v2026-08-26-renewal';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -5100,10 +5108,15 @@ async function confirmExtensionPurchase(env, session, attempt = 0) {
     // the "what has this case paid" helpers stay true as it runs on.
     fullAccessRateCents: (Number(c.data.fullAccessRateCents) || 0) + amountCents,
     pendingExtend: null,
+    // A NEW MONTH GETS ITS OWN WARNING. windowEndWarned is a once-only flag,
+    // so leaving it set here would mean the first month was the only one ever
+    // warned about: every month after this would end in silence, on a case
+    // that renews as many times as it needs to.
+    windowEndWarned: null,
     extraPayments: payments,
   }, {
     mask: ['fullAccessExtraDays', 'fullAccessMonths', 'fullAccessRateCents',
-      'pendingExtend', 'extraPayments'],
+      'pendingExtend', 'windowEndWarned', 'extraPayments'],
     ifUpdateTime: c.updateTime,
   });
   // Lost the lock: re-run from the top; the sessionId dedup makes it idempotent.
@@ -7342,6 +7355,59 @@ export async function runFollowUpWarnings(env, now = Date.now()) {
     }
     await patchDoc(env, `cases/${row.id}`, { followUpExpiryWarned: true }, {
       mask: ['followUpExpiryWarned'],
+    });
+  }
+}
+
+/**
+ * A week's notice that a Hands-Off month is ending.
+ *
+ * Modelled on runFollowUpWarnings above, which is the shape every warning in
+ * this file uses: query, skip what is already handled, skip what has already
+ * lapsed, skip what is not yet due, send once, then stamp a flag so it is
+ * never sent twice.
+ *
+ * It reads fullAccessWindowEnd, the same function the auto-close sweep and
+ * the check-in ceiling read, so the date in the email is the date the system
+ * will actually act on. A deadline email with the wrong deadline is worse
+ * than none, which is the lesson written into its sibling.
+ *
+ * NOT a dunning notice. He sells this as a rhythm you stop whenever you like,
+ * so it says what happens if they do nothing and leaves it there.
+ */
+export async function runWindowWarnings(env, now = Date.now()) {
+  const rows = await queryDocs(env, 'cases', [['fullAccess', 'EQUAL', true]], 100);
+  for (const row of rows) {
+    const c = row.data;
+    if (c.status === 'closed' || c.windowEndWarned) continue;
+    // A paused case is not running its window down, so it is not ending.
+    if (c.hold?.pausedAt) continue;
+    // A checkout already in flight is somebody mid-renewal. Emailing them
+    // that their month is about to end reads as a bill they already paid.
+    if (c.pendingExtend) continue;
+    const end = fullAccessWindowEnd(c);
+    if (!end) continue;
+    const at = end.getTime();
+    // Already over: no email after the fact. The renewal card is still on
+    // their page and still works, which is the right way to find out late.
+    if (now >= at) continue;
+    if (at - now > FULL_WINDOW_WARN_DAYS * 86_400_000) continue;
+    if (c.clientEmail) {
+      await sendEmail(env, {
+        to: c.clientEmail,
+        subject: 'Your Hands-Off month ends next week',
+        html: `<p>Your coordination window is coming to an end:</p>
+          ${whenHtml(end, c.clientTz)}
+          <p>If you want me to carry on, you can add another month from your
+          case page. Same price, same rhythm, and the check-ins and the calls
+          on your behalf continue as they are.</p>
+          <p>If you would rather stop here, do nothing. Your case wraps up and
+          your whole file stays yours to keep.</p>
+          <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
+      });
+    }
+    await patchDoc(env, `cases/${row.id}`, { windowEndWarned: true }, {
+      mask: ['windowEndWarned'],
     });
   }
 }

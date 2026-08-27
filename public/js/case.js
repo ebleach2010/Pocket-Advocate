@@ -1226,6 +1226,10 @@ function addAboutButton(host, id) {
  * compiled-in number here and the number Stripe charges are the same.
  */
 const EXTEND_PRICE_CENTS = 340000;
+// How close to the end the renewal card appears. His number (2026-08-26).
+// The warning email goes out earlier, at FULL_WINDOW_WARN_DAYS in the Worker,
+// because a card only reaches somebody who opens the app.
+const EXTEND_OFFER_WITHIN_DAYS = 3;
 // The Worker's rule, and the Worker's numbers. These are not decoration: this
 // function tells a client the date their month runs to, and until now it said
 // SIXTY DAYS for every case, hardcoded, while the Worker gives a case bought
@@ -1306,6 +1310,24 @@ function extendOffer(c) {
         <p><a class="btn glow" href="${esc(pending.url)}">Finish checkout</a></p>
       </div>`;
   const end = windowEndOf(c);
+  // NEAR THE END, not all month. Eric, 2026-08-26: "Shouldn't that show maybe
+  // three days before their month ends?"
+  //
+  // This card carried a four-figure price and sat on the client's page from
+  // day one of a thirty-day month, which reads as a hand out rather than an
+  // offer. On a case opened for a delayed start it appeared before the month
+  // had even begun, which is the same defect a month early.
+  //
+  // FAILS OPEN. A case with no computable end still shows the card: hiding a
+  // renewal because a date could not be worked out is a silent way to lose
+  // money, and the two branches above already handle the states where
+  // something is genuinely in flight.
+  //
+  // It also stays up AFTER the window ends, until the case closes. Renewing
+  // late is sound: confirmExtensionPurchase credits the lapsed days first
+  // (worker/index.js), so a month bought late is a full thirty days from
+  // today rather than thirty days added to a date three weeks gone.
+  if (end && end.getTime() - Date.now() > EXTEND_OFFER_WITHIN_DAYS * 86_400_000) return '';
   return `
     <div class="followup-offer">
       <h3>Keep going another month?</h3>

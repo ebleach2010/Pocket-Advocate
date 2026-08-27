@@ -204,6 +204,21 @@ ok('the client is told their month STARTS, not that it already started',
 ok('and is told why signing early is still worth it',
    /records request can take weeks/.test(windowLine));
 
+// AND THE UPSELL IS NOT IN THEIR FACE. Eric, 2026-08-26: "Shouldn't that show
+// maybe three days before their month ends?" This case was opened moments ago
+// for a month starting in a fortnight, so it has 44 days to run: the renewal
+// card must not be on the page, and the price must not be either. Checked on
+// the RENDERED page, because the arithmetic is pinned in checkins.mjs Z3-Z8
+// and a lift cannot prove the markup ever reaches the DOM.
+const upsell = await client.evaluate(() => ({
+  card: !!document.querySelector('[data-buy-extend]'),
+  words: /Keep going another month/.test(document.body.textContent || ''),
+  price: /\$3,400/.test(document.body.textContent || ''),
+}));
+ok('a month that has not started is not being sold another one',
+   upsell.card === false && upsell.words === false, JSON.stringify(upsell));
+ok('and no four-figure price is sitting on their page', upsell.price === false);
+
 ok('the client is asked for the authorisation the tier needs',
    seen.heading === 'Before I can act for you', seen.heading || '(no panel)');
 ok('the insurer form is on their page, which is the whole reason for this',
