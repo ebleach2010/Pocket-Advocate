@@ -64,6 +64,25 @@ for jumping straight to a fixture:
 No email is sent anywhere in the demo. Drop `&tour=1` to skip the update
 tour.
 
+### Straight onto a form
+
+`?sign=records` or `?sign=representative` on a client case opens that document
+with the sheet already up, so a link lands on the form rather than on a case
+page with a panel some way down it:
+
+| where | url |
+|---|---|
+| Records authorisation | `/case.html?demo=1&id=demo-case&sign=records` |
+| Insurance representative | `/case.html?demo=1&id=demo-case&sign=representative` |
+
+The parameter is spent on arrival: it is stripped from the address bar and
+cleared in memory, because the authority panel repaints whenever its documents
+change and a parameter left behind would reopen the sheet on top of itself
+after every signature. `?extended=1` learned that in the 2026-08-25 audit.
+
+It works outside the demo too, on a real case, which is the point: this is the
+link that goes in an email telling a client to sign.
+
 ## What each one is for
 
 **Booking.** The three steps, then the payment step where the two services
