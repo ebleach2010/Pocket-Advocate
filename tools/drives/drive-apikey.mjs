@@ -18,6 +18,25 @@ const ok = (n, c, d = '') => { if (c) { pass++; console.log('  ok   ', n, d ? `(
 
 const KEY = 'sk-proj-driveTESTkey0123456789abcdefghijklmnopQRST';
 
+// Before the browser: the real route, asked by a stranger. The demo mirror
+// answers the panel, so nothing else here touches the Worker's own handler,
+// and the one thing that handler must never do is admit it exists. Node's
+// fetch, not the page's, because the demo replaces window.fetch outright.
+{
+  const paths = ['/api/admin/openai-key', '/api/admin/effort',
+                 '/api/admin/not-a-real-route', '/api/admin/zzz'];
+  const seen = [];
+  for (const path of paths) {
+    const r = await fetch(`${P}${path}`).catch(() => null);
+    seen.push(r ? `${r.status} ${await r.text()}` : 'no answer');
+  }
+  // Negative control run 2026-08-27: make the route answer 403 "Admins only"
+  // and both of these go red, printing the 403 beside the three 404s.
+  ok('a stranger gets 404 from the key route', seen[0].startsWith('404'), seen[0]);
+  ok('byte for byte what a made-up route gives, so it admits nothing',
+    new Set(seen).size === 1, seen.join(' | '));
+}
+
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const ctx = await b.newContext({ viewport: { width: 390, height: 844 } });
 await ctx.addCookies([{ name: 'pa_demo', value: 'admin', domain: '127.0.0.1', path: '/' }]);
