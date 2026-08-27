@@ -25,6 +25,26 @@
 #
 # The sibling workflow pages.yml publishes only PROTOTYPE.html to the GitHub
 # Pages review build. That is not the production site either.
+#
+# ONE SHA, ONE BUILD. Do not push the same commit to the branch and to main.
+# Cloudflare builds per COMMIT, not per ref: the first push of a SHA gets a
+# real build and the second gets a zero-duration mirror of it, which does
+# nothing. Both directions cost something and both have now happened:
+#
+#   ce24bf0  branch second  -> no preview URL was minted, so there was nothing
+#                              to hand him to test the fix on.
+#   dadc14c  main second    -> the mirror was recorded as a FAILED check, the
+#                              production deploy never ran, and the live site
+#                              stayed on the previous build while the push
+#                              looked like it had landed.
+#
+# The second one is the dangerous one, because a green push and a stale site
+# look identical from here. Tell them apart by the build's timestamps: a real
+# build takes minutes, a mirror has started_at == completed_at to the second.
+#
+# So: give main its own commit. Push to main, watch /api/version report the
+# new BUILD_TAG, and only then fast-forward the branch to the same SHA (that
+# mirror costs a preview nobody needed, which is the harmless direction).
 name: Deploy to Cloudflare (manual fallback)
 
 on:
