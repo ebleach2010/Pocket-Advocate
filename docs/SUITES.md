@@ -7,14 +7,14 @@ building and re-finding this once cost a full day.
 
     node tools/suites/run.mjs
 
-Fifteen suites assert against the real Worker and page sources: pricing
+Sixteen suites assert against the real Worker and page sources: pricing
 constants, the tier window and closure rules, the maintenance gate, the
-acknowledgment flow, the authority documents and their golden text, the hold
-model, the check-in cadence, the work clock, the advisor queue, the Stripe
-parameters, the ChatGPT key store, and the defect regressions. (It said
-"nine" for months while the count climbed; the runner discovers the folder,
-so the number here is the only thing that can drift.) No server, no browser,
-no network.
+acknowledgment flow, the authority documents and their golden text, the
+sign-once authorisation and the provider packet, the hold model, the check-in
+cadence, the work clock, the advisor queue, the Stripe parameters, the ChatGPT
+key store, and the defect regressions. (It said "nine" for months while the
+count climbed; the runner discovers the folder, so the number here is the only
+thing that can drift.) No server, no browser, no network.
 Eric's rule (2026-08-25): this battery runs and passes before ANYTHING is
 pushed to main. See CLAUDE.md.
 
