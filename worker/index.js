@@ -30,6 +30,7 @@ import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
+import { getOpenAiKeyState, setOpenAiKey, clearOpenAiKey } from './openai.js';
 
 /**
  * The advisor's model turns, out of harm's way. A Workflow step has no wall
@@ -882,6 +883,8 @@ export default {
         return await handleCloseCase(request, env);
       if (url.pathname === '/api/admin/effort')
         return await handleEffort(request, env);
+      if (url.pathname === '/api/admin/openai-key')
+        return await handleOpenAiKey(request, env);
       if (url.pathname === '/api/admin/voice')
         return await handleVoiceLoop(request, env, ctx);
       if (url.pathname === '/api/version' && request.method === 'GET')
@@ -1580,7 +1583,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-27-signfix';
+const BUILD_TAG = 'v2026-08-27-apikey';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -4219,6 +4222,32 @@ async function handleEffort(request, env) {
     return json(await setAdvisorEffort(env, body?.effort));
   }
   return json(await getAdvisorEffort(env));
+}
+
+/**
+ * GET/POST /api/admin/openai-key
+ *
+ * The spot for Eric's ChatGPT key. GET reports whether one is set and its
+ * last four characters; it NEVER returns the key, so a stolen admin session
+ * still cannot walk off with it. POST { key } stores one after asking OpenAI
+ * whether it works, and POST { clear: true } forgets it.
+ *
+ * Admin-gated by requireAdmin, and 404 rather than 403 on a miss, like every
+ * other advocate route: a 403 would confirm the route exists.
+ */
+async function handleOpenAiKey(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    if (body?.clear) return json(await clearOpenAiKey(env));
+    const out = await setOpenAiKey(env, body?.key);
+    // A refusal is a 400 so the panel's own !res.ok branch catches it and
+    // shows the reason, instead of painting a saved state over a save that
+    // did not happen.
+    return json(out, out.error ? 400 : 200);
+  }
+  return json(await getOpenAiKeyState(env));
 }
 
 /**

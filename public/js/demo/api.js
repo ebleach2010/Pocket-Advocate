@@ -55,6 +55,11 @@ the phone. The referral question is the one that changes the shape of the case.`
 let demoChatSecs = 3 * 3600 + 40 * 60;
 let demoEffort = 'high';
 
+// The ChatGPT key row, in the demo. It never holds a real key and never asks
+// OpenAI anything: the point is to show what the row DOES, so the shape check
+// is real and the "OpenAI accepted it" answer is invented. Demo only.
+let demoOpenAi = { set: false, tail: '', updatedAt: null, checked: false, viaSecret: false };
+
 // What the study looks like after a few nights. Demo only.
 const demoVoice = {
   enabled: true,
@@ -523,6 +528,29 @@ export function demoApi(role, store) {
     if (path === '/api/admin/effort') {
       if (init.method === 'POST') demoEffort = body.effort === 'max' ? 'max' : 'high';
       return ok({ effort: demoEffort });
+    }
+    if (path === '/api/admin/openai-key') {
+      if (init.method === 'POST') {
+        if (body.clear) {
+          demoOpenAi = { set: false, tail: '', updatedAt: null, checked: false, viaSecret: false };
+          return ok({ ...demoOpenAi, message: 'Key removed.' });
+        }
+        const key = typeof body.key === 'string' ? body.key.trim() : '';
+        // The same shape check the Worker runs, so a bad paste is refused here
+        // too and the demo does not teach him something the real thing will
+        // not do.
+        if (!/^sk-[A-Za-z0-9_-]{16,500}$/.test(key)) {
+          return new Response(
+            JSON.stringify({ error: 'An OpenAI key starts with sk- and is one long line. That does not look like one.' }),
+            { status: 400, headers: { 'content-type': 'application/json' } });
+        }
+        demoOpenAi = {
+          set: true, tail: key.slice(-4), updatedAt: new Date().toISOString(),
+          checked: true, viaSecret: false,
+        };
+        return ok({ ...demoOpenAi, message: 'Saved. OpenAI accepted it.' });
+      }
+      return ok({ ...demoOpenAi });
     }
     if (path === '/api/admin/voice') {
       if (typeof body.enabled === 'boolean') demoVoice.enabled = body.enabled;

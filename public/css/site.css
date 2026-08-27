@@ -532,6 +532,10 @@ label:has(> input[type="checkbox"]):not([class]) {
 input[type=email],
 input[type=tel],
 input[type=text],
+/* password was missing from this list, so the one password field outside
+   signin.html (the ChatGPT key in Settings) painted as a bare browser box on
+   the admin pages, which do not load glowup.css. */
+input[type=password],
 input[type=date],
 input[type=url],
 input[type=datetime-local],
