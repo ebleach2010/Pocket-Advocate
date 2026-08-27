@@ -20,9 +20,10 @@ import { openDutyDraft } from './duty.js';
 import { openPrepSheet } from './prep.js';
 import { mountFolder } from './folder.js';
 import {
-  recordsAuthorisation, representativeDesignation, APPEAL_DEADLINES, appealDueAt,
+  recordsAuthorisationModel, representativeDesignationModel, APPEAL_DEADLINES, appealDueAt,
 } from './authority.js';
 import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
+import { openAuthorityDocument } from './authority-doc-window.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
@@ -3621,21 +3622,14 @@ function printAuthorityDoc(item) {
     ...item,
     clientName: data.clientName, clientDob: data.clientDob, advocateName: 'Eric Bleach',
   };
-  const text = item.kind === 'records' ? recordsAuthorisation(o) : representativeDesignation(o);
-  const win = window.open('', '_blank');
-  if (!win) { alert('Allow pop-ups to print this.'); return; }
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
-    <title>${item.kind === 'records' ? 'Records authorisation' : 'Insurance representative'}</title>
-    <style>@page { margin: 16mm; }
-      body { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color:#000; }
-      pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
-      .sig-ink { margin: 6mm 0 0; page-break-inside: avoid; }
-      .sig-ink img { max-width: 78mm; max-height: 26mm; display: block; }
-      .sig-ink figcaption { font-size: 10px; color: #444; margin-top: 1mm; }
-      </style>
-    </head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre>${signatureInk(item)}</body></html>`);
-  win.document.close();
-  setTimeout(() => win.print(), 350);
+  // The STRUCTURE, not the finished text. The window renders it; this file never
+  // touches the words, which is why the same document can be a printed page
+  // here and a preview on the client's phone without two copies of the words.
+  openAuthorityDocument({
+    model: item.kind === 'records' ? recordsAuthorisationModel(o) : representativeDesignationModel(o),
+    title: item.kind === 'records' ? 'Records authorisation' : 'Insurance representative',
+    signatureHtml: signatureInk(item),
+  });
 }
 
 /**

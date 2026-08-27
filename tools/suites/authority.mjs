@@ -167,10 +167,22 @@ check('S9 the completeness gate carries Eric\'s wording, exactly',
   CASE.includes('Your document is incomplete. please review the full document and be sure you did not miss any areas requiring your selection or signature.'));
 check('S10 bad fields go red and the pad is one of them',
   /field-bad/.test(CASE) && /mark\('\[data-sig-open\]'\)/.test(CASE));
+// UPDATED 2026-08-26, not deleted. Its intent is that the drawn signature is
+// rendered OUTSIDE the document text: the text is what authority.mjs pins
+// line by line, and an image spliced into it would be both unpinnable and
+// forgeable. That is unchanged and is what is checked below.
+//
+// What it pinned was `</pre>${signatureInk(item)}`, and the <pre> is gone:
+// both halves now hand the ink to the shared window opener as its own
+// argument, which renders it after the document and never inside the model.
+// If anything, the separation is now structural rather than textual.
+const DOCWIN = readFileSync(__j(__REPO, 'public/js/authority-doc-window.js'), 'utf8');
 check('S11 the signature prints on paper, outside the document text',
   /function signatureInk/.test(CASE) && /function signatureInk/.test(ADMIN)
-  && /<\/pre>\$\{signatureInk\(item\)\}/.test(CASE)
-  && /<\/pre>\$\{signatureInk\(item\)\}/.test(ADMIN));
+  && /signatureHtml: signatureInk\(item\)/.test(CASE)
+  && /signatureHtml: signatureInk\(item\)/.test(ADMIN)
+  // Rendered after the document, and the model itself never sees it.
+  && /\$\{authorityHtml\(model\)\}\n\$\{signatureHtml\}/.test(DOCWIN));
 check('S12 and it is re-checked before it is ever written into a document',
   (CASE.match(/data:image\\\/\(png\|jpe\?g\);base64/g) || []).length >= 1
   && (ADMIN.match(/data:image\\\/\(png\|jpe\?g\);base64/g) || []).length >= 1);
@@ -211,6 +223,113 @@ check('S24 the list GET omits the signature blobs unless one is asked for by id'
   /hasSignature: !!signatureImage/.test(W) && /url\.searchParams\.get\('id'\)/.test(W));
 check('S25 a signature nobody can draw is not the only route',
   /data-sig-typed/.test(CASE), 'pointer-only would lock out the whole tier');
+
+// ---- F1-F12: it has to look like a document, and have a way out ----------
+// Eric, 2026-08-26, on the printed records authorisation: "The forms are
+// fucking horrendous. This? Really? Format it neatly." And separately: "There's
+// also no way to exit out of this screen."
+//
+// Both came out of the same twenty lines, which existed twice: each half wrote
+// its own window, dumped the document into a <pre> at 12px monospace, and
+// called win.print() on a timer with no controls on the page at all. Dismiss
+// the print sheet on a phone and there was no back, no close, nothing to tap.
+{
+  const A = await import(`file://${__j(__REPO, 'public/js/authority.js')}`);
+  const model = A.recordsAuthorisationModel({
+    clientName: 'Jordan Avery', clinicName: 'Mountain Ridge Neurology',
+    categories: ['mentalHealth'], scopes: ['discuss', 'records'],
+  });
+  const html = A.authorityHtml(model);
+
+  check('F1 the document renders as HTML, not as a wall of preformatted text',
+    /<h1>/.test(html) && /<h2>/.test(html) && !/<pre/.test(html));
+  check('F2 its sections are sections, so a clerk can skim for the signature',
+    (html.match(/<section/g) || []).length >= 6);
+  check('F3 the rights are a numbered list, not four lines that look like one',
+    /<ol class="doc-rights">/.test(html) && (html.match(/<li>/g) || []).length >= 4);
+  check('F4 a ticked scope is marked as ticked, and says so out loud',
+    /class="doc-box is-on"/.test(html) && /Authorised<\/span>/.test(html));
+  check('F5 an unticked one is not silently identical to a ticked one',
+    /<span class="doc-box"/.test(A.authorityHtml(A.recordsAuthorisationModel({ blank: true }))));
+  // Hard wraps are for the fixed-width text form. Left in the HTML they would
+  // break mid-sentence at whatever width the paper happens to be.
+  check('F6 wrapped paragraphs reflow instead of keeping their line breaks',
+    !/\n[a-z]/.test(html.replace(/\n\s*</g, '<')));
+  check('F7 a blank field is a rule to write on, not forty-six underscores',
+    /<span class="doc-rule">/.test(A.authorityHtml(A.recordsAuthorisationModel({ blank: true })))
+    && !/_{10,}/.test(A.authorityHtml(A.recordsAuthorisationModel({ blank: true }))));
+  // The words come from one place. A second copy is how a document and its
+  // preview start disagreeing.
+  check('F8 the text and the HTML are built from the same model',
+    typeof A.authorityText === 'function'
+    && A.recordsAuthorisation({ clientName: 'X' }) === A.authorityText(A.recordsAuthorisationModel({ clientName: 'X' })));
+
+  const W = readFileSync(__j(__REPO, 'public/js/authority-doc-window.js'), 'utf8');
+  check('F9 there is a way out of the document window',
+    /data-done/.test(W) && />Done</.test(W));
+  check('F10 and it is a real way out, with a fallback that admits defeat',
+    /window\.close\(\)/.test(W) && /window\.history\.back\(\)/.test(W)
+    && /Close this tab to go back/.test(W));
+  // The trap: print fired at somebody who asked to LOOK at the form.
+  check('F11 nothing prints until he asks it to',
+    !/setTimeout\(\(\) => win\.print\(\)/.test(W) && !/\.print\(\), \d+\)/.test(W)
+    && /data-print/.test(W));
+  // Comments stripped first. The version of this check that read the whole
+  // file failed on the word "monospace" inside the comment EXPLAINING the
+  // monospace bug, which is a check marking its own documentation as the
+  // defect.
+  const WCSS = W.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  check('F12 the controls never reach paper, and the body is not monospace',
+    /@media print \{[\s\S]*?\.doc-bar \{ display: none/.test(WCSS)
+    && !/monospace/.test(WCSS)
+    && /font: 15px\/1\.6 Georgia/.test(WCSS));
+
+  // One opener, not two. This is what stopped being true and caused both bugs.
+  const CASE2 = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  const ADMIN2 = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
+  // Scoped to the two AUTHORITY printers. Both files legitimately write other
+  // windows (the compiled case file, the appeal letter, the prep sheet), and
+  // the first version of this check banned document.write outright, which
+  // would have marked three unrelated working features as this bug.
+  const fnBody = (src, name) => {
+    const i = src.indexOf(name);
+    if (i < 0) return '';
+    const j = src.indexOf('\n}\n', i);
+    return j < 0 ? src.slice(i) : src.slice(i, j);
+  };
+  const clientPrinter = fnBody(CASE2, 'async function printAuthority(c, item) {');
+  const adminPrinter = fnBody(ADMIN2, 'function printAuthorityDoc(item) {');
+  check('F13 both halves use the one opener and neither writes its own window',
+    clientPrinter.length > 0 && adminPrinter.length > 0
+    && /openAuthorityDocument\(/.test(clientPrinter) && /openAuthorityDocument\(/.test(adminPrinter)
+    && !/document\.write/.test(clientPrinter) && !/document\.write/.test(adminPrinter)
+    && !/<pre>/.test(clientPrinter) && !/<pre>/.test(adminPrinter),
+    `${clientPrinter.length}/${adminPrinter.length} chars lifted`);
+  check('F14 the in-app preview renders the same document as the paper one',
+    /preview\.innerHTML = authorityHtml\(/.test(CASE2)
+    && !/class="auth-doc" data-preview><\/pre>/.test(CASE2));
+}
+
+// ---- F15: a blank can grant what the app can grant -----------------------
+// A printed blank said flatly "I have NOT authorised release of separately
+// protected categories", with nothing to tick. So a client filling one in on
+// paper could not authorise mental-health records however much they wanted
+// to: the in-app form offered the choice and the paper form silently refused
+// it. "Make sure it covers all bases" (Eric, 2026-08-26).
+{
+  const A = await import(`file://${__j(__REPO, 'public/js/authority.js')}`);
+  const blank = A.recordsAuthorisation({ blank: true });
+  check('F15 a blank offers every sensitive category, unticked',
+    A.SENSITIVE_CATEGORIES.every((c) => blank.includes(`[ ] ${c.label}`)),
+    A.SENSITIVE_CATEGORIES.filter((c) => !blank.includes(`[ ] ${c.label}`)).map((c) => c.id).join(',') || 'all present');
+  check('F16 and says plainly that none of it is required',
+    /Nothing in this list is required/.test(blank));
+  // The signed form must NOT sprout empty boxes: a signed document says what
+  // was authorised, and an unticked box on it reads as a choice not made.
+  check('F17 a signed form with no categories still states the exclusion',
+    /I have NOT authorised release of separately protected categories/
+      .test(A.recordsAuthorisation({ clientName: 'X' })));
+}
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

@@ -15,9 +15,10 @@ import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
 import { helpButton, wireHelp, openCaseHelp } from './help.js';
 import {
-  recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
-  COMMUNICATION_SCOPES,
+  recordsAuthorisationModel, representativeDesignationModel, authorityHtml,
+  SENSITIVE_CATEGORIES, COMMUNICATION_SCOPES,
 } from './authority.js';
+import { openAuthorityDocument } from './authority-doc-window.js';
 import { FULL_ACCESS_TERMS, FULL_ACCESS_PLAIN } from './tier-terms.js';
 import { wireAboutButtons } from './service-about.js';
 import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
@@ -2163,7 +2164,7 @@ function openAuthoritySheet(c, kind, onDone) {
       ` : ''}
       <details class="agreement" style="margin:.9rem 0 .6rem;">
         <summary><span class="agreement-title">Read the whole form</span></summary>
-        <div class="agreement-body"><pre class="auth-doc" data-preview></pre></div>
+        <div class="agreement-body"><div class="auth-doc" data-preview></div></div>
       </details>
       <label class="dim small">Type your full name to sign
         <input type="text" data-f="signedName" maxlength="120" placeholder="${esc(c.clientName || 'Your full name')}"></label>
@@ -2195,7 +2196,11 @@ function openAuthoritySheet(c, kind, onDone) {
       planName: val('planName'), memberId: val('memberId'),
       categories: cats(), scopes: scopesOf(), signedName: val('signedName'),
     };
-    preview.textContent = isRecords ? recordsAuthorisation(o) : representativeDesignation(o);
+    // The SAME renderer the printed page uses, so what they read before
+    // signing is what comes out afterwards. It was textContent of a monospace
+    // <pre>, which is what made a legal form look like a terminal log.
+    preview.innerHTML = authorityHtml(isRecords
+      ? recordsAuthorisationModel(o) : representativeDesignationModel(o));
   };
   overlay.addEventListener('input', repaint);
   overlay.addEventListener('change', repaint);
@@ -2546,30 +2551,19 @@ function signatureInk(item) {
 async function printAuthority(c, item) {
   if (!item) return;
   // The list no longer carries the signature blobs, so the one document
-  // being printed asks for its own. A failed fetch prints the form without
-  // the ink rather than not printing at all.
+  // being printed asks for its own. A failed fetch shows the form without
+  // the ink rather than not showing it at all.
   if (item.hasSignature && !item.signatureImage) item = await withSignature(c, item);
   const o = {
     ...item,
     clientName: c.clientName, clientDob: c.clientDob,
     advocateName: 'Eric Bleach',
   };
-  const text = item.kind === 'records' ? recordsAuthorisation(o) : representativeDesignation(o);
-  const win = window.open('', '_blank');
-  if (!win) {
-    alert('Your browser blocked the print window. Allow pop-ups for this site and try again.');
-    return;
-  }
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
-    <title>${item.kind === 'records' ? 'Records authorisation' : 'Insurance representative'}</title>
-    <style>
-      @page { margin: 16mm; }
-      body { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: #000; }
-      pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
-      .sig-ink { margin: 6mm 0 0; page-break-inside: avoid; }
-      .sig-ink img { max-width: 78mm; max-height: 26mm; display: block; }
-      .sig-ink figcaption { font-size: 10px; color: #444; margin-top: 1mm; }
-    </style></head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre>${signatureInk(item)}</body></html>`);
-  win.document.close();
-  setTimeout(() => win.print(), 350);
+  // One opener, shared with the advocate's half. It renders the structure, adds a
+  // Done control, and does NOT print on its own.
+  openAuthorityDocument({
+    model: item.kind === 'records' ? recordsAuthorisationModel(o) : representativeDesignationModel(o),
+    title: item.kind === 'records' ? 'Records authorisation' : 'Insurance representative',
+    signatureHtml: signatureInk(item),
+  });
 }

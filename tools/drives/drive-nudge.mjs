@@ -129,6 +129,7 @@ const sched = await page.evaluate(() => {
     open: box ? !box.hidden : false,
     prefill: document.getElementById('sched-when')?.value || '',
     chips: [...document.querySelectorAll('[data-today]')].map((x) => x.textContent.trim()),
+    rowText: document.querySelector('[data-today-row]')?.textContent.trim() || '',
     small: [...document.querySelectorAll('[data-today]')].filter((x) => x.getBoundingClientRect().height < 44).length,
   };
 });
@@ -136,7 +137,25 @@ ok('typing a time is the first option, not buried under next week',
    /not on the calendar/i.test(sched.first), sched.first);
 ok('it is preselected, so the picker is already on screen', sched.custom && sched.open);
 ok('the picker is prefilled with a time today', /^\d{4}-\d{2}-\d{2}T\d{2}:00$/.test(sched.prefill), sched.prefill);
-ok('every hour left today is one tap', sched.chips.length > 0, sched.chips.join(' '));
+// TIME OF DAY DECIDES WHICH OF THESE IS CORRECT, so the check asks the clock
+// first. Chips run from the next whole hour to 9pm Mountain
+// (admin-case.js: `for (let h = Math.max(from, 7); h <= 21; h++)`), so after
+// 9pm there are none and the row says so instead. The old version asserted
+// `chips.length > 0` unconditionally and therefore passed all afternoon and
+// failed every night, which is a drive that reports the hour rather than the
+// code. The empty state is the more valuable half anyway: it proves the row
+// says something rather than going blank.
+const mtHour = Number(new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Etc/GMT+7', hour: '2-digit', hour12: false,
+}).format(new Date()));
+if (mtHour + 1 <= 21) {
+  ok('every hour left today is one tap', sched.chips.length > 0,
+     `${mtHour}:00 MST, chips: ${sched.chips.join(' ')}`);
+} else {
+  ok('after the last hour, the row says so rather than going blank',
+     sched.chips.length === 0 && /Nothing left today/.test(sched.rowText || ''),
+     `${mtHour}:00 MST, row: ${JSON.stringify(sched.rowText || '')}`);
+}
 ok('and each chip is a 44px target', sched.small === 0, `${sched.small} too small`);
 
 const two = await page.evaluate(() => {
