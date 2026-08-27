@@ -14,6 +14,12 @@
 // So the check that counts is the LAST one: the client's own page offering the
 // insurer authorisation. The admin panel saying a nice sentence proves
 // nothing if the forms did not actually open.
+// Observed 2026-08-27: 32 ok, 0 FAIL, driving a 45-day agreement with a start
+// a fortnight out.
+//
+// Negative control, run 2026-08-26: dropping the typed amount from the demo's
+// open-full write lands on $1,200, the case fee alone, with the $3,400
+// silently gone.
 import { chromium } from 'playwright';
 const P = `http://127.0.0.1:${process.env.PA_PORT || 8901}`;
 let pass = 0, fail = 0;

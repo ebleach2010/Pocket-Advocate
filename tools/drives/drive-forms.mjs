@@ -10,6 +10,13 @@
 // there: whether the body actually renders in a serif at a readable size, and
 // whether the Done button actually leaves. A button that exists in the source
 // and does nothing when pressed would pass every source check ever written.
+// Observed 2026-08-27: 32 ok, 0 FAIL.
+//
+// Negative controls, run the same day: restoring the old one-size-fits-all
+// sentence ("Your document is incomplete...") turns "the message NAMES the
+// name" red and quotes that sentence straight back; dropping
+// body.classList.add('sheet-open') turns "the page behind the sheet is
+// locked" red; removing the Done button turns authority.mjs F9 red.
 import { chromium } from 'playwright';
 const P = `http://127.0.0.1:${process.env.PA_PORT || 8901}`;
 let pass = 0, fail = 0;
