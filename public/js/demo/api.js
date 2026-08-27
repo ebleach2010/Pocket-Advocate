@@ -226,6 +226,30 @@ export function demoApi(role, store) {
         if (!Number.isFinite(cents) || cents <= 0 || cents > 100000 * 100)
           return fail(400, 'Give an amount between $1 and $100,000.');
         store.docs.set(key, { ...c, paidOverrideCents: cents, paidOverrideAt: now });
+      } else if (body.action === 'set-agreement') {
+        // Correcting a running agreement. Moves no money, sends nothing.
+        if (!c.fullAccess) return fail(409, 'This case is not on Hands-Off Case Management.');
+        const next = { ...c };
+        let touched = false;
+        if (body.days !== undefined && body.days !== null && body.days !== '') {
+          const d = Math.round(Number(body.days));
+          if (!Number.isFinite(d) || d < 1 || d > 365)
+            return fail(400, 'Give a length between 1 and 365 days.');
+          next.fullAccessDays = d;
+          touched = true;
+        }
+        if (body.startAt) {
+          const t = new Date(body.startAt);
+          if (Number.isNaN(t.getTime())) return fail(400, 'That start date did not make sense.');
+          if (Math.abs(t.getTime() - now.getTime()) > 365 * 86400000)
+            return fail(400, 'Pick a start date within a year either side of today.');
+          next.fullAccessAt = t;
+          touched = true;
+        }
+        if (!touched) return fail(400, 'Nothing to change.');
+        // A moved window is a different deadline, so the notice fires again.
+        next.windowEndWarned = null;
+        store.docs.set(key, next);
       } else if (body.action === 'open-full') {
         // The tier, opened by hand. Same rules as the Worker, so the demo
         // cannot show a case the live app would refuse to make.
@@ -245,6 +269,12 @@ export function demoApi(role, store) {
             return fail(400, 'Pick a start date within a year either side of today.');
           startAt = t;
         }
+        // How long they agreed. The default is the standard month, so leaving
+        // it alone behaves exactly as it did.
+        const days = body.days === undefined || body.days === null || body.days === ''
+          ? 30 : Math.round(Number(body.days));
+        if (!Number.isFinite(days) || days < 1 || days > 365)
+          return fail(400, 'Give a length between 1 and 365 days.');
         const paidForCase = Number(c.caseRateCents) > 0
           ? Number(c.caseRateCents) : (Number(c.stripe?.amountTotal) || 0);
         const payments = Array.isArray(c.extraPayments) ? [...c.extraPayments] : [];
@@ -259,6 +289,7 @@ export function demoApi(role, store) {
           fullAccess: true,
           fullAccessAt: startAt,
           fullAccessOpenedAt: now,
+          fullAccessDays: days,
           fullAccessRateCents: paidForCase + tier,
           fullAccessMonths: 1,
           fullAccessByHand: true,

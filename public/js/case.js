@@ -1254,8 +1254,10 @@ function windowEndOf(c) {
   if (!start) return null;
   const held = Math.max(0, Number(c?.hold?.totalMs) || 0)
     + (c?.hold?.pausedAt ? Math.max(0, Date.now() - toDate(c.hold.pausedAt).getTime()) : 0);
-  const base = bought && bought >= FULL_MONTHLY_FROM_AT
-    ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS;
+  // The agreed length wins when there is one, exactly as in the Worker.
+  const agreed = Number(c.fullAccessDays);
+  const base = agreed > 0 ? agreed
+    : (bought && bought >= FULL_MONTHLY_FROM_AT ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS);
   const days = base + (Number(c.fullAccessExtraDays) || 0);
   return new Date(start + days * 86_400_000 + held);
 }

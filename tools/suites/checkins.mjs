@@ -180,10 +180,20 @@ check('E4 the card lives under Case Enhancements, states and all',
 // The base now comes from the same rule the Worker uses. The real check is
 // U1 to U6 in pricing.mjs, which RUNS all three implementations of this window
 // against the same cases instead of reading them.
-check('E5 the client window mirror adds the bought days on top of the month',
+// UPDATED AGAIN 2026-08-26, and this is the second time, which is the tell.
+// Its intent is one thing: whatever the base window is, days a client BOUGHT
+// stack on top of it. That is checked below and has never changed. What keeps
+// breaking is the half that pinned the source text of how the base is chosen,
+// which has now moved twice: first when the hardcoded sixty became the
+// Worker's rule, and now because an agreed length (fullAccessDays) wins over
+// both. So that half is dropped rather than re-pinned to a third spelling.
+//
+// The base itself is covered where it belongs, by checks that RUN all three
+// window helpers against the same cases: pricing.mjs U1-U6 for the rule and
+// A1-A7 for the agreed length. A regex cannot tell 14 from 30 from 60.
+check('E5 the client window mirror adds the bought days on top of the base',
   /function windowEndOf/.test(CASE)
-  && /const days = base \+ \(Number\(c\.fullAccessExtraDays\) \|\| 0\);/.test(CASE)
-  && /\? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS;/.test(CASE));
+  && /const days = base \+ \(Number\(c\.fullAccessExtraDays\) \|\| 0\);/.test(CASE));
 check('E6 the demo drives the purchase and the days really stack',
   /'\/api\/extend'/.test(DEMO)
   && /fullAccessExtraDays: \(Number\(c\.fullAccessExtraDays\) \|\| 0\) \+ 30/.test(DEMO));

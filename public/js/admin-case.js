@@ -1795,6 +1795,35 @@ function paintOverview(pane) {
          tier is on, which is exactly when this line has something to say. -->
     ${saidHtml('openfull')}
     <p class="eyebrow mgmt-when">Before the call</p>
+    ${!c.fullAccess ? '' : `
+    <!-- CORRECTING AN AGREEMENT THAT IS ALREADY RUNNING. An agreement made on
+         a call gets renegotiated on a later call, and the length and the start
+         were set once and then frozen: a mistyped date, or a fortnight that
+         became six weeks, left a case that could never say the truth again.
+         Moves no money and sends no email; the amount is the rate pill's job. -->
+    <details class="mgmt" data-k="agreement">
+      <summary>🤝 Their agreement</summary>
+      <div class="mgmt-body">
+        <p class="dim small" style="margin:0 0 .6rem;">What you and this client
+          agreed, and what the window runs on. Changing it moves no money and
+          sends them nothing. To correct what they paid, tap the rate beside
+          the work clock.</p>
+        <label class="small" style="display:block; margin-bottom:.3rem;">
+          Starts
+          <input type="date" id="agree-start" style="margin-left:.35rem;">
+        </label>
+        <label class="small" style="display:block; margin-bottom:.3rem;">
+          and runs for
+          <input type="number" id="agree-days" min="1" max="365" step="1"
+            style="width:5rem; margin:0 .35rem;">days
+        </label>
+        <p class="dim small" id="agree-when" style="margin:0 0 .5rem;"></p>
+        <p class="error" id="agree-err" hidden></p>
+        <div class="actions"><button class="btn secondary" id="agree-go">Save the agreement</button></div>
+      </div>
+    </details>`}
+    ${saidHtml('agree')}
+
     ${c.fullAccess ? '' : `
     <!-- OPENING THE TIER BY HAND. Until now the only thing that could set
          fullAccess was a Stripe webhook, so a client who agreed on a call and
@@ -1828,6 +1857,11 @@ function paintOverview(pane) {
         <label class="small" style="display:block; margin-bottom:.3rem;">
           Their month starts
           <input type="date" id="openfull-start" style="margin-left:.35rem;">
+        </label>
+        <label class="small" style="display:block; margin-bottom:.3rem;">
+          and runs for
+          <input type="number" id="openfull-days" min="1" max="365" step="1" value="30"
+            style="width:5rem; margin:0 .35rem;">days
         </label>
         <p class="dim small" id="openfull-when" style="margin:0 0 .5rem;"></p>
         <p class="error" id="openfull-err" hidden></p>
@@ -2005,6 +2039,7 @@ function paintOverview(pane) {
   pane.querySelector('#save-link').addEventListener('click', saveLink);
   wireScheduler(pane);
   wireOpenFull(pane, c);
+  wireAgreement(pane, c);
   pane.querySelectorAll('[data-action]').forEach((b) =>
     b.addEventListener('click', () => milestone(b.dataset.action, b)));
   // Blank forms print straight from the pure functions — nothing is written
@@ -2882,6 +2917,107 @@ function infoBar(c, mtFmt, start, due) {
  *   THE CASE IS RE-READ AFTERWARDS and only then does the panel say what
  *   happened. Same rule as the meeting link and the reschedule.
  */
+/**
+ * Correcting an agreement that is already running.
+ *
+ * Eric, 2026-08-26: "I should be able to override with custom
+ * amounts/agreements me and the client make. Because that might vary per
+ * client and length of time."
+ *
+ * Deliberately three separate controls rather than one big one, because they
+ * are three different kinds of fact and two of them are dangerous:
+ *
+ *   what they PAID          the rate pill, beside the work clock
+ *   when it starts and how long it runs   here
+ *   whether they are on the tier at all   the opening panel, once
+ *
+ * This one moves no money and sends no email. It is a record of a deal.
+ */
+function wireAgreement(el, c) {
+  const startEl = el.querySelector('#agree-start');
+  if (!startEl) return;                   // not on the tier: no panel
+  const daysEl = el.querySelector('#agree-days');
+  const whenEl = el.querySelector('#agree-when');
+  const errEl = el.querySelector('#agree-err');
+  const go = el.querySelector('#agree-go');
+  const dayFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, month: 'long', day: 'numeric',
+  });
+  // Prefilled from the case, so the fields say what is true before he touches
+  // them. A blank form here would invite him to retype a date he had right.
+  const at = c.fullAccessAt ? toDate(c.fullAccessAt) : null;
+  if (at && !startEl.value) {
+    startEl.value = new Intl.DateTimeFormat('en-CA', {
+      timeZone: MOUNTAIN_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(at);
+  }
+  // The length actually in force: what he agreed, or the standard month.
+  if (daysEl && !daysEl.value) daysEl.value = String(Number(c.fullAccessDays) || FULL_WINDOW_DAYS);
+  const bought = Number(c.fullAccessExtraDays) || 0;
+
+  const readDays = () => {
+    const n = Math.round(Number((daysEl?.value || '').trim()));
+    return Number.isFinite(n) && n >= 1 && n <= 365 ? n : null;
+  };
+  const readStart = () => {
+    const day = (startEl.value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+    const t = new Date(`${day}T12:00:00-07:00`);
+    return Number.isNaN(t.getTime()) ? null : t;
+  };
+  const preview = () => {
+    const t = readStart();
+    const n = readDays();
+    if (!whenEl) return;
+    if (!t || n === null) { whenEl.textContent = 'Give a date and a length between 1 and 365 days.'; return; }
+    // Months they BOUGHT sit on top of what was agreed, and are named
+    // separately so a purchase never reads as something he typed.
+    const end = new Date(t.getTime() + (n + bought) * 86_400_000);
+    whenEl.textContent = `Their window would run ${dayFmt.format(t)} to ${dayFmt.format(end)}`
+      + `${bought ? `, including ${bought} days they bought` : ''}.`;
+  };
+  [startEl, daysEl].forEach((x) => {
+    x?.addEventListener('input', preview);
+    x?.addEventListener('change', preview);
+  });
+  preview();
+
+  go.addEventListener('click', async () => {
+    errEl.hidden = true;
+    const t = readStart();
+    const n = readDays();
+    if (!t || n === null) {
+      errEl.textContent = 'Give a date and a length between 1 and 365 days.';
+      errEl.hidden = false;
+      return;
+    }
+    const end = new Date(t.getTime() + (n + bought) * 86_400_000);
+    // Named out loud. Moving a window changes the day their case closes and
+    // the day their renewal notice goes out.
+    if (!confirm(`Change ${c.clientName || 'this client'}'s agreement?\n\n`
+      + `Their window runs ${dayFmt.format(t)} to ${dayFmt.format(end)}.\n\n`
+      + 'Nothing is charged and they are not emailed.')) return;
+    go.disabled = true;
+    try {
+      await api({ action: 'set-agreement', startAt: t.toISOString(), days: n });
+      // Re-read before claiming, and say the date the CASE now holds rather
+      // than the one that was typed.
+      await load();
+      const now = data?.fullAccessAt ? toDate(data.fullAccessAt) : null;
+      const held = Number(data?.fullAccessDays) || FULL_WINDOW_DAYS;
+      say('agree', now && held === n
+        ? `Saved. Their window runs ${dayFmt.format(now)} to ${dayFmt.format(end)}.`
+        : 'That went through, but the case does not show the change yet. Try once more.',
+      { tone: now && held === n ? 'ok' : 'warn' });
+      refreshOverview();
+    } catch (err) {
+      say('agree', `Not saved: ${err.message}`, { tone: 'warn' });
+      go.disabled = false;
+      refreshOverview();
+    }
+  });
+}
+
 function wireOpenFull(el, c) {
   const box = el.querySelector('#openfull-amt');
   if (!box) return;                       // already on the tier: no panel
@@ -2924,7 +3060,12 @@ function wireOpenFull(el, c) {
   // one fewer wheel to spin on a phone. Noon Mountain on the chosen day, so
   // no timezone rounding can shunt it to the day before or after.
   const startEl = el.querySelector('#openfull-start');
+  const daysEl = el.querySelector('#openfull-days');
   const whenEl = el.querySelector('#openfull-when');
+  const agreedDays = () => {
+    const n = Math.round(Number((daysEl?.value || '').trim()));
+    return Number.isFinite(n) && n >= 1 && n <= 365 ? n : null;
+  };
   const todayMT = () => new Intl.DateTimeFormat('en-CA', {
     timeZone: MOUNTAIN_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date());
@@ -2945,13 +3086,21 @@ function wireOpenFull(el, c) {
     const t = startInstant();
     if (!whenEl) return;
     if (!t) { whenEl.textContent = 'Pick the day their month begins.'; return; }
-    const end = new Date(t.getTime() + 30 * 86_400_000);
+    const n = agreedDays();
+    if (n === null) { whenEl.textContent = 'Give a length between 1 and 365 days.'; return; }
+    const end = new Date(t.getTime() + n * 86_400_000);
+    // The word "month" is dropped once it is not one. He can agree a
+    // fortnight, and calling that a month on his own screen is how the wrong
+    // date ends up in an email.
+    const what = n === 30 ? 'month' : `${n} days`;
     whenEl.textContent = t.getTime() > Date.now()
-      ? `Their month runs ${dayFmt.format(t)} to ${dayFmt.format(end)}. Their forms go live today either way, so records requests can start moving now.`
-      : `Their month runs ${dayFmt.format(t)} to ${dayFmt.format(end)}.`;
+      ? `Their ${what} runs ${dayFmt.format(t)} to ${dayFmt.format(end)}. Their forms go live today either way, so records requests can start moving now.`
+      : `Their ${what} runs ${dayFmt.format(t)} to ${dayFmt.format(end)}.`;
   };
   startEl?.addEventListener('change', previewWhen);
   startEl?.addEventListener('input', previewWhen);
+  daysEl?.addEventListener('input', previewWhen);
+  daysEl?.addEventListener('change', previewWhen);
   previewWhen();
 
   go.addEventListener('click', async () => {
@@ -2974,17 +3123,23 @@ function wireOpenFull(el, c) {
       errEl.hidden = false;
       return;
     }
+    const days = agreedDays();
+    if (days === null) {
+      errEl.textContent = 'Give a length between 1 and 365 days.';
+      errEl.hidden = false;
+      return;
+    }
     const after = paidCents({ ...c, fullAccess: true, fullAccessRateCents: paidForCase + cents });
     // The figure is named out loud. An upgrade that emails the client and
     // unlocks the signing surfaces is not a thing to do on a mis-tap.
     if (!confirm(`Open Hands-Off Case Management on ${c.clientName || 'this case'}?\n\n`
       + `${cents > 0 ? `Recording $${dollars(cents)} paid outside the app.` : 'No new payment recorded.'}\n`
       + `${after === null ? 'The case will show no payment recorded.' : `The case will show $${dollars(after)} paid.`}\n`
-      + `Their month starts ${dayFmt.format(startAt)}.\n\n`
+      + `Their ${days === 30 ? 'month' : `${days} days`} starts ${dayFmt.format(startAt)} and ends ${dayFmt.format(new Date(startAt.getTime() + days * 86_400_000))}.\n\n`
       + 'They get an email asking them to sign their authorisation.')) return;
     go.disabled = true;
     try {
-      await api({ action: 'open-full', tierCents: cents, startAt: startAt.toISOString() });
+      await api({ action: 'open-full', tierCents: cents, startAt: startAt.toISOString(), days });
       // Re-read before claiming, same rule as the meeting link: a 200 says
       // the request was accepted, and what he needs to know is whether the
       // case is actually on the tier now.
@@ -3407,8 +3562,10 @@ function fullAccessDaysLeft(c) {
   // number on the card holds still, which is the point of a pause.
   const held = Math.max(0, Number(c?.hold?.totalMs) || 0)
     + (c?.hold?.pausedAt ? Math.max(0, Date.now() - toDate(c.hold.pausedAt).getTime()) : 0);
-  const base = bought && bought >= FULL_MONTHLY_FROM_AT
-    ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS;
+  // The agreed length wins when there is one, exactly as in the Worker.
+  const agreed = Number(c.fullAccessDays);
+  const base = agreed > 0 ? agreed
+    : (bought && bought >= FULL_MONTHLY_FROM_AT ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS);
   const end = start + (base + (Number(c.fullAccessExtraDays) || 0)) * 86_400_000 + held;
   return Math.max(0, Math.ceil((end - Date.now()) / 86_400_000));
 }

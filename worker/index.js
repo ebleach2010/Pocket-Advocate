@@ -1580,7 +1580,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-26-renewal';
+const BUILD_TAG = 'v2026-08-26-agreement';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1997,8 +1997,18 @@ function fullAccessWindowEnd(c) {
   // keeps them. A case sold after buys thirty days at a time: month one at
   // approval, and every further month adds another thirty through
   // fullAccessExtraDays, which is the same field extensions always used.
-  const base = bought && bought >= FULL_MONTHLY_FROM_AT
-    ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS;
+  // THE LENGTH HE AGREED, when he agreed one. Eric, 2026-08-26: "I should be
+  // able to override with custom amounts/agreements me and the client make.
+  // Because that might vary per client and length of time." A month was the
+  // only shape on offer: thirty days, or sixty for a legacy case, and no way
+  // to record "we agreed six weeks" or "we agreed a fortnight".
+  //
+  // It is the BASE, not an extension. fullAccessExtraDays is what a client
+  // BUYS on top, thirty days at a time, and the two must stay separate or an
+  // agreed length would read on his own card as months somebody paid for.
+  const agreed = Number(c.fullAccessDays);
+  const base = agreed > 0 ? agreed
+    : (bought && bought >= FULL_MONTHLY_FROM_AT ? FULL_WINDOW_DAYS : FULL_LEGACY_WINDOW_DAYS);
   const days = base + (Number(c.fullAccessExtraDays) || 0);
   return new Date(start + days * 86_400_000 + heldMs(c));
 }
@@ -6716,6 +6726,13 @@ async function handleCaseUpdate(request, env) {
       startAt = t;
     }
     const startsLater = startAt.getTime() > now.getTime() + 12 * 3600_000;
+    // HOW LONG THEY AGREED. Default is the standard month, so leaving it alone
+    // behaves exactly as before. A fortnight, six weeks and ninety days are
+    // all things he has agreed on a call, and none of them was expressible.
+    const days = body?.days === undefined || body.days === null || body.days === ''
+      ? FULL_WINDOW_DAYS : Math.round(Number(body.days));
+    if (!Number.isFinite(days) || days < 1 || days > 365)
+      return json({ error: 'Give a length between 1 and 365 days.' }, 400);
     // The same shape the webhook writes: the case fee this client actually
     // paid, plus what they paid for the tier. caseRateCents is the standard
     // rate kept as the base for percentage charges, so an old case with no
@@ -6739,6 +6756,7 @@ async function handleCaseUpdate(request, env) {
       fullAccess: true,
       fullAccessAt: startAt,
       fullAccessOpenedAt: now,
+      fullAccessDays: days,
       fullAccessRateCents: paidForCase + tier,
       fullAccessMonths: 1,
       fullAccessByHand: true,
@@ -6746,9 +6764,9 @@ async function handleCaseUpdate(request, env) {
       fullAccessRequest: req ? { ...req, state: 'started', startedAt: now } : null,
       extraPayments: payments,
     }, {
-      mask: ['fullAccess', 'fullAccessAt', 'fullAccessOpenedAt', 'fullAccessRateCents',
-        'fullAccessMonths', 'fullAccessByHand', 'pendingFullAccess', 'fullAccessRequest',
-        'extraPayments'],
+      mask: ['fullAccess', 'fullAccessAt', 'fullAccessOpenedAt', 'fullAccessDays',
+        'fullAccessRateCents', 'fullAccessMonths', 'fullAccessByHand',
+        'pendingFullAccess', 'fullAccessRequest', 'extraPayments'],
     });
     // The email the webhook sends, with one sentence added when the month has
     // not begun yet. The client should not be able to tell which way the
@@ -6774,6 +6792,44 @@ async function handleCaseUpdate(request, env) {
         <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
       }).catch(() => {});
     }
+  } else if (action === 'set-agreement') {
+    // CHANGING THE AGREEMENT AFTER IT IS OPEN. Eric, 2026-08-26: "that might
+    // vary per client and length of time". An agreement made on a call gets
+    // renegotiated on a later call, and until now the length and the start
+    // were set once and then frozen: a mistyped date or a fortnight that
+    // became six weeks meant a case that could never say the truth again.
+    //
+    // Deliberately NOT open-full. This moves no money, sends no email and
+    // does not touch fullAccess itself: it corrects the record of a deal.
+    // The amount is handled by the rate pill (set-paid), which is the one
+    // control for "what have they actually paid me".
+    const c = doc.data;
+    if (!c.fullAccess)
+      return json({ error: 'This case is not on Hands-Off Case Management.' }, 409);
+    const fields = {};
+    if (body?.days !== undefined && body.days !== null && body.days !== '') {
+      const days = Math.round(Number(body.days));
+      if (!Number.isFinite(days) || days < 1 || days > 365)
+        return json({ error: 'Give a length between 1 and 365 days.' }, 400);
+      fields.fullAccessDays = days;
+    }
+    if (body?.startAt) {
+      const t = new Date(body.startAt);
+      if (Number.isNaN(t.getTime()))
+        return json({ error: 'That start date did not make sense.' }, 400);
+      const YEAR = 365 * 86_400_000;
+      if (Math.abs(t.getTime() - now.getTime()) > YEAR)
+        return json({ error: 'Pick a start date within a year either side of today.' }, 400);
+      fields.fullAccessAt = t;
+    }
+    if (!Object.keys(fields).length)
+      return json({ error: 'Nothing to change.' }, 400);
+    // Moving the window means the week's notice is about a different date, so
+    // it gets to fire again. Otherwise a case whose month was extended by hand
+    // would have been warned about a deadline that no longer exists, once,
+    // and then never again.
+    fields.windowEndWarned = null;
+    await patchDoc(env, `cases/${caseId}`, fields, { mask: Object.keys(fields) });
   } else if (action === 'recording-uploaded') {
     // The call happened: start the report clock. Admin-side the deadline is a
     // strict 7 calendar days; the client is told "7 business days, some take
