@@ -103,6 +103,60 @@ ok('and it is not monospace either', !/mono/i.test(sheet.font), sheet.font);
 ok('the tick boxes render there too', sheet.boxes >= 3, String(sheet.boxes));
 ok('the signature box and the Sign button are on the same sheet', sheet.sig && sheet.sign);
 
+// ---- the link he actually taps -------------------------------------------
+// Eric asked for "a small suite preview where I can fill out that form so I
+// can see how the tapping and signing work". Driven COLD, from a fresh page
+// load with the parameter on the URL, because that is the only thing he will
+// do: tap a link. Landing on a case page with the sheet shut would be a
+// working feature and a useless link.
+const deep = await ctx.newPage();
+deep.on('pageerror', (e) => errs.push(`deep: ${e.message}`));
+await deep.goto(`${P}/case.html?id=demo-case&demo=1&sign=records`, { waitUntil: 'networkidle' });
+await deep.waitForSelector('.settings-card.sig-sheet', { timeout: 20000 }).catch(() => {});
+const landed = await deep.evaluate(() => {
+  const card = document.querySelector('.settings-card.sig-sheet');
+  const box = document.querySelector('[data-sig-open]');
+  return {
+    open: !!card,
+    heading: card?.querySelector('h3')?.textContent.trim() || '',
+    clinic: !!document.querySelector('[data-f="clinicName"]'),
+    typedName: !!document.querySelector('[data-f="signedName"]'),
+    sigBox: !!box,
+    sigTall: box ? Math.round(box.getBoundingClientRect().height) : 0,
+    sign: !!document.querySelector('[data-sign]'),
+    url: location.search,
+  };
+});
+ok('the link lands with the form already open', landed.open, landed.heading || '(shut)');
+ok('and it is the records authorisation, the one the link asked for',
+   /Records authorisation/.test(landed.heading), landed.heading);
+ok('the fields he types into are there', landed.clinic && landed.typedName);
+ok('the signature box is there and is a real target',
+   landed.sigBox && landed.sigTall >= 44, `${landed.sigTall}px`);
+ok('and the Sign button with it', landed.sign);
+// Spent on use: a parameter left behind reopens the sheet on every repaint.
+ok('the link is spent, so it cannot reopen over itself',
+   !/sign=/.test(landed.url), landed.url || '(clean)');
+
+// Type into it and draw, which is the thing he wants to feel.
+await deep.evaluate(() => {
+  const el = document.querySelector('[data-f="clinicName"]');
+  el.value = 'Mountain Ridge Neurology';
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+});
+await deep.waitForTimeout(400);
+const flowed = await deep.evaluate(() =>
+  (document.querySelector('.auth-doc')?.textContent || '').includes('Mountain Ridge Neurology'));
+ok('what he types appears in the document as he types it', flowed);
+
+await deep.evaluate(() => document.querySelector('[data-sig-open]').click());
+await deep.waitForTimeout(600);
+const pad = await deep.evaluate(() => {
+  const c = document.querySelector('canvas');
+  return { canvas: !!c, w: c ? Math.round(c.getBoundingClientRect().width) : 0 };
+});
+ok('tapping the signature box opens a pad to draw on', pad.canvas, `${pad.w}px wide`);
+
 ok('no page errors anywhere', errs.length === 0, errs.slice(0, 2).join(' | '));
 await b.close();
 console.log(`\n${pass} ok, ${fail} FAIL`);

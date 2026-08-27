@@ -331,6 +331,37 @@ check('S25 a signature nobody can draw is not the only route',
       .test(A.recordsAuthorisation({ clientName: 'X' })));
 }
 
+// ---- F18-F21: a link that opens the form ---------------------------------
+// Eric, 2026-08-26: "Give me a small suite preview where I can fill out that
+// form so I can see how the tapping and signing work." The demo already does
+// all of it; what was missing was a way to land ON the form rather than on a
+// case page with a panel some distance down it.
+//
+// It is not only a preview convenience. This is the link that goes in an email
+// telling a client to sign.
+{
+  const C = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  check('F18 the page reads ?sign= and accepts only the two real documents',
+    /get\('sign'\)/.test(C)
+    && /want !== 'records' && want !== 'representative'/.test(C));
+  // Spent on use, twice over: stripped from the address bar AND cleared in
+  // memory. The authority panel repaints on every change to its documents, so
+  // a parameter left behind would reopen the sheet on top of itself after a
+  // signature, and again on a back-navigation. ?extended=1 learned this the
+  // hard way in the 2026-08-25 audit.
+  check('F19 and spends it, so a repaint cannot reopen the sheet',
+    /u\.searchParams\.delete\('sign'\)/.test(C)
+    && /history\.replaceState\(null, '', u\.pathname \+ u\.search \+ u\.hash\)/.test(C)
+    && /signOnLoad = '';/.test(C));
+  check('F20 it opens the EXISTING sheet, not a second copy of the form',
+    /openAuthoritySheet\(c, kind,/.test(C)
+    && (C.match(/function openAuthoritySheet/g) || []).length === 1);
+  // A sheet opened over a panel that has not painted yet is a sheet with no
+  // document behind it.
+  check('F21 and waits for the panel before opening over it',
+    /if \(auth && signOnLoad\) \{/.test(C) && /setTimeout\(\(\) => openAuthoritySheet/.test(C));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 process.exit(failed.length ? 1 : 0);

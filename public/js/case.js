@@ -584,6 +584,14 @@ function renderProgress(el, c) {
   // rather than trusting this.
   const auth = el.querySelector('[data-authority]');
   if (auth) mountAuthority(auth, c);
+  // The deep link, spent on use. mountAuthority paints asynchronously (it
+  // fetches the signed documents first), so this waits a beat rather than
+  // opening a sheet over a panel that is still empty.
+  if (auth && signOnLoad) {
+    const kind = signOnLoad;
+    signOnLoad = '';
+    setTimeout(() => openAuthoritySheet(c, kind, () => mountAuthority(auth, c)), 400);
+  }
 
   el.querySelector('[data-ics]')?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -1268,6 +1276,23 @@ function windowEndOf(c) {
 // been confirmed yet - and it hid the buy button for the rest of the session,
 // so a client who wanted a second thirty days could not buy one (audit,
 // 2026-08-25).
+// ?sign=records or ?sign=representative opens that form the moment the page
+// settles, so a link can put a client straight on the document instead of
+// "open your case, scroll down, find the panel, tap Sign".
+//
+// READ ONCE AND STRIPPED, exactly like ?extended=1 below and for the same
+// reason: the authority panel repaints whenever its documents change, so a
+// parameter left in the address bar would reopen the sheet on top of itself
+// after every signature, and again on a back-navigation.
+let signOnLoad = (() => {
+  const want = new URLSearchParams(location.search).get('sign');
+  if (want !== 'records' && want !== 'representative') return '';
+  const u = new URL(location.href);
+  u.searchParams.delete('sign');
+  history.replaceState(null, '', u.pathname + u.search + u.hash);
+  return want;
+})();
+
 let extendJustPaid = new URLSearchParams(location.search).get('extended') === '1';
 if (extendJustPaid) {
   const u = new URL(location.href);
