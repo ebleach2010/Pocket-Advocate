@@ -163,10 +163,32 @@ check('S7 the signature is validated as an image, not trusted as a string',
 check('S8 the Worker refuses an unsigned document, whatever the page did',
   /Sign the document with your finger before sending it\./.test(WORKER)
   && /Sign the document with your finger before sending it\./.test(DEMO));
-check('S9 the completeness gate carries Eric\'s wording, exactly',
-  CASE.includes('Your document is incomplete. please review the full document and be sure you did not miss any areas requiring your selection or signature.'));
-check('S10 bad fields go red and the pad is one of them',
-  /field-bad/.test(CASE) && /mark\('\[data-sig-open\]'\)/.test(CASE));
+// UPDATED 2026-08-27, not deleted, and this one RETIRES a sentence of his on
+// his own instruction. The gate used to show one wording for every possible
+// failure, and he hit it with a form that was correctly filled in:
+//
+//   "Biggest issue is saying the form isn't filled out completely when it is."
+//
+// It was filled in. He had typed his own name on a case belonging to somebody
+// else, so the name check failed, and the single sentence called that
+// "incomplete" and sent him hunting for a blank field. A client who mistypes
+// their own name would read exactly the same thing.
+//
+// So the gate now says what is actually wrong, per field. The intent of this
+// check is unchanged and is what is asserted below: every failure reaches the
+// person as words, not only as a red border.
+check('S9 the gate says what is actually wrong, not one sentence for everything',
+  // The retired wording is gone, so it cannot come back by accident.
+  !CASE.includes('Your document is incomplete.')
+  // The name mismatch, which is the one that caught him, names the name.
+  && /The name has to match the one on this case, \$\{c\.clientName\}/.test(CASE)
+  // And the reasons reach the error line rather than dying on the field.
+  && /reasons\.join\(' '\)/.test(CASE));
+check('S10 bad fields go red, the pad is one of them, and each carries a reason',
+  /field-bad/.test(CASE)
+  && /mark\('\[data-sig-open\]', 'Tap the box and sign with your finger\.'\)/.test(CASE)
+  // Screen readers get the reason too, not just the colour.
+  && /aria-errormessage/.test(CASE));
 // UPDATED 2026-08-26, not deleted. Its intent is that the drawn signature is
 // rendered OUTSIDE the document text: the text is what authority.mjs pins
 // line by line, and an image spliced into it would be both unpinnable and
@@ -360,6 +382,47 @@ check('S25 a signature nobody can draw is not the only route',
   // document behind it.
   check('F21 and waits for the panel before opening over it',
     /if \(auth && signOnLoad\) \{/.test(C) && /setTimeout\(\(\) => openAuthoritySheet/.test(C));
+}
+
+// ---- F22-F27: the three other things he hit on a phone -------------------
+// Eric, 2026-08-27, after signing the form on his phone for the first time.
+{
+  const C = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  const CSS = readFileSync(__j(__REPO, 'public/css/site.css'), 'utf8');
+
+  // "there should be a tick box for 'all available records' that overrides the
+  // dates". It is the DEFAULT, because most clients want the whole file, and
+  // it sends no dates at all: the document already reads "Records covering the
+  // whole period of my care" when it has none, so the legal text is untouched.
+  check('F22 there is an all-records tick and it is on by default',
+    /data-all-records" checked/.test(C.replace(/\s+/g, ' ')) || /data-all-records checked/.test(C));
+  // Hiding a field that still holds a value would put a date on a signed
+  // document that nobody can see.
+  check('F23 ticking it CLEARS the dates, it does not merely hide them',
+    /rangeWrap\.hidden = allBox\.checked;/.test(C)
+    && /if \(allBox\.checked\) \{[\s\S]{0,200}el\.value = '';/.test(C));
+  check('F24 and unticking it with no dates at all is refused, kindly',
+    /Give at least one date, or tick "All the records they have"/.test(C));
+
+  // "the cramping of the dates from/through fields": two date inputs side by
+  // side at 390px squeeze their own labels.
+  check('F25 the dates are stacked, not two columns of a squeezed row',
+    !/<label class="dim small" style="flex:1;">Records from/.test(C)
+    && /data-date-range/.test(C));
+
+  // "when signing the screen moves around". The canvas has had
+  // touch-action: none all along, so this looked like a browser quirk. The
+  // real cause: the DOCUMENT behind the overlay was never locked, unlike the
+  // lightbox and the full chat.
+  check('F26 the page behind the signing sheet is locked while it is open',
+    /body\.sheet-open \{ overflow: hidden; \}/.test(CSS)
+    && /document\.body\.classList\.add\('sheet-open'\)/.test(C));
+  // Every exit goes through close(): Cancel, Escape, click-outside, and a
+  // successful signature. A lock that outlives its sheet freezes the page.
+  check('F27 and released on every route out, including a successful signature',
+    /document\.body\.classList\.remove\('sheet-open'\)/.test(C)
+    && (C.match(/const close = \(\) => \{[\s\S]{0,300}?sheet-open/g) || []).length === 1
+    && /if \(!res\.ok\) throw[\s\S]{0,80}close\(\);/.test(C));
 }
 
 const failed = results.filter((r) => !r.pass);

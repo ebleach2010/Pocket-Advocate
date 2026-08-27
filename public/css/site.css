@@ -1459,6 +1459,15 @@ html { scroll-padding-top: calc(var(--demo-bar-h, 0px) + 4.4rem); }
 }
 .lightbox-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60vw; }
 body.lightbox-open { overflow: hidden; }
+/* The signing sheet locks the page behind it, the same as the lightbox above
+   and the full chat. Eric, 2026-08-27, signing on a phone: "when signing the
+   screen moves around". The overlay already contains its own scroll
+   (overscroll-behavior: contain), but the DOCUMENT behind it was still free
+   to move, so a drag that started a hair outside the canvas scrolled the case
+   page under the sheet while he was trying to write his name. The canvas has
+   had touch-action: none all along, which is why it looked like a quirk of
+   whichever browser he happened to be in. */
+body.sheet-open { overflow: hidden; }
 .msg-img { cursor: zoom-in; }
 
 /* ------------------------------------------------------------- what's new

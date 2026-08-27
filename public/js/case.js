@@ -2157,11 +2157,27 @@ function openAuthoritySheet(c, kind, onDone) {
           <input type="text" data-f="clinicAddress" maxlength="400"></label>
         <label class="dim small">Their phone, if you have it
           <input type="tel" data-f="clinicPhone" maxlength="40"></label>
-        <div class="row" style="gap:.5rem;">
-          <label class="dim small" style="flex:1;">Records from
-            <input type="date" data-f="fromDate" max="${esc(mstToday())}"></label>
-          <label class="dim small" style="flex:1;">Through
-            <input type="date" data-f="toDate" max="${esc(mstToday())}"></label>
+        <!-- ALL THE RECORDS, as the default and as an explicit choice.
+             Eric, 2026-08-27: "there should be a tick box for 'all available
+             records' that overrides the dates", and "the cramping of the
+             dates from/through fields". Both are the same fix: two date
+             inputs side by side at 390px squeeze their own labels, and most
+             clients want the whole file anyway, so the range is hidden until
+             somebody actually wants one.
+             Ticked, this sends no dates at all, and the document already
+             reads "Records covering the whole period of my care" when it has
+             none. No new wording, so the legal text is untouched. -->
+        <label class="agreement-check" style="align-items:flex-start;">
+          <input type="checkbox" data-all-records checked>
+          <span><strong>All the records they have</strong><br>
+            <span class="dim small">The whole period of your care. Untick this
+            if you only want a date range.</span></span>
+        </label>
+        <div data-date-range hidden>
+          <label class="dim small" style="display:block; margin-bottom:.45rem;">Records from
+            <input type="date" data-f="fromDate" max="${esc(mstToday())}" style="display:block; width:100%;"></label>
+          <label class="dim small" style="display:block;">Through
+            <input type="date" data-f="toDate" max="${esc(mstToday())}" style="display:block; width:100%;"></label>
         </div>
         <p class="dim small" style="margin:.8rem 0 .3rem;">Some records need your
           specific permission and are left out unless you tick them. Nothing here
@@ -2227,6 +2243,24 @@ function openAuthoritySheet(c, kind, onDone) {
     preview.innerHTML = authorityHtml(isRecords
       ? recordsAuthorisationModel(o) : representativeDesignationModel(o));
   };
+  // The tick owns the range. Ticking it CLEARS the dates rather than merely
+  // hiding them, because a hidden field that still holds a value is a date on
+  // a legal document that nobody can see.
+  const allBox = overlay.querySelector('[data-all-records]');
+  const rangeWrap = overlay.querySelector('[data-date-range]');
+  const syncRange = () => {
+    if (!allBox || !rangeWrap) return;
+    rangeWrap.hidden = allBox.checked;
+    if (allBox.checked) {
+      for (const f of ['fromDate', 'toDate']) {
+        const el = overlay.querySelector(`[data-f="${f}"]`);
+        if (el) el.value = '';
+      }
+    }
+  };
+  allBox?.addEventListener('change', () => { syncRange(); repaint(); });
+  syncRange();
+
   overlay.addEventListener('input', repaint);
   overlay.addEventListener('change', repaint);
   repaint();
@@ -2272,26 +2306,47 @@ function openAuthoritySheet(c, kind, onDone) {
     for (const el of overlay.querySelectorAll('.field-bad')) {
       el.classList.remove('field-bad');
       el.removeAttribute('aria-invalid');
+      el.removeAttribute('aria-errormessage');
     }
-    const mark = (sel) => {
+    const reasons = [];
+    // EVERY MARK CARRIES ITS REASON. Eric, 2026-08-27: "Biggest issue is
+    // saying the form isn't filled out completely when it is." It was filled
+    // out. He had typed his own name on a case belonging to somebody else, so
+    // the name check failed, and the one generic sentence this gate showed for
+    // every possible failure called that "incomplete". A client who mistypes
+    // their own name would read the same thing and have no idea what to do.
+    const mark = (sel, why) => {
       const el = overlay.querySelector(sel);
       if (!el) return;
       el.classList.add('field-bad');
       // Colour alone is not an error message. On contrast the border is a
       // one-pixel luminance step, and a screen reader saw nothing at all.
       el.setAttribute('aria-invalid', 'true');
+      if (why) el.setAttribute('aria-errormessage', why);
       bad.push(el);
+      if (why && !reasons.includes(why)) reasons.push(why);
+    };
+    const LABEL = {
+      clinicName: 'the clinic or hospital name',
+      planName: 'your insurance plan or company',
+      memberId: 'your member or policy ID',
+      signedName: 'your full name',
     };
     const need = isRecords ? ['clinicName', 'signedName'] : ['planName', 'memberId', 'signedName'];
-    for (const f of need) if (!val(f)) mark(`[data-f="${f}"]`);
+    for (const f of need) if (!val(f)) mark(`[data-f="${f}"]`, `Fill in ${LABEL[f]}.`);
     // The Worker requires the typed name to match the name on the case, and
     // requires two characters. Mirror both here: without them the button
     // disabled, the POST 400ed, and the message landed as plain text with
     // nothing reddened and nothing scrolled to - the dead end this gate
     // exists to remove.
     const typed = val('signedName');
-    if (typed && (typed.length < 2 || (c.clientName && !nameMatches(typed, c.clientName))))
-      mark('[data-f="signedName"]');
+    if (typed && typed.length < 2) mark('[data-f="signedName"]', 'Type your full name.');
+    else if (typed && c.clientName && !nameMatches(typed, c.clientName)) {
+      // Name the name. "Incomplete" is what this used to say, and it sent him
+      // looking for an empty field that did not exist.
+      mark('[data-f="signedName"]',
+        `The name has to match the one on this case, ${c.clientName}. Type it the way it appears there.`);
+    }
     if (isRecords) {
       // MST, the same clock the document prints in. Comparing YYYY-MM-DD
       // strings keeps Date parsing out of the gate entirely, and stops a
@@ -2301,23 +2356,42 @@ function openAuthoritySheet(c, kind, onDone) {
       for (const f of ['fromDate', 'toDate']) {
         const v = val(f);
         if (!v) continue;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || v > today) mark(`[data-f="${f}"]`);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || v > today) {
+          mark(`[data-f="${f}"]`, 'A date cannot be in the future.');
+        }
       }
       const from = val('fromDate'); const to = val('toDate');
-      if (from && to && from > to) { mark('[data-f="fromDate"]'); mark('[data-f="toDate"]'); }
+      if (from && to && from > to) {
+        mark('[data-f="fromDate"]', 'The first date has to come before the second.');
+        mark('[data-f="toDate"]', 'The first date has to come before the second.');
+      }
+      // Asking for a range and naming no dates is not a request for a range.
+      // The tick above is the way to say "everything".
+      if (allBox && !allBox.checked && !from && !to) {
+        mark('[data-f="fromDate"]',
+          'Give at least one date, or tick "All the records they have".');
+      }
       // A document that authorises nothing is not a document. The boxes
       // arrive ticked, so this only fires for someone who deliberately
       // cleared all three - and it tells them so rather than silently
       // signing them up to all of it.
-      if (!scopesOf().length) mark('[data-scope="discuss"]');
+      if (!scopesOf().length) {
+        mark('[data-scope="discuss"]',
+          'Tick at least one thing you are allowing, or this form authorises nothing.');
+      }
     }
-    if (!signatureImage) mark('[data-sig-open]');
-    return bad;
+    if (!signatureImage) mark('[data-sig-open]', 'Tap the box and sign with your finger.');
+    return { bad, reasons };
   };
 
   const opener = document.activeElement;
+  // Lock the page behind the sheet while it is open, the same as the lightbox
+  // and the full chat. Removed in close(), including the Escape and
+  // click-outside routes, so a sheet can never leave the page frozen.
+  document.body.classList.add('sheet-open');
   const close = () => {
     overlay.remove();
+    document.body.classList.remove('sheet-open');
     document.removeEventListener('keydown', onKey);
     if (opener?.isConnected) opener.focus();
   };
@@ -2329,9 +2403,14 @@ function openAuthoritySheet(c, kind, onDone) {
     const btn = overlay.querySelector('[data-sign]');
     const err = overlay.querySelector('[data-sheet-error]');
     err.hidden = true;
-    const bad = validateSheet();
+    const { bad, reasons } = validateSheet();
     if (bad.length) {
-      err.textContent = 'Your document is incomplete. please review the full document and be sure you did not miss any areas requiring your selection or signature.';
+      // What is actually wrong, in the order it appears on the form. The old
+      // sentence was the same for every failure and sent him hunting for a
+      // blank field when the real problem was a name that did not match.
+      err.textContent = reasons.length
+        ? reasons.join(' ')
+        : 'Something on this form still needs your attention. The fields to fix are outlined below.';
       err.hidden = false;
       bad[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;

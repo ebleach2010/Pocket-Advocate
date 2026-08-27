@@ -157,6 +157,75 @@ const pad = await deep.evaluate(() => {
 });
 ok('tapping the signature box opens a pad to draw on', pad.canvas, `${pad.w}px wide`);
 
+// ---- what he hit on his phone --------------------------------------------
+// Eric, 2026-08-27: "Biggest issue is saying the form isn't filled out
+// completely when it is." It WAS filled in. He typed his own name on a case
+// belonging to somebody else, the name check failed, and one generic sentence
+// called that "incomplete".
+//
+// Driven as the exact failure: fill the form correctly, sign it, and type the
+// wrong name.
+const dateState = await deep.evaluate(() => ({
+  allTicked: document.querySelector('[data-all-records]')?.checked,
+  rangeHidden: document.querySelector('[data-date-range]')?.hidden,
+}));
+ok('all-records is ticked by default, so the dates stay out of the way',
+   dateState.allTicked === true && dateState.rangeHidden === true, JSON.stringify(dateState));
+const unticked = await deep.evaluate(() => {
+  const b = document.querySelector('[data-all-records]');
+  b.checked = false;
+  b.dispatchEvent(new Event('change', { bubbles: true }));
+  const wrap = document.querySelector('[data-date-range]');
+  const ins = [...wrap.querySelectorAll('input[type=date]')];
+  return {
+    shown: !wrap.hidden,
+    // Stacked, not two columns: each input gets the full width of the sheet.
+    stacked: ins.length === 2 && ins[0].getBoundingClientRect().width > 200,
+    width: ins[0] ? Math.round(ins[0].getBoundingClientRect().width) : 0,
+  };
+});
+ok('unticking reveals the range', unticked.shown);
+ok('and the two dates are stacked, each full width, not cramped side by side',
+   unticked.stacked, `${unticked.width}px each`);
+// Ticking it back must CLEAR them, not just hide them.
+await deep.evaluate(() => {
+  const from = document.querySelector('[data-f="fromDate"]');
+  from.value = '2024-01-01';
+  from.dispatchEvent(new Event('input', { bubbles: true }));
+  const b = document.querySelector('[data-all-records]');
+  b.checked = true;
+  b.dispatchEvent(new Event('change', { bubbles: true }));
+});
+await deep.waitForTimeout(300);
+const cleared = await deep.evaluate(() => ({
+  value: document.querySelector('[data-f="fromDate"]').value,
+  doc: (document.querySelector('.auth-doc')?.textContent || '').includes('whole period of my care'),
+}));
+ok('re-ticking clears the date rather than hiding a value nobody can see',
+   cleared.value === '', `value=${JSON.stringify(cleared.value)}`);
+ok('and the document goes back to the whole period of care', cleared.doc);
+
+// The name. This is the one that stopped him.
+const said = await deep.evaluate(() => {
+  const n = document.querySelector('[data-f="signedName"]');
+  n.value = 'Eric Leach';
+  n.dispatchEvent(new Event('input', { bubbles: true }));
+  document.querySelector('[data-sign]').click();
+  const e = document.querySelector('[data-sheet-error]');
+  return { hidden: e.hidden, text: e.textContent.trim() };
+});
+ok('a name that does not match is refused', said.hidden === false);
+ok('and the message NAMES the name, instead of saying the form is incomplete',
+   /Jordan Avery/.test(said.text) && !/incomplete/i.test(said.text), said.text.slice(0, 120));
+
+// The page behind must be locked while the sheet is up, and released after.
+const locked = await deep.evaluate(() => document.body.classList.contains('sheet-open'));
+ok('the page behind the sheet is locked while it is open', locked);
+await deep.evaluate(() => document.querySelector('[data-x]').click());
+await deep.waitForTimeout(400);
+const released = await deep.evaluate(() => document.body.classList.contains('sheet-open'));
+ok('and released when the sheet closes, so the page is never left frozen', !released);
+
 ok('no page errors anywhere', errs.length === 0, errs.slice(0, 2).join(' | '));
 await b.close();
 console.log(`\n${pass} ok, ${fail} FAIL`);
