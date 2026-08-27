@@ -14,6 +14,7 @@ import { mountSaved } from './saved.js';
 import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
 import { helpButton, wireHelp, openCaseHelp } from './help.js';
+import { officeCueHtml } from './office.js';
 import {
   recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
   COMMUNICATION_SCOPES,
@@ -646,7 +647,7 @@ function renderChat(el, c) {
   el.innerHTML = `
     <h2 class="case-sec-h">Chat</h2>
     <p class="dim small" style="margin:.1rem 0 .3rem;">Chat keeps your case moving between calls: records, scheduling, and anything new or urgent with your health. The analysis itself happens on our calls, and everything else goes on the list for the next one.</p>
-    <p style="margin:.2rem 0 .3rem;"><span class="p-dot"></span><span class="p-label">Checking…</span></p>
+    <p class="office-row" style="margin:.2rem 0 .3rem;">${officeCueHtml()}</p>
     <div class="panel" data-chat></div>
     ${chatLocked ? `
     <div class="panel" data-chat-unlock style="margin-top:.7rem;">
@@ -667,6 +668,10 @@ function renderChat(el, c) {
       <p class="error" data-agenda-err hidden></p>`}
     </div>`;
   watchPresence(el);
+  // The "?" beside the in/out pill. This block repaints, so it is wired here
+  // and not once at page load, or the button goes dead the first time the case
+  // reloads underneath it.
+  wireHelp(el);
   // Just a chat (Eric, 2026-08-22: "Have it just be a chat"). The next-call
   // list keeps its own panel and add box below; the composer stays clean.
   mountChat({

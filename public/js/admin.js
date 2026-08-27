@@ -5,14 +5,24 @@ import './admin-ledger.js';
 import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { initPushPrompt } from './push.js';
-import { folderCardHtml, wireFolderOpen, wireFolderClocks, wireDxLongPress, openDxSheet } from './drawer.js';
+import {
+  folderCardHtml, wireFolderOpen, wireFolderClocks, wireDxLongPress, openDxSheet,
+  wireFolderLongPress, openWorkSheet, folderIsWorking,
+} from './drawer.js';
 import { unseenBadges } from './seen.js';
+import { mountOfficeControl } from './admin-hours.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 
 hydrateNav();
 const user = await requireAdmin();
-if (user) load();
+if (user) {
+  // In or out, at the top of the page he actually opens. The same control is
+  // on the availability page; both read and write settings/officeHours through
+  // the Worker, so they cannot disagree.
+  mountOfficeControl(document.getElementById('office'), { getToken: () => user.getIdToken() });
+  load();
+}
 
 /**
  * The covers, in one call. caseMeta is Worker-only by rule: a case doc is
@@ -354,8 +364,23 @@ async function load() {
   // The clock on each card. Tapping out here PINS it, so it keeps running
   // while he moves around the app — which is the entire reason the control
   // lives on the shelf and not only inside the chart.
-  wireFolderClocks(listEl, { getToken: () => user.getIdToken() });
+  const clocks = wireFolderClocks(listEl, { getToken: () => user.getIdToken() });
   wireDxLongPress(listEl, overrideDx);
+  // Eric, 2026-08-27: "I long press a case file and tap 'Working on this
+  // client' and the file turns green-outline glow... This starts the clock
+  // back on for that client."
+  //
+  // It goes through wireFolderClocks' own toggle rather than posting to
+  // /api/work here, so this door and the card's own toggle are one behaviour
+  // and the glow, the dot and the running total move together whichever he
+  // uses. A closed case has no clock and toggleById says so.
+  wireFolderLongPress(listEl, async (id, name) => {
+    const running = folderIsWorking(listEl, id);
+    const pick = await openWorkSheet({ name, running });
+    if (!pick) return;
+    if (!clocks?.toggleById(id))
+      alert('This case is closed, so there is no clock to run on it.');
+  });
 }
 
 function badge(c) {

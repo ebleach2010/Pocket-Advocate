@@ -29,8 +29,8 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=sp1">
-<link rel="stylesheet" href="/css/glowup.css?v=sp1">
+<link rel="stylesheet" href="/css/site.css?v=sp3">
+<link rel="stylesheet" href="/css/glowup.css?v=sp3">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body class="chat-page">
@@ -48,7 +48,10 @@
 <main>
   <div class="row">
     <h1 style="margin:0;">Chat with me</h1>
-    <span><span class="p-dot"></span><span class="p-label">Checking…</span></span>
+    <!-- The in/out pill and its "?" are built by office.js, so this page, the
+         case page and the subscriber page cannot end up carrying three
+         different versions of the same cue. -->
+    <span class="office-row" data-office-slot></span>
   </div>
   <div id="switcher" class="case-picker" hidden></div>
   <div id="chat" class="panel" style="margin-top:.8rem;"><p class="dim small">Loading…</p></div>

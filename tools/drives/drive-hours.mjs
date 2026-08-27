@@ -1,0 +1,438 @@
+// In office / out of office, the "?" sheet, and "Working on this client",
+// driven in a real browser at 390x844 - an iPhone, which is where Eric and
+// most of his clients are.
+//
+// Eric, 2026-08-27. Three things, and this drive asks all three of the app
+// rather than of the source:
+//   1. clients get a "pretty noticeable visual cue" of whether he is in or out,
+//      and his manual switch beats the schedule both ways;
+//   2. a small "?" beside the chat, at least 44px, opens "When will Eric
+//      respond?" with his status at the top and his copy below it;
+//   3. long-press a case file, tap "Working on this client", the folder turns
+//      green-outline glow and the clock that already exists starts.
+//
+// Screenshots land in /tmp so they can actually be looked at, because a drive
+// that only prints "ok" has not seen anything.
+import { chromium } from 'playwright';
+
+const PORT = process.env.PA_PORT || 8823;
+const P = `http://127.0.0.1:${PORT}`;
+const SHOT = process.env.PA_SHOTS || '/tmp/hours-shots';
+
+let pass = 0, fail = 0;
+const errs = [];
+const ok = (n, c, d = '') => {
+  if (c) { pass++; console.log('  ok   ', n, d ? `- ${d}` : ''); }
+  else { fail++; console.log('  FAIL ', n, d ? `- ${d}` : ''); }
+};
+
+const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+// A real phone: 390x844, touch on, so a long press is a long press.
+const ctx = await b.newContext({
+  viewport: { width: 390, height: 844 },
+  deviceScaleFactor: 2,
+  hasTouch: true,
+  isMobile: true,
+});
+await ctx.addCookies([{ name: 'pa_demo', value: '1', domain: '127.0.0.1', path: '/' }]);
+const page = await ctx.newPage();
+page.on('pageerror', (e) => errs.push(e.message));
+
+const settle = (ms = 2500) => page.waitForTimeout(ms);
+
+// ---------------------------------------------------------------------------
+console.log('\n--- 1. the advocate control, on the shelf ---');
+await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
+await settle(3000);
+
+const ctl = await page.evaluate(() => {
+  const box = document.querySelector('.office-ctl');
+  if (!box) return { there: false };
+  const big = box.querySelector('[data-big]');
+  const acts = [...box.querySelectorAll('[data-set]')];
+  return {
+    there: true,
+    state: big?.textContent?.trim(),
+    why: box.querySelector('[data-why]')?.textContent?.trim(),
+    buttons: acts.map((x) => x.textContent.trim()),
+    // Every one of his controls has to be thumb-sized.
+    smallest: Math.min(...acts.map((x) => Math.round(x.getBoundingClientRect().height))),
+    // He is on a phone: nothing may push the page sideways.
+    docWidth: document.documentElement.scrollWidth,
+    winWidth: window.innerWidth,
+  };
+});
+ok('the status control is on the shelf', ctl.there, JSON.stringify(ctl.state));
+ok('it says in or out in words', /IN OFFICE|OUT OF OFFICE/.test(ctl.state || ''), ctl.state);
+ok('it offers both switches and the way back to the schedule',
+  ctl.buttons?.join('|') === 'In office|Out of office|Follow my hours', ctl.buttons?.join('|'));
+ok('every switch is a 44px target', ctl.smallest >= 44, `${ctl.smallest}px`);
+ok('and nothing on the shelf scrolls sideways at 390px',
+  ctl.docWidth <= ctl.winWidth, `${ctl.docWidth} vs ${ctl.winWidth}`);
+await page.screenshot({ path: `${SHOT}/1-shelf-control.png` });
+
+// ---------------------------------------------------------------------------
+console.log('\n--- 2. the client cue follows the schedule ---');
+// The case page is a folder of tabs and the chat lives on one of them, so the
+// cue and its "?" are display:none until that tab is open. Measuring them from
+// the Progress tab reports 0x0 for everything, which is how the first run of
+// this drive "found" a 0px tap target.
+const openClientChat = async () => {
+  await page.goto(`${P}/case.html?id=demo-case&demo=1`, { waitUntil: 'networkidle' });
+  await settle(3000);
+  // The first-run tutorial is a modal overlay and it swallows every tap behind
+  // it, so it has to go before anything on the page can be pressed. Marking it
+  // done is what the tutorial itself does when you finish it.
+  await page.evaluate(() => {
+    try { localStorage.setItem('pa-intro-done', '1'); } catch { /* blocked */ }
+    document.getElementById('pa-intro')?.remove();
+  });
+  await page.evaluate(() => document.querySelector('.folder-tabs a[data-page="chat"]')?.click());
+  await settle(2500);
+};
+await openClientChat();
+
+const readCue = () => page.evaluate(() => {
+  const cue = document.querySelector('.office-cue');
+  if (!cue) return { there: false };
+  const r = cue.getBoundingClientRect();
+  const cs = getComputedStyle(cue);
+  const dot = cue.querySelector('.p-dot');
+  return {
+    there: true,
+    label: cue.querySelector('.p-label')?.textContent?.trim(),
+    cls: cue.className,
+    border: cs.borderColor,
+    background: cs.backgroundColor,
+    dotColour: dot ? getComputedStyle(dot).backgroundColor : null,
+    w: Math.round(r.width), h: Math.round(r.height),
+  };
+});
+
+const scheduled = await readCue();
+ok('the client case page carries the pill', scheduled.there, JSON.stringify(scheduled));
+ok('it has resolved to a real state rather than sitting on "Checking"',
+  /In office|Out of office/.test(scheduled.label || ''), scheduled.label);
+ok('and it carries the matching class, so the styling is on',
+  /\b(in|out)\b/.test(scheduled.cls || ''), scheduled.cls);
+
+const help = await page.evaluate(() => {
+  const btn = document.querySelector('[data-help="hours"]');
+  if (!btn) return { there: false };
+  const r = btn.getBoundingClientRect();
+  return {
+    there: true,
+    w: Math.round(r.width), h: Math.round(r.height),
+    label: btn.getAttribute('aria-label'),
+    text: btn.textContent.trim(),
+    // "Visually subtle": it must not be shouting louder than the pill.
+    colour: getComputedStyle(btn).color,
+  };
+});
+ok('there is a "?" beside the chat', help.there && help.text === '?', JSON.stringify(help));
+ok('it is at least a 44px tap target', help.w >= 44 && help.h >= 44, `${help.w}x${help.h}`);
+ok('and it says what it opens', /When will Eric respond/.test(help.label || ''), help.label);
+await page.screenshot({ path: `${SHOT}/2-client-cue.png` });
+
+// ---------------------------------------------------------------------------
+console.log('\n--- 3. the sheet ---');
+await page.click('[data-help="hours"]');
+await settle(1200);
+
+const sheet = await page.evaluate(() => {
+  const card = document.querySelector('#pa-help .settings-card');
+  if (!card) return { there: false };
+  const title = card.querySelector('h3')?.textContent?.trim();
+  const paras = [...card.querySelectorAll('p')].map((p) => p.textContent.replace(/\s+/g, ' ').trim());
+  const key = card.querySelector('.hours-key');
+  const keyCs = key ? getComputedStyle(key) : null;
+  const bodyCs = getComputedStyle(card.querySelector('p:not([class])') || card);
+  const statusFirst = card.querySelector('.hours-now');
+  const cue = card.querySelector('.office-cue');
+  return {
+    there: true,
+    title,
+    paras,
+    text: card.textContent.replace(/\s+/g, ' ').trim(),
+    statusIsFirst: !!statusFirst
+      && [...card.children].indexOf(statusFirst) <= 1,
+    statusLabel: cue?.querySelector('.p-label')?.textContent?.trim(),
+    keyText: key?.textContent?.replace(/\s+/g, ' ').trim(),
+    keyWeight: keyCs?.fontWeight,
+    keySize: parseFloat(keyCs?.fontSize || '0'),
+    bodySize: parseFloat(bodyCs.fontSize || '0'),
+    keyBorder: keyCs?.borderLeftWidth,
+    scrollsSideways: document.documentElement.scrollWidth > window.innerWidth,
+  };
+});
+ok('the sheet opens', sheet.there);
+ok('titled in his words', sheet.title === 'When will Eric respond?', sheet.title);
+ok('his status is at the TOP, above the copy', sheet.statusIsFirst, String(sheet.statusIsFirst));
+ok('and the status in the sheet is a real one',
+  /In office|Out of office/.test(sheet.statusLabel || ''), sheet.statusLabel);
+ok('it is broken into sections, not one wall of text',
+  (sheet.paras || []).length >= 7, `${(sheet.paras || []).length} blocks`);
+ok('the sentence he asked to emphasise is the emphasised one',
+  /^If I haven't responded yet, that doesn't necessarily mean I'm not working on your case\.$/
+    .test(sheet.keyText || ''), sheet.keyText);
+ok('and it is VISIBLY emphasised, not just tagged',
+  Number(sheet.keyWeight) >= 700 && sheet.keySize > sheet.bodySize
+  && parseFloat(sheet.keyBorder) >= 2,
+  `weight ${sheet.keyWeight}, ${sheet.keySize}px vs body ${sheet.bodySize}px, rule ${sheet.keyBorder}`);
+
+// His copy, as RENDERED. The suite compares the source; this compares what a
+// person actually sees, which is the only place an HTML entity would show up
+// as the character it decodes to.
+const WORDS = [
+  'Standard advocacy hours are Monday to Friday, 8:00 AM to 7:00 PM Mountain Time, unless my current status shows otherwise.',
+  'I check messages throughout the day, but responses are triaged based on urgency, time sensitivity, and what each case needs, not simply the order messages arrive.',
+  'A time-sensitive issue, such as an appointment happening soon, a problem accessing care, a deadline, or an important change in your situation, may be prioritized ahead of a routine question or update.',
+  "If I haven't responded yet, that doesn't necessarily mean I'm not working on your case.",
+  'A significant part of advocacy happens behind the scenes.',
+  'Some messages also deserve more than a quick answer.',
+  "You're always welcome to send messages outside office hours. I'll see them when I'm back in office.",
+  'This chat is not an emergency or real-time medical service.',
+];
+for (const w of WORDS)
+  ok(`rendered: "${w.slice(0, 44)}..."`, (sheet.text || '').includes(w));
+ok('no em or en dash anywhere a person reads it',
+  !/[—–]/.test(sheet.text || ''),
+  (sheet.text || '').match(/.{0,30}[—–].{0,30}/)?.[0] || '');
+ok('no response time is promised, because none has been set',
+  !/typically|usually within|within \d+ (hour|day)/i.test(sheet.text || ''));
+ok('the sheet does not push the page sideways', !sheet.scrollsSideways);
+await page.screenshot({ path: `${SHOT}/3-sheet-top.png` });
+await page.evaluate(() => {
+  const c = document.querySelector('#pa-help .settings-card');
+  if (c) c.scrollTop = c.scrollHeight;
+});
+await settle(400);
+await page.screenshot({ path: `${SHOT}/3b-sheet-bottom.png` });
+
+await page.keyboard.press('Escape');
+await settle(600);
+ok('Escape closes it', await page.evaluate(() => !document.getElementById('pa-help')));
+
+// ---------------------------------------------------------------------------
+console.log('\n--- 4. the switch beats the schedule, seen from the client side ---');
+const flip = async (which) => {
+  await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
+  await settle(2500);
+  await page.click(`[data-set="${which}"]`);
+  await settle(1500);
+  return page.evaluate(() => ({
+    state: document.querySelector('[data-big]')?.textContent?.trim(),
+    why: document.querySelector('[data-why]')?.textContent?.trim(),
+    overriding: !!document.querySelector('[data-why]')?.classList.contains('overriding'),
+  }));
+};
+
+const wentOut = await flip('out');
+ok('he can switch himself OUT', wentOut.state === 'OUT OF OFFICE', wentOut.state);
+ok('and is told the switch is disagreeing with his hours',
+  wentOut.overriding && /Set by hand/.test(wentOut.why || ''), wentOut.why);
+await page.screenshot({ path: `${SHOT}/4-shelf-out.png` });
+
+await openClientChat();
+await settle(3500);
+const clientOut = await readCue();
+ok('the CLIENT now sees out of office during his normal hours',
+  clientOut.label === 'Out of office' && /\bout\b/.test(clientOut.cls || ''),
+  `${clientOut.label} [${clientOut.cls}]`);
+await page.screenshot({ path: `${SHOT}/5-client-out.png` });
+
+const wentIn = await flip('in');
+ok('he can switch himself back IN', wentIn.state === 'IN OFFICE', wentIn.state);
+
+await openClientChat();
+await settle(3500);
+const clientIn = await readCue();
+ok('and the client sees in office again', clientIn.label === 'In office', clientIn.label);
+ok('the two states really do look different to a person',
+  clientIn.border !== clientOut.border || clientIn.dotColour !== clientOut.dotColour,
+  `in: ${clientIn.border} / ${clientIn.dotColour}   out: ${clientOut.border} / ${clientOut.dotColour}`);
+await page.screenshot({ path: `${SHOT}/6-client-in.png` });
+
+// The Chat tab carries the same cue and the same "?".
+//
+// THE SUBSCRIBER PAGE IS NOT DRIVEN HERE, and that is a real gap rather than
+// an oversight: the demo store seeds no subscription at all, so
+// /subscription.html can only ever render its "No subscription yet" branch,
+// which has no chat and therefore no cue. What holds it together instead is
+// the availability suite, which pins that subscription.js renders
+// officeCueHtml() and calls wireHelp() like the other two. Seeding a demo
+// subscription would be the way to close this, and it is a bigger change than
+// this feature.
+for (const [name, url] of [['the Chat tab', `${P}/chat.html?demo=1`]]) {
+  await page.goto(url, { waitUntil: 'networkidle' });
+  await settle(3000);
+  const found = await page.evaluate(() => ({
+    cue: !!document.querySelector('.office-cue'),
+    label: document.querySelector('.office-cue .p-label')?.textContent?.trim(),
+    q: !!document.querySelector('[data-help="hours"]'),
+  }));
+  ok(`${name} carries the pill`, found.cue && /In office|Out of office/.test(found.label || ''),
+    JSON.stringify(found));
+  ok(`${name} carries the "?" too`, found.q);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n--- 5. long press: "Working on this client" ---');
+await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
+await settle(3500);
+
+// Scroll FIRST, settle, then measure. Reading the rect in the same evaluate as
+// the scrollIntoView gave a y of 1385 in an 844-high viewport, and every mouse
+// event then landed on nothing at all - which reads exactly like a long press
+// that does not work.
+const folderId = await page.evaluate(() => {
+  const card = document.querySelector('.folder');
+  card?.scrollIntoView({ block: 'center', behavior: 'instant' });
+  return card?.dataset.id || null;
+});
+await settle(900);
+const folderBox = await page.evaluate((id) => {
+  const card = document.querySelector(`.folder[data-id="${id}"]`);
+  if (!card) return null;
+  // The NAME on the tab: away from the diagnosis line, which owns its own
+  // press, and away from the clock, which owns the tap.
+  const t = card.querySelector('.folder-name') || card;
+  const r = t.getBoundingClientRect();
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), id };
+}, folderId);
+ok('there is a folder on the shelf to press', !!folderBox, JSON.stringify(folderBox));
+ok('and it is actually on screen, so a press can land on it',
+  folderBox && folderBox.y > 0 && folderBox.y < 844, JSON.stringify(folderBox));
+
+const longPress = async () => {
+  await page.mouse.move(folderBox.x, folderBox.y);
+  await page.mouse.down();
+  await page.waitForTimeout(900);      // comfortably past the 550ms threshold
+  await page.mouse.up();
+  await settle(700);
+};
+
+const before = await page.evaluate((id) => ({
+  working: !!document.querySelector(`.folder[data-id="${id}"]`)?.classList.contains('working'),
+  clockOn: !!document.querySelector(`[data-clock="${id}"]`)?.classList.contains('on'),
+  url: location.pathname,
+}), folderBox.id);
+ok('the folder starts as plain manila', !before.working && !before.clockOn, JSON.stringify(before));
+
+await longPress();
+const menu = await page.evaluate(() => {
+  const m = document.querySelector('.msg-menu');
+  if (!m) return { there: false, url: location.pathname };
+  const rows = [...m.querySelectorAll('.msg-menu-row')];
+  return {
+    there: true,
+    url: location.pathname,
+    rows: rows.map((r) => r.textContent.replace(/\s+/g, ' ').trim()),
+    smallest: Math.min(...rows.map((r) => Math.round(r.getBoundingClientRect().height))),
+  };
+});
+ok('the long press opens a menu', menu.there, JSON.stringify(menu));
+// Cloudflare serves /admin.html at /admin too, so both spellings mean "still
+// on the shelf". What must NOT have happened is a trip to /admin-case.html.
+ok('and does NOT open the case underneath it',
+  /^\/admin(\.html)?$/.test(menu.url || ''), menu.url);
+ok('the menu offers "Working on this client" in his words',
+  (menu.rows || []).some((r) => /Working on this client/.test(r)), (menu.rows || []).join(' | '));
+ok('its rows are thumb-sized', (menu.smallest || 0) >= 40, `${menu.smallest}px`);
+await page.screenshot({ path: `${SHOT}/7-longpress-menu.png` });
+
+await page.click('.msg-menu-row[data-act="work"]');
+await settle(2000);
+const on = await page.evaluate((id) => {
+  const card = document.querySelector(`.folder[data-id="${id}"]`);
+  const clock = document.querySelector(`[data-clock="${id}"]`);
+  const cs = card ? getComputedStyle(card) : null;
+  return {
+    working: !!card?.classList.contains('working'),
+    clockOn: !!clock?.classList.contains('on'),
+    clockText: clock?.querySelector('[data-clock-t]')?.textContent?.trim(),
+    outline: cs?.outlineColor,
+    outlineWidth: cs?.outlineWidth,
+    shadow: (cs?.boxShadow || '').slice(0, 120),
+  };
+}, folderBox.id);
+ok('the folder turns green-outline glow', on.working && parseFloat(on.outlineWidth) >= 2,
+  `${on.outlineWidth} ${on.outline}`);
+ok('the outline really is green, not the cyan everything else uses',
+  /rgb\(\s*\d+,\s*2\d\d,\s*1\d\d\s*\)/.test(on.outline || ''), on.outline);
+ok('and the SAME clock that already existed is now running',
+  on.clockOn, `clock reads "${on.clockText}"`);
+await page.screenshot({ path: `${SHOT}/8-folder-working.png` });
+
+// The other three switches onto this clock must agree with it, or he has two
+// numbers for one case. The card's own toggle is the one visible from here.
+const inStep = await page.evaluate((id) => {
+  const clock = document.querySelector(`[data-clock="${id}"]`);
+  return { pressed: clock?.getAttribute('aria-pressed'), title: clock?.getAttribute('title') };
+}, folderBox.id);
+ok('the card toggle agrees that it is running',
+  inStep.pressed === 'true' && /Tap to stop/.test(inStep.title || ''), JSON.stringify(inStep));
+
+await longPress();
+const menu2 = await page.evaluate(() => ({
+  rows: [...document.querySelectorAll('.msg-menu-row')].map((r) => r.textContent.replace(/\s+/g, ' ').trim()),
+}));
+ok('pressing again offers the way back off it',
+  (menu2.rows || []).some((r) => /Stop working on this client/.test(r)), (menu2.rows || []).join(' | '));
+await page.click('.msg-menu-row[data-act="stop"]');
+await settle(2000);
+const off = await page.evaluate((id) => {
+  const card = document.querySelector(`.folder[data-id="${id}"]`);
+  const cs = card ? getComputedStyle(card) : null;
+  return {
+    working: !!card?.classList.contains('working'),
+    clockOn: !!document.querySelector(`[data-clock="${id}"]`)?.classList.contains('on'),
+    outlineWidth: cs?.outlineWidth,
+    background: cs?.backgroundColor,
+  };
+}, folderBox.id);
+ok('turning it off goes back to regular manila', !off.working, JSON.stringify(off));
+ok('and stops the clock with it', !off.clockOn);
+await page.screenshot({ path: `${SHOT}/9-folder-manila.png` });
+
+// A press on the diagnosis line must still be the diagnosis editor, not this.
+const dxBox = await page.evaluate(() => {
+  const el = document.querySelector('.folder-dx');
+  if (!el) return null;
+  el.scrollIntoView({ block: 'center' });
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+});
+if (dxBox) {
+  await page.mouse.move(dxBox.x, dxBox.y);
+  await page.mouse.down();
+  await page.waitForTimeout(900);
+  await page.mouse.up();
+  await settle(800);
+  const which = await page.evaluate(() => ({
+    dx: !!document.querySelector('.dx-card'),
+    work: !!document.querySelector('.msg-menu'),
+  }));
+  ok('pressing the diagnosis line still opens the read editor, not the work menu',
+    which.dx && !which.work, JSON.stringify(which));
+  await page.keyboard.press('Escape');
+  await settle(400);
+} else {
+  ok('pressing the diagnosis line still opens the read editor, not the work menu',
+    false, 'no .folder-dx on the shelf to press');
+}
+
+// Put the demo back the way it was found.
+await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
+await settle(2500);
+await page.click('[data-set=""]');
+await settle(1200);
+const restored = await page.evaluate(() => document.querySelector('[data-why]')?.textContent?.trim());
+ok('"Follow my hours" hands the answer back to the schedule',
+  /Following your hours/.test(restored || ''), restored);
+
+console.log(`\n${pass} ok, ${fail} FAIL`);
+if (errs.length) console.log('page errors:\n  ' + errs.join('\n  '));
+console.log(`screenshots in ${SHOT}`);
+await b.close();
+process.exit(fail || errs.length ? 1 : 0);

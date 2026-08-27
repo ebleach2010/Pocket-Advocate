@@ -46,6 +46,68 @@ export function windowProblem(startIso, durationMin) {
   return null;
 }
 
+/**
+ * OFFICE HOURS. Eric, 2026-08-27: "Mon to Fri, 8:00 to 19:00 Mountain."
+ *
+ * Those are OPEN_HOUR and CLOSE_HOUR exactly, so this reuses them rather than
+ * writing 8 and 19 down in a second place where the two could drift apart. The
+ * bookable window and the in-office light are the same day by construction.
+ *
+ * The weekday rule is new here - the booking window never had one, because a
+ * Saturday simply has no slots opened on it. The idiom is copied from
+ * public/js/admin-availability.js, which is the only Mon-Fri test in the repo.
+ *
+ * MOUNTAIN_TZ is fixed UTC-7 with no daylight saving (see the header). From
+ * mid-March to early November that means this window is 9am to 8pm on Eric's
+ * real wall clock. That is a consequence of the 2026-07-11 decision to anchor
+ * everything to one offset, and it is a decision, not a bug: the light and the
+ * booking calendar agree with each other, which matters more than either
+ * agreeing with a phone. The manual override below covers the hour at each end
+ * until he says otherwise.
+ */
+export function scheduledOpen(now = new Date()) {
+  const when = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(when.getTime())) return false;
+  const weekday = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, weekday: 'short',
+  }).format(when);
+  if (weekday === 'Sat' || weekday === 'Sun') return false;
+  const { hour, minute } = mountainParts(when);
+  const minutes = hour * 60 + minute;
+  // Open at the top of OPEN_HOUR, shut at the top of CLOSE_HOUR: 8:00 is in,
+  // 19:00 is out. The last bookable slot ENDS at 19:00, so the office being
+  // shut at 19:00 exactly is the same boundary the calendar already uses.
+  return minutes >= OPEN_HOUR * 60 && minutes < CLOSE_HOUR * 60;
+}
+
+/**
+ * In or out, and why.
+ *
+ * ERIC'S RULE, BOTH DIRECTIONS (2026-08-27): "manual override always beats the
+ * schedule." Out during normal hours shows out - he is with his daughter.
+ * In outside normal hours shows in - he is pulling overtime. There is no
+ * expiry on an override, deliberately: one that lapsed on its own would be the
+ * schedule beating him, which is the thing he ruled out. The advocate control
+ * says so out loud whenever a standing override disagrees with the schedule,
+ * so putting it back is one tap and never a surprise.
+ *
+ * `manual` is 'in', 'out', or anything else for "follow the schedule".
+ */
+export function officeStatus(manual, now = new Date()) {
+  const scheduled = scheduledOpen(now);
+  const override = manual === 'in' || manual === 'out' ? manual : null;
+  const inOffice = override ? override === 'in' : scheduled;
+  return {
+    inOffice,
+    scheduled,
+    manual: override,
+    // True only when the override is actually changing the answer. A standing
+    // "in" during office hours is agreement, not an override worth shouting
+    // about, and the advocate control paints from this.
+    overriding: !!override && inOffice !== scheduled,
+  };
+}
+
 function mountainParts(date) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: MOUNTAIN_TZ,

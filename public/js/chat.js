@@ -9,14 +9,15 @@
 // (profiles/{uid}/saved), where the Documents tab picks it up.
 
 import {
-  db, rtdb, storage, collection, doc, addDoc, updateDoc, onSnapshot, getDocs,
-  query, orderBy, limit, serverTimestamp, rtdbRef, onValue,
+  db, storage, collection, doc, addDoc, updateDoc, onSnapshot, getDocs,
+  query, orderBy, limit, serverTimestamp,
   ref, uploadBytesResumable, getDownloadURL,
 } from './firebase.js';
 import {
   emojiById, statusById, openMessageMenu, openStatusSheet, openEditor, openNote, EDIT_WINDOW_MS,
 } from './msg-actions.js';
 import { askName, safeName } from './rename.js';
+import { watchOffice } from './office.js';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const LONG_PRESS_MS = 550;
@@ -35,14 +36,28 @@ const MOVE_TOLERANCE = 12;
 // and a runtime gate does not stop devtools.
 let bridge = null;
 
-/** Shows the advocate's live status in `el` (any element with a .p-dot child). */
+/**
+ * Shows whether Eric is in office in `el`. Kept under this name because five
+ * client surfaces already call it; what it paints has changed.
+ *
+ * IT USED TO PAINT presence/eric, which is true whenever an advocate tab is
+ * open anywhere and false otherwise, and said "I'm online" or "I'm away". Two
+ * problems with that as the thing a client reads:
+ *
+ *   It contradicts the switch. Eric, 2026-08-27: the manual override always
+ *   beats the schedule, both directions. A tab left open on his laptop while
+ *   he is out with his daughter would have lit "I'm online" straight over the
+ *   top of him having said he is out.
+ *
+ *   "I'm online" is a response-time promise in two words, and he asked for no
+ *   response time to be shown unless he has set one by hand.
+ *
+ * So the client-facing light is now the office status, which he controls, and
+ * presence/eric is no longer painted for clients at all. auth.js still writes
+ * it; nothing client-side reads it.
+ */
 export function watchPresence(el) {
-  onValue(rtdbRef(rtdb, 'presence/eric'), (snap) => {
-    const online = snap.val() === true;
-    el.querySelector('.p-dot')?.classList.toggle('on', online);
-    const label = el.querySelector('.p-label');
-    if (label) label.textContent = online ? "I'm online" : "I'm away";
-  });
+  watchOffice(el);
 }
 
 /**

@@ -4,6 +4,7 @@
 
 import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
+import { mountOfficeControl } from './admin-hours.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7'; // MST = fixed UTC-7 (IANA sign is inverted)
 const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]; // last 60-min slot ends 7pm (CLOSE_HOUR in worker/schedule.js)
@@ -22,6 +23,9 @@ function init() {
       ${h <= 11 ? h + 'am' : h === 12 ? '12pm' : (h - 12) + 'pm'}
     </label>`).join('');
   document.getElementById('create').addEventListener('click', createSlots);
+  // In or out, on the page where the rest of his calendar decisions live. The
+  // same control is on the shelf; both read and write the one settings doc.
+  mountOfficeControl(document.getElementById('office'), { getToken: () => user.getIdToken() });
   wireClosure();
   loadCalendar();
 }

@@ -112,9 +112,13 @@ async function loadInbox() {
   } catch { /* empty */ }
   document.getElementById('save-exp').addEventListener('click', async () => {
     try {
+      // MERGE. This was a bare setDoc, which is a FULL OVERWRITE: every save
+      // of this one line silently deleted every other field on
+      // settings/subscriberChat. Nothing else lived there yet, so it never
+      // showed - it was a trap laid for whoever added the second field.
       await setDoc(doc(db, 'settings', 'subscriberChat'), {
         expectationLine: document.getElementById('expectation').value.trim(),
-      });
+      }, { merge: true });
       document.getElementById('exp-ok').hidden = false;
       setTimeout(() => { document.getElementById('exp-ok').hidden = true; }, 2000);
     } catch (err) {

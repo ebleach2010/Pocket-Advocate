@@ -7,6 +7,8 @@ import { paintRates } from './rates.js';
 import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence } from './chat.js';
 import { initPushPrompt } from './push.js';
+import { officeCueHtml } from './office.js';
+import { wireHelp } from './help.js';
 
 hydrateNav();
 const user = await requireUser();
@@ -41,19 +43,26 @@ async function load() {
   const active = end > new Date();
   const endFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
-  let expectation = 'I typically reply within a few days.';
+  // NO DEFAULT (Eric, 2026-08-27: "Never display or promise a specific
+  // response time unless one has been manually set"). This used to fall back
+  // to "I typically reply within a few days" - a response-time promise printed
+  // on a paying subscriber's screen that he had never actually made. The line
+  // now shows what he typed on his chats page, and nothing at all until he
+  // types something.
+  let expectation = '';
   try {
     const snapshot = await getDoc(doc(db, 'settings', 'subscriberChat'));
-    if (snapshot.exists() && snapshot.data().expectationLine) expectation = snapshot.data().expectationLine;
-  } catch { /* default stands */ }
+    const line = snapshot.exists() ? String(snapshot.data().expectationLine || '').trim() : '';
+    if (line) expectation = line;
+  } catch { /* nothing shown, which is the safe direction */ }
 
   page.innerHTML = `
     <div class="row">
       <h1 style="margin:0;">Your chat with me</h1>
       <span class="status-pill ${active ? '' : 'closed'}">${active ? 'ACTIVE' : 'ENDED'}</span>
     </div>
-    <p style="margin-top:.4rem;"><span class="p-dot"></span><span class="p-label">Checking…</span>
-      <span class="expectation"> · "${esc(expectation)}"</span></p>
+    <p class="office-row" style="margin-top:.4rem;">${officeCueHtml()}${
+      expectation ? `<span class="expectation">"${esc(expectation)}"</span>` : ''}</p>
     <div class="panel" id="chat"></div>
     <p class="dim small">
       ${active
@@ -63,6 +72,7 @@ async function load() {
     </p>`;
 
   watchPresence(page);
+  wireHelp(page);
   initPushPrompt(user, page).catch(() => {});
   mountChat({
     container: document.getElementById('chat'),

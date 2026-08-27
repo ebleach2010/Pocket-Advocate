@@ -1,8 +1,14 @@
-// The "?" panels. Two of them, one shell:
-//   openAppHelp()  — on the landing page, next to "This is a web app"
-//   openCaseHelp() — beside the case title, for what's actually in the file
-// Both answer the questions clients ask in week one and nobody wants to email
+// The "?" panels. Four of them, one shell:
+//   openAppHelp()        on the landing page, next to "This is a web app"
+//   openCaseHelp()       beside the case title, for what is actually in the file
+//   openTelehealthHelp() the ground rules for joining an appointment
+//   openHoursHelp()      beside the chat: when will Eric respond
+// They answer the questions clients ask in week one and nobody wants to email
 // about: what is this thing, where does it live, and will it tell me anything.
+
+// office.js has no imports of its own, so this costs the landing page a few
+// hundred bytes and never drags the data layer onto it.
+import { officeNow, readOffice, watchOffice, officeLabel } from './office.js';
 
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 const installed = () =>
@@ -20,7 +26,78 @@ export function wireHelp(root) {
     b.addEventListener('click', () => (
       b.dataset.help === 'app' ? openAppHelp()
         : b.dataset.help === 'telehealth' ? openTelehealthHelp()
-          : openCaseHelp())));
+          : b.dataset.help === 'hours' ? openHoursHelp()
+            : openCaseHelp())));
+}
+
+/**
+ * "When will Eric respond?" - the sheet behind the "?" beside the chat.
+ *
+ * THE COPY IS HIS, WORD FOR WORD (2026-08-27), with one class of change and
+ * one only: the app forbids em and en dashes anywhere a person reads, and his
+ * draft had three. "Monday-Friday" and "8:00 AM-7:00 PM" became "Monday to
+ * Friday" and "8:00 AM to 7:00 PM"; the dash before "not simply the order"
+ * became a comma. Nothing else in it may be edited, shortened or reworded.
+ *
+ * His current status sits at the top, above the copy, because the first line
+ * of that copy defers to it ("unless my current status shows otherwise").
+ *
+ * The one sentence he asked to be emphasised gets its own block. It is still
+ * the first sentence of its paragraph and the paragraph still reads in his
+ * order; it is set apart rather than reordered.
+ *
+ * NO RESPONSE TIME IS PRINTED unless he has set one by hand. There is no
+ * default, no "usually within", nothing computed from his hours.
+ */
+export function openHoursHelp() {
+  const s = officeNow();
+  const rt = s?.responseTime;
+  openPanel('When will Eric respond?', `
+    <p class="hours-now">
+      <span class="office-cue" data-office role="status"
+        ><span class="p-dot" aria-hidden="true"></span
+        ><span class="p-label">${officeLabel(s)}</span></span>
+    </p>
+    ${rt ? `<p class="hours-set">${esc(rt)}</p>` : ''}
+
+    <p>Standard advocacy hours are Monday to Friday, 8:00 AM to 7:00 PM
+      Mountain Time, unless my current status shows otherwise.</p>
+
+    <p>I check messages throughout the day, but responses are triaged based on
+      urgency, time sensitivity, and what each case needs, not simply the order
+      messages arrive.</p>
+
+    <p>A time-sensitive issue, such as an appointment happening soon, a problem
+      accessing care, a deadline, or an important change in your situation, may
+      be prioritized ahead of a routine question or update.</p>
+
+    <p class="hours-key">If I haven't responded yet, that doesn't necessarily
+      mean I'm not working on your case.</p>
+    <p>A significant part of advocacy happens behind the scenes. I may be
+      reviewing your records, researching your case, preparing for an
+      appointment, working through next steps, contacting or preparing
+      communication for your care team, or handling something that indirectly
+      moves your case forward.</p>
+
+    <p>Some messages also deserve more than a quick answer. If I need to review
+      information or do additional work before giving you a useful response, I
+      may intentionally wait to respond until I can give the question the
+      attention it deserves.</p>
+
+    <p>You're always welcome to send messages outside office hours. I'll see
+      them when I'm back in office.</p>
+
+    <p class="hours-safety">This chat is not an emergency or real-time medical
+      service. If something requires immediate medical attention, use the
+      appropriate emergency or medical resources available to you.</p>`,
+  (overlay) => {
+    // The pill inside the sheet is live like every other one, and the sheet
+    // may well be the first thing on the page to ask. Without the re-read, a
+    // client who opened the sheet before the first answer landed would sit
+    // looking at "Office hours" with no status at all.
+    watchOffice(overlay);
+    readOffice();
+  });
 }
 
 /**
@@ -50,7 +127,15 @@ export function openTelehealthHelp() {
 
 // ---- the shell ----
 
-function openPanel(title, bodyHtml) {
+/** Escapes text that came from a settings document rather than this file. */
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (ch) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+// `after(overlay)` runs once the card is on the page, for a panel that has
+// something live in it. Optional; the three older panels pass nothing.
+function openPanel(title, bodyHtml, after = null) {
   if (document.getElementById('pa-help')) return;
 
   const overlay = document.createElement('div');
@@ -76,6 +161,7 @@ function openPanel(title, bodyHtml) {
   document.addEventListener('keydown', onKey);
   document.body.appendChild(overlay);
   overlay.querySelector('[data-close]').focus();
+  try { after?.(overlay); } catch (err) { console.warn('help panel:', err); }
 }
 
 // ---- shared blocks ----
@@ -137,7 +223,7 @@ export function openAppHelp() {
 
 export function openCaseHelp() {
   openPanel('Your case file', `
-    <p>Everything about your case lives here, in one place, for as long as you want it. Nothing in it is shared with anyone: not your hospital, not your insurer, not anybody — unless you send it to them yourself.</p>
+    <p>Everything about your case lives here, in one place, for as long as you want it. Nothing in it is shared with anyone: not your hospital, not your insurer, not anybody, unless you send it to them yourself.</p>
 
     <h4>What's stored here</h4>
     <ul class="help-list">
