@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.44';
+export const VERSION = '2.45';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '2.44';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // The contact tick on the scope of work agreement (Eric, 2026-08-29:
+    // "he agrees I can contact him via phone by text or phone call...
+    // non-urgent messages should be used in the app chat portal"). Quiet.
+    version: '2.45',
+    quiet: true,
+    client: [
+      'Your scope of work agreement now includes a contact line: you tick it to say I may call or text you about your case, and anything not urgent stays in your case chat.',
+    ],
+  },
   {
     // One document signed in the app now: the scope of work agreement, on
     // Hands-Off cases opened by hand (Eric, 2026-08-29: "All I need is scope

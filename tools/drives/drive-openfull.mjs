@@ -282,6 +282,21 @@ ok('and there is nothing to fill in but the name',
    sheet.fields === 1, `${sheet.fields} fields`);
 await snap('scope-2-sheet');
 
+// The contact tick (Eric, 2026-08-29): arrives unticked, the document shows
+// it unticked, and ticking it marks the document itself before anything is
+// signed.
+const boxState = await client.evaluate(() => {
+  const cb = document.querySelector('.sig-sheet [data-contact]');
+  const pre = document.querySelector('.sig-sheet [data-preview]')?.textContent || '';
+  return { there: !!cb, ticked: !!cb?.checked, unmarked: /\[ \] My advocate may contact me/.test(pre) };
+});
+ok('the contact tick is there, unticked, and the document prints it unticked',
+   boxState.there && !boxState.ticked && boxState.unmarked, JSON.stringify(boxState));
+await client.check('.sig-sheet [data-contact]');
+ok('and ticking it marks the document itself',
+   await client.evaluate(() =>
+     /\[X\] My advocate may contact me/.test(document.querySelector('.sig-sheet [data-preview]')?.textContent || '')));
+
 await client.fill('.sig-sheet [data-f="signedName"]', 'Jordan Avery');
 await client.evaluate(() => document.querySelector('.sig-sheet [data-sig-open]').click());
 await client.waitForSelector('#pa-sigpad [data-sig-canvas]', { timeout: 10000 });

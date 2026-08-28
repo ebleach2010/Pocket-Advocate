@@ -2336,6 +2336,19 @@ function openAuthoritySheet(c, kind, onDone) {
             <span><strong>${esc(sc.label)}</strong><br><span class="dim small">${esc(sc.note)}</span></span>
           </label>`).join('')}
       ` : ''}
+      ${isScope ? `
+        <!-- ARRIVES UNTICKED, on purpose. Ticking it is part of signing
+             (Eric, 2026-08-29: "a tick box saying that he agrees I can
+             contact him via phone by text or phone call"), and a consent
+             that arrives pre-ticked is not one the client gave. -->
+        <label class="agreement-check" style="align-items:flex-start;">
+          <input type="checkbox" data-contact>
+          <span><strong>Contact me by phone, call or text, about my case</strong><br>
+          <span class="dim small">I can return the calls the same way. Anything
+            that is not urgent goes through my case chat instead, so the whole
+            case stays in one place.</span></span>
+        </label>
+      ` : ''}
       <details class="agreement"${isScope ? ' open' : ''} style="margin:.9rem 0 .6rem;">
         <summary><span class="agreement-title">${isScope ? 'The agreement' : 'Read the whole form'}</span></summary>
         <div class="agreement-body"><pre class="auth-doc" data-preview></pre></div>
@@ -2369,6 +2382,7 @@ function openAuthoritySheet(c, kind, onDone) {
       fromDate: val('fromDate'), toDate: val('toDate'),
       planName: val('planName'), memberId: val('memberId'),
       categories: cats(), scopes: scopesOf(), signedName: val('signedName'),
+      contactOk: !!overlay.querySelector('[data-contact]:checked'),
     };
     preview.textContent = (AUTHORITY_KINDS[kind]?.build || recordsAuthorisation)(o);
   };
@@ -2457,6 +2471,11 @@ function openAuthoritySheet(c, kind, onDone) {
       // signing them up to all of it.
       if (!scopesOf().length) mark('[data-scope="discuss"]');
     }
+    // The contact tick is part of the agreement, not an extra: the Worker
+    // refuses the signature without it, so the sheet says so here, in red,
+    // instead of letting the POST come back as plain text.
+    if (isScope && !overlay.querySelector('[data-contact]:checked'))
+      mark('[data-contact]');
     if (!signatureImage) mark('[data-sig-open]');
     return bad;
   };
@@ -2496,6 +2515,7 @@ function openAuthoritySheet(c, kind, onDone) {
           fromDate: val('fromDate'), toDate: val('toDate'),
           planName: val('planName'), memberId: val('memberId'),
           categories: cats(), scopes: scopesOf(),
+          contactOk: !!overlay.querySelector('[data-contact]:checked'),
           signatureImage,
         }),
       });
