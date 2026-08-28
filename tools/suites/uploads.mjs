@@ -1256,15 +1256,37 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
 // NEGATIVE CONTROL (run 2026-08-28): taking lifted() off the form panel slab
 // made this read
 //   FAIL  U28i every lift this suite takes came back with something in it  -- 11 lifts, expected at least 12
+//
+// THE FLOOR MOVED TO FOURTEEN, 2026-08-28, and the gap it closes is the reason
+// to say so out loud. Two more slabs were registered when the name-resolving
+// lifts were measured, but this line was left at twelve. Fourteen registered
+// against a floor of twelve means TWO COULD BE DROPPED AND THIS STAYS GREEN,
+// which is precisely the silent drop the floor exists to prevent, sitting
+// inside the floor itself. Caught by a peer working the same merge from the
+// other side, and confirmed here by removing two registrations and watching a
+// green run.
+//
+// The floor and the registry have to move together. If that feels like a
+// thing that will be forgotten again, it is, and the honest mitigation is
+// that the size table prints every run.
+//
+// NEGATIVE CONTROL AT THE NEW LEVEL (run 2026-08-28): taking lifted() off the
+// two name-resolving slabs made this read
+//   FAIL  U28i every lift this suite takes came back with something in it  -- 12 lifts, expected at least 14
+//
+// The 11-of-12 line above is left as it was recorded rather than rewritten to
+// fit the new number. An observation edited to match a later state stops being
+// an observation.
+//
 // Note what it does NOT catch, so nobody trusts it further than it goes: a
-// NEW slab added without lifted() leaves the count at twelve and passes. The
-// floor guards the twelve that are here; adding a thirteenth is a thing a
+// NEW slab added without lifted() leaves the count at fourteen and passes. The
+// floor guards the fourteen that are here; adding a fifteenth is a thing a
 // person still has to do on purpose.
 {
   const empties = [...LIFTS].filter(([, v]) => v.size === 0).map(([k]) => k);
   ck('U28i every lift this suite takes came back with something in it',
-    LIFTS.size >= 12 && empties.length === 0,
-    empties.length ? `empty: ${empties.join(', ')}` : `${LIFTS.size} lifts, expected at least 12`);
+    LIFTS.size >= 14 && empties.length === 0,
+    empties.length ? `empty: ${empties.join(', ')}` : `${LIFTS.size} lifts, expected at least 14`);
 }
 
 // ---- U28j: and not one of them ran past where it should have stopped -----
