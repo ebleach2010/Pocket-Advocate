@@ -359,12 +359,11 @@ const ACTS = {
   // Eric, 2026-08-27: "This is another example of what the advisor could do:
   // 'send the hands-off forms to the client'."
   //
-  // TODO(claude/pocketai-webhooks-triggers-a96dea-forms): the form sender is
-  // being built on that branch and does not exist here. The id is reserved and
-  // the tier is already decided (CONFIRM: a client is sent something), so
-  // wiring it up after that branch merges is: set enabled true, finish `check`
-  // against the argument that branch takes, and give it a way to be carried
-  // out.
+  // DONE, 2026-08-28. This was written while the form sender was still being
+  // built on claude/pocketai-webhooks-triggers-a96dea-forms and did not exist
+  // in this tree; both halves are now on main and `enabled` is true below.
+  // What follows is kept because it is the contract the two halves agreed on
+  // before either could see the other, not a plan for work still to do.
   //
   // THAT LAST PART IS THE ONE THING THAT IS NOT LIKE THE OTHERS, and it is
   // worth knowing before anybody starts. Confirmed with that branch: the send
@@ -405,10 +404,10 @@ const ACTS = {
   // did not finish. The forms are deliberately RESENDABLE, so no once-only
   // guard goes on this side either.
   //
-  // `enabled: false` means validate() REFUSES it today rather than parking a
-  // proposal nothing can carry out, and the model is never offered the tool at
-  // all. A half wired act that shows him a card he cannot tap is worse than
-  // no act.
+  // It first shipped `enabled: false`, which made validate() refuse it and
+  // kept the tool from ever being offered, because a half wired act that shows
+  // him a card he cannot tap is worse than no act. That is no longer the
+  // state, and the next two lines are the reason it changed.
   // WIRED 2026-08-28, once both halves of the seam were in one tree for the
   // first time. Eric named this himself as what he wanted the advisor to do:
   // "send the hands-off forms to the client".

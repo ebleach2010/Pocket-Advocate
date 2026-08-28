@@ -4205,8 +4205,11 @@ async function sendBlankForms(kinds, btn) {
  * `pa-panel-review` and `pa-mark-done` already do between chat.js and
  * advisor.js.
  *
- * NOTHING DISPATCHES THIS TODAY. It is inert until that branch lands, and it
- * is here rather than there because the sender lives here.
+ * THE ADVISOR DISPATCHES THIS, since 2026-08-28. advisor.js fires the event
+ * named by the act and reads `detail.result` straight back off the detail.
+ * This listener was written before that half existed and sat inert until the
+ * two landed in one tree; it is here rather than there because the sender
+ * lives here. Do not read it as dead code and do not build a second one.
  *
  * THE PROMISE GOES BACK ON THE DETAIL, SYNCHRONOUSLY, and that is the whole
  * design. A fire-and-forget event cannot tell "the send failed" apart from

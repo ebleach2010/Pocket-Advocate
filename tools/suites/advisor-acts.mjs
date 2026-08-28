@@ -53,6 +53,44 @@ const { validateAction, ALLOWED, DENYLIST, tierOf, dispatchFor, actionTools, tab
  */
 const SLABS = [];
 /**
+ * THE FLOOR, read by every A30 check rather than by A30e alone.
+ *
+ * MEASURED on main, 2026-08-28, by returning early from lifted() so the
+ * registry is empty BEFORE any check reads it (clearing it inside the A30
+ * block instead reads AFTER they have run, and tells the flattering story):
+ *
+ *   PASS A30   PASS A30b   PASS A30c   PASS A30d   PASS A30d2   FAIL A30e
+ *
+ * Five of the six passed on nothing at all. Each one filters SLABS and asserts
+ * the result is empty, and an empty filter of an empty list is empty, so they
+ * were upheld by A30e standing next to them and not by anything they checked.
+ * A29c, four hundred lines below, says in as many words that a check safe only
+ * while its neighbour survives is one deletion from going quiet. Saying it did
+ * not prevent it; a shared number does.
+ *
+ * AFTER, same break, same placement:
+ *
+ *   FAIL A30    -- 0 lifts, expected at least 8
+ *   FAIL A30b   -- 0 lifts, expected at least 8
+ *   FAIL A30c   -- 0 lifts, expected at least 8
+ *   FAIL A30d   -- 0 lifts, expected at least 8
+ *   FAIL A30d2  -- 0 lifts, expected at least 8
+ *   FAIL A30e   -- 0 lifts, expected at least 8
+ *
+ * Restored from a copy rather than from git, because the file held work that
+ * was not committed yet and a checkout would have taken it.
+ *
+ * THE LIMIT, unchanged from A30e's own note: this guards the eight that are
+ * here against quietly becoming seven. A NINTH slab added without going
+ * through lifted() still leaves the count at eight and still passes.
+ *
+ * Same defect and same repair as LIFT_FLOOR in tools/suites/uploads.mjs.
+ */
+const SLAB_FLOOR = 8;
+/** What each A30 check prepends, so an empty registry fails all six. */
+const floorFault = () => (SLABS.length < SLAB_FLOOR
+  ? [`${SLABS.length} lifts, expected at least ${SLAB_FLOOR}`] : []);
+/**
  * EVERY LIFT DECLARES WHAT LIES BEYOND ITS END, and the argument for that came
  * from the -forms branch on 2026-08-28, which I think is right and which lands
  * on three of the eight below.
@@ -855,7 +893,8 @@ const TABLE = {
   //     FAIL  A30 every lift in this file actually found its function  -- alertConsts
   //   and the size line said `alertConsts 0` in the same breath, which is the
   //   half that tells you WHICH kind of failure you are looking at.
-  ck('A30 every lift in this file actually found its function', !short.length, short.join(', '));
+  const shortF = [...floorFault(), ...short];
+  ck('A30 every lift in this file actually found its function', !shortF.length, shortF.join(', '));
   // ENDS WHERE ITS OWN FUNCTION ENDS. This is the one that catches a slab that
   // ran on: the last line of the capture has to be the last line of the thing
   // it was meant to capture.
@@ -872,7 +911,8 @@ const TABLE = {
   //   tightening handleClientAlert's close to '\n  }', which STOPPED IT EARLY
   //   at 2,453 characters, the failure in the other direction
   //     FAIL  A30b and ends exactly where that function ends, not later  -- handleClientAlert
-  ck('A30b and ends exactly where that function ends, not later', !ranOn.length, ranOn.join(', '));
+  const ranOnF = [...floorFault(), ...ranOn];
+  ck('A30b and ends exactly where that function ends, not later', !ranOnF.length, ranOnF.join(', '));
   // AND WHAT SHOULD LIE BEYOND IT REALLY DOES. Each lift names a sentinel from
   // past its intended end; finding that string INSIDE the capture means the
   // slab ran on and took it. This replaces a hand-written list of neighbouring
@@ -902,7 +942,8 @@ const TABLE = {
   // An early-truncation break does NOT show up here, and should not: a slab
   // that stops short has swallowed nothing. That is A30b's job, on the lifts
   // whose tails still have teeth.
-  ck('A30c and swallowed no other function on the way', !swallowed.length, swallowed.join(', '));
+  const swallowedF = [...floorFault(), ...swallowed];
+  ck('A30c and swallowed no other function on the way', !swallowedF.length, swallowedF.join(', '));
   // EVERY REGISTERED SLAB IS ACCOUNTED FOR, twice over. A new lift with no
   // TAIL entry would skip A30b in silence; one with no sentinel would skip
   // A30c the same way, and that is the "passes by asserting nothing" shape
@@ -922,17 +963,19 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): removing adminAssetGate's sentinel
   // argument made this read
   //   FAIL  A30d every registered slab declares a tail rule and a sentinel  -- adminAssetGate: no sentinel
+  const ownedF = [...floorFault(), ...unowned.map((n) => `${n}: no tail rule`),
+    ...unguarded.map((n) => `${n}: no sentinel`)];
   ck('A30d every registered slab declares a tail rule and a sentinel',
-    !unowned.length && !unguarded.length,
-    [...unowned.map((n) => `${n}: no tail rule`), ...unguarded.map((n) => `${n}: no sentinel`)].join(', '));
+    !ownedF.length, ownedF.join(', '));
   // NEGATIVE CONTROL (run 2026-08-28), both halves of the claim:
   //   a typo in handleClientAlert's sentinel, so the string exists nowhere
   //     FAIL  A30d2 and every sentinel is real, and really lies beyond its slab  -- handleClientAlert
   //   alertConsts pointed at 'const ADMIN_ASSET =', which is real but sits
   //   EARLIER in the file, so it proves nothing about where that slab stops
   //     FAIL  A30d2 ... -- alertConsts
+  const misplacedF = [...floorFault(), ...misplaced];
   ck('A30d2 and every sentinel is real, and really lies beyond its slab',
-    !misplaced.length, misplaced.join(', '));
+    !misplacedF.length, misplacedF.join(', '));
   // AND THE REGISTRY CANNOT QUIETLY SHRINK. A lift deleted, or one that stops
   // being registered, takes its checks with it and nothing else would say so.
   //
@@ -943,7 +986,7 @@ const TABLE = {
   // registry made this read
   //   FAIL  A30e the registry still holds every lift it was built with  -- 7 lifts, expected at least 8
   ck('A30e the registry still holds every lift it was built with',
-    SLABS.length >= 8, `${SLABS.length} lifts, expected at least 8`);
+    SLABS.length >= SLAB_FLOOR, `${SLABS.length} lifts, expected at least ${SLAB_FLOOR}`);
   console.log(`      lift sizes: ${LIFTS.map(([n, src]) => `${n} ${src.length}`).join(', ')}`);
 }
 

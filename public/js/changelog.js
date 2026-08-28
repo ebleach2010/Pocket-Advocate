@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.40';
+export const VERSION = '2.41';
 
 /**
  * Newest first.
@@ -51,6 +51,24 @@ export const VERSION = '2.40';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // NOTHING IN THIS RELEASE IS ON THE CLIENT'S SIDE OF THE GLASS, so the
+    // client list is empty on purpose rather than by omission. An empty list
+    // is the supported shape: version-note.js takes the newest release that
+    // has one, so the footer number and the notes window both hold still at
+    // 2.40 and move again the next time their own app changes.
+    //
+    // QUIET, and unspecified: an unspecified push is silent, per the rule
+    // above.
+    //
+    // This comment says what the list holds and no more. THIS FILE IS SERVED
+    // TO EVERY PAGE, so its comments are client-readable bytes and the
+    // blindness rule covers them; a previous entry failed the audit for
+    // explaining what it was leaving out.
+    version: '2.41',
+    quiet: true,
+    client: [],
+  },
   {
     // Filing a file, and the two things about it a client can see
     // (Eric, 2026-08-27 and 2026-08-28).
