@@ -805,9 +805,18 @@ check('E: and .hours-key is actually styled to stand out',
     /border-top/.test(safety));
   // Position is his. The emergency note is the last thing he wrote and it stays
   // the last thing on the sheet.
+  // BOTH ANCHORS HAVE TO BE FOUND. indexOf returns -1 for a string that is
+  // gone, and every real index is greater than -1, so losing `hours-key`
+  // entirely would have left this green. Measured 2026-08-28: renaming it in
+  // the shipped sheet passed before, fails after.
+  const safetyAt = HELP.indexOf('hours-safety');
+  const keyAt = HELP.indexOf('hours-key');
   check('E: and its position in his order is unchanged, still last',
     ERICS_WORDS[ERICS_WORDS.length - 1].startsWith('This chat is not an emergency')
-    && HELP.indexOf('hours-safety') > HELP.indexOf('hours-key'));
+    && safetyAt >= 0 && keyAt >= 0 && safetyAt > keyAt,
+    keyAt < 0 ? 'hours-key is not on the sheet at all'
+      : safetyAt < 0 ? 'hours-safety is not on the sheet at all'
+        : `safety at ${safetyAt}, key at ${keyAt}`);
 }
 
 // THE DASH RULE, on the copy this commit adds.

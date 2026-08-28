@@ -112,10 +112,19 @@ const reqGuard = /closedUntil && start\.getTime\(\) < closedUntil/.test(SRC);
 check('K13 the calendar path refuses a closed slot', slotGuard);
 check('K14 the requested-time path refuses one too - it never reads a slot, '
   + 'so hiding slots does nothing to it', reqGuard);
+// BOTH ENDS HAVE TO BE FOUND, or this passes on a guard that is GONE:
+// indexOf returns -1 for a missing string and -1 is less than every real
+// index, so deleting the closed-slot refusal entirely would have read green
+// here. Measured 2026-08-28: renaming closedMessage in the shipped Worker
+// passed before, fails after.
+const refuseAt = SRC.indexOf('closedMessage(closedUntil)');
+const holdAt = SRC.indexOf("{ state: 'held'");
 check('K15 the slot check happens BEFORE the hold, so a refused booking does '
   + 'not take a time off the calendar for half an hour',
-  SRC.indexOf('closedMessage(closedUntil)') < SRC.indexOf("{ state: 'held'"),
-  `${SRC.indexOf('closedMessage(closedUntil)')} vs ${SRC.indexOf("{ state: 'held'")}`);
+  refuseAt >= 0 && holdAt >= 0 && refuseAt < holdAt,
+  refuseAt < 0 ? 'the closed-slot refusal is not there at all'
+    : holdAt < 0 ? 'the hold is not there at all'
+      : `${refuseAt} vs ${holdAt}`);
 check('K16 the closure lands within a minute of deploy, not on the 15 minute gate',
   /ctx\.waitUntil\(unparkAdvisor\(env\)\);[\s\S]{0,500}?ctx\.waitUntil\(closeBookingsAug2026\(env\)\)/.test(SRC)
   || /ctx\.waitUntil\(runWorkClockNudges\(env\)\);[\s\S]{0,500}?ctx\.waitUntil\(closeBookingsAug2026\(env\)\)/.test(SRC));

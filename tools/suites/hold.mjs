@@ -171,9 +171,17 @@ ck('the reschedule-refund contradiction is flagged in CLAUDE.md, not fudged',
 
 // ---- the review outlives the close --------------------------------------
 const CJ = f('public/js/case.js');
+// The first anchor is covered by the regex above it; the SECOND was not.
+// indexOf returns -1 for a string that is gone and every real index beats -1,
+// so losing renderReview entirely would have left this green. Measured
+// 2026-08-28: renaming it in the shipped page passed before, fails after.
+const noticeAt = CJ.indexOf('Your case is closed, and this stays open');
+const renderAt = CJ.indexOf('function renderReview');
 ck('a closed case still shows the review card',
    /Your case is closed, and this stays open/.test(CJ)
-   && CJ.indexOf('Your case is closed, and this stays open') > CJ.indexOf('function renderReview'));
+   && noticeAt >= 0 && renderAt >= 0 && noticeAt > renderAt,
+   renderAt < 0 ? 'renderReview is not in the page at all'
+     : `notice at ${noticeAt}, renderReview at ${renderAt}`);
 ck('the 48-hour warning is only shown where it is true',
    /delivered && c\.status !== 'closed' && !c\.fullAccess/.test(CJ));
 ck('there is exactly one review card on the page',

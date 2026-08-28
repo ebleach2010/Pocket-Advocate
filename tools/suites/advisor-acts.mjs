@@ -695,8 +695,25 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): swapping the patchDoc and notifyUser
   // calls made this read
   //   FAIL  A21b recorded BEFORE it is sent, so nothing can reach a phone unlogged
+  //
+  // BOTH ENDS HAVE TO BE FOUND, and that is not pedantry. String.indexOf
+  // returns -1 for a string that is not there, and -1 is less than every real
+  // index, so deleting the trail write entirely made this read GREEN while
+  // nothing was being recorded at all: the exact condition the check is named
+  // for.
+  //
+  // MEASURED on main, 2026-08-28, by renaming `clientAlerts` in the shipped
+  // Worker so the trail write no longer matches: A21 failed, and this passed.
+  // Found by reading every line that survived the refuse-everything break
+  // rather than only the lines I suspected, which is how A10c was missed an
+  // hour earlier.
+  const recordedAt = W.indexOf('clientAlerts: [...prior');
+  const sentAt = W.indexOf("title: 'Pocket Advocate',\n    body: text,");
   ck('A21b recorded BEFORE it is sent, so nothing can reach a phone unlogged',
-    W.indexOf('clientAlerts: [...prior') < W.indexOf("title: 'Pocket Advocate',\n    body: text,"));
+    recordedAt >= 0 && sentAt >= 0 && recordedAt < sentAt,
+    recordedAt < 0 ? 'the trail write is not there at all'
+      : sentAt < 0 ? 'the send is not there at all'
+        : `recorded at ${recordedAt}, sent at ${sentAt}`);
   // And it lands where no browser can read it. caseMeta is denied to every
   // browser by the catch-all in firestore.rules; cases/{id} is not.
   // NEGATIVE CONTROL (run 2026-08-28): pointing the trail write at cases/{caseId}
