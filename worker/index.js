@@ -25,6 +25,11 @@ import {
 } from './schedule.js';
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
+// The advisor's allowlist. Imported here rather than duplicated: the bound the
+// urgent notification enforces and the bound the advisor may propose within
+// are the SAME constant, so the route cannot drift wider than the thing it was
+// narrowed for.
+import { validateAction } from './advisor-acts.js';
 import {
   getAdvisorEffort, setAdvisorEffort,
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
@@ -759,6 +764,8 @@ export default {
         return await handleDeleteSlot(request, env, url);
       if (url.pathname === '/api/admin/case-update' && request.method === 'POST')
         return await handleCaseUpdate(request, env);
+      if (url.pathname === '/api/admin/client-alert' && request.method === 'POST')
+        return await handleClientAlert(request, env);
       if (url.pathname === '/api/admin/schedule' && request.method === 'POST')
         return await handleAdminSchedule(request, env);
       if (url.pathname === '/api/notify' && request.method === 'POST')
@@ -1694,7 +1701,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-28-worklog-main';
+const BUILD_TAG = 'v2026-08-28-forms-advisor';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -6197,6 +6204,7 @@ function sanitizeNotes(html) {
 /**
  * POST /api/advisor  Body: { kind: 'case'|'sub', id, action, question?, instruction?, draft?, sent? }
  * action: 'analyze' | 'ask' | 'draft' | 'draft-feedback' | 'pause' | 'resume' | 'clear-draft'
+ *       | 'act-done' (a proposed change was carried out, or discarded)
  *       | 'appeal-draft' | 'clear-appeal' | 'appeal-filed'
  *       | 'dx' (folder-cover override) | 'note' (private notes) | 'correction-dismiss'
  *       | 'unanswered-answered' (an outstanding ask he got, or let go)
@@ -6339,6 +6347,22 @@ async function handleAdvisor(request, env, ctx) {
     await deleteDoc(env, `${parent}/${id}/advisor/state`);
     await deleteDoc(env, `advisorQueue/${kind}_${id}`);
     return json({ ok: true, cleared: true });
+  }
+
+  if (action === 'act-done') {
+    // A parked proposal was carried out, or discarded. Either way it stops
+    // being pending. The actId is checked against what is stored so a slow tap
+    // on an old card cannot clear a NEWER proposal that has since arrived: a
+    // stale clear answers ok and changes nothing.
+    const actId = typeof body?.actId === 'string' ? body.actId : '';
+    if (!/^[\w-]{1,64}$/.test(actId)) return json({ error: 'Bad act' }, 400);
+    const st = await getDoc(env, statePath).catch(() => null);
+    const stored = st?.data.pendingAct?.actId;
+    if (stored && stored !== actId) return json({ ok: true, stale: true });
+    await patchDoc(env, statePath, { pendingAct: null, pendingActError: null }, {
+      mask: ['pendingAct', 'pendingActError'],
+    });
+    return json({ ok: true });
   }
 
   if (action === 'clear-draft') {
@@ -7102,10 +7126,45 @@ async function handleCaseUpdate(request, env) {
     const cents = Math.round(Number(body?.paidCents));
     if (!Number.isFinite(cents) || cents <= 0 || cents > 100_000_00)
       return json({ error: 'Give an amount between $1 and $100,000.' }, 400);
+    // WHAT IT REPLACED, AND WHO REPLACED IT.
+    //
+    // This field is the most consequential number a hand can move in the whole
+    // app: it is instantly live on his dashboard, on the client's own case
+    // page and in the hourly the ledger builds. Until now it overwrote with no
+    // memory at all - no prior figure, no actor, only paidOverrideAt saying
+    // that SOMETHING happened at some minute. A wrong entry could be replaced
+    // but never accounted for, and every entry looked identical whether he
+    // typed it himself or something else typed it for him.
+    //
+    // The shape is `work.correction` above, deliberately: from, to, at, and
+    // that is the only control in this app that has ever recorded what it
+    // replaced. `by` is the one field added to it, and it exists because a
+    // control that can be driven by more than his own thumb has to say which
+    // thumb it was.
+    //
+    // IT LIVES ON caseMeta, NOT ON THE CASE. cases/{id} is client-readable by
+    // rule; caseMeta/{id} is denied to every browser by the catch-all. A
+    // provenance stamp reading 'advisor' sitting on a document the client can
+    // open is the blindness rule broken by an audit trail, which would be a
+    // silly way to break it. The figure itself stays where its readers are.
+    //
+    // THE TRAIL IS WRITTEN FIRST. If recording what is about to happen fails,
+    // nothing happens: he gets an error and the old number stands. The other
+    // order gives a changed figure with no record of what it displaced, which
+    // is the exact state this block exists to end.
+    const priorCents = Number(doc.data.paidOverrideCents) > 0
+      ? Math.round(Number(doc.data.paidOverrideCents)) : 0;
+    const by = body?.by === 'advisor' ? 'advisor' : 'eric';
+    await patchDoc(env, `caseMeta/${caseId}`, {
+      paidCorrection: { from: priorCents, to: cents, at: now, by },
+    }, { mask: ['paidCorrection'] });
     await patchDoc(env, `cases/${caseId}`, {
       paidOverrideCents: cents,
       paidOverrideAt: now,
     }, { mask: ['paidOverrideCents', 'paidOverrideAt'] });
+    // correctedFrom is the same name /api/work answers a clock correction
+    // with, so the two controls read the same way from the outside.
+    return json({ ok: true, correctedFrom: priorCents, by });
   } else if (action === 'open-full') {
     // HANDS-OFF, TURNED ON BY HAND (Eric, 2026-08-26: "where to start the
     // clock and send forms as if he paid for the enhancement through the
@@ -7342,6 +7401,127 @@ async function handleCaseUpdate(request, env) {
     return json({ error: 'Unknown action' }, 400);
   }
   return json({ ok: true });
+}
+
+/**
+ * POST /api/admin/client-alert  Body: { caseId, text }   admin only
+ *
+ * ONE URGENT SENTENCE ON A CLIENT'S PHONE, IN ERIC'S OWN WORDS. He asked for
+ * this in exactly those terms (2026-08-27), listing it as a thing the advisor
+ * should be able to raise:
+ *
+ *   "special notifications. Such as 'send an urgent notification that the
+ *    client has a time sensitive form to fill out'."
+ *
+ * THE GUARDRAIL THIS MOVES, AND WHY IT WAS MOVED DELIBERATELY.
+ *
+ * handleCaseUpdate's summary-uploaded branch carries this rule, and it is a
+ * good rule: "The WORDS come from here, keyed by an id, never from the caller.
+ * A body that could name its own label would be a route for putting arbitrary
+ * text into a client's push notification."
+ *
+ * That rule is about an UNTRUSTED OR PROGRAMMATIC caller. It is aimed at a
+ * body arriving from somewhere with a label in it that nobody read. Eric
+ * writing a sentence himself, reading it back on a confirm card that shows the
+ * exact characters the client will see, and tapping send, is a different act:
+ * it is the same laundering the chat draft path has always relied on, where a
+ * proposed message becomes a real one only by passing under his eye and his
+ * thumb. So the guardrail is moved here, once, on his word, and the narrowness
+ * is made structural instead of being left to good intentions:
+ *
+ *   ADMIN ONLY, 404 to everyone else, like every other admin route.
+ *   THE BODY MAY CARRY NOTHING ELSE. caseId and text and no third key. This is
+ *     the pin that stops it quietly becoming a general purpose route: a caller
+ *     that wants to name its own title, its own link or its own recipient is
+ *     refused before anything is read, rather than having its extra fields
+ *     silently ignored until somebody wires one of them up.
+ *   THE TITLE AND THE LINK ARE LITERALS HERE. Never from the body. The only
+ *     thing the caller supplies is the sentence.
+ *   THE RECIPIENT IS THE CASE'S OWN CLIENT. Never a uid from the body: this
+ *     route cannot be pointed at a person.
+ *   BOUNDED AND FLATTENED, the same treatment the upload file name gets, and
+ *     bounded by the SAME constant the advisor allowlist proposes within, so
+ *     the two can never drift apart.
+ *   TEXT AS A VALUE, NEVER AS MARKUP. Angle brackets are refused at the door
+ *     by validateAction, the JSON payload carries the sentence as a string,
+ *     and push-sw.js hands it to showNotification's `body`, which renders
+ *     text. There is no surface between here and his client's lock screen
+ *     that parses it.
+ *   RECORDED, WITH THE TIME. Every sentence sent is kept on caseMeta, which no
+ *     browser can read, so there is a trail. There is no admin audit log in
+ *     this app and this route was not going to be the second thing without
+ *     one.
+ *   RATE LIMITED, SOFTLY. A client is not buzzed twice inside half an hour or
+ *     more than three times in a day, whatever anybody taps.
+ *
+ * The confirm card lives in public/js/advisor.js: nothing sends until he has
+ * read the exact words and tapped.
+ */
+const ALERT_MIN_GAP_MS = 30 * 60_000;
+const ALERT_MAX_PER_DAY = 3;
+const ALERT_TRAIL_KEEP = 20;
+
+async function handleClientAlert(request, env) {
+  // 404, not 403, like every other admin route in this file.
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  // THE PIN. Two keys, no more. See the note above: an ignored extra field is
+  // how a narrow route becomes a wide one without anybody deciding to widen
+  // it, so an extra field is a refusal rather than a shrug.
+  const keys = Object.keys(body || {});
+  if (keys.some((k) => k !== 'caseId' && k !== 'text'))
+    return json({ error: 'This route sends one sentence to one case, and takes nothing else.' }, 400);
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case id' }, 400);
+  // The SAME check the advisor proposes within: bounded, flattened, no markup.
+  const checked = validateAction('client-alert', { text: body?.text });
+  if (!checked.ok) return json({ error: checked.error }, 400);
+  const text = checked.alertText;
+
+  const doc = await getDoc(env, `cases/${caseId}`);
+  if (!doc) return json({ error: 'No such case' }, 404);
+  if (doc.data.status === 'closed') return json({ error: 'Case is closed.' }, 409);
+  if (!doc.data.clientUid)
+    return json({ error: 'This client has not signed in yet, so there is no phone to reach.' }, 409);
+
+  // The trail, which is also the rate limiter. Reading decodes timestamps to
+  // ISO strings; writing the array back untouched would retype every `at` from
+  // timestamp to string, so every row is rebuilt as a Date on the way out.
+  const meta = await getDoc(env, `caseMeta/${caseId}`).catch(() => null);
+  const priorRaw = Array.isArray(meta?.data.clientAlerts) ? meta.data.clientAlerts : [];
+  const prior = priorRaw
+    .filter((r) => r && r.at)
+    .map((r) => ({ text: String(r.text || ''), at: new Date(r.at), by: r.by === 'advisor' ? 'advisor' : 'eric' }))
+    .filter((r) => !Number.isNaN(r.at.getTime()));
+  const now = new Date();
+  const last = prior.length ? Math.max(...prior.map((r) => r.at.getTime())) : 0;
+  if (last && now.getTime() - last < ALERT_MIN_GAP_MS) {
+    const mins = Math.ceil((ALERT_MIN_GAP_MS - (now.getTime() - last)) / 60_000);
+    return json({
+      error: `You buzzed this client a few minutes ago. Give it ${mins} more minute${mins === 1 ? '' : 's'}, or send it in the chat instead.`,
+    }, 429);
+  }
+  const today = prior.filter((r) => now.getTime() - r.at.getTime() < 86_400_000).length;
+  if (today >= ALERT_MAX_PER_DAY)
+    return json({
+      error: `That is ${ALERT_MAX_PER_DAY} urgent notifications to this client in a day, which stops being urgent. Use the chat.`,
+    }, 429);
+
+  // RECORDED FIRST, for the same reason set-paid records first: a sentence
+  // that reached a phone with no record of what it said is the thing this
+  // trail exists to prevent.
+  await patchDoc(env, `caseMeta/${caseId}`, {
+    clientAlerts: [...prior, { text, at: now, by: 'advisor' }].slice(-ALERT_TRAIL_KEEP),
+  }, { mask: ['clientAlerts'] });
+
+  await notifyUser(env, doc.data.clientUid, {
+    // Literals. The caller names neither of these and never will.
+    title: 'Pocket Advocate',
+    body: text,
+    link: `/case.html?id=${caseId}`,
+  });
+  return json({ ok: true, sent: text, at: now.toISOString() });
 }
 
 async function releaseHold(env, session) {

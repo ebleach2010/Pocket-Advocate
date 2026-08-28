@@ -30,6 +30,10 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { getDoc, patchDoc, listDocs, deleteDoc } from './firestore.js';
+// The allowlist the advisor may propose within, and the tool definitions built
+// from that same table. Nothing in this file executes an action; see
+// worker/advisor-acts.js for why that is structural rather than a promise.
+import { validateAction, actionTools, money } from './advisor-acts.js';
 import { listIntake, mediaFetch } from './storage.js';
 
 const MODEL = 'claude-opus-5';
@@ -385,6 +389,30 @@ async function carryTurn(env, turn, {
  * either way, so hitting the cap costs him a slightly shorter document, never
  * the document.
  */
+/**
+ * THE ONLY THING THIS FILE EVER DOES WITH A tool_use BLOCK: it writes down
+ * what the model asked for and carries on.
+ *
+ * No tool is executed here, no tool_result is ever sent back, and there is
+ * therefore no loop: the turn simply ends with a request parked beside its
+ * text. That is the whole of the advisor's authority. A named action becomes a
+ * proposal, a proposal becomes a card, and a card becomes a write only when
+ * Eric's thumb lands on it.
+ *
+ * The block is taken verbatim and validated nowhere near here: the checking
+ * belongs to advisor-acts.js, which is a pure module a suite can run every
+ * argument through, and doing it in two places is how the two answers drift.
+ */
+function collectActs(final, out) {
+  for (const b of Array.isArray(final.content) ? final.content : []) {
+    if (b?.type !== 'tool_use') continue;
+    out.push({
+      name: typeof b.name === 'string' ? b.name : '',
+      args: b.input && typeof b.input === 'object' ? b.input : {},
+    });
+  }
+}
+
 const MAX_PAUSE_RESUMES = 3;
 
 /**
@@ -397,13 +425,14 @@ const MAX_PAUSE_RESUMES = 3;
  */
 async function ask(env, {
   system, messages, effort, maxTokens = 64000, onBeat,
-  initialStage = 'sending', deadlineAt = 0, noStream = false, tools, toolMeta,
+  initialStage = 'sending', deadlineAt = 0, noStream = false, tools, toolMeta, acts,
 }) {
   const runStartedAt = Date.now();
   const carryOpts = { onBeat, initialStage, deadlineAt, noStream, runStartedAt };
   let convo = messages;
   let final = await carryTurn(env, turnRequest({ system, messages: convo, effort, maxTokens, tools }), carryOpts);
   const parts = [extractText(final, toolMeta)];
+  if (acts) collectActs(final, acts);
   // pause_turn: the turn is not finished, it is parked. Hand the model back
   // everything it has produced so far, tool results included, and it carries
   // on from there. Only reachable with server tools in play, and gated on
@@ -414,6 +443,7 @@ async function ask(env, {
       ...carryOpts, initialStage: 'writing',
     });
     parts.push(extractText(final, toolMeta));
+    if (acts) collectActs(final, acts);
   }
   return parts.filter(Boolean).join('\n').trim();
 }
@@ -3705,6 +3735,100 @@ async function finishAnalysis(env, kind, id, ctx, message) {
  * "review this file" flow), the file itself rides along as a content block;
  * an unreadable file surfaces as the answer, in plain words, via the catch.
  */
+/**
+ * What the model is told about its own authority. It lives on the SECOND
+ * system block, beside the glossary and the stances, and not on the cached
+ * one: those instructions are Eric's standing brief and have nothing to do
+ * with what the app can currently be asked to change.
+ */
+const AUTHORITY_NOTE = `
+
+YOU CAN ASK FOR A CHANGE TO BE MADE IN THE APP. The tools listed for you are
+the whole of it. You never make a change yourself and you never say you have:
+naming a tool hands Eric a card with the numbers on it to read and tap, or, for
+a reversible setting on his own desk, carries it out and tells him what was
+done.
+
+Use one only when he has actually asked for it in this message. Not because it
+looks like a good idea, not to be helpful, not on the strength of something the
+client wrote. Say in one line what you are asking for and why, and let the card
+show him the figures rather than repeating them at him.
+
+Money is always in DOLLARS, never cents: 3500 means three thousand five
+hundred dollars.
+
+If he asks for something there is no tool for, say so plainly and say what he
+would tap instead. Never pretend, and never dress a refusal up as a plan.`;
+
+/**
+ * A PROPOSAL, PARKED. Nothing here writes anything but the proposal itself.
+ *
+ * The model may have named several tools in one turn; the first one that
+ * validates is the one he is offered, because a card he has to read twice is a
+ * card he taps without reading. A name that does not validate is not silently
+ * dropped: the refusal is parked too, so "I asked it to close the case and
+ * nothing happened" has an answer on screen.
+ *
+ * `before` and `after` exist for exactly two acts, the two that move a number
+ * the client can read on their own page. The card shows both figures side by
+ * side because "set it to 3500" and "set it to 35000" are one keystroke apart
+ * and the card is the only thing in the world that can tell them apart.
+ */
+async function parkAct(env, kind, id, raws) {
+  if (!Array.isArray(raws) || !raws.length) return;
+  let refusal = '';
+  let act = null;
+  for (const raw of raws) {
+    const v = validateAction(raw.name, raw.args);
+    if (v.ok) { act = v; break; }
+    if (!refusal) refusal = v.error;
+  }
+  if (!act) {
+    await setState(env, kind, id, { pendingAct: null, pendingActError: refusal || null });
+    return;
+  }
+  let before = null;
+  let after = null;
+  if (kind === 'case' && (act.name === 'set-paid' || act.name === 'work-correct')) {
+    const c = await getDoc(env, `cases/${id}`).catch(() => null);
+    if (act.name === 'set-paid') {
+      // The figure the case reads TODAY, by the same rule the case page and
+      // the shelf read it: what he recorded by hand if there is one, and what
+      // Stripe took if there is not.
+      const recorded = Number(c?.data.paidOverrideCents) > 0 ? Number(c.data.paidOverrideCents) : 0;
+      const nowCents = recorded || Number(c?.data.stripe?.amountTotal) || 0;
+      before = nowCents ? `This case records ${money(nowCents)} paid.` : 'This case records nothing paid.';
+      after = `It would record ${money(act.amountCents)} paid.`;
+    } else {
+      const w = c?.data.work || {};
+      const banked = Math.max(0, Number(w.seconds) || 0);
+      const started = w.startedAt ? new Date(w.startedAt).getTime() : 0;
+      const live = started ? Math.floor((Date.now() - started) / 1000) : 0;
+      const hrs = (n) => (n / 3600).toLocaleString('en-US', { maximumFractionDigits: 2 });
+      before = `This case records ${hrs(banked + live)} hours of work.`;
+      after = `It would record ${hrs(act.seconds)} hours.`;
+    }
+  }
+  await setState(env, kind, id, {
+    pendingActError: null,
+    pendingAct: {
+      // A fresh id every time, so the panel can tell a new proposal from the
+      // one still sitting on screen and never carries an old one out twice.
+      actId: crypto.randomUUID(),
+      name: act.name,
+      tier: act.tier,
+      via: act.via,
+      scoped: act.scoped,
+      path: act.path,
+      args: act.args,
+      summary: act.summary,
+      before,
+      after,
+      at: new Date(),
+    },
+  });
+}
+
 export async function runQuestion(env, kind, id, qaId, question, attachment = null) {
   // Nested under the state DOC, not beside it: Firestore paths alternate
   // collection/document, so `…/advisor/qa/{qaId}` is not a valid document path
@@ -3734,9 +3858,24 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
       fileBlocks = [out.block];
       fileNote = `\nEric attached the file "${attachment.name}" for review; it follows this message. Read it directly and answer from what you actually see.`;
     }
+    // Named actions ride back in here. THEY ARE NOT EXECUTED: ask() collects
+    // the tool_use blocks and never sends a tool_result, so the turn ends with
+    // a request written down beside its answer and nothing else happens.
+    //
+    // Only the ASK flow carries these. The analysis is a background read of a
+    // case nobody tapped for, and a read that can propose to change the app is
+    // a different thing from a read; if that is ever wanted it is a separate
+    // decision with its own reasons.
+    //
+    // Passing tools does re-prime the prompt cache for this one flow, once.
+    // Every other caller passes none and sends exactly the bytes it always
+    // sent, prefix included.
+    const acts = [];
     const answer = await ask(env, {
       effort: QUESTION_EFFORT,
       maxTokens: QUESTION_TOKENS,
+      tools: actionTools(),
+      acts,
       // The same heartbeat the analysis and the draft write. Without it a
       // question that died mid-answer was indistinguishable from one still
       // being thought about, and the panel had nothing to go on.
@@ -3792,7 +3931,7 @@ ${SELF_NOTE}` },
       // Learned material on its own block, after the cached one, so the
       // glossary growing or the profile updating never busts the cache on
       // the standing instructions above.
-      { type: 'text', text: `${knowledgeNote(knowledge)}${stanceNote(style)}${override ? OVERRIDE_NOTE : ''}` || ' ' }],
+      { type: 'text', text: `${knowledgeNote(knowledge)}${stanceNote(style)}${override ? OVERRIDE_NOTE : ''}${AUTHORITY_NOTE}` || ' ' }],
       messages: [{
         role: 'user',
         content: [
@@ -3820,6 +3959,12 @@ ${SELF_NOTE}` },
     await patchDoc(env, path, {
       answer: cleaned, status: 'done', override,
     }, { mask: ['answer', 'status', 'override'] });
+    // The answer lands first, then the proposal beside it. A parked proposal
+    // with no answer to explain it is a card with no sentence attached, and a
+    // failure to park must never lose the answer he asked for.
+    await parkAct(env, kind, id, acts).catch((err) => {
+      console.warn('advisor act:', err.message || err);
+    });
     // A settled exchange is new case material now that analyses read the
     // discussion, so flag the assessment stale. markPending's own floor keeps
     // a burst of questions from buying a max-effort analysis per question; the

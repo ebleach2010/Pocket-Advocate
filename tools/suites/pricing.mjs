@@ -519,6 +519,74 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
     !silly.threw && silly.res?.status === 400 && silly.writes.length === 0,
     silly.threw || `status ${silly.res?.status}, ${silly.writes.length} write(s)`);
 
+  // ---- T4a-T4f: what set-paid REPLACED, and whose hand replaced it -------
+  //
+  // This figure is live the instant it is written: his dashboard, the client's
+  // own case page, and the hourly the ledger builds. It used to overwrite with
+  // no memory whatever - no prior figure, no actor, only a timestamp saying
+  // that something happened. Every entry looked identical whether he typed it
+  // or something typed it for him, which is not a state the advisor is allowed
+  // anywhere near.
+  //
+  // Modelled on work.correction { from, to, at }, the only control in the app
+  // that has ever recorded what it displaced, plus `by`.
+  const OVERWRITE = { ...CASEDOC, paidOverrideCents: 17500 };
+  const again = await run(OVERWRITE, { action: 'set-paid', paidCents: 340000 });
+  const trail = again.writes.find((w) => w.fields.paidCorrection);
+  // NEGATIVE CONTROL (run 2026-08-28): deleting the caseMeta patchDoc from
+  // set-paid made this read
+  //   FAIL  T4a ... -- no paidCorrection was written at all
+  check('T4a overwriting a recorded figure records what it replaced',
+    !again.threw && !!trail && trail.fields.paidCorrection.from === 17500
+      && trail.fields.paidCorrection.to === 340000,
+    again.threw || (trail ? JSON.stringify(trail.fields.paidCorrection) : 'no paidCorrection was written at all'));
+  // NEGATIVE CONTROL (run 2026-08-28): pointing the trail write at
+  // `cases/${caseId}` made this read
+  //   FAIL  T4b ... -- trail landed on cases/abc
+  check('T4b and it lands on caseMeta, never on the case a client can read',
+    !!trail && trail.path === 'caseMeta/abc'
+      && !again.writes.some((w) => w.path.startsWith('cases/') && w.fields.paidCorrection),
+    trail ? `trail landed on ${trail.path}` : 'no trail');
+  // NEGATIVE CONTROL (run 2026-08-28): hardcoding by: 'eric' made this read
+  //   FAIL  T4c ... -- by hand eric, through the advisor eric
+  const viaAdvisor = await run(OVERWRITE, { action: 'set-paid', paidCents: 340000, by: 'advisor' });
+  const advTrail = viaAdvisor.writes.find((w) => w.fields.paidCorrection);
+  check('T4c an advisor-initiated write is distinguishable from one he typed',
+    trail?.fields.paidCorrection.by === 'eric' && advTrail?.fields.paidCorrection.by === 'advisor',
+    `by hand ${trail?.fields.paidCorrection.by}, through the advisor ${advTrail?.fields.paidCorrection.by}`);
+  // Anything else claiming to be somebody is nobody: the field is a fixed
+  // vocabulary, not a caller-supplied label.
+  const viaJunk = await run(OVERWRITE, { action: 'set-paid', paidCents: 340000, by: '<b>stripe</b>' });
+  // NEGATIVE CONTROL (run 2026-08-28): writing `by: body?.by || 'eric'` made
+  // this read
+  //   FAIL  T4d ... -- by came back as <b>stripe</b>
+  check('T4d and the actor is a fixed vocabulary, not a label the caller picks',
+    viaJunk.writes.find((w) => w.fields.paidCorrection)?.fields.paidCorrection.by === 'eric',
+    `by came back as ${viaJunk.writes.find((w) => w.fields.paidCorrection)?.fields.paidCorrection.by}`);
+  // ORDER. Recording what is about to happen comes first; if the trail cannot
+  // be written, the money does not move and he is told. The other order gives
+  // a changed figure with no record of what it displaced.
+  // NEGATIVE CONTROL (run 2026-08-28): swapping the two patchDoc calls made
+  // this read
+  //   FAIL  T4e ... -- trail at 1, money at 0
+  const trailAt = again.writes.findIndex((w) => w.fields.paidCorrection);
+  const moneyAt = again.writes.findIndex((w) => w.fields.paidOverrideCents);
+  check('T4e the trail is written before the money, not after it',
+    trailAt === 0 && moneyAt === 1, `trail at ${trailAt}, money at ${moneyAt}`);
+  // NEGATIVE CONTROL (run 2026-08-28): returning a bare json({ ok: true })
+  // made this read
+  //   FAIL  T4f ... -- answered undefined
+  check('T4f the route answers with the figure it displaced, so a control can say it',
+    again.res?.body?.correctedFrom === 17500, `answered ${again.res?.body?.correctedFrom}`);
+  // A FIRST entry replaced nothing, and says so with a zero rather than
+  // inventing a figure out of the Stripe receipt.
+  // NEGATIVE CONTROL (run 2026-08-28): the same dropped caseMeta write made
+  // this read
+  //   FAIL  T4g a first entry records a zero rather than guessing at a prior
+  check('T4g a first entry records a zero rather than guessing at a prior',
+    paid.writes.find((w) => w.fields.paidCorrection)?.fields.paidCorrection.from === 0,
+    JSON.stringify(paid.writes.find((w) => w.fields.paidCorrection)?.fields.paidCorrection));
+
   const open = await run(CASEDOC, { action: 'open-full', tierCents: 340000 });
   const of = open.writes.find((w) => w.fields.fullAccess === true);
   check('T5 the tier can be opened by hand at all',

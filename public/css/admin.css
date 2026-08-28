@@ -369,6 +369,14 @@ main > p > a.small[href="/admin.html"] {
   border: 1px solid var(--magenta); border-radius: 12px;
   padding: .55rem .7rem .65rem; margin: .6rem 0; background: var(--bg);
 }
+/* The confirm card for a change to the app. Cyan rather than magenta so a
+   thing that CHANGES something never looks like a thing that writes words. */
+.advisor-act {
+  border: 1px solid var(--cyan); border-radius: 12px;
+  padding: .55rem .7rem .65rem; margin: .6rem 0; background: var(--bg);
+}
+.advisor-act .advisor-draft-label { color: var(--cyan); }
+.advisor-act p { overflow-wrap: anywhere; }
 .advisor-draft-label { margin: 0; font-weight: 700; color: var(--magenta); font-size: .85rem; }
 .draft-box {
   width: 100%; min-height: 5.5rem; margin-top: .4rem; resize: vertical;
