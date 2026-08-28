@@ -772,8 +772,11 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   // plausible tail). Only naming the neighbours catches the third.
   // WHAT THE endsWith CLAUSE BELOW ACTUALLY COVERS, and its reach, because the
   // advisor branch nulled two of its own tail rules for reading stronger than
-  // they were: ';' and '  }\n}' occur 2,056 and 5 times in their source, so
-  // neither could ever have failed. This one is not that. Its marker occurs
+  // they were. Counted here rather than repeated from a report, because the
+  // figure that reached me had already been corrected once and was still wrong:
+  // in worker/advisor.js ';' occurs 1,203 times and '  }\n}' 12 times; in
+  // public/js/advisor.js, 674 and 1. Neither of those tails could have failed,
+  // whichever file you take. This one is not that. Its marker occurs
   // exactly ONCE in admin-case.js and it did fire on the swallow control above.
   // But because the marker is unique, a run-on that KEEPS the marker is
   // impossible here, so the clause really guards against someone changing the
