@@ -40,10 +40,18 @@ export const statusById = (id) => STATUS_REACTIONS.find((r) => r.id === id);
 /**
  * Open the menu for one message.
  * opts: { canReact, canUseStatus, canEdit, canPass, canSave, savedAlready,
- *         passedByMe, hasReaction, hasText, current, extraRows }
+ *         passedByMe, hasReaction, hasText, current, extraRows, heading, label }
  *
  * extraRows: [{ act, emoji, label }] the caller wants in the sheet. Used for
  * rows whose meaning belongs to the caller rather than to the chat.
+ *
+ * heading and label are for callers that are not opening this on a chat
+ * message. A held press on a file row uses the same sheet, and a sheet
+ * offering three actions with nothing naming the thing they act on is a sheet
+ * you dismiss to go and check which row you were on. heading puts that name at
+ * the top; label is what a screen reader announces the dialog as, instead of
+ * the message-actions wording that would be wrong there.
+ *
  * Resolves to { action: 'react', id } | { action: 'clear' } | { action: 'edit' }
  * | { action: 'copy' } | { action: 'stage' }, or undefined if dismissed.
  */
@@ -51,12 +59,12 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (ch) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
 export function openMessageMenu(opts) {
-  const { canReact, canUseStatus, canEdit, canPass, canSave, savedAlready, passedByMe, hasReaction, hasText, current, extraRows = [] } = opts;
+  const { canReact, canUseStatus, canEdit, canPass, canSave, savedAlready, passedByMe, hasReaction, hasText, current, extraRows = [], heading = '', label = 'Message actions' } = opts;
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'msg-menu-overlay';
     overlay.innerHTML = `
-      <div class="msg-menu" role="dialog" aria-modal="true" aria-label="Message actions">
+      <div class="msg-menu" role="dialog" aria-modal="true" aria-label="${esc(label)}">
         ${canReact ? `
           <div class="react-bar" role="group" aria-label="React">
             ${EMOJI_REACTIONS.map((r) => `
@@ -64,6 +72,7 @@ export function openMessageMenu(opts) {
                 data-react="${r.id}" title="${r.name}" aria-label="${r.name}">${r.emoji}</button>`).join('')}
           </div>` : ''}
         <div class="msg-menu-sheet">
+          ${heading ? `<p class="msg-menu-head">${esc(heading)}</p>` : ''}
           ${canUseStatus ? `
             <p class="msg-menu-head">Let them know what you're doing</p>
             ${STATUS_REACTIONS.map((r) => `

@@ -96,3 +96,72 @@ export async function listIntake(env, kind, id, { max = 100 } = {}) {
   );
   return lists.flat().sort((a, b) => a.at - b.at);
 }
+
+/**
+ * ONE OBJECT'S METADATA, without its bytes.
+ *
+ * Used by the delete route to find out whether Eric has FILED a file. A filed
+ * file is part of the record he keeps, and a client removing their own chat
+ * upload after he has labelled it a filled form would take that form out of
+ * the case. The label is the only place that fact is written, so this is the
+ * only place the delete route can read it.
+ *
+ * Returns null for an object that is not there, because "no metadata" and
+ * "no file" answer the delete route the same way: there is no label on it.
+ */
+export async function objectMeta(env, path) {
+  const token = await getAccessToken(env, SCOPE);
+  const res = await fetch(`${GCS}/${BUCKET}/o/${encodeURIComponent(path)}`,
+    { headers: { authorization: `Bearer ${token}` } });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`storage meta ${path}: ${res.status} ${await res.text()}`);
+  const o = await res.json();
+  return {
+    path: o.name,
+    contentType: o.contentType || '',
+    size: Number(o.size) || 0,
+    custom: o.metadata || {},
+  };
+}
+
+/**
+ * Change the custom metadata on an object that already exists.
+ *
+ * WHY A FILE CANNOT SIMPLY BE RENAMED. An object's name IS its identity in
+ * Storage: there is no rename. The nearest thing is a copy to a new name
+ * followed by a delete of the old one, and that changes the path. The path is
+ * the identity the chat message's attachment points at, the identity the
+ * advisor dedupes on, and the identity baked into every download URL already
+ * handed out. So the bytes and the path stay exactly where they are and the
+ * name a person reads rides alongside them as `paName`. Both listings prefer
+ * it and fall back to the object name, so a file nobody has renamed reads
+ * exactly as it always did.
+ *
+ * PATCH, NEVER UPDATE, and only the `metadata` map. Two reasons, both of them
+ * the kind that break quietly:
+ *
+ *   - `firebaseStorageDownloadTokens` lives in that same map. Replacing the
+ *     map wholesale drops the token, and every download URL already given out
+ *     for that file stops working. patch MERGES the map: keys given are set,
+ *     keys given as null are removed, keys not mentioned are left alone.
+ *   - contentType and contentDisposition are object fields beside it. An
+ *     upload that set `contentDisposition: 'inline'` so a document opens in
+ *     the phone's browser instead of downloading keeps it, because those
+ *     fields are not in this request body at all.
+ *
+ * objects.patch is one of the methods that can reach an object's ACLs, so
+ * Google requires the full scope for it. Everything else in this file stays
+ * on the narrowest scope that works.
+ */
+export async function patchObjectMeta(env, path, custom) {
+  const token = await getAccessToken(env,
+    'https://www.googleapis.com/auth/devstorage.full_control');
+  const res = await fetch(`${GCS}/${BUCKET}/o/${encodeURIComponent(path)}`, {
+    method: 'PATCH',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ metadata: custom }),
+  });
+  if (!res.ok) throw new Error(`storage patch ${path}: ${res.status} ${await res.text()}`);
+  const o = await res.json();
+  return { path: o.name, custom: o.metadata || {} };
+}

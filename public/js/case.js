@@ -899,6 +899,10 @@ async function refreshFiles(c, el) {
         rows.push({
           kind, name: item.name, url, ts: new Date(meta.timeCreated), size: meta.size,
           path: item.fullPath, cat: meta.customMetadata?.paCategory || '',
+          // The name it was given AFTER it landed, if it was given one. It
+          // arrives on the same metadata the category does, so it costs no
+          // extra request either.
+          display: meta.customMetadata?.paName || '',
         });
       }
     } catch { /* folder may not exist yet */ }
@@ -911,6 +915,12 @@ async function refreshFiles(c, el) {
   // thing cannot collide. That is a storage detail, and printing it put a
   // thirteen-digit number in front of every filename a client reads.
   const shownName = (n) => String(n).replace(/^\d{10,}-/, '');
+  // The name a person actually reads. A Storage object's name is its identity
+  // and cannot be changed (see patchObjectMeta in worker/storage.js), so a
+  // file renamed after it landed carries the new name beside its bytes and it
+  // is preferred here. A file nobody renamed has none and reads exactly as it
+  // always did.
+  const readName = (r) => r.display || shownName(r.name);
   // A file long-pressed out of the chat exists twice: once where it was
   // shared and once in their own saved folder. One row, not two.
   const seen = new Set(rows.filter((r) => r.kind === 'chat')
@@ -934,10 +944,21 @@ async function refreshFiles(c, el) {
   // these where they were would have sorted a form in among the recordings,
   // which is the off-by-one this map invites every time it grows.
   const order = { report: 0, recording: 6, upload: 7, chat: 8, saved: 9 };
+  // A CATEGORY IS A LABEL ON A FILE, AND A FILE CAN BE FILED AFTER IT LANDS.
+  //
+  // This used to consult the category on report/ files alone, and that was
+  // right at the time: the label was stamped on at upload, so report/ was the
+  // only folder a labelled file could come from. A document can now be filed
+  // after the fact, so the label has to be read wherever one can legitimately
+  // be written - which is exactly the set of folders the filing route accepts.
+  //
+  // Your own saved shelf is deliberately not in that set. It follows you
+  // rather than the case, and it is yours to keep.
+  const FILEABLE = new Set(['report', 'upload', 'chat', 'recording']);
+  const filedCat = (r) => (FILEABLE.has(r.kind) && CATS[r.cat] ? r.cat : '');
   // A missing rank sorts LAST rather than sorting as NaN, which would put
   // every row in an arbitrary place the moment an unfamiliar category appears.
-  const rank = (r) => (r.kind === 'report' && CATS[r.cat] ? CATS[r.cat].at
-    : (order[r.kind] ?? 9));
+  const rank = (r) => (filedCat(r) ? CATS[filedCat(r)].at : (order[r.kind] ?? 9));
   rows.sort((a, b) => rank(a) - rank(b) || b.ts - a.ts);
   const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
   // The report gets a ✅ the moment the case is delivered. It is the one file
@@ -951,11 +972,11 @@ async function refreshFiles(c, el) {
   const delivered = c.status === 'delivered' || c.status === 'closed';
   listEl.innerHTML = rows.map((r, i) => `
     <li data-frow="${i}">
-      <span class="fname"><span class="kind-pill ${r.kind === 'report' && CATS[r.cat] ? r.cat : r.kind}">${
-        r.kind === 'report' && CATS[r.cat] ? CATS[r.cat].label
+      <span class="fname"><span class="kind-pill ${filedCat(r) || r.kind}">${
+        filedCat(r) ? CATS[filedCat(r)].label
           : r.kind === 'saved' || r.kind === 'chat' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
         ${r.kind === 'report' && !r.cat && delivered ? '<span class="delivered-tick" title="Delivered" role="img" aria-label="Delivered">✅</span>' : ''}
-        <a href="${r.url}" target="_blank" rel="noopener">${esc(shownName(r.name))}</a></span>
+        <a href="${r.url}" target="_blank" rel="noopener">${esc(readName(r))}</a></span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
     </li>`).join('');
 
@@ -969,7 +990,14 @@ async function refreshFiles(c, el) {
     // Your own files only. Everything in report/ is the case record, including
     // the documents written for you, and the record is not something either of
     // us can quietly take back.
-    if (!r?.path || !['upload', 'chat', 'saved'].includes(r.kind)) return;
+    //
+    // AND NOTHING THAT HAS BEEN FILED. A file you shared in the chat is yours
+    // to take back right up until it becomes a document in the case: a filled
+    // form is exactly the file this list would otherwise let you remove, and
+    // it is the one nobody can afford to lose. `r.cat` and not the known-label
+    // check, so a label this page does not recognise still locks the row. The
+    // Worker refuses it as well; this only stops the offer being made.
+    if (!r?.path || !['upload', 'chat', 'saved'].includes(r.kind) || r.cat) return;
     wireFileDelete(li, r, async () => {
       try {
         const token = await user.getIdToken();
@@ -988,7 +1016,7 @@ async function refreshFiles(c, el) {
 
 /** Long-press (550ms) or right-click asks, then runs the delete. */
 function wireFileDelete(li, r, doDelete) {
-  const name = String(r.name).replace(/^\d{10,}-/, '');
+  const name = r.display || String(r.name).replace(/^\d{10,}-/, '');
   const askThen = () => {
     if (confirm(`Delete "${name}"? This removes the file for both of us.`)) doDelete();
   };

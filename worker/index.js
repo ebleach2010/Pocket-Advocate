@@ -17,7 +17,7 @@ import { WorkflowEntrypoint } from 'cloudflare:workers';
 import { requireUser } from './firebase-auth.js';
 import { mintCustomToken, getAccessToken } from './google-auth.js';
 import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, listDocs } from './firestore.js';
-import { deleteFile } from './storage.js';
+import { deleteFile, objectMeta, patchObjectMeta } from './storage.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import {
   slotTimingProblem, windowProblem, HOLD_MINUTES,
@@ -903,6 +903,8 @@ export default {
         return await handleAgenda(request, env, url);
       if (url.pathname === '/api/file/delete' && request.method === 'POST')
         return await handleFileDelete(request, env);
+      if (url.pathname === '/api/file/meta' && request.method === 'POST')
+        return await handleFileMeta(request, env);
       if (url.pathname === '/api/admin/ledger' && request.method === 'GET')
         return await handleLedger(request, env);
       if (url.pathname === '/api/chattime' && request.method === 'POST')
@@ -4170,6 +4172,20 @@ async function handleFileDelete(request, env) {
     if (!inThread && !ownShelf) return json({ error: 'Bad path' }, 400);
     if (path.startsWith(`${base}report/`) || path.startsWith(`${base}recording/`))
       return json({ error: 'That file is part of your case record.' }, 403);
+    // A FILED FILE IS PART OF THAT RECORD TOO. Eric can put a label on any
+    // file on the thread (POST /api/file/meta), and the moment he does it
+    // stops being a loose attachment and becomes a document in the case
+    // file - a filled form he asked for, most of the time. Their own chat
+    // upload stays theirs to take back right up until he files it, and not
+    // afterwards: otherwise the one copy of a signed form leaves the record
+    // on a tap, and nothing on his side would say it ever existed.
+    //
+    // The label lives in Storage metadata and nowhere else, so this read is
+    // the only way the route can know. It costs a round trip on a CLIENT
+    // delete only; his own deletes never reach this branch.
+    const filed = await objectMeta(env, path).catch(() => null);
+    if (filed?.custom?.paCategory)
+      return json({ error: 'That file is part of your case record.' }, 403);
     if (path.startsWith(`${base}chat-files/`)) {
       const rows = await listDocs(env, `${base}chat`, { pageSize: 200, all: true }).catch(() => []);
       const theirs = rows.some((r) =>
@@ -4180,6 +4196,91 @@ async function handleFileDelete(request, env) {
 
   await deleteFile(env, path);
   return json({ ok: true });
+}
+
+/**
+ * The document types a file on a case can be FILED as, server side.
+ *
+ * Kept in step with UPLOAD_CATEGORIES in public/js/admin-case.js, which is the
+ * list Eric picks from, and pinned equal to it by tools/suites/filing.mjs. The
+ * server owns this copy because a route that took the caller's word for a
+ * category would let a caller write any string onto a case file, and both
+ * listings render that string as a filing label.
+ */
+const FILING_CATEGORIES = ['report', 'callsummary', 'visitfollowup',
+  'apptsummary', 'formsent', 'formfilled'];
+
+/**
+ * POST /api/file/meta  Body: { kind: 'case'|'sub', id, path, name?, category? }
+ *
+ * RENAMING A FILE, AND FILING IT. Eric, 2026-08-27: "the advisor/app should
+ * take anything uploaded in the chat and add it to forms. I can long press and
+ * rename them." Asked whether every chat upload should file itself, he chose:
+ * "Filable, I choose." So nothing files itself. A chat upload keeps saying
+ * FROM CHAT until he long-presses it and says what it is.
+ *
+ * ADMIN ONLY, AND 404 TO EVERYONE ELSE, which is the whole reason this is a
+ * Worker route and not a client-side updateMetadata call. Letting the browser
+ * write Storage metadata would need storage.rules widened to allow a client
+ * write on report/, and a client who could write metadata could rename Eric's
+ * report or re-file their own chat upload as a filled form. His filing system
+ * is his. The 404 is the same one every other admin route answers with, so
+ * this path is indistinguishable from a path that is not there.
+ *
+ * The bytes never move. See patchObjectMeta in storage.js for why a rename
+ * cannot be a rename, and why this is a merge rather than a replace.
+ */
+async function handleFileMeta(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = (await request.json().catch(() => null)) || {};
+  const kind = body.kind === 'sub' ? 'sub' : 'case';
+  const id = String(body.id || '');
+  const ctx = await threadContext(env, admin, kind, id);
+  if (ctx.error) return json({ error: ctx.error }, ctx.code);
+
+  const path = String(body.path || '');
+  if (!path || path.length > 1024 || path.includes('..'))
+    return json({ error: 'Bad path' }, 400);
+  // The thread's own folders and nothing else. The client's profile shelf is
+  // reachable from the same listing and is deliberately NOT here: that shelf
+  // follows the person rather than the case, and it is theirs to keep, not
+  // his to label.
+  const base = `${ctx.parent}/${id}/`;
+  const inThread = ['report/', 'recording/', 'uploads/', 'chat-files/']
+    .some((f) => path.startsWith(base + f));
+  if (!inThread) return json({ error: 'Bad path' }, 400);
+
+  const patch = {};
+  if ('name' in body) {
+    // His words, bounded, with control characters and line breaks flattened.
+    // It is stored as TEXT and it is rendered as text at both ends; nothing
+    // here is trying to make it safe as markup, because it is never markup.
+    const name = String(body.name ?? '')
+      .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80);
+    // An empty name is a real answer: it clears the display name and the file
+    // goes back to reading as whatever it is called in Storage.
+    patch.paName = name || null;
+  }
+  if ('category' in body) {
+    const category = String(body.category ?? '');
+    if (category && !FILING_CATEGORIES.includes(category))
+      return json({ error: 'That is not a document type I know.' }, 400);
+    patch.paCategory = category || null;
+  }
+  if (!Object.keys(patch).length)
+    return json({ error: 'Nothing to change' }, 400);
+
+  const out = await patchObjectMeta(env, path, patch);
+  return json({
+    ok: true,
+    path: out.path,
+    name: out.custom?.paName || '',
+    category: out.custom?.paCategory || '',
+  });
 }
 
 /**
