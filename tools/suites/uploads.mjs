@@ -321,23 +321,74 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   // on Eric's word (the doctor appointment summary, then the form he sends and
   // the same form back), and a floor that stayed at three would have gone
   // green with any two of them dropped on the floor.
+  //
+  // THE FLOOR IS SHARED, and this is the one list in this suite that comes out
+  // of the SHIPPED FILES rather than out of this one. Every list starved in
+  // this file until now was its own; a bad merge in admin-case.js or case.js
+  // empties these instead, and that is the likelier accident.
+  //
+  // MEASURED on main, 2026-08-28, by reordering the keys in both declarations
+  // so the extracting regexes match nothing:
+  //
+  //   both empty:   FAIL U8   PASS U9   PASS U9b   FAIL U9c   PASS U9d   PASS U10
+  //   client only:  PASS U8   FAIL U9   FAIL U9b   FAIL U9c   PASS U9d   PASS U10
+  //
+  // AND THE SAME BREAKS AFTER, all three directions:
+  //
+  //   both empty:   FAIL U8   FAIL U9   FAIL U9b   FAIL U9c   FAIL U9d   FAIL U10
+  //   client only:  PASS U8   FAIL U9   FAIL U9b   FAIL U9c   FAIL U9d   PASS U10
+  //   admin only:   FAIL U8   FAIL U9   FAIL U9b   PASS U9c   PASS U9d   FAIL U10
+  //
+  // The passes on the one-sided runs are the point, not a gap: U8 and U10 read
+  // the admin list alone and U9c and U9d read the client list alone, so each
+  // one holds while ITS side is intact. A blanket floor would have hidden that.
+  //
+  // HOW THE FIRST ATTEMPT AT THIS MEASUREMENT LIED. The break was a shell
+  // quoted python -c whose replacement template failed to compile; python
+  // printed a traceback, the shell carried on, and all six checks were then
+  // run against a tree nobody had touched. Six PASS lines that meant nothing,
+  // which is this file's own subject arriving in the harness written to find
+  // it. The break now lives in a script that counts its own matches and exits
+  // non-zero if it changed no bytes, and it prints the count it applied.
+  //
+  // U9 and U9b compare two sorted joins and '' equals ''. U9d compares a Set
+  // of nothing against a length of nothing. U10 filters an empty list and
+  // finds nothing missing. All four were upheld by U8 standing beside them,
+  // which is what A29c in advisor-acts.mjs warns about and what SLAB_FLOOR,
+  // ACTION_FLOOR and LIFT_FLOOR were each added for.
+  //
+  // U10 passing the client-only break is CORRECT and not an instance: it reads
+  // the admin list alone, and that list was intact.
+  //
+  // Each check takes the floor for the list IT reads, not a blanket one, so a
+  // one-sided break still fails the checks that span both sides.
+  const CAT_FLOOR = 6;
+  const adminFault = () => (adminCats.length < CAT_FLOOR
+    ? [`${adminCats.length} admin categories, expected at least ${CAT_FLOOR}`] : []);
   ck('U8 the advocate side declares the categories in one place',
-    adminCats.length >= 6, `${adminCats.length} found`);
+    adminCats.length >= CAT_FLOOR, `${adminCats.length} found`);
   const clientCats = [...CLIENT.matchAll(/(\w+): \{ label: '([^']*)', at: (\d+) \}/g)]
     .map((m) => ({ id: m[1], label: m[2], at: Number(m[3]) }));
   // NEGATIVE CONTROL: renaming CALL SUMMARY to CALL NOTE on the client side
   // only made this read
   //   FAIL  U9 ... -- admin CALL SUMMARY|REPORT|VISIT FOLLOW-UP vs client CALL NOTE|REPORT|VISIT FOLLOW-UP
+  const clientFault = () => (clientCats.length < CAT_FLOOR
+    ? [`${clientCats.length} client categories, expected at least ${CAT_FLOOR}`] : []);
+  const bothFault = () => [...adminFault(), ...clientFault()];
   const sorted = (a) => a.slice().sort().join('|');
   ck('U9 and the client\'s pill says exactly the same words for them',
-    sorted(adminCats.map((c) => c.pill)) === sorted(clientCats.map((c) => c.label)),
-    `admin ${sorted(adminCats.map((c) => c.pill))} vs client ${sorted(clientCats.map((c) => c.label))}`);
+    !bothFault().length
+      && sorted(adminCats.map((c) => c.pill)) === sorted(clientCats.map((c) => c.label)),
+    bothFault().length ? bothFault().join(', ')
+      : `admin ${sorted(adminCats.map((c) => c.pill))} vs client ${sorted(clientCats.map((c) => c.label))}`);
   // NEGATIVE CONTROL: a one-letter case difference on the client side made
   // this read
   //   FAIL  U9b ... -- admin callsummary|report|visitfollowup vs client callsummary|report|visitfollowUp
   ck('U9b and the same ids, so a stored label cannot land on nothing',
-    sorted(adminCats.map((c) => c.id)) === sorted(clientCats.map((c) => c.id)),
-    `admin ${sorted(adminCats.map((c) => c.id))} vs client ${sorted(clientCats.map((c) => c.id))}`);
+    !bothFault().length
+      && sorted(adminCats.map((c) => c.id)) === sorted(clientCats.map((c) => c.id)),
+    bothFault().length ? bothFault().join(', ')
+      : `admin ${sorted(adminCats.map((c) => c.id))} vs client ${sorted(clientCats.map((c) => c.id))}`);
   // THE OFF-BY-ONE THIS MAP INVITES EVERY TIME IT GROWS. The client's list is
   // sorted by rank: the document categories take 0 upward and everything else
   // (recording, upload, chat, saved) starts after them. Add a category without
@@ -359,8 +410,9 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   // made this read
   //   FAIL  U9d ... -- 6 categories, 5 distinct ranks
   ck('U9d and no two categories claim the same place in the list',
-    new Set(catRanks).size === catRanks.length,
-    `${catRanks.length} categories, ${new Set(catRanks).size} distinct ranks`);
+    !clientFault().length && new Set(catRanks).size === catRanks.length,
+    clientFault().length ? clientFault().join(', ')
+      : `${catRanks.length} categories, ${new Set(catRanks).size} distinct ranks`);
   // Every group name a category can produce has to exist in FILE_GROUPS, or
   // the file renders under a heading the page never prints and vanishes.
   const groups = (ADMINCASE.match(/const FILE_GROUPS = \[[\s\S]*?\];/) || [''])[0];
@@ -368,8 +420,9 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   // read
   //   FAIL  U10 ... -- Visit follow-ups is not in FILE_GROUPS
   const missing = adminCats.map((c) => c.group).filter((g) => !groups.includes(`'${g}'`));
+  const missingF = [...adminFault(), ...missing.map((g) => `${g} is not in FILE_GROUPS`)];
   ck('U10 every category has a heading the Uploads page actually prints',
-    missing.length === 0, `${missing.join(', ')} is not in FILE_GROUPS`);
+    !missingF.length, missingF.join(', '));
   // Four tabs per group at 320px is a hard limit. These are day headings on a
   // page, not tabs, and the tab strip must not have grown.
   const strip = (ADMINCASE.match(/groups: \[[\s\S]*?\n    \],/) || [''])[0];
