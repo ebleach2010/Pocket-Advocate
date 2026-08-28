@@ -382,8 +382,15 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): adding a working 'close' entry to ACTS
   // and moving the DENIED lookup to AFTER the ACTS lookup made this read
   //   FAIL  A7 a denylisted action is refused even when the model names it perfectly  -- got through: close
+  // AND SOMETHING ON THE ALLOWLIST STILL GETS THROUGH, or this proves nothing:
+  // a validator that refused every name would refuse these too. Same shape as
+  // A3, A6, A13 and A20, and found in the same run, on the second look at the
+  // same output.
+  const anyAllowed = ALLOWED.some((n) => validateAction(n, TABLE[n]?.good).ok);
   ck('A7 a denylisted action is refused even when the model names it perfectly',
-    !slipped.length && DENYLIST.length >= DENY_FLOOR, `got through: ${slipped.join(', ')}`);
+    !slipped.length && DENYLIST.length >= DENY_FLOOR && anyAllowed,
+    !anyAllowed ? 'nothing is allowed either, so this proves nothing'
+      : `got through: ${slipped.join(', ')}`);
   // Each one refuses with a SENTENCE, because Eric is the one who reads it.
   const mute = DENYLIST.filter((n) => {
     const out = validateAction(n, {});
@@ -625,8 +632,16 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): deleting the extra-key refusal made
   // this read
   //   FAIL  A19 the body may carry caseId and text and nothing else  -- title, link, html, uid
+  // AND THE ROUTE STILL TAKES THE NARROW BODY. `sent` above is that same route
+  // answering { caseId, text } and nothing else, so a route that answered 400
+  // to everything fails here instead of passing on its refusals. A20 below
+  // rests on the same one send, which is deliberate: two checks about what the
+  // route refuses, one proof that it still accepts.
+  const routeTakesNarrow = sent.res?.status === 200 && sent.pushes.length > 0;
   ck('A19 the body may carry caseId and text and nothing else',
-    !widened.length, widened.join(', '));
+    !widened.length && routeTakesNarrow,
+    !routeTakesNarrow ? 'the route refuses a good body too, so this proves nothing'
+      : widened.join(', '));
 
   // Markup and length, at the ROUTE, not just at the validator: the trust
   // boundary is the route, and it must refuse the same things on its own.

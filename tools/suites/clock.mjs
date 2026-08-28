@@ -357,9 +357,27 @@ check('C34c zero is a legitimate answer, not a missing one',
   (await W.handleWork(req({ caseId: 'a', setSeconds: 0 }), env)).body.seconds === 0);
 
 // Nonsense is refused rather than quietly banked as zero: this is billable.
+//
+// AND A GOOD CORRECTION STILL GETS THROUGH, asserted in the same check. A
+// route that answered 400 to EVERYTHING would satisfy the refusal on its own,
+// and no count of any list can see that: the list is full, nothing gets
+// through it.
+//
+// MEASURED on main, 2026-08-28, by returning json({ error }, 400) from the
+// first line of handleWork: C34, C34b and C34c failed and all three C35 runs
+// passed. `fixed` above is that same route taking a real correction, so this
+// borrows the proof rather than making a fourth call.
+//
+// The first attempt at this measurement returned jsonErr(), which does not
+// exist in the Worker. The suite crashed, printed no PASS or FAIL lines at
+// all, and briefly read as a clean result. The break is now asserted by
+// counting the lines the run produced before anything is concluded from it.
+const takesGood = fixed.status === 200 && fixed.body.seconds === 3600;
 for (const [label, v] of [['negative', -60], ['not a number', 'banana'], ['absurd', 9e9]]) {
   const r = await W.handleWork(req({ caseId: 'a', setSeconds: v }), env);
-  check(`C35 a ${label} correction is refused`, r.status === 400, JSON.stringify(r.body));
+  check(`C35 a ${label} correction is refused`, r.status === 400 && takesGood,
+    takesGood ? JSON.stringify(r.body)
+      : 'a good correction is refused too, so this proves nothing');
 }
 
 // Correcting does NOT decide whether the clock is running - stopping is still
