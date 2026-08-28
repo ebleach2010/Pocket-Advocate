@@ -1,8 +1,12 @@
-// The booking copy deck.
+// The copy deck: ALL of it.
 //
-// "provide me the full copy for everything booking side in a pdf in case I
-// want to change anything. Format it properly with labeled headers and
-// descriptors of what the copy is and where it's located."
+// Born as the booking deck ("provide me the full copy for everything booking
+// side in a pdf in case I want to change anything. Format it properly with
+// labeled headers and descriptors of what the copy is and where it's
+// located.") and widened on 2026-08-29 ("deliver me a formatted PDF of all
+// the copy in the same fashion you have before for me to make changes"):
+// every marketing page, the case page, the agreements a client acknowledges,
+// the documents they sign, the "?" sheets, every email and every push.
 //
 // Every entry carries four things: what it is, where it lives (file:line),
 // when a client sees it, and the copy itself, set in a face that separates his
@@ -207,12 +211,64 @@ const WAIVERS = (() => {
   return out;
 })();
 
+/** Every push notification body the Worker sends. */
+function pushes() {
+  const src = read('worker/index.js');
+  const ls = src.split('\n');
+  const out = [];
+  ls.forEach((l, i) => {
+    const m = l.match(/body:\s*[`'"]([^`'"]{18,220})[`'"]/);
+    if (!m) return;
+    // Near a notifyUser call, not an email html body or a fetch payload.
+    const around = ls.slice(Math.max(0, i - 6), i + 1).join(' ');
+    if (!/notifyUser\(/.test(around)) return;
+    out.push({ text: m[1].replace(/\$\{[^}]*\}/g, '[...]'), where: `worker/index.js:${i + 1}` });
+  });
+  // The one-per-category status lines live in their own map.
+  const wl = src.match(/const WORK_LOG_NOTICES = \{[\s\S]*?\};/);
+  if (wl) {
+    const base = src.slice(0, src.indexOf(wl[0])).split('\n').length;
+    for (const m of wl[0].matchAll(/(\w+): '([^']+)'/g))
+      out.push({ text: `[Your advocate] ${m[2]}`, where: `worker/index.js:${base}` });
+  }
+  const seen = new Set();
+  return out.filter((x) => (seen.has(x.text) ? false : seen.add(x.text)));
+}
+
+/** The two case-page agreements, whole, and the two documents clients sign. */
+const CASE_AGREEMENTS = await (async () => {
+  const out = [];
+  try {
+    const { FULL_ACCESS_TERMS } = await import(`${R}/public/js/tier-terms.js`);
+    out.push({ title: FULL_ACCESS_TERMS.title, body: textOf(FULL_ACCESS_TERMS.body),
+      where: 'public/js/tier-terms.js',
+      when: 'Acknowledged before Hands-Off Case Management is bought, and readable from the case page after.' });
+  } catch { /* keep the deck alive */ }
+  try {
+    const { SERVICE_TERMS } = await import(`${R}/public/js/service-terms.js`);
+    out.push({ title: SERVICE_TERMS.title, body: textOf(SERVICE_TERMS.body),
+      where: 'public/js/service-terms.js',
+      when: 'Shown on every case page under How this service runs.' });
+  } catch { /* keep the deck alive */ }
+  try {
+    const A = await import(`${R}/public/js/authority.js`);
+    const o = { clientName: '[CLIENT NAME]', clientDob: '[DOB]', advocateName: 'Eric Bleach', blank: true };
+    out.push({ title: 'Records authorisation (the document itself)',
+      body: A.recordsAuthorisation(o), where: 'public/js/authority.js',
+      when: 'Sent to a Hands-Off client to sign; placeholders shown in brackets.' });
+    out.push({ title: 'Insurance representative designation (the document itself)',
+      body: A.representativeDesignation(o), where: 'public/js/authority.js',
+      when: 'Sent to a Hands-Off client to sign; placeholders shown in brackets.' });
+  } catch { /* the two documents are optional in the deck, never worth failing it */ }
+  return out;
+})();
+
 const ds = dashes();
 const totalCopyDashes = ds.reduce((n, d) => n + d.copy, 0);
 
 const html = `<!doctype html>
 <meta charset="utf-8">
-<title>Pocket Advocate — booking copy</title>
+<title>Pocket Advocate, the copy deck</title>
 <style>
   @page { size: A4; margin: 16mm 14mm; }
   :root {
@@ -272,7 +328,7 @@ const html = `<!doctype html>
   .toc div { break-inside: avoid; }
 </style>
 
-<h1>Pocket Advocate: the booking copy</h1>
+<h1>Pocket Advocate: all of the copy</h1>
 <p class="sub">Every word a client reads from the landing page to the day their case closes.
   Generated from the source on ${new Date().toISOString().slice(0, 10)}.</p>
 
@@ -282,35 +338,59 @@ const html = `<!doctype html>
 
 <div class="toc">
   <div>1. The landing page</div>
-  <div>2. About</div>
-  <div>3. Signing in</div>
-  <div>4. Booking, step by step</div>
-  <div>5. The legal texts, in full</div>
-  <div>6. After payment</div>
-  <div>7. Priority Chat</div>
-  <div>8. Every email</div>
-  <div>9. Errors and empty states</div>
-  <div>10. A finding: the dashes</div>
+  <div>2. Services and pricing</div>
+  <div>3. About</div>
+  <div>4. Questions (FAQ)</div>
+  <div>5. Reviews</div>
+  <div>6. Contact</div>
+  <div>7. Signing in</div>
+  <div>8. Booking, step by step</div>
+  <div>9. The booking agreements, in full</div>
+  <div>10. The case-page agreements and the signed documents</div>
+  <div>11. Your case page, everything a client reads</div>
+  <div>12. The "?" answer sheets</div>
+  <div>13. Priority Chat</div>
+  <div>14. After payment</div>
+  <div>15. Every email</div>
+  <div>16. Every push notification</div>
+  <div>17. Errors and empty states</div>
+  <div>18. A finding: the dashes</div>
 </div>
 
 ${pageSection(1, 'The landing page', 'public/index.html',
   'The first thing anyone sees. Everything here is read before they trust you.',
   'Before signing in, on the front page.')}
 
-${pageSection(2, 'About', 'public/about.html',
+${pageSection(2, 'Services and pricing', 'public/services.html',
+  'The three offers side by side. Where the prices and the promises live.',
+  'Before signing in, from the nav and the landing page.')}
+
+${pageSection(3, 'About', 'public/about.html',
   'Who you are and what you are not. Read by people deciding whether to book.',
   'Before signing in, from the nav.')}
 
-${pageSection(3, 'Signing in', 'public/signin.html',
+${pageSection(4, 'Questions (FAQ)', 'public/faq.html',
+  'The objections page. Read by the cautious, right before they decide.',
+  'Before signing in, from the nav.')}
+
+${pageSection(5, 'Reviews', 'public/reviews.html',
+  'The wall of proof, and the page your Google reviews page is linked from.',
+  'Before signing in, from the nav.')}
+
+${pageSection(6, 'Contact', 'public/contact.html',
+  'The phone number page.',
+  'Before signing in, from the nav.')}
+
+${pageSection(7, 'Signing in', 'public/signin.html',
   'The email-and-code screen. Short, and read while someone is already committed.',
   'On the way to booking, or coming back.')}
 
-${section(4, 'Booking, step by step',
+${section(8, 'Booking, step by step',
   'Three visible steps under a persistent rail. This is the copy that takes payment.',
   jsCopy('public/js/book.js').map((r) =>
     entry('booking', r.where, 'While booking, steps 1 to 3.', r.text)).join(''))}
 
-${section(5, `The legal texts, in full (${WAIVERS.length})`,
+${section(9, `The booking agreements, in full (${WAIVERS.length})`,
   'Verbatim. You have said these are settled, so they are here whole rather than summarised: nothing about them should be a surprise later. The first three are the booking agreements; the last is agreed on the subscribe screen instead.',
   WAIVERS.map((w, i) => entry(w.title, w.where,
     i < 3
@@ -318,27 +398,45 @@ ${section(5, `The legal texts, in full (${WAIVERS.length})`,
       : 'On the Priority Chat subscribe screen.',
     w.body)).join(''))}
 
-${pageSection(6, 'After payment', 'public/return.html',
+${section(10, 'The case-page agreements, and the two documents clients sign',
+  'The Hands-Off scope note, the running-of-the-service terms, and the two authority documents, whole. These changed most recently, so read them closest.',
+  CASE_AGREEMENTS.map((a) => entry(a.title, a.where, a.when, a.body)).join(''))}
+
+${section(11, 'Your case page, everything a client reads',
+  'The app a paying client lives in: status lines, buttons, folds, the review card, the work log.',
+  jsCopy('public/js/case.js').map((r) =>
+    entry('case page', r.where, 'Signed in, on their own case.', r.text)).join(''))}
+
+${section(12, 'The "?" answer sheets',
+  'The little question-mark buttons and the sheets they open: hours, telehealth, the app itself.',
+  jsCopy('public/js/help.js').map((r) =>
+    entry('help sheet', r.where, 'When a client taps a "?" anywhere.', r.text)).join(''))}
+
+${pageSection(14, 'After payment', 'public/return.html',
   'The screen that catches someone the moment their money has left.',
   'Immediately after Stripe, before the case page.')}
 
-${section(7, 'Priority Chat',
+${section(13, 'Priority Chat',
   'The separate subscription. Sold on its own terms, and cancelled on them too.',
   [...jsCopy('public/js/subscribe.js'), ...pageCopy('public/subscribe.html').map((r) => ({ text: r.text, where: r.where }))]
     .map((r) => entry('subscription', r.where, 'On the subscribe page and in the manage screen.', r.text)).join(''))}
 
-${section(8, 'Every email',
+${section(15, 'Every email',
   `${emails().length} emails. Nobody reviews these because nobody sees them all at once, and several are read at the worst moment of someone's week.`,
   emails().map((e) => entry(`to ${e.to}`, e.where, 'Sent automatically.', [`SUBJECT: ${e.subject}`, e.body])).join(''))}
 
-${section(9, 'Errors and empty states',
+${section(16, 'Every push notification',
+  'The one-line buzzes. Each is read on a lock screen with no context around it.',
+  pushes().map((r) => entry('push', r.where, 'Sent automatically. Dynamic parts shown as [...].', r.text)).join(''))}
+
+${section(17, 'Errors and empty states',
   'The copy nobody reviews, read exactly when something has gone wrong.',
   [...jsCopy('public/js/book.js'), ...jsCopy('public/js/case.js'), ...jsCopy('public/js/subscribe.js')]
     .filter((r) => /could|couldn|failed|error|sorry|try again|nothing|no |not /i.test(r.text))
     .slice(0, 40)
     .map((r) => entry('error / empty', r.where, 'When something fails or a list is empty.', r.text)).join(''))}
 
-${section(10, 'A finding: the dashes',
+${section(18, 'A finding: the dashes',
   'You told me em dashes are an AI giveaway and that the advisor must never use one. Your own copy has ' + totalCopyDashes + ' of them. Code comments are separated out, because nobody reads those.',
   `<table>
      <tr><th>File</th><th class="n">In copy</th><th class="n">In comments</th></tr>
@@ -374,7 +472,7 @@ const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', a
 const page = await b.newPage();
 await page.setContent(html, { waitUntil: 'load' });
 await page.pdf({
-  path: `${OUT}/pocket-advocate-booking-copy.pdf`,
+  path: `${OUT}/pocket-advocate-copy.pdf`,
   format: 'A4',
   printBackground: true,
   margin: { top: '16mm', bottom: '16mm', left: '14mm', right: '14mm' },
@@ -387,4 +485,4 @@ await b.close();
 console.log(`emails: ${emails().length}`);
 console.log(`agreements: ${WAIVERS.length}`);
 console.log(`em/en dashes in client-facing copy: ${totalCopyDashes}`);
-console.log(`written: ${OUT}/pocket-advocate-booking-copy.pdf`);
+console.log(`written: ${OUT}/pocket-advocate-copy.pdf`);
