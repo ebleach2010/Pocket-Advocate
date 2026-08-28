@@ -8,6 +8,7 @@ import { fileURLToPath as __f } from 'node:url';
 import { dirname as __d, join as __j } from 'node:path';
 const __REPO = __j(__d(__f(import.meta.url)), '..', '..');
 import { readFileSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 const R = __REPO;
 const W = readFileSync(`${R}/worker/index.js`, 'utf8');
 const ADV = readFileSync(`${R}/worker/advisor.js`, 'utf8');
@@ -429,7 +430,64 @@ ck('clock: all switches share one painter set, so no two can disagree',
      /say\('sched', msg/.test(AC) && /\$\{saidHtml\('sched'\)\}/.test(AC));
 }
 
-// ---- 18. no conflict markers in anything this repo ships ----------------
+// ---- 18. every file this app serves actually PARSES ---------------------
+//
+// THE BATTERY READS THESE FILES. IT DOES NOT RUN THEM. That distinction had
+// gone unnoticed by three separate agents and by me, all of us reasoning that
+// broken JavaScript announces itself because a broken suite file dies at load.
+// True of the files the battery RUNS. False of every file it reads as text,
+// which is all of the app.
+//
+// Demonstrated on main before this was written, with `const = ;` appended to
+// public/js/admin-case.js:
+//
+//   node tools/suites/run.mjs  ->  20/20 suites green.  Battery clear.
+//   the advocate's case screen ->  blank
+//
+// Twenty suites, twelve hundred checks, and the whole workspace gone. Every
+// check that reads that file matches text inside it, and a broken statement
+// appended after the part they match satisfies all of them.
+//
+// This is not the marker sweep below in different clothes. A conflict leaves
+// markers and that sweep catches them; a bad edit, a truncated write or a
+// half-applied patch leaves valid-looking wreckage with no marker in it, and
+// only a parser sees that.
+//
+// NEGATIVE CONTROLS (all three run 2026-08-28, all three observed):
+//   `const = ;` appended to public/js/admin-case.js ->
+//     FAIL  parses: every file this app serves parses  -- public/js/admin-case.js
+//   a stray `}` appended to worker/index.js ->
+//     FAIL  parses: every file this app serves parses  -- worker/index.js
+//   the walk disabled, so the sweep reads nothing ->
+//     FAIL  parses: the sweep read the app (0 files)  -- 0 files
+{
+  const SRC = [];
+  const walk = (dir) => {
+    let entries;
+    try { entries = readdirSync(`${R}/${dir}`, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const rel = `${dir}/${e.name}`;
+      if (/node_modules|\.git/.test(rel)) continue;
+      if (e.isDirectory()) walk(rel);
+      else if (/\.(js|mjs)$/.test(e.name)) SRC.push(rel);
+    }
+  };
+  walk('public/js');
+  walk('worker');
+  const broken = SRC.filter((rel) => {
+    try {
+      execFileSync(process.execPath, ['--check', `${R}/${rel}`], { stdio: 'pipe' });
+      return false;
+    } catch { return true; }
+  });
+  // GUARD AGAINST THE SILENT PASS, the same way the sweep below does: a walk
+  // that found nothing would report nothing broken just as happily as a clean
+  // tree, which is the failure this whole battery spent a night on.
+  ck(`parses: the sweep read the app (${SRC.length} files)`, SRC.length >= 30, `${SRC.length} files`);
+  ck('parses: every file this app serves parses', broken.length === 0, broken.join(', '));
+}
+
+// ---- 19. no conflict markers in anything this repo ships ----------------
 //
 // A MERGE CAN LEAVE MARKERS IN A FILE NOTHING PARSES, and nothing here would
 // have said so. Found on the forms branch while chasing a merge-tool caveat:
