@@ -1766,6 +1766,22 @@ function saidHtml(key) {
 }
 
 /**
+ * The blank forms he can put in front of a client, and the only list of them.
+ *
+ * The `id` is the kind the two pure functions in authority.js answer to, and
+ * the `label` is both what the tick box says and the front of the file name
+ * the client reads. One field for both on purpose: a form whose row said one
+ * thing and whose file said another is a form he cannot talk about on a call.
+ *
+ * Adding a third form is one row here. Everything else follows: the picker,
+ * the Print button beside it, the send, and the file name.
+ */
+const SENDABLE_FORMS = [
+  { id: 'records', label: 'Records authorisation' },
+  { id: 'representative', label: 'Insurance representative' },
+];
+
+/**
  * The Overview page: the info bar, whatever is waiting on his answer, then
  * every lever on the case.
  *
@@ -1893,18 +1909,46 @@ function paintOverview(pane) {
       </div>
     </details>`}
 
+    <!-- TICK THEM AND SEND THEM. Eric, 2026-08-27, on a live case he had
+         already been paid for outside the app: "I need to be able to select
+         forms and send them, regardless of if they've already been sent or
+         not. This way this client can have the signed forms in the uploaded
+         documents. This is another example of what the advisor could do:
+         'send the hands-off forms to the client'."
+         FORMS, PLURAL, IN ONE ACTION. Printing each one and uploading it by
+         hand was three trips through the share sheet per form on a phone, and
+         the pair of them go out together every single time.
+         THE COPY THIS PANEL USED TO CARRY SAID signing in the app opened when
+         they upgraded. It does not: the client-side offer is parked
+         (OFFER_AUTHORITY_SIGNING in public/js/case.js), so every form on
+         every case is signed by hand now, and the sentence was telling him
+         something untrue about his own tool. -->
     <details class="mgmt" data-k="auth">
-      <summary>📄 Print a form to sign</summary>
+      <summary>📄 Send a form to sign</summary>
       <div class="mgmt-body">
-        <p class="dim small" style="margin:0 0 .6rem;">A blank copy to print or
-          send, with ${esc(c.clientName || 'the client')}'s name already on it and
-          ruled lines to sign by hand. Use this to get a form into their hands
-          before a case is running${c.fullAccess ? '' : ', and signing in the app opens when they upgrade'}.
-          Records requests take weeks, so the form going out early is the whole game.</p>
-        <p class="row" style="gap:.4rem; flex-wrap:wrap; margin:0;">
-          <button class="btn quiet tiny" data-blank="records">Records authorisation</button>
-          <button class="btn quiet tiny" data-blank="representative">Insurance representative</button>
-        </p>
+        <p class="dim small" style="margin:0 0 .6rem;">A blank copy with
+          ${esc(c.clientName || 'the client')}'s name already on it and ruled lines
+          to sign by hand. Tick what you need and send it straight to their
+          documents, or print one to hand over on paper. Signing is by hand on
+          every case: they sign it, send it back to you, and you file the signed
+          copy as a filled form. Records requests take weeks, so the form going
+          out early is the whole game.</p>
+        <!-- flex-wrap:nowrap and min-width:0 on the label, both deliberate.
+             .row wraps by default, and at 320px that dropped every Print
+             button onto a line of its own underneath its form, which reads as
+             a button belonging to nothing. The label wrapping to two lines
+             with the button held on the right keeps the pair together at every
+             width. The button is OUTSIDE the label, or tapping Print would
+             also tick the box. -->
+        ${SENDABLE_FORMS.map((f) => `
+        <div class="row" style="gap:.5rem; align-items:center; flex-wrap:nowrap; margin:0 0 .4rem;">
+          <label class="small" style="flex:1 1 auto; min-width:0; margin:0;">
+            <input type="checkbox" data-form-pick="${f.id}" style="margin-right:.35rem;">${esc(f.label)}</label>
+          <button type="button" class="btn quiet tiny" data-blank="${f.id}">Print</button>
+        </div>`).join('')}
+        <p class="error" id="forms-err" hidden></p>
+        <div class="actions"><button class="btn secondary" id="forms-send">Send the ticked forms</button></div>
+        ${saidHtml('auth')}
       </div>
     </details>
 
@@ -2070,6 +2114,17 @@ function paintOverview(pane) {
   // those all post a milestone to the server, and this one is just paper.
   pane.querySelectorAll('[data-blank]').forEach((b) =>
     b.addEventListener('click', () => printAuthorityDoc({ kind: b.dataset.blank, blank: true })));
+  // SENDING them is a different thing from printing them, and it reads the
+  // ticks rather than the button it was hung on, so one tap sends the pair.
+  //
+  // The catch is not swallowing anything: sendBlankForms has already put the
+  // failure where Eric will read it, and it throws on top of that so a caller
+  // that is not a person can tell a send from a failure. A tap must not also
+  // raise an unhandled rejection into the console.
+  pane.querySelector('#forms-send')?.addEventListener('click', (e) =>
+    sendBlankForms([...pane.querySelectorAll('[data-form-pick]:checked')]
+      .map((x) => x.dataset.formPick), e.currentTarget)
+      .catch(() => { /* already said, on the panel */ }));
   pane.querySelectorAll('[data-telehealth]').forEach((b) =>
     b.addEventListener('click', async () => {
       const action = b.dataset.telehealth;
@@ -3464,7 +3519,15 @@ function esc(s) {
 /**
  * Whether he is actually allowed to act yet, on the page where he decides what
  * to do next. Read-only: he can see and print what was signed, and he can
- * never sign it himself. The client's own page is where signing happens.
+ * never sign it himself.
+ *
+ * IT NO LONGER SAYS "the client's own page is where signing happens", which
+ * was true when it was written and stopped being true the day the client-side
+ * offer was parked (OFFER_AUTHORITY_SIGNING in public/js/case.js). Signing is
+ * by hand now: the forms panel on Overview sends or prints a blank, they sign
+ * it and send it back, and the signed copy is filed as a filled form. What
+ * this card lists is what was signed BEFORE that, plus anything signed if the
+ * offer is ever turned back on.
  *
  * Served through the Worker like everything else under the case's private
  * subtree, which the browser cannot read directly by rule.
@@ -3662,26 +3725,209 @@ function signatureInk(item) {
     <figcaption>Signature of the person named above.</figcaption></figure>`;
 }
 
-function printAuthorityDoc(item) {
+/**
+ * The document itself, as one self-contained page.
+ *
+ * ONE BUILDER, TWO DESTINATIONS. This is what goes into the print window, and
+ * it is byte for byte what is stored on the case when he sends a form. Two
+ * builders would drift, and the morning they drifted he would be talking a
+ * client through a document that is not the one on their screen.
+ *
+ * Self-contained is the requirement, not a nicety: the sent copy is opened
+ * from Storage on the client's phone, where nothing of this app is loaded, so
+ * every style it needs is inside it and it fetches nothing.
+ */
+function authorityDocTitle(kind) {
+  return kind === 'records' ? 'Records authorisation' : 'Insurance representative';
+}
+function authorityDocHtml(item) {
   const o = {
     ...item,
     clientName: data.clientName, clientDob: data.clientDob, advocateName: 'Eric Bleach',
   };
   const text = item.kind === 'records' ? recordsAuthorisation(o) : representativeDesignation(o);
-  const win = window.open('', '_blank');
-  if (!win) { alert('Allow pop-ups to print this.'); return; }
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
-    <title>${item.kind === 'records' ? 'Records authorisation' : 'Insurance representative'}</title>
+  return `<!doctype html><html><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${authorityDocTitle(item.kind)}</title>
     <style>@page { margin: 16mm; }
-      body { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color:#000; }
+      body { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color:#000; background:#fff; margin: 16px; }
       pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
       .sig-ink { margin: 6mm 0 0; page-break-inside: avoid; }
       .sig-ink img { max-width: 78mm; max-height: 26mm; display: block; }
       .sig-ink figcaption { font-size: 10px; color: #444; margin-top: 1mm; }
       </style>
-    </head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre>${signatureInk(item)}</body></html>`);
+    </head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre>${signatureInk(item)}</body></html>`;
+}
+
+function printAuthorityDoc(item) {
+  const win = window.open('', '_blank');
+  if (!win) { alert('Allow pop-ups to print this.'); return; }
+  win.document.write(authorityDocHtml(item));
   win.document.close();
   setTimeout(() => win.print(), 350);
+}
+
+/**
+ * The Mountain day, as a date a person reads on a file name: 2026-08-27.
+ *
+ * Etc/GMT+7 like every other date on this page. Built from the parts rather
+ * than from a locale string, because the file name is a stored artefact and
+ * "27/08/2026" or "8/27/2026" depending on where the browser thinks it is
+ * would put three shapes of the same day into one client's document list.
+ */
+function mountainDay(d = new Date()) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(d).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+}
+
+/**
+ * A storage stamp that never repeats, in the shape both file listings already
+ * strip (`^\d{10,}-`).
+ *
+ * Date.now() alone is what every other upload path uses, and it is enough
+ * there because he is picking files by hand. Here the file NAME is generated,
+ * so a resend produces a byte-identical name every time, and Storage
+ * overwrites a repeated path without a word. Two sends of one form inside the
+ * same millisecond would therefore be one document, which is precisely the
+ * thing he asked for and precisely the thing that would silently not happen.
+ */
+let lastStamp = 0;
+function uploadStamp() {
+  lastStamp = Math.max(Date.now(), lastStamp + 1);
+  return lastStamp;
+}
+
+/**
+ * SEND THE TICKED FORMS TO THE CLIENT.
+ *
+ * Eric, 2026-08-27, on a client who paid him outside the app: "I need to be
+ * able to select forms and send them, regardless of if they've already been
+ * sent or not. This way this client can have the signed forms in the uploaded
+ * documents. This is another example of what the advisor could do: 'send the
+ * hands-off forms to the client'."
+ *
+ * THERE IS NO ONCE-ONLY GUARD HERE, AND NONE MAY BE ADDED. Not a disabled
+ * button, not an "already sent" refusal, not a quiet skip of a form that is
+ * already on the case. His words are "regardless of if they've already been
+ * sent or not", and every reason to resend is a real one: the client deleted
+ * it, the clinic wants a copy dated today, the first one went out before he
+ * had their date of birth on the case. Send it three times and three
+ * documents land. tools/suites/uploads.mjs U24 sends the same form twice and
+ * fails if fewer than two documents exist afterwards, so a guard added here
+ * turns that check red rather than quietly costing him a send.
+ *
+ * WHERE IT LANDS AND WHY. Straight into `cases/{id}/report/` wearing
+ * `paCategory: 'formsent'`, which is exactly the path and exactly the label a
+ * hand upload of the same document would produce. The category is metadata,
+ * never a folder: storage.rules names four client-readable folders and
+ * prep-shelf.mjs pins that list by string equality. So the client's documents
+ * list shows it under Forms sent with a FORM SENT pill, and the moment they
+ * send the signed copy back he files that as a filled form beside it.
+ *
+ * THE NOTIFICATION IS NOT THE SEND. The document is on their page the instant
+ * Storage has the bytes. Telling them is a second, weaker thing that runs
+ * after, and a failure there must never lose him the send or make him think
+ * he has to do it again; it says so on the panel instead.
+ */
+async function sendBlankForms(kinds, btn) {
+  const sent = [];
+  const quiet = [];
+  // REPORTED ON THE PANEL AND THROWN, both.
+  //
+  // The panel line is for Eric, who is looking at this screen. The throw is
+  // for a caller that is not a person: the advisor branch proposes "send the
+  // hands-off forms to the client" as a card he taps, and its card renders
+  // "Not done: {message}" and stays on screen when a carry-out fails. A
+  // function that reports only into the DOM tells such a caller nothing, and
+  // a caller that cannot tell a send from a failure reports success for both.
+  // So this returns { sent, quiet } when it worked and throws an Error
+  // carrying the same two lists when it did not.
+  const problem = (msg, { onPanel = true } = {}) => {
+    // onPanel is false once load() has been called: the repaint would wipe
+    // anything written straight onto the panel, and the said line below
+    // carries the same news in a form that survives it.
+    if (onPanel) {
+      const el = document.getElementById('forms-err');
+      if (el) { el.textContent = msg; el.hidden = false; } else alert(msg);
+    }
+    const e = new Error(msg);
+    e.sent = sent.slice();
+    e.quiet = quiet.slice();
+    return e;
+  };
+  const errEl = document.getElementById('forms-err');
+  if (errEl) errEl.hidden = true;
+  const picked = SENDABLE_FORMS.filter((f) => kinds.includes(f.id));
+  // Nothing ticked is a refusal, not a failure of the send, and it happens
+  // before anything is repainted, so the error line survives where it is.
+  if (!picked.length) throw problem('Tick at least one form first.');
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  let broke = '';
+  try {
+    for (const form of picked) {
+      const name = `${form.label} ${mountainDay()}.html`;
+      // The same sanitiser the hand-upload path uses, so one rule governs
+      // every name that reaches a Storage path on this page.
+      const safe = name.replace(/[^\w.\- ]+/g, '_');
+      const path = `cases/${caseId}/report/${uploadStamp()}-${safe}`;
+      // NOT `doc`: that name is the Firestore import at the top of this file,
+      // and shadowing it inside a function that also touches Storage is how a
+      // later edit here reaches for the wrong one.
+      const page = authorityDocHtml({ kind: form.id, blank: true });
+      // A File, not a bare Blob: the demo store and every listing read
+      // `file.name`, and the content type is what decides whether this opens
+      // as a readable form on their phone or arrives as bytes they cannot use.
+      const body = new File([page], name, { type: 'text/html' });
+      const task = uploadBytesResumable(ref(storage, path), body, {
+        contentType: 'text/html',
+        // Storage would otherwise be free to hand it over as a download. He
+        // is sending a form to be read and printed, on a phone.
+        contentDisposition: 'inline',
+        customMetadata: { paCategory: 'formsent' },
+      });
+      // ONE AT A TIME, not Promise.all. Nothing in this repo lints, so this
+      // is not a lint appeasement: sequential is what lets the line below say
+      // how many of the ticked forms actually got through before it stopped,
+      // and it keeps the stamps in the order he ticked them.
+      await new Promise((resolve, reject) => {
+        // Four arguments, every one a function, matching the shape the hand
+        // upload path uses. There is no progress bar on this panel: a form is
+        // a few kilobytes and the whole send is over before a bar could paint.
+        task.on('state_changed', () => {}, reject, resolve);
+      });
+      sent.push(name);
+      await api({ action: 'summary-uploaded', category: 'formsent', fileName: name })
+        .catch(() => { quiet.push(name); });
+    }
+  } catch (e) {
+    broke = e.message;
+  }
+  if (btn) { btn.disabled = false; btn.textContent = label; }
+  const names = sent.join(' and ');
+  const is = sent.length === 1 ? 'is' : 'are';
+  // THROUGH THE SAID MAP, NOT INTO THE DOM. load() below repaints the whole
+  // Overview, which would destroy a line written straight onto the panel: the
+  // repaint that proves it worked would erase the sentence saying so.
+  if (sent.length) {
+    say('auth', broke
+      ? `${names} ${is} on their documents now, under Forms sent. The rest stopped: ${broke}`
+      : quiet.length
+        ? `${names} ${is} on their documents now, under Forms sent. I could not confirm they were told, so mention it in chat.`
+        : `Sent. ${names} ${is} on their documents now, under Forms sent, and they have been notified by name.`,
+    { tone: broke || quiet.length ? 'warn' : 'ok' });
+    // Untick, so a second tap is a decision rather than an accident. NOT a
+    // guard: tick it again and it goes again, which is the whole point.
+    document.querySelectorAll('[data-form-pick]:checked').forEach((x) => { x.checked = false; });
+    load();
+  }
+  if (broke) {
+    throw problem(`${sent.length ? `${sent.length} sent, then it stopped: ` : 'Not sent: '}${broke}`,
+      { onPanel: !sent.length });
+  }
+  return { sent, quiet };
 }
 
 /**
