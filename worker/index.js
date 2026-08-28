@@ -1703,7 +1703,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-daylight-1';
+const BUILD_TAG = 'v2026-08-29-daylight-2';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1711,7 +1711,7 @@ const BUILD_TAG = 'v2026-08-29-daylight-1';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.43';
+const VERSION = '2.44';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3575,7 +3575,7 @@ async function handleSaved(request, env, url) {
  * directions by the rules already deployed, and this route is the only way
  * in. Both sides read; only the client signs; only the Worker stamps time.
  */
-const AUTHORITY_KINDS = ['records', 'representative'];
+const AUTHORITY_KINDS = ['records', 'representative', 'scope'];
 // Mirrored from COMMUNICATION_SCOPES in public/js/authority.js. The Worker
 // cannot import a client module, so a suite check asserts the two lists
 // stay identical rather than trusting them to.
@@ -3704,6 +3704,17 @@ async function handleAuthority(request, env, url) {
     if (ctx.isAdmin) return json({ error: 'Only the client can revoke this.' }, 403);
     const itemId = String(body?.id || '');
     if (!/^[\w-]{1,64}$/.test(itemId)) return json({ error: 'Bad request' }, 400);
+    // The scope of work agreement is the contract the case runs on, not a
+    // permission, and one tap cannot un-agree a contract. The page never
+    // offers Withdraw on it; this is the half that holds when someone posts
+    // straight at the route. Every actual permission stays withdrawable.
+    const target = await getDoc(env, `${coll}/${itemId}`);
+    if (!target) return json({ error: 'Bad request' }, 400);
+    if (target.data.kind === 'scope')
+      return json({
+        error: 'This is the agreement your case runs on, not a permission. '
+          + 'If something in it needs to change, tell me in your case chat and we will settle it together.',
+      }, 409);
     await patchDoc(env, `${coll}/${itemId}`, { revokedAt: new Date() }, { mask: ['revokedAt'] });
     const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
     for (const a of admins) {
@@ -3723,8 +3734,9 @@ async function handleAuthority(request, env, url) {
   if (!AUTHORITY_KINDS.includes(kind)) return json({ error: 'Bad request' }, 400);
   // The half that is genuinely Hands-Off work. Filing appeals and speaking to
   // a plan on somebody's behalf is what the monthly fee buys; the records
-  // release above is not, and any case can sign one.
-  if (kind === 'representative' && !c.data.fullAccess)
+  // release above is not, and any case can sign one. The scope of work
+  // agreement is the Hands-Off engagement itself, so it is gated the same way.
+  if ((kind === 'representative' || kind === 'scope') && !c.data.fullAccess)
     return json({ error: 'This case is not on Hands-Off Case Management.' }, 409);
   const typed = typeof body?.signedName === 'string' ? body.signedName.trim().slice(0, 120) : '';
   if (typed.length < 2) return json({ error: 'Type your full name to sign.' }, 400);
@@ -3804,18 +3816,29 @@ async function handleAuthority(request, env, url) {
   const itemId = crypto.randomUUID();
   await patchDoc(env, `${coll}/${itemId}`, item, { mustNotExist: true });
 
-  // A record of when he FIRST had authority to act - nothing more. No clock
-  // runs from this: the window runs from purchase (fullAccessWindowEnd), and
-  // the readiness checklist is derived from the signed items themselves.
-  if (!c.data.authorityAt) {
+  if (kind === 'scope') {
+    // Stamped on the case itself so the readiness checklist (which reads
+    // only the case doc) can see it without a second fetch. The item in the
+    // private subtree stays the record; this is the flag.
+    await patchDoc(env, `cases/${id}`, { scopeSignedAt: new Date() }, { mask: ['scopeSignedAt'] })
+      .catch(() => {});
+  } else if (!c.data.authorityAt) {
+    // A record of when he FIRST had authority to act - nothing more. No clock
+    // runs from this: the window runs from purchase (fullAccessWindowEnd), and
+    // the readiness checklist is derived from the signed items themselves.
+    // The scope agreement is excluded: agreeing the engagement is not
+    // authority to phone anyone.
     await patchDoc(env, `cases/${id}`, { authorityAt: new Date() }, { mask: ['authorityAt'] })
       .catch(() => {});
   }
   const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  const signedWhat = kind === 'records' ? 'a records authorisation'
+    : kind === 'representative' ? 'the insurance representative form'
+      : 'the scope of work agreement';
   for (const a of admins) {
     await notifyUser(env, a.id, {
       title: 'Pocket Advocate',
-      body: `${firstName(c.data.clientName)} signed ${kind === 'records' ? 'a records authorisation' : 'the insurance representative form'}.`,
+      body: `${firstName(c.data.clientName)} signed ${signedWhat}.`,
       link: `/admin-case.html?id=${id}`,
     }).catch(() => {});
   }
@@ -7351,12 +7374,15 @@ async function handleCaseUpdate(request, env) {
         'fullAccessMonths', 'fullAccessByHand', 'pendingFullAccess', 'fullAccessRequest',
         'extraPayments'],
     });
-    // The email the webhook sends, with one sentence added when the month has
-    // not begun yet. The client should not be able to tell which way the
-    // money reached him, and the only thing that matters to them either way is
-    // the sentence about signing: the forms go out NOW even when the month
-    // starts later, because a records request takes weeks and the paperwork
-    // moving early is the whole point of asking for it early.
+    // The email the webhook sends, plus the ask a hand-opened case needs and
+    // a webhook case does not: sign the scope of work agreement. A client who
+    // bought in the app acknowledged the scope note at checkout; a client who
+    // agreed on a call has acknowledged nothing in writing, and the agreement
+    // card on their case page is where that gets fixed (Eric, 2026-08-29:
+    // "All I need is scope of work agreement. The rest I handle." The records
+    // and insurer forms he sends by hand from the Send-a-form panel). The
+    // agreement is live NOW even when the month starts later, because there
+    // is no reason to make the paperwork wait on the clock.
     if (c.clientEmail) {
       // 'Etc/GMT+7', the literal every other formatter in this file uses.
       // MOUNTAIN_TZ is a constant in the browser modules and does NOT exist
@@ -7370,6 +7396,7 @@ async function handleCaseUpdate(request, env) {
         to: c.clientEmail,
         subject: 'Hands-Off Case Management is open on your case',
         html: `<p>Your case is now on Hands-Off Case Management. I do the legwork from here: I work directly with your clinics and your insurer rather than alongside you.</p>
+        <p>First thing: read and sign your scope of work agreement on your case page. It is short, it says exactly what I do for you and where it stops, and your case runs on it.</p>
         ${startsLater ? `<p>Your month runs from ${dayFmt.format(startAt)}. It is still worth getting me your permission before then: a records request can take weeks to come back, so the sooner the paperwork is in, the more of your month is spent on your case instead of on waiting.</p>` : ''}
         <p>I will message you in your case chat with what I need from you to get moving. Everything I do on your case is logged on your case page as I do it, so you can see where it stands without having to ask.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,

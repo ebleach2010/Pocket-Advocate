@@ -20,7 +20,8 @@ import { openDutyDraft } from './duty.js';
 import { openPrepSheet } from './prep.js';
 import { mountFolder } from './folder.js';
 import {
-  recordsAuthorisation, representativeDesignation, APPEAL_DEADLINES, appealDueAt,
+  recordsAuthorisation, representativeDesignation, scopeOfWork,
+  APPEAL_DEADLINES, appealDueAt,
 } from './authority.js';
 import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
 
@@ -1912,8 +1913,10 @@ function paintOverview(pane) {
       <div class="mgmt-body">
         <p class="dim small" style="margin:0 0 .6rem;">For a client who agreed
           it on a call. This opens exactly the case a payment opens: their work
-          log, their checklist, the check-in booking and the email. They cannot
-          tell which way the money reached you.</p>
+          log, their checklist, the check-in booking, the scope of work
+          agreement to sign, and the email. They cannot tell which way the
+          money reached you. It sends no other forms: the records and insurer
+          forms go out from Send a form below, when you choose.</p>
         <p class="small" style="margin:0 0 .5rem;">This case shows
           <strong>${paidCents(c) === null ? 'no payment recorded' : '$' + dollars(paidCents(c))}</strong>
           paid so far.</p>
@@ -1945,7 +1948,11 @@ function paintOverview(pane) {
         </label>
         <p class="dim small" id="openfull-when" style="margin:0 0 .5rem;"></p>
         <p class="error" id="openfull-err" hidden></p>
-        <div class="actions"><button class="btn secondary" id="openfull-go">Open Hands-Off and send the forms</button></div>
+        <!-- "and send the forms" came off this button (Eric, 2026-08-29:
+             "Remove those. I have those sent manually."). It never sent any:
+             the handler posts open-full and nothing else, so the label was
+             promising an action that did not exist. -->
+        <div class="actions"><button class="btn secondary" id="openfull-go">Open Hands-Off</button></div>
       </div>
     </details>`}
 
@@ -3494,7 +3501,7 @@ function wireOpenFull(el, c) {
     if (!t) { whenEl.textContent = 'Pick the day their month begins.'; return; }
     const end = new Date(t.getTime() + 30 * 86_400_000);
     whenEl.textContent = t.getTime() > Date.now()
-      ? `Their month runs ${dayFmt.format(t)} to ${dayFmt.format(end)}. Their forms go live today either way, so records requests can start moving now.`
+      ? `Their month runs ${dayFmt.format(t)} to ${dayFmt.format(end)}. Their scope of work agreement goes live today either way, so it can be signed before the month starts.`
       : `Their month runs ${dayFmt.format(t)} to ${dayFmt.format(end)}.`;
   };
   startEl?.addEventListener('change', previewWhen);
@@ -3528,7 +3535,7 @@ function wireOpenFull(el, c) {
       + `${cents > 0 ? `Recording $${dollars(cents)} paid outside the app.` : 'No new payment recorded.'}\n`
       + `${after === null ? 'The case will show no payment recorded.' : `The case will show $${dollars(after)} paid.`}\n`
       + `Their month starts ${dayFmt.format(startAt)}.\n\n`
-      + 'They get an email asking them to sign their authorisation.')) return;
+      + 'They get an email asking them to sign the scope of work agreement. Nothing else is sent.')) return;
     go.disabled = true;
     try {
       await api({ action: 'open-full', tierCents: cents, startAt: startAt.toISOString() });
@@ -3545,7 +3552,7 @@ function wireOpenFull(el, c) {
       // already running.
       const later = handsOffStartsLater(data);
       say('openfull', data?.fullAccess
-        ? `Open. Their work log and the check-in booking are live on their case page and the email has gone. Get their permission in writing yourself before you phone anyone.${stored ? ` Their month ${later ? 'starts' : 'started'} ${dayFmt.format(stored)}.` : ''}`
+        ? `Open. Their work log, the check-in booking and the scope of work agreement are live on their case page and the email has gone. Send the records and insurer forms yourself when the case needs them, and get their permission in writing before you phone anyone.${stored ? ` Their month ${later ? 'starts' : 'started'} ${dayFmt.format(stored)}.` : ''}`
         : 'That went through, but the case still does not show Hands-Off. Do not send them to sign yet: try once more.',
       { tone: data?.fullAccess ? 'ok' : 'warn' });
       refreshOverview();
@@ -3852,7 +3859,13 @@ async function paintAuthorityStatus(pane) {
   const live = items.filter((i) => !i.revokedAt);
   const recs = live.filter((i) => i.kind === 'records');
   const rep = live.find((i) => i.kind === 'representative');
-  const revoked = items.filter((i) => i.revokedAt);
+  // The agreement is not a permission. It says the engagement is agreed; it
+  // authorises no phone call, so it is kept out of every permission count
+  // below and shown on its own line (Eric, 2026-08-29: "All I need is scope
+  // of work agreement").
+  const scope = live.find((i) => i.kind === 'scope');
+  const perms = live.filter((i) => i.kind !== 'scope');
+  const revoked = items.filter((i) => i.revokedAt && i.kind !== 'scope');
   const days = fullAccessDaysLeft(data);
   // Extensions and holds both stretch the window, so "75 days left in the 60
   // day window" was a sentence this card could print. Name the extra instead.
@@ -3869,24 +3882,34 @@ async function paintAuthorityStatus(pane) {
   // one row now, and it says only what it still knows: whether they have read
   // and acknowledged the scope note.
   //
+  // SINCE 2026-08-29 the row can be satisfied on a hand-opened case too: the
+  // scope of work agreement signed on the case page stamps scopeSignedAt,
+  // and handsOffReadiness counts either record.
+  //
   // THE WARNING DID NOT GO ANYWHERE. "May I pick up the phone" was the real
   // question, and the honest answer is the permissions on file, not a tick
   // box. So the card goes orange, and says so in words, whenever nothing is
   // on file - which no longer depends on the checklist at all.
   const ready = handsOffReadiness(data);
-  const noPermission = live.length === 0;
+  const noPermission = perms.length === 0;
   const alarm = !ready.ready || noPermission;
 
   host.innerHTML = `
     <div class="panel" style="${alarm ? 'border-color:var(--orange); box-shadow:var(--glow-o);' : ''}">
       <h3 style="margin:0 0 .35rem;${alarm ? ' color:var(--orange);' : ''}">
-        ${noPermission ? 'No permission on file' : ready.ready ? 'Scope note done' : 'Waiting on the scope note'}</h3>
+        ${noPermission ? 'No permission on file' : ready.ready ? 'Scope of work agreed' : 'Waiting on the scope of work'}</h3>
       <p class="dim small" style="margin:0 0 .4rem;">
         ${ready.rows.map((r) => `${r.done ? '✓' : '○'} ${esc(r.label)}`).join('<br>')}</p>
       ${noPermission ? `<p class="dim small" style="margin:0 0 .5rem; color:var(--orange);">
         Nothing here authorises you to speak for them. Do not phone a clinic or
         their plan on their behalf until you have it in writing. The clock runs
         from purchase either way.</p>` : ''}
+      <p class="dim small" style="margin:.1rem 0;">
+        Agreement: ${scope
+          ? `signed ${esc(new Date(scope.signedAt).toLocaleDateString())}`
+          : data.forms?.fullAccess
+            ? 'acknowledged at purchase'
+            : '<span style="color:var(--orange)">not signed</span>'}</p>
       <p class="dim small" style="margin:.1rem 0;">
         Records: ${recs.length
           ? recs.map((r) => esc(r.clinicName || 'clinic')).join(', ')
@@ -3901,7 +3924,8 @@ async function paintAuthorityStatus(pane) {
         ${revoked.length} withdrawn. Do not act on ${revoked.length === 1 ? 'it' : 'them'}.</p>` : ''}
       ${live.length ? `<p class="row" style="gap:.4rem; flex-wrap:wrap; margin:.5rem 0 0;">
         ${live.map((i) => `<button class="btn ghost tiny" data-auth-print="${esc(i.id)}">
-          ${i.kind === 'records' ? esc(i.clinicName || 'Records') : 'Insurer form'}</button>`).join('')}
+          ${i.kind === 'records' ? esc(i.clinicName || 'Records')
+    : i.kind === 'scope' ? 'Scope of work' : 'Insurer form'}</button>`).join('')}
       </p>` : ''}
     </div>`;
 
@@ -4043,14 +4067,16 @@ function signatureInk(item) {
  * every style it needs is inside it and it fetches nothing.
  */
 function authorityDocTitle(kind) {
-  return kind === 'records' ? 'Records authorisation' : 'Insurance representative';
+  return kind === 'records' ? 'Records authorisation'
+    : kind === 'scope' ? 'Scope of work agreement' : 'Insurance representative';
 }
 function authorityDocHtml(item) {
   const o = {
     ...item,
     clientName: data.clientName, clientDob: data.clientDob, advocateName: 'Eric Bleach',
   };
-  const text = item.kind === 'records' ? recordsAuthorisation(o) : representativeDesignation(o);
+  const text = item.kind === 'records' ? recordsAuthorisation(o)
+    : item.kind === 'scope' ? scopeOfWork(o) : representativeDesignation(o);
   return `<!doctype html><html><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${authorityDocTitle(item.kind)}</title>

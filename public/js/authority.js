@@ -1,7 +1,16 @@
-// The two documents Full Access runs on, and they are not interchangeable.
+// The documents Full Access runs on, and they are not interchangeable.
 //
 // Written 2026-08-23, PENDING ERIC'S SIGN-OFF, flagged in the PR. A NEW file,
 // not an addition to waivers.js, which is frozen.
+//
+// THREE DOCUMENTS SINCE 2026-08-29, with different lives. Eric: "Remove
+// those. I have those sent manually. All I need is scope of work agreement.
+// The rest I handle." So the records authorisation and the representative
+// designation are never offered for signing in the app: they exist here as
+// the blank forms he sends by hand from the case page, signed however he and
+// the client arrange it. The SCOPE OF WORK AGREEMENT (third, below) is the
+// one document signed in the app, because it is the agreement the case runs
+// on and he needs it on file the day Hands-Off opens.
 //
 //   1. A RECORDS AUTHORISATION, one per clinic. This is what lets a provider
 //      hand your records to somebody who is not you. Its required elements
@@ -279,10 +288,93 @@ This appointment stays in effect until ${o.expiresAt ? fmt(o.expiresAt) : 'one y
 ${signatureBlock(o, 'member')}`;
 }
 
-/** Which document a stored record is. The pair is the whole vocabulary. */
+/**
+ * The scope of work agreement: what the case runs on. Signed in the app the
+ * day Hands-Off opens, by the client, with the same typed name and drawn
+ * signature the other documents use.
+ *
+ * EVERY SENTENCE HERE IS ALREADY IN FULL_ACCESS_TERMS (public/js/tier-terms.js,
+ * Eric's words as of v2.43). This document is that scope note restated as a
+ * signature-grade summary; it makes no promise the scope note does not make.
+ * When Eric edits one of them through the copy deck, check the other, because
+ * they describe one engagement and must not drift apart in substance.
+ *
+ * `o`: { clientName, signedName, signedAt } and `blank` for a paper copy.
+ */
+export function scopeOfWork(o = {}) {
+  return `SCOPE OF WORK AGREEMENT
+HANDS-OFF CASE MANAGEMENT
+
+Client: ${field(o, o.clientName, '(name)')}
+Advocate: Eric Bleach, patient advocate, Pocket Advocate.
+
+This is the agreement your case runs on. It says what I do, what I need
+from you, and where the work stops.
+
+THE WORK
+I work inside your case, not beside it. Once you have authorised it in
+writing, I speak to your clinics and your insurance company myself, and I
+do the legwork: the records I chase, the referrals I follow up, the calls
+I make, and the insurance appeals I write. I do not count the calls or
+the appeals, and you will never be told you have used them up.
+
+We check in at least twice a month through your window, by phone or
+video, so the case runs on a rhythm instead of going quiet. The check-ins
+are part of the service, not an option: a case I cannot reach you about
+is a case I cannot run. Everything I do is logged on your case page as I
+do it, so you can see where the case stands without having to ask.
+
+WHAT I NEED FROM YOU
+Before I can act for you I need your permission in writing. I bring you
+each document as the case needs it and walk you through it, so you are
+never handed paperwork you did not expect. Any permission you give me can
+be withdrawn in writing at any time, and I stop using it straight away.
+
+Your month runs from the day it starts, whether or not that paperwork is
+settled. How fast we get it done is up to you: get it done early and you
+get all of it.
+
+THE MONTH
+This is billed a month at a time, an active window of 30 days per month
+you take. At the end of each month you decide whether to carry on, at the
+same price, as many times as you need. When your last paid month ends the
+case wraps up, not at any particular call and never by surprise, because
+we will have spoken at least twice a month on the way there. An insurance
+appeal in flight does not expire with the window: whenever a denial
+arrives on an appeal I filed for you, I write the escalation.
+
+WHAT THIS IS NOT
+Not legal representation. I am a patient advocate, not an attorney, and
+if your situation needs a lawyer I will say so plainly.
+Not medical care. No diagnosis, no treatment, no prescriptions, and no
+doctor-patient relationship.
+Not a promised outcome. No one can guarantee an insurer will overturn a
+denial or a clinic will move quickly. What I promise is the work, the
+deadlines, honesty about how it is going, and acceleration: while I am
+working for you the case moves faster than it would without me, and you
+come out knowing more about running your own case than you went in with.
+
+MONEY
+You are charged one month at a time, at the price we agreed. Refunds are
+not automatic, and nothing in this document triggers one by itself. If
+something goes genuinely wrong, you tell me and we settle it together:
+any refund is agreed between you and me, person to person, on what
+actually happened. A check-in you miss or decline is never a refund
+basis.
+
+YOUR PRIVACY
+Records I obtain on your behalf live in your case file under the same
+protections as anything you upload yourself: your advocate and you,
+nobody else.
+
+${signatureBlock(o, 'client')}`;
+}
+
+/** Which document a stored record is. This map is the whole vocabulary. */
 export const AUTHORITY_KINDS = {
   records: { title: 'Records authorisation', build: recordsAuthorisation },
   representative: { title: 'Insurance representative', build: representativeDesignation },
+  scope: { title: 'Scope of work agreement', build: scopeOfWork },
 };
 
 /**

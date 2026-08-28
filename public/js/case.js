@@ -20,7 +20,7 @@ import { startNightShift } from './night-shift.js';
 startNightShift();
 import {
   recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
-  COMMUNICATION_SCOPES,
+  COMMUNICATION_SCOPES, AUTHORITY_KINDS,
 } from './authority.js';
 import { FULL_ACCESS_TERMS, FULL_ACCESS_PLAIN } from './tier-terms.js';
 import { wireAboutButtons } from './service-about.js';
@@ -2145,13 +2145,47 @@ const OFFER_AUTHORITY_SIGNING = false;
  */
 async function mountPermissions(host, c) {
   const paint = (items) => {
-    if (!items.length && !OFFER_AUTHORITY_SIGNING) { host.innerHTML = ''; return; }
-    const live = items.filter((i) => !i.revokedAt);
-    const gone = items.filter((i) => i.revokedAt);
+    // THE AGREEMENT SITS APART FROM THE PERMISSIONS. A signed scope of work
+    // is the contract the case runs on, not a permission the client can
+    // withdraw, so it gets its own block, a View button, and no Withdraw
+    // (the Worker refuses one posted straight at the route too). The offer
+    // appears only where the record is missing: a case opened by hand never
+    // acknowledged the scope note at checkout, and this signature is what
+    // stands in for it (Eric, 2026-08-29: "All I need is scope of work
+    // agreement. The rest I handle." The records and insurer forms reach the
+    // client as documents he sends by hand, signed outside the app).
+    const scopeItem = items.find((i) => i.kind === 'scope' && !i.revokedAt);
+    const offerScope = !!c.fullAccess && !scopeItem
+      && !(c.forms && c.forms.fullAccess) && !c.scopeSignedAt;
+    const perms = items.filter((i) => i.kind !== 'scope');
+    if (!perms.length && !scopeItem && !offerScope && !OFFER_AUTHORITY_SIGNING) {
+      host.innerHTML = '';
+      return;
+    }
+    const live = perms.filter((i) => !i.revokedAt);
+    const gone = perms.filter((i) => i.revokedAt);
     const named = (r) => (r.kind === 'records'
       ? `Records release${r.clinicName ? `, ${esc(r.clinicName)}` : ''}`
       : `Insurer form${r.planName ? `, ${esc(r.planName)}` : ''}`);
-    host.innerHTML = `
+    const scopeBlock = scopeItem ? `
+      <div class="panel authority" data-scope-panel>
+        <h3>Your scope of work agreement</h3>
+        <p class="auth-item">
+          <span>Signed ${new Date(scopeItem.signedAt).toLocaleDateString()}<span class="dim small"> · the agreement your case runs on</span></span>
+          <span class="auth-item-acts">
+            <button type="button" class="btn ghost tiny" data-auth-view="${esc(scopeItem.id)}">View</button>
+          </span>
+        </p>
+      </div>` : offerScope ? `
+      <div class="panel authority" data-scope-panel>
+        <h3>Your scope of work agreement</h3>
+        <p class="dim small">What I do on your case, what I need from you, and
+          where the work stops. Read it and sign it once; it is the agreement
+          your case runs on.</p>
+        <p><button class="btn glow" data-scope-sign>Read and sign</button></p>
+        <p class="error" data-scope-error hidden></p>
+      </div>` : '';
+    const permBlock = (perms.length || OFFER_AUTHORITY_SIGNING) ? `
       <div class="panel authority" data-auth-panel>
         <h3>Permissions you have given me</h3>
         <p class="dim small">Read any of these back whenever you like. You can
@@ -2176,8 +2210,11 @@ async function mountPermissions(host, c) {
           <p><button class="btn ghost" data-auth-add="records">Sign a records authorisation</button></p>
           ${c.fullAccess ? '<p><button class="btn ghost" data-auth-add="representative">Sign the insurance form</button></p>' : ''}` : ''}
         <p class="error" data-auth-error hidden></p>
-      </div>`;
+      </div>` : '';
+    host.innerHTML = scopeBlock + permBlock;
 
+    host.querySelector('[data-scope-sign]')
+      ?.addEventListener('click', () => openAuthoritySheet(c, 'scope', load));
     for (const b of host.querySelectorAll('[data-auth-add]'))
       b.addEventListener('click', () => openAuthoritySheet(c, b.dataset.authAdd, load));
     for (const b of host.querySelectorAll('[data-auth-view]'))
@@ -2251,14 +2288,19 @@ function nameMatches(typed, onCase) {
 /** The signing sheet. Same overlay furniture as everything else on this page. */
 function openAuthoritySheet(c, kind, onDone) {
   const isRecords = kind === 'records';
+  // The scope of work agreement has no fields to fill: the document is
+  // complete as written, and the whole job here is reading it and signing.
+  const isScope = kind === 'scope';
   const overlay = document.createElement('div');
   overlay.className = 'settings-overlay';
   overlay.innerHTML = `
     <div class="settings-card sig-sheet" role="dialog" aria-modal="true" aria-label="Sign">
-      <h3 style="margin:0 0 .3rem;">${isRecords ? 'Records authorisation' : 'Insurance representative'}</h3>
+      <h3 style="margin:0 0 .3rem;">${AUTHORITY_KINDS[kind]?.title || 'Sign'}</h3>
       <p class="dim small" style="margin:0 0 .8rem;">${isRecords
-        ? 'One clinic per form. Fill in what you know; I can chase the rest.'
-        : 'This lets me deal with your plan about your claims and appeals.'}</p>
+    ? 'One clinic per form. Fill in what you know; I can chase the rest.'
+    : isScope
+      ? 'What I do on your case, what I need from you, and where the work stops. Read it, then sign at the bottom.'
+      : 'This lets me deal with your plan about your claims and appeals.'}</p>
       ${isRecords ? `
         <label class="dim small">Clinic or hospital name
           <input type="text" data-f="clinicName" maxlength="200" placeholder="e.g. Valley Neurology"></label>
@@ -2280,7 +2322,7 @@ function openAuthoritySheet(c, kind, onDone) {
             <input type="checkbox" data-cat="${cat.id}">
             <span><strong>${esc(cat.label)}</strong><br><span class="dim small">${esc(cat.note)}</span></span>
           </label>`).join('')}
-      ` : `
+      ` : isScope ? '' : `
         <label class="dim small">Insurance plan or company
           <input type="text" data-f="planName" maxlength="200" placeholder="e.g. Blue Cross of Arizona"></label>
         <label class="dim small">Member or policy ID
@@ -2296,8 +2338,8 @@ function openAuthoritySheet(c, kind, onDone) {
             <span><strong>${esc(sc.label)}</strong><br><span class="dim small">${esc(sc.note)}</span></span>
           </label>`).join('')}
       ` : ''}
-      <details class="agreement" style="margin:.9rem 0 .6rem;">
-        <summary><span class="agreement-title">Read the whole form</span></summary>
+      <details class="agreement"${isScope ? ' open' : ''} style="margin:.9rem 0 .6rem;">
+        <summary><span class="agreement-title">${isScope ? 'The agreement' : 'Read the whole form'}</span></summary>
         <div class="agreement-body"><pre class="auth-doc" data-preview></pre></div>
       </details>
       <label class="dim small">Type your full name to sign
@@ -2330,7 +2372,7 @@ function openAuthoritySheet(c, kind, onDone) {
       planName: val('planName'), memberId: val('memberId'),
       categories: cats(), scopes: scopesOf(), signedName: val('signedName'),
     };
-    preview.textContent = isRecords ? recordsAuthorisation(o) : representativeDesignation(o);
+    preview.textContent = (AUTHORITY_KINDS[kind]?.build || recordsAuthorisation)(o);
   };
   overlay.addEventListener('input', repaint);
   overlay.addEventListener('change', repaint);
@@ -2387,7 +2429,8 @@ function openAuthoritySheet(c, kind, onDone) {
       el.setAttribute('aria-invalid', 'true');
       bad.push(el);
     };
-    const need = isRecords ? ['clinicName', 'signedName'] : ['planName', 'memberId', 'signedName'];
+    const need = isScope ? ['signedName']
+      : isRecords ? ['clinicName', 'signedName'] : ['planName', 'memberId', 'signedName'];
     for (const f of need) if (!val(f)) mark(`[data-f="${f}"]`);
     // The Worker requires the typed name to match the name on the case, and
     // requires two characters. Mirror both here: without them the button
@@ -2689,14 +2732,14 @@ async function printAuthority(c, item) {
     clientName: c.clientName, clientDob: c.clientDob,
     advocateName: 'Eric Bleach',
   };
-  const text = item.kind === 'records' ? recordsAuthorisation(o) : representativeDesignation(o);
+  const text = (AUTHORITY_KINDS[item.kind]?.build || recordsAuthorisation)(o);
   const win = window.open('', '_blank');
   if (!win) {
     alert('Your browser blocked the print window. Allow pop-ups for this site and try again.');
     return;
   }
   win.document.write(`<!doctype html><html><head><meta charset="utf-8">
-    <title>${item.kind === 'records' ? 'Records authorisation' : 'Insurance representative'}</title>
+    <title>${AUTHORITY_KINDS[item.kind]?.title || 'Records authorisation'}</title>
     <style>
       @page { margin: 16mm; }
       body { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: #000; }

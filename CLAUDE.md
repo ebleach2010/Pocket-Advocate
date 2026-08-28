@@ -193,6 +193,20 @@ comments; this is the same breach `service-terms.js` had.
   deliberately: the telehealth full refund when an appointment never
   happens, and the frozen `waivers.js` reschedule clause. New copy must not
   add automatic refund triggers.
+- **The app signs ONE document: the scope of work agreement** (Eric,
+  2026-08-29: "Remove those. I have those sent manually. All I need is
+  scope of work agreement. The rest I handle."). The records authorisation
+  and representative designation are never offered for in-app signing
+  (`OFFER_AUTHORITY_SIGNING` stays false); they go out as blank forms from
+  the admin Send-a-form panel, signed however Eric arranges it. The scope
+  agreement (kind `scope`, `scopeOfWork()` in `public/js/authority.js`) is
+  offered on Hands-Off cases that never acknowledged the scope note at
+  checkout, stamps `scopeSignedAt`, satisfies the readiness row, and cannot
+  be revoked by one tap (authority.mjs W6d, worklog.mjs L46 pin all of
+  this). Its text restates FULL_ACCESS_TERMS and must not drift from it in
+  substance (authority.mjs S32). Opening Hands-Off sends NO forms — only
+  the email and the agreement card. Do not put "send the forms" back on
+  that button.
 - **"Every two weeks" is a FLAG, not an automation.** Eric schedules each
   check-in himself; the dashboard marks any tier case 14 days without one
   (`CHECKIN_DAYS`, `checkInDue`). The copy says "runs on a rhythm" for that

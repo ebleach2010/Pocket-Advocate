@@ -789,6 +789,12 @@ export function demoApi(role, store) {
       if (body.action === 'revoke') {
         const k = prefix + body.id;
         const cur = store.docs.get(k);
+        // Mirrors the Worker (2026-08-29): the scope of work agreement is the
+        // contract the case runs on, not a permission, and cannot be revoked
+        // by one tap.
+        if (cur?.kind === 'scope')
+          return fail(409, 'This is the agreement your case runs on, not a permission. '
+            + 'If something in it needs to change, tell me in your case chat and we will settle it together.');
         if (cur) store.docs.set(k, { ...cur, revokedAt: new Date() });
         store.persist?.(); // without this a withdrawn authorisation came back on reload
         return ok({ ok: true });
@@ -796,13 +802,15 @@ export function demoApi(role, store) {
       // The Worker's gates, in the Worker's ORDER - the demo used to refuse a
       // missing signature first, so the same bad POST got two different
       // answers depending on which side you were driving.
-      const kinds = ['records', 'representative'];
+      const kinds = ['records', 'representative', 'scope'];
       if (!kinds.includes(body.kind)) return fail(400, 'Bad request');
       // Per DOCUMENT, matching the Worker as of 2026-08-26. A records release
-      // can be signed on any case; the insurance designation is the Hands-Off
-      // half. The demo never checked the tier at all, so it would happily sign
-      // a designation a real case would have refused.
-      if (body.kind === 'representative' && !store.docs.get(`cases/${cid}`)?.fullAccess)
+      // can be signed on any case; the insurance designation and the scope of
+      // work agreement are the Hands-Off half. The demo never checked the
+      // tier at all, so it would happily sign a designation a real case would
+      // have refused.
+      if ((body.kind === 'representative' || body.kind === 'scope')
+        && !store.docs.get(`cases/${cid}`)?.fullAccess)
         return fail(409, 'This case is not on Hands-Off Case Management.');
       const typed = String(body.signedName || '').trim();
       if (typed.length < 2) return fail(400, 'Type your full name to sign.');
@@ -833,6 +841,13 @@ export function demoApi(role, store) {
         scopes,
         signatureImage: body.signatureImage || '',
       });
+      // Mirrors the Worker (2026-08-29): a scope signature stamps the case
+      // itself, which is where the readiness checklist reads from.
+      if (body.kind === 'scope') {
+        const ck = `cases/${cid}`;
+        const cc = store.docs.get(ck);
+        if (cc) store.docs.set(ck, { ...cc, scopeSignedAt: new Date() });
+      }
       store.persist?.();
       return ok({ ok: true, id, signedAt: new Date().toISOString() });
     }
