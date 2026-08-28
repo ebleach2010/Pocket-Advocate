@@ -1703,7 +1703,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-contact-tick';
+const BUILD_TAG = 'v2026-08-29-forms-tick';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1711,7 +1711,7 @@ const BUILD_TAG = 'v2026-08-29-contact-tick';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.45';
+const VERSION = '2.46';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -7386,15 +7386,11 @@ async function handleCaseUpdate(request, env) {
         'fullAccessMonths', 'fullAccessByHand', 'pendingFullAccess', 'fullAccessRequest',
         'extraPayments'],
     });
-    // The email the webhook sends, plus the ask a hand-opened case needs and
-    // a webhook case does not: sign the scope of work agreement. A client who
-    // bought in the app acknowledged the scope note at checkout; a client who
-    // agreed on a call has acknowledged nothing in writing, and the agreement
-    // card on their case page is where that gets fixed (Eric, 2026-08-29:
-    // "All I need is scope of work agreement. The rest I handle." The records
-    // and insurer forms he sends by hand from the Send-a-form panel). The
-    // agreement is live NOW even when the month starts later, because there
-    // is no reason to make the paperwork wait on the clock.
+    // The email the webhook sends, with one sentence added when the month
+    // has not begun yet. It asks the client to sign NOTHING (Eric,
+    // 2026-08-29: "Do NOT send him any forms whatsoever"): every document
+    // travels by his hand, and he records their return with the Forms
+    // submitted tick (action 'forms-on-file', below).
     if (c.clientEmail) {
       // 'Etc/GMT+7', the literal every other formatter in this file uses.
       // MOUNTAIN_TZ is a constant in the browser modules and does NOT exist
@@ -7408,12 +7404,23 @@ async function handleCaseUpdate(request, env) {
         to: c.clientEmail,
         subject: 'Hands-Off Case Management is open on your case',
         html: `<p>Your case is now on Hands-Off Case Management. I do the legwork from here: I work directly with your clinics and your insurer rather than alongside you.</p>
-        <p>First thing: read and sign your scope of work agreement on your case page. It is short, it says exactly what I do for you and where it stops, and your case runs on it.</p>
         ${startsLater ? `<p>Your month runs from ${dayFmt.format(startAt)}. It is still worth getting me your permission before then: a records request can take weeks to come back, so the sooner the paperwork is in, the more of your month is spent on your case instead of on waiting.</p>` : ''}
         <p>I will message you in your case chat with what I need from you to get moving. Everything I do on your case is logged on your case page as I do it, so you can see where it stands without having to ask.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
       }).catch(() => {});
     }
+  } else if (action === 'forms-on-file') {
+    // THE "FORMS SUBMITTED" TICK (Eric, 2026-08-29: "Just create a 'forms
+    // submitted' tick box for me to tick off once I've received them. Keep
+    // that my side, not his."). Every document travels by his hand and comes
+    // back the same way; this stamp is his record that the signed copies are
+    // in. handsOffReadiness reads exactly this field, so ticking it clears
+    // his orange card and ticks the client's checklist row in one move.
+    // Untickable on purpose: a mis-tick is his to take back, and null is the
+    // supported "not yet" shape.
+    const on = body?.on === true;
+    await patchDoc(env, `cases/${caseId}`, { formsOnFileAt: on ? now : null },
+      { mask: ['formsOnFileAt'] });
   } else if (action === 'recording-uploaded') {
     // The call happened: start the report clock. Admin-side the deadline is a
     // strict 7 calendar days; the client is told "7 business days, some take

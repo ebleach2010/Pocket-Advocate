@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.45';
+export const VERSION = '2.46';
 
 /**
  * Newest first.
@@ -51,6 +51,15 @@ export const VERSION = '2.45';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // Nothing is signed in the app any more (Eric, 2026-08-29: "Do NOT send
+    // him any forms whatsoever... Keep that my side, not his."). Quiet.
+    version: '2.46',
+    quiet: true,
+    client: [
+      'Your case page no longer asks you to sign anything. Every document comes to you from your advocate directly, and your case page simply shows when your signed forms are back with him.',
+    ],
+  },
   {
     // The contact tick on the scope of work agreement (Eric, 2026-08-29:
     // "he agrees I can contact him via phone by text or phone call...

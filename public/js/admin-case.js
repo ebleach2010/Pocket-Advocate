@@ -1873,10 +1873,10 @@ function paintOverview(pane) {
       <div class="mgmt-body">
         <p class="dim small" style="margin:0 0 .6rem;">For a client who agreed
           it on a call. This opens exactly the case a payment opens: their work
-          log, their checklist, the check-in booking, the scope of work
-          agreement to sign, and the email. They cannot tell which way the
-          money reached you. It sends no other forms: the records and insurer
-          forms go out from Send a form below, when you choose.</p>
+          log, their checklist, the check-in booking and the email. They cannot
+          tell which way the money reached you. It sends no forms and asks
+          them to sign nothing: every form goes out by your hand, and you tick
+          Forms submitted on the tier card when the signed copies are back.</p>
         <p class="small" style="margin:0 0 .5rem;">This case shows
           <strong>${paidCents(c) === null ? 'no payment recorded' : '$' + dollars(paidCents(c))}</strong>
           paid so far.</p>
@@ -3461,7 +3461,7 @@ function wireOpenFull(el, c) {
     if (!t) { whenEl.textContent = 'Pick the day their month begins.'; return; }
     const end = new Date(t.getTime() + 30 * 86_400_000);
     whenEl.textContent = t.getTime() > Date.now()
-      ? `Their month runs ${dayFmt.format(t)} to ${dayFmt.format(end)}. Their scope of work agreement goes live today either way, so it can be signed before the month starts.`
+      ? `Their month runs ${dayFmt.format(t)} to ${dayFmt.format(end)}. The clock runs from the day it starts, signed forms or not.`
       : `Their month runs ${dayFmt.format(t)} to ${dayFmt.format(end)}.`;
   };
   startEl?.addEventListener('change', previewWhen);
@@ -3495,7 +3495,7 @@ function wireOpenFull(el, c) {
       + `${cents > 0 ? `Recording $${dollars(cents)} paid outside the app.` : 'No new payment recorded.'}\n`
       + `${after === null ? 'The case will show no payment recorded.' : `The case will show $${dollars(after)} paid.`}\n`
       + `Their month starts ${dayFmt.format(startAt)}.\n\n`
-      + 'They get an email asking them to sign the scope of work agreement. Nothing else is sent.')) return;
+      + 'They get one email. No forms are sent, and nothing on their page asks them to sign.')) return;
     go.disabled = true;
     try {
       await api({ action: 'open-full', tierCents: cents, startAt: startAt.toISOString() });
@@ -3512,7 +3512,7 @@ function wireOpenFull(el, c) {
       // already running.
       const later = handsOffStartsLater(data);
       say('openfull', data?.fullAccess
-        ? `Open. Their work log, the check-in booking and the scope of work agreement are live on their case page and the email has gone. Send the records and insurer forms yourself when the case needs them, and get their permission in writing before you phone anyone.${stored ? ` Their month ${later ? 'starts' : 'started'} ${dayFmt.format(stored)}.` : ''}`
+        ? `Open. Their work log and the check-in booking are live on their case page and the email has gone. Send every form yourself, and tick Forms submitted on the tier card when the signed copies are back in your hands.${stored ? ` Their month ${later ? 'starts' : 'started'} ${dayFmt.format(stored)}.` : ''}`
         : 'That went through, but the case still does not show Hands-Off. Do not send them to sign yet: try once more.',
       { tone: data?.fullAccess ? 'ok' : 'warn' });
       refreshOverview();
@@ -3842,42 +3842,53 @@ async function paintAuthorityStatus(pane) {
   // one row now, and it says only what it still knows: whether they have read
   // and acknowledged the scope note.
   //
-  // SINCE 2026-08-29 the row can be satisfied on a hand-opened case too: the
-  // scope of work agreement signed on the case page stamps scopeSignedAt,
-  // and handsOffReadiness counts either record.
+  // SINCE 2026-08-29 THE ROW IS HIS OWN TICK. Every form travels by hand
+  // (Eric: "Do NOT send him any forms whatsoever... Just create a 'forms
+  // submitted' tick box for me to tick off once I've received them. Keep
+  // that my side, not his."), so the record that matters is whether the
+  // signed copies are back in his hands, and only he can say so. The tick
+  // stamps formsOnFileAt on the case; handsOffReadiness reads exactly that,
+  // both sides of the glass.
   //
   // THE WARNING DID NOT GO ANYWHERE. "May I pick up the phone" was the real
-  // question, and the honest answer is the permissions on file, not a tick
-  // box. So the card goes orange, and says so in words, whenever nothing is
-  // on file - which no longer depends on the checklist at all.
+  // question, and the honest answer is written permission in hand: an in-app
+  // permission on file, or the tick saying the paper ones are back. Orange
+  // until one of those is true.
   const ready = handsOffReadiness(data);
-  const noPermission = perms.length === 0;
+  const formsBack = data.formsOnFileAt ? toDate(data.formsOnFileAt) : null;
+  const noPermission = perms.length === 0 && !formsBack;
   const alarm = !ready.ready || noPermission;
 
   host.innerHTML = `
     <div class="panel" style="${alarm ? 'border-color:var(--orange); box-shadow:var(--glow-o);' : ''}">
       <h3 style="margin:0 0 .35rem;${alarm ? ' color:var(--orange);' : ''}">
-        ${noPermission ? 'No permission on file' : ready.ready ? 'Scope of work agreed' : 'Waiting on the scope of work'}</h3>
+        ${noPermission ? 'No permission on file' : ready.ready ? 'Forms on file' : 'Waiting on the signed forms'}</h3>
       <p class="dim small" style="margin:0 0 .4rem;">
         ${ready.rows.map((r) => `${r.done ? '✓' : '○'} ${esc(r.label)}`).join('<br>')}</p>
       ${noPermission ? `<p class="dim small" style="margin:0 0 .5rem; color:var(--orange);">
         Nothing here authorises you to speak for them. Do not phone a clinic or
         their plan on their behalf until you have it in writing. The clock runs
         from purchase either way.</p>` : ''}
+      <label class="agreement-check" style="align-items:flex-start; margin:.2rem 0 .4rem;">
+        <input type="checkbox" data-forms-back${formsBack ? ' checked' : ''}>
+        <span><strong>Forms submitted</strong><br><span class="dim small">
+          ${formsBack
+    ? `Received ${esc(formsBack.toLocaleDateString())}. Untick if that was a mistake.`
+    : 'Tick once the signed forms are back in your hands. It clears the warning and ticks their checklist row.'}</span></span>
+      </label>
+      <p class="error" data-forms-back-err hidden></p>
+      ${items.length ? `
       <p class="dim small" style="margin:.1rem 0;">
         Agreement: ${scope
-          ? `signed ${esc(new Date(scope.signedAt).toLocaleDateString())}`
-          : data.forms?.fullAccess
-            ? 'acknowledged at purchase'
-            : '<span style="color:var(--orange)">not signed</span>'}</p>
+    ? `signed ${esc(new Date(scope.signedAt).toLocaleDateString())}`
+    : data.forms?.fullAccess ? 'acknowledged at purchase' : 'not signed in the app'}</p>
       <p class="dim small" style="margin:.1rem 0;">
         Records: ${recs.length
-          ? recs.map((r) => esc(r.clinicName || 'clinic')).join(', ')
-          : '<span style="color:var(--orange)">none signed</span>'}</p>
+    ? recs.map((r) => esc(r.clinicName || 'clinic')).join(', ') : 'none signed in the app'}</p>
       <p class="dim small" style="margin:.1rem 0;">
         Insurer: ${rep
-          ? `${esc(rep.planName || 'plan')}${rep.memberId ? ` · ${esc(rep.memberId)}` : ''}`
-          : '<span style="color:var(--orange)">not signed</span>'}</p>
+    ? `${esc(rep.planName || 'plan')}${rep.memberId ? ` · ${esc(rep.memberId)}` : ''}`
+    : 'not signed in the app'}</p>` : ''}
       ${days !== null ? `<p class="dim small" style="margin:.35rem 0 0;">
         ${days} day${days === 1 ? '' : 's'} left in the window${extra ? ` (${FULL_WINDOW_DAYS} + ${extra} bought)` : ''}${paused ? ', paused' : ''}.</p>` : ''}
       ${revoked.length ? `<p class="dim small" style="margin:.35rem 0 0; color:var(--orange);">
@@ -3888,6 +3899,26 @@ async function paintAuthorityStatus(pane) {
     : i.kind === 'scope' ? 'Scope of work' : 'Insurer form'}</button>`).join('')}
       </p>` : ''}
     </div>`;
+
+  // THE TICK, DEEP-READ STYLE: the control reflects the case, the write goes
+  // through the Worker, and a failed write puts the box back the way it was
+  // rather than lying about what is stored.
+  const tick = host.querySelector('[data-forms-back]');
+  tick?.addEventListener('change', async () => {
+    const errEl = host.querySelector('[data-forms-back-err]');
+    if (errEl) errEl.hidden = true;
+    const want = tick.checked;
+    tick.disabled = true;
+    try {
+      await api({ action: 'forms-on-file', on: want });
+      await load();
+      paintAuthorityStatus(pane);
+    } catch (err) {
+      tick.checked = !want;
+      tick.disabled = false;
+      if (errEl) { errEl.textContent = `Not saved: ${err.message}`; errEl.hidden = false; }
+    }
+  });
 
   for (const b of host.querySelectorAll('[data-auth-print]')) {
     b.addEventListener('click', async () => {

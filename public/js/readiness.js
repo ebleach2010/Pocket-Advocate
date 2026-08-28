@@ -22,19 +22,21 @@
 // warning that used to ride on this checklist did not go anywhere.
 
 export function handsOffReadiness(c) {
-  // Two records satisfy the one row, because there are two ways onto the
-  // tier. Bought in the app: the scope note was read and acknowledged at
-  // checkout (forms.fullAccess). Opened by hand: nothing was acknowledged at
-  // purchase, and the scope of work agreement signed on the case page
-  // (scopeSignedAt, stamped by the Worker at signing) is the record that
-  // closes the gap (Eric, 2026-08-29: "All I need is scope of work
-  // agreement"). Before that stamp existed a hand-opened case sat at "Not
-  // ready" forever, with nothing the client could do about it.
+  // ONE row, ONE record: formsOnFileAt, the advocate's own "Forms submitted"
+  // tick (Eric, 2026-08-29: "Just create a 'forms submitted' tick box for me
+  // to tick off once I've received them. Keep that my side, not his."). Every
+  // document travels by hand now, and nothing on the client's page asks for a
+  // signature, so the app's only honest knowledge of the paperwork is whether
+  // he says the signed copies are back in his hands. The earlier records (the
+  // checkout acknowledgment, the briefly-shipped in-app scope signature) are
+  // deliberately not counted any more: acknowledging a scope note is not
+  // signed forms in hand, and a row that read "received" off the back of a
+  // checkout checkbox would be a false sentence on both pages.
   const rows = [
     {
-      id: 'scope',
-      label: 'The scope of work, read and agreed',
-      done: !!(c?.forms?.fullAccess || c?.scopeSignedAt),
+      id: 'forms',
+      label: 'The signed forms, received',
+      done: !!c?.formsOnFileAt,
     },
   ];
   return { rows, ready: rows.every((r) => r.done) };
