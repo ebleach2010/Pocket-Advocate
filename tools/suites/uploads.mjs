@@ -139,15 +139,40 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
   // in case.js and stayed green with the file list's own stripper deleted,
   // because a second copy lives in the delete confirmation. A check that
   // passes when the thing it guards is gone is worse than no check.
+  //
+  // UPDATED 2026-08-28, not deleted, and deliberately no looser. Eric can now
+  // rename a file after it has landed (his words: "I can long press and
+  // rename them"), and a Storage object's name cannot be changed, so the name
+  // a person reads is resolved by `readName`: the name he typed if he typed
+  // one, and otherwise the object name with its upload prefix stripped. The
+  // stripping moved one function outward, so the pin moves with it. BOTH
+  // halves are still nailed down on both sides - the render line by the call
+  // it must make, and the resolver by the strip it must contain - and no part
+  // of it can be deleted without this going red.
   const clientName = slab(CLIENT, 'const shownName =', "');");
+  const clientRead = slab(CLIENT, 'const readName =', ';');
+  const adminRead = slab(ADMINCASE, 'const readName =', ';');
   const adminName = slab(ADMINCASE, '<span class="fname"><span class="kind-pill ${pillClass(r)}',
     '</a></span>');
+  // NEGATIVE CONTROLS, all three run 2026-08-28 and all three observed:
+  //   deleting the strip from the client's shownName ->
+  //     FAIL  U3 ... -- Summary.pdf Summary.pdf | client strip yes, client render yes
+  //   rendering ${readName(r)} bare in the client's row ->
+  //     FAIL  U3 ... -- client render no
+  //   dropping the strip from the advocate's readName ->
+  //     FAIL  U3 ... -- advocate strip no
+  const u3 = {
+    'client strip': /replace\(\/\^\\d\{10,\}-\//.test(clientName),
+    'client resolve': /shownName\(r\.name\)/.test(clientRead),
+    'client render': /esc\(readName\(r\)\)/.test(CLIENT),
+    'advocate strip': /replace\(\/\^\\d\{10,\}-\//.test(adminRead),
+    'advocate render': /esc\(readName\(r\)\)/.test(adminName),
+  };
   ck('U3 and the prefix is stripped where a person reads the name',
     paths.every((p) => shown(p.split('/').pop()) === 'Summary.pdf')
-    && /replace\(\/\^\\d\{10,\}-\//.test(clientName)
-    && /esc\(shownName\(r\.name\)\)/.test(CLIENT)
-    && /replace\(\/\^\\d\{10,\}-\//.test(adminName),
-    paths.map((p) => shown(p.split('/').pop())).join(' '));
+    && Object.values(u3).every(Boolean),
+    `${paths.map((p) => shown(p.split('/').pop())).join(' ')} | `
+      + Object.entries(u3).map(([k, v]) => `${k} ${v ? 'yes' : 'no'}`).join(', '));
   // NEGATIVE CONTROL: dropping the customMetadata argument made this read
   //   FAIL  U4 ... -- [null,null]
   ck('U4 the category rides on the file as metadata, and is what he picked',

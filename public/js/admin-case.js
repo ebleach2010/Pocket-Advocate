@@ -11,7 +11,7 @@ import {
 } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { mountChat, openLightbox } from './chat.js';
-import { STATUS_REACTIONS } from './msg-actions.js';
+import { STATUS_REACTIONS, openMessageMenu } from './msg-actions.js';
 import { mountAdvisor, sendToClient } from './advisor.js';
 import { mountNotes } from './notes.js';
 import { mountSaved } from './saved.js';
@@ -2367,10 +2367,10 @@ async function compileCaseFile() {
       <h2>${esc(g)}<span class="n">${list.length} file${list.length === 1 ? '' : 's'}</span></h2>
       ${list.map((r) => `
         <article class="item">
-          <p class="meta"><strong>${esc(r.name)}</strong><br>
+          <p class="meta"><strong>${esc(readName(r))}</strong><br>
             ${esc(when.format(r.ts))} · ${esc(size(r.size))} · ${esc(r.kindLabel || r.kind || '')}</p>
           ${isImg(r)
-            ? `<img src="${esc(r.url)}" alt="${esc(r.name)}">`
+            ? `<img src="${esc(r.url)}" alt="${esc(readName(r))}">`
             : `<p class="not-shown">Not rendered here: a ${esc((r.contentType || 'file').split('/').pop())}
                  cannot be printed inside another document.
                  <a href="${esc(r.url)}">Open the original</a></p>`}
@@ -2663,6 +2663,34 @@ const UPLOAD_CATEGORIES = [
 ];
 const categoryOf = (id) => UPLOAD_CATEGORIES.find((x) => x.id === id) || null;
 
+/**
+ * A CATEGORY IS A LABEL ON A FILE, AND A FILE CAN BE FILED AFTER IT LANDS.
+ *
+ * Every reader of `cat` used to gate on `kind === 'report'`, and that was
+ * right while the label could only be stamped on at upload time: report/ was
+ * the only folder a labelled file could come from. Eric can now long-press a
+ * chat upload and file it (POST /api/file/meta), so the label has to be read
+ * wherever he is allowed to write one, which is the same four case folders
+ * that route accepts.
+ *
+ * The client's own profile shelf is deliberately absent from that set, here
+ * and on the route: it follows the person rather than the case, and it is
+ * theirs to keep rather than his to file.
+ */
+const FILEABLE_KINDS = new Set(['report', 'upload', 'chat', 'recording']);
+const filedCat = (r) => (FILEABLE_KINDS.has(r.kind) && categoryOf(r.cat) ? r.cat : '');
+
+/**
+ * The name a person reads on a file row.
+ *
+ * A Storage object's name IS its identity and cannot be changed - see
+ * patchObjectMeta in worker/storage.js for what a real rename would cost. So
+ * a file Eric has renamed carries the name he typed beside its bytes, and it
+ * is preferred here over the object name with its upload timestamp stripped.
+ * A file nobody has renamed has none, and reads exactly as it always did.
+ */
+const readName = (r) => r.display || String(r.name || '').replace(/^\d{10,}-/, '');
+
 // Uploads are grouped by day and then by what kind of thing they are. The
 // order inside a day is deliberate: the report is the deliverable, documents
 // are what the advisor reads, images are usually screenshots of documents, and
@@ -2675,8 +2703,12 @@ const FILE_GROUPS = ['Reports', 'Call summaries', 'Visit follow-ups',
 
 function fileGroup(r) {
   // The category first: a call summary IS a report-folder file, so a check on
-  // the folder alone would file every one of them under Reports.
-  if (r.kind === 'report') return categoryOf(r.cat)?.group || 'Reports';
+  // the folder alone would file every one of them under Reports. And a chat
+  // upload he has filed as a filled form belongs under Filled forms rather
+  // than under whatever its file extension suggests.
+  const filed = filedCat(r);
+  if (filed) return categoryOf(filed).group;
+  if (r.kind === 'report') return 'Reports';
   if (r.kind === 'recording') return 'Recordings';
   const ct = (r.contentType || '').toLowerCase();
   const name = (r.name || '').toLowerCase();
@@ -2787,6 +2819,10 @@ async function listCaseFiles({ onProgress } = {}) {
             // existed has none and reads as a plain report, which is what it
             // is.
             cat: meta.customMetadata?.paCategory || '',
+            // And the name he gave it AFTER it landed, if he gave it one. It
+            // rides on the same metadata this line already fetched, so a
+            // rename costs no extra request in either listing.
+            display: meta.customMetadata?.paName || '',
           };
         } catch {
           // One unreadable object must not lose the other nineteen, which is
@@ -2896,9 +2932,9 @@ async function refreshFiles() {
     const ct = (r.contentType || '').toLowerCase();
     return ct.startsWith('image/') && !/heic|heif/.test(ct);
   };
-  const label = (r) => (r.kind === 'report' && categoryOf(r.cat)?.pill)
+  const label = (r) => (filedCat(r) && categoryOf(filedCat(r)).pill)
     || (r.kind === 'saved' ? 'SAVED' : r.kind === 'chat' ? 'CHAT' : r.kind.toUpperCase());
-  const pillClass = (r) => (r.kind === 'report' && r.cat ? r.cat : r.kind);
+  const pillClass = (r) => filedCat(r) || r.kind;
 
   // Newest day first; inside a day, newest file first within its group.
   rows.sort((a, b) => b.ts - a.ts);
@@ -2922,12 +2958,12 @@ async function refreshFiles() {
     <li data-frow="${i}">
       ${thumbable(r) ? `<img class="thumb" src="${r.url}" alt="" loading="lazy" data-thumb="${i}">` : ''}
       <span class="up-text">
-        <span class="fname"><span class="kind-pill ${pillClass(r)}">${label(r)}</span><a href="${r.url}" target="_blank" rel="noopener">${esc(String(r.name).replace(/^\d{10,}-/, ''))}</a></span>
+        <span class="fname"><span class="kind-pill ${pillClass(r)}">${label(r)}</span><a href="${r.url}" target="_blank" rel="noopener">${esc(readName(r))}</a></span>
         <span class="fmeta">${time.format(r.ts)} · ${prettySize(r.size)}</span>
       </span>
       ${reviewable(r)
         ? `<button class="btn quiet file-review" data-review="${i}"
-             aria-label="Hand ${esc(String(r.name).replace(/^\d{10,}-/, ''))} to the advisor to read"
+             aria-label="Hand ${esc(readName(r))} to the advisor to read"
              title="Hand this to the advisor to read, then press Update on the Read page">👨‍⚕️</button>`
         : ''}
     </li>`;
@@ -2942,37 +2978,15 @@ async function refreshFiles() {
     </section>`).join('');
   listEl.querySelectorAll('[data-thumb]').forEach((img) => {
     const r = rows[Number(img.dataset.thumb)];
-    img.addEventListener('click', () => openLightbox({ name: r.name, url: r.url }));
+    img.addEventListener('click', () => openLightbox({ name: readName(r), url: r.url }));
   });
-  // Long-press (or right-click) any row to delete the file. Full authority
-  // on this side (Eric, 2026-08-22: "I get authority on both"); the confirm
-  // is the only brake.
+  // Long-press (or right-click) any row for that file's own menu: Rename,
+  // File as..., Delete. Full authority on this side (Eric, 2026-08-22: "I get
+  // authority on both").
   listEl.querySelectorAll('[data-frow]').forEach((li) => {
     const r = rows[Number(li.dataset.frow)];
     if (!r?.path) return;
-    const name = String(r.name).replace(/^\d{10,}-/, '');
-    const askThen = () => {
-      if (!confirm(`Delete "${name}"? This removes it for the client too.`)) return;
-      (async () => {
-        try {
-          const token = await user.getIdToken();
-          const res = await fetch('/api/file/delete', {
-            method: 'POST',
-            headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-            body: JSON.stringify({ kind: 'case', id: caseId, path: r.path }),
-          });
-          const out = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
-          refreshFiles();
-        } catch (err) { alert(`Couldn't delete: ${err.message}`); }
-      })();
-    };
-    let timer = null;
-    li.addEventListener('touchstart', () => { timer = setTimeout(askThen, 550); }, { passive: true });
-    for (const ev of ['touchend', 'touchmove', 'touchcancel']) {
-      li.addEventListener(ev, () => clearTimeout(timer), { passive: true });
-    }
-    li.addEventListener('contextmenu', (e) => { e.preventDefault(); askThen(); });
+    wireHeldPress(li, () => { openFileMenu(r); });
   });
 
   // Toggle to stage the file for the advisor's next analysis; highlighted
@@ -2989,6 +3003,257 @@ async function refreshFiles() {
     });
   });
 }
+
+/**
+ * A HELD PRESS, the way every other held press in this app works.
+ *
+ * Pointer events with a movement tolerance, the same 550ms and the same 12px
+ * as wireFolderLongPress in drawer.js. What this replaces listened for
+ * `touchstart` alone with no tolerance at all, and both halves of that were
+ * wrong in a way you only find by using it: a held MOUSE press did nothing,
+ * so on the machine he does his long sessions on the feature simply was not
+ * there, and a finger dragged down a long list fired the menu on the way past
+ * because nothing was watching for movement.
+ */
+const HELD_PRESS_MS = 550;
+const HELD_PRESS_MOVE = 12;
+
+function wireHeldPress(el, fire) {
+  let timer = null;
+  let from = null;
+  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } from = null; };
+  // The controls that already answer a tap keep it. A press that lingered on
+  // the advisor button or a thumbnail would pop a menu offering something else
+  // entirely, on top of the thing he was actually reaching for.
+  const onOwnControl = (e) => !!e.target.closest?.('button, .thumb');
+  const fired = () => {
+    // The click that TRAILS a held press must not also follow the file link,
+    // which would open the file in a new tab behind the sheet. Eaten once, and
+    // then disarmed: a press fired from a right-click has no trailing click,
+    // and a listener left armed would spend itself on his next ordinary tap
+    // instead. That is the stale-mark bug drawer.js documents, in a new shape.
+    const eat = (e) => { e.preventDefault(); e.stopPropagation(); };
+    el.addEventListener('click', eat, { capture: true, once: true });
+    setTimeout(() => el.removeEventListener('click', eat, { capture: true }), 400);
+    fire();
+  };
+  el.addEventListener('pointerdown', (e) => {
+    if (onOwnControl(e)) return;
+    from = { x: e.clientX, y: e.clientY };
+    timer = setTimeout(() => { timer = null; fired(); }, HELD_PRESS_MS);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!timer || !from) return;
+    if (Math.hypot(e.clientX - from.x, e.clientY - from.y) > HELD_PRESS_MOVE) cancel();
+  });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) {
+    el.addEventListener(ev, cancel);
+  }
+  el.addEventListener('contextmenu', (e) => {
+    if (onOwnControl(e)) return;
+    e.preventDefault();
+    cancel();
+    fired();
+  });
+}
+
+/** The Uploads page's own status line, reused by the file menu. */
+function saidFiles(msg, bad) {
+  const el = document.getElementById('up-said');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.toggle('warn', !!bad);
+  el.classList.toggle('ok', !bad);
+  el.hidden = false;
+}
+
+/**
+ * THE FILE MENU. Eric, 2026-08-27: "the advisor/app should take anything
+ * uploaded in the chat and add it to forms. I can long press and rename them."
+ *
+ * Asked whether every chat upload should file itself as a form, he chose:
+ * "Filable, I choose." So nothing files itself, ever. A file a client shares
+ * keeps saying FROM CHAT until he presses it and says what it is, which is why
+ * this menu is the entire feature and there is no automatic path beside it.
+ *
+ * The client's own saved shelf gets Delete and nothing else. That shelf
+ * follows the person rather than the case; the filing route refuses to write
+ * metadata into it at all, and offering him two rows that would come back
+ * "Bad path" is worse than not offering them.
+ */
+async function openFileMenu(r) {
+  const name = readName(r);
+  const mine = FILEABLE_KINDS.has(r.kind);
+  const pick = await openMessageMenu({
+    heading: name,
+    label: 'File actions',
+    extraRows: [
+      ...(mine ? [
+        { act: 'rename', emoji: '✏️', label: 'Rename' },
+        { act: 'file', emoji: '🗂', label: 'File as...' },
+      ] : []),
+      { act: 'delete', emoji: '🗑', label: 'Delete' },
+    ],
+  });
+  if (!pick) return;
+  if (pick.action === 'rename') await renameCaseFile(r);
+  else if (pick.action === 'file') await fileCaseFileAs(r);
+  else if (pick.action === 'delete') await deleteCaseFile(r);
+}
+
+/**
+ * Write a new name or a new category onto a file that already exists.
+ *
+ * THROUGH THE WORKER, never from here. Firebase's updateMetadata would need
+ * storage.rules widened to let a browser write metadata, and storage.rules is
+ * the one file that decides what a client can reach: a client who could write
+ * metadata could rename the report or file their own chat upload as a filled
+ * form. The route is behind requireAdmin and answers 404 to everyone else, so
+ * it is not merely refused to a client, it is not there.
+ */
+async function saveFileMeta(r, patch) {
+  const token = await user.getIdToken();
+  const res = await fetch('/api/file/meta', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ kind: 'case', id: caseId, path: r.path, ...patch }),
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+  return out;
+}
+
+async function renameCaseFile(r) {
+  const typed = await openRenameSheet(readName(r));
+  if (typed === undefined) return;
+  try {
+    const out = await saveFileMeta(r, { name: typed });
+    saidFiles(out.name
+      ? `Renamed. It reads as "${out.name}" here and on your client's page.`
+      : 'Back to the name it was uploaded with.');
+    refreshFiles();
+  } catch (err) {
+    saidFiles(`Not renamed: ${err.message}`, true);
+  }
+}
+
+async function fileCaseFileAs(r) {
+  const name = readName(r);
+  // HIS OWN UPLOAD LIST, the same words in the same order. A document he
+  // sends and a document he files are the same six kinds of thing, and a
+  // second vocabulary here is how the two lists start disagreeing.
+  const rows = UPLOAD_CATEGORIES.map((c) => ({
+    act: `cat:${c.id}`,
+    emoji: c.id === r.cat ? '✅' : '📄',
+    label: c.label,
+  }));
+  if (r.cat) rows.push({ act: 'cat:', emoji: '✕', label: 'Take the label off' });
+  const pick = await openMessageMenu({
+    heading: `File "${name}" as`,
+    label: 'File this as',
+    extraRows: rows,
+  });
+  if (!pick || !String(pick.action).startsWith('cat:')) return;
+  const id = String(pick.action).slice(4);
+  if (id === (r.cat || '')) return;
+  try {
+    const out = await saveFileMeta(r, { category: id });
+    const c = categoryOf(out.category);
+    saidFiles(c
+      ? `Filed as a ${c.label.toLowerCase()}. It sits under ${c.group} here, and your client's list says ${c.pill}.`
+      : 'Label removed. It reads as an ordinary file again on both lists.');
+    refreshFiles();
+  } catch (err) {
+    saidFiles(`Not filed: ${err.message}`, true);
+  }
+}
+
+async function deleteCaseFile(r) {
+  if (!confirm(`Delete "${readName(r)}"? This removes it for the client too.`)) return;
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/file/delete', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'case', id: caseId, path: r.path }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+    refreshFiles();
+  } catch (err) { alert(`Couldn't delete: ${err.message}`); }
+}
+
+/**
+ * "What should this be called?" Resolves to the new name, to '' for "put the
+ * uploaded name back", or to undefined if he backs out.
+ *
+ * The current name goes in through .value, never through markup, which is the
+ * same rule the client's own upload sheet follows: a file name is somebody
+ * else's words and this dialog is the one place they come back out of storage
+ * and onto a screen.
+ */
+function openRenameSheet(current) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'settings-overlay';
+    overlay.innerHTML = `
+      <div class="settings-card rename-card" role="dialog" aria-modal="true" aria-label="Rename this file">
+        <div class="row"><h3 style="margin:0;">Rename this file</h3>
+          <button class="btn quiet" data-cancel>Cancel</button></div>
+        <p class="dim small" style="margin:.5rem 0 .7rem;">What it is called here and
+          on your client's page. The file itself does not move, so every link to
+          it keeps working.</p>
+        <input type="text" data-name maxlength="80" autocomplete="off"
+          autocapitalize="sentences" placeholder="Signed records release"
+          style="width:100%;">
+        <div class="actions" style="margin-top:.8rem; display:flex; gap:.5rem; flex-wrap:wrap;">
+          <button class="btn glow" data-save>Use this name</button>
+          <button class="btn quiet" data-orig>Put the uploaded name back</button>
+        </div>
+      </div>`;
+    const input = overlay.querySelector('[data-name]');
+    // Through .value, never through the template above: whatever it is called
+    // now came off a file somebody else named.
+    input.value = current || '';
+
+    let settled = false;
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    const save = () => {
+      const typed = input.value.trim().replace(/\s+/g, ' ').slice(0, 80);
+      done(typed);
+    };
+    function onKey(e) {
+      if (e.key === 'Escape') { done(undefined); return; }
+      if (e.key === 'Enter' && document.activeElement === input) { e.preventDefault(); save(); }
+    }
+    overlay.querySelector('[data-save]').addEventListener('click', save);
+    overlay.querySelector('[data-orig]').addEventListener('click', () => done(''));
+    overlay.querySelector('[data-cancel]').addEventListener('click', () => done(undefined));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(undefined); });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+    // Same rule as the client's naming sheet: do not raise the keyboard on a
+    // short screen, where it covers the two buttons and iOS gives the overlay
+    // nothing to scroll.
+    if (window.innerHeight >= 700) setTimeout(() => input.focus(), 30);
+  });
+}
+
+// A FILE SHARED IN THE CHAT BELONGS ON THIS PAGE THE MOMENT IT LANDS.
+//
+// The client's own Documents page has listened for this since chat files
+// started appearing in it; this side never did, so a file either of us had
+// just attached was on his Uploads page only after a reload - and the long
+// press that files it is on that page. Same event, same reason. The listener
+// is permanent and the page repaint is cheap enough to run unconditionally:
+// refreshFiles returns early when the list is not mounted.
+document.addEventListener('pa-saved-file', () => { refreshFiles(); });
 
 // Repaint the file badges when the advisor panel consumes the selection.
 document.addEventListener('pa-panel-select', () => {
@@ -5220,7 +5485,9 @@ function paintCallDoc(host) {
           .filter(advisorReadable)
           .sort((a, b) => b.ts - a.ts)
           .map((r) => ({
-            name: r.name,
+            // What he calls it, so a file he renamed is not offered here
+            // under the name he renamed it away from.
+            name: readName(r),
             path: r.path,
             url: r.url,
             contentType: r.contentType,

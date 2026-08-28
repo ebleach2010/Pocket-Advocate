@@ -13,6 +13,15 @@ import { DEMO_CASE_ID } from './seed.js';
 // reaction the UI has no name for.
 import { EMOJI_REACTIONS, STATUS_REACTIONS } from '../msg-actions.js';
 
+/**
+ * The document types a file can be FILED as, mirroring FILING_CATEGORIES in
+ * worker/index.js, which in turn mirrors UPLOAD_CATEGORIES in admin-case.js.
+ * All three are pinned equal by tools/suites/filing.mjs: a demo that accepted
+ * a label the Worker refuses would show Eric a filing that cannot happen.
+ */
+const FILING_CATEGORIES = ['report', 'callsummary', 'visitfollowup',
+  'apptsummary', 'formsent', 'formfilled'];
+
 /** A little delay, so states that only exist while something is in flight
  *  (the button disabling, the progress bar, "Reading…") are visible. */
 const beat = (ms = 320) => new Promise((r) => setTimeout(r, ms));
@@ -1325,6 +1334,43 @@ export function demoApi(role, store) {
     if (path === '/api/file/delete') {
       if (typeof body.path === 'string') { store.files.delete(body.path); store.fire?.(body.path); }
       return ok({ ok: true });
+    }
+    // Renaming a file, and filing it. Eric drives the demo himself, and a shim
+    // that could not carry a new name or a new label would show him a long
+    // press that appears to do nothing.
+    //
+    // MIRRORED, NOT APPROXIMATED. Where this file has ever been KINDER than
+    // the Worker it has hidden a real refusal, so the admin-only 404, the
+    // folder check that keeps the client's own shelf out of it, and the
+    // refusal of a document type the server does not know are all repeated
+    // here rather than assumed.
+    if (path === '/api/file/meta') {
+      if (role !== 'admin') return fail(404, 'Not found');
+      const target = String(body.path || '');
+      if (!/^(cases|subscriptions)\/[\w-]+\/(report|recording|uploads|chat-files)\//.test(target))
+        return fail(400, 'Bad path');
+      const f = store.files.get(target);
+      if (!f) return fail(400, 'Bad path');
+      const meta = { ...(f.meta || {}) };
+      if ('name' in body) {
+        const name = String(body.name ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ')
+          .replace(/\s+/g, ' ').trim().slice(0, 80);
+        if (name) meta.paName = name; else delete meta.paName;
+      }
+      if ('category' in body) {
+        const category = String(body.category ?? '');
+        if (category && !FILING_CATEGORIES.includes(category))
+          return fail(400, 'That is not a document type I know.');
+        if (category) meta.paCategory = category; else delete meta.paCategory;
+      }
+      // The bytes and the path are untouched, which is the whole shape of the
+      // real thing: only the metadata map is written.
+      store.files.set(target, { ...f, meta });
+      store.fire?.(target);
+      return ok({
+        ok: true, path: target,
+        name: meta.paName || '', category: meta.paCategory || '',
+      });
     }
 
     // ---- everything else --------------------------------------------------
