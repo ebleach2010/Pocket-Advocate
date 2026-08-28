@@ -76,6 +76,29 @@ export function adminSettingsHtml() {
       <button class="switch ${localStorage.getItem('pa-open-admin') !== '0' ? 'on' : ''}" data-open-admin
         aria-pressed="${localStorage.getItem('pa-open-admin') !== '0'}" aria-label="Open to my dashboard"></button>
     </div>
+    <h4 style="margin:1.2rem 0 .1rem;">Hands-Off cases at once</h4>
+    <!-- THE TAP THE WORKER'S OWN COMMENT PROMISED. FULL_MAX_OPEN_DEFAULT said
+         "one tap on his dashboard changes it" and there was no tap: the field
+         it read had never been written by anything. Eric, 2026-08-27: "remove
+         limitations on how many hand off cases I can have. Or at least put
+         that in an admin settings cog." He picked the cog.
+
+         Presets, not a text field. A number he types on a phone is a keyboard,
+         a fat finger and a validation message; these are five taps that cannot
+         be wrong. No limit is 0, stored deliberately, which is why the Worker
+         reads it behind setByHand rather than treating 0 as unset. -->
+    <p class="dim small" style="margin:0 0 .5rem;">The most you will carry at
+      one time. Past this, approving a request tells you that you are full and
+      asks before it goes ahead, so it slows you down rather than stopping
+      you.</p>
+    <p class="dim small" style="margin:0 0 .5rem;">No copy anywhere promises a
+      number, so you can change this whenever you like.</p>
+    <div class="row" style="gap:.4rem; flex-wrap:wrap; justify-content:flex-start;" data-cap-picks>
+      ${[1, 2, 3, 5].map((n) => `<button class="btn tiny" data-cap="${n}" disabled>${n}</button>`).join('')}
+      <button class="btn tiny" data-cap="0" disabled>No limit</button>
+    </div>
+    <p class="dim small" data-cap-said style="margin:.45rem 0 0;">Reading it back…</p>
+
     <div class="toggle-row" style="margin-top:1rem;">
       <span><strong>Deep read</strong><br><span class="dim small">Your second opinion thinks harder on every Update. Better on a knotty case, several minutes slower. Off is the normal setting.</span></span>
       <button class="switch" data-effort aria-pressed="false" aria-label="Deep read" disabled></button>
@@ -89,6 +112,7 @@ export function adminSettingsHtml() {
  */
 export function wireAdminSettings(overlay, user) {
   wirePaid(overlay, user);
+  wireCapacity(overlay, user);
   const effortBtn = overlay.querySelector('[data-effort]');
   if (effortBtn) {
     const paint = (on) => {
@@ -222,4 +246,78 @@ async function wirePaid(overlay, user) {
       tell(`Not recorded: ${err.message}. Nothing on the case changed.`, true);
     }
   });
+}
+
+/**
+ * How many Hands-Off cases at once.
+ *
+ * Same discipline as the two rows above and as wireClosure in
+ * admin-availability.js: the buttons render DISABLED, the Worker is asked what
+ * is actually stored, that is what gets painted, and only then can he touch
+ * them. On a failed write the buttons go back to the last state the server
+ * confirmed instead of showing a choice that did not take.
+ */
+async function wireCapacity(overlay, user) {
+  const row = overlay.querySelector('[data-cap-picks]');
+  const said = overlay.querySelector('[data-cap-said]');
+  if (!row) return;
+  const btns = [...row.querySelectorAll('[data-cap]')];
+
+  const call = async (body) => {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/admin/full-capacity', {
+      method: body ? 'POST' : 'GET',
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(body ? { 'content-type': 'application/json' } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+    return out;
+  };
+
+  let confirmed = null;              // the last state the SERVER agreed to
+  const paint = (state) => {
+    confirmed = state;
+    for (const b of btns) {
+      const on = Number(b.dataset.cap) === state.max;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+      b.disabled = false;
+    }
+    // His current load either way. Taking the cap off must not take away the
+    // one line that tells him how much he is carrying.
+    said.textContent = state.max === 0
+      ? `No limit. You are carrying ${state.open} right now.`
+      : `${state.open} of ${state.max} open right now.`;
+    said.style.color = '';
+  };
+
+  try {
+    paint(await call());
+  } catch {
+    // Left disabled and honest. A row of buttons showing a state nobody has
+    // read is the exact failure the Deep read switch above was written to
+    // avoid.
+    said.textContent = 'Could not read your limit, so this is not safe to change yet.';
+    said.style.color = 'var(--danger)';
+    return;
+  }
+
+  for (const b of btns) {
+    b.addEventListener('click', async () => {
+      const want = Number(b.dataset.cap);
+      for (const x of btns) x.disabled = true;
+      said.textContent = 'Saving…';
+      try {
+        paint(await call({ maxOpen: want }));
+      } catch (err) {
+        paint(confirmed);            // put the row back where the server left it
+        said.textContent = `Not changed: ${err.message}`;
+        said.style.color = 'var(--danger)';
+      }
+    });
+  }
 }

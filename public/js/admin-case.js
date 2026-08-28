@@ -2102,7 +2102,12 @@ function paintOverview(pane) {
         if (res.status === 409 && out.error === 'full-booked') {
           // The cap is real now - this route is the ONLY way a tier case can
           // be created - so it can refuse him, and he can override knowingly.
-          if (!confirm(`You already carry ${out.open} of ${out.max}. Take this one anyway?`)) {
+          // "3 of undefined" was one setting away, once the cap could be
+          // turned off. It cannot fire with no cap set, and a prompt about his
+          // load is not the place to rely on that.
+          const carrying = out.max
+            ? `${out.open} of ${out.max}` : `${out.open}, with no limit set`;
+          if (!confirm(`You already carry ${carrying}. Take this one anyway?`)) {
             b.disabled = false;
             return;
           }

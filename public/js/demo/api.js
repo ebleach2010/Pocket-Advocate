@@ -188,6 +188,33 @@ export function demoApi(role, store) {
         message: live ? `I am not taking new cases until ${when}. Existing clients are unaffected.` : null,
       });
     }
+    // How many Hands-Off cases at once. Backed by the same config document the
+    // Worker reads, so a limit set here really does change what the demo's
+    // approval prompt says, and 0 really does mean no limit on the way back.
+    if (path === '/api/admin/full-capacity') {
+      const key = 'config/fullAccess';
+      if (init.method === 'POST') {
+        const want = typeof body.maxOpen === 'number' ? body.maxOpen : NaN;
+        if (!Number.isInteger(want) || want < 0 || want > 99)
+          return fail(400, 'Pick a whole number from 1 to 99, or no limit.');
+        store.docs.set(key, { maxOpen: want, setByHand: true });
+        store.persist?.();
+      }
+      const cfg = store.docs.get(key);
+      const chosen = cfg?.setByHand === true ? Number(cfg.maxOpen) : NaN;
+      const max = Number.isInteger(chosen) && chosen >= 0 && chosen <= 99 ? chosen : 2;
+      const open = [...store.docs.entries()]
+        .filter(([k, v]) => /^cases\/[^/]+$/.test(k) && v?.fullAccess && v.status !== 'closed')
+        .length;
+      const room = max === 0 || open < max;
+      return ok({
+        open,
+        max,
+        room,
+        counted: true,
+        message: max === 0 ? `${open} open, no limit set.` : `${open} of ${max} open.`,
+      });
+    }
     // Pausing a case and closing one, mirrored so both are drivable in the
     // demo rather than dead buttons.
     // THE SHIM USED TO FALL THROUGH TO ok({ ok: true }) HERE, writing nothing.

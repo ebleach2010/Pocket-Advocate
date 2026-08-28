@@ -869,6 +869,8 @@ export default {
         return await handleWorkPresence(request, env);
       if (url.pathname === '/api/admin/booking-closure')
         return await handleBookingClosure(request, env);
+      if (url.pathname === '/api/admin/full-capacity')
+        return await handleFullCapacity(request, env);
       if (url.pathname === '/api/admin/hold' && request.method === 'POST')
         return await handleHold(request, env);
       if (url.pathname === '/api/admin/close-case' && request.method === 'POST')
@@ -1793,9 +1795,28 @@ function fullAccessLineItems(cents) {
  */
 // Two, not three. Three was sized for a 90-day window where the work spread
 // out; sixty days of UNCAPPED coordination is far denser per week, and the
-// cap is the lever that actually governs his load. One tap on his dashboard
-// changes it.
+// cap is the lever that actually governs his load.
+//
+// THE TAP THIS COMMENT PROMISED NOW EXISTS. It said "one tap on his dashboard
+// changes it" and there was no tap: settings/fullAccess.maxOpen was READ here
+// and written by nothing, ever. Eric, 2026-08-27: "remove limitations on how
+// many hand off cases I can have. Or at least put that in an admin settings
+// cog." He picked the cog, so this is only the value he starts from.
 const FULL_MAX_OPEN_DEFAULT = 2;
+// config/, NOT settings/. Every document under settings/ is world-readable by
+// rule (firestore.rules), and /api/rates deliberately publishes a bare boolean
+// because how many clients he has is not a buyer's business. Storing the
+// number in settings/ would hand it to anyone with a browser. config/advisor
+// is the precedent.
+const FULL_CAP_PATH = 'config/fullAccess';
+/**
+ * His load, in a phrase. THE COUNT IS IN BOTH BRANCHES on purpose: the push
+ * below is the only place he passively learns how many of these he is
+ * carrying, and taking the cap off must not take that away with it.
+ */
+const capacityLine = (cap) => (cap.max === 0
+  ? `${cap.open} open, no limit set.`
+  : `${cap.open} of ${cap.max} open.`);
 
 /**
  * When a Hands-Off case's coordination window closes: the PURCHASE moment
@@ -1994,14 +2015,88 @@ function fullAccessWindowEnd(c) {
   const days = base + (Number(c.fullAccessExtraDays) || 0);
   return new Date(start + days * 86_400_000 + heldMs(c));
 }
+/**
+ * COUNTED SERVER-SIDE, and never by an accident of paging.
+ *
+ * This asked for 50 tier cases with no status filter, no ordering and no
+ * cursor, then discarded the closed ones in JS. On the fifty-first tier case
+ * he ever sells, those fifty rows come back full of finished work, `open`
+ * under-reports, and the cap FAILS SILENTLY OPEN - which is the direction that
+ * costs him, because the cap is not a price, it is the thing protecting his
+ * attention.
+ *
+ * Firestore can refuse an equality-plus-inequality query without a composite
+ * index, and the old code answered a refusal with [], which reads as "all the
+ * room in the world". So the fallback is the previous query with a bigger page
+ * and the JS filter, never an empty list.
+ */
 async function fullAccessCapacity(env) {
+  const openRows = async () => {
+    try {
+      return await queryDocs(env, 'cases', [
+        ['fullAccess', 'EQUAL', true],
+        ['status', 'NOT_EQUAL', 'closed'],
+      ], 200);
+    } catch {
+      const all = await queryDocs(env, 'cases', [['fullAccess', 'EQUAL', true]], 200);
+      return all.filter((r) => r.data.status !== 'closed');
+    }
+  };
   const [rows, cfg] = await Promise.all([
-    queryDocs(env, 'cases', [['fullAccess', 'EQUAL', true]], 50).catch(() => []),
-    getDoc(env, 'settings/fullAccess').catch(() => null),
+    openRows().catch(() => null),
+    getDoc(env, FULL_CAP_PATH).catch(() => null),
   ]);
-  const max = Number(cfg?.data.maxOpen) > 0 ? Number(cfg.data.maxOpen) : FULL_MAX_OPEN_DEFAULT;
-  const open = rows.filter((r) => r.data.status !== 'closed').length;
-  return { open, max, room: open < max };
+  // setByHand, so a stored ZERO means the thing he chose. `Number(x) > 0 ? x :
+  // DEFAULT` turned "no limit" back into two on the next read, which would
+  // look like the control was broken.
+  // typeof, not Number(). Number(null) is 0 and 0 means NO LIMIT here, so a
+  // null sitting in the document - a hand edit, a half-written legacy field -
+  // would silently take his cap off; Number(true) is 1, which would set it to
+  // one. The route already refuses both on the way in and the read has to be
+  // exactly as strict, because a stored value nobody validated is the one that
+  // gets here. Caught by running the function against junk, not by reading it.
+  const raw = cfg?.data.maxOpen;
+  const chosen = cfg?.data.setByHand === true && typeof raw === 'number'
+    ? raw : Number.NaN;
+  const max = Number.isInteger(chosen) && chosen >= 0 && chosen <= 99
+    ? chosen : FULL_MAX_OPEN_DEFAULT;
+  const open = rows ? rows.length : 0;
+  // `counted` says whether `open` is a real count. If Firestore is unreachable
+  // this still reports room, the way it always has: refusing a client on a
+  // number we could not read would be worse than asking him, and he is asked
+  // at the approval prompt either way.
+  return { open, max, room: max === 0 || open < max, counted: rows !== null };
+}
+
+/**
+ * GET/POST /api/admin/full-capacity   admin only
+ *
+ * How many Hands-Off cases he carries at once, from his phone, with no deploy.
+ * `maxOpen: 0` is no limit at all, which is the thing he actually asked for;
+ * anything else is that many.
+ *
+ * Modelled on handleBookingClosure: 404 rather than 403 to a stranger, an
+ * explicit integer range, a plain-English refusal, a masked write, and a read
+ * of the real state on the way back out so the control paints what is stored
+ * rather than what was typed.
+ */
+async function handleFullCapacity(request, env) {
+  // 404, not 403, like every other admin route in this file.
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    // A NUMBER, not something Number() will politely turn into one. Number(null)
+    // is 0, and 0 means "no limit" here, so a missing field would quietly take
+    // his cap off.
+    const want = typeof body?.maxOpen === 'number' ? body.maxOpen : Number.NaN;
+    if (!Number.isInteger(want) || want < 0 || want > 99)
+      return json({ error: 'Pick a whole number from 1 to 99, or no limit.' }, 400);
+    await patchDoc(env, FULL_CAP_PATH, { maxOpen: want, setByHand: true },
+      { mask: ['maxOpen', 'setByHand'] });
+  }
+  const cap = await fullAccessCapacity(env);
+  return json({ ...cap, message: capacityLine(cap) });
 }
 
 function followUpLineItems(cents) {
@@ -4692,7 +4787,11 @@ async function handleUpgradeCheckout(request, env) {
   for (const a of await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => [])) {
     await notifyUser(env, a.id, {
       title: 'Pocket Advocate',
-      body: `${firstName(c.data.clientName) || 'A client'} is asking for Hands-Off. ${cap.open}/${cap.max} open.`,
+      // "3 of undefined" is what this printed the moment the cap could be
+      // turned off, so the phrase comes from one place that has a branch for
+      // it - and keeps the count either way, because this notification is the
+      // only place he passively learns his current load.
+      body: `${firstName(c.data.clientName) || 'A client'} is asking for Hands-Off. ${capacityLine(cap)}`,
       link: `/admin-case.html?id=${caseId}`,
     }).catch(() => {});
   }

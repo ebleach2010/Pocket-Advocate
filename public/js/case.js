@@ -1663,8 +1663,9 @@ function upgradeOffer(c) {
   if (req?.state === 'pending') return `
     <div class="followup-offer">
       <h3>Your request is with me</h3>
-      <p>I read every one of these myself, because I only carry two of these
-        cases at a time and I would rather say no than do it badly.
+      <p>I read every one of these myself, because I only carry a limited
+        number of these cases at a time and I would rather say no than do it
+        badly.
         <strong style="color:var(--ink)">Nothing has been charged</strong> and
         I have not taken a card.</p>
       <p class="fu-fine">You will hear from me either way. If I say yes, you

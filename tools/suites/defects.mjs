@@ -187,9 +187,19 @@ for (const gone of ['90 days', 'up to <strong>five</strong>', 'three three-way']
 ck('scope note: it promises a month at a time and two letters, both enforced',
    /<strong>30 days per month you take<\/strong>/.test(TT)
    && /<strong>Two insurance appeal letters<\/strong>/.test(TT));
+// UPDATED 2026-08-28, on Eric's word: "remove limitations on how many hand
+// off cases I can have. Or at least put that in an admin settings cog." He
+// chose the cog, so the number is his to change from his phone - and an
+// agreement that names a figure he can change is a promise that goes false
+// the first time he uses the control. The clause still has to say there IS a
+// limit and that the answer is his; it may no longer say what the limit is.
+// Not deleted: the second half is now the stronger check, because it asserts
+// that NO figure appears in the sentence at all.
 ck('scope note: it says asking is free and the answer is his',
    /Asking costs nothing and I do not take a card/.test(TT)
-   && /I carry two of these at once/.test(TT));
+   && /I only take on a limited number of these at once/.test(TT));
+ck('scope note: and it names no figure he could later contradict',
+   !/(carry|take on|take) (two|three|one|five|\d+) of these/.test(TT));
 ck('scope note: it says continuing never costs more',
    /one more month at the same price/.test(TT)
    && /It never costs more for continuing/.test(TT));
