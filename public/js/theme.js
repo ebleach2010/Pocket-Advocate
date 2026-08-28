@@ -51,4 +51,12 @@ export function applyScheme(id) {
   else document.documentElement.dataset.scheme = id;
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', THEME_COLOR[id] || THEME_COLOR.neon);
+  // Announced so the night shift (night-shift.js) can stand down for the
+  // visit: a scheme somebody just chose outranks the door sign.
+  document.dispatchEvent(new CustomEvent('pa-scheme-set', { detail: { id } }));
+}
+
+/** The theme-color a scheme deserves, for anything repainting the meta. */
+export function schemeThemeColor(id) {
+  return THEME_COLOR[id] || THEME_COLOR.neon;
 }

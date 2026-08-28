@@ -8,6 +8,8 @@ import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence } from './chat.js';
 import { initPushPrompt } from './push.js';
 import { officeCueHtml, officeLineHtml } from './office.js';
+import { startNightShift } from './night-shift.js';
+startNightShift();
 import { wireHelp } from './help.js';
 
 hydrateNav();

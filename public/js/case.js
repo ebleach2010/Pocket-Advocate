@@ -16,6 +16,8 @@ import { askName, safeName } from './rename.js';
 import { helpButton, wireHelp, openCaseHelp } from './help.js';
 import { GOOGLE_REVIEW_WRITE_URL } from './reviews-config.js';
 import { officeCueHtml } from './office.js';
+import { startNightShift } from './night-shift.js';
+startNightShift();
 import {
   recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
   COMMUNICATION_SCOPES,

@@ -6,6 +6,8 @@ import { db, collection, getDocs, doc, getDoc, query, where } from './firebase.j
 import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence } from './chat.js';
 import { officeCueHtml } from './office.js';
+import { startNightShift } from './night-shift.js';
+startNightShift();
 import { wireHelp } from './help.js';
 
 hydrateNav();
