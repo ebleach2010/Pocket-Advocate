@@ -71,6 +71,20 @@ const slab = (src, from, to) => {
  * characters. That growth was benign (a set-paid provenance write using only
  * already-stubbed helpers) but it was invisible to a green run.
  */
+// HOW MANY LIFTS THERE SHOULD BE, in one place, read by all three checks that
+// depend on the registry being populated.
+//
+// U28j and U28k were leaning on U28i: emptying the registry made U28i fail and
+// left BOTH of them green, because a loop over nothing reports nothing wrong.
+// That is the same "safe only while its neighbour survives" objection this
+// file already makes about U2b, U4 and U3, reproduced in checks added while
+// hunting for exactly it. Knowing the shape did not prevent writing it.
+//
+// One constant rather than three scattered numbers, because a merge that adds
+// registrations then has ONE line to move. Deliberately below the current
+// count: it guards against a registry that is not really there, and a pin on
+// the exact number goes stale the moment somebody adds a lift.
+const LIFT_FLOOR = 14;
 const LIFTS = new Map();
 /**
  * `after` is the SENTINEL: a distinctive string from whatever sits immediately
@@ -1285,8 +1299,8 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
 {
   const empties = [...LIFTS].filter(([, v]) => v.size === 0).map(([k]) => k);
   ck('U28i every lift this suite takes came back with something in it',
-    LIFTS.size >= 14 && empties.length === 0,
-    empties.length ? `empty: ${empties.join(', ')}` : `${LIFTS.size} lifts, expected at least 14`);
+    LIFTS.size >= LIFT_FLOOR && empties.length === 0,
+    empties.length ? `empty: ${empties.join(', ')}` : `${LIFTS.size} lifts, expected at least ${LIFT_FLOOR}`);
 }
 
 // ---- U28j: and not one of them ran past where it should have stopped -----
@@ -1327,6 +1341,8 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
     if (typeof v.after !== 'string' || !v.after) { bad.push(`${name} declares no sentinel`); continue; }
     if (v.text.includes(v.after)) bad.push(`${name} swallowed ${JSON.stringify(v.after)}`);
   }
+  // Its own floor, not U28i's. See LIFT_FLOOR above for why.
+  if (LIFTS.size < LIFT_FLOOR) bad.unshift(`${LIFTS.size} lifts, expected at least ${LIFT_FLOOR}`);
   ck('U28j no lift ran past where it should have stopped', bad.length === 0, bad.join('; '));
 
   // U28k: AND THE SENTINEL ITSELF HAS TO BE REAL.
@@ -1377,6 +1393,8 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
     if (v.src.indexOf(v.after, start + v.text.length) < 0)
       unreal.push(`${name} sentinel ${JSON.stringify(v.after)} is nowhere at or after the end of the lift`);
   }
+  // Its own floor too, for the same reason.
+  if (LIFTS.size < LIFT_FLOOR) unreal.unshift(`${LIFTS.size} lifts, expected at least ${LIFT_FLOOR}`);
   ck('U28k and every sentinel is real, and really lies beyond its slab',
     unreal.length === 0, unreal.join('; '));
 
