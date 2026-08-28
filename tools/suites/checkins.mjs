@@ -244,8 +244,17 @@ check('AB5 the readiness checklist is DERIVED on both sides, never stored',
 // The em dash before it became a full stop (2026-08-26, the no-dash rule), so
 // the sentence now starts with a capital. Same words; the article is matched
 // either way so punctuation can move again without this going red.
+//
+// UPDATED 2026-08-27, not deleted. The checklist lost two of its three rows
+// when signing on the case page was parked, so "this list" became one item and
+// the copy reads "this" instead. The sentence still has to be on the client's
+// own page, next to whatever is left of the checklist, which is what this has
+// always been for.
+// NEGATIVE CONTROL (run 2026-08-27): deleting the sentence from case.js made
+// this read
+//   FAIL  AB6 the client reads the honest clock sentence beside the checklist
 check('AB6 the client reads the honest clock sentence beside the checklist',
-  /[Tt]he clock runs whether or not this list is done/.test(CASE));
+  /[Tt]he clock runs whether or not this is done/.test(CASE));
 
 // ---- the copy that had to change ----
 check('W1 tier terms no longer close the case at any call',

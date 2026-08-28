@@ -2,36 +2,31 @@
 // checklist on their end that populates in order for me to begin... but the
 // clock starts upon booking").
 //
-// DERIVED, never stored. Every row is backed by a record that already
-// exists - the scope-note acknowledgment on the case, the signed authority
-// documents behind /api/authority - so the checklist can never disagree
-// with the documents themselves, needs no route of its own, and holds
-// nothing a client could tick past. Both sides render from this one
-// function, so the two views cannot drift.
+// DERIVED, never stored. The one row left is backed by a record that already
+// exists, the scope-note acknowledgment on the case, so the checklist can
+// never disagree with the case itself, needs no route of its own, and holds
+// nothing a client could tick past. Both sides render from this one function,
+// so the two views cannot drift.
+//
+// WHY IT IS ONE ROW NOW (2026-08-27). It had three. Two of them were derived
+// from the signed authority documents, and signing them on the case page was
+// parked on Eric's word the same day. A row nothing can satisfy is not a
+// checklist, it is a card pinned at "Not ready yet" on every case he ever
+// opens, so those two rows are gone rather than left to rot.
+//
+// AND "READY" NO LONGER MEANS "you may pick up the phone". That claim needed
+// a signed records release behind it, which this file can no longer see. What
+// is left is exactly what the app still knows: whether they have read and
+// acknowledged the scope note. His own card reports the permissions on file
+// separately, in its own words, and goes orange when there are none, so the
+// warning that used to ride on this checklist did not go anywhere.
 
-export function handsOffReadiness(c, authorityItems = []) {
-  const live = (authorityItems || []).filter((i) => !i.revokedAt);
+export function handsOffReadiness(c) {
   const rows = [
     {
       id: 'scope',
       label: 'The scope note, read and acknowledged',
       done: !!(c?.forms?.fullAccess),
-    },
-    {
-      id: 'records',
-      label: 'A records authorisation signed for at least one clinic',
-      // It has to actually authorise something. A records form with every
-      // communication box unticked is a piece of paper, not permission, and
-      // reading it as "ready" told Eric he could pick up the phone.
-      // Documents signed before scopes existed have no scopes field at all
-      // and did authorise the full set, so undefined counts and [] does not.
-      done: live.some((i) => i.kind === 'records'
-        && (!Array.isArray(i.scopes) || i.scopes.length > 0)),
-    },
-    {
-      id: 'representative',
-      label: 'The insurance representative designation signed',
-      done: live.some((i) => i.kind === 'representative'),
     },
   ];
   return { rows, ready: rows.every((r) => r.done) };

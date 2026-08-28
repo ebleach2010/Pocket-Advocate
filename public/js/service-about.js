@@ -57,7 +57,7 @@ export const SERVICE_ABOUT = {
     price: '$3,400 a month. On an open case, your case fee comes off the first one.',
     tldr: 'You hand me the case. I do the legwork: the calls, the records, the insurer, the appeals, and we talk at least twice a month so you always know where it stands. A month at a time, for as long as you need it.',
     paragraphs: [
-      'In a standard case I work beside you: I read, I explain, and you carry it to your doctors and your insurer. With Hands-Off Case Management I work inside the case. I phone your clinics, chase your records, deal with your insurer, and write your appeals myself. Your job shrinks to a short checklist, signing the documents that give me the authority to act, and from there the legwork is mine.',
+      'In a standard case I work beside you: I read, I explain, and you carry it to your doctors and your insurer. With Hands-Off Case Management I work inside the case. I phone your clinics, chase your records, deal with your insurer, and write your appeals myself. Your job shrinks to giving me the permission I need to act for you, which I bring you and walk you through, and from there the legwork is mine.',
       'You ask, and I answer personally. I carry a limited number of these at a time, so this is not something you can simply buy - you send the request, I read it, and I tell you yes or no. Asking costs nothing and takes no card. If I say no, nothing is charged and I will tell you why.',
       'It is billed a month at a time, and I would rather explain why than have you wonder. A single payment for a whole engagement is a large thing to hand over at the exact moment you are least able to think about money. Monthly means the biggest number you ever see is one month, and it means you are never locked into a case that is going nowhere. Most of these run about two months. Some run one. Some run five. You decide each month.',
       'We speak at least twice a month, by phone or video, for as long as the case runs. That rhythm is part of the service, not an option: it is how the case keeps moving, and how you always know what happened without having to push for updates. If something breaks between check-ins, I add calls at no charge.',
@@ -75,7 +75,7 @@ export const SERVICE_ABOUT = {
       'I write to providers too, when a doctor will not cooperate',
       'Telehealth advocacy included: I join your video visits and advocate live',
       'A month at a time. Continue or stop at the end of any month, no penalty either way',
-      'A short checklist starts my authority; your pace is your own, the clock runs from the day you start',
+      'Your permission in writing starts my authority; I bring you the documents and walk you through them',
       'On an open case, the case fee you already paid comes off your first month, never twice',
     ],
   },

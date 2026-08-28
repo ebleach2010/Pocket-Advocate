@@ -209,8 +209,27 @@ ck('scope note: it says the second letter outlives the window',
    /second appeal letter does not expire with the window/.test(TT));
 // The start MOVED (Eric, 2026-08-25: "the clock starts upon booking") and
 // the sentence moved with it, checklist wording included.
-ck('scope note: it says the clock runs regardless of the checklist',
-   /the month runs from the day it starts, whether or not the checklist is done/.test(TT));
+//
+// UPDATED 2026-08-27, not deleted. Signing the two documents on the case page
+// was parked on Eric's word ("Remove the release of records and park that"),
+// so the section stopped being a checklist the client works through and became
+// the permission he brings them. The PROMISE this check exists for is
+// untouched and is still pinned word for word: the month runs from the day it
+// starts whatever else has or has not happened. Only the noun moved.
+// NEGATIVE CONTROL (run 2026-08-27): deleting the clause from tier-terms.js
+// made this read
+//   FAIL  scope note: it says the clock runs regardless of the permission
+ck('scope note: it says the clock runs regardless of the permission',
+   /the month runs from the day it starts, whether or not that is settled/.test(TT));
+// And the withdrawal right survived the parking, which is the half that could
+// have been lost: the agreement still promises it in writing, and the client
+// still has a control that does it.
+// NEGATIVE CONTROL (run 2026-08-27): removing the promise from tier-terms.js
+// made this read
+//   FAIL  scope note: withdrawing is still promised in writing, and still possible
+ck('scope note: withdrawing is still promised in writing, and still possible',
+   /[Ee]ither one can be withdrawn in writing at any time/.test(TT)
+   && /data-auth-revoke/.test(f('public/js/case.js')));
 
 // ---- 12. chat reactions: the record shape and who may touch what ---------
 // (Audit, 2026-08-25.) The stored reaction is a RECORD ({ id, kind, ... }),

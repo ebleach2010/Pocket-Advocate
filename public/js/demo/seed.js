@@ -418,17 +418,37 @@ export function seed({ set, file }) {
 
   // Two clinic calls of the three the tier includes: one done with notes, one
   // still to happen. Admin-only by path, which is the point.
+  // THE WORK LOG. Two entries, and deliberately only one of them carries a
+  // `summary`: that is the whole design, and a demo where both were visible
+  // would not show it. The one without is his alone.
+  //
+  // THE MIRROR UNDER caseLog/ IS THE POINT, not a shortcut. `/private/` is on
+  // this store's NOT_FOR_CLIENTS list, so a client-side demo tab never loads
+  // these records at all - which is exactly right, and exactly why the demo
+  // could not paint the client's log from them. In production the Worker
+  // builds the projection server-side and the browser never holds the record;
+  // here the "Worker" is a shim inside the same tab, so the projection is
+  // written down as its own client-safe document instead. The client half of
+  // the demo therefore holds four fields and never the phone, the parties or
+  // the notes, which is the same guarantee by the same means.
   set(`cases/${FULL_ID}/private/clinicCalls/items/c1`, {
     clinic: 'Valley Neurology, records office',
     phone: '+1 555 0102', parties: 'me, Jordan, records clerk',
+    kind: 'call',
+    summary: 'Called your neurology records office and put the request in.',
     at: days(24), createdAt: days(26), notesAt: days(24),
     notes: 'Records request logged, reference VN-88213. They quoted 30 days and '
       + 'confirmed the authorisation is on file. Asked for imaging on disc as well '
       + 'as the reports. Jordan confirmed her date of birth on the call.',
   });
+  set(`cases/${FULL_ID}/caseLog/c1`, {
+    at: days(24), kind: 'call', who: 'Valley Neurology, records office',
+    summary: 'Called your neurology records office and put the request in.',
+  });
   set(`cases/${FULL_ID}/private/clinicCalls/items/c2`, {
     clinic: 'Cascade Health, utilisation review',
     phone: '+1 555 0190', parties: 'me, Jordan',
+    kind: 'investigation', summary: '',
     at: days(2), createdAt: days(5), notes: '',
   });
 

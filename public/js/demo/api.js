@@ -819,9 +819,42 @@ export function demoApi(role, store) {
       store.persist?.();
       return ok({ ok: true, id, signedAt: new Date().toISOString() });
     }
+    // The client's view of the work log.
+    //
+    // READS THE MIRROR, NEVER THE RECORD, and that is not a shortcut. The
+    // record lives under `/private/`, which this store's NOT_FOR_CLIENTS list
+    // keeps out of a client-side tab entirely, so there is nothing there to
+    // read and there must not be: it holds a clinic's direct line, who was on
+    // the call, and his own notes. In production the Worker builds the
+    // projection server-side and the browser never sees the record. Here the
+    // Worker is a shim in the same tab, so the projection is written down as
+    // its own client-safe document when the entry is saved (below), and this
+    // route serves that. Same four fields, same guarantee, same place to
+    // break it.
+    if (path === '/api/case-log') {
+      const cid = q.get('caseId') || '';
+      const prefix = `cases/${cid}/caseLog/`;
+      const kinds = ['call', 'appeal', 'investigation', 'appointment'];
+      const items = [];
+      for (const [k, v] of store.docs.entries()) {
+        if (!k.startsWith(prefix)) continue;
+        const summary = typeof v.summary === 'string' ? v.summary.trim().slice(0, 400) : '';
+        if (!summary) continue;
+        items.push({
+          id: k.slice(prefix.length),
+          at: v.at || null,
+          kind: kinds.includes(v.kind) ? v.kind : 'call',
+          who: typeof v.who === 'string' ? v.who.slice(0, 200) : '',
+          summary,
+        });
+      }
+      items.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+      return ok({ items });
+    }
     if (path === '/api/clinic-calls') {
       const cid = body.caseId || q.get('caseId') || '';
       const prefix = `cases/${cid}/private/clinicCalls/items/`;
+      const kinds = ['call', 'appeal', 'investigation', 'appointment'];
       if ((init.method || 'GET').toUpperCase() === 'GET') {
         const items = [...store.docs.entries()]
           .filter(([k]) => k.startsWith(prefix))
@@ -830,17 +863,49 @@ export function demoApi(role, store) {
         return ok({ items });
       }
       await beat(400);
+      // The client-safe half, rewritten from the record every time the record
+      // changes. Four fields, built by naming them, never by spreading the
+      // record; and an entry with no client line has no mirror at all rather
+      // than an empty one, so removing the line takes the row off their page.
+      const mirror = (id, rec) => {
+        const key = `cases/${cid}/caseLog/${id}`;
+        const summary = String(rec.summary || '').trim().slice(0, 400);
+        if (!summary) { store.docs.delete(key); return; }
+        store.docs.set(key, {
+          at: rec.at || rec.createdAt || null,
+          kind: kinds.includes(rec.kind) ? rec.kind : 'call',
+          who: String(rec.clinic || '').slice(0, 200),
+          summary,
+        });
+      };
       if (body.action === 'notes') {
         const k = prefix + body.id;
         const cur = store.docs.get(k);
-        if (cur) store.docs.set(k, { ...cur, notes: body.notes || '', notesAt: new Date() });
+        // The summary joins only when the caller sent one, matching the
+        // Worker's mask: a request that knows nothing about it must not blank
+        // the line a client is already reading.
+        if (cur) {
+          const next = {
+            ...cur, notes: body.notes || '', notesAt: new Date(),
+            ...(typeof body.summary === 'string' ? { summary: body.summary.slice(0, 400) } : {}),
+          };
+          store.docs.set(k, next);
+          mirror(body.id, next);
+        }
+        store.persist?.();
         return ok({ ok: true });
       }
       if (body.action === 'add') {
-        store.docs.set(prefix + `c-${Math.random().toString(36).slice(2, 8)}`, {
+        const id = `c-${Math.random().toString(36).slice(2, 8)}`;
+        const rec = {
           clinic: body.clinic || '', phone: body.phone || '', parties: body.parties || '',
+          kind: kinds.includes(body.kind) ? body.kind : 'call',
+          summary: String(body.summary || '').slice(0, 400),
           at: body.at ? new Date(body.at) : null, notes: '', createdAt: new Date(),
-        });
+        };
+        store.docs.set(prefix + id, rec);
+        mirror(id, rec);
+        store.persist?.();
       }
       return ok({ ok: true });
     }

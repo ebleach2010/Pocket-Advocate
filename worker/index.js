@@ -895,6 +895,8 @@ export default {
         return await handleSaved(request, env, url);
       if (url.pathname === '/api/clinic-calls')
         return await handleClinicCalls(request, env, url);
+      if (url.pathname === '/api/case-log' && request.method === 'GET')
+        return await handleCaseLog(request, env, url);
       if (url.pathname === '/api/authority')
         return await handleAuthority(request, env, url);
       if (url.pathname === '/api/agenda')
@@ -1692,7 +1694,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-27-hours-2';
+const BUILD_TAG = 'v2026-08-27-worklog-1';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -3789,13 +3791,99 @@ async function handleAuthority(request, env, url) {
 }
 
 /**
- * GET/POST /api/clinic-calls - the three-way calls, admin only.
+ * THE WORK LOG. Four words for the four things he does, and nothing else.
+ *
+ * Eric, 2026-08-27: "I also do unlimited calls etc so that section should
+ * just be a log of what I've been doing by date, so they can see what I've
+ * been up to. Calls with notes for reason, appeals, investigations, attended
+ * appointments."
+ *
+ * ONE RECORD, not two. This is the SAME collection the clinic calls have
+ * always lived in, grown two fields, because a second collection would mean
+ * logging a clinic call once for himself and again for his client.
+ *
+ * Keyed by id and validated here, never taken as free text: the word rides
+ * out to the client on their own case page, and a route that accepted a
+ * caller's own label would be a route for putting arbitrary text on it.
+ */
+const LOG_KINDS = ['call', 'appeal', 'investigation', 'appointment'];
+
+/**
+ * WHAT THE CLIENT IS ALLOWED TO SEE OF IT. This function is the privacy
+ * boundary, and it is the whole design.
+ *
+ * `cases/{id}/private/**` is `read, write: if false` in firestore.rules, so
+ * no browser reads these records, his or theirs. The client's log therefore
+ * cannot be the record: it has to be a PROJECTION, built here, field by
+ * field, and shipped by /api/case-log.
+ *
+ * BUILT BY LISTING WHAT GOES IN, never by spreading the record and deleting
+ * what must not. A spread with a delete-list is one forgotten field away from
+ * publishing a clinic's direct line, and the route above already carries the
+ * comment saying that line is exactly what must not reach the client. So four
+ * values are copied out by name and everything else is left behind: `phone`,
+ * `parties`, `notes` and `notesAt` have no path out of this function.
+ *
+ * NO SUMMARY, NO ROW. That is his privacy valve, and it is the reason this is
+ * a filter and not a formatter: he logs everything, writes a client-safe line
+ * on the entries they should see, and the ones he leaves blank stay his.
+ */
+function caseLogProjection(rows) {
+  const out = [];
+  for (const r of rows || []) {
+    const d = (r && r.data) || {};
+    const summary = typeof d.summary === 'string' ? d.summary.trim().slice(0, 400) : '';
+    if (!summary) continue;
+    out.push({
+      id: String((r && r.id) || ''),
+      at: d.at || d.createdAt || null,
+      kind: LOG_KINDS.includes(d.kind) ? d.kind : 'call',
+      who: typeof d.clinic === 'string' ? d.clinic.slice(0, 200) : '',
+      summary,
+    });
+  }
+  // Newest first. His own list runs oldest first because he reads it as a
+  // history he is adding to; theirs answers "what has he been up to", and the
+  // answer to that is at the top of a phone screen.
+  out.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+  return out;
+}
+
+/**
+ * GET /api/case-log - the client's view of the work log.
+ *
+ * The ONLY way this record reaches a browser that is not his, and it ships
+ * caseLogProjection's output rather than the record. Read-only by design:
+ * nothing a client sends could add to, edit or hide a line of his log.
+ *
+ * threadContext is the same membership check every case route makes, so a
+ * signed-in stranger gets 403 and an unknown case 404.
+ */
+async function handleCaseLog(request, env, url) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in required' }, 401);
+  const id = String(url.searchParams.get('caseId') || '');
+  const ctx = await threadContext(env, user, 'case', id);
+  if (ctx.error) return json({ error: ctx.error }, ctx.code);
+  const rows = await listDocs(env, `cases/${id}/private/clinicCalls/items`, { pageSize: 200 })
+    .catch(() => []);
+  return json({ items: caseLogProjection(rows) });
+}
+
+/**
+ * GET/POST /api/clinic-calls - his own work log, admin only.
  *
  * Their own private record, not a value on `appointment`: that field's
  * `method` is a two-value enum gating checkout, and everything on the
  * appointment sits on the client-readable case doc, so a clinic's direct line
  * would be published to the client along with it. This lives under the case's
  * private subtree, which no browser can read either way.
+ *
+ * The record now carries `kind` and `summary` as well, so one entry serves
+ * both sides: his private note stays here, and the short line he writes for
+ * the client goes out through caseLogProjection above. Growing this record
+ * rather than adding a second one is the point - a separate client-facing log
+ * would mean logging the same call twice.
  *
  * Notes only. No audio: the recording consent covers Eric's calls with his
  * client, not a third party on the other end, and recording a clinic without
@@ -3820,10 +3908,15 @@ async function handleClinicCalls(request, env, url) {
 
   if (body?.action === 'add') {
     const clinic = str(body?.clinic, 200);
-    if (!clinic) return json({ error: 'Name the clinic.' }, 400);
+    if (!clinic) return json({ error: 'Say who it was with.' }, 400);
     const at = str(body?.at, 40);
+    // An unrecognised word becomes 'call', which is what this record has held
+    // since the day it was written, so a stale page cannot file an entry under
+    // a category that does not exist.
+    const kind = LOG_KINDS.includes(body?.kind) ? body.kind : 'call';
     await patchDoc(env, `${coll}/${crypto.randomUUID()}`, {
       clinic, phone: str(body?.phone, 40), parties: str(body?.parties, 200),
+      kind, summary: str(body?.summary, 400),
       at: at ? new Date(at) : null, notes: '', createdAt: new Date(),
     }, { mustNotExist: true });
     return json({ ok: true });
@@ -3831,8 +3924,18 @@ async function handleClinicCalls(request, env, url) {
   if (body?.action === 'notes') {
     const itemId = String(body?.id || '');
     if (!/^[\w-]{1,64}$/.test(itemId)) return json({ error: 'Bad request' }, 400);
-    await patchDoc(env, `${coll}/${itemId}`,
-      { notes: str(body?.notes, 20000), notesAt: new Date() }, { mask: ['notes', 'notesAt'] });
+    // ONE SAVE for the two things he writes about an entry, because they are
+    // written in the same breath and a second button is a second tap on a
+    // phone. The summary joins the mask only when the caller actually sent
+    // one, so a request that knows nothing about it cannot blank the line his
+    // client is already reading.
+    const fields = { notes: str(body?.notes, 20000), notesAt: new Date() };
+    const mask = ['notes', 'notesAt'];
+    if (body && typeof body.summary === 'string') {
+      fields.summary = str(body.summary, 400);
+      mask.push('summary');
+    }
+    await patchDoc(env, `${coll}/${itemId}`, fields, { mask });
     return json({ ok: true });
   }
   return json({ error: 'Bad request' }, 400);
@@ -5073,7 +5176,7 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
       to: c.data.clientEmail,
       subject: 'Hands-Off Case Management is open on your case',
       html: `<p>Your case is now on Hands-Off Case Management. I do the legwork from here: I work directly with your clinics and your insurer rather than alongside you.</p>
-        <p>The next thing I need is your authorisation, which is waiting on your case page. Nothing can start until that is signed.</p>
+        <p>I will message you in your case chat with what I need from you to get moving. Everything I do on your case is logged on your case page as I do it, so you can see where it stands without having to ask.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
     }).catch(() => {});
   }
@@ -6984,8 +7087,8 @@ async function handleCaseUpdate(request, env) {
         to: c.clientEmail,
         subject: 'Hands-Off Case Management is open on your case',
         html: `<p>Your case is now on Hands-Off Case Management. I do the legwork from here: I work directly with your clinics and your insurer rather than alongside you.</p>
-        ${startsLater ? `<p>Your month runs from ${dayFmt.format(startAt)}. Please sign before then anyway: a records request can take weeks to come back, so the sooner the paperwork is in, the more of your month is spent on your case instead of on waiting.</p>` : ''}
-        <p>The next thing I need is your authorisation, which is waiting on your case page. Nothing can start until that is signed.</p>
+        ${startsLater ? `<p>Your month runs from ${dayFmt.format(startAt)}. It is still worth getting me your permission before then: a records request can take weeks to come back, so the sooner the paperwork is in, the more of your month is spent on your case instead of on waiting.</p>` : ''}
+        <p>I will message you in your case chat with what I need from you to get moving. Everything I do on your case is logged on your case page as I do it, so you can see where it stands without having to ask.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
       }).catch(() => {});
     }

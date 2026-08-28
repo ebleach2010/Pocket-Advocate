@@ -313,7 +313,7 @@ function refreshSections() {
   // scrolled it to the end and ticked the box watched the accordion snap
   // shut, the tick clear and the button grey out, with their tap landing on
   // a dead control. Same for a half-written review, and for the two
-  // authorisation buttons a tier client cannot start without.
+  // authorisation buttons that used to sit under the timeline.
   if (progress && !busyInside(progress)) renderProgress(progress, c);
   if (docs && !busyInside(docs)) renderDocs(docs, c);
   const addons = folder?.el('addons');
@@ -477,8 +477,8 @@ function checkInLine(c, localFmt) {
       <strong style="color:var(--ink)">${esc(localFmt.format(next))}</strong> your time.</p>`;
   }
   return `<p class="dim small" style="margin:.4rem 0 0;">🗓 Your case includes
-    check-in calls at least twice a month — they are part of the service, so
-    we never go long without speaking. None is on the books right now —
+    check-in calls at least twice a month. They are part of the service, so
+    we never go long without speaking. None is on the books right now, so
     message me in chat and we'll set the next one.</p>`;
 }
 
@@ -591,6 +591,7 @@ function renderProgress(el, c) {
         ${followUpSection(c)}
       </div>
     </details>
+    <div data-worklog></div>
     <div data-authority></div>
     <hr class="divide">
     <!-- The "?" dot was a bare glyph beside a heading at the top of the page,
@@ -607,15 +608,17 @@ function renderProgress(el, c) {
   // Sits directly under the timeline rather than behind a tab: the client tab
   // strip is already at four and three pills barely fit a 390px phone.
   //
-  // On EVERY case, not just Full Access (Eric, 2026-08-26: the form was
-  // missing). Reviewing records is the standard case, and the records release
-  // is what gets a clinic to send them and lets him ring and ask for the rest.
-  // Gated on the tier, it was invisible to exactly the clients who needed it.
-  // The panel decides internally which of the two documents to offer; the
-  // insurance designation stays Hands-Off, and the Worker enforces that
-  // rather than trusting this.
+  // TWO PANELS IN THIS SLOT SINCE 2026-08-27, in this order. The work log is
+  // what the section is now; the permissions list under it is the half of the
+  // old records panel that could not be parked, because a client who has
+  // already signed must always be able to read it back and withdraw it.
+  //
+  // On EVERY case, not just Hands-Off. He works standard cases too, and the
+  // log is the answer to "what has he been up to" whichever tier they are on.
+  const log = el.querySelector('[data-worklog]');
+  if (log) mountCaseLog(log, c);
   const auth = el.querySelector('[data-authority]');
-  if (auth) mountAuthority(auth, c);
+  if (auth) mountPermissions(auth, c);
 
   el.querySelector('[data-ics]')?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -1643,8 +1646,9 @@ function upgradeOffer(c) {
     return `
       <div class="followup-offer is-done">
         <h3><span class="fu-tick" aria-hidden="true">\u2713</span> Hands-Off Case Management is open on your case.</h3>
-        <p>There is an authorisation waiting for you on this page. Nothing can
-          start until it is signed, so it is the one thing I need from you now.</p>
+        <p>I will pick this up in your case chat and tell you exactly what I
+          need from you to get started. Everything I do on your case appears
+          on this page as I do it.</p>
       </div>`;
   if (c.fullAccess || c.status === 'closed') return '';
 
@@ -1698,8 +1702,8 @@ function upgradeOffer(c) {
       <p>Right now I work beside you: I read everything, we talk it through,
         and you carry it to your doctors and your insurer. Hands-Off Case Management is where
         I do that part myself. I speak to your clinics, with you on the line or
-        under your written authorisation, and I write and file your insurance
-        appeals.</p>
+        alone once you have given me permission in writing, and I write and file
+        your insurance appeals.</p>
       <p class="fu-emphasis">Same case. Same file. I just stop handing it back to you.</p>
       <details class="agreement" data-id="${esc(FULL_ACCESS_TERMS.id)}">
         <summary>
@@ -1980,109 +1984,148 @@ function esc(s) {
 }
 
 /**
- * The authorisations, on the client's own case page. Two documents, because
- * they do two different legal jobs: one lets a clinic release records to
- * Eric, the other lets Eric argue with the insurer. Signing one does not
- * grant the other, and clients conflate them constantly, so they are two
- * cards with two buttons and never a single "I agree".
+ * THE WORK LOG, their side: what he has been doing on this case, by date.
  *
- * Everything is Worker-mediated: the records live under the case's private
- * subtree, which the browser cannot read or write directly by rule.
+ * Eric, 2026-08-27: "I also do unlimited calls etc so that section should
+ * just be a log of what I've been doing by date, so they can see what I've
+ * been up to."
+ *
+ * A PROJECTION, NOT THE RECORD. His log lives under the case's private
+ * subtree, which is `read, write: if false` for every browser including his
+ * own, so this cannot be a Firestore read. /api/case-log builds a four-field
+ * view of each entry in the Worker and ships that: the date, what kind of
+ * thing it was, who it was with, and the one line he wrote for you. His
+ * notes, the clinic's direct line and who else was on the call have no path
+ * into it.
+ *
+ * An entry he has written no line on does not appear here at all.
  */
-async function mountAuthority(host, c) {
+const LOG_PILLS = {
+  call: 'CALL', appeal: 'APPEAL', investigation: 'INVESTIGATION', appointment: 'APPOINTMENT',
+};
+
+async function mountCaseLog(host, c) {
+  const full = !!c.fullAccess;
+  // The checklist and the window sentence are Hands-Off furniture, and they
+  // used to sit on top of the records panel that was parked. They belong at
+  // the head of the log now, which is the same place on the page.
+  const ready = handsOffReadiness(c);
+  const boughtAt = c.fullAccessAt ? toDate(c.fullAccessAt) : null;
+  // Not "your 60 days": extensions and holds both move the end, so say the
+  // date the window actually runs to rather than a number that goes stale
+  // the moment somebody buys another thirty days.
+  const dayFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
+  // The SHARED predicate, not a bare `> Date.now()`. A month can be set to
+  // begin later than the day it was arranged, and the panel stores NOON
+  // Mountain, so a case opened at nine in the morning to start today sits
+  // three hours ahead. Three parties say this sentence; one predicate.
+  const startsLater = handsOffStartsLater(c);
+  const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+
+  const head = full ? `
+    <ul class="ready-list" data-ready-list>
+      ${ready.rows.map((r) => `
+        <li class="${r.done ? 'is-done' : ''}">${r.done ? '✓' : '○'} ${esc(r.label)}</li>`).join('')}
+    </ul>
+    <p class="dim small">${boughtAt ? (startsLater
+    ? `Your month starts ${esc(dayFmt.format(boughtAt))}${windowEndOf(c) ? ` and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. Getting me your permission before then is worth doing: a records request can take weeks to come back, so the sooner it is in, the more of your month is spent on your case instead of on waiting.`
+    : `Your window started ${esc(dayFmt.format(boughtAt))}${windowEndOf(c) ? `, and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. The clock runs whether or not this is done.`) : ''}</p>` : '';
+
   const paint = (items) => {
-    const signed = (kind) => items.find((i) => i.kind === kind && !i.revokedAt);
-    const rep = signed('representative');
-    const recs = items.filter((i) => i.kind === 'records' && !i.revokedAt);
-    // The readiness checklist frames the two documents (Eric, 2026-08-25):
-    // what is done, what remains, and the one honest sentence about the
-    // clock, which runs from purchase however fast this list is finished.
-    const ready = handsOffReadiness(c, items);
-    const boughtAt = c.fullAccessAt ? toDate(c.fullAccessAt) : null;
-    // Not "your 60 days": extensions and holds both move the end, so say the
-    // date the window actually runs to rather than a number that goes stale
-    // the moment somebody buys another thirty days.
-    const dayFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
-    // A month can now be set to BEGIN LATER than the day it was arranged: a
-    // case agreed on a call in August for a September start. fullAccessAt is
-    // the start, so on such a case this date is in the future and the old
-    // sentence, "Your window started ... the day you bought Hands-Off", was
-    // two lies at once. It also cannot say "the day you bought" any more,
-    // because a hand-opened case may never have gone through a checkout.
-    //
-    // The SHARED predicate, not a bare `> Date.now()`. The Worker decides
-    // whether the client's email mentions a future month using a twelve-hour
-    // grace, and the panel stores NOON Mountain, so a case opened at nine in
-    // the morning to start today sits three hours ahead: this page announced
-    // a month that "starts" while the email that had just gone out said
-    // nothing of the kind, for three hours, on every same-day opening. Three
-    // parties to one sentence, one predicate between them.
-    const startsLater = handsOffStartsLater(c);
-    // Two framings, because this panel now appears on every case. The
-    // readiness checklist and the window sentence are Hands-Off furniture and
-    // would be nonsense on a standard case, which has no checklist and no
-    // month running down. A standard case gets the one thing it needs said:
-    // this is how your records reach me.
-    const full = !!c.fullAccess;
+    host.innerHTML = `
+      <div class="panel authority" data-worklog-panel>
+        <h3>What I have been doing</h3>
+        ${head}
+        ${items.length ? `
+        <ul class="filelist">
+          ${items.map((i) => {
+    const at = i.at ? new Date(i.at) : null;
+    const kind = LOG_PILLS[i.kind] ? i.kind : 'call';
+    return `
+            <li>
+              <span class="fname"><span class="kind-pill ${kind}">${LOG_PILLS[kind]}</span>
+                <span class="logline">${esc(i.summary)}${i.who ? `<span class="dim"> · ${esc(i.who)}</span>` : ''}</span></span>
+              <span class="fmeta">${at && !Number.isNaN(at.getTime()) ? esc(fmt.format(at)) : ''}</span>
+            </li>`;
+  }).join('')}
+        </ul>` : `
+        <p class="dim small">Nothing here yet. Calls I make for you, appeals I
+          file, things I chase down and appointments I sit in on land here by
+          date, so you can see where your case has been without having to ask.</p>`}
+      </div>`;
+  };
+
+  paint([]);
+  try {
+    const idToken = await user.getIdToken();
+    const res = await fetch(`/api/case-log?caseId=${encodeURIComponent(c.id)}`, {
+      headers: { authorization: `Bearer ${idToken}` },
+    });
+    paint(res.ok ? ((await res.json()).items || []) : []);
+  } catch { /* an unreachable log still shows the panel and says nothing yet */ }
+}
+
+/**
+ * PARKED, NOT DELETED (Eric, 2026-08-27: "Remove the release of records and
+ * park that."). Flip this back to true and the two Sign buttons and the sheet
+ * behind them come back exactly as they were; nothing else was removed.
+ *
+ * WHAT COULD NOT BE PARKED WITH THEM, and the reason this panel still exists.
+ * View and Withdraw lived inside the same markup as the offer, `Withdraw` is
+ * the only revoke control anywhere on the client side, and the advocate
+ * cannot revoke on a client's behalf: the Worker answers 403 "Only the client
+ * can revoke this", under a comment saying revocation is the client's right
+ * and is not negotiable. Deleting the block would have left everyone who has
+ * already signed with no way to withdraw, while the agreement they signed
+ * promises them in writing that either document can be withdrawn at any time.
+ *
+ * So the offer is gone and the record of what they have given is not.
+ */
+const OFFER_AUTHORITY_SIGNING = false;
+
+/**
+ * The permissions this client has already given, with the two things they can
+ * still do about them: read it back, and take it away.
+ *
+ * Renders NOTHING at all on a case that has signed nothing, which since the
+ * offer was parked is every new case. No empty box, no explanation of a thing
+ * that is not there.
+ *
+ * Worker-mediated like everything else: the documents live under the case's
+ * private subtree, which the browser cannot read or write directly by rule.
+ */
+async function mountPermissions(host, c) {
+  const paint = (items) => {
+    if (!items.length && !OFFER_AUTHORITY_SIGNING) { host.innerHTML = ''; return; }
+    const live = items.filter((i) => !i.revokedAt);
+    const gone = items.filter((i) => i.revokedAt);
+    const named = (r) => (r.kind === 'records'
+      ? `Records release${r.clinicName ? `, ${esc(r.clinicName)}` : ''}`
+      : `Insurer form${r.planName ? `, ${esc(r.planName)}` : ''}`);
     host.innerHTML = `
       <div class="panel authority" data-auth-panel>
-        <h3>${full ? 'Before I can act for you' : 'Getting your records to me'}</h3>
-        ${full ? `
-        <ul class="ready-list" data-ready-list>
-          ${ready.rows.map((r) => `
-            <li class="${r.done ? 'is-done' : ''}">${r.done ? '✓' : '○'} ${esc(r.label)}</li>`).join('')}
-        </ul>
-        <p class="dim small">${ready.ready
-    ? 'Your checklist is done. The legwork is mine from here.'
-    : 'These are two separate permissions, and you can withdraw either one at any time. How fast you finish is up to you.'}
-          ${boughtAt ? (startsLater
-    ? `Your month starts ${esc(dayFmt.format(boughtAt))}${windowEndOf(c) ? ` and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. Signing before then is worth doing: a records request can take weeks to come back, so the sooner these are in, the more of your month is spent on your case instead of on waiting.`
-    : `Your window started ${esc(dayFmt.format(boughtAt))}${windowEndOf(c) ? `, and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. The clock runs whether or not this list is done.`) : ''}</p>`
-    : `<p class="dim small">You can upload records yourself at any time. This form
-          is the other way: it lets a clinic send them to me directly, and lets me
-          call and ask for what is missing, so you are not chasing a fax machine.
-          You can withdraw it at any time.</p>`}
-
-        <div class="auth-row">
-          <div class="auth-head">
-            <strong>Your clinics</strong>
-            ${recs.length
-              ? `<span class="auth-on">✓ ${recs.length} signed</span>`
-              : '<span class="auth-off">Not signed</span>'}
-          </div>
-          <p class="dim small">Lets a clinic release your records to me. One for
-            each clinic or hospital I need records from.</p>
-          ${recs.map((r) => `
-            <p class="auth-item">
-              <span>${esc(r.clinicName || 'Clinic')}<span class="dim small"> · signed ${new Date(r.signedAt).toLocaleDateString()}</span></span>
-              <span class="auth-item-acts">
-                <button type="button" class="btn ghost tiny" data-auth-view="${esc(r.id)}">View</button>
-                <button type="button" class="btn ghost tiny" data-auth-revoke="${esc(r.id)}">Withdraw</button>
-              </span>
-            </p>`).join('')}
-          <p><button class="btn${recs.length ? ' ghost' : ' glow'}" data-auth-add="records">
-            ${recs.length ? 'Add another clinic' : 'Sign a records authorisation'}</button></p>
-        </div>
-
-        ${full || rep ? `
-        <div class="auth-row">
-          <div class="auth-head">
-            <strong>Your insurer</strong>
-            ${rep ? '<span class="auth-on">✓ Signed</span>' : '<span class="auth-off">Not signed</span>'}
-          </div>
-          <p class="dim small">Lets me file appeals and speak to your plan on
-            your behalf. It is not a power of attorney and it is not legal
-            representation.</p>
-          ${rep ? `
-            <p class="auth-item">
-              <span>${esc(rep.planName || 'Your plan')}<span class="dim small"> · signed ${new Date(rep.signedAt).toLocaleDateString()}</span></span>
-              <span class="auth-item-acts">
-                <button type="button" class="btn ghost tiny" data-auth-view="${esc(rep.id)}">View</button>
-                <button type="button" class="btn ghost tiny" data-auth-revoke="${esc(rep.id)}">Withdraw</button>
-              </span>
-            </p>` : `
-            <p><button class="btn glow" data-auth-add="representative">Sign the insurance form</button></p>`}
-        </div>` : ''}
+        <h3>Permissions you have given me</h3>
+        <p class="dim small">Read any of these back whenever you like. You can
+          withdraw one at any time and I stop using it straight away, though
+          withdrawing cannot unmake a disclosure already made under it.</p>
+        ${live.map((r) => `
+          <p class="auth-item">
+            <span>${named(r)}<span class="dim small"> · signed ${new Date(r.signedAt).toLocaleDateString()}</span></span>
+            <span class="auth-item-acts">
+              <button type="button" class="btn ghost tiny" data-auth-view="${esc(r.id)}">View</button>
+              <button type="button" class="btn ghost tiny" data-auth-revoke="${esc(r.id)}">Withdraw</button>
+            </span>
+          </p>`).join('')}
+        ${gone.map((r) => `
+          <p class="auth-item">
+            <span class="dim">${named(r)}<span class="dim small"> · withdrawn ${new Date(r.revokedAt).toLocaleDateString()}</span></span>
+            <span class="auth-item-acts">
+              <button type="button" class="btn ghost tiny" data-auth-view="${esc(r.id)}">View</button>
+            </span>
+          </p>`).join('')}
+        ${OFFER_AUTHORITY_SIGNING ? `
+          <p><button class="btn ghost" data-auth-add="records">Sign a records authorisation</button></p>
+          ${c.fullAccess ? '<p><button class="btn ghost" data-auth-add="representative">Sign the insurance form</button></p>' : ''}` : ''}
         <p class="error" data-auth-error hidden></p>
       </div>`;
 
@@ -2121,7 +2164,7 @@ async function mountAuthority(host, c) {
       });
       paint(res.ok ? ((await res.json()).items || []) : []);
     } catch {
-      paint([]); // an unreachable list still shows the two buttons
+      paint([]); // an unreachable list renders nothing rather than a broken box
     }
   }
   load();

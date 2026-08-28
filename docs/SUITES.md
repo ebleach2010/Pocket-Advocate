@@ -7,7 +7,7 @@ building and re-finding this once cost a full day.
 
     node tools/suites/run.mjs
 
-Nine suites assert against the real Worker and page sources: pricing
+Eighteen suites assert against the real Worker and page sources: pricing
 constants, the tier window and closure rules, the maintenance gate, the
 acknowledgment flow, the authority documents, the hold model, the check-in
 cadence, and the defect regressions. No server, no browser, no network.
@@ -85,12 +85,16 @@ priced at the difference rather than the list price. The work clock reads
 about 12 hours, which against $650 is the below-floor number his margin
 badge is meant to catch.
 
-**Client, Full Access case.** The authorisations, under the timeline on
-Progress: one clinic signed, the insurer form signed, both with View and
-Withdraw. Sign another and it appears; the form previews itself as you type,
-and the whole document is readable before anything is signed. Progress also
-carries the tier's cadence line - the next check-in call once one is booked
-from the advocate side, or the standing every-two-weeks promise. On the
+**Client, Full Access case.** **What I have been doing**, under the timeline
+on Progress: the work log, newest first, one dated row per entry with its
+category on a pill. Only entries the advocate wrote a client line on are here;
+the seeded case has one of each so the difference is visible. Under it,
+**Permissions you have given me**: one clinic signed, the insurer form signed,
+both with View and Withdraw. There is no Sign button any more (Eric,
+2026-08-27: "Remove the release of records and park that"), and on a case that
+has signed nothing the whole permissions panel renders nothing at all. Progress
+also carries the tier's cadence line - the next check-in call once one is
+booked from the advocate side, or the standing every-two-weeks promise. On the
 Add-ons tab, telehealth advocacy shows **Included** instead of a price, and
 a request goes straight to the advocate with no payment.
 
@@ -108,9 +112,12 @@ advocacy from a client suite first and the chart grows the confirm/deny
 card - denying pings the refund. The **Pause / close** card requires the
 closing reason and says, before you type, that the client reads it word for
 word; close with one and the client's page shows "Why this case closed."
-Open the Full Access case and there is a fifth tab group, **Act**, holding
-Appeals and Clinic calls, plus the authority status card on Overview and the
-margin badge beside the work clock. The appeal is drafted and sitting
+The **Work log** is the fourth page of the Case group, on EVERY case: pick one
+of his four categories, say who it was with, and write the one line the client
+sees, or leave that box empty and the entry stays his. Each row says which it
+is. Open the Full Access case and there is a fifth tab group, **Act**, holding
+Appeals, plus the authority status card on Overview and the margin badge
+beside the work clock. The appeal is drafted and sitting
 against a live deadline; Write, Revise, Print and Mark it filed all work
 against the local store. On the **Drafts** page, **📞 Notes for the call**
 drafts the reference sheet for the next call - action plan first, then the
@@ -131,8 +138,12 @@ before filing is visible in the demo too.
 
 UI, not AI: `public/js/demo/api.js` answers every Worker call locally and
 nothing touches a model or Stripe. Fixtures live in `public/js/demo/seed.js`
-(two cases, chat, advisor state, agenda, authorisations, clinic calls, and a
-drafted appeal). State persists in the browser
+(two cases, chat, advisor state, agenda, authorisations, the work log, and a
+drafted appeal). The work log is seeded twice over: the record itself under
+`private/`, which the client half of the store never loads, and the four-field
+projection under `caseLog/`, which is what a client-side tab reads. That split
+is the demo standing in for what the Worker does in production, where the
+browser never holds the record at all. State persists in the browser
 (`pa-demo-store`, plus `pa-demo-store-advocate` for the admin-only half so a
 client-side tab never holds admin material); the Start over button in the
 demo banner reseeds it.

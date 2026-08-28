@@ -793,6 +793,10 @@ summary.btn::-webkit-details-marker { display: none; }
   overflow-wrap: anywhere; white-space: normal;
 }
 .filelist .fmeta { color: var(--dim); font-size: .82rem; white-space: nowrap; }
+/* The work log rides the file list's grammar: a pill, a line, a date. The
+   line is a sentence rather than a file name, so it wraps the way the name
+   does instead of pushing the date off a 320px screen. */
+.filelist .logline { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
 .kind-pill {
   font: 700 .58rem/1 ui-monospace, monospace; letter-spacing: .12em;
   padding: .18rem .45rem; border-radius: 999px; border: 1px solid var(--line); color: var(--dim);
@@ -806,6 +810,29 @@ summary.btn::-webkit-details-marker { display: none; }
    is which, so a second hue would be decoration paid for in legibility. */
 .kind-pill.callsummary,
 .kind-pill.visitfollowup { border-color: var(--gold); color: var(--gold); }
+/* The work log's four categories. ONE colour for all four, from the tokens,
+   for the same reason the two document pills share one: the word on the pill
+   already says which is which, and four hues down one column would be
+   decoration paid for in legibility. Cyan, the colour the rest of the case
+   page already uses for "this is where your case is". */
+.kind-pill.call,
+.kind-pill.appeal,
+.kind-pill.investigation,
+.kind-pill.appointment { border-color: var(--cyan); color: var(--cyan); }
+/* A work log row where it is written rather than read: what it was, who it
+   was with, and whether the client can see it. The badge takes a whole flex
+   basis so it lands on its own line at every width. Inline it was clipped to
+   two letters at 320px, which is the one thing on this row that must never be
+   half a word. */
+.log-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem;
+  min-width: 0; flex: 1 1 auto;
+}
+.log-row-t { min-width: 0; overflow-wrap: anywhere; }
+.log-seen {
+  flex: 0 0 100%; font-size: .82rem; font-weight: 600; color: var(--muted);
+}
+.log-seen.is-on { color: var(--green); }
 
 .status-pill {
   font: 700 .62rem/1 ui-monospace, monospace; letter-spacing: .12em;

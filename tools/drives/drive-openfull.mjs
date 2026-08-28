@@ -11,9 +11,19 @@
 // who agreed on a call and paid another way could not be given the thing he
 // had bought. Everything that matters here is gated on that flag.
 //
-// So the check that counts is the LAST one: the client's own page offering the
-// insurer authorisation. The admin panel saying a nice sentence proves
-// nothing if the forms did not actually open.
+// So the check that counts is the LAST one: the client's own page. The admin
+// panel saying a nice sentence proves nothing if the tier furniture did not
+// actually open on the client's side.
+//
+// UPDATED 2026-08-27, not deleted. That furniture used to BE the two
+// authorisation forms, and signing them on the case page was parked on Eric's
+// word ("Remove the release of records and park that"). What the client's page
+// carries in that slot now is the work log, with the readiness row and the
+// window sentence at the head of it, so this drive follows the panel rather
+// than being loosened to "is anything there". The three things it has always
+// really asserted are unchanged: the tier flag reached the client's browser,
+// their page says their month STARTS rather than started, and it tells them
+// why getting the permission in early is still worth it.
 import { chromium } from 'playwright';
 const P = `http://127.0.0.1:${process.env.PA_PORT || 8901}`;
 let pass = 0, fail = 0;
@@ -165,7 +175,7 @@ ok('and the confirm named the start date too, not just the money',
 const said = await page.evaluate(() =>
   [...document.querySelectorAll('.saved-note')].map((n) => n.textContent.trim()).join(' | '));
 ok('and the panel says so where he can still read it after it vanishes',
-   /authorisation forms are live/i.test(said), said.slice(0, 110));
+   /work log and the check-in booking are live/i.test(said), said.slice(0, 110));
 ok('the panel itself is gone, because the case is on the tier now',
    !(await openPanel()));
 
@@ -178,18 +188,22 @@ const client = await ctx.newPage();
 // cookie in demoRole (worker/index.js:636) and sets it back. Same browser, so
 // the demo store is the one the admin half just wrote to.
 await client.goto(`${P}/case.html?id=demo-case&demo=1`, { waitUntil: 'networkidle' });
-// WAIT ON THE ELEMENT, not on a stopwatch. mountAuthority is async and fetches
-// the signed documents before it paints, so a fixed pause races it: at 3500ms
-// this reported "(no panel)" on a page that renders the panel correctly, which
-// is a drive accusing working code. A timeout here is a real failure; a slow
-// paint is not.
-await client.waitForSelector('[data-auth-panel]', { timeout: 20000 }).catch(() => {});
+// WAIT ON THE ELEMENT, not on a stopwatch. mountCaseLog is async and fetches
+// the log before it repaints, so a fixed pause races it: at 3500ms the old
+// version of this reported "(no panel)" on a page that renders correctly,
+// which is a drive accusing working code. A timeout here is a real failure; a
+// slow paint is not.
+await client.waitForSelector('[data-worklog-panel]', { timeout: 20000 }).catch(() => {});
 const seen = await client.evaluate(() => {
-  const p = document.querySelector('[data-auth-panel]');
+  const p = document.querySelector('[data-worklog-panel]');
   return {
     heading: p?.querySelector('h3')?.textContent.trim() || '',
-    insurer: /Your insurer/.test(p?.textContent || ''),
     ready: !!p?.querySelector('[data-ready-list]'),
+    // The offer is parked, so there must be no Sign button anywhere on the
+    // client's page - and no empty permissions box either, because this demo
+    // case has signed nothing.
+    signButtons: document.querySelectorAll('[data-auth-add]').length,
+    emptyPermissions: (document.querySelector('[data-auth-panel]')?.textContent || '').trim().length,
   };
 });
 // THE SENTENCE A FUTURE START BREAKS. It used to read "Your window started
@@ -197,18 +211,21 @@ const seen = await client.evaluate(() => {
 // start two weeks out is false twice over, on the client's own page, about the
 // thing they paid for.
 const windowLine = await client.evaluate(() =>
-  document.querySelector('[data-auth-panel]')?.textContent.replace(/\s+/g, ' ') || '');
+  document.querySelector('[data-worklog-panel]')?.textContent.replace(/\s+/g, ' ') || '');
 ok('the client is told their month STARTS, not that it already started',
    /Your month starts \w+ \d+/.test(windowLine) && !/window started/.test(windowLine),
    (windowLine.match(/Your (?:month|window) starte?s? [^.]*/) || ['(no window sentence)'])[0].slice(0, 110));
-ok('and is told why signing early is still worth it',
+ok('and is told why getting it in early is still worth it',
    /records request can take weeks/.test(windowLine));
 
-ok('the client is asked for the authorisation the tier needs',
-   seen.heading === 'Before I can act for you', seen.heading || '(no panel)');
-ok('the insurer form is on their page, which is the whole reason for this',
-   seen.insurer === true);
+ok('the tier furniture reached the client\'s own page',
+   seen.heading === 'What I have been doing', seen.heading || '(no panel)');
 ok('and the readiness checklist is there with it', seen.ready === true);
+// The parking, driven rather than grepped.
+ok('nothing offers them a form to sign, because that is parked',
+   seen.signButtons === 0, `${seen.signButtons} Sign buttons`);
+ok('and a case that has signed nothing shows no empty permissions box',
+   seen.emptyPermissions === 0, `${seen.emptyPermissions} chars of permissions panel`);
 
 ok('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
 await b.close();

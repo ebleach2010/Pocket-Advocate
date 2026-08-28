@@ -257,7 +257,14 @@ function render(el) {
     //   Track    where the case stands and what is outstanding
     //   Mine     the things he wrote himself
     groups: [
-      { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files'] },
+      // 'log' is the FOURTH page here, not a fifth anywhere else, and it is
+      // in this group on purpose: the Case group is the client, the
+      // conversation and their files, and the work log is the fourth thing
+      // they can see. It was 'calls' under Act until 2026-08-27. Act only
+      // exists on a Hands-Off case, and the client-facing log is on EVERY
+      // case, so leaving the entry form behind a tier gate would have meant a
+      // standard case with a log its client could read and he could not write.
+      { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files', 'log'] },
       { id: 'read', label: 'Advisor', icon: '👨‍⚕️', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
       { id: 'track', label: 'Track', icon: '🗒', pages: ['summary', 'unanswered', 'agenda', 'about'] },
       // 'calldoc' sits in Mine, beside Notes: both start from something Eric
@@ -269,7 +276,7 @@ function render(el) {
       // Only rendered for a Full Access case; on a standard case these pages
       // would be furniture for work that was never bought.
       ...(data.fullAccess
-        ? [{ id: 'act', label: 'Act', icon: '⚖️', pages: ['appeals', 'calls'] }] : []),
+        ? [{ id: 'act', label: 'Act', icon: '⚖️', pages: ['appeals'] }] : []),
     ],
     // Landing on a page IS having seen it. The badge clears here rather than
     // on some later save, so it never outlives the thing it was pointing at.
@@ -279,11 +286,6 @@ function render(el) {
         {
           id: 'appeals', title: 'Appeals', icon: '⚖️',
           render: (pane) => paintAppeals(pane),
-          onShow: (pane) => pane._reload?.(),
-        },
-        {
-          id: 'calls', title: 'Clinic calls', icon: '📞',
-          render: (pane) => paintClinicCalls(pane),
           onShow: (pane) => pane._reload?.(),
         },
       ] : []),
@@ -372,6 +374,19 @@ function render(el) {
         // page itself is now everything shared on the case, from either side.
         id: 'files', title: 'Uploads', icon: '📎',
         render: (pane) => paintFiles(pane),
+      },
+      // AFTER 'files', NOT BEFORE 'overview'. The strip renders in THIS array's
+      // order and the first page of a group in it is the tab the group opens
+      // on, which is written down thirty lines below and which this ignored on
+      // the first pass: defined at the top of the array, the work log became
+      // the landing page of the whole chart. Two browser drives caught it,
+      // measuring controls on Overview that were suddenly not on screen
+      // (drive-charge: "it is a 44px target (0px)"). Opening a case lands on
+      // Overview, as it always has.
+      {
+        id: 'log', title: 'Work log', icon: '🗒',
+        render: (pane) => paintWorkLog(pane),
+        onShow: (pane) => pane._reload?.(),
       },
       {
         id: 'about', title: 'About you', icon: '🪞',
@@ -1832,17 +1847,17 @@ function paintOverview(pane) {
     <!-- OPENING THE TIER BY HAND. Until now the only thing that could set
          fullAccess was a Stripe webhook, so a client who agreed on a call and
          paid another way could not be given what he had bought: the
-         authorisation forms, the readiness checklist and the check-in booking
-         are all gated on that flag. Eric, 2026-08-26: "where to start the
+         work log, the scope-note checklist and the check-in booking are all
+         gated on that flag. Eric, 2026-08-26: "where to start the
          clock and send forms as if he paid for the enhancement through the
          app." -->
     <details class="mgmt" data-k="openfull">
       <summary>🤝 Open Hands-Off by hand</summary>
       <div class="mgmt-body">
         <p class="dim small" style="margin:0 0 .6rem;">For a client who agreed
-          it on a call. This opens exactly the case a payment opens: their
-          authorisation forms, the readiness checklist, and the email telling
-          them to sign. They cannot tell which way the money reached you.</p>
+          it on a call. This opens exactly the case a payment opens: their work
+          log, their checklist, the check-in booking and the email. They cannot
+          tell which way the money reached you.</p>
         <p class="small" style="margin:0 0 .5rem;">This case shows
           <strong>${paidCents(c) === null ? 'no payment recorded' : '$' + dollars(paidCents(c))}</strong>
           paid so far.</p>
@@ -3147,7 +3162,7 @@ function wireOpenFull(el, c) {
       // already running.
       const later = handsOffStartsLater(data);
       say('openfull', data?.fullAccess
-        ? `Open. Their authorisation forms are live on their case page and the email has gone.${stored ? ` Their month ${later ? 'starts' : 'started'} ${dayFmt.format(stored)}.` : ''}`
+        ? `Open. Their work log and the check-in booking are live on their case page and the email has gone. Get their permission in writing yourself before you phone anyone.${stored ? ` Their month ${later ? 'starts' : 'started'} ${dayFmt.format(stored)}.` : ''}`
         : 'That went through, but the case still does not show Hands-Off. Do not send them to sign yet: try once more.',
       { tone: data?.fullAccess ? 'ok' : 'warn' });
       refreshOverview();
@@ -3453,18 +3468,34 @@ async function paintAuthorityStatus(pane) {
   const extra = Number(data.fullAccessExtraDays) || 0;
   const paused = !!data.hold?.pausedAt;
   // The same derived checklist the client sees, from the same helper - the
-  // two views cannot drift, and this card is where Eric reads "may I begin".
-  const ready = handsOffReadiness(data, items);
+  // two views cannot drift.
+  //
+  // WHAT THIS CARD STOPPED CLAIMING (2026-08-27). Its headline was "Ready:
+  // authority to act", and two of the checklist's three rows came from the
+  // signed authority documents. Signing them on the case page was parked on
+  // Eric's word, so those rows could never be ticked again and this card would
+  // have read "Not ready yet" on every case he ever opened. The checklist is
+  // one row now, and it says only what it still knows: whether they have read
+  // and acknowledged the scope note.
+  //
+  // THE WARNING DID NOT GO ANYWHERE. "May I pick up the phone" was the real
+  // question, and the honest answer is the permissions on file, not a tick
+  // box. So the card goes orange, and says so in words, whenever nothing is
+  // on file - which no longer depends on the checklist at all.
+  const ready = handsOffReadiness(data);
+  const noPermission = live.length === 0;
+  const alarm = !ready.ready || noPermission;
 
   host.innerHTML = `
-    <div class="panel" style="${ready.ready ? '' : 'border-color:var(--orange); box-shadow:var(--glow-o);'}">
-      <h3 style="margin:0 0 .35rem;${ready.ready ? '' : ' color:var(--orange);'}">
-        ${ready.ready ? 'Ready: authority to act' : 'Not ready yet'}</h3>
+    <div class="panel" style="${alarm ? 'border-color:var(--orange); box-shadow:var(--glow-o);' : ''}">
+      <h3 style="margin:0 0 .35rem;${alarm ? ' color:var(--orange);' : ''}">
+        ${noPermission ? 'No permission on file' : ready.ready ? 'Scope note done' : 'Waiting on the scope note'}</h3>
       <p class="dim small" style="margin:0 0 .4rem;">
         ${ready.rows.map((r) => `${r.done ? '✓' : '○'} ${esc(r.label)}`).join('<br>')}</p>
-      ${ready.ready ? '' : `<p class="dim small" style="margin:0 0 .5rem;">The
-        clock runs from purchase either way. The forms are waiting on their case
-        page; a nudge in chat is usually all it takes.</p>`}
+      ${noPermission ? `<p class="dim small" style="margin:0 0 .5rem; color:var(--orange);">
+        Nothing here authorises you to speak for them. Do not phone a clinic or
+        their plan on their behalf until you have it in writing. The clock runs
+        from purchase either way.</p>` : ''}
       <p class="dim small" style="margin:.1rem 0;">
         Records: ${recs.length
           ? recs.map((r) => esc(r.clinicName || 'clinic')).join(', ')
@@ -4050,18 +4081,56 @@ function printCallNotes(text, title = 'Call notes') {
 }
 
 /**
- * Clinic calls. Their own private record rather than a value on the
- * appointment: `appointment.method` is a two-value enum that gates checkout,
- * and everything on `appointment` is client-readable, so a clinic's direct
- * line would be on the client's own case doc. What the client sees is a
- * summary line; the number stays here.
+ * THE WORK LOG. What he has been doing on this case, by date.
+ *
+ * Eric, 2026-08-27: "I also do unlimited calls etc so that section should
+ * just be a log of what I've been doing by date, so they can see what I've
+ * been up to. Calls with notes for reason, appeals, investigations, attended
+ * appointments."
+ *
+ * THE SAME RECORD the clinic calls always used, grown two fields, because a
+ * second record would mean logging one call twice. It is still their own
+ * private record and not a value on the appointment: `appointment.method` is
+ * a two-value enum that gates checkout, and everything on `appointment` is
+ * client-readable, so a clinic's direct line would be on the client's own
+ * case doc. The number, who was on the line and his notes stay here; the one
+ * line he writes for the client goes out through /api/case-log.
+ *
+ * NOTHING AUTO-POPULATES (Eric, asked directly, 2026-08-27: "only what I log
+ * by hand"). No past check-in, attended appointment or upload writes a row
+ * here. Every line on this page is one he typed.
+ *
+ * NO COUNTER. This panel used to say "Three are included" and "N of 3 used",
+ * which contradicted his own agreement ("as many calls as the case needs. I
+ * do not count them and you will never be told you have used them up") and
+ * the About sheet's "Unlimited calls... never counted or metered". Nobody but
+ * him ever read it, and it was still wrong.
  *
  * No audio recording. The recording consent covers Eric's calls with his
  * client, not a third party, and two-party-consent states make recording a
  * clinic without asking a legal trap. The artifact is the written note.
  */
+const LOG_KINDS = [
+  { id: 'call', label: 'Call', pill: 'CALL' },
+  { id: 'appeal', label: 'Appeal', pill: 'APPEAL' },
+  { id: 'investigation', label: 'Investigation', pill: 'INVESTIGATION' },
+  { id: 'appointment', label: 'Attended appointment', pill: 'APPOINTMENT' },
+];
+// KEEP IN STEP with LOG_PILLS in case.js and with LOG_KINDS in the Worker.
+// Three copies because one file is served to clients, one is not, and the
+// Worker cannot import either; tools/suites/worklog.mjs pins all three equal.
+const logKind = (id) => LOG_KINDS.find((k) => k.id === id) || LOG_KINDS[0];
+
+/** The value an <input type="datetime-local"> wants, in local time. */
+function localInputValue(v) {
+  const d = v ? new Date(v) : null;
+  if (!d || Number.isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 let callsKey = null;
-function paintClinicCalls(pane) {
+function paintWorkLog(pane) {
   const load = async () => {
     let items = [];
     try {
@@ -4075,36 +4144,78 @@ function paintClinicCalls(pane) {
     if (key === callsKey && pane.querySelector('[data-calls-root]')) return;
     callsKey = key;
 
+    const shown = items.filter((i) => String(i.summary || '').trim()).length;
     pane.innerHTML = `
       <div class="panel" data-calls-root>
-        <h3 style="margin:0 0 .3rem;">📞 Clinic calls</h3>
-        <p class="dim small" style="margin:0 0 .6rem;">Three are included. Notes
-          only, never a recording: your recording consent covers your calls with
-          your client, not a clinic on the other end of the line.</p>
-        <p class="dim small" style="margin:0 0 .6rem;">${items.length} of 3 used.</p>
-        ${items.map((i) => `
+        <h3 style="margin:0 0 .3rem;">🗒 Work log</h3>
+        <p class="dim small" style="margin:0 0 .6rem;">Everything you do on this
+          case, by date, and nothing lands here on its own. Calls, appeals,
+          investigations, appointments you attended. Never counted, never
+          metered.</p>
+        <p class="dim small" style="margin:0 0 .6rem;"><strong>Your client sees
+          an entry only if you write the client line on it.</strong> Leave that
+          box empty and the entry is yours alone.
+          ${items.length
+            ? `${shown} of ${items.length} ${items.length === 1 ? 'entry is' : 'entries are'} on their page.`
+            : ''}</p>
+        ${items.map((i) => {
+    const seen = !!String(i.summary || '').trim();
+    const k = logKind(i.kind);
+    return `
           <details class="faq" data-k="call-${esc(i.id)}">
-            <summary>${esc(i.clinic || 'Clinic')} · ${i.at ? new Date(i.at).toLocaleDateString() : 'unscheduled'}</summary>
+            <summary>
+              <!-- ONE WRAPPER, and it is not decoration. The summary rule in
+                   site.css is display:flex with space-between, so a bare span
+                   in here is a FLEX ITEM: setting it to display block changes
+                   nothing, and the badge was pushed off the right edge at
+                   320px, where it read "Pr". Half a word is worse than no
+                   badge, because this is how he tells at a glance what his
+                   client is reading. So the row is its own wrapping flex box
+                   and the badge takes a whole basis, which puts it on the next
+                   line at every width. Found in a 320px screenshot, twice.
+                   NOTE: no back quotes in this comment. It sits inside a
+                   template literal, and the first draft of it ended the
+                   literal three words in. -->
+              <span class="log-row">
+                <span class="kind-pill ${esc(k.id)}">${esc(k.pill)}</span>
+                <span class="log-row-t">${esc(i.clinic || 'Someone')} · ${i.at ? new Date(i.at).toLocaleDateString() : 'no date'}</span>
+                <span class="log-seen${seen ? ' is-on' : ''}">${seen ? '👁 Shown to your client' : '🔒 Private, not shown'}</span>
+              </span></summary>
             <div class="faq-a">
               ${i.phone ? `<p class="dim small">${esc(i.phone)}</p>` : ''}
-              <textarea class="notes-root" data-call-notes="${esc(i.id)}" rows="6"
-                placeholder="What was said, what was agreed, who owes what by when.">${esc(i.notes || '')}</textarea>
-              <p><button class="btn quiet tiny" data-call-save="${esc(i.id)}">Save notes</button></p>
+              ${i.parties ? `<p class="dim small">On it: ${esc(i.parties)}</p>` : ''}
+              <label class="dim small">What your client sees, in one line. Leave
+                it empty and they see nothing.
+                <textarea data-call-summary="${esc(i.id)}" rows="2" maxlength="400"
+                  placeholder="e.g. Called the records office and chased the neurology notes.">${esc(i.summary || '')}</textarea></label>
+              <label class="dim small">Your own notes. These never leave this page.
+                <textarea class="notes-root" data-call-notes="${esc(i.id)}" rows="6"
+                  placeholder="What was said, what was agreed, who owes what by when.">${esc(i.notes || '')}</textarea></label>
+              <p><button class="btn quiet tiny" data-call-save="${esc(i.id)}">Save</button></p>
             </div>
-          </details>`).join('')}
+          </details>`;
+  }).join('')}
         <details class="faq" data-k="call-new">
-          <summary>Log another call</summary>
+          <summary>Log something</summary>
           <div class="faq-a">
-            <label class="dim small">Clinic
-              <input type="text" data-c="clinic"></label>
+            <label class="dim small">What was it
+              <select data-c="kind">
+                ${LOG_KINDS.map((k) => `<option value="${esc(k.id)}">${esc(k.label)}</option>`).join('')}
+              </select></label>
+            <label class="dim small">Who it was with
+              <input type="text" data-c="clinic" placeholder="e.g. Valley Neurology, or their insurer"></label>
+            <label class="dim small">When
+              <input type="datetime-local" data-c="at" value="${esc(localInputValue(Date.now()))}"></label>
+            <label class="dim small">What your client sees, in one line. Leave it
+              empty and they see nothing.
+              <textarea data-c="summary" rows="2" maxlength="400"
+                placeholder="e.g. Filed your first-level appeal."></textarea></label>
             <div class="row" style="gap:.5rem; flex-wrap:wrap;">
-              <label class="dim small" style="flex:1 1 8rem;">Their number
+              <label class="dim small" style="flex:1 1 8rem;">Their number, private
                 <input type="tel" data-c="phone"></label>
-              <label class="dim small" style="flex:1 1 8rem;">When
-                <input type="datetime-local" data-c="at"></label>
+              <label class="dim small" style="flex:1 1 8rem;">Who was on it, private
+                <input type="text" data-c="parties" placeholder="e.g. me, the client, records clerk"></label>
             </div>
-            <label class="dim small">Who is on it
-              <input type="text" data-c="parties" placeholder="e.g. me, the client, records clerk"></label>
             <p><button class="btn" data-call-add>Add it</button></p>
           </div>
         </details>
@@ -4135,13 +4246,17 @@ function paintClinicCalls(pane) {
 
     pane.querySelector('[data-call-add]')?.addEventListener('click', (e) => {
       const g = (n) => pane.querySelector(`[data-c="${n}"]`)?.value.trim() || '';
-      if (!g('clinic')) { alert('Name the clinic first.'); return; }
-      post({ action: 'add', clinic: g('clinic'), phone: g('phone'), at: g('at'), parties: g('parties') }, e.currentTarget);
+      if (!g('clinic')) { alert('Say who it was with first.'); return; }
+      post({
+        action: 'add', kind: g('kind'), clinic: g('clinic'), summary: g('summary'),
+        phone: g('phone'), at: g('at'), parties: g('parties'),
+      }, e.currentTarget);
     });
     for (const b of pane.querySelectorAll('[data-call-save]')) {
       b.addEventListener('click', (e) => post({
         action: 'notes', id: b.dataset.callSave,
         notes: pane.querySelector(`[data-call-notes="${b.dataset.callSave}"]`)?.value || '',
+        summary: pane.querySelector(`[data-call-summary="${b.dataset.callSave}"]`)?.value || '',
       }, e.currentTarget));
     }
   };

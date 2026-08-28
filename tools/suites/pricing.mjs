@@ -535,9 +535,21 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
     JSON.stringify(of?.fields.extraPayments || []).slice(0, 120));
   // "send forms as if he paid for the enhancement through the app": the
   // client's email has to be the webhook's email, or they can tell.
-  check('T8 the client is emailed and told to sign, exactly as a payment would',
+  // UPDATED 2026-08-27, not deleted. The email used to end "your authorisation
+  // is waiting on your case page. Nothing can start until that is signed",
+  // which stopped being true the day signing on the case page was parked: it
+  // pointed a paying client at a control that is no longer rendered. The
+  // ASSERTION is unchanged in substance and is the reason the check exists at
+  // all ("send forms as if he paid for the enhancement through the app"): the
+  // hand-opened case sends exactly one email, and it is the webhook's email,
+  // so a client cannot tell which way the money reached him. The body match
+  // follows the copy rather than being loosened away.
+  // NEGATIVE CONTROL (run 2026-08-27): pointing the hand-opened branch at a
+  // different subject line made this read
+  //   FAIL  T8 ... -- ["Your case is open"]
+  check('T8 the client is emailed exactly as a payment would email them',
     open.emails.length === 1 && /Hands-Off Case Management is open/.test(open.emails[0].subject || '')
-      && /authorisation/.test(open.emails[0].html || ''),
+      && /what I need from you to get moving/.test(open.emails[0].html || ''),
     JSON.stringify(open.emails.map((e) => e.subject)));
   const twice = await run({ ...CASEDOC, fullAccess: true }, { action: 'open-full', tierCents: 340000 });
   check('T9 a case already on the tier is refused, so nobody is billed twice',
