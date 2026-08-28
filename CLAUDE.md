@@ -176,9 +176,23 @@ comments; this is the same breach `service-terms.js` had.
   advice. The tier widens what Eric DOES, never what he claims to be.
 - **Every number in the agreement must drive a real limit.** An audit once
   caught it promising five clinics, three calls, two appeals and ninety
-  days with not one of them counted anywhere. Two survive because the code
-  enforces them: the 60-day window (`fullAccessWindowEnd()`) and the two
-  appeal letters (`appealsUsed()`).
+  days with not one of them counted anywhere. One survives because the code
+  enforces it: the monthly window (`fullAccessWindowEnd()`). The two appeal
+  letters and their `appealsUsed()` gate were REMOVED on Eric's word
+  (2026-08-28, v2.43): "The copy also says things like '2 appeal calls.'
+  The truth is I do my very best and there is no limit." Appeals are now
+  uncounted in the agreement AND ungated in the Worker; `filedCount` is
+  still stamped as a record but nothing reads it as a wall. Do not
+  reintroduce a count in either place — defects.mjs and pricing T9d pin the
+  absence.
+- **Refunds are by agreement only, never automatic** (Eric, 2026-08-28:
+  "Refunds happen under agreement upon the client and the advocate. It's
+  too much work to refund halfway through for some dumb reason."). The
+  tier's old first-month-refunds-down trigger is gone (v2.43). The two
+  surviving refund promises are both for work NOT delivered and were kept
+  deliberately: the telehealth full refund when an appointment never
+  happens, and the frozen `waivers.js` reschedule clause. New copy must not
+  add automatic refund triggers.
 - **"Every two weeks" is a FLAG, not an automation.** Eric schedules each
   check-in himself; the dashboard marks any tier case 14 days without one
   (`CHECKIN_DAYS`, `checkInDue`). The copy says "runs on a rhythm" for that
