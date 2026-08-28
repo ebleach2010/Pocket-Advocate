@@ -903,10 +903,14 @@ export function demoApi(role, store) {
       // His own activity types, mirroring the Worker (2026-08-29): stored in
       // one config doc, colours off the same allowlist, base ids protected.
       const colorIds = ['blue', 'deep', 'green', 'gold', 'orange', 'red'];
+      // A legacy id or a slider hue h0-h359, mirroring the Worker's
+      // validPillColor (2026-08-29).
+      const validColor = (c) => colorIds.includes(c)
+        || (/^h\d{1,3}$/.test(String(c || '')) && Number(String(c).slice(1)) <= 359);
       const customKinds = () => {
         const rows = store.docs.get('config/workLog')?.kinds;
         return (Array.isArray(rows) ? rows : []).filter((k) => k && k.id && k.label
-          && colorIds.includes(k.color));
+          && validColor(k.color));
       };
       if ((init.method || 'GET').toUpperCase() === 'GET') {
         const items = [...store.docs.entries()]
@@ -920,7 +924,7 @@ export function demoApi(role, store) {
         const label = String(body.label || '').trim().replace(/\s+/g, ' ').slice(0, 24);
         if (!/^[A-Za-z][A-Za-z0-9 &-]{1,23}$/.test(label))
           return fail(400, 'Name it in plain words: letters and numbers, up to 24 characters.');
-        if (!colorIds.includes(body.color)) return fail(400, 'Pick one of the colours.');
+        if (!validColor(body.color)) return fail(400, 'Pick one of the colours.');
         const kid = label.toLowerCase().replace(/[^a-z0-9]+/g, '');
         if (kid.length < 2) return fail(400, 'Name it in plain words first.');
         const existing = customKinds();

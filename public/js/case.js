@@ -2054,15 +2054,24 @@ const LOG_PILLS = {
   call: 'CALL', appeal: 'APPEAL', investigation: 'INVESTIGATION', appointment: 'APPOINTMENT',
 };
 // The advocate's own activity types arrive on each entry as a label and a
-// colour id (never free-form CSS): the id resolves here against a fixed map
-// of scheme tokens, so a custom pill is legible in every scheme and nothing
-// from the network reaches a style attribute except through this lookup.
-// KEEP IN STEP with LOG_COLORS in admin-case.js and LOG_COLOR_IDS in the
-// Worker; tools/suites/worklog.mjs pins the three equal.
+// colour (never free-form CSS): one of six legacy token ids, or a bare hue
+// h0-h359 from his slider (Eric, 2026-08-29: "Would like a color
+// wheel/slider"). Either way the value resolves HERE, into a token or into
+// hsl() built from digits plus the scheme's own --pill-s/--pill-l, so a
+// custom pill is legible in every scheme and nothing from the network
+// reaches a style attribute except through this function.
+// KEEP IN STEP with pillColor in admin-case.js and validPillColor in the
+// Worker; tools/suites/worklog.mjs pins them together.
 const LOG_COLORS = {
   blue: '--cyan', deep: '--magenta', green: '--green',
   gold: '--gold', orange: '--orange', red: '--danger',
 };
+function pillColor(c) {
+  if (LOG_COLORS[c]) return `var(${LOG_COLORS[c]})`;
+  const m = /^h(\d{1,3})$/.exec(String(c || ''));
+  if (m && Number(m[1]) <= 359) return `hsl(${Number(m[1])} var(--pill-s, 62%) var(--pill-l, 36%))`;
+  return 'var(--cyan)';
+}
 
 async function mountCaseLog(host, c) {
   const full = !!c.fullAccess;
@@ -2102,9 +2111,9 @@ async function mountCaseLog(host, c) {
     const at = i.at ? new Date(i.at) : null;
     const custom = !LOG_PILLS[i.kind] && typeof i.label === 'string' && i.label.trim();
     const kind = LOG_PILLS[i.kind] ? i.kind : 'call';
-    const cvar = LOG_COLORS[i.color] || '--cyan';
+    const chue = pillColor(i.color);
     const pill = custom
-      ? `<span class="kind-pill" style="border-color:var(${cvar}); color:var(${cvar})">${esc(i.label.trim().toUpperCase())}</span>`
+      ? `<span class="kind-pill" style="border-color:${chue}; color:${chue}">${esc(i.label.trim().toUpperCase())}</span>`
       : `<span class="kind-pill ${kind}">${LOG_PILLS[kind]}</span>`;
     return `
             <li>

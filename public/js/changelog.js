@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.48';
+export const VERSION = '2.49';
 
 /**
  * Newest first.
@@ -51,6 +51,14 @@ export const VERSION = '2.48';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // The colour slider for his activity types (Eric, 2026-08-29: "Would
+    // like a color wheel/slider for choosing new color for a category.").
+    // Quiet; admin control, client sees only nicer pills.
+    version: '2.49',
+    quiet: true,
+    client: [],
+  },
   {
     // His own work-log activity types (Eric, 2026-08-29: "I want to add
     // 'email' for example... I can select the highlight color."). Quiet.

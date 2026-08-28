@@ -1703,7 +1703,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-own-activity-types';
+const BUILD_TAG = 'v2026-08-29-hue-slider';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1711,7 +1711,7 @@ const BUILD_TAG = 'v2026-08-29-own-activity-types';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.48';
+const VERSION = '2.49';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3893,11 +3893,25 @@ const LOG_KINDS = ['call', 'appeal', 'investigation', 'appointment'];
  */
 const LOG_COLOR_IDS = ['blue', 'deep', 'green', 'gold', 'orange', 'red'];
 const LOG_CUSTOM_MAX = 12;
+/**
+ * A colour a pill may carry: one of the six legacy ids above, or a bare hue
+ * h0-h359 from the slider (Eric, 2026-08-29: "Would like a color
+ * wheel/slider"). The hue is the ONLY free choice; each scheme supplies its
+ * own saturation and lightness (site.css --pill-s/--pill-l), so any hue he
+ * picks stays legible on every ground, and the stored string is digits
+ * behind one letter, never anything that could reach a style attribute as
+ * markup.
+ */
+function validPillColor(c) {
+  if (LOG_COLOR_IDS.includes(c)) return true;
+  const m = /^h(\d{1,3})$/.exec(String(c || ''));
+  return !!m && Number(m[1]) <= 359;
+}
 async function customLogKinds(env) {
   const doc = await getDoc(env, 'config/workLog').catch(() => null);
   const rows = Array.isArray(doc?.data?.kinds) ? doc.data.kinds : [];
   return rows.filter((k) => k && typeof k.id === 'string' && typeof k.label === 'string'
-    && LOG_COLOR_IDS.includes(k.color));
+    && validPillColor(k.color));
 }
 
 /**
@@ -3936,7 +3950,7 @@ function caseLogProjection(rows) {
       kind: LOG_KINDS.includes(d.kind) ? d.kind : (custom ? String(d.kind).slice(0, 40) : 'call'),
       ...(custom ? {
         label: String(d.kindLabel).slice(0, 24),
-        color: LOG_COLOR_IDS.includes(d.kindColor) ? d.kindColor : 'blue',
+        color: validPillColor(d.kindColor) ? d.kindColor : 'blue',
       } : {}),
       who: typeof d.clinic === 'string' ? d.clinic.slice(0, 200) : '',
       summary,
@@ -4082,7 +4096,7 @@ async function handleClinicCalls(request, env, url) {
     const label = str(body?.label, 24).replace(/\s+/g, ' ');
     if (!/^[A-Za-z][A-Za-z0-9 &-]{1,23}$/.test(label))
       return json({ error: 'Name it in plain words: letters and numbers, up to 24 characters.' }, 400);
-    if (!LOG_COLOR_IDS.includes(body?.color))
+    if (!validPillColor(body?.color))
       return json({ error: 'Pick one of the colours.' }, 400);
     const kid = label.toLowerCase().replace(/[^a-z0-9]+/g, '');
     if (kid.length < 2) return json({ error: 'Name it in plain words first.' }, 400);

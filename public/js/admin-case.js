@@ -4795,10 +4795,16 @@ const LOG_COLORS = {
   blue: '--cyan', deep: '--magenta', green: '--green',
   gold: '--gold', orange: '--orange', red: '--danger',
 };
-const LOG_COLOR_NAMES = {
-  blue: 'Blue', deep: 'Deep blue', green: 'Green',
-  gold: 'Gold', orange: 'Orange', red: 'Red',
-};
+// The slider stores a bare hue, h0-h359 (Eric, 2026-08-29: "Would like a
+// color wheel/slider"); the scheme supplies saturation and lightness through
+// site.css --pill-s/--pill-l. KEEP IN STEP with pillColor in case.js and
+// validPillColor in the Worker.
+function pillColor(c) {
+  if (LOG_COLORS[c]) return `var(${LOG_COLORS[c]})`;
+  const m = /^h(\d{1,3})$/.exec(String(c || ''));
+  if (m && Number(m[1]) <= 359) return `hsl(${Number(m[1])} var(--pill-s, 62%) var(--pill-l, 36%))`;
+  return 'var(--cyan)';
+}
 
 /** The value an <input type="datetime-local"> wants, in local time. */
 function localInputValue(v) {
@@ -4824,7 +4830,8 @@ function paintWorkLog(pane) {
       if (res.ok) {
         const out = await res.json();
         items = out.items || [];
-        customs = (out.kinds || []).filter((k) => k && k.id && k.label && LOG_COLORS[k.color]);
+        customs = (out.kinds || []).filter((k) => k && k.id && k.label
+          && (LOG_COLORS[k.color] || /^h\d{1,3}$/.test(String(k.color))));
       }
     } catch { /* an unreachable list still offers the form */ }
     const key = JSON.stringify([items, customs]);
@@ -4852,9 +4859,9 @@ function paintWorkLog(pane) {
     // time, so a type he later removes never blanks an old row.
     const custom = !LOG_KINDS.some((b) => b.id === i.kind)
       && typeof i.kindLabel === 'string' && i.kindLabel.trim();
-    const cvar = LOG_COLORS[i.kindColor] || '--cyan';
+    const chue = pillColor(i.kindColor);
     const pillHtml = custom
-      ? `<span class="kind-pill" style="border-color:var(${cvar}); color:var(${cvar})">${esc(i.kindLabel.trim().toUpperCase())}</span>`
+      ? `<span class="kind-pill" style="border-color:${chue}; color:${chue}">${esc(i.kindLabel.trim().toUpperCase())}</span>`
       : `<span class="kind-pill ${esc(k.id)}">${esc(k.pill)}</span>`;
     return `
           <details class="faq" data-k="call-${esc(i.id)}">
@@ -4906,21 +4913,19 @@ function paintWorkLog(pane) {
             <div data-newkind hidden style="margin:.4rem 0 .6rem; padding:.6rem; border:1px solid var(--line); border-radius:10px;">
               <label class="dim small">Call it
                 <input type="text" data-nk-label maxlength="24" placeholder="e.g. Email"></label>
-              <p class="dim small" style="margin:.5rem 0 .2rem;">Highlight colour</p>
-              <div class="row" style="gap:.4rem; flex-wrap:wrap;">
-                ${Object.keys(LOG_COLORS).map((cid, n) => `
-                <label class="nk-chip" title="${esc(LOG_COLOR_NAMES[cid])}">
-                  <input type="radio" name="nk-color" value="${esc(cid)}"${n === 0 ? ' checked' : ''}>
-                  <span class="nk-swatch" style="background:var(${LOG_COLORS[cid]})"></span>
-                  <span class="dim small">${esc(LOG_COLOR_NAMES[cid])}</span>
-                </label>`).join('')}
-              </div>
+              <p class="dim small" style="margin:.5rem 0 .2rem;">Highlight colour.
+                Slide to any colour; the app keeps it readable in every look,
+                day and night.</p>
+              <input type="range" class="nk-hue" data-nk-hue min="0" max="359" value="210"
+                aria-label="Highlight colour hue">
+              <p style="margin:.45rem 0 0;">
+                <span class="kind-pill" data-nk-preview>LIKE THIS</span></p>
               <p style="margin:.6rem 0 0;"><button class="btn quiet tiny" data-nk-add>Add the type</button></p>
               ${customs.length ? `
               <p class="dim small" style="margin:.7rem 0 .2rem;">Your types. Removing one never touches anything already logged.</p>
               ${customs.map((k) => `
               <p class="row" style="gap:.4rem; align-items:center; margin:.15rem 0;">
-                <span class="kind-pill" style="border-color:var(${LOG_COLORS[k.color]}); color:var(${LOG_COLORS[k.color]})">${esc(k.label.toUpperCase())}</span>
+                <span class="kind-pill" style="border-color:${pillColor(k.color)}; color:${pillColor(k.color)}">${esc(k.label.toUpperCase())}</span>
                 <button class="btn ghost tiny" data-nk-remove="${esc(k.id)}" aria-label="Remove ${esc(k.label)}">Remove</button>
               </p>`).join('')}` : ''}
             </div>
@@ -4981,10 +4986,25 @@ function paintWorkLog(pane) {
     const syncNewBox = () => { if (newBox) newBox.hidden = kindSel?.value !== '__new'; };
     kindSel?.addEventListener('change', syncNewBox);
     syncNewBox();
+    // The live preview: the pill shows the name he is typing in the hue he
+    // is sliding through, before anything is saved.
+    const hueEl = pane.querySelector('[data-nk-hue]');
+    const labelEl = pane.querySelector('[data-nk-label]');
+    const previewEl = pane.querySelector('[data-nk-preview]');
+    const paintPreview = () => {
+      if (!previewEl) return;
+      const c = pillColor(`h${Number(hueEl?.value) || 0}`);
+      previewEl.style.borderColor = c;
+      previewEl.style.color = c;
+      previewEl.textContent = (labelEl?.value.trim() || 'Like this').toUpperCase();
+    };
+    hueEl?.addEventListener('input', paintPreview);
+    labelEl?.addEventListener('input', paintPreview);
+    paintPreview();
     pane.querySelector('[data-nk-add]')?.addEventListener('click', async (e) => {
-      const label = pane.querySelector('[data-nk-label]')?.value.trim() || '';
+      const label = labelEl?.value.trim() || '';
       if (!label) { alert('Call it something first.'); return; }
-      const color = pane.querySelector('input[name="nk-color"]:checked')?.value || 'blue';
+      const color = `h${Number(hueEl?.value) || 0}`;
       const out = await post({ action: 'kind-add', label, color }, e.currentTarget);
       if (out?.id) pickKindAfterLoad = out.id;
     });

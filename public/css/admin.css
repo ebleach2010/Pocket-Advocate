@@ -1345,3 +1345,24 @@ main > p > a.small[href="/admin.html"] {
 }
 .nk-chip input:checked + .nk-swatch { border-color: var(--ink); }
 .nk-chip input:focus-visible + .nk-swatch { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* The hue slider replacing the six chips (Eric, 2026-08-29: "Would like a
+   color wheel/slider"). The track IS the wheel, unrolled; the thumb keeps
+   the scheme's ink ring so it reads on every stop of the rainbow. */
+.nk-hue {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; max-width: 22rem; height: 14px; border-radius: 999px;
+  background: linear-gradient(90deg,
+    hsl(0 70% 55%), hsl(60 70% 55%), hsl(120 70% 45%), hsl(180 70% 45%),
+    hsl(240 70% 55%), hsl(300 70% 55%), hsl(359 70% 55%));
+  outline-offset: 3px;
+}
+.nk-hue::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--panel); border: 3px solid var(--ink);
+}
+.nk-hue::-moz-range-thumb {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--panel); border: 3px solid var(--ink);
+}

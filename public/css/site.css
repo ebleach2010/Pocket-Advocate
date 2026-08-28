@@ -2580,3 +2580,15 @@ input[type="radio"] { min-width: 24px; min-height: 24px; }
 @media (prefers-reduced-motion: no-preference) {
   [data-worklog] details.faq { transition: opacity 180ms ease; }
 }
+
+/* HIS OWN ACTIVITY-TYPE COLOURS, hue only (Eric, 2026-08-29: "Would like a
+   color wheel/slider for choosing new color for a category."). The slider
+   picks the hue and stores h0-h359; the SHADE is decided here, per scheme,
+   so an activity coloured on a bright phone in the afternoon is still
+   legible on the deep navy Night ground and on High contrast's black. Both
+   pill renderers build hsl(H var(--pill-s) var(--pill-l)) from these two
+   tokens and digits only. */
+:root { --pill-s: 62%; --pill-l: 36%; }
+[data-scheme="calm"] { --pill-s: 68%; --pill-l: 70%; }
+[data-scheme="paper"] { --pill-s: 55%; --pill-l: 34%; }
+[data-scheme="contrast"] { --pill-s: 100%; --pill-l: 75%; }

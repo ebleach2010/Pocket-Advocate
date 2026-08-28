@@ -511,6 +511,9 @@ const routeSrc = (WORKER.match(/async function handleClinicCalls\(request, env, 
 // The route now resolves his own activity types (2026-08-29), so the lift
 // needs the resolver and its two constants or it dies mid-run.
 const customFn = (WORKER.match(/async function customLogKinds\(env\) \{[\s\S]*?\n\}/) || [''])[0];
+// And the colour gate itself (2026-08-29, the hue slider): a legacy id or
+// h0-h359, one function both the route and the projection call.
+const colorFn = (WORKER.match(/function validPillColor\(c\) \{[\s\S]*?\n\}/) || [''])[0];
 const colorIdsLine = (WORKER.match(/const LOG_COLOR_IDS = \[[^\n]*\];/) || [''])[0];
 const customMaxLine = (WORKER.match(/const LOG_CUSTOM_MAX = \d+;/) || [''])[0];
 const strFn = (WORKER.match(/function str\(v, n\) \{[\s\S]*?\n\}/) || [''])[0];
@@ -526,11 +529,12 @@ const advocateFn = (WORKER.match(/function advocateName\(profile\) \{[\s\S]*?\n\
 // same way L4 does for the projection.
 ck('L32 the notification lifts out of the shipped Worker, words and all',
   !!noticeTable && !!noticeFn && !!routeSrc && !!strFn && !!nameFn && !!advocateFn
-  && !!customFn && !!colorIdsLine && !!customMaxLine,
+  && !!customFn && !!colorIdsLine && !!customMaxLine && !!colorFn,
   [!noticeTable && 'WORK_LOG_NOTICES', !noticeFn && 'workLogNotice',
     !routeSrc && 'handleClinicCalls', !strFn && 'str', !nameFn && 'firstName',
     !advocateFn && 'advocateName', !customFn && 'customLogKinds',
-    !colorIdsLine && 'LOG_COLOR_IDS', !customMaxLine && 'LOG_CUSTOM_MAX']
+    !colorIdsLine && 'LOG_COLOR_IDS', !customMaxLine && 'LOG_CUSTOM_MAX',
+    !colorFn && 'validPillColor']
     .filter(Boolean).join(', '));
 
 /** The route, running, with everything it touches stubbed. `ctl.boom` makes a
@@ -565,6 +569,7 @@ const harness = (caseData, adminData = { name: 'Eric Bleach', role: 'admin' }) =
     const LOG_KINDS = ${workerKinds || "['call']"};
     ${colorIdsLine}
     ${customMaxLine}
+    ${colorFn}
     ${strFn}
     ${nameFn}
     ${advocateFn}
@@ -963,19 +968,63 @@ ck('L48h a kind nobody defined still folds to call, with no stamp',
 // NEGATIVE CONTROLS (run 2026-08-29): renaming the projection's label field
 // made L48i red; taking the pill colour straight from i.color made L48j red;
 // renaming the demo's kind-add action made L48k red.
+// Pin updated 2026-08-29 (hue slider): the projection's colour gate moved
+// from the id allowlist to validPillColor, which admits h0-h359 as well.
 ck('L48i the projection ships the stamped label and colour by name',
   /label: String\(d\.kindLabel\)\.slice\(0, 24\),/.test(WORKER)
-  && /color: LOG_COLOR_IDS\.includes\(d\.kindColor\) \? d\.kindColor : 'blue',/.test(WORKER));
-ck('L48j both pages colour custom pills through the fixed map, label escaped',
-  /const cvar = LOG_COLORS\[i\.color\] \|\| '--cyan';/.test(CLIENT)
+  && /color: validPillColor\(d\.kindColor\) \? d\.kindColor : 'blue',/.test(WORKER));
+// Pin updated 2026-08-29 (hue slider): both pages resolve through
+// pillColor(), which admits the six token ids and h0-h359 hues built from
+// digits plus the scheme's --pill-s/--pill-l, and nothing else.
+ck('L48j both pages colour custom pills through pillColor, label escaped',
+  (CLIENT.match(/function pillColor\(c\) \{/g) || []).length === 1
+  && (ADMIN.match(/function pillColor\(c\) \{/g) || []).length === 1
+  && /hsl\(\$\{Number\(m\[1\]\)\} var\(--pill-s, 62%\) var\(--pill-l, 36%\)\)/.test(CLIENT)
+  && /hsl\(\$\{Number\(m\[1\]\)\} var\(--pill-s, 62%\) var\(--pill-l, 36%\)\)/.test(ADMIN)
   && /\$\{esc\(i\.label\.trim\(\)\.toUpperCase\(\)\)\}/.test(CLIENT)
+  && /\$\{esc\(i\.kindLabel\.trim\(\)\.toUpperCase\(\)\)\}/.test(ADMIN)
   && /blue: '--cyan', deep: '--magenta', green: '--green',/.test(CLIENT)
-  && /blue: '--cyan', deep: '--magenta', green: '--green',/.test(ADMIN)
-  && /\$\{esc\(i\.kindLabel\.trim\(\)\.toUpperCase\(\)\)\}/.test(ADMIN));
+  && /blue: '--cyan', deep: '--magenta', green: '--green',/.test(ADMIN));
 ck('L48k and the demo mirrors the type store, the gates and the stamp',
   /body\.action === 'kind-add'/.test(DEMO) && /body\.action === 'kind-remove'/.test(DEMO)
   && /'blue', 'deep', 'green', 'gold', 'orange', 'red'/.test(DEMO)
   && /kindLabel: rec\.kindLabel, kindColor: rec\.kindColor \|\| 'blue'/.test(DEMO));
+
+// ---- L48l-L48o: the hue slider (Eric, 2026-08-29: "Would like a color
+// wheel/slider for choosing new color for a category.") -------------------
+const H3 = harness({ ...OPEN_CASE });
+// NEGATIVE CONTROL (run 2026-08-29): anchoring the Worker's hue regex to a
+// capital H made this read
+//   FAIL  L48l a slider hue is a colour: h0-h359 is accepted and stored
+const hueOk = await H3.post({ caseId: 'c1', action: 'kind-add', label: 'Fax', color: 'h287' });
+ck('L48l a slider hue is a colour: h0-h359 is accepted and stored',
+  hueOk.code === 200
+  && (H3.store.get('config/workLog')?.kinds || []).some((k) => k.id === 'fax' && k.color === 'h287'),
+  JSON.stringify(hueOk.obj));
+// NEGATIVE CONTROL (run 2026-08-29): lifting the 359 ceiling to 9999 made
+// this read
+//   FAIL  L48m ... -- 200 / 400
+const hueBad = await H3.post({ caseId: 'c1', action: 'kind-add', label: 'Post', color: 'h999' });
+const hueEvil = await H3.post({ caseId: 'c1', action: 'kind-add', label: 'Mail', color: 'h12;x' });
+ck('L48m and anything that is not a bare hue or a token id is refused',
+  hueBad.code === 400 && hueEvil.code === 400, `${hueBad.code} / ${hueEvil.code}`);
+// The shade is the scheme's, never the slider's: every scheme block defines
+// the saturation and lightness the hue renders with, so a colour picked at
+// noon is still legible on Night's navy and High contrast's black.
+// NEGATIVE CONTROL (run 2026-08-29): deleting the calm line made this read
+//   FAIL  L48n every scheme defines the shade the hue is rendered with
+ck('L48n every scheme defines the shade the hue is rendered with',
+  /:root \{ --pill-s: 62%; --pill-l: 36%; \}/.test(CSS)
+  && /\[data-scheme="calm"\] \{ --pill-s: 68%; --pill-l: 70%; \}/.test(CSS)
+  && /\[data-scheme="paper"\] \{ --pill-s: 55%; --pill-l: 34%; \}/.test(CSS)
+  && /\[data-scheme="contrast"\] \{ --pill-s: 100%; --pill-l: 75%; \}/.test(CSS));
+// NEGATIVE CONTROL (run 2026-08-29): sending the slider's raw value without
+// the h prefix made this read
+//   FAIL  L48o the slider is real, stores h plus digits, demo takes the same shape
+ck('L48o the slider is real, stores h plus digits, demo takes the same shape',
+  /data-nk-hue/.test(ADMIN) && /type="range"/.test(ADMIN)
+  && /const color = `h\$\{Number\(hueEl\?\.value\) \|\| 0\}`;/.test(ADMIN)
+  && /const validColor = \(c\) => colorIds\.includes\(c\)/.test(DEMO));
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
