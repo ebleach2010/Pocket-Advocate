@@ -50,12 +50,37 @@ const slab = (src, from, to) => {
   return b < 0 ? '' : src.slice(a, b + to.length);
 };
 
+/**
+ * EVERY LIFT, MEASURED, AND THE SIZES PRINTED ON EVERY RUN.
+ *
+ * A slab that runs past the end of what it meant to capture does not go red.
+ * It swallows whatever comes next and the checks below stay green on it,
+ * because the extra code is usually inert. That happened here: the
+ * sendBlankForms lift ended on '\n  load();\n}', load() later moved inside an
+ * `if`, and the slab quietly captured 16,234 characters instead of 5,144
+ * through three commits without one check noticing.
+ *
+ * So "the suite is green" is not the claim worth making about a lift. "The
+ * suite is green AND the lift is the size it was" is a different claim, and
+ * only the second one survives a merge. The table prints unconditionally so
+ * the number is in front of whoever runs this, on the run that changes it
+ * rather than three commits later.
+ *
+ * Proved its keep on 2026-08-28: across a trial merge with the advisor branch
+ * every lift here was byte-identical except handleCaseUpdate, which grew 2,145
+ * characters. That growth was benign (a set-paid provenance write using only
+ * already-stubbed helpers) but it was invisible to a green run.
+ */
+const LIFTS = new Map();
+const lifted = (name, text) => { LIFTS.set(name, text.length); return text; };
+const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
+
 // ---- U1-U4: two files with one name must BOTH survive --------------------
 // Lifted and run against a Storage stand-in that behaves the way Storage
 // behaves: a repeated path overwrites, without a word.
 {
-  const body = slab(ADMINCASE, 'async function upload(file, kind, milestoneAction',
-    '  bar.hidden = true;\n}');
+  const body = lifted('upload', slab(ADMINCASE, 'async function upload(file, kind, milestoneAction',
+    '  bar.hidden = true;\n}'));
   // NEGATIVE CONTROL (all runs 2026-08-28): renaming upload() made this read
   //   FAIL  U1 the upload path lifts out of the shipped page
   // A lift that has lost its target goes red rather than asserting nothing.
@@ -335,10 +360,26 @@ const slab = (src, from, to) => {
 // 48 hours and closes the chat after it. A call summary doing that would end
 // a case because he filed a note.
 {
-  const fn = (WORKER.match(/async function handleCaseUpdate\(request, env\) \{[\s\S]*?\n\}/) || [''])[0];
+  const fn = lifted('handleCaseUpdate',
+    (WORKER.match(/async function handleCaseUpdate\(request, env\) \{[\s\S]*?\n\}/) || [''])[0]);
   // NEGATIVE CONTROL: renaming handleCaseUpdate made this read
   //   FAIL  U12 handleCaseUpdate lifts out of the shipped Worker
   ck('U12 handleCaseUpdate lifts out of the shipped Worker', fn.length > 0);
+  // AND IT LIFTED THAT FUNCTION AND NOT ITS NEIGHBOURS. The size of this one
+  // legitimately moves whenever the route grows, so it cannot be pinned to a
+  // number; what can be pinned is that the capture stops before the next
+  // declaration. Borrowed from the advisor branch's A30c, which is the better
+  // shape: a slab that swallows exactly one extra function still ends on a
+  // plausible closing brace and still looks a plausible length, and only
+  // holding the NEIGHBOUR catches that.
+  // NEGATIVE CONTROL (run 2026-08-28): making the body regex greedy
+  // ([\s\S]*\n\}) made this read
+  //   FAIL  U12b and it stopped before the next route, rather than swallowing it  -- 39663 chars, swallowed: validTz
+  ck('U12b and it stopped before the next route, rather than swallowing it',
+    fn.length > 0 && !/\nfunction validTz\(/.test(fn)
+    && !/\nasync function handleAdminCase\(/.test(fn),
+    `${fn.length} chars, swallowed: ${['validTz', 'handleAdminCase']
+      .filter((n) => new RegExp(`\\n(async )?function ${n}\\(`).test(fn)).join(', ') || 'nothing'}`);
   const writes = [];
   const pushes = [];
   const run = async (caseDoc, reqBody) => {
@@ -550,10 +591,10 @@ const slab = (src, from, to) => {
 // documents. Every future reader of that function will want to add an "already
 // sent" guard to it; this is what stops them.
 {
-  const TZ = slab(ADMINCASE, "const MOUNTAIN_TZ = ", ";");
-  const FORMS = slab(ADMINCASE, 'const SENDABLE_FORMS = [', '];');
-  const DAY = slab(ADMINCASE, 'function mountainDay(d = new Date()) {', '\n}');
-  const STAMP = slab(ADMINCASE, 'let lastStamp = 0;', '\n}');
+  const TZ = lifted('MOUNTAIN_TZ', slab(ADMINCASE, "const MOUNTAIN_TZ = ", ";"));
+  const FORMS = lifted('SENDABLE_FORMS', slab(ADMINCASE, 'const SENDABLE_FORMS = [', '];'));
+  const DAY = lifted('mountainDay', slab(ADMINCASE, 'function mountainDay(d = new Date()) {', '\n}'));
+  const STAMP = lifted('uploadStamp', slab(ADMINCASE, 'let lastStamp = 0;', '\n}'));
   // ENDING ON THE RETURN, not on `load();`. It ended on load() until the send
   // grew a partial-failure path and load() moved inside an if, four spaces in.
   // The slab then ran past the end of the function to the NEXT match further
@@ -561,8 +602,8 @@ const slab = (src, from, to) => {
   // stayed green on it because the extra code happened to be inert. A lift
   // that quietly captures half a file is a lift that will one day capture
   // something that is not inert, so U20b now measures what came out.
-  const SEND = slab(ADMINCASE, 'async function sendBlankForms(kinds, btn) {',
-    '\n  return { sent, quiet };\n}');
+  const SEND = lifted('sendBlankForms', slab(ADMINCASE, 'async function sendBlankForms(kinds, btn) {',
+    '\n  return { sent, quiet };\n}'));
   // NEGATIVE CONTROL (run 2026-08-28): renaming sendBlankForms made this read
   //   FAIL  U20 the send path lifts out of the shipped page  -- tz 1, forms 1, day 1, stamp 1, send 0
   // A lift that has lost its target goes red rather than asserting nothing, so
@@ -577,17 +618,30 @@ const slab = (src, from, to) => {
   // NEGATIVE CONTROL (run 2026-08-28): putting the end marker back to
   // '\n  load();\n}' made this read
   //   FAIL  U20b and it lifted the function and NOT half the file after it  -- 16234 chars, ends "load = load;\n  load();\n}"
+  // and a SECOND control for the swallow, which the length and tail alone let
+  // through: ending the slab on '\n});' captured the function plus exactly the
+  // seam listener, 6,540 characters, a wholly plausible size ->
+  //   FAIL  U20b ... -- 6540 chars, ends "detail.kinds || []);\n});", swallowed: the seam
   // and the run then died at "TypeError: document.addEventListener is not a
   // function", which is the lift refusing to run code the harness does not
   // stub: a loud failure, not a quiet pass.
   // which is the real bug this check was written from: the lift had been
   // over-capturing since the send grew its partial-failure path, and every
   // check below stayed green on it.
+  // THREE SHAPES OF THE SAME FAILURE, and it takes all three, which is the
+  // advisor branch's A30/A30b/A30c split and it is the right one: a LOST lift
+  // (length zero, U20 above), a RUN-ON (wrong length, wrong tail), and a
+  // SWALLOW (exactly one extra function, still a plausible length and a
+  // plausible tail). Only naming the neighbours catches the third.
   ck('U20b and it lifted the function and NOT half the file after it',
     SEND.length > 2000 && SEND.length < 6000
     && SEND.trimEnd().endsWith('return { sent, quiet };\n}')
-    && !SEND.includes('addEventListener'),
-    `${SEND.length} chars, ends ${JSON.stringify(SEND.trimEnd().slice(-24))}`);
+    && !SEND.includes("addEventListener('pa-send-forms'")
+    && !/\nfunction paintAppeals\(/.test(SEND),
+    `${SEND.length} chars, ends ${JSON.stringify(SEND.trimEnd().slice(-24))}`
+      + `, swallowed: ${['the seam', 'paintAppeals']
+        .filter((n, i) => (i ? /\nfunction paintAppeals\(/.test(SEND)
+          : SEND.includes("addEventListener('pa-send-forms'"))).join(', ') || 'nothing'}`);
 
   /**
    * One harness, five runs. `apiFails` makes the notification throw; `noPanel`
@@ -905,7 +959,7 @@ const slab = (src, from, to) => {
   // that branch lands, so it is LIFTED AND DISPATCHED here rather than left as
   // a line nobody has ever run.
   {
-    const SEAM = slab(ADMINCASE, "document.addEventListener('pa-send-forms'", '});');
+    const SEAM = lifted('seam', slab(ADMINCASE, "document.addEventListener('pa-send-forms'", '});'));
     // NEGATIVE CONTROL (run 2026-08-28): deleting the listener made this read
     //   FAIL  U28f the pa-send-forms seam is in the shipped page
     ck('U28f the pa-send-forms seam is in the shipped page', SEAM.length > 0);
@@ -1015,6 +1069,10 @@ const slab = (src, from, to) => {
       && /\$\{form\.label\} \$\{mountainDay\(\)\}\.html/.test(ADMINCASE));
   }
 }
+
+// EVERY LIFT, AND ITS SIZE, ON EVERY RUN. See `lifted` at the top: green is
+// not the claim worth making about a slab, green and unchanged is.
+console.log(`\nlifted: ${liftTable()}`);
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
