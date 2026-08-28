@@ -2996,6 +2996,27 @@ function firstName(v) {
   return name || 'A client';
 }
 
+/**
+ * What to call HIM, to a CLIENT.
+ *
+ * NOT firstName() on its own, and this is the whole reason this exists.
+ * firstName never returns empty by design: it falls back to 'A client', which
+ * is exactly right on HIS lock screen, where a client is who did the thing.
+ * On a client's lock screen it is wrong in a way that reads as a bug, because
+ * their advocate arrives as "A client sent you a message."
+ *
+ * The `|| 'Your advocate'` that used to sit at those call sites looked like it
+ * covered this and never could: 'A client' is truthy, so the fallback was
+ * unreachable from the day firstName grew its own.
+ *
+ * So the emptiness is tested BEFORE firstName is asked, and the two client
+ * facing bodies share this one expression rather than growing two.
+ */
+function advocateName(profile) {
+  const raw = String(profile?.data?.name || '').trim();
+  return raw ? firstName(raw) : 'Your advocate';
+}
+
 async function handleNotify(request, env, ctx) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in required' }, 401);
@@ -3067,7 +3088,7 @@ async function handleNotify(request, env, ctx) {
     refreshAdvisor(env, ctx, kind, id);
     await notifyUser(env, clientUid, {
       title: 'Pocket Advocate',
-      body: `${firstName(profile?.data.name) || 'Your advocate'} sent you a message.`,
+      body: `${advocateName(profile)} sent you a message.`,
       link: clientLink,
     });
   } else {
@@ -3910,8 +3931,8 @@ const WORK_LOG_NOTICES = {
  *
  * `c` is the case document's data and `who` is what to call him. The one
  * house way of naming him to a client is
- * `firstName(profile?.data.name) || 'Your advocate'`, which is what the "sent
- * you a message" notification uses; it is passed in rather than built here so
+ * `advocateName(profile)`, which is what the "sent you a message"
+ * notification uses; it is passed in rather than built here so
  * there is still only one of it, and so this function stays runnable.
  *
  * THE THREE SILENCES LIVE IN HERE, not at the call site, so a test can prove
@@ -3992,7 +4013,7 @@ async function handleClinicCalls(request, env, url) {
       getDoc(env, `cases/${id}`).catch(() => null),
       getDoc(env, `users/${admin.uid}`).catch(() => null),
     ]);
-    const notice = workLogNotice(kind, c?.data, firstName(profile?.data.name) || 'Your advocate');
+    const notice = workLogNotice(kind, c?.data, advocateName(profile));
     if (notice) {
       // ORDER: send FIRST, stamp the case SECOND, and the stamp sits inside
       // the success path so anything that throws on the way never lays one

@@ -461,15 +461,20 @@ const noticeFn = (WORKER.match(/function workLogNotice\(kind, c, who\) \{[\s\S]*
 const routeSrc = (WORKER.match(/async function handleClinicCalls\(request, env, url\) \{[\s\S]*?\n\}/) || [''])[0];
 const strFn = (WORKER.match(/function str\(v, n\) \{[\s\S]*?\n\}/) || [''])[0];
 const nameFn = (WORKER.match(/function firstName\(v\) \{[\s\S]*?\n\}/) || [''])[0];
+// The route names him to a client through this, not through firstName direct.
+// Added 2026-08-28 when the route started calling it: without it the lift
+// threw ReferenceError mid-run, which is the suite doing its job.
+const advocateFn = (WORKER.match(/function advocateName\(profile\) \{[\s\S]*?\n\}/) || [''])[0];
 // NEGATIVE CONTROL (run 2026-08-28): renaming workLogNotice in the Worker made
 // this read
 //   FAIL  L32 the notification lifts out of the shipped Worker, words and all  -- workLogNotice
 // A lift that has lost its target goes red rather than asserting nothing, the
 // same way L4 does for the projection.
 ck('L32 the notification lifts out of the shipped Worker, words and all',
-  !!noticeTable && !!noticeFn && !!routeSrc && !!strFn && !!nameFn,
+  !!noticeTable && !!noticeFn && !!routeSrc && !!strFn && !!nameFn && !!advocateFn,
   [!noticeTable && 'WORK_LOG_NOTICES', !noticeFn && 'workLogNotice',
-    !routeSrc && 'handleClinicCalls', !strFn && 'str', !nameFn && 'firstName']
+    !routeSrc && 'handleClinicCalls', !strFn && 'str', !nameFn && 'firstName',
+    !advocateFn && 'advocateName']
     .filter(Boolean).join(', '));
 
 /** The route, running, with everything it touches stubbed. `ctl.boom` makes a
@@ -504,6 +509,7 @@ const harness = (caseData, adminData = { name: 'Eric Bleach', role: 'admin' }) =
     const LOG_KINDS = ${workerKinds || "['call']"};
     ${strFn}
     ${nameFn}
+    ${advocateFn}
     ${noticeTable}
     ${noticeFn}
     ${routeSrc}
@@ -730,6 +736,58 @@ const dashLines = [...noticeTable.split('\n'),
 ck('L44b no em or en dash in the new client copy',
   dashLines.length === 0, dashLines[0]?.trim() || '');
 
+
+// ---- L45: he is never introduced to his own client as "A client" ---------
+//
+// LIFTED AND RUN, because this one was invisible to every reader for weeks and
+// is live on the production site right now.
+//
+// `firstName()` promises never to return empty and keeps that promise with
+// `return name || 'A client'`. That is right on HIS lock screen, where a
+// client is who did the thing. The two bodies that name him to a CLIENT wrote
+// `firstName(profile?.data.name) || 'Your advocate'`, which looks like it
+// handles a missing name and cannot: 'A client' is truthy, so the fallback was
+// unreachable and an advocate with no profile name reached his client as
+// "A client sent you a message."
+//
+// So the function is pulled out of the shipped Worker and RUN, with a profile
+// that has a name, one that has none, one that is only whitespace, and one
+// that is missing entirely.
+//
+// THREE NEGATIVE CONTROLS, all run 2026-08-28 and all observed:
+//   restoring `firstName(profile?.data.name) || 'Your advocate'` ->
+//     FAIL  L45 an advocate with no name on his profile is "Your advocate",
+//           never "A client"  -- no name gave "A client"
+//     FAIL  L45c and neither client facing body reaches for the fallback that
+//           could never fire
+//   making advocateName always return 'Your advocate' ->
+//     FAIL  L45b and his real first name is still used when he has one
+//           -- named profile gave "Your advocate"
+//   renaming advocateName in the Worker, so the lift loses its target ->
+//     FAIL  L32 the notification lifts out of the shipped Worker, words and
+//           all  -- advocateName
+{
+  // eslint-disable-next-line no-new-func
+  const advocateName = new Function(`${nameFn}\n${advocateFn}\nreturn advocateName;`)();
+
+  const noName = [
+    advocateName({ data: { name: '' } }),
+    advocateName({ data: { name: '   ' } }),
+    advocateName({ data: {} }),
+    advocateName(null),
+  ];
+  ck('L45 an advocate with no name on his profile is "Your advocate", never "A client"',
+    noName.every((x) => x === 'Your advocate'),
+    `no name gave ${JSON.stringify(noName.find((x) => x !== 'Your advocate'))}`);
+
+  const named = advocateName({ data: { name: 'Eric Bleach' } });
+  ck('L45b and his real first name is still used when he has one',
+    named === 'Eric', `named profile gave ${JSON.stringify(named)}`);
+
+  // The dead expression must not come back at either client facing site.
+  ck('L45c and neither client facing body reaches for the fallback that could never fire',
+    !/firstName\(profile\?\.data\.name\) \|\| 'Your advocate'/.test(WORKER));
+}
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
