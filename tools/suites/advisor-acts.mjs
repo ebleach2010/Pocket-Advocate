@@ -13,7 +13,7 @@
 // it, or lifts the shipped route out of the Worker and executes it.
 //
 // Run: node tools/suites/advisor-acts.mjs
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath as f } from 'node:url';
 import { dirname as d, join as j } from 'node:path';
 
@@ -35,6 +35,43 @@ const ck = (name, cond, detail = '') => {
 const { validateAction, ALLOWED, DENYLIST, tierOf, dispatchFor, actionTools, tablesDisagree } = ACTS;
 
 /**
+ * THE LIFT REGISTRY, and why every slab in this file goes through it.
+ *
+ * The -forms branch found the failure this guards on 2026-08-28, and it is
+ * nastier than a lift that goes red: one of its checks was written as
+ * `!/generator/.test(slab(...))` and a lost lift returns ''. A regex does not
+ * match an empty string, the negation turns that into true, and the check
+ * PASSED while asserting nothing at all, from the day it was written. Two of
+ * mine were the same shape.
+ *
+ * So the slabs are lifted ONCE, here, and registered. A30 then asserts over
+ * the whole registry rather than over whatever each block happened to
+ * remember to guard. Lifting once also kills a second hazard that was already
+ * live in this file: handleClientAlert and renderActCard were each matched by
+ * TWO regexes in two places, and two copies of a pattern are two things that
+ * can drift apart while both look right.
+ */
+const SLABS = [];
+const lifted = (name, src) => { SLABS.push([name, src || '']); return src || ''; };
+
+const LIFT = {
+  handleClientAlert: lifted('handleClientAlert',
+    (W.match(/async function handleClientAlert\(request, env\) \{[\s\S]*?\n\}/) || [''])[0]),
+  alertConsts: lifted('alertConsts',
+    (W.match(/const ALERT_MIN_GAP_MS = [^;]+;\nconst ALERT_MAX_PER_DAY = [^;]+;\nconst ALERT_TRAIL_KEEP = [^;]+;/) || [''])[0]),
+  adminAssetGate: lifted('adminAssetGate', (W.match(/const ADMIN_ASSET =\n[^;]+;/) || [''])[0]),
+  runQuestion: lifted('runQuestion', (ADV.match(/export async function runQuestion[\s\S]*?\n\}/) || [''])[0]),
+  actDispatch: lifted('actDispatch',
+    (PANELSRC.match(/export function actDispatch\(act\) \{[\s\S]*?\n\}/) || [''])[0]),
+  carryAct: lifted('carryAct',
+    (PANELSRC.match(/async function carryAct\(act\) \{[\s\S]*?\n  \}/) || [''])[0]),
+  renderActCard: lifted('renderActCard',
+    (PANELSRC.match(/function renderActCard\(act\) \{[\s\S]*?\n  \}/) || [''])[0]),
+  handleAct: lifted('handleAct',
+    (PANELSRC.match(/async function handleAct\(act, actError\) \{[\s\S]*?\n  \}/) || [''])[0]),
+};
+
+/**
  * The panel's dispatch, LIFTED out of the shipped file rather than imported.
  * public/js/advisor.js wires document listeners at module scope, so importing
  * it into node dies on `document is not defined`; the decision this file has
@@ -42,8 +79,7 @@ const { validateAction, ALLOWED, DENYLIST, tierOf, dispatchFor, actionTools, tab
  * comes back null and A10 goes red, which is the point.
  */
 const PANEL = (() => {
-  const src = (PANELSRC.match(/export function actDispatch\(act\) \{[\s\S]*?\n\}/) || [''])[0]
-    .replace(/^export /, '');
+  const src = LIFT.actDispatch.replace(/^export /, '');
   try { return { actDispatch: src ? new Function(`${src}\nreturn actDispatch;`)() : null }; }
   catch { return { actDispatch: null }; }
 })();
@@ -343,8 +379,8 @@ const TABLE = {
 
 // ---- A17-A23: the route itself, lifted and run --------------------------
 {
-  const fn = (W.match(/async function handleClientAlert\(request, env\) \{[\s\S]*?\n\}/) || [''])[0];
-  const consts = (W.match(/const ALERT_MIN_GAP_MS = [^;]+;\nconst ALERT_MAX_PER_DAY = [^;]+;\nconst ALERT_TRAIL_KEEP = [^;]+;/) || [''])[0];
+  const fn = LIFT.handleClientAlert;
+  const consts = LIFT.alertConsts;
   // NEGATIVE CONTROL (run 2026-08-28): renaming the route to
   // handleClientPush made this read
   //   FAIL  A17 handleClientAlert lifts out of the shipped Worker
@@ -539,8 +575,23 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): putting an /api/admin/ string into
   // collectActs made this read
   //   FAIL  A24b and the advisor module never calls an admin route itself
+  // The presence half is not decoration. A negated regex over a source that
+  // came back empty or wrong passes by asserting nothing, which is the exact
+  // failure the -forms branch found in one of its own checks on 2026-08-28.
+  // So this requires the file to be the file first, and only then says what
+  // is absent from it.
+  // NEGATIVE CONTROL (run 2026-08-28), two of them, and the second is the one
+  // that matters:
+  //   putting an /api/admin/ string into collectActs
+  //     FAIL  A24b ... -- 1 admin route(s)
+  //   reading worker/advisor.js as an empty string, which is what a rename
+  //   would do. The OLD version of this check PASSED that, because a regex
+  //   does not match '' and the negation made it true. The new one reads
+  //     FAIL  A24b ... -- that is not the advisor module
+  const adminCalls = (ADV.match(/\/api\/admin\//g) || []).length;
   ck('A24b and the advisor module never calls an admin route itself',
-    !/\/api\/admin\//.test(ADV));
+    /export async function runQuestion/.test(ADV) && adminCalls === 0,
+    /export async function runQuestion/.test(ADV) ? `${adminCalls} admin route(s)` : 'that is not the advisor module');
   // The tools offered to the model ARE the allowlist, by construction, so a
   // tool it can see and an action that would validate are the same list.
   const offered = actionTools().map((t) => t.name).sort();
@@ -556,7 +607,7 @@ const TABLE = {
   // Only the ASK flow carries them. An analysis is a background read of a case
   // nobody tapped for, and a read that can propose to change the app is a
   // different thing from a read.
-  const q = (ADV.match(/export async function runQuestion[\s\S]*?\n\}/) || [''])[0];
+  const q = LIFT.runQuestion;
   // NEGATIVE CONTROL (run 2026-08-28): commenting out the tools on the question
   // turn made this read
   //   FAIL  A26 only the question flow is given tools, not the background analysis
@@ -569,7 +620,7 @@ const TABLE = {
 {
   // The route a proposal goes to comes from the parked proposal, which came
   // from the allowlist. The panel does not hold a table of its own.
-  const carry = (PANELSRC.match(/async function carryAct\(act\) \{[\s\S]*?\n  \}/) || [''])[0];
+  const carry = LIFT.carryAct;
   // NEGATIVE CONTROL (run 2026-08-28): hardcoding
   // fetch('/api/admin/case-update') in carryAct made this read
   //   FAIL  A27 the panel posts where the proposal says, and holds no route table of its own
@@ -577,7 +628,7 @@ const TABLE = {
     carry.length > 0 && /fetch\(act\.path,/.test(carry) && !/'\/api\/admin\//.test(carry));
   // Text as a VALUE. The card builds its lines with textContent, never with
   // innerHTML holding a model-written or Eric-written string.
-  const card = (PANELSRC.match(/function renderActCard\(act\) \{[\s\S]*?\n  \}/) || [''])[0];
+  const card = LIFT.renderActCard;
   // NEGATIVE CONTROL (run 2026-08-28): building the summary line with
   // `said.innerHTML = act.summary` made this read
   //   FAIL  A27b the card puts text in as a value, never as markup
@@ -617,16 +668,31 @@ const TABLE = {
   // The allowlist lives in worker/, which is never served. If it ever moved
   // under public/ it would need naming in ADMIN_ASSET, and this is the check
   // that would notice.
-  // NEGATIVE CONTROL (run 2026-08-28): reading the module source as an empty string
+  // THIS CHECK USED TO TEST A HARDCODED STRING. It read
+  //   !/public\//.test('worker/advisor-acts.js')
+  // which is a regex against a literal spelled out three characters earlier,
+  // so it was true on every run this file will ever have and could not have
+  // been anything else. It looked like a check and was a decoration. Found
+  // while auditing for the vacuous-negation shape the -forms branch reported
+  // on 2026-08-28, and it is the worse cousin of that bug: theirs asserted
+  // nothing when a lift was lost, this one asserted nothing ever.
+  //
+  // What it should have been asking is whether the file is where it claims to
+  // be, so ask the filesystem.
+  // NEGATIVE CONTROL (run 2026-08-28): copying advisor-acts.js into public/js/
   // made this read
-  //   FAIL  A29 the allowlist is Worker-side and no client can download it
+  //   FAIL  A29 the allowlist is Worker-side and no client can download it  -- a copy is sitting in public/
+  const inWorker = existsSync(j(ROOT, 'worker/advisor-acts.js'));
+  const inPublic = existsSync(j(ROOT, 'public/js/advisor-acts.js'))
+    || existsSync(j(ROOT, 'public/advisor-acts.js'));
   ck('A29 the allowlist is Worker-side and no client can download it',
-    !/public\//.test('worker/advisor-acts.js') && ACTSRC.length > 0);
+    inWorker && !inPublic && ACTSRC.length > 0,
+    inPublic ? 'a copy is sitting in public/' : 'worker/advisor-acts.js is not there');
   // The panel is already named in ADMIN_ASSET; the card lives inside it.
   // NEGATIVE CONTROL (run 2026-08-28): dropping `advisor` from the ADMIN_ASSET
   // alternation made this read
   //   FAIL  A29b the confirm card lives in the panel, which 404s to a client  -- advisor is not in ADMIN_ASSET
-  const gate = (W.match(/const ADMIN_ASSET =\n[^;]+;/) || [''])[0];
+  const gate = LIFT.adminAssetGate;
   ck('A29b the confirm card lives in the panel, which 404s to a client',
     /\|advisor\|/.test(gate) && /data-act-card/.test(PANELSRC),
     /\|advisor\|/.test(gate) ? 'no act card in the panel' : 'advisor is not in ADMIN_ASSET');
@@ -636,15 +702,24 @@ const TABLE = {
   // check is how a check starts causing damage.
   const NEW = [
     ['worker/advisor-acts.js', ACTSRC],
-    ['the panel dispatch', (PANELSRC.match(/export function actDispatch[\s\S]*?\n\}/) || [''])[0]],
-    ['the confirm card', (PANELSRC.match(/function renderActCard\(act\) \{[\s\S]*?\n  \}/) || [''])[0]],
-    ['the act handler', (PANELSRC.match(/async function handleAct\(act, actError\) \{[\s\S]*?\n  \}/) || [''])[0]],
-    ['the alert route', (W.match(/async function handleClientAlert[\s\S]*?\n\}/) || [''])[0]],
+    ['the panel dispatch', LIFT.actDispatch],
+    ['the confirm card', LIFT.renderActCard],
+    ['the act handler', LIFT.handleAct],
+    ['the alert route', LIFT.handleClientAlert],
   ];
-  const dashes = NEW.filter(([, src]) => /[–—]/.test(src)).map(([n]) => n);
-  // NEGATIVE CONTROL (run 2026-08-28): putting an em dash in the confirm
-  // card's heading made this read
-  //   FAIL  A29c no em or en dash in anything this change added  -- the confirm card
+  // AN EMPTY SLAB CONTAINS NO DASH, so a lost lift would satisfy this check by
+  // asserting nothing. A29d catches that, but a check that is only safe while
+  // its NEIGHBOUR survives is one deletion away from going quietly vacuous, so
+  // the presence requirement is inline as well.
+  const dashes = NEW.filter(([, src]) => !src || /[–—]/.test(src)).map(([n]) => n);
+  // NEGATIVE CONTROL (run 2026-08-28), two of them:
+  //   putting an em dash in the confirm card's heading
+  //     FAIL  A29c ... -- the confirm card
+  //   pointing renderActCard's lift at a name that does not exist, so the slab
+  //   comes back empty. That used to pass here and be caught only by A29d
+  //   next door; it now fails in BOTH, which is the point of the inline guard
+  //     FAIL  A29c ... -- the confirm card
+  //     FAIL  A29d ... -- the confirm card
   ck('A29c no em or en dash in anything this change added', !dashes.length, dashes.join(', '));
   // And the lifts above actually found something, so a rename cannot turn A29c
   // into a check on four empty strings.
@@ -683,23 +758,24 @@ const TABLE = {
 // the stub to its harness in the same commit.
 {
   // [name, captured source, the exact tail it must end on or null to skip]
-  const LIFTS = [
-    ['handleClientAlert', (W.match(/async function handleClientAlert\(request, env\) \{[\s\S]*?\n\}/) || [''])[0],
-      "  return json({ ok: true, sent: text, at: now.toISOString() });\n}"],
-    ['actDispatch', (PANELSRC.match(/export function actDispatch\(act\) \{[\s\S]*?\n\}/) || [''])[0],
-      "  return act.tier === 'desk' ? 'run' : 'card';\n}"],
-    ['carryAct', (PANELSRC.match(/async function carryAct\(act\) \{[\s\S]*?\n  \}/) || [''])[0],
-      '    return out;\n  }'],
-    ['renderActCard', (PANELSRC.match(/function renderActCard\(act\) \{[\s\S]*?\n  \}/) || [''])[0],
-      '    });\n  }'],
-    ['handleAct', (PANELSRC.match(/async function handleAct\(act, actError\) \{[\s\S]*?\n  \}/) || [''])[0],
-      '    renderActCard(act);\n  }'],
-    // The harness's other input, measured for the same reason. No tail: its
-    // last line carries the trail bound, and A22d owns that number. Pinning it
-    // twice would make a deliberate change to the bound fail here, in a check
-    // about lifts, which is a check going off about somebody else's business.
-    ['alertConsts', (W.match(/const ALERT_MIN_GAP_MS = [^;]+;\nconst ALERT_MAX_PER_DAY = [^;]+;\nconst ALERT_TRAIL_KEEP = [^;]+;/) || [''])[0], null],
-  ];
+  // The tails, by name. Not a second lift table: the slabs come from the one
+  // registry, and this only says where each is required to END.
+  //
+  // alertConsts has no tail on purpose. Its last line carries the trail bound,
+  // and A22d owns that number; pinning it twice would make a deliberate change
+  // to the bound fail HERE, in a check about lifts, which is a check going off
+  // about somebody else's business.
+  const TAIL = {
+    handleClientAlert: "  return json({ ok: true, sent: text, at: now.toISOString() });\n}",
+    actDispatch: "  return act.tier === 'desk' ? 'run' : 'card';\n}",
+    carryAct: '    return out;\n  }',
+    renderActCard: '    });\n  }',
+    handleAct: '    renderActCard(act);\n  }',
+    runQuestion: '  }\n}',
+    adminAssetGate: ';',
+    alertConsts: null,
+  };
+  const LIFTS = SLABS.map(([n, src]) => [n, src, TAIL[n]]);
   const short = LIFTS.filter(([, src]) => src.length < 60).map(([n]) => n);
   // NEGATIVE CONTROL (run 2026-08-28), two of them:
   //   renaming carryAct in the shipped panel
@@ -743,6 +819,26 @@ const TABLE = {
   // The early-truncation break above does NOT show up here, and should not:
   // a slab that stops short has swallowed nothing. That is A30b's job alone.
   ck('A30c and swallowed no other function on the way', !swallowed.length, swallowed.join(', '));
+  // EVERY REGISTERED SLAB IS ACCOUNTED FOR. A new lift added to the registry
+  // without a TAIL entry would otherwise skip A30b in silence, which is the
+  // same "passes by asserting nothing" this whole block exists to end.
+  const unowned = SLABS.map(([n]) => n).filter((n) => !(n in TAIL));
+  // NEGATIVE CONTROL (run 2026-08-28): deleting the runQuestion line from TAIL
+  // made this read
+  //   FAIL  A30d every registered slab has a tail rule, even if that rule is none  -- runQuestion
+  ck('A30d every registered slab has a tail rule, even if that rule is none',
+    !unowned.length, unowned.join(', '));
+  // AND THE REGISTRY CANNOT QUIETLY SHRINK. A lift deleted, or one that stops
+  // being registered, takes its checks with it and nothing else would say so.
+  //
+  // The limit, stated so nobody mistakes this for more than it is: a NEW slab
+  // added without going through lifted() leaves the count at eight and passes.
+  // This guards the eight that are here. It does not conscript the ninth.
+  // NEGATIVE CONTROL (run 2026-08-28): removing adminAssetGate from the
+  // registry made this read
+  //   FAIL  A30e the registry still holds every lift it was built with  -- 7 lifts, expected at least 8
+  ck('A30e the registry still holds every lift it was built with',
+    SLABS.length >= 8, `${SLABS.length} lifts, expected at least 8`);
   console.log(`      lift sizes: ${LIFTS.map(([n, src]) => `${n} ${src.length}`).join(', ')}`);
 }
 
