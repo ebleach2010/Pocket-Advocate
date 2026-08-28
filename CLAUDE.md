@@ -84,6 +84,57 @@ idea without solving both.
 - **Nothing is pushed to main until he says so.** No exceptions for
   hotfixes; ask, or hold.
 
+## Agents talk to each other before they talk to me (Eric, 2026-08-28)
+
+His words:
+
+> "From now on if more than one agent is sent out, they communicate with each
+> other before giving you information. That way they're not blind to each
+> other's work."
+
+So whenever more than one agent is dispatched at once, every brief carries the
+peer list: each agent's id, the directory it is working in, and one line on
+what it is building. Before any of them writes its final report it must message
+every peer with what it actually built (routes, action ids, storage shapes, and
+the files it touched that a peer is likely to touch too), ask the same of them,
+WAIT for the answers, and reconcile. Where two have built the same thing, they
+agree who owns it rather than both shipping a version. Where they disagree,
+both positions come to me; nothing gets papered over.
+
+Every report then carries a section headed PEER RECONCILIATION: who was talked
+to, what was learned, what changed as a result, or that nothing needed changing
+and why. An agent does not block forever: if a peer has not answered after a
+reasonable wait it reports anyway and names who did not answer.
+
+This rule exists because three separate branches once each added a route in the
+same place, and the merge that followed is what made the long-press vanish from
+a preview he had been told was complete.
+
+## Commit identity
+
+Commits are authored `Claude <noreply@anthropic.com>`, which is what
+`git config` already says in every worktree. NEVER pass `--author`. An agent
+once committed as `Eric Bleach <ebleach2010@gmail.com>`, which puts work he did
+not write into his own history under his name. The trailer is
+`Co-Authored-By: Claude <noreply@anthropic.com>` with NO model name, per the
+iron rule below; some commits before 2026-08-28 carry a model name and are not
+being rewritten, but nothing new adds to that.
+
+## Reviews (Eric, 2026-08-28)
+
+> "any request for a review gets a link to my Google reviews:
+> https://g.page/r/CUKWU6xlposHEAE/review
+> Reviews are pulled from that link and implemented in the app, run weekly."
+
+Every place the app asks a client for a review links there. The Place ID behind
+that short link, resolved 2026-08-28, is `ChIJX3ioajAvlIURQpZTrGWmiwc`.
+
+Pulling the reviews back in needs the Google Places API, which needs an API key
+this Worker does not have: its secrets are listed in `.env.example` and no
+Google key is among them. Places also returns at most five reviews. So the link
+half ships on its own, and the weekly pull waits on a key from him. Do not
+promise the pull as working until that key exists.
+
 ## Iron rules (long-standing, do not relax)
 
 - Clients must be completely blind to admin information and tools. Admin
