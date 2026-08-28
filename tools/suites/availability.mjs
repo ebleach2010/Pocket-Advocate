@@ -266,6 +266,11 @@ const SCHEDULE_CASES = [
   ['2026-01-06T02:00:00Z', 'Mon, 19:00', false],
   ['2026-01-10T19:00:00Z', 'Sat, 12:00', false],
   ['2026-01-11T19:00:00Z', 'Sun, 12:00', false],
+  // Friday joined the weekend 2026-08-29 ("Fri-Sun out of office").
+  // NEGATIVE CONTROLS (run 2026-08-29): reopening Friday in the predicate
+  // made both Friday rows and the demo-parity check red; sliding the sheet
+  // sentence back to "Monday to Friday" made both E copy checks red.
+  ['2026-01-09T19:00:00Z', 'Fri, 12:00', false],
   // August. Same six wall-clock readings, same six answers, an hour earlier in
   // UTC because Boise is on MDT, UTC-6. THIS IS THE MOVED EXPECTATION: these
   // six instants used to be 15:00Z, 02:00Z and so on, pinning a fixed offset
@@ -276,6 +281,7 @@ const SCHEDULE_CASES = [
   ['2026-08-04T01:00:00Z', 'Mon, 19:00', false],
   ['2026-08-08T18:00:00Z', 'Sat, 12:00', false],
   ['2026-08-09T18:00:00Z', 'Sun, 12:00', false],
+  ['2026-08-07T18:00:00Z', 'Fri, 12:00', false],
 ];
 
 for (const [iso, expectWall, expectOpen] of SCHEDULE_CASES) {
@@ -288,9 +294,9 @@ for (const [iso, expectWall, expectOpen] of SCHEDULE_CASES) {
 // The two halves of each pair must give the SAME answer. That used to be the
 // fixed offset stated as an assertion; it is now daylight saving stated as one.
 // Same reading on his wall, same answer, whatever month it is.
-for (let i = 0; i < 6; i += 1) {
+for (let i = 0; i < 7; i += 1) {
   const [janIso, w] = SCHEDULE_CASES[i];
-  const [augIso] = SCHEDULE_CASES[i + 6];
+  const [augIso] = SCHEDULE_CASES[i + 7];
   check(`A: ${w} answers the same in January and August (his clock, not an offset)`,
     scheduledOpen(new Date(janIso)) === scheduledOpen(new Date(augIso)),
     `${scheduledOpen(new Date(janIso))} vs ${scheduledOpen(new Date(augIso))}`);
@@ -648,7 +654,11 @@ check('C: the control is routed too, and to its own handler',
 // what is served, comments included.
 const HELP = code('public/js/help.js');
 const ERICS_WORDS = [
-  'Standard advocacy hours are Monday to Friday, 8:00 AM to 7:00 PM Mountain Time, unless my current status shows otherwise.',
+  // UPDATED 2026-08-29, on Eric's word: "we're now doing Fri-Sun out of
+  // office unless I manually turn it back on." Friday left the sentence the
+  // same day it left the schedule, so the copy and the predicate cannot
+  // disagree about what a Friday is.
+  'Standard advocacy hours are Monday to Thursday, 8:00 AM to 7:00 PM Mountain Time, unless my current status shows otherwise.',
   'I check messages throughout the day, but responses are triaged based on urgency, time sensitivity, and what each case needs, not simply the order messages arrive.',
   'A time-sensitive issue, such as an appointment happening soon, a problem accessing care, a deadline, or an important change in your situation, may be prioritized ahead of a routine question or update.',
   "If I haven't responded yet, that doesn't necessarily mean I'm not working on your case.",

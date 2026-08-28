@@ -354,12 +354,12 @@ export function seed({ set, file }) {
     addonRateCents: 22500,
     fullAccess: true,
     fullAccessAt: days(38),
-    // Month one plus one continuation: $3,400 x 2, less the case fee credited
-    // against the first. The tier is monthly since 2026-08-26. Two months
-    // bought 38 days ago leaves 22 days on the window, which is a case in
-    // healthy mid-flight - the state where "keep going another month" is the
-    // interesting card to press.
-    fullAccessRateCents: 680000 - 120000,
+    // Month one plus one continuation: $3,500 x 2 on top of the case fee,
+    // nothing credited (Eric, 2026-08-29: "They pay 3400 separately", and
+    // the month is $3,500 on his later word). Two months bought 38 days ago
+    // leaves 22 days on the window, which is a case in healthy mid-flight -
+    // the state where "keep going another month" is the interesting card.
+    fullAccessRateCents: 95000 + 2 * 350000,
     fullAccessMonths: 2,
     fullAccessExtraDays: 30,
     // Stamped at the first signature, matching the authorisation seeded
@@ -373,12 +373,12 @@ export function seed({ set, file }) {
     },
     reportDueAt: days(13),
     files: [],
-    stripe: { sessionId: 'cs_demo_full', paymentIntentId: 'pi_demo_full', amountTotal: 220000 },
-    // 24.5 hours against two months at $3,400 (less the credited case fee)
-    // is about $229/hr, which is exactly what the tier is priced to earn -
-    // the middle of the working band for this work. The standard case above is
-    // deliberately the opposite number, so the margin badge shows both of
-    // its states across the demo.
+    stripe: { sessionId: 'cs_demo_full', paymentIntentId: 'pi_demo_full', amountTotal: 350000 },
+    // 24.5 lifetime hours against the case fee plus two uncredited months
+    // is comfortably above the working band, which is the healthy state the
+    // margin badge should show here. The standard case above is deliberately
+    // the opposite number, so the badge shows both of its states across the
+    // demo.
     // Two clocks, two tiers (Eric, 2026-08-29): 22 hours of case review
     // behind the mark, 2h 30m on the Hands-Off clock since the flip. The
     // lifetime total is their sum, which is what `seconds` has always been.

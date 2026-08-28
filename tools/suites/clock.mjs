@@ -674,6 +674,41 @@ Date.now = realNow;
     && /- \(Number\(out\.tierMark\) \|\| 0\)/.test(DRAWER));
 }
 
+// ---- C51: the client is told about the hours, front and center -------------
+// Eric, 2026-08-29: "the client needs to be aware when I'm reaching my hours
+// rough limit and that I pace my work to be most efficient and not waste
+// time. Front and center." The thresholds are LIFTED AND RUN from case.js;
+// the card's placement and sentences are pinned at the source.
+// NEGATIVE CONTROLS (run 2026-08-29): the limit threshold widened to 50h ->
+// C51 red; the fullAccess gate removed -> C51b red; the pacing sentence
+// reworded -> C51c red. All restored.
+{
+  const CASEJS = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  const stateSrc = (CASEJS.match(/function hoursState\([\s\S]*?\n\}/) || [''])[0];
+  let hoursState = null;
+  try { hoursState = new Function(`${stateSrc}; return hoursState;`)(); } catch { /* red below */ }
+  check('C51 the thresholds lift and run: close from 80% of 20h, limit from 22h',
+    !!hoursState
+    && hoursState(15.9 * 3600, 1) === 'ok'
+    && hoursState(16 * 3600, 1) === 'close'
+    && hoursState(22 * 3600, 1) === 'limit'
+    && hoursState(30 * 3600, 2) === 'ok'
+    && hoursState(44 * 3600, 2) === 'limit',
+    hoursState ? `${hoursState(16 * 3600, 1)}/${hoursState(22 * 3600, 1)}` : 'lift failed');
+  const apptAt = CASEJS.indexOf('${primaryAction}');
+  const cardAt = CASEJS.indexOf('${hoursCard(c)}');
+  const foldAt = CASEJS.indexOf('<details class="faq card-quiet" data-steps');
+  check('C51b the card is front and center: after the appointment, before any fold',
+    apptAt > -1 && cardAt > apptAt && foldAt > cardAt
+    && /if \(!c\.fullAccess \|\| c\.status === 'closed'\) return '';/.test(CASEJS),
+    JSON.stringify({ apptAt, cardAt, foldAt }));
+  check('C51c the pacing sentence and the rough-limit notes are the shipped words',
+    /I pace this work to be as\s+efficient as possible with your hours: nothing is padded, and no time\s+is wasted\./.test(CASEJS)
+    && /We are at the rough limit of the included hours\./.test(CASEJS)
+    && /We are getting close to the included hours\./.test(CASEJS)
+    && /is not counted here/.test(CASEJS));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) { for (const f of failed) console.log(`  FAILED: ${f.name}`); process.exit(1); }

@@ -53,8 +53,9 @@ console.log(`# case ${CASE} addon ${ADDON} sub ${SUB} full ${FULL} floor ${FLOOR
 // and has no hours to price, so the market research does not bind it - his
 // reasoning is that a low door on the subscription is worth more than the
 // margin. Its ceiling returns to the $100 he named with the $50 seed.
+// FULL moved to 350000 on Eric's word, 2026-08-29 ("Make it 3500").
 check('P1 the new list prices are what was agreed',
-  CASE === 120000 && ADDON === 27500 && SUB === 5000 && FULL === 340000,
+  CASE === 120000 && ADDON === 27500 && SUB === 5000 && FULL === 350000,
   JSON.stringify({ CASE, ADDON, SUB, FULL }));
 check('P2 caps moved with the prices',
   CASE_CAP === 180000 && ADDON_CAP === 42500 && SUB_CAP === 10000 && FULL_CAP === 440000,
@@ -330,7 +331,8 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
     num('SUB_PRICE_CENTS') / 100, num('FULL_MONTH_CENTS') / 100]);
   // Superseded values, each one a real price this product used to charge.
   // Any of these still on a client page is a page nobody updated.
-  const STALE = [250, 175, 265, 275.00, 650, 1500, 95, 3700];
+  // 3400 joined the stale list when the month moved to $3,500 (2026-08-29).
+  const STALE = [250, 175, 265, 275.00, 650, 1500, 95, 3700, 3400];
   const pages = [];
   for (const d of ['public', 'public/js']) {
     for (const n of readdirSync(__j(__REPO, d))) {
@@ -383,6 +385,44 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   // back on services.html made this read FAIL Q5. Restored.
   check('Q5 no client surface promises the case fee comes off a Hands-Off month',
     creditTalk.length === 0, creditTalk.join('  |  '));
+}
+
+// ---- P14: the $3,500 reprice reaches the stored doc, and only that ------
+// Eric, 2026-08-29: "Make it 3500." LIFTED AND RUN: the migration lifts a
+// stored $3,400 to the new seed, keeps a price the ratchet already grew
+// past it, leaves stale-epoch docs to the seeds, and never touches the
+// base prices.
+// NEGATIVE CONTROL (run 2026-08-29): adding caseCents to the migration's
+// write made P14 read FAIL. Restored.
+{
+  const fn = (SRC.match(/async function repriceTier\(env\) \{[\s\S]*?\n\}/) || [''])[0];
+  const run = async (ratesDoc) => {
+    const writes = [];
+    const make = new Function('__writes', `
+      const getDoc = async (env, path) => (path === 'config/rates'
+        ? ${JSON.stringify(ratesDoc)} && { data: ${JSON.stringify(ratesDoc)}, updateTime: '1' }
+        : null);
+      const patchDoc = async (env, path, fields) => { __writes.push({ path, fields }); return true; };
+      const RATES_PATH = 'config/rates';
+      const PRICING_EPOCH = '2026-08-26-market';
+      const FULL_MONTH_CENTS = 350000;
+      ${fn}
+      return repriceTier;
+    `);
+    await make(writes)({});
+    return writes.filter((w) => w.path === 'config/rates');
+  };
+  const lifted = await run({ fullCents: 340000, pricingEpoch: '2026-08-26-market', caseCents: 130000 });
+  check('P14 a stored $3,400 on the live epoch is lifted to $3,500, one field only',
+    lifted.length === 1 && lifted[0].fields.fullCents === 350000
+    && lifted[0].fields.caseCents === undefined,
+    JSON.stringify(lifted));
+  const grown = await run({ fullCents: 367500, pricingEpoch: '2026-08-26-market' });
+  check('P14b a price the ratchet grew past the seed is kept',
+    grown.length === 0, JSON.stringify(grown));
+  const stale = await run({ fullCents: 340000, pricingEpoch: 'older' });
+  check('P14c a stale-epoch doc is left to the seeds',
+    stale.length === 0, JSON.stringify(stale));
 }
 
 // ---- R1-R6: the hourly must never invent what a client paid -------------

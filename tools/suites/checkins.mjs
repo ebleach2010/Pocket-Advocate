@@ -274,7 +274,8 @@ check('W4 the agreement says the closure reason is written into the case',
 // no lump price any more, so there is no FULL_PRICE_CENTS to pin - the unit
 // is a month, and another month costs exactly what the first one did.
 check('W5 the worker constants match the monthly decision',
-  /const FULL_MONTH_CENTS = 340000;/.test(SRC)
+  // $3,500 on Eric's word, 2026-08-29 ("Make it 3500").
+  /const FULL_MONTH_CENTS = 350000;/.test(SRC)
   && /const FULL_CAP_CENTS = 440000;/.test(SRC)
   && /const FULL_EXTEND = \{ 30: FULL_MONTH_CENTS \};/.test(SRC)
   && !/FULL_PRICE_CENTS/.test(SRC));
@@ -282,7 +283,7 @@ check('W6 the one client fallback left moved with it; booking compiles no tier p
   // Booking sells one service now, so the tier price lives only where the
   // tier is sold: the request card on the case page. A MONTHLY number since
   // 2026-08-26, matching FULL_MONTH_CENTS in the Worker.
-  /let fullAccessCents = 340000;/.test(CASE)
+  /let fullAccessCents = 350000;/.test(CASE)
   && !/FULL_PRICE_CENTS/.test(BOOK));
 // WHY THIS CHECK MOVED (2026-08-26, with the split into a real site).
 // It read all three of these off index.html, because until now index.html WAS

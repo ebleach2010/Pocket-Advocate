@@ -1,6 +1,7 @@
 // IN OFFICE / OUT OF OFFICE, the advocate's half of it.
 //
-// Eric, 2026-08-27: scheduled hours Monday to Friday, 8:00 to 19:00 Mountain,
+// Eric, 2026-08-27: scheduled hours 8:00 to 19:00 Mountain - Monday to
+// Thursday since 2026-08-29 ("we're now doing Fri-Sun out of office") -
 // and he can "manually switch himself to out of office (with his daughter,
 // etc) and switch it back on", including switching ON when he is pulling
 // overtime. The manual switch always beats the schedule, both directions.
@@ -87,7 +88,7 @@ export function mountOfficeControl(root, { getToken } = {}) {
     } else {
       // "Mountain", not "MST". The light follows America/Boise, so it moves
       // with daylight saving and 8am is 8am on your own clock all year.
-      why.textContent = 'Following your hours: Monday to Friday, 8am to 7pm Mountain.';
+      why.textContent = 'Following your hours: Monday to Thursday, 8am to 7pm Mountain.';
       why.classList.remove('overriding');
     }
     for (const b of box.querySelectorAll('[data-set]'))

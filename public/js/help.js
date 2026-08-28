@@ -16,7 +16,7 @@ import {
 // paragraph a client reads and the string the local-time line is computed from
 // are THE SAME STRING, so "8:00 AM to 7:00 PM Mountain" and "X to Y your time"
 // cannot come to state two different windows however either is edited.
-const HOURS_LINE = 'Standard advocacy hours are Monday to Friday, 8:00 AM to 7:00 PM Mountain Time, unless my current status shows otherwise.';
+const HOURS_LINE = 'Standard advocacy hours are Monday to Thursday, 8:00 AM to 7:00 PM Mountain Time, unless my current status shows otherwise.';
 
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 const installed = () =>

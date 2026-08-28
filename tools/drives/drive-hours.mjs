@@ -215,7 +215,7 @@ ok('and it is VISIBLY emphasised, not just tagged',
 // person actually sees, which is the only place an HTML entity would show up
 // as the character it decodes to.
 const WORDS = [
-  'Standard advocacy hours are Monday to Friday, 8:00 AM to 7:00 PM Mountain Time, unless my current status shows otherwise.',
+  'Standard advocacy hours are Monday to Thursday, 8:00 AM to 7:00 PM Mountain Time, unless my current status shows otherwise.',
   'I check messages throughout the day, but responses are triaged based on urgency, time sensitivity, and what each case needs, not simply the order messages arrive.',
   'A time-sensitive issue, such as an appointment happening soon, a problem accessing care, a deadline, or an important change in your situation, may be prioritized ahead of a routine question or update.',
   "If I haven't responded yet, that doesn't necessarily mean I'm not working on your case.",
@@ -273,6 +273,20 @@ ok('Escape closes it', await page.evaluate(() => !document.getElementById('pa-he
 
 // ---------------------------------------------------------------------------
 console.log('\n--- 4. the switch beats the schedule, seen from the client side ---');
+// The schedule as the app now has it: Monday to Thursday, 8:00 to 19:00 in
+// Boise (Eric, 2026-08-29: "Fri-Sun out of office"). The drive computes it
+// for the real moment it runs, so a Saturday run asserts the agreeing
+// wording instead of failing on the disagreeing one.
+const schedOpenNow = () => {
+  const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Boise', weekday: 'short' }).format(new Date());
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Boise', hour12: false, hour: 'numeric', minute: 'numeric',
+  }).formatToParts(new Date());
+  const g = (t2) => Number(parts.find((x) => x.type === t2)?.value) || 0;
+  const mins = (g('hour') % 24) * 60 + g('minute');
+  return wd !== 'Fri' && wd !== 'Sat' && wd !== 'Sun' && mins >= 480 && mins < 1140;
+};
+
 const flip = async (which) => {
   await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
   await settle(2500);
@@ -295,14 +309,19 @@ const flip = async (which) => {
 
 const wentOut = await flip('out');
 ok('he can switch himself OUT', wentOut.state === 'OUT OF OFFICE', wentOut.state);
-ok('and is told the switch is disagreeing with his hours',
-  wentOut.overriding && /Set by hand/.test(wentOut.why || ''), wentOut.why);
+if (schedOpenNow()) {
+  ok('and is told the switch is disagreeing with his hours',
+    wentOut.overriding && /Set by hand\. Your hours say in right now/.test(wentOut.why || ''), wentOut.why);
+} else {
+  ok('and is told the switch agrees with his hours (a closed day)',
+    !wentOut.overriding && /Set by hand, and it matches your hours/.test(wentOut.why || ''), wentOut.why);
+}
 await page.screenshot({ path: `${SHOT}/4-shelf-out.png` });
 
 await openClientChat();
 await settle(3500);
 const clientOut = await readCue();
-ok('the CLIENT now sees out of office during his normal hours',
+ok('the CLIENT now sees out of office, on his word',
   clientOut.label === 'Out of office' && /\bout\b/.test(clientOut.cls || ''),
   `${clientOut.label} [${clientOut.cls}]`);
 await page.screenshot({ path: `${SHOT}/5-client-out.png` });
@@ -541,6 +560,54 @@ if (!tapAt) {
     swAfter === swBefore, `switch ${swBefore} -> ${swAfter}`);
 }
 
+// ---------------------------------------------------------------------------
+// THE HOURS CARD, on the CLIENT'S page (Eric, 2026-08-29: "the client needs
+// to be aware when I'm reaching my hours rough limit and that I pace my work
+// to be most efficient and not waste time. Front and center."). The demo
+// tier case has 2h 30m on the Hands-Off clock across two bought months, so
+// the card must sit directly under the appointment card, name the envelope,
+// and carry the pacing sentence. The standard case must NOT have one.
+console.log('\n--- 5c. the client sees the hours, front and center ---');
+await page.goto(`${P}/case.html?id=demo-case-full&demo=1`, { waitUntil: 'networkidle' });
+await settle(3000);
+await page.evaluate(() => {
+  try { localStorage.setItem('pa-intro-done', '1'); } catch { /* blocked */ }
+  document.getElementById('pa-intro')?.remove();
+});
+await settle(600);
+const hoursCard = await page.evaluate(() => {
+  const card = document.querySelector('[data-hours-card]');
+  if (!card) return { there: false };
+  return {
+    there: true,
+    frontAndCenter: !!document.querySelector('[data-appt]')?.nextElementSibling?.matches('[data-hours-card]'),
+    text: card.textContent.replace(/\s+/g, ' ').trim(),
+    meter: !!card.querySelector('.hours-meter span'),
+  };
+});
+ok('the Hands-Off case carries the hours card', hoursCard.there);
+ok('and it is front and center: directly under the appointment card',
+  hoursCard.frontAndCenter);
+ok('it says what is used and what a month includes',
+  /2h 30m used/.test(hoursCard.text || '')
+  && /Your 2 months include up to 40-44 advocacy hours\./.test(hoursCard.text || ''),
+  (hoursCard.text || '').slice(0, 140));
+ok('the pacing sentence stands on it, word for word in substance',
+  /I pace this work to be as efficient as possible with your hours: nothing is padded, and no time is wasted\./.test(hoursCard.text || ''));
+ok('the review hours are named as separate, so nothing reads as vanished',
+  /case review's 22h 0m came with the case and is not counted here/.test(hoursCard.text || ''),
+  (hoursCard.text || '').slice(-160));
+ok('and it has a real meter, not just words', hoursCard.meter);
+await page.screenshot({ path: `${SHOT}/11-hours-card.png` });
+
+const noCard = await page.evaluate(async () => {
+  const r = await fetch('/case.html');
+  return r.ok;
+}).then(() => page.goto(`${P}/case.html?id=demo-case&demo=1`, { waitUntil: 'networkidle' }))
+  .then(() => settle(2500))
+  .then(() => page.evaluate(() => !document.querySelector('[data-hours-card]')));
+ok('the standard case has NO hours card: it is a Hands-Off instrument', noCard);
+
 // Put the demo back the way it was found.
 await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await settle(2500);
@@ -554,7 +621,7 @@ await page.click('[data-set=""]');
 await settle(1200);
 const restored = await page.evaluate(() => document.querySelector('[data-why]')?.textContent?.trim());
 ok('"Follow my hours" hands the answer back to the schedule',
-  /Following your hours/.test(restored || ''), restored);
+  /Following your hours: Monday to Thursday, 8am to 7pm Mountain/.test(restored || ''), restored);
 
 // ---------------------------------------------------------------------------
 console.log('\n--- 6. the cold state: the client page with no answer at all ---');

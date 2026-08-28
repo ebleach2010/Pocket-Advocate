@@ -55,7 +55,7 @@ export const SERVICE_ABOUT = {
 
   handsOff: {
     title: 'Hands-Off Case Management',
-    price: '$3,400 a month, every month the same. The case fee is separate: it pays for the review.',
+    price: '$3,500 a month, every month the same. The case fee is separate: it pays for the review.',
     tldr: 'You hand me the case. I do the legwork: the calls, the records, the insurer, the appeals, and we talk at least twice a month so you always know where it stands. A month at a time, for as long as you need it.',
     paragraphs: [
       'In a standard case I work beside you: I read, I explain, and you carry it to your doctors and your insurer. With Hands-Off Case Management I work inside the case. I phone your clinics, chase your records, deal with your insurer, and write your appeals myself. Your job shrinks to giving me the permission I need to act for you, which I bring you and walk you through, and from there the legwork is mine.',
@@ -86,7 +86,7 @@ export const SERVICE_ABOUT = {
 
   extension: {
     title: 'Another month',
-    price: '$3,400 a month, the same as the first',
+    price: '$3,500 a month, the same as the first',
     tldr: 'Another month of everything: the check-ins, the calls on your behalf, the lot. Take as many as your case needs, one at a time. Nothing else changes.',
     paragraphs: [
       'Some cases outlast a month or two through nobody\u2019s fault: a records office takes its full thirty days, a referral sits in a queue, an insurer uses every day it is allowed. Continuing keeps me inside the case while those clocks run.',

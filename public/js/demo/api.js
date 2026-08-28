@@ -96,8 +96,8 @@ export function demoApi(role, store) {
     if (path === '/api/admin/session') return ok({ ok: true });
 
     // ---- money, without any -----------------------------------------------
-    if (path === '/api/rates') return ok({ caseCents: 120000, addonCents: 27500, subCents: 5000, fullCents: 340000, chatOpenCents: 5000 });
-    if (path === '/api/admin/rates') return ok({ caseCents: 120000, addonCents: 27500, subCents: 5000, fullCents: 340000, floorCents: 7500, bookings: 0, changed: false });
+    if (path === '/api/rates') return ok({ caseCents: 120000, addonCents: 27500, subCents: 5000, fullCents: 350000, chatOpenCents: 5000 });
+    if (path === '/api/admin/rates') return ok({ caseCents: 120000, addonCents: 27500, subCents: 5000, fullCents: 350000, floorCents: 7500, bookings: 0, changed: false });
     // The nightly study, with a plausible history so the card on the dashboard
     // shows what it shows on a real night.
     if (path === '/api/work') {
@@ -340,7 +340,9 @@ export function demoApi(role, store) {
       }).formatToParts(now);
       const num = (t) => Number(p.find((x) => x.type === t).value);
       const mins = (num('hour') % 24) * 60 + num('minute');
-      const scheduled = wd !== 'Sat' && wd !== 'Sun' && mins >= 8 * 60 && mins < 19 * 60;
+      // Friday joined the weekend, mirroring the Worker (Eric, 2026-08-29:
+      // "we're now doing Fri-Sun out of office").
+      const scheduled = wd !== 'Fri' && wd !== 'Sat' && wd !== 'Sun' && mins >= 8 * 60 && mins < 19 * 60;
       const inOffice = manual ? manual === 'in' : scheduled;
       // No `by` on the public answer, and the demo mirrors that: whether the
       // clock or his hand decided it is not a stranger's business. See the
@@ -709,7 +711,7 @@ export function demoApi(role, store) {
       if (!c.fullAccess) return fail(409, 'Extensions are part of Hands-Off Case Management.');
       if (c.status === 'closed') return fail(409, 'This case is closed.');
       await beat(600);
-      const cents = 340000;
+      const cents = 350000;
       store.docs.set(key, {
         ...c,
         fullAccessExtraDays: (Number(c.fullAccessExtraDays) || 0) + 30,
@@ -825,7 +827,7 @@ export function demoApi(role, store) {
           store.fire?.(key);
           return ok({ ok: true, withdrawn: true });
         }
-        const monthCents = 340000;
+        const monthCents = 350000;
         const at = new Date();
         store.docs.set(key, {
           ...c,

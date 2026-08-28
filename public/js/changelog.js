@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.53';
+export const VERSION = '2.54';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '2.53';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // Three on Eric's word, 2026-08-29: Fri-Sun out of office by schedule
+    // (his switch still wins), the Hands-Off month at $3,500 with a one-shot
+    // migration for the stored rate, and the client-facing hours card with
+    // the pacing sentence, front and center on Hands-Off cases.
+    version: '2.54',
+    quiet: true,
+    client: [
+      'Hands-Off cases now show your advocacy hours front and center: what is used, what a month includes, and fair warning as the included hours run down.',
+      'Standard advocacy hours are now Monday to Thursday, 8:00 AM to 7:00 PM Mountain Time. My live status still shows when I am in outside those hours.',
+    ],
+  },
   {
     // Two clocks for two tiers and the flat month (Eric, 2026-08-29). The
     // work clock resets when a case goes Hands-Off (review hours kept

@@ -1,7 +1,8 @@
 // In office, or out of office. The one client-facing answer, and the cue that
 // paints it.
 //
-// Eric, 2026-08-27: scheduled hours Monday to Friday, 8:00 to 19:00 Mountain,
+// Eric, 2026-08-27: scheduled hours 8:00 to 19:00 Mountain - Monday to
+// Thursday since 2026-08-29 ("we're now doing Fri-Sun out of office") -
 // with a switch he can flip either way from his phone that always beats the
 // schedule, and a "pretty noticeable visual cue" for clients of which it is.
 //

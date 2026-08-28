@@ -98,7 +98,11 @@ export function scheduledOpen(now = new Date()) {
   const weekday = new Intl.DateTimeFormat('en-US', {
     timeZone: OFFICE_TZ, weekday: 'short',
   }).format(when);
-  if (weekday === 'Sat' || weekday === 'Sun') return false;
+  // Friday joined the weekend on Eric's word (2026-08-29: "we're now doing
+  // Fri-Sun out of office unless I manually turn it back on"). The manual
+  // override still beats this both ways, so a Friday he chooses to work is
+  // one tap on the shelf, exactly as before.
+  if (weekday === 'Fri' || weekday === 'Sat' || weekday === 'Sun') return false;
   const { hour, minute } = officeParts(when);
   const minutes = hour * 60 + minute;
   // Open at the top of OPEN_HOUR, shut at the top of CLOSE_HOUR: 8:00 is in,

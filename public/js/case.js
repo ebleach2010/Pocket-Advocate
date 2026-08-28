@@ -385,6 +385,67 @@ function paidShownCents(c) {
   return charged > 0 ? charged : null;
 }
 
+/**
+ * THE HOURS CARD, front and center on a Hands-Off case (Eric, 2026-08-29:
+ * "the client needs to be aware when I'm reaching my hours rough limit and
+ * that I pace my work to be most efficient and not waste time. Front and
+ * center."). It sits directly under the appointment card, not inside any
+ * fold: the Hands-Off clock against the month's included hours, a warmer
+ * note as the rough limit nears, and the pacing sentence standing whether
+ * or not anything is near anything.
+ *
+ * The thresholds are a pure function so the suite can lift and run them:
+ * "close" from 80% of the low end of the envelope, "limit" from the high
+ * end. Rough on purpose - the agreement says 20-22, not a meter that
+ * pretends to a precision the word "rough" was chosen to avoid.
+ */
+function hoursState(usedSec, months) {
+  const m = Math.max(1, Math.floor(Number(months) || 1));
+  if (usedSec >= m * 22 * 3600) return 'limit';
+  if (usedSec >= 0.8 * m * 20 * 3600) return 'close';
+  return 'ok';
+}
+function hoursCard(c) {
+  if (!c.fullAccess || c.status === 'closed') return '';
+  const w = c.work || {};
+  const mark = Math.max(0, Number(w.tierMark) || 0);
+  const banked = Math.max(0, (Number(w.seconds) || 0) - mark);
+  const live = w.startedAt
+    ? Math.max(0, Math.min(Math.floor((Date.now() - toDate(w.startedAt).getTime()) / 1000), 12 * 3600))
+    : 0;
+  const used = banked + live;
+  const months = Math.max(1, Math.floor(Number(c.fullAccessMonths) || 1));
+  const state = hoursState(used, months);
+  const fmt = (secs) => {
+    const h = Math.floor(secs / 3600);
+    const m2 = Math.floor((secs % 3600) / 60);
+    return `${h ? `${h}h ` : ''}${m2}m`;
+  };
+  const pct = Math.min(100, Math.round((used / (months * 22 * 3600)) * 100));
+  const span = months > 1
+    ? `Your ${months} months include up to ${months * 20}-${months * 22} advocacy hours.`
+    : 'A month includes up to 20-22 advocacy hours.';
+  const note = state === 'limit'
+    ? 'We are at the rough limit of the included hours. Anything beyond them is agreed with you before the work, exactly as your agreement says.'
+    : state === 'close'
+      ? 'We are getting close to the included hours. If your case needs more, it is agreed with you before the work, never discovered on a bill.'
+      : '';
+  return `
+    <section class="card hours-card${state === 'ok' ? '' : ` is-${state}`}" data-hours-card>
+      <p class="eyebrow">HANDS-OFF HOURS</p>
+      <p class="hours-line"><strong style="color:var(--ink);">${fmt(used)}</strong> used${
+  w.startedAt ? ' <span style="color:var(--cyan);">· working on it right now</span>' : ''
+}</p>
+      <div class="hours-meter" role="img" aria-label="${fmt(used)} of the included advocacy hours used"><span style="width:${pct}%;"></span></div>
+      <p class="dim small" style="margin:0;">${span}</p>
+      ${note ? `<p class="small hours-note" style="margin:.4rem 0 0;"><strong>${note}</strong></p>` : ''}
+      <p class="dim small" style="margin:.4rem 0 0;">I pace this work to be as
+        efficient as possible with your hours: nothing is padded, and no time
+        is wasted.</p>
+      ${mark >= 60 ? `<p class="dim small" style="margin:.4rem 0 0;">Your case review's ${fmt(mark)} came with the case and is not counted here.</p>` : ''}
+    </section>`;
+}
+
 // ---- Progress section ----
 /**
  * Hours worked on this case, shown to the CLIENT. Eric clocks the time on
@@ -582,6 +643,7 @@ function renderProgress(el, c) {
       ${primaryAction}
       ${requestedNote}
     </section>
+    ${hoursCard(c)}
     ${checkInLine(c, localFmt)}
     <hr class="divide">
     <!-- ONE fold, not two. "Progress" and "Session details" were two identical
@@ -598,7 +660,7 @@ function renderProgress(el, c) {
             <li class="${i + 1 < rank ? 'done' : i + 1 === rank ? (closed ? 'done' : 'now') : ''}">
               <span class="t-dot"></span>${label}</li>`).join('')}
         </ul>
-        ${workLine(c)}
+        ${c.fullAccess ? '' : workLine(c)}
         ${closed ? '' : '<p class="dim small">A copy is in your email. Nothing else is needed from you before the call, though labs and imaging help if you have them.</p>'}
         ${secondAction ? `<p class="back-row">${secondAction}</p>` : ''}
         <hr class="divide">
@@ -1275,7 +1337,7 @@ const followUpPrice = (c) =>
 // The Full Access list price, in CENTS, corrected from /api/rates the moment
 // it answers. The upgrade card subtracts what this case already paid, so the
 // number on the button is the difference and never the list price.
-let fullAccessCents = 340000;
+let fullAccessCents = 350000;
 const fullAccessPrice = () => fullAccessCents;
 // Named, because the upgrade card has to know when this has landed. It used
 // to be fire-and-forget, so a slow or failed fetch left the compiled-in price
@@ -1357,7 +1419,7 @@ function addAboutButton(host, id) {
  * monthly all the way down. A flat price the Worker also holds, so the
  * compiled-in number here and the number Stripe charges are the same.
  */
-const EXTEND_PRICE_CENTS = 340000;
+const EXTEND_PRICE_CENTS = 350000;
 // The Worker's rule, and the Worker's numbers. These are not decoration: this
 // function tells a client the date their month runs to, and until now it said
 // SIXTY DAYS for every case, hardcoded, while the Worker gives a case bought

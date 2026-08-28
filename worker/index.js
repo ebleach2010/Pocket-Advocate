@@ -143,7 +143,8 @@ const SUB_PRICE_CENTS = 5000;
 // hours a month of records chasing, clinic calls and appeal drafting, so the
 // hourly basis is the right one to price from. The retainer figure is the
 // wrong comparable, not a ceiling being broken.
-const FULL_MONTH_CENTS = 340000;
+// $3,500 on Eric's word, 2026-08-29: "Make it 3500."
+const FULL_MONTH_CENTS = 350000;
 // A month of coverage. Every purchase on this tier buys exactly this.
 const FULL_MONTH_DAYS = 30;
 // What the scope note says the engagement realistically takes, and what the
@@ -1069,6 +1070,7 @@ export default {
       ctx.waitUntil(reviveLostSend(env));
       ctx.waitUntil(seedWorkClock(env));
       ctx.waitUntil(restructureRates(env));
+      ctx.waitUntil(repriceTier(env));
     }
     // Un-gated on purpose: the wedged case should recover on the FIRST
     // firing after this deploys, not up to a quarter hour later. One marker
@@ -1254,7 +1256,8 @@ async function handleBookingClosure(request, env) {
 /**
  * IN OR OUT OF OFFICE.
  *
- * Eric, 2026-08-27: scheduled hours Monday to Friday 8:00 to 19:00 Mountain,
+ * Eric, 2026-08-27: scheduled hours 8:00 to 19:00 Mountain - Monday to
+ * Thursday since 2026-08-29 ("we're now doing Fri-Sun out of office") -
  * with a switch he can flip either way from his phone, and the switch always
  * wins. Clients get a noticeable cue of which it is.
  *
@@ -1537,6 +1540,43 @@ async function restructureRates(env) {
   }
 }
 
+/**
+ * The tier moves to $3,500 (Eric, 2026-08-29: "Make it 3500"). One field,
+ * one shot: the base prices and the booking ratchet stay exactly where they
+ * are, hand-set or not, because he ordered exactly one number. A stored
+ * price the ratchet has already grown PAST the new seed is the ratchet's
+ * work and is kept; only a price below the seed - the retired $3,400 -
+ * moves up. A doc on an older epoch already answers with the seeds, so
+ * there is nothing to move there.
+ */
+async function repriceTier(env) {
+  const MARKER = 'migrations/tier-3500-2026-08-29';
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;
+  const done = (result) => patchDoc(env, MARKER, { finishedAt: new Date(), result },
+    { mask: ['finishedAt', 'result'] }).catch(() => {});
+  try {
+    const doc = await getDoc(env, RATES_PATH).catch(() => null);
+    if (!doc) return done('no rates doc; the seeds already answer 350000');
+    const cur = Number(doc.data.fullCents) || 0;
+    if (doc.data.pricingEpoch !== PRICING_EPOCH)
+      return done(`stale epoch; the seeds already answer, stored ${cur} ignored`);
+    if (cur >= FULL_MONTH_CENTS) return done(`kept ${cur}, already at or past the new seed`);
+    const won = await patchDoc(env, RATES_PATH,
+      { fullCents: FULL_MONTH_CENTS, updatedAt: new Date() },
+      { mask: ['fullCents', 'updatedAt'], ifUpdateTime: doc.updateTime }).catch(() => false);
+    if (won === false) return; // someone wrote first; the next firing retries
+    return done(`full ${cur} -> ${FULL_MONTH_CENTS}`);
+  } catch (err) {
+    console.error('reprice tier:', err.message || err);
+  }
+}
+
 async function seedWorkClock(env) {
   const MARKER = 'migrations/workclock-2026-08-22';
   const CASE_ID = '65cc57c1-2057-47eb-8dee-d82fce8bf5fe';
@@ -1703,7 +1743,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-two-clocks';
+const BUILD_TAG = 'v2026-08-29-hours-card';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1711,7 +1751,7 @@ const BUILD_TAG = 'v2026-08-29-two-clocks';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.53';
+const VERSION = '2.54';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
