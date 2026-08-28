@@ -667,10 +667,12 @@ function renderPayment() {
           these are available from the Case Enhancements tab on your case page
           whenever you want them:</p>
         <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Hands-Off Case Management</strong><br>
-          I take over the legwork, a month at a time: check-in calls at least
-          twice a month, unlimited calls to your clinics and insurer on your
-          behalf, your telehealth visits attended, and your insurance appeals
-          written by me, as many as the case needs. Most cases take about two months, and every month after the
+          I take over the legwork, a month at a time: up to 20-22 hours of
+          comprehensive advocacy each 30-day service period, with priority
+          access throughout. Check-in calls at least twice a month, calls to
+          your clinics and insurer on your behalf, your telehealth visits
+          attended, and your insurance appeals written by me, all from those
+          hours. Most cases take about two months, and every month after the
           first is your choice, not a commitment. You pay what is owed minus
           what you have already paid, never twice.</p>
         <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Follow-up session · $<span data-rate="addon">175</span></strong><br>

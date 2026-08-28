@@ -347,6 +347,13 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
       // is the documented fallback and rates.js overwrites it.
       const before = body.slice(Math.max(0, m.index - 120), m.index);
       if (/data-rate=/.test(before)) continue;
+      // ALLOWED 2026-08-29, on Eric's word: the Hands-Off overage rate is
+      // quoted as "$175 to $225 an hour" in the tier copy. That $175 is a
+      // live term he adopted, not the old follow-up price lingering; only
+      // the exact phrase is allowed, so a bare stale $175 still trips this.
+      // NEGATIVE CONTROL (run 2026-08-29): a bare "$175" planted on
+      // services.html outside the phrase still made Q3 read FAIL. Restored.
+      if (/^\$175 to \$225 an hour/.test(body.slice(m.index, m.index + 24))) continue;
       hits.push(`${rel}: $${m[1]}`);
     }
   }

@@ -211,13 +211,26 @@ for (const gone of ['90 days', 'up to <strong>five</strong>', 'three three-way']
 // UPDATED 2026-08-28, on Eric's word: "The copy also says things like '2
 // appeal calls.' The truth is I do my very best and there is no limit." So
 // the two-letter promise is GONE, from the agreement and from the Worker
-// gate that enforced it, and this check now pins its absence both places: a
-// count creeping back into either one is a broken promise waiting to happen.
-ck('scope note: a month at a time, and appeals are never counted',
+// gate that enforced it.
+// UPDATED AGAIN 2026-08-29, on Eric's word (adopting the framing he was
+// advised to use): the month is "up to 20-22 hours of comprehensive
+// advocacy during a 30-day service period", priority access throughout,
+// and casework beyond the hours is billed at $175 to $225 an hour, agreed
+// in advance. Calls and appeals are still never counted as ITEMS - they
+// draw from the hours - so the per-item count staying gone is still pinned,
+// alongside the envelope being present. The 2026-08-28 uncapped sentences
+// live in file history at v2.51.
+// NEGATIVE CONTROLS (run 2026-08-29): resurrecting "you will never be told
+// you have used them up" made this red; so did replacing the 20-22 hours
+// phrase with "a generous amount of advocacy". Both restored.
+ck('scope note: a month at a time, hours-based, and appeals never counted as items',
    /<strong>30 days per month you take<\/strong>/.test(TT)
    && !/Two insurance appeal letters/i.test(TT)
-   && /as many as the case needs<\/strong>/.test(TT)
-   && /I do not count appeals/.test(TT)
+   && /up to 20-22 hours of comprehensive advocacy/.test(TT)
+   && /priority access maintained throughout the month/.test(TT)
+   && /\$175 to \$225 an hour/.test(TT)
+   && /Appeals are not counted as items/.test(TT)
+   && !/you will never be told you have used them up/.test(TT)
    && !/FULL_APPEALS_INCLUDED = 2/.test(W));
 // UPDATED 2026-08-28, on Eric's word: "remove limitations on how many hand
 // off cases I can have. Or at least put that in an admin settings cog." He

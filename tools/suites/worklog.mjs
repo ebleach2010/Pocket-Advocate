@@ -311,9 +311,18 @@ ck('L16b and it gets a line of its own, because at 320px it did not fit on that 
 // stripper exists, and this is the trap it exists for pointed the other way.
 ck('L17 his own panel no longer counts what he promised not to count',
   !/Three are included/.test(bare(ADMIN)) && !/of 3 used/.test(bare(ADMIN)));
-ck('L18 and the agreement still says he does not count them',
-  /as many as the case needs/.test(TIER)
-  && /I do not count them and you will never be told you have used them up/.test(TIER));
+// UPDATED 2026-08-29, on Eric's word: the agreement moved to an hours
+// envelope ("up to 20-22 hours of comprehensive advocacy during each 30-day
+// service period"), so the uncapped sentence this pinned is deliberately
+// gone (history at v2.51). What survives it, and what L17 still needs from
+// the agreement: calls are not metered call by call - they draw from the
+// hours - so his panel showing per-item counts would still break a promise.
+// NEGATIVE CONTROLS (run 2026-08-29): the uncapped sentence back, or the
+// 20-22 hours phrase reworded, each made this read FAIL L18. Restored.
+ck('L18 and the agreement still says he does not meter them item by item',
+  /I do not meter them call by call/.test(TIER)
+  && /up to 20-22 hours of comprehensive advocacy/.test(TIER)
+  && !/you will never be told you have used them up/.test(TIER));
 
 // ---- L19-L23: the records release, parked, and the promise kept ----------
 // Eric, 2026-08-27: "Remove the release of records and park that."

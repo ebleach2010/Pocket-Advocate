@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.51';
+export const VERSION = '2.52';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '2.51';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // The hours envelopes (Eric, 2026-08-29, adopting the framing he was
+    // advised to use): Hands-Off months are up to 20-22 hours of
+    // comprehensive advocacy with priority access throughout, extra
+    // casework at $175 to $225 an hour agreed in advance; the Advocacy Case
+    // is 5-6 hours of research and reporting. Copy and agreements only; no
+    // price changed.
+    version: '2.52',
+    quiet: true,
+    client: [
+      'The service descriptions now spell out the time behind each service: 5-6 hours of research and reporting in an Advocacy Case, and up to 20-22 hours of advocacy in each Hands-Off month.',
+    ],
+  },
   {
     // Today's hours under every total (Eric, 2026-08-29: "a daily hours/min
     // logged for the day for a running clock, seen next to the total. Only
