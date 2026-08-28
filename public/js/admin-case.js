@@ -1162,15 +1162,41 @@ function startWorkClock(c) {
       `${total} banked on this case. Tap to add or subtract time.`);
     totalEl.classList.toggle('on', !!clock.startedAt);
     // The margin line, live beside the clock that produces it.
+    //
+    // IT READS `data`, NOT THE `c` THIS FUNCTION WAS HANDED. startWorkClock
+    // runs ONCE per case, from render(), and closed over the case document as
+    // it stood at that moment. load() reassigns `data` and deliberately does
+    // not re-render the Chat pane, so once a payment was recorded this pill
+    // went on printing the old hourly for as long as the page stayed open.
+    // The save worked and the screen said otherwise, which is the one pair
+    // that must never be made to look identical.
+    const live = data || c;
     if (rateEl) {
-      const hourly = effectiveHourly(c, t);
-      rateEl.hidden = hourly === null;
-      if (hourly !== null) {
+      const hourly = effectiveHourly(live, t);
+      const paid = paidCents(live);
+      // THREE STATES, and the third is the one that most needs saying. It used
+      // to hide itself whenever there was no hourly, so a case with no
+      // recorded payment showed nothing at all in the one spot built to tell
+      // him about his money. The .unknown style was written for exactly this
+      // case and nothing had ever set it.
+      //
+      // It is a READOUT, not a control. It carries no click handler: the
+      // control is the labelled row in Settings, and two controls writing one
+      // number is how they end up disagreeing. The cog glyph says where to go.
+      rateEl.hidden = false;
+      rateEl.classList.toggle('unknown', paid === null);
+      rateEl.classList.toggle('under', hourly !== null && hourly < floorCents);
+      if (paid === null) {
+        rateEl.textContent = '⚙ no payment recorded';
+        rateEl.title = 'Settings has a box for what this client actually paid. Fill it in and the hourly appears here.';
+      } else if (hourly === null) {
+        rateEl.textContent = `$${dollars(paid)} paid`;
+        rateEl.title = 'The hourly appears once six minutes are on the clock.';
+      } else {
         rateEl.textContent = `$${dollars(hourly)}/hr`;
-        rateEl.classList.toggle('under', hourly < floorCents);
         rateEl.title = hourly < floorCents
-          ? `Below your $${dollars(floorCents)}/hr floor. $${dollars(paidCents(c))} paid so far.`
-          : `$${dollars(paidCents(c))} paid so far.`;
+          ? `Below your $${dollars(floorCents)}/hr floor. $${dollars(paid)} paid so far.`
+          : `$${dollars(paid)} paid so far.`;
       }
     }
     btn.textContent = clock.startedAt ? '⏸ Stop working' : '▶ Start working';
@@ -1183,32 +1209,38 @@ function startWorkClock(c) {
   wireClockToggle(btn);
   // The time itself opens the sheet (Eric, 2026-08-25: "tap on the time").
   wireClockFix(totalEl);
-  // And the rate pill records what they actually paid. Deliberately on the
-  // pill: it is the thing showing the wrong answer, so it is the thing to
-  // press. Writes paidOverrideCents, which paidCents() prefers over any
-  // inference from today's price.
-  rateEl?.addEventListener('click', async () => {
-    const cur = Number(c.paidOverrideCents) > 0 ? (c.paidOverrideCents / 100).toFixed(2) : '';
-    const typed = prompt(
-      'What did this client actually pay for the case itself, in dollars?\n\n'
-      + 'Add-ons and follow-ups are counted separately and do not go here.', cur);
-    if (typed === null) return;
-    const amount = Number(String(typed).replace(/[^0-9.]/g, ''));
-    if (!(amount > 0)) {
-      say('paid', 'That did not look like an amount. Nothing changed.', { tone: 'warn' });
-      refreshOverview();
-      return;
-    }
-    try {
-      await api({ action: 'set-paid', paidCents: Math.round(amount * 100) });
-      await load();
-      say('paid', `Recorded. This case shows $${dollars(Math.round(amount * 100))} paid, and the hourly is worked out from that.`);
-    } catch (err) {
-      say('paid', `Not recorded: ${err.message}`, { tone: 'warn' });
-    }
-    refreshOverview();
-  });
+  // THE PILL NO LONGER TAKES A TAP. It used to open a prompt() that wrote
+  // paidOverrideCents, and that control failed him in every way a control can:
+  // 0.72rem dim monospace with no pointer, no role, no accessible name and no
+  // verb, explained only by a title attribute a phone never renders, sitting
+  // on the Chat page rather than anywhere he would look for money. Worse, it
+  // said nothing back - say('paid', ...) wrote into a key with no slot on the
+  // page, so both failures and the success were silent, and the stale closure
+  // above meant even a save that landed changed nothing on screen.
+  //
+  // The replacement is a labelled row in Settings with the client's name on
+  // it. Leaving this one wired as well would be two controls for one number,
+  // which is the thing that must not happen, so it is a readout now.
 }
+
+/**
+ * A payment was recorded from the Settings cog. Re-read the case and repaint.
+ *
+ * The number it changes shows in three places on this page - the rate pill on
+ * Chat, the PAID row on Overview, and the hourly the pill is worked out from -
+ * and NONE of them repaint on their own. load() re-reads the document, then
+ * refreshes the header and the Overview; the pill above now reads `data`, so
+ * it follows the same re-read. Registered once, at module scope, beside the
+ * other document listener rather than inside a paint function.
+ */
+document.addEventListener('pa-case-money', async () => {
+  await load();
+  // load() refreshes the header and the Overview and deliberately leaves the
+  // Chat pane alone, so the rate pill would sit on the old hourly until the
+  // 30-second tick came round. Thirty seconds of a stale number after a save
+  // is the same silence in a smaller size.
+  paintClock();
+});
 
 /**
  * Correcting a total, for a clock left running by mistake.
@@ -1764,8 +1796,9 @@ function paintOverview(pane) {
       <p class="dim small" style="margin:0 0 .7rem;">Nothing has been charged and no
         card was taken. Approving sends them a link to start month one at the rate
         quoted above — the one they were shown when they asked, not today's.
-        You take at most two of these at once; if you are full, approving
-        tells you so and asks before it goes ahead.</p>
+        You carry a set number of these at once, which you choose in
+        Settings, and if you are full, approving tells you so and asks before
+        it goes ahead.</p>
       <button class="btn" data-full-request="approve">Approve — send the link</button>
       <button class="btn quiet" data-full-request="decline">Can't take it</button>
       <p class="error" data-full-request-error hidden></p>
@@ -1824,6 +1857,16 @@ function paintOverview(pane) {
         <p class="dim small" style="margin:0 0 .5rem;">Leave it at zero if you
           already took the money through the charge panel. It is on the case
           once already, and entering it twice inflates your hourly.</p>
+        <!-- ONE NUMBER, NOT TWO. This box ADDS to the case fee already on the
+             record; the box in Settings SETS the whole figure outright. So
+             3400 typed here and 3400 typed there mean two different totals for
+             one real event, and the Settings figure is the one every screen
+             reads. Saying that here costs a sentence and saves him finding out
+             from a total he does not recognise. -->
+        <p class="dim small" style="margin:0 0 .5rem;">This adds to the case
+          fee already on the record. If the total it lands on is not what they
+          really paid, set the whole figure in Settings instead: that is the
+          number every other screen reads.</p>
         <p class="small" id="openfull-total" style="margin:0 0 .7rem;"></p>
         <label class="small" style="display:block; margin-bottom:.3rem;">
           Their month starts
@@ -2818,11 +2861,23 @@ function infoBar(c, mtFmt, start, due) {
     ? `${fmt.format(start)} MST · ${esc(c.appointment.method)}${c.publicElection?.choice === 'public' ? ' · <span style="color:var(--magenta)">PUBLIC</span>' : ''}`
     : 'no appointment', start ? null : 'var(--danger)');
 
+  // WHAT THEY PAID FOR THE CASE ITSELF, his correction first. This row read
+  // `stripe.amountTotal` alone, so a case where he had recorded $3,400 against
+  // a $175 Stripe booking still said PAID $175 on the page he opens first.
+  // paidOverrideCents had exactly one reader in the whole app, and it was not
+  // this one.
+  //
+  // The recorded figure REPLACES the Stripe line rather than adding to it: it
+  // is the whole of what they paid for the case, which is what the box in
+  // Settings asks for and says on its face. Sessions and follow-ups stay on
+  // their own line, the way they always were.
   const extraCents = Array.isArray(c.extraPayments)
     ? c.extraPayments.reduce((x, p) => x + (p.amountCents || 0), 0) : 0;
-  const totalCents = (c.stripe?.amountTotal || 0) + extraCents;
+  const recordedCents = Number(c.paidOverrideCents) > 0 ? Number(c.paidOverrideCents) : 0;
+  const caseCents = recordedCents || (c.stripe?.amountTotal || 0);
+  const totalCents = caseCents + extraCents;
   if (totalCents)
-    row('PAID', `$${(totalCents / 100).toLocaleString()}${extraCents ? ` <span class="dim">(case $${((c.stripe?.amountTotal || 0) / 100).toLocaleString()} + sessions $${(extraCents / 100).toLocaleString()})</span>` : ''}`, 'var(--cyan)');
+    row('PAID', `$${(totalCents / 100).toLocaleString()}${extraCents ? ` <span class="dim">(case $${(caseCents / 100).toLocaleString()} + sessions $${(extraCents / 100).toLocaleString()})</span>` : ''}${recordedCents ? ' <span class="dim">· recorded by you</span>' : ''}`, 'var(--cyan)');
 
   // The report clock — strict 7 calendar days on this side of the counter.
   if (c.status === 'delivered' || c.status === 'closed')

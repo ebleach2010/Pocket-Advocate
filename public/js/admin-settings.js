@@ -12,9 +12,65 @@
 // same byte-identical 404 as every other advocate module, for free. Rename it
 // to anything else and it is served to the world again.
 
+/**
+ * WHICH CASE THIS PANEL IS SITTING ON TOP OF, if any.
+ *
+ * The cog is global furniture and a payment is one client's. So the money row
+ * renders on a case page and nowhere else, and it carries that client's name
+ * so there is never a question about which case a figure is being written
+ * onto. Read from the page rather than passed in, because settings.js is
+ * served to every client and has no business knowing this module needs it.
+ *
+ * The name comes from the header admin-case.js paints, which is the same
+ * string he is looking at three inches higher up the screen.
+ */
+function onCase() {
+  // BOTH SPELLINGS. The Worker serves the page at /admin-case as well as
+  // /admin-case.html and redirects the second to the first, so on his actual
+  // phone `location.pathname` is the extensionless one. A test written against
+  // the filename alone rendered no money row at all on the live page, which a
+  // browser drive caught and no amount of reading would have.
+  if (!/\/admin-case(\.html)?\/?$/.test(location.pathname)) return null;
+  const id = new URLSearchParams(location.search).get('id') || '';
+  if (!/^[\w-]{1,64}$/.test(id)) return null;
+  const name = (document.querySelector('[data-client]')?.textContent || '').trim();
+  return { id, name };
+}
+
+const esc = (s2) => String(s2).replace(/[&<>"]/g, (ch) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
 /** The rows, as HTML. Only ever inserted after the caller has proven admin. */
 export function adminSettingsHtml() {
+  const c = onCase();
   return `
+    ${c ? `
+    <h4 style="margin:1.2rem 0 .1rem;">What ${esc(c.name || 'this client')} actually paid</h4>
+    <!-- THE CONTROL THAT WAS NOT THERE. There was one, on the Chat page: a
+         0.72rem dim monospace pill with no pointer, no role, no accessible
+         name and no verb, whose only explanation was a title attribute an
+         iPhone never renders. It wrote the right field and told him nothing
+         either way, so a dashboard reading $175 on a case that paid $3,400
+         survived him tapping it.
+
+         So: a heading with the client's name in it, a label with a verb, a
+         44px target, and a sentence that says what happens to the number
+         afterwards. Rendered whether or not anything is recorded yet, because
+         "nothing recorded" is the case that most needs the box. -->
+    <p class="dim small" style="margin:0 0 .5rem;">Everything they have paid
+      you for the case itself, however it reached you. Follow-ups and sessions
+      booked in the app are counted separately.</p>
+    <p class="dim small" style="margin:0 0 .5rem;">This sets your hourly, the
+      PAID line on their case, and the figure on their own page. Your Stripe
+      total never changes.</p>
+    <div class="row" style="gap:.5rem; align-items:flex-end;">
+      <label class="dim small" style="flex:1;">Paid for this case, in dollars
+        <input type="text" inputmode="decimal" data-paid-amount
+          placeholder="Reading the case…" aria-label="What this client paid for the case, in dollars"
+          disabled></label>
+      <button class="btn" data-paid-save style="flex:none; min-height:44px;" disabled>Record</button>
+    </div>
+    <p class="dim small" data-paid-said style="margin:.45rem 0 0;"></p>` : ''}
     <div class="toggle-row" style="margin-top:1rem;">
       <span><strong>Open to my dashboard</strong><br><span class="dim small">This device skips the booking page and lands on Admin. Turn off to test the client view.</span></span>
       <button class="switch ${localStorage.getItem('pa-open-admin') !== '0' ? 'on' : ''}" data-open-admin
@@ -32,6 +88,7 @@ export function adminSettingsHtml() {
  * until the real answer is in so it can never show a state it is not in.
  */
 export function wireAdminSettings(overlay, user) {
+  wirePaid(overlay, user);
   const effortBtn = overlay.querySelector('[data-effort]');
   if (effortBtn) {
     const paint = (on) => {
@@ -71,5 +128,98 @@ export function wireAdminSettings(overlay, user) {
     localStorage.setItem('pa-open-admin', on ? '1' : '0');
     btn.classList.toggle('on', on);
     btn.setAttribute('aria-pressed', String(on));
+  });
+}
+
+/**
+ * The money row, wired on the same discipline as the Deep read switch above:
+ * render disabled, ask the SERVER what is true, paint that, and only then let
+ * him touch it. A control that starts out claiming a state it has not checked
+ * is how a save that never happened looks exactly like one that did.
+ *
+ * The read is the case document itself, which is the record every other
+ * screen reads. The write goes through the same admin route the old pill
+ * used, and then the case is READ BACK before anything is claimed: a 200 says
+ * the request was accepted, and the question he is actually asking is what
+ * the case now holds. On a failure the box is put back to the last figure the
+ * server confirmed rather than left showing a number nothing agrees with.
+ */
+async function wirePaid(overlay, user) {
+  const input = overlay.querySelector('[data-paid-amount]');
+  const btn = overlay.querySelector('[data-paid-save]');
+  const said = overlay.querySelector('[data-paid-said]');
+  if (!input || !btn) return;
+  const caseId = new URLSearchParams(location.search).get('id') || '';
+
+  // Firestore, not a bespoke route: the case document IS the state, the admin
+  // can read it by rule, and a second endpoint returning a copy of one field
+  // is one more thing that can disagree with the case.
+  const { db, doc, getDoc } = await import('./firebase.js');
+  const readCase = async () => (await getDoc(doc(db, 'cases', caseId))).data() || {};
+
+  // Grouped in the sentence, plain in the box. A four-figure confirmation
+  // reading "$3400" is the same missing comma the case page and the shelf both
+  // fixed; the input value must stay parseable, so only the words get it.
+  const money = (cents) => (cents / 100).toFixed(2).replace(/\.00$/, '');
+  const shown = (cents) => (cents / 100).toLocaleString('en-US', {
+    minimumFractionDigits: cents % 100 ? 2 : 0,
+    maximumFractionDigits: cents % 100 ? 2 : 0,
+  });
+  let confirmed = null;             // the last figure the SERVER agreed to
+  const paint = (cents) => {
+    confirmed = cents;
+    input.value = cents > 0 ? money(cents) : '';
+    input.placeholder = cents > 0 ? '' : 'Nothing recorded yet';
+    input.disabled = false;
+    btn.disabled = false;
+  };
+  const tell = (text, bad) => {
+    said.textContent = text;
+    said.style.color = bad ? 'var(--danger)' : 'var(--cyan)';
+  };
+
+  try {
+    paint(Number((await readCase()).paidOverrideCents) || 0);
+  } catch {
+    // Disabled and honest, rather than an empty box that looks like a fact.
+    said.textContent = 'Could not read this case, so this is not safe to edit yet.';
+    said.style.color = 'var(--danger)';
+    return;
+  }
+
+  btn.addEventListener('click', async () => {
+    const amount = Number(String(input.value).replace(/[^0-9.]/g, ''));
+    if (!(amount > 0)) {
+      tell('That did not look like an amount. Nothing changed.', true);
+      input.value = confirmed > 0 ? money(confirmed) : '';
+      return;
+    }
+    const cents = Math.round(amount * 100);
+    input.disabled = true;
+    btn.disabled = true;
+    said.textContent = 'Recording…';
+    said.style.color = '';
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/case-update', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ caseId, action: 'set-paid', paidCents: cents }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      const stored = Number((await readCase()).paidOverrideCents) || 0;
+      if (stored !== cents) throw new Error('the case still shows the old figure');
+      paint(stored);
+      tell(`Recorded. This case now reads $${shown(stored)} paid, on your dashboard, on their page, and in your hourly.`);
+      // The case page behind this overlay holds the same number in three
+      // places and repaints none of them by itself.
+      document.dispatchEvent(new CustomEvent('pa-case-money'));
+    } catch (err) {
+      // Put the control back where the server left it. Leaving his typing in
+      // the box after a failed write is the lie this row exists to stop.
+      paint(confirmed);
+      tell(`Not recorded: ${err.message}. Nothing on the case changed.`, true);
+    }
   });
 }

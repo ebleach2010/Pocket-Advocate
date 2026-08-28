@@ -89,8 +89,24 @@ async function load() {
   // must stay honest. So a hand-recorded payment is counted on its own line
   // and the headline stays what Stripe actually took.
   const covers = await loadCovers();
+  // A PAYMENT HE RECORDED BY HAND ON THE CASE COUNTS TOO, and until now it
+  // did not: the hand line read `extraPayments[].byHand` and nothing else, so
+  // on a case with no such row handCents was 0 and the WHOLE block below did
+  // not render. His $3,400 was recorded, was on the case, and appeared
+  // nowhere on this screen.
+  //
+  // What goes on the hand line is the part Stripe did not take:
+  // paidOverrideCents is the whole of what they paid for the case, and
+  // stripe.amountTotal is the slice of it that went through Stripe. The
+  // difference is the money that arrived another way, which is exactly what
+  // the line says it is. Never below zero: if he records LESS than Stripe
+  // charged (a refund he settled outside the app) the headline still means
+  // what Stripe took, which is the one sentence on this card that has to stay
+  // literally true.
+  const handRecorded = (c) => Math.max(0,
+    (Number(c.paidOverrideCents) || 0) - (Number(c.stripe?.amountTotal) || 0));
   const byKind = (want) => cases.reduce((sum, c) => sum
-    + (want === 'stripe' ? (c.stripe?.amountTotal || 0) : 0)
+    + (want === 'stripe' ? (c.stripe?.amountTotal || 0) : handRecorded(c))
     // Tips excluded, the way handleLedger already excludes them. A tip is a
     // gift, and counting it flatters the same number.
     + (Array.isArray(c.extraPayments)

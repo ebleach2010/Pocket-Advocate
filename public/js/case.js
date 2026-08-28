@@ -342,11 +342,43 @@ function busyInside(pane) {
  */
 function confirmedLine(c) {
   if (c.status === 'closed') return '';
-  const cents = c.stripe?.amountTotal;
-  const paid = typeof cents === 'number'
-    ? `, $${(cents / 100).toFixed(2).replace(/\.00$/, '')} received`
+  const paid = paidShownCents(c);
+  // Grouped. This used to be toFixed(2) with the trailing zeroes trimmed,
+  // which reads fine for the $175 it was only ever given and prints "$3400"
+  // the moment a four-figure total reaches it. A missing comma on the one
+  // number a client checks is not a rounding detail.
+  const amount = typeof paid === 'number'
+    ? `, $${(paid / 100).toLocaleString('en-US', {
+      minimumFractionDigits: paid % 100 ? 2 : 0,
+      maximumFractionDigits: paid % 100 ? 2 : 0,
+    })} received`
     : '';
-  return `Payment confirmed${paid}`;
+  return `Payment confirmed${amount}`;
+}
+
+/**
+ * The whole of what this case has paid, for the line above.
+ *
+ * It used to read the card charge and nothing else. On a case where the money
+ * arrived another way, or where more was agreed later, that made this line
+ * understate the work by a wide margin: the hours below say seventeen and
+ * three quarters, and anyone doing the division against a first booking gets
+ * an answer that is nothing like the truth. So the figure here is the same
+ * one the case itself records.
+ *
+ * In order of how much the source knows, and it REFUSES to guess. Nothing is
+ * inferred from a price list: a case with none of these on it shows no amount
+ * at all, which is what this line did before whenever the charge was missing.
+ * Follow-ups, sessions and tips are separate purchases with their own
+ * receipts and are not folded in here.
+ */
+function paidShownCents(c) {
+  const recorded = Number(c?.paidOverrideCents);
+  if (recorded > 0) return recorded;
+  const tier = Number(c?.fullAccessRateCents);
+  if (c?.fullAccess && tier > 0) return tier;
+  const charged = Number(c?.stripe?.amountTotal);
+  return charged > 0 ? charged : null;
 }
 
 // ---- Progress section ----

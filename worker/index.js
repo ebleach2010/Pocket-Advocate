@@ -4228,8 +4228,14 @@ async function handleLedger(request, env) {
     }
     const g = byClient.get(key);
     g.cases += 1;
-    g.paidCents += Number(c.payment?.amountTotal) || Number(c.stripe?.amountTotal)
-      || Number(c.caseRateCents) || 0;
+    // His own correction first, for the same reason paidCents() on the case
+    // page takes it first: only he knows about money that moved outside
+    // Stripe, and the ledger reading $175 for a client who paid $3,400 is the
+    // ledger being wrong about the one thing it is for. It REPLACES the
+    // booking figure rather than adding to it - it is the whole of what they
+    // paid for the case - and extraPayments below are still counted on top.
+    g.paidCents += Number(c.paidOverrideCents) || Number(c.payment?.amountTotal)
+      || Number(c.stripe?.amountTotal) || Number(c.caseRateCents) || 0;
     for (const p of (Array.isArray(c.extraPayments) ? c.extraPayments : [])) {
       const cents = Number(p?.amountCents) || 0;
       if (p?.kind === 'tip') g.tipCents += cents;

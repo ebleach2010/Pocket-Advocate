@@ -1126,12 +1126,19 @@ main > p > a.small[href="/admin.html"] {
 /* The rate pill's third state: no recorded payment, so no hourly. It must not
    look like a number, because the whole defect was a number that looked
    trustworthy and was not. Amber, not red: nothing is wrong with the case, the
-   app simply does not know what they paid and is saying so. */
+   app simply does not know what they paid and is saying so.
+
+   THIS BLOCK WAS DEAD until now. It described a state the JS never set: the
+   pill hid itself whenever the hourly was null, so the one case that most
+   needed a word on screen got a blank space. startWorkClock sets .unknown now.
+
+   `cursor: pointer` went with the pill's click handler. The pill is a readout
+   and the control is the labelled row in Settings; a hand cursor on a thing
+   that does nothing is the same broken promise in the other direction. */
 .work-rate.unknown {
   color: var(--gold);
   border-color: color-mix(in srgb, var(--gold) 45%, transparent);
   background: color-mix(in srgb, var(--gold) 10%, transparent);
-  cursor: pointer;
 }
 
 /* Today's remaining hours, as chips. Wraps rather than scrolls: a row that

@@ -248,14 +248,35 @@ check('T10b booking still never offers the tier as a checkout line',
 const CASEJS = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
 const ADMINJS = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
 const ADVJS = readFileSync(__j(__REPO, 'worker/advisor.js'), 'utf8');
-// case.js no longer computes a paid figure at all: the only one it had lived
-// in the tip jar, which was retired 2026-08-24. The rule still binds the two
-// places that do.
-for (const [name, src] of [['admin-case.js', ADMINJS], ['advisor.js', ADVJS]])
+// THREE places compute a paid figure now, not two. H1b used to assert that
+// case.js computed none at all - true when it was written, because the only
+// one it ever had lived in the tip jar, retired 2026-08-24.
+//
+// UPDATED 2026-08-28, on Eric's word ("keep the hours, fix the money"). The
+// client's page showed the first card charge beside a live count of the hours
+// worked, so a client dividing $175 by 17h 45m got $9.86/hr on a case that had
+// paid $3,400. paidShownCents in case.js now answers the same question the
+// other two answer, which means it is bound by the same rule rather than
+// exempt from it. The RULE has not moved an inch: the two rate fields mean
+// different things and may never be summed. Not deleted, widened.
+for (const [name, src] of [['admin-case.js', ADMINJS], ['advisor.js', ADVJS], ['case.js', CASEJS]])
   check(`H1 ${name} reads fullAccessRateCents instead of adding it to the case rate`,
     /fullAccessRateCents/.test(src) && !/caseRateCents \+ .*fullAccessRateCents/.test(src));
-check('H1b case.js computes no paid figure now the jar is gone',
-  !/fullAccessRateCents|totalPaidCents/.test(CASEJS));
+// And the half of H1b that still binds: whatever case.js shows a client, it
+// may not be inferred from a price list. caseRateCents is the field that
+// turned a $175 client into a $1,200 one; the client's page must never reach
+// for it.
+// Scoped to the FUNCTION, not the file. case.js reads caseRateCents in one
+// other place - upgradeQuoteCents, which credits what the case already paid
+// against the tier price - and that is a different question with a correct
+// answer. A file-wide ban read as a leak where there was none, and a check
+// that cries wolf is a check that gets relaxed.
+{
+  const fn = (CASEJS.match(/function paidShownCents\(c\) \{[\s\S]*?\n\}/) || [''])[0];
+  check('H1b the figure the client is shown is never inferred from a price list',
+    fn.length > 0 && !/caseRateCents|CASE_PRICE/.test(fn),
+    fn.length ? 'a price-list rung is back in paidShownCents' : 'paidShownCents is gone');
+}
 
 check('H2 the hourly instrument refuses to divide by a trivial clock',
   /if \(secs < 360\) return null;/.test(ADMINJS));
@@ -731,7 +752,14 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
 // what he has actually been paid. Counted on its own line instead.
 {
   const ADMIN = readFileSync(__j(__REPO, 'public/js/admin.js'), 'utf8');
-  const fn = (ADMIN.match(/const byKind = \(want\) =>[\s\S]*?: 0\), 0\);/) || [''])[0];
+  // UPDATED 2026-08-28: the lift now starts at handRecorded, because byKind
+  // calls it. The old lift still MATCHED and the lifted code still built; it
+  // threw ReferenceError on the call, which is why V2 is a separate check and
+  // why the construction and the call both sit inside the try below. The rule
+  // this block enforces is unchanged.
+  const a = ADMIN.indexOf('  const handRecorded = (c) =>');
+  const b2 = ADMIN.indexOf(': 0), 0);', a);
+  const fn = a >= 0 && b2 >= 0 ? ADMIN.slice(a, b2 + ': 0), 0);'.length) : '';
   check('V1 the shelf splits Stripe money from hand-recorded money', fn.length > 0);
   // Built AND called inside the try. A lift that comes back half a function
   // throws on the call, not on the construction, and an uncaught throw here
