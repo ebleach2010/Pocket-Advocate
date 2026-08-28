@@ -594,11 +594,51 @@ function render(el) {
   // puts it first in view, on arrival and after every single tab tap.
   const head = document.createElement('div');
   head.className = 'case-head';
+  // THE MASTHEAD ANSWERS THE FIVE QUESTIONS (visual director pass,
+  // 2026-08-29): who, what state, what is waiting, what happens next, when.
+  // Everything below is read off the case document this page already holds;
+  // nothing is fetched and nothing is new state, so the masthead can never
+  // disagree with the panes underneath it.
+  const nowMs = Date.now();
+  const nextOf = [];
+  if (c.appointment?.start && toDate(c.appointment.start).getTime() > nowMs)
+    nextOf.push({ t: toDate(c.appointment.start), what: 'Call' });
+  if (Array.isArray(c.checkIns))
+    for (const x of c.checkIns) {
+      const t = toDate(x.start);
+      if (t.getTime() > nowMs) nextOf.push({ t, what: 'Check-in' });
+    }
+  if (c.status === 'awaiting_report' && c.reportDueAt)
+    nextOf.push({ t: toDate(c.reportDueAt), what: 'Report due' });
+  nextOf.sort((a, b) => a.t - b.t);
+  const nextFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Phoenix', weekday: 'short', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+  });
+  const nextLine = nextOf.length && c.status !== 'closed'
+    ? `<p class="case-next"><span class="case-next-k">NEXT</span> ${esc(nextOf[0].what)} &#183; ${nextFmt.format(nextOf[0].t)} MST</p>`
+    : '';
+  // OPEN LOOPS: the states that end only when he acts. Same flags the
+  // dashboard gathers, painted where the case itself is open.
+  const loops = [];
+  if (c.needsReschedule) loops.push(['hot', 'Needs rescheduling']);
+  if (c.pendingTelehealth?.state === 'requested') loops.push(['hot', 'Telehealth to confirm']);
+  if (c.status === 'awaiting_report' && c.reportDueAt) {
+    const days = Math.ceil((toDate(c.reportDueAt).getTime() - nowMs) / 86_400_000);
+    if (days < 0) loops.push(['hot', `Report overdue ${-days}d`]);
+  }
+  if (c.hold?.pausedAt) loops.push(['warm', 'Case paused']);
+  const loopRow = loops.length && c.status !== 'closed'
+    ? `<p class="loop-chips">${loops.map(([tone, t]) =>
+      `<span class="loop-chip ${tone}">${esc(t)}</span>`).join('')}</p>`
+    : '';
   head.innerHTML = `
     <div class="case-who">
       <span class="case-name" data-client>${esc(c.clientName || c.clientEmail || c.clientUid)}</span>
       <span class="status-pill" data-status>${(c.status || '?').replace('_', ' ').toUpperCase()}</span>
     </div>
+    ${loopRow}
+    ${nextLine}
     ${c.status === 'closed' ? '' : `
     <button type="button" class="btn quiet work-head" data-work-head
       aria-label="Clock in or out of this case">⏱</button>`}

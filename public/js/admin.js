@@ -295,7 +295,58 @@ async function load() {
     ? `<h2 style="font-size:.78rem; letter-spacing:.16em; color:${color}; font-family:ui-monospace,monospace; margin:1.4rem 0 .6rem;">${title}</h2><div class="drawer">${rows.join('')}</div>`
     : '';
 
-  listEl.innerHTML = rateBlock + voiceBlock + summary +
+  // ---- THE COMMAND CENTER ORDER (visual director pass, 2026-08-29) ------
+  //
+  // The dashboard used to lead with the rate control, the voice study and
+  // the revenue figure: settings and statistics, none of which is a reason
+  // he opened the page. It leads with the decisions now. NEEDS ATTENTION is
+  // every state flag the folders already carry, gathered into one tappable
+  // list; TODAY is any call on today's calendar. Both are REORGANISATIONS of
+  // state this file already computed for the folder cards: nothing here is
+  // fetched or invented, so the two views can never disagree.
+  const loops = [];
+  for (const c of [...current, ...future]) {
+    const name = c.clientName || c.clientEmail || c.clientUid;
+    const href = `/admin-case.html?id=${c.id}`;
+    if (c.needsReschedule) loops.push({ href, name, label: 'Needs rescheduling', tone: 'hot' });
+    if (checkInDue(c)) loops.push({ href, name, label: 'Check-in due', tone: 'hot' });
+    if (c.pendingTelehealth?.state === 'requested')
+      loops.push({ href, name, label: 'Telehealth to confirm', tone: 'hot' });
+    if (c.status === 'awaiting_report' && c.reportDueAt) {
+      const days = Math.ceil((toDate(c.reportDueAt) - Date.now()) / 86_400_000);
+      if (days < 0) loops.push({ href, name, label: `Report overdue ${-days}d`, tone: 'hot' });
+      else if (days <= 3) loops.push({ href, name, label: `Report due in ${days}d`, tone: 'warm' });
+    }
+  }
+  const attBlock = loops.length ? `
+    <section class="cmd" aria-label="Needs attention">
+      <h2 class="cmd-h hot">NEEDS ATTENTION <span class="cmd-count">${loops.length}</span></h2>
+      ${loops.map((a) => `
+      <a class="cmd-row ${a.tone}" href="${a.href}">
+        <strong>${esc(a.name)}</strong>
+        <span class="cmd-what">${a.label}</span>
+        <span class="cmd-go" aria-hidden="true">&#8250;</span>
+      </a>`).join('')}
+    </section>` : `
+    <p class="cmd-clear dim small">Nothing is waiting on you right now.</p>`;
+  const today = future.filter((c) => {
+    const d = toDate(c.appointment.start);
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+      && d.getDate() === now.getDate();
+  });
+  const todayBlock = today.length ? `
+    <section class="cmd" aria-label="Today">
+      <h2 class="cmd-h">TODAY</h2>
+      ${today.map((c) => `
+      <a class="cmd-row" href="/admin-case.html?id=${c.id}">
+        <strong>${esc(c.clientName || c.clientEmail || c.clientUid)}</strong>
+        <span class="cmd-what">${mtFmt.format(toDate(c.appointment.start))} MST &#183; ${esc(c.appointment.method || '')}</span>
+        <span class="cmd-go" aria-hidden="true">&#8250;</span>
+      </a>`).join('')}
+    </section>` : '';
+
+  listEl.innerHTML = attBlock + todayBlock +
     section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
       `${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
        ${followUpFlag(c)}`))) +
@@ -303,7 +354,8 @@ async function load() {
       `<strong style="color:var(--manila-strong)">${mtFmt.format(toDate(c.appointment.start))} MST</strong> · ${esc(c.appointment.method)}
        ${followUpFlag(c)}`))) +
     section('FORMER CLIENTS: CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
-      `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`)));
+      `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`))) +
+    `<div class="cmd-quiet">` + rateBlock + voiceBlock + summary + `</div>`;
 
   const voiceSay = listEl.querySelector('#voice-said');
   const voicePost = async (btn, body, done) => {

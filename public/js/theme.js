@@ -4,31 +4,35 @@
 // stylesheet paints (no flash); this module is for the Settings picker and
 // anything else that changes the scheme while a page is open.
 //
-// Defaults: Eric's admin device keeps Neon; everyone else gets Calm. A
-// stored choice always wins.
+// Defaults, since the Daylight restyle (2026-08-29): a stored choice always
+// wins; with nothing stored the app follows the SYSTEM setting, light to
+// Daylight and dark to Night, which is what a phone user already expects.
 
 const KEY = 'pa-scheme';
 
+// The ids are STORAGE KEYS and never change: a client who picked one in
+// July keeps their choice. Only the labels moved with the restyle.
 export const SCHEMES = [
-  { id: 'neon', label: 'Neon', blurb: 'The original. Electric.' },
-  { id: 'calm', label: 'Calm', blurb: 'Same bones, easier on the eyes.' },
+  { id: 'neon', label: 'Daylight', blurb: 'The brand look. Powder blue, white, navy.' },
+  { id: 'calm', label: 'Night', blurb: 'The same brand after dark.' },
   { id: 'paper', label: 'Paper', blurb: 'Warm, light, like the folder itself.' },
   { id: 'contrast', label: 'High contrast', blurb: 'Maximum legibility.' },
 ];
 
 // Keep in sync with the theme-color meta each scheme deserves.
 const THEME_COLOR = {
-  neon: '#07090F',
-  calm: '#0B0E14',
+  neon: '#EAF2FA',
+  calm: '#0A1626',
   paper: '#F3EEE3',
   contrast: '#000000',
 };
 
 export function defaultScheme() {
   try {
-    return localStorage.getItem('pa-admin-device') === '1' ? 'neon' : 'calm';
+    return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches
+      ? 'calm' : 'neon';
   } catch {
-    return 'calm';
+    return 'neon';
   }
 }
 

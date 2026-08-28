@@ -40,49 +40,61 @@
    ------------------------------------------------------------------------ */
 [hidden] { display: none !important; }
 
-/* Pocket Advocate neon system — single-theme by design (approved 2026-07-11).
-   Same tokens as PROTOTYPE.html so the shipped app matches the prototype. */
-/* Eric's mockup, 2026-08-25 (visual reference only, his copy untouched):
-   deep navy ground with a violet cast, indigo panels, cyan and violet
-   accents, and card edges that glow rather than merely outline. Only these
-   VALUES moved - no rule names a colour, so the whole app follows, and the
-   other three schemes keep their own values and stay coherent.
-   --magenta keeps its NAME and takes a violet value: renaming a token would
-   touch every rule that reads it, for nothing. */
+/* Pocket Advocate DAYLIGHT system (Eric's logo, 2026-08-29): powder blue
+   ground, white panels lifted over blue-grey, denim action blue, deep navy
+   ink, and deep navy contrast sections. The palette is sampled from the
+   logo itself: tile #BAE0F5 to #6191C1, ring #204071, shield silver
+   #EEF3F9, pocket denim #558DC8 / #3063A8, heart sky #ABD6F2.
+   Only VALUES moved - no rule names a colour, so the whole app follows, and
+   the other three schemes keep their own values and stay coherent.
+   --cyan and --magenta keep their NAMES and take blue-family values:
+   renaming a token would touch every rule that reads it, for nothing.
+   --cyan is THE action blue; --magenta is the deep denim navy that partners
+   it in gradients and on the REPORT pill. */
 :root {
-  --bg: #050817;
-  --bg-deep: #03050E;
-  --panel: #0B1128;
-  --panel-2: #131C3E;
-  --ink: #F0F4FF;
-  --dim: #AAB4D3;
-  --muted: #7884AC;
-  --soft: #DCE2F3;
-  --line: #29386E;
-  --cyan: #52E4FF;
-  --cyan-dim: #3794AD;
-  --magenta: #A981FF;
-  --green: #48DB91;
-  --blue: #A981FF;
-  --danger: #FF7272;
-  --gold: #FFCA58;
-  --orange: #FFA962;
+  --bg: #EAF2FA;
+  --bg-deep: #DDE9F6;
+  --panel: #FFFFFF;
+  --panel-2: #F2F7FD;
+  --ink: #172B4D;
+  --dim: #4D6183;
+  --muted: #74839F;
+  --soft: #24395E;
+  --line: #D6E1EF;
+  --cyan: #2E6AB8;
+  --cyan-dim: #6A91C2;
+  --magenta: #27508D;
+  --green: #1E7A4E;
+  --blue: #27508D;
+  --danger: #B23B3B;
+  --gold: #96690F;
+  --orange: #AA5A26;
   /* DEPTH, NOT GLOW. These five keep their names because forty rules read
-     them, and take shadow values instead of blooms: the spec's hierarchy
-     comes from elevation, and the only thing left that truly glows is the
-     one primary action (--el-cta). */
-  --glow-c: 0 8px 28px rgba(0, 0, 0, .18);
-  --glow-m: 0 8px 28px rgba(0, 0, 0, .18);
-  --glow-g: 0 6px 20px rgba(0, 0, 0, .16);
-  --glow-b: 0 6px 20px rgba(0, 0, 0, .16);
-  --glow-o: 0 6px 20px rgba(0, 0, 0, .16);
-  --glow-c-peak: 0 12px 34px rgba(82, 228, 255, .28), 0 0 0 1px rgba(82, 228, 255, .40);
-  --wash-b: rgba(169, 129, 255, .05);
-  --chip-wash: rgba(169, 129, 255, .12);
+     them, and take shadow values instead of blooms: hierarchy comes from
+     elevation, and the only thing left that truly glows is the one primary
+     action. Shadows on a pale ground are navy-cast and lighter than their
+     dark-scheme cousins, or the page reads bruised. */
+  --glow-c: 0 8px 28px rgba(23, 52, 101, .10);
+  --glow-m: 0 8px 28px rgba(23, 52, 101, .10);
+  --glow-g: 0 6px 20px rgba(23, 52, 101, .09);
+  --glow-b: 0 6px 20px rgba(23, 52, 101, .09);
+  --glow-o: 0 6px 20px rgba(23, 52, 101, .09);
+  --glow-c-peak: 0 12px 34px rgba(46, 106, 184, .30), 0 0 0 1px rgba(46, 106, 184, .38);
+  --wash-b: rgba(39, 80, 141, .05);
+  --chip-wash: rgba(46, 106, 184, .10);
   --sig-paper: #FFFFFF;
   --sig-ink: #101828;
-  --bar: rgba(5, 8, 23, .86);
-  --on-accent: #071018;
+  --bar: rgba(234, 242, 250, .88);
+  --on-accent: #FFFFFF;
+  /* THE DEEP SECTION. A full-bleed navy band is how a light page gets its
+     moments of value contrast: white elevated over blue-grey, a bright
+     action inside restrained surroundings. Four tokens, so a band never
+     invents its own ink. Every scheme redefines them in its own key. */
+  --deep: #1D3C6E;
+  --deep-2: #152F5A;
+  --deep-ink: #F1F6FD;
+  --deep-dim: #B7C7E1;
+  --deep-line: rgba(255, 255, 255, .16);
 }
 
 /* ---------------------------------------------------------------- schemes
@@ -91,43 +103,57 @@
    directly, so a scheme is a palette swap and every component follows.
    theme.js stamps data-scheme on <html>; a head snippet does it before first
    paint so a scheme never flashes neon on the way in. */
-/* Calm: the same room with the lights down. Same hues, lower saturation and a
-   softer glow, for reading in bed at 2am with a headache, which is when a lot
-   of this gets read. */
+/* Night: the same brand after dark. Deep navy ground, silver ink, sky-blue
+   action, for reading in bed at 2am with a headache, which is when a lot of
+   this gets read. Follows the system setting by default (see theme.js) and
+   sits one tap away in Settings either way. */
 :root[data-scheme="calm"] {
-  --bg: #090C12;
-  --bg-deep: #06080D;
-  --panel: #111720;
-  --panel-2: #19222E;
-  --ink: #F2F4F7;
-  --dim: #A9B1BE;
-  --muted: #7F8998;
-  --soft: #DEE1E7;
-  --line: #2A3442;
-  --cyan: #87A9FF;
-  --cyan-dim: #5A72AA;
-  --magenta: #A58DD7;
-  --green: #70CA9A;
-  --blue: #A58DD7;
-  --danger: #F07878;
-  --gold: #E6B95C;
-  --orange: #EAA067;
-  /* DEPTH, NOT GLOW. These five keep their names because forty rules read
-     them, and take shadow values instead of blooms: the spec's hierarchy
-     comes from elevation, and the only thing left that truly glows is the
-     one primary action (--el-cta). */
+  --bg: #0A1626;
+  --bg-deep: #071020;
+  --panel: #101F36;
+  --panel-2: #182A47;
+  --ink: #EFF4FB;
+  --dim: #A9BAD4;
+  --muted: #7D90AE;
+  --soft: #DCE6F4;
+  --line: #263D63;
+  --cyan: #7FB3E8;
+  --cyan-dim: #4E749E;
+  --magenta: #9DB4DF;
+  --green: #63C695;
+  --blue: #9DB4DF;
+  --danger: #F07E7E;
+  --gold: #E0B45F;
+  --orange: #E29B64;
+  /* DEPTH, NOT GLOW: dark-ground shadows, and one lit action. */
   --glow-c: 0 8px 28px rgba(0, 0, 0, .18);
   --glow-m: 0 8px 28px rgba(0, 0, 0, .18);
   --glow-g: 0 6px 20px rgba(0, 0, 0, .16);
   --glow-b: 0 6px 20px rgba(0, 0, 0, .16);
   --glow-o: 0 6px 20px rgba(0, 0, 0, .16);
-  --glow-c-peak: 0 12px 34px rgba(135, 169, 255, .28), 0 0 0 1px rgba(135, 169, 255, .40);
-  --wash-b: rgba(165, 141, 215, .05);
-  --chip-wash: rgba(165, 141, 215, .12);
+  --glow-c-peak: 0 12px 34px rgba(127, 179, 232, .28), 0 0 0 1px rgba(127, 179, 232, .40);
+  --wash-b: rgba(127, 179, 232, .05);
+  --chip-wash: rgba(127, 179, 232, .12);
   --sig-paper: #FFFFFF;
   --sig-ink: #101828;
-  --bar: rgba(9, 12, 18, .86);
-  --on-accent: #071018;
+  --bar: rgba(10, 22, 38, .86);
+  --on-accent: #0A1626;
+  --deep: #0B1B36;
+  --deep-2: #081527;
+  --deep-ink: #EFF4FB;
+  --deep-dim: #A9BAD4;
+  --deep-line: rgba(255, 255, 255, .12);
+  /* The folder on a night desk: the dark-ground manila that used to be the
+     app-wide default, moved here when Daylight took the bare :root. */
+  --manila: #DEC791;
+  --manila-2: #F0DFB0;
+  --manila-ink: #2A2113;
+  --manila-edge: #A98F5F;
+  --manila-fold: rgba(10, 7, 2, .7);
+  --manila-strong: #14100A;
+  --manila-alert: #8A2B00;
+  --manila-note: #14432F;
+  --manila-flag: #4A1D6E;
 }
 
 /* Paper: light, warm, like the folder itself. The one scheme where ink is dark
@@ -142,11 +168,11 @@
   --muted: #7C817F;
   --soft: #32383F;
   --line: #D2C7B8;
-  --cyan: #35598D;
+  --cyan: #2E5E9E;
   --cyan-dim: #6882A7;
-  --magenta: #70598F;
+  --magenta: #3D5684;
   --green: #287250;
-  --blue: #70598F;
+  --blue: #3D5684;
   --danger: #A63F3F;
   --gold: #9D6819;
   --orange: #A05827;
@@ -160,8 +186,13 @@
   --glow-b: 0 6px 20px rgba(0, 0, 0, .09);
   --glow-o: 0 6px 20px rgba(0, 0, 0, .09);
   --glow-c-peak: 0 12px 34px rgba(53, 89, 141, .28), 0 0 0 1px rgba(53, 89, 141, .40);
-  --wash-b: rgba(112, 89, 143, .05);
-  --chip-wash: rgba(112, 89, 143, .12);
+  --wash-b: rgba(53, 89, 141, .05);
+  --chip-wash: rgba(53, 89, 141, .12);
+  --deep: #2B3F60;
+  --deep-2: #22334F;
+  --deep-ink: #F5F1E8;
+  --deep-dim: #C4CBDA;
+  --deep-line: rgba(255, 255, 255, .16);
   --sig-paper: #FFFFFF;
   --sig-ink: #101828;
   --bar: rgba(241, 236, 226, .86);
@@ -180,11 +211,11 @@
   --muted: #B6B6B6;
   --soft: #F2F2F2;
   --line: #666666;
-  --cyan: #73E8FF;
-  --cyan-dim: #4C95A3;
-  --magenta: #C3A3FF;
+  --cyan: #79C2FF;
+  --cyan-dim: #4C7FA9;
+  --magenta: #A9C7FF;
   --green: #76F1AC;
-  --blue: #C3A3FF;
+  --blue: #A9C7FF;
   --danger: #FF8C8C;
   --gold: #FFD66A;
   --orange: #FFBA77;
@@ -197,9 +228,14 @@
   --glow-g: 0 6px 20px rgba(0, 0, 0, .16);
   --glow-b: 0 6px 20px rgba(0, 0, 0, .16);
   --glow-o: 0 6px 20px rgba(0, 0, 0, .16);
-  --glow-c-peak: 0 12px 34px rgba(115, 232, 255, .28), 0 0 0 1px rgba(115, 232, 255, .40);
-  --wash-b: rgba(195, 163, 255, .05);
-  --chip-wash: rgba(195, 163, 255, .12);
+  --glow-c-peak: 0 12px 34px rgba(121, 194, 255, .28), 0 0 0 1px rgba(121, 194, 255, .40);
+  --wash-b: rgba(169, 199, 255, .05);
+  --chip-wash: rgba(169, 199, 255, .12);
+  --deep: #0D0D0D;
+  --deep-2: #000000;
+  --deep-ink: #FFFFFF;
+  --deep-dim: #D2D2D2;
+  --deep-line: rgba(255, 255, 255, .38);
   --sig-paper: #FFFFFF;
   --sig-ink: #101828;
   --bar: rgba(0, 0, 0, .86);
@@ -268,8 +304,14 @@ body {
   font-family: "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   line-height: 1.6; font-size: 1rem; -webkit-text-size-adjust: 100%;
   background-image:
-    radial-gradient(1200px 500px at 85% -10%, rgba(45,226,255,.07), transparent 60%),
-    radial-gradient(900px 500px at 0% 110%, rgba(255,79,216,.06), transparent 60%);
+    radial-gradient(1200px 500px at 85% -10%, rgba(46, 106, 184, .07), transparent 60%),
+    radial-gradient(900px 500px at 0% 110%, rgba(32, 64, 113, .05), transparent 60%);
+}
+/* Night keeps its own pair, in its own key. */
+:root[data-scheme="calm"] body {
+  background-image:
+    radial-gradient(1200px 500px at 85% -10%, rgba(127, 179, 232, .06), transparent 60%),
+    radial-gradient(900px 500px at 0% 110%, rgba(46, 106, 184, .05), transparent 60%);
 }
 h1,
 h2,
@@ -1775,11 +1817,15 @@ body.lightbox-open { overflow: hidden; }
    piece of folder chrome follows.
    ========================================================================= */
 :root {
-  --manila: #DEC791;        /* the card stock */
-  --manila-2: #F0DFB0;      /* the lit top edge of a fold */
+  /* Manila on a pale desk: cooler, darker edges so the folder stays a
+     separate object on card stock (same reasoning the paper scheme has
+     always carried; Daylight shares its polarity). The dark-desk set lives
+     in the Night block. */
+  --manila: #E3D3AE;        /* the card stock */
+  --manila-2: #EFE2C6;      /* the lit top edge of a fold */
   --manila-ink: #2A2113;    /* type printed on the stock */
-  --manila-edge: #A98F5F;   /* cut edges, rims, the back cover */
-  --manila-fold: rgba(10, 7, 2, .7); /* the crease where a flap meets a body */
+  --manila-edge: #9C8551;   /* cut edges, rims, the back cover */
+  --manila-fold: rgba(60, 45, 15, .45); /* the crease where a flap meets a body */
   /* Ink for EMPHASIS on the stock. The dashboard was writing the app's own
      dark-ground tokens straight onto a light folder: measured on the shelf,
      the report-due date came out rgb(228,233,242) on rgb(222,199,145), which
@@ -2513,4 +2559,24 @@ input[type="radio"] { min-width: 24px; min-height: 24px; }
   border: 1px solid #52140F;
   font-weight: 800; letter-spacing: .045em;
   box-shadow: 0 4px 12px rgba(80, 20, 15, .28);
+}
+
+/* ==========================================================================
+   Client case choreography (visual director pass, 2026-08-29).
+   CURRENT STATE is the lit masthead the page already leads with. These rules
+   settle the other two ranks: NEXT ACTIONS carry an accent rail so the
+   things a client can act on read as interactive, and HISTORY recedes,
+   newest first, without a single line becoming less readable on tap.
+   ========================================================================== */
+[data-authority] .panel.authority,
+[data-worklog] .panel.authority {
+  border-left: 4px solid var(--cyan);
+}
+/* The work log is history: the two newest entries keep full ink, everything
+   older steps back until it is opened. Opacity, not font-size: a sick person
+   at 2am still gets full-size type the moment they tap. */
+[data-worklog] details.faq:nth-of-type(n+3):not([open]) { opacity: .72; }
+[data-worklog] details.faq:nth-of-type(n+6):not([open]) { opacity: .55; }
+@media (prefers-reduced-motion: no-preference) {
+  [data-worklog] details.faq { transition: opacity 180ms ease; }
 }

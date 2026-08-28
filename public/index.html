@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/logo-192.png">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
-<meta name="theme-color" content="#060A1C">
+<meta name="theme-color" content="#EAF2FA">
 <title>Pocket Advocate</title>
 <script>
 // Paint in the stored colour scheme before the stylesheet lands, so a scheme
@@ -20,16 +21,16 @@
   try {
     var s = localStorage.getItem('pa-scheme');
     if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
-      s = localStorage.getItem('pa-admin-device') === '1' ? 'neon' : 'calm';
+      s = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'calm' : 'neon';
     if (s !== 'neon') document.documentElement.dataset.scheme = s;
-    var c = { neon: '#060A1C', calm: '#0B0E14', paper: '#F3EEE3', contrast: '#000000' }[s];
+    var c = { neon: '#EAF2FA', calm: '#0A1626', paper: '#F3EEE3', contrast: '#000000' }[s];
     var m = document.querySelector('meta[name="theme-color"]');
     if (m && c) m.setAttribute('content', c);
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=sp7">
-<link rel="stylesheet" href="/css/glowup.css?v=sp4">
+<link rel="stylesheet" href="/css/site.css?v=sp8">
+<link rel="stylesheet" href="/css/glowup.css?v=sp5">
 <script>
 // A returning account holder skips the booking page. Inline in <head> so there
 // is no flash of it first; the marker is set at sign-in and cleared at
@@ -121,28 +122,18 @@
 
 <main>
   <section class="land-sec hero">
-    <!-- The illustration carries the subject before a word is read: a mind,
-         and something standing in front of it. Drawn rather than photographed
-         so it recolours with the scheme and costs no request. -->
-    <svg class="hero-art" viewBox="0 0 132 104" aria-hidden="true" focusable="false">
-      <g fill="none" stroke="url(#g-cv)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M74 20c-7 0-11 4-12 9-5 0-9 4-9 9 0 3 1 5 3 7-2 2-3 4-3 7 0 6 5 10 11 10 2 4 6 6 10 6 5 0 9-3 10-7 7-1 12-6 12-13 0-3-1-6-3-8 2-2 3-4 3-7 0-6-5-11-11-11-2-2-6-3-11-2z"/>
-        <path d="M74 20v58M74 32c-4 0-7 2-8 5M74 45c-5 0-9 3-10 7M74 58c-4 0-7 2-9 5M74 34c4 1 7 3 8 6M74 48c5 0 9 2 10 6M74 62c4 0 7 2 8 5"/>
-      </g>
-      <g fill="var(--cyan)">
-        <circle cx="66" cy="37" r="1.7"/><circle cx="64" cy="52" r="1.7"/><circle cx="82" cy="40" r="1.7"/><circle cx="84" cy="54" r="1.7"/>
-      </g>
-      <path d="M33 22l20 7.6v14.8C53 57 45 67 33 70 21 67 13 57 13 44.4V29.6z"
-        fill="color-mix(in srgb, var(--bg) 88%, transparent)" stroke="url(#g-cv)" stroke-width="2" stroke-linejoin="round"/>
-      <path d="M33 34v18M24 43h18" stroke="var(--cyan)" stroke-width="3.4" stroke-linecap="round"/>
-      <g fill="var(--magenta)"><circle cx="104" cy="26" r="1.4"/><circle cx="112" cy="46" r="1.1"/><circle cx="98" cy="76" r="1.2"/></g>
-    </svg>
+    <!-- The brand object itself, not an illustration of it: the tile rides
+         the hero's top edge the way the heart rides the pocket, with its own
+         pool of light behind it. -->
+    <span class="hero-halo" aria-hidden="true"></span>
+    <img class="hero-logo" src="/img/logo-192.png" alt="" width="192" height="192">
     <div class="stack">
       <div class="hero-eyebrow eyebrow">PATIENT ADVOCACY</div>
       <h1>Go into your next appointment with a plan.</h1>
       <p class="hero-sub measure">I review your labs, imaging, records, and history, then help you sort out what deserves attention, what questions to ask next, and how to present the case clearly to your care team.</p>
       <p class="hero-cred measure">I'm a professional patient advocate with 5 years' worth of boots on the ground experience, and an autoimmune encephalitis survivor. I know what it is like to have a complicated case that does not fit neatly into a box.</p>
     </div>
+    <div class="hero-pocket">
     <div class="acts">
       <!-- Eric, 2026-08-21: two solid buttons, equal weight, neither one
            fading into the page. Eric, 2026-08-25: they were flat rectangles
@@ -166,6 +157,7 @@
       <button type="button" class="btn ghost" data-about="case">About the Advocacy Case</button>
     </div>
     <p class="webapp-note" id="webapp-note">This is a web app</p>
+    </div>
   </section>
 
   <!-- Four things worth knowing before the scroll, in the space a paragraph
@@ -190,7 +182,7 @@
     <p class="dim measure">Three ways to work with me, each a flat price you see before
       you pay.</p>
     <div class="svc-grid">
-      <a class="svc-card" href="/services.html">
+      <a class="svc-card svc-feat" href="/services.html">
         <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="#i-brief"/></svg></span>
         <h3>Advocacy Case</h3>
         <span class="svc-price" data-rate="case">$1,200</span>
@@ -215,7 +207,7 @@
     <p class="dim small"><a class="pill" href="/services.html">What happens after you book, step by step</a></p>
   </section>
 
-  <section class="land-sec meet">
+  <section class="land-sec meet sec-deep">
     <h2>Who you're hiring</h2>
     <div class="mission">
       <p class="dim measure">I work with patients facing complicated neurological conditions
@@ -246,19 +238,53 @@
        disclaimer that used to be repeated here is printed word for word in
        that same footer, a few lines further down the page. Both are still
        on this page; neither is on it twice any more. -->
-  <section class="land-sec closing">
-    <p class="close-line">
-      <span class="close-ico"><svg class="ico" aria-hidden="true"><use href="#i-heart"/></svg></span>
-      <span><strong>You don't have to navigate this alone.</strong><br>
-        <span class="dim">Professional support. Human understanding.</span></span>
-      <svg class="ico close-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
-    </p>
-    <h2>Ready when you are.</h2>
-    <div class="actions">
-      <a class="btn glow cta" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
+  <section class="land-sec closing sec-deep" id="closing">
+    <div class="convert">
+      <p class="close-line">
+        <span class="close-ico"><svg class="ico" aria-hidden="true"><use href="#i-heart"/></svg></span>
+        <span><strong>You don't have to navigate this alone.</strong><br>
+          <span class="dim">Professional support. Human understanding.</span></span>
+      </p>
+      <h2>Ready when you are.</h2>
+      <div class="convert-pocket">
+        <div class="actions">
+          <a class="btn glow cta" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
+        </div>
+      </div>
     </div>
   </section>
 </main>
+
+<!-- The booking dock: appears only once the hero's own button has scrolled
+     away, leaves again at the conversion zone, and never blocks content. -->
+<div class="sticky-book" id="sticky-book" aria-hidden="true">
+  <a class="cta" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
+</div>
+<script type="module">
+  const dock = document.getElementById('sticky-book');
+  const hero = document.querySelector('.land-sec.hero');
+  const closing = document.getElementById('closing');
+  if (dock && hero && closing && 'IntersectionObserver' in window) {
+    // Hidden while ANY of the hero is on screen (its own button is there),
+    // and hidden again once the conversion zone approaches. Not before the
+    // page has been read a little, not over the thing it duplicates.
+    const seen = { hero: true, closing: false };
+    const paint = () => {
+      const on = !seen.hero && !seen.closing;
+      dock.classList.toggle('on', on);
+      dock.setAttribute('aria-hidden', on ? 'false' : 'true');
+    };
+    new IntersectionObserver((es) => {
+      for (const e of es) seen.hero = e.isIntersecting;
+      paint();
+    }).observe(hero);
+    // Its own observer, so the early rootMargin only applies to the zone.
+    new IntersectionObserver((es) => {
+      for (const e of es) seen.closing = e.isIntersecting;
+      paint();
+    }, { rootMargin: '120px' }).observe(closing);
+  }
+</script>
 
 <footer class="site-foot">
   <div class="foot-cols">

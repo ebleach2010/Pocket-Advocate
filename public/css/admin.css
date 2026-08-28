@@ -1218,3 +1218,117 @@ main > p > a.small[href="/admin.html"] {
 .office-ctl .office-acts .btn.on { border-color: var(--cyan); color: var(--cyan); }
 .office-ctl .office-line { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
 .office-ctl .office-line input { flex: 1 1 12rem; min-width: 0; min-height: 44px; }
+
+/* ==========================================================================
+   The command center (visual director pass, 2026-08-29).
+   The dashboard leads with decisions: NEEDS ATTENTION, then TODAY, then the
+   shelves. Settings and revenue sit at the bottom in a quiet tray. Rows are
+   the app's ordinary tokens, so all four schemes follow.
+   ========================================================================== */
+.cmd { display: grid; gap: .45rem; margin: 0 0 1.1rem; }
+.cmd-h {
+  margin: 0 0 .15rem;
+  font: 700 .78rem/1.2 ui-monospace, monospace;
+  letter-spacing: .16em;
+  color: var(--dim);
+}
+.cmd-h.hot { color: var(--danger); }
+.cmd-count {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: .05em .45em;
+  margin-left: .3em;
+  border-radius: 999px;
+  background: var(--danger);
+  color: var(--panel);
+  text-align: center;
+}
+.cmd-row {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  min-height: 52px;
+  padding: .55rem .8rem;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--cyan-dim);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--ink);
+  text-decoration: none;
+  box-shadow: var(--glow-b);
+}
+.cmd-row strong { flex: 0 0 auto; }
+.cmd-row .cmd-what { flex: 1 1 auto; min-width: 0; color: var(--dim); font-size: .92rem; }
+.cmd-row .cmd-go { color: var(--muted); font-size: 1.3rem; line-height: 1; }
+.cmd-row.hot { border-left-color: var(--danger); }
+.cmd-row.warm { border-left-color: var(--orange); }
+.cmd-row:active { transform: translateY(1px); }
+.cmd-clear { margin: 0 0 1rem; }
+/* The tray at the bottom: present, findable, and visibly not the point. */
+.cmd-quiet { margin-top: 1.6rem; opacity: .92; }
+.cmd-quiet .panel { box-shadow: none; }
+
+/* The folded status row: the whole card collapses to one line, and the line
+   is the answer. The old .office-state block is gone from the markup; its
+   two spans live in the summary now. */
+.office-fold { padding: .6rem .8rem; }
+.office-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  min-height: 40px;
+  cursor: pointer;
+  list-style: none;
+}
+.office-fold > summary::-webkit-details-marker { display: none; }
+.office-fold > summary::after {
+  content: "\203A";
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  transform: rotate(90deg);
+  transition: transform 160ms ease;
+}
+.office-fold[open] > summary::after { transform: rotate(270deg); }
+.office-fold .office-big { font-weight: 800; letter-spacing: .06em; }
+.office-fold .office-why { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.office-fold .office-acts { margin-top: .7rem; }
+/* Inside the fold's summary the pill must not wrap into a lozenge three
+   lines tall at 390px: one line, ellipsis, and the label stays a pill. */
+.office-fold .office-big { white-space: nowrap; flex: 0 0 auto; }
+.office-fold > summary .dim { flex: 0 0 auto; }
+
+/* The masthead's two new lines: what is waiting, and what happens next. */
+.case-next {
+  margin: .15rem 0 0;
+  color: var(--soft);
+  font-size: .95rem;
+  font-weight: 600;
+}
+.case-next-k {
+  font: 700 .7rem/1 ui-monospace, monospace;
+  letter-spacing: .16em;
+  color: var(--cyan);
+  margin-right: .35rem;
+}
+.loop-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem 0 0; }
+.loop-chip {
+  display: inline-block;
+  padding: .22rem .6rem;
+  border-radius: 999px;
+  font-size: .74rem;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.loop-chip.hot {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+}
+.loop-chip.warm {
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+  color: var(--orange);
+  border: 1px solid color-mix(in srgb, var(--orange) 40%, transparent);
+}

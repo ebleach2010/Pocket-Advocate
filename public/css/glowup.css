@@ -103,34 +103,53 @@
   --ease: cubic-bezier(.2, .8, .2, 1);
 
   /* ---- THE SURFACE LADDER.
-     Five steps now, not three. `floating` is what a card sitting ON a panel
-     uses, which is the case the three-step ladder could not express, and
-     `inset` is what a field sunk INTO one uses. Paper redefines the ground and
-     nothing downstream has to know. ---- */
-  --sur-quiet: color-mix(in srgb, var(--panel) 78%, var(--bg));
+     Five steps. `floating` is what a card sitting ON a panel uses, and
+     `inset` is what a field sunk INTO one uses. The DEFAULT polarity is now
+     LIGHT (Daylight took the bare :root on 2026-08-29): a raised surface
+     goes toward white, a sunken one toward the powder ground. Night flips
+     it back below and nothing downstream has to know. ---- */
+  --sur-quiet: color-mix(in srgb, var(--panel-2) 55%, var(--bg));
   --sur-base: var(--panel);
-  --sur-lit: var(--panel-2);
-  --sur-floating: color-mix(in srgb, var(--panel-2) 91%, white);
-  --sur-inset: color-mix(in srgb, var(--bg) 62%, var(--panel));
+  --sur-lit: #FFFFFF;
+  --sur-floating: #FFFFFF;
+  --sur-inset: color-mix(in srgb, var(--bg-deep) 70%, var(--panel));
 
-  /* ---- THE EDGE LADDER. Contrast against the surface, same steps. ---- */
-  --edge-quiet: rgba(255, 255, 255, .055);
-  --edge-base: rgba(255, 255, 255, .105);
-  --edge-lit: rgba(255, 255, 255, .17);
-  --edge-focus: color-mix(in srgb, var(--cyan) 70%, white);
+  /* ---- THE EDGE LADDER. Ink hairlines on a pale ground: white ones
+     vanish. Night restores the light-made edges. ---- */
+  --edge-quiet: rgba(23, 43, 77, .08);
+  --edge-base: rgba(23, 43, 77, .14);
+  --edge-lit: rgba(23, 43, 77, .24);
+  --edge-focus: color-mix(in srgb, var(--cyan) 78%, var(--ink));
 
   /* ---- THE ELEVATION LADDER.
-     Real shadows, cast down and soft, with a hairline of light along the top
-     edge of anything raised. That inset highlight is what stops a dark card on
-     a dark ground reading as a flat rectangle. ---- */
+     Navy-cast shadows, soft and believable, with a white top hairline on
+     anything raised: that is what makes white read as ABOVE off-white. ---- */
   --el-0: none;
-  --el-1: 0 8px 28px rgba(0, 0, 0, .18);
-  --el-2: 0 16px 44px rgba(0, 0, 0, .26), 0 1px 0 rgba(255, 255, 255, .055) inset;
-  --el-3: 0 24px 70px rgba(0, 0, 0, .36), 0 1px 0 rgba(255, 255, 255, .075) inset;
+  --el-1: 0 1px 2px rgba(23, 52, 101, .06), 0 6px 20px rgba(23, 52, 101, .08);
+  --el-2: 0 2px 4px rgba(23, 52, 101, .06), 0 14px 36px rgba(23, 52, 101, .12), 0 1px 0 rgba(255, 255, 255, .85) inset;
+  --el-3: 0 4px 10px rgba(23, 52, 101, .08), 0 24px 60px rgba(23, 52, 101, .18), 0 1px 0 #FFFFFF inset;
   /* The only light left in the system, and it belongs to the one action. */
   --el-cta:
     0 12px 34px color-mix(in srgb, var(--cyan) 28%, transparent),
     0 0 0 1px color-mix(in srgb, var(--cyan) 40%, transparent);
+}
+
+/* Night: the dark ladders that were the app-wide default before Daylight.
+   A raised surface moves toward light, edges are made OF light, shadows are
+   made of the ground. */
+:root[data-scheme="calm"] {
+  --sur-quiet: color-mix(in srgb, var(--panel) 78%, var(--bg));
+  --sur-lit: var(--panel-2);
+  --sur-floating: color-mix(in srgb, var(--panel-2) 91%, white);
+  --sur-inset: color-mix(in srgb, var(--bg) 62%, var(--panel));
+  --edge-quiet: rgba(255, 255, 255, .055);
+  --edge-base: rgba(255, 255, 255, .105);
+  --edge-lit: rgba(255, 255, 255, .17);
+  --edge-focus: color-mix(in srgb, var(--cyan) 70%, white);
+  --el-1: 0 8px 28px rgba(0, 0, 0, .18);
+  --el-2: 0 16px 44px rgba(0, 0, 0, .26), 0 1px 0 rgba(255, 255, 255, .055) inset;
+  --el-3: 0 24px 70px rgba(0, 0, 0, .36), 0 1px 0 rgba(255, 255, 255, .075) inset;
+  --sh-cast: rgba(0, 0, 0, 1);
 }
 
 /* A pale ground cannot use white hairlines or black shadows at dark-scheme
@@ -157,10 +176,8 @@
   --el-3: 0 0 0 2px rgba(255, 255, 255, .8);
 }
 
-/* Paper is the light scheme, so the polarity flips: a raised surface goes
-   toward white rather than toward ink, and a shadow is made of ink rather
-   than of the ground. Everything above then reads correctly with no per
-   component paper rules anywhere else in this file. */
+/* Paper shares Daylight's polarity (both light); what it keeps of its own
+   is the warm shadow cast and warm surfaces. */
 :root[data-scheme="paper"] {
   --sur-quiet: color-mix(in srgb, var(--panel-2) 55%, var(--bg));
   --sur-base: var(--panel);
@@ -1051,14 +1068,11 @@ main > footer.legal { margin: 0; }
   letter-spacing: .14em;
 }
 
+/* The closing stopped being its own card when the conversion zone arrived
+   (section 16): it is a deep band now, and the card inside it is .convert. */
 .land-sec.closing {
   padding: var(--s-5) var(--s-4);
-  border: 1px solid var(--edge-base);
-  border-radius: var(--r-4);
-  background: var(--sur-base);
-  background-image: none;
-  box-shadow: var(--el-1);
-  justify-items: center;
+  justify-items: stretch;
 }
 .close-line {
   margin: 0;
@@ -1829,4 +1843,283 @@ label { color: var(--dim); font-size: var(--t-small); }
   .hero-art { width: 9rem; }
   .step-rail { display: grid; grid-template-columns: 1fr; }
   .step-rail li { min-height: 48px; }
+}
+
+
+/* ==========================================================================
+   16. DAYLIGHT CHOREOGRAPHY (visual director pass, 2026-08-29)
+
+   The failure this section exists to prevent: everything redesigned, and
+   everything still at equal visual weight. Five planes, stated once:
+
+     P0 environment   the powder ground, washes, and the deep navy band
+     P1 information   open text on the ground, hairline rules, no box
+     P2 interactive   white card, ink hairline, one pixel of lift (--el-1)
+     P3 important     white card, real shadow (--el-2/3), stronger type
+     P4 the action    the one filled button, lit (--el-cta), in its own zone
+
+   Anything below that reads "card by default" got demoted to P1 here. The
+   pocket motif from the logo appears exactly three times in the app: the
+   featured service card, the conversion zone, and the case masthead. A motif
+   a user consciously notices is a costume; three is a signature.
+   ========================================================================== */
+
+/* ---- P4: the primary action, rebuilt as a physical object ---------------
+   Navy-to-denim vertical fill, crisp upper highlight, believable depth, a
+   pressed state that actually compresses, a focus ring that cannot be
+   missed, and a disabled state that looks intentional rather than broken. */
+.cta,
+.act-c,
+.btn.glow {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--cyan) 86%, white) 0%,
+    var(--cyan) 45%,
+    color-mix(in srgb, var(--cyan) 82%, var(--deep-2)) 100%);
+  border: 1px solid color-mix(in srgb, var(--cyan) 70%, var(--deep-2));
+  color: var(--on-accent);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .35) inset,
+    0 10px 24px color-mix(in srgb, var(--cyan) 32%, transparent),
+    0 2px 5px color-mix(in srgb, var(--deep-2) 28%, transparent);
+}
+.cta:hover,
+.act-c:hover,
+.btn.glow:hover { filter: brightness(1.05); }
+.cta:active,
+.act-c:active,
+.btn.glow:active {
+  transform: translateY(1.5px) scale(.995);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .2) inset,
+    0 4px 10px color-mix(in srgb, var(--cyan) 26%, transparent);
+  filter: brightness(.97);
+}
+.cta:focus-visible,
+.act-c:focus-visible,
+.btn:focus-visible,
+.act:focus-visible,
+.pill:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--cyan) 55%, transparent);
+  outline-offset: 2px;
+}
+.btn:disabled,
+.btn[disabled],
+.cta:disabled {
+  background: var(--sur-quiet);
+  border-color: var(--edge-quiet);
+  color: var(--muted);
+  box-shadow: none;
+  filter: none;
+  transform: none;
+  cursor: not-allowed;
+}
+
+/* ---- P0: the deep navy band ---------------------------------------------
+   Full bleed inside main's padding, a soft curved shoulder at the top, its
+   own ink. This is where a light page earns its value contrast. */
+.sec-deep {
+  position: relative;
+  margin-inline: -1.1rem;
+  padding: var(--s-5) 1.1rem;
+  border-radius: 30px 30px 0 0;
+  background:
+    radial-gradient(120% 70% at 85% -10%, color-mix(in srgb, var(--cyan) 22%, transparent), transparent 55%),
+    linear-gradient(180deg, var(--deep) 0%, var(--deep-2) 100%);
+  color: var(--deep-ink);
+}
+.sec-deep + .sec-deep { border-radius: 0; margin-top: calc(var(--s-5) * -1); }
+.sec-deep:last-child { margin-bottom: calc(var(--s-6) * -1); padding-bottom: var(--s-6); }
+.sec-deep > h2,
+.sec-deep h2 { color: var(--deep-ink); }
+.sec-deep .dim,
+.sec-deep .muted,
+.sec-deep .small { color: var(--deep-dim); }
+.sec-deep .eyebrow { color: var(--deep-dim); }
+.sec-deep hr { border-color: var(--deep-line); }
+.sec-deep .btn.ghost {
+  border: 1px solid var(--deep-line);
+  color: var(--deep-ink);
+}
+.sec-deep .btn.ghost:hover { background: rgba(255, 255, 255, .07); }
+
+/* ---- the hero, composed rather than stacked ----------------------------- */
+.land-sec.hero {
+  padding-top: calc(var(--s-5) + 1.4rem);
+  overflow: visible;
+}
+/* The brand object. Real, lit, and half out of the frame: it overlaps the
+   hero's top edge the way the heart overlaps the pocket on the tile. */
+.land-sec.hero > .hero-logo {
+  position: absolute;
+  z-index: 2;
+  top: -1.35rem;
+  right: var(--s-4);
+  width: 5.6rem;
+  height: 5.6rem;
+  border-radius: 24%;
+  box-shadow:
+    0 18px 40px color-mix(in srgb, var(--deep-2) 26%, transparent),
+    0 2px 6px color-mix(in srgb, var(--deep-2) 18%, transparent);
+  transform: rotate(3deg);
+}
+/* The glow pool under it: localized light, not a page-wide wash. */
+.land-sec.hero > .hero-halo {
+  position: absolute;
+  z-index: 0;
+  top: -4rem;
+  right: -3rem;
+  width: 16rem;
+  height: 16rem;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--cyan) 22%, transparent), transparent 70%);
+  pointer-events: none;
+}
+.land-sec.hero h1 { max-width: 12ch; }
+@media (min-width: 700px) {
+  .hero-logo { width: 7.5rem; height: 7.5rem; right: var(--s-6); }
+  .land-sec.hero h1 { max-width: 16ch; }
+}
+
+/* The hero's own action sits in a pocket: the card's lower band, a shade
+   deeper, holding the one thing to press. Pocket appearance one of three. */
+.hero-pocket {
+  margin: var(--s-4) calc(var(--s-4) * -1) calc(var(--s-5) * -1);
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  border-top: 1px solid var(--edge-quiet);
+  border-radius: 22px 22px 0 0;
+  background: var(--sur-quiet);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--deep-2) 7%, transparent) inset;
+}
+.hero-pocket .acts { margin-top: 0; }
+.hero-pocket .actions { margin-top: var(--s-2); }
+
+/* Trust chips ride the hero's bottom shoulder: two planes, deliberately
+   overlapped, which is what stops the page reading as a single column. */
+main > .trust {
+  position: relative;
+  z-index: 2;
+  margin-top: calc(var(--s-5) * -1 + .4rem);
+  margin-inline: var(--s-2);
+  background: var(--sur-floating);
+  border: 1px solid var(--edge-base);
+  box-shadow: var(--el-2);
+}
+
+/* ---- the service shelf --------------------------------------------------
+   One featured offer at P3, two quiet doors at P2. Equal cards read as a
+   catalogue; a shelf with one thing forward reads as a recommendation. */
+.svc-card {
+  box-shadow: var(--el-1);
+}
+.svc-card.svc-feat {
+  background: var(--sur-floating);
+  border-color: color-mix(in srgb, var(--cyan) 36%, var(--line));
+  box-shadow: var(--el-3);
+}
+.svc-card.svc-feat .svc-price { color: var(--cyan); font-size: 1.5rem; }
+/* The card's lower edge is its pocket: the walk-in line lives in it. */
+.svc-card .svc-go {
+  display: block;
+  margin: var(--s-2) calc(var(--s-3) * -1) calc(var(--s-3) * -1);
+  padding: var(--s-2) var(--s-3);
+  border-top: 1px solid var(--edge-quiet);
+  background: var(--sur-quiet);
+  border-radius: 0 0 var(--r-2) var(--r-2);
+  color: var(--cyan);
+  font-weight: 700;
+}
+
+/* ---- the conversion zone ------------------------------------------------
+   site.css still gives .land-sec.closing its old card fill at (0,2,0), so
+   the band restates its ground at (0,3,0) from this later sheet. */
+.land-sec.closing.sec-deep {
+  border: 0;
+  background:
+    radial-gradient(120% 70% at 85% -10%, color-mix(in srgb, var(--cyan) 22%, transparent), transparent 55%),
+    linear-gradient(180deg, var(--deep) 0%, var(--deep-2) 100%);
+  background-image:
+    radial-gradient(120% 70% at 85% -10%, color-mix(in srgb, var(--cyan) 22%, transparent), transparent 55%),
+    linear-gradient(180deg, var(--deep) 0%, var(--deep-2) 100%);
+  box-shadow: none;
+  border-radius: 30px 30px 0 0;
+}
+/* A deep band holding one white card holding one action: restrained
+   surroundings, a bright object, physically nearer than everything else.
+   Pocket appearance two of three: the card's lower band holds the button. */
+.sec-deep .convert {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-4) var(--s-4) 0;
+  border-radius: var(--r-3);
+  background: var(--sur-floating);
+  border: 1px solid rgba(255, 255, 255, .55);
+  box-shadow: 0 30px 70px rgba(4, 12, 28, .45), 0 1px 0 #FFFFFF inset;
+  color: var(--ink);
+  text-align: center;
+}
+.sec-deep .convert h2 { color: var(--ink); margin: 0; }
+.sec-deep .convert .dim { color: var(--dim); }
+.sec-deep .convert .close-line { justify-content: center; }
+.convert-pocket {
+  margin: var(--s-2) calc(var(--s-4) * -1) 0;
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  border-top: 1px solid var(--edge-quiet);
+  border-radius: 20px 20px var(--r-3) var(--r-3);
+  background: var(--sur-quiet);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--deep-2) 7%, transparent) inset;
+}
+.convert-pocket .actions { justify-content: center; margin: 0; }
+.convert-pocket .btn { width: 100%; max-width: 24rem; justify-content: center; }
+
+/* ---- the sticky booking action ------------------------------------------
+   Appears only after the hero's own CTA has scrolled away, disappears at
+   the conversion zone, and respects the home indicator. A dock, not an ad. */
+.sticky-book {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  z-index: 60;
+  width: min(92vw, 26rem);
+  transform: translate(-50%, calc(100% + 24px));
+  opacity: 0;
+  transition: transform var(--mo-slow) var(--ease), opacity var(--mo-slow) var(--ease);
+  pointer-events: none;
+}
+.sticky-book.on {
+  transform: translate(-50%, 0);
+  opacity: 1;
+  pointer-events: auto;
+}
+.sticky-book .cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .6rem;
+  min-height: 54px;
+  width: 100%;
+  border-radius: var(--r-pill);
+  font-weight: 800;
+  font-size: 1.02rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sticky-book { transition: none; }
+}
+@media (min-width: 1000px) {
+  /* Desktop keeps the page's own rhythm; a dock is a thumb affordance. */
+  .sticky-book { display: none; }
+}
+
+/* ---- larger canvases ----------------------------------------------------
+   The phone composition holds to 700px; above it the hero becomes two true
+   columns and the deep band breathes wider. */
+@media (min-width: 900px) {
+  main { max-width: var(--max-content); margin-inline: auto; width: 100%; }
+  .sec-deep { border-radius: 34px; margin-inline: 0; padding-inline: var(--s-5); }
+  .sec-deep:last-child { margin-bottom: 0; }
+  /* On a wide canvas the pocket lays its two doors on one line: the filled
+     action first, the ghost beside it, neither centred into orphan space. */
+  .hero-pocket { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+  .hero-pocket .acts { flex: 0 1 auto; min-width: 24rem; margin: 0; }
+  .hero-pocket .actions { margin: 0; }
+  .hero-pocket .webapp-note { flex-basis: 100%; margin: 0; justify-content: flex-start; }
 }

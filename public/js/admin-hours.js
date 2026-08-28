@@ -30,14 +30,20 @@ export function mountOfficeControl(root, { getToken } = {}) {
   if (!root || root.__paOffice) return;
   root.__paOffice = true;
 
-  const box = document.createElement('div');
-  box.className = 'panel office-ctl';
+  // ONE LINE CLOSED, THE CONTROLS FOLDED (visual director pass, 2026-08-29).
+  // This card used to take the whole first screen of the dashboard: a status
+  // he already knows, three buttons and a text field, sitting ABOVE the list
+  // of people who need him. Closed, it is one row: the status and a chevron.
+  // Every control is unchanged inside the fold, and the fold is a <details>,
+  // so nothing about how it works moved.
+  const box = document.createElement('details');
+  box.className = 'panel office-ctl office-fold';
   box.innerHTML = `
-    <h3 style="margin:.1rem 0 .5rem;">Your status</h3>
-    <div class="office-state">
+    <summary class="office-sum">
+      <span class="dim small" style="letter-spacing:.1em;">YOUR STATUS</span>
       <span class="office-big" data-big>CHECKING</span>
-      <span class="office-why" data-why></span>
-    </div>
+      <span class="office-why dim small" data-why></span>
+    </summary>
     <div class="office-acts">
       <button class="btn quiet" type="button" data-set="in">In office</button>
       <button class="btn quiet" type="button" data-set="out">Out of office</button>

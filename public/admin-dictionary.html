@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/logo-192.png">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
-<meta name="theme-color" content="#060A1C">
+<meta name="theme-color" content="#EAF2FA">
 <title>Dictionary · Pocket Advocate</title>
 <script>
 // Paint in the stored colour scheme before the stylesheet lands, so a scheme
@@ -20,16 +21,16 @@
   try {
     var s = localStorage.getItem('pa-scheme');
     if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
-      s = localStorage.getItem('pa-admin-device') === '1' ? 'neon' : 'calm';
+      s = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'calm' : 'neon';
     if (s !== 'neon') document.documentElement.dataset.scheme = s;
-    var c = { neon: '#060A1C', calm: '#0B0E14', paper: '#F3EEE3', contrast: '#000000' }[s];
+    var c = { neon: '#EAF2FA', calm: '#0A1626', paper: '#F3EEE3', contrast: '#000000' }[s];
     var m = document.querySelector('meta[name="theme-color"]');
     if (m && c) m.setAttribute('content', c);
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=sp7">
-<link rel="stylesheet" href="/css/admin.css?v=stat103">
+<link rel="stylesheet" href="/css/site.css?v=sp8">
+<link rel="stylesheet" href="/css/admin.css?v=stat104">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
