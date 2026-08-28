@@ -238,10 +238,22 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   ck('U3b and each of those four stayed inside its own statement',
     strayed.length === 0, strayed.join(', '));
 
+  // COUNT FIRST, inline. `paths.every(...)` is vacuously true of an empty
+  // array, so with a stand-in bucket that recorded nothing this passed while
+  // asserting nothing about stripping. It was covered only because U2b above
+  // asserts the same array holds two, and a check that is safe only while its
+  // NEIGHBOUR survives is one deletion from going quiet. That was the exact
+  // reasoning that turned up A29c and U18 tonight, so the requirement goes
+  // where the check is.
+  //
+  // NEGATIVE CONTROL (run 2026-08-28): a stand-in bucket recording nothing ->
+  //   FAIL  U3 and the prefix is stripped where a person reads the name
+  //         -- 0 paths |
   ck('U3 and the prefix is stripped where a person reads the name',
-    paths.every((p) => shown(p.split('/').pop()) === 'Summary.pdf')
+    paths.length === 2
+    && paths.every((p) => shown(p.split('/').pop()) === 'Summary.pdf')
     && Object.values(u3).every(Boolean),
-    `${paths.map((p) => shown(p.split('/').pop())).join(' ')} | `
+    `${paths.length ? paths.map((p) => shown(p.split('/').pop())).join(' ') : '0 paths'} | `
       + Object.entries(u3).map(([k, v]) => `${k} ${v ? 'yes' : 'no'}`).join(', '));
   // NEGATIVE CONTROL: dropping the customMetadata argument made this read
   //   FAIL  U4 ... -- [null,null]
