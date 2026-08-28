@@ -215,6 +215,60 @@ export function demoApi(role, store) {
         message: max === 0 ? `${open} open, no limit set.` : `${open} of ${max} open.`,
       });
     }
+    // IN OFFICE / OUT OF OFFICE, both halves, off one document, so flipping the
+    // switch on the demo shelf really does change the pill on the demo case
+    // page.
+    //
+    // THE SCHEDULE IS REIMPLEMENTED HERE and that is worth naming out loud: it
+    // is the one thing in the demo that is a copy rather than the real code,
+    // because the real one lives in the Worker and the demo never reaches a
+    // Worker. It is a copy of the RULE, not of the hours - the hours are read
+    // off the same OPEN/CLOSE numbers the availability editor above uses. A
+    // suite check pins the two together so this cannot quietly drift; if it
+    // ever does, the demo is what is wrong.
+    //
+    // The zone is Eric's own, America/Boise, and NOT the fixed offset the
+    // booking calendar above is anchored to. Same reason the real one changed:
+    // the light answers what time it is where he is standing.
+    if (path === '/api/availability' || path === '/api/admin/office-hours') {
+      const key = 'config/officeHours';
+      if (path === '/api/admin/office-hours' && init.method === 'POST') {
+        const want = body.manual;
+        if (want !== 'in' && want !== 'out' && want !== null && want !== undefined)
+          return fail(400, "Set 'in', 'out', or null to follow the schedule.");
+        const cur = store.docs.get(key) || {};
+        const next = { ...cur, setByHand: true, setAt: new Date() };
+        if (want !== undefined) next.manual = want ?? null;
+        if (body.responseTime !== undefined) {
+          const typed = String(body.responseTime ?? '').trim();
+          next.responseTime = typed ? typed.slice(0, 160) : null;
+        }
+        store.docs.set(key, next);
+        store.persist?.();
+      }
+      const raw = store.docs.get(key) || {};
+      const manual = raw.manual === 'in' || raw.manual === 'out' ? raw.manual : null;
+      const typed = typeof raw.responseTime === 'string' ? raw.responseTime.trim() : '';
+      const responseTime = typed ? typed.slice(0, 160) : null;
+      const now = new Date();
+      const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Boise', weekday: 'short' }).format(now);
+      const p = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Boise', hour: 'numeric', minute: 'numeric', hour12: false,
+      }).formatToParts(now);
+      const num = (t) => Number(p.find((x) => x.type === t).value);
+      const mins = (num('hour') % 24) * 60 + num('minute');
+      const scheduled = wd !== 'Sat' && wd !== 'Sun' && mins >= 8 * 60 && mins < 19 * 60;
+      const inOffice = manual ? manual === 'in' : scheduled;
+      // No `by` on the public answer, and the demo mirrors that: whether the
+      // clock or his hand decided it is not a stranger's business. See the
+      // comment on handleAvailability in worker/index.js.
+      if (path === '/api/availability')
+        return ok({ inOffice, responseTime });
+      return ok({
+        inOffice, scheduled, manual, responseTime,
+        overriding: !!manual && inOffice !== scheduled,
+      });
+    }
     // Pausing a case and closing one, mirrored so both are drivable in the
     // demo rather than dead buttons.
     // THE SHIM USED TO FALL THROUGH TO ok({ ok: true }) HERE, writing nothing.

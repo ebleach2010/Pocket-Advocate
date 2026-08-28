@@ -315,8 +315,17 @@ const slab = (src, from, to) => {
   //   FAIL  C14b and settings/ really is the world-readable one, which is why
   // This check is not asking for settings/ to stay open. It records WHY the
   // number is not stored there, so a future reader does not "tidy" it back.
+  //
+  // EXPECTATION UPDATED 2026-08-28, and NOT relaxed. It read the raw rules
+  // through a 300-character window, so it was measuring how much COMMENT sits
+  // between the match line and the grant, not whether the grant is there. The
+  // office-hours work legitimately grew that comment from two lines to
+  // fourteen (879 characters) explaining what may live under settings/, and
+  // this check went red while the thing it asserts stayed true. Reading
+  // through bare(), the stripper already used by C14 above, makes the
+  // assertion immune to comment length, which is what it always meant.
   ck('C14b and settings/ really is the world-readable one, which is why',
-    /match \/settings\/\{doc\} \{[\s\S]{0,300}?allow read: if true;/.test(RULES));
+    /match \/settings\/\{doc\} \{[\s\S]{0,200}?allow read: if true;/.test(bare(RULES)));
   // NEGATIVE CONTROL: adding `match /config/{doc} { allow read: if true; }`
   // read
   //   FAIL  C14c while config/ has no read grant at all, so it falls to the deny tail

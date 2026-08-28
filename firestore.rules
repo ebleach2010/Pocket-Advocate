@@ -156,12 +156,26 @@ service cloud.firestore {
     }
 
     match /settings/{doc} {
-      // e.g. settings/subscriberChat.expectationLine ("Eric typically replies
-      // within a few days") — public copy, Eric-controlled.
+      // PUBLIC COPY ONLY. Everything under settings/ is world-readable to
+      // anybody who knows the project id, so a document belongs here only if
+      // every field in it is something Eric would print on the landing page.
+      // Not just the field the Worker chooses to serve: the whole document.
+      //
+      // e.g. settings/booking.closedUntil, the date the calendar is shut
+      // until, which the booking page prints to anybody who visits it.
+      //
+      // Timestamps of Eric's own decisions are NOT public copy. The in-office
+      // switch stores the minute he last flipped it, so it lives on
+      // config/officeHours instead and only the Worker can read it. Anything
+      // that would let somebody with a polling script reconstruct his week
+      // goes to config/ and is served, or not served, by worker/index.js.
       allow read: if true;
       allow write: if isAdmin();
     }
 
+    // Everything else, config/ included, is the service account's alone. The
+    // Worker bypasses these rules; a browser is refused whether it is signed
+    // in, signed out, or holding an admin claim.
     match /{document=**} {
       allow read, write: if false;
     }

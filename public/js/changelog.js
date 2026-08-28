@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.38';
+export const VERSION = '2.39';
 
 /**
  * Newest first.
@@ -51,6 +51,22 @@ export const VERSION = '2.38';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // Office hours and the "?" beside the chat (Eric, 2026-08-27).
+    //
+    // QUIET unless he says "push as full update": he has not said which yet,
+    // and an unspecified push is silent. The bullets below are the client half
+    // of this release and only the client half, per the scope rule above.
+    version: '2.39',
+    quiet: true,
+    client: [
+      'Your chat now shows whether I am in office or out of office, as a pill above the messages.',
+      'New: the small "?" beside that pill answers "When will Eric respond?" It explains my hours, how I decide what to answer first, and what is happening when you have not heard back yet.',
+      'The hours in that answer now also show in your own timezone, so you do not have to work out what Mountain time means where you are.',
+      'You can always message me outside office hours. I see it when I am back in office.',
+      'Fixed: the subscriber chat could show a reply time that had never been set. A note about timing now appears only when one has been written.',
+    ],
+  },
   {
     // THIS BRANCH'S ENTRY. It sat at 2.36 while the branch was open, and
     // 2.36 and 2.37 shipped to main underneath it, so it moves up rather

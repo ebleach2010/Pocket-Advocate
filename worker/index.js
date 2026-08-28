@@ -21,7 +21,7 @@ import { deleteFile } from './storage.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import {
   slotTimingProblem, windowProblem, HOLD_MINUTES,
-  LEAD_TIME_HOURS, MAX_LEAD_TIME_HOURS,
+  LEAD_TIME_HOURS, MAX_LEAD_TIME_HOURS, officeStatus,
 } from './schedule.js';
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
@@ -819,6 +819,12 @@ export default {
         return await handleReviewsAdmin(request, env);
       if (url.pathname === '/api/rates' && request.method === 'GET')
         return await handleRates(env);
+      // Public on purpose, like /api/rates: it is the in/out light on the
+      // client's own chat. Two keys wide and no wider, for the reason set out
+      // on handleAvailability: anonymous and polled once a minute means every
+      // field it returns is a public timeline.
+      if (url.pathname === '/api/availability' && request.method === 'GET')
+        return await handleAvailability(env);
       // The flight recorder's read hatch. Temporary scaffolding for the
       // advisor incident: run telemetry only, no case content anywhere in
       // the payload. Wrong or missing key answers 404 like every admin
@@ -871,6 +877,8 @@ export default {
         return await handleBookingClosure(request, env);
       if (url.pathname === '/api/admin/full-capacity')
         return await handleFullCapacity(request, env);
+      if (url.pathname === '/api/admin/office-hours')
+        return await handleOfficeHoursControl(request, env);
       if (url.pathname === '/api/admin/hold' && request.method === 'POST')
         return await handleHold(request, env);
       if (url.pathname === '/api/admin/close-case' && request.method === 'POST')
@@ -1233,6 +1241,116 @@ async function handleBookingClosure(request, env) {
 }
 
 /**
+ * IN OR OUT OF OFFICE.
+ *
+ * Eric, 2026-08-27: scheduled hours Monday to Friday 8:00 to 19:00 Mountain,
+ * with a switch he can flip either way from his phone, and the switch always
+ * wins. Clients get a noticeable cue of which it is.
+ *
+ * A document rather than a constant, for exactly the reason the comment above
+ * readBookingClosure gives: this is a decision he changes from his phone
+ * between deploys, several times a week, and a constant would mean a deploy to
+ * say he is with his daughter.
+ *
+ * IT LIVES UNDER config/, NOT settings/, AND THAT IS THE POINT. firestore.rules
+ * makes every document under settings/ readable by anybody with the project id,
+ * and this one carries setAt: the exact minute he last flipped the switch. That
+ * is a public log of when he steps out and when he comes back, readable
+ * straight out of Firestore whatever this Worker chooses to send. config/ has
+ * no rule of its own, so the catch-all at the bottom of firestore.rules denies
+ * every browser, the same place config/advisor and config/rates already sit.
+ * Only the service account behind this Worker can read or write it, and the two
+ * handlers below decide what leaves the building.
+ *
+ * Stored shape:
+ *   manual        'in' | 'out' | null    null means follow the schedule
+ *   responseTime  string | null          only ever set by hand; see below
+ *   setByHand     true                   same stamp settings/booking carries
+ *   setAt         Date                   never leaves this Worker
+ */
+async function readOfficeHours(env) {
+  const doc = await getDoc(env, 'config/officeHours').catch(() => null);
+  const raw = doc?.data || {};
+  const manual = raw.manual === 'in' || raw.manual === 'out' ? raw.manual : null;
+  // NEVER PROMISE A RESPONSE TIME UNLESS ONE HAS BEEN SET BY HAND (Eric,
+  // 2026-08-27). So this is null until he types something, and a blank or
+  // whitespace-only string is null too rather than an empty quotation mark on
+  // a client's screen.
+  const typed = typeof raw.responseTime === 'string' ? raw.responseTime.trim() : '';
+  return { manual, responseTime: typed ? typed.slice(0, 160) : null };
+}
+
+/**
+ * GET /api/availability   PUBLIC, no auth
+ *
+ * The only thing a client's browser needs to paint the in/out cue, and the
+ * only place the schedule is evaluated: officeStatus() lives in schedule.js
+ * beside the constants it reads, so the light and the booking calendar cannot
+ * drift apart.
+ *
+ * TWO KEYS, AND NO MORE THAN TWO. This route is anonymous, uncached and cheap
+ * to poll once a minute, so whatever it returns is a public timeline. It used
+ * to also return `by`, saying whether the clock or his own hand decided the
+ * answer. Nothing on the client side ever read it, and what it told a stranger
+ * who kept the log was the shape of his week: which afternoons he takes off and
+ * which evenings he works late. "Out of office" is a door sign. "Out of office
+ * because he chose to be, at 2:14pm on a Tuesday" is his diary. The public
+ * answer is now the sign only.
+ *
+ * The advocate route below still returns manual/scheduled/overriding, because
+ * he is the one person entitled to know why his own door sign says what it
+ * says, and that route is behind requireAdmin.
+ */
+async function handleAvailability(env) {
+  const { manual, responseTime } = await readOfficeHours(env);
+  const state = officeStatus(manual);
+  return json({
+    inOffice: state.inOffice,
+    responseTime,
+  });
+}
+
+/**
+ * GET/POST /api/admin/office-hours   admin only
+ *
+ * POST { manual: 'in' | 'out' | null, responseTime?: string }
+ *
+ * Mirrors handleBookingClosure deliberately, down to the setByHand stamp: one
+ * shape for the two settings he drives from his phone.
+ *
+ * The reply carries the whole state back - what the schedule says on its own,
+ * and whether the override is currently disagreeing with it - so the control
+ * can tell him "you are showing OUT and the schedule says IN" without doing
+ * the arithmetic itself and getting a different answer from the server.
+ */
+async function handleOfficeHoursControl(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const want = body?.manual;
+    if (want !== 'in' && want !== 'out' && want !== null && want !== undefined)
+      return json({ error: "Set 'in', 'out', or null to follow the schedule." }, 400);
+    const patch = { setByHand: true, setAt: new Date() };
+    const mask = ['setByHand', 'setAt'];
+    if (want !== undefined) { patch.manual = want ?? null; mask.push('manual'); }
+    if (body?.responseTime !== undefined) {
+      if (body.responseTime !== null && typeof body.responseTime !== 'string')
+        return json({ error: 'A response time is a line of text, or null to remove it.' }, 400);
+      const typed = String(body.responseTime ?? '').trim();
+      patch.responseTime = typed ? typed.slice(0, 160) : null;
+      mask.push('responseTime');
+    }
+    // Masked, so setting the switch never wipes a response line he typed
+    // yesterday and vice versa.
+    await patchDoc(env, 'config/officeHours', patch, { mask });
+  }
+  const { manual, responseTime } = await readOfficeHours(env);
+  const state = officeStatus(manual);
+  return json({ ...state, responseTime });
+}
+
+/**
  * Run-once: close the books for two weeks.
  *
  * The date is written out rather than computed from the deploy moment, so it
@@ -1574,7 +1692,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-26-grace';
+const BUILD_TAG = 'v2026-08-27-hours-2';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1582,7 +1700,7 @@ const BUILD_TAG = 'v2026-08-26-grace';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.38';
+const VERSION = '2.39';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

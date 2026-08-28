@@ -1175,3 +1175,38 @@ main > p > a.small[href="/admin.html"] {
 }
 .sched-amt input:focus { outline: none; }
 .sched-amt:focus-within { border-color: var(--cyan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cyan) 16%, transparent); }
+
+.folder.working {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .25) inset, 0 6px 16px rgba(0, 0, 0, .45),
+              0 0 0 1px var(--green), 0 0 14px color-mix(in srgb, var(--green) 55%, transparent);
+}
+.folder.working:hover,
+.folder.working:focus-visible {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .25) inset, 0 10px 22px rgba(0, 0, 0, .5),
+              0 0 0 1px var(--green), 0 0 18px color-mix(in srgb, var(--green) 65%, transparent);
+}
+
+.office-ctl { margin: 0 0 1rem; }
+.office-ctl .office-state {
+  display: flex; align-items: center; flex-wrap: wrap; gap: .5rem;
+  margin: 0 0 .5rem; font-size: .95rem;
+}
+.office-ctl .office-big {
+  display: inline-flex; align-items: center; gap: .45rem;
+  padding: .35rem .8rem; border-radius: 999px;
+  border: 1.5px solid var(--line); color: var(--dim);
+  font-weight: 800; font-size: .78rem; letter-spacing: .09em; text-transform: uppercase;
+}
+.office-ctl .office-big.in {
+  border-color: var(--green); color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+.office-ctl .office-why { color: var(--dim); font-size: .84rem; }
+.office-ctl .office-why.overriding { color: var(--orange); font-weight: 700; }
+.office-ctl .office-acts { display: flex; flex-wrap: wrap; gap: .4rem; }
+.office-ctl .office-acts .btn { min-height: 44px; }
+.office-ctl .office-acts .btn.on { border-color: var(--cyan); color: var(--cyan); }
+.office-ctl .office-line { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
+.office-ctl .office-line input { flex: 1 1 12rem; min-width: 0; min-height: 44px; }

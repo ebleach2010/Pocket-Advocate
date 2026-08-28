@@ -5,6 +5,8 @@
 import { db, collection, getDocs, doc, getDoc, query, where } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence } from './chat.js';
+import { officeCueHtml } from './office.js';
+import { wireHelp } from './help.js';
 
 hydrateNav();
 const user = await requireUser();
@@ -12,7 +14,13 @@ if (user) load();
 
 async function load() {
   const chatEl = document.getElementById('chat');
-  watchPresence(document.querySelector('main'));
+  // The slot in chat.html is empty markup; office.js owns what goes in it, so
+  // this page shows the same pill and the same "?" as the other two.
+  const slot = document.querySelector('[data-office-slot]');
+  if (slot) slot.innerHTML = officeCueHtml();
+  const head = document.querySelector('main');
+  watchPresence(head);
+  wireHelp(head);
 
   const threads = [];
   try {

@@ -38,8 +38,14 @@ export function folderCardHtml({
   // advisor's read of the case.
   const pen = dxIsMine ? '<span class="dx-pen" role="img" aria-label="your read">✎</span>' : '';
   const dxCls = read ? (dxIsMine ? ' mine' : '') : ' empty';
+  // The green outline glow IS the running work clock and nothing else
+  // (Eric, 2026-08-27: "the file turns green-outline glow... This starts the
+  // clock back on for that client"). It is painted from the same `clock`
+  // object the toggle on the card reads, so a clock started from the chart,
+  // from the row above the chat, from the card itself or from the long-press
+  // menu all light the folder, and none of them can light it alone.
   return `
-    <a class="folder" href="${esc(href)}" data-id="${esc(id)}">
+    <a class="folder${clock?.running ? ' working' : ''}" href="${esc(href)}" data-id="${esc(id)}">
       <span class="folder-tab"><span class="folder-name">${esc(name)}</span></span>
       <span class="folder-body">
         <span class="folder-dx${dxCls}" data-dx="${esc(id)}" data-dx-text="${esc(read)}"
@@ -230,15 +236,145 @@ export function wireDxLongPress(root, handler) {
 }
 
 /**
+ * The long-press menu on a folder. Eric, 2026-08-27:
+ *
+ *   "I long press a case file and tap 'Working on this client' and the file
+ *    turns green-outline glow. When I turn it off it goes back to regular
+ *    Manila. This starts the clock back on for that client; I just haven't
+ *    specified exactly what I'm working on."
+ *
+ * So this is a FOURTH DOOR ONTO THE CLOCK THAT ALREADY EXISTS, not a second
+ * clock. It calls the same /api/work the card's own toggle calls, with the
+ * same `auto: false`, and the glow is painted off the same running state.
+ *
+ * Resolves 'work' to start, 'stop' to stop, undefined if he backs out.
+ */
+export function openWorkSheet({ name = '', running = false } = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'msg-menu-overlay';
+    const who = name ? esc(name) : 'this client';
+    overlay.innerHTML = `
+      <div class="msg-menu" role="dialog" aria-modal="true" aria-label="This case file">
+        <div class="msg-menu-sheet">
+          <p class="msg-menu-head">${who}</p>
+          <button class="msg-menu-row" data-act="${running ? 'stop' : 'work'}">
+            <span class="react-emoji">${running ? '⏹' : '⏱'}</span>
+            <span>${running ? 'Stop working on this client' : 'Working on this client'}</span>
+          </button>
+          <p class="msg-menu-note">${running
+            ? 'Stops the clock on this case and takes the glow off the folder.'
+            : 'Starts the clock on this case and outlines the folder in green. No note, no status, just the time.'}</p>
+          <button class="msg-menu-row cancel" data-act="cancel"><span>Cancel</span></button>
+        </div>
+      </div>`;
+    let settled = false;
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    function onKey(e) { if (e.key === 'Escape') done(undefined); }
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(undefined); });
+    overlay.querySelectorAll('[data-act]').forEach((b) =>
+      b.addEventListener('click', () => done(b.dataset.act === 'cancel' ? undefined : b.dataset.act)));
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+  });
+}
+
+/**
+ * Long-press (or right-click) a folder to open that menu: handler(id, name).
+ *
+ * The diagnosis line and the clock control are BOTH excluded. The line has its
+ * own long press (wireDxLongPress above) and stealing it would take away the
+ * override editor; the clock is a one-tap toggle and a press that lingered on
+ * it would pop a menu offering the thing he had already pressed.
+ *
+ * Same press length and the same movement tolerance as every other held press
+ * in the app, and the same `lp` mark, which is what stops the click trailing
+ * the press from also opening the case (see wireFolderOpen).
+ */
+export function wireFolderLongPress(root, handler) {
+  if (!root || typeof handler !== 'function' || root.__paFolderPress) return;
+  root.__paFolderPress = true;
+
+  let timer = null;
+  let from = null;
+  const MOVE_TOLERANCE = 12;
+  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } from = null; };
+
+  const target = (e) => {
+    const card = e.target.closest?.('.folder');
+    if (!card || !root.contains(card)) return null;
+    if (e.target.closest?.('.folder-dx') || e.target.closest?.('[data-clock]')) return null;
+    return card;
+  };
+
+  const fire = (card) => {
+    card.dataset.lp = '1';
+    try {
+      handler(card.dataset.id || '', card.querySelector('.folder-name')?.textContent?.trim() || '');
+    } catch (err) { console.warn('folder menu:', err); }
+  };
+
+  root.addEventListener('pointerdown', (e) => {
+    const card = target(e);
+    if (!card) return;
+    // CLEAR THE MARK BEFORE ARMING, the same line wireDxLongPress has above.
+    //
+    // fire() sets `lp` so that the click trailing a fired press does not also
+    // open the case, and wireFolderOpen clears the mark when that click
+    // arrives. After a long press the sheet is on top of the shelf, so that
+    // click never arrives and the mark stayed on the card. The next ordinary
+    // tap then spent itself clearing a stale mark and did nothing at all:
+    // press, Cancel, tap, nothing, tap again, open. Clearing it here means a
+    // mark can only ever outlive the press that set it by one pointerdown.
+    delete card.dataset.lp;
+    from = { x: e.clientX, y: e.clientY };
+    timer = setTimeout(() => { timer = null; fire(card); }, LONG_PRESS_MS);
+  });
+  root.addEventListener('pointermove', (e) => {
+    if (!timer || !from) return;
+    if (Math.hypot(e.clientX - from.x, e.clientY - from.y) > MOVE_TOLERANCE) cancel();
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) =>
+    root.addEventListener(ev, cancel));
+  root.addEventListener('contextmenu', (e) => {
+    const card = target(e);
+    if (!card) return;
+    e.preventDefault();
+    cancel();
+    fire(card);
+  });
+}
+
+/** Is that case's clock running right now, as the shelf currently shows it? */
+export function folderIsWorking(root, id) {
+  return !!root?.querySelector(`[data-clock="${CSS.escape(id)}"]`)?.classList.contains('on');
+}
+
+/**
  * The work clock on every card. Several may run at once, which the Worker
  * already allows: /api/work is per case and never touches another.
  *
  * `getToken` is passed in rather than imported so this module keeps its "no
  * app imports" property. `onChange(id, running, seconds)` lets the caller
  * keep its own copy of the case in step without a refetch.
+ *
+ * Returns `{ toggleById }`, which is the SAME code path the card's own toggle
+ * runs. The long-press menu calls it rather than posting to /api/work itself,
+ * so the two entry points cannot drift into two behaviours.
+ *
+ * The API is stashed on the root as well, because the shelf repaints and calls
+ * this again; the second call returns early and would otherwise hand the
+ * caller nothing.
  */
 export function wireFolderClocks(root, { getToken, onChange } = {}) {
-  if (!root || root.__paClocks) return;
+  if (!root) return null;
+  if (root.__paClocks) return root.__paClocksApi;
   root.__paClocks = true;
 
   const fmt = (secs) => {
@@ -262,6 +398,12 @@ export function wireFolderClocks(root, { getToken, onChange } = {}) {
   clearInterval(root.__paClockTimer);
   root.__paClockTimer = setInterval(tick, 30_000);
   tick();
+
+  // The glow on the card and the dot on its clock are one state, so nothing
+  // may set one without the other. Every path below goes through this.
+  const glow = (id, running) => {
+    root.querySelector(`.folder[data-id="${CSS.escape(id)}"]`)?.classList.toggle('working', !!running);
+  };
 
   const toggle = async (el) => {
     const id = el.dataset.clock;
@@ -288,6 +430,7 @@ export function wireFolderClocks(root, { getToken, onChange } = {}) {
       const t = el.querySelector('[data-clock-t]');
       if (t) t.textContent = fmt(Number(out.seconds) || 0);
       el.title = out.running ? 'Working now. Tap to stop.' : 'Tap to start the clock';
+      glow(id, !!out.running);
       onChange?.(id, !!out.running, Number(out.seconds) || 0);
     } catch (err) {
       // Say it out loud rather than leaving a button that looks like it worked.
@@ -327,7 +470,21 @@ export function wireFolderClocks(root, { getToken, onChange } = {}) {
         if (t) t.textContent = fmt(secs);
       }
       el.title = 'Tap to start the clock';
+      glow(id, false);
       onChange?.(id, false, Number.isFinite(secs) ? secs : Number(el.dataset.banked) || 0);
     }
   });
+
+  // What the long-press menu calls. Same function, same request, same repaint;
+  // a card with no clock (a closed case) has nothing to start and says so by
+  // answering false rather than throwing.
+  root.__paClocksApi = {
+    toggleById: (id) => {
+      const el = root.querySelector(`[data-clock="${CSS.escape(id)}"]`);
+      if (!el) return false;
+      toggle(el);
+      return true;
+    },
+  };
+  return root.__paClocksApi;
 }

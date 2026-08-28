@@ -1,12 +1,14 @@
-// The subscriber home (24/7 Priority Chat): live subscriber chat, the advocate's
-// presence + the admin-controlled expectation line, subscription status, and
-// the Stripe customer portal.
+// The subscriber home (24/7 Priority Chat): live subscriber chat, the in office
+// cue and the response line Eric has set, subscription status, and the Stripe
+// customer portal.
 
 import { db, doc, getDoc } from './firebase.js';
 import { paintRates } from './rates.js';
 import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence } from './chat.js';
 import { initPushPrompt } from './push.js';
+import { officeCueHtml, officeLineHtml } from './office.js';
+import { wireHelp } from './help.js';
 
 hydrateNav();
 const user = await requireUser();
@@ -41,19 +43,22 @@ async function load() {
   const active = end > new Date();
   const endFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
-  let expectation = 'I typically reply within a few days.';
-  try {
-    const snapshot = await getDoc(doc(db, 'settings', 'subscriberChat'));
-    if (snapshot.exists() && snapshot.data().expectationLine) expectation = snapshot.data().expectationLine;
-  } catch { /* default stands */ }
+  // ONE RESPONSE LINE, ONE SOURCE.
+  //
+  // The line about timing shown here and the one inside the "?" answer are the
+  // same line, and it reaches the browser on the same answer that paints the
+  // pill. Two surfaces cannot state different things, and clearing it clears it
+  // in both. office.js fills the slot below.
+  //
+  // NO DEFAULT. Nothing about how long a reply takes appears unless a line has
+  // been written, and nothing here invents one.
 
   page.innerHTML = `
     <div class="row">
       <h1 style="margin:0;">Your chat with me</h1>
       <span class="status-pill ${active ? '' : 'closed'}">${active ? 'ACTIVE' : 'ENDED'}</span>
     </div>
-    <p style="margin-top:.4rem;"><span class="p-dot"></span><span class="p-label">Checking…</span>
-      <span class="expectation"> · "${esc(expectation)}"</span></p>
+    <p class="office-row" style="margin-top:.4rem;">${officeCueHtml()}${officeLineHtml()}</p>
     <div class="panel" id="chat"></div>
     <p class="dim small">
       ${active
@@ -63,6 +68,7 @@ async function load() {
     </p>`;
 
   watchPresence(page);
+  wireHelp(page);
   initPushPrompt(user, page).catch(() => {});
   mountChat({
     container: document.getElementById('chat'),
@@ -100,6 +106,6 @@ async function fetchSub() {
   }
 }
 
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-}
+// The escaper that used to live here went with the second response-line store.
+// Nothing on this page renders text from a document any more: the one line a
+// client reads is set by office.js, from the answer that paints the pill.

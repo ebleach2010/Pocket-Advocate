@@ -51,6 +51,26 @@ because a one-line hotfix once broke the admin dashboard and nothing caught
 it. When a suite fails because the DESIGN changed on Eric's word, update the
 suite's expectation in the same commit and say so — never delete the check.
 
+## A drivable demo before anything major ships (Eric, 2026-08-27)
+
+His words: **"full dummy suites as if I were a dummy client before major
+things (like forms and filling forms/new pipelines) get pushed."**
+
+Green suites are not the same as him having seen it. Before a MAJOR change
+reaches main, he gets a preview URL and drives the whole thing himself as a
+client would: the demo case, the real screens, filling the real forms. Major
+means anything a client touches or signs, anything that changes a pipeline,
+and any new flow. A copy tweak or an advocate-side panel does not need one.
+
+This replaces an idea he floated and then cancelled the same day: a permanent
+dummy CLIENT account with real credentials in production. It was dropped once
+two things were verified. A permanent dummy Hands-Off case would occupy one of
+the two concurrency slots counted by `fullAccessCapacity()`, which feeds
+`fullOpen` on the PUBLIC `/api/rates`, so it would have told real buyers the
+tier was full. And creating a case the ordinary way fires `raiseRates()`, which
+would have moved the live published price for real clients. Do not revive the
+idea without solving both.
+
 ## Eric's working defaults (2026-08-25, his words — commit to memory)
 
 - **"Build suites" means the seamless demo, always.** One flow, not four

@@ -9,14 +9,15 @@
 // (profiles/{uid}/saved), where the Documents tab picks it up.
 
 import {
-  db, rtdb, storage, collection, doc, addDoc, updateDoc, onSnapshot, getDocs,
-  query, orderBy, limit, serverTimestamp, rtdbRef, onValue,
+  db, storage, collection, doc, addDoc, updateDoc, onSnapshot, getDocs,
+  query, orderBy, limit, serverTimestamp,
   ref, uploadBytesResumable, getDownloadURL,
 } from './firebase.js';
 import {
   emojiById, statusById, openMessageMenu, openStatusSheet, openEditor, openNote, EDIT_WINDOW_MS,
 } from './msg-actions.js';
 import { askName, safeName } from './rename.js';
+import { watchOffice } from './office.js';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const LONG_PRESS_MS = 550;
@@ -35,14 +36,15 @@ const MOVE_TOLERANCE = 12;
 // and a runtime gate does not stop devtools.
 let bridge = null;
 
-/** Shows the advocate's live status in `el` (any element with a .p-dot child). */
+/**
+ * Paints the in office / out of office cue inside `el`, and keeps it painted.
+ *
+ * One line, because office.js owns all of it: what to ask for, how often, and
+ * what the pill says. The three chat surfaces call this so they cannot end up
+ * with three answers to one question.
+ */
 export function watchPresence(el) {
-  onValue(rtdbRef(rtdb, 'presence/eric'), (snap) => {
-    const online = snap.val() === true;
-    el.querySelector('.p-dot')?.classList.toggle('on', online);
-    const label = el.querySelector('.p-label');
-    if (label) label.textContent = online ? "I'm online" : "I'm away";
-  });
+  watchOffice(el);
 }
 
 /**

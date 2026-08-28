@@ -2,7 +2,6 @@
 import {
   auth,
   db,
-  rtdb,
   doc,
   getDoc,
   setDoc,
@@ -12,9 +11,6 @@ import {
   where,
   onAuthStateChanged,
   signOut,
-  rtdbRef,
-  rtdbSet,
-  onDisconnect,
 } from './firebase.js';
 
 const EMAIL_KEY = 'pa-signin-email';
@@ -152,21 +148,14 @@ export async function requireAdmin() {
   // Mark this device as the admin's so the landing page can redirect to the
   // dashboard instantly, without waiting for Firebase to wake up.
   localStorage.setItem('pa-admin-device', '1');
-  startPresence();
   return user;
 }
 
-// Eric's presence sets itself while any admin page is open, and clears when
-// the connection drops (SPEC §D — Tether's onDisconnect pattern).
-function startPresence() {
-  try {
-    const presenceRef = rtdbRef(rtdb, 'presence/eric');
-    onDisconnect(presenceRef).set(false);
-    rtdbSet(presenceRef, true);
-  } catch (err) {
-    console.warn('presence unavailable', err);
-  }
-}
+// A world-readable flag saying whether Eric had a tab open used to be written
+// here on every load of an advocate page. Nothing reads it any more: the in
+// office / out of office answer comes from the Worker and he sets it himself.
+// It was a live signal about him that anybody could read, so it is not written
+// and the database rule that published it is closed (database.rules.json).
 
 /** Fills the shared top-nav sign-in/out state on any page that has it. */
 export async function hydrateNav() {
