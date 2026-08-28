@@ -14,6 +14,7 @@ import { mountSaved } from './saved.js';
 import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
 import { helpButton, wireHelp, openCaseHelp } from './help.js';
+import { GOOGLE_REVIEW_WRITE_URL } from './reviews-config.js';
 import { officeCueHtml } from './office.js';
 import {
   recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
@@ -457,7 +458,8 @@ function closedNotice(c) {
       <p style="margin:0;">${esc(c.closedReason)}</p>
       <p class="dim small" style="margin:.5rem 0 0;">Everything in the case
         stays yours to read and download, for as long as you want it. If you
-        would like to leave a review, that stays open too.</p>
+        would like to leave a review, that stays open too, here or
+        <a href="${GOOGLE_REVIEW_WRITE_URL}" target="_blank" rel="noopener noreferrer">on Google</a>.</p>
     </div>`;
 }
 
@@ -1054,6 +1056,18 @@ function renderReview(el, c) {
         <button class="btn glow" data-review-send disabled>Submit</button>
       </div>
       <p class="error" data-review-error hidden></p>
+      <!-- Eric, 2026-08-28: "any request for a review gets a link to my Google
+           reviews". This is the request, so this is where it goes.
+           BOTH stay. The stars and the box above are private and reach only
+           him, which is the only channel someone gets to say a hard thing in.
+           Google is public and is what a stranger deciding whether to call him
+           actually reads. Offering one instead of the other would cost him the
+           half he did not choose, so the card asks for both and says plainly
+           which is which. -->
+      <p class="dim small google-ask" style="margin:.6rem 0 0;">Or leave it on
+        Google, where anyone deciding whether to call me can read it:
+        <a href="${GOOGLE_REVIEW_WRITE_URL}" target="_blank" rel="noopener noreferrer">write a Google review</a>.
+        The box above comes only to me; Google is public.</p>
       ${delivered && c.addOnFollowUp && !c.followUp && !justBoughtFollowUp() ? `
         <p class="dim small follow-note">Your follow-up case review is still on the books. If it's still not scheduled, Eric will promptly discuss with you the best time to follow up with a second review.</p>` : ''}
       ${delivered ? `

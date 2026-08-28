@@ -1649,6 +1649,15 @@ body.lightbox-open { overflow: hidden; }
 }
 .review-card h3 { margin: 0 0 .5rem; }
 .review-card p { font-size: .93rem; }
+/* The Google ask (Eric, 2026-08-28: "any request for a review gets a link to
+   my Google reviews"). It sits under the Submit button and directly above the
+   export note, and with nothing between them the two read as one paragraph:
+   the first drive of this shipped exactly that. A hairline is all it needs,
+   using the same divider the rest of the file uses. */
+.review-card .google-ask {
+  margin: .9rem 0 .9rem; padding-top: .8rem;
+  border-top: 1px solid var(--line);
+}
 .review-card .follow-note {
   margin: .7rem 0 0; padding: .55rem .7rem;
   border-left: 3px solid var(--magenta); border-radius: 0 8px 8px 0;
