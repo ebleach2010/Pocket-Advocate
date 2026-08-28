@@ -92,11 +92,35 @@ ck('tip jar: the ledger still reconciles tips already received',
    /kind === 'tip'/.test(W));
 
 // ---- 6. economicsNote cannot emit 1h 60m --------------------------------
-const spentOf = new Function('econ', 'hours', `
-  return ${ADV.match(/const spent = hours >= 1\n([\s\S]*?);\n/)[0].replace(/^\s*const spent = /, '').replace(/;\n$/, '')};`);
-for (const secs of [7170, 3599, 3600, 7199]) {
-  const out = spentOf({ seconds: secs }, secs / 3600);
-  ck(`economics: ${secs}s never renders 60m`, !/\b60m\b/.test(out), out);
+// A LOST LIFT IS A CLEAN FAIL, NOT A STACK TRACE AT MODULE SCOPE.
+//
+// This read `.match(...)[0]` with no guard. String.match returns NULL when the
+// pattern stops matching, and indexing null throws before any check has run.
+//
+// MEASURED on main, 2026-08-28, by renaming `const spent` in the shipped
+// advisor: this file produced 28 of its 127 lines and then died. Ninety-nine
+// checks stopped existing, and the output was a stack trace rather than a
+// verdict. run.mjs marks the suite failed either way, so it is loud, but loud
+// is not the same as informative and none of those 99 were asked.
+const spentSrc = (ADV.match(/const spent = hours >= 1\n([\s\S]*?);\n/) || [''])[0];
+ck('economics: the spent-hours expression lifts out of the shipped advisor',
+  spentSrc.length > 0, 'the lift came back empty');
+if (spentSrc) {
+  let spentOf = null;
+  try {
+    spentOf = new Function('econ', 'hours', `
+      return ${spentSrc.replace(/^\s*const spent = /, '').replace(/;\n$/, '')};`);
+  } catch (e) {
+    ck('economics: and the expression it lifted actually runs', false, `${e.message}`);
+  }
+  if (spentOf) {
+    for (const secs of [7170, 3599, 3600, 7199]) {
+      let out = '';
+      try { out = spentOf({ seconds: secs }, secs / 3600); }
+      catch (e) { out = `threw: ${e.message}`; }
+      ck(`economics: ${secs}s never renders 60m`, !/\b60m\b/.test(out) && !/^threw:/.test(out), out);
+    }
+  }
 }
 
 // ---- 7. ceilings quote the constants in force ---------------------------

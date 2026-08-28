@@ -684,14 +684,31 @@ const TABLE = {
   // THE TRAIL. There is no admin audit log in this app and this route was not
   // going to be the second thing without one.
   const trail = sent.writes.find((w) => w.fields.clientAlerts);
+  // COUNT THE ROWS BEFORE INDEXING THEM. An empty array is TRUTHY, so a route
+  // writing `clientAlerts: []` is found by that `find` and then `.at(-1)` is
+  // undefined and `.text` throws.
+  //
+  // MEASURED on main, 2026-08-28, by making the route write an empty trail:
+  // the file died at this line with `TypeError: Cannot read properties of
+  // undefined`, having produced 31 of its 70 lines. Everything from A21b to
+  // A32c stopped existing. run.mjs marks the suite failed, so it is loud, but
+  // a stack trace is not a verdict and 39 checks went unasked.
+  //
+  // The rule this came from, arrived at across two branches tonight: assert
+  // the ABSOLUTE before the RELATIVE, and make the absolute a NUMBER. "A trail
+  // was written" is satisfied by an empty one; "the trail has a row in it" is
+  // not.
+  const rows = trail?.fields.clientAlerts?.length ?? 0;
   // NEGATIVE CONTROL (run 2026-08-28): deleting the caseMeta patchDoc made
   // this read
   //   FAIL  A21 every sentence sent is recorded, with the time  -- nothing recorded
   ck('A21 every sentence sent is recorded, with the time',
-    !!trail && trail.path === 'caseMeta/abc'
+    rows >= 1 && trail.path === 'caseMeta/abc'
       && trail.fields.clientAlerts.at(-1).text === SENTENCE
       && trail.fields.clientAlerts.at(-1).at instanceof Date,
-    trail ? JSON.stringify(trail.fields.clientAlerts.at(-1)).slice(0, 90) : 'nothing recorded');
+    !trail ? 'nothing recorded'
+      : rows === 0 ? '0 rows recorded'
+        : JSON.stringify(trail.fields.clientAlerts.at(-1)).slice(0, 90));
   // NEGATIVE CONTROL (run 2026-08-28): swapping the patchDoc and notifyUser
   // calls made this read
   //   FAIL  A21b recorded BEFORE it is sent, so nothing can reach a phone unlogged
@@ -727,10 +744,13 @@ const TABLE = {
   // MEASURED on main, 2026-08-28, by returning json({ ok: true }) from the
   // first line of handleClientAlert: thirteen checks failed and this one
   // passed.
+  // The absolute here is the ROW COUNT, not the write count: a route writing
+  // an empty trail writes SOMETHING, and "never on the case" would have gone
+  // on passing over a record with nothing in it.
   ck('A21c and the trail is on caseMeta, never on the case a client can read',
-    sent.writes.length > 0 && !sent.writes.some((w) => w.path.startsWith('cases/')),
-    sent.writes.length ? JSON.stringify(sent.writes.map((w) => w.path))
-      : 'nothing was written anywhere either, so this proves nothing');
+    rows >= 1 && !sent.writes.some((w) => w.path.startsWith('cases/')),
+    rows === 0 ? `it recorded ${rows} rows, so this proves nothing`
+      : JSON.stringify(sent.writes.map((w) => w.path)));
 
   // THE SOFT RATE LIMIT. A client cannot be buzzed repeatedly.
   const justNow = { clientAlerts: [{ text: 'earlier', at: new Date().toISOString(), by: 'advisor' }] };
