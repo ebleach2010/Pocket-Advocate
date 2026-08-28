@@ -616,9 +616,23 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   // NEGATIVE CONTROL: writing status: 'delivered' from this route made this
   // read
   //   FAIL  U13 ... -- 1 write, status {"status":"delivered"}
+  // A NON-HAPPENING NEEDS A HAPPENING BESIDE IT. "Moves nothing on the case"
+  // is satisfied perfectly by a route that does NOTHING AT ALL, and nothing is
+  // empty in that break, so no floor and no count can see it. It is the most
+  // convincing sentence in this file and the least questioned.
+  //
+  // MEASURED on main, 2026-08-28, by returning json({ ok: true }) from the
+  // first line of the summary-uploaded branch, so it answers 200 and does
+  // nothing: U14, U15, U16b and U16c failed, and U13 and U16d passed.
+  //
+  // The push is the happening. It is what this route is FOR, and U14 below
+  // reads its words; this half only asks that one went out at all.
   ck('U13 filing a call summary moves NOTHING on the case',
-    !out.threw && out.res?.status === 200 && out.writes.length === 0,
-    out.threw || `${out.writes.length} write, status ${JSON.stringify(out.writes[0]?.fields)}`);
+    !out.threw && out.res?.status === 200 && out.writes.length === 0
+      && out.pushes.length === 1,
+    out.threw || (out.pushes.length !== 1
+      ? `it moved nothing because it DID nothing: ${out.pushes.length} pushes`
+      : `${out.writes.length} write, status ${JSON.stringify(out.writes[0]?.fields)}`));
   // NEGATIVE CONTROL: deleting the notifyUser call made this read
   //   FAIL  U14 ... -- no notification
   // NEGATIVE CONTROL: deleting the notifyUser call made this read
@@ -722,9 +736,12 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   // NEGATIVE CONTROL (run 2026-08-28): adding a patchDoc of status
   // 'delivered' to the formsent path made this read
   //   FAIL  U16d and sending a form moves NOTHING on the case  -- 1 write: [{"status":"delivered"}]
+  // Same as U13: a route that did nothing would satisfy this on its own.
   ck('U16d and sending a form moves NOTHING on the case',
-    form.writes.length === 0,
-    `${form.writes.length} write: ${JSON.stringify(form.writes.map((w) => w.fields))}`);
+    form.writes.length === 0 && form.pushes.length === 1,
+    form.pushes.length !== 1
+      ? `it moved nothing because it DID nothing: ${form.pushes.length} pushes`
+      : `${form.writes.length} write: ${JSON.stringify(form.writes.map((w) => w.fields))}`);
 }
 
 // ---- U17-U18: it stays his document -------------------------------------

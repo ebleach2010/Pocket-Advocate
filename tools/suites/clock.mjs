@@ -120,7 +120,28 @@ reset();
 const noop = await W.handleWork(req({ caseId: 'a', on: true, auto: true }), env);
 check('C1 an automatic start is a NO-OP: nothing starts (manual only, 2026-08-25)',
   !work('a').startedAt && noop.body.running === false, JSON.stringify(noop.body));
-check('C2 and the running list stays empty', running().length === 0, running().join());
+// AND THE LIST IS ONE A DELIBERATE TAP CAN FILL, proven here rather than
+// borrowed from C3 below, which runs after this. "Stays empty" is satisfied
+// perfectly by a route that does NOTHING AT ALL, and nothing is empty in that
+// break, so no floor and no count can see it.
+//
+// MEASURED on main, 2026-08-28, by returning json({ ok: true }) from the first
+// line of handleWork so it answers 200 and does nothing: 45 checks in this
+// file failed and C2 passed, as did C14 below.
+//
+// A THROWAWAY CASE, so the fixture case 'a' reaches C3 exactly as before.
+const proof = 'clock-proof';
+docs.set(`cases/${proof}`, { clientName: 'Proof' });
+await W.handleWork(req({ caseId: proof, on: true, auto: false }), env);
+const listFills = running().includes(proof);
+// Stopped through the same route, not deleted out from under the registry:
+// dropping the doc alone leaves the id in CLOCK_DOC.running and C4 goes red.
+await W.handleWork(req({ caseId: proof, on: false }), env);
+docs.delete(`cases/${proof}`);
+check('C2 and the running list stays empty',
+  running().length === 0 && listFills,
+  listFills ? running().join()
+    : 'a deliberate tap does not fill it either, so this proves nothing');
 
 await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
 check('C3 a deliberate tap starts the clock, pinned',
@@ -200,7 +221,13 @@ await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
 await W.handleWorkPresence(req({ caseId: 'a' }), env);
 advance(2);
 await W.runWorkClockNudges(env);
-check('C14 nothing is asked while the app is open', pushes.length === 0);
+// AND THERE IS SOMETHING TO ASK ABOUT. Silence proves nothing if no clock is
+// running: the same do-nothing break leaves this green because there is no
+// clock to nudge over. C15 on the next line asserts the clock is running; this
+// check now asserts it too, so the silence is silence with a reason.
+check('C14 nothing is asked while the app is open',
+  pushes.length === 0 && !!work('a').startedAt,
+  work('a').startedAt ? '' : 'no clock is running either, so this proves nothing');
 check('C15 and a running clock is NOT stopped by the app closing',
   !!work('a').startedAt);
 
