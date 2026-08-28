@@ -611,9 +611,25 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
   // and took U13 to U15b down with it at "ReferenceError: markPending is not
   // defined", which is the lift refusing to run code the harness does not
   // stub - a loud failure, not a quiet pass.
+  //
+  // STRENGTHENED 2026-08-28, not weakened, and this is why. The check was
+  // `!regex.test(slab(...))`, so a LOST lift returned '', the regex did not
+  // match the empty string, and the negation made it PASS. Proved by pointing
+  // the slab at a route that does not exist: U18 read PASS and the suite
+  // reported 67/67 while asserting nothing whatsoever. That is the same
+  // failure U11e was written for, one file down, and it was found by
+  // measuring every lift after the advisor branch found the same gap in its
+  // own suite. The route text is now required to be there BEFORE its absence
+  // of a generator means anything.
+  // NEGATIVE CONTROL (run 2026-08-28): pointing the slab at
+  // 'NOT-A-ROUTE' made this read
+  //   FAIL  U18 no path here reads, writes or summarises a document  -- 0 chars lifted
+  const summaryRoute = lifted('summaryRoute', slab(WORKER,
+    "} else if (action === 'summary-uploaded') {", "} else if (action === 'report-uploaded') {"));
   ck('U18 no path here reads, writes or summarises a document',
-    !/runAnalysis|runCallNotes|advisor/i.test(slab(WORKER,
-      "} else if (action === 'summary-uploaded') {", "} else if (action === 'report-uploaded') {")));
+    summaryRoute.length > 0
+    && !/runAnalysis|runCallNotes|advisor/i.test(summaryRoute),
+    `${summaryRoute.length} chars lifted`);
 }
 
 // ---- U19: the demo tells the same story ---------------------------------
@@ -1098,7 +1114,8 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
   // something untrue about his own tool, on the panel he reaches for while a
   // client is on the phone.
   {
-    const panel = slab(ADMINCASE, '<details class="mgmt" data-k="auth">', '</details>');
+    const panel = lifted('formPanel',
+      slab(ADMINCASE, '<details class="mgmt" data-k="auth">', '</details>'));
     // NEGATIVE CONTROL (run 2026-08-28): putting the old sentence back made
     // this read
     //   FAIL  U27 the form panel no longer promises signing in the app  -- signing in the app
@@ -1130,6 +1147,37 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
       && /data-blank="\$\{f\.id\}"/.test(panel)
       && /\$\{form\.label\} \$\{mountainDay\(\)\}\.html/.test(ADMINCASE));
   }
+}
+
+// ---- U28i: not one of those lifts came back empty ------------------------
+//
+// The blanket version of what U20 and U12 do for one slab each, and it exists
+// because U18 did not have one. U18 read `!regex.test(slab(...))`, so a lost
+// lift gave '' , the regex did not match it, and the negation made it PASS:
+// the suite reported 67/67 while that check asserted nothing at all. Any
+// future check written in that shape is covered here whether or not its
+// author remembers, which is the point of doing it once for all of them
+// rather than twelve times.
+//
+// NEGATIVE CONTROL (run 2026-08-28): pointing the U18 slab at a route that
+// does not exist made this read
+//   FAIL  U28i every lift this suite takes came back with something in it  -- empty: summaryRoute
+// and on the same run U18 itself, before it was strengthened, read PASS.
+//
+// The count floor is the second half and catches the other direction, a slab
+// quietly dropping out of the measured set:
+// NEGATIVE CONTROL (run 2026-08-28): taking lifted() off the form panel slab
+// made this read
+//   FAIL  U28i every lift this suite takes came back with something in it  -- 11 lifts, expected at least 12
+// Note what it does NOT catch, so nobody trusts it further than it goes: a
+// NEW slab added without lifted() leaves the count at twelve and passes. The
+// floor guards the twelve that are here; adding a thirteenth is a thing a
+// person still has to do on purpose.
+{
+  const empties = [...LIFTS].filter(([, n]) => n === 0).map(([k]) => k);
+  ck('U28i every lift this suite takes came back with something in it',
+    LIFTS.size >= 12 && empties.length === 0,
+    empties.length ? `empty: ${empties.join(', ')}` : `${LIFTS.size} lifts, expected at least 12`);
 }
 
 // EVERY LIFT, AND ITS SIZE, ON EVERY RUN. See `lifted` at the top: green is
