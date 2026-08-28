@@ -2145,20 +2145,19 @@ const OFFER_AUTHORITY_SIGNING = false;
  */
 async function mountPermissions(host, c) {
   const paint = (items) => {
-    // THE AGREEMENT SITS APART FROM THE PERMISSIONS. A signed scope of work
-    // is the contract the case runs on, not a permission the client can
-    // withdraw, so it gets its own block, a View button, and no Withdraw
-    // (the Worker refuses one posted straight at the route too). The offer
-    // appears only where the record is missing: a case opened by hand never
-    // acknowledged the scope note at checkout, and this signature is what
-    // stands in for it (Eric, 2026-08-29: "All I need is scope of work
-    // agreement. The rest I handle." The records and insurer forms reach the
-    // client as documents he sends by hand, signed outside the app).
+    // NOTHING HERE OFFERS A SIGNATURE, and nothing may (Eric, 2026-08-29:
+    // "Do NOT send him any forms whatsoever including the one you just
+    // created"). Every document reaches the client by hand and comes back
+    // the same way; the advocate records their return with his own Forms
+    // submitted tick on his side. The scope-agreement offer that shipped for
+    // a few hours on 2026-08-29 is gone with the rest. What remains is the
+    // record: anything that WAS signed in the app stays readable, the
+    // agreement with a View button and no Withdraw (it is the contract the
+    // case runs on, and the Worker refuses a revoke posted straight at the
+    // route), the permissions with View and Withdraw as always.
     const scopeItem = items.find((i) => i.kind === 'scope' && !i.revokedAt);
-    const offerScope = !!c.fullAccess && !scopeItem
-      && !(c.forms && c.forms.fullAccess) && !c.scopeSignedAt;
     const perms = items.filter((i) => i.kind !== 'scope');
-    if (!perms.length && !scopeItem && !offerScope && !OFFER_AUTHORITY_SIGNING) {
+    if (!perms.length && !scopeItem && !OFFER_AUTHORITY_SIGNING) {
       host.innerHTML = '';
       return;
     }
@@ -2176,14 +2175,6 @@ async function mountPermissions(host, c) {
             <button type="button" class="btn ghost tiny" data-auth-view="${esc(scopeItem.id)}">View</button>
           </span>
         </p>
-      </div>` : offerScope ? `
-      <div class="panel authority" data-scope-panel>
-        <h3>Your scope of work agreement</h3>
-        <p class="dim small">What I do on your case, what I need from you, and
-          where the work stops. Read it and sign it once; it is the agreement
-          your case runs on.</p>
-        <p><button class="btn glow" data-scope-sign>Read and sign</button></p>
-        <p class="error" data-scope-error hidden></p>
       </div>` : '';
     const permBlock = (perms.length || OFFER_AUTHORITY_SIGNING) ? `
       <div class="panel authority" data-auth-panel>
@@ -2213,8 +2204,6 @@ async function mountPermissions(host, c) {
       </div>` : '';
     host.innerHTML = scopeBlock + permBlock;
 
-    host.querySelector('[data-scope-sign]')
-      ?.addEventListener('click', () => openAuthoritySheet(c, 'scope', load));
     for (const b of host.querySelectorAll('[data-auth-add]'))
       b.addEventListener('click', () => openAuthoritySheet(c, b.dataset.authAdd, load));
     for (const b of host.querySelectorAll('[data-auth-view]'))

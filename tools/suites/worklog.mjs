@@ -360,8 +360,13 @@ ck('L22 and the agreement\'s written promise is still true',
 // NEGATIVE CONTROL (run 2026-08-27, on the original single-condition form):
 // removing the early return made this read
 //   FAIL  L23 a client who has signed nothing sees no permissions box
+// And updated AGAIN the same day: the agreement offer was withdrawn within
+// hours (Eric: "Do NOT send him any forms whatsoever including the one you
+// just created"), so the offer condition left the early return the way it
+// arrived. A client who signed nothing sees nothing; a signed record still
+// renders.
 ck('L23 a client who signed nothing and is owed nothing sees no permissions box',
-  /if \(!perms\.length && !scopeItem && !offerScope && !OFFER_AUTHORITY_SIGNING\) \{\n\s*host\.innerHTML = '';\n\s*return;\n\s*\}/.test(CLIENT));
+  /if \(!perms\.length && !scopeItem && !OFFER_AUTHORITY_SIGNING\) \{\n\s*host\.innerHTML = '';\n\s*return;\n\s*\}/.test(CLIENT));
 
 // ---- L24-L26: readiness, and the two sides agreeing ----------------------
 // Two of the three rows were derived from the signed documents. With signing
@@ -370,9 +375,13 @@ ck('L23 a client who signed nothing and is owed nothing sees no permissions box'
 // NEGATIVE CONTROL (run 2026-08-27): putting the two document rows back made
 // this read
 //   FAIL  L24 ... -- readiness still asks for something nothing can satisfy
+// The row's id moved from 'scope' to 'forms' on 2026-08-29: with every
+// document travelling by hand, the one thing the app can still see is the
+// advocate's own Forms submitted tick (formsOnFileAt). Pin updated, not
+// deleted.
 ck('L24 readiness asks only for what the app can still see',
   !/authorityItems/.test(READY) && !/kind === 'records'/.test(READY)
-  && /id: 'scope'/.test(READY),
+  && /id: 'forms'/.test(READY) && /formsOnFileAt/.test(READY),
   'readiness still asks for something nothing can satisfy');
 // NEGATIVE CONTROL (run 2026-08-27): calling it with the old two-argument
 // signature on one side only made this read
@@ -387,12 +396,15 @@ ck('L25 and both sides call the same helper the same way',
 // NEGATIVE CONTROL (run 2026-08-27): deleting the warning made this read
 //   FAIL  L26 ... -- nothing tells him not to pick up the phone
 // Updated 2026-08-29: the count moved from `live` to `perms`, and that move
-// IS the safety property now. A signed scope of work agreement is live in
-// the same list, and counting it would have silenced this warning on a case
-// where nothing authorises him to phone anyone.
+// IS the safety property. A signed scope of work agreement is live in the
+// same list, and counting it would have silenced this warning on a case
+// where nothing authorises him to phone anyone. Later the same day the tick
+// joined the condition: Forms submitted means the signed paper permissions
+// are physically in his hands, which is written permission, so the warning
+// stands down for exactly that record and nothing weaker.
 ck('L26 his card still tells him not to phone anyone without permission',
   /Do not phone a clinic or\n\s*their plan on their behalf until you have it in writing/.test(ADMIN)
-  && /const noPermission = perms\.length === 0;/.test(ADMIN)
+  && /const noPermission = perms\.length === 0 && !formsBack;/.test(ADMIN)
   && /live\.filter\(\(i\) => i\.kind !== 'scope'\)/.test(ADMIN),
   'nothing tells him not to pick up the phone');
 // NEGATIVE CONTROL (run 2026-08-27): leaving the old headline in place made
@@ -822,37 +834,56 @@ ck('L44b no em or en dash in the new client copy',
     !/firstName\(profile\?\.data\.name\) \|\| 'Your advocate'/.test(WORKER));
 }
 
-// ---- L46: the scope of work agreement card (Eric, 2026-08-29) -------------
-// "All I need is scope of work agreement. The rest I handle." One card,
-// offered exactly where the record is missing: a Hands-Off case with no
-// checkout acknowledgment, no case stamp, and no live signed item. All four
-// conditions matter: dropping any one of them either nags a client who
-// already agreed, or hides the card from the one client who never did.
-// NEGATIVE CONTROL (run 2026-08-29): dropping the forms.fullAccess condition
-// made this read
-//   FAIL  L46 the agreement card is offered exactly where the record is missing
-ck('L46 the agreement card is offered exactly where the record is missing',
-  /const offerScope = !!c\.fullAccess && !scopeItem\n\s*&& !\(c\.forms && c\.forms\.fullAccess\) && !c\.scopeSignedAt;/.test(CLIENT));
-// The agreement block carries View and the signing button and NEVER
-// Withdraw: it is a contract record, not a permission, and the Worker
-// refuses a revoke posted straight at the route too (authority.mjs W6d).
-// NEGATIVE CONTROL (run 2026-08-29): adding a data-auth-revoke button to the
-// scope block made this read
+// ---- L46: nothing on the client's page asks for a signature ---------------
+// The agreement offer shipped on the morning of 2026-08-29 and was
+// withdrawn by Eric the same day: "Do NOT send him any forms whatsoever
+// including the one you just created... Keep that my side, not his." These
+// pins flipped from asserting the offer to asserting its absence; the
+// original offer pins and their negative controls are in this file's
+// history at v2.45.
+// NEGATIVE CONTROL (run 2026-08-29): putting the data-scope-sign button back
+// in the scope block made this read
+//   FAIL  L46 nothing on the client's page offers a signature
+ck("L46 nothing on the client's page offers a signature",
+  !/data-scope-sign/.test(CLIENT) && !/offerScope/.test(CLIENT));
+// What WAS signed stays readable: the agreement block renders a signed item
+// with View and never Withdraw (it is a contract record, not a permission,
+// and the Worker refuses a revoke posted straight at the route too,
+// authority.mjs W6d).
+// NEGATIVE CONTROL (run 2026-08-29, on the offer-era block): adding a
+// data-auth-revoke button to the scope block made this read
 //   FAIL  L46b the agreement block has View and no Withdraw
 ck('L46b the agreement block has View and no Withdraw', (() => {
-  const m = CLIENT.match(/const scopeBlock = scopeItem \? `[\s\S]*?` : offerScope \? `[\s\S]*?` : '';/);
+  const m = CLIENT.match(/const scopeBlock = scopeItem \? `[\s\S]*?` : '';/);
   if (!m) return false;
-  return !/data-auth-revoke/.test(m[0]) && /data-auth-view/.test(m[0])
-    && /data-scope-sign/.test(m[0]);
+  return !/data-auth-revoke/.test(m[0]) && /data-auth-view/.test(m[0]);
 })());
-// The sheet the button opens is the same signing sheet, on the new kind,
-// with nothing to fill in but the name and the finger signature.
-// NEGATIVE CONTROL (run 2026-08-29): wiring the button to kind 'records'
+// ---- L47: the Forms submitted tick, his side and only his -----------------
+// Eric, 2026-08-29: "Just create a 'forms submitted' tick box for me to
+// tick off once I've received them. Keep that my side, not his."
+// NEGATIVE CONTROL (run 2026-08-29): renaming the Worker action made this
+// read
+//   FAIL  L47 the Forms submitted tick exists on his card and lands on the case
+ck('L47 the Forms submitted tick exists on his card and lands on the case',
+  /data-forms-back/.test(ADMIN)
+  && /api\(\{ action: 'forms-on-file', on: want \}\)/.test(ADMIN)
+  && /action === 'forms-on-file'/.test(WORKER)
+  && /\{ formsOnFileAt: on \? now : null \}/.test(WORKER));
+// A failed write puts the box back and says so, rather than showing a tick
+// the case does not hold.
+// NEGATIVE CONTROL (run 2026-08-29): deleting the revert line made this read
+//   FAIL  L47b a failed save reverts the box instead of lying
+ck('L47b a failed save reverts the box instead of lying',
+  /tick\.checked = !want;/.test(ADMIN) && /data-forms-back-err/.test(ADMIN));
+// "My side, not his": the control exists nowhere in client code, and the
+// demo mirrors the action so he can drive it.
+// NEGATIVE CONTROL (run 2026-08-29): pasting the tick markup into case.js
 // made this read
-//   FAIL  L46c and the button opens the signing sheet on the scope kind
-ck('L46c and the button opens the signing sheet on the scope kind',
-  /openAuthoritySheet\(c, 'scope', load\)/.test(CLIENT)
-  && /const need = isScope \? \['signedName'\]/.test(CLIENT));
+//   FAIL  L47c the tick is nowhere on the client's side, and the demo mirrors it
+ck("L47c the tick is nowhere on the client's side, and the demo mirrors it",
+  !/data-forms-back/.test(CLIENT)
+  && /body\.action === 'forms-on-file'/.test(DEMO)
+  && /formsOnFileAt: body\.on === true \? new Date\(\) : null/.test(DEMO));
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

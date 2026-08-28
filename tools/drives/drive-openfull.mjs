@@ -141,12 +141,13 @@ const todayMT = new Intl.DateTimeFormat('en-CA', {
 ok('it is prefilled to today, so the common case is no taps',
    startDay?.was === todayMT, `${startDay?.was} vs ${todayMT}`);
 const whenLine = await page.evaluate(() => document.getElementById('openfull-when')?.textContent.trim() || '');
-// The pinned sentence changed 2026-08-29: nothing called "forms" goes
-// anywhere at open any more (Eric: "Remove those. I have those sent
-// manually."), and the line now names the one thing that does go live, the
-// scope of work agreement. Pin updated, not deleted.
+// The pinned sentence changed twice on 2026-08-29: first "forms go live"
+// became the agreement, then the agreement ask was withdrawn the same day
+// ("Do NOT send him any forms whatsoever"). What remains is the one honest
+// thing a future start needs saying: the clock does not wait on paperwork.
+// Pin updated, not deleted.
 ok('and it says the month it is about to create, both ends',
-   /runs .+ to .+/.test(whenLine) && /scope of work agreement goes live today/.test(whenLine), whenLine.slice(0, 110));
+   /runs .+ to .+/.test(whenLine) && /clock runs from the day it starts/.test(whenLine), whenLine.slice(0, 110));
 
 // The real thing.
 await typed('3400');
@@ -178,12 +179,14 @@ ok('and the confirm named the start date too, not just the money',
 
 const said = await page.evaluate(() =>
   [...document.querySelectorAll('.saved-note')].map((n) => n.textContent.trim()).join(' | '));
-// Pinned line updated 2026-08-29: the confirmation now names the scope of
-// work agreement with the rest of the furniture, and tells him the records
-// and insurer forms are his to send by hand.
+// Pinned line updated twice on 2026-08-29: the agreement joined the
+// furniture in the morning and left it the same day. The confirmation now
+// says the two things that stay true: send every form himself, and tick
+// Forms submitted when the signed copies are back.
 ok('and the panel says so where he can still read it after it vanishes',
-   /work log, the check-in booking and the scope of work agreement are live/i.test(said)
-   && /Send the records and insurer forms yourself/i.test(said), said.slice(0, 110));
+   /work log and the check-in booking are live/i.test(said)
+   && /Send every form yourself/i.test(said)
+   && /tick Forms submitted/i.test(said), said.slice(0, 110));
 ok('the panel itself is gone, because the case is on the tier now',
    !(await openPanel()));
 
@@ -238,102 +241,71 @@ ok('nothing offers them a form to sign, because that is parked',
 ok('and a case that has signed nothing shows no empty permissions box',
    seen.emptyPermissions === 0, `${seen.emptyPermissions} chars of permissions panel`);
 
-// ---- the scope of work agreement, driven end to end (2026-08-29) ----------
-// Eric: "Remove those. I have those sent manually. All I need is scope of
-// work agreement. The rest I handle." A case opened by hand never
-// acknowledged the scope note at checkout, so THIS case must offer the
-// agreement card, the sheet must sign with nothing but a name and a finger,
-// and the record must land on both the card and the checklist.
+// ---- every form travels by hand, and the tick is his (2026-08-29) ---------
+// Eric, later the same day the agreement card shipped: "Do NOT send him any
+// forms whatsoever including the one you just created. Just create a 'forms
+// submitted' tick box for me to tick off once I've received them. Keep that
+// my side, not his." So this section asserts the ABSENCE of every ask on the
+// client's page, then drives the tick on his.
 const shots = process.env.PA_SHOTS || '';
-const snap = async (name) => { if (shots) await client.screenshot({ path: `${shots}/${name}.png` }).catch(() => {}); };
-const offer = await client.evaluate(() => {
-  const p = document.querySelector('[data-scope-panel]');
+const snap = async (pg, name) => { if (shots) await pg.screenshot({ path: `${shots}/${name}.png` }).catch(() => {}); };
+const asks = await client.evaluate(() => ({
+  scopePanel: !!document.querySelector('[data-scope-panel]'),
+  scopeSign: !!document.querySelector('[data-scope-sign]'),
+  anySheet: !!document.querySelector('.sig-sheet'),
+  formsTick: !!document.querySelector('[data-forms-back]'),
+  readyRow: document.querySelector('[data-ready-list]')?.textContent.replace(/\s+/g, ' ').trim() || '',
+}));
+ok('nothing on their page offers the agreement or any signature',
+   !asks.scopePanel && !asks.scopeSign && !asks.anySheet, JSON.stringify(asks));
+ok('and the Forms submitted tick is nowhere on their side', !asks.formsTick);
+ok('their checklist row waits on the signed forms, honestly',
+   /○ The signed forms, received/.test(asks.readyRow), asks.readyRow.slice(0, 80));
+await snap(client, 'forms-1-client-nothing-to-sign');
+
+// His side: the tier card is orange with no permission, the tick is there,
+// and ticking it is the one move that clears it.
+const cardSel = '[data-authority-status]';
+await page.waitForSelector(`${cardSel} [data-forms-back]`, { timeout: 20000 });
+const cardBefore = await page.evaluate(() => {
+  const c = document.querySelector('[data-authority-status]');
   return {
-    there: !!p,
-    heading: p?.querySelector('h3')?.textContent.trim() || '',
-    signBtn: !!p?.querySelector('[data-scope-sign]'),
-    withdraw: !!p?.querySelector('[data-auth-revoke]'),
+    head: c?.querySelector('h3')?.textContent.trim() || '',
+    warn: /Do not phone a clinic/.test(c?.textContent || ''),
+    ticked: !!c?.querySelector('[data-forms-back]')?.checked,
   };
 });
-ok('the scope of work agreement card is offered on this hand-opened case',
-   offer.there && offer.signBtn, JSON.stringify(offer));
-ok('under its own name, with no Withdraw on it',
-   offer.heading === 'Your scope of work agreement' && !offer.withdraw, offer.heading);
-await client.evaluate(() => document.querySelector('[data-scope-panel]')?.scrollIntoView({ block: 'center' }));
-await snap('scope-1-offer');
-
-await client.evaluate(() => document.querySelector('[data-scope-sign]').click());
-await client.waitForSelector('.sig-sheet', { timeout: 10000 });
-const sheet = await client.evaluate(() => {
-  const s = document.querySelector('.sig-sheet');
+ok('his card says no permission and warns him off the phone',
+   cardBefore.head === 'No permission on file' && cardBefore.warn && !cardBefore.ticked,
+   JSON.stringify(cardBefore));
+await snap(page, 'forms-2-card-before');
+await page.check(`${cardSel} [data-forms-back]`);
+// The save round-trips through the store and repaints the card.
+await page.waitForFunction(() =>
+  /Forms on file/.test(document.querySelector('[data-authority-status]')?.textContent || ''), { timeout: 15000 });
+const after2 = await page.evaluate(() => {
+  const c = document.querySelector('[data-authority-status]');
   return {
-    title: s?.querySelector('h3')?.textContent.trim() || '',
-    doc: s?.querySelector('[data-preview]')?.textContent || '',
-    open: !!s?.querySelector('details[open]'),
-    fields: s?.querySelectorAll('[data-f]').length,
+    head: c?.querySelector('h3')?.textContent.trim() || '',
+    warn: /Do not phone a clinic/.test(c?.textContent || ''),
+    received: /Received/.test(c?.textContent || ''),
+    row: /✓ The signed forms, received/.test(c?.textContent || ''),
   };
 });
-ok('the sheet opens on the agreement, already unfolded to read',
-   sheet.title === 'Scope of work agreement' && sheet.open, `${sheet.title}, open=${sheet.open}`);
-ok('the document is the real one: the work, the limits and the money',
-   /SCOPE OF WORK AGREEMENT/.test(sheet.doc) && /WHAT THIS IS NOT/.test(sheet.doc)
-   && /MONEY/.test(sheet.doc) && /Jordan Avery/.test(sheet.doc));
-ok('and there is nothing to fill in but the name',
-   sheet.fields === 1, `${sheet.fields} fields`);
-await snap('scope-2-sheet');
+ok('one tick later the card stands down and shows the received date',
+   after2.head === 'Forms on file' && !after2.warn && after2.received && after2.row,
+   JSON.stringify(after2));
+await snap(page, 'forms-3-card-after');
 
-// The contact tick (Eric, 2026-08-29): arrives unticked, the document shows
-// it unticked, and ticking it marks the document itself before anything is
-// signed.
-const boxState = await client.evaluate(() => {
-  const cb = document.querySelector('.sig-sheet [data-contact]');
-  const pre = document.querySelector('.sig-sheet [data-preview]')?.textContent || '';
-  return { there: !!cb, ticked: !!cb?.checked, unmarked: /\[ \] My advocate may contact me/.test(pre) };
-});
-ok('the contact tick is there, unticked, and the document prints it unticked',
-   boxState.there && !boxState.ticked && boxState.unmarked, JSON.stringify(boxState));
-await client.check('.sig-sheet [data-contact]');
-ok('and ticking it marks the document itself',
-   await client.evaluate(() =>
-     /\[X\] My advocate may contact me/.test(document.querySelector('.sig-sheet [data-preview]')?.textContent || '')));
-
-await client.fill('.sig-sheet [data-f="signedName"]', 'Jordan Avery');
-await client.evaluate(() => document.querySelector('.sig-sheet [data-sig-open]').click());
-await client.waitForSelector('#pa-sigpad [data-sig-canvas]', { timeout: 10000 });
-const box = await client.evaluate(() => {
-  const r = document.querySelector('#pa-sigpad [data-sig-canvas]').getBoundingClientRect();
-  return { x: r.x, y: r.y, w: r.width, h: r.height };
-});
-await client.mouse.move(box.x + box.w * 0.2, box.y + box.h * 0.5);
-await client.mouse.down();
-await client.mouse.move(box.x + box.w * 0.5, box.y + box.h * 0.25, { steps: 8 });
-await client.mouse.move(box.x + box.w * 0.8, box.y + box.h * 0.6, { steps: 8 });
-await client.mouse.up();
-await client.click('#pa-sigpad [data-sig-done]');
-await client.click('.sig-sheet [data-sign]');
-await client.waitForSelector('[data-scope-panel] [data-auth-view]', { timeout: 10000 });
-const signedNow = await client.evaluate(() => {
-  const p = document.querySelector('[data-scope-panel]');
-  return {
-    line: p?.textContent.replace(/\s+/g, ' ').trim() || '',
-    signBtn: !!p?.querySelector('[data-scope-sign]'),
-    withdraw: !!p?.querySelector('[data-auth-revoke]'),
-  };
-});
-ok('one signature later the card is the record, not the ask',
-   /Signed \d/.test(signedNow.line) && !signedNow.signBtn, signedNow.line.slice(0, 90));
-ok('with View on it and still no Withdraw',
-   /View/.test(signedNow.line) && !signedNow.withdraw);
-await snap('scope-3-signed');
-
-// The checklist head paints from the case doc, so the tick appears on the
-// next open; the demo persists, so a reload IS the next open.
+// And the client's checklist row ticks on their next open, with nothing
+// asked of them.
 await client.reload({ waitUntil: 'networkidle' });
 await client.waitForSelector('[data-ready-list]', { timeout: 20000 });
 const rowNow = await client.evaluate(() =>
   document.querySelector('[data-ready-list]')?.textContent.replace(/\s+/g, ' ').trim() || '');
-ok('and the readiness row is satisfied on the next open',
-   /✓/.test(rowNow) && /scope of work/i.test(rowNow), rowNow.slice(0, 80));
+ok('and their checklist row is satisfied by his tick alone',
+   /✓ The signed forms, received/.test(rowNow), rowNow.slice(0, 80));
+await snap(client, 'forms-4-client-row-ticked');
 
 ok('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
 await b.close();

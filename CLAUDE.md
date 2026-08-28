@@ -193,20 +193,21 @@ comments; this is the same breach `service-terms.js` had.
   deliberately: the telehealth full refund when an appointment never
   happens, and the frozen `waivers.js` reschedule clause. New copy must not
   add automatic refund triggers.
-- **The app signs ONE document: the scope of work agreement** (Eric,
-  2026-08-29: "Remove those. I have those sent manually. All I need is
-  scope of work agreement. The rest I handle."). The records authorisation
-  and representative designation are never offered for in-app signing
-  (`OFFER_AUTHORITY_SIGNING` stays false); they go out as blank forms from
-  the admin Send-a-form panel, signed however Eric arranges it. The scope
-  agreement (kind `scope`, `scopeOfWork()` in `public/js/authority.js`) is
-  offered on Hands-Off cases that never acknowledged the scope note at
-  checkout, stamps `scopeSignedAt`, satisfies the readiness row, and cannot
-  be revoked by one tap (authority.mjs W6d, worklog.mjs L46 pin all of
-  this). Its text restates FULL_ACCESS_TERMS and must not drift from it in
-  substance (authority.mjs S32). Opening Hands-Off sends NO forms — only
-  the email and the agreement card. Do not put "send the forms" back on
-  that button.
+- **The app signs NOTHING. Every document travels by Eric's hand** (Eric,
+  2026-08-29, superseding his own morning ask the same day: "Do NOT send
+  him any forms whatsoever including the one you just created. Just create
+  a 'forms submitted' tick box for me to tick off once I've received them.
+  Keep that my side, not his."). No client page may offer any signature:
+  `OFFER_AUTHORITY_SIGNING` stays false and the scope-agreement offer card
+  (live only within v2.44-2.45) is gone (worklog.mjs L46 pins the
+  absence). The record that paperwork is settled is `formsOnFileAt`,
+  written ONLY by Eric's "Forms submitted" tick on the admin tier card
+  (worker action `forms-on-file`); it clears the No-permission alarm and
+  is the single row `handsOffReadiness` reads (worklog.mjs L47). The
+  authority machinery (`scopeOfWork()`, kinds, the signing sheet, the
+  Worker route) is kept parked for the copy deck, printing, and any
+  legacy signed items — do not delete it, and do not resurface it to
+  clients without Eric's explicit word.
 - **"Every two weeks" is a FLAG, not an automation.** Eric schedules each
   check-in himself; the dashboard marks any tier case 14 days without one
   (`CHECKIN_DAYS`, `checkInDue`). The copy says "runs on a rhythm" for that
