@@ -253,12 +253,16 @@ const CASE_AGREEMENTS = await (async () => {
   try {
     const A = await import(`${R}/public/js/authority.js`);
     const o = { clientName: '[CLIENT NAME]', clientDob: '[DOB]', advocateName: 'Eric Bleach', blank: true };
+    out.push({ title: 'Scope of work agreement (the document itself)',
+      body: A.scopeOfWork({ clientName: '[CLIENT NAME]', blank: true }),
+      where: 'public/js/authority.js',
+      when: 'Signed on the case page when Hands-Off opens by hand; the one document the app itself signs (Eric, 2026-08-29).' });
     out.push({ title: 'Records authorisation (the document itself)',
       body: A.recordsAuthorisation(o), where: 'public/js/authority.js',
-      when: 'Sent to a Hands-Off client to sign; placeholders shown in brackets.' });
+      when: 'Sent by hand from the case page, signed outside the app; placeholders shown in brackets.' });
     out.push({ title: 'Insurance representative designation (the document itself)',
       body: A.representativeDesignation(o), where: 'public/js/authority.js',
-      when: 'Sent to a Hands-Off client to sign; placeholders shown in brackets.' });
+      when: 'Sent by hand from the case page, signed outside the app; placeholders shown in brackets.' });
   } catch { /* the two documents are optional in the deck, never worth failing it */ }
   return out;
 })();
