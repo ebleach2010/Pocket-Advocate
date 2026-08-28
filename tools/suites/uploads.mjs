@@ -89,8 +89,8 @@ const LIFTS = new Map();
  * inside. Same idea as A30c, applied to all twelve at once instead of the two
  * that happened to have it written out by hand.
  */
-const lifted = (name, text, after) => {
-  LIFTS.set(name, { size: text.length, after, text });
+const lifted = (name, text, after, src) => {
+  LIFTS.set(name, { size: text.length, after, text, src });
   return text;
 };
 const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
@@ -100,7 +100,7 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
 // behaves: a repeated path overwrites, without a word.
 {
   const body = lifted('upload', slab(ADMINCASE, 'async function upload(file, kind, milestoneAction',
-    '  bar.hidden = true;\n}'), 'WHAT A DOCUMENT HE UPLOADS IS');
+    '  bar.hidden = true;\n}'), 'WHAT A DOCUMENT HE UPLOADS IS', ADMINCASE);
   // NEGATIVE CONTROL (all runs 2026-08-28): renaming upload() made this read
   //   FAIL  U1 the upload path lifts out of the shipped page
   // A lift that has lost its target goes red rather than asserting nothing.
@@ -185,14 +185,14 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   // slab that quietly starts capturing the wrong span. The sizes print on
   // every run, so a jump is visible even on a green one.
   const clientName = lifted('shownName', slab(CLIENT, 'const shownName =', "');"),
-    'A file long-pressed out of the chat');
+    'A file long-pressed out of the chat', CLIENT);
   const clientRead = lifted('clientReadName', slab(CLIENT, 'const readName =', ';'),
-    'A file long-pressed out of the chat');
+    'A file long-pressed out of the chat', CLIENT);
   const adminRead = lifted('adminReadName', slab(ADMINCASE, 'const readName =', ';'),
-    'Uploads are grouped by day');
+    'Uploads are grouped by day', ADMINCASE);
   const adminName = lifted('adminNameRow', slab(ADMINCASE,
     '<span class="fname"><span class="kind-pill ${pillClass(r)}', '</a></span>'),
-  '<span class="fmeta">');
+  '<span class="fmeta">', ADMINCASE);
   // NEGATIVE CONTROLS, all three run 2026-08-28 and all three observed:
   //   deleting the strip from the client's shownName ->
   //     FAIL  U3 ... -- Summary.pdf Summary.pdf | client strip yes, client render yes
@@ -477,7 +477,7 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
 {
   const fn = lifted('handleCaseUpdate',
     (WORKER.match(/async function handleCaseUpdate\(request, env\) \{[\s\S]*?\n\}/) || [''])[0],
-    'async function releaseHold');
+    'async function releaseHold', WORKER);
   // NEGATIVE CONTROL: renaming handleCaseUpdate made this read
   //   FAIL  U12 handleCaseUpdate lifts out of the shipped Worker
   ck('U12 handleCaseUpdate lifts out of the shipped Worker', fn.length > 0);
@@ -680,7 +680,7 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   //   FAIL  U18 no path here reads, writes or summarises a document  -- 0 chars lifted
   const summaryRoute = lifted('summaryRoute', slab(WORKER,
     "} else if (action === 'summary-uploaded') {", "} else if (action === 'report-uploaded') {"),
-  'reportDeliveredAt');
+  'Your Pocket Advocate report is ready', WORKER);
   ck('U18 no path here reads, writes or summarises a document',
     summaryRoute.length > 0
     && !/runAnalysis|runCallNotes|advisor/i.test(summaryRoute),
@@ -725,13 +725,13 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
 // sent" guard to it; this is what stops them.
 {
   const TZ = lifted('MOUNTAIN_TZ', slab(ADMINCASE, "const MOUNTAIN_TZ = ", ";"),
-    'Keep in sync with CASE_PRICE_CENTS');
+    'Keep in sync with CASE_PRICE_CENTS', ADMINCASE);
   const FORMS = lifted('SENDABLE_FORMS', slab(ADMINCASE, 'const SENDABLE_FORMS = [', '];'),
-    'The Overview page: the info bar');
+    'The Overview page: the info bar', ADMINCASE);
   const DAY = lifted('mountainDay', slab(ADMINCASE, 'function mountainDay(d = new Date()) {', '\n}'),
-    'A storage stamp that never repeats');
+    'A storage stamp that never repeats', ADMINCASE);
   const STAMP = lifted('uploadStamp', slab(ADMINCASE, 'let lastStamp = 0;', '\n}'),
-    'SEND THE TICKED FORMS TO THE CLIENT');
+    'SEND THE TICKED FORMS TO THE CLIENT', ADMINCASE);
   // ENDING ON THE RETURN, not on `load();`. It ended on load() until the send
   // grew a partial-failure path and load() moved inside an if, four spaces in.
   // The slab then ran past the end of the function to the NEXT match further
@@ -740,7 +740,7 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   // that quietly captures half a file is a lift that will one day capture
   // something that is not inert, so U20b now measures what came out.
   const SEND = lifted('sendBlankForms', slab(ADMINCASE, 'async function sendBlankForms(kinds, btn) {',
-    '\n  return { sent, quiet };\n}'), 'THE SEAM FOR');
+    '\n  return { sent, quiet };\n}'), 'THE SEAM FOR', ADMINCASE);
   // NEGATIVE CONTROL (run 2026-08-28): renaming sendBlankForms made this read
   //   FAIL  U20 the send path lifts out of the shipped page  -- tz 1, forms 1, day 1, stamp 1, send 0
   // A lift that has lost its target goes red rather than asserting nothing, so
@@ -1097,7 +1097,7 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   // a line nobody has ever run.
   {
     const SEAM = lifted('seam', slab(ADMINCASE, "document.addEventListener('pa-send-forms'", '});'),
-      'The appeals workbench');
+      'The appeals workbench', ADMINCASE);
     // NEGATIVE CONTROL (run 2026-08-28): deleting the listener made this read
     //   FAIL  U28f the pa-send-forms seam is in the shipped page
     ck('U28f the pa-send-forms seam is in the shipped page', SEAM.length > 0);
@@ -1176,7 +1176,7 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   {
     const panel = lifted('formPanel',
       slab(ADMINCASE, '<details class="mgmt" data-k="auth">', '</details>'),
-      'data-k="sched"');
+      'data-k="sched"', ADMINCASE);
     // NEGATIVE CONTROL (run 2026-08-28): putting the old sentence back made
     // this read
     //   FAIL  U27 the form panel no longer promises signing in the app  -- signing in the app
@@ -1280,6 +1280,50 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
     if (v.text.includes(v.after)) bad.push(`${name} swallowed ${JSON.stringify(v.after)}`);
   }
   ck('U28j no lift ran past where it should have stopped', bad.length === 0, bad.join('; '));
+
+  // U28k: AND THE SENTINEL ITSELF HAS TO BE REAL.
+  //
+  // Raised by the advisor branch, which hit it in its own version of this and
+  // was right that the same hole was open here. U28j asks whether the sentinel
+  // is absent from the capture. A sentinel with a TYPO IN IT is absent too,
+  // for entirely the wrong reason, and U28j passes on it: our own bug class,
+  // pointed straight at our own fix for it.
+  //
+  // So each sentinel must be found in the source the slab came from, AT OR
+  // AFTER where the capture ends. "The string exists somewhere in the file" is
+  // not enough on its own: a sentinel copied from EARLIER in the file is real,
+  // is absent from the capture, and still proves nothing about where the slab
+  // stopped. That is the control worth keeping.
+  //
+  // TWO NEGATIVE CONTROLS, both run 2026-08-28 and both observed:
+  //   a typo in a sentinel ->
+  //     FAIL  U28k -- upload sentinel "WHAT A DOCUMENT HE UPLOADZ IS" is not
+  //           in its own source
+  //   a real string taken from EARLIER in the same file ->
+  //     FAIL  U28k -- upload sentinel "const MOUNTAIN_TZ" appears before the
+  //           slab ends, so it proves nothing
+  //
+  // The first attempt at that second control used 'const UPLOAD_CATEGORIES',
+  // which PASSED, and rightly: that constant is declared after this slab, so
+  // it is a perfectly good sentinel. Picking a control that does not break the
+  // thing it is aimed at proves nothing about the check, and recording it as a
+  // proof would have been the same mistake this check exists to catch.
+  const unreal = [];
+  for (const [name, v] of LIFTS) {
+    if (!v.src || typeof v.after !== 'string' || !v.after) continue;  // U28j owns those
+    const at = v.src.indexOf(v.after);
+    if (at < 0) { unreal.push(`${name} sentinel ${JSON.stringify(v.after)} is not in its own source`); continue; }
+    const start = v.src.indexOf(v.text);
+    if (start >= 0 && at < start + v.text.length)
+      unreal.push(`${name} sentinel ${JSON.stringify(v.after)} appears before the slab ends, so it proves nothing`);
+  }
+  ck('U28k and every sentinel is real, and really lies beyond its slab',
+    unreal.length === 0, unreal.join('; '));
+
+  // NEGATIVE CONTROL (2026-08-28): dropping the source from one lifted() call
+  //   FAIL  U28l every lift names the source it came from  -- handleCaseUpdate
+  const sourceless = [...LIFTS].filter(([, v]) => !v.src).map(([n]) => n);
+  ck('U28l every lift names the source it came from', sourceless.length === 0, sourceless.join(', '));
 }
 
 // EVERY LIFT, AND ITS SIZE, ON EVERY RUN. See `lifted` at the top: green is
