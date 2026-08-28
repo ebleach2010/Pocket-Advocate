@@ -69,6 +69,15 @@ const { validateAction, ALLOWED, DENYLIST, tierOf, dispatchFor, actionTools, tab
  * seven. A NINTH action added to the table is not conscripted by it.
  */
 const ACTION_FLOOR = 8;
+/**
+ * AND THE SAME FOR THE DENYLIST, measured the same way. Emptying DENIED left
+ * A7b and A8 green: a filter of nothing finds no mute refusals, and two tables
+ * cannot disagree when one of them is empty. A7 and A7c caught the break, so
+ * the suite was never going to miss it, but neither of those two was standing
+ * on anything of its own. A7's own floor of 8 is folded in here so there is
+ * one number rather than two that can drift apart.
+ */
+const DENY_FLOOR = 8;
 /** What a check over ACTS prepends, so an empty table fails it on its own. */
 const actionFault = () => (ALLOWED.length < ACTION_FLOOR
   ? [`${ALLOWED.length} actions, expected at least ${ACTION_FLOOR}`] : []);
@@ -291,7 +300,18 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): dropping the `cents < 100` half of the
   // money bound made this read
   //   FAIL  A3 and refuses every argument he would not  -- set-paid {"dollars":0} | set-paid {"dollars":-100}
-  const badPassesF = [...actionFault(), ...badPasses];
+  // A REFUSAL ONLY MEANS SOMETHING IF SOMETHING IS ACCEPTED. A validator that
+  // refused EVERYTHING would satisfy this check perfectly, and no count of any
+  // list detects that: ALLOWED stays full while nothing gets through it. So
+  // the acceptance rides along with the refusal, in the same check.
+  //
+  // MEASURED on main, 2026-08-28, by making validateAction return
+  // { ok: false } on its first line: A3, A6, A13 and A20 all passed. A9 caught
+  // it, and A9 exists for exactly this reason, which is the point: it guarded
+  // the file and not one of its neighbours.
+  const badPassesF = [...actionFault(), ...badPasses,
+    ...(goodFails.length === ALLOWED.length && ALLOWED.length
+      ? ['nothing is accepted either, so a refusal proves nothing'] : [])];
   ck('A3 and refuses every argument he would not', !badPassesF.length, badPassesF.join(' | '));
 }
 
@@ -329,10 +349,14 @@ const TABLE = {
   // The floor is not decoration here: with no table at all every one of these
   // is "refused" because the ACTION ITSELF is unknown, which proves nothing
   // about the money bound this check is named for.
+  // AND A GOOD FIGURE IS STILL ACCEPTED, in the same check: a validator that
+  // refuses every number refuses these too, and would read green here.
+  const takesMoney = cents(3500) === 350_000;
   ck('A6 zero, negative, NaN, a string and ten million dollars are all refused',
-    !actionFault().length && !refused.length,
+    !actionFault().length && !refused.length && takesMoney,
     actionFault().length ? actionFault().join('')
-      : `let through: ${refused.map(String).join(', ')}`);
+      : !takesMoney ? '$3,500 is not accepted either, so this proves nothing'
+        : `let through: ${refused.map(String).join(', ')}`);
   // And the boundary itself, in the unit the route stores: one cent over the
   // ceiling is refused, the ceiling exactly is not.
   // NEGATIVE CONTROL (run 2026-08-28): moving the ceiling to cents > 100_000_01
@@ -359,7 +383,7 @@ const TABLE = {
   // and moving the DENIED lookup to AFTER the ACTS lookup made this read
   //   FAIL  A7 a denylisted action is refused even when the model names it perfectly  -- got through: close
   ck('A7 a denylisted action is refused even when the model names it perfectly',
-    !slipped.length && DENYLIST.length >= 8, `got through: ${slipped.join(', ')}`);
+    !slipped.length && DENYLIST.length >= DENY_FLOOR, `got through: ${slipped.join(', ')}`);
   // Each one refuses with a SENTENCE, because Eric is the one who reads it.
   const mute = DENYLIST.filter((n) => {
     const out = validateAction(n, {});
@@ -368,7 +392,9 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): returning { ok: false, error: 'no' } for a
   // denylisted name instead of its sentence made this read
   //   FAIL  A7b and each refusal says why, in words he can read  -- close, close-case, delete-file, open-full, report-uploaded, set-rates, rates, price, sign, sign-authority, revoke, revoke-authority
-  ck('A7b and each refusal says why, in words he can read', !mute.length, mute.join(', '));
+  const muteF = [...(DENYLIST.length < DENY_FLOOR
+    ? [`${DENYLIST.length} denied names, expected at least ${DENY_FLOOR}`] : []), ...mute];
+  ck('A7b and each refusal says why, in words he can read', !muteF.length, muteF.join(', '));
   // The six he named, each present under whatever spelling the model reaches
   // for. A price is the CLAUDE.md iron rule; a signature is the one refusal
   // worker/index.js already makes against an admin and will not negotiate.
@@ -381,7 +407,10 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): adding a `close` entry to ACTS made
   // this read
   //   FAIL  A8 the allowlist and the denylist cannot both claim a name  -- close
-  const disagreeF = [...actionFault(), ...tablesDisagree()];
+  const disagreeF = [...actionFault(),
+    ...(DENYLIST.length < DENY_FLOOR
+      ? [`${DENYLIST.length} denied names, expected at least ${DENY_FLOOR}`] : []),
+    ...tablesDisagree()];
   ck('A8 the allowlist and the denylist cannot both claim a name',
     !disagreeF.length, disagreeF.join(', '));
 }
@@ -483,7 +512,13 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): deleting the MARKUP test from
   // client-alert's check made this read
   //   FAIL  A13 a notification body cannot carry markup  -- <b>Urgent</b>, Urgent <script>x</script>, Form due > today, a < b, <img src=x onerror=alert(1)>, </p><p>
-  ck('A13 a notification body cannot carry markup', !leaked.length, leaked.join(', '));
+  // AND A PLAIN SENTENCE STILL GETS THROUGH. Without this half, a check on a
+  // gate that refuses everything reads green while nothing can ever be sent.
+  const plainPasses = alert('Your forms are ready to sign.').ok;
+  ck('A13 a notification body cannot carry markup',
+    !leaked.length && plainPasses,
+    leaked.length ? leaked.join(', ')
+      : 'no plain sentence is accepted either, so this proves nothing');
   // The bound is PINNED at the number, not read back off the module. Asserting
   // `ALERT_MAX_CHARS + 1 is refused` is a check that agrees with whatever the
   // constant happens to say, so raising the constant to four thousand would
@@ -605,7 +640,14 @@ const TABLE = {
   // the route with a bare `const text = String(body?.text || '')` made this
   // read
   //   FAIL  A20 the route refuses markup and overlength on its own  -- "<b>x</b>", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, "", "   ", 42
-  ck('A20 the route refuses markup and overlength on its own', !bad.length, bad.join(', '));
+  // AND THE ROUTE STILL TAKES A GOOD ONE. `sent` below is that same route
+  // answering a real sentence, so a route that refused everything would fail
+  // here rather than pass on its refusals.
+  const routeTakesGood = sent.res?.status === 200 && sent.pushes.length > 0;
+  ck('A20 the route refuses markup and overlength on its own',
+    !bad.length && routeTakesGood,
+    bad.length ? bad.join(', ')
+      : 'the route refuses a good sentence too, so this proves nothing');
 
   // THE TRAIL. There is no admin audit log in this app and this route was not
   // going to be the second thing without one.

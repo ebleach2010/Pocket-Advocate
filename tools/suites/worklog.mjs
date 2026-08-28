@@ -63,22 +63,45 @@ const adminIds = [...(ADMIN.match(/const LOG_KINDS = \[[\s\S]*?\n\];/) || [''])[
 const clientPills = (CLIENT.match(/const LOG_PILLS = \{[\s\S]*?\};/) || [''])[0];
 const clientIds = [...clientPills.matchAll(/(\w+): '([^']*)'/g)].map((m) => ({ id: m[1], pill: m[2] }));
 const sorted = (a) => a.slice().sort().join('|');
+
+/**
+ * THE FLOOR, one per copy of the list, because there are three copies and a
+ * break usually hits one of them.
+ *
+ * MEASURED on main, 2026-08-28, by blanking all three shipped files: L1 failed
+ * and L2 and L3 PASSED. Both compare two sorted joins, and the empty string
+ * equals the empty string, so with nothing extracted from anywhere they agreed
+ * perfectly about nothing. Found by starving every suite in the battery of the
+ * files it reads and counting what stayed green; these two and the four in
+ * uploads.mjs were what that turned up.
+ *
+ * Each check takes the floor for the copies IT reads, so a one-sided break
+ * still fails only the checks that actually span the broken side.
+ */
+const KIND_FLOOR = 4;
+const workerKindIds = workerKinds.replace(/[[\]'\s]/g, '').split(',').filter(Boolean);
+const fault = (label, n) => (n < KIND_FLOOR
+  ? [`${n} ${label} kinds, expected ${KIND_FLOOR}`] : []);
 // NEGATIVE CONTROL (run 2026-08-27): dropping 'investigation' from the admin
 // list made this read
 //   FAIL  L2 ... -- worker call,appeal,investigation,appointment vs advocate appeal|appointment|call
+const l2Fault = [...fault('worker', workerKindIds.length), ...fault('advocate', adminIds.length)];
 ck('L2 and his own form offers exactly those four, no more and no fewer',
-  sorted(adminIds.map((x) => x.id))
-    === sorted(workerKinds.replace(/[[\]'\s]/g, '').split(',')),
-  `worker ${workerKinds.replace(/[[\]'\s]/g, '')} vs advocate ${sorted(adminIds.map((x) => x.id))}`);
+  !l2Fault.length && sorted(adminIds.map((x) => x.id)) === sorted(workerKindIds),
+  l2Fault.length ? l2Fault.join(', ')
+    : `worker ${workerKindIds.join(',')} vs advocate ${sorted(adminIds.map((x) => x.id))}`);
 // The client's pill words and the advocate's must be the same words: a stored
 // kind that lands on nothing renders a pill with no text in it.
 // NEGATIVE CONTROL (run 2026-08-27): renaming the client's APPEAL pill to
 // APPEALS made this read
 //   FAIL  L3 ... -- advocate APPEAL|APPOINTMENT|CALL|INVESTIGATION vs client APPEALS|APPOINTMENT|CALL|INVESTIGATION
+const l3Fault = [...fault('advocate', adminIds.length), ...fault('client', clientIds.length)];
 ck('L3 and the client\'s pill says exactly the same word for each of them',
-  sorted(adminIds.map((x) => x.pill)) === sorted(clientIds.map((x) => x.pill))
+  !l3Fault.length
+    && sorted(adminIds.map((x) => x.pill)) === sorted(clientIds.map((x) => x.pill))
     && sorted(adminIds.map((x) => x.id)) === sorted(clientIds.map((x) => x.id)),
-  `advocate ${sorted(adminIds.map((x) => x.pill))} vs client ${sorted(clientIds.map((x) => x.pill))}`);
+  l3Fault.length ? l3Fault.join(', ')
+    : `advocate ${sorted(adminIds.map((x) => x.pill))} vs client ${sorted(clientIds.map((x) => x.pill))}`);
 
 // ---- L4-L8: the projection, LIFTED AND RUN -------------------------------
 // The record as it actually is: his notes, the clinic's direct line, and who
