@@ -304,7 +304,11 @@ export function demoApi(role, store) {
         // refused. Where this shim has ever been kinder than the Worker it has
         // hidden a real refusal.
         if (c.status === 'closed') return fail(409, 'Case is closed.');
-        const kinds = { callsummary: 'call summary', visitfollowup: 'visit follow-up' };
+        const kinds = {
+          callsummary: 'call summary', visitfollowup: 'visit follow-up',
+          apptsummary: 'appointment summary',
+          formsent: 'form to fill in', formfilled: 'filled form',
+        };
         if (!kinds[body.category]) return fail(400, 'That is not a document type I know.');
         return ok({ ok: true, category: body.category, notified: true });
       } else if (body.action === 'report-uploaded') {

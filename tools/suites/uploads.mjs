@@ -165,8 +165,12 @@ const slab = (src, from, to) => {
   //   FAIL  U8 ... -- 1 found
   //   FAIL  U9 ... -- admin REPORT vs client CALL SUMMARY|REPORT|VISIT FOLLOW-UP
   //   FAIL  U9b ... -- admin report vs client callsummary|report|visitfollowup
+  // UPDATED 2026-08-27, not deleted: was `>= 3`. Three more categories landed
+  // on Eric's word (the doctor appointment summary, then the form he sends and
+  // the same form back), and a floor that stayed at three would have gone
+  // green with any two of them dropped on the floor.
   ck('U8 the advocate side declares the categories in one place',
-    adminCats.length >= 3, `${adminCats.length} found`);
+    adminCats.length >= 6, `${adminCats.length} found`);
   const clientCats = [...CLIENT.matchAll(/(\w+): \{ label: '([^']*)', at: (\d+) \}/g)]
     .map((m) => ({ id: m[1], label: m[2], at: Number(m[3]) }));
   // NEGATIVE CONTROL: renaming CALL SUMMARY to CALL NOTE on the client side
@@ -182,6 +186,29 @@ const slab = (src, from, to) => {
   ck('U9b and the same ids, so a stored label cannot land on nothing',
     sorted(adminCats.map((c) => c.id)) === sorted(clientCats.map((c) => c.id)),
     `admin ${sorted(adminCats.map((c) => c.id))} vs client ${sorted(clientCats.map((c) => c.id))}`);
+  // THE OFF-BY-ONE THIS MAP INVITES EVERY TIME IT GROWS. The client's list is
+  // sorted by rank: the document categories take 0 upward and everything else
+  // (recording, upload, chat, saved) starts after them. Add a category without
+  // pushing `order` down and the new one collides with the recording, so a
+  // form sorts in among an hour of video. Lifted from the shipped file and
+  // compared as numbers, because that is the only form the bug takes.
+  const orderLine = (CLIENT.match(/const order = \{([^}]*)\};/) || ['', ''])[1];
+  const orderVals = [...orderLine.matchAll(/(\w+): (\d+)/g)]
+    .map((m) => ({ k: m[1], v: Number(m[2]) })).filter((o) => o.k !== 'report');
+  const catRanks = clientCats.map((c) => c.at);
+  // NEGATIVE CONTROL (run 2026-08-27): putting `order` back to recording 4
+  // while the categories ran 0 to 5 made this read
+  //   FAIL  U9c ... -- categories reach 5, recording sits at 4
+  ck('U9c a document category never sorts in among the recordings',
+    catRanks.length > 0 && orderVals.length > 0
+      && Math.max(...catRanks) < Math.min(...orderVals.map((o) => o.v)),
+    `categories reach ${Math.max(...catRanks)}, ${orderVals.sort((a, b) => a.v - b.v)[0]?.k} sits at ${Math.min(...orderVals.map((o) => o.v))}`);
+  // NEGATIVE CONTROL (run 2026-08-27): giving two categories the same `at`
+  // made this read
+  //   FAIL  U9d ... -- 6 categories, 5 distinct ranks
+  ck('U9d and no two categories claim the same place in the list',
+    new Set(catRanks).size === catRanks.length,
+    `${catRanks.length} categories, ${new Set(catRanks).size} distinct ranks`);
   // Every group name a category can produce has to exist in FILE_GROUPS, or
   // the file renders under a heading the page never prints and vanishes.
   const groups = (ADMINCASE.match(/const FILE_GROUPS = \[[\s\S]*?\];/) || [''])[0];
@@ -215,6 +242,30 @@ const slab = (src, from, to) => {
   //   FAIL  U11b with no literal colour anywhere near it
   ck('U11b with no literal colour anywhere near it',
     !pills.some((p) => /#[0-9a-f]{3,8}|rgba?\(/i.test(p)));
+  // The form pair. Eric, 2026-08-27: "A 'form sent to client' should be
+  // included as a category. Then once it's filled out and sent back to me
+  // I'll delete the one I sent him and reupload that and categorize it as
+  // 'filled forms'. All color coded." Two points in one document's life, so
+  // they must not share a colour with each other, and NOT green: green is
+  // what "from chat" already means in this same list, and one colour with two
+  // meanings in one list is worse than no colour at all.
+  const tokenOf = (name) => {
+    const rule = pills.find((x) => new RegExp(`\\.kind-pill\\.${name}\\b`).test(x));
+    return rule ? (rule.match(/color: (var\(--\w+\))/) || [])[1] || '' : '';
+  };
+  // NEGATIVE CONTROL (run 2026-08-27): giving both form pills var(--orange)
+  // made this read
+  //   FAIL  U11c ... -- sent var(--orange), back var(--orange)
+  ck('U11c the form he sent and the form that came back are not one colour',
+    tokenOf('formsent') && tokenOf('formfilled')
+      && tokenOf('formsent') !== tokenOf('formfilled'),
+    `sent ${tokenOf('formsent') || '(none)'}, back ${tokenOf('formfilled') || '(none)'}`);
+  // NEGATIVE CONTROL (run 2026-08-27): painting formfilled var(--green) made
+  // this read
+  //   FAIL  U11d ... -- var(--green) already means "from chat" here
+  ck('U11d and neither one takes the colour "from chat" already owns',
+    ![tokenOf('formsent'), tokenOf('formfilled')].includes('var(--green)'),
+    'var(--green) already means "from chat" here');
 }
 
 // ---- U12-U16: the client is told, by name, and nothing else moves --------

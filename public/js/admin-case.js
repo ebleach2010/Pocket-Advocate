@@ -2575,14 +2575,36 @@ async function upload(file, kind, milestoneAction, category = '') {
  * the report advances the case to delivered. A call summary that marked the
  * report delivered would end the case chat 48 hours later.
  *
- * Adding a fourth is one line here, one line in the client's map in case.js
- * (pinned equal by tools/suites/uploads.mjs), and one line in the Worker's
- * own map, which is the only thing that decides the words in a push.
+ * ADDING ONE IS SIX ONE-LINE EDITS, and every one of them is load-bearing:
+ * here; FILE_GROUPS below, or the file renders under a heading the page never
+ * prints and disappears; the client's CATS map in case.js, pinned equal to
+ * this list by tools/suites/uploads.mjs; SUMMARY_KINDS in the Worker, which is
+ * the only thing that decides the words in a push and is keyed by id so a
+ * caller can never name its own; the .kind-pill rule in site.css, joining an
+ * existing token rather than inventing a hue; and the demo's own copy of the
+ * kinds map, because Eric drives the demo.
+ *
+ * Eric, 2026-08-27: "Doctor appointment summaries should also be a tag
+ * because I will upload one after an attendance at a doctor's visit." And,
+ * the same day: "A 'form sent to client' should be included as a category.
+ * Then once it's filled out and sent back to me I'll delete the one I sent
+ * him and reupload that and categorize it as 'filled forms'."
+ *
+ * The two form rows are ONE document at two points in its life, not two
+ * kinds of thing, which is why they sit next to each other and why the
+ * blank one is deleted rather than left beside the filled one.
+ *
+ * Every one of these carries action 'summary-uploaded' like the documents he
+ * writes; ONLY the report may carry 'report-uploaded', which advances the
+ * case to delivered, starts the client's 48 hours and closes the chat.
  */
 const UPLOAD_CATEGORIES = [
   { id: 'report', label: 'Report', pill: 'REPORT', group: 'Reports', action: 'report-uploaded' },
   { id: 'callsummary', label: 'Call summary', pill: 'CALL SUMMARY', group: 'Call summaries', action: 'summary-uploaded' },
   { id: 'visitfollowup', label: 'Visit follow-up', pill: 'VISIT FOLLOW-UP', group: 'Visit follow-ups', action: 'summary-uploaded' },
+  { id: 'apptsummary', label: 'Appointment summary', pill: 'APPOINTMENT', group: 'Appointment summaries', action: 'summary-uploaded' },
+  { id: 'formsent', label: 'Form sent to client', pill: 'FORM SENT', group: 'Forms sent', action: 'summary-uploaded' },
+  { id: 'formfilled', label: 'Filled form', pill: 'FILLED FORM', group: 'Filled forms', action: 'summary-uploaded' },
 ];
 const categoryOf = (id) => UPLOAD_CATEGORIES.find((x) => x.id === id) || null;
 
@@ -2593,6 +2615,7 @@ const categoryOf = (id) => UPLOAD_CATEGORIES.find((x) => x.id === id) || null;
 // document types he writes himself sit directly under the report, because they
 // are the same kind of thing: something he produced for this client.
 const FILE_GROUPS = ['Reports', 'Call summaries', 'Visit follow-ups',
+  'Appointment summaries', 'Forms sent', 'Filled forms',
   'Documents', 'Images', 'Recordings', 'Other'];
 
 function fileGroup(r) {

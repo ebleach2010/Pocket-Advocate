@@ -926,8 +926,14 @@ async function refreshFiles(c, el) {
     report: { label: 'REPORT', at: 0 },
     callsummary: { label: 'CALL SUMMARY', at: 1 },
     visitfollowup: { label: 'VISIT FOLLOW-UP', at: 2 },
+    apptsummary: { label: 'APPOINTMENT', at: 3 },
+    formsent: { label: 'FORM SENT', at: 4 },
+    formfilled: { label: 'FILLED FORM', at: 5 },
   };
-  const order = { report: 0, recording: 3, upload: 4, chat: 5, saved: 6 };
+  // The categories occupy 0 to 5, so everything else starts at 6. Leaving
+  // these where they were would have sorted a form in among the recordings,
+  // which is the off-by-one this map invites every time it grows.
+  const order = { report: 0, recording: 6, upload: 7, chat: 8, saved: 9 };
   // A missing rank sorts LAST rather than sorting as NaN, which would put
   // every row in an arbitrary place the moment an unfamiliar category appears.
   const rank = (r) => (r.kind === 'report' && CATS[r.cat] ? CATS[r.cat].at

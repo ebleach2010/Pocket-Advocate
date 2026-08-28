@@ -805,11 +805,19 @@ summary.btn::-webkit-details-marker { display: none; }
 .kind-pill.report { border-color: var(--magenta); color: var(--magenta); }
 .kind-pill.recording { border-color: var(--cyan); color: var(--cyan); }
 /* The documents written for this client, as distinct from the report and from
-   anything either side merely attached. ONE colour for both, from the tokens:
-   they are the same kind of thing and the words on the pill already say which
-   is which, so a second hue would be decoration paid for in legibility. */
+   anything either side merely attached. ONE colour for all three, from the
+   tokens: they are the same kind of thing and the words on the pill already
+   say which is which, so a hue each would be decoration paid for in
+   legibility. */
 .kind-pill.callsummary,
-.kind-pill.visitfollowup { border-color: var(--gold); color: var(--gold); }
+.kind-pill.visitfollowup,
+.kind-pill.apptsummary { border-color: var(--gold); color: var(--gold); }
+/* A form he sent, and the same form back. Two points in one document's life,
+   so they are the two ends of a pair rather than two unrelated colours:
+   waiting on them, then in and filed. Tokens only, and NOT green, which is
+   already what "from chat" means in this very list. */
+.kind-pill.formsent { border-color: var(--orange); color: var(--orange); }
+.kind-pill.formfilled { border-color: var(--blue); color: var(--blue); }
 /* The work log's four categories. ONE colour for all four, from the tokens,
    for the same reason the two document pills share one: the word on the pill
    already says which is which, and four hues down one column would be

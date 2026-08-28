@@ -7138,7 +7138,11 @@ async function handleCaseUpdate(request, env) {
     // The WORDS come from here, keyed by an id, never from the caller. A body
     // that could name its own label would be a route for putting arbitrary
     // text into a client's push notification.
-    const SUMMARY_KINDS = { callsummary: 'call summary', visitfollowup: 'visit follow-up' };
+    const SUMMARY_KINDS = {
+      callsummary: 'call summary', visitfollowup: 'visit follow-up',
+      apptsummary: 'appointment summary',
+      formsent: 'form to fill in', formfilled: 'filled form',
+    };
     const what = SUMMARY_KINDS[body?.category];
     if (!what) return json({ error: 'That is not a document type I know.' }, 400);
     // His own file name, which is the whole point of asking, bounded and with

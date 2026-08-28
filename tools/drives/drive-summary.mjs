@@ -70,8 +70,18 @@ for (const width of [390, 320]) {
     };
   });
   ok('there is a picker for what the document IS', picker.found);
-  ok('with the three types he named, spelled the way he said them',
-    picker.options.join(' | ') === 'Report | Call summary | Visit follow-up',
+  // UPDATED 2026-08-27, not deleted. He named three more the same week: the
+  // doctor appointment summary ("I will upload one after an attendance at a
+  // doctor's visit"), then the form he sends a client and the same form back
+  // ("A 'form sent to client' should be included as a category. Then once it's
+  // filled out and sent back to me I'll delete the one I sent him and reupload
+  // that and categorize it as 'filled forms'"). The assertion is unchanged in
+  // kind and is still the strong one: the list is pinned WORD FOR WORD and in
+  // order, so a renamed or reordered option fails here rather than quietly
+  // disagreeing with the client's pill.
+  ok('with the types he named, spelled the way he said them, in his order',
+    picker.options.join(' | ') === 'Report | Call summary | Visit follow-up | '
+      + 'Appointment summary | Form sent to client | Filled form',
     picker.options.join(' | '));
   ok('and it starts on Report, so the common case is no taps',
     /Marks the case delivered/.test(picker.note), picker.note);
