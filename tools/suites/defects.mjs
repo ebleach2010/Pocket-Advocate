@@ -429,5 +429,63 @@ ck('clock: all switches share one painter set, so no two can disagree',
      /say\('sched', msg/.test(AC) && /\$\{saidHtml\('sched'\)\}/.test(AC));
 }
 
+// ---- 18. no conflict markers in anything this repo ships ----------------
+//
+// A MERGE CAN LEAVE MARKERS IN A FILE NOTHING PARSES, and nothing here would
+// have said so. Found on the forms branch while chasing a merge-tool caveat:
+// chaining merges bakes an earlier stage's markers into the tree as ordinary
+// content, so the last stage's conflict list understates what is outstanding.
+//
+// In a .mjs that is loud, because the suite fails to parse. In storage.rules
+// it is SILENT, and storage.rules is the file that decides which folders a
+// client may read. Worse, the two checks that guard it (uploads U5 and
+// prep-shelf P2) both pin the folder LIST by string equality, so a conflicted
+// hunk appended anywhere else in that file leaves both of them green.
+//
+// The forms branch scoped its version to storage.rules alone, deliberately,
+// and named HTML, JSON and docs as still uncovered. This is that gap closed:
+// the standing-rules suite is the right home for a rule about the whole repo,
+// rather than a suite about uploads carrying a repo-wide sweep.
+//
+// NEGATIVE CONTROLS (both run 2026-08-28, both observed):
+//   three marker lines pasted into storage.rules ->
+//     FAIL  no conflict markers in anything this repo ships
+//           -- storage.rules: 3 marker lines
+//   one pasted into public/index.html (which nothing parses either) ->
+//     FAIL  ... -- public/index.html: 1 marker line
+{
+  const WALK = ['public', 'worker', 'tools', 'docs'];
+  const ROOT_FILES = ['storage.rules', 'firestore.rules', 'firebase.json',
+    'database.rules.json', 'package.json', 'CLAUDE.md'];
+  const SKIP = /node_modules|\.git|[/\\]dist[/\\]/;
+  const MARKER = /^(?:<{7}|={7}|>{7})(?:\s|$)/;
+  const found = [];
+  let scanned = 0;
+  const walkedEnough = () => scanned >= 40;
+  const look = (rel) => {
+    let text;
+    try { text = f(rel); } catch { return; }
+    scanned += 1;
+    const n = text.split('\n').filter((l) => MARKER.test(l)).length;
+    if (n) found.push(`${rel}: ${n} marker line${n === 1 ? '' : 's'}`);
+  };
+  const walk = (dir) => {
+    let entries;
+    try { entries = readdirSync(`${R}/${dir}`, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const rel = `${dir}/${e.name}`;
+      if (SKIP.test(rel)) continue;
+      if (e.isDirectory()) walk(rel);
+      else if (/\.(js|mjs|html|css|json|md|rules|yml|yaml|txt)$/.test(e.name)) look(rel);
+    }
+  };
+  for (const d of WALK) walk(d);
+  for (const r of ROOT_FILES) look(r);
+  // GUARD AGAINST THE SILENT PASS: a walk that found no files at all would
+  // report no markers just as happily as a clean tree.
+  ck('the marker sweep actually read the repo', walkedEnough(), `${scanned} files scanned`);
+  ck('no conflict markers in anything this repo ships', found.length === 0, found.join('; '));
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);
