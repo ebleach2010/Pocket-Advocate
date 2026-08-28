@@ -3115,10 +3115,15 @@ async function handleChatReact(request, env) {
  * POST /api/uploaded  Body: { kind: 'case'|'sub', id }
  *
  * "A file just landed." Sent by the Documents page, which uploads straight to
- * Storage and otherwise leaves no trace anywhere the Worker can see. No file
- * details are taken from the caller: the advisor lists the bucket itself, so
- * this is only a nudge to look, and the worst a bad caller can do is ask for a
- * read of a case they are already a party to.
+ * Storage and otherwise leaves no trace anywhere the Worker can see.
+ *
+ * This used to say "no file details are taken from the caller", and stopped
+ * being true when the push notification started naming what landed: `names`
+ * below is the client's own wording for their file, which is the entire reason
+ * he asked for it rather than IMG_4127. It is bounded and truncated where it
+ * is read. Nothing is trusted for anything but the words in a notification -
+ * the advisor still lists the bucket itself - and the worst a bad caller can
+ * do is ask for a read of a case they are already a party to.
  */
 async function handleUploaded(request, env) {
   const user = await requireUser(request, env);
@@ -6791,6 +6796,42 @@ async function handleCaseUpdate(request, env) {
           <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
       });
     }
+  } else if (action === 'summary-uploaded') {
+    // A DOCUMENT HE WROTE HIMSELF, landing on their case with its name on it.
+    //
+    // Eric, 2026-08-27: "All SOAP notes and visit f/u summaries are done
+    // through uploads. I simply need an upload type to separate the category.
+    // So they're labeled. 'Call Summaries,' for example. They get notified
+    // that I uploaded [file name]."
+    //
+    // Nothing is generated here and nothing reads the file. This route exists
+    // for one reason: report-uploaded marks the case DELIVERED, which starts
+    // their 48 hours and closes the chat after it, and a call summary must not
+    // do that. So the case does not move at all; the client is simply told.
+    //
+    // handleUploaded already sends "{who} uploaded {what}" for a client's own
+    // file, gated `if (!isAdmin)` with the comment "his own file landing on
+    // his own case is not news". That was true when it was written and this is
+    // exactly the thing he is asking to change, so this is the same shape of
+    // notification pointed the other way.
+    if (doc.data.status === 'closed') return json({ error: 'Case is closed.' }, 409);
+    // The WORDS come from here, keyed by an id, never from the caller. A body
+    // that could name its own label would be a route for putting arbitrary
+    // text into a client's push notification.
+    const SUMMARY_KINDS = { callsummary: 'call summary', visitfollowup: 'visit follow-up' };
+    const what = SUMMARY_KINDS[body?.category];
+    if (!what) return json({ error: 'That is not a document type I know.' }, 400);
+    // His own file name, which is the whole point of asking, bounded and with
+    // its line breaks flattened so it cannot rearrange a notification.
+    const named = String(body?.fileName || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (doc.data.clientUid) {
+      await notifyUser(env, doc.data.clientUid, {
+        title: 'Pocket Advocate',
+        body: named ? `A new ${what} is on your case: ${named}` : `A new ${what} is on your case.`,
+        link: `/case.html?id=${caseId}`,
+      }).catch(() => { /* the document is on their page either way */ });
+    }
+    return json({ ok: true, category: body.category, notified: !!doc.data.clientUid });
   } else if (action === 'report-uploaded') {
     if (doc.data.status === 'closed') return json({ error: 'Case is closed.' }, 409);
     await patchDoc(env, `cases/${caseId}`, { status: 'delivered', reportDeliveredAt: now }, {

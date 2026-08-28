@@ -39,9 +39,12 @@ for (const width of [390, 320]) {
 
   // The Chat page is where the rate pill lives. Two taps: the group, then the
   // page, the same way he gets there.
+  // The tabs are <a data-page>, not buttons, and every pane is built at mount
+  // and merely hidden - so a selector that misses still lets every assertion
+  // below read a pane nobody can see. Click the real tab, by id.
   const toChat = () => page.evaluate(() => {
-    const t = [...document.querySelectorAll('button, [role=tab]')]
-      .find((x) => /^\s*(💬\s*)?Chat\s*$/.test(x.textContent || ''));
+    document.querySelector('[data-group="case"]')?.click();
+    const t = document.querySelector('[data-page="chat"]');
     if (t) t.click();
     return !!t;
   });
@@ -56,6 +59,8 @@ for (const width of [390, 320]) {
       hidden: el.hidden,
       unknown: el.classList.contains('unknown'),
       under: el.classList.contains('under'),
+      // Not merely present: on the page the browser is actually showing.
+      visible: !!el.closest('.fpage') && el.closest('.fpage').hidden === false,
       clickable: getComputedStyle(el).cursor === 'pointer',
     };
   });
@@ -66,15 +71,16 @@ for (const width of [390, 320]) {
   });
 
   const before = await pill();
-  ok('the rate pill is on screen at all', !!before && before.hidden === false,
-    before ? before.text : '(no pill)');
+  ok('the rate pill is on screen at all',
+    !!before && before.hidden === false && before.visible === true,
+    before ? `${before.text}${before.visible ? '' : ' (on a hidden page)'}` : '(no pill)');
   ok('and it is a readout, not something dressed up as a button',
     before?.clickable === false, `cursor: ${before?.clickable ? 'pointer' : 'default'}`);
 
   // Overview first, so there is a PAID row to compare against.
   const toOverview = () => page.evaluate(() => {
-    const t = [...document.querySelectorAll('button, [role=tab]')]
-      .find((x) => /^\s*(⚡\s*)?Overview\s*$/.test(x.textContent || ''));
+    document.querySelector('[data-group="case"]')?.click();
+    const t = document.querySelector('[data-page="overview"]');
     if (t) t.click();
     return !!t;
   });

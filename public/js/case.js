@@ -884,7 +884,14 @@ async function refreshFiles(c, el) {
       const res = await listAll(ref(storage, path));
       for (const item of res.items) {
         const [url, meta] = await Promise.all([getDownloadURL(item), getMetadata(item)]);
-        rows.push({ kind, name: item.name, url, ts: new Date(meta.timeCreated), size: meta.size, path: item.fullPath });
+        // What kind of document this is, when it is one of the ones written
+        // for you rather than a file either of us happened to attach. It rides
+        // on the file itself, so it arrives with the metadata already being
+        // fetched on this line.
+        rows.push({
+          kind, name: item.name, url, ts: new Date(meta.timeCreated), size: meta.size,
+          path: item.fullPath, cat: meta.customMetadata?.paCategory || '',
+        });
       }
     } catch { /* folder may not exist yet */ }
   }
@@ -904,17 +911,36 @@ async function refreshFiles(c, el) {
   rows.length = 0;
   rows.push(...deduped);
 
-  const order = { report: 0, recording: 1, upload: 2, chat: 3, saved: 4 };
-  rows.sort((a, b) => order[a.kind] - order[b.kind] || b.ts - a.ts);
+  // The documents written for you sit directly under the report, because that
+  // is what they are. KEEP THIS MAP IN STEP with UPLOAD_CATEGORIES; the two
+  // are pinned equal by tools/suites/uploads.mjs.
+  const CATS = {
+    report: { label: 'REPORT', at: 0 },
+    callsummary: { label: 'CALL SUMMARY', at: 1 },
+    visitfollowup: { label: 'VISIT FOLLOW-UP', at: 2 },
+  };
+  const order = { report: 0, recording: 3, upload: 4, chat: 5, saved: 6 };
+  // A missing rank sorts LAST rather than sorting as NaN, which would put
+  // every row in an arbitrary place the moment an unfamiliar category appears.
+  const rank = (r) => (r.kind === 'report' && CATS[r.cat] ? CATS[r.cat].at
+    : (order[r.kind] ?? 9));
+  rows.sort((a, b) => rank(a) - rank(b) || b.ts - a.ts);
   const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
   // The report gets a ✅ the moment the case is delivered. It is the one file
   // they have been waiting for, and "is this the final one" should not be a
   // question they have to work out from the filename.
+  //
+  // THE REPORT ONLY. A call summary is filed in the same place, so a tick
+  // keyed on the folder alone put "delivered" beside every document written
+  // during the case and made the mark meaningless on the one file it is for.
+  // Caught by looking at the client's own screen at 320px.
   const delivered = c.status === 'delivered' || c.status === 'closed';
   listEl.innerHTML = rows.map((r, i) => `
     <li data-frow="${i}">
-      <span class="fname"><span class="kind-pill ${r.kind}">${r.kind === 'saved' || r.kind === 'chat' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
-        ${r.kind === 'report' && delivered ? '<span class="delivered-tick" title="Delivered" role="img" aria-label="Delivered">✅</span>' : ''}
+      <span class="fname"><span class="kind-pill ${r.kind === 'report' && CATS[r.cat] ? r.cat : r.kind}">${
+        r.kind === 'report' && CATS[r.cat] ? CATS[r.cat].label
+          : r.kind === 'saved' || r.kind === 'chat' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
+        ${r.kind === 'report' && !r.cat && delivered ? '<span class="delivered-tick" title="Delivered" role="img" aria-label="Delivered">✅</span>' : ''}
         <a href="${r.url}" target="_blank" rel="noopener">${esc(shownName(r.name))}</a></span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
     </li>`).join('');
@@ -926,6 +952,9 @@ async function refreshFiles(c, el) {
   // long as they themselves uploaded it.")
   listEl.querySelectorAll('[data-frow]').forEach((li) => {
     const r = rows[Number(li.dataset.frow)];
+    // Your own files only. Everything in report/ is the case record, including
+    // the documents written for you, and the record is not something either of
+    // us can quietly take back.
     if (!r?.path || !['upload', 'chat', 'saved'].includes(r.kind)) return;
     wireFileDelete(li, r, async () => {
       try {

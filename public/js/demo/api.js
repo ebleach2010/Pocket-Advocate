@@ -216,6 +216,16 @@ export function demoApi(role, store) {
         // restarts the clock without undoing the delivery, same as the Worker.
         if (c.status !== 'delivered') next.status = 'awaiting_report';
         store.docs.set(key, next);
+      } else if (body.action === 'summary-uploaded') {
+        // A document he wrote, filed on the case under its own label. The
+        // Worker's rules, mirrored: the case does NOT move, the label comes
+        // from a map here rather than from the caller, and an unknown one is
+        // refused. Where this shim has ever been kinder than the Worker it has
+        // hidden a real refusal.
+        if (c.status === 'closed') return fail(409, 'Case is closed.');
+        const kinds = { callsummary: 'call summary', visitfollowup: 'visit follow-up' };
+        if (!kinds[body.category]) return fail(400, 'That is not a document type I know.');
+        return ok({ ok: true, category: body.category, notified: true });
       } else if (body.action === 'report-uploaded') {
         if (c.status === 'closed') return fail(409, 'Case is closed.');
         store.docs.set(key, { ...c, status: 'delivered', reportDeliveredAt: now });

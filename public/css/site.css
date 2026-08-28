@@ -787,6 +787,12 @@ summary.btn::-webkit-details-marker { display: none; }
 }
 .kind-pill.report { border-color: var(--magenta); color: var(--magenta); }
 .kind-pill.recording { border-color: var(--cyan); color: var(--cyan); }
+/* The documents written for this client, as distinct from the report and from
+   anything either side merely attached. ONE colour for both, from the tokens:
+   they are the same kind of thing and the words on the pill already say which
+   is which, so a second hue would be decoration paid for in legibility. */
+.kind-pill.callsummary,
+.kind-pill.visitfollowup { border-color: var(--gold); color: var(--gold); }
 
 .status-pill {
   font: 700 .62rem/1 ui-monospace, monospace; letter-spacing: .12em;

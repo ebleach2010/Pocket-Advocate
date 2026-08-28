@@ -420,7 +420,7 @@ function storageRef(_storage, path) {
   return { __kind: 'file', path: String(path || '') };
 }
 
-function uploadBytesResumable(ref, file) {
+function uploadBytesResumable(ref, file, metadata) {
   // The real thing hands back a task you subscribe to. So does this one, with
   // a couple of progress ticks so the bar he sees is the bar that ships.
   const total = file.size || 1;
@@ -449,6 +449,11 @@ function uploadBytesResumable(ref, file) {
         size: file.size || 0,
         at: new Date().toISOString(),
         url,
+        // The real thing carries custom metadata alongside the bytes, and the
+        // file listings read the category off it. Without this the demo can
+        // upload a call summary and then show it as a report, which is a demo
+        // disagreeing with the app about the one thing it was driven to check.
+        meta: (metadata && metadata.customMetadata) || null,
       });
       persist();
       handlers.done.forEach((f) => f({ ref, bytesTransferred: total, totalBytes: total }));
@@ -488,6 +493,9 @@ async function getMetadata(ref) {
     size: f.size || 0,
     contentType: f.type || '',
     timeCreated: f.at || new Date().toISOString(),
+    // Absent on a file uploaded without any, exactly as Firebase leaves it,
+    // so both listings exercise their own `|| ''` fallback here too.
+    customMetadata: f.meta || undefined,
   };
 }
 

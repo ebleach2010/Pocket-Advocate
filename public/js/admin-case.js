@@ -2352,7 +2352,19 @@ function paintFiles(pane) {
       <label class="small" style="margin-top:.7rem;">Upload the recording
         <input type="file" id="up-recording" accept="video/*,audio/*,.mp4,.m4a,.mp3,.mkv,.webm">
       </label>
-      <label class="small" style="margin-top:.5rem;">Upload the report <span class="dim">(advances the case + pings the client)</span>
+      <!-- ONE PICKER, TWO DECISIONS, IN THE ORDER HE MAKES THEM. He knows what
+           the document IS before he goes looking for it, so the category is
+           above the file field rather than beside it, and the sentence under
+           it changes to say what this particular choice does. A call summary
+           must NOT advance the case: report-uploaded marks the report
+           delivered, which ends the case chat 48 hours later. -->
+      <label class="small" style="margin-top:.7rem; display:block;">What are you uploading?
+        <select id="up-cat" style="margin-left:.35rem;">
+          ${UPLOAD_CATEGORIES.map((x) => `<option value="${x.id}">${esc(x.label)}</option>`).join('')}
+        </select>
+      </label>
+      <p class="dim small" id="up-cat-note" style="margin:.3rem 0 .1rem;"></p>
+      <label class="small" style="margin-top:.2rem;">Choose the file
         <input type="file" id="up-report" accept=".pdf,.html,.md,.doc,.docx,.jpg,.jpeg,.png,.heic">
       </label>
       <progress id="bar" max="100" value="0" hidden></progress>
@@ -2361,8 +2373,22 @@ function paintFiles(pane) {
     </div>`;
   pane.querySelector('#up-recording').addEventListener('change', (e) =>
     upload(e.target.files[0], 'recording', 'recording-uploaded'));
-  pane.querySelector('#up-report').addEventListener('change', (e) =>
-    upload(e.target.files[0], 'report', 'report-uploaded'));
+  // The category picker drives the sentence AND the route the upload finishes
+  // with, so the two can never say different things.
+  const cat = pane.querySelector('#up-cat');
+  const note = pane.querySelector('#up-cat-note');
+  const sayWhat = () => {
+    const c = categoryOf(cat.value) || UPLOAD_CATEGORIES[0];
+    note.textContent = c.action === 'report-uploaded'
+      ? 'Marks the case delivered and starts their 48 hours to ask about it.'
+      : `Files it on their case as a ${c.label.toLowerCase()} and tells them by name. Nothing about the case moves.`;
+  };
+  cat.addEventListener('change', sayWhat);
+  sayWhat();
+  pane.querySelector('#up-report').addEventListener('change', (e) => {
+    const c = categoryOf(cat.value) || UPLOAD_CATEGORIES[0];
+    upload(e.target.files[0], 'report', c.action, c.id);
+  });
 }
 
 async function api(body) {
@@ -2454,7 +2480,7 @@ async function milestone(action, btn) {
   }
 }
 
-async function upload(file, kind, milestoneAction) {
+async function upload(file, kind, milestoneAction, category = '') {
   if (!file) return;
   const bar = document.getElementById('bar');
   const err = document.getElementById('err');
@@ -2463,22 +2489,42 @@ async function upload(file, kind, milestoneAction) {
   if (done) done.hidden = true;
   bar.hidden = false;
   const safe = file.name.replace(/[^\w.\- ]+/g, '_');
-  const task = uploadBytesResumable(ref(storage, `cases/${caseId}/${kind}/${safe}`), file);
+  // ${Date.now()}- IN FRONT, which every other upload path in this app already
+  // does and this one alone did not. Storage overwrites on a repeated path
+  // without a word, so two files called "Summary.pdf" were one file, and the
+  // first one was gone. He is about to upload many documents with names like
+  // that. Both listings strip the prefix for display (`^\d{10,}-`), so a file
+  // uploaded before today still reads correctly.
+  const path = `cases/${caseId}/${kind}/${Date.now()}-${safe}`;
+  const task = uploadBytesResumable(ref(storage, path), file,
+    // THE CATEGORY IS A LABEL, NOT A FOLDER. storage.rules names exactly four
+    // client-readable folders and prep-shelf.mjs pins that list by string
+    // equality, because a recursive wildcard once put anything dropped under a
+    // case straight onto a client's screen. So a call summary is a report-
+    // folder file wearing a different word. getMetadata() is already called on
+    // every file in both listings, so this costs no extra request.
+    category ? { customMetadata: { paCategory: category } } : undefined);
   try {
     await new Promise((resolve, reject) => {
       task.on('state_changed',
         (snap) => { bar.value = (snap.bytesTransferred / snap.totalBytes) * 100; },
         reject, resolve);
     });
-    await api({ action: milestoneAction });
+    // The name goes with it. The client's notification says WHAT landed, and
+    // the Worker cannot see Storage, so the only place that name can come from
+    // is here.
+    await api({ action: milestoneAction, category, fileName: file.name });
     // The bar hides and the list repaints, which up to now was the whole of
     // the feedback: he could not tell an upload that landed from one that
     // silently did not. The Uploads page is not repainted wholesale by load(),
     // so this line can simply stay put.
     if (done) {
-      done.textContent = kind === 'report'
+      const cat = UPLOAD_CATEGORIES.find((x) => x.id === category);
+      done.textContent = milestoneAction === 'report-uploaded'
         ? `“${file.name}” is up. Your client can open it on their case page now, and their page says the report is delivered.`
-        : `“${file.name}” is up. Your client can open it on their case page now.`;
+        : cat
+          ? `“${file.name}” is up, filed as a ${cat.label.toLowerCase()}. Your client can open it now and has been notified by name.`
+          : `“${file.name}” is up. Your client can open it on their case page now.`;
       done.hidden = false;
     }
     load();
@@ -2489,14 +2535,50 @@ async function upload(file, kind, milestoneAction) {
   bar.hidden = true;
 }
 
+/**
+ * WHAT A DOCUMENT HE UPLOADS IS. Eric, 2026-08-27: "All SOAP notes and visit
+ * f/u summaries are done through uploads. I simply need an upload type to
+ * separate the category. So they're labeled. 'Call Summaries,' for example.
+ * They get notified that I uploaded [file name]."
+ *
+ * He writes the document. Nothing here generates, summarises or reads
+ * anything; this is a word attached to a file he already has.
+ *
+ * A LABEL, NEVER A FOLDER. storage.rules grants a client read on exactly four
+ * named folders and prep-shelf.mjs pins that list by string equality, because
+ * a recursive wildcard once made anything dropped under a case instantly
+ * client-readable. So every one of these lands in report/ and carries its
+ * category in Storage customMetadata, which both listings already fetch.
+ *
+ * `action` is the Worker route the upload finishes with, and it is the reason
+ * the list is shaped this way rather than being a bare array of words: only
+ * the report advances the case to delivered. A call summary that marked the
+ * report delivered would end the case chat 48 hours later.
+ *
+ * Adding a fourth is one line here, one line in the client's map in case.js
+ * (pinned equal by tools/suites/uploads.mjs), and one line in the Worker's
+ * own map, which is the only thing that decides the words in a push.
+ */
+const UPLOAD_CATEGORIES = [
+  { id: 'report', label: 'Report', pill: 'REPORT', group: 'Reports', action: 'report-uploaded' },
+  { id: 'callsummary', label: 'Call summary', pill: 'CALL SUMMARY', group: 'Call summaries', action: 'summary-uploaded' },
+  { id: 'visitfollowup', label: 'Visit follow-up', pill: 'VISIT FOLLOW-UP', group: 'Visit follow-ups', action: 'summary-uploaded' },
+];
+const categoryOf = (id) => UPLOAD_CATEGORIES.find((x) => x.id === id) || null;
+
 // Uploads are grouped by day and then by what kind of thing they are. The
 // order inside a day is deliberate: the report is the deliverable, documents
 // are what the advisor reads, images are usually screenshots of documents, and
-// a recording is an hour of video nobody scrubs through on a phone.
-const FILE_GROUPS = ['Reports', 'Documents', 'Images', 'Recordings', 'Other'];
+// a recording is an hour of video nobody scrubs through on a phone. The two
+// document types he writes himself sit directly under the report, because they
+// are the same kind of thing: something he produced for this client.
+const FILE_GROUPS = ['Reports', 'Call summaries', 'Visit follow-ups',
+  'Documents', 'Images', 'Recordings', 'Other'];
 
 function fileGroup(r) {
-  if (r.kind === 'report') return 'Reports';
+  // The category first: a call summary IS a report-folder file, so a check on
+  // the folder alone would file every one of them under Reports.
+  if (r.kind === 'report') return categoryOf(r.cat)?.group || 'Reports';
   if (r.kind === 'recording') return 'Recordings';
   const ct = (r.contentType || '').toLowerCase();
   const name = (r.name || '').toLowerCase();
@@ -2602,6 +2684,11 @@ async function listCaseFiles({ onProgress } = {}) {
           return {
             kind, name: item.name, url, ts: new Date(meta.timeCreated),
             size: meta.size, contentType: meta.contentType || '', path: item.fullPath,
+            // Arrives with the metadata this line already fetched, so the
+            // category costs nothing. A file uploaded before the control
+            // existed has none and reads as a plain report, which is what it
+            // is.
+            cat: meta.customMetadata?.paCategory || '',
           };
         } catch {
           // One unreadable object must not lose the other nineteen, which is
@@ -2711,7 +2798,9 @@ async function refreshFiles() {
     const ct = (r.contentType || '').toLowerCase();
     return ct.startsWith('image/') && !/heic|heif/.test(ct);
   };
-  const label = (kind) => (kind === 'saved' ? 'SAVED' : kind === 'chat' ? 'CHAT' : kind.toUpperCase());
+  const label = (r) => (r.kind === 'report' && categoryOf(r.cat)?.pill)
+    || (r.kind === 'saved' ? 'SAVED' : r.kind === 'chat' ? 'CHAT' : r.kind.toUpperCase());
+  const pillClass = (r) => (r.kind === 'report' && r.cat ? r.cat : r.kind);
 
   // Newest day first; inside a day, newest file first within its group.
   rows.sort((a, b) => b.ts - a.ts);
@@ -2735,7 +2824,7 @@ async function refreshFiles() {
     <li data-frow="${i}">
       ${thumbable(r) ? `<img class="thumb" src="${r.url}" alt="" loading="lazy" data-thumb="${i}">` : ''}
       <span class="up-text">
-        <span class="fname"><span class="kind-pill ${r.kind}">${label(r.kind)}</span><a href="${r.url}" target="_blank" rel="noopener">${esc(String(r.name).replace(/^\d{10,}-/, ''))}</a></span>
+        <span class="fname"><span class="kind-pill ${pillClass(r)}">${label(r)}</span><a href="${r.url}" target="_blank" rel="noopener">${esc(String(r.name).replace(/^\d{10,}-/, ''))}</a></span>
         <span class="fmeta">${time.format(r.ts)} · ${prettySize(r.size)}</span>
       </span>
       ${reviewable(r)
