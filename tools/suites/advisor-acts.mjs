@@ -35,6 +35,45 @@ const ck = (name, cond, detail = '') => {
 const { validateAction, ALLOWED, DENYLIST, tierOf, dispatchFor, actionTools, tablesDisagree } = ACTS;
 
 /**
+ * THE FLOOR ON THE TABLE THIS SUITE IS ABOUT.
+ *
+ * Every list emptied in this file so far belonged to this file. The one list
+ * never starved is the one the module hands over, which is what a bad merge or
+ * a bad edit in worker/advisor-acts.js would actually empty.
+ *
+ * MEASURED on main, 2026-08-28, by replacing the ACTS table with {}:
+ * 29 checks failed, and A1 and A2c named the break loudly, so the suite as a
+ * whole was never going to miss it. But EIGHT checks whose whole job is to
+ * assert something about that table passed on nothing:
+ *
+ *   A2  A3  A6  A8  A10c  A11  A25  A25b
+ *
+ * A loop that finds no failures reads as success, and so does a comparison of
+ * two empty joins. Each was upheld by A1 and A2c standing next to it, which is
+ * the shape A29c warns about a few hundred lines below and the same one
+ * SLAB_FLOOR and uploads.mjs's LIFT_FLOOR were added for.
+ *
+ * Eight, not the four found on the branch this came from: main carries more
+ * checks over the same table, so it carried more instances.
+ *
+ * AFTER, same break: all eight fail, each naming the empty table, and the
+ * suite's failure count goes from 29 to 37.
+ *
+ * THE OTHER TWO SUITES that import an app module were starved the same way and
+ * needed nothing. Emptying SENSITIVE_CATEGORIES and COMMUNICATION_SCOPES makes
+ * authority.mjs throw, which is loud. Emptying SERVICE_ABOUT fails exactly the
+ * two checks in checkins.mjs that read it, AB1 and AB4, and nothing else there
+ * claims anything about it.
+ *
+ * THE LIMIT: this guards the eight actions that exist against quietly becoming
+ * seven. A NINTH action added to the table is not conscripted by it.
+ */
+const ACTION_FLOOR = 8;
+/** What a check over ACTS prepends, so an empty table fails it on its own. */
+const actionFault = () => (ALLOWED.length < ACTION_FLOOR
+  ? [`${ALLOWED.length} actions, expected at least ${ACTION_FLOOR}`] : []);
+
+/**
  * THE LIFT REGISTRY, and why every slab in this file goes through it.
  *
  * The -forms branch found the failure this guards on 2026-08-28, and it is
@@ -246,12 +285,14 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): changing set-paid's summary to an empty
   // string in the shipped module made this read
   //   FAIL  A2 every allowlisted action validates with arguments he would give  -- set-paid: no args/summary/tier
+  const goodFailsF = [...actionFault(), ...goodFails];
   ck('A2 every allowlisted action validates with arguments he would give',
-    !goodFails.length, goodFails.join(' | '));
+    !goodFailsF.length, goodFailsF.join(' | '));
   // NEGATIVE CONTROL (run 2026-08-28): dropping the `cents < 100` half of the
   // money bound made this read
   //   FAIL  A3 and refuses every argument he would not  -- set-paid {"dollars":0} | set-paid {"dollars":-100}
-  ck('A3 and refuses every argument he would not', !badPasses.length, badPasses.join(' | '));
+  const badPassesF = [...actionFault(), ...badPasses];
+  ck('A3 and refuses every argument he would not', !badPassesF.length, badPassesF.join(' | '));
 }
 
 // ---- A4-A5: HIS MONEY, to the cent --------------------------------------
@@ -285,8 +326,13 @@ const TABLE = {
   // let nothing through, so this one was broken the other way, by removing the
   // `> 100_000_00` half of the bound, which made this read
   //   FAIL  A6 zero, negative, NaN, a string and ten million dollars are all refused  -- let through: 10000000
+  // The floor is not decoration here: with no table at all every one of these
+  // is "refused" because the ACTION ITSELF is unknown, which proves nothing
+  // about the money bound this check is named for.
   ck('A6 zero, negative, NaN, a string and ten million dollars are all refused',
-    !refused.length, `let through: ${refused.map(String).join(', ')}`);
+    !actionFault().length && !refused.length,
+    actionFault().length ? actionFault().join('')
+      : `let through: ${refused.map(String).join(', ')}`);
   // And the boundary itself, in the unit the route stores: one cent over the
   // ceiling is refused, the ceiling exactly is not.
   // NEGATIVE CONTROL (run 2026-08-28): moving the ceiling to cents > 100_000_01
@@ -335,8 +381,9 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): adding a `close` entry to ACTS made
   // this read
   //   FAIL  A8 the allowlist and the denylist cannot both claim a name  -- close
+  const disagreeF = [...actionFault(), ...tablesDisagree()];
   ck('A8 the allowlist and the denylist cannot both claim a name',
-    tablesDisagree().length === 0, tablesDisagree().join(', '));
+    !disagreeF.length, disagreeF.join(', '));
 }
 
 // THE SILENT PASS. A validator that refused EVERYTHING would satisfy most of
@@ -389,8 +436,9 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): changing actDispatch's last line to
   // `return 'run';` made this read
   //   FAIL  A10c no confirm-tier action can be carried out without a card  -- set-paid, work-correct, client-alert
+  const ranWithoutCardF = [...actionFault(), ...ranWithoutCard];
   ck('A10c no confirm-tier action can be carried out without a card',
-    !ranWithoutCard.length, ranWithoutCard.join(', '));
+    !ranWithoutCardF.length, ranWithoutCardF.join(', '));
   // And the two halves agree, so the panel can never be shown a tier the
   // Worker did not mean.
   const disagree = ALLOWED.filter((n) => {
@@ -400,8 +448,9 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): deleting the via === 'draft' line from the
   // panel's actDispatch made this read
   //   FAIL  A11 the Worker and the panel dispatch every action the same way  -- client-message
+  const bothWaysF = [...actionFault(), ...disagree];
   ck('A11 the Worker and the panel dispatch every action the same way',
-    !disagree.length, disagree.join(', '));
+    !bothWaysF.length, bothWaysF.join(', '));
   // A shape the panel has never seen falls through to a card, not to a run.
   // NEGATIVE CONTROL (run 2026-08-28): making actDispatch answer 'run' for a shape
   // it does not recognise made this read
@@ -686,11 +735,14 @@ const TABLE = {
   // ALLOWED.slice(1) inside actionTools made this read
   //   FAIL  A25 the tools the model is offered are exactly the allowlist  -- offered: booking-closure, client-alert, client-message, full-capacity, office-hours, work-clock, work-correct
   ck('A25 the tools the model is offered are exactly the allowlist',
-    offered.join(', ') === [...ALLOWED].sort().join(', '), `offered: ${offered.join(', ')}`);
+    !actionFault().length && offered.join(', ') === [...ALLOWED].sort().join(', '),
+    actionFault().length ? actionFault().join('') : `offered: ${offered.join(', ')}`);
   // NEGATIVE CONTROL (run 2026-08-28): blanking a tool description made this read
   //   FAIL  A25b and every tool carries a description and a schema the model can read
   ck('A25b and every tool carries a description and a schema the model can read',
-    actionTools().every((t) => t.description && t.input_schema?.type === 'object'));
+    !actionFault().length
+      && actionTools().every((t) => t.description && t.input_schema?.type === 'object'),
+    actionFault().join(''));
   // Only the ASK flow carries them. An analysis is a background read of a case
   // nobody tapped for, and a read that can propose to change the app is a
   // different thing from a read.
