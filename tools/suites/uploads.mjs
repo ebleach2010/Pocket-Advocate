@@ -554,7 +554,15 @@ const slab = (src, from, to) => {
   const FORMS = slab(ADMINCASE, 'const SENDABLE_FORMS = [', '];');
   const DAY = slab(ADMINCASE, 'function mountainDay(d = new Date()) {', '\n}');
   const STAMP = slab(ADMINCASE, 'let lastStamp = 0;', '\n}');
-  const SEND = slab(ADMINCASE, 'async function sendBlankForms(kinds, btn) {', '\n  load();\n}');
+  // ENDING ON THE RETURN, not on `load();`. It ended on load() until the send
+  // grew a partial-failure path and load() moved inside an if, four spaces in.
+  // The slab then ran past the end of the function to the NEXT match further
+  // down the file and swallowed whatever lay between, and the checks below
+  // stayed green on it because the extra code happened to be inert. A lift
+  // that quietly captures half a file is a lift that will one day capture
+  // something that is not inert, so U20b now measures what came out.
+  const SEND = slab(ADMINCASE, 'async function sendBlankForms(kinds, btn) {',
+    '\n  return { sent, quiet };\n}');
   // NEGATIVE CONTROL (run 2026-08-28): renaming sendBlankForms made this read
   //   FAIL  U20 the send path lifts out of the shipped page  -- tz 1, forms 1, day 1, stamp 1, send 0
   // A lift that has lost its target goes red rather than asserting nothing, so
@@ -566,6 +574,20 @@ const slab = (src, from, to) => {
     TZ.length > 0 && FORMS.length > 0 && DAY.length > 0 && STAMP.length > 0 && SEND.length > 0,
     `tz ${+!!TZ.length}, forms ${+!!FORMS.length}, day ${+!!DAY.length}, `
       + `stamp ${+!!STAMP.length}, send ${+!!SEND.length}`);
+  // NEGATIVE CONTROL (run 2026-08-28): putting the end marker back to
+  // '\n  load();\n}' made this read
+  //   FAIL  U20b and it lifted the function and NOT half the file after it  -- 16234 chars, ends "load = load;\n  load();\n}"
+  // and the run then died at "TypeError: document.addEventListener is not a
+  // function", which is the lift refusing to run code the harness does not
+  // stub: a loud failure, not a quiet pass.
+  // which is the real bug this check was written from: the lift had been
+  // over-capturing since the send grew its partial-failure path, and every
+  // check below stayed green on it.
+  ck('U20b and it lifted the function and NOT half the file after it',
+    SEND.length > 2000 && SEND.length < 6000
+    && SEND.trimEnd().endsWith('return { sent, quiet };\n}')
+    && !SEND.includes('addEventListener'),
+    `${SEND.length} chars, ends ${JSON.stringify(SEND.trimEnd().slice(-24))}`);
 
   /**
    * One harness, five runs. `apiFails` makes the notification throw; `noPanel`
@@ -872,6 +894,83 @@ const slab = (src, from, to) => {
     ck('U28e and the failure is not written where the repaint will wipe it',
       half.shouted.length === 0,
       `${half.shouted.length} written onto the panel after load()`);
+  }
+
+  // ---- U28f-U28h: the seam for "send the hands-off forms to the client" ----
+  //
+  // Eric named that sentence himself as an example of what he wants to say out
+  // loud. The advisor branch turns it into a confirm card; the card lives in
+  // advisor.js, which cannot import from admin-case.js, so they talk through a
+  // DOM event the way pa-panel-review and pa-mark-done already do. Inert until
+  // that branch lands, so it is LIFTED AND DISPATCHED here rather than left as
+  // a line nobody has ever run.
+  {
+    const SEAM = slab(ADMINCASE, "document.addEventListener('pa-send-forms'", '});');
+    // NEGATIVE CONTROL (run 2026-08-28): deleting the listener made this read
+    //   FAIL  U28f the pa-send-forms seam is in the shipped page
+    ck('U28f the pa-send-forms seam is in the shipped page', SEAM.length > 0);
+
+    const bucket = new Map();
+    const said = [];
+    const calls = [];
+    const dispatch = new Function('__bucket', '__said', '__api', `
+      const caseId = 'abc';
+      const storage = {};
+      const ref = (_s, path) => ({ path });
+      const uploadBytesResumable = (r, file, meta) => {
+        __bucket.set(r.path, { file, meta });
+        return { on: (_e, _p, _f, done) => done && done() };
+      };
+      const api = async (body) => { __api.push(body); return { ok: true }; };
+      const say = (k, text, o) => { __said.push({ k, text, tone: (o && o.tone) || 'ok' }); };
+      const load = () => {};
+      const alert = () => {};
+      // A document with just enough of one to register and fire an event.
+      const listeners = {};
+      const document = {
+        addEventListener: (name, fn) => { listeners[name] = fn; },
+        getElementById: () => ({ hidden: true, textContent: '' }),
+        querySelectorAll: () => [],
+      };
+      const authorityDocHtml = (o) => '<pre>BLANK FORM ' + o.kind + '</pre>';
+      ${TZ}
+      ${FORMS};
+      ${DAY}
+      ${STAMP}
+      ${SEND}
+      ${SEAM}
+      // Dispatched exactly as the advisor branch dispatches it, and READ BACK
+      // SYNCHRONOUSLY, because that is the part of the contract that breaks
+      // silently: an await anywhere before the assignment and the caller sees
+      // null on a send that is actually running.
+      return (kinds) => {
+        const detail = { kinds, result: null };
+        listeners['pa-send-forms']({ detail });
+        return detail.result;
+      };
+    `)(bucket, said, calls);
+
+    const handed = dispatch(['records', 'representative']);
+    // NEGATIVE CONTROL (run 2026-08-28): making the listener `async` so the
+    // assignment lands a microtask late made this read
+    //   FAIL  U28g and it hands the promise back before dispatch returns  -- got null
+    // null is the dispatcher's own "no sender on this page" answer, arrived at
+    // on a send that was in fact running, which is the confusion this whole
+    // shape exists to prevent.
+    ck('U28g and it hands the promise back before dispatch returns',
+      handed && typeof handed.then === 'function',
+      `got ${handed === null ? 'null' : typeof handed}`);
+    const seamOut = await Promise.resolve(handed).catch((e) => e);
+    // NEGATIVE CONTROL (run 2026-08-28): dropping the ticked kinds on the
+    // floor (`sendBlankForms([])`) made this read
+    //   FAIL  U28h and it really sends, both forms, filed as formsent  -- 0 stored, handed back {"sent":[],"quiet":[]}
+    // A seam that fires and stores nothing is the silent pass this check is
+    // here to catch; the counts are numbers for that reason.
+    ck('U28h and it really sends, both forms, filed as formsent',
+      bucket.size === 2
+      && [...bucket.values()].every((v) => v.meta?.customMetadata?.paCategory === 'formsent')
+      && seamOut?.sent?.length === 2,
+      `${bucket.size} stored, handed back ${JSON.stringify(seamOut)}`);
   }
 
   // ---- U27: the copy stopped promising a thing that is parked -------------

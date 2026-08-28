@@ -3931,6 +3931,36 @@ async function sendBlankForms(kinds, btn) {
 }
 
 /**
+ * THE SEAM FOR "send the hands-off forms to the client".
+ *
+ * Eric named it himself as an example of what he wants to be able to say out
+ * loud rather than tap out. The advisor branch turns a spoken instruction into
+ * a confirm card he taps; the card lives in advisor.js, which cannot import
+ * from this file, so the two talk through a DOM event exactly as
+ * `pa-panel-review` and `pa-mark-done` already do between chat.js and
+ * advisor.js.
+ *
+ * NOTHING DISPATCHES THIS TODAY. It is inert until that branch lands, and it
+ * is here rather than there because the sender lives here.
+ *
+ * THE PROMISE GOES BACK ON THE DETAIL, SYNCHRONOUSLY, and that is the whole
+ * design. A fire-and-forget event cannot tell "the send failed" apart from
+ * "admin-case.js is not on this page", and those need different words in front
+ * of a client. The dispatcher reads `detail.result` the instant
+ * dispatchEvent() returns: null means no sender is here, a rejected promise
+ * means it was tried and failed. So there must never be an `await` before the
+ * assignment below, or a send that is genuinely running reads as a page that
+ * cannot send.
+ *
+ * Registered at module scope, so it is registered exactly once however many
+ * times the page repaints.
+ */
+document.addEventListener('pa-send-forms', (e) => {
+  if (!e.detail) return;
+  e.detail.result = sendBlankForms(e.detail.kinds || []);
+});
+
+/**
  * The appeals workbench. One letter in flight at a time per case, which is
  * how appeals actually run: you file one, you wait for the plan's answer, and
  * what you file next depends on that answer.
