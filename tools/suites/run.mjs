@@ -21,6 +21,32 @@ const suites = readdirSync(here)
   .filter((f) => f.endsWith('.mjs') && f !== 'run.mjs')
   .sort();
 
+// THE GATE HAS TO KNOW HOW MANY SUITES THERE SHOULD BE.
+//
+// It counted whatever it discovered and reported success against that count,
+// so on a tree with no suites in it at all this printed
+//
+//   0/0 suites green
+//   Battery clear.        exit 0
+//
+// A partial checkout is likelier and worse: three suites of twenty reads
+// "3/3 suites green, Battery clear" in exactly the same voice as a full run,
+// and anything shaped `node tools/suites/run.mjs && <ship>` ships on it. This
+// is the gate CLAUDE.md names as the reason the battery exists, and it was the
+// one tool here that could bless nothing at all.
+//
+// The floor sits BELOW the current count on purpose. It is a guard against a
+// tree that is not really there, not a pin on the number of suites, and a pin
+// would go stale every time somebody adds one. Raise it when the count grows
+// enough that the gap stops meaning anything.
+const FLOOR = 18;
+if (suites.length < FLOOR) {
+  console.log(`Found ${suites.length} suite${suites.length === 1 ? '' : 's'} in ${here},`
+    + ` expected at least ${FLOOR}.`);
+  console.log('That is not a battery, it is a partial tree. Nothing goes to main like this.');
+  process.exit(1);
+}
+
 let failed = 0;
 const rows = [];
 for (const f of suites) {
