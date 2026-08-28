@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.50';
+export const VERSION = '2.51';
 
 /**
  * Newest first.
@@ -51,6 +51,15 @@ export const VERSION = '2.50';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // Today's hours under every total (Eric, 2026-08-29: "a daily hours/min
+    // logged for the day for a running clock, seen next to the total. Only
+    // seen on my side."). Admin-only by storage AND by paint; the client
+    // list stays empty.
+    version: '2.51',
+    quiet: true,
+    client: [],
+  },
   {
     // The work switch (Eric, 2026-08-29: "I want a toggle-able pill like a
     // light switch"). The long-press menu on the case folder is gone; the

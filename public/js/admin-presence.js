@@ -54,6 +54,16 @@ async function beat() {
     if (Array.isArray(out.stopped) && out.stopped.length) {
       window.dispatchEvent(new CustomEvent('pa-clock-stopped', { detail: { stopped: out.stopped } }));
     }
+    // Today's per-case hours, which only this beacon carries (Eric,
+    // 2026-08-29: "a daily hours/min logged for the day... Only seen on my
+    // side"). The shelf and the chart both listen; neither has to ask. The
+    // stash on window is for paints that happen BETWEEN beats - a shelf
+    // repaint reads it so the figure survives its own card being rebuilt.
+    if (out.day && typeof out.day === 'object') {
+      const byCase = out.day.byCase && typeof out.day.byCase === 'object' ? out.day.byCase : {};
+      window.__paDayLog = byCase;
+      window.dispatchEvent(new CustomEvent('pa-day-log', { detail: { byCase } }));
+    }
   } catch {
     // Offline, or the tab is being torn down. The next beat catches up, and
     // a missed beat only ever makes him look MORE away, which is the safe

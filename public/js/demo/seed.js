@@ -382,6 +382,19 @@ export function seed({ set, file }) {
     work: { seconds: 24 * 3600 + 30 * 60, startedAt: null },
   });
 
+  // Today's work, already on the books when the demo opens (Eric,
+  // 2026-08-29: the daily figure next to the total, his side only). An hour
+  // five on the tier case, so the line under the switch has something true
+  // to say the moment the shelf paints. Same shape as the Worker's
+  // CLOCK_DOC, dated in his timezone so it reads as today for a demo driven
+  // the day it was seeded and rolls to empty after that, like the real one.
+  set('admin/clock', {
+    today: {
+      d: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' }).format(new Date()),
+      byCase: { [FULL_ID]: 65 * 60 },
+    },
+  });
+
   for (const [ago, role, text] of FULL_CHAT) {
     const id = `f${String(++i).padStart(3, '0')}`;
     set(`cases/${FULL_ID}/chat/${id}`, {

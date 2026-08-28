@@ -41,9 +41,18 @@ function konst(name) {
   return m[0];
 }
 
+// Sync functions, same idea as fn(): the first column-0 close brace ends it.
+function sfn(name) {
+  const m = SRC.match(new RegExp(`\\nfunction ${name}\\([\\s\\S]*?\\n\\}`));
+  if (!m) throw new Error(`could not lift ${name}`);
+  return m[0];
+}
+
 const LIFTED = [
   konst('WORK_NUDGE_MINUTES'), konst('WORK_NUDGE_REPEAT_MINUTES'),
-  konst('WORK_PRESENCE_STALE_MS'), konst('CLOCK_DOC'),
+  konst('WORK_PRESENCE_STALE_MS'), konst('CLOCK_DOC'), konst('WORK_DAY_TZ'),
+  sfn('workDayString'), sfn('workDayElapsedMs'), sfn('todayByCase'),
+  fn('bankDaySeconds'), fn('readDaySeconds'),
   fn('setClockRunning'), fn('stopWorkClock'), fn('handleWork'),
   fn('handleWorkPresence'), fn('runWorkClockNudges'),
 ].join('\n');
@@ -529,6 +538,87 @@ Date.now = realNow;
     && /to: env\.ADMIN_EMAIL,/.test(nudgeSrc)
     && !/clientUid/.test(nudgeSrc)
     && !/notifyUser|sendEmail/.test(workSrc));
+}
+
+// ---- C44 and on: today's hours, his side only ------------------------------
+// Eric, 2026-08-29: "I would like a daily hours/min logged for the day for a
+// running clock, seen next to the total. Only seen on my side." The bucket
+// lives on CLOCK_DOC - the doc firestore.rules serves to nobody - and rolls
+// by date comparison, never by a midnight job. All RUN through the lifted
+// route on the fake clock, which starts these checks at noon his time
+// (18:00Z on 2026-08-25 is 12:00 in Boise).
+//
+// NEGATIVE CONTROLS (run 2026-08-29), one mutation per claim, all restored:
+//   stop banks nothing        -> C44 {"byCase":{}}, C44b, C45, C47 all red
+//   beacon sends an empty map -> C44b red alone
+//   midnight clamp removed    -> C45 red (today read the full 3600)
+//   date-roll comparison off  -> C46 red (yesterday's 7200 leaked through)
+//   correction delta zeroed   -> C47 red ({"down":7200,"up":7200,"zero":7200})
+//   "todaySeconds" in case.js -> C48 red
+{
+  reset();
+  const started = await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
+  advance(90);
+  const stopped = await W.handleWork(req({ caseId: 'a', on: false }), env);
+  const bucket = docs.get(W.CLOCK_DOC)?.today;
+  check('C44 a banked stretch lands in today\'s bucket, dated his day',
+    bucket?.d === '2026-08-25' && bucket?.byCase?.a === 5400
+    && started.body.todaySeconds === 0 && stopped.body.todaySeconds === 5400,
+    JSON.stringify({ bucket, start: started.body.todaySeconds, stop: stopped.body.todaySeconds }));
+
+  const beat = await W.handleWorkPresence(req({ caseId: '' }), env);
+  check('C44b and the beacon hands the whole day back on every beat',
+    beat.body.day?.d === '2026-08-25' && beat.body.day?.byCase?.a === 5400,
+    JSON.stringify(beat.body));
+}
+{
+  // Started 23:30 his time, stopped 00:30: the hour banks to the total, and
+  // only the half hour since HIS midnight counts as the new day.
+  reset();
+  NOW = Date.parse('2026-08-26T05:30:00Z');
+  await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
+  advance(60);
+  const out = await W.handleWork(req({ caseId: 'a', on: false }), env);
+  const bucket = docs.get(W.CLOCK_DOC)?.today;
+  check('C45 an overnight stretch splits at his midnight',
+    out.body.seconds === 7200 && bucket?.d === '2026-08-26' && bucket?.byCase?.a === 1800,
+    JSON.stringify({ total: out.body.seconds, bucket }));
+}
+{
+  // No midnight job: any other day's bucket IS empty, by comparison at read.
+  reset();
+  docs.set(W.CLOCK_DOC, { today: { d: '2026-08-24', byCase: { a: 7200 } } });
+  const beat = await W.handleWorkPresence(req({ caseId: '' }), env);
+  const started = await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
+  await W.handleWork(req({ caseId: 'a', on: false }), env);
+  check('C46 yesterday\'s bucket reads empty today, with no midnight job',
+    JSON.stringify(beat.body.day?.byCase) === '{}' && started.body.todaySeconds === 0,
+    JSON.stringify({ day: beat.body.day, start: started.body.todaySeconds }));
+}
+{
+  // A correction moves today by what it moves the total, floored at zero -
+  // ten accidental overnight hours corrected away at breakfast leave today
+  // reading zero, not minus nine.
+  reset();
+  await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
+  advance(120);
+  await W.handleWork(req({ caseId: 'a', on: false }), env);      // total 10800, today 7200
+  const down = await W.handleWork(req({ caseId: 'a', setSeconds: 5400 }), env);
+  const up = await W.handleWork(req({ caseId: 'a', setSeconds: 6000 }), env);
+  const zero = await W.handleWork(req({ caseId: 'a', setSeconds: 0 }), env);
+  check('C47 a correction moves today with the total, floored at zero',
+    down.body.todaySeconds === 1800 && up.body.todaySeconds === 2400
+    && zero.body.todaySeconds === 0,
+    JSON.stringify({ down: down.body.todaySeconds, up: up.body.todaySeconds, zero: zero.body.todaySeconds }));
+}
+{
+  // "Only seen on my side", pinned at the source: the bucket is on the
+  // worker-only doc and no client-served clock surface ever mentions it.
+  const CASEJS = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  check('C48 the day figure never reaches a client surface',
+    !/todaySeconds|pa-day-log|fc-day|dayTail|__paDayLog/.test(CASEJS)
+    && /const CLOCK_DOC = 'admin\/clock';/.test(SRC)
+    && /today: \{ d: workDayString\(now\), byCase \}/.test(SRC));
 }
 
 const failed = results.filter((r) => !r.pass);

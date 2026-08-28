@@ -1015,6 +1015,42 @@ const paintClock = () => {
     f();
   }
 };
+
+/**
+ * TODAY'S HOURS beside the total (Eric, 2026-08-29: "a daily hours/min
+ * logged for the day for a running clock, seen next to the total. Only seen
+ * on my side."). The banked half lives on the worker-only clock doc and
+ * arrives two ways: the presence beacon's answer (relayed as pa-day-log by
+ * admin-presence.js, stashed on window for anything that painted first) and
+ * every /api/work reply. NaN means no answer has carried it yet, and the
+ * painters say nothing rather than a made-up zero.
+ */
+const dayLog = { seconds: Number(window.__paDayLog?.[caseId]) };
+window.addEventListener('pa-day-log', (e) => {
+  const got = Number(e.detail?.byCase?.[caseId]);
+  dayLog.seconds = Number.isFinite(got) ? Math.max(0, Math.floor(got)) : 0;
+  paintClock();
+});
+/** Banked-today plus the live stretch, the stretch clipped at HIS midnight
+ *  (America/Boise, matching the Worker) so an overnight accident never reads
+ *  as this morning's work. NaN through and through while unknown. */
+const liveDaySeconds = () => {
+  if (!Number.isFinite(dayLog.seconds)) return NaN;
+  if (!clock.startedAt) return dayLog.seconds;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Boise', hour12: false,
+    hour: 'numeric', minute: 'numeric', second: 'numeric',
+  }).formatToParts(new Date());
+  const get = (t) => Number(parts.find((p) => p.type === t)?.value) || 0;
+  const sinceMidnight = (get('hour') % 24) * 3600 + get('minute') * 60 + get('second');
+  const stretch = Math.min(Math.floor((Date.now() - clock.startedAt) / 1000), 12 * 3600);
+  return dayLog.seconds + Math.max(0, Math.min(stretch, sinceMidnight));
+};
+/** The " · 2h 10m today" tail, or nothing while unknown or under a minute. */
+const dayTail = () => {
+  const d = liveDaySeconds();
+  return Number.isFinite(d) && d >= 60 ? ` · ${fmtHm(d)} today` : '';
+};
 /** Banked plus the live stretch, clamped like every sibling renderer:
  *  clock.startedAt is the SERVER's clock (a phone seconds behind it rendered
  *  "-1h -1m · running"), and a stretch forgotten over a weekend banks at most
@@ -1045,6 +1081,11 @@ async function postWork(payload) {
   // to reset to the banked total.
   clock.startedAt = out.startedAt ? new Date(out.startedAt).getTime() : 0;
   clock.loaded = true;
+  // Every answer carries today's banked figure, so a stop or a correction
+  // moves the day line in the same paint as the total.
+  if (out.todaySeconds !== undefined) {
+    dayLog.seconds = Math.max(0, Math.floor(Number(out.todaySeconds) || 0));
+  }
   paintClock();
   return out;
 }
@@ -1181,7 +1222,9 @@ function startHeadClock(c) {
     const m = Math.floor((t % 3600) / 60);
     const total = `${h ? `${h}h ` : ''}${m}m`;
     const on = !!clock.startedAt;
-    btn.textContent = on ? `● WORKING · ${total}` : `▶ Start · ${total}`;
+    // The day tail rides beside the total (Eric, 2026-08-29), on the face,
+    // because a title attribute is invisible on the phone this is used from.
+    btn.textContent = on ? `● WORKING · ${total}${dayTail()}` : `▶ Start · ${total}${dayTail()}`;
     btn.classList.toggle('glow', on);
     btn.classList.toggle('clock-on', on);
     btn.setAttribute('role', 'switch');
@@ -1213,9 +1256,9 @@ function startWorkClock(c) {
     const h = Math.floor(t / 3600);
     const m = Math.floor((t % 3600) / 60);
     const total = `${h ? `${h}h ` : ''}${m}m`;
-    totalEl.innerHTML = `${esc(total)} on this case${clock.startedAt ? ' · running' : ''}<span class="fixit">✎ fix</span>`;
+    totalEl.innerHTML = `${esc(total)} on this case${esc(dayTail())}${clock.startedAt ? ' · running' : ''}<span class="fixit">✎ fix</span>`;
     totalEl.setAttribute('aria-label',
-      `${total} banked on this case. Tap to add or subtract time.`);
+      `${total} banked on this case.${dayTail() ? `${dayTail().replace(' · ', ' ')} of that was logged today.` : ''} Tap to add or subtract time.`);
     totalEl.classList.toggle('on', !!clock.startedAt);
     // The margin line, live beside the clock that produces it.
     //

@@ -18,6 +18,28 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
 
+/** Seconds the way the clock writes them everywhere: "10h 40m", or "40m". */
+function fmtClock(secs) {
+  const t = Math.max(0, Math.floor(secs));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
+/**
+ * Seconds since ERIC'S midnight (America/Boise, the same zone the Worker
+ * banks the day bucket in), so the live today figure never counts
+ * yesterday's half of an overnight stretch.
+ */
+function daySecNow() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Boise', hour12: false,
+    hour: 'numeric', minute: 'numeric', second: 'numeric',
+  }).formatToParts(new Date());
+  const get = (t) => Number(parts.find((p) => p.type === t)?.value) || 0;
+  return (get('hour') % 24) * 3600 + get('minute') * 60 + get('second');
+}
+
 /**
  * One folder on the shelf. Everything interpolated is escaped here, so callers
  * pass raw strings - except `flags`, which is markup by definition (a run of
@@ -62,8 +84,12 @@ export function folderCardHtml({
           title="${clock.running ? 'Working now. Flip to stop.' : 'Flip to start the clock'}"
           data-started="${Number(clock.startedAt) || 0}"
           data-banked="${Number(clock.banked) || 0}"
-          ><span class="wk-sw" aria-hidden="true"><span class="wk-knob"></span></span><span class="fc-t"
-            data-clock-t="${esc(id)}">${esc(clock.label || 'Off')}</span></span>` : ''}
+          ${Number.isFinite(clock.todayBanked) ? `data-day-banked="${Math.max(0, Math.floor(clock.todayBanked))}"` : ''}
+          ><span class="wk-sw" aria-hidden="true"><span class="wk-knob"></span></span><span class="fc-col"><span class="fc-t"
+            data-clock-t="${esc(id)}">${esc(clock.label || 'Off')}</span><span class="fc-day"
+            data-clock-day="${esc(id)}"${Number(clock.todayBanked) >= 60 ? '' : ' hidden'}>${
+  Number(clock.todayBanked) >= 60 ? `${esc(fmtClock(clock.todayBanked))} today` : ''
+}</span></span></span>` : ''}
     </a>`;
 }
 
@@ -274,11 +300,23 @@ export function wireFolderClocks(root, { getToken, onChange } = {}) {
   if (root.__paClocks) return root.__paClocksApi;
   root.__paClocks = true;
 
-  const fmt = (secs) => {
-    const t = Math.max(0, Math.floor(secs));
-    const h = Math.floor(t / 3600);
-    const m = Math.floor((t % 3600) / 60);
-    return h ? `${h}h ${m}m` : `${m}m`;
+  const fmt = fmtClock;
+
+  // TODAY'S LINE UNDER THE TOTAL (Eric, 2026-08-29: "a daily hours/min
+  // logged for the day for a running clock, seen next to the total. Only
+  // seen on my side."). The banked half arrives on the presence beacon
+  // (pa-day-log, below) and on every /api/work answer; the live half is the
+  // running stretch, clipped at his midnight so an overnight accident never
+  // reads as this morning's work. Under a minute stays hidden: "0m today"
+  // on every card is noise, not a log.
+  const paintDay = (el) => {
+    const t = el.querySelector('[data-clock-day]');
+    const banked = Number(el.dataset.dayBanked);
+    if (!t || !Number.isFinite(banked)) return; // no answer carried it yet
+    const started = el.classList.contains('on') ? Number(el.dataset.started) || 0 : 0;
+    const live = banked + (started ? Math.min((Date.now() - started) / 1000, daySecNow()) : 0);
+    t.hidden = live < 60;
+    t.textContent = live >= 60 ? `${fmt(live)} today` : '';
   };
 
   // Live tick for whatever is running. One interval for the whole shelf, and
@@ -290,11 +328,22 @@ export function wireFolderClocks(root, { getToken, onChange } = {}) {
       if (!started) continue;
       const t = el.querySelector('[data-clock-t]');
       if (t) t.textContent = fmt(banked + (Date.now() - started) / 1000);
+      paintDay(el);
     }
   };
   clearInterval(root.__paClockTimer);
   root.__paClockTimer = setInterval(tick, 30_000);
   tick();
+
+  // The beacon's answer, for every card at once - including cards painted
+  // before the first beat came back.
+  window.addEventListener('pa-day-log', (e) => {
+    const byCase = e.detail?.byCase || {};
+    for (const el of root.querySelectorAll('[data-clock]')) {
+      el.dataset.dayBanked = String(Math.max(0, Math.floor(Number(byCase[el.dataset.clock]) || 0)));
+      paintDay(el);
+    }
+  });
 
   // The glow on the card and the dot on its clock are one state, so nothing
   // may set one without the other. Every path below goes through this.
@@ -326,6 +375,10 @@ export function wireFolderClocks(root, { getToken, onChange } = {}) {
       el.dataset.started = out.startedAt ? String(new Date(out.startedAt).getTime()) : '0';
       const t = el.querySelector('[data-clock-t]');
       if (t) t.textContent = fmt(Number(out.seconds) || 0);
+      if (out.todaySeconds !== undefined) {
+        el.dataset.dayBanked = String(Math.max(0, Math.floor(Number(out.todaySeconds) || 0)));
+      }
+      paintDay(el);
       el.title = out.running ? 'Working now. Flip to stop.' : 'Flip to start the clock';
       glow(id, !!out.running);
       onChange?.(id, !!out.running, Number(out.seconds) || 0);

@@ -1703,7 +1703,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-work-switch';
+const BUILD_TAG = 'v2026-08-29-today-line';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1711,7 +1711,7 @@ const BUILD_TAG = 'v2026-08-29-work-switch';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.50';
+const VERSION = '2.51';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -4475,6 +4475,67 @@ const WORK_PRESENCE_STALE_MS = 3 * 60_000;
  */
 const CLOCK_DOC = 'admin/clock';
 
+/**
+ * TODAY'S HOURS, PER CASE (Eric, 2026-08-29: "I would like a daily hours/min
+ * logged for the day for a running clock, seen next to the total. Only seen
+ * on my side.").
+ *
+ * The buckets live HERE, on CLOCK_DOC, and not on the case docs, because of
+ * his second sentence. A case doc is exactly the document its client can
+ * read; this one no client can read however they are signed in. The total
+ * stays on the case doc because he decided the client sees it. The day
+ * figure is his alone by where it is STORED, not merely by what happens to
+ * be rendered.
+ *
+ * "Today" is his real wall clock, daylight saving included - the same zone
+ * as OFFICE_TZ in schedule.js, repeated here rather than imported so the
+ * suite can lift these functions whole. If he ever moves, both move.
+ * The date never needs a midnight job: a bucket stamped with any other day
+ * IS empty, by comparison at every read.
+ */
+const WORK_DAY_TZ = 'America/Boise';
+function workDayString(t = Date.now()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: WORK_DAY_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(t));
+}
+/** Milliseconds since his midnight, for splitting a stretch at the day line. */
+function workDayElapsedMs(t = Date.now()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: WORK_DAY_TZ, hour12: false,
+    hour: 'numeric', minute: 'numeric', second: 'numeric',
+  }).formatToParts(new Date(t));
+  const get = (type) => Number(parts.find((p) => p.type === type)?.value) || 0;
+  return ((get('hour') % 24) * 3600 + get('minute') * 60 + get('second')) * 1000;
+}
+/** The stored bucket as today's truth: any other day's bucket reads empty. */
+function todayByCase(clockData, now = Date.now()) {
+  const t = clockData?.today;
+  if (!t || t.d !== workDayString(now) || !t.byCase || typeof t.byCase !== 'object') return {};
+  const out = {};
+  for (const [id, v] of Object.entries(t.byCase)) {
+    const n = Math.floor(Number(v));
+    if (Number.isFinite(n) && n > 0) out[id] = n;
+  }
+  return out;
+}
+/** Add (or, for a correction, subtract) seconds on today's bucket. */
+async function bankDaySeconds(env, caseId, add, now = Date.now()) {
+  const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
+  const byCase = todayByCase(doc?.data, now);
+  const cur = byCase[caseId] || 0;
+  const next = Math.max(0, cur + (Math.floor(Number(add)) || 0));
+  if (next === cur && doc?.data?.today?.d === workDayString(now)) return next;
+  if (next > 0) byCase[caseId] = next; else delete byCase[caseId];
+  await patchDoc(env, CLOCK_DOC, { today: { d: workDayString(now), byCase } },
+    { mask: ['today'] }).catch(() => {});
+  return next;
+}
+async function readDaySeconds(env, caseId) {
+  const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
+  return todayByCase(doc?.data)[caseId] || 0;
+}
+
 /** The running list, self-healing: whatever the case docs actually say. */
 async function setClockRunning(env, caseId, running) {
   const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
@@ -4499,7 +4560,18 @@ async function stopWorkClock(env, caseId, w, until = Date.now()) {
     // A clock left running for days is a forgotten toggle, not a work week.
     // Bank at most twelve hours from one stretch.
     const end = Math.max(startedAt, Math.min(until, Date.now()));
-    seconds += Math.min(Math.floor((end - startedAt) / 1000), 12 * 3600);
+    const add = Math.min(Math.floor((end - startedAt) / 1000), 12 * 3600);
+    seconds += add;
+    // The day line: only the part of the stretch since HIS midnight counts
+    // as today, so an overnight accident banked at breakfast does not read
+    // as ten hours worked this morning. A backdated stop whose end already
+    // fell on an earlier day is that day's work, and earlier days are not
+    // kept - today is the only bucket there is.
+    if (workDayString(end) === workDayString()) {
+      const dayStart = end - workDayElapsedMs(end);
+      const inToday = Math.max(0, Math.floor((end - Math.max(startedAt, dayStart)) / 1000));
+      await bankDaySeconds(env, caseId, Math.min(add, inToday));
+    }
   }
   await patchDoc(env, `cases/${caseId}`, {
     work: { seconds, startedAt: null, updatedAt: new Date(), auto: false, nudged: 0 },
@@ -4581,10 +4653,18 @@ async function handleWork(request, env) {
       },
     }, { mask: ['work'] });
     if (wrote === false) return json({ error: 'Try that once more.' }, 409);
+    // Today's log moves with the total: the running stretch this correction
+    // just banked (by the re-anchor above), plus the adjustment itself,
+    // floored at zero. Ten accidental overnight hours corrected away at
+    // breakfast leave today reading zero, not minus nine.
+    const stretch = stillRunning ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0;
+    const stretchToday = Math.min(stretch, Math.floor(workDayElapsedMs() / 1000));
+    const todaySeconds = await bankDaySeconds(env, caseId, (next - seconds - stretch) + stretchToday);
     return json({
       seconds: next, running: stillRunning, auto: w.auto === true,
       startedAt: stillRunning ? anchor : null,
       correctedFrom: seconds,
+      todaySeconds,
     });
   }
 
@@ -4597,6 +4677,7 @@ async function handleWork(request, env) {
     return json({
       seconds, running: !!startedAt, auto: w.auto === true,
       startedAt: startedAt ? new Date(startedAt) : null,
+      todaySeconds: await readDaySeconds(env, caseId),
     });
 
   // Correcting the total, for a clock left running by mistake. Eric,
@@ -4628,13 +4709,16 @@ async function handleWork(request, env) {
   }
 
   if (on) {
+    // The day figure rides on every answer in this block. Starting banks
+    // nothing, so this is a read of what earlier stretches already put there.
+    const todaySeconds = await readDaySeconds(env, caseId);
     if (!startedAt) {
       const now = new Date();
       await patchDoc(env, `cases/${caseId}`, {
         work: { seconds, startedAt: now, updatedAt: now, auto, nudged: 0 },
       }, { mask: ['work'] });
       await setClockRunning(env, caseId, true);
-      return json({ seconds, running: true, auto, startedAt: now });
+      return json({ seconds, running: true, auto, startedAt: now, todaySeconds });
     }
     // Already running: leave the existing start alone rather than resetting
     // it, so a double tap cannot quietly discard time already on the clock.
@@ -4648,9 +4732,9 @@ async function handleWork(request, env) {
     if (w.auto === true && !auto) {
       await patchDoc(env, `cases/${caseId}`, { work: { ...w, auto: false, updatedAt: new Date() } },
         { mask: ['work'] }).catch(() => {});
-      return json({ seconds, running: true, auto: false, startedAt: new Date(startedAt) });
+      return json({ seconds, running: true, auto: false, startedAt: new Date(startedAt), todaySeconds });
     }
-    return json({ seconds, running: true, auto: w.auto === true, startedAt: new Date(startedAt) });
+    return json({ seconds, running: true, auto: w.auto === true, startedAt: new Date(startedAt), todaySeconds });
   }
 
   // "I stopped a while ago" - bank to the last time the APP was known open,
@@ -4670,6 +4754,7 @@ async function handleWork(request, env) {
     seconds: banked,
     running: false,
     startedAt: null,
+    todaySeconds: await readDaySeconds(env, caseId),
     // What the caller tells him: a backdated stop banked less than the clock
     // on screen was showing, and silence about that reads as lost time.
     bankedTo: until < Date.now() - 30_000 ? new Date(until) : null,
@@ -4708,10 +4793,17 @@ async function handleWorkPresence(request, env) {
   await patchDoc(env, CLOCK_DOC, { seenAt: new Date(), atCaseId },
     { mask: ['seenAt', 'atCaseId'] }).catch(() => {});
 
+  // Today's per-case log rides back on every beat. The beacon is the one
+  // request every advocate page already makes on load and each minute, so
+  // the shelf and the chart learn the day figure with no extra round trip -
+  // and no client page ever sends this beacon or could read CLOCK_DOC,
+  // which is what "Only seen on my side" means in storage, not just paint.
+  const day = { d: workDayString(), byCase: todayByCase(doc?.data) };
+
   // Nothing running is the common case, and it costs nothing more than this.
-  if (!running.length) return json({ ok: true });
+  if (!running.length) return json({ ok: true, day });
   // Nothing to reconcile while he sits on the same page and never left.
-  if (prevAt === atCaseId && !wasAway) return json({ ok: true });
+  if (prevAt === atCaseId && !wasAway) return json({ ok: true, day });
 
   for (const id of running) {
     const c = await getDoc(env, `cases/${id}`).catch(() => null);
@@ -4737,7 +4829,7 @@ async function handleWorkPresence(request, env) {
   // `stopped` used to ride back here with the cases this beacon had ended.
   // Nothing is ended here now, so the field is gone rather than shipping an
   // always-empty promise that a later reader would trust.
-  return json({ ok: true });
+  return json({ ok: true, day });
 }
 
 /**

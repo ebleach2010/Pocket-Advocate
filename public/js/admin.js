@@ -277,6 +277,11 @@ async function load() {
         // skipped every card, so a running clock sat frozen until a reload.
         startedAt: started,
         banked,
+        // Today's banked seconds, from the last presence beat - the beacon
+        // stashes its answer on window exactly so a repaint between beats
+        // does not blank the day line for up to a minute. Absent before the
+        // first beat answers; the pa-day-log listener fills it in seconds.
+        todayBanked: Number(window.__paDayLog?.[c.id]),
       },
       name: c.clientName || c.clientEmail || c.clientUid,
       dx: cover.text || '',

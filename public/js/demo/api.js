@@ -105,8 +105,37 @@ export function demoApi(role, store) {
       // on the shelf drove the same case's timer, which is exactly the thing
       // the shelf controls exist to avoid.
       const key = `cases/${body.caseId || DEMO_CASE_ID}`;
+      const caseKey = body.caseId || DEMO_CASE_ID;
       const c = store.docs.get(key) || {};
       const w = c.work || { seconds: 0, startedAt: null };
+      // Today's bucket, mirroring the Worker's CLOCK_DOC: any other day's
+      // bucket reads empty, banking clips the stretch at his midnight.
+      const dayString = () =>
+        new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' }).format(new Date());
+      const dayBucket = () => {
+        const t = (store.docs.get('admin/clock') || {}).today;
+        return t && t.d === dayString() && t.byCase && typeof t.byCase === 'object'
+          ? { ...t.byCase } : {};
+      };
+      const bankDay = (add) => {
+        const byCase = dayBucket();
+        const next = Math.max(0, (Number(byCase[caseKey]) || 0) + (Math.floor(add) || 0));
+        if (next > 0) byCase[caseKey] = next; else delete byCase[caseKey];
+        store.docs.set('admin/clock', {
+          ...(store.docs.get('admin/clock') || {}),
+          today: { d: dayString(), byCase },
+        });
+        store.persist?.();
+        return next;
+      };
+      const daySecNow = () => {
+        const p = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Boise', hour12: false,
+          hour: 'numeric', minute: 'numeric', second: 'numeric',
+        }).formatToParts(new Date());
+        const g = (t) => Number(p.find((x) => x.type === t)?.value) || 0;
+        return (g('hour') % 24) * 3600 + g('minute') * 60 + g('second');
+      };
       // Correcting a total, mirroring the Worker: the only thing besides
       // start and stop that can move this number, and the answer to a clock
       // left running by mistake.
@@ -128,9 +157,16 @@ export function demoApi(role, store) {
           },
         });
         store.persist?.();
+        // Today moves with the total, mirroring the Worker: the stretch the
+        // re-anchor just banked plus the adjustment itself, floored at zero.
+        const cStretch = stillRunning
+          ? Math.max(0, Math.floor((Date.now() - new Date(w.startedAt).getTime()) / 1000)) : 0;
+        const todaySeconds = bankDay(
+          (next - (w.seconds || 0) - cStretch) + Math.min(cStretch, daySecNow()));
         return ok({
           seconds: next, running: stillRunning, auto: w.auto === true,
           startedAt: stillRunning ? anchor : null, correctedFrom: w.seconds || 0,
+          todaySeconds,
         });
       }
       // MANUAL ONLY, mirroring the Worker (Eric, 2026-08-25): an `auto`
@@ -139,6 +175,7 @@ export function demoApi(role, store) {
         return ok({
           seconds: w.seconds || 0, running: !!w.startedAt,
           auto: w.auto === true, startedAt: w.startedAt || null,
+          todaySeconds: dayBucket()[caseKey] || 0,
         });
       }
       if (body.on === true) {
@@ -148,7 +185,10 @@ export function demoApi(role, store) {
         // The ORIGINAL start comes back, matching the Worker: a caller that
         // assumed "running now means started now" would paint a long stretch
         // as nothing.
-        return ok({ seconds: w.seconds || 0, running: true, auto: false, startedAt });
+        return ok({
+          seconds: w.seconds || 0, running: true, auto: false, startedAt,
+          todaySeconds: dayBucket()[caseKey] || 0,
+        });
       }
       // The real one can bank to the last beacon when he answers "no, I
       // finished a while ago". The demo never pushes, so that answer never
@@ -158,7 +198,10 @@ export function demoApi(role, store) {
       const seconds = (Number(w.seconds) || 0) + add;
       store.docs.set(key, { ...c, work: { seconds, startedAt: null, auto: false, nudged: 0 } });
       store.persist?.();
-      return ok({ seconds, running: false, startedAt: null, bankedTo: null });
+      // The stretch banks into today too, clipped at his midnight like the
+      // Worker does, so an overnight demo stretch cannot claim the morning.
+      const todaySeconds = bankDay(Math.min(add, daySecNow()));
+      return ok({ seconds, running: false, startedAt: null, bankedTo: null, todaySeconds });
     }
     // The presence beacon. In the demo it stops an automatic stretch the same
     // way the Worker does, so walking from a chart back to the shelf behaves
@@ -169,7 +212,14 @@ export function demoApi(role, store) {
       // looking at, mirroring a Worker branch that is now gone. A forgotten
       // clock is answered by the hourly reminder and the correction control,
       // both of which leave the number in his hands.
-      return ok({ ok: true });
+      //
+      // What it DOES carry, like the real one: today's per-case hours, from
+      // the same bucket /api/work banks into. Any other day's bucket is
+      // presented empty rather than rolled by a job.
+      const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' }).format(new Date());
+      const t = (store.docs.get('admin/clock') || {}).today;
+      const byCase = t && t.d === d && t.byCase && typeof t.byCase === 'object' ? t.byCase : {};
+      return ok({ ok: true, day: { d, byCase } });
     }
     // Shutting the books. Backed by the same settings document the booking
     // page reads, so closing here really does empty the calendar in the demo.

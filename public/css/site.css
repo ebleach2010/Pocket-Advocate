@@ -1864,6 +1864,15 @@ body.lightbox-open { overflow: hidden; }
   transform: translate(-50%, -50%);
 }
 .folder-clock:hover { opacity: 1; }
+/* The total and, under it, today's share (Eric, 2026-08-29: "a daily
+   hours/min logged for the day for a running clock, seen next to the
+   total. Only seen on my side."). Stacked, not inline: side by side the
+   pill grew wide enough to sit on top of the client's name at 320px. */
+.folder-clock .fc-col {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 2px; padding: .25rem 0;
+}
+.folder-clock .fc-day { font-size: .6rem; opacity: .8; white-space: nowrap; }
 /* THE LIGHT SWITCH (Eric, 2026-08-29: "I want a toggle-able pill like a
    light switch. On/off for work with a 0.25 second animation of the switch
    flipping."). A real track and a real knob: flipping on slides the knob

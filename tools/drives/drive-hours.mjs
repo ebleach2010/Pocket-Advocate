@@ -376,6 +376,8 @@ const swState = (id) => page.evaluate((fid) => {
     knobShift: knob ? getComputedStyle(knob).transform : null,
     knobTransition: knob ? getComputedStyle(knob).transitionDuration : null,
     clockText: clock?.querySelector('[data-clock-t]')?.textContent?.trim(),
+    dayText: clock?.querySelector('[data-clock-day]')?.textContent?.trim(),
+    dayHidden: clock?.querySelector('[data-clock-day]')?.hidden ?? null,
     outline: cs?.outlineColor,
     outlineWidth: cs?.outlineWidth,
   };
@@ -387,6 +389,13 @@ ok('the switch is a switch, off, and the folder plain manila',
   && !before.working && !before.clockOn, JSON.stringify(before));
 ok('the knob is wired to flip in a quarter second',
   before.knobTransition === '0.25s', String(before.knobTransition));
+// Today's line under the total (Eric, 2026-08-29: "a daily hours/min logged
+// for the day... seen next to the total. Only seen on my side."). The demo
+// seeds an hour five on this case, dated today, and it must be on the card
+// with the clock still OFF - the day log is a log, not a live-only readout.
+ok('today\'s hours sit under the total before anything is flipped',
+  before.dayHidden === false && /^1h 5m today$/.test(before.dayText || ''),
+  `"${before.dayText}" hidden=${before.dayHidden}`);
 await page.screenshot({ path: `${SHOT}/7-switch-off.png` });
 
 await page.click(`[data-clock="${folderId}"]`);
@@ -410,6 +419,8 @@ ok('the outline really is green, not the cyan everything else uses',
 ok('and the SAME clock that already existed is now running',
   on.clockOn, `clock reads "${on.clockText}"`);
 ok('the words keep up with the state', /Flip to stop/.test(on.title || ''), on.title);
+ok('and the day line rides through the flip', /^1h 5m today$/.test(on.dayText || ''),
+  `"${on.dayText}"`);
 await page.screenshot({ path: `${SHOT}/8-switch-on.png` });
 
 await page.click(`[data-clock="${folderId}"]`);
@@ -418,6 +429,8 @@ const off = await swState(folderId);
 ok('flipping it back goes to regular manila', !off.working && off.checked === 'false',
   JSON.stringify({ checked: off.checked, working: off.working }));
 ok('and stops the clock with it', !off.clockOn);
+ok('the few seconds of that flip did not lose the day figure',
+  /^1h 5m today$/.test(off.dayText || ''), `"${off.dayText}"`);
 await page.screenshot({ path: `${SHOT}/9-switch-off-again.png` });
 
 // A press on the diagnosis line must still be the diagnosis editor, not this.
@@ -499,6 +512,13 @@ if (!tapAt) {
   ok('no work menu appears any more', !held.menu);
   ok('the hold is just a slow tap: the case opens',
     /admin-case/.test(held.where), `at ${held.where}`);
+  // While the drive is on the chart: the day figure beside the total on the
+  // header switch too, from the same beacon answer the shelf used.
+  await settle(1500);
+  const headText = await page.evaluate(() =>
+    document.querySelector('[data-work-head]')?.textContent?.trim() || '');
+  ok('the chart header carries the day figure beside the total',
+    /1h 5m today/.test(headText), `"${headText}"`);
   await page.screenshot({ path: `${SHOT}/10-hold-opens-case.png` });
   await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
   await settle(2500);
