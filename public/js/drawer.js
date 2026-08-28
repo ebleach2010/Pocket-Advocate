@@ -41,9 +41,9 @@ export function folderCardHtml({
   // The green outline glow IS the running work clock and nothing else
   // (Eric, 2026-08-27: "the file turns green-outline glow... This starts the
   // clock back on for that client"). It is painted from the same `clock`
-  // object the toggle on the card reads, so a clock started from the chart,
-  // from the row above the chat, from the card itself or from the long-press
-  // menu all light the folder, and none of them can light it alone.
+  // object the switch on the card reads, so a clock started from the chart,
+  // from the row above the chat or from the switch itself all light the
+  // folder, and none of them can light it alone.
   return `
     <a class="folder${clock?.running ? ' working' : ''}" href="${esc(href)}" data-id="${esc(id)}">
       <span class="folder-tab"><span class="folder-name">${esc(name)}</span></span>
@@ -56,14 +56,14 @@ export function folderCardHtml({
       </span>
       ${clock ? `
         <span class="folder-clock${clock.running ? ' on' : ''}" data-clock="${esc(id)}"
-          role="button" tabindex="0"
-          aria-pressed="${clock.running ? 'true' : 'false'}"
-          aria-label="${clock.running ? 'Stop' : 'Start'} the work clock for ${esc(name)}"
-          title="${clock.running ? 'Working now. Tap to stop.' : 'Tap to start the clock'}"
+          role="switch" tabindex="0"
+          aria-checked="${clock.running ? 'true' : 'false'}"
+          aria-label="Work clock for ${esc(name)}"
+          title="${clock.running ? 'Working now. Flip to stop.' : 'Flip to start the clock'}"
           data-started="${Number(clock.startedAt) || 0}"
           data-banked="${Number(clock.banked) || 0}"
-          ><span class="fc-dot" aria-hidden="true"></span><span class="fc-t"
-            data-clock-t="${esc(id)}">${esc(clock.label || 'Start')}</span></span>` : ''}
+          ><span class="wk-sw" aria-hidden="true"><span class="wk-knob"></span></span><span class="fc-t"
+            data-clock-t="${esc(id)}">${esc(clock.label || 'Off')}</span></span>` : ''}
     </a>`;
 }
 
@@ -235,121 +235,18 @@ export function wireDxLongPress(root, handler) {
   });
 }
 
-/**
- * The long-press menu on a folder. Eric, 2026-08-27:
+/*
+ * THE LONG-PRESS WORK MENU IS GONE (Eric, 2026-08-29: "long pressing the
+ * chart isn't the way to go about toggling on if I'm working. For reasons I
+ * won't explain. I want a toggle-able pill like a light switch.").
  *
- *   "I long press a case file and tap 'Working on this client' and the file
- *    turns green-outline glow. When I turn it off it goes back to regular
- *    Manila. This starts the clock back on for that client; I just haven't
- *    specified exactly what I'm working on."
- *
- * So this is a FOURTH DOOR ONTO THE CLOCK THAT ALREADY EXISTS, not a second
- * clock. It calls the same /api/work the card's own toggle calls, with the
- * same `auto: false`, and the glow is painted off the same running state.
- *
- * Resolves 'work' to start, 'stop' to stop, undefined if he backs out.
+ * openWorkSheet and wireFolderLongPress lived here from 2026-08-27 to
+ * 2026-08-29; the switch on the card (folderCardHtml above, wired by
+ * wireFolderClocks below) is now the one control on the shelf, and it flips
+ * a real knob in a quarter second. The DIAGNOSIS long press
+ * (wireDxLongPress, above) is a different feature and stays. Do not bring
+ * the work menu back without his word.
  */
-export function openWorkSheet({ name = '', running = false } = {}) {
-  return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.className = 'msg-menu-overlay';
-    const who = name ? esc(name) : 'this client';
-    overlay.innerHTML = `
-      <div class="msg-menu" role="dialog" aria-modal="true" aria-label="This case file">
-        <div class="msg-menu-sheet">
-          <p class="msg-menu-head">${who}</p>
-          <button class="msg-menu-row" data-act="${running ? 'stop' : 'work'}">
-            <span class="react-emoji">${running ? '⏹' : '⏱'}</span>
-            <span>${running ? 'Stop working on this client' : 'Working on this client'}</span>
-          </button>
-          <p class="msg-menu-note">${running
-            ? 'Stops the clock on this case and takes the glow off the folder.'
-            : 'Starts the clock on this case and outlines the folder in green. No note, no status, just the time.'}</p>
-          <button class="msg-menu-row cancel" data-act="cancel"><span>Cancel</span></button>
-        </div>
-      </div>`;
-    let settled = false;
-    const done = (v) => {
-      if (settled) return;
-      settled = true;
-      overlay.remove();
-      document.removeEventListener('keydown', onKey);
-      resolve(v);
-    };
-    function onKey(e) { if (e.key === 'Escape') done(undefined); }
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(undefined); });
-    overlay.querySelectorAll('[data-act]').forEach((b) =>
-      b.addEventListener('click', () => done(b.dataset.act === 'cancel' ? undefined : b.dataset.act)));
-    document.addEventListener('keydown', onKey);
-    document.body.appendChild(overlay);
-  });
-}
-
-/**
- * Long-press (or right-click) a folder to open that menu: handler(id, name).
- *
- * The diagnosis line and the clock control are BOTH excluded. The line has its
- * own long press (wireDxLongPress above) and stealing it would take away the
- * override editor; the clock is a one-tap toggle and a press that lingered on
- * it would pop a menu offering the thing he had already pressed.
- *
- * Same press length and the same movement tolerance as every other held press
- * in the app, and the same `lp` mark, which is what stops the click trailing
- * the press from also opening the case (see wireFolderOpen).
- */
-export function wireFolderLongPress(root, handler) {
-  if (!root || typeof handler !== 'function' || root.__paFolderPress) return;
-  root.__paFolderPress = true;
-
-  let timer = null;
-  let from = null;
-  const MOVE_TOLERANCE = 12;
-  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } from = null; };
-
-  const target = (e) => {
-    const card = e.target.closest?.('.folder');
-    if (!card || !root.contains(card)) return null;
-    if (e.target.closest?.('.folder-dx') || e.target.closest?.('[data-clock]')) return null;
-    return card;
-  };
-
-  const fire = (card) => {
-    card.dataset.lp = '1';
-    try {
-      handler(card.dataset.id || '', card.querySelector('.folder-name')?.textContent?.trim() || '');
-    } catch (err) { console.warn('folder menu:', err); }
-  };
-
-  root.addEventListener('pointerdown', (e) => {
-    const card = target(e);
-    if (!card) return;
-    // CLEAR THE MARK BEFORE ARMING, the same line wireDxLongPress has above.
-    //
-    // fire() sets `lp` so that the click trailing a fired press does not also
-    // open the case, and wireFolderOpen clears the mark when that click
-    // arrives. After a long press the sheet is on top of the shelf, so that
-    // click never arrives and the mark stayed on the card. The next ordinary
-    // tap then spent itself clearing a stale mark and did nothing at all:
-    // press, Cancel, tap, nothing, tap again, open. Clearing it here means a
-    // mark can only ever outlive the press that set it by one pointerdown.
-    delete card.dataset.lp;
-    from = { x: e.clientX, y: e.clientY };
-    timer = setTimeout(() => { timer = null; fire(card); }, LONG_PRESS_MS);
-  });
-  root.addEventListener('pointermove', (e) => {
-    if (!timer || !from) return;
-    if (Math.hypot(e.clientX - from.x, e.clientY - from.y) > MOVE_TOLERANCE) cancel();
-  });
-  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) =>
-    root.addEventListener(ev, cancel));
-  root.addEventListener('contextmenu', (e) => {
-    const card = target(e);
-    if (!card) return;
-    e.preventDefault();
-    cancel();
-    fire(card);
-  });
-}
 
 /** Is that case's clock running right now, as the shelf currently shows it? */
 export function folderIsWorking(root, id) {
@@ -422,14 +319,14 @@ export function wireFolderClocks(root, { getToken, onChange } = {}) {
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
       el.classList.toggle('on', !!out.running);
-      el.setAttribute('aria-pressed', out.running ? 'true' : 'false');
+      el.setAttribute('aria-checked', out.running ? 'true' : 'false');
       el.dataset.banked = String(Number(out.seconds) || 0);
       // The ORIGINAL start, not now: tapping a card whose clock was already
       // running must not appear to throw the running stretch away.
       el.dataset.started = out.startedAt ? String(new Date(out.startedAt).getTime()) : '0';
       const t = el.querySelector('[data-clock-t]');
       if (t) t.textContent = fmt(Number(out.seconds) || 0);
-      el.title = out.running ? 'Working now. Tap to stop.' : 'Tap to start the clock';
+      el.title = out.running ? 'Working now. Flip to stop.' : 'Flip to start the clock';
       glow(id, !!out.running);
       onChange?.(id, !!out.running, Number(out.seconds) || 0);
     } catch (err) {

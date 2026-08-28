@@ -7,7 +7,6 @@ import { requireAdmin, hydrateNav } from './auth.js';
 import { initPushPrompt } from './push.js';
 import {
   folderCardHtml, wireFolderOpen, wireFolderClocks, wireDxLongPress, openDxSheet,
-  wireFolderLongPress, openWorkSheet, folderIsWorking,
 } from './drawer.js';
 import { unseenBadges } from './seen.js';
 import { mountOfficeControl } from './admin-hours.js';
@@ -429,26 +428,16 @@ async function load() {
   // Tap a folder and it opens in the hand before the case page loads; press
   // and hold the diagnosis line to write your own over the advisor's.
   wireFolderOpen(listEl);
-  // The clock on each card. Tapping out here PINS it, so it keeps running
-  // while he moves around the app — which is the entire reason the control
-  // lives on the shelf and not only inside the chart.
-  const clocks = wireFolderClocks(listEl, { getToken: () => user.getIdToken() });
+  // The switch on each card. Flipping it out here PINS the clock, so it keeps
+  // running while he moves around the app, which is the entire reason the
+  // control lives on the shelf and not only inside the chart. The long-press
+  // work menu that used to sit beside it is gone (Eric, 2026-08-29: "long
+  // pressing the chart isn't the way to go about toggling on if I'm working
+  // ... I want a toggle-able pill like a light switch"); the switch is the
+  // one door on the shelf now. The diagnosis long press below is a different
+  // feature and stays.
+  wireFolderClocks(listEl, { getToken: () => user.getIdToken() });
   wireDxLongPress(listEl, overrideDx);
-  // Eric, 2026-08-27: "I long press a case file and tap 'Working on this
-  // client' and the file turns green-outline glow... This starts the clock
-  // back on for that client."
-  //
-  // It goes through wireFolderClocks' own toggle rather than posting to
-  // /api/work here, so this door and the card's own toggle are one behaviour
-  // and the glow, the dot and the running total move together whichever he
-  // uses. A closed case has no clock and toggleById says so.
-  wireFolderLongPress(listEl, async (id, name) => {
-    const running = folderIsWorking(listEl, id);
-    const pick = await openWorkSheet({ name, running });
-    if (!pick) return;
-    if (!clocks?.toggleById(id))
-      alert('This case is closed, so there is no clock to run on it.');
-  });
 }
 
 function badge(c) {

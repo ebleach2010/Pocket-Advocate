@@ -1864,27 +1864,38 @@ body.lightbox-open { overflow: hidden; }
   transform: translate(-50%, -50%);
 }
 .folder-clock:hover { opacity: 1; }
-.folder-clock .fc-dot {
-  width: .5rem; height: .5rem; border-radius: 50%;
-  border: 1.5px solid currentColor; flex: none;
+/* THE LIGHT SWITCH (Eric, 2026-08-29: "I want a toggle-able pill like a
+   light switch. On/off for work with a 0.25 second animation of the switch
+   flipping."). A real track and a real knob: flipping on slides the knob
+   across in a quarter second and the track fills work-clock green. The dot
+   it replaces is gone. */
+.folder-clock .wk-sw {
+  position: relative; flex: none;
+  width: 1.9rem; height: 1.1rem; border-radius: 999px;
+  background: rgba(0, 0, 0, .30);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .25);
+  transition: background .25s ease;
 }
-/* Running: filled, coloured, and quietly pulsing, so a shelf of eight cards
-   answers "what am I on right now" from across the room. */
+.folder-clock .wk-knob {
+  position: absolute; top: 2px; left: 2px;
+  width: calc(1.1rem - 4px); height: calc(1.1rem - 4px); border-radius: 50%;
+  background: #FFFFFF; box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  transition: transform .25s ease;
+}
+/* Running: knob across, track green, and the pill wash reads as running
+   before the number does, so a shelf of eight cards answers "what am I on
+   right now" from across the room. Same #0B6E4F family as before, dark
+   enough to read on card stock. */
 .folder-clock.on {
-  /* Measured on the tab band, #0B6E4F came out at 2.02:1, on the one badge
-     whose whole job is to answer "am I on the clock right now" from across
-     the room. Same green family, dark enough to read on card stock, and the
-     wash carries a little more colour so the pill reads as running before
-     the number does. */
   opacity: 1; color: var(--manila-note);
   background: rgba(16, 185, 129, .26);
 }
-.folder-clock.on .fc-dot { background: currentColor; animation: fc-pulse 2.4s ease-in-out infinite; }
+.folder-clock.on .wk-sw { background: var(--manila-note); }
+.folder-clock.on .wk-knob { transform: translateX(.8rem); }
 .folder-clock.busy { opacity: .4; pointer-events: none; }
 .folder-clock:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-@keyframes fc-pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) {
-  .folder-clock.on .fc-dot { animation: none; }
+  .folder-clock .wk-sw, .folder-clock .wk-knob { transition: none; }
 }
 
 .folder {

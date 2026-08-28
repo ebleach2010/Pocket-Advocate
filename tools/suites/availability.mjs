@@ -1069,63 +1069,39 @@ check('G: and it is mounted on BOTH advocate pages, so they cannot disagree',
 //
 // Eric, 2026-08-25: "All clocks in/clock out buttons are manual. Nothing
 // automatic." Eric, 2026-08-27: the long press "starts the clock back on for
-// that client". The danger is a fifth clock rather than a fourth switch, so
-// what is pinned here is that the menu goes through the SAME toggle.
+// that client". AND THEN, 2026-08-29, the long press went: "long pressing
+// the chart isn't the way to go about toggling on if I'm working. For
+// reasons I won't explain. I want a toggle-able pill like a light switch.
+// On/off for work with a 0.25 second animation of the switch flipping."
+//
+// The nine pins that held the menu are flipped to pin its ABSENCE and the
+// switch that replaced it; the originals and their negative controls are in
+// this file's history at v2.49. The DIAGNOSIS long press is a different
+// feature and its pins stand further down.
 // ---------------------------------------------------------------------------
 // code(), not f(). Both of these are whole-file greps and both were proved to
 // pass on commented-out lines.
 const DRAWER = code('public/js/drawer.js');
 const ADMINJS = code('public/js/admin.js');
-check('H: the long press exists and opens a menu',
-  /export function wireFolderLongPress/.test(DRAWER)
-  && /export function openWorkSheet/.test(DRAWER));
-// The ROW, not the prose. The doc comment above openWorkSheet quotes him
-// saying the words, so a check that matched anywhere in the raw file would go
-// green on the quotation after the button had been renamed to something else.
-// Comments are stripped now as well, which is belt and braces on the same risk.
-check('H: the menu row says exactly what he asked it to say',
-  /: 'Working on this client'\}<\/span>/.test(DRAWER.replace(/\s+/g, ' ')),
-  'no "Working on this client" row in the sheet markup');
-check('H: and offers the way back off it',
-  /Stop working on this client/.test(DRAWER));
-// A fetch, not a mention: the comment above the handler names the route it is
-// deliberately NOT calling, and that sentence is worth keeping.
-check('H: the handler runs the card toggle rather than posting to /api/work '
-  + 'itself, so the two doors are one behaviour',
-  /toggleById\(id\)/.test(ADMINJS) && !/fetch\(\s*'\/api\/work'/.test(ADMINJS),
+const SITECSS = code('public/css/site.css');
+check('H: the long-press work menu is gone, both halves',
+  !/wireFolderLongPress/.test(DRAWER) && !/openWorkSheet/.test(DRAWER)
+  && !/Working on this client/.test(DRAWER)
+  && !/wireFolderLongPress|openWorkSheet|folderIsWorking/.test(ADMINJS));
+check('H: the switch on the card is the one door, and it is a real switch',
+  /role="switch"/.test(DRAWER) && /aria-checked/.test(DRAWER)
+  && /wk-sw/.test(DRAWER) && /wk-knob/.test(DRAWER)
+  && !/fetch\(\s*'\/api\/work'/.test(ADMINJS),
   /fetch\(\s*'\/api\/work'/.test(ADMINJS) ? 'admin.js posts to /api/work directly' : '');
-check('H: wireFolderClocks hands that toggle back to its caller',
-  /root\.__paClocksApi = \{[\s\S]*?toggleById/.test(DRAWER));
-check('H: and keeps handing it back after a repaint, when it returns early',
-  /if \(root\.__paClocks\) return root\.__paClocksApi;/.test(DRAWER));
-// Scoped to the NEW function. wireDxLongPress sets the same mark a hundred
-// lines up, so a whole-file grep stayed green after the mark was deleted from
-// the folder press and every long press started opening the case underneath
-// its own menu.
-const PRESS = (DRAWER.match(/export function wireFolderLongPress\([\s\S]*?\n\}/) || [''])[0];
-check('H: the folder press function can be found at all', PRESS.length > 200);
-check('H: the press leaves the same lp mark, so the trailing click does not '
-  + 'also open the case',
-  /card\.dataset\.lp = '1';/.test(PRESS));
-// AND CLEARS IT AGAIN ON THE NEXT PRESS, which is the half that was missing.
-//
-// The mark is only ever consumed by a click reaching wireFolderOpen. After a
-// long press the sheet overlay is on top, so that click never arrives and the
-// mark stayed on the card: long press, Cancel, tap, nothing happens, tap again,
-// the case opens. wireDxLongPress has guarded exactly this with a `delete` on
-// pointerdown since it was written; the new function was missing the line.
-check('H: and clears any stale mark when the next press begins, so a tap after '
-  + 'a cancelled long press is not eaten',
-  /pointerdown[\s\S]*?delete card\.dataset\.lp;/.test(PRESS),
-  'wireFolderLongPress arms without clearing the mark its last press left');
-check('H: the older diagnosis press still does the same, which is where the '
-  + 'line was copied from',
-  /delete el\.dataset\.lp;/.test(DRAWER));
-check('H: it keeps its hands off the diagnosis line and the clock control, '
-  + 'which already own the press and the tap',
-  /closest\?\.\('\.folder-dx'\) \|\| e\.target\.closest\?\.\('\[data-clock\]'\)/.test(PRESS));
-check('H: and uses the app-wide press length rather than one of its own',
-  /LONG_PRESS_MS\)/.test(PRESS) && /const LONG_PRESS_MS = 550;/.test(DRAWER));
+check('H: the knob flips in a quarter second, and holds still under reduced motion',
+  /\.folder-clock \.wk-knob \{[\s\S]*?transition: transform \.25s ease;/.test(SITECSS)
+  && /\.folder-clock\.on \.wk-knob \{ transform: translateX\(\.8rem\); \}/.test(SITECSS)
+  && /prefers-reduced-motion[\s\S]{0,200}?\.wk-knob \{ transition: none; \}/.test(SITECSS));
+check('H: flipping updates what a screen reader is told',
+  /setAttribute\('aria-checked', out\.running \? 'true' : 'false'\)/.test(DRAWER));
+check('H: wireFolderClocks still hands its toggle back to a future caller',
+  /root\.__paClocksApi = \{[\s\S]*?toggleById/.test(DRAWER)
+  && /if \(root\.__paClocks\) return root\.__paClocksApi;/.test(DRAWER));
 
 check('H: the glow is the running clock and nothing else',
   /class="folder\$\{clock\?\.running \? ' working' : ''\}"/.test(DRAWER));

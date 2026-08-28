@@ -276,6 +276,14 @@ console.log('\n--- 4. the switch beats the schedule, seen from the client side -
 const flip = async (which) => {
   await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
   await settle(2500);
+  // The visual pass (2026-08-29) folded the office card into a closed
+  // <details>; the buttons still exist unchanged inside it. Set .open
+  // directly - clicking the summary after a repaint can toggle it closed.
+  await page.evaluate(() => {
+    const d = document.querySelector('details.office-fold');
+    if (d) d.open = true;
+  });
+  await settle(300);
   await page.click(`[data-set="${which}"]`);
   await settle(1500);
   return page.evaluate(() => ({
@@ -335,123 +343,82 @@ for (const [name, url] of [['the Chat tab', `${P}/chat.html?demo=1`]]) {
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n--- 5. long press: "Working on this client" ---');
+console.log('\n--- 5. the work switch on the card ---');
+// The long-press menu this section used to drive is gone (Eric, 2026-08-29:
+// "long pressing the chart isn't the way to go about toggling on if I'm
+// working... I want a toggle-able pill like a light switch. On/off for work
+// with a 0.25 second animation of the switch flipping."). What is driven now
+// is the switch itself: flip on, knob across, folder glows green, same clock
+// underneath; flip off, plain manila. The long-press drive and its shots are
+// in this file's history at v2.49.
 await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await settle(3500);
 
-// Scroll FIRST, settle, then measure. Reading the rect in the same evaluate as
-// the scrollIntoView gave a y of 1385 in an 844-high viewport, and every mouse
-// event then landed on nothing at all - which reads exactly like a long press
-// that does not work.
 const folderId = await page.evaluate(() => {
   const card = document.querySelector('.folder');
   card?.scrollIntoView({ block: 'center', behavior: 'instant' });
   return card?.dataset.id || null;
 });
 await settle(900);
-const folderBox = await page.evaluate((id) => {
-  const card = document.querySelector(`.folder[data-id="${id}"]`);
-  if (!card) return null;
-  // The NAME on the tab: away from the diagnosis line, which owns its own
-  // press, and away from the clock, which owns the tap.
-  const t = card.querySelector('.folder-name') || card;
-  const r = t.getBoundingClientRect();
-  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), id };
-}, folderId);
-ok('there is a folder on the shelf to press', !!folderBox, JSON.stringify(folderBox));
-ok('and it is actually on screen, so a press can land on it',
-  folderBox && folderBox.y > 0 && folderBox.y < 844, JSON.stringify(folderBox));
+ok('there is a folder on the shelf', !!folderId, String(folderId));
 
-const longPress = async () => {
-  await page.mouse.move(folderBox.x, folderBox.y);
-  await page.mouse.down();
-  await page.waitForTimeout(900);      // comfortably past the 550ms threshold
-  await page.mouse.up();
-  await settle(700);
-};
-
-const before = await page.evaluate((id) => ({
-  working: !!document.querySelector(`.folder[data-id="${id}"]`)?.classList.contains('working'),
-  clockOn: !!document.querySelector(`[data-clock="${id}"]`)?.classList.contains('on'),
-  url: location.pathname,
-}), folderBox.id);
-ok('the folder starts as plain manila', !before.working && !before.clockOn, JSON.stringify(before));
-
-await longPress();
-const menu = await page.evaluate(() => {
-  const m = document.querySelector('.msg-menu');
-  if (!m) return { there: false, url: location.pathname };
-  const rows = [...m.querySelectorAll('.msg-menu-row')];
-  return {
-    there: true,
-    url: location.pathname,
-    rows: rows.map((r) => r.textContent.replace(/\s+/g, ' ').trim()),
-    smallest: Math.min(...rows.map((r) => Math.round(r.getBoundingClientRect().height))),
-  };
-});
-ok('the long press opens a menu', menu.there, JSON.stringify(menu));
-// Cloudflare serves /admin.html at /admin too, so both spellings mean "still
-// on the shelf". What must NOT have happened is a trip to /admin-case.html.
-ok('and does NOT open the case underneath it',
-  /^\/admin(\.html)?$/.test(menu.url || ''), menu.url);
-ok('the menu offers "Working on this client" in his words',
-  (menu.rows || []).some((r) => /Working on this client/.test(r)), (menu.rows || []).join(' | '));
-ok('its rows are thumb-sized', (menu.smallest || 0) >= 40, `${menu.smallest}px`);
-await page.screenshot({ path: `${SHOT}/7-longpress-menu.png` });
-
-await page.click('.msg-menu-row[data-act="work"]');
-await settle(2000);
-const on = await page.evaluate((id) => {
-  const card = document.querySelector(`.folder[data-id="${id}"]`);
-  const clock = document.querySelector(`[data-clock="${id}"]`);
+const swState = (id) => page.evaluate((fid) => {
+  const card = document.querySelector(`.folder[data-id="${fid}"]`);
+  const clock = document.querySelector(`[data-clock="${fid}"]`);
+  const knob = clock?.querySelector('.wk-knob');
   const cs = card ? getComputedStyle(card) : null;
   return {
     working: !!card?.classList.contains('working'),
     clockOn: !!clock?.classList.contains('on'),
+    role: clock?.getAttribute('role'),
+    checked: clock?.getAttribute('aria-checked'),
+    title: clock?.getAttribute('title'),
+    knobShift: knob ? getComputedStyle(knob).transform : null,
+    knobTransition: knob ? getComputedStyle(knob).transitionDuration : null,
     clockText: clock?.querySelector('[data-clock-t]')?.textContent?.trim(),
     outline: cs?.outlineColor,
     outlineWidth: cs?.outlineWidth,
-    shadow: (cs?.boxShadow || '').slice(0, 120),
   };
-}, folderBox.id);
+}, id);
+
+const before = await swState(folderId);
+ok('the switch is a switch, off, and the folder plain manila',
+  before.role === 'switch' && before.checked === 'false'
+  && !before.working && !before.clockOn, JSON.stringify(before));
+ok('the knob is wired to flip in a quarter second',
+  before.knobTransition === '0.25s', String(before.knobTransition));
+await page.screenshot({ path: `${SHOT}/7-switch-off.png` });
+
+await page.click(`[data-clock="${folderId}"]`);
+await settle(2000);
+const on = await swState(folderId);
+ok('one flip: the switch reads on and the knob has slid across',
+  on.checked === 'true' && on.clockOn
+  && !!on.knobShift && on.knobShift !== 'none' && on.knobShift !== before.knobShift,
+  JSON.stringify({ checked: on.checked, knob: on.knobShift }));
 ok('the folder turns green-outline glow', on.working && parseFloat(on.outlineWidth) >= 2,
   `${on.outlineWidth} ${on.outline}`);
+// The Daylight palette (2026-08-29) deepened the glow green from
+// rgb(16,185,129) to rgb(30,122,78), so this asserts green-DOMINANCE - the
+// green channel beating both others - instead of pinning one green's bytes.
+// Cyan fails it: cyan's blue keeps up with its green.
 ok('the outline really is green, not the cyan everything else uses',
-  /rgb\(\s*\d+,\s*2\d\d,\s*1\d\d\s*\)/.test(on.outline || ''), on.outline);
+  (() => {
+    const m = (on.outline || '').match(/rgb\(\s*(\d+),\s*(\d+),\s*(\d+)/);
+    return !!m && +m[2] > +m[1] && +m[2] > +m[3];
+  })(), on.outline);
 ok('and the SAME clock that already existed is now running',
   on.clockOn, `clock reads "${on.clockText}"`);
-await page.screenshot({ path: `${SHOT}/8-folder-working.png` });
+ok('the words keep up with the state', /Flip to stop/.test(on.title || ''), on.title);
+await page.screenshot({ path: `${SHOT}/8-switch-on.png` });
 
-// The other three switches onto this clock must agree with it, or he has two
-// numbers for one case. The card's own toggle is the one visible from here.
-const inStep = await page.evaluate((id) => {
-  const clock = document.querySelector(`[data-clock="${id}"]`);
-  return { pressed: clock?.getAttribute('aria-pressed'), title: clock?.getAttribute('title') };
-}, folderBox.id);
-ok('the card toggle agrees that it is running',
-  inStep.pressed === 'true' && /Tap to stop/.test(inStep.title || ''), JSON.stringify(inStep));
-
-await longPress();
-const menu2 = await page.evaluate(() => ({
-  rows: [...document.querySelectorAll('.msg-menu-row')].map((r) => r.textContent.replace(/\s+/g, ' ').trim()),
-}));
-ok('pressing again offers the way back off it',
-  (menu2.rows || []).some((r) => /Stop working on this client/.test(r)), (menu2.rows || []).join(' | '));
-await page.click('.msg-menu-row[data-act="stop"]');
+await page.click(`[data-clock="${folderId}"]`);
 await settle(2000);
-const off = await page.evaluate((id) => {
-  const card = document.querySelector(`.folder[data-id="${id}"]`);
-  const cs = card ? getComputedStyle(card) : null;
-  return {
-    working: !!card?.classList.contains('working'),
-    clockOn: !!document.querySelector(`[data-clock="${id}"]`)?.classList.contains('on'),
-    outlineWidth: cs?.outlineWidth,
-    background: cs?.backgroundColor,
-  };
-}, folderBox.id);
-ok('turning it off goes back to regular manila', !off.working, JSON.stringify(off));
+const off = await swState(folderId);
+ok('flipping it back goes to regular manila', !off.working && off.checked === 'false',
+  JSON.stringify({ checked: off.checked, working: off.working }));
 ok('and stops the clock with it', !off.clockOn);
-await page.screenshot({ path: `${SHOT}/9-folder-manila.png` });
+await page.screenshot({ path: `${SHOT}/9-switch-off-again.png` });
 
 // A press on the diagnosis line must still be the diagnosis editor, not this.
 const dxBox = await page.evaluate(() => {
@@ -490,14 +457,14 @@ if (dxAt) {
 }
 
 // ---------------------------------------------------------------------------
-// THE LONG PRESS MUST NOT EAT THE NEXT TAP.
-//
-// fire() marks the card so the click trailing a fired press does not also open
-// the case. That mark is only ever consumed by a click reaching wireFolderOpen,
-// and after a long press the sheet is on top, so the click never arrives and
-// the mark stayed on the card. Reproduced before the fix: press, Cancel, tap,
-// nothing at all, tap again, the case opens. This is that sequence, driven.
-console.log('\n--- 5b. a tap straight after a cancelled long press ---');
+// THE LONG PRESS IS GONE (Eric, 2026-08-29: "long pressing the chart isn't
+// the way to go about toggling on if I'm working"). Until v2.49 this section
+// drove the mark-eats-the-next-tap bug in the long-press work menu; the menu
+// and its mark are deleted with the menu itself, and the old sequence lives
+// in file history at v2.49. What must stay true instead: a long hold on the
+// folder is now just a slow tap - no menu appears, the work switch does not
+// flip, and the case simply opens.
+console.log('\n--- 5b. a long hold on the folder is just a slow tap now ---');
 await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await settle(3000);
 const tapBox = await page.evaluate(() => {
@@ -514,41 +481,43 @@ const tapAt = await page.evaluate((id) => {
   return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
 }, tapBox);
 if (!tapAt) {
-  ok('a tap straight after a cancelled long press opens the case', false,
+  ok('a long hold on the folder opens the case', false,
     'no folder on the shelf to press');
 } else {
+  const swBefore = await page.evaluate((id) =>
+    document.querySelector(`[data-clock="${id}"]`)?.getAttribute('aria-checked') ?? null,
+  tapBox);
   await page.mouse.move(tapAt.x, tapAt.y);
   await page.mouse.down();
   await page.waitForTimeout(900);
   await page.mouse.up();
-  await settle(700);
-  ok('the long press opened its menu again', await page.evaluate(() => !!document.querySelector('.msg-menu')));
-  await page.click('.msg-menu-row[data-act="cancel"]');
-  await settle(600);
-  // The mark IS still on the card here, and that is fine: the click that would
-  // clear it never arrives, because the sheet was over the shelf. What matters
-  // is that the next press clears it before it can eat anything, which is the
-  // line wireDxLongPress has always had and this one was missing. So: press
-  // down, read the mark mid-press, release. That is one ordinary tap.
-  await page.mouse.move(tapAt.x, tapAt.y);
-  await page.mouse.down();
-  const midPress = await page.evaluate((id) =>
-    document.querySelector(`.folder[data-id="${id}"]`)?.dataset.lp ?? null, tapBox);
-  ok('the next press clears the mark its own last press left behind',
-    midPress === null, `lp is ${JSON.stringify(midPress)} at the start of the next tap`);
-  await page.mouse.up();
   await settle(1600);
-  const where = await page.evaluate(() => location.pathname + location.search);
-  ok('ONE ordinary tap after a cancelled long press opens the case',
-    /admin-case/.test(where), `still at ${where} after a single tap`);
-  await page.screenshot({ path: `${SHOT}/10-tap-after-press.png` });
+  const held = await page.evaluate(() => ({
+    menu: !!document.querySelector('.msg-menu'),
+    where: location.pathname + location.search,
+  }));
+  ok('no work menu appears any more', !held.menu);
+  ok('the hold is just a slow tap: the case opens',
+    /admin-case/.test(held.where), `at ${held.where}`);
+  await page.screenshot({ path: `${SHOT}/10-hold-opens-case.png` });
   await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
   await settle(2500);
+  const swAfter = await page.evaluate((id) =>
+    document.querySelector(`[data-clock="${id}"]`)?.getAttribute('aria-checked') ?? null,
+  tapBox);
+  ok('and it never flipped the work switch on the way through',
+    swAfter === swBefore, `switch ${swBefore} -> ${swAfter}`);
 }
 
 // Put the demo back the way it was found.
 await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await settle(2500);
+// Same fold as flip(): the buttons live inside the closed <details> now.
+await page.evaluate(() => {
+  const d = document.querySelector('details.office-fold');
+  if (d) d.open = true;
+});
+await settle(300);
 await page.click('[data-set=""]');
 await settle(1200);
 const restored = await page.evaluate(() => document.querySelector('[data-why]')?.textContent?.trim());

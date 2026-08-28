@@ -495,6 +495,42 @@ Date.now = realNow;
   docs.set('cases/a', saved);
 }
 
+// ---- C43: starting and stopping tells the client NOTHING ------------------
+// Eric, 2026-08-29: "I want to double check that the client is NOT getting
+// notifications when I start/stop working in general, like when I hit the
+// 'start working' button in chat. I don't want them getting notifications
+// for that." RUN, not read: the lifted route is driven through a start, a
+// correction and a stop with both send spies live, and the spies stay
+// empty. The nudge ladder is the clock's one sender, and its recipients are
+// pinned to his side alone in C43b.
+// NEGATIVE CONTROL (run 2026-08-29): adding a notifyUser call to the start
+// branch of the lifted handleWork made this read
+//   FAIL  C43 a start, a correction and a stop send nobody anything  -- 1 pushes, 0 emails
+{
+  reset();
+  await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
+  await W.handleWork(req({ caseId: 'a', setSeconds: 7200 }), env);
+  await W.handleWork(req({ caseId: 'a', on: false }), env);
+  check('C43 a start, a correction and a stop send nobody anything',
+    pushes.length === 0 && emails.length === 0,
+    `${pushes.length} pushes, ${emails.length} emails`);
+}
+// The ladder's push goes to the admin query and its email to ADMIN_EMAIL;
+// neither branch can reach clientUid, and the route itself contains no
+// sender at all.
+// NEGATIVE CONTROL (run 2026-08-29): pointing the ladder's notifyUser at
+// c.data.clientUid made this read
+//   FAIL  C43b the nudge ladder pings him, never them
+{
+  const nudgeSrc = (SRC.match(/async function runWorkClockNudges\([\s\S]*?\n\}/) || [''])[0];
+  const workSrc = (SRC.match(/async function handleWork\([\s\S]*?\n\}/) || [''])[0];
+  check('C43b the nudge ladder pings him, never them',
+    /queryDocs\(env, 'users', \[\['role', 'EQUAL', 'admin'\]\], 5\)/.test(nudgeSrc)
+    && /to: env\.ADMIN_EMAIL,/.test(nudgeSrc)
+    && !/clientUid/.test(nudgeSrc)
+    && !/notifyUser|sendEmail/.test(workSrc));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) { for (const f of failed) console.log(`  FAILED: ${f.name}`); process.exit(1); }
