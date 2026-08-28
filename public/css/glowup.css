@@ -2123,3 +2123,24 @@ main > .trust {
   .hero-pocket .actions { margin: 0; }
   .hero-pocket .webapp-note { flex-basis: 100%; margin: 0; justify-content: flex-start; }
 }
+
+/* ---- the booking page vignette (Eric, 2026-08-29) -----------------------
+   "Add a subtle gradient vignette to give it depth on the booking page."
+   One fixed elliptical layer: clear through the middle where every word and
+   field lives, deepening toward the corners in the scheme's own deep navy,
+   so the form reads as sitting in a pool of light. Under the sticky bar and
+   every overlay (they live at 40 and above), over the page itself, and
+   untouchable (pointer-events none). High contrast drops it: that scheme
+   exists so nothing is subtle. */
+.page-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background:
+    radial-gradient(130% 95% at 50% 14%,
+      transparent 52%,
+      color-mix(in srgb, var(--deep-2) 7%, transparent) 78%,
+      color-mix(in srgb, var(--deep-2) 16%, transparent) 100%);
+}
+:root[data-scheme="contrast"] .page-vignette { display: none; }
