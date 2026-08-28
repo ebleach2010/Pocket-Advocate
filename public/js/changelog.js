@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.46';
+export const VERSION = '2.47';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '2.46';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // The Daylight restyle lands on main on Eric's word ("Ship it.",
+    // 2026-08-29). Quiet, per the unspecified-push rule; he can call for a
+    // full update if he wants the card shown.
+    version: '2.47',
+    quiet: true,
+    client: [
+      'Pocket Advocate has a new look, drawn from our logo: powder blue in the day, deep navy after dark. Everything on your case works exactly as it did.',
+      'When my office is closed, the app rests in its night colors until I am back. Your own choice of look in Settings always wins, and you can change it there any time.',
+    ],
+  },
   {
     // Nothing is signed in the app any more (Eric, 2026-08-29: "Do NOT send
     // him any forms whatsoever... Keep that my side, not his."). Quiet.
