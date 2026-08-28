@@ -826,6 +826,10 @@ export function demoApi(role, store) {
         return fail(400, 'Name your insurance plan.');
       if (body.kind === 'records' && !scopes.length)
         return fail(400, 'Tick at least one thing you are authorising me to do.');
+      // Mirrors the Worker (2026-08-29): the contact tick is part of the
+      // scope of work agreement, refused in the same order.
+      if (body.kind === 'scope' && body.contactOk !== true)
+        return fail(400, 'Tick the box that lets me phone and text you about your case.');
       if (!body.signatureImage
         || !/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(String(body.signatureImage).trim()))
         return fail(400, 'Sign the document with your finger before sending it.');
@@ -839,6 +843,7 @@ export function demoApi(role, store) {
         planName: body.planName || '', memberId: body.memberId || '',
         categories: Array.isArray(body.categories) ? body.categories : [],
         scopes,
+        contactOk: body.contactOk === true,
         signatureImage: body.signatureImage || '',
       });
       // Mirrors the Worker (2026-08-29): a scope signature stamps the case

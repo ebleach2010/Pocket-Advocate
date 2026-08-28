@@ -299,9 +299,19 @@ ${signatureBlock(o, 'member')}`;
  * When Eric edits one of them through the copy deck, check the other, because
  * they describe one engagement and must not drift apart in substance.
  *
- * `o`: { clientName, signedName, signedAt } and `blank` for a paper copy.
+ * `o`: { clientName, signedName, signedAt, contactOk } and `blank` for a
+ * paper copy.
+ *
+ * CONTACT is the one section not lifted from the scope note, added on
+ * Eric's word (2026-08-29: "a tick box saying that he agrees I can contact
+ * him via phone by text or phone call. He can return my calls, but
+ * non-urgent messages should be used in the app chat portal"). The box
+ * prints as the client left it: [X] only when they actually ticked it,
+ * never assumed, and the Worker refuses to store a scope signature without
+ * the tick.
  */
 export function scopeOfWork(o = {}) {
+  const contactMark = o.blank || !o.contactOk ? '[ ]' : '[X]';
   return `SCOPE OF WORK AGREEMENT
 HANDS-OFF CASE MANAGEMENT
 
@@ -333,6 +343,12 @@ be withdrawn in writing at any time, and I stop using it straight away.
 Your month runs from the day it starts, whether or not that paperwork is
 settled. How fast we get it done is up to you: get it done early and you
 get all of it.
+
+CONTACT
+${contactMark} My advocate may contact me about my case by phone, as a phone
+call or a text message, and I can return his calls the same way.
+Anything that is not urgent goes through my case chat instead, so the
+whole case stays in one place.
 
 THE MONTH
 This is billed a month at a time, an active window of 30 days per month

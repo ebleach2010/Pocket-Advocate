@@ -396,6 +396,47 @@ check('S33 a blank prints ruled lines and no attestation',
     `${sdoc.length} chars`);
 }
 
+// ---- S35: the contact tick (Eric, 2026-08-29) -----------------------------
+// "a tick box saying that he agrees I can contact him via phone by text or
+// phone call. He can return my calls, but non-urgent messages should be
+// used in the app chat portal." The box prints as the client left it, the
+// Worker refuses a scope signature without it, and the sheet's copy never
+// arrives pre-ticked: a consent that arrives ticked is not one the client
+// gave.
+// NEGATIVE CONTROL (run 2026-08-29): hardcoding contactMark to '[X]' made
+// this read
+//   FAIL  S35 the agreement prints the contact box as the client left it
+check('S35 the agreement prints the contact box as the client left it',
+  (() => {
+    const ticked = scopeOfWork({ clientName: 'D', contactOk: true }).replace(/\s+/g, ' ');
+    const un = scopeOfWork({ clientName: 'D' }).replace(/\s+/g, ' ');
+    const blank = scopeOfWork({ blank: true }).replace(/\s+/g, ' ');
+    return /CONTACT \[X\] My advocate may contact me/.test(ticked)
+      && /phone call or a text message/.test(ticked)
+      && /not urgent goes through my case chat/.test(ticked)
+      && /CONTACT \[ \] My advocate may contact me/.test(un)
+      && /CONTACT \[ \]/.test(blank);
+  })());
+// NEGATIVE CONTROL (run 2026-08-29): deleting the Worker gate made this read
+//   FAIL  S35b the Worker refuses a scope signature without the tick
+check('S35b the Worker refuses a scope signature without the tick',
+  /if \(kind === 'scope' && !item\.contactOk\)/.test(WORKER)
+  && /Tick the box that lets me phone and text you about your case\./.test(WORKER)
+  && /contactOk: body\?\.contactOk === true,/.test(WORKER));
+// NEGATIVE CONTROL (run 2026-08-29): pre-ticking the sheet's box made this
+// read
+//   FAIL  S35c the sheet box arrives unticked and gates in red
+check('S35c the sheet box arrives unticked and gates in red',
+  /<input type="checkbox" data-contact>/.test(CASE)
+  && !/data-contact checked/.test(CASE)
+  && /if \(isScope && !overlay\.querySelector\('\[data-contact\]:checked'\)\)\n\s*mark\('\[data-contact\]'\);/.test(CASE)
+  && /contactOk: !!overlay\.querySelector\('\[data-contact\]:checked'\)/.test(CASE));
+// NEGATIVE CONTROL (run 2026-08-29): dropping the demo gate made this read
+//   FAIL  S35d and the demo refuses it the same way
+check('S35d and the demo refuses it the same way',
+  /body\.kind === 'scope' && body\.contactOk !== true/.test(DEMO)
+  && /contactOk: body\.contactOk === true,/.test(DEMO));
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 process.exit(failed.length ? 1 : 0);

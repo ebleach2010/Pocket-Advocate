@@ -1703,7 +1703,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-daylight-2';
+const BUILD_TAG = 'v2026-08-29-daylight-3';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1711,7 +1711,7 @@ const BUILD_TAG = 'v2026-08-29-daylight-2';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.44';
+const VERSION = '2.45';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3774,6 +3774,12 @@ async function handleAuthority(request, env, url) {
     // so a suite check keeps the two in step.
     scopes: Array.isArray(body?.scopes)
       ? body.scopes.filter((x) => AUTHORITY_SCOPE_IDS.includes(x)).slice(0, 8) : [],
+    // The contact tick on the scope of work agreement (Eric, 2026-08-29:
+    // "a tick box saying that he agrees I can contact him via phone by text
+    // or phone call"). Stored as the client left it; the gate below refuses
+    // a scope signature without it, so a stored scope item always carries
+    // true and the printed [X] is never assumed.
+    contactOk: body?.contactOk === true,
     // The drawn signature, as a data URL. Stored beside the typed name
     // rather than instead of it: the typed name is still the signature the
     // name-match above gates, and this is the mark that goes on the paper.
@@ -3808,6 +3814,12 @@ async function handleAuthority(request, env, url) {
     return json({ error: 'Name the clinic this authorisation is for.' }, 400);
   if (kind === 'representative' && !item.planName)
     return json({ error: 'Name your insurance plan.' }, 400);
+  // The contact clause is part of the agreement, not an extra, and the
+  // document prints the box exactly as ticked: without this gate a POST
+  // straight at the route stored a signed agreement whose contact box read
+  // as declined while the case ran on being able to phone them.
+  if (kind === 'scope' && !item.contactOk)
+    return json({ error: 'Tick the box that lets me phone and text you about your case.' }, 400);
   // The page gates on this too; this is the half that cannot be skipped by
   // posting straight at the route.
   if (!item.signatureImage)
