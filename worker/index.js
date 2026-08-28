@@ -1694,7 +1694,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-27-worklog-1';
+const BUILD_TAG = 'v2026-08-27-worklog-2';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -3871,6 +3871,68 @@ async function handleCaseLog(request, env, url) {
 }
 
 /**
+ * WHAT HIS CLIENT IS TOLD WHILE HE IS WORKING, and the words for each kind.
+ *
+ * Eric, 2026-08-27: "If I log a call it should notify the client that I'm
+ * making calls on his behalf. But not every time. Only once. Then it only
+ * sends him a new notification if it switches categories even if I made
+ * several calls."
+ *
+ * ONE LINE PER RUN OF A KIND. A run ends the moment he logs a different kind,
+ * so calls, then appeals, then calls again is THREE notifications and not two:
+ * coming back to a category is news in exactly the way staying in it is not.
+ *
+ * KEYED BY KIND, NEVER COMPOSED FROM ANYTHING A CALLER SENT. The same rule
+ * two other routes in this file already state in their own words: the
+ * summary-uploaded branch of the case action ("The WORDS come from here,
+ * keyed by an id, never from the caller. A body that could name its own label
+ * would be a route for putting arbitrary text into a client's push
+ * notification"), and the saved-message route, which reads the snapshot from
+ * the message rather than the request because taking it from the body "would
+ * let a caller store words the other person never wrote".
+ *
+ * AND THE LINE HE WROTE FOR THE ENTRY IS NOT IN HERE EITHER, deliberately.
+ * Asked whether an entry with no client-safe line should still notify, he
+ * said yes: this is about the KIND of work happening, not a pointer to a
+ * sentence to go and read. So the summary has no path into a push, which is
+ * also why an entry he keeps private can still say "he is on it".
+ */
+const WORK_LOG_NOTICES = {
+  call: 'is making calls to clinics on your case.',
+  appeal: 'is writing insurance companies about your case.',
+  investigation: 'is chasing something down on your case.',
+  appointment: 'is sitting in on an appointment for you.',
+};
+
+/**
+ * The whole decision in one function, so it can be RUN rather than read.
+ * Returns the words to send, or null for silence.
+ *
+ * `c` is the case document's data and `who` is what to call him. The one
+ * house way of naming him to a client is
+ * `firstName(profile?.data.name) || 'Your advocate'`, which is what the "sent
+ * you a message" notification uses; it is passed in rather than built here so
+ * there is still only one of it, and so this function stays runnable.
+ *
+ * THE THREE SILENCES LIVE IN HERE, not at the call site, so a test can prove
+ * them by running this instead of by reading it.
+ */
+function workLogNotice(kind, c, who) {
+  const tail = WORK_LOG_NOTICES[kind];
+  // A word this record does not know. The add action already folds those into
+  // 'call' on the way in; this is the second lock on the same door.
+  if (!tail) return null;
+  // Nobody on the other end, or a case that is over. Neither is a client to
+  // tell, and a closed case saying "he is making calls" would be a lie.
+  if (!c || !c.clientUid || c.status === 'closed') return null;
+  // The run test. `logKindTold` is the last kind his client was TOLD about,
+  // never the last kind he logged: an entry that told nobody must not end the
+  // run, or the next entry of that kind would be swallowed as well.
+  if (c.logKindTold === kind) return null;
+  return `${who} ${tail}`;
+}
+
+/**
  * GET/POST /api/clinic-calls - his own work log, admin only.
  *
  * Their own private record, not a value on `appointment`: that field's
@@ -3919,6 +3981,40 @@ async function handleClinicCalls(request, env, url) {
       kind, summary: str(body?.summary, 400),
       at: at ? new Date(at) : null, notes: '', createdAt: new Date(),
     }, { mustNotExist: true });
+
+    // THE STATUS LINE, and only on this branch. Logging work is new work;
+    // editing an entry's notes further down is not, and says nothing at all.
+    //
+    // The entry is already saved above, and nothing below may undo that: a
+    // phone that cannot be reached is not a reason to lose what he typed.
+    // Both reads together, because the second costs nothing beside the first.
+    const [c, profile] = await Promise.all([
+      getDoc(env, `cases/${id}`).catch(() => null),
+      getDoc(env, `users/${admin.uid}`).catch(() => null),
+    ]);
+    const notice = workLogNotice(kind, c?.data, firstName(profile?.data.name) || 'Your advocate');
+    if (notice) {
+      // ORDER: send FIRST, stamp the case SECOND, and the stamp sits inside
+      // the success path so anything that throws on the way never lays one
+      // down. The other order has one failure mode and it is the bad one: a
+      // stamp with nothing sent behind it ends the run in the record only,
+      // and every later entry of that kind is then silently swallowed, which
+      // is a client told nothing and nobody ever finding out. This way round
+      // the worst case is a line said twice, which he and his client can both
+      // see. (notifyUser swallows its own send errors by design, so what this
+      // ordering really guards is the stamp write and anything added here
+      // later that does throw.)
+      await notifyUser(env, c.data.clientUid, {
+        title: 'Pocket Advocate',
+        body: notice,
+        link: `/case.html?id=${id}`,
+      })
+        // The case doc is client-readable, so this field was chosen to be
+        // something the client has just been told in words: one of four
+        // fixed kinds, and never his private line or his notes.
+        .then(() => patchDoc(env, `cases/${id}`, { logKindTold: kind }, { mask: ['logKindTold'] }))
+        .catch(() => { /* the entry is logged either way */ });
+    }
     return json({ ok: true });
   }
   if (body?.action === 'notes') {
@@ -3929,6 +4025,12 @@ async function handleClinicCalls(request, env, url) {
     // phone. The summary joins the mask only when the caller actually sent
     // one, so a request that knows nothing about it cannot blank the line his
     // client is already reading.
+    //
+    // NOTHING IS SENT FROM HERE, and `kind` is not in the mask. An edit is
+    // not new work: he can rewrite what he wrote about a call he already
+    // logged without buzzing his client again. Keep both true together, since
+    // a kind that could be edited here would be a run switch with no
+    // notification behind it, and the stored kind would then be wrong.
     const fields = { notes: str(body?.notes, 20000), notesAt: new Date() };
     const mask = ['notes', 'notesAt'];
     if (body && typeof body.summary === 'string') {

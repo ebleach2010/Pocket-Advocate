@@ -440,6 +440,297 @@ ck('L30 the demo builds the same four fields, by name',
 ck('L31 and drops an entry with no client line, exactly as the Worker does',
   /if \(!summary\) continue;/.test(demoLog));
 
+// ---- L32-L44: "he is on it", said once per run of a kind -----------------
+// Eric, 2026-08-27: "Current status notifications. If I log a call it should
+// notify the client that I'm making calls on his behalf. But not every time.
+// Only once. Then it only sends him a new notification if it switches
+// categories even if I made several calls. So if I start logging calls it
+// notifies 'Your advocate is making calls to clinics...' and then switches to
+// 'Eric is writing insurance companies...' etc." Asked two questions, he chose
+// that it notifies EVEN IF he wrote no client-safe line on the entry (it is
+// about the KIND of work, not a pointer to something to go and read), and
+// therefore that the empty log must not look broken.
+//
+// THESE ARE RUN, NOT READ. A regex can see that a notifyUser call exists; it
+// cannot tell you that six entries produce three notifications, which three,
+// or that a notes edit produces none. So the route itself is lifted out of the
+// shipped Worker and driven with stubbed dependencies, and the assertions are
+// about what came out of it.
+const noticeTable = (WORKER.match(/const WORK_LOG_NOTICES = \{[\s\S]*?\n\};/) || [''])[0];
+const noticeFn = (WORKER.match(/function workLogNotice\(kind, c, who\) \{[\s\S]*?\n\}/) || [''])[0];
+const routeSrc = (WORKER.match(/async function handleClinicCalls\(request, env, url\) \{[\s\S]*?\n\}/) || [''])[0];
+const strFn = (WORKER.match(/function str\(v, n\) \{[\s\S]*?\n\}/) || [''])[0];
+const nameFn = (WORKER.match(/function firstName\(v\) \{[\s\S]*?\n\}/) || [''])[0];
+// NEGATIVE CONTROL (run 2026-08-28): renaming workLogNotice in the Worker made
+// this read
+//   FAIL  L32 the notification lifts out of the shipped Worker, words and all  -- workLogNotice
+// A lift that has lost its target goes red rather than asserting nothing, the
+// same way L4 does for the projection.
+ck('L32 the notification lifts out of the shipped Worker, words and all',
+  !!noticeTable && !!noticeFn && !!routeSrc && !!strFn && !!nameFn,
+  [!noticeTable && 'WORK_LOG_NOTICES', !noticeFn && 'workLogNotice',
+    !routeSrc && 'handleClinicCalls', !strFn && 'str', !nameFn && 'firstName']
+    .filter(Boolean).join(', '));
+
+/** The route, running, with everything it touches stubbed. `ctl.boom` makes a
+ *  send throw, which is how the ordering of send-then-stamp is proved. */
+const harness = (caseData, adminData = { name: 'Eric Bleach', role: 'admin' }) => {
+  const notified = [];
+  const written = [];
+  const store = new Map();
+  const ctl = { boom: false };
+  if (caseData) store.set('cases/c1', caseData);
+  if (adminData) store.set('users/eric', adminData);
+  const deps = {
+    requireAdmin: async () => ({ uid: 'eric' }),
+    json: (obj, code = 200) => ({ code, obj }),
+    listDocs: async () => [],
+    getDoc: async (env, path) => (store.has(path)
+      ? { id: path.split('/').pop(), data: store.get(path) } : null),
+    patchDoc: async (env, path, data) => {
+      written.push({ path, data });
+      store.set(path, { ...(store.get(path) || {}), ...data });
+      return true;
+    },
+    notifyUser: async (env, uid, msg) => {
+      if (ctl.boom) throw new Error('push is down');
+      notified.push({ uid, ...msg });
+    },
+    crypto: { randomUUID: () => `entry${written.length}` },
+  };
+  // eslint-disable-next-line no-new-func
+  const fn = new Function('deps', `
+    const { requireAdmin, json, listDocs, getDoc, patchDoc, notifyUser, crypto } = deps;
+    const LOG_KINDS = ${workerKinds || "['call']"};
+    ${strFn}
+    ${nameFn}
+    ${noticeTable}
+    ${noticeFn}
+    ${routeSrc}
+    return handleClinicCalls;
+  `)(deps);
+  const post = (b) => fn({ method: 'POST', json: async () => b },
+    {}, new URL('https://x/api/clinic-calls'));
+  return { post, notified, written, store, ctl };
+};
+
+// The line he types on the entry. It is stored, it reaches his client's work
+// log through the projection, and it must never reach a lock screen.
+const TYPED = 'Chased Marcy about the fax that never went. Do not repeat this.';
+const OPEN_CASE = { clientUid: 'client1', clientName: 'Dana Reyes', status: 'open' };
+const H = harness({ ...OPEN_CASE });
+const SEQUENCE = ['call', 'call', 'call', 'appeal', 'appeal', 'call'];
+const replies = [];
+for (const kind of SEQUENCE) {
+  // eslint-disable-next-line no-await-in-loop
+  replies.push(await H.post({
+    caseId: 'c1', action: 'add', kind, clinic: 'Valley Neurology', summary: TYPED,
+  }));
+}
+const said = H.notified.map((n) => n.body);
+// NEGATIVE CONTROL (run 2026-08-28): neutering the run test in workLogNotice
+// (`if (c.logKindTold === kind)` to `if (false)`) made this read
+//   FAIL  L33 six entries, three runs, three notifications and not one more  --
+//   6 sent: Eric is making calls to clinics on your case. | Eric is making
+//   calls to clinics on your case. | Eric is making calls to clinics on your
+//   case. | Eric is writing insurance companies about your case. | Eric is
+//   writing insurance companies about your case. | Eric is making calls to
+//   clinics on your case.
+// which is the "every time" he explicitly did not ask for.
+ck('L33 six entries, three runs, three notifications and not one more',
+  said.length === 3, `${said.length} sent: ${said.join(' | ')}`);
+// AND WHICH THREE. Three of anything is not the property; the property is that
+// the third one is a CALL again, because returning to a category he used
+// earlier is a switch and does say so a second time.
+// NEGATIVE CONTROL (run 2026-08-28): remembering every kind ever announced
+// (stamping an accumulated string and testing it with `includes`, instead of
+// one last-told kind) made this read
+//   FAIL  L34 and going back to calls after the appeals says so again  -- Eric
+//   is making calls to clinics on your case. | Eric is writing insurance
+//   companies about your case.
+ck('L34 and going back to calls after the appeals says so again',
+  said.join(' | ') === [
+    'Eric is making calls to clinics on your case.',
+    'Eric is writing insurance companies about your case.',
+    'Eric is making calls to clinics on your case.',
+  ].join(' | '), said.join(' | ') || '(silence)');
+// NEGATIVE CONTROL (run 2026-08-28): pointing the link at /admin-case.html and
+// the title at 'Work log' made this read
+//   FAIL  L35 all three go to the client, in the house title, at their own
+//   work log  -- uid client1 | title Work log | link /admin-case.html?id=c1
+ck('L35 all three go to the client, in the house title, at their own work log',
+  H.notified.every((n) => n.uid === 'client1' && n.title === 'Pocket Advocate'
+    && n.link === '/case.html?id=c1'),
+  H.notified.map((n) => `uid ${n.uid} | title ${n.title} | link ${n.link}`)[0] || '(silence)');
+// THE LINE HE TYPED HAS NO PATH INTO A LOCK SCREEN. He asked for the entry to
+// notify even when he writes no client line at all, so the words are keyed by
+// kind in the Worker; this is that promise, run.
+// NEGATIVE CONTROL (run 2026-08-28): appending `${str(body?.summary, 400)}` to
+// the notification body made this read
+//   FAIL  L36 and not one of them carries the line he typed, or who he called
+//   -- Eric is making calls to clinics on your case. Chased Marcy about the
+//   fax that never went. Do not repeat this.
+ck('L36 and not one of them carries the line he typed, or who he called',
+  !said.some((b) => b.includes(TYPED) || b.includes('Marcy') || b.includes('Valley Neurology')),
+  said.find((b) => b.includes(TYPED) || b.includes('Marcy') || b.includes('Valley Neurology')) || '');
+// AND THE ENTRY LANDS FIRST. Saving what he typed is the job; the status line
+// is a courtesy on top of it, and it must never be able to get in front.
+// NEGATIVE CONTROL (run 2026-08-28): moving the notify block above the entry
+// write made this read
+//   FAIL  L37 all six entries were saved, and each one before a word was sent
+//   -- 6 entries, 6 ok, first write cases/c1
+const entryWrites = H.written.filter((w) => w.path.includes('/private/clinicCalls/items/'));
+ck('L37 all six entries were saved, and each one before a word was sent',
+  entryWrites.length === 6 && replies.every((r) => r.obj.ok === true)
+  && H.written[0].path.includes('/private/clinicCalls/items/'),
+  `${entryWrites.length} entries, ${replies.filter((r) => r.obj.ok).length} ok, first write ${H.written[0]?.path}`);
+
+// THE NEGATIVE, RUN. An edit is not new work: he rewrites what he wrote about
+// a call he already logged, and nobody's phone lights up for it.
+const before = H.notified.length;
+const noteReply = await H.post({
+  caseId: 'c1', action: 'notes', id: 'entry0', notes: 'private', summary: 'a new line',
+});
+// NEGATIVE CONTROL (run 2026-08-28): copying the notify block from the add
+// branch into the notes branch made this read
+//   FAIL  L38 editing an entry's notes tells the client nothing at all  -- 4 sent, was 3
+ck('L38 editing an entry\'s notes tells the client nothing at all',
+  H.notified.length === before && noteReply.obj.ok === true,
+  `${H.notified.length} sent, was ${before}`);
+// And the kind stays unwritable there, because a kind that could be edited
+// would be a run switch with nothing sent behind it.
+// READ STRIPPED, the same trap L17 documents: the comment standing over that
+// branch explains why the kind is not editable there, so the raw slice
+// contains the word this check is looking for the absence of.
+// NEGATIVE CONTROL (run 2026-08-28): adding kind to the notes mask made this
+// read
+//   FAIL  L38b and the notes save still cannot change an entry's kind  -- the notes branch touches kind or notifies
+const notesBranch = bare((routeSrc.match(/if \(body\?\.action === 'notes'\) \{[\s\S]*?\n  \}/) || [''])[0]);
+ck('L38b and the notes save still cannot change an entry\'s kind',
+  notesBranch.length > 0 && !/kind/.test(notesBranch) && !/notifyUser/.test(notesBranch),
+  notesBranch ? 'the notes branch touches kind or notifies' : 'could not slice the notes branch');
+
+// NOBODY TO TELL, AND A CASE THAT IS OVER. Both are silence, and both still
+// save the entry.
+const noClient = harness({ status: 'open' });
+await noClient.post({ caseId: 'c1', action: 'add', kind: 'call', clinic: 'X' });
+const closed = harness({ clientUid: 'client1', status: 'closed' });
+await closed.post({ caseId: 'c1', action: 'add', kind: 'call', clinic: 'X' });
+// NEGATIVE CONTROL (run 2026-08-28): reducing the guard in workLogNotice to
+// `if (!c) return null;` made this read
+//   FAIL  L39 a case with nobody on it and a closed case are both told nothing
+//   -- no client 1 sent, closed case 1 sent
+ck('L39 a case with nobody on it and a closed case are both told nothing',
+  noClient.notified.length === 0 && closed.notified.length === 0
+  && noClient.written.length === 1 && closed.written.length === 1,
+  `no client ${noClient.notified.length} sent, closed case ${closed.notified.length} sent`);
+
+// THE GUARD AGAINST A FUNCTION THAT NEVER SPEAKS. Everything above would also
+// pass if the decision were "say nothing, always", so this drives all four
+// kinds from a fresh case and demands four different sentences.
+// eslint-disable-next-line no-new-func
+const lifted = new Function(`${noticeTable}\n${noticeFn}\nreturn { WORK_LOG_NOTICES, workLogNotice };`)();
+const eachKind = workerKinds.replace(/[[\]'\s]/g, '').split(',')
+  .map((k) => lifted.workLogNotice(k, { ...OPEN_CASE }, 'Your advocate'));
+// NEGATIVE CONTROL (run 2026-08-28): making workLogNotice `return null;` on its
+// first line made this read
+//   FAIL  L40 every one of the four kinds actually says something, and says it
+//   once  --  ,  ,  ,
+ck('L40 every one of the four kinds actually says something, and says it once',
+  eachKind.length === 4 && eachKind.every((b) => typeof b === 'string' && b.length > 10)
+  && new Set(eachKind).size === 4,
+  eachKind.join(' , '));
+// HIS TWO EXAMPLES, BOTH OF THEM, from the one house way of naming him. The
+// call site passes `firstName(profile?.data.name) || 'Your advocate'`, the
+// same expression the "sent you a message" notification uses.
+// NEGATIVE CONTROL (run 2026-08-28): changing the call tail to "is phoning
+// around" made this read
+//   FAIL  L40b and the words are his own, both ways he can be named  -- Your
+//   advocate is phoning around.
+ck('L40b and the words are his own, both ways he can be named',
+  lifted.workLogNotice('call', { ...OPEN_CASE }, 'Your advocate')
+    === 'Your advocate is making calls to clinics on your case.'
+  && lifted.workLogNotice('appeal', { ...OPEN_CASE }, 'Eric')
+    === 'Eric is writing insurance companies about your case.',
+  lifted.workLogNotice('call', { ...OPEN_CASE }, 'Your advocate') || '(silence)');
+// NEGATIVE CONTROL (run 2026-08-28): dropping 'investigation' from the notice
+// table made this read
+//   FAIL  L40c the table covers exactly the four kinds this record holds  --
+//   notices appeal|appointment|call vs kinds
+//   appeal|appointment|call|investigation
+ck('L40c the table covers exactly the four kinds this record holds',
+  sorted(Object.keys(lifted.WORK_LOG_NOTICES))
+    === sorted(workerKinds.replace(/[[\]'\s]/g, '').split(',')),
+  `notices ${sorted(Object.keys(lifted.WORK_LOG_NOTICES))} vs kinds ${sorted(workerKinds.replace(/[[\]'\s]/g, '').split(','))}`);
+
+// THE ORDERING, PROVED BY BREAKING THE SEND. Stamp-then-send would leave the
+// case saying the client had been told when nothing went out, and every later
+// entry of that kind would be swallowed in silence. Send-then-stamp fails the
+// other way: it can repeat itself, which is visible.
+const boom = harness({ ...OPEN_CASE });
+boom.ctl.boom = true;
+// Wrapped, because L42 below exists to catch the route letting a dead phone
+// escape. Without this the suite would die here instead of reporting it.
+let boomThrew = '';
+try { await boom.post({ caseId: 'c1', action: 'add', kind: 'call', clinic: 'X' }); }
+catch (e) { boomThrew = ` (and the route threw: ${e.message})`; }
+const stampedAfterThrow = boom.store.get('cases/c1').logKindTold;
+boom.ctl.boom = false;
+await boom.post({ caseId: 'c1', action: 'add', kind: 'call', clinic: 'X' });
+// NEGATIVE CONTROL (run 2026-08-28): moving the stamp ahead of the send (an
+// unconditional patchDoc before notifyUser) made this read
+//   FAIL  L41 a send that throws leaves the stored kind alone, so the next one
+//   says it  -- stamped call after the send threw, then 0 sent
+ck('L41 a send that throws leaves the stored kind alone, so the next one says it',
+  stampedAfterThrow === undefined && boom.notified.length === 1,
+  `stamped ${stampedAfterThrow} after the send threw, then ${boom.notified.length} sent${boomThrew}`);
+// NEGATIVE CONTROL (run 2026-08-28): taking the `.catch(() => {})` off the
+// notify chain made this read
+//   FAIL  L42 and a phone that cannot be reached never fails his save  -- the
+//   route threw: Error: push is down
+let saveSurvived = '';
+try {
+  const b2 = harness({ ...OPEN_CASE });
+  b2.ctl.boom = true;
+  const r = await b2.post({ caseId: 'c1', action: 'add', kind: 'appeal', clinic: 'X' });
+  saveSurvived = r.obj.ok === true && b2.written.length === 1 ? 'ok' : 'the entry was not saved';
+} catch (e) { saveSurvived = `the route threw: ${e}`; }
+ck('L42 and a phone that cannot be reached never fails his save',
+  saveSurvived === 'ok', saveSurvived);
+// NOTHING GOES TO HIM. This is a client-facing status; his own phone already
+// buzzes for everything else on this case.
+// NEGATIVE CONTROL (run 2026-08-28): adding an admin fan-out to the add branch
+// made this read
+//   FAIL  L43 exactly one send lives in the add branch, and it is aimed at the
+//   client  -- 2 sends in the add branch
+const addBranch = (routeSrc.match(/if \(body\?\.action === 'add'\) \{[\s\S]*?\n  \}/) || [''])[0];
+ck('L43 exactly one send lives in the add branch, and it is aimed at the client',
+  (addBranch.match(/notifyUser\(/g) || []).length === 1
+  && /notifyUser\(env, c\.data\.clientUid, \{/.test(addBranch)
+  && !/role', 'EQUAL', 'admin/.test(addBranch),
+  `${(addBranch.match(/notifyUser\(/g) || []).length} sends in the add branch`);
+
+// THE EMPTY LOG. A client can now be told he is making calls and open the app
+// to a log with nothing in it, because he logs a call when he writes it up.
+// An empty box would read as broken; this says what the panel is.
+// NEGATIVE CONTROL (run 2026-08-28): deleting the else branch of the items
+// ternary made this read
+//   FAIL  L44 the empty work log says what it is for, in his voice
+ck('L44 the empty work log says what it is for, in his voice',
+  /This is where I write down the work I do on your\n\s*case, by date\./.test(CLIENT));
+// No em or en dash in anything a client reads. defects.mjs scans the static
+// pages and says in its own comment that copy built inside a JS module is NOT
+// covered, so the new copy is pinned here by codepoint.
+// NEGATIVE CONTROL (run 2026-08-28): putting an em dash in the call notice
+// made this read
+//   FAIL  L44b no em or en dash in the new client copy  -- call: 'is making calls to clinics — on your case.',
+const dashLines = [...noticeTable.split('\n'),
+  ...(CLIENT.match(/<p class="dim small">This is where I write[\s\S]*?<\/p>/) || [''])[0].split('\n')]
+  .filter((ln) => /[—–]/.test(ln));
+ck('L44b no em or en dash in the new client copy',
+  dashLines.length === 0, dashLines[0]?.trim() || '');
+
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

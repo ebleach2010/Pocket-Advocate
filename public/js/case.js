@@ -2055,9 +2055,8 @@ async function mountCaseLog(host, c) {
             </li>`;
   }).join('')}
         </ul>` : `
-        <p class="dim small">Nothing here yet. Calls I make for you, appeals I
-          file, things I chase down and appointments I sit in on land here by
-          date, so you can see where your case has been without having to ask.</p>`}
+        <p class="dim small">This is where I write down the work I do on your
+          case, by date.</p>`}
       </div>`;
   };
 
