@@ -141,7 +141,19 @@ const cache = new Map();
 
 async function get(path) {
   if (cache.has(path)) return cache.get(path);
-  const res = await fetch(new URL(path, ORIGIN));
+  // AN ORIGIN THAT IS NOT THERE IS A FAILED AUDIT, NOT A CRASH. An unhandled
+  // TypeError from fetch exits non-zero with a stack trace and no verdict,
+  // which reads as "the tool is broken" rather than "nothing was checked".
+  // Found 2026-08-28 pointing this at a port whose server had gone away.
+  let res;
+  try {
+    res = await fetch(new URL(path, ORIGIN));
+  } catch (e) {
+    const rec = { status: 0, url: `${ORIGIN}${path}`, type: '', body: '',
+      unreachable: `${e.cause?.code || e.message}` };
+    cache.set(path, rec);
+    return rec;
+  }
   const type = res.headers.get('content-type') || '';
   // Only text is searchable. A PNG will match /\bAI\b/ by accident and mean
   // nothing by it.
@@ -206,8 +218,56 @@ function resolve(ref, fromUrl) {
 
 console.log(`blindness audit — ${ORIGIN}\n`);
 
+// ---- 0. THE SERVER IS SERVING THIS TREE ----------------------------------
+//
+// Added 2026-08-28, after an ALL CLEAR was reported against a Worker that
+// turned out to belong to another worktree entirely. It answered on the port
+// this was pointed at, it returned 200, and it served a DIFFERENT case.js:
+// 127,900 bytes against this tree's 130,644, and /api/version naming a branch
+// tag two releases old. The audit had no way to notice, so it scanned somebody
+// else's bytes and pronounced them clean.
+//
+// A 200 on the origin proves a server answered. It does not prove it is YOUR
+// server. This does: fetch a file a client is meant to read and compare it to
+// the same file on disk, byte for byte.
+//
+// NOT AN ADMIN FILE. Probing /js/admin-case.js gives 404 by design, and
+// reading that as a dead server is the same mistake pointed the other way.
+// Client-readable only, and two of them, so a single stale cache entry cannot
+// carry the check.
+{
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const { dirname, join } = await import('node:path');
+  const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
+  console.log('0. the server under test is serving this working tree');
+  let matched = 0;
+  for (const rel of ['js/case.js', 'js/reviews-config.js']) {
+    let disk = '';
+    try { disk = readFileSync(join(REPO, 'public', rel), 'utf8'); } catch { /* not here */ }
+    if (!disk) { fail(`public/${rel} is not on disk, so identity cannot be checked`); continue; }
+    const rec = await get(`/${rel}`);
+    if (rec.unreachable) fail(`nothing is answering at ${ORIGIN} (${rec.unreachable})`);
+    else if (rec.status !== 200) fail(`/${rel} answered ${rec.status}, so identity cannot be checked`);
+    else if (rec.body !== disk)
+      // CHARACTERS, not bytes, and the label matters: these files carry emoji
+      // and curly quotes, so `wc -c` on the same file reports ~96 more. The
+      // comparison itself is the whole string, so it is exact either way; only
+      // a mislabelled number sends the next reader hunting a phantom diff.
+      fail(`/${rel} is not this tree: served ${rec.body.length} characters,`
+        + ` on disk ${disk.length} (${Buffer.byteLength(disk)} bytes)`);
+    else matched += 1;
+  }
+  if (matched === 2) console.log('  case.js and reviews-config.js match this tree byte for byte');
+  if (failures) {
+    console.log('\nSTOPPING. Whatever is on that port, it is not this tree, and a'
+      + ' verdict about\nsomebody else\'s bytes is worse than no verdict at all.');
+    process.exit(1);
+  }
+}
+
 // ---- 1. every byte a client's browser downloads --------------------------
-console.log('1. everything reachable from a client page');
+console.log('\n1. everything reachable from a client page');
 const queue = [...CLIENT_PAGES, ...EXTRA];
 const visited = new Set();
 let files = 0;

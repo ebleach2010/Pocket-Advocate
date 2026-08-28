@@ -1178,9 +1178,25 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       : act.summary;
     actCard.appendChild(said);
 
-    // Both figures, side by side, for the two acts that move a number the
-    // client can read on their own page. "3500" and "35000" are one keystroke
-    // apart and this is the only thing that can tell them apart.
+    // BOTH FIGURES, SIDE BY SIDE, FOR THE ACTS THAT MOVE A NUMBER a client can
+    // read on their own page.
+    //
+    // NOTHING SUPPLIES THESE TODAY, and the comment that used to sit here said
+    // otherwise. Measured 2026-08-28 by lifting this function and running it on
+    // the real output of validateAction('set-paid', { dollars: 3500 }): the act
+    // carries ok, name, tier, via, scoped, path, args, summary and amountCents,
+    // and no before or after. The card renders three lines and neither figure.
+    //
+    // What he DOES see is the summary, which spells the amount out in full:
+    // "Record that this client has paid $3,500 for the case." So 3500 and 35000
+    // are still told apart, as "$3,500" against "$35,000". What is missing is
+    // the other half, what the case records NOW, so he cannot see what he is
+    // about to overwrite.
+    //
+    // Left in place rather than deleted: this is the render path for the day
+    // that half exists. Supplying it means a case read, and validateAction is
+    // deliberately pure and has no case in front of it, so it is a real change
+    // and not a line of glue. Eric's call, not one to make at 2am.
     if (act.before) actLine(actCard, act.before);
     if (act.after) actLine(actCard, act.after);
 

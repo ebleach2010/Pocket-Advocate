@@ -1215,6 +1215,82 @@ const TABLE = {
       && !/already sent/i.test(ACTSRC.slice(ACTSRC.indexOf("'send-forms'"), ACTSRC.indexOf("'send-forms'") + 1400)));
 }
 
+// ---- A32: the confirm card, LIFTED AND RUN ------------------------------
+//
+// Until now this file matched renderActCard as TEXT and never called it. That
+// is how a comment claiming the card shows "both figures, side by side" for a
+// money change survived: nothing ever ran the function to see.
+//
+// Measured 2026-08-28 by lifting it and rendering the real output of
+// validateAction('set-paid', { dollars: 3500 }). The act carries ok, name,
+// tier, via, scoped, path, args, summary and amountCents. There is no `before`
+// and no `after`, from the allowlist or from anywhere else, so both lines are
+// skipped and the card renders three things.
+//
+// THIS CHECK PINS WHAT HE ACTUALLY SEES, not what the comment wished for. The
+// figure is in the summary, spelled out, which is what keeps $3,500 and
+// $35,000 apart. If someone later supplies before/after, A32b goes red and is
+// updated deliberately rather than the change landing unnoticed.
+{
+  const mk = (tag) => ({
+    tagName: tag.toUpperCase(), className: '', id: '', hidden: false,
+    style: {}, dataset: {}, children: [], _text: '',
+    set textContent(t) { this._text = t; }, get textContent() { return this._text; },
+    set innerHTML(h) { this.children = []; }, get innerHTML() { return ''; },
+    appendChild(c) { this.children.push(c); return c; },
+    append(...c) { this.children.push(...c); },
+    addEventListener() {}, scrollIntoView() {},
+  });
+  // A LOST LIFT IS A CLEAN FAIL, NOT A STACK TRACE. Renaming renderActCard in
+  // the shipped panel leaves the slab empty, and running an empty slab threw
+  // `ReferenceError: renderActCard is not defined`, killing the process with
+  // no verdict for this block. Loud, but the same "the tool is broken" shape
+  // the blindness audit had against a dead origin. Measured 2026-08-28.
+  const render = (act) => {
+    if (!LIFT.renderActCard) return null;
+    const host = mk('div');
+    const actLine = (h, text) => { const el = mk('p'); el.textContent = text; h.appendChild(el); return el; };
+    let fn;
+    try {
+      fn = new Function('actCard', 'actLine', 'document', 'actFinish', 'actBusy',
+        `${LIFT.renderActCard}\n return renderActCard;`)(
+        host, actLine, { createElement: mk }, async () => {}, false);
+      fn(act);
+    } catch (e) { return { threw: `${e.constructor.name}: ${e.message}` }; }
+    const flat = (n, out = []) => { if (n._text) out.push(n._text); n.children.forEach((c) => flat(c, out)); return out; };
+    return flat(host);
+  };
+  const paid = validateAction('set-paid', TABLE['set-paid']?.good);
+  const rendered = render({ ...paid, name: 'set-paid' });
+  const shown = Array.isArray(rendered) ? rendered : [];
+  const why = rendered === null ? 'the lift came back empty'
+    : rendered?.threw ? rendered.threw : '';
+
+  // NEGATIVE CONTROL (run 2026-08-28): renaming renderActCard in the shipped
+  // panel made this read
+  //   FAIL  A32 the confirm card lifts out of the shipped panel and renders
+  ck('A32 the confirm card lifts out of the shipped panel and renders',
+    !why && shown.length > 0, why || `${shown.length} lines`);
+
+  // FOUR LINES: the heading, the summary, and the two buttons. I first wrote
+  // three here and this check told me so on its first run, which is the whole
+  // argument for pinning a rendered count rather than describing it.
+  //
+  // NEGATIVE CONTROL (run 2026-08-28): giving the act a `before` string made
+  // this read
+  //   FAIL  A32b -- 5 lines: ... | This case records $175 paid. | Not now | Do it
+  ck('A32b the two-figure lines are NOT rendered, because nothing supplies them',
+    !paid.before && !paid.after && shown.length === 4,
+    `${shown.length} lines: ${shown.join(' | ')}`);
+
+  // AND THE FIGURE HE CONFIRMS IS ON THE CARD, spelled out, which is the half
+  // that does the work. NEGATIVE CONTROL (2026-08-28): blanking the summary in
+  // the shipped module made this read
+  //   FAIL  A32c the amount he is confirming is on the card, in full
+  ck('A32c the amount he is confirming is on the card, in full',
+    shown.some((t) => /\$3,500/.test(t)), shown.join(' | '));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }
