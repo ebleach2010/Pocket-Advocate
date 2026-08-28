@@ -149,11 +149,17 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
   // halves are still nailed down on both sides - the render line by the call
   // it must make, and the resolver by the strip it must contain - and no part
   // of it can be deleted without this going red.
-  const clientName = slab(CLIENT, 'const shownName =', "');");
-  const clientRead = slab(CLIENT, 'const readName =', ';');
-  const adminRead = slab(ADMINCASE, 'const readName =', ';');
-  const adminName = slab(ADMINCASE, '<span class="fname"><span class="kind-pill ${pillClass(r)}',
-    '</a></span>');
+  // MEASURED, like every other slab in this file. These four were the last
+  // unmeasured ones, and U3 is the check with the best reason to be measured:
+  // it has already been broken once by a legitimate refactor (the stripping
+  // moved one function outward), and a slab whose target moves is exactly the
+  // slab that quietly starts capturing the wrong span. The sizes print on
+  // every run, so a jump is visible even on a green one.
+  const clientName = lifted('shownName', slab(CLIENT, 'const shownName =', "');"));
+  const clientRead = lifted('clientReadName', slab(CLIENT, 'const readName =', ';'));
+  const adminRead = lifted('adminReadName', slab(ADMINCASE, 'const readName =', ';'));
+  const adminName = lifted('adminNameRow', slab(ADMINCASE,
+    '<span class="fname"><span class="kind-pill ${pillClass(r)}', '</a></span>'));
   // NEGATIVE CONTROLS, all three run 2026-08-28 and all three observed:
   //   deleting the strip from the client's shownName ->
   //     FAIL  U3 ... -- Summary.pdf Summary.pdf | client strip yes, client render yes
@@ -168,6 +174,37 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
     'advocate strip': /replace\(\/\^\\d\{10,\}-\//.test(adminRead),
     'advocate render': /esc\(readName\(r\)\)/.test(adminName),
   };
+  // U3b EXISTS BECAUSE THE SIZE LINE ALONE IS NOT A GUARD.
+  //
+  // Ending clientReadName's slab on '</a></span>' instead of its own ';' made
+  // it capture 3,514 characters instead of 55, sixty four times its own size,
+  // and every check in this file stayed GREEN. The size line showed it to a
+  // human reading the output; nothing failed. A number printed beside a pass
+  // is a diagnostic, and a diagnostic nobody is reading is not a check.
+  //
+  // So each of these four is held to its own shape rather than to a number.
+  // A number would have to be edited every time the code legitimately moves,
+  // which is how a pin becomes something people relax. These are all single
+  // statements or one render line, so none of them may contain a second
+  // declaration or closing markup: that is what over-running looks like here,
+  // and it is true regardless of how long the statement gets.
+  //
+  // NEGATIVE CONTROL (run 2026-08-28): the same widened slab, which the size
+  // line saw and nothing caught, now reads
+  //   FAIL  U3b and each of those four stayed inside its own statement
+  //         -- clientReadName ran on past its own end
+  const strayed = Object.entries({
+    shownName: clientName, clientReadName: clientRead,
+    adminReadName: adminRead, adminNameRow: adminName,
+  }).filter(([name, src]) => (name === 'adminNameRow'
+    // The render line is markup by nature, so it is held to carrying exactly
+    // one closing anchor rather than to carrying none.
+    ? (src.match(/<\/a>/g) || []).length !== 1 || /\bconst\s+\w+\s*=/.test(src)
+    : /<\/(a|span|div|p)>/.test(src) || (src.match(/\bconst\s+\w+\s*=/g) || []).length > 1))
+    .map(([name]) => `${name} ran on past its own end`);
+  ck('U3b and each of those four stayed inside its own statement',
+    strayed.length === 0, strayed.join(', '));
+
   ck('U3 and the prefix is stripped where a person reads the name',
     paths.every((p) => shown(p.split('/').pop()) === 'Summary.pdf')
     && Object.values(u3).every(Boolean),
