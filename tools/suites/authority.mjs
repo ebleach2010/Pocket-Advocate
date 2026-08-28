@@ -212,6 +212,77 @@ check('S24 the list GET omits the signature blobs unless one is asked for by id'
 check('S25 a signature nobody can draw is not the only route',
   /data-sig-typed/.test(CASE), 'pointer-only would lock out the whole tier');
 
+// ---- S26-S30: the stored document, LIFTED AND RUN ------------------------
+//
+// The ONE place a client's own typed text lands inside a document that is
+// stored as text/html and served contentDisposition: inline. The name comes
+// from them at booking. authorityDocHtml escapes it, and until now nothing in
+// this repo ran that escape against anything needing escaping.
+//
+// This file pinned the form TEXT as source and never called the builder.
+// uploads.mjs stubbed it in all three of its harnesses. drive-forms.mjs opens
+// the real stored document, with the demo's client name, "Jordan Avery": no
+// ampersand, no angle bracket, nothing to escape.
+//
+// MEASURED on main, 2026-08-28, by deleting the escape from the builder that
+// sendBlankForms stores: a raw <script> reached the stored document and all
+// TWENTY suites stayed green.
+//
+// THE ESCAPE APPEARS TWICE in admin-case.js, the stored path and the print
+// path. The first attempt at that measurement replaced one occurrence of a
+// string that was there twice, refused itself, and reported "20/20 green" over
+// a tree it had not modified. The break script counts its sites now.
+{
+  const src = (ADMIN.match(/function authorityDocHtml\(item\) \{[\s\S]*?\n\}/) || [''])[0];
+  check('S26 the stored document builder lifts out of the shipped page',
+    src.length > 0, `${src.length} chars`);
+
+  const HOSTILE = 'Jordan <script>alert(1)</script> & Avery';
+  let doc = '';
+  if (src) {
+    try {
+      const fn = new Function('data', 'recordsAuthorisation', 'representativeDesignation',
+        'authorityDocTitle', 'signatureInk', `${src}\n return authorityDocHtml;`)(
+        { clientName: HOSTILE, clientDob: '1990-01-01' },
+        recordsAuthorisation, representativeDesignation,
+        () => 'Records authorisation', () => '');
+      doc = fn({ kind: 'records', blank: false });
+    } catch (e) { doc = ''; }
+  }
+
+  // THE ABSOLUTE BEFORE THE RELATIVE, and it is the whole reason this block
+  // is ordered like this: "no raw script tag" is satisfied perfectly by an
+  // empty document. So first prove the name got in at all.
+  // NEGATIVE CONTROL (2026-08-28): stubbing recordsAuthorisation to return ''
+  //   FAIL  S27 the client's own name reaches the document  -- 0 chars
+  check("S27 the client's own name reaches the document",
+    doc.length > 500 && doc.includes('Jordan') && doc.includes('Avery'),
+    `${doc.length} chars`);
+
+  // NEGATIVE CONTROL (2026-08-28): deleting the .replace from the builder
+  //   FAIL  S28 and every angle bracket in it is escaped  -- raw <script> present
+  check('S28 and every angle bracket in it is escaped, so their name cannot be markup',
+    doc.length > 500 && !/<script>alert/.test(doc) && /&lt;script&gt;alert/.test(doc),
+    /<script>alert/.test(doc) ? 'raw <script> present in the stored document'
+      : 'the escaped form is missing too');
+
+  // The ampersand matters on its own: escaping < and > while leaving & turns
+  // a name containing "&amp;" into a bracket on the way back out.
+  // NEGATIVE CONTROL (2026-08-28): dropping & from the character class
+  //   FAIL  S29 ... -- the bare ampersand survived
+  check('S29 and the bare ampersand with it, not just the brackets',
+    /&amp; Avery/.test(doc), 'the bare ampersand survived unescaped');
+
+  // BOTH BUILDERS, because there are two and only one is covered above. The
+  // print path writes into a window rather than Storage, but it is the same
+  // client-supplied name in the same shape of document.
+  // NEGATIVE CONTROL (2026-08-28): removing either one
+  //   FAIL  S30 ... -- 1 of 2 document builders escape
+  const escapes = (ADMIN.match(/text\.replace\(\/\[&<>\]\/g/g) || []).length;
+  check('S30 and both document builders escape, the stored one and the printed one',
+    escapes === 2, `${escapes} of 2 document builders escape`);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 process.exit(failed.length ? 1 : 0);
