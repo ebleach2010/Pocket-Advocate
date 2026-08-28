@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.42';
+export const VERSION = '2.43';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '2.42';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // The agreement catches up with the truth (Eric, 2026-08-28: "I do my
+    // very best and there is no limit... refunds happen under agreement").
+    // Quiet, per the rule above; the client list carries it because the
+    // words of the agreement are the client's to read.
+    version: '2.43',
+    quiet: true,
+    client: [
+      'The Hands-Off agreement no longer caps the number of insurance appeals I write. It now says what was always true: I write as many as your case needs, and I do not count them any more than I count calls.',
+      'The agreement now says plainly that refunds are settled between us, person to person, rather than triggered by a clause on their own.',
+      'It is also more honest about time: a difficult case rarely resolves in a month or two, and what you are buying is acceleration, an easier journey, and as much of what I know as I can hand you.',
+    ],
+  },
   {
     // Nothing in this release is on the client's side of the glass, so the
     // client list is empty on purpose. version-note.js takes the newest

@@ -1703,7 +1703,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-28-cardprobe';
+const BUILD_TAG = 'v2026-08-29-truth-in-terms';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1711,7 +1711,7 @@ const BUILD_TAG = 'v2026-08-28-cardprobe';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.42';
+const VERSION = '2.43';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -1990,11 +1990,13 @@ function heldMs(c) {
 }
 const onHold = (c) => !!c?.hold?.pausedAt;
 
-/** Appeal letters actually filed on this case. The scope note promises two. */
-const FULL_APPEALS_INCLUDED = 2;
-function appealsUsed(state) {
-  return Number(state?.appealMeta?.filedCount) || 0;
-}
+// THERE IS NO APPEAL COUNT ANY MORE. The scope note used to promise two
+// letters and a constant here enforced it. Eric, 2026-08-28: "The
+// copy also says things like '2 appeal calls.' The truth is I do my very best
+// and there is no limit." So the agreement now says appeals are never
+// counted, and a Worker that refused a third would make that a lie. The
+// filedCount stamp on appealMeta stays: it is a record of work done, and the
+// ledger and his own memory are welcome to it. Nothing reads it as a wall.
 
 /**
  * POST /api/admin/hold  Body: { caseId, on, reason }   admin only
@@ -6611,18 +6613,14 @@ async function handleAdvisor(request, env, ctx) {
     const c = await getDoc(env, `cases/${id}`).catch(() => null);
     if (kind === 'case' && !c?.data.fullAccess)
       return json({ ok: false, error: 'This case is not on Hands-Off Case Management.' }, 409);
-    // The scope note promises TWO appeal letters, and until now nothing
-    // counted them - the document asserted a boundary neither side could
-    // find. Filed letters are the count; drafting and redrafting the current
-    // one is free. Refusing is a soft stop he can override by agreement, not
-    // a wall: it tells him where he is rather than silently doing more work
-    // than the client bought.
-    const stNow = await getDoc(env, statePath).catch(() => null);
-    if (appealsUsed(stNow?.data) >= FULL_APPEALS_INCLUDED && body?.beyondScope !== true)
-      return json({
-        ok: false, error: 'appeals-used',
-        used: appealsUsed(stNow?.data), included: FULL_APPEALS_INCLUDED,
-      }, 409);
+    // No count gate here any more. The scope note promised two letters and a
+    // gate enforced it; on Eric's word (2026-08-28) the agreement now promises
+    // as many appeals as the case needs, so the only per-case rule left is the
+    // one above this route: one letter IN FLIGHT at a time, which is how
+    // appeals actually run. Nothing about totals. The gate that stood here was
+    // also half wired: its 'appeals-used' answer had no reader in the panel
+    // and its beyondScope override had no sender, so the first client to need
+    // a third appeal would have hit a refusal nothing could clear.
     const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
     const appeal = {
       memberName: str(body?.appeal?.memberName, 120) || c?.data.clientName || '',
@@ -6748,8 +6746,10 @@ async function handleAdvisor(request, env, ctx) {
     const st = await getDoc(env, statePath).catch(() => null);
     const meta = st?.data.appealMeta || {};
     await patchDoc(env, statePath, {
-      // filedCount is what appealsUsed() reads. It counts letters that left
-      // the building, so redrafting the one in front of him costs nothing.
+      // filedCount counts letters that left the building, so redrafting the
+      // one in front of him costs nothing. Since 2026-08-28 nothing reads it
+      // as a limit; it is a record of work done, kept because deleting a
+      // truthful number to tidy up would be the wrong kind of tidy.
       appealMeta: {
         ...meta,
         filedAt: new Date(),

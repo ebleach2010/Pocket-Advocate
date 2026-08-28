@@ -207,11 +207,18 @@ for (const gone of ['90 days', 'up to <strong>five</strong>', 'three three-way']
   ck(`scope note: "${gone}" is gone`, !TT.includes(gone));
 }
 // The window went MONTHLY on 2026-08-26, so the promise is thirty days per
-// month taken rather than a flat sixty. Both halves are still enforced: the
-// window by fullAccessWindowEnd, the letters by appealsUsed.
-ck('scope note: it promises a month at a time and two letters, both enforced',
+// month taken rather than a flat sixty, enforced by fullAccessWindowEnd.
+// UPDATED 2026-08-28, on Eric's word: "The copy also says things like '2
+// appeal calls.' The truth is I do my very best and there is no limit." So
+// the two-letter promise is GONE, from the agreement and from the Worker
+// gate that enforced it, and this check now pins its absence both places: a
+// count creeping back into either one is a broken promise waiting to happen.
+ck('scope note: a month at a time, and appeals are never counted',
    /<strong>30 days per month you take<\/strong>/.test(TT)
-   && /<strong>Two insurance appeal letters<\/strong>/.test(TT));
+   && !/Two insurance appeal letters/i.test(TT)
+   && /as many as the case needs<\/strong>/.test(TT)
+   && /I do not count appeals/.test(TT)
+   && !/FULL_APPEALS_INCLUDED = 2/.test(W));
 // UPDATED 2026-08-28, on Eric's word: "remove limitations on how many hand
 // off cases I can have. Or at least put that in an admin settings cog." He
 // chose the cog, so the number is his to change from his phone - and an
@@ -230,8 +237,11 @@ ck('scope note: it says continuing never costs more',
    && /It never costs more for continuing/.test(TT));
 ck('scope note: it says nothing is charged before he approves',
    /Nothing is charged unless and until I approve your request/.test(TT));
-ck('scope note: it says the second letter outlives the window',
-   /second appeal letter does not expire with the window/.test(TT));
+// UPDATED 2026-08-28 with the count's removal: the promise that outlives the
+// window is now any appeal in flight, not a numbered second letter.
+ck('scope note: an appeal in flight outlives the window',
+   /appeal in flight does not expire with the window/.test(TT)
+   && /That obligation outlives the window/.test(TT));
 // The start MOVED (Eric, 2026-08-25: "the clock starts upon booking") and
 // the sentence moved with it, checklist wording included.
 //

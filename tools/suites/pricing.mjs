@@ -194,9 +194,14 @@ check('T9c the window is a paid month from PURCHASE, computed not stored',
   && /function fullAccessWindowEnd\(c\)/.test(SRC)
   && /c\?\.fullAccessAt/.test(SRC)
   && /c\?\.appointment\?\.start/.test(SRC));
-check('T9d two appeal letters are actually counted now',
-  /const FULL_APPEALS_INCLUDED = 2;/.test(SRC)
-  && /appealsUsed\(stNow\?\.data\) >= FULL_APPEALS_INCLUDED/.test(SRC)
+// UPDATED 2026-08-28, on Eric's word: "I do my very best and there is no
+// limit." T9d used to pin the two-letter gate; the gate is gone because the
+// agreement no longer names a count, and a Worker refusing a third appeal
+// would make the new copy a lie. What remains pinned: filedCount is still
+// STAMPED (a record of work done), and no count gate reads it back.
+check('T9d appeals are recorded but never gated',
+  !/FULL_APPEALS_INCLUDED/.test(SRC)
+  && !/appealsUsed\(/.test(SRC)
   && /filedCount: \(Number\(meta\.filedCount\) \|\| 0\) \+ 1,/.test(SRC));
 // There is no separate "extension" product any more: the next month costs
 // what the first month costs, which is the whole point of going monthly.

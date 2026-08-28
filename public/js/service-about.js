@@ -61,7 +61,7 @@ export const SERVICE_ABOUT = {
       'You ask, and I answer personally. I carry a limited number of these at a time, so this is not something you can simply buy - you send the request, I read it, and I tell you yes or no. Asking costs nothing and takes no card. If I say no, nothing is charged and I will tell you why.',
       'It is billed a month at a time, and I would rather explain why than have you wonder. A single payment for a whole engagement is a large thing to hand over at the exact moment you are least able to think about money. Monthly means the biggest number you ever see is one month, and it means you are never locked into a case that is going nowhere. Most of these run about two months. Some run one. Some run five. You decide each month.',
       'We speak at least twice a month, by phone or video, for as long as the case runs. That rhythm is part of the service, not an option: it is how the case keeps moving, and how you always know what happened without having to push for updates. If something breaks between check-ins, I add calls at no charge.',
-      'If your insurer says no, I write the appeal: a first-level internal appeal, and one escalation if they deny it. If a doctor will not cooperate, a referral that never gets sent, records that never arrive, I put it in writing and go through the channels myself. Appeal help alone typically runs $500 to $2,500 per appeal elsewhere; two are included here, plus everything around them.',
+      'If your insurer says no, I write the appeal: the first-level internal appeal, the escalation if they deny it, and I keep writing for as long as the case is mine. I do not count appeals. If a doctor will not cooperate, a referral that never gets sent, records that never arrive, I put it in writing and go through the channels myself. Appeal help alone typically runs $500 to $2,500 per appeal elsewhere; here it is simply part of the month.',
       'I cannot make an insurer answer faster and I cannot promise an outcome. What I promise is that somebody who knows these clocks is running yours, and that you hear the truth about how it is going, at least twice a month.',
     ],
     bullets: [
@@ -70,8 +70,8 @@ export const SERVICE_ABOUT = {
       'I do the legwork: your clinics, your records, your insurer, handled by me on your authority',
       'Check-in calls at least twice a month, included; extra calls at my discretion, free',
       'Unlimited calls to clinics and your insurer on your behalf, never counted or metered',
-      'Two written insurance appeals; drafting is unlimited, only filed letters count',
-      'The second appeal does not expire with the window: a late denial still gets its answer',
+      'Written insurance appeals, as many as the case needs, never counted or metered',
+      'An appeal in flight does not expire with the window: a late denial still gets its answer',
       'I write to providers too, when a doctor will not cooperate',
       'Telehealth advocacy included: I join your video visits and advocate live',
       'A month at a time. Continue or stop at the end of any month, no penalty either way',
@@ -87,7 +87,7 @@ export const SERVICE_ABOUT = {
     paragraphs: [
       'Some cases outlast a month or two through nobody\u2019s fault: a records office takes its full thirty days, a referral sits in a queue, an insurer uses every day it is allowed. Continuing keeps me inside the case while those clocks run.',
       'It costs exactly what the first month cost. There is no separate extension product and no penalty rate for needing longer - the price is the price, month after month.',
-      'Everything continues exactly as it was: the same cadence of check-ins, the same calls made in your name, the same file. There is no obligation to continue, ever, and no penalty for stopping: the second appeal I owe you survives the window regardless.',
+      'Everything continues exactly as it was: the same cadence of check-ins, the same calls made in your name, the same file. There is no obligation to continue, ever, and no penalty for stopping: an appeal already in flight survives the window regardless.',
     ],
     bullets: [
       'Thirty days added to your coordination window, from the day it would have ended',
