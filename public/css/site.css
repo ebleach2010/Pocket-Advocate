@@ -817,7 +817,13 @@ summary.btn::-webkit-details-marker { display: none; }
    waiting on them, then in and filed. Tokens only, and NOT green, which is
    already what "from chat" means in this very list. */
 .kind-pill.formsent { border-color: var(--orange); color: var(--orange); }
-.kind-pill.formfilled { border-color: var(--blue); color: var(--blue); }
+/* NOT var(--blue). That token is defined as the SAME HEX as --magenta in
+   all four themes, so a filled form came out pixel-identical to a REPORT
+   in the one list they share, and the report is the deliverable wearing
+   the tick. Measured, not eyeballed: blue sits at dE 0.0 from report in
+   every theme; cyan-dim sits at dE 19 to 31 from its nearest neighbour in
+   every theme. Form sent keeps its orange; this one takes cyan-dim. */
+.kind-pill.formfilled { border-color: var(--cyan-dim); color: var(--cyan-dim); }
 /* The work log's four categories. ONE colour for all four, from the tokens,
    for the same reason the two document pills share one: the word on the pill
    already says which is which, and four hues down one column would be

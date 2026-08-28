@@ -249,9 +249,12 @@ const slab = (src, from, to) => {
   // they must not share a colour with each other, and NOT green: green is
   // what "from chat" already means in this same list, and one colour with two
   // meanings in one list is worse than no colour at all.
+  // [\w-] and not \w: --cyan-dim is a real token used sixteen times, and \w+
+  // silently refuses the hyphen, which made this report "(none)" for a pill
+  // that was in fact painted correctly (2026-08-28).
   const tokenOf = (name) => {
     const rule = pills.find((x) => new RegExp(`\\.kind-pill\\.${name}\\b`).test(x));
-    return rule ? (rule.match(/color: (var\(--\w+\))/) || [])[1] || '' : '';
+    return rule ? (rule.match(/color: (var\(--[\w-]+\))/) || [])[1] || '' : '';
   };
   // NEGATIVE CONTROL (run 2026-08-27): giving both form pills var(--orange)
   // made this read
@@ -266,6 +269,65 @@ const slab = (src, from, to) => {
   ck('U11d and neither one takes the colour "from chat" already owns',
     ![tokenOf('formsent'), tokenOf('formfilled')].includes('var(--green)'),
     'var(--green) already means "from chat" here');
+
+  // U11e EXISTS BECAUSE U11c PASSED FOR THE WRONG REASON.
+  //
+  // FILLED FORM originally shipped as var(--blue) on my instruction, and U11c
+  // above went green on it: it compares TOKEN NAMES, and 'var(--blue)' is not
+  // the string 'var(--magenta)'. But --blue is DEFINED as the same hex as
+  // --magenta in all four theme blocks, so on screen a filled form was
+  // pixel-identical to a REPORT, which is the deliverable wearing the tick.
+  // A check that reads the name a colour is written under cannot see that.
+  //
+  // So this one resolves every pill in that shared list down to its actual hex,
+  // theme block by theme block, and insists no two of them collide. Two token
+  // names for one colour is the failure it is here to catch.
+  //
+  // TWO NEGATIVE CONTROLS, both run 2026-08-28 and both observed:
+  //
+  //   putting formfilled back to var(--blue), the original bug ->
+  //     FAIL  U11e ... -- theme 1: formfilled and report are both #A981FF
+  //   and U11c above PASSED on that same run, which is the whole point of
+  //   this check existing.
+  //
+  //   breaking tokenOf back to \w+ so var(--cyan-dim) cannot resolve ->
+  //     FAIL  U11e ... -- theme 1: formfilled has no colour this check can read
+  //   which is the run that caught this check passing on an empty set.
+  {
+    const themes = [...CSS.matchAll(/--cyan:\s*#[0-9A-Fa-f]{6};/g)].length;
+    const hexes = (tok, i) => {
+      const name = (tok.match(/var\(--([\w-]+)\)/) || [])[1];
+      const all = [...CSS.matchAll(new RegExp(`--${name}:\\s*(#[0-9A-Fa-f]{6});`, 'g'))]
+        .map((m) => m[1].toUpperCase());
+      return all[i] || '';
+    };
+    // Every pill that shares the one file list a client actually scrolls.
+    const SHARED = ['report', 'recording', 'callsummary', 'visitfollowup',
+      'apptsummary', 'formsent', 'formfilled', 'chat', 'saved'];
+    const clashes = [];
+    for (let i = 0; i < themes; i++) {
+      const seen = new Map();
+      for (const name of SHARED) {
+        const tok = tokenOf(name);
+        // NOT `continue`. This check first shipped skipping anything it could
+        // not resolve, so when tokenOf could not read var(--cyan-dim) it
+        // resolved NOTHING and passed clean. A colour check that goes green on
+        // an empty set is worse than no colour check.
+        if (!tok) { clashes.push(`theme ${i + 1}: ${name} has no colour this check can read`); continue; }
+        const hex = hexes(tok, i);
+        if (!hex) { clashes.push(`theme ${i + 1}: ${name} uses ${tok}, which resolves to no hex`); continue; }
+        // Gold is shared BY DECISION (Eric, 2026-08-28: "leave them gold"), so
+        // the four it covers are not a clash. Everything else is.
+        const GOLD_BY_CHOICE = ['callsummary', 'visitfollowup', 'apptsummary', 'saved'];
+        const prior = seen.get(hex);
+        if (prior && !(GOLD_BY_CHOICE.includes(prior) && GOLD_BY_CHOICE.includes(name)))
+          clashes.push(`theme ${i + 1}: ${name} and ${prior} are both ${hex}`);
+        if (!prior) seen.set(hex, name);
+      }
+    }
+    ck('U11e and no two pills in that one list resolve to the same hex',
+      clashes.length === 0, clashes[0] || '');
+  }
 }
 
 // ---- U12-U16: the client is told, by name, and nothing else moves --------
