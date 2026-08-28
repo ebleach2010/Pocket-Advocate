@@ -770,6 +770,17 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   // (length zero, U20 above), a RUN-ON (wrong length, wrong tail), and a
   // SWALLOW (exactly one extra function, still a plausible length and a
   // plausible tail). Only naming the neighbours catches the third.
+  // WHAT THE endsWith CLAUSE BELOW ACTUALLY COVERS, and its reach, because the
+  // advisor branch nulled two of its own tail rules for reading stronger than
+  // they were: ';' and '  }\n}' occur 2,056 and 5 times in their source, so
+  // neither could ever have failed. This one is not that. Its marker occurs
+  // exactly ONCE in admin-case.js and it did fire on the swallow control above.
+  // But because the marker is unique, a run-on that KEEPS the marker is
+  // impossible here, so the clause really guards against someone changing the
+  // marker rather than against the slab running long: the run-on and swallow
+  // cases are carried by the length bound, the neighbour name, and U28j. If a
+  // second `return { sent, quiet };` is ever added to this file that uniqueness
+  // goes, and this clause goes quiet with it while U28j does not.
   ck('U20b and it lifted the function and NOT half the file after it',
     SEND.length > 2000 && SEND.length < 6000
     && SEND.trimEnd().endsWith('return { sent, quiet };\n}')
@@ -1300,8 +1311,8 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   //     FAIL  U28k -- upload sentinel "WHAT A DOCUMENT HE UPLOADZ IS" is not
   //           in its own source
   //   a real string taken from EARLIER in the same file ->
-  //     FAIL  U28k -- upload sentinel "const MOUNTAIN_TZ" appears before the
-  //           slab ends, so it proves nothing
+  //     FAIL  U28k -- upload sentinel "const MOUNTAIN_TZ" is nowhere at or
+  //           after the end of the lift
   //
   // The first attempt at that second control used 'const UPLOAD_CATEGORIES',
   // which PASSED, and rightly: that constant is declared after this slab, so
@@ -1311,11 +1322,23 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   const unreal = [];
   for (const [name, v] of LIFTS) {
     if (!v.src || typeof v.after !== 'string' || !v.after) continue;  // U28j owns those
-    const at = v.src.indexOf(v.after);
-    if (at < 0) { unreal.push(`${name} sentinel ${JSON.stringify(v.after)} is not in its own source`); continue; }
+    if (v.src.indexOf(v.after) < 0) {
+      unreal.push(`${name} sentinel ${JSON.stringify(v.after)} is not in its own source`);
+      continue;
+    }
     const start = v.src.indexOf(v.text);
-    if (start >= 0 && at < start + v.text.length)
-      unreal.push(`${name} sentinel ${JSON.stringify(v.after)} appears before the slab ends, so it proves nothing`);
+    if (start < 0) { unreal.push(`${name} lift is not in the source it names`); continue; }
+    // SEARCH FROM THE END OF THE LIFT, not from the top of the file.
+    //
+    // The first cut of this took the FIRST occurrence anywhere and failed if it
+    // sat before the slab. That is over-strict, and the forms branch was right
+    // to point it out: a sentinel that appears both early in the file AND after
+    // the slab is a perfectly good sentinel. U28j still proves the capture does
+    // not contain it, and this proves one lies beyond the end. Rejecting it
+    // would have produced false failures on valid work, which is its own way of
+    // teaching people to relax a check.
+    if (v.src.indexOf(v.after, start + v.text.length) < 0)
+      unreal.push(`${name} sentinel ${JSON.stringify(v.after)} is nowhere at or after the end of the lift`);
   }
   ck('U28k and every sentinel is real, and really lies beyond its slab',
     unreal.length === 0, unreal.join('; '));
