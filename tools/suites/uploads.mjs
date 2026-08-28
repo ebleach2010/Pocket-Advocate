@@ -441,6 +441,40 @@ const slab = (src, from, to) => {
   ck('U16 and uploading the REPORT still delivers the case, as it always did',
     rep.writes.some((w) => w.fields.status === 'delivered'),
     JSON.stringify(rep.writes.map((w) => w.fields)));
+
+  // A FORM HE SENT, which is this same route pointed at the same client from
+  // a different panel. Eric, 2026-08-27: "I need to be able to select forms
+  // and send them... This way this client can have the signed forms in the
+  // uploaded documents." The send is a Storage write plus THIS call, and this
+  // call is the only thing that tells them it arrived.
+  const form = await run(CASEDOC, {
+    action: 'summary-uploaded', category: 'formsent',
+    fileName: 'Records authorisation 2026-08-27.html',
+  });
+  // NEGATIVE CONTROL (run 2026-08-28): deleting the `formsent` entry from
+  // SUMMARY_KINDS in the Worker made this read
+  //   FAIL  U16b a form he sent is a document type the Worker knows  -- status 400, 0 pushes
+  // which is a form landing on their page with nothing said about it.
+  ck('U16b a form he sent is a document type the Worker knows',
+    !form.threw && form.res?.status === 200 && form.pushes.length === 1,
+    form.threw || `status ${form.res?.status}, ${form.pushes.length} pushes`);
+  // The words come from the Worker's own map, keyed by an id, never from the
+  // caller.
+  // NEGATIVE CONTROL (run 2026-08-28): changing the Worker's label for
+  // formsent to 'document' made this read
+  //   FAIL  U16c and the client is told it is a form to fill in, naming the file  -- A new document is on your case: Records authorisation 2026-08-27.html
+  ck('U16c and the client is told it is a form to fill in, naming the file',
+    form.pushes[0]?.body
+      === 'A new form to fill in is on your case: Records authorisation 2026-08-27.html',
+    form.pushes[0]?.body || 'no notification');
+  // A blank form is not a deliverable. Moving the case on it would start the
+  // client's 48 hours and close the chat over a form nobody has signed yet.
+  // NEGATIVE CONTROL (run 2026-08-28): adding a patchDoc of status
+  // 'delivered' to the formsent path made this read
+  //   FAIL  U16d and sending a form moves NOTHING on the case  -- 1 write: [{"status":"delivered"}]
+  ck('U16d and sending a form moves NOTHING on the case',
+    form.writes.length === 0,
+    `${form.writes.length} write: ${JSON.stringify(form.writes.map((w) => w.fields))}`);
 }
 
 // ---- U17-U18: it stays his document -------------------------------------
@@ -497,6 +531,489 @@ const slab = (src, from, to) => {
     /summary-uploaded/.test(DEMOAPI)
     && /That is not a document type I know\./.test(DEMOAPI)
     && /That is not a document type I know\./.test(WORKER));
+}
+
+// ---- U20-U27: the forms he ticks, and the ones he sends AGAIN ------------
+//
+// Eric, 2026-08-27, on a client who paid him outside the app and needs the
+// paperwork today: "I need to be able to select forms and send them,
+// regardless of if they've already been sent or not. This way this client can
+// have the signed forms in the uploaded documents. This is another example of
+// what the advisor could do: 'send the hands-off forms to the client'."
+//
+// LIFTED AND RUN, like U1-U4 above and for the same reason: what a send
+// actually PUTS IN STORAGE is not a question a regex can answer. The function
+// comes out of the shipped page and runs against a Storage stand-in that
+// behaves the way Storage behaves, a repeated path overwriting without a word.
+//
+// U24 IS THE ONE THAT MATTERS. It sends the same form twice and insists on two
+// documents. Every future reader of that function will want to add an "already
+// sent" guard to it; this is what stops them.
+{
+  const TZ = slab(ADMINCASE, "const MOUNTAIN_TZ = ", ";");
+  const FORMS = slab(ADMINCASE, 'const SENDABLE_FORMS = [', '];');
+  const DAY = slab(ADMINCASE, 'function mountainDay(d = new Date()) {', '\n}');
+  const STAMP = slab(ADMINCASE, 'let lastStamp = 0;', '\n}');
+  // ENDING ON THE RETURN, not on `load();`. It ended on load() until the send
+  // grew a partial-failure path and load() moved inside an if, four spaces in.
+  // The slab then ran past the end of the function to the NEXT match further
+  // down the file and swallowed whatever lay between, and the checks below
+  // stayed green on it because the extra code happened to be inert. A lift
+  // that quietly captures half a file is a lift that will one day capture
+  // something that is not inert, so U20b now measures what came out.
+  const SEND = slab(ADMINCASE, 'async function sendBlankForms(kinds, btn) {',
+    '\n  return { sent, quiet };\n}');
+  // NEGATIVE CONTROL (run 2026-08-28): renaming sendBlankForms made this read
+  //   FAIL  U20 the send path lifts out of the shipped page  -- tz 1, forms 1, day 1, stamp 1, send 0
+  // A lift that has lost its target goes red rather than asserting nothing, so
+  // every check below runs the real function or does not run at all. The four
+  // helpers are lifted rather than stubbed for the same reason: MOUNTAIN_TZ
+  // and the timestamp shape are both load-bearing, and a stub of either would
+  // be this suite agreeing with itself.
+  ck('U20 the send path lifts out of the shipped page',
+    TZ.length > 0 && FORMS.length > 0 && DAY.length > 0 && STAMP.length > 0 && SEND.length > 0,
+    `tz ${+!!TZ.length}, forms ${+!!FORMS.length}, day ${+!!DAY.length}, `
+      + `stamp ${+!!STAMP.length}, send ${+!!SEND.length}`);
+  // NEGATIVE CONTROL (run 2026-08-28): putting the end marker back to
+  // '\n  load();\n}' made this read
+  //   FAIL  U20b and it lifted the function and NOT half the file after it  -- 16234 chars, ends "load = load;\n  load();\n}"
+  // and the run then died at "TypeError: document.addEventListener is not a
+  // function", which is the lift refusing to run code the harness does not
+  // stub: a loud failure, not a quiet pass.
+  // which is the real bug this check was written from: the lift had been
+  // over-capturing since the send grew its partial-failure path, and every
+  // check below stayed green on it.
+  ck('U20b and it lifted the function and NOT half the file after it',
+    SEND.length > 2000 && SEND.length < 6000
+    && SEND.trimEnd().endsWith('return { sent, quiet };\n}')
+    && !SEND.includes('addEventListener'),
+    `${SEND.length} chars, ends ${JSON.stringify(SEND.trimEnd().slice(-24))}`);
+
+  /**
+   * One harness, five runs. `apiFails` makes the notification throw; `noPanel`
+   * takes the error line off the screen, so a refusal has to reach `alert`
+   * instead of writing into an element nobody is looking at.
+   *
+   * What is STOOD IN rather than lifted: the document itself. What that says
+   * is pinned line by line in tools/suites/authority.mjs and driven for real
+   * in tools/drives/drive-forms.mjs. What this block proves is where the bytes
+   * go, what rides on them, and that a second send is a second document.
+   */
+  const build = ({ apiFails = false, noPanel = false } = {}) => {
+    const bucket = new Map();
+    const said = [];
+    const calls = [];
+    const shouted = [];
+    const fn = new Function('__bucket', '__said', '__api', '__shout', `
+      const caseId = 'abc';
+      const storage = {};
+      const ref = (_s, path) => ({ path });
+      // Storage overwrites a repeated path silently. So does this.
+      const uploadBytesResumable = (r, file, meta) => {
+        __bucket.set(r.path, { file, meta });
+        return { on: (_e, _p, _f, done) => done && done() };
+      };
+      const api = async (body) => {
+        __api.push(body);
+        ${apiFails ? "throw new Error('offline');" : 'return { ok: true };'}
+      };
+      const say = (k, text, o) => { __said.push({ k, text, tone: (o && o.tone) || 'ok' }); };
+      const load = () => {};
+      const alert = (m) => { __shout.push(m); };
+      const document = {
+        getElementById: () => ${noPanel ? 'null' : "({ hidden: true, set textContent(v) { __shout.push(v); } })"},
+        querySelectorAll: () => [],
+      };
+      const authorityDocHtml = (o) =>
+        '<!doctype html><title>' + o.kind + '</title><pre>BLANK FORM ' + o.kind + '</pre>';
+      ${TZ}
+      ${FORMS};
+      ${DAY}
+      ${STAMP}
+      ${SEND}
+      return sendBlankForms;
+    `)(bucket, said, calls, shouted);
+    return { fn, bucket, said, calls, shouted };
+  };
+
+  const both = build();
+  const out = await both.fn(['records', 'representative']);
+
+  // NEGATIVE CONTROL (run 2026-08-28): making the loop `break` after the first
+  // form made this read
+  //   FAIL  U21 both ticked forms are stored, from one action  -- 1 of 2: cases/abc/report/1787889795470-Records authorisation 2026-08-27.html
+  // He said "forms", plural, and gave "send the hands-off forms to the client"
+  // as the example. One at a time is not what he asked for.
+  ck('U21 both ticked forms are stored, from one action',
+    both.bucket.size === 2,
+    `${both.bucket.size} of 2: ${[...both.bucket.keys()].join(', ')}`);
+  const paths = [...both.bucket.keys()];
+  // NEGATIVE CONTROL (run 2026-08-28): filing under `cases/abc/formsent/`
+  // instead made this read
+  //   FAIL  U21b in the report folder, under the case, with no new folder invented  -- cases/abc/formsent/1787889795564-Records authorisation 2026-08-27.html cases/abc/formsent/1787889795565-Insurance representative 2026-08-27.html
+  // which is the one mistake storage.rules cannot survive: four named folders
+  // are client-readable and prep-shelf.mjs P2 pins that list by string
+  // equality. A form in a fifth folder is a form the client cannot open.
+  ck('U21b in the report folder, under the case, with no new folder invented',
+    paths.length === 2 && paths.every((p) => /^cases\/abc\/report\/\d{10,}-/.test(p)),
+    paths.join(' '));
+  // NEGATIVE CONTROL (run 2026-08-28): dropping the customMetadata argument
+  // made this read
+  //   FAIL  U22 every sent form carries paCategory formsent, on the file itself  -- [null,null]
+  // THE CATEGORY IS THE WHOLE POINT: it is what puts the FORM SENT pill on
+  // their screen and files it under Forms sent, and it is metadata rather than
+  // a folder for the reason U21b gives.
+  ck('U22 every sent form carries paCategory formsent, on the file itself',
+    both.bucket.size === 2
+    && [...both.bucket.values()].every((v) => v.meta?.customMetadata?.paCategory === 'formsent'),
+    JSON.stringify([...both.bucket.values()].map((v) => v.meta?.customMetadata || null)));
+  // NEGATIVE CONTROL (run 2026-08-28): sending it as application/octet-stream
+  // made this read
+  //   FAIL  U22b and is served as a document their phone can open and print  -- application/octet-stream/inline, application/octet-stream/inline
+  // A client tapping it on a phone gets a readable form or gets bytes they
+  // cannot use, and that is decided here.
+  ck('U22b and is served as a document their phone can open and print',
+    both.bucket.size === 2
+    && [...both.bucket.values()].every((v) => v.meta?.contentType === 'text/html'
+      && v.meta?.contentDisposition === 'inline'),
+    [...both.bucket.values()].map((v) => `${v.meta?.contentType}/${v.meta?.contentDisposition}`).join(', '));
+  // A NAME, NOT A UUID (his ask). The form and the date, so the two of them
+  // are told apart at a glance on a phone.
+  const shown = paths.map((p) => p.split('/').pop().replace(/^\d{10,}-/, '')).sort();
+  // NEGATIVE CONTROL (run 2026-08-28): naming the files by kind id
+  // (`records.html`) made this read
+  //   FAIL  U23 each file is named for its form and the day it went out  -- records.html | representative.html
+  ck('U23 each file is named for its form and the day it went out',
+    shown.length === 2
+    && /^Insurance representative \d{4}-\d{2}-\d{2}\.html$/.test(shown[0])
+    && /^Records authorisation \d{4}-\d{2}-\d{2}\.html$/.test(shown[1]),
+    shown.join(' | '));
+  // GUARDING THE SILENT PASS. A send that stored an EMPTY file, or stored the
+  // same document twice under two names, satisfies every count above. So the
+  // bytes come back out of the stand-in bucket and are read.
+  const bytes = await Promise.all([...both.bucket.values()].map((v) => v.file.text()));
+  // NEGATIVE CONTROL (run 2026-08-28): uploading `new File([], name, ...)`
+  // made this read
+  //   FAIL  U23b and there is a real document inside it, not an empty file  -- 0, 0 bytes
+  ck('U23b and there is a real document inside it, not an empty file',
+    bytes.length === 2 && bytes.every((b) => b.length > 20 && /BLANK FORM/.test(b)),
+    `${bytes.map((b) => b.length).join(', ')} bytes`);
+  // NEGATIVE CONTROL (run 2026-08-28): sending the records document under both
+  // names made this read
+  //   FAIL  U23c and the two documents are the two different forms  -- records, records
+  // Two rows on a client's phone with different names and identical contents
+  // is worse than one row.
+  const kindsInside = bytes.map((b) => (b.match(/BLANK FORM (\w+)/) || [])[1]).sort();
+  ck('U23c and the two documents are the two different forms',
+    kindsInside.join() === 'records,representative', kindsInside.join(', '));
+
+  // ---- U24: HIS WORDS. "regardless of if they've already been sent or not."
+  {
+    const again = build();
+    await again.fn(['records']);
+    await again.fn(['records']);
+    // TWO NEGATIVE CONTROLS, both run 2026-08-28 and both observed:
+    //
+    //   adding the once-only guard a future reader would add, `const seen =
+    //   new Set(); ... if (seen.has(form.id)) continue;` hoisted to module
+    //   scope, gave
+    //     FAIL  U24 sending the same form a second time lands a SECOND document  -- 1 of 2: 1787889814279-Records authorisation 2026-08-27.html
+    //
+    //   dropping the monotonic uploadStamp() back to a bare Date.now(), so two
+    //   sends inside one millisecond write one path, gave
+    //     FAIL  U24 sending the same form a second time lands a SECOND document  -- 1 of 2: 1787889814372-Records authorisation 2026-08-27.html
+    //   which is the same silent overwrite U2 exists for, and far more likely
+    //   here: the file name is GENERATED, so a resend repeats it exactly.
+    ck('U24 sending the same form a second time lands a SECOND document',
+      again.bucket.size === 2,
+      `${again.bucket.size} of 2: ${[...again.bucket.keys()].map((p) => p.split('/').pop()).join(', ')}`);
+    // NEGATIVE CONTROL (run 2026-08-28): filing the resend as 'formfilled' so
+    // it would not look like a duplicate made this read
+    //   FAIL  U24b and the resent copy is filed exactly like the first  -- formfilled, formfilled
+    // The resent copy is the same blank form. It is not a filled one.
+    ck('U24b and the resent copy is filed exactly like the first',
+      again.bucket.size === 2
+      && [...again.bucket.values()].every((v) => v.meta?.customMetadata?.paCategory === 'formsent'),
+      [...again.bucket.values()].map((v) => v.meta?.customMetadata?.paCategory).join(', '));
+    // NEGATIVE CONTROL (run 2026-08-28): telling the client only on the first
+    // send made this read
+    //   FAIL  U24c and the client is told about the resend too, not just the first  -- 1 of 2
+    ck('U24c and the client is told about the resend too, not just the first',
+      again.calls.filter((c) => c.action === 'summary-uploaded' && c.category === 'formsent').length === 2,
+      `${again.calls.length} of 2`);
+    // NEGATIVE CONTROL (run 2026-08-28): saying "Already sent, so I skipped
+    // it" on the second run made this read
+    //   FAIL  U24d and nothing anywhere says it was already sent  -- Sent. Records authorisation 2026-08-27.h | Already sent, so I skipped it
+    ck('U24d and nothing anywhere says it was already sent',
+      again.said.length === 2
+      && !again.said.some((s) => /already/i.test(s.text))
+      && !again.shouted.some((m) => /already/i.test(m)),
+      [...again.said.map((s) => s.text.slice(0, 40)), ...again.shouted].join(' | '));
+  }
+
+  // ---- U25: the notification is not the send ------------------------------
+  // A push failure must not lose him the document or make him send it twice.
+  {
+    const flaky = build({ apiFails: true });
+    await flaky.fn(['records', 'representative']);
+    // NEGATIVE CONTROL (run 2026-08-28): dropping the `.catch` on the api call
+    // so a failed notification threw made this read
+    //   FAIL  U25 a failed notification does not lose the send  -- 1 stored
+    // The document is on their page the moment Storage has the bytes. Telling
+    // them is a second, weaker thing.
+    ck('U25 a failed notification does not lose the send',
+      flaky.bucket.size === 2, `${flaky.bucket.size} stored`);
+    // NEGATIVE CONTROL (run 2026-08-28): keeping the cheerful line when the
+    // notification had failed made this read
+    //   FAIL  U25b and he is told plainly that they were not notified  -- warn: Sent. Records authorisation 2026-08-27.html and Insurance representative 2026-08-27.html are on their documents now, under Forms sent, and they have been notified by name.
+    // He must not be told they were notified when they were not: that is a
+    // sentence he would repeat to a client on a call.
+    ck('U25b and he is told plainly that they were not notified',
+      flaky.said.length === 1 && flaky.said[0].tone === 'warn'
+      && /could not confirm/.test(flaky.said[0].text)
+      && !/have been notified/.test(flaky.said[0].text),
+      `${flaky.said[0]?.tone}: ${flaky.said[0]?.text || 'nothing said'}`);
+  }
+
+  // ---- U26: nothing ticked stores nothing, and says so --------------------
+  {
+    // noPanel: the error line is not on screen, so the refusal has to reach
+    // him some other way rather than disappearing.
+    const none = build({ noPanel: true });
+    // It THROWS now rather than returning quietly (see U28b), so the refusal
+    // is caught here and the message is read off the Error.
+    const refused = await none.fn([]).then(() => '', (e) => e.message);
+    // NEGATIVE CONTROL (run 2026-08-28): dropping the `if (!picked.length)`
+    // refusal made this read
+    //   FAIL  U26 nothing ticked stores nothing, and he is told why  -- 0 stored, said ""
+    // Not a guard on resending: a guard on sending NOTHING, which would
+    // otherwise be a tap that did nothing and explained nothing.
+    ck('U26 nothing ticked stores nothing, and he is told why',
+      none.bucket.size === 0 && none.said.length === 0
+      && none.shouted.some((m) => /Tick at least one form/.test(m))
+      && /Tick at least one form/.test(refused),
+      `${none.bucket.size} stored, said "${none.shouted.join(' ')}", threw "${refused}"`);
+    // NEGATIVE CONTROL (run 2026-08-28): trusting `kinds` instead of filtering
+    // it against SENDABLE_FORMS made this read
+    //   FAIL  U26b and a kind that is not one of his forms sends nothing at all  -- 3 stored: cases/abc/report/1787889831374-formfilled 2026-08-27.html, cases/abc/report/1787889831375-.._.._.._etc_passwd 2026-08-27.html, cases/abc/report/1787889831376-report 2026-08-27.html
+    // Nothing that is not one of his two forms can be talked into Storage, and
+    // nothing can put a chosen string into a Storage path.
+    const forged = build();
+    await forged.fn(['formfilled', '../../../etc/passwd', 'report']).catch(() => {});
+    ck('U26b and a kind that is not one of his forms sends nothing at all',
+      forged.bucket.size === 0,
+      `${forged.bucket.size} stored: ${[...forged.bucket.keys()].join(', ')}`);
+  }
+
+  // ---- U28: a caller that is not a person can tell a send from a failure --
+  //
+  // Asked for by the advisor branch (2026-08-28), which proposes "send the
+  // hands-off forms to the client" as a card Eric taps and renders
+  // "Not done: {message}" on the card when a carry-out fails. Reporting only
+  // into the panel DOM tells such a caller nothing at all, and a caller that
+  // cannot tell a send from a failure reports success for both.
+  {
+    // NEGATIVE CONTROL (run 2026-08-28): returning undefined instead of the
+    // two lists made this read
+    //   FAIL  U28 a completed send hands back what landed and what went quiet
+    // (no detail: JSON.stringify(undefined) is undefined, so ck prints none)
+    ck('U28 a completed send hands back what landed and what went quiet',
+      out && Array.isArray(out.sent) && out.sent.length === 2
+      && Array.isArray(out.quiet) && out.quiet.length === 0,
+      JSON.stringify(out));
+    // NEGATIVE CONTROL (run 2026-08-28): swallowing the refusal and returning
+    // `{ sent: [], quiet: [] }` made this read
+    //   FAIL  U28b and a refusal is thrown, not returned as an empty success  -- resolved with {"sent":[],"quiet":[]}
+    const nothing = build({ noPanel: true });
+    const refusal = await nothing.fn([]).then(
+      (r) => `resolved with ${JSON.stringify(r)}`, (e) => e);
+    ck('U28b and a refusal is thrown, not returned as an empty success',
+      refusal instanceof Error && /Tick at least one form/.test(refusal.message),
+      refusal instanceof Error ? refusal.message : String(refusal));
+    // A STORAGE FAILURE MID-RUN. The first form lands, the second one cannot,
+    // and both facts have to reach the caller: what got through, and that it
+    // stopped.
+    const half = (() => {
+      const bucket = new Map();
+      const said = [];
+      const calls = [];
+      const shouted = [];
+      const fn = new Function('__bucket', '__said', '__api', '__shout', `
+        const caseId = 'abc';
+        const storage = {};
+        const ref = (_s, path) => ({ path });
+        let n = 0;
+        const uploadBytesResumable = (r, file, meta) => {
+          n += 1;
+          if (n > 1) return { on: (_e, _p, fail) => fail && fail(new Error('network')) };
+          __bucket.set(r.path, { file, meta });
+          return { on: (_e, _p, _f, done) => done && done() };
+        };
+        const api = async (body) => { __api.push(body); return { ok: true }; };
+        const say = (k, text, o) => { __said.push({ k, text, tone: (o && o.tone) || 'ok' }); };
+        const load = () => {};
+        const alert = (m) => { __shout.push(m); };
+        const document = {
+          getElementById: () => ({ hidden: true, set textContent(v) { __shout.push(v); } }),
+          querySelectorAll: () => [],
+        };
+        const authorityDocHtml = (o) => '<pre>BLANK FORM ' + o.kind + '</pre>';
+        ${TZ}
+        ${FORMS};
+        ${DAY}
+        ${STAMP}
+        ${SEND}
+        return sendBlankForms;
+      `)(bucket, said, calls, shouted);
+      return { fn, bucket, said, calls, shouted };
+    })();
+    const stopped = await half.fn(['records', 'representative']).then(() => null, (e) => e);
+    // NEGATIVE CONTROL (run 2026-08-28): resolving instead of throwing when a
+    // form failed to upload made this read
+    //   FAIL  U28c a send that stopped half way throws, and says how far it got  -- resolved
+    ck('U28c a send that stopped half way throws, and says how far it got',
+      stopped instanceof Error && /1 sent, then it stopped/.test(stopped.message)
+      && Array.isArray(stopped.sent) && stopped.sent.length === 1,
+      stopped ? stopped.message : 'resolved');
+    // NEGATIVE CONTROL (run 2026-08-28): dropping the `say` on the partial
+    // path, so only the thrown Error knew, made this read
+    //   FAIL  U28d and the one that DID land is still named on his panel  -- nothing said
+    // He is the one holding the phone. A form that reached the client must not
+    // be invisible to him because the next one failed.
+    ck('U28d and the one that DID land is still named on his panel',
+      half.said.length === 1 && half.said[0].tone === 'warn'
+      && /Records authorisation/.test(half.said[0].text)
+      && /stopped/.test(half.said[0].text),
+      half.said[0] ? `${half.said[0].tone}: ${half.said[0].text}` : 'nothing said');
+    // NEGATIVE CONTROL (run 2026-08-28): writing the failure onto the panel
+    // AFTER load() had been called made this read
+    //   FAIL  U28e and the failure is not written where the repaint will wipe it  -- 1 written onto the panel after load()
+    // load() repaints the whole Overview. A line put straight into #forms-err
+    // after that call is destroyed by the repaint that proves the send worked,
+    // which is the exact silence the said map exists to end.
+    ck('U28e and the failure is not written where the repaint will wipe it',
+      half.shouted.length === 0,
+      `${half.shouted.length} written onto the panel after load()`);
+  }
+
+  // ---- U28f-U28h: the seam for "send the hands-off forms to the client" ----
+  //
+  // Eric named that sentence himself as an example of what he wants to say out
+  // loud. The advisor branch turns it into a confirm card; the card lives in
+  // advisor.js, which cannot import from admin-case.js, so they talk through a
+  // DOM event the way pa-panel-review and pa-mark-done already do. Inert until
+  // that branch lands, so it is LIFTED AND DISPATCHED here rather than left as
+  // a line nobody has ever run.
+  {
+    const SEAM = slab(ADMINCASE, "document.addEventListener('pa-send-forms'", '});');
+    // NEGATIVE CONTROL (run 2026-08-28): deleting the listener made this read
+    //   FAIL  U28f the pa-send-forms seam is in the shipped page
+    ck('U28f the pa-send-forms seam is in the shipped page', SEAM.length > 0);
+
+    const bucket = new Map();
+    const said = [];
+    const calls = [];
+    const dispatch = new Function('__bucket', '__said', '__api', `
+      const caseId = 'abc';
+      const storage = {};
+      const ref = (_s, path) => ({ path });
+      const uploadBytesResumable = (r, file, meta) => {
+        __bucket.set(r.path, { file, meta });
+        return { on: (_e, _p, _f, done) => done && done() };
+      };
+      const api = async (body) => { __api.push(body); return { ok: true }; };
+      const say = (k, text, o) => { __said.push({ k, text, tone: (o && o.tone) || 'ok' }); };
+      const load = () => {};
+      const alert = () => {};
+      // A document with just enough of one to register and fire an event.
+      const listeners = {};
+      const document = {
+        addEventListener: (name, fn) => { listeners[name] = fn; },
+        getElementById: () => ({ hidden: true, textContent: '' }),
+        querySelectorAll: () => [],
+      };
+      const authorityDocHtml = (o) => '<pre>BLANK FORM ' + o.kind + '</pre>';
+      ${TZ}
+      ${FORMS};
+      ${DAY}
+      ${STAMP}
+      ${SEND}
+      ${SEAM}
+      // Dispatched exactly as the advisor branch dispatches it, and READ BACK
+      // SYNCHRONOUSLY, because that is the part of the contract that breaks
+      // silently: an await anywhere before the assignment and the caller sees
+      // null on a send that is actually running.
+      return (kinds) => {
+        const detail = { kinds, result: null };
+        listeners['pa-send-forms']({ detail });
+        return detail.result;
+      };
+    `)(bucket, said, calls);
+
+    const handed = dispatch(['records', 'representative']);
+    // NEGATIVE CONTROL (run 2026-08-28): making the listener `async` so the
+    // assignment lands a microtask late made this read
+    //   FAIL  U28g and it hands the promise back before dispatch returns  -- got null
+    // null is the dispatcher's own "no sender on this page" answer, arrived at
+    // on a send that was in fact running, which is the confusion this whole
+    // shape exists to prevent.
+    ck('U28g and it hands the promise back before dispatch returns',
+      handed && typeof handed.then === 'function',
+      `got ${handed === null ? 'null' : typeof handed}`);
+    const seamOut = await Promise.resolve(handed).catch((e) => e);
+    // NEGATIVE CONTROL (run 2026-08-28): dropping the ticked kinds on the
+    // floor (`sendBlankForms([])`) made this read
+    //   FAIL  U28h and it really sends, both forms, filed as formsent  -- 0 stored, handed back {"sent":[],"quiet":[]}
+    // A seam that fires and stores nothing is the silent pass this check is
+    // here to catch; the counts are numbers for that reason.
+    ck('U28h and it really sends, both forms, filed as formsent',
+      bucket.size === 2
+      && [...bucket.values()].every((v) => v.meta?.customMetadata?.paCategory === 'formsent')
+      && seamOut?.sent?.length === 2,
+      `${bucket.size} stored, handed back ${JSON.stringify(seamOut)}`);
+  }
+
+  // ---- U27: the copy stopped promising a thing that is parked -------------
+  //
+  // The panel told him, for a client without the tier, "and signing in the app
+  // opens when they upgrade". In-app signing was PARKED the day before
+  // (OFFER_AUTHORITY_SIGNING = false in public/js/case.js), so the sentence
+  // was false, and false in the direction that matters: it was telling ERIC
+  // something untrue about his own tool, on the panel he reaches for while a
+  // client is on the phone.
+  {
+    const panel = slab(ADMINCASE, '<details class="mgmt" data-k="auth">', '</details>');
+    // NEGATIVE CONTROL (run 2026-08-28): putting the old sentence back made
+    // this read
+    //   FAIL  U27 the form panel no longer promises signing in the app  -- signing in the app
+    ck('U27 the form panel no longer promises signing in the app',
+      panel.length > 0
+      && !/signing in the app|sign in the app|opens when they upgrade/i.test(panel),
+      (panel.match(/signing in the app|sign in the app|opens when they upgrade/i) || [])[0]
+        || 'panel not found');
+    // NEGATIVE CONTROL (run 2026-08-28): deleting the "by hand" sentence made
+    // this read
+    //   FAIL  U27b and says what actually happens instead
+    // Correcting a false line by deleting it leaves him with no answer to "so
+    // how DOES this get signed".
+    ck('U27b and says what actually happens instead',
+      /by hand/.test(panel) && /send it back/.test(panel) && /filled form/.test(panel));
+    // NEGATIVE CONTROL (run 2026-08-28): flipping OFFER_AUTHORITY_SIGNING to
+    // true made this read
+    //   FAIL  U27c and the client-side signing offer is still parked
+    // Nothing in this change may un-park it.
+    ck('U27c and the client-side signing offer is still parked',
+      /const OFFER_AUTHORITY_SIGNING = false;/.test(CLIENT));
+    // NEGATIVE CONTROL (run 2026-08-28): hard-coding the two rows in the
+    // markup instead of mapping SENDABLE_FORMS made this read
+    //   FAIL  U27d one list of forms drives the ticks, the Print buttons and the file names
+    // Two lists is how a tick labelled one thing sends a file called another.
+    ck('U27d one list of forms drives the ticks, the Print buttons and the file names',
+      /\$\{SENDABLE_FORMS\.map\(/.test(panel)
+      && /data-form-pick="\$\{f\.id\}"/.test(panel)
+      && /data-blank="\$\{f\.id\}"/.test(panel)
+      && /\$\{form\.label\} \$\{mountainDay\(\)\}\.html/.test(ADMINCASE));
+  }
 }
 
 const failed = results.filter((r) => !r.pass);
