@@ -7,11 +7,17 @@ building and re-finding this once cost a full day.
 
     node tools/suites/run.mjs
 
-Nineteen suites assert against the real Worker and page sources: pricing
+Twenty suites assert against the real Worker and page sources: pricing
 constants, the tier window and closure rules, the maintenance gate, the
 acknowledgment flow, the authority documents, the hold model, the check-in
-cadence, what the advisor is allowed to ask for, and the defect regressions.
+cadence, the work log and what a client sees of it, document types and
+sending forms, renaming and filing a file, what the advisor is allowed to
+ask for, and the defect regressions.
 No server, no browser, no network.
+
+The count in this sentence goes stale the moment a suite is added, so
+`run.mjs` prints its own total on every run. If the two disagree, the run is
+right and this line needs editing.
 Eric's rule (2026-08-25): this battery runs and passes before ANYTHING is
 pushed to main. See CLAUDE.md.
 

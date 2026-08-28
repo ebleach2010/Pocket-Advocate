@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.39';
+export const VERSION = '2.40';
 
 /**
  * Newest first.
@@ -51,6 +51,37 @@ export const VERSION = '2.39';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // Filing a file, and the two things about it a client can see
+    // (Eric, 2026-08-27 and 2026-08-28).
+    //
+    // 2.39 shipped and reached clients earlier tonight, so this is its own
+    // version rather than an edit to that list.
+    //
+    // QUIET, same as 2.39: he said "push what you build to main since it
+    // doesn't affect the client much at all" and never said "push as full
+    // update", and an unspecified push is silent.
+    //
+    // TWO bullets only, and that is deliberate. Almost all of this release is
+    // on his side of the glass and none of it is news to a client, per the
+    // scope rule above. What IS news is that a file can now change its name,
+    // and that a file he has filed as part of the record has stopped being
+    // theirs to delete. The second one takes away something they had, which
+    // is exactly the kind of change this list exists for.
+    //
+    // And a note for whoever writes the next entry: THIS FILE IS SERVED TO
+    // EVERY PAGE, so its comments are client-readable bytes and the blindness
+    // rule covers them. The first draft of this comment listed the admin side
+    // work by name to explain why it was being left out, and the audit failed
+    // on it: "FAIL /js/changelog.js - 1 forbidden match". Say what belongs in
+    // the list, never what was left out of it.
+    version: '2.40',
+    quiet: true,
+    client: [
+      'A document I have labelled as part of your case record can no longer be deleted from your side. Anything you uploaded yourself and I have not labelled is still yours to remove.',
+      'If I rename a document so it is easier to recognise, the new name is what you see. Nothing about the file itself changes, and any link you already have to it keeps working.',
+    ],
+  },
   {
     // Office hours, the work log, and what a document is (Eric, 2026-08-27
     // and 2026-08-28).
