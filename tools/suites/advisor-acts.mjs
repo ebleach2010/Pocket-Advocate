@@ -680,7 +680,26 @@ const TABLE = {
 // because the swallowed code happened to be inert. So the lifts are MEASURED,
 // not trusted: each one has to end where its own function ends and carry no
 // other function's header.
+//
+// THREE DIFFERENT FAILURES, WHICH IS WHY THERE ARE THREE CHECKS. A lift can be
+// LOST (its anchor renamed, and it quietly asserts nothing), it can RUN ON
+// past its own end, or it can SWALLOW exactly one neighbour and come back a
+// wholly plausible size ending on a wholly plausible line. Only naming the
+// neighbours catches the third, and the third is the one that hides.
+//
+// The sizes are PRINTED on every run as well as checked, because a lift that
+// legitimately moves is a thing somebody has to notice. That mattered the same
+// day it was written: the -forms branch measured its own handleCaseUpdate lift
+// at 15,915 on its branch and 18,060 merged with this one, and the 2,145
+// character difference is the set-paid provenance block below. Every check
+// stayed green and correctly so, because that block reaches only for patchDoc,
+// json and doc.data and all three were already stubbed there. Nothing but the
+// size said the lift had grown. IF ANYTHING HERE EVER EDITS INSIDE
+// handleCaseUpdate AGAIN and reaches for a helper that suite does not stub,
+// U13 to U16d in tools/suites/uploads.mjs all die at one ReferenceError: add
+// the stub to its harness in the same commit.
 {
+  // [name, captured source, the exact tail it must end on or null to skip]
   const LIFTS = [
     ['handleClientAlert', (W.match(/async function handleClientAlert\(request, env\) \{[\s\S]*?\n\}/) || [''])[0],
       "  return json({ ok: true, sent: text, at: now.toISOString() });\n}"],
@@ -692,19 +711,38 @@ const TABLE = {
       '    });\n  }'],
     ['handleAct', (PANELSRC.match(/async function handleAct\(act, actError\) \{[\s\S]*?\n  \}/) || [''])[0],
       '    renderActCard(act);\n  }'],
+    // The harness's other input, measured for the same reason. No tail: its
+    // last line carries the trail bound, and A22d owns that number. Pinning it
+    // twice would make a deliberate change to the bound fail here, in a check
+    // about lifts, which is a check going off about somebody else's business.
+    ['alertConsts', (W.match(/const ALERT_MIN_GAP_MS = [^;]+;\nconst ALERT_MAX_PER_DAY = [^;]+;\nconst ALERT_TRAIL_KEEP = [^;]+;/) || [''])[0], null],
   ];
   const short = LIFTS.filter(([, src]) => src.length < 60).map(([n]) => n);
-  // NEGATIVE CONTROL (run 2026-08-28): renaming carryAct in the shipped panel
-  // made this read
-  //   FAIL  A30 every lift in this file actually found its function  -- carryAct
+  // NEGATIVE CONTROL (run 2026-08-28), two of them:
+  //   renaming carryAct in the shipped panel
+  //     FAIL  A30 every lift in this file actually found its function  -- carryAct
+  //   renaming ALERT_MAX_PER_DAY in the shipped Worker, which is the middle
+  //   line of the three the harness lifts and so takes the whole slab with it
+  //     FAIL  A30 every lift in this file actually found its function  -- alertConsts
+  //   and the size line said `alertConsts 0` in the same breath, which is the
+  //   half that tells you WHICH kind of failure you are looking at.
   ck('A30 every lift in this file actually found its function', !short.length, short.join(', '));
   // ENDS WHERE ITS OWN FUNCTION ENDS. This is the one that catches a slab that
   // ran on: the last line of the capture has to be the last line of the thing
   // it was meant to capture.
-  const ranOn = LIFTS.filter(([, src, tail]) => !src.endsWith(tail)).map(([n]) => n);
-  // NEGATIVE CONTROL (run 2026-08-28): loosening renderActCard's closing
-  // anchor from '\n  }' to '\n}' made this read
-  //   FAIL  A30b and ends exactly where that function ends, not later  -- renderActCard
+  const ranOn = LIFTS.filter(([, src, tail]) => tail && !src.endsWith(tail)).map(([n]) => n);
+  // NEGATIVE CONTROL (run 2026-08-28), THREE OF THEM, because this check has
+  // to catch a slab that stops early as well as one that runs on, and because
+  // handleClientAlert is a function this branch ADDED and its slab has no
+  // history behind it to have proved itself against:
+  //   loosening renderActCard's closing anchor from '\n  }' to '\n}'
+  //     FAIL  A30b and ends exactly where that function ends, not later  -- renderActCard
+  //   making handleClientAlert's slab GREEDY ([\s\S]* not [\s\S]*?), which
+  //   took it from 3,358 characters to 27,106
+  //     FAIL  A30b and ends exactly where that function ends, not later  -- handleClientAlert
+  //   tightening handleClientAlert's close to '\n  }', which STOPPED IT EARLY
+  //   at 2,453 characters, the failure in the other direction
+  //     FAIL  A30b and ends exactly where that function ends, not later  -- handleClientAlert
   ck('A30b and ends exactly where that function ends, not later', !ranOn.length, ranOn.join(', '));
   // And carries nobody else's header. A slab that swallowed the next function
   // fails here even if its tail happened to match.
@@ -713,8 +751,14 @@ const TABLE = {
     'async function releaseHold('];
   const swallowed = LIFTS.filter(([name, src]) =>
     HEADERS.filter((h) => src.includes(h)).some((h) => !h.includes(`${name}(`))).map(([n]) => n);
-  // NEGATIVE CONTROL (run 2026-08-28): the same loosened anchor made this read
-  //   FAIL  A30c and swallowed no other function on the way  -- renderActCard
+  // NEGATIVE CONTROL (run 2026-08-28), two of them:
+  //   the same loosened renderActCard anchor
+  //     FAIL  A30c and swallowed no other function on the way  -- renderActCard
+  //   the greedy handleClientAlert slab, which swallowed releaseHold and every
+  //   function after it
+  //     FAIL  A30c and swallowed no other function on the way  -- handleClientAlert
+  // The early-truncation break above does NOT show up here, and should not:
+  // a slab that stops short has swallowed nothing. That is A30b's job alone.
   ck('A30c and swallowed no other function on the way', !swallowed.length, swallowed.join(', '));
   console.log(`      lift sizes: ${LIFTS.map(([n, src]) => `${n} ${src.length}`).join(', ')}`);
 }
