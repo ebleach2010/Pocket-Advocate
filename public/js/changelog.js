@@ -52,11 +52,22 @@ export const VERSION = '2.39';
  */
 export const CHANGELOG = [
   {
-    // Office hours and the "?" beside the chat (Eric, 2026-08-27).
+    // Office hours, the work log, and what a document is (Eric, 2026-08-27
+    // and 2026-08-28).
     //
-    // QUIET unless he says "push as full update": he has not said which yet,
-    // and an unspecified push is silent. The bullets below are the client half
-    // of this release and only the client half, per the scope rule above.
+    // 2.39 sat on the branch while main stayed at 2.38, so it has never
+    // reached a client. Rather than bumping past it and leaving a version
+    // nobody was ever shown, its client list is REPLACED with the whole of
+    // this push, which is what the versioning rule above asks for.
+    //
+    // QUIET. His words were "push what you build to main since it doesn't
+    // affect the client much at all", and an unspecified push is silent. He
+    // did not say "push as full update", so no update card opens: the version
+    // and these notes sit behind the "Version notes" button in the footer.
+    //
+    // Client half only, per the scope rule. The settings cog, the case limit,
+    // the long press on a case folder and everything else on his side of the
+    // glass is deliberately absent.
     version: '2.39',
     quiet: true,
     client: [
@@ -64,7 +75,13 @@ export const CHANGELOG = [
       'New: the small "?" beside that pill answers "When will Eric respond?" It explains my hours, how I decide what to answer first, and what is happening when you have not heard back yet.',
       'The hours in that answer now also show in your own timezone, so you do not have to work out what Mountain time means where you are.',
       'You can always message me outside office hours. I see it when I am back in office.',
+      'New: a log of the work I have been doing on your case, by date. It is the fourth tab along the top of your case, beside your documents.',
+      'Your documents now carry a label saying what each one is, such as a call summary, an appointment summary, or a form to fill in, and I tell you the file name when a new one lands.',
+      'The total you have paid now shows on your case beside the hours I have worked, so the two numbers read against each other properly.',
+      'You will hear from me when I start a new kind of work on your case, such as calling your clinics or writing to your insurer. Once when that stretch of work begins, not once for every call.',
+      'The forms I need you to sign now come to you from me directly rather than being signed in the app. Any permission you have already given me is still on your case, with View and Withdraw beside it, and you can still withdraw one at any time.',
       'Fixed: the subscriber chat could show a reply time that had never been set. A note about timing now appears only when one has been written.',
+      'Fixed: a message or an update from me could arrive on your phone appearing to come from "A client". It says my name now.',
     ],
   },
   {
