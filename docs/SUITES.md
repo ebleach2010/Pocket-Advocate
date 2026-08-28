@@ -7,12 +7,28 @@ building and re-finding this once cost a full day.
 
     node tools/suites/run.mjs
 
-Eighteen suites assert against the real Worker and page sources: pricing
+Nineteen suites assert against the real Worker and page sources: pricing
 constants, the tier window and closure rules, the maintenance gate, the
 acknowledgment flow, the authority documents, the hold model, the check-in
-cadence, and the defect regressions. No server, no browser, no network.
+cadence, what the advisor is allowed to ask for, and the defect regressions.
+No server, no browser, no network.
 Eric's rule (2026-08-25): this battery runs and passes before ANYTHING is
 pushed to main. See CLAUDE.md.
+
+### The one that carries his money
+
+`tools/suites/advisor-acts.mjs` is the gate on the advisor's authority over
+settings. It IMPORTS `worker/advisor-acts.js` and calls it, LIFTS
+`handleClientAlert` out of the Worker and runs it, and LIFTS `actDispatch`
+out of the panel and runs it over every action at once. A regex cannot tell
+3500 from 35000, cannot tell a real refusal from a validator that refuses
+everything, and cannot tell an action that shows a confirm card from one
+that does not, so none of it is pattern matched.
+
+Its browser half is `tools/drives/drive-act.mjs` (390px and 320px), which
+proves the confirm card is on the page, shows BOTH figures before money
+moves, shows the exact sentence a client will read before it is sent, and
+posts what he read.
 
 ## Where the drivable demo runs
 

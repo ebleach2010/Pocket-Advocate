@@ -27,6 +27,33 @@ export function normTitle(s) {
     .toLowerCase();
 }
 
+/**
+ * THE ONE QUESTION THIS PANEL ASKS ABOUT A PROPOSED CHANGE, and the reason it
+ * is a pure exported function rather than three lines buried in a handler: it
+ * can be lifted out of the shipped file and run over every action the Worker
+ * knows about, which is how "money can never happen without a card" stops
+ * being a promise and starts being a check.
+ *
+ *   'run'    carry it out now, no card. Reversible settings on his own desk,
+ *            which he asked to just happen: a card in front of "I'm back" is a
+ *            card he learns to dismiss without reading.
+ *   'card'   show him what it would do and wait for a tap. Money, and anything
+ *            a client sees or is sent.
+ *   'draft'  hand it to the draft flow. The draft card IS the confirm card: he
+ *            edits it, taps Send, and only then does a client see anything.
+ *   'none'   nothing is parked.
+ *
+ * It reads the tier off the proposal and never decides one. The tier was
+ * decided server-side against a fixed table, so a panel that got this wrong
+ * could only ever get it wrong in the safe direction: an unknown shape falls
+ * through to a card.
+ */
+export function actDispatch(act) {
+  if (!act || typeof act !== 'object' || !act.name) return 'none';
+  if (act.via === 'draft') return 'draft';
+  return act.tier === 'desk' ? 'run' : 'card';
+}
+
 const SECTION_ICON_RAW = {
   'Right now': '⚡',
   'Plain English': '💬',
@@ -104,6 +131,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       <div class="advisor-files" data-fchips></div>
       <div class="advisor-body" data-analysis></div>
       <div class="advisor-read" data-read hidden></div>
+      <div class="advisor-act" data-act-card hidden></div>
       <div class="advisor-draft" data-draft-card hidden></div>
       <div class="advisor-qa" data-qa></div>
       <div class="advisor-foot">
@@ -122,6 +150,15 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   const bodyEl = el('[data-analysis]');
   // Drafts render into their own page section when the host provides one.
   const draftCard = draftContainer || el('[data-draft-card]');
+  // The confirm card for a change to the app. Stays in the panel even when
+  // drafts have been given their own section of the page: this is a question,
+  // not a document, and it belongs next to the answer that raised it.
+  const actCard = el('[data-act-card]');
+  // Declared up here with the handles, not down beside the card code: refresh()
+  // starts polling before this function has finished running, and a `let` read
+  // before its declaration is a crash, not a null.
+  let actShown = null;      // the actId on screen, or already carried out
+  let actBusy = false;
   const chipsEl = el('[data-fchips]');
   const readEl = el('[data-read]');
   const qaEl = el('[data-qa]');
@@ -809,6 +846,14 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         };
         renderDiff(detail);
         renderRead(out.mediaReport, out.queuedFiles, d.running, out.state?.mediaPlan || []);
+        // A change the advisor has asked for, parked server-side and waiting.
+        // Read straight off out.state rather than through the detail whitelist
+        // above: this one belongs to the panel that raised it, not to the
+        // folder pages that ride the same poll. Never awaited, because a card
+        // that has to finish before the next poll can run would stall the
+        // panel behind his own reading of it.
+        handleAct(out.state?.pendingAct || null, out.state?.pendingActError || '')
+          .catch(() => { /* the next tick tries again */ });
         document.dispatchEvent(new CustomEvent('pa-panel-state', { detail }));
       }
     } catch { /* transient — the next tick tries again */ }
@@ -1049,6 +1094,192 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     if (!msgId) return;
     post({ action: 'correction-dismiss', msgId });
   });
+
+  // ---- a change to the app, proposed and waiting -----------------------
+  //
+  // Eric, 2026-08-27: "Have the advisor have authority over settings in the
+  // app. Such as 'set the total price paid by this client to 3500' or 'notify
+  // client that there's a form he needs to fill out'." And, asked which of
+  // them should stop and ask him first: "Tap to confirm the ones that matter."
+  //
+  // The Worker parks a validated proposal on the state document and this reads
+  // it. NOTHING HERE DECIDES ANYTHING: the allowlist, the bounds and the tier
+  // were all settled server-side in worker/advisor-acts.js, and the tap below
+  // calls the same admin route his own thumb already calls, with his own admin
+  // token, through every guard that route already had.
+  /** A line in the card. Text as a VALUE, never as markup, every time. */
+  const actLine = (parent, text, cls) => {
+    const el2 = document.createElement('p');
+    el2.className = cls || 'dim small';
+    el2.style.margin = '.25rem 0 0';
+    el2.textContent = text;
+    parent.appendChild(el2);
+    return el2;
+  };
+
+  /** Call the ordinary admin route, exactly as the hand-driven control does. */
+  async function carryAct(act) {
+    const payload = { ...(act.args || {}) };
+    if (act.scoped) payload.caseId = id;
+    const token = await user.getIdToken();
+    const res = await fetch(act.path, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+    return out;
+  }
+
+  /** It is done (or it refused): stop offering it. */
+  async function actFinish(act) {
+    await post({ action: 'act-done', actId: act.actId }).catch(() => {});
+  }
+
+  /**
+   * THE CONFIRM CARD. What it would do, in his own units, with BOTH figures
+   * where a figure is moving, and the exact words where words are going to a
+   * client's phone. Nothing sends until the button.
+   */
+  function renderActCard(act) {
+    actCard.hidden = false;
+    actCard.innerHTML = '';
+    const head = document.createElement('p');
+    head.className = 'advisor-draft-label';
+    head.textContent = '⚙️ Change to make';
+    actCard.appendChild(head);
+
+    const said = document.createElement('p');
+    said.style.margin = '.3rem 0 0';
+    // The alert is the one act whose summary IS the sentence a client will
+    // read, so it is shown as the quotation it is, character for character.
+    said.textContent = act.name === 'client-alert'
+      ? `Send this client an urgent notification reading: "${act.summary}"`
+      : act.summary;
+    actCard.appendChild(said);
+
+    // Both figures, side by side, for the two acts that move a number the
+    // client can read on their own page. "3500" and "35000" are one keystroke
+    // apart and this is the only thing that can tell them apart.
+    if (act.before) actLine(actCard, act.before);
+    if (act.after) actLine(actCard, act.after);
+
+    const err = actLine(actCard, '', 'error');
+    err.hidden = true;
+
+    const actions = document.createElement('div');
+    actions.className = 'advisor-draft-actions';
+    const no = document.createElement('button');
+    no.className = 'btn quiet tiny';
+    no.textContent = 'Not now';
+    const yes = document.createElement('button');
+    yes.className = 'btn tiny';
+    yes.textContent = act.name === 'client-alert' ? 'Send it' : 'Do it';
+    actions.append(no, yes);
+    actCard.appendChild(actions);
+
+    // BRING IT INTO VIEW. The panel is long and the card lands under the
+    // answer that raised it, which on a phone is well below the fold: a card
+    // he has to go looking for is the same "where did it go" the draft card
+    // exists to answer. Nearest, so it never yanks the page about.
+    actCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    no.addEventListener('click', async () => {
+      actCard.hidden = true;
+      await actFinish(act);
+    });
+    yes.addEventListener('click', async () => {
+      if (actBusy) return;
+      actBusy = true;
+      yes.disabled = true;
+      no.disabled = true;
+      err.hidden = true;
+      try {
+        await carryAct(act);
+        actCard.innerHTML = '';
+        actCard.appendChild(head);
+        actLine(actCard, `Done. ${act.after || act.summary}`);
+        // The case page holds these numbers in several places and repaints
+        // none of them by itself.
+        document.dispatchEvent(new CustomEvent('pa-case-money'));
+        await actFinish(act);
+      } catch (e) {
+        // Left on screen, with the reason. A card that vanishes on a failure
+        // is a card that looks like it worked.
+        err.textContent = `Not done: ${e.message}`;
+        err.hidden = false;
+        yes.disabled = false;
+        no.disabled = false;
+      } finally {
+        actBusy = false;
+      }
+    });
+  }
+
+  /**
+   * One parked proposal, read off the poll. A DESK setting is carried out and
+   * reported; anything else waits for him.
+   */
+  async function handleAct(act, actError) {
+    const how = actDispatch(act);
+    if (how === 'none') {
+      if (actError) {
+        // A refusal is SHOWN, never swallowed. "I asked it to close the case
+        // and nothing happened" needs an answer on the screen he asked from.
+        actCard.hidden = false;
+        actCard.innerHTML = '';
+        const head = document.createElement('p');
+        head.className = 'advisor-draft-label';
+        head.textContent = '⚙️ Not something I can do';
+        actCard.appendChild(head);
+        actLine(actCard, actError);
+        return;
+      }
+      if (actShown === null) actCard.hidden = true;
+      return;
+    }
+    if (act.actId === actShown) return;   // already on screen, or already done
+    actShown = act.actId;
+    // A case-scoped act on a subscription thread has no case to act on. It
+    // cannot be built here, so it is refused here rather than sent wrong.
+    if (act.scoped && kind !== 'case') {
+      actCard.hidden = false;
+      actCard.innerHTML = '';
+      actLine(actCard, 'That one belongs to a case, and this is not one.', 'error');
+      await actFinish(act);
+      return;
+    }
+    if (how === 'draft') {
+      // Straight into the draft flow that already exists. The draft card is
+      // the confirm: nothing reaches the client until he taps Send there.
+      actCard.hidden = true;
+      prepBtn.disabled = true;
+      prepBtn.textContent = '✍️ Drafting…';
+      awaitingDraft = true;
+      await post({ action: 'draft', instruction: act.args?.instruction || '' });
+      await actFinish(act);
+      return;
+    }
+    if (how === 'run') {
+      actCard.hidden = false;
+      actCard.innerHTML = '';
+      const head = document.createElement('p');
+      head.className = 'advisor-draft-label';
+      head.textContent = '⚙️ Done';
+      actCard.appendChild(head);
+      const line = actLine(actCard, act.summary);
+      try {
+        await carryAct(act);
+      } catch (e) {
+        line.className = 'error';
+        line.textContent = `Not done: ${e.message}`;
+      }
+      await actFinish(act);
+      return;
+    }
+    renderActCard(act);
+  }
 
   /**
    * The draft's home: a code-box card in the panel. Edit the text in place,
