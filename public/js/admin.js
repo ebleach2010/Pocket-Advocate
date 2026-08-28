@@ -256,7 +256,10 @@ async function load() {
     // The clock as it stands right now, so a card can paint "running" the
     // moment the shelf does rather than after a round trip.
     const w = c.work || {};
-    const banked = Math.max(0, Number(w.seconds) || 0);
+    // The TIER'S clock, not the case-lifetime total: everything behind
+    // work.tierMark is the review phase, kept apart since the case went
+    // Hands-Off (Eric, 2026-08-29: "Two clocks for two different tiers").
+    const banked = Math.max(0, (Number(w.seconds) || 0) - (Number(w.tierMark) || 0));
     const started = w.startedAt ? toDate(w.startedAt).getTime() : 0;
     const live = banked + (started ? (Date.now() - started) / 1000 : 0);
     const h = Math.floor(live / 3600);

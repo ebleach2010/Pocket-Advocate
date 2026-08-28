@@ -1007,7 +1007,10 @@ function paintAgendaPage(pane) {
  * poll that repainted only one of them showed two different clocks.
  */
 let workTick = null;
-const clock = { seconds: 0, startedAt: 0, loaded: false };
+// `mark` is work.tierMark: where the case-review clock ended and the
+// Hands-Off clock began (Eric, 2026-08-29: "Two clocks for two different
+// tiers"). Zero on a case that never went Hands-Off.
+const clock = { seconds: 0, startedAt: 0, mark: 0, loaded: false };
 const clockPaints = new Set();
 const paintClock = () => {
   for (const f of [...clockPaints]) {
@@ -1055,10 +1058,14 @@ const dayTail = () => {
  *  clock.startedAt is the SERVER's clock (a phone seconds behind it rendered
  *  "-1h -1m · running"), and a stretch forgotten over a weekend banks at most
  *  twelve hours, so all three switches and the bank agree on one number. */
-const liveClockSeconds = () => Math.max(0, clock.seconds
-  + (clock.startedAt
-    ? Math.min(Math.floor((Date.now() - clock.startedAt) / 1000), 12 * 3600)
-    : 0));
+const liveStretch = () => (clock.startedAt
+  ? Math.max(0, Math.min(Math.floor((Date.now() - clock.startedAt) / 1000), 12 * 3600))
+  : 0);
+const liveClockSeconds = () => Math.max(0, clock.seconds - (clock.mark || 0)) + liveStretch();
+/** The case-lifetime total, review hours included. The hourly instrument
+ *  reads THIS one: the money paid covers both tiers, so dividing it by only
+ *  the Hands-Off clock would flatter every rate on the page. */
+const liveTotalSeconds = () => Math.max(0, clock.seconds) + liveStretch();
 /** One ticking repaint for however many switches exist. A minute is plenty. */
 function armClockTick() {
   clearInterval(workTick);
@@ -1080,6 +1087,7 @@ async function postWork(payload) {
   // so re-entering a chart mid-stretch keeps counting rather than appearing
   // to reset to the banked total.
   clock.startedAt = out.startedAt ? new Date(out.startedAt).getTime() : 0;
+  if (out.tierMark !== undefined) clock.mark = Math.max(0, Number(out.tierMark) || 0);
   clock.loaded = true;
   // Every answer carries today's banked figure, so a stop or a correction
   // moves the day line in the same paint as the total.
@@ -1160,6 +1168,7 @@ function seedClock(c) {
   const w = c?.work || {};
   clock.seconds = Math.max(0, Number(w.seconds) || 0);
   clock.startedAt = w.startedAt ? toDate(w.startedAt).getTime() : 0;
+  clock.mark = Math.max(0, Number(w.tierMark) || 0);
 }
 
 /** The tap every switch shares: flip, tell the Worker, repaint them all. */
@@ -1256,7 +1265,7 @@ function startWorkClock(c) {
     const h = Math.floor(t / 3600);
     const m = Math.floor((t % 3600) / 60);
     const total = `${h ? `${h}h ` : ''}${m}m`;
-    totalEl.innerHTML = `${esc(total)} on this case${esc(dayTail())}${clock.startedAt ? ' · running' : ''}<span class="fixit">✎ fix</span>`;
+    totalEl.innerHTML = `${esc(total)} ${clock.mark ? 'since Hands-Off began' : 'on this case'}${esc(dayTail())}${clock.startedAt ? ' · running' : ''}<span class="fixit">✎ fix</span>`;
     totalEl.setAttribute('aria-label',
       `${total} banked on this case.${dayTail() ? `${dayTail().replace(' · ', ' ')} of that was logged today.` : ''} Tap to add or subtract time.`);
     totalEl.classList.toggle('on', !!clock.startedAt);
@@ -1271,7 +1280,7 @@ function startWorkClock(c) {
     // that must never be made to look identical.
     const live = data || c;
     if (rateEl) {
-      const hourly = effectiveHourly(live, t);
+      const hourly = effectiveHourly(live, liveTotalSeconds());
       const paid = paidCents(live);
       // THREE STATES, and the third is the one that most needs saying. It used
       // to hide itself whenever there was no hourly, so a case with no
@@ -1384,6 +1393,14 @@ function wireClockFix(btn) {
         </div>
         <p class="dim small" style="margin:.7rem 0 .2rem;">New total:
           <strong style="color:var(--ink)" data-preview>${fmtHm(now)}</strong></p>
+        ${(data || {}).fullAccess ? `
+        <p class="dim small" data-markrow style="margin:.8rem 0 .2rem; border-top:1px solid rgba(127,127,127,.25); padding-top:.6rem;">${
+  clock.mark
+    ? `Case review clock: <strong style="color:var(--ink)">${fmtHm(clock.mark)}</strong>, kept apart since the case went Hands-Off. The number above is the Hands-Off clock.`
+    : 'This number still includes the case review hours.'
+} <button type="button" class="btn quiet tiny" data-markhere style="margin-left:.3rem;">${
+  clock.mark ? 'Restart the Hands-Off clock from here' : 'Start the Hands-Off clock from here'
+}</button></p>` : ''}
         <p class="error" data-err hidden></p>
         <div class="actions" style="margin-top:.5rem;">
           <button class="btn" data-sub>− Subtract</button>
@@ -1435,7 +1452,9 @@ function wireClockFix(btn) {
       button.disabled = true;
       try {
         // postWork banks the answer and repaints every switch on the page.
-        await postWork({ setSeconds: next });
+        // The sheet works in the TIER'S clock; the Worker stores the
+        // case-lifetime total, so the review hours ride along untouched.
+        await postWork({ setSeconds: clock.mark + next });
         close();
       } catch (e2) {
         if (err) { err.textContent = e2.message || 'That did not save. Try again.'; err.hidden = false; }
@@ -1444,6 +1463,25 @@ function wireClockFix(btn) {
     };
     overlay.querySelector('[data-sub]').addEventListener('click', (e) => apply(-1, e.currentTarget));
     overlay.querySelector('[data-add]').addEventListener('click', (e) => apply(1, e.currentTarget));
+
+    // The clock reset, by hand (Eric, 2026-08-29: "if they upgrade to a
+    // hands-off, the clock resets"). New upgrades get the mark stamped by
+    // the Worker at the flip; this button backfills a case that went
+    // Hands-Off before the mark existed, or restarts the count on his word.
+    // Everything on the clock right now becomes the review side of the mark.
+    const markBtn = overlay.querySelector('[data-markhere]');
+    if (markBtn) {
+      markBtn.addEventListener('click', async () => {
+        markBtn.disabled = true;
+        try {
+          await postWork({ setTierMark: true });
+          close();
+        } catch (e2) {
+          if (err) { err.textContent = e2.message || 'That did not save. Try again.'; err.hidden = false; }
+          markBtn.disabled = false;
+        }
+      });
+    }
 
     document.body.appendChild(overlay);
     overlay.querySelector('[data-h]').focus();

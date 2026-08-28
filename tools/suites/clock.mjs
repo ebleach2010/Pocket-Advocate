@@ -52,6 +52,7 @@ const LIFTED = [
   konst('WORK_NUDGE_MINUTES'), konst('WORK_NUDGE_REPEAT_MINUTES'),
   konst('WORK_PRESENCE_STALE_MS'), konst('CLOCK_DOC'), konst('WORK_DAY_TZ'),
   sfn('workDayString'), sfn('workDayElapsedMs'), sfn('todayByCase'),
+  sfn('splitClockAtFlip'),
   fn('bankDaySeconds'), fn('readDaySeconds'),
   fn('setClockRunning'), fn('stopWorkClock'), fn('handleWork'),
   fn('handleWorkPresence'), fn('runWorkClockNudges'),
@@ -619,6 +620,58 @@ Date.now = realNow;
     !/todaySeconds|pa-day-log|fc-day|dayTail|__paDayLog/.test(CASEJS)
     && /const CLOCK_DOC = 'admin\/clock';/.test(SRC)
     && /today: \{ d: workDayString\(now\), byCase \}/.test(SRC));
+}
+
+// ---- C49 and on: two clocks, two tiers -------------------------------------
+// Eric, 2026-08-29: "if they upgrade to a hands-off, the clock resets. Two
+// clocks for two different tiers. Hands off overrides if they upgrade before
+// the report is due." work.tierMark is where the review clock ended; the
+// stored total keeps counting and every display subtracts the mark.
+//
+// NEGATIVE CONTROLS (run 2026-08-29), one mutation per claim, all restored:
+//   mark stamped as zero        -> C49 and C49b red
+//   stop rebuilt without ...w   -> C49b red (the mark vanished at the stop)
+//   webhook flip forgot work    -> C50 red
+//   client page ignored mark    -> C50 red
+{
+  // The by-hand stamp, RUN: an hour of review work, then the mark. The
+  // running stretch banks by re-anchor (nothing stops), the mark lands at
+  // the total, and later work accrues past it without touching it.
+  reset();
+  await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
+  advance(60);
+  const marked = await W.handleWork(req({ caseId: 'a', setTierMark: true }), env);
+  check('C49 the mark banks the stretch and stamps the total, still running',
+    marked.body.seconds === 7200 && marked.body.tierMark === 7200
+    && marked.body.running === true && work('a').tierMark === 7200,
+    JSON.stringify(marked.body));
+  advance(30);
+  const stopped = await W.handleWork(req({ caseId: 'a', on: false }), env);
+  const restart = await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
+  await W.handleWork(req({ caseId: 'a', on: false }), env);
+  check('C49b a stop and a fresh start never lose the mark',
+    stopped.body.seconds === 9000 && stopped.body.tierMark === 7200
+    && restart.body.tierMark === 7200 && work('a').tierMark === 7200,
+    JSON.stringify({ stop: stopped.body, mark: work('a').tierMark }));
+  // The re-anchored stretch still reached today's bucket: the hour before
+  // the mark plus the half hour after it.
+  check('C49c the mark does not eat the day: both stretches are in the bucket',
+    (docs.get(W.CLOCK_DOC)?.today?.byCase?.a || 0) === 5400,
+    String(docs.get(W.CLOCK_DOC)?.today?.byCase?.a));
+}
+{
+  // Every door a case goes Hands-Off through stamps the mark, and every
+  // display subtracts it. Source pins: the two Worker flips, the client
+  // page, the shelf, and the card toggle.
+  const CASEJS = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  const ADMINJS = readFileSync(__j(__REPO, 'public/js/admin.js'), 'utf8');
+  const DRAWER = readFileSync(__j(__REPO, 'public/js/drawer.js'), 'utf8');
+  check('C50 both flips stamp the mark, and every surface subtracts it',
+    (SRC.match(/work: split\.work,?\n/g) || []).length === 2
+    && /function splitClockAtFlip\(/.test(SRC)
+    && /Number\(w\.tierMark\)/.test(CASEJS) && /During your case review/.test(CASEJS)
+    && /- \(Number\(w\.tierMark\) \|\| 0\)/.test(ADMINJS)
+    && /- \(Number\(out\.tierMark\) \|\| 0\)/.test(DRAWER));
 }
 
 const failed = results.filter((r) => !r.pass);

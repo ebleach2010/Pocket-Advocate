@@ -673,8 +673,8 @@ function renderPayment() {
           your clinics and insurer on your behalf, your telehealth visits
           attended, and your insurance appeals written by me, all from those
           hours. Most cases take about two months, and every month after the
-          first is your choice, not a commitment. You pay what is owed minus
-          what you have already paid, never twice.</p>
+          first is your choice, not a commitment. It is a separate service at
+          its own monthly price; your case fee pays for the case review.</p>
         <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Follow-up session · $<span data-rate="addon">175</span></strong><br>
           A second full discussion on the same case after your report lands. Same case, same file, no starting over.</p>
         <p class="muted small" style="margin:0;"><strong style="color:var(--ink)">Telehealth appointment advocacy · $<span data-rate="tele">450</span></strong><br>

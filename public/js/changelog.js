@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.52';
+export const VERSION = '2.53';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '2.52';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // Two clocks for two tiers and the flat month (Eric, 2026-08-29). The
+    // work clock resets when a case goes Hands-Off (review hours kept
+    // behind work.tierMark), the upgrade price is the full month with no
+    // case-fee credit, and Hands-Off governs from the flip even before the
+    // report lands.
+    version: '2.53',
+    quiet: true,
+    client: [
+      'If your case moves to Hands-Off Case Management, the worked-hours figure on your case page starts fresh for it, and your case review hours are shown on their own line.',
+    ],
+  },
   {
     // The hours envelopes (Eric, 2026-08-29, adopting the framing he was
     // advised to use): Hands-Off months are up to 20-22 hours of

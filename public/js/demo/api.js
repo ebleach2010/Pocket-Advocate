@@ -136,6 +136,28 @@ export function demoApi(role, store) {
         const g = (t) => Number(p.find((x) => x.type === t)?.value) || 0;
         return (g('hour') % 24) * 3600 + g('minute') * 60 + g('second');
       };
+      const wMark = Math.max(0, Number(w.tierMark) || 0);
+      // The tier mark, by hand, mirroring the Worker (Eric, 2026-08-29):
+      // everything on the clock becomes the review side and the Hands-Off
+      // clock starts over. A running stretch banks by re-anchor.
+      if (body.setTierMark !== undefined) {
+        const st = w.startedAt ? new Date(w.startedAt).getTime() : 0;
+        const str = st ? Math.max(0, Math.floor((Date.now() - st) / 1000)) : 0;
+        const tot = Math.max(0, Number(w.seconds) || 0) + str;
+        const mark = body.setTierMark === false ? 0 : tot;
+        const anchored = body.setTierMark === false ? w : {
+          ...w, seconds: tot, startedAt: st ? new Date() : null,
+        };
+        store.docs.set(key, { ...c, work: { ...anchored, tierMark: mark } });
+        store.persist?.();
+        if (str && body.setTierMark !== false) bankDay(Math.min(str, daySecNow()));
+        return ok({
+          seconds: body.setTierMark === false ? (Number(w.seconds) || 0) : tot,
+          running: !!st, auto: w.auto === true,
+          startedAt: anchored.startedAt || null, tierMark: mark,
+          todaySeconds: dayBucket()[caseKey] || 0,
+        });
+      }
       // Correcting a total, mirroring the Worker: the only thing besides
       // start and stop that can move this number, and the answer to a clock
       // left running by mistake.
@@ -166,7 +188,7 @@ export function demoApi(role, store) {
         return ok({
           seconds: next, running: stillRunning, auto: w.auto === true,
           startedAt: stillRunning ? anchor : null, correctedFrom: w.seconds || 0,
-          todaySeconds,
+          todaySeconds, tierMark: wMark,
         });
       }
       // MANUAL ONLY, mirroring the Worker (Eric, 2026-08-25): an `auto`
@@ -175,7 +197,7 @@ export function demoApi(role, store) {
         return ok({
           seconds: w.seconds || 0, running: !!w.startedAt,
           auto: w.auto === true, startedAt: w.startedAt || null,
-          todaySeconds: dayBucket()[caseKey] || 0,
+          todaySeconds: dayBucket()[caseKey] || 0, tierMark: wMark,
         });
       }
       if (body.on === true) {
@@ -187,7 +209,7 @@ export function demoApi(role, store) {
         // as nothing.
         return ok({
           seconds: w.seconds || 0, running: true, auto: false, startedAt,
-          todaySeconds: dayBucket()[caseKey] || 0,
+          todaySeconds: dayBucket()[caseKey] || 0, tierMark: wMark,
         });
       }
       // The real one can bank to the last beacon when he answers "no, I
@@ -196,12 +218,14 @@ export function demoApi(role, store) {
       const started = w.startedAt ? new Date(w.startedAt).getTime() : 0;
       const add = started ? Math.floor((Date.now() - started) / 1000) : 0;
       const seconds = (Number(w.seconds) || 0) + add;
-      store.docs.set(key, { ...c, work: { seconds, startedAt: null, auto: false, nudged: 0 } });
+      // Spread first, like the Worker: a stop that rebuilds the object
+      // would drop tierMark and merge the two tier clocks back together.
+      store.docs.set(key, { ...c, work: { ...w, seconds, startedAt: null, auto: false, nudged: 0 } });
       store.persist?.();
       // The stretch banks into today too, clipped at his midnight like the
       // Worker does, so an overnight demo stretch cannot claim the morning.
       const todaySeconds = bankDay(Math.min(add, daySecNow()));
-      return ok({ seconds, running: false, startedAt: null, bankedTo: null, todaySeconds });
+      return ok({ seconds, running: false, startedAt: null, bankedTo: null, todaySeconds, tierMark: wMark });
     }
     // The presence beacon. In the demo it stops an automatic stretch the same
     // way the Worker does, so walking from a chart back to the shelf behaves
@@ -612,12 +636,20 @@ export function demoApi(role, store) {
       // Approving is what starts month one. In the demo there is no Stripe,
       // so the "checkout" lands straight where paying would have.
       const amount = Number(req.firstMonthCents) || 0;
+      // The clock resets at the flip, mirroring the Worker (Eric,
+      // 2026-08-29): review hours behind work.tierMark, a running stretch
+      // banked by re-anchor.
+      const w0 = c.work || {};
+      const st0 = w0.startedAt ? new Date(w0.startedAt).getTime() : 0;
+      const str0 = st0 ? Math.max(0, Math.floor((Date.now() - st0) / 1000)) : 0;
+      const tot0 = Math.max(0, Number(w0.seconds) || 0) + str0;
       store.docs.set(key, {
         ...c,
         fullAccess: true,
         fullAccessAt: new Date(),
         fullAccessMonths: 1,
         fullAccessRateCents: (Number(c.caseRateCents) || 0) + amount,
+        work: { ...w0, seconds: tot0, startedAt: st0 ? new Date() : null, tierMark: tot0 },
         pendingFullAccess: null,
         fullAccessRequest: { ...req, state: 'started', decidedAt: new Date(), startedAt: new Date() },
         forms: { ...(c.forms || {}), fullAccess: new Date(Number(req.ackAt) || Date.now()) },
@@ -799,7 +831,9 @@ export function demoApi(role, store) {
           ...c,
           fullAccessRequest: {
             state: 'pending', at, monthCents,
-            firstMonthCents: Math.max(100, monthCents - (Number(c.caseRateCents) || 0)),
+            // NO CREDIT, mirroring the Worker (Eric, 2026-08-29: "They pay
+            // 3400 separately.").
+            firstMonthCents: monthCents,
             ackAt: body.acks?.fullAccess || Date.now(),
             decidedAt: null, declineReason: '',
           },

@@ -169,8 +169,16 @@ check('T4 capacity closes the door rather than raising the price',
   /error: 'full-booked'/.test(SRC) && /async function fullAccessCapacity/.test(SRC));
 check('T5 capacity still guards the one door left: the upgrade',
   (SRC.match(/error: 'full-booked'/g) || []).length === 1);
-check('T6 the upgrade charges the difference, never the list price',
-  /function upgradeCents/.test(SRC) && /liveFullCents - alreadyPaid/.test(SRC));
+// UPDATED 2026-08-29, on Eric's word: "Clients don't get discounted their
+// initial cost for a case review. They pay 3400 separately." The credit this
+// check used to pin is deliberately gone (history at v2.52); what is pinned
+// now is its ABSENCE, so a discount creeping back is caught the same way its
+// removal would have been.
+// NEGATIVE CONTROL (run 2026-08-29): restoring `liveFullCents - alreadyPaid`
+// made this read FAIL T6. Restored.
+check('T6 the upgrade charges the full month, with no case-fee credit',
+  /function upgradeCents/.test(SRC) && !/liveFullCents - alreadyPaid/.test(SRC)
+  && /Number\(liveFullCents\) \|\| 0/.test(SRC));
 check('T7 an abandoned upgrade checkout is cleared',
   /pendingFullAccess: null/.test(SRC) && /kind === 'fullaccess' && session\.metadata\.caseId/.test(SRC));
 check('T8 paying twice is recorded and flagged for refund, never dropped',
@@ -361,6 +369,20 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
     hits.length === 0, hits.slice(0, 6).join('  |  '));
   check('Q4 the booking page quotes telehealth as a fillable spot',
     /data-rate="tele"/.test(readFileSync(__j(__REPO, 'public/js/book.js'), 'utf8')));
+  // Q5, 2026-08-29, on Eric's word: "Clients don't get discounted their
+  // initial cost for a case review. They pay 3400 separately." The credit
+  // promise is gone from every client surface; this catches it creeping
+  // back in any wording it ever used. Comments are stripped like Q3.
+  const creditTalk = [];
+  for (const rel of pages) {
+    const body = noComments(readFileSync(__j(__REPO, rel), 'utf8'));
+    if (/case fee comes off|comes off your first month|minus what you have already paid|less the case fee/.test(body))
+      creditTalk.push(rel);
+  }
+  // NEGATIVE CONTROL (run 2026-08-29): planting "comes off your first month"
+  // back on services.html made this read FAIL Q5. Restored.
+  check('Q5 no client surface promises the case fee comes off a Hands-Off month',
+    creditTalk.length === 0, creditTalk.join('  |  '));
 }
 
 // ---- R1-R6: the hourly must never invent what a client paid -------------
@@ -494,6 +516,18 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
     const queryDocs = async () => [];
     const notifyUser = async () => {};
     const firstName = (n) => String(n || '').split(' ')[0];
+    // The by-hand flip stamps the tier mark now (2026-08-29), so the route
+    // needs the real clock-split helpers in scope - lifted, not stubbed,
+    // for the same reason the route itself is. bankDaySeconds reads the
+    // stubbed getDoc, which answers with the case doc for every path; the
+    // day helpers treat that as an empty bucket, which is fine here.
+    const CLOCK_DOC = 'admin/clock';
+    ${(SRC.match(/\nconst WORK_DAY_TZ = [^;]+;/) || [''])[0]}
+    ${(SRC.match(/\nfunction workDayString\([\s\S]*?\n\}/) || [''])[0]}
+    ${(SRC.match(/\nfunction workDayElapsedMs\([\s\S]*?\n\}/) || [''])[0]}
+    ${(SRC.match(/\nfunction todayByCase\([\s\S]*?\n\}/) || [''])[0]}
+    ${(SRC.match(/\nasync function bankDaySeconds\([\s\S]*?\n\}/) || [''])[0]}
+    ${(SRC.match(/\nfunction splitClockAtFlip\([\s\S]*?\n\}/) || [''])[0]}
     ${fn}
     return handleCaseUpdate;
   `;

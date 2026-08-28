@@ -369,12 +369,17 @@ export function wireFolderClocks(root, { getToken, onChange } = {}) {
       if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
       el.classList.toggle('on', !!out.running);
       el.setAttribute('aria-checked', out.running ? 'true' : 'false');
-      el.dataset.banked = String(Number(out.seconds) || 0);
+      // The tier's clock: the Worker answers with the case-lifetime total
+      // and the tier mark, and the card shows their difference.
+      el.dataset.banked = String(Math.max(0,
+        (Number(out.seconds) || 0) - (Number(out.tierMark) || 0)));
       // The ORIGINAL start, not now: tapping a card whose clock was already
       // running must not appear to throw the running stretch away.
       el.dataset.started = out.startedAt ? String(new Date(out.startedAt).getTime()) : '0';
       const t = el.querySelector('[data-clock-t]');
-      if (t) t.textContent = fmt(Number(out.seconds) || 0);
+      // The tier's clock here too: painting out.seconds raw flashed the
+      // lifetime total onto the card until the next tick corrected it.
+      if (t) t.textContent = fmt(Number(el.dataset.banked) || 0);
       if (out.todaySeconds !== undefined) {
         el.dataset.dayBanked = String(Math.max(0, Math.floor(Number(out.todaySeconds) || 0)));
       }

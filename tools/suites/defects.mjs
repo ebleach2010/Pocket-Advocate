@@ -133,14 +133,24 @@ ck('ceilings: every ping interpolates its own constant, none are typed',
 const AC = f('public/js/admin-case.js');
 // Renamed live() -> liveClockSeconds() when the three-switch refactor hoisted
 // it to module level (2026-08-25); same body, same assertions.
+// UPDATED 2026-08-29 with the two-tier clock (Eric: "Two clocks for two
+// different tiers"): the function now subtracts work.tierMark and leans on a
+// liveStretch helper, so the lift takes both, and a third assertion pins the
+// mark actually coming off.
 const liveOf = new Function('clock', 'now',
   `const Date = { now: () => now };
-   ${AC.match(/const liveClockSeconds = \(\) => Math\.max\(0, clock\.seconds[\s\S]*?: 0\)\);\n/)[0]}
+   ${AC.match(/const liveStretch = \(\) => \(clock\.startedAt[\s\S]*?: 0\);\n/)[0]}
+   ${AC.match(/const liveClockSeconds = \(\) => [^\n]*\n/)[0]}
    return liveClockSeconds();`);
 ck('clock: a phone behind the server never renders a negative',
    liveOf({ seconds: 0, startedAt: 1000 }, 995) === 0, String(liveOf({ seconds: 0, startedAt: 1000 }, 995)));
 ck('clock: one stretch banks at most twelve hours on his screen too',
    liveOf({ seconds: 0, startedAt: 0 + 1 }, 1 + 64 * 3600 * 1000) === 12 * 3600);
+// NEGATIVE CONTROL (run 2026-08-29): dropping `- (clock.mark || 0)` from
+// liveClockSeconds made this read FAIL with 88200. Restored.
+ck('clock: the review hours behind the tier mark come off what he is shown',
+   liveOf({ seconds: 24.5 * 3600, mark: 22 * 3600, startedAt: 0 }, 0) === 2.5 * 3600,
+   String(liveOf({ seconds: 24.5 * 3600, mark: 22 * 3600, startedAt: 0 }, 0)));
 ck('clock: nothing may start on a closed case',
    /doc\.data\.status === 'closed' && body\?\.on === true/.test(W));
 ck('clock: a closed case gets no badge on the shelf',

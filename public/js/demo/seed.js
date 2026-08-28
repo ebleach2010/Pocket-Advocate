@@ -379,7 +379,10 @@ export function seed({ set, file }) {
     // the middle of the working band for this work. The standard case above is
     // deliberately the opposite number, so the margin badge shows both of
     // its states across the demo.
-    work: { seconds: 24 * 3600 + 30 * 60, startedAt: null },
+    // Two clocks, two tiers (Eric, 2026-08-29): 22 hours of case review
+    // behind the mark, 2h 30m on the Hands-Off clock since the flip. The
+    // lifetime total is their sum, which is what `seconds` has always been.
+    work: { seconds: 24 * 3600 + 30 * 60, startedAt: null, tierMark: 22 * 3600 },
   });
 
   // Today's work, already on the books when the demo opens (Eric,

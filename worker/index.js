@@ -1703,7 +1703,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-hours-envelope';
+const BUILD_TAG = 'v2026-08-29-two-clocks';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1711,7 +1711,7 @@ const BUILD_TAG = 'v2026-08-29-hours-envelope';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.52';
+const VERSION = '2.53';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -4536,6 +4536,41 @@ async function readDaySeconds(env, caseId) {
   return todayByCase(doc?.data)[caseId] || 0;
 }
 
+/**
+ * TWO CLOCKS, TWO TIERS (Eric, 2026-08-29: "if they upgrade to a hands-off,
+ * the clock resets. Two clocks for two different tiers. Hands off overrides
+ * if they upgrade before the report is due.").
+ *
+ * `work.tierMark` is the second where the case-review clock ended and the
+ * Hands-Off clock began. Everything at or below the mark is review-phase
+ * work; everything past it belongs to the Hands-Off months. The stored
+ * total keeps counting - the ledger, the hourly and the nudges still read
+ * one case-lifetime number - and every display subtracts the mark to show
+ * the tier's own clock. Stamped at the moment a case goes Hands-Off,
+ * whichever door it goes through, report delivered or not.
+ *
+ * This computes the work object for that stamp: a running stretch is banked
+ * by RE-ANCHOR, never stopped - manual only, both ways - and the caller
+ * banks `stretch` into today's bucket, because a stop after a re-anchor can
+ * only see the new stretch.
+ */
+function splitClockAtFlip(w, now = new Date()) {
+  const startedAt = w?.startedAt ? new Date(w.startedAt).getTime() : 0;
+  const stretch = startedAt
+    ? Math.max(0, Math.min(Math.floor((now.getTime() - startedAt) / 1000), 12 * 3600)) : 0;
+  const total = Math.max(0, Number(w?.seconds) || 0) + stretch;
+  return {
+    stretch,
+    work: {
+      ...(w || {}),
+      seconds: total,
+      startedAt: startedAt ? now : null,
+      tierMark: total,
+      updatedAt: now,
+    },
+  };
+}
+
 /** The running list, self-healing: whatever the case docs actually say. */
 async function setClockRunning(env, caseId, running) {
   const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
@@ -4574,7 +4609,9 @@ async function stopWorkClock(env, caseId, w, until = Date.now()) {
     }
   }
   await patchDoc(env, `cases/${caseId}`, {
-    work: { seconds, startedAt: null, updatedAt: new Date(), auto: false, nudged: 0 },
+    // Spread first: rebuilding the object here used to be harmless, but a
+    // stop that drops tierMark merges the two tier clocks back into one.
+    work: { ...w, seconds, startedAt: null, updatedAt: new Date(), auto: false, nudged: 0 },
   }, { mask: ['work'] });
   await setClockRunning(env, caseId, false);
   return seconds;
@@ -4614,6 +4651,38 @@ async function handleWork(request, env) {
   const seconds = Math.max(0, Number(w.seconds) || 0);
   const on = body?.on === true;
   const auto = body?.auto === true;
+  const tierMark = Math.max(0, Number(w.tierMark) || 0);
+
+  // RE-STAMP THE TIER MARK BY HAND (Eric, 2026-08-29: "if they upgrade to a
+  // hands-off, the clock resets. Two clocks for two different tiers."). The
+  // flip stamps this automatically now, but his live case went Hands-Off
+  // before the mark existed - this is the one-tap backfill in the fix
+  // sheet, and it can re-stamp at the current total any time. `false`
+  // clears the mark; no control sends it today, but an undo has to have a
+  // shape before it is needed.
+  if (body?.setTierMark !== undefined) {
+    if (body.setTierMark === false) {
+      await patchDoc(env, `cases/${caseId}`, {
+        work: { ...w, tierMark: 0, updatedAt: new Date() },
+      }, { mask: ['work'] });
+      return json({
+        seconds, running: !!startedAt, auto: w.auto === true,
+        startedAt: startedAt ? new Date(startedAt) : null, tierMark: 0,
+        todaySeconds: await readDaySeconds(env, caseId),
+      });
+    }
+    const split = splitClockAtFlip(w);
+    await patchDoc(env, `cases/${caseId}`, { work: split.work }, { mask: ['work'] });
+    if (split.stretch) {
+      await bankDaySeconds(env, caseId,
+        Math.min(split.stretch, Math.floor(workDayElapsedMs() / 1000)));
+    }
+    return json({
+      seconds: split.work.seconds, running: !!startedAt, auto: w.auto === true,
+      startedAt: split.work.startedAt, tierMark: split.work.tierMark,
+      todaySeconds: await readDaySeconds(env, caseId),
+    });
+  }
 
   // CORRECTING THE TOTAL (Eric, 2026-08-25, after ten hours ran on his only
   // client because a toggle was left on).
@@ -4665,6 +4734,7 @@ async function handleWork(request, env) {
       startedAt: stillRunning ? anchor : null,
       correctedFrom: seconds,
       todaySeconds,
+      tierMark,
     });
   }
 
@@ -4678,6 +4748,7 @@ async function handleWork(request, env) {
       seconds, running: !!startedAt, auto: w.auto === true,
       startedAt: startedAt ? new Date(startedAt) : null,
       todaySeconds: await readDaySeconds(env, caseId),
+      tierMark,
     });
 
   // Correcting the total, for a clock left running by mistake. Eric,
@@ -4715,10 +4786,12 @@ async function handleWork(request, env) {
     if (!startedAt) {
       const now = new Date();
       await patchDoc(env, `cases/${caseId}`, {
-        work: { seconds, startedAt: now, updatedAt: now, auto, nudged: 0 },
+        // Spread first: a start that rebuilt the object from scratch would
+        // silently drop tierMark and merge the two tier clocks back together.
+        work: { ...w, seconds, startedAt: now, updatedAt: now, auto, nudged: 0 },
       }, { mask: ['work'] });
       await setClockRunning(env, caseId, true);
-      return json({ seconds, running: true, auto, startedAt: now, todaySeconds });
+      return json({ seconds, running: true, auto, startedAt: now, todaySeconds, tierMark });
     }
     // Already running: leave the existing start alone rather than resetting
     // it, so a double tap cannot quietly discard time already on the clock.
@@ -4732,9 +4805,9 @@ async function handleWork(request, env) {
     if (w.auto === true && !auto) {
       await patchDoc(env, `cases/${caseId}`, { work: { ...w, auto: false, updatedAt: new Date() } },
         { mask: ['work'] }).catch(() => {});
-      return json({ seconds, running: true, auto: false, startedAt: new Date(startedAt), todaySeconds });
+      return json({ seconds, running: true, auto: false, startedAt: new Date(startedAt), todaySeconds, tierMark });
     }
-    return json({ seconds, running: true, auto: w.auto === true, startedAt: new Date(startedAt), todaySeconds });
+    return json({ seconds, running: true, auto: w.auto === true, startedAt: new Date(startedAt), todaySeconds, tierMark });
   }
 
   // "I stopped a while ago" - bank to the last time the APP was known open,
@@ -4755,6 +4828,7 @@ async function handleWork(request, env) {
     running: false,
     startedAt: null,
     todaySeconds: await readDaySeconds(env, caseId),
+    tierMark,
     // What the caller tells him: a backdated stop banked less than the clock
     // on screen was showing, and silence about that reads as lost time.
     bankedTo: until < Date.now() - 30_000 ? new Date(until) : null,
@@ -5383,15 +5457,13 @@ async function handleChangelog(request, env) {
  * Stripe error.
  */
 function upgradeCents(c, liveFullCents) {
-  // MONTH ONE, not a 60-day total. The case fee they already paid is credited
-  // against it, so a $1,200 case makes the first month $2,200 - never twice
-  // for the same work. Every month after this one is the plain monthly rate.
-  //
-  // Worth stating because the ladder LOOKS like it climbs: $1,200, then
-  // $2,200, then $3,400. Nothing is getting more expensive. Month one costs
-  // the same $3,400 as every other month; $1,200 of it was already paid.
-  const alreadyPaid = Number(c.caseRateCents) || 0;
-  return Math.max(100, liveFullCents - alreadyPaid);
+  // NO CREDIT (Eric, 2026-08-29: "Clients don't get discounted their initial
+  // cost for a case review. They pay 3400 separately."). The case fee bought
+  // the case review; a Hands-Off month is a separate service at the full
+  // month price. The credit this function used to apply lives in file
+  // history at v2.52. `c` stays in the signature so the callers and the
+  // quote-freeze handshake do not have to know the arithmetic changed.
+  return Math.max(100, Number(liveFullCents) || 0);
 }
 
 /**
@@ -5603,12 +5675,16 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
     ...(Number.isFinite(ackMs) && ackMs > 0 ? { [FULL_ACCESS_ACK]: new Date(ackMs) } : {}),
   };
   const req = c.data.fullAccessRequest;
+  // The clock resets at the flip (Eric, 2026-08-29): the review hours stay
+  // behind work.tierMark and the Hands-Off clock starts from here.
+  const split = splitClockAtFlip(c.data.work, now);
   const okBuy = await patchDoc(env, `cases/${caseId}`, {
     fullAccess: true,
     fullAccessAt: now,
-    // What they paid in total for the tier: the case fee plus this first
-    // month. The helpers that ask "what has this case paid" read this field,
-    // and each further month adds to it as it is bought.
+    // What this case has paid in total: the case fee plus this first month.
+    // The helpers that ask "what has this case paid" read this field, and
+    // each further month adds to it as it is bought. Still summed even
+    // though the month is no longer discounted - both payments are real.
     fullAccessRateCents: (Number(c.data.caseRateCents) || 0) + amountCents,
     // Month one of however many they choose to take. Every further month
     // increments this and adds FULL_MONTH_DAYS to the window.
@@ -5619,12 +5695,17 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
     fullAccessRequest: req ? { ...req, state: 'started', startedAt: now } : null,
     extraPayments: payments,
     forms,
+    work: split.work,
   }, {
     mask: ['fullAccess', 'fullAccessAt', 'fullAccessRateCents', 'fullAccessMonths',
-      'pendingFullAccess', 'fullAccessRequest', 'extraPayments', 'forms'],
+      'pendingFullAccess', 'fullAccessRequest', 'extraPayments', 'forms', 'work'],
     ifUpdateTime: c.updateTime,
   }).catch(() => false);
   if (okBuy === false) return confirmFullAccessPurchase(env, session, attempt + 1);
+  if (split.stretch) {
+    await bankDaySeconds(env, caseId,
+      Math.min(split.stretch, Math.floor(workDayElapsedMs() / 1000))).catch(() => {});
+  }
 
   if (c.data.clientEmail) {
     await sendEmail(env, {
@@ -7558,6 +7639,9 @@ async function handleCaseUpdate(request, env) {
       });
     }
     const req = c.fullAccessRequest;
+    // Same clock reset as the paid door: review hours behind the mark, the
+    // Hands-Off clock from here (Eric, 2026-08-29).
+    const split = splitClockAtFlip(c.work, now);
     await patchDoc(env, `cases/${caseId}`, {
       fullAccess: true,
       fullAccessAt: startAt,
@@ -7568,11 +7652,16 @@ async function handleCaseUpdate(request, env) {
       pendingFullAccess: null,
       fullAccessRequest: req ? { ...req, state: 'started', startedAt: now } : null,
       extraPayments: payments,
+      work: split.work,
     }, {
       mask: ['fullAccess', 'fullAccessAt', 'fullAccessOpenedAt', 'fullAccessRateCents',
         'fullAccessMonths', 'fullAccessByHand', 'pendingFullAccess', 'fullAccessRequest',
-        'extraPayments'],
+        'extraPayments', 'work'],
     });
+    if (split.stretch) {
+      await bankDaySeconds(env, caseId,
+        Math.min(split.stretch, Math.floor(workDayElapsedMs() / 1000))).catch(() => {});
+    }
     // The email the webhook sends, with one sentence added when the month
     // has not begun yet. It asks the client to sign NOTHING (Eric,
     // 2026-08-29: "Do NOT send him any forms whatsoever"): every document

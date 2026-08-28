@@ -55,7 +55,7 @@ export const SERVICE_ABOUT = {
 
   handsOff: {
     title: 'Hands-Off Case Management',
-    price: '$3,400 a month. On an open case, your case fee comes off the first one.',
+    price: '$3,400 a month, every month the same. The case fee is separate: it pays for the review.',
     tldr: 'You hand me the case. I do the legwork: the calls, the records, the insurer, the appeals, and we talk at least twice a month so you always know where it stands. A month at a time, for as long as you need it.',
     paragraphs: [
       'In a standard case I work beside you: I read, I explain, and you carry it to your doctors and your insurer. With Hands-Off Case Management I work inside the case. I phone your clinics, chase your records, deal with your insurer, and write your appeals myself. Your job shrinks to giving me the permission I need to act for you, which I bring you and walk you through, and from there the legwork is mine.',
@@ -80,7 +80,7 @@ export const SERVICE_ABOUT = {
       'Telehealth advocacy included: I join your video visits and advocate live',
       'A month at a time. Continue or stop at the end of any month, no penalty either way',
       'Your permission in writing starts my authority; I bring you the documents and walk you through them',
-      'On an open case, the case fee you already paid comes off your first month, never twice',
+      'A separate service: the case fee pays for your review, and a month is priced on its own',
     ],
   },
 

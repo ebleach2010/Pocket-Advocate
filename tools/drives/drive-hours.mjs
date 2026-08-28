@@ -396,6 +396,11 @@ ok('the knob is wired to flip in a quarter second',
 ok('today\'s hours sit under the total before anything is flipped',
   before.dayHidden === false && /^1h 5m today$/.test(before.dayText || ''),
   `"${before.dayText}" hidden=${before.dayHidden}`);
+// Two clocks, two tiers (Eric, 2026-08-29). The demo case carries 24h 30m
+// lifetime with 22h of review behind the mark, so the card must show the
+// Hands-Off clock: 2h 30m, not the lifetime total.
+ok('the card shows the Hands-Off clock, review hours behind the mark',
+  before.clockText === '2h 30m', `"${before.clockText}"`);
 await page.screenshot({ path: `${SHOT}/7-switch-off.png` });
 
 await page.click(`[data-clock="${folderId}"]`);
@@ -418,6 +423,11 @@ ok('the outline really is green, not the cyan everything else uses',
   })(), on.outline);
 ok('and the SAME clock that already existed is now running',
   on.clockOn, `clock reads "${on.clockText}"`);
+// Caught on camera 2026-08-29: the flip repainted the card with the raw
+// lifetime total for thirty seconds before the tick corrected it. The text
+// must be the tier's clock at every moment, the flip included.
+ok('the flip never flashes the lifetime total onto the card',
+  /^2h 3[01]m$/.test(on.clockText || ''), `"${on.clockText}"`);
 ok('the words keep up with the state', /Flip to stop/.test(on.title || ''), on.title);
 ok('and the day line rides through the flip', /^1h 5m today$/.test(on.dayText || ''),
   `"${on.dayText}"`);
@@ -519,6 +529,8 @@ if (!tapAt) {
     document.querySelector('[data-work-head]')?.textContent?.trim() || '');
   ok('the chart header carries the day figure beside the total',
     /1h 5m today/.test(headText), `"${headText}"`);
+  ok('and the chart header total is the Hands-Off clock too',
+    /2h 30m/.test(headText) && !/24h 30m/.test(headText), `"${headText}"`);
   await page.screenshot({ path: `${SHOT}/10-hold-opens-case.png` });
   await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
   await settle(2500);

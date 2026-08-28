@@ -352,11 +352,17 @@ const CASE = {
   const paint = slab(ADMINCASE, '    const live = data || c;', '    }\n    btn.textContent =');
   // NEGATIVE CONTROL: putting `effectiveHourly(c, t)` back made this read
   //   FAIL  M19 ... -- the pill still reads the closed-over case
+  // UPDATED 2026-08-29 with the two-tier clock: the hourly divides the money
+  // by the CASE-LIFETIME clock (liveTotalSeconds), never the tier's clock,
+  // because the money paid covers both tiers. The live-document half of the
+  // pin is unchanged.
+  // NEGATIVE CONTROL (run 2026-08-29): pointing the hourly at the tier's
+  // clock (liveClockSeconds) made this read FAIL M19. Restored.
   ck('M19 the pill reads the CURRENT case document, not the one it closed over',
     /const live = data \|\| c;/.test(paint)
-    && /effectiveHourly\(live, t\)/.test(paint)
+    && /effectiveHourly\(live, liveTotalSeconds\(\)\)/.test(paint)
     && /paidCents\(live\)/.test(paint)
-    && !/effectiveHourly\(c, t\)/.test(bare(paint)),
+    && !/effectiveHourly\(c, /.test(bare(paint)),
     'the pill still reads the closed-over case');
   // NEGATIVE CONTROL: deleting the listener made this read
   //   FAIL  M20 ... -- nothing repaints the case after a save

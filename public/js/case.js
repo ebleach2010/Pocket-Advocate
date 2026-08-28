@@ -397,18 +397,31 @@ function paidShownCents(c) {
  */
 function workLine(c) {
   const w = c.work || {};
-  const banked = Math.max(0, Number(w.seconds) || 0);
+  // TWO CLOCKS, TWO TIERS (Eric, 2026-08-29). Everything up to work.tierMark
+  // was the case review; the running figure is the current tier's own clock,
+  // so a Hands-Off month never opens looking half spent. The review hours
+  // are not hidden - they get their own line - they are just not this clock.
+  const mark = Math.max(0, Number(w.tierMark) || 0);
+  const banked = Math.max(0, (Number(w.seconds) || 0) - mark);
   const live = w.startedAt
     ? Math.min(Math.floor((Date.now() - toDate(w.startedAt).getTime()) / 1000), 12 * 3600)
     : 0;
   const total = banked + live;
-  if (total < 60) return '';
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const spent = `${h ? `${h}h ` : ''}${m}m`;
-  return `<p class="dim small" style="margin:.6rem 0 0;">⏱ Time I have worked on your case: <strong style="color:var(--ink);">${spent}</strong>${
-    w.startedAt ? ' <span style="color:var(--cyan);">· working on it right now</span>' : ''
-  }</p>`;
+  if (total < 60 && mark < 60) return '';
+  const fmt = (secs) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    return `${h ? `${h}h ` : ''}${m}m`;
+  };
+  const main = total >= 60 || mark < 60
+    ? `<p class="dim small" style="margin:.6rem 0 0;">⏱ Time I have worked on your case${
+      mark >= 60 ? ' since Hands-Off began' : ''}: <strong style="color:var(--ink);">${fmt(total)}</strong>${
+      w.startedAt ? ' <span style="color:var(--cyan);">· working on it right now</span>' : ''
+    }</p>` : '';
+  const review = mark >= 60
+    ? `<p class="dim small" style="margin:.2rem 0 0;">⏱ During your case review: <strong style="color:var(--ink);">${fmt(mark)}</strong></p>`
+    : '';
+  return main + review;
 }
 
 /**
@@ -1682,13 +1695,18 @@ function followUpOffer(c) {
  * paid for the case part and should never be asked for it twice.
  */
 /**
- * What upgrading THIS case costs, in cents: the live tier price less what the
- * case has already paid toward it. One helper so the card and the checkout
- * POST cannot quote different numbers - which is the whole point of the
- * handshake below.
+ * What upgrading THIS case costs, in cents. One helper so the card and the
+ * checkout POST cannot quote different numbers - which is the whole point
+ * of the handshake below.
+ *
+ * NO CREDIT (Eric, 2026-08-29: "Clients don't get discounted their initial
+ * cost for a case review. They pay 3400 separately."). The case fee bought
+ * the review; a Hands-Off month is a separate service at the full month
+ * price. The credit this used to apply is in file history at v2.52. `c`
+ * stays in the signature so the callers did not have to learn anything.
  */
 function upgradeQuoteCents(c) {
-  return Math.max(100, fullAccessPrice() - (Number(c.caseRateCents) || 0));
+  return Math.max(100, fullAccessPrice());
 }
 
 function upgradeOffer(c) {
@@ -1709,8 +1727,9 @@ function upgradeOffer(c) {
     && toDate(c.pendingFullAccess.expiresAt).getTime() > Date.now()) return `
     <div class="followup-offer">
       <h3><span class="fu-tick" aria-hidden="true">\u2713</span> I can take your case.</h3>
-      <p>Your first month is ready to start. Your case fee comes off it, so
-        this is the difference and not a second payment for the same work.</p>
+      <p>Your first month is ready to start. Hands-Off is its own service,
+        priced on its own: your case fee paid for the review you already
+        have, and the month below is the month.</p>
       <div class="fu-buy">
         <span class="price">$${Math.max(1, Math.round(Number(c.pendingFullAccess.cents) / 100)).toLocaleString()}</span>
         <a class="btn glow" href="${esc(c.pendingFullAccess.url)}">Start month one</a>
@@ -1772,9 +1791,9 @@ function upgradeOffer(c) {
       <p class="fu-fine"><strong style="color:var(--ink)">Asking costs nothing
         and takes no card.</strong> I answer every request myself. If I say yes,
         your first month is
-        <strong style="color:var(--ink)">$${first.toLocaleString()}</strong> — the
-        month, less the case fee you have already paid, so you never pay twice
-        for the same work. Every month after that is your choice, one at a time.
+        <strong style="color:var(--ink)">$${first.toLocaleString()}</strong>, the
+        same as every month after it. Your case fee paid for the case review;
+        this pays for the month. Every month is your choice, one at a time.
         Open the note above first: it is the whole of what I do, what I need
         from you, and where it stops.</p>
       <p class="error" data-upgrade-error hidden></p>
