@@ -902,24 +902,15 @@ export default {
       if (url.pathname === '/api/admin/voice')
         return await handleVoiceLoop(request, env, ctx);
       if (url.pathname === '/api/version' && request.method === 'GET') {
-        // TEMPORARY DIAG (2026-08-29): the $3,500 reprice marker and the
-        // cron heartbeat, readable from outside while the migration is
-        // watched to completion. "No marker" after minutes of every-minute
-        // attempts pointed at the cron itself, so the heartbeat says
-        // whether scheduled() is firing at all - and this route ALSO runs
-        // the one-shot itself, so a dead cron cannot block Eric's order:
-        // the migration is idempotent, marker-guarded, and can only ever
-        // lift a stored 340000 to 350000 once. Nothing here is secret; the
-        // price is public on /api/rates. Remove all of it once the stored
-        // rate reads 350000.
-        ctx.waitUntil(repriceTier(env));
-        const m = await getDoc(env, 'migrations/tier-3500-2026-08-29').catch((e) => ({ err: String(e?.message || e) }));
+        // The reprice diag came off once the stored rate read 350000
+        // (2026-08-29, marker "full 340000 -> 350000"). The HEARTBEAT
+        // stays: whether the scheduler is alive, and whether the beat is
+        // the cron's own or the watchdog standing in, is worth being able
+        // to see from a phone for as long as Cloudflare's trigger has
+        // history of going quiet. Nothing here is secret.
         const hb = await getDoc(env, 'diag/cron').catch(() => null);
         return json({
           tag: BUILD_TAG, version: VERSION,
-          reprice: m?.err ? { error: m.err } : (m?.data
-            ? { startedAt: m.data.startedAt || null, finishedAt: m.data.finishedAt || null, result: m.data.result || null }
-            : 'no marker yet'),
           cronLastFiredAt: hb?.data?.lastFiredAt || null,
           // true = the last beat was the WATCHDOG standing in; the real
           // cron clears this the moment it fires again.
@@ -1099,13 +1090,10 @@ export default {
       ctx.waitUntil(reviveLostSend(env));
       ctx.waitUntil(seedWorkClock(env));
       ctx.waitUntil(restructureRates(env));
+      // Landed 2026-08-29 ("full 340000 -> 350000"); an instant no-op since.
+      ctx.waitUntil(repriceTier(env));
     }
-    // Un-gated while it is being watched to completion, exactly like
-    // unparkAdvisor below: the $3,500 order should land on the FIRST firing
-    // after this deploys, not up to a quarter hour later. One marker read
-    // per firing once finished; re-gate or remove with the diag on
-    // /api/version once the stored rate reads 350000.
-    ctx.waitUntil(repriceTier(env));
+
     // Un-gated on purpose: the wedged case should recover on the FIRST
     // firing after this deploys, not up to a quarter hour later. One marker
     // read per firing once finished; remove with the diag scaffolding.
@@ -1777,7 +1765,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-cron-watchdog';
+const BUILD_TAG = 'v2026-08-29-diag-off';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1785,7 +1773,7 @@ const BUILD_TAG = 'v2026-08-29-cron-watchdog';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.57';
+const VERSION = '2.58';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
