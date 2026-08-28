@@ -235,7 +235,13 @@ async function wirePaid(overlay, user) {
       const stored = Number((await readCase()).paidOverrideCents) || 0;
       if (stored !== cents) throw new Error('the case still shows the old figure');
       paint(stored);
-      tell(`Recorded. This case now reads $${shown(stored)} paid, on your dashboard, on their page, and in your hourly.`);
+      // WHAT IT REPLACED, said back to him. The server records the figure it
+      // displaced; without a reader that record is a write nobody ever sees,
+      // and the one moment it is worth reading is the moment it happens. A
+      // first entry replaced nothing, so it says nothing.
+      const was = Number(out.correctedFrom) > 0 && Number(out.correctedFrom) !== stored
+        ? ` It was $${shown(Number(out.correctedFrom))}.` : '';
+      tell(`Recorded. This case now reads $${shown(stored)} paid, on your dashboard, on their page, and in your hourly.${was}`);
       // The case page behind this overlay holds the same number in three
       // places and repaints none of them by itself.
       document.dispatchEvent(new CustomEvent('pa-case-money'));

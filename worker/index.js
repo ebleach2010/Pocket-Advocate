@@ -6979,10 +6979,45 @@ async function handleCaseUpdate(request, env) {
     const cents = Math.round(Number(body?.paidCents));
     if (!Number.isFinite(cents) || cents <= 0 || cents > 100_000_00)
       return json({ error: 'Give an amount between $1 and $100,000.' }, 400);
+    // WHAT IT REPLACED, AND WHO REPLACED IT.
+    //
+    // This field is the most consequential number a hand can move in the whole
+    // app: it is instantly live on his dashboard, on the client's own case
+    // page and in the hourly the ledger builds. Until now it overwrote with no
+    // memory at all - no prior figure, no actor, only paidOverrideAt saying
+    // that SOMETHING happened at some minute. A wrong entry could be replaced
+    // but never accounted for, and every entry looked identical whether he
+    // typed it himself or something else typed it for him.
+    //
+    // The shape is `work.correction` above, deliberately: from, to, at, and
+    // that is the only control in this app that has ever recorded what it
+    // replaced. `by` is the one field added to it, and it exists because a
+    // control that can be driven by more than his own thumb has to say which
+    // thumb it was.
+    //
+    // IT LIVES ON caseMeta, NOT ON THE CASE. cases/{id} is client-readable by
+    // rule; caseMeta/{id} is denied to every browser by the catch-all. A
+    // provenance stamp reading 'advisor' sitting on a document the client can
+    // open is the blindness rule broken by an audit trail, which would be a
+    // silly way to break it. The figure itself stays where its readers are.
+    //
+    // THE TRAIL IS WRITTEN FIRST. If recording what is about to happen fails,
+    // nothing happens: he gets an error and the old number stands. The other
+    // order gives a changed figure with no record of what it displaced, which
+    // is the exact state this block exists to end.
+    const priorCents = Number(doc.data.paidOverrideCents) > 0
+      ? Math.round(Number(doc.data.paidOverrideCents)) : 0;
+    const by = body?.by === 'advisor' ? 'advisor' : 'eric';
+    await patchDoc(env, `caseMeta/${caseId}`, {
+      paidCorrection: { from: priorCents, to: cents, at: now, by },
+    }, { mask: ['paidCorrection'] });
     await patchDoc(env, `cases/${caseId}`, {
       paidOverrideCents: cents,
       paidOverrideAt: now,
     }, { mask: ['paidOverrideCents', 'paidOverrideAt'] });
+    // correctedFrom is the same name /api/work answers a clock correction
+    // with, so the two controls read the same way from the outside.
+    return json({ ok: true, correctedFrom: priorCents, by });
   } else if (action === 'open-full') {
     // HANDS-OFF, TURNED ON BY HAND (Eric, 2026-08-26: "where to start the
     // clock and send forms as if he paid for the enhancement through the

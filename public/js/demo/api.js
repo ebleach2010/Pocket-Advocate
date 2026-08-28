@@ -320,7 +320,11 @@ export function demoApi(role, store) {
         const cents = Math.round(Number(body.paidCents));
         if (!Number.isFinite(cents) || cents <= 0 || cents > 100000 * 100)
           return fail(400, 'Give an amount between $1 and $100,000.');
+        // The figure it displaces comes back the way the Worker sends it, so
+        // the control says the same sentence on both sides of the mirror.
+        const priorCents = Number(c.paidOverrideCents) > 0 ? Math.round(Number(c.paidOverrideCents)) : 0;
         store.docs.set(key, { ...c, paidOverrideCents: cents, paidOverrideAt: now });
+        return ok({ ok: true, correctedFrom: priorCents, by: body.by === 'advisor' ? 'advisor' : 'eric' });
       } else if (body.action === 'open-full') {
         // The tier, opened by hand. Same rules as the Worker, so the demo
         // cannot show a case the live app would refuse to make.
