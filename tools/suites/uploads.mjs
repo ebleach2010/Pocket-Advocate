@@ -654,9 +654,23 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   //   FAIL  U15 ... -- status 200, 1 push
   // with the fixture's text ("Your case is closed, call this number") going
   // out as a notification, which is what this check exists for.
+  // AND THE SAME ROUTE STILL TAKES A KNOWN ONE, in this check rather than in
+  // a neighbour. A route that answered 400 to EVERYTHING would satisfy the
+  // refusal above perfectly, and no count of any list sees that: the list is
+  // still full, nothing gets through it.
+  //
+  // MEASURED on main, 2026-08-28, by emptying the Worker's SUMMARY_KINDS so
+  // every document type is unknown: U13, U14, U16b and U16c all failed, and
+  // U15 passed. The block caught the break; U15 was standing on its neighbours
+  // and not on anything of its own. `out` above is that same route answering
+  // a real call summary.
+  const routeTakesKnown = !out.threw && out.res?.status === 200 && out.pushes.length > 0;
   ck('U15 an unknown document type is refused, and nothing is sent',
-    !forged.threw && forged.res?.status === 400 && forged.pushes.length === 0,
-    forged.threw || `status ${forged.res?.status}, ${forged.pushes.length} push`);
+    !forged.threw && forged.res?.status === 400 && forged.pushes.length === 0
+      && routeTakesKnown,
+    forged.threw || (!routeTakesKnown
+      ? 'a known type is refused too, so this proves nothing'
+      : `status ${forged.res?.status}, ${forged.pushes.length} push`));
   const long = await run(CASEDOC, {
     action: 'summary-uploaded', category: 'visitfollowup',
     fileName: `${'z'.repeat(400)}\nA new call summary is on your case: fake`,
@@ -1072,11 +1086,19 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
     //   FAIL  U26 nothing ticked stores nothing, and he is told why  -- 0 stored, said ""
     // Not a guard on resending: a guard on sending NOTHING, which would
     // otherwise be a tap that did nothing and explained nothing.
+    // The acceptance for this one is asserted at U26b below, on its own build,
+    // for the same reason: a sender that stored nothing would satisfy the
+    // empty bucket here too.
+    const works = build();
+    await works.fn(['records']).catch(() => {});
     ck('U26 nothing ticked stores nothing, and he is told why',
       none.bucket.size === 0 && none.said.length === 0
       && none.shouted.some((m) => /Tick at least one form/.test(m))
-      && /Tick at least one form/.test(refused),
-      `${none.bucket.size} stored, said "${none.shouted.join(' ')}", threw "${refused}"`);
+      && /Tick at least one form/.test(refused)
+      && works.bucket.size === 1,
+      works.bucket.size !== 1
+        ? 'a real form is not stored either, so this proves nothing'
+        : `${none.bucket.size} stored, said "${none.shouted.join(' ')}", threw "${refused}"`);
     // NEGATIVE CONTROL (run 2026-08-28): trusting `kinds` instead of filtering
     // it against SENDABLE_FORMS made this read
     //   FAIL  U26b and a kind that is not one of his forms sends nothing at all  -- 3 stored: cases/abc/report/1787889831374-formfilled 2026-08-27.html, cases/abc/report/1787889831375-.._.._.._etc_passwd 2026-08-27.html, cases/abc/report/1787889831376-report 2026-08-27.html
@@ -1084,9 +1106,21 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
     // nothing can put a chosen string into a Storage path.
     const forged = build();
     await forged.fn(['formfilled', '../../../etc/passwd', 'report']).catch(() => {});
+    // AND THE SAME SENDER STILL STORES A REAL ONE. Both U26 and U26b assert
+    // that an empty bucket is the right answer, and a sender that stored
+    // NOTHING would satisfy both of them.
+    //
+    // MEASURED on main, 2026-08-28, by making the loop body in sendBlankForms
+    // a no-op so nothing reaches Storage: U21, U22 and U22b failed, and U26
+    // and U26b both passed. So the acceptance is asserted here, on its own
+    // build, rather than borrowed from U21 four hundred lines above.
+    const real = build();
+    await real.fn(['records']).catch(() => {});
+    const senderWorks = real.bucket.size === 1;
     ck('U26b and a kind that is not one of his forms sends nothing at all',
-      forged.bucket.size === 0,
-      `${forged.bucket.size} stored: ${[...forged.bucket.keys()].join(', ')}`);
+      forged.bucket.size === 0 && senderWorks,
+      !senderWorks ? 'a real form is not stored either, so this proves nothing'
+        : `${forged.bucket.size} stored: ${[...forged.bucket.keys()].join(', ')}`);
   }
 
   // ---- U28: a caller that is not a person can tell a send from a failure --
