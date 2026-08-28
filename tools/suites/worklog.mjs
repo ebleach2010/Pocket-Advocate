@@ -352,11 +352,16 @@ ck('L21b and the advocate still cannot do it for them',
 //   FAIL  L22 and the agreement's written promise is still true
 ck('L22 and the agreement\'s written promise is still true',
   /[Ee]ither one can be withdrawn in writing at any time/.test(TIER));
-// A client who signed nothing gets no box at all, not an empty one.
-// NEGATIVE CONTROL (run 2026-08-27): removing the early return made this read
+// A client who signed nothing gets no box at all, not an empty one. The
+// early return grew three conditions on 2026-08-29: a Hands-Off case that
+// never acknowledged the scope note is OWED the agreement card (Eric: "All I
+// need is scope of work agreement"), so "signed nothing" only renders
+// nothing when no agreement is due either. Pin updated, not deleted.
+// NEGATIVE CONTROL (run 2026-08-27, on the original single-condition form):
+// removing the early return made this read
 //   FAIL  L23 a client who has signed nothing sees no permissions box
-ck('L23 a client who has signed nothing sees no permissions box',
-  /if \(!items\.length && !OFFER_AUTHORITY_SIGNING\) \{ host\.innerHTML = ''; return; \}/.test(CLIENT));
+ck('L23 a client who signed nothing and is owed nothing sees no permissions box',
+  /if \(!perms\.length && !scopeItem && !offerScope && !OFFER_AUTHORITY_SIGNING\) \{\n\s*host\.innerHTML = '';\n\s*return;\n\s*\}/.test(CLIENT));
 
 // ---- L24-L26: readiness, and the two sides agreeing ----------------------
 // Two of the three rows were derived from the signed documents. With signing
@@ -381,9 +386,14 @@ ck('L25 and both sides call the same helper the same way',
 // his card, and it no longer depends on a tick box.
 // NEGATIVE CONTROL (run 2026-08-27): deleting the warning made this read
 //   FAIL  L26 ... -- nothing tells him not to pick up the phone
+// Updated 2026-08-29: the count moved from `live` to `perms`, and that move
+// IS the safety property now. A signed scope of work agreement is live in
+// the same list, and counting it would have silenced this warning on a case
+// where nothing authorises him to phone anyone.
 ck('L26 his card still tells him not to phone anyone without permission',
   /Do not phone a clinic or\n\s*their plan on their behalf until you have it in writing/.test(ADMIN)
-  && /const noPermission = live\.length === 0;/.test(ADMIN),
+  && /const noPermission = perms\.length === 0;/.test(ADMIN)
+  && /live\.filter\(\(i\) => i\.kind !== 'scope'\)/.test(ADMIN),
   'nothing tells him not to pick up the phone');
 // NEGATIVE CONTROL (run 2026-08-27): leaving the old headline in place made
 // this read
@@ -811,6 +821,38 @@ ck('L44b no em or en dash in the new client copy',
   ck('L45c and neither client facing body reaches for the fallback that could never fire',
     !/firstName\(profile\?\.data\.name\) \|\| 'Your advocate'/.test(WORKER));
 }
+
+// ---- L46: the scope of work agreement card (Eric, 2026-08-29) -------------
+// "All I need is scope of work agreement. The rest I handle." One card,
+// offered exactly where the record is missing: a Hands-Off case with no
+// checkout acknowledgment, no case stamp, and no live signed item. All four
+// conditions matter: dropping any one of them either nags a client who
+// already agreed, or hides the card from the one client who never did.
+// NEGATIVE CONTROL (run 2026-08-29): dropping the forms.fullAccess condition
+// made this read
+//   FAIL  L46 the agreement card is offered exactly where the record is missing
+ck('L46 the agreement card is offered exactly where the record is missing',
+  /const offerScope = !!c\.fullAccess && !scopeItem\n\s*&& !\(c\.forms && c\.forms\.fullAccess\) && !c\.scopeSignedAt;/.test(CLIENT));
+// The agreement block carries View and the signing button and NEVER
+// Withdraw: it is a contract record, not a permission, and the Worker
+// refuses a revoke posted straight at the route too (authority.mjs W6d).
+// NEGATIVE CONTROL (run 2026-08-29): adding a data-auth-revoke button to the
+// scope block made this read
+//   FAIL  L46b the agreement block has View and no Withdraw
+ck('L46b the agreement block has View and no Withdraw', (() => {
+  const m = CLIENT.match(/const scopeBlock = scopeItem \? `[\s\S]*?` : offerScope \? `[\s\S]*?` : '';/);
+  if (!m) return false;
+  return !/data-auth-revoke/.test(m[0]) && /data-auth-view/.test(m[0])
+    && /data-scope-sign/.test(m[0]);
+})());
+// The sheet the button opens is the same signing sheet, on the new kind,
+// with nothing to fill in but the name and the finger signature.
+// NEGATIVE CONTROL (run 2026-08-29): wiring the button to kind 'records'
+// made this read
+//   FAIL  L46c and the button opens the signing sheet on the scope kind
+ck('L46c and the button opens the signing sheet on the scope kind',
+  /openAuthoritySheet\(c, 'scope', load\)/.test(CLIENT)
+  && /const need = isScope \? \['signedName'\]/.test(CLIENT));
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

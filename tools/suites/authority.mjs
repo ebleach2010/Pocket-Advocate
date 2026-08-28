@@ -1,5 +1,7 @@
-// authority.mjs — the two Full Access documents, and the route that stores
-// them. The document text is legally load-bearing: a records authorisation
+// authority.mjs — the Full Access documents (three since 2026-08-29: the
+// records authorisation, the representative designation, and the scope of
+// work agreement), and the route that stores them.
+// The document text is legally load-bearing: a records authorisation
 // missing one of the 45 CFR 164.508(c) elements is defective, which in
 // practice means a records department rejects it and weeks are lost. So the
 // elements are pinned here, the way duty.js's copy is pinned.
@@ -13,9 +15,10 @@ const __REPO = __j(__d(__f(import.meta.url)), '..', '..');
 import { readFileSync } from 'node:fs';
 
 const {
-  recordsAuthorisation, representativeDesignation, SENSITIVE_CATEGORIES,
-  COMMUNICATION_SCOPES,
+  recordsAuthorisation, representativeDesignation, scopeOfWork, AUTHORITY_KINDS,
+  SENSITIVE_CATEGORIES, COMMUNICATION_SCOPES,
 } = await import(__j(__REPO, 'public/js/authority.js'));
+const { FULL_ACCESS_TERMS } = await import(__j(__REPO, 'public/js/tier-terms.js'));
 const WORKER = readFileSync(__j(__REPO, 'worker/index.js'), 'utf8');
 const CASE = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
 const ADMIN = readFileSync(__j(__REPO, 'public/js/admin-case.js'), 'utf8');
@@ -112,15 +115,39 @@ check('W5 signing requires the name on the case',
 check('W6a a records release can be signed on any case',
   !/if \(!c\?\.data\.fullAccess\)\n\s*return json/.test(WORKER)
   && /THE TIER GATE IS PER DOCUMENT/.test(WORKER));
-check('W6b the insurance designation is still Hands-Off only',
-  /if \(kind === 'representative' && !c\.data\.fullAccess\)\n\s*return json\(\{ error: 'This case is not on Hands-Off Case Management\.' \}, 409\);/.test(WORKER));
+// W6b grew a second kind on 2026-08-29: the scope of work agreement is the
+// Hands-Off engagement itself (Eric: "All I need is scope of work
+// agreement"), so it shares the designation's gate. The pinned source moved
+// from `kind === 'representative'` to the two-kind form; updated, not
+// deleted.
+check('W6b the insurance designation and the scope agreement are Hands-Off only',
+  /if \(\(kind === 'representative' \|\| kind === 'scope'\) && !c\.data\.fullAccess\)\n\s*return json\(\{ error: 'This case is not on Hands-Off Case Management\.' \}, 409\);/.test(WORKER));
 // The half that is easy to lose when a gate moves: somebody who signed while
 // on Hands-Off must still be able to withdraw afterwards. The old blanket gate
 // sat above the revoke branch and answered 409, which left them holding a
-// permission they could not take back.
-check('W6c withdrawing is never gated on the tier',
-  WORKER.indexOf("if (body?.action === 'revoke')")
-    < WORKER.indexOf("if (kind === 'representative' && !c.data.fullAccess)"));
+// permission they could not take back. Anchor updated 2026-08-29 with the
+// gate's new two-kind source, and both anchors are required to exist first:
+// indexOf on a missing needle is -1, which sits "before" everything and
+// passed this check over a file that contained neither line.
+{
+  const revokeAt = WORKER.indexOf("if (body?.action === 'revoke')");
+  const gateAt = WORKER.indexOf("if ((kind === 'representative' || kind === 'scope') && !c.data.fullAccess)");
+  check('W6c withdrawing is never gated on the tier',
+    revokeAt >= 0 && gateAt >= 0 && revokeAt < gateAt);
+}
+// The one thing revoke refuses (2026-08-29): the scope of work agreement is
+// the contract the case runs on, not a permission, and one tap cannot
+// un-agree a contract. The refusal has to come BEFORE the revokedAt write.
+// NEGATIVE CONTROL (run 2026-08-29): rewording the refusal so its anchor
+// phrase vanished made this read
+//   FAIL  W6d the scope agreement cannot be revoked by one tap
+{
+  const refuseAt = WORKER.indexOf('the agreement your case runs on, not a permission');
+  const writeAt = WORKER.indexOf('{ revokedAt: new Date() }');
+  check('W6d the scope agreement cannot be revoked by one tap',
+    refuseAt >= 0 && writeAt >= 0 && refuseAt < writeAt
+    && /const target = await getDoc\(env, `\$\{coll\}\/\$\{itemId\}`\);/.test(WORKER));
+}
 check('W7 both sides read through threadContext, so a stranger gets a 404 or 403',
   /const ctx = await threadContext\(env, user, 'case', id\);\n  if \(ctx\.error\) return json\(\{ error: ctx\.error \}, ctx\.code\);\n  const coll = `cases\/\$\{id\}\/private\/authority/.test(WORKER));
 // authorityAt is stamped at the first signature and is NOT the window any
@@ -128,6 +155,22 @@ check('W7 both sides read through threadContext, so a stranger gets a 404 or 403
 // The field is kept as the record of when he first had authority to act.
 check('W8 authorityAt is stamped at the first signature',
   /if \(!c\.data\.authorityAt\)/.test(WORKER) && /authorityAt: new Date\(\)/.test(WORKER));
+// The scope signature stamps its own field (2026-08-29). scopeSignedAt is
+// what the readiness checklist reads, because handsOffReadiness sees only
+// the case doc, never the private items. And it must NOT stamp authorityAt:
+// agreeing the engagement is not authority to phone anyone.
+// NEGATIVE CONTROL (run 2026-08-29): renaming the stamped field made this
+// read
+//   FAIL  W8b a scope signature stamps scopeSignedAt on the case
+check('W8b a scope signature stamps scopeSignedAt on the case',
+  /\{ scopeSignedAt: new Date\(\) \}, \{ mask: \['scopeSignedAt'\] \}/.test(WORKER)
+  && /kind === 'scope'/.test(WORKER));
+// NEGATIVE CONTROL (run 2026-08-29): adding 'appeal' to the Worker list made
+// this read
+//   FAIL  W9 the Worker and the module agree on the document kinds
+check('W9 the Worker and the module agree on the document kinds',
+  /const AUTHORITY_KINDS = \['records', 'representative', 'scope'\];/.test(WORKER)
+  && Object.keys(AUTHORITY_KINDS).join(',') === 'records,representative,scope');
 
 // ---- the beefed-up release: what he may DO, and the drawn signature ----
 // (Eric, 2026-08-25: "Essentially a beefed up release of records" so he can
@@ -281,6 +324,76 @@ check('S25 a signature nobody can draw is not the only route',
   const escapes = (ADMIN.match(/text\.replace\(\/\[&<>\]\/g/g) || []).length;
   check('S30 and both document builders escape, the stored one and the printed one',
     escapes === 2, `${escapes} of 2 document builders escape`);
+}
+
+// ---- S31-S34: the scope of work agreement (Eric, 2026-08-29) --------------
+// "Remove those. I have those sent manually. All I need is scope of work
+// agreement. The rest I handle." The third document: signed in the app when
+// Hands-Off opens by hand, run here the same way the other two are.
+const sow = scopeOfWork({
+  clientName: 'Dana Reyes', signedName: 'Dana Reyes', signedAt: '2026-08-29',
+});
+// NEGATIVE CONTROL (run 2026-08-29): renaming the MONEY heading in the
+// builder made this read
+//   FAIL  S31 the agreement covers the work, the limits and the money
+check('S31 the agreement covers the work, the limits and the money',
+  /SCOPE OF WORK AGREEMENT/.test(sow) && /THE WORK/.test(sow)
+  && /WHAT THIS IS NOT/.test(sow) && /MONEY/.test(sow)
+  && /Dana Reyes/.test(sow) && /Signed electronically by the client/.test(sow));
+// The agreement is the scope note restated for a signature. It must not
+// promise anything FULL_ACCESS_TERMS does not: these phrases are the
+// substance both must carry, word for word, so an edit to one shows up here
+// until the other catches up.
+// NEGATIVE CONTROL (run 2026-08-29): changing "person to person" in the
+// builder alone made this read
+//   FAIL  S32 its promises are the scope note's promises
+// Whitespace-normalised on both sides: the agreement is plain text wrapped
+// at a fixed column, so a phrase can span a line break and still be the
+// phrase.
+check("S32 its promises are the scope note's promises, word for word where it counts",
+  (() => {
+    const flatSow = sow.replace(/\s+/g, ' ');
+    const flatTier = FULL_ACCESS_TERMS.body.replace(/\s+/g, ' ');
+    return ['at least twice a month', 'Refunds are not automatic', 'not an attorney', 'person to person']
+      .every((p) => flatSow.includes(p) && flatTier.includes(p));
+  })());
+// Same rule the other two blanks follow: ruled lines, no attestation nobody
+// made.
+// NEGATIVE CONTROL (run 2026-08-29): forcing signatureBlock's signed branch
+// for blanks made this read
+//   FAIL  S33 a blank prints ruled lines and no attestation
+check('S33 a blank prints ruled lines and no attestation',
+  (() => {
+    const b = scopeOfWork({ blank: true });
+    return b.includes('Signed: _') && !b.includes('Signed electronically');
+  })());
+// The stored-document builder, lifted and run against the NEW kind with the
+// same hostile name S26-S30 use. The scope agreement is stored and printed
+// by the same two builders, and the client's name lands in it the same way.
+// NEGATIVE CONTROL (run 2026-08-29): dropping & from the escape set in both
+// builders made this read
+//   FAIL  S34 the scope agreement escapes the client name like the other two  -- 4012 chars
+// (S29 and S30 went red with it, as they should: one escape set, three
+// documents.)
+{
+  const src = (ADMIN.match(/function authorityDocHtml\(item\) \{[\s\S]*?\n\}/) || [''])[0];
+  const HOSTILE = 'Jordan <script>alert(1)</script> & Avery';
+  let sdoc = '';
+  if (src) {
+    try {
+      const fn = new Function('data', 'recordsAuthorisation', 'representativeDesignation',
+        'scopeOfWork', 'authorityDocTitle', 'signatureInk', `${src}\n return authorityDocHtml;`)(
+        { clientName: HOSTILE, clientDob: '1990-01-01' },
+        recordsAuthorisation, representativeDesignation, scopeOfWork,
+        () => 'Scope of work agreement', () => '');
+      sdoc = fn({ kind: 'scope', blank: false });
+    } catch { sdoc = ''; }
+  }
+  check('S34 the scope agreement escapes the client name like the other two',
+    sdoc.length > 500 && sdoc.includes('Jordan')
+    && !/<script>alert/.test(sdoc) && /&lt;script&gt;alert/.test(sdoc)
+    && /&amp; Avery/.test(sdoc),
+    `${sdoc.length} chars`);
 }
 
 const failed = results.filter((r) => !r.pass);

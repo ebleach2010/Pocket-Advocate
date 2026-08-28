@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.43';
+export const VERSION = '2.44';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '2.43';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // One document signed in the app now: the scope of work agreement, on
+    // Hands-Off cases opened by hand (Eric, 2026-08-29: "All I need is scope
+    // of work agreement. The rest I handle."). Quiet, per the rule above.
+    version: '2.44',
+    quiet: true,
+    client: [
+      'If your case is on Hands-Off Case Management, your scope of work agreement lives on your case page: read it and sign it there, and read it back any time.',
+    ],
+  },
   {
     // The agreement catches up with the truth (Eric, 2026-08-28: "I do my
     // very best and there is no limit... refunds happen under agreement").

@@ -141,8 +141,12 @@ const todayMT = new Intl.DateTimeFormat('en-CA', {
 ok('it is prefilled to today, so the common case is no taps',
    startDay?.was === todayMT, `${startDay?.was} vs ${todayMT}`);
 const whenLine = await page.evaluate(() => document.getElementById('openfull-when')?.textContent.trim() || '');
+// The pinned sentence changed 2026-08-29: nothing called "forms" goes
+// anywhere at open any more (Eric: "Remove those. I have those sent
+// manually."), and the line now names the one thing that does go live, the
+// scope of work agreement. Pin updated, not deleted.
 ok('and it says the month it is about to create, both ends',
-   /runs .+ to .+/.test(whenLine) && /forms go live today/.test(whenLine), whenLine.slice(0, 110));
+   /runs .+ to .+/.test(whenLine) && /scope of work agreement goes live today/.test(whenLine), whenLine.slice(0, 110));
 
 // The real thing.
 await typed('3400');
@@ -174,8 +178,12 @@ ok('and the confirm named the start date too, not just the money',
 
 const said = await page.evaluate(() =>
   [...document.querySelectorAll('.saved-note')].map((n) => n.textContent.trim()).join(' | '));
+// Pinned line updated 2026-08-29: the confirmation now names the scope of
+// work agreement with the rest of the furniture, and tells him the records
+// and insurer forms are his to send by hand.
 ok('and the panel says so where he can still read it after it vanishes',
-   /work log and the check-in booking are live/i.test(said), said.slice(0, 110));
+   /work log, the check-in booking and the scope of work agreement are live/i.test(said)
+   && /Send the records and insurer forms yourself/i.test(said), said.slice(0, 110));
 ok('the panel itself is gone, because the case is on the tier now',
    !(await openPanel()));
 
@@ -221,11 +229,96 @@ ok('and is told why getting it in early is still worth it',
 ok('the tier furniture reached the client\'s own page',
    seen.heading === 'What I have been doing', seen.heading || '(no panel)');
 ok('and the readiness checklist is there with it', seen.ready === true);
-// The parking, driven rather than grepped.
+// The parking, driven rather than grepped. Still true after 2026-08-29: the
+// records and insurer forms are never offered for signing ([data-auth-add]
+// stays absent) and no permission box renders on a case with no permissions.
+// The AGREEMENT card is its own panel and is checked below.
 ok('nothing offers them a form to sign, because that is parked',
    seen.signButtons === 0, `${seen.signButtons} Sign buttons`);
 ok('and a case that has signed nothing shows no empty permissions box',
    seen.emptyPermissions === 0, `${seen.emptyPermissions} chars of permissions panel`);
+
+// ---- the scope of work agreement, driven end to end (2026-08-29) ----------
+// Eric: "Remove those. I have those sent manually. All I need is scope of
+// work agreement. The rest I handle." A case opened by hand never
+// acknowledged the scope note at checkout, so THIS case must offer the
+// agreement card, the sheet must sign with nothing but a name and a finger,
+// and the record must land on both the card and the checklist.
+const shots = process.env.PA_SHOTS || '';
+const snap = async (name) => { if (shots) await client.screenshot({ path: `${shots}/${name}.png` }).catch(() => {}); };
+const offer = await client.evaluate(() => {
+  const p = document.querySelector('[data-scope-panel]');
+  return {
+    there: !!p,
+    heading: p?.querySelector('h3')?.textContent.trim() || '',
+    signBtn: !!p?.querySelector('[data-scope-sign]'),
+    withdraw: !!p?.querySelector('[data-auth-revoke]'),
+  };
+});
+ok('the scope of work agreement card is offered on this hand-opened case',
+   offer.there && offer.signBtn, JSON.stringify(offer));
+ok('under its own name, with no Withdraw on it',
+   offer.heading === 'Your scope of work agreement' && !offer.withdraw, offer.heading);
+await client.evaluate(() => document.querySelector('[data-scope-panel]')?.scrollIntoView({ block: 'center' }));
+await snap('scope-1-offer');
+
+await client.evaluate(() => document.querySelector('[data-scope-sign]').click());
+await client.waitForSelector('.sig-sheet', { timeout: 10000 });
+const sheet = await client.evaluate(() => {
+  const s = document.querySelector('.sig-sheet');
+  return {
+    title: s?.querySelector('h3')?.textContent.trim() || '',
+    doc: s?.querySelector('[data-preview]')?.textContent || '',
+    open: !!s?.querySelector('details[open]'),
+    fields: s?.querySelectorAll('[data-f]').length,
+  };
+});
+ok('the sheet opens on the agreement, already unfolded to read',
+   sheet.title === 'Scope of work agreement' && sheet.open, `${sheet.title}, open=${sheet.open}`);
+ok('the document is the real one: the work, the limits and the money',
+   /SCOPE OF WORK AGREEMENT/.test(sheet.doc) && /WHAT THIS IS NOT/.test(sheet.doc)
+   && /MONEY/.test(sheet.doc) && /Jordan Avery/.test(sheet.doc));
+ok('and there is nothing to fill in but the name',
+   sheet.fields === 1, `${sheet.fields} fields`);
+await snap('scope-2-sheet');
+
+await client.fill('.sig-sheet [data-f="signedName"]', 'Jordan Avery');
+await client.evaluate(() => document.querySelector('.sig-sheet [data-sig-open]').click());
+await client.waitForSelector('#pa-sigpad [data-sig-canvas]', { timeout: 10000 });
+const box = await client.evaluate(() => {
+  const r = document.querySelector('#pa-sigpad [data-sig-canvas]').getBoundingClientRect();
+  return { x: r.x, y: r.y, w: r.width, h: r.height };
+});
+await client.mouse.move(box.x + box.w * 0.2, box.y + box.h * 0.5);
+await client.mouse.down();
+await client.mouse.move(box.x + box.w * 0.5, box.y + box.h * 0.25, { steps: 8 });
+await client.mouse.move(box.x + box.w * 0.8, box.y + box.h * 0.6, { steps: 8 });
+await client.mouse.up();
+await client.click('#pa-sigpad [data-sig-done]');
+await client.click('.sig-sheet [data-sign]');
+await client.waitForSelector('[data-scope-panel] [data-auth-view]', { timeout: 10000 });
+const signedNow = await client.evaluate(() => {
+  const p = document.querySelector('[data-scope-panel]');
+  return {
+    line: p?.textContent.replace(/\s+/g, ' ').trim() || '',
+    signBtn: !!p?.querySelector('[data-scope-sign]'),
+    withdraw: !!p?.querySelector('[data-auth-revoke]'),
+  };
+});
+ok('one signature later the card is the record, not the ask',
+   /Signed \d/.test(signedNow.line) && !signedNow.signBtn, signedNow.line.slice(0, 90));
+ok('with View on it and still no Withdraw',
+   /View/.test(signedNow.line) && !signedNow.withdraw);
+await snap('scope-3-signed');
+
+// The checklist head paints from the case doc, so the tick appears on the
+// next open; the demo persists, so a reload IS the next open.
+await client.reload({ waitUntil: 'networkidle' });
+await client.waitForSelector('[data-ready-list]', { timeout: 20000 });
+const rowNow = await client.evaluate(() =>
+  document.querySelector('[data-ready-list]')?.textContent.replace(/\s+/g, ' ').trim() || '');
+ok('and the readiness row is satisfied on the next open',
+   /✓/.test(rowNow) && /scope of work/i.test(rowNow), rowNow.slice(0, 80));
 
 ok('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
 await b.close();
