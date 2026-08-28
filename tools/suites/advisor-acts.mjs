@@ -472,7 +472,24 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): changing actDispatch's last line to
   // `return 'run';` made this read
   //   FAIL  A10c no confirm-tier action can be carried out without a card  -- set-paid, work-correct, client-alert
-  const ranWithoutCardF = [...actionFault(), ...ranWithoutCard];
+  // AND EVERY ONE OF THEM COULD ACTUALLY BE BUILT. This is the sentence the
+  // whole branch exists to guarantee, and it was the weakest check in the file.
+  //
+  // `parked(n)` returns NULL when validation fails, actDispatch(null) is
+  // 'none', and 'none' is not 'run', so the filter finds nothing and this
+  // reads green while the validator parks nothing at all.
+  //
+  // MEASURED on main, 2026-08-28, with validateAction returning { ok: false }
+  // on its first line: 29 checks failed and A10c passed. I had run that exact
+  // break an hour earlier, seen this line in the output, and reasoned that
+  // ALLOWED being intact made it safe. It does not: the tier comes off the
+  // table, but the PROPOSAL comes off the validator.
+  const confirmActs = ALLOWED.filter((n) => tierOf(n) === 'confirm');
+  const unbuildable = confirmActs.filter((n) => !parked(n));
+  const ranWithoutCardF = [...actionFault(), ...ranWithoutCard,
+    ...(unbuildable.length
+      ? [`${confirmActs.length - unbuildable.length} of ${confirmActs.length} confirm-tier proposals could even be built`]
+      : [])];
   ck('A10c no confirm-tier action can be carried out without a card',
     !ranWithoutCardF.length, ranWithoutCardF.join(', '));
   // And the two halves agree, so the panel can never be shown a tier the
@@ -685,8 +702,18 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): pointing the trail write at cases/{caseId}
   // made this read
   //   FAIL  A21c and the trail is on caseMeta, never on the case a client can read  -- ["cases/abc"]
+  // AND SOMETHING WAS ACTUALLY WRITTEN. "Never on the case a client can read"
+  // is satisfied perfectly by a route that writes NOWHERE, and nothing is
+  // empty in that break so no floor sees it, and it is not a refusal so the
+  // acceptance clauses elsewhere do not reach it.
+  //
+  // MEASURED on main, 2026-08-28, by returning json({ ok: true }) from the
+  // first line of handleClientAlert: thirteen checks failed and this one
+  // passed.
   ck('A21c and the trail is on caseMeta, never on the case a client can read',
-    !sent.writes.some((w) => w.path.startsWith('cases/')), JSON.stringify(sent.writes.map((w) => w.path)));
+    sent.writes.length > 0 && !sent.writes.some((w) => w.path.startsWith('cases/')),
+    sent.writes.length ? JSON.stringify(sent.writes.map((w) => w.path))
+      : 'nothing was written anywhere either, so this proves nothing');
 
   // THE SOFT RATE LIMIT. A client cannot be buzzed repeatedly.
   const justNow = { clientAlerts: [{ text: 'earlier', at: new Date().toISOString(), by: 'advisor' }] };
