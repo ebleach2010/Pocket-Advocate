@@ -55,7 +55,7 @@ const LIFTED = [
   sfn('splitClockAtFlip'),
   fn('bankDaySeconds'), fn('readDaySeconds'),
   fn('setClockRunning'), fn('stopWorkClock'), fn('handleWork'),
-  fn('handleWorkPresence'), fn('runWorkClockNudges'),
+  fn('handleWorkPresence'), fn('runWorkClockNudges'), fn('cronWatchdog'),
 ].join('\n');
 
 // ---- the world it runs in ------------------------------------------------
@@ -98,7 +98,12 @@ class FakeDate extends Date {
 const build = new Function(
   ...Object.keys(deps), 'Date',
   `${LIFTED}
+   // Not lifted: the watchdog only needs these names to exist; their own
+   // suites cover them. The nudge ladder above IS the real one.
+   async function runAppealWarnings() {}
+   async function runFollowUpWarnings() {}
    return { handleWork, handleWorkPresence, runWorkClockNudges, stopWorkClock,
+            cronWatchdog,
             WORK_NUDGE_MINUTES, WORK_NUDGE_REPEAT_MINUTES,
             WORK_PRESENCE_STALE_MS, CLOCK_DOC };`,
 );
@@ -707,6 +712,43 @@ Date.now = realNow;
     && /We are at the rough limit of the included hours\./.test(CASEJS)
     && /We are getting close to the included hours\./.test(CASEJS)
     && /is not counted here/.test(CASEJS));
+}
+
+// ---- C52: the cron watchdog ------------------------------------------------
+// 2026-08-28, found live: diag/cron.lastFiredAt froze for over an hour while
+// the site answered requests, and the nudge ladder went silent with it. The
+// watchdog rides API traffic: a heartbeat five minutes stale is claimed by
+// CAS and the rung-guarded safety ladders run; a fresh one is left alone.
+// RUN with the REAL nudge ladder: the fixture leaves a clock running and the
+// app absent, so a working watchdog produces an actual push.
+// NEGATIVE CONTROLS (run 2026-08-29): the staleness window ballooned to 500
+// minutes -> C52 red (no push, no claim); the fresh guard removed -> C52b
+// red; the cron's flag-clearing dropped -> C52c red. All restored.
+{
+  reset();
+  await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
+  advance(90);
+  docs.set(W.CLOCK_DOC, {
+    ...(docs.get(W.CLOCK_DOC) || {}),
+    seenAt: new Date(NOW - 90 * 60_000),
+  });
+  docs.set('diag/cron', { lastFiredAt: new Date(NOW - 6 * 60_000) });
+  const before = pushes.length;
+  await W.cronWatchdog(env);
+  const hb = docs.get('diag/cron');
+  check('C52 a stale heartbeat is claimed and the nudge ladder runs anyway',
+    pushes.length > before && hb?.watchdog === true && hb?.minute === -1,
+    JSON.stringify({ newPushes: pushes.length - before, hb }));
+  const b2 = pushes.length;
+  docs.set('diag/cron', { lastFiredAt: new Date(NOW - 60_000) });
+  await W.cronWatchdog(env);
+  check('C52b a fresh heartbeat is left entirely alone',
+    pushes.length === b2 && docs.get('diag/cron').watchdog === undefined,
+    JSON.stringify(docs.get('diag/cron')));
+  check('C52c the claim is a CAS, the fetch path is wired, and the cron clears the flag',
+    /ifUpdateTime: doc\.updateTime/.test((SRC.match(/async function cronWatchdog[\s\S]*?\n\}/) || [''])[0])
+    && /url\.pathname\.startsWith\('\/api\/'\) && Date\.now\(\) - watchdogCheckedAt > 60_000/.test(SRC)
+    && /minute, watchdog: false/.test(SRC));
 }
 
 const failed = results.filter((r) => !r.pass);

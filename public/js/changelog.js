@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.56';
+export const VERSION = '2.57';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '2.56';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // The cron watchdog (found live 2026-08-28: the scheduled trigger went
+    // silent for over an hour). Any API request now checks the heartbeat
+    // and, when it is five minutes stale, claims it and runs the
+    // rung-guarded safety ladders: the clock nudges, the appeal warnings,
+    // the follow-up warnings. Admin plumbing; nothing client-visible.
+    version: '2.57',
+    quiet: true,
+    client: [],
+  },
   {
     // Diagnostic push 2: /api/version also reports the cron heartbeat and
     // runs the reprice one-shot itself, so a dead cron cannot block it.

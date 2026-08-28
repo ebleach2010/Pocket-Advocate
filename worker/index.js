@@ -732,6 +732,12 @@ async function withAdminCookie(env, res, uid) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    // The cron watchdog rides any API request, throttled to one heartbeat
+    // read per minute per isolate. See cronWatchdog for why it exists.
+    if (url.pathname.startsWith('/api/') && Date.now() - watchdogCheckedAt > 60_000) {
+      watchdogCheckedAt = Date.now();
+      ctx.waitUntil(cronWatchdog(env));
+    }
     try {
       // Maintenance: refuse the two routes that spend money, before either
       // handler can reach Stripe. Deliberately above everything else and
@@ -915,6 +921,9 @@ export default {
             ? { startedAt: m.data.startedAt || null, finishedAt: m.data.finishedAt || null, result: m.data.result || null }
             : 'no marker yet'),
           cronLastFiredAt: hb?.data?.lastFiredAt || null,
+          // true = the last beat was the WATCHDOG standing in; the real
+          // cron clears this the moment it fires again.
+          cronByWatchdog: hb?.data?.watchdog === true,
         });
       }
       if (url.pathname === '/api/summary' && request.method === 'POST')
@@ -1072,8 +1081,8 @@ export default {
     const minute = new Date(event.scheduledTime || fired).getUTCMinutes();
     // Flight-recorder heartbeat: proof, readable from outside, that the cron
     // trigger itself is firing. One tiny masked write per minute.
-    ctx.waitUntil(patchDoc(env, 'diag/cron', { lastFiredAt: new Date(), minute },
-      { mask: ['lastFiredAt', 'minute'] }).catch(() => {}));
+    ctx.waitUntil(patchDoc(env, 'diag/cron', { lastFiredAt: new Date(), minute, watchdog: false },
+      { mask: ['lastFiredAt', 'minute', 'watchdog'] }).catch(() => {}));
     if (minute % 15 === 0) {
       ctx.waitUntil(runChatDigest(env));
       ctx.waitUntil(runFollowUpWarnings(env));
@@ -1768,7 +1777,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-reprice-diag2';
+const BUILD_TAG = 'v2026-08-29-cron-watchdog';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1776,7 +1785,7 @@ const BUILD_TAG = 'v2026-08-29-reprice-diag2';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.56';
+const VERSION = '2.57';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -4969,6 +4978,41 @@ async function handleWorkPresence(request, env) {
   // Nothing is ended here now, so the field is gone rather than shipping an
   // always-empty promise that a later reader would trust.
   return json({ ok: true, day });
+}
+
+/**
+ * THE CRON WATCHDOG (2026-08-29). The production cron went silent for over
+ * an hour tonight - diag/cron.lastFiredAt froze at 21:56 UTC through four
+ * deploys - and the nudge ladder, the appeal warnings and the follow-up
+ * warnings all ride it. Those are SAFETY duties: a dead scheduler must not
+ * be able to silence them while the site itself is still answering
+ * requests. So any /api/ request checks the heartbeat, at most once a
+ * minute per isolate, and when it is more than five minutes stale the
+ * caller claims the beat by compare-and-swap on the same doc the cron
+ * heartbeats - so two stale requests cannot both run, and a cron firing
+ * mid-claim wins - and runs exactly the three rung-guarded ladders. Each
+ * is idempotent by its own stamps (`nudged`, `warnedAt`), so a recovering
+ * cron cannot double-send. The convenience duties (digests, cleanups,
+ * migrations) stay cron-only: missing them late is annoying, not unsafe.
+ * `watchdog: true` marks a beat as substitute so /api/version can say the
+ * real cron is still down; the cron's own heartbeat clears it.
+ */
+let watchdogCheckedAt = 0;
+async function cronWatchdog(env) {
+  const doc = await getDoc(env, 'diag/cron').catch(() => null);
+  const last = doc?.data?.lastFiredAt ? new Date(doc.data.lastFiredAt).getTime() : 0;
+  if (last && Date.now() - last < 5 * 60_000) return;
+  const claimed = await patchDoc(env, 'diag/cron',
+    { lastFiredAt: new Date(), minute: -1, watchdog: true },
+    doc
+      ? { mask: ['lastFiredAt', 'minute', 'watchdog'], ifUpdateTime: doc.updateTime }
+      : { mustNotExist: true }).catch(() => false);
+  if (claimed === false) return;
+  await Promise.all([
+    runWorkClockNudges(env).catch(() => {}),
+    runAppealWarnings(env).catch(() => {}),
+    runFollowUpWarnings(env).catch(() => {}),
+  ]);
 }
 
 /**
