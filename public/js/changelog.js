@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.54';
+export const VERSION = '2.55';
 
 /**
  * Newest first.
@@ -51,6 +51,14 @@ export const VERSION = '2.54';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // Diagnostic push: the $3,500 reprice migration runs on every cron fire
+    // until it lands, and its marker is readable on /api/version while it
+    // is watched. Admin plumbing only.
+    version: '2.55',
+    quiet: true,
+    client: [],
+  },
   {
     // Three on Eric's word, 2026-08-29: Fri-Sun out of office by schedule
     // (his switch still wins), the Hands-Off month at $3,500 with a one-shot

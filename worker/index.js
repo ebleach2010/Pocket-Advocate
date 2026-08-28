@@ -895,8 +895,20 @@ export default {
         return await handleEffort(request, env);
       if (url.pathname === '/api/admin/voice')
         return await handleVoiceLoop(request, env, ctx);
-      if (url.pathname === '/api/version' && request.method === 'GET')
-        return json({ tag: BUILD_TAG, version: VERSION });
+      if (url.pathname === '/api/version' && request.method === 'GET') {
+        // TEMPORARY DIAG (2026-08-29): the $3,500 reprice marker, readable
+        // from outside while the migration is being watched to completion.
+        // Nothing here is secret - the price itself is public on /api/rates.
+        // Remove with the marker's confirmation, like the diag scaffolding
+        // before it.
+        const m = await getDoc(env, 'migrations/tier-3500-2026-08-29').catch((e) => ({ err: String(e?.message || e) }));
+        return json({
+          tag: BUILD_TAG, version: VERSION,
+          reprice: m?.err ? { error: m.err } : (m?.data
+            ? { startedAt: m.data.startedAt || null, finishedAt: m.data.finishedAt || null, result: m.data.result || null }
+            : 'no marker yet'),
+        });
+      }
       if (url.pathname === '/api/summary' && request.method === 'POST')
         return await handleDaySummary(request, env);
       if (url.pathname === '/api/saved')
@@ -1070,8 +1082,13 @@ export default {
       ctx.waitUntil(reviveLostSend(env));
       ctx.waitUntil(seedWorkClock(env));
       ctx.waitUntil(restructureRates(env));
-      ctx.waitUntil(repriceTier(env));
     }
+    // Un-gated while it is being watched to completion, exactly like
+    // unparkAdvisor below: the $3,500 order should land on the FIRST firing
+    // after this deploys, not up to a quarter hour later. One marker read
+    // per firing once finished; re-gate or remove with the diag on
+    // /api/version once the stored rate reads 350000.
+    ctx.waitUntil(repriceTier(env));
     // Un-gated on purpose: the wedged case should recover on the FIRST
     // firing after this deploys, not up to a quarter hour later. One marker
     // read per firing once finished; remove with the diag scaffolding.
@@ -1743,7 +1760,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-hours-card';
+const BUILD_TAG = 'v2026-08-29-reprice-diag';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1751,7 +1768,7 @@ const BUILD_TAG = 'v2026-08-29-hours-card';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.54';
+const VERSION = '2.55';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
