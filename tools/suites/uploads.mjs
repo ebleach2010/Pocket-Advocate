@@ -72,15 +72,35 @@ const slab = (src, from, to) => {
  * already-stubbed helpers) but it was invisible to a green run.
  */
 const LIFTS = new Map();
-const lifted = (name, text) => { LIFTS.set(name, text.length); return text; };
-const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
+/**
+ * `after` is the SENTINEL: a distinctive string from whatever sits immediately
+ * beyond the intended end of this lift. It is what U28j checks, and it is
+ * required rather than optional so a new lift cannot skip that check in
+ * silence. Adapted from the advisor branch's A30d, with one change for the
+ * shape of the lifts here.
+ *
+ * WHY A SENTINEL AND NOT A TAIL. A30d asserts each lift ENDS the way it
+ * should, which is the right rule for a regex lift like handleCaseUpdate
+ * where nothing pins the end. Almost every lift here comes from slab(), and
+ * slab() returns a string ending in its own `to` marker BY CONSTRUCTION, so a
+ * tail assertion on one of those is tautological: it passes just as happily
+ * when `to` matched the third occurrence half a file later. What catches THAT
+ * is naming the thing that should lie beyond the end and insisting it is not
+ * inside. Same idea as A30c, applied to all twelve at once instead of the two
+ * that happened to have it written out by hand.
+ */
+const lifted = (name, text, after) => {
+  LIFTS.set(name, { size: text.length, after, text });
+  return text;
+};
+const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
 
 // ---- U1-U4: two files with one name must BOTH survive --------------------
 // Lifted and run against a Storage stand-in that behaves the way Storage
 // behaves: a repeated path overwrites, without a word.
 {
   const body = lifted('upload', slab(ADMINCASE, 'async function upload(file, kind, milestoneAction',
-    '  bar.hidden = true;\n}'));
+    '  bar.hidden = true;\n}'), 'WHAT A DOCUMENT HE UPLOADS IS');
   // NEGATIVE CONTROL (all runs 2026-08-28): renaming upload() made this read
   //   FAIL  U1 the upload path lifts out of the shipped page
   // A lift that has lost its target goes red rather than asserting nothing.
@@ -129,8 +149,17 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
   // NEGATIVE CONTROL: filing by category instead of by folder made this read
   //   FAIL  U2b ... -- cases/abc/callsummary/1787880535918-Summary.pdf ...
   // which is the exact mistake storage.rules cannot survive.
+  // NEGATIVE CONTROL (run 2026-08-28): making the stand-in bucket record
+  // nothing made this read PASS before the count was added, and now reads
+  //   FAIL  U2b and both are under the case, in the report folder  -- 0 paths:
+  // COUNT FIRST, ALWAYS. Added 2026-08-28: this read `paths.every(...)` with
+  // nothing requiring paths to have anything in it, so a stand-in bucket that
+  // recorded NOTHING passed it. Its neighbour U2 would have caught the empty
+  // bucket, and that is exactly the objection: a check that is safe only while
+  // the check next to it survives is one deletion away from going quiet.
   ck('U2b and both are under the case, in the report folder',
-    paths.every((p) => p.startsWith('cases/abc/report/')), paths.join(' '));
+    paths.length === 2 && paths.every((p) => p.startsWith('cases/abc/report/')),
+    `${paths.length} paths: ${paths.join(' ')}`);
   // The display layer has to put the name back, or every file a client reads
   // grows a thirteen-digit number in front of it.
   const shown = (n) => String(n).replace(/^\d{10,}-/, '');
@@ -155,11 +184,15 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
   // moved one function outward), and a slab whose target moves is exactly the
   // slab that quietly starts capturing the wrong span. The sizes print on
   // every run, so a jump is visible even on a green one.
-  const clientName = lifted('shownName', slab(CLIENT, 'const shownName =', "');"));
-  const clientRead = lifted('clientReadName', slab(CLIENT, 'const readName =', ';'));
-  const adminRead = lifted('adminReadName', slab(ADMINCASE, 'const readName =', ';'));
+  const clientName = lifted('shownName', slab(CLIENT, 'const shownName =', "');"),
+    'A file long-pressed out of the chat');
+  const clientRead = lifted('clientReadName', slab(CLIENT, 'const readName =', ';'),
+    'A file long-pressed out of the chat');
+  const adminRead = lifted('adminReadName', slab(ADMINCASE, 'const readName =', ';'),
+    'Uploads are grouped by day');
   const adminName = lifted('adminNameRow', slab(ADMINCASE,
-    '<span class="fname"><span class="kind-pill ${pillClass(r)}', '</a></span>'));
+    '<span class="fname"><span class="kind-pill ${pillClass(r)}', '</a></span>'),
+  '<span class="fmeta">');
   // NEGATIVE CONTROLS, all three run 2026-08-28 and all three observed:
   //   deleting the strip from the client's shownName ->
   //     FAIL  U3 ... -- Summary.pdf Summary.pdf | client strip yes, client render yes
@@ -212,9 +245,15 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
       + Object.entries(u3).map(([k, v]) => `${k} ${v ? 'yes' : 'no'}`).join(', '));
   // NEGATIVE CONTROL: dropping the customMetadata argument made this read
   //   FAIL  U4 ... -- [null,null]
+  // COUNT FIRST here too, and for the same reason: an empty bucket satisfied
+  // `every` and this passed with no file to carry a category at all.
+  // NEGATIVE CONTROL (run 2026-08-28): making the stand-in bucket record
+  // nothing made this read PASS before the count was added, and now reads
+  //   FAIL  U4 the category rides on the file as metadata, and is what he picked  -- 0 files: []
   ck('U4 the category rides on the file as metadata, and is what he picked',
-    [...bucket.values()].every((v) => v.meta && v.meta.paCategory === 'callsummary'),
-    JSON.stringify([...bucket.values()].map((v) => v.meta)));
+    bucket.size === 2
+    && [...bucket.values()].every((v) => v.meta && v.meta.paCategory === 'callsummary'),
+    `${bucket.size} files: ${JSON.stringify([...bucket.values()].map((v) => v.meta))}`);
 }
 
 // ---- U5-U7: a label, not a folder ---------------------------------------
@@ -312,10 +351,17 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
   //   FAIL  U10b ... -- pages: ['overview', 'chat', 'files', 'a', 'b'] ...
   // Four per group at 320px is a hard limit; this suite touches the Uploads
   // page's HEADINGS, which are not tabs, and this is what says so.
+  // AND THE GROUPS HAVE TO BE THERE. Added 2026-08-28: `(x || []).every(...)`
+  // over a slab that found nothing is true, so this passed with the tab strip
+  // lifted as an empty string and no group examined at all.
+  // NEGATIVE CONTROL (run 2026-08-28): lifting the tab strip as '' made this
+  // read PASS before the count was added, and now reads
+  //   FAIL  U10b and no group in the tab strip grew a fifth page  -- 0 groups found:
+  const stripGroups = strip.match(/pages: \[[^\]]*\]/g) || [];
   ck('U10b and no group in the tab strip grew a fifth page',
-    (strip.match(/pages: \[[^\]]*\]/g) || [])
-      .every((p) => (p.match(/'/g) || []).length / 2 <= 4),
-    (strip.match(/pages: \[[^\]]*\]/g) || []).join(' '));
+    stripGroups.length >= 4
+    && stripGroups.every((p) => (p.match(/'/g) || []).length / 2 <= 4),
+    `${stripGroups.length} groups found: ${stripGroups.join(' ')}`);
   // NEGATIVE CONTROL: giving visitfollowup its own colour made this read
   //   FAIL  U11 ... -- 2 new colours
   const pills = (CSS.match(/\.kind-pill\.\w+[^{]*\{[^}]*\}/g) || []);
@@ -327,8 +373,15 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
   // NEGATIVE CONTROL: putting the gold token's own hex in as a literal made
   // this read
   //   FAIL  U11b with no literal colour anywhere near it
+  // AND THERE HAVE TO BE PILLS. Added 2026-08-28: `!pills.some(...)` over an
+  // empty list is true, so this passed with no pill rule found at all. That is
+  // the failure U11e below was written for, sitting three checks above it.
+  // NEGATIVE CONTROL (run 2026-08-28): lifting no pill rules made this read
+  // PASS before the count was added, and now reads
+  //   FAIL  U11b with no literal colour anywhere near it  -- 0 pill rules found
   ck('U11b with no literal colour anywhere near it',
-    !pills.some((p) => /#[0-9a-f]{3,8}|rgba?\(/i.test(p)));
+    pills.length > 0 && !pills.some((p) => /#[0-9a-f]{3,8}|rgba?\(/i.test(p)),
+    `${pills.length} pill rules found`);
   // The form pair. Eric, 2026-08-27: "A 'form sent to client' should be
   // included as a category. Then once it's filled out and sent back to me
   // I'll delete the one I sent him and reupload that and categorize it as
@@ -423,7 +476,8 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
 // a case because he filed a note.
 {
   const fn = lifted('handleCaseUpdate',
-    (WORKER.match(/async function handleCaseUpdate\(request, env\) \{[\s\S]*?\n\}/) || [''])[0]);
+    (WORKER.match(/async function handleCaseUpdate\(request, env\) \{[\s\S]*?\n\}/) || [''])[0],
+    'async function releaseHold');
   // NEGATIVE CONTROL: renaming handleCaseUpdate made this read
   //   FAIL  U12 handleCaseUpdate lifts out of the shipped Worker
   ck('U12 handleCaseUpdate lifts out of the shipped Worker', fn.length > 0);
@@ -625,7 +679,8 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
   // 'NOT-A-ROUTE' made this read
   //   FAIL  U18 no path here reads, writes or summarises a document  -- 0 chars lifted
   const summaryRoute = lifted('summaryRoute', slab(WORKER,
-    "} else if (action === 'summary-uploaded') {", "} else if (action === 'report-uploaded') {"));
+    "} else if (action === 'summary-uploaded') {", "} else if (action === 'report-uploaded') {"),
+  'reportDeliveredAt');
   ck('U18 no path here reads, writes or summarises a document',
     summaryRoute.length > 0
     && !/runAnalysis|runCallNotes|advisor/i.test(summaryRoute),
@@ -669,10 +724,14 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
 // documents. Every future reader of that function will want to add an "already
 // sent" guard to it; this is what stops them.
 {
-  const TZ = lifted('MOUNTAIN_TZ', slab(ADMINCASE, "const MOUNTAIN_TZ = ", ";"));
-  const FORMS = lifted('SENDABLE_FORMS', slab(ADMINCASE, 'const SENDABLE_FORMS = [', '];'));
-  const DAY = lifted('mountainDay', slab(ADMINCASE, 'function mountainDay(d = new Date()) {', '\n}'));
-  const STAMP = lifted('uploadStamp', slab(ADMINCASE, 'let lastStamp = 0;', '\n}'));
+  const TZ = lifted('MOUNTAIN_TZ', slab(ADMINCASE, "const MOUNTAIN_TZ = ", ";"),
+    'Keep in sync with CASE_PRICE_CENTS');
+  const FORMS = lifted('SENDABLE_FORMS', slab(ADMINCASE, 'const SENDABLE_FORMS = [', '];'),
+    'The Overview page: the info bar');
+  const DAY = lifted('mountainDay', slab(ADMINCASE, 'function mountainDay(d = new Date()) {', '\n}'),
+    'A storage stamp that never repeats');
+  const STAMP = lifted('uploadStamp', slab(ADMINCASE, 'let lastStamp = 0;', '\n}'),
+    'SEND THE TICKED FORMS TO THE CLIENT');
   // ENDING ON THE RETURN, not on `load();`. It ended on load() until the send
   // grew a partial-failure path and load() moved inside an if, four spaces in.
   // The slab then ran past the end of the function to the NEXT match further
@@ -681,7 +740,7 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
   // that quietly captures half a file is a lift that will one day capture
   // something that is not inert, so U20b now measures what came out.
   const SEND = lifted('sendBlankForms', slab(ADMINCASE, 'async function sendBlankForms(kinds, btn) {',
-    '\n  return { sent, quiet };\n}'));
+    '\n  return { sent, quiet };\n}'), 'THE SEAM FOR');
   // NEGATIVE CONTROL (run 2026-08-28): renaming sendBlankForms made this read
   //   FAIL  U20 the send path lifts out of the shipped page  -- tz 1, forms 1, day 1, stamp 1, send 0
   // A lift that has lost its target goes red rather than asserting nothing, so
@@ -1037,7 +1096,8 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
   // that branch lands, so it is LIFTED AND DISPATCHED here rather than left as
   // a line nobody has ever run.
   {
-    const SEAM = lifted('seam', slab(ADMINCASE, "document.addEventListener('pa-send-forms'", '});'));
+    const SEAM = lifted('seam', slab(ADMINCASE, "document.addEventListener('pa-send-forms'", '});'),
+      'The appeals workbench');
     // NEGATIVE CONTROL (run 2026-08-28): deleting the listener made this read
     //   FAIL  U28f the pa-send-forms seam is in the shipped page
     ck('U28f the pa-send-forms seam is in the shipped page', SEAM.length > 0);
@@ -1115,7 +1175,8 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
   // client is on the phone.
   {
     const panel = lifted('formPanel',
-      slab(ADMINCASE, '<details class="mgmt" data-k="auth">', '</details>'));
+      slab(ADMINCASE, '<details class="mgmt" data-k="auth">', '</details>'),
+      'data-k="sched"');
     // NEGATIVE CONTROL (run 2026-08-28): putting the old sentence back made
     // this read
     //   FAIL  U27 the form panel no longer promises signing in the app  -- signing in the app
@@ -1174,10 +1235,51 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v}`).join(', ');
 // floor guards the twelve that are here; adding a thirteenth is a thing a
 // person still has to do on purpose.
 {
-  const empties = [...LIFTS].filter(([, n]) => n === 0).map(([k]) => k);
+  const empties = [...LIFTS].filter(([, v]) => v.size === 0).map(([k]) => k);
   ck('U28i every lift this suite takes came back with something in it',
     LIFTS.size >= 12 && empties.length === 0,
     empties.length ? `empty: ${empties.join(', ')}` : `${LIFTS.size} lifts, expected at least 12`);
+}
+
+// ---- U28j: and not one of them ran past where it should have stopped -----
+//
+// The blanket version of U12b and U20b, which name the neighbours of two
+// lifts by hand. This asks the same question of all twelve, and it asks it of
+// any thirteenth that goes through lifted(), because the sentinel is a
+// REQUIRED argument rather than an optional one. Adapted from the advisor
+// branch's A30d after it made the same generalisation on its side.
+//
+// The reason it is a sentinel and not a tail assertion is written out at
+// `lifted` above: eleven of these twelve come from slab(), which returns a
+// string ending in its own `to` marker by construction, so asserting the tail
+// is asserting nothing. Naming what should lie BEYOND the end is the version
+// that catches a `to` marker matching half a file too late.
+//
+// TWO NEGATIVE CONTROLS, both run 2026-08-28 and both observed:
+//   the form panel slab run on to the NEXT panel ->
+//     FAIL  U28j no lift ran past where it should have stopped  -- formPanel swallowed "data-k=\"sched\""
+//     with the size line reading formPanel 7219 instead of 1796 on the same run
+//   a lift registered with no sentinel at all ->
+//     FAIL  U28j no lift ran past where it should have stopped  -- formPanel declares no sentinel
+//
+// AND ONE CONTROL THAT DID NOT REACH THIS CHECK, recorded because it says
+// something about the order things fail in rather than about this check.
+// Running sendBlankForms on to the seam listener does trip U20b
+//     FAIL  U20b ... -- 6540 chars, ends "detail.kinds || []);\n});", swallowed: the seam
+// but the run then dies at a TypeError inside the harness, because the
+// swallowed listener calls document.addEventListener and the stand-in
+// document does not have one. So U28j is never reached on that particular
+// break. That is the lift refusing to run code the harness does not stub,
+// which is a loud failure and the outcome we want; it is simply not this
+// check's outcome, and claiming it here would be recording a FAIL line that
+// was never printed.
+{
+  const bad = [];
+  for (const [name, v] of LIFTS) {
+    if (typeof v.after !== 'string' || !v.after) { bad.push(`${name} declares no sentinel`); continue; }
+    if (v.text.includes(v.after)) bad.push(`${name} swallowed ${JSON.stringify(v.after)}`);
+  }
+  ck('U28j no lift ran past where it should have stopped', bad.length === 0, bad.join('; '));
 }
 
 // EVERY LIFT, AND ITS SIZE, ON EVERY RUN. See `lifted` at the top: green is
