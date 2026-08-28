@@ -1703,7 +1703,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-daylight';
+const BUILD_TAG = 'v2026-08-29-own-activity-types';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1711,7 +1711,7 @@ const BUILD_TAG = 'v2026-08-29-daylight';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.47';
+const VERSION = '2.48';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3876,6 +3876,31 @@ async function handleAuthority(request, env, url) {
 const LOG_KINDS = ['call', 'appeal', 'investigation', 'appointment'];
 
 /**
+ * HIS OWN ACTIVITY TYPES (Eric, 2026-08-29: "Make it so I can add my own
+ * 'activity' in the logs in the drop down menu. I want to add 'email' for
+ * example but don't want to come here every time to add something new. I
+ * can select the highlight color.").
+ *
+ * Stored in config/workLog (admin-managed through the clinic-calls route,
+ * never world-readable), colours from a fixed token allowlist so every
+ * scheme stays legible and nothing a request sends can reach a style
+ * attribute. The four base kinds above stay compiled in: they cannot be
+ * removed, and a custom type cannot shadow their ids.
+ *
+ * AN ENTRY IS STAMPED AT WRITE TIME with the custom type's label and colour
+ * (kindLabel, kindColor), so the client's projection never needs the config
+ * and removing a type later leaves every logged entry exactly as it was.
+ */
+const LOG_COLOR_IDS = ['blue', 'deep', 'green', 'gold', 'orange', 'red'];
+const LOG_CUSTOM_MAX = 12;
+async function customLogKinds(env) {
+  const doc = await getDoc(env, 'config/workLog').catch(() => null);
+  const rows = Array.isArray(doc?.data?.kinds) ? doc.data.kinds : [];
+  return rows.filter((k) => k && typeof k.id === 'string' && typeof k.label === 'string'
+    && LOG_COLOR_IDS.includes(k.color));
+}
+
+/**
  * WHAT THE CLIENT IS ALLOWED TO SEE OF IT. This function is the privacy
  * boundary, and it is the whole design.
  *
@@ -3901,10 +3926,18 @@ function caseLogProjection(rows) {
     const d = (r && r.data) || {};
     const summary = typeof d.summary === 'string' ? d.summary.trim().slice(0, 400) : '';
     if (!summary) continue;
+    // A custom type ships the label and colour STAMPED ON THE ENTRY, still
+    // by naming the fields: the projection never reads the config, and a
+    // type removed later leaves every old entry rendering as it always did.
+    const custom = typeof d.kindLabel === 'string' && d.kindLabel;
     out.push({
       id: String((r && r.id) || ''),
       at: d.at || d.createdAt || null,
-      kind: LOG_KINDS.includes(d.kind) ? d.kind : 'call',
+      kind: LOG_KINDS.includes(d.kind) ? d.kind : (custom ? String(d.kind).slice(0, 40) : 'call'),
+      ...(custom ? {
+        label: String(d.kindLabel).slice(0, 24),
+        color: LOG_COLOR_IDS.includes(d.kindColor) ? d.kindColor : 'blue',
+      } : {}),
       who: typeof d.clinic === 'string' ? d.clinic.slice(0, 200) : '',
       summary,
     });
@@ -3984,8 +4017,12 @@ const WORK_LOG_NOTICES = {
  * THE THREE SILENCES LIVE IN HERE, not at the call site, so a test can prove
  * them by running this instead of by reading it.
  */
-function workLogNotice(kind, c, who) {
-  const tail = WORK_LOG_NOTICES[kind];
+function workLogNotice(kind, c, who, customLabel = '') {
+  // A custom type gets one generic sentence, composed ONLY from the label
+  // Eric stored through the validated kind-add action, never from the
+  // request that logs the entry. The base kinds keep their own words.
+  const tail = WORK_LOG_NOTICES[kind]
+    || (customLabel ? `is doing ${customLabel.toLowerCase()} work on your case.` : null);
   // A word this record does not know. The add action already folds those into
   // 'call' on the way in; this is the second lock on the same door.
   if (!tail) return null;
@@ -4031,21 +4068,65 @@ async function handleClinicCalls(request, env, url) {
     return json({
       items: rows.map((r) => ({ id: r.id, ...r.data }))
         .sort((a, b) => new Date(a.at || a.createdAt || 0) - new Date(b.at || b.createdAt || 0)),
+      // His own activity types ride along, so the page needs one fetch.
+      kinds: await customLogKinds(env),
     });
   }
   if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+
+  // A NEW ACTIVITY TYPE, from the dropdown itself (Eric, 2026-08-29). The
+  // label is validated here and the colour comes off a fixed allowlist, so
+  // nothing free-form ever reaches a pill's style attribute or a push
+  // notification but words he typed into this one gate.
+  if (body?.action === 'kind-add') {
+    const label = str(body?.label, 24).replace(/\s+/g, ' ');
+    if (!/^[A-Za-z][A-Za-z0-9 &-]{1,23}$/.test(label))
+      return json({ error: 'Name it in plain words: letters and numbers, up to 24 characters.' }, 400);
+    if (!LOG_COLOR_IDS.includes(body?.color))
+      return json({ error: 'Pick one of the colours.' }, 400);
+    const kid = label.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    if (kid.length < 2) return json({ error: 'Name it in plain words first.' }, 400);
+    const existing = await customLogKinds(env);
+    if (LOG_KINDS.includes(kid) || existing.some((k) => k.id === kid))
+      return json({ error: 'That activity type already exists.' }, 409);
+    if (existing.length >= LOG_CUSTOM_MAX)
+      return json({ error: `That is ${LOG_CUSTOM_MAX} of your own types already. Remove one you no longer use first.` }, 400);
+    await patchDoc(env, 'config/workLog',
+      { kinds: [...existing, { id: kid, label, color: body.color }] }, { mask: ['kinds'] });
+    return json({ ok: true, id: kid });
+  }
+  if (body?.action === 'kind-remove') {
+    const kid = String(body?.id || '');
+    if (LOG_KINDS.includes(kid)) return json({ error: 'The built-in types stay.' }, 400);
+    const existing = await customLogKinds(env);
+    // Entries already logged under it keep the label and colour they were
+    // stamped with at write time; nothing on any page goes blank.
+    await patchDoc(env, 'config/workLog',
+      { kinds: existing.filter((k) => k.id !== kid) }, { mask: ['kinds'] });
+    return json({ ok: true });
+  }
 
   if (body?.action === 'add') {
     const clinic = str(body?.clinic, 200);
     if (!clinic) return json({ error: 'Say who it was with.' }, 400);
     const at = str(body?.at, 40);
-    // An unrecognised word becomes 'call', which is what this record has held
-    // since the day it was written, so a stale page cannot file an entry under
-    // a category that does not exist.
-    const kind = LOG_KINDS.includes(body?.kind) ? body.kind : 'call';
+    // A base kind by id, a custom kind by id resolved against the config he
+    // manages, and anything else becomes 'call', which is what this record
+    // has held since the day it was written, so a stale page cannot file an
+    // entry under a category that does not exist. A custom entry is stamped
+    // with the type's label and colour so it renders forever, config or not.
+    let kind = 'call';
+    let kindLabel = '';
+    let kindColor = '';
+    if (LOG_KINDS.includes(body?.kind)) {
+      kind = body.kind;
+    } else {
+      const custom = (await customLogKinds(env)).find((k) => k.id === body?.kind);
+      if (custom) { kind = custom.id; kindLabel = custom.label; kindColor = custom.color; }
+    }
     await patchDoc(env, `${coll}/${crypto.randomUUID()}`, {
       clinic, phone: str(body?.phone, 40), parties: str(body?.parties, 200),
-      kind, summary: str(body?.summary, 400),
+      kind, kindLabel, kindColor, summary: str(body?.summary, 400),
       at: at ? new Date(at) : null, notes: '', createdAt: new Date(),
     }, { mustNotExist: true });
 
@@ -4059,7 +4140,7 @@ async function handleClinicCalls(request, env, url) {
       getDoc(env, `cases/${id}`).catch(() => null),
       getDoc(env, `users/${admin.uid}`).catch(() => null),
     ]);
-    const notice = workLogNotice(kind, c?.data, advocateName(profile));
+    const notice = workLogNotice(kind, c?.data, advocateName(profile), kindLabel);
     if (notice) {
       // ORDER: send FIRST, stamp the case SECOND, and the stamp sits inside
       // the success path so anything that throws on the way never lays one
@@ -4077,8 +4158,8 @@ async function handleClinicCalls(request, env, url) {
         link: `/case.html?id=${id}`,
       })
         // The case doc is client-readable, so this field was chosen to be
-        // something the client has just been told in words: one of four
-        // fixed kinds, and never his private line or his notes.
+        // something the client has just been told in words: a kind id, base
+        // or one of his own types, and never his private line or his notes.
         .then(() => patchDoc(env, `cases/${id}`, { logKindTold: kind }, { mask: ['logKindTold'] }))
         .catch(() => { /* the entry is logged either way */ });
     }

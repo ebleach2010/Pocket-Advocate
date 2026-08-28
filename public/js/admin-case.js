@@ -4785,6 +4785,21 @@ const LOG_KINDS = [
 // Worker cannot import either; tools/suites/worklog.mjs pins all three equal.
 const logKind = (id) => LOG_KINDS.find((k) => k.id === id) || LOG_KINDS[0];
 
+// HIS OWN ACTIVITY TYPES (Eric, 2026-08-29: "I want to add 'email' for
+// example but don't want to come here every time to add something new. I can
+// select the highlight color."). The colour ids resolve here against scheme
+// tokens; KEEP IN STEP with LOG_COLORS in case.js and LOG_COLOR_IDS in the
+// Worker (worklog.mjs pins the three equal). The labels are what the picker
+// shows him.
+const LOG_COLORS = {
+  blue: '--cyan', deep: '--magenta', green: '--green',
+  gold: '--gold', orange: '--orange', red: '--danger',
+};
+const LOG_COLOR_NAMES = {
+  blue: 'Blue', deep: 'Deep blue', green: 'Green',
+  gold: 'Gold', orange: 'Orange', red: 'Red',
+};
+
 /** The value an <input type="datetime-local"> wants, in local time. */
 function localInputValue(v) {
   const d = v ? new Date(v) : null;
@@ -4794,17 +4809,25 @@ function localInputValue(v) {
 }
 
 let callsKey = null;
+// The kind the select should land on after the next repaint: set when he
+// creates a type, so the thing he just made is the thing selected.
+let pickKindAfterLoad = '';
 function paintWorkLog(pane) {
   const load = async () => {
     let items = [];
+    let customs = [];
     try {
       const token = await user.getIdToken();
       const res = await fetch(`/api/clinic-calls?caseId=${encodeURIComponent(caseId)}`, {
         headers: { authorization: `Bearer ${token}` },
       });
-      if (res.ok) items = (await res.json()).items || [];
+      if (res.ok) {
+        const out = await res.json();
+        items = out.items || [];
+        customs = (out.kinds || []).filter((k) => k && k.id && k.label && LOG_COLORS[k.color]);
+      }
     } catch { /* an unreachable list still offers the form */ }
-    const key = JSON.stringify(items);
+    const key = JSON.stringify([items, customs]);
     if (key === callsKey && pane.querySelector('[data-calls-root]')) return;
     callsKey = key;
 
@@ -4825,6 +4848,14 @@ function paintWorkLog(pane) {
         ${items.map((i) => {
     const seen = !!String(i.summary || '').trim();
     const k = logKind(i.kind);
+    // A custom entry wears the label and colour stamped on it at write
+    // time, so a type he later removes never blanks an old row.
+    const custom = !LOG_KINDS.some((b) => b.id === i.kind)
+      && typeof i.kindLabel === 'string' && i.kindLabel.trim();
+    const cvar = LOG_COLORS[i.kindColor] || '--cyan';
+    const pillHtml = custom
+      ? `<span class="kind-pill" style="border-color:var(${cvar}); color:var(${cvar})">${esc(i.kindLabel.trim().toUpperCase())}</span>`
+      : `<span class="kind-pill ${esc(k.id)}">${esc(k.pill)}</span>`;
     return `
           <details class="faq" data-k="call-${esc(i.id)}">
             <summary>
@@ -4841,7 +4872,7 @@ function paintWorkLog(pane) {
                    template literal, and the first draft of it ended the
                    literal three words in. -->
               <span class="log-row">
-                <span class="kind-pill ${esc(k.id)}">${esc(k.pill)}</span>
+                ${pillHtml}
                 <span class="log-row-t">${esc(i.clinic || 'Someone')} · ${i.at ? new Date(i.at).toLocaleDateString() : 'no date'}</span>
                 <span class="log-seen${seen ? ' is-on' : ''}">${seen ? '👁 Shown to your client' : '🔒 Private, not shown'}</span>
               </span></summary>
@@ -4865,7 +4896,34 @@ function paintWorkLog(pane) {
             <label class="dim small">What was it
               <select data-c="kind">
                 ${LOG_KINDS.map((k) => `<option value="${esc(k.id)}">${esc(k.label)}</option>`).join('')}
+                ${customs.map((k) => `<option value="${esc(k.id)}">${esc(k.label)}</option>`).join('')}
+                <option value="__new">+ New activity type</option>
               </select></label>
+            <!-- HIS OWN TYPES, MADE HERE (Eric, 2026-08-29: "I want to add
+                 'email' for example but don't want to come here every time
+                 to add something new. I can select the highlight color.").
+                 Shown only while the dropdown sits on + New activity type. -->
+            <div data-newkind hidden style="margin:.4rem 0 .6rem; padding:.6rem; border:1px solid var(--line); border-radius:10px;">
+              <label class="dim small">Call it
+                <input type="text" data-nk-label maxlength="24" placeholder="e.g. Email"></label>
+              <p class="dim small" style="margin:.5rem 0 .2rem;">Highlight colour</p>
+              <div class="row" style="gap:.4rem; flex-wrap:wrap;">
+                ${Object.keys(LOG_COLORS).map((cid, n) => `
+                <label class="nk-chip" title="${esc(LOG_COLOR_NAMES[cid])}">
+                  <input type="radio" name="nk-color" value="${esc(cid)}"${n === 0 ? ' checked' : ''}>
+                  <span class="nk-swatch" style="background:var(${LOG_COLORS[cid]})"></span>
+                  <span class="dim small">${esc(LOG_COLOR_NAMES[cid])}</span>
+                </label>`).join('')}
+              </div>
+              <p style="margin:.6rem 0 0;"><button class="btn quiet tiny" data-nk-add>Add the type</button></p>
+              ${customs.length ? `
+              <p class="dim small" style="margin:.7rem 0 .2rem;">Your types. Removing one never touches anything already logged.</p>
+              ${customs.map((k) => `
+              <p class="row" style="gap:.4rem; align-items:center; margin:.15rem 0;">
+                <span class="kind-pill" style="border-color:var(${LOG_COLORS[k.color]}); color:var(${LOG_COLORS[k.color]})">${esc(k.label.toUpperCase())}</span>
+                <button class="btn ghost tiny" data-nk-remove="${esc(k.id)}" aria-label="Remove ${esc(k.label)}">Remove</button>
+              </p>`).join('')}` : ''}
+            </div>
             <label class="dim small">Who it was with
               <input type="text" data-c="clinic" placeholder="e.g. Valley Neurology, or their insurer"></label>
             <label class="dim small">When
@@ -4901,15 +4959,45 @@ function paintWorkLog(pane) {
         if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
         callsKey = null;
         load();
+        return out;
       } catch (e) {
         err.textContent = e.message;
         err.hidden = false;
         if (btn) btn.disabled = false;
+        return null;
       }
     };
 
+    // The new-type mini form, revealed only while the dropdown sits on
+    // + New activity type; anything he made lands back in the dropdown
+    // selected, so the next tap logs under it.
+    const kindSel = pane.querySelector('[data-c="kind"]');
+    const newBox = pane.querySelector('[data-newkind]');
+    if (kindSel && pickKindAfterLoad
+      && [...kindSel.options].some((o) => o.value === pickKindAfterLoad)) {
+      kindSel.value = pickKindAfterLoad;
+      pickKindAfterLoad = '';
+    }
+    const syncNewBox = () => { if (newBox) newBox.hidden = kindSel?.value !== '__new'; };
+    kindSel?.addEventListener('change', syncNewBox);
+    syncNewBox();
+    pane.querySelector('[data-nk-add]')?.addEventListener('click', async (e) => {
+      const label = pane.querySelector('[data-nk-label]')?.value.trim() || '';
+      if (!label) { alert('Call it something first.'); return; }
+      const color = pane.querySelector('input[name="nk-color"]:checked')?.value || 'blue';
+      const out = await post({ action: 'kind-add', label, color }, e.currentTarget);
+      if (out?.id) pickKindAfterLoad = out.id;
+    });
+    for (const b of pane.querySelectorAll('[data-nk-remove]')) {
+      b.addEventListener('click', () => {
+        pickKindAfterLoad = '__new'; // stay on the manager so he sees it gone
+        post({ action: 'kind-remove', id: b.dataset.nkRemove }, b);
+      });
+    }
+
     pane.querySelector('[data-call-add]')?.addEventListener('click', (e) => {
       const g = (n) => pane.querySelector(`[data-c="${n}"]`)?.value.trim() || '';
+      if (g('kind') === '__new') { alert('Finish the new type first, or pick one from the list.'); return; }
       if (!g('clinic')) { alert('Say who it was with first.'); return; }
       post({
         action: 'add', kind: g('kind'), clinic: g('clinic'), summary: g('summary'),

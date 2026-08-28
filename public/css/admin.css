@@ -1332,3 +1332,16 @@ main > p > a.small[href="/admin.html"] {
   color: var(--orange);
   border: 1px solid color-mix(in srgb, var(--orange) 40%, transparent);
 }
+
+/* His own activity types: the colour picker chips in the work log's new-type
+   form (Eric, 2026-08-29). The radio stays real for the keyboard and the
+   swatch wears the token it stands for; the checked ring is the ink colour
+   so it reads in every scheme. */
+.nk-chip { display: inline-flex; align-items: center; gap: .3rem; cursor: pointer; }
+.nk-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.nk-swatch {
+  width: 1.15rem; height: 1.15rem; border-radius: 50%;
+  border: 2px solid transparent; display: inline-block;
+}
+.nk-chip input:checked + .nk-swatch { border-color: var(--ink); }
+.nk-chip input:focus-visible + .nk-swatch { outline: 2px solid var(--cyan); outline-offset: 2px; }

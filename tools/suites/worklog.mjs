@@ -270,8 +270,10 @@ ck('L14 exactly two places in the Worker touch the log: his route and the projec
 // NEGATIVE CONTROL (run 2026-08-27): deleting the summary field from the add
 // action made this read
 //   FAIL  L15 the client line is written by hand, on the entry, by him
+// Pin updated 2026-08-29: the entry write grew the custom type's stamped
+// label and colour (kindLabel, kindColor) between kind and summary.
 ck('L15 the client line is written by hand, on the entry, by him',
-  /kind, summary: str\(body\?\.summary, 400\),/.test(WORKER)
+  /kind, kindLabel, kindColor, summary: str\(body\?\.summary, 400\),/.test(WORKER)
   && /data-call-summary=/.test(ADMIN) && /data-c="summary"/.test(ADMIN));
 // A save that did not send a summary must not blank a line already on a
 // client's page.
@@ -502,8 +504,15 @@ ck('L31 and drops an entry with no client line, exactly as the Worker does',
 // shipped Worker and driven with stubbed dependencies, and the assertions are
 // about what came out of it.
 const noticeTable = (WORKER.match(/const WORK_LOG_NOTICES = \{[\s\S]*?\n\};/) || [''])[0];
-const noticeFn = (WORKER.match(/function workLogNotice\(kind, c, who\) \{[\s\S]*?\n\}/) || [''])[0];
+// Signature updated 2026-08-29: the custom-type label rides in as a fourth
+// argument with a default, so the base-kind call sites did not move.
+const noticeFn = (WORKER.match(/function workLogNotice\(kind, c, who, customLabel = ''\) \{[\s\S]*?\n\}/) || [''])[0];
 const routeSrc = (WORKER.match(/async function handleClinicCalls\(request, env, url\) \{[\s\S]*?\n\}/) || [''])[0];
+// The route now resolves his own activity types (2026-08-29), so the lift
+// needs the resolver and its two constants or it dies mid-run.
+const customFn = (WORKER.match(/async function customLogKinds\(env\) \{[\s\S]*?\n\}/) || [''])[0];
+const colorIdsLine = (WORKER.match(/const LOG_COLOR_IDS = \[[^\n]*\];/) || [''])[0];
+const customMaxLine = (WORKER.match(/const LOG_CUSTOM_MAX = \d+;/) || [''])[0];
 const strFn = (WORKER.match(/function str\(v, n\) \{[\s\S]*?\n\}/) || [''])[0];
 const nameFn = (WORKER.match(/function firstName\(v\) \{[\s\S]*?\n\}/) || [''])[0];
 // The route names him to a client through this, not through firstName direct.
@@ -516,10 +525,12 @@ const advocateFn = (WORKER.match(/function advocateName\(profile\) \{[\s\S]*?\n\
 // A lift that has lost its target goes red rather than asserting nothing, the
 // same way L4 does for the projection.
 ck('L32 the notification lifts out of the shipped Worker, words and all',
-  !!noticeTable && !!noticeFn && !!routeSrc && !!strFn && !!nameFn && !!advocateFn,
+  !!noticeTable && !!noticeFn && !!routeSrc && !!strFn && !!nameFn && !!advocateFn
+  && !!customFn && !!colorIdsLine && !!customMaxLine,
   [!noticeTable && 'WORK_LOG_NOTICES', !noticeFn && 'workLogNotice',
     !routeSrc && 'handleClinicCalls', !strFn && 'str', !nameFn && 'firstName',
-    !advocateFn && 'advocateName']
+    !advocateFn && 'advocateName', !customFn && 'customLogKinds',
+    !colorIdsLine && 'LOG_COLOR_IDS', !customMaxLine && 'LOG_CUSTOM_MAX']
     .filter(Boolean).join(', '));
 
 /** The route, running, with everything it touches stubbed. `ctl.boom` makes a
@@ -552,11 +563,14 @@ const harness = (caseData, adminData = { name: 'Eric Bleach', role: 'admin' }) =
   const fn = new Function('deps', `
     const { requireAdmin, json, listDocs, getDoc, patchDoc, notifyUser, crypto } = deps;
     const LOG_KINDS = ${workerKinds || "['call']"};
+    ${colorIdsLine}
+    ${customMaxLine}
     ${strFn}
     ${nameFn}
     ${advocateFn}
     ${noticeTable}
     ${noticeFn}
+    ${customFn}
     ${routeSrc}
     return handleClinicCalls;
   `)(deps);
@@ -884,6 +898,84 @@ ck("L47c the tick is nowhere on the client's side, and the demo mirrors it",
   !/data-forms-back/.test(CLIENT)
   && /body\.action === 'forms-on-file'/.test(DEMO)
   && /formsOnFileAt: body\.on === true \? new Date\(\) : null/.test(DEMO));
+
+// ---- L48: his own activity types, run end to end (2026-08-29) -------------
+// Eric: "Make it so I can add my own 'activity' in the logs in the drop down
+// menu. I want to add 'email' for example but don't want to come here every
+// time to add something new. I can select the highlight color." The lifted
+// route is driven through the whole life of a type: made, refused, used,
+// stamped, announced, deduplicated.
+const H2 = harness({ ...OPEN_CASE });
+// NEGATIVE CONTROL (run 2026-08-29): skipping the config write made this
+// read
+//   FAIL  L48 he can make a type from the dropdown, and it lands in config  -- {"ok":true,"id":"email"}
+const madeK = await H2.post({ caseId: 'c1', action: 'kind-add', label: 'Email', color: 'gold' });
+ck('L48 he can make a type from the dropdown, and it lands in config',
+  madeK.code === 200 && madeK.obj.id === 'email'
+  && (H2.store.get('config/workLog')?.kinds || []).some((k) => k.id === 'email' && k.color === 'gold'),
+  JSON.stringify(madeK.obj));
+// NEGATIVE CONTROL (run 2026-08-29): disabling the allowlist gate made this
+// read
+//   FAIL  L48b ... -- {"ok":true,"id":"fax"}
+const badColor = await H2.post({ caseId: 'c1', action: 'kind-add', label: 'Fax', color: 'hotpink' });
+ck('L48b a colour off the allowlist is refused, so nothing free-form reaches a style',
+  badColor.code === 400 && /Pick one of the colours/.test(badColor.obj.error || ''),
+  JSON.stringify(badColor.obj));
+// NEGATIVE CONTROL (run 2026-08-29): dropping LOG_KINDS from the collision
+// test made this read
+//   FAIL  L48c a base kind cannot be shadowed  -- {"ok":true,"id":"call"}
+const shadow = await H2.post({ caseId: 'c1', action: 'kind-add', label: 'Call', color: 'red' });
+ck('L48c a base kind cannot be shadowed', shadow.code === 409, JSON.stringify(shadow.obj));
+// NEGATIVE CONTROL (run 2026-08-29): disabling the guard made this read
+//   FAIL  L48d and cannot be removed  -- {"ok":true}
+const keepBase = await H2.post({ caseId: 'c1', action: 'kind-remove', id: 'call' });
+ck('L48d and cannot be removed',
+  keepBase.code === 400 && /built-in types stay/.test(keepBase.obj.error || ''),
+  JSON.stringify(keepBase.obj));
+await H2.post({ caseId: 'c1', action: 'add', kind: 'email', clinic: 'Valley Neurology', summary: 'Emailed the records office.' });
+// NEGATIVE CONTROLS (run 2026-08-29): disabling the custom resolution made
+// L48e read kind:"call" with empty stamps, L48f fall back to the calls
+// sentence, and L48g count 0 email notices.
+const stamped = H2.written.find((w) => w.path.includes('/private/clinicCalls/items/'));
+ck('L48e an entry under his type is stamped with the label and colour',
+  !!stamped && stamped.data.kind === 'email'
+  && stamped.data.kindLabel === 'Email' && stamped.data.kindColor === 'gold',
+  JSON.stringify(stamped?.data || {}));
+ck('L48f and the client is told in one generic sentence built from that label',
+  H2.notified.some((n) => n.body === 'Eric is doing email work on your case.'),
+  H2.notified.map((n) => n.body).join(' | ') || '(silence)');
+await H2.post({ caseId: 'c1', action: 'add', kind: 'email', clinic: 'Valley Neurology', summary: 'Second email.' });
+ck('L48g the one-per-run rule holds for his types too',
+  H2.notified.filter((n) => /email work/.test(n.body)).length === 1,
+  `${H2.notified.filter((n) => /email work/.test(n.body)).length} email notices`);
+// NEGATIVE CONTROL (run 2026-08-29): letting the raw kind through made this
+// read
+//   FAIL  L48h ... -- {"kind":"zzz",...}
+const junkH = harness({ ...OPEN_CASE });
+await junkH.post({ caseId: 'c1', action: 'add', kind: 'zzz', clinic: 'X', summary: 's' });
+const junkEntry = junkH.written.find((w) => w.path.includes('/private/clinicCalls/items/'));
+ck('L48h a kind nobody defined still folds to call, with no stamp',
+  !!junkEntry && junkEntry.data.kind === 'call' && !junkEntry.data.kindLabel,
+  JSON.stringify(junkEntry?.data || {}));
+// The stamp travels: the projection ships it by name, and both pages take
+// the colour from a fixed token map with the label escaped, so nothing off
+// the network reaches a style attribute or unescaped HTML.
+// NEGATIVE CONTROLS (run 2026-08-29): renaming the projection's label field
+// made L48i red; taking the pill colour straight from i.color made L48j red;
+// renaming the demo's kind-add action made L48k red.
+ck('L48i the projection ships the stamped label and colour by name',
+  /label: String\(d\.kindLabel\)\.slice\(0, 24\),/.test(WORKER)
+  && /color: LOG_COLOR_IDS\.includes\(d\.kindColor\) \? d\.kindColor : 'blue',/.test(WORKER));
+ck('L48j both pages colour custom pills through the fixed map, label escaped',
+  /const cvar = LOG_COLORS\[i\.color\] \|\| '--cyan';/.test(CLIENT)
+  && /\$\{esc\(i\.label\.trim\(\)\.toUpperCase\(\)\)\}/.test(CLIENT)
+  && /blue: '--cyan', deep: '--magenta', green: '--green',/.test(CLIENT)
+  && /blue: '--cyan', deep: '--magenta', green: '--green',/.test(ADMIN)
+  && /\$\{esc\(i\.kindLabel\.trim\(\)\.toUpperCase\(\)\)\}/.test(ADMIN));
+ck('L48k and the demo mirrors the type store, the gates and the stamp',
+  /body\.action === 'kind-add'/.test(DEMO) && /body\.action === 'kind-remove'/.test(DEMO)
+  && /'blue', 'deep', 'green', 'gold', 'orange', 'red'/.test(DEMO)
+  && /kindLabel: rec\.kindLabel, kindColor: rec\.kindColor \|\| 'blue'/.test(DEMO));
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

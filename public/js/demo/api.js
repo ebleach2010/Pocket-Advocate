@@ -881,10 +881,14 @@ export function demoApi(role, store) {
         if (!k.startsWith(prefix)) continue;
         const summary = typeof v.summary === 'string' ? v.summary.trim().slice(0, 400) : '';
         if (!summary) continue;
+        // A custom type's label and colour ride the entry, mirroring the
+        // Worker's stamped-at-write rule (2026-08-29).
+        const custom = typeof v.kindLabel === 'string' && v.kindLabel;
         items.push({
           id: k.slice(prefix.length),
           at: v.at || null,
-          kind: kinds.includes(v.kind) ? v.kind : 'call',
+          kind: kinds.includes(v.kind) ? v.kind : (custom ? String(v.kind) : 'call'),
+          ...(custom ? { label: v.kindLabel, color: v.kindColor || 'blue' } : {}),
           who: typeof v.who === 'string' ? v.who.slice(0, 200) : '',
           summary,
         });
@@ -896,25 +900,58 @@ export function demoApi(role, store) {
       const cid = body.caseId || q.get('caseId') || '';
       const prefix = `cases/${cid}/private/clinicCalls/items/`;
       const kinds = ['call', 'appeal', 'investigation', 'appointment'];
+      // His own activity types, mirroring the Worker (2026-08-29): stored in
+      // one config doc, colours off the same allowlist, base ids protected.
+      const colorIds = ['blue', 'deep', 'green', 'gold', 'orange', 'red'];
+      const customKinds = () => {
+        const rows = store.docs.get('config/workLog')?.kinds;
+        return (Array.isArray(rows) ? rows : []).filter((k) => k && k.id && k.label
+          && colorIds.includes(k.color));
+      };
       if ((init.method || 'GET').toUpperCase() === 'GET') {
         const items = [...store.docs.entries()]
           .filter(([k]) => k.startsWith(prefix))
           .map(([k, v]) => ({ id: k.slice(prefix.length), ...v }))
           .sort((a, b) => new Date(a.at || a.createdAt || 0) - new Date(b.at || b.createdAt || 0));
-        return ok({ items });
+        return ok({ items, kinds: customKinds() });
       }
       await beat(400);
+      if (body.action === 'kind-add') {
+        const label = String(body.label || '').trim().replace(/\s+/g, ' ').slice(0, 24);
+        if (!/^[A-Za-z][A-Za-z0-9 &-]{1,23}$/.test(label))
+          return fail(400, 'Name it in plain words: letters and numbers, up to 24 characters.');
+        if (!colorIds.includes(body.color)) return fail(400, 'Pick one of the colours.');
+        const kid = label.toLowerCase().replace(/[^a-z0-9]+/g, '');
+        if (kid.length < 2) return fail(400, 'Name it in plain words first.');
+        const existing = customKinds();
+        if (kinds.includes(kid) || existing.some((k) => k.id === kid))
+          return fail(409, 'That activity type already exists.');
+        if (existing.length >= 12)
+          return fail(400, 'That is 12 of your own types already. Remove one you no longer use first.');
+        store.docs.set('config/workLog', { kinds: [...existing, { id: kid, label, color: body.color }] });
+        store.persist?.();
+        return ok({ ok: true, id: kid });
+      }
+      if (body.action === 'kind-remove') {
+        const kid = String(body.id || '');
+        if (kinds.includes(kid)) return fail(400, 'The built-in types stay.');
+        store.docs.set('config/workLog', { kinds: customKinds().filter((k) => k.id !== kid) });
+        store.persist?.();
+        return ok({ ok: true });
+      }
       // The client-safe half, rewritten from the record every time the record
-      // changes. Four fields, built by naming them, never by spreading the
-      // record; and an entry with no client line has no mirror at all rather
-      // than an empty one, so removing the line takes the row off their page.
+      // changes. Built by naming fields, never by spreading the record; and an
+      // entry with no client line has no mirror at all rather than an empty
+      // one, so removing the line takes the row off their page.
       const mirror = (id, rec) => {
         const key = `cases/${cid}/caseLog/${id}`;
         const summary = String(rec.summary || '').trim().slice(0, 400);
         if (!summary) { store.docs.delete(key); return; }
+        const custom = typeof rec.kindLabel === 'string' && rec.kindLabel;
         store.docs.set(key, {
           at: rec.at || rec.createdAt || null,
-          kind: kinds.includes(rec.kind) ? rec.kind : 'call',
+          kind: kinds.includes(rec.kind) ? rec.kind : (custom ? String(rec.kind) : 'call'),
+          ...(custom ? { kindLabel: rec.kindLabel, kindColor: rec.kindColor || 'blue' } : {}),
           who: String(rec.clinic || '').slice(0, 200),
           summary,
         });
@@ -938,9 +975,20 @@ export function demoApi(role, store) {
       }
       if (body.action === 'add') {
         const id = `c-${Math.random().toString(36).slice(2, 8)}`;
+        // Base kind by id, custom kind resolved and STAMPED, junk folds to
+        // 'call': the Worker's rule, mirrored.
+        let kind = 'call';
+        let kindLabel = '';
+        let kindColor = '';
+        if (kinds.includes(body.kind)) {
+          kind = body.kind;
+        } else {
+          const cu = customKinds().find((k) => k.id === body.kind);
+          if (cu) { kind = cu.id; kindLabel = cu.label; kindColor = cu.color; }
+        }
         const rec = {
           clinic: body.clinic || '', phone: body.phone || '', parties: body.parties || '',
-          kind: kinds.includes(body.kind) ? body.kind : 'call',
+          kind, kindLabel, kindColor,
           summary: String(body.summary || '').slice(0, 400),
           at: body.at ? new Date(body.at) : null, notes: '', createdAt: new Date(),
         };

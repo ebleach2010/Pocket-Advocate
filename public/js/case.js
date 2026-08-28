@@ -2053,6 +2053,16 @@ function esc(s) {
 const LOG_PILLS = {
   call: 'CALL', appeal: 'APPEAL', investigation: 'INVESTIGATION', appointment: 'APPOINTMENT',
 };
+// The advocate's own activity types arrive on each entry as a label and a
+// colour id (never free-form CSS): the id resolves here against a fixed map
+// of scheme tokens, so a custom pill is legible in every scheme and nothing
+// from the network reaches a style attribute except through this lookup.
+// KEEP IN STEP with LOG_COLORS in admin-case.js and LOG_COLOR_IDS in the
+// Worker; tools/suites/worklog.mjs pins the three equal.
+const LOG_COLORS = {
+  blue: '--cyan', deep: '--magenta', green: '--green',
+  gold: '--gold', orange: '--orange', red: '--danger',
+};
 
 async function mountCaseLog(host, c) {
   const full = !!c.fullAccess;
@@ -2090,10 +2100,15 @@ async function mountCaseLog(host, c) {
         <ul class="filelist">
           ${items.map((i) => {
     const at = i.at ? new Date(i.at) : null;
+    const custom = !LOG_PILLS[i.kind] && typeof i.label === 'string' && i.label.trim();
     const kind = LOG_PILLS[i.kind] ? i.kind : 'call';
+    const cvar = LOG_COLORS[i.color] || '--cyan';
+    const pill = custom
+      ? `<span class="kind-pill" style="border-color:var(${cvar}); color:var(${cvar})">${esc(i.label.trim().toUpperCase())}</span>`
+      : `<span class="kind-pill ${kind}">${LOG_PILLS[kind]}</span>`;
     return `
             <li>
-              <span class="fname"><span class="kind-pill ${kind}">${LOG_PILLS[kind]}</span>
+              <span class="fname">${pill}
                 <span class="logline">${esc(i.summary)}${i.who ? `<span class="dim"> · ${esc(i.who)}</span>` : ''}</span></span>
               <span class="fmeta">${at && !Number.isNaN(at.getTime()) ? esc(fmt.format(at)) : ''}</span>
             </li>`;
