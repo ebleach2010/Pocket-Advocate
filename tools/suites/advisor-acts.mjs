@@ -52,23 +52,66 @@ const { validateAction, ALLOWED, DENYLIST, tierOf, dispatchFor, actionTools, tab
  * can drift apart while both look right.
  */
 const SLABS = [];
-const lifted = (name, src) => { SLABS.push([name, src || '']); return src || ''; };
+/**
+ * EVERY LIFT DECLARES WHAT LIES BEYOND ITS END, and the argument for that came
+ * from the -forms branch on 2026-08-28, which I think is right and which lands
+ * on three of the eight below.
+ *
+ * A tail assertion asks "does this slab end on the line it should?". For a
+ * capture whose closing anchor is distinctive that has teeth. For one whose
+ * anchor is generic it is close to tautological: renderActCard's tail was
+ * '    });\n  }' and that pair occurs after every addEventListener in the
+ * function, so a capture ending at a LATER '\n  }' would have satisfied it
+ * just as happily. runQuestion's was '  }\n}'. adminAssetGate's was ';', which
+ * is the regex's own closing character and could not fail at all.
+ *
+ * The question with teeth in those cases is not where the slab ends, it is
+ * what should be OUTSIDE it. So each lift names a sentinel: a distinctive
+ * string from past its intended end. It must not appear INSIDE the slab, which
+ * is the swallow check, applied to all eight by construction rather than to
+ * the two I had previously written out by hand in a list I maintained myself.
+ *
+ * AND THE SENTINEL MUST ITSELF BE FOUND, at or after the slab's end, in the
+ * source the slab came from. Without that half, a sentinel with a typo in it
+ * is absent from the slab for the wrong reason and the check passes on it,
+ * which is the whole class of bug this exchange has been about. `hay` is
+ * carried per lift for exactly that.
+ *
+ * The three tails named above are set to null below rather than kept as
+ * decoration. A check that reads like a check and asserts nothing is the thing
+ * A29 turned out to be; leaving one in place while a better one stands beside
+ * it would be repeating that on purpose.
+ */
+const lifted = (name, hay, src, sentinel) => {
+  SLABS.push({ name, hay, src: src || '', sentinel });
+  return src || '';
+};
 
 const LIFT = {
-  handleClientAlert: lifted('handleClientAlert',
-    (W.match(/async function handleClientAlert\(request, env\) \{[\s\S]*?\n\}/) || [''])[0]),
-  alertConsts: lifted('alertConsts',
-    (W.match(/const ALERT_MIN_GAP_MS = [^;]+;\nconst ALERT_MAX_PER_DAY = [^;]+;\nconst ALERT_TRAIL_KEEP = [^;]+;/) || [''])[0]),
-  adminAssetGate: lifted('adminAssetGate', (W.match(/const ADMIN_ASSET =\n[^;]+;/) || [''])[0]),
-  runQuestion: lifted('runQuestion', (ADV.match(/export async function runQuestion[\s\S]*?\n\}/) || [''])[0]),
-  actDispatch: lifted('actDispatch',
-    (PANELSRC.match(/export function actDispatch\(act\) \{[\s\S]*?\n\}/) || [''])[0]),
-  carryAct: lifted('carryAct',
-    (PANELSRC.match(/async function carryAct\(act\) \{[\s\S]*?\n  \}/) || [''])[0]),
-  renderActCard: lifted('renderActCard',
-    (PANELSRC.match(/function renderActCard\(act\) \{[\s\S]*?\n  \}/) || [''])[0]),
-  handleAct: lifted('handleAct',
-    (PANELSRC.match(/async function handleAct\(act, actError\) \{[\s\S]*?\n  \}/) || [''])[0]),
+  handleClientAlert: lifted('handleClientAlert', W,
+    (W.match(/async function handleClientAlert\(request, env\) \{[\s\S]*?\n\}/) || [''])[0],
+    'async function releaseHold(env, session)'),
+  alertConsts: lifted('alertConsts', W,
+    (W.match(/const ALERT_MIN_GAP_MS = [^;]+;\nconst ALERT_MAX_PER_DAY = [^;]+;\nconst ALERT_TRAIL_KEEP = [^;]+;/) || [''])[0],
+    'async function handleClientAlert(request, env)'),
+  adminAssetGate: lifted('adminAssetGate', W,
+    (W.match(/const ADMIN_ASSET =\n[^;]+;/) || [''])[0],
+    'const DEMO_ASSET ='),
+  runQuestion: lifted('runQuestion', ADV,
+    (ADV.match(/export async function runQuestion[\s\S]*?\n\}/) || [''])[0],
+    'export async function runDraft('),
+  actDispatch: lifted('actDispatch', PANELSRC,
+    (PANELSRC.match(/export function actDispatch\(act\) \{[\s\S]*?\n\}/) || [''])[0],
+    'const SECTION_ICON_RAW = {'),
+  carryAct: lifted('carryAct', PANELSRC,
+    (PANELSRC.match(/async function carryAct\(act\) \{[\s\S]*?\n  \}/) || [''])[0],
+    'async function actFinish(act)'),
+  renderActCard: lifted('renderActCard', PANELSRC,
+    (PANELSRC.match(/function renderActCard\(act\) \{[\s\S]*?\n  \}/) || [''])[0],
+    'async function handleAct(act, actError)'),
+  handleAct: lifted('handleAct', PANELSRC,
+    (PANELSRC.match(/async function handleAct\(act, actError\) \{[\s\S]*?\n  \}/) || [''])[0],
+    'function renderDraftCard(text)'),
 };
 
 /**
@@ -786,13 +829,23 @@ const TABLE = {
     handleClientAlert: "  return json({ ok: true, sent: text, at: now.toISOString() });\n}",
     actDispatch: "  return act.tier === 'desk' ? 'run' : 'card';\n}",
     carryAct: '    return out;\n  }',
-    renderActCard: '    });\n  }',
     handleAct: '    renderActCard(act);\n  }',
-    runQuestion: '  }\n}',
-    adminAssetGate: ';',
+    // NULL, DELIBERATELY, all four. These captures close on an anchor that is
+    // not distinctive, so a tail assertion on them agrees with a slab that ran
+    // on to a later occurrence just as readily as with a correct one:
+    //   renderActCard  '    });\n  }'  follows every addEventListener in it
+    //   runQuestion    '  }\n}'        is two closing braces
+    //   adminAssetGate ';'             is the regex's own last character and
+    //                                  could not have failed at all
+    //   alertConsts    its last line carries ALERT_TRAIL_KEEP, which A22d owns
+    // Their sentinels carry them instead, which is a question with teeth: not
+    // where the slab ends, but what has to lie outside it.
+    renderActCard: null,
+    runQuestion: null,
+    adminAssetGate: null,
     alertConsts: null,
   };
-  const LIFTS = SLABS.map(([n, src]) => [n, src, TAIL[n]]);
+  const LIFTS = SLABS.map(({ name, src }) => [name, src, TAIL[name]]);
   const short = LIFTS.filter(([, src]) => src.length < 60).map(([n]) => n);
   // NEGATIVE CONTROL (run 2026-08-28), two of them:
   //   renaming carryAct in the shipped panel
@@ -820,31 +873,66 @@ const TABLE = {
   //   at 2,453 characters, the failure in the other direction
   //     FAIL  A30b and ends exactly where that function ends, not later  -- handleClientAlert
   ck('A30b and ends exactly where that function ends, not later', !ranOn.length, ranOn.join(', '));
-  // And carries nobody else's header. A slab that swallowed the next function
-  // fails here even if its tail happened to match.
-  const HEADERS = ['async function carryAct(', 'function renderActCard(', 'async function handleAct(',
-    'async function actFinish(', 'function renderDraftCard(', 'async function handleClientAlert(',
-    'async function releaseHold('];
-  const swallowed = LIFTS.filter(([name, src]) =>
-    HEADERS.filter((h) => src.includes(h)).some((h) => !h.includes(`${name}(`))).map(([n]) => n);
-  // NEGATIVE CONTROL (run 2026-08-28), two of them:
-  //   the same loosened renderActCard anchor
+  // AND WHAT SHOULD LIE BEYOND IT REALLY DOES. Each lift names a sentinel from
+  // past its intended end; finding that string INSIDE the capture means the
+  // slab ran on and took it. This replaces a hand-written list of neighbouring
+  // headers, which covered whichever neighbours I had remembered to type: a
+  // per-lift declaration covers all eight by construction and cannot silently
+  // miss one.
+  const swallowed = SLABS.filter(({ src, sentinel }) => sentinel && src.includes(sentinel))
+    .map(({ name }) => name);
+  // NEGATIVE CONTROL (run 2026-08-28), one run-on per lift whose tail rule is
+  // now null, because for those three this check is the ONLY thing standing:
+  //   renderActCard's anchor loosened from '\n  }' to '\n}'  (2,875 -> 11,769)
   //     FAIL  A30c and swallowed no other function on the way  -- renderActCard
-  //   the greedy handleClientAlert slab, which swallowed releaseHold and every
-  //   function after it
-  //     FAIL  A30c and swallowed no other function on the way  -- handleClientAlert
-  // The early-truncation break above does NOT show up here, and should not:
-  // a slab that stops short has swallowed nothing. That is A30b's job alone.
+  //   runQuestion's slab made greedy                          (8,227 -> 49,952)
+  //     FAIL  A30c and swallowed no other function on the way  -- runQuestion
+  //   adminAssetGate run on to the next constant                 (141 -> 583)
+  //     FAIL  A30c and swallowed no other function on the way  -- adminAssetGate
+  //
+  // THE LAST TWO ARE NOT HYPOTHETICAL AND WERE NOT COVERED BEFORE. Measured
+  // rather than assumed, by running both captures against the checks as they
+  // stood an hour ago:
+  //   adminAssetGate 583 chars   PASSES old A30b   old A30c: PASSES
+  //   runQuestion  49,952 chars  PASSES old A30b   old A30c: PASSES
+  // The old tail for adminAssetGate was ';', which a run-on ends with too, and
+  // the old header list held function names only, so a slab swallowing a CONST
+  // matched nothing in it. Both would have run on in silence.
+  //
+  // An early-truncation break does NOT show up here, and should not: a slab
+  // that stops short has swallowed nothing. That is A30b's job, on the lifts
+  // whose tails still have teeth.
   ck('A30c and swallowed no other function on the way', !swallowed.length, swallowed.join(', '));
-  // EVERY REGISTERED SLAB IS ACCOUNTED FOR. A new lift added to the registry
-  // without a TAIL entry would otherwise skip A30b in silence, which is the
-  // same "passes by asserting nothing" this whole block exists to end.
-  const unowned = SLABS.map(([n]) => n).filter((n) => !(n in TAIL));
-  // NEGATIVE CONTROL (run 2026-08-28): deleting the runQuestion line from TAIL
-  // made this read
-  //   FAIL  A30d every registered slab has a tail rule, even if that rule is none  -- runQuestion
-  ck('A30d every registered slab has a tail rule, even if that rule is none',
-    !unowned.length, unowned.join(', '));
+  // EVERY REGISTERED SLAB IS ACCOUNTED FOR, twice over. A new lift with no
+  // TAIL entry would skip A30b in silence; one with no sentinel would skip
+  // A30c the same way, and that is the "passes by asserting nothing" shape
+  // this whole block exists to end.
+  const unowned = SLABS.map(({ name }) => name).filter((n) => !(n in TAIL));
+  const unguarded = SLABS.filter(({ sentinel }) => !sentinel).map(({ name }) => name);
+  // AND THE SENTINEL MUST ITSELF BE FOUND, at or after the slab's end, in the
+  // source that slab came from. Without this half a sentinel with a typo in it
+  // is absent from the capture for the wrong reason and A30c passes on it,
+  // which is precisely the bug class this exchange has been chasing. `hay` is
+  // carried per lift so the question can be asked at all.
+  const misplaced = SLABS.filter(({ hay, src, sentinel }) => {
+    if (!sentinel || !src) return false;
+    const at = hay.indexOf(sentinel);
+    return at < 0 || at < hay.indexOf(src) + src.length;
+  }).map(({ name }) => name);
+  // NEGATIVE CONTROL (run 2026-08-28): removing adminAssetGate's sentinel
+  // argument made this read
+  //   FAIL  A30d every registered slab declares a tail rule and a sentinel  -- adminAssetGate: no sentinel
+  ck('A30d every registered slab declares a tail rule and a sentinel',
+    !unowned.length && !unguarded.length,
+    [...unowned.map((n) => `${n}: no tail rule`), ...unguarded.map((n) => `${n}: no sentinel`)].join(', '));
+  // NEGATIVE CONTROL (run 2026-08-28), both halves of the claim:
+  //   a typo in handleClientAlert's sentinel, so the string exists nowhere
+  //     FAIL  A30d2 and every sentinel is real, and really lies beyond its slab  -- handleClientAlert
+  //   alertConsts pointed at 'const ADMIN_ASSET =', which is real but sits
+  //   EARLIER in the file, so it proves nothing about where that slab stops
+  //     FAIL  A30d2 ... -- alertConsts
+  ck('A30d2 and every sentinel is real, and really lies beyond its slab',
+    !misplaced.length, misplaced.join(', '));
   // AND THE REGISTRY CANNOT QUIETLY SHRINK. A lift deleted, or one that stops
   // being registered, takes its checks with it and nothing else would say so.
   //
