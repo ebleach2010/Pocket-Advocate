@@ -467,6 +467,21 @@ export function seed({ set, file }) {
     kind: 'investigation', summary: '',
     at: days(2), createdAt: days(5), notes: '',
   });
+  // A second entry on the SAME day as c2, so the day-by-day view (Eric,
+  // 2026-08-29) has a heading holding two rows on camera, not only
+  // one-entry days.
+  set(`cases/${FULL_ID}/private/clinicCalls/items/c3`, {
+    clinic: 'Cascade Health, appeals department',
+    phone: '', parties: 'me',
+    kind: 'appeal',
+    summary: 'Filed your first-level appeal against the MRI denial.',
+    at: days(2), createdAt: days(2),
+    notes: 'Filed by fax and portal both; confirmation CH-4471. Their clock is 30 days.',
+  });
+  set(`cases/${FULL_ID}/caseLog/c3`, {
+    at: days(2), kind: 'appeal', who: 'Cascade Health, appeals department',
+    summary: 'Filed your first-level appeal against the MRI denial.',
+  });
 
   // The advisor state for this case: an assessment, and an appeal letter
   // already drafted and waiting to be filed against a live deadline. All of

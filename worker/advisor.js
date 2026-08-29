@@ -3045,6 +3045,44 @@ What this case has paid, and what it has cost him so far: ${dollars(econ.paidCen
 }
 
 /**
+ * THE WORK LOG (Eric, 2026-08-29: "Make it so the advisor gathers
+ * information from the things I log, and forms opinions around those,
+ * too."). Every entry he files: calls, appeals, investigations,
+ * appointments, and his own types, with who it was with, the client line
+ * and his private notes. Capped at the newest 60 entries and the notes at
+ * 280 characters each, so a long case cannot flood the prompt; the pattern
+ * the advisor is asked to read lives in the recent entries anyway.
+ */
+async function loadWorkLog(env, kind, id) {
+  if (kind !== 'case') return [];
+  const rows = await listDocs(env, `cases/${id}/private/clinicCalls/items`, { pageSize: 200 })
+    .catch(() => []);
+  return rows
+    .map((r) => (r && r.data) || {})
+    .sort((a, b) => new Date(a.at || a.createdAt || 0) - new Date(b.at || b.createdAt || 0))
+    .slice(-60);
+}
+
+function workLogNote(log) {
+  if (!Array.isArray(log) || !log.length) return '';
+  const one = (s, max) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, max);
+  const lines = log.map((e) => {
+    const d = new Date(e.at || e.createdAt || 0);
+    const day = Number.isFinite(d.getTime()) && d.getTime() ? d.toISOString().slice(0, 10) : 'undated';
+    const label = one(e.kindLabel, 24) || one(e.kind, 24) || 'call';
+    const parts = [day, label];
+    if (e.clinic) parts.push(`with ${one(e.clinic, 120)}`);
+    if (e.summary) parts.push(`client line: ${one(e.summary, 200)}`);
+    if (e.notes) parts.push(`his notes: ${one(e.notes, 280)}`);
+    return `- ${parts.join(' | ')}`;
+  });
+  return `
+
+ERIC'S WORK LOG, oldest first - what he has actually done on this case, in his own words. Read it as evidence exactly like the chat, and form opinions from the PATTERN of it too: a clinic called repeatedly with nothing to show is an escalation waiting to be named, an appeal filed with no answer past its usual clock is a follow-up he should make, a line of work that simply stopped is worth asking him why. Where the log and the chat disagree about what has actually been done, the log wins: it is his own record. His notes here are his private record: use them freely to advise HIM, but in anything drafted for the client, refer only to work the client line already told them about.
+${lines.join('\n')}`;
+}
+
+/**
  * Eric's hand-written working line, when he has set one. Pressing his own
  * line onto the folder is the most explicit case-level call he can make, and
  * the analysis used to never see it: the advisor kept producing and
@@ -3120,7 +3158,7 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     const runT0 = Date.now();
     await diagLog(env, { ev: 'start', kind, auto, skipMedia, hasDeadline: !!deadlineAt });
     await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date(), stage: 'starting' });
-    const [rows, state, knowledge, style, qa, effort, econ] = await Promise.all([
+    const [rows, state, knowledge, style, qa, effort, econ, worklog] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
       loadKnowledge(env),
@@ -3128,6 +3166,7 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       loadQa(env, kind, id),
       loadEffort(env),
       loadEconomics(env, kind, id),
+      loadWorkLog(env, kind, id),
     ]);
     const chat = transcript(rows);
     // NOTE: the empty-thread bail moved BELOW the media walk. Bailing here
@@ -3516,6 +3555,7 @@ ${style.voice}` : ''}` || ' ' }],
               + dxOverrideNote(state)
               + bookkeepingNote(state, { delta: passType === 'delta' })
               + economicsNote(econ)
+              + workLogNote(worklog)
               + mediaNote(media),
           },
           ...media.blocks,
@@ -3837,7 +3877,7 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
   const path = `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state/qa/${qaId}`;
   const override = isOverride(question);
   try {
-    const [rows, state, knowledge, style, qa, econ] = await Promise.all([
+    const [rows, state, knowledge, style, qa, econ, worklog] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
       loadKnowledge(env),
@@ -3847,6 +3887,7 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
       // never existed on the advisor's side.
       loadQa(env, kind, id, { skip: qaId }),
       loadEconomics(env, kind, id),
+      loadWorkLog(env, kind, id),
     ]);
     const chat = transcript(rows);
     let fileBlocks = [];
@@ -3943,7 +3984,7 @@ ${SELF_NOTE}` },
               state?.data.draft ? `\n<your_current_draft>\nA reply you drafted for Eric to send, not yet sent. He may be asking about it.\n${state.data.draft}\n</your_current_draft>\n` : ''
             }${qaBlock(qa)}${
               qa.length ? '\nThis is one continuing conversation. His question below may lean on it; do not repeat what you already told him there.\n' : ''
-            }${economicsNote(econ)}${fileNote}\nEric asks: ${question}`,
+            }${economicsNote(econ)}${workLogNote(worklog)}${fileNote}\nEric asks: ${question}`,
           },
           ...fileBlocks,
         ],

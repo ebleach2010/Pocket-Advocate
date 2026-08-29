@@ -1873,6 +1873,19 @@ body.lightbox-open { overflow: hidden; }
   gap: 2px; padding: .25rem 0;
 }
 .folder-clock .fc-day { font-size: .6rem; opacity: .8; white-space: nowrap; }
+/* The work log reads day by day now (Eric, 2026-08-29: "separate logged
+   things by day so it's not just one long string of logged activities"),
+   on his panel and the client's alike: a quiet dated rule wherever the
+   date changes. list-style off because the client's copy is an <li>. */
+.log-day {
+  display: block; list-style: none;
+  margin: .9rem 0 .3rem; padding-top: .55rem;
+  border-top: 1px solid var(--line);
+  font: 600 .68rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .12em; text-transform: uppercase;
+  opacity: .75;
+}
+
 /* THE HANDS-OFF HOURS CARD, front and center on the client's case page
    (Eric, 2026-08-29: "the client needs to be aware when I'm reaching my
    hours rough limit... Front and center."). The meter leans warmer as the

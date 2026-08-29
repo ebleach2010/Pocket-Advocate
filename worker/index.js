@@ -1765,7 +1765,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-diag-off';
+const BUILD_TAG = 'v2026-08-29-log-days-csv';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1773,7 +1773,7 @@ const BUILD_TAG = 'v2026-08-29-diag-off';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.58';
+const VERSION = '2.59';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -4140,7 +4140,10 @@ async function handleClinicCalls(request, env, url) {
   const coll = `cases/${id}/private/clinicCalls/items`;
 
   if (request.method === 'GET') {
-    const rows = await listDocs(env, coll, { pageSize: 50 }).catch(() => []);
+    // 200, not 50: the page renders the log IN TOTALITY now, day by day,
+    // and the CSV export is built from this same answer (Eric, 2026-08-29:
+    // "the things that I logged in totality"). Same size /api/case-log uses.
+    const rows = await listDocs(env, coll, { pageSize: 200 }).catch(() => []);
     return json({
       items: rows.map((r) => ({ id: r.id, ...r.data }))
         .sort((a, b) => new Date(a.at || a.createdAt || 0) - new Date(b.at || b.createdAt || 0)),

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.58';
+export const VERSION = '2.59';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '2.58';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // Three log asks (Eric, 2026-08-29): the advisor reads the work log and
+    // forms opinions from its pattern, both log views read day by day, and
+    // the whole log exports as a CSV with the clock's three figures.
+    version: '2.59',
+    quiet: true,
+    client: [
+      'The work log on your case page now reads day by day, with a dated heading wherever the date changes, instead of one long list.',
+    ],
+  },
   {
     // Cleanup: the reprice diag comes off /api/version now the $3,500 is
     // stored; the cron heartbeat readout stays. Admin plumbing only.

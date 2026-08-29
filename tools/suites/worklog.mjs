@@ -1035,6 +1035,84 @@ ck('L48o the slider is real, stores h plus digits, demo takes the same shape',
   && /const color = `h\$\{Number\(hueEl\?\.value\) \|\| 0\}`;/.test(ADMIN)
   && /const validColor = \(c\) => colorIds\.includes\(c\)/.test(DEMO));
 
+// ---- L49 and on: the advisor reads the log, the days, and the CSV --------
+// Eric, 2026-08-29: "Make it so the advisor gathers information from the
+// things I log, and forms opinions around those, too. Also, separate logged
+// things by day... And it can be exported as a CSV so at the end of a case I
+// can export total hours worked with the things that I logged in totality."
+//
+// NEGATIVE CONTROLS (run 2026-08-29), one mutation per claim, all restored:
+//   notes line dropped from the note fn -> L49 red
+//   study's loader gutted (shadow array) -> L49b red, after the counted fix
+//   day headings dropped from the panel  -> L50 red
+//   CSV stops doubling quotes            -> L51 red
+//   BOM dropped from the download        -> L51b red
+const ADVISOR = read('worker/advisor.js');
+{
+  // The note the advisor reads, LIFTED AND RUN: labels win over ids, his
+  // notes ride truncated, the pattern instruction and the client guard are
+  // the shipped words, and an empty log says nothing at all.
+  const src = (ADVISOR.match(/function workLogNote\([\s\S]*?\n\}/) || [''])[0];
+  let workLogNote = null;
+  try { workLogNote = new Function(`${src}; return workLogNote;`)(); } catch { /* red below */ }
+  const out = workLogNote ? workLogNote([
+    { at: '2026-08-20T15:00:00Z', kind: 'call', clinic: 'Valley Neurology', summary: 'Chased the notes.', notes: 'N'.repeat(500) },
+    { at: '2026-08-21T15:00:00Z', kind: 'em', kindLabel: 'Email', clinic: 'Their insurer', notes: 'asked for the denial letter' },
+  ]) : '';
+  ck('L49 the advisor note lifts, runs, and carries the log in his words',
+    !!workLogNote
+    && /2026-08-20 \| call \| with Valley Neurology \| client line: Chased the notes\./.test(out)
+    && /2026-08-21 \| Email \| with Their insurer/.test(out)
+    && /his notes: N{280}(?!N)/.test(out)
+    && /form opinions from the PATTERN/.test(out)
+    && /refer only to work the client line already told them about/.test(out)
+    && workLogNote([]) === '');
+  // COUNTED on both halves. The first draft tested the loader with a bare
+  // .test(), and gutting the STUDY's loader while the ask kept its own
+  // passed clean - a shadowed `const worklog = []` satisfied the fold-site
+  // count too. Two loads and two folds, exactly.
+  ck('L49b the study and the ask both load it, from the private record',
+    (ADVISOR.match(/loadWorkLog\(env, kind, id\),/g) || []).length === 2
+    && (ADVISOR.match(/workLogNote\(worklog\)/g) || []).length === 2
+    && !/const worklog = \[\]/.test(ADVISOR)
+    && /`cases\/\$\{id\}\/private\/clinicCalls\/items`/.test(ADVISOR));
+}
+ck('L50 both log pages read day by day, with the dated rule styled once',
+  /const dayGroups = \[\];/.test(ADMIN) && /class="log-day"/.test(ADMIN)
+  && /toLocaleTimeString/.test(ADMIN)
+  && /class="log-day"/.test(CLIENT)
+  && /\.log-day \{/.test(CSS));
+{
+  // The CSV, LIFTED AND RUN against a cell carrying a comma, a quote and a
+  // newline, because Excel-safety is exactly the thing a regex cannot vouch
+  // for. The totals ride at the top in both shapes.
+  const kindsSrc = (ADMIN.match(/const LOG_KINDS = \[[\s\S]*?\n\];/) || [''])[0];
+  const src = (ADMIN.match(/function workLogCsv\([\s\S]*?\n\}/) || [''])[0];
+  let workLogCsv = null;
+  try {
+    workLogCsv = new Function(`${kindsSrc}
+      const logKind = (id) => LOG_KINDS.find((k) => k.id === id) || LOG_KINDS[0];
+      ${src}; return workLogCsv;`)();
+  } catch { /* red below */ }
+  const csv = workLogCsv ? workLogCsv(
+    [{ at: '2026-08-20T15:00:00Z', kind: 'call', clinic: 'Records, "central" office', summary: 'line one\nline two', notes: 'ok' }],
+    { reviewSeconds: 79200, tierSeconds: 9000, totalSeconds: 88200 },
+    { client: 'Jordan Avery', caseId: 'abc', exportedAt: '2026-08-29T00:00:00Z' },
+  ) : '';
+  ck('L51 the CSV lifts, runs, quotes the hard cells, and carries the hours',
+    !!workLogCsv
+    && csv.startsWith('"Client","Jordan Avery"')
+    && csv.includes('"Case review hours","22h 0m","22.00"')
+    && csv.includes('"Hands-Off hours","2h 30m","2.50"')
+    && csv.includes('"Total hours worked","24h 30m","24.50"')
+    && csv.includes('"Records, ""central"" office"')
+    && csv.includes('"line one\nline two"')
+    && csv.includes('"Date","Type","With","Client line","Private notes","Phone","Who was on it"'));
+  ck('L51b the download is wired with a BOM, off the button on the panel',
+    /data-log-csv/.test(ADMIN) && /'\\ufeff' \+ csv/.test(ADMIN)
+    && /text\/csv;charset=utf-8/.test(ADMIN));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

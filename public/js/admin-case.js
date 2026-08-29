@@ -4895,6 +4895,39 @@ function localInputValue(v) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/**
+ * THE CSV (Eric, 2026-08-29: "it can be exported as a CSV so at the end of
+ * a case I can export total hours worked with the things that I logged in
+ * totality"). Pure and module-level so the suite lifts and RUNS it against
+ * entries carrying commas, quotes and newlines rather than trusting a
+ * regex. Excel-safe: every cell quoted, quotes doubled, CRLF rows; the
+ * click handler prepends a BOM so Excel reads it as UTF-8. The hours ride
+ * at the top in both shapes anybody wants them in: "22h 0m" for a person,
+ * a decimal for a spreadsheet formula.
+ */
+function workLogCsv(items, totals, meta) {
+  const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const row = (r) => r.map(cell).join(',');
+  const hm = (s) => `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  const dec = (s) => (s / 3600).toFixed(2);
+  const head = [
+    ['Client', meta.client || ''],
+    ['Case', meta.caseId || ''],
+    ['Exported', meta.exportedAt || new Date().toISOString()],
+    ['Case review hours', hm(totals.reviewSeconds), dec(totals.reviewSeconds)],
+    ['Hands-Off hours', hm(totals.tierSeconds), dec(totals.tierSeconds)],
+    ['Total hours worked', hm(totals.totalSeconds), dec(totals.totalSeconds)],
+    [],
+    ['Date', 'Type', 'With', 'Client line', 'Private notes', 'Phone', 'Who was on it'],
+  ];
+  const body = (items || []).map((i) => [
+    i.at || i.createdAt ? new Date(i.at || i.createdAt).toLocaleString('en-US') : '',
+    (typeof i.kindLabel === 'string' && i.kindLabel.trim()) || logKind(i.kind).label,
+    i.clinic || '', i.summary || '', i.notes || '', i.phone || '', i.parties || '',
+  ]);
+  return [...head, ...body].map(row).join('\r\n');
+}
+
 let callsKey = null;
 // The kind the select should land on after the next repaint: set when he
 // creates a type, so the thing he just made is the thing selected.
@@ -4920,6 +4953,23 @@ function paintWorkLog(pane) {
     callsKey = key;
 
     const shown = items.filter((i) => String(i.summary || '').trim()).length;
+    // DAY BY DAY (Eric, 2026-08-29: "separate logged things by day so it's
+    // not just one long string of logged activities"). His list keeps its
+    // reading order, oldest first, so the case still reads down the page as
+    // a story; a heading lands wherever the date changes.
+    const dayLabel = (i) => {
+      const d = new Date(i.at || i.createdAt || 0);
+      return Number.isFinite(d.getTime()) && d.getTime()
+        ? d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+        : 'No date';
+    };
+    const dayGroups = [];
+    for (const i of items) {
+      const label = dayLabel(i);
+      const last = dayGroups[dayGroups.length - 1];
+      if (last && last.label === label) last.rows.push(i);
+      else dayGroups.push({ label, rows: [i] });
+    }
     pane.innerHTML = `
       <div class="panel" data-calls-root>
         <h3 style="margin:0 0 .3rem;">🗒 Work log</h3>
@@ -4933,7 +4983,9 @@ function paintWorkLog(pane) {
           ${items.length
             ? `${shown} of ${items.length} ${items.length === 1 ? 'entry is' : 'entries are'} on their page.`
             : ''}</p>
-        ${items.map((i) => {
+        ${items.length ? `<p style="margin:0 0 .6rem;"><button class="btn quiet tiny" data-log-csv>⬇ Export the log as CSV, with the hours</button></p>` : ''}
+        ${dayGroups.map((g) => `
+        <p class="log-day">${esc(g.label)}</p>` + g.rows.map((i) => {
     const seen = !!String(i.summary || '').trim();
     const k = logKind(i.kind);
     // A custom entry wears the label and colour stamped on it at write
@@ -4961,7 +5013,7 @@ function paintWorkLog(pane) {
                    literal three words in. -->
               <span class="log-row">
                 ${pillHtml}
-                <span class="log-row-t">${esc(i.clinic || 'Someone')} · ${i.at ? new Date(i.at).toLocaleDateString() : 'no date'}</span>
+                <span class="log-row-t">${esc(i.clinic || 'Someone')}${i.at ? ` · ${new Date(i.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}</span>
                 <span class="log-seen${seen ? ' is-on' : ''}">${seen ? '👁 Shown to your client' : '🔒 Private, not shown'}</span>
               </span></summary>
             <div class="faq-a">
@@ -4977,7 +5029,7 @@ function paintWorkLog(pane) {
               <p><button class="btn quiet tiny" data-call-save="${esc(i.id)}">Save</button></p>
             </div>
           </details>`;
-  }).join('')}
+  }).join('')).join('')}
         <details class="faq" data-k="call-new">
           <summary>Log something</summary>
           <div class="faq-a">
@@ -5029,6 +5081,31 @@ function paintWorkLog(pane) {
         </details>
         <p class="error" data-calls-err hidden></p>
       </div>`;
+
+    // The whole record leaves as one file: every entry plus the clock's
+    // three figures, named for the client and the day.
+    pane.querySelector('[data-log-csv]')?.addEventListener('click', () => {
+      const total = liveTotalSeconds();
+      const review = Math.min(clock.mark || 0, total);
+      const csv = workLogCsv(items, {
+        reviewSeconds: review,
+        tierSeconds: Math.max(0, total - review),
+        totalSeconds: total,
+      }, {
+        client: (data || {}).clientName || (data || {}).clientEmail || caseId,
+        caseId,
+        exportedAt: new Date().toISOString(),
+      });
+      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      const who = String((data || {}).clientName || 'case').trim().replace(/[^\w-]+/g, '-').toLowerCase() || 'case';
+      a.download = `work-log-${who}-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    });
 
     const post = async (payload, btn) => {
       const err = pane.querySelector('[data-calls-err]');

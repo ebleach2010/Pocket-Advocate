@@ -2170,7 +2170,7 @@ async function mountCaseLog(host, c) {
   // Mountain, so a case opened at nine in the morning to start today sits
   // three hours ahead. Three parties say this sentence; one predicate.
   const startsLater = handsOffStartsLater(c);
-  const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+  const timeFmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' });
 
   const head = full ? `
     <ul class="ready-list" data-ready-list>
@@ -2188,7 +2188,26 @@ async function mountCaseLog(host, c) {
         ${head}
         ${items.length ? `
         <ul class="filelist">
-          ${items.map((i) => {
+          ${(() => {
+    // DAY BY DAY, same as Eric's own panel (2026-08-29): a dated heading
+    // wherever the date changes, newest day first as this list has always
+    // run, and the per-row date becomes a time because the heading now
+    // carries the date.
+    const dayLabel = (i) => {
+      const d = i.at ? new Date(i.at) : null;
+      return d && !Number.isNaN(d.getTime())
+        ? d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+        : '';
+    };
+    const groups = [];
+    for (const i of items) {
+      const label = dayLabel(i);
+      const last = groups[groups.length - 1];
+      if (last && last.label === label) last.rows.push(i);
+      else groups.push({ label, rows: [i] });
+    }
+    return groups.map((g) => (g.label ? `
+          <li class="log-day">${esc(g.label)}</li>` : '') + g.rows.map((i) => {
     const at = i.at ? new Date(i.at) : null;
     const custom = !LOG_PILLS[i.kind] && typeof i.label === 'string' && i.label.trim();
     const kind = LOG_PILLS[i.kind] ? i.kind : 'call';
@@ -2200,9 +2219,10 @@ async function mountCaseLog(host, c) {
             <li>
               <span class="fname">${pill}
                 <span class="logline">${esc(i.summary)}${i.who ? `<span class="dim"> · ${esc(i.who)}</span>` : ''}</span></span>
-              <span class="fmeta">${at && !Number.isNaN(at.getTime()) ? esc(fmt.format(at)) : ''}</span>
+              <span class="fmeta">${at && !Number.isNaN(at.getTime()) ? esc(timeFmt.format(at)) : ''}</span>
             </li>`;
-  }).join('')}
+  }).join('')).join('');
+  })()}
         </ul>` : `
         <p class="dim small">This is where I write down the work I do on your
           case, by date.</p>`}
