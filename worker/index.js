@@ -7592,6 +7592,27 @@ async function handleDeleteSlot(request, env, url) {
 }
 
 // POST /api/admin/case-update  Body: { caseId, action, joinLink?, paidCents?, tierCents? }
+/**
+ * A YouTube link a client may be handed, or null. PARKED FEATURE (Eric,
+ * 2026-08-29: "Unlisted YT videos where he gets the link... For this specific
+ * client" and then "I want to park this as a PR"): built on its own branch,
+ * merged only on his word.
+ *
+ * https only, and only the four hosts YouTube actually answers on. Anything
+ * else - http:, javascript:, a lookalike host, garbage - is null, and the
+ * caller says so in plain English. Pure and dependency-free on purpose: the
+ * suite lifts this function whole and runs the refusals against it.
+ */
+function videoUrl(u) {
+  let p;
+  try { p = new URL(String(u || '').trim()); } catch { return null; }
+  if (p.protocol !== 'https:') return null;
+  const host = p.hostname.toLowerCase();
+  if (host !== 'youtube.com' && host !== 'www.youtube.com'
+    && host !== 'm.youtube.com' && host !== 'youtu.be') return null;
+  return p.toString();
+}
+
 async function handleCaseUpdate(request, env) {
   const admin = await requireAdmin(request, env);
   if (!admin) return json({ error: 'Not found' }, 404);
@@ -7797,6 +7818,64 @@ async function handleCaseUpdate(request, env) {
     const on = body?.on === true;
     await patchDoc(env, `cases/${caseId}`, { formsOnFileAt: on ? now : null },
       { mask: ['formsOnFileAt'] });
+  } else if (action === 'video-add') {
+    // VIDEO GUIDANCE, PARKED (Eric, 2026-08-29). The format he asked about
+    // the night his health said no to phone work: "I can give him step by
+    // step guidance with some research without going full elbow deep into
+    // records and contacting clinics... Unlisted YT videos where he gets the
+    // link." The links live on the case doc because they exist FOR the
+    // client - the same doctrine as work.seconds. Anything that reads a
+    // record aloud rides the private upload lane instead, never YouTube.
+    if (doc.data.status === 'closed') return json({ error: 'Case is closed.' }, 409);
+    const url = videoUrl(body?.url);
+    if (!url)
+      return json({ error: 'That is not a YouTube link. Paste the address the Share button gives you: youtu.be/... or youtube.com/watch?...' }, 400);
+    // Same flatten-and-bound gate as the summary-uploaded notification: this
+    // title lands in a push notification, so it cannot carry line breaks and
+    // it cannot run long.
+    const title = String(body?.title || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!title) return json({ error: 'Give the video a title first. It is what the notification says.' }, 400);
+    const note = String(body?.note || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    const existing = Array.isArray(doc.data.videos) ? doc.data.videos : [];
+    if (existing.length >= 50)
+      return json({ error: 'Fifty videos is the shelf. Remove one first.' }, 409);
+    // THE LIMIT HE SET (Eric, 2026-08-29: "There needs a limit... one per
+    // business day that I'm open"). Two gates, both on HIS definitions.
+    //
+    // One per day, on his wall clock: a second video on the same Boise day
+    // waits for tomorrow, and removing today's video frees the day again -
+    // a wrong link is not a burned day. workDayString is the same function
+    // the work clock's day bucket rolls on.
+    if (existing.some((v) => v && v.at && workDayString(new Date(v.at)) === workDayString(now.getTime())))
+      return json({ error: 'One video a day is the limit you set. Tomorrow.' }, 409);
+    // And only on a day he is open, by the same predicate as his door sign:
+    // the Mon-Thu schedule, or his own switch. Flipping himself in IS the
+    // override, one tap, already on his phone. This protects him from
+    // himself at 1am, which is the hour this feature was designed at.
+    const { manual } = await readOfficeHours(env);
+    if (!officeStatus(manual).inOffice)
+      return json({ error: "You're out of office. If today is a working day, flip yourself in first." }, 409);
+    const videos = [...existing, { id: crypto.randomUUID(), title, url, note, at: now }];
+    await patchDoc(env, `cases/${caseId}`, { videos }, { mask: ['videos'] });
+    // The client is told by name, mirroring the uploaded-file notification:
+    // a video made for them that they never hear about helps nobody.
+    if (doc.data.clientUid) {
+      await notifyUser(env, doc.data.clientUid, {
+        title: 'Pocket Advocate',
+        body: `A new video is on your case: ${title}`,
+        link: `/case.html?id=${caseId}`,
+      }).catch(() => { /* the video is on their page either way */ });
+    }
+    return json({ ok: true, videos });
+  } else if (action === 'video-remove') {
+    // Silent on purpose: a removal is housekeeping, and a push saying a video
+    // vanished is an alarm with no action on it.
+    const existing = Array.isArray(doc.data.videos) ? doc.data.videos : [];
+    const videos = existing.filter((v) => !v || v.id !== body?.id);
+    if (videos.length === existing.length)
+      return json({ error: 'No such video on this case.' }, 404);
+    await patchDoc(env, `cases/${caseId}`, { videos }, { mask: ['videos'] });
+    return json({ ok: true, videos });
   } else if (action === 'recording-uploaded') {
     // The call happened: start the report clock. Admin-side the deadline is a
     // strict 7 calendar days; the client is told "7 business days, some take

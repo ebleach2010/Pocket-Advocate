@@ -671,6 +671,7 @@ function renderProgress(el, c) {
       </div>
     </details>
     <div data-worklog></div>
+    <div data-videos></div>
     <div data-authority></div>
     <hr class="divide">
     <!-- The "?" dot was a bare glyph beside a heading at the top of the page,
@@ -696,6 +697,8 @@ function renderProgress(el, c) {
   // log is the answer to "what has he been up to" whichever tier they are on.
   const log = el.querySelector('[data-worklog]');
   if (log) mountCaseLog(log, c);
+  const vids = el.querySelector('[data-videos]');
+  if (vids) mountVideos(vids, c);
   const auth = el.querySelector('[data-authority]');
   if (auth) mountPermissions(auth, c);
 
@@ -2237,6 +2240,54 @@ async function mountCaseLog(host, c) {
     });
     paint(res.ok ? ((await res.json()).items || []) : []);
   } catch { /* an unreachable log still shows the panel and says nothing yet */ }
+}
+
+/**
+ * VIDEO GUIDANCE, PARKED FEATURE (Eric, 2026-08-29): short step-by-step
+ * videos he records for this client, unlisted on YouTube, the link handed
+ * over here. Renders nothing at all on a case with no videos: for every
+ * client who was never offered the format, this function does not exist.
+ *
+ * Links only, never an embedded player: the row opens YouTube in its own
+ * tab, rel=noopener, so nothing over there can reach back into the case.
+ */
+function mountVideos(host, c) {
+  const rows = (Array.isArray(c.videos) ? c.videos : [])
+    .filter((v) => v && typeof v.url === 'string' && /^https:\/\//.test(v.url)
+      && typeof v.title === 'string' && v.title.trim())
+    .sort((a, b) => toDate(b.at) - toDate(a.at));
+  if (!rows.length) { host.innerHTML = ''; return; }
+  const timeFmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' });
+  // Day by day, newest first, the same headings as the work log above it.
+  const dayLabel = (v) => {
+    const d = toDate(v.at);
+    return d.getTime() ? d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : '';
+  };
+  const groups = [];
+  for (const v of rows) {
+    const label = dayLabel(v);
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.rows.push(v);
+    else groups.push({ label, rows: [v] });
+  }
+  host.innerHTML = `
+    <div class="panel authority" data-videos-panel>
+      <h3>Video guidance from me</h3>
+      <p class="dim small">Short videos I record for you, walking you through
+        each step with the research done. Yours to rewatch as many times as
+        you like. Up to one new video each business day I am open.</p>
+      <ul class="filelist">
+        ${groups.map((g) => (g.label ? `
+        <li class="log-day">${esc(g.label)}</li>` : '') + g.rows.map((v) => {
+    const at = toDate(v.at);
+    return `
+        <li>
+          <span class="fname">▶ ${esc(v.title.trim())}${v.note && String(v.note).trim() ? `<span class="dim small" style="display:block;">${esc(String(v.note).trim())}</span>` : ''}</span>
+          <span class="fmeta">${at.getTime() ? esc(timeFmt.format(at)) + ' · ' : ''}<a href="${esc(v.url)}" target="_blank" rel="noopener">Watch</a></span>
+        </li>`;
+  }).join('')).join('')}
+      </ul>
+    </div>`;
 }
 
 /**

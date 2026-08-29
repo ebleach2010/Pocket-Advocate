@@ -383,6 +383,17 @@ export function seed({ set, file }) {
     // behind the mark, 2h 30m on the Hands-Off clock since the flip. The
     // lifetime total is their sum, which is what `seconds` has always been.
     work: { seconds: 24 * 3600 + 30 * 60, startedAt: null, tierMark: 22 * 3600 },
+    // VIDEO GUIDANCE, PARKED (2026-08-29): one link on the shelf so both
+    // sides render the panel on camera. Two days back on purpose - today
+    // stays free, so driving an add in the demo shows the limit only where
+    // the limit really bites, on the SECOND add of a day.
+    videos: [{
+      id: 'vid-demo-1',
+      title: 'Reading your denial letter, line by line',
+      url: 'https://youtu.be/demo-video-1',
+      note: 'Have the letter from your Documents open while you watch.',
+      at: days(2),
+    }],
   });
 
   // Today's work, already on the books when the demo opens (Eric,

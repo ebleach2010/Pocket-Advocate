@@ -455,6 +455,54 @@ export function demoApi(role, store) {
             ? { ...c.fullAccessRequest, state: 'started', startedAt: now } : null,
           extraPayments: payments,
         });
+      } else if (body.action === 'video-add') {
+        // VIDEO GUIDANCE, PARKED (2026-08-29), mirrored whole: the same URL
+        // gate, the same one-per-open-business-day limit, the same sentences.
+        // A demo kinder than the Worker would show him an add the live app
+        // refuses at 1am on a Saturday, which is the exact moment the limit
+        // exists for.
+        if (c.status === 'closed') return fail(409, 'Case is closed.');
+        let parsed = null;
+        try { parsed = new URL(String(body.url || '').trim()); } catch { parsed = null; }
+        const host = parsed ? parsed.hostname.toLowerCase() : '';
+        if (!parsed || parsed.protocol !== 'https:'
+          || !['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(host))
+          return fail(400, 'That is not a YouTube link. Paste the address the Share button gives you: youtu.be/... or youtube.com/watch?...');
+        const title = String(body.title || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+        if (!title) return fail(400, 'Give the video a title first. It is what the notification says.');
+        const existing = Array.isArray(c.videos) ? c.videos : [];
+        if (existing.length >= 50) return fail(409, 'Fifty videos is the shelf. Remove one first.');
+        const dayOf = (t) => new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'America/Boise', year: 'numeric', month: '2-digit', day: '2-digit',
+        }).format(new Date(t));
+        if (existing.some((v) => v && v.at && dayOf(v.at) === dayOf(now)))
+          return fail(409, 'One video a day is the limit you set. Tomorrow.');
+        const office = store.docs.get('config/officeHours') || {};
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Boise', weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
+        }).formatToParts(now);
+        const wd = parts.find((x) => x.type === 'weekday').value;
+        const num = (t) => Number(parts.find((x) => x.type === t).value);
+        const mins = (num('hour') % 24) * 60 + num('minute');
+        const sched = wd !== 'Fri' && wd !== 'Sat' && wd !== 'Sun' && mins >= 8 * 60 && mins < 19 * 60;
+        const open = office.manual ? office.manual === 'in' : sched;
+        if (!open) return fail(409, "You're out of office. If today is a working day, flip yourself in first.");
+        const videos = [...existing, {
+          id: `vid-${Date.now()}`, title, url: parsed.toString(),
+          note: String(body.note || '').replace(/\s+/g, ' ').trim().slice(0, 200), at: now,
+        }];
+        store.docs.set(key, { ...c, videos });
+        store.persist?.();
+        store.fire?.(key);
+        return ok({ ok: true, videos });
+      } else if (body.action === 'video-remove') {
+        const existing = Array.isArray(c.videos) ? c.videos : [];
+        const videos = existing.filter((v) => !v || v.id !== body.id);
+        if (videos.length === existing.length) return fail(404, 'No such video on this case.');
+        store.docs.set(key, { ...c, videos });
+        store.persist?.();
+        store.fire?.(key);
+        return ok({ ok: true, videos });
       } else {
         return fail(400, 'Bad request');
       }
