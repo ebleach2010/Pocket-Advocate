@@ -1311,6 +1311,50 @@ const TABLE = {
     shown.some((t) => /\$3,500/.test(t)), shown.join(' | '));
 }
 
+// ---- A33-A36: the voice fix (Eric, 2026-08-29) ---------------------------
+//
+// "The app still isn't picking up my tone at all and it has 30 pages of my
+// writing. It still reeks of AI, not my voice, and doesn't take in immediate
+// emotional tone or context." Three causes, each pinned and proven able to
+// fail: the draft writer never saw his writing from other threads, the
+// distilled profile outranked his verbatim messages, and nothing told the
+// writer to read the moment.
+{
+  // NEGATIVE CONTROL (run 2026-08-29): lowering the thin-thread threshold to
+  // 0 (so the fallback never fires) made this read
+  //   FAIL  A33 a thin thread pulls his real messages from every other thread, echo-guarded
+  ck('A33 a thin thread pulls his real messages from every other thread, echo-guarded',
+    /voice\.length < 2500/.test(ADV)
+    && /voiceCorpus\(env, \{ exclude: style\.echo \}\)/.test(ADV)
+    && /<his_voice_elsewhere>/.test(ADV)
+    && /echo: new Set\(editsRaw\.map\(\(r\) => r\.data\.sent\)\.filter\(Boolean\)\.map\(flatText\)\)/.test(ADV));
+
+  // NEGATIVE CONTROL (run 2026-08-29): restoring the old authority line
+  // ("the profile wins" with no messages-win clause) made this read
+  //   FAIL  A34 his verbatim messages outrank the learned profile, in both places that rank them
+  ck('A34 his verbatim messages outrank the learned profile, in both places that rank them',
+    /THEY are the styling authority/.test(ADV)
+    && /Where the profile and his verbatim messages disagree, the messages win/.test(ADV)
+    && /a draft more polished than his own writing is a\nfailed draft/.test(ADV));
+
+  // NEGATIVE CONTROL (run 2026-08-29): cutting the moment paragraph from the
+  // draft prompt made this read
+  //   FAIL  A35 the draft writer reads where the client is RIGHT NOW and answers that state
+  ck('A35 the draft writer reads where the client is RIGHT NOW and answers that state',
+    /where they are RIGHT\nNOW: scared, flat, angry, hopeful, done/.test(ADV)
+    && /The first sentence meets that state/.test(ADV)
+    && /match what Eric actually sent back in that moment/.test(ADV));
+
+  // NEGATIVE CONTROL (run 2026-08-29): deleting the em-dash entry from the
+  // tells list made this read
+  //   FAIL  A36 the machine tells are banned by name, the dashes included
+  ck('A36 the machine tells are banned by name, the dashes included',
+    /Machine tells, banned because he never writes them/.test(ADV)
+    && /an em dash or en dash anywhere/.test(ADV)
+    && /If a sentence could open any support email ever written, it is\nnot his/.test(ADV)
+    && /\.slice\(0, 5\)\n      \.map\(\(r\) => \(\{ draft: r\.data\.draft, sent: r\.data\.sent \}\)\)/.test(ADV));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

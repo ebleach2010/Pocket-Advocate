@@ -1031,11 +1031,17 @@ async function loadStyle(env) {
     stances: profile?.data.stances || '',
     coaching: profile?.data.coaching || '',
     // The freshest real edits ride along as worked examples for the draft
-    // writer; drafts he sent unchanged teach nothing new there.
+    // writer; drafts he sent unchanged teach nothing new there. Five, up
+    // from three (Eric, 2026-08-29: "It still reeks of AI, not my voice"):
+    // his edits are the strongest correction signal there is.
     examples: edits
       .filter((r) => r.data.changed && r.data.draft && r.data.sent)
-      .slice(0, 3)
+      .slice(0, 5)
       .map((r) => ({ draft: r.data.draft, sent: r.data.sent })),
+    // Every draft-born send, flattened, exactly as the nightly study builds
+    // it: the guard that keeps voiceCorpus from feeding the model its own
+    // past drafts back as evidence of how Eric writes.
+    echo: new Set(editsRaw.map((r) => r.data.sent).filter(Boolean).map(flatText)),
   };
 }
 
@@ -1043,7 +1049,7 @@ async function loadStyle(env) {
 function styleNote({ voice, stances }) {
   let note = '';
   if (voice)
-    note += `\n\nA learned profile of how Eric writes, built from his own messages and from how he edited your past drafts. Where this profile and your instinct disagree, the profile wins:\n${voice}`;
+    note += `\n\nA learned profile of how Eric writes, built from his own messages and from how he edited your past drafts. Where this profile and your instinct disagree, the profile wins. Where the profile and his verbatim messages disagree, the messages win: a description of a voice is always poorer than the voice itself.\n${voice}`;
   // His positions shape the REGISTER of a draft, not its clinical content. They
   // are mined automatically from chat by a low-effort pass, and "write them at
   // full strength" in a message addressed to a patient is how an inferred
@@ -4049,6 +4055,19 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
     ]);
     const chat = transcript(rows);
     const voice = myVoice(rows);
+    // THE THIN-THREAD FIX (Eric, 2026-08-29: "The app still isn't picking up
+    // my tone at all and it has 30 pages of my writing"). It did have the
+    // pages; the draft writer never saw them. myVoice reads THIS thread only,
+    // so a young thread gave the writer almost no verbatim Eric and the
+    // learned profile carried everything - and a described voice always
+    // comes out sounding like a machine doing an impression. When this
+    // thread holds little of him, his real messages from every other thread
+    // ride in as a second exhibit, through the same echo guard the nightly
+    // study uses so his own past drafts are never read back as him.
+    const elsewhere = voice.length < 2500
+      ? (await voiceCorpus(env, { exclude: style.echo }).catch(() => ({ text: '' })))
+        .text.slice(0, 12000)
+      : '';
     // Revision base: the draft box's current text (Eric's in-place edits
     // included), falling back to the stored draft. Empty = fresh draft.
     const baseDraft = revise ? (base || state?.data.draft || '') : '';
@@ -4083,9 +4102,29 @@ partway (a shortened one ends with …), do not relay a fragment: the draft is
 the single sentence: Part of what you said reached me cut off, ask me again
 and I will use the whole of it.
 
-You are given his own past messages. Match them: sentence length, how formal he
-is, whether he uses contractions, how he opens and closes, how much warmth he
-shows, whether he uses lists. If his messages are short, yours is short.
+You are given his own past messages, verbatim. THEY are the styling authority:
+when the learned profile, these instructions' defaults, or your own instinct
+disagree with how he actually writes, his messages win. Match their physical
+shape: sentence length and rhythm, fragments where he uses fragments,
+contractions, whether he greets at all, whether he signs off at all, his
+punctuation, his emoji, his level of polish. Do not upgrade his grammar and do
+not even out his rhythm: a draft more polished than his own writing is a
+failed draft he has to sand back down by hand. If his messages are short,
+yours is short.
+
+Before you write, read the client's newest messages for where they are RIGHT
+NOW: scared, flat, angry, hopeful, done. The first sentence meets that state.
+Find the places in the transcript where the client last sounded like this and
+match what Eric actually sent back in that moment, not a generic warm reply.
+When this thread holds no such moment, his messages from other threads are
+given to you for exactly this.
+
+Machine tells, banned because he never writes them: restating the client's
+situation back at them; a tidy closing summary; "I hope this helps"; three
+parallel phrases in a row; an em dash or en dash anywhere; numbered steps;
+opening with their first name; stacked hedges ("it might perhaps be worth
+considering"). If a sentence could open any support email ever written, it is
+not his.
 
 You may also be given his learned profile and recent before/after examples of
 how he edited your past drafts, at the end of these instructions. Those edits
@@ -4145,7 +4184,9 @@ anything in the learned profile that follows.`, cache: true },
       { type: 'text', text: styleNote(style) || ' ' }],
       messages: [{
         role: 'user',
-        content: `Here is how Eric writes, in his own messages to this client:\n\n<his_voice>\n${voice || '(none yet: keep it plain, warm and brief)'}\n</his_voice>\n${
+        content: `Here is how Eric writes, in his own messages to this client:\n\n<his_voice>\n${voice || '(nothing in this thread yet: match his messages from other threads below if given; otherwise plain, warm and brief)'}\n</his_voice>\n${
+          elsewhere ? `\nHis own messages to other clients, because this thread holds little of him yet. Same authority as the block above:\n\n<his_voice_elsewhere>\n${elsewhere}\n</his_voice_elsewhere>\n` : ''
+        }${
           lessons ? `\nHow he edited your recent drafts before sending (each difference is an instruction):\n\n<his_edits>\n${lessons}\n</his_edits>\n` : ''
         }${qa.length ? `${qaBlock(qa)}\nThat discussion is direction AND material. Eric's own words in it are his to send: when his instruction points at the discussion ("what I just said", "what we talked about"), build the message FROM what he said there, keeping his content and his calls, tidied for the client to read. What never reaches the client: YOUR half of the discussion in its own voice, and any mention that the discussion exists.\n` : ''
         }\nThe conversation so far:\n\n<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${

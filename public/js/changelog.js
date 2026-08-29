@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.60';
+export const VERSION = '2.61';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '2.60';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // The voice fix (Eric, 2026-08-29, on his side of the desk): the draft
+    // writer now treats his own verbatim messages as the styling authority,
+    // borrows his messages from every thread when the current one holds
+    // little of him, and reads the client's newest messages for where they
+    // are right now before writing a word. Nothing client-visible changed
+    // in the app itself, so the client list stays empty.
+    version: '2.61',
+    quiet: true,
+    client: [],
+  },
   {
     // One reworded comment, in THIS file: the entry below named his side's
     // machinery, and a client's browser downloads this file. Nothing ever
