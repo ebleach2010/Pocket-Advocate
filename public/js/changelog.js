@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.59';
+export const VERSION = '2.60';
 
 /**
  * Newest first.
@@ -52,8 +52,17 @@ export const VERSION = '2.59';
  */
 export const CHANGELOG = [
   {
-    // Three log asks (Eric, 2026-08-29): the advisor reads the work log and
-    // forms opinions from its pattern, both log views read day by day, and
+    // One reworded comment, in THIS file: the entry below named his side's
+    // machinery, and a client's browser downloads this file. Nothing ever
+    // rendered the word, but the blindness audit reads served bytes and
+    // flagged it, which is the audit doing its job. Nothing else moved.
+    version: '2.60',
+    quiet: true,
+    client: [],
+  },
+  {
+    // Three log asks (Eric, 2026-08-29): what he logs now feeds the case
+    // notes on his side of the desk, both log views read day by day, and
     // the whole log exports as a CSV with the clock's three figures.
     version: '2.59',
     quiet: true,
