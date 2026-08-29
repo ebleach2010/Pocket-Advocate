@@ -602,5 +602,27 @@ ck('clock: all switches share one painter set, so no two can disagree',
   ck('no conflict markers in anything this repo ships', found.length === 0, found.join('; '));
 }
 
+// ---- the chat resume net (Eric, 2026-08-29) -------------------------------
+//
+// "Got notification for chat but no new message was there." The push and the
+// message travel two different roads: the Worker sends the push, Firestore
+// streams the message, and a phone coming back from the background - the
+// exact thing tapping a notification does - can sit on a frozen stream. The
+// pane now forces one plain read of the same window on every return to the
+// foreground and paints it through the same painter the live listener uses.
+{
+  const one = (re) => (CHJ.match(re) || []).length === 1;
+  // NEGATIVE CONTROL (run 2026-08-29): dropping the pageshow listener made
+  // this read
+  //   FAIL  chat: coming back to the foreground repaints from a fresh read, through the one painter
+  ck('chat: coming back to the foreground repaints from a fresh read, through the one painter',
+    one(/const paintChat = \(snap\) =>/g)
+    && one(/onSnapshot\(CHAT_Q, paintChat, \(err\) =>/g)
+    && one(/getDocs\(CHAT_Q\)\.then\(paintChat\)/g)
+    && one(/document\.addEventListener\('visibilitychange', kickChat\)/g)
+    && one(/window\.addEventListener\('pageshow', kickChat\)/g)
+    && /visibilityState !== 'visible'/.test(CHJ));
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);

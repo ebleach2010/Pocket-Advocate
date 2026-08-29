@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.62';
+export const VERSION = '2.63';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '2.62';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // The chat resume net (Eric, 2026-08-29: "Got notification for chat but
+    // no new message was there"): a phone coming back from the background
+    // can sit on a frozen live stream, and tapping a notification is exactly
+    // that move. Every return to the foreground now forces one fresh read of
+    // the thread through the same painter, which also shoves the stream back
+    // to life.
+    version: '2.63',
+    quiet: true,
+    client: [
+      'The chat now catches up the moment you come back to the app, so a notification never beats its message to your screen.',
+    ],
+  },
   {
     // The 7:31 AM bug (Eric, 2026-08-29: "This time is incorrect. I drafted
     // it at 1:31PM"): the log form's time picker hands over a string with no

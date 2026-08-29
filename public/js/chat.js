@@ -121,7 +121,8 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   // 2026-08-22: "I did a 'send as me' after editing a draft and it just
   // disappeared.") Descending keeps the NEWEST 200, which is the window a
   // conversation actually needs; the full history stays in the CSV export.
-  onSnapshot(query(messagesRef, orderBy('ts', 'desc'), limit(200)), (snap) => {
+  const CHAT_Q = query(messagesRef, orderBy('ts', 'desc'), limit(200));
+  const paintChat = (snap) => {
     if (snap.empty) {
       log.innerHTML = '<p class="dim small">No messages yet. Say hi.</p>';
       return;
@@ -311,9 +312,32 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     if (wasAtBottom) log.scrollTop = log.scrollHeight;
     repaintFlags();
     paintSaved();
-  }, (err) => {
+  };
+  onSnapshot(CHAT_Q, paintChat, (err) => {
     log.innerHTML = `<p class="error">Couldn't load messages: ${esc(err.message)}</p>`;
   });
+
+  // THE RESUME NET (Eric, 2026-08-29: "Got notification for chat but no new
+  // message was there."). The live listener above is the pane's owner, but
+  // it rides a stream, and a phone that comes back from the background - the
+  // exact thing tapping a notification does - can sit on a frozen stream for
+  // a while before the SDK notices. The push and the message travel two
+  // different roads, so the push winning the race to the screen must never
+  // leave the pane stale. Coming back to the foreground forces one plain
+  // read of the same window and paints it through the same painter; the
+  // read also gives the SDK the shove that re-establishes the stream, so
+  // the listener takes back over immediately after. Throttled, because
+  // pageshow and visibilitychange can land together.
+  let chatKickAt = 0;
+  const kickChat = () => {
+    if (document.visibilityState !== 'visible') return;
+    if (Date.now() - chatKickAt < 4000) return;
+    chatKickAt = Date.now();
+    getDocs(CHAT_Q).then(paintChat).catch(() => { /* the live listener still owns the pane */ });
+  };
+  document.addEventListener('visibilitychange', kickChat);
+  window.addEventListener('pageshow', kickChat);
+
 
   // The admin-only half, fetched only on an admin thread. A client's browser
   // never asks for this file and would be refused if it did. The role comes
