@@ -1092,6 +1092,7 @@ export default {
       ctx.waitUntil(restructureRates(env));
       // Landed 2026-08-29 ("full 340000 -> 350000"); an instant no-op since.
       ctx.waitUntil(repriceTier(env));
+      ctx.waitUntil(fixLogTimes(env));
     }
 
     // Un-gated on purpose: the wedged case should recover on the FIRST
@@ -1599,6 +1600,59 @@ async function repriceTier(env) {
   }
 }
 
+/**
+ * One-shot: every stored work-log time, moved onto his wall clock.
+ *
+ * Every entry the log form ever saved went through `new Date(bare string)`
+ * on a UTC Worker, so each one sits ahead of the truth by his UTC offset at
+ * that moment: the 1:31 PM he typed was stored as 1:31 UTC and painted back
+ * as 7:31 AM (Eric, 2026-08-29). Adding the Boise offset at each stored
+ * instant puts every entry back where his hand put it, daylight saving
+ * included.
+ *
+ * CUTOFF is the moment the fix shipped, written out: an entry created after
+ * it arrived through the corrected paths and is already true, and shifting
+ * one of those would break it. The bias is deliberate: better to leave a
+ * last-minute entry unmoved than to move a correct one twice. The marker
+ * pattern is the standard one-shot claim.
+ */
+async function fixLogTimes(env) {
+  const MARKER = 'migrations/logtimes-2026-08-29';
+  const CUTOFF = Date.parse('2026-08-29T19:41:00Z');
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;
+  const done = (result) => patchDoc(env, MARKER, { finishedAt: new Date(), result },
+    { mask: ['finishedAt', 'result'] }).catch(() => {});
+  try {
+    const cases = await listDocs(env, 'cases', { pageSize: 300, all: true }).catch(() => []);
+    let moved = 0;
+    let seen = 0;
+    for (const c of cases) {
+      const items = await listDocs(env, `cases/${c.id}/private/clinicCalls/items`,
+        { pageSize: 200, all: true }).catch(() => []);
+      for (const it of items) {
+        seen += 1;
+        if (!it.data.at) continue;
+        const at = new Date(it.data.at);
+        if (Number.isNaN(at.getTime())) continue;
+        const created = new Date(it.data.createdAt || it.data.at).getTime();
+        if (!(created < CUTOFF)) continue;
+        await patchDoc(env, `cases/${c.id}/private/clinicCalls/items/${it.id}`,
+          { at: new Date(at.getTime() + boiseOffsetMs(at)) }, { mask: ['at'] });
+        moved += 1;
+      }
+    }
+    return done(`${moved} of ${seen} entries moved onto his wall clock`);
+  } catch (err) {
+    console.error('fix log times:', err.message || err);
+  }
+}
+
 async function seedWorkClock(env) {
   const MARKER = 'migrations/workclock-2026-08-22';
   const CASE_ID = '65cc57c1-2057-47eb-8dee-d82fce8bf5fe';
@@ -1765,7 +1819,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-29-his-voice';
+const BUILD_TAG = 'v2026-08-29-wall-clock';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1773,7 +1827,7 @@ const BUILD_TAG = 'v2026-08-29-his-voice';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.61';
+const VERSION = '2.62';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -4206,7 +4260,10 @@ async function handleClinicCalls(request, env, url) {
     await patchDoc(env, `${coll}/${crypto.randomUUID()}`, {
       clinic, phone: str(body?.phone, 40), parties: str(body?.parties, 200),
       kind, kindLabel, kindColor, summary: str(body?.summary, 400),
-      at: at ? new Date(at) : null, notes: '', createdAt: new Date(),
+      // A bare wall-clock string means his wall, never this Worker's UTC;
+      // anything carrying its own zone is already an instant. See
+      // hisWallClock for the 7:31 AM bug this closes.
+      at: at ? (hisWallClock(at) || new Date(at)) : null, notes: '', createdAt: new Date(),
     }, { mustNotExist: true });
 
     // THE STATUS LINE, and only on this branch. Logging work is new work;
@@ -4573,6 +4630,42 @@ function workDayElapsedMs(t = Date.now()) {
   const get = (type) => Number(parts.find((p) => p.type === type)?.value) || 0;
   return ((get('hour') % 24) * 3600 + get('minute') * 60 + get('second')) * 1000;
 }
+/**
+ * How far UTC sits ahead of his wall clock at a given instant, in
+ * milliseconds, daylight saving included. August answers 6 hours; January
+ * answers 7.
+ */
+function boiseOffsetMs(d) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: WORK_DAY_TZ, hour12: false,
+    year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric',
+  }).formatToParts(d);
+  const get = (type) => Number(parts.find((p) => p.type === type)?.value) || 0;
+  return d.getTime() - Date.UTC(get('year'), get('month') - 1, get('day'),
+    get('hour') % 24, get('minute'), get('second'));
+}
+/**
+ * A zone-less datetime-local string ("2026-08-29T13:31") read as HIS wall
+ * clock instead of UTC. THE 7:31 AM BUG (Eric, 2026-08-29: "This time is
+ * incorrect. I drafted it at 1:31PM... This is happening across the
+ * board"): the log form posts what the picker gives it, which carries no
+ * zone, and this Worker's own clock is UTC, so new Date() read 1:31 PM as
+ * 1:31 UTC and every page then rendered it six hours early. The browser now
+ * posts a real instant; this is the net under it, for any stale cached page
+ * and any future caller that posts a bare wall-clock string. A string that
+ * carries its own zone does not match here and parses as the instant it
+ * already is. Two passes pin the offset across a daylight-saving boundary.
+ */
+function hisWallClock(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(String(s || '').trim());
+  if (!m) return null;
+  const asUtc = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+  let t = asUtc;
+  for (let i = 0; i < 2; i++) t = asUtc + boiseOffsetMs(new Date(t));
+  return new Date(t);
+}
+
 /** The stored bucket as today's truth: any other day's bucket reads empty. */
 function todayByCase(clockData, now = Date.now()) {
   const t = clockData?.today;

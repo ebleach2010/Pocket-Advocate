@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.61';
+export const VERSION = '2.62';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '2.61';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // The 7:31 AM bug (Eric, 2026-08-29: "This time is incorrect. I drafted
+    // it at 1:31PM"): the log form's time picker hands over a string with no
+    // time zone on it, and the server's own clock reads it six hours wrong.
+    // The page now sends a real instant, the server reads a bare string as
+    // Mountain wall time, and a one-shot pass moves every already-saved
+    // entry back onto the clock it was typed from.
+    version: '2.62',
+    quiet: true,
+    client: [
+      'The times on the work log on your case page now read correctly in your time zone.',
+    ],
+  },
   {
     // The voice fix (Eric, 2026-08-29, on his side of the desk): the draft
     // writer now treats his own verbatim messages as the styling authority,

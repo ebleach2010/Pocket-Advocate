@@ -263,10 +263,16 @@ ck('L13b the record route is still his alone',
 // NEGATIVE CONTROL (run 2026-08-27): adding a patchDoc into the clinicCalls
 // collection from the check-in route made this read
 //   FAIL  L14 ... -- 3 writers
+// Pin updated 2026-08-29: the 7:31 AM time fix added fixLogTimes, a
+// one-shot that lists and re-stamps rows already his (two more path
+// mentions: its listDocs and its patchDoc). It moves `at` on existing
+// entries and can never add a row, so "only what I log by hand" holds; the
+// count moves 2 -> 4 and the entry-creating routes are still exactly the
+// add action and the projection.
 const writers = [...WORKER.matchAll(/private\/clinicCalls\/items/g)].length;
 const collDecls = [...bare(WORKER).matchAll(/`cases\/\$\{id\}\/private\/clinicCalls\/items`/g)].length;
-ck('L14 exactly two places in the Worker touch the log: his route and the projection',
-  writers === 2 && collDecls === 2, `${writers} writers`);
+ck('L14 exactly four places in the Worker touch the log: his route, the projection, and the one-shot repair',
+  writers === 4 && collDecls === 2, `${writers} writers`);
 // NEGATIVE CONTROL (run 2026-08-27): deleting the summary field from the add
 // action made this read
 //   FAIL  L15 the client line is written by hand, on the entry, by him
@@ -1111,6 +1117,97 @@ ck('L50 both log pages read day by day, with the dated rule styled once',
   ck('L51b the download is wired with a BOM, off the button on the panel',
     /data-log-csv/.test(ADMIN) && /'\\ufeff' \+ csv/.test(ADMIN)
     && /text\/csv;charset=utf-8/.test(ADMIN));
+}
+
+// ---- L59-L61: the 7:31 AM bug (Eric, 2026-08-29) -------------------------
+//
+// "This time is incorrect. I drafted it at 1:31PM... This is happening
+// across the board." The picker's string carries no zone, the Worker's own
+// clock is UTC, and new Date() believed it: every logged time sat ahead of
+// the truth by his UTC offset. Three fixes, each lifted or pinned and
+// proven able to fail: the browser posts a real instant, the Worker reads a
+// bare wall-clock string as Boise, and a one-shot moves every stored entry
+// back onto his wall.
+{
+  const offSrc = (WORKER.match(/function boiseOffsetMs\(d\) \{[\s\S]*?\n\}/) || [''])[0];
+  const wallSrc = (WORKER.match(/function hisWallClock\(s\) \{[\s\S]*?\n\}/) || [''])[0];
+  let hisWallClock = null;
+  try {
+    hisWallClock = new Function(`
+      const WORK_DAY_TZ = 'America/Boise';
+      ${offSrc}
+      ${wallSrc}
+      return hisWallClock;`)();
+  } catch { /* red below */ }
+  const iso = (s) => hisWallClock(s)?.toISOString() || null;
+  // NEGATIVE CONTROL (run 2026-08-29): flipping the offset sign in
+  // boiseOffsetMs made this read
+  //   FAIL  L59 a bare wall-clock string parses as his wall, summer and
+  //         winter, and a zoned one is left alone
+  //         -- 2026-08-29T07:31:00.000Z / 2026-01-15T06:31:00.000Z
+  ck('L59 a bare wall-clock string parses as his wall, summer and winter, and a zoned one is left alone',
+    !!hisWallClock
+    && iso('2026-08-29T13:31') === '2026-08-29T19:31:00.000Z'
+    && iso('2026-01-15T13:31') === '2026-01-15T20:31:00.000Z'
+    && iso('2026-08-29T13:31:22') === '2026-08-29T19:31:22.000Z'
+    && hisWallClock('2026-08-29T19:31:00.000Z') === null
+    && hisWallClock('garbage') === null && hisWallClock('') === null,
+    `${iso('2026-08-29T13:31')} / ${iso('2026-01-15T13:31')}`);
+
+  // NEGATIVE CONTROL (run 2026-08-29): reverting the browser post to the raw
+  // picker string made this read
+  //   FAIL  L60 both ends fixed: the browser posts a real instant, the Worker nets the bare string
+  ck('L60 both ends fixed: the browser posts a real instant, the Worker nets the bare string',
+    /at: g\('at'\) \? new Date\(g\('at'\)\)\.toISOString\(\) : ''/.test(ADMIN)
+    && /at: at \? \(hisWallClock\(at\) \|\| new Date\(at\)\) : null/.test(WORKER));
+
+  // The one-shot, lifted and RUN: an entry from before the cutoff moves by
+  // its stored instant's offset, one created after the fix stays put, a
+  // finished marker makes the whole thing a no-op.
+  const migSrc = (WORKER.match(/async function fixLogTimes\(env\) \{[\s\S]*?\n\}/) || [''])[0];
+  let runMig = null;
+  try {
+    // eslint-disable-next-line no-new-func
+    runMig = new Function('deps', `
+      const { getDoc, patchDoc, listDocs } = deps;
+      const WORK_DAY_TZ = 'America/Boise';
+      ${offSrc}
+      ${migSrc}
+      return fixLogTimes;`);
+  } catch { /* red below */ }
+  const drive = async (marker) => {
+    const writes = [];
+    const deps = {
+      getDoc: async (_e, path) => (path.startsWith('migrations/') ? marker : null),
+      patchDoc: async (_e, path, fields) => { writes.push({ path, fields }); return true; },
+      listDocs: async (_e, path) => {
+        if (path === 'cases') return [{ id: 'c1', data: {} }];
+        return [
+          { id: 'i1', data: { at: '2026-08-28T13:17:00.000Z', createdAt: '2026-08-28T13:18:00.000Z' } },
+          { id: 'i2', data: { at: '2026-09-02T13:00:00.000Z', createdAt: '2026-09-02T13:00:00.000Z' } },
+          { id: 'i3', data: { at: null, createdAt: '2026-08-28T13:18:00.000Z' } },
+        ];
+      },
+    };
+    if (runMig) await runMig(deps)({});
+    return writes;
+  };
+  const ran = await drive(null);
+  const itemWrites = ran.filter((w) => w.path.includes('/items/'));
+  const doneWrite = ran.find((w) => w.fields.finishedAt);
+  const already = await drive({ data: { finishedAt: '2026-08-29T20:00:00Z' }, updateTime: 'x' });
+  // NEGATIVE CONTROL (run 2026-08-29): dropping the created < CUTOFF guard
+  // made this read
+  //   FAIL  L61 the one-shot moves only the old entries, by the offset their
+  //         own instant had  -- 2 moved: 2026-08-28T19:17:00.000Z
+  ck('L61 the one-shot moves only the old entries, by the offset their own instant had',
+    !!runMig
+    && itemWrites.length === 1
+    && itemWrites[0].path === 'cases/c1/private/clinicCalls/items/i1'
+    && itemWrites[0].fields.at.toISOString() === '2026-08-28T19:17:00.000Z'
+    && String(doneWrite?.fields.result || '').startsWith('1 of 3')
+    && already.length === 0,
+    `${itemWrites.length} moved: ${itemWrites[0]?.fields.at?.toISOString?.() || '(none)'}`);
 }
 
 const failed = results.filter((r) => !r.pass);

@@ -5179,7 +5179,11 @@ function paintWorkLog(pane) {
       if (!g('clinic')) { alert('Say who it was with first.'); return; }
       post({
         action: 'add', kind: g('kind'), clinic: g('clinic'), summary: g('summary'),
-        phone: g('phone'), at: g('at'), parties: g('parties'),
+        // A real instant, not the picker's bare wall-clock string: the
+        // Worker's clock is UTC, and it read "1:31 PM" as 1:31 UTC, which
+        // painted back as 7:31 AM (Eric, 2026-08-29). The device knows what
+        // its own wall clock means; let it say so before the string leaves.
+        phone: g('phone'), at: g('at') ? new Date(g('at')).toISOString() : '', parties: g('parties'),
       }, e.currentTarget);
     });
     for (const b of pane.querySelectorAll('[data-call-save]')) {
