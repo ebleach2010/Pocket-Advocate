@@ -1113,6 +1113,184 @@ ck('L50 both log pages read day by day, with the dated rule styled once',
     && /text\/csv;charset=utf-8/.test(ADMIN));
 }
 
+// ---- L52-L58: video guidance, the PARKED feature (Eric, 2026-08-29) ------
+//
+// "Unlisted YT videos where he gets the link... For this specific client",
+// then "There needs a limit... one per business day that I'm open", then
+// "I want to park this as a PR." These checks ride the video-guidance branch
+// with the feature and merge with it; the limit is HIS limit, so the office
+// predicate here is the real officeStatus lifted from schedule.js, not a
+// stand-in that could drift from what his switch actually does.
+{
+  const { officeStatus: realOfficeStatus } = await import('../../worker/schedule.js');
+
+  // The validator, lifted whole and RUN.
+  const vurlSrc = (WORKER.match(/function videoUrl\(u\) \{[\s\S]*?\n\}/) || [''])[0];
+  let videoUrl = null;
+  try { videoUrl = new Function(`${vurlSrc}; return videoUrl;`)(); } catch { /* red below */ }
+  // NEGATIVE CONTROL (run 2026-08-29): renaming the Worker's videoUrl to
+  // videoUrlX made this read
+  //   FAIL  L52 the YouTube gate lifts, takes the real links, and refuses everything else
+  ck('L52 the YouTube gate lifts, takes the real links, and refuses everything else',
+    !!videoUrl
+    && videoUrl('https://www.youtube.com/watch?v=abc123') === 'https://www.youtube.com/watch?v=abc123'
+    && videoUrl(' https://youtu.be/abc123 ') === 'https://youtu.be/abc123'
+    && !!videoUrl('https://m.youtube.com/watch?v=abc123')
+    && videoUrl('http://youtu.be/abc123') === null
+    // eslint-disable-next-line no-script-url
+    && videoUrl('javascript:alert(1)') === null
+    && videoUrl('https://evil.com/watch?v=abc123') === null
+    && videoUrl('https://youtu.be.evil.com/abc123') === null
+    && videoUrl('') === null && videoUrl(null) === null);
+
+  // The two route branches, lifted between their own else-ifs and RUN inside
+  // a harness whose json/patchDoc/notifyUser are spies and whose office
+  // answer is the real predicate at a fixture instant.
+  const branchSrc = (WORKER.match(
+    /\} else if \(action === 'video-add'\) \{[\s\S]*?(?=\} else if \(action === 'recording-uploaded'\))/,
+  ) || [''])[0];
+  const wdsSrc = (WORKER.match(/const WORK_DAY_TZ = [^\n]+\nfunction workDayString\([\s\S]*?\n\}/) || [''])[0];
+  let runner = null;
+  try {
+    // eslint-disable-next-line no-new-func
+    runner = new Function('deps', `
+      const { json, patchDoc, notifyUser, readOfficeHours, officeStatus, crypto } = deps;
+      ${wdsSrc}
+      ${vurlSrc}
+      return async (ctl) => {
+        const env = {};
+        const caseId = 'case1';
+        const doc = { data: ctl.data };
+        const body = ctl.body;
+        const action = body.action;
+        const now = new Date(ctl.nowMs);
+        if (false) { // the lifted region's own leading brace closes this if
+        ${branchSrc}
+        }
+        return json({ ok: true });
+      };
+    `);
+  } catch { /* red below */ }
+  const runVideo = async (ctl) => {
+    const writes = [];
+    const notified = [];
+    const deps = {
+      json: (obj, status = 200) => ({ status, ...obj }),
+      patchDoc: async (_e, path, fields) => { writes.push({ path, fields }); },
+      notifyUser: async (_e, uid, msg) => { notified.push({ uid, ...msg }); },
+      readOfficeHours: async () => ({ manual: ctl.manual ?? null }),
+      officeStatus: (manual) => realOfficeStatus(manual, new Date(ctl.nowMs)),
+      crypto: { randomUUID: () => `v${writes.length + 1}` },
+    };
+    const out = runner ? await runner(deps)(ctl) : { status: 0, error: 'lift failed' };
+    return { out, writes, notified };
+  };
+
+  // Fixture instants, America/Boise (UTC-6 that week): Wednesday 2026-09-02
+  // noon is an open scheduled day; Friday 2026-09-04 noon is closed by the
+  // Fri-Sun rule; Thursday 2026-09-03 is the day after the Wednesday.
+  const WED_NOON = Date.parse('2026-09-02T18:00:00Z');
+  const WED_LATER = Date.parse('2026-09-02T22:00:00Z');
+  const THU_NOON = Date.parse('2026-09-03T18:00:00Z');
+  const FRI_NOON = Date.parse('2026-09-04T18:00:00Z');
+  const CASE = (videos) => ({ status: 'open', clientUid: 'client1', videos });
+  const ADD = { action: 'video-add', title: 'Reading your denial letter', url: 'https://youtu.be/abc123', note: 'Short one.' };
+  const wedVideo = { id: 'v1', title: 'Earlier today', url: 'https://youtu.be/xyz', at: '2026-09-02T16:00:00.000Z' };
+
+  const clean = await runVideo({ data: CASE([]), body: ADD, nowMs: WED_NOON });
+  const second = await runVideo({ data: CASE([wedVideo]), body: ADD, nowMs: WED_LATER });
+  // NEGATIVE CONTROL (run 2026-08-29): rewording the Worker's day-limit
+  // sentence made this read
+  //   FAIL  L53 one per day on his wall clock: the first add lands, the second
+  //         waits for tomorrow  -- first 200, second said "One video a day is
+  //         the limit you set. To...
+  ck('L53 one per day on his wall clock: the first add lands, the second waits for tomorrow',
+    clean.out.ok === true && clean.writes.length === 1
+    && Array.isArray(clean.out.videos) && clean.out.videos.length === 1
+    && second.out.status === 409 && second.writes.length === 0
+    && second.out.error === 'One video a day is the limit you set. Tomorrow.',
+    `first ${JSON.stringify(clean.out.status || 'ok')}, second said "${second.out.error}"`);
+
+  const friday = await runVideo({ data: CASE([]), body: ADD, nowMs: FRI_NOON });
+  const fridayIn = await runVideo({ data: CASE([]), body: ADD, nowMs: FRI_NOON, manual: 'in' });
+  // NEGATIVE CONTROL (run 2026-08-29): disarming the office gate in the
+  // Worker (if (false && !officeStatus...)) made this read
+  //   FAIL  L54 closed days refuse, and his own switch is the override
+  //         -- friday said "undefined", manual-in landed
+  ck('L54 closed days refuse, and his own switch is the override',
+    friday.out.status === 409 && friday.writes.length === 0
+    && friday.out.error === "You're out of office. If today is a working day, flip yourself in first."
+    && fridayIn.out.ok === true && fridayIn.writes.length === 1,
+    `friday said "${friday.out.error}", manual-in ${fridayIn.out.ok ? 'landed' : 'refused'}`);
+
+  const removed = await runVideo({
+    data: CASE([wedVideo]), body: { action: 'video-remove', id: 'v1' }, nowMs: WED_LATER,
+  });
+  const afterRemove = await runVideo({
+    data: CASE(removed.out.videos || []), body: ADD, nowMs: WED_LATER,
+  });
+  const nextDay = await runVideo({ data: CASE([wedVideo]), body: ADD, nowMs: THU_NOON });
+  const wrongId = await runVideo({
+    data: CASE([wedVideo]), body: { action: 'video-remove', id: 'nope' }, nowMs: WED_LATER,
+  });
+  // NEGATIVE CONTROL (run 2026-08-29): making the day-limit predicate `true`
+  // (any existing video blocks, whatever its day) made this read
+  //   FAIL  L55 a removed video frees the day, and so does the day rolling
+  //         over  -- after-remove ok, next-day One video a day is the limit
+  //         you set. Tomorrow.
+  ck('L55 a removed video frees the day, and so does the day rolling over',
+    removed.out.ok === true && (removed.out.videos || []).length === 0
+    && afterRemove.out.ok === true
+    && nextDay.out.ok === true
+    && wrongId.out.status === 404 && wrongId.out.error === 'No such video on this case.',
+    `after-remove ${afterRemove.out.error || 'ok'}, next-day ${nextDay.out.error || 'ok'}`);
+
+  const noClient = await runVideo({ data: { status: 'open', videos: [] }, body: ADD, nowMs: WED_NOON });
+  const closedCase = await runVideo({ data: { status: 'closed', clientUid: 'client1', videos: [] }, body: ADD, nowMs: WED_NOON });
+  // NEGATIVE CONTROL (run 2026-08-29): dropping the title from the Worker's
+  // notification body made this read
+  //   FAIL  L56 the add tells the client by title; the remove and a clientless
+  //         case say nothing  -- add sent "A new video is on your case.",
+  //         remove sent 0
+  ck('L56 the add tells the client by title; the remove and a clientless case say nothing',
+    clean.notified.length === 1 && clean.notified[0].uid === 'client1'
+    && clean.notified[0].body === 'A new video is on your case: Reading your denial letter'
+    && removed.notified.length === 0
+    && noClient.out.ok === true && noClient.notified.length === 0
+    && closedCase.out.status === 409 && closedCase.notified.length === 0,
+    `add sent "${(clean.notified[0] || {}).body}", remove sent ${removed.notified.length}`);
+
+  // The client render, pinned on its extracted source: everything a hand
+  // typed passes esc, the link opens away with noopener, no iframe exists,
+  // and the promise line states the exact limit he chose.
+  const mvSrc = (CLIENT.match(/function mountVideos\(host, c\) \{[\s\S]*?\n\}/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-08-29): dropping rel="noopener" from the
+  // client's Watch link made this read
+  //   FAIL  L57 the client panel escapes what he typed, opens away safely, and states the limit
+  ck('L57 the client panel escapes what he typed, opens away safely, and states the limit',
+    mvSrc.length > 0
+    && mvSrc.includes('${esc(v.title.trim())}')
+    && mvSrc.includes('esc(String(v.note).trim())')
+    && mvSrc.includes('href="${esc(v.url)}" target="_blank" rel="noopener"')
+    && mvSrc.includes("/^https:\\/\\//.test(v.url)")
+    && !/iframe/i.test(mvSrc)
+    && mvSrc.includes('Up to one new video each business day I am open.')
+    && /data-videos-root/.test(ADMIN)
+    && /▶ \$\{esc\(String\(v\.title\)\)\}/.test(ADMIN)
+    && /action: 'video-add'/.test(ADMIN) && /action: 'video-remove'/.test(ADMIN));
+
+  // The demo says the Worker's exact sentences, so a drive against the demo
+  // rehearses the refusals the live app will actually give him.
+  // NEGATIVE CONTROL (run 2026-08-29): rewording the demo's day-limit
+  // sentence made this read
+  //   FAIL  L58 the demo mirrors both refusals word for word
+  ck('L58 the demo mirrors both refusals word for word',
+    DEMO.includes('One video a day is the limit you set. Tomorrow.')
+    && DEMO.includes("You're out of office. If today is a working day, flip yourself in first.")
+    && WORKER.includes('One video a day is the limit you set. Tomorrow.')
+    && WORKER.includes("You're out of office. If today is a working day, flip yourself in first."));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

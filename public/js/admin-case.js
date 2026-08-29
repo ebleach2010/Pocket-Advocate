@@ -4948,7 +4948,9 @@ function paintWorkLog(pane) {
           && (LOG_COLORS[k.color] || /^h\d{1,3}$/.test(String(k.color))));
       }
     } catch { /* an unreachable list still offers the form */ }
-    const key = JSON.stringify([items, customs]);
+    // The videos ride in the key so an add or a remove repaints this pane
+    // even though they live on the case doc rather than in the call list.
+    const key = JSON.stringify([items, customs, (data || {}).videos || null]);
     if (key === callsKey && pane.querySelector('[data-calls-root]')) return;
     callsKey = key;
 
@@ -4970,7 +4972,44 @@ function paintWorkLog(pane) {
       if (last && last.label === label) last.rows.push(i);
       else dayGroups.push({ label, rows: [i] });
     }
-    pane.innerHTML = `
+    // VIDEO GUIDANCE, PARKED FEATURE (Eric, 2026-08-29): the shelf of
+    // unlisted YouTube links he hands a client who chose the video format.
+    // One per open business day, and the Worker is the one who says no - the
+    // sentences under the form are its refusals, said out loud here.
+    const videos = (Array.isArray((data || {}).videos) ? data.videos : [])
+      .filter((v) => v && v.id && v.title);
+    const vDate = (v) => (v.at?.toDate ? v.at.toDate() : new Date(v.at || 0));
+    const videosHtml = `
+      <div class="panel" data-videos-root>
+        <h3 style="margin:0 0 .3rem;">▶ Video guidance</h3>
+        <p class="dim small" style="margin:0 0 .6rem;">Unlisted YouTube links,
+          handed to this client on their case page. One per business day you
+          are open; removing today's video frees the day again. The client is
+          notified by title when one lands.</p>
+        ${videos.slice().sort((a, b) => vDate(b) - vDate(a)).map((v) => `
+        <p class="row" style="gap:.4rem; align-items:center; margin:.2rem 0; flex-wrap:wrap;">
+          <span style="flex:1 1 12rem;">▶ ${esc(String(v.title))}
+            <span class="dim small" style="display:block;">${vDate(v).getTime() ? esc(vDate(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) + ' · ' : ''}<a href="${esc(String(v.url || ''))}" target="_blank" rel="noopener">Watch</a>${v.note ? ` · ${esc(String(v.note))}` : ''}</span></span>
+          <button class="btn ghost tiny" data-video-remove="${esc(String(v.id))}">Remove</button>
+        </p>`).join('')}
+        <details class="faq" data-k="video-new">
+          <summary>Add a video</summary>
+          <div class="faq-a">
+            <label class="dim small">Title. The notification names it, so say
+              what the video walks them through.
+              <input type="text" data-v="title" maxlength="80"
+                placeholder="e.g. Requesting your records from Premier Neuro, step by step"></label>
+            <label class="dim small">The YouTube link, from the Share button.
+              <input type="url" data-v="url" placeholder="https://youtu.be/..."></label>
+            <label class="dim small">One line for the client, optional.
+              <input type="text" data-v="note" maxlength="200"
+                placeholder="e.g. Watch before you call them; the form is in your Documents."></label>
+            <p><button class="btn" data-video-add>Add it, and tell them</button></p>
+          </div>
+        </details>
+        <p class="error" data-video-err hidden></p>
+      </div>`;
+    pane.innerHTML = videosHtml + `
       <div class="panel" data-calls-root>
         <h3 style="margin:0 0 .3rem;">🗒 Work log</h3>
         <p class="dim small" style="margin:0 0 .6rem;">Everything you do on this
@@ -5130,6 +5169,43 @@ function paintWorkLog(pane) {
         return null;
       }
     };
+
+    // The videos post through the case-update route, not the clinic-calls
+    // one: the shelf lives on the case doc. The Worker's reply carries the
+    // whole array back, so the local copy of the case is patched in place and
+    // the pane repaints without waiting for the next Firestore load.
+    const postVideo = async (payload, btn) => {
+      const err = pane.querySelector('[data-video-err]');
+      if (btn) btn.disabled = true;
+      if (err) err.hidden = true;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/admin/case-update', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ caseId, ...payload }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+        if (data && Array.isArray(out.videos)) data.videos = out.videos;
+        callsKey = null;
+        load();
+      } catch (e) {
+        // The Worker's refusals land here word for word: the day limit and
+        // the out-of-office gate are its sentences, not this panel's.
+        if (err) { err.textContent = e.message; err.hidden = false; }
+        if (btn) btn.disabled = false;
+      }
+    };
+    pane.querySelector('[data-video-add]')?.addEventListener('click', (e) => {
+      const g = (n) => pane.querySelector(`[data-v="${n}"]`)?.value.trim() || '';
+      if (!g('title')) { alert('Give the video a title first.'); return; }
+      if (!g('url')) { alert('Paste the YouTube link first.'); return; }
+      postVideo({ action: 'video-add', title: g('title'), url: g('url'), note: g('note') }, e.currentTarget);
+    });
+    for (const b of pane.querySelectorAll('[data-video-remove]')) {
+      b.addEventListener('click', () => postVideo({ action: 'video-remove', id: b.dataset.videoRemove }, b));
+    }
 
     // The new-type mini form, revealed only while the dropdown sits on
     // + New activity type; anything he made lands back in the dropdown
