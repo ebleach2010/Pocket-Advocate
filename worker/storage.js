@@ -62,6 +62,36 @@ export async function listFiles(env, prefix, { max = 100 } = {}) {
 }
 
 /**
+ * Write one object with the service account: the two-week report's CSVs are
+ * built in the Worker and land in the case's report folder, where both
+ * Documents listings already look (2026-08-30). The GCS JSON multipart
+ * upload, so the custom metadata (category, name) rides in the same request
+ * as the bytes. Same read_write scope as deleteFile below.
+ */
+export async function uploadFile(env, path, bytes, contentType, customMetadata = null) {
+  const token = await getAccessToken(env, 'https://www.googleapis.com/auth/devstorage.read_write');
+  const boundary = `pa-${crypto.randomUUID()}`;
+  const meta = JSON.stringify({
+    name: path, contentType,
+    ...(customMetadata ? { metadata: customMetadata } : {}),
+  });
+  const head = `--${boundary}\r\ncontent-type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\ncontent-type: ${contentType}\r\n\r\n`;
+  const tail = `\r\n--${boundary}--`;
+  const enc = new TextEncoder();
+  const body = new Blob([enc.encode(head), bytes, enc.encode(tail)]);
+  const res = await fetch(
+    `https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o?uploadType=multipart`,
+    {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': `multipart/related; boundary=${boundary}` },
+      body,
+    },
+  );
+  if (!res.ok) throw new Error(`storage upload ${path}: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+/**
  * Delete one object with the service account. A missing object counts as
  * deleted: the point is that it is gone, not who got there first. Uses the
  * read_write scope only here; everything else in this file stays read-only.

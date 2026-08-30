@@ -17,7 +17,7 @@ import { WorkflowEntrypoint } from 'cloudflare:workers';
 import { requireUser } from './firebase-auth.js';
 import { mintCustomToken, getAccessToken } from './google-auth.js';
 import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, listDocs } from './firestore.js';
-import { deleteFile, objectMeta, patchObjectMeta } from './storage.js';
+import { uploadFile, deleteFile, objectMeta, patchObjectMeta } from './storage.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import {
   slotTimingProblem, windowProblem, HOLD_MINUTES,
@@ -32,7 +32,7 @@ import { notifyUser } from './push.js';
 import { validateAction } from './advisor-acts.js';
 import {
   getAdvisorEffort, setAdvisorEffort,
-  runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
+  runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, runMidwayReport,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
 
@@ -933,6 +933,8 @@ export default {
         return await handleFileDelete(request, env);
       if (url.pathname === '/api/file/meta' && request.method === 'POST')
         return await handleFileMeta(request, env);
+      if (url.pathname === '/api/admin/midway')
+        return await handleMidway(request, env, ctx);
       if (url.pathname === '/api/admin/ledger' && request.method === 'GET')
         return await handleLedger(request, env);
       if (url.pathname === '/api/chattime' && request.method === 'POST')
@@ -1093,6 +1095,7 @@ export default {
       // Landed 2026-08-29 ("full 340000 -> 350000"); an instant no-op since.
       ctx.waitUntil(repriceTier(env));
       ctx.waitUntil(fixLogTimes(env));
+      ctx.waitUntil(sweepMidwayReports(env, ctx));
     }
 
     // Un-gated on purpose: the wedged case should recover on the FIRST
@@ -1651,6 +1654,213 @@ async function fixLogTimes(env) {
   } catch (err) {
     console.error('fix log times:', err.message || err);
   }
+}
+
+// ---- the two-week effort report (Eric, 2026-08-30) ------------------------
+//
+// "At the end of two weeks of a hands-off case, the client should
+// automatically be delivered a CSV of the log and chat with your analysis of
+// milestones, things accomplished, amount of hours I've put in, your
+// analysis of work done on my part, and how it compares to a typical
+// advocate." His choices (2026-08-30): delivered IN-APP, and HELD FOR HIS
+// TAP: the narrative generates itself at day 14 and waits on the case
+// Overview until he reads it, makes it his, and presses Send.
+
+/**
+ * The log CSV a CLIENT receives. Client-safe columns only: date, type, and
+ * the client line. The private fields (notes, phone, who was on it) are not
+ * merely dropped from the output, they are never read, and an entry with no
+ * client line does not exist here at all: this file is a client page.
+ */
+function midwayLogCsv(items) {
+  const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const lines = [['Date', 'Type', 'What was done'].map(cell).join(',')];
+  for (const it of items) {
+    if (!String(it.summary || '').trim()) continue;
+    const d = new Date(it.at || it.createdAt || 0);
+    lines.push([
+      Number.isFinite(d.getTime()) && d.getTime() ? d.toISOString().slice(0, 10) : '',
+      it.kindLabel || it.kind || 'work',
+      String(it.summary).trim(),
+    ].map(cell).join(','));
+  }
+  return lines.join('\r\n');
+}
+
+/** The whole conversation, both sides, dated. The chat is already shared. */
+function midwayChatCsv(rows, clientName, advocate) {
+  const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const lines = [['Date', 'From', 'Message'].map(cell).join(',')];
+  for (const r of rows) {
+    const t = r.ts ? new Date(r.ts.toDate ? r.ts.toDate() : r.ts) : null;
+    const text = r.text || (r.attachment?.name ? `[shared a file: ${r.attachment.name}]` : '');
+    if (!text) continue;
+    lines.push([
+      t && Number.isFinite(t.getTime()) ? t.toISOString().replace('T', ' ').slice(0, 16) : '',
+      r.role === 'admin' ? advocate : clientName,
+      text,
+    ].map(cell).join(','));
+  }
+  return lines.join('\r\n');
+}
+
+/** When a Hands-Off case's report is due: fourteen days after the month began. */
+function midwayDueAt(c) {
+  const start = c?.fullAccessAt ? new Date(c.fullAccessAt).getTime() : 0;
+  return start ? start + 14 * 86_400_000 : 0;
+}
+
+/**
+ * The day-14 sweep, on the quarter-hour cron. Fires inside a seven-day
+ * window past the mark so a case already deep in its month when this ships
+ * cannot be surprised, stamps caseMeta before starting so two firings never
+ * pay for the same generation, and backs off two hours after a failure.
+ * caseMeta is worker-only: no browser, client or admin, can read the parked
+ * draft except through the admin route below.
+ */
+async function sweepMidwayReports(env, ctx) {
+  let cases = [];
+  try {
+    cases = await queryDocs(env, 'cases', [['fullAccess', 'EQUAL', true]], 100);
+  } catch (err) {
+    console.warn('midway sweep:', err.message || err);
+    return;
+  }
+  const now = Date.now();
+  for (const row of cases) {
+    const c = row.data;
+    if (c.status === 'closed' || !c.clientUid) continue;
+    const due = midwayDueAt(c);
+    if (!due || now < due || now > due + 7 * 86_400_000) continue;
+    const meta = await getDoc(env, `caseMeta/${row.id}`).catch(() => null);
+    const mr = meta?.data.midwayReport;
+    if (mr?.generatedAt || mr?.sentAt) continue;
+    if (mr?.startedAt && now - new Date(mr.startedAt).getTime() < 30 * 60_000) continue;
+    if (mr?.failedAt && now - new Date(mr.failedAt).getTime() < 2 * 3_600_000) continue;
+    await patchDoc(env, `caseMeta/${row.id}`, { midwayReport: { startedAt: new Date() } },
+      { mask: ['midwayReport'] }).catch(() => {});
+    ctx.waitUntil((async () => {
+      try {
+        await runMidwayReport(env, row.id);
+        const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5);
+        for (const a of admins) {
+          await notifyUser(env, a.id, {
+            title: 'Pocket Advocate',
+            body: `The two-week report for ${c.clientName || 'a client'} is ready for your eyes.`,
+            link: `/admin-case.html?id=${row.id}`,
+          }).catch(() => {});
+        }
+      } catch (err) {
+        console.error('midway report:', err.message || err);
+        await patchDoc(env, `caseMeta/${row.id}`,
+          { midwayReport: { failedAt: new Date() } }, { mask: ['midwayReport'] }).catch(() => {});
+      }
+    })());
+  }
+}
+
+/**
+ * GET  /api/admin/midway?caseId=   the parked report's state and draft
+ * POST /api/admin/midway { caseId, action: 'generate' }   write it now
+ * POST /api/admin/midway { caseId, action: 'send', text } deliver it
+ *
+ * Send is the only door out of the building: HIS text, exactly as the box
+ * holds it, goes as the chat message; the CSVs are built fresh at this
+ * moment so they cover through the day it actually goes.
+ */
+async function handleMidway(request, env, ctx) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const url = new URL(request.url);
+
+  if (request.method === 'GET') {
+    const caseId = String(url.searchParams.get('caseId') || '');
+    if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case id' }, 400);
+    const [doc, meta] = await Promise.all([
+      getDoc(env, `cases/${caseId}`),
+      getDoc(env, `caseMeta/${caseId}`).catch(() => null),
+    ]);
+    if (!doc) return json({ error: 'No such case' }, 404);
+    const mr = meta?.data.midwayReport || null;
+    return json({
+      report: mr ? {
+        generatedAt: mr.generatedAt || null,
+        sentAt: mr.sentAt || null,
+        startedAt: mr.startedAt || null,
+        draft: mr.draft || '',
+      } : null,
+      dueAt: midwayDueAt(doc.data) ? new Date(midwayDueAt(doc.data)) : null,
+    });
+  }
+
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const caseId = String(body.caseId || '');
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case id' }, 400);
+  const doc = await getDoc(env, `cases/${caseId}`);
+  if (!doc) return json({ error: 'No such case' }, 404);
+  const c = doc.data;
+  if (!c.fullAccess) return json({ error: 'This is not a Hands-Off case.' }, 400);
+
+  if (body.action === 'generate') {
+    await patchDoc(env, `caseMeta/${caseId}`, { midwayReport: { startedAt: new Date() } },
+      { mask: ['midwayReport'] });
+    ctx.waitUntil(runMidwayReport(env, caseId).catch(async (err) => {
+      console.error('midway generate:', err.message || err);
+      await patchDoc(env, `caseMeta/${caseId}`,
+        { midwayReport: { failedAt: new Date() } }, { mask: ['midwayReport'] }).catch(() => {});
+    }));
+    return json({ ok: true, started: true });
+  }
+
+  if (body.action === 'send') {
+    const text = String(body.text || '').replace(/\r\n/g, '\n').trim().slice(0, 2400);
+    if (!text) return json({ error: 'The message is empty.' }, 400);
+    if (c.status === 'closed') return json({ error: 'Case is closed.' }, 409);
+    const meta = await getDoc(env, `caseMeta/${caseId}`).catch(() => null);
+    const mr = meta?.data.midwayReport || {};
+    if (mr.sentAt) return json({ error: 'Already sent.' }, 409);
+    const now = new Date();
+    // The CSVs, built now so they cover through today.
+    const [logRows, chatRows, profile] = await Promise.all([
+      listDocs(env, `cases/${caseId}/private/clinicCalls/items`, { pageSize: 200, all: true })
+        .catch(() => []),
+      listDocs(env, `cases/${caseId}/chat`, { pageSize: 400, all: true }).catch(() => []),
+      getDoc(env, `users/${admin.uid}`).catch(() => null),
+    ]);
+    const who = advocateName(profile);
+    const logCsv = midwayLogCsv(logRows.map((r) => r.data)
+      .sort((a, b) => new Date(a.at || a.createdAt || 0) - new Date(b.at || b.createdAt || 0)));
+    const chatCsv = midwayChatCsv(chatRows.map((r) => r.data)
+      .sort((a, b) => {
+        const t = (x) => (x.ts ? new Date(x.ts.toDate ? x.ts.toDate() : x.ts).getTime() : 0);
+        return t(a) - t(b);
+      }), c.clientName || 'Client', who);
+    const stamp = Date.now();
+    await uploadFile(env, `cases/${caseId}/report/${stamp}-two-week-work-log.csv`,
+      `﻿${logCsv}`, 'text/csv; charset=utf-8');
+    await uploadFile(env, `cases/${caseId}/report/${stamp}-two-week-chat.csv`,
+      `﻿${chatCsv}`, 'text/csv; charset=utf-8');
+    // The message, HIS text word for word, through the same shape every
+    // worker-side send uses: chat doc, lastMessage, then the notification.
+    await patchDoc(env, `cases/${caseId}/chat/${crypto.randomUUID()}`, {
+      from: admin.uid, role: 'admin', text, ts: now,
+    });
+    await patchDoc(env, `cases/${caseId}`, {
+      lastMessage: { text: text.slice(0, 120), from: admin.uid, role: 'admin', ts: now, emailed: false },
+    }, { mask: ['lastMessage'] }).catch(() => {});
+    await notifyUser(env, c.clientUid, {
+      title: 'Pocket Advocate',
+      body: 'Your two-week report is in: a message from me, and two spreadsheets in your Documents.',
+      link: `/case.html?id=${caseId}`,
+    }).catch(() => {});
+    await patchDoc(env, `caseMeta/${caseId}`, {
+      midwayReport: { generatedAt: mr.generatedAt || now, draft: text, sentAt: now },
+    }, { mask: ['midwayReport'] });
+    return json({ ok: true, sent: true });
+  }
+
+  return json({ error: 'Unknown action' }, 400);
 }
 
 async function seedWorkClock(env) {

@@ -1540,6 +1540,51 @@ export function demoApi(role, store) {
       });
     }
 
+    // The two-week report (2026-08-30), mirrored: the full case wakes with a
+    // ready draft so the card is drivable; Send writes the chat message and
+    // marks it sent, exactly the state flow the Worker keeps on caseMeta.
+    if (path === '/api/admin/midway') {
+      if (role !== 'admin') return fail(404, 'Not found');
+      const id = body.caseId || q.get('caseId') || DEMO_CASE_ID;
+      const key = `demoMidway/${id}`;
+      const c = store.docs.get(`cases/${id}`);
+      if (!c) return fail(404, 'No such case');
+      let mr = store.docs.get(key);
+      if (!mr && c.fullAccess) {
+        mr = {
+          generatedAt: new Date().toISOString(),
+          sentAt: null,
+          draft: 'Jordan, we are two weeks in and I want you to see the shape of it. '
+            + 'Since the month opened I have been on the phone with Cascade Health twice, '
+            + 'filed your first-level appeal, and chased the records your denial turned on. '
+            + 'The clock stands at 22h 0m of case review and 2h 30m on the month, 24h 30m '
+            + 'in all. For scale, independent patient advocates typically put 2 to 5 hours '
+            + 'a week into an active case. The two spreadsheets in your Documents carry '
+            + 'every logged line and our whole conversation. The back half of the month is '
+            + 'for the appeal decision and the second opinion. I am with you.',
+        };
+        store.docs.set(key, mr);
+      }
+      if ((init.method || 'GET') === 'GET' || !body.action) {
+        return ok({ report: mr || null, dueAt: null });
+      }
+      if (body.action === 'send') {
+        const text = String(body.text || '').trim().slice(0, 2400);
+        if (!text) return fail(400, 'The message is empty.');
+        if (mr?.sentAt) return fail(409, 'Already sent.');
+        const now = new Date();
+        store.docs.set(`cases/${id}/chat/midway-${Date.now()}`, {
+          from: 'demo-admin', role: 'admin', text, ts: now,
+        });
+        store.docs.set(key, { ...(mr || {}), draft: text, sentAt: now.toISOString() });
+        store.persist?.();
+        store.fire?.(`cases/${id}/chat/x`);
+        return ok({ ok: true, sent: true });
+      }
+      if (body.action === 'generate') return ok({ ok: true, started: true });
+      return fail(400, 'Unknown action');
+    }
+
     // ---- everything else --------------------------------------------------
     if (path === '/api/version') return ok({ tag: 'demo', version: '2.27' });
     if (path === '/api/changelog') {
