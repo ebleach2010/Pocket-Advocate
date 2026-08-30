@@ -26,9 +26,12 @@ const check = (name, cond, detail = '') => {
 };
 
 // ---- the cadence ----
+// Pins renamed 2026-08-30 (Eric, via a ChatGPT read of his advert: 'hands-off
+// reads like you aren't doing much'): the tier is Full-Service Case
+// Management on every surface a person reads. Identifiers (fullAccess) stay.
 check('C1 the checkin scheduler mode exists and is tier-only',
   // Renamed with the tier (Eric, 2026-08-25): Hands-Off Case Management.
-  /'checkin'/.test(SRC) && /if \(!c\.fullAccess\) return json\(\{ error: 'Check-ins are part of Hands-Off Case Management/.test(SRC));
+  /'checkin'/.test(SRC) && /if \(!c\.fullAccess\) return json\(\{ error: 'Check-ins are part of Full-Service Case Management/.test(SRC));
 check('C2 a check-in past the window is refused, pointing at extensions',
   /That lands after the window ends[\s\S]{0,80}Extend the case first/.test(SRC));
 check('C3 check-ins are an append-only ARRAY, never the single followUp object',
@@ -152,7 +155,7 @@ check('T16 the demo drives the whole loop',
 // constant with no route and fullAccessExtraDays had no writer.)
 check('E1 the extend route exists and is tier-only',
   /async function handleExtendCheckout/.test(SRC)
-  && /Extensions are part of Hands-Off Case Management\./.test(SRC));
+  && /Extensions are part of Full-Service Case Management\./.test(SRC));
 check('E2 the webhook stacks a month, idempotent by sessionId',
   /async function confirmExtensionPurchase/.test(SRC)
   && /fullAccessExtraDays: newDays/.test(SRC)
@@ -307,7 +310,7 @@ check('W7 the landing sells with his phrase, and the value math is on the servic
     const valueMath = /per appeal<\/em> elsewhere/.test(svc) && /data-rate="full"/.test(svc);
     // And the landing still has to NAME the tier and its live price, or the
     // split would have quietly hidden the most expensive thing he sells.
-    const onLanding = /data-rate="full"/.test(idx) && /Hands-Off Case Management/.test(idx);
+    const onLanding = /data-rate="full"/.test(idx) && /Full-Service Case Management/.test(idx);
     return hisPhrase && valueMath && onLanding;
   })());
 

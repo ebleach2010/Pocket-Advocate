@@ -221,7 +221,7 @@ const ACTS = {
   'full-capacity': {
     tier: DESK, via: ROUTE, scoped: false,
     path: '/api/admin/full-capacity',
-    describe: 'Set how many Hands-Off cases you carry at once',
+    describe: 'Set how many Full-Service cases you carry at once',
     schema: {
       type: 'object',
       properties: {
@@ -236,8 +236,8 @@ const ACTS = {
       return {
         args: { maxOpen: n },
         summary: n === 0
-          ? 'Carry as many Hands-Off cases at once as come in, with no limit.'
-          : `Carry at most ${n} Hands-Off case${n === 1 ? '' : 's'} at once.`,
+          ? 'Carry as many Full-Service cases at once as come in, with no limit.'
+          : `Carry at most ${n} Full-Service case${n === 1 ? '' : 's'} at once.`,
       };
     },
   },
@@ -355,9 +355,9 @@ const ACTS = {
     },
   },
 
-  // ---- THE SEAM: sending the hands-off forms ----------------------------
+  // ---- THE SEAM: sending the full-service forms ----------------------------
   // Eric, 2026-08-27: "This is another example of what the advisor could do:
-  // 'send the hands-off forms to the client'."
+  // 'send the full-service forms to the client'."
   //
   // DONE, 2026-08-28. This was written while the form sender was still being
   // built on claude/pocketai-webhooks-triggers-a96dea-forms and did not exist
@@ -410,7 +410,7 @@ const ACTS = {
   // state, and the next two lines are the reason it changed.
   // WIRED 2026-08-28, once both halves of the seam were in one tree for the
   // first time. Eric named this himself as what he wanted the advisor to do:
-  // "send the hands-off forms to the client".
+  // "send the full-service forms to the client".
   //
   // CONFIRM tier, and not negotiable: this puts documents on a client's case
   // and buzzes their phone once per form. Resendable by design, so the card
@@ -421,7 +421,7 @@ const ACTS = {
     tier: CONFIRM, via: PAGE, scoped: true,
     path: null,
     event: 'pa-send-forms',
-    describe: 'Send the Hands-Off authorisation forms to this client',
+    describe: 'Send the Full-Service authorisation forms to this client',
     schema: { type: 'object', properties: {} },
     check() {
       // No arguments to validate. WHICH forms is not the model's to choose:
@@ -455,7 +455,7 @@ const DENIED = {
   // Gone is gone.
   'delete-file': 'Deleting a file cannot be undone, so it stays your hand only.',
   // No off switch: nothing in the app can take a case back off the tier.
-  'open-full': 'Opening Hands-Off has no off switch, so it stays your hand only.',
+  'open-full': 'Opening Full-Service has no off switch, so it stays your hand only.',
   // Marks the case delivered, which starts an irreversible 48 hour clock.
   'report-uploaded': 'Marking the report delivered starts the client\'s 48 hours and cannot be taken back.',
   // CLAUDE.md, standing: prices only change on Eric's explicit word.

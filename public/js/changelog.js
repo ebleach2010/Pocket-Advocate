@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.67';
+export const VERSION = '2.68';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '2.67';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE RENAME (Eric, 2026-08-30, after a second read of his advert:
+    // "'hands-off' reads like you aren't doing much, which is basically the
+    // opposite of the entire post"). One hundred twenty-three mentions across
+    // seventeen files; the stored field names stay what they were, his own
+    // quoted words in old comments stay his, and the old name survives only
+    // in these release notes as history.
+    version: '2.68',
+    client: [
+      'Hands-Off Case Management is now called Full-Service Case Management. Same service, same promises, a name that says what it is.',
+    ],
+  },
   {
     // Two star reports within the hour (Eric, 2026-08-30): pinning several
     // files could look refused, because the slow real listing let an OLDER

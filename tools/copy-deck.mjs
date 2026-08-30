@@ -242,7 +242,7 @@ const CASE_AGREEMENTS = await (async () => {
     const { FULL_ACCESS_TERMS } = await import(`${R}/public/js/tier-terms.js`);
     out.push({ title: FULL_ACCESS_TERMS.title, body: textOf(FULL_ACCESS_TERMS.body),
       where: 'public/js/tier-terms.js',
-      when: 'Acknowledged before Hands-Off Case Management is bought, and readable from the case page after.' });
+      when: 'Acknowledged before Full-Service Case Management is bought, and readable from the case page after.' });
   } catch { /* keep the deck alive */ }
   try {
     const { SERVICE_TERMS } = await import(`${R}/public/js/service-terms.js`);
@@ -256,7 +256,7 @@ const CASE_AGREEMENTS = await (async () => {
     out.push({ title: 'Scope of work agreement (the document itself)',
       body: A.scopeOfWork({ clientName: '[CLIENT NAME]', blank: true }),
       where: 'public/js/authority.js',
-      when: 'Signed on the case page when Hands-Off opens by hand; the one document the app itself signs (Eric, 2026-08-29).' });
+      when: 'Signed on the case page when Full-Service opens by hand; the one document the app itself signs (Eric, 2026-08-29).' });
     out.push({ title: 'Records authorisation (the document itself)',
       body: A.recordsAuthorisation(o), where: 'public/js/authority.js',
       when: 'Sent by hand from the case page, signed outside the app; placeholders shown in brackets.' });
@@ -403,7 +403,7 @@ ${section(9, `The booking agreements, in full (${WAIVERS.length})`,
     w.body)).join(''))}
 
 ${section(10, 'The case-page agreements, and the two documents clients sign',
-  'The Hands-Off scope note, the running-of-the-service terms, and the two authority documents, whole. These changed most recently, so read them closest.',
+  'The Full-Service scope note, the running-of-the-service terms, and the two authority documents, whole. These changed most recently, so read them closest.',
   CASE_AGREEMENTS.map((a) => entry(a.title, a.where, a.when, a.body)).join(''))}
 
 ${section(11, 'Your case page, everything a client reads',

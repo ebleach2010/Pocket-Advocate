@@ -157,10 +157,13 @@ check('P13 the market recalibration has its OWN marker, because the last finishe
   && !/MARKER = 'migrations\/reprice-2026-08-24-tier'/.test(SRC));
 
 // ---- the tier -------------------------------------------------------------
+// Pins renamed 2026-08-30 (Eric, via a ChatGPT read of his advert: 'hands-off
+// reads like you aren't doing much'): the tier is Full-Service Case
+// Management on every surface a person reads. Identifiers (fullAccess) stay.
 check('T1 booking REFUSES the tier: it is added from inside a case now',
   // Eric, 2026-08-25: "Advocacy case and direct line are bookable. The
   // others are ADD-ONS." A refusal with directions, never a silent clamp.
-  /Hands-Off Case Management is added from inside an open case now/.test(SRC)
+  /Full-Service Case Management is added from inside an open case now/.test(SRC)
   && !/tier: wantsFull/.test(SRC) && !/const wantsFull/.test(SRC));
 check('T2 a full-access sale is refused without the scope-note ack',
   /typeof body\?\.acks\?\.\[FULL_ACCESS_ACK\] !== 'number'/.test(SRC));
@@ -702,7 +705,7 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   // different subject line made this read
   //   FAIL  T8 ... -- ["Your case is open"]
   check('T8 the client is emailed exactly as a payment would email them',
-    open.emails.length === 1 && /Hands-Off Case Management is open/.test(open.emails[0].subject || '')
+    open.emails.length === 1 && /Full-Service Case Management is open/.test(open.emails[0].subject || '')
       && /what I need from you to get moving/.test(open.emails[0].html || ''),
     JSON.stringify(open.emails.map((e) => e.subject)));
   const twice = await run({ ...CASEDOC, fullAccess: true }, { action: 'open-full', tierCents: 340000 });
@@ -828,7 +831,7 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   check('T13 the demo implements both new actions under the same bounds',
     /body\.action === 'set-paid'/.test(DEMO)
     && /body\.action === 'open-full'/.test(DEMO)
-    && /already on Hands-Off Case Management/.test(DEMO));
+    && /already on Full-Service Case Management/.test(DEMO));
 }
 
 // ---- U1-U6: one window, three copies of it, and they did not agree -------

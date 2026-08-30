@@ -120,8 +120,11 @@ check('W6a a records release can be signed on any case',
 // agreement"), so it shares the designation's gate. The pinned source moved
 // from `kind === 'representative'` to the two-kind form; updated, not
 // deleted.
-check('W6b the insurance designation and the scope agreement are Hands-Off only',
-  /if \(\(kind === 'representative' \|\| kind === 'scope'\) && !c\.data\.fullAccess\)\n\s*return json\(\{ error: 'This case is not on Hands-Off Case Management\.' \}, 409\);/.test(WORKER));
+// Pins renamed 2026-08-30 (Eric, via a ChatGPT read of his advert: 'hands-off
+// reads like you aren't doing much'): the tier is Full-Service Case
+// Management on every surface a person reads. Identifiers (fullAccess) stay.
+check('W6b the insurance designation and the scope agreement are Full-Service only',
+  /if \(\(kind === 'representative' \|\| kind === 'scope'\) && !c\.data\.fullAccess\)\n\s*return json\(\{ error: 'This case is not on Full-Service Case Management\.' \}, 409\);/.test(WORKER));
 // The half that is easy to lose when a gate moves: somebody who signed while
 // on Hands-Off must still be able to withdraw afterwards. The old blanket gate
 // sat above the revoke branch and answered 409, which left them holding a

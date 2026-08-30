@@ -117,7 +117,7 @@ const SUB_PRICE_CENTS = 5000;
 // the tier is realistically 25-35 hours, so $3,500 is $100-140/hr. He holds
 // at most FULL_MAX_OPEN_DEFAULT of these at once with health that varies,
 // so each slot has to carry its weight - price above the floor, not at it.
-// Hands-Off is billed BY THE MONTH, not as a lump (Eric, 2026-08-25). The
+// Full-Service is billed BY THE MONTH, not as a lump (Eric, 2026-08-25). The
 // price is the same money either way; what changes is the moment of paying.
 //
 // The reasoning, because it decides the shape of three routes: hourly was
@@ -1819,7 +1819,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-30-star-polish';
+const BUILD_TAG = 'v2026-08-30-full-service';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1827,7 +1827,7 @@ const BUILD_TAG = 'v2026-08-30-star-polish';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.67';
+const VERSION = '2.68';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2021,7 +2021,7 @@ function fullAccessLineItems(cents) {
         currency: 'usd',
         unit_amount: cents,
         product_data: {
-          name: 'Hands-Off Case Management, first month',
+          name: 'Full-Service Case Management, first month',
           description: 'Direct work with your clinics and insurer, including appeals. Your case fee is credited against this.',
         },
       },
@@ -2064,7 +2064,7 @@ const capacityLine = (cap) => (cap.max === 0
   : `${cap.open} of ${cap.max} open.`);
 
 /**
- * When a Hands-Off case's coordination window closes: the PURCHASE moment
+ * When a Full-Service case's coordination window closes: the PURCHASE moment
  * plus 60 days, plus any extension bought.
  *
  * Eric, 2026-08-25: "the clock starts upon booking. It's up to them how
@@ -2318,7 +2318,7 @@ async function fullAccessCapacity(env) {
 /**
  * GET/POST /api/admin/full-capacity   admin only
  *
- * How many Hands-Off cases he carries at once, from his phone, with no deploy.
+ * How many Full-Service cases he carries at once, from his phone, with no deploy.
  * `maxOpen: 0` is no limit at all, which is the thing he actually asked for;
  * anything else is that many.
  *
@@ -2378,7 +2378,7 @@ async function handleCheckout(request, env) {
   const { slotId, requestedStart, method, phone, acks } = body;
   const clientTz = validTz(body.tz);
   // Booking sells ONE service (Eric, 2026-08-25: "Advocacy case and direct
-  // line are bookable. The others are ADD-ONS."). Hands-Off Case Management
+  // line are bookable. The others are ADD-ONS."). Full-Service Case Management
   // is bought from inside an open case through /api/upgrade, at the
   // difference, behind its own scope-note gate there. A refusal, not a
   // silent clamp: charging $650 against a $3,500 intent is exactly the
@@ -2387,7 +2387,7 @@ async function handleCheckout(request, env) {
   // sentence converts them.
   if (body?.tier === 'full')
     return json({
-      error: 'Hands-Off Case Management is added from inside an open case now. '
+      error: 'Full-Service Case Management is added from inside an open case now. '
         + 'Book an Advocacy Case, then add it from your case page — you pay the difference, never twice.',
     }, 400);
 
@@ -3807,10 +3807,10 @@ async function handleAuthority(request, env, url) {
   // landing page, and this release is the instrument that gets them and that
   // lets him speak to the clinic. Gating it meant the core service had no
   // lawful way to start. Only the insurance representative designation is
-  // Hands-Off work, and only it is gated now, below, once `kind` is known.
+  // Full-Service work, and only it is gated now, below, once `kind` is known.
   //
   // Revocation is deliberately OUTSIDE any tier check. A client who signs
-  // while on Hands-Off and whose case later is not must still be able to
+  // while on Full-Service and whose case later is not must still be able to
   // withdraw; the old gate answered 409 and left them holding a permission
   // they could not take back.
   if (body?.action === 'revoke') {
@@ -3848,12 +3848,12 @@ async function handleAuthority(request, env, url) {
   if (ctx.isAdmin) return json({ error: 'Only the client can sign this.' }, 403);
   const kind = String(body?.kind || '');
   if (!AUTHORITY_KINDS.includes(kind)) return json({ error: 'Bad request' }, 400);
-  // The half that is genuinely Hands-Off work. Filing appeals and speaking to
+  // The half that is genuinely Full-Service work. Filing appeals and speaking to
   // a plan on somebody's behalf is what the monthly fee buys; the records
   // release above is not, and any case can sign one. The scope of work
-  // agreement is the Hands-Off engagement itself, so it is gated the same way.
+  // agreement is the Full-Service engagement itself, so it is gated the same way.
   if ((kind === 'representative' || kind === 'scope') && !c.data.fullAccess)
-    return json({ error: 'This case is not on Hands-Off Case Management.' }, 409);
+    return json({ error: 'This case is not on Full-Service Case Management.' }, 409);
   const typed = typeof body?.signedName === 'string' ? body.signedName.trim().slice(0, 120) : '';
   if (typed.length < 2) return json({ error: 'Type your full name to sign.' }, 400);
   // The typed name has to be the name on the case. Not signature matching,
@@ -4711,11 +4711,11 @@ async function readDaySeconds(env, caseId) {
  * if they upgrade before the report is due.").
  *
  * `work.tierMark` is the second where the case-review clock ended and the
- * Hands-Off clock began. Everything at or below the mark is review-phase
- * work; everything past it belongs to the Hands-Off months. The stored
+ * Full-Service clock began. Everything at or below the mark is review-phase
+ * work; everything past it belongs to the Full-Service months. The stored
  * total keeps counting - the ledger, the hourly and the nudges still read
  * one case-lifetime number - and every display subtracts the mark to show
- * the tier's own clock. Stamped at the moment a case goes Hands-Off,
+ * the tier's own clock. Stamped at the moment a case goes Full-Service,
  * whichever door it goes through, report delivered or not.
  *
  * This computes the work object for that stamp: a running stretch is banked
@@ -4823,8 +4823,8 @@ async function handleWork(request, env) {
   const tierMark = Math.max(0, Number(w.tierMark) || 0);
 
   // RE-STAMP THE TIER MARK BY HAND (Eric, 2026-08-29: "if they upgrade to a
-  // hands-off, the clock resets. Two clocks for two different tiers."). The
-  // flip stamps this automatically now, but his live case went Hands-Off
+  // full-service, the clock resets. Two clocks for two different tiers."). The
+  // flip stamps this automatically now, but his live case went Full-Service
   // before the mark existed - this is the one-tap backfill in the fix
   // sheet, and it can re-stamp at the current total any time. `false`
   // clears the mark; no control sends it today, but an undo has to have a
@@ -5663,7 +5663,7 @@ async function handleChangelog(request, env) {
 function upgradeCents(c, liveFullCents) {
   // NO CREDIT (Eric, 2026-08-29: "Clients don't get discounted their initial
   // cost for a case review. They pay 3400 separately."). The case fee bought
-  // the case review; a Hands-Off month is a separate service at the full
+  // the case review; a Full-Service month is a separate service at the full
   // month price. The credit this function used to apply lives in file
   // history at v2.52. `c` stays in the signature so the callers and the
   // quote-freeze handshake do not have to know the arithmetic changed.
@@ -5671,7 +5671,7 @@ function upgradeCents(c, liveFullCents) {
 }
 
 /**
- * POST /api/upgrade - ASK for Hands-Off Case Management.
+ * POST /api/upgrade - ASK for Full-Service Case Management.
  *
  * This used to be a checkout. It is a request now (Eric, 2026-08-25: "Hands
  * off cases get approval by me once they submit request. If I approve, they
@@ -5694,7 +5694,7 @@ async function handleUpgradeCheckout(request, env) {
   const c = await getDoc(env, `cases/${caseId}`);
   if (!c || c.data.clientUid !== user.uid) return json({ error: 'Not found' }, 404);
   if (c.data.fullAccess)
-    return json({ error: 'This case already has Hands-Off Case Management.' }, 409);
+    return json({ error: 'This case already has Full-Service Case Management.' }, 409);
   if (c.data.status === 'closed')
     return json({ error: 'This case is closed. Book a new one and we will start there.' }, 409);
 
@@ -5743,7 +5743,7 @@ async function handleUpgradeCheckout(request, env) {
       // turned off, so the phrase comes from one place that has a branch for
       // it - and keeps the count either way, because this notification is the
       // only place he passively learns his current load.
-      body: `${firstName(c.data.clientName) || 'A client'} is asking for Hands-Off. ${capacityLine(cap)}`,
+      body: `${firstName(c.data.clientName) || 'A client'} is asking for Full-Service. ${capacityLine(cap)}`,
       link: `/admin-case.html?id=${caseId}`,
     }).catch(() => {});
   }
@@ -5784,7 +5784,7 @@ async function handleFullRequestDecision(request, env) {
     if (c.data.clientUid) {
       await notifyUser(env, c.data.clientUid, {
         title: 'Pocket Advocate',
-        body: 'I have answered your Hands-Off request. Nothing was charged.',
+        body: 'I have answered your Full-Service request. Nothing was charged.',
         link: `/case.html?id=${caseId}`,
       }).catch(() => {});
     }
@@ -5861,7 +5861,7 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
     for (const a of admins) {
       await notifyUser(env, a.id, {
         title: 'Pocket Advocate',
-        body: `${firstName(c.data.clientName)} paid for Hands-Off Case Management their case already has. Refund it from Stripe.`,
+        body: `${firstName(c.data.clientName)} paid for Full-Service Case Management their case already has. Refund it from Stripe.`,
         link: `/admin-case.html?id=${caseId}`,
       }).catch(() => {});
     }
@@ -5880,7 +5880,7 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
   };
   const req = c.data.fullAccessRequest;
   // The clock resets at the flip (Eric, 2026-08-29): the review hours stay
-  // behind work.tierMark and the Hands-Off clock starts from here.
+  // behind work.tierMark and the Full-Service clock starts from here.
   const split = splitClockAtFlip(c.data.work, now);
   const okBuy = await patchDoc(env, `cases/${caseId}`, {
     fullAccess: true,
@@ -5914,8 +5914,8 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
   if (c.data.clientEmail) {
     await sendEmail(env, {
       to: c.data.clientEmail,
-      subject: 'Hands-Off Case Management is open on your case',
-      html: `<p>Your case is now on Hands-Off Case Management. I do the legwork from here: I work directly with your clinics and your insurer rather than alongside you.</p>
+      subject: 'Full-Service Case Management is open on your case',
+      html: `<p>Your case is now on Full-Service Case Management. I do the legwork from here: I work directly with your clinics and your insurer rather than alongside you.</p>
         <p>I will message you in your case chat with what I need from you to get moving. Everything I do on your case is logged on your case page as I do it, so you can see where it stands without having to ask.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
     }).catch(() => {});
@@ -5924,7 +5924,7 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
   for (const a of admins) {
     await notifyUser(env, a.id, {
       title: 'Pocket Advocate',
-      body: `${firstName(c.data.clientName)} upgraded to Hands-Off Case Management.`,
+      body: `${firstName(c.data.clientName)} upgraded to Full-Service Case Management.`,
       link: `/admin-case.html?id=${caseId}`,
     }).catch(() => {});
   }
@@ -6047,7 +6047,7 @@ async function confirmFollowUpPurchase(env, session) {
 /**
  * POST /api/extend  Body: { caseId }
  *
- * Another month on a Hands-Off case, as many times as it needs. This is the
+ * Another month on a Full-Service case, as many times as it needs. This is the
  * SAME price and the same thirty days as month one - the tier is monthly all
  * the way down, so there is no separate "extension" product to reason about,
  * just the next month.
@@ -6060,7 +6060,7 @@ function extendLineItems(cents) {
     price_data: {
       currency: 'usd',
       product_data: {
-        name: 'Hands-Off Case Management, one month',
+        name: 'Full-Service Case Management, one month',
         description: 'Another month of coordination on this case.',
       },
       unit_amount: cents,
@@ -6079,7 +6079,7 @@ async function handleExtendCheckout(request, env) {
   const c = await getDoc(env, `cases/${caseId}`);
   if (!c || c.data.clientUid !== user.uid) return json({ error: 'Not found' }, 404);
   if (!c.data.fullAccess)
-    return json({ error: 'Extensions are part of Hands-Off Case Management.' }, 409);
+    return json({ error: 'Extensions are part of Full-Service Case Management.' }, 409);
   if (c.data.status === 'closed') return json({ error: 'This case is closed.' }, 409);
   // A live checkout still in play: hand back the same link rather than
   // opening a second one they could pay twice.
@@ -7119,7 +7119,7 @@ async function handleAdvisor(request, env, ctx) {
   if (action === 'appeal-draft') {
     const c = await getDoc(env, `cases/${id}`).catch(() => null);
     if (kind === 'case' && !c?.data.fullAccess)
-      return json({ ok: false, error: 'This case is not on Hands-Off Case Management.' }, 409);
+      return json({ ok: false, error: 'This case is not on Full-Service Case Management.' }, 409);
     // No count gate here any more. The scope note promised two letters and a
     // gate enforced it; on Eric's word (2026-08-28) the agreement now promises
     // as many appeals as the case needs, so the only per-case rule left is the
@@ -7790,7 +7790,7 @@ async function handleCaseUpdate(request, env) {
     // however he collected it.
     const c = doc.data;
     if (c.fullAccess)
-      return json({ error: 'This case is already on Hands-Off Case Management.' }, 409);
+      return json({ error: 'This case is already on Full-Service Case Management.' }, 409);
     if (c.status === 'closed') return json({ error: 'Case is closed.' }, 409);
     // Zero is allowed on purpose: if he already took the money through the
     // charge panel it is in extraPayments, and entering it again here would
@@ -7839,12 +7839,12 @@ async function handleCaseUpdate(request, env) {
         // Says on the ledger line where the money came from, because a
         // payment with no Stripe session against it looks like a mistake to
         // anybody reading it later, including him.
-        byHand: true, label: 'Hands-Off Case Management, paid outside the app',
+        byHand: true, label: 'Full-Service Case Management, paid outside the app',
       });
     }
     const req = c.fullAccessRequest;
     // Same clock reset as the paid door: review hours behind the mark, the
-    // Hands-Off clock from here (Eric, 2026-08-29).
+    // Full-Service clock from here (Eric, 2026-08-29).
     const split = splitClockAtFlip(c.work, now);
     await patchDoc(env, `cases/${caseId}`, {
       fullAccess: true,
@@ -7882,8 +7882,8 @@ async function handleCaseUpdate(request, env) {
       });
       await sendEmail(env, {
         to: c.clientEmail,
-        subject: 'Hands-Off Case Management is open on your case',
-        html: `<p>Your case is now on Hands-Off Case Management. I do the legwork from here: I work directly with your clinics and your insurer rather than alongside you.</p>
+        subject: 'Full-Service Case Management is open on your case',
+        html: `<p>Your case is now on Full-Service Case Management. I do the legwork from here: I work directly with your clinics and your insurer rather than alongside you.</p>
         ${startsLater ? `<p>Your month runs from ${dayFmt.format(startAt)}. It is still worth getting me your permission before then: a records request can take weeks to come back, so the sooner the paperwork is in, the more of your month is spent on your case instead of on waiting.</p>` : ''}
         <p>I will message you in your case chat with what I need from you to get moving. Everything I do on your case is logged on your case page as I do it, so you can see where it stands without having to ask.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
@@ -8390,7 +8390,7 @@ async function handleAdminSchedule(request, env) {
     // is no automation and no charge. Unlike followUp - a single object,
     // deliberately, because a standard case gets exactly one - check-ins are
     // an append-only array: the whole point is that there are several.
-    if (!c.fullAccess) return json({ error: 'Check-ins are part of Hands-Off Case Management. Use "charge" for a standard case.' }, 409);
+    if (!c.fullAccess) return json({ error: 'Check-ins are part of Full-Service Case Management. Use "charge" for a standard case.' }, 409);
     if (c.status === 'closed') return json({ error: 'This case is closed.' }, 409);
     const until = fullAccessWindowEnd(c);
     if (until && start.getTime() > until.getTime())

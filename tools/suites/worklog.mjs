@@ -1109,7 +1109,8 @@ ck('L50 both log pages read day by day, with the dated rule styled once',
     !!workLogCsv
     && csv.startsWith('"Client","Jordan Avery"')
     && csv.includes('"Case review hours","22h 0m","22.00"')
-    && csv.includes('"Hands-Off hours","2h 30m","2.50"')
+    // Pin renamed 2026-08-30: the tier reads Full-Service everywhere now.
+    && csv.includes('"Full-Service hours","2h 30m","2.50"')
     && csv.includes('"Total hours worked","24h 30m","24.50"')
     && csv.includes('"Records, ""central"" office"')
     && csv.includes('"line one\nline two"')

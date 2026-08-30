@@ -92,7 +92,7 @@ function paidCents(c) {
   // 2. THE TIER TOTAL, on a case that is on the tier. This has to come before
   //    the Stripe receipt below, and did not: `stripe.amountTotal` is the
   //    ORIGINAL booking, so an upgraded case answered with the case fee and
-  //    dropped the whole Hands-Off payment. A $1,200 booking that then paid
+  //    dropped the whole Full-Service payment. A $1,200 booking that then paid
   //    $3,400 for the tier read as $1,200 paid, which is the direction that
   //    HIDES a loss on the one figure built to reveal one.
   if (c?.fullAccess && Number(c.fullAccessRateCents) > 0)
@@ -262,7 +262,7 @@ function render(el) {
       // in this group on purpose: the Case group is the client, the
       // conversation and their files, and the work log is the fourth thing
       // they can see. It was 'calls' under Act until 2026-08-27. Act only
-      // exists on a Hands-Off case, and the client-facing log is on EVERY
+      // exists on a Full-Service case, and the client-facing log is on EVERY
       // case, so leaving the entry form behind a tier gate would have meant a
       // standard case with a log its client could read and he could not write.
       { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files', 'log'] },
@@ -1069,8 +1069,8 @@ function paintAgendaPage(pane) {
  */
 let workTick = null;
 // `mark` is work.tierMark: where the case-review clock ended and the
-// Hands-Off clock began (Eric, 2026-08-29: "Two clocks for two different
-// tiers"). Zero on a case that never went Hands-Off.
+// Full-Service clock began (Eric, 2026-08-29: "Two clocks for two different
+// tiers"). Zero on a case that never went Full-Service.
 const clock = { seconds: 0, startedAt: 0, mark: 0, loaded: false };
 const clockPaints = new Set();
 const paintClock = () => {
@@ -1125,7 +1125,7 @@ const liveStretch = () => (clock.startedAt
 const liveClockSeconds = () => Math.max(0, clock.seconds - (clock.mark || 0)) + liveStretch();
 /** The case-lifetime total, review hours included. The hourly instrument
  *  reads THIS one: the money paid covers both tiers, so dividing it by only
- *  the Hands-Off clock would flatter every rate on the page. */
+ *  the Full-Service clock would flatter every rate on the page. */
 const liveTotalSeconds = () => Math.max(0, clock.seconds) + liveStretch();
 /** One ticking repaint for however many switches exist. A minute is plenty. */
 function armClockTick() {
@@ -1326,7 +1326,7 @@ function startWorkClock(c) {
     const h = Math.floor(t / 3600);
     const m = Math.floor((t % 3600) / 60);
     const total = `${h ? `${h}h ` : ''}${m}m`;
-    totalEl.innerHTML = `${esc(total)} ${clock.mark ? 'since Hands-Off began' : 'on this case'}${esc(dayTail())}${clock.startedAt ? ' · running' : ''}<span class="fixit">✎ fix</span>`;
+    totalEl.innerHTML = `${esc(total)} ${clock.mark ? 'since Full-Service began' : 'on this case'}${esc(dayTail())}${clock.startedAt ? ' · running' : ''}<span class="fixit">✎ fix</span>`;
     totalEl.setAttribute('aria-label',
       `${total} banked on this case.${dayTail() ? `${dayTail().replace(' · ', ' ')} of that was logged today.` : ''} Tap to add or subtract time.`);
     totalEl.classList.toggle('on', !!clock.startedAt);
@@ -1457,10 +1457,10 @@ function wireClockFix(btn) {
         ${(data || {}).fullAccess ? `
         <p class="dim small" data-markrow style="margin:.8rem 0 .2rem; border-top:1px solid rgba(127,127,127,.25); padding-top:.6rem;">${
   clock.mark
-    ? `Case review clock: <strong style="color:var(--ink)">${fmtHm(clock.mark)}</strong>, kept apart since the case went Hands-Off. The number above is the Hands-Off clock.`
+    ? `Case review clock: <strong style="color:var(--ink)">${fmtHm(clock.mark)}</strong>, kept apart since the case went Full-Service. The number above is the Full-Service clock.`
     : 'This number still includes the case review hours.'
 } <button type="button" class="btn quiet tiny" data-markhere style="margin-left:.3rem;">${
-  clock.mark ? 'Restart the Hands-Off clock from here' : 'Start the Hands-Off clock from here'
+  clock.mark ? 'Restart the Full-Service clock from here' : 'Start the Full-Service clock from here'
 }</button></p>` : ''}
         <p class="error" data-err hidden></p>
         <div class="actions" style="margin-top:.5rem;">
@@ -1526,9 +1526,9 @@ function wireClockFix(btn) {
     overlay.querySelector('[data-add]').addEventListener('click', (e) => apply(1, e.currentTarget));
 
     // The clock reset, by hand (Eric, 2026-08-29: "if they upgrade to a
-    // hands-off, the clock resets"). New upgrades get the mark stamped by
+    // full-service, the clock resets"). New upgrades get the mark stamped by
     // the Worker at the flip; this button backfills a case that went
-    // Hands-Off before the mark existed, or restarts the count on his word.
+    // Full-Service before the mark existed, or restarts the count on his word.
     // Everything on the clock right now becomes the review side of the mark.
     const markBtn = overlay.querySelector('[data-markhere]');
     if (markBtn) {
@@ -2002,7 +2002,7 @@ function paintOverview(pane) {
     </div>` : ''}
     ${c.fullAccessRequest?.state === 'pending' ? `
     <div class="panel" style="border-color:var(--cyan); box-shadow:var(--glow-c);">
-      <h3 style="margin:0 0 .3rem; color:var(--cyan);">Hands-Off request — your call</h3>
+      <h3 style="margin:0 0 .3rem; color:var(--cyan);">Full-Service request: your call</h3>
       <p class="small" style="margin:0 0 .2rem;">
         First month <strong>$${((Number(c.fullAccessRequest.firstMonthCents) || 0) / 100).toLocaleString()}</strong>
         (their case fee is already off it), then
@@ -2051,7 +2051,7 @@ function paintOverview(pane) {
          clock and send forms as if he paid for the enhancement through the
          app." -->
     <details class="mgmt" data-k="openfull">
-      <summary>🤝 Open Hands-Off by hand</summary>
+      <summary>🤝 Open Full-Service by hand</summary>
       <div class="mgmt-body">
         <p class="dim small" style="margin:0 0 .6rem;">For a client who agreed
           it on a call. This opens exactly the case a payment opens: their work
@@ -2063,7 +2063,7 @@ function paintOverview(pane) {
           <strong>${paidCents(c) === null ? 'no payment recorded' : '$' + dollars(paidCents(c))}</strong>
           paid so far.</p>
         <label class="small" style="display:block; margin-bottom:.3rem;">
-          Paid you for Hands-Off, outside the app
+          Paid you for Full-Service, outside the app
           <span class="sched-amt">
             <span aria-hidden="true">$</span>
             <input type="text" inputmode="decimal" id="openfull-amt"
@@ -2094,7 +2094,7 @@ function paintOverview(pane) {
              "Remove those. I have those sent manually."). It never sent any:
              the handler posts open-full and nothing else, so the label was
              promising an action that did not exist. -->
-        <div class="actions"><button class="btn secondary" id="openfull-go">Open Hands-Off</button></div>
+        <div class="actions"><button class="btn secondary" id="openfull-go">Open Full-Service</button></div>
       </div>
     </details>`}
 
@@ -2103,7 +2103,7 @@ function paintOverview(pane) {
          forms and send them, regardless of if they've already been sent or
          not. This way this client can have the signed forms in the uploaded
          documents. This is another example of what the advisor could do:
-         'send the hands-off forms to the client'."
+         'send the full-service forms to the client'."
          FORMS, PLURAL, IN ONE ACTION. Printing each one and uploading it by
          hand was three trips through the share sheet per form on a phone, and
          the pair of them go out together every single time.
@@ -3617,7 +3617,7 @@ function infoBar(c, mtFmt, start, due) {
 }
 
 /**
- * Opening Hands-Off Case Management by hand.
+ * Opening Full-Service Case Management by hand.
  *
  * Eric, 2026-08-26: "I need to charge a client 3400 (verbally agreed to on
  * call)... where to start the clock and send forms as if he paid for the
@@ -3733,7 +3733,7 @@ function wireOpenFull(el, c) {
     const after = paidCents({ ...c, fullAccess: true, fullAccessRateCents: paidForCase + cents });
     // The figure is named out loud. An upgrade that emails the client and
     // unlocks the signing surfaces is not a thing to do on a mis-tap.
-    if (!confirm(`Open Hands-Off Case Management on ${c.clientName || 'this case'}?\n\n`
+    if (!confirm(`Open Full-Service Case Management on ${c.clientName || 'this case'}?\n\n`
       + `${cents > 0 ? `Recording $${dollars(cents)} paid outside the app.` : 'No new payment recorded.'}\n`
       + `${after === null ? 'The case will show no payment recorded.' : `The case will show $${dollars(after)} paid.`}\n`
       + `Their month starts ${dayFmt.format(startAt)}.\n\n`
@@ -3755,7 +3755,7 @@ function wireOpenFull(el, c) {
       const later = handsOffStartsLater(data);
       say('openfull', data?.fullAccess
         ? `Open. Their work log and the check-in booking are live on their case page and the email has gone. Send every form yourself, and tick Forms submitted on the tier card when the signed copies are back in your hands.${stored ? ` Their month ${later ? 'starts' : 'started'} ${dayFmt.format(stored)}.` : ''}`
-        : 'That went through, but the case still does not show Hands-Off. Do not send them to sign yet: try once more.',
+        : 'That went through, but the case still does not show Full-Service. Do not send them to sign yet: try once more.',
       { tone: data?.fullAccess ? 'ok' : 'warn' });
       refreshOverview();
     } catch (err) {
@@ -4370,7 +4370,7 @@ function uploadStamp() {
  * able to select forms and send them, regardless of if they've already been
  * sent or not. This way this client can have the signed forms in the uploaded
  * documents. This is another example of what the advisor could do: 'send the
- * hands-off forms to the client'."
+ * full-service forms to the client'."
  *
  * THERE IS NO ONCE-ONLY GUARD HERE, AND NONE MAY BE ADDED. Not a disabled
  * button, not an "already sent" refusal, not a quiet skip of a form that is
@@ -4402,7 +4402,7 @@ async function sendBlankForms(kinds, btn) {
   //
   // The panel line is for Eric, who is looking at this screen. The throw is
   // for a caller that is not a person: the advisor branch proposes "send the
-  // hands-off forms to the client" as a card he taps, and its card renders
+  // full-service forms to the client" as a card he taps, and its card renders
   // "Not done: {message}" and stays on screen when a carry-out fails. A
   // function that reports only into the DOM tells such a caller nothing, and
   // a caller that cannot tell a send from a failure reports success for both.
@@ -4495,7 +4495,7 @@ async function sendBlankForms(kinds, btn) {
 }
 
 /**
- * THE SEAM FOR "send the hands-off forms to the client".
+ * THE SEAM FOR "send the full-service forms to the client".
  *
  * Eric named it himself as an example of what he wants to be able to say out
  * loud rather than tap out. The advisor branch turns a spoken instruction into
@@ -5036,7 +5036,7 @@ function workLogCsv(items, totals, meta) {
     ['Case', meta.caseId || ''],
     ['Exported', meta.exportedAt || new Date().toISOString()],
     ['Case review hours', hm(totals.reviewSeconds), dec(totals.reviewSeconds)],
-    ['Hands-Off hours', hm(totals.tierSeconds), dec(totals.tierSeconds)],
+    ['Full-Service hours', hm(totals.tierSeconds), dec(totals.tierSeconds)],
     ['Total hours worked', hm(totals.totalSeconds), dec(totals.totalSeconds)],
     [],
     ['Date', 'Type', 'With', 'Client line', 'Private notes', 'Phone', 'Who was on it'],

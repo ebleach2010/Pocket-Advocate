@@ -258,7 +258,7 @@ async function load() {
     const w = c.work || {};
     // The TIER'S clock, not the case-lifetime total: everything behind
     // work.tierMark is the review phase, kept apart since the case went
-    // Hands-Off (Eric, 2026-08-29: "Two clocks for two different tiers").
+    // Full-Service (Eric, 2026-08-29: "Two clocks for two different tiers").
     const banked = Math.max(0, (Number(w.seconds) || 0) - (Number(w.tierMark) || 0));
     const started = w.startedAt ? toDate(w.startedAt).getTime() : 0;
     const live = banked + (started ? (Date.now() - started) / 1000 : 0);

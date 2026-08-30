@@ -30,7 +30,7 @@ const CASE_PRICE_CENTS = 120000;
 // Worker refuses a stale quote.
 let caseCents = CASE_PRICE_CENTS;
 // This page sells ONE service (Eric, 2026-08-25: "Advocacy case and direct
-// line are bookable. The others are ADD-ONS."). Hands-Off Case Management is
+// line are bookable. The others are ADD-ONS."). Full-Service Case Management is
 // bought from inside an open case at the difference; no tier price is
 // compiled into this file any more.
 // Thousands separated, because the case price crossed $1,000 in the 2026-08-26
@@ -666,7 +666,7 @@ function renderPayment() {
           now, and nothing here is charged today. Once your case is open,
           these are available from the Case Enhancements tab on your case page
           whenever you want them:</p>
-        <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Hands-Off Case Management</strong><br>
+        <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Full-Service Case Management</strong><br>
           I take over the legwork, a month at a time: up to 20-22 hours of
           comprehensive advocacy each 30-day service period, with priority
           access throughout. Check-in calls at least twice a month, calls to
@@ -678,7 +678,7 @@ function renderPayment() {
         <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Follow-up session · $<span data-rate="addon">175</span></strong><br>
           A second full discussion on the same case after your report lands. Same case, same file, no starting over.</p>
         <p class="muted small" style="margin:0;"><strong style="color:var(--ink)">Telehealth appointment advocacy · $<span data-rate="tele">450</span></strong><br>
-          I join a telehealth visit with one of your own providers by video and advocate live. I confirm every appointment personally; if I can't attend, or your provider doesn't allow it, you get every dollar back. Included with Hands-Off Case Management.</p>
+          I join a telehealth visit with one of your own providers by video and advocate live. I confirm every appointment personally; if I can't attend, or your provider doesn't allow it, you get every dollar back. Included with Full-Service Case Management.</p>
       </div>
     </details>
     <p class="back-row"><button class="btn quiet pill" id="back">Back</button></p>`);
@@ -686,7 +686,7 @@ function renderPayment() {
   el.querySelector('#back').addEventListener('click', back);
 
   // One service on this screen now (Eric, 2026-08-25: "Advocacy case and
-  // direct line are bookable. The others are ADD-ONS."). Hands-Off Case
+  // direct line are bookable. The others are ADD-ONS."). Full-Service Case
   // Management is bought from inside an open case, at the difference, behind
   // its own scope-note gate there - the tier picker and its agreement left
   // with the second service.

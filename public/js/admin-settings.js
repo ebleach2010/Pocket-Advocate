@@ -76,7 +76,7 @@ export function adminSettingsHtml() {
       <button class="switch ${localStorage.getItem('pa-open-admin') !== '0' ? 'on' : ''}" data-open-admin
         aria-pressed="${localStorage.getItem('pa-open-admin') !== '0'}" aria-label="Open to my dashboard"></button>
     </div>
-    <h4 style="margin:1.2rem 0 .1rem;">Hands-Off cases at once</h4>
+    <h4 style="margin:1.2rem 0 .1rem;">Full-Service cases at once</h4>
     <!-- THE TAP THE WORKER'S OWN COMMENT PROMISED. FULL_MAX_OPEN_DEFAULT said
          "one tap on his dashboard changes it" and there was no tap: the field
          it read had never been written by anything. Eric, 2026-08-27: "remove
@@ -255,7 +255,7 @@ async function wirePaid(overlay, user) {
 }
 
 /**
- * How many Hands-Off cases at once.
+ * How many Full-Service cases at once.
  *
  * Same discipline as the two rows above and as wireClosure in
  * admin-availability.js: the buttons render DISABLED, the Worker is asked what

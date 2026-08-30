@@ -1,4 +1,4 @@
-// The Hands-Off readiness checklist (Eric, 2026-08-25: "There needs to be a
+// The Full-Service readiness checklist (Eric, 2026-08-25: "There needs to be a
 // checklist on their end that populates in order for me to begin... but the
 // clock starts upon booking").
 //
@@ -43,7 +43,7 @@ export function handsOffReadiness(c) {
 }
 
 /**
- * Has this case's Hands-Off month not begun yet?
+ * Has this case's Full-Service month not begun yet?
  *
  * ONE PREDICATE, because there are three parties to this sentence and they
  * were disagreeing. The Worker decides whether the client's email mentions a

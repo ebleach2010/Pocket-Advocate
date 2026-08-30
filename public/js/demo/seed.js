@@ -380,7 +380,7 @@ export function seed({ set, file }) {
     // the opposite number, so the badge shows both of its states across the
     // demo.
     // Two clocks, two tiers (Eric, 2026-08-29): 22 hours of case review
-    // behind the mark, 2h 30m on the Hands-Off clock since the flip. The
+    // behind the mark, 2h 30m on the Full-Service clock since the flip. The
     // lifetime total is their sum, which is what `seconds` has always been.
     work: { seconds: 24 * 3600 + 30 * 60, startedAt: null, tierMark: 22 * 3600 },
   });

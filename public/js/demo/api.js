@@ -138,7 +138,7 @@ export function demoApi(role, store) {
       };
       const wMark = Math.max(0, Number(w.tierMark) || 0);
       // The tier mark, by hand, mirroring the Worker (Eric, 2026-08-29):
-      // everything on the clock becomes the review side and the Hands-Off
+      // everything on the clock becomes the review side and the Full-Service
       // clock starts over. A running stretch banks by re-anchor.
       if (body.setTierMark !== undefined) {
         const st = w.startedAt ? new Date(w.startedAt).getTime() : 0;
@@ -271,7 +271,7 @@ export function demoApi(role, store) {
         message: live ? `I am not taking new cases until ${when}. Existing clients are unaffected.` : null,
       });
     }
-    // How many Hands-Off cases at once. Backed by the same config document the
+    // How many Full-Service cases at once. Backed by the same config document the
     // Worker reads, so a limit set here really does change what the demo's
     // approval prompt says, and 0 really does mean no limit on the way back.
     if (path === '/api/admin/full-capacity') {
@@ -417,7 +417,7 @@ export function demoApi(role, store) {
       } else if (body.action === 'open-full') {
         // The tier, opened by hand. Same rules as the Worker, so the demo
         // cannot show a case the live app would refuse to make.
-        if (c.fullAccess) return fail(409, 'This case is already on Hands-Off Case Management.');
+        if (c.fullAccess) return fail(409, 'This case is already on Full-Service Case Management.');
         if (c.status === 'closed') return fail(409, 'Case is closed.');
         const tier = Math.round(Number(body.tierCents));
         if (!Number.isFinite(tier) || tier < 0 || tier > 100000 * 100)
@@ -439,7 +439,7 @@ export function demoApi(role, store) {
         if (tier > 0) {
           payments.push({
             kind: 'fullaccess', amountCents: tier, at: now, byHand: true,
-            label: 'Hands-Off Case Management, paid outside the app',
+            label: 'Full-Service Case Management, paid outside the app',
           });
         }
         store.docs.set(key, {
@@ -526,7 +526,7 @@ export function demoApi(role, store) {
       }).format(start) + ' MST';
 
       if (mode === 'checkin') {
-        if (!c.fullAccess) return fail(409, 'Check-ins are part of Hands-Off Case Management. Use "charge" for a standard case.');
+        if (!c.fullAccess) return fail(409, 'Check-ins are part of Full-Service Case Management. Use "charge" for a standard case.');
         if (c.status === 'closed') return fail(409, 'This case is closed.');
         // Same 60-day rule the Worker enforces, minus the hold arithmetic the
         // demo does not need: the refusal is the thing worth driving. From
@@ -698,7 +698,7 @@ export function demoApi(role, store) {
       }
       return ok({ ...demoVoice });
     }
-    // One more month on a Hands-Off case, stacking. Straight past Stripe,
+    // One more month on a Full-Service case, stacking. Straight past Stripe,
     // written down, so the demo's window guard actually moves.
     //
     // EVERY field the Worker's confirmExtensionPurchase writes has to be
@@ -708,7 +708,7 @@ export function demoApi(role, store) {
     if (path === '/api/extend') {
       const key = `cases/${body.caseId || DEMO_CASE_ID}`;
       const c = store.docs.get(key) || {};
-      if (!c.fullAccess) return fail(409, 'Extensions are part of Hands-Off Case Management.');
+      if (!c.fullAccess) return fail(409, 'Extensions are part of Full-Service Case Management.');
       if (c.status === 'closed') return fail(409, 'This case is closed.');
       await beat(600);
       const cents = 350000;
@@ -750,7 +750,7 @@ export function demoApi(role, store) {
       if (path === '/api/checkout') {
         // Booking sells ONE service (mirrors the Worker's refusal).
         if (body.tier === 'full')
-          return fail(400, 'Hands-Off Case Management is added from inside an open case now. '
+          return fail(400, 'Full-Service Case Management is added from inside an open case now. '
             + 'Book an Advocacy Case, then add it from your case page.');
         const profile = store.docs.get('users/demo-client') || {};
         const slot = body.slotId ? store.docs.get(`availability/${body.slotId}`) : null;
@@ -896,12 +896,12 @@ export function demoApi(role, store) {
       if (!kinds.includes(body.kind)) return fail(400, 'Bad request');
       // Per DOCUMENT, matching the Worker as of 2026-08-26. A records release
       // can be signed on any case; the insurance designation and the scope of
-      // work agreement are the Hands-Off half. The demo never checked the
+      // work agreement are the Full-Service half. The demo never checked the
       // tier at all, so it would happily sign a designation a real case would
       // have refused.
       if ((body.kind === 'representative' || body.kind === 'scope')
         && !store.docs.get(`cases/${cid}`)?.fullAccess)
-        return fail(409, 'This case is not on Hands-Off Case Management.');
+        return fail(409, 'This case is not on Full-Service Case Management.');
       const typed = String(body.signedName || '').trim();
       if (typed.length < 2) return fail(400, 'Type your full name to sign.');
       const flat = (v) => String(v || '').toLowerCase().replace(/[^a-z]+/g, '');
@@ -1248,7 +1248,7 @@ export function demoApi(role, store) {
             '[Line chart: TSH results across the last six months]',
             '',
             'THE PITCH',
-            '"Jordan, the next sixty days are the heavy lift on this case. If you want me on every call and every portal message while that happens, the Hands-Off Case Management tier covers exactly that. You have seen this week what it looks like."',
+            '"Jordan, the next sixty days are the heavy lift on this case. If you want me on every call and every portal message while that happens, the Full-Service Case Management tier covers exactly that. You have seen this week what it looks like."',
             '',
             'RESOURCES NEARBY',
             'University Medical Center, endocrinology and rheumatology, about 15 minutes out (verify current wait times).',

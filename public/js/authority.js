@@ -10,7 +10,7 @@
 // the blank forms he sends by hand from the case page, signed however he and
 // the client arrange it. The SCOPE OF WORK AGREEMENT (third, below) is the
 // one document signed in the app, because it is the agreement the case runs
-// on and he needs it on file the day Hands-Off opens.
+// on and he needs it on file the day Full-Service opens.
 //
 //   1. A RECORDS AUTHORISATION, one per clinic. This is what lets a provider
 //      hand your records to somebody who is not you. Its required elements
@@ -290,7 +290,7 @@ ${signatureBlock(o, 'member')}`;
 
 /**
  * The scope of work agreement: what the case runs on. Signed in the app the
- * day Hands-Off opens, by the client, with the same typed name and drawn
+ * day Full-Service opens, by the client, with the same typed name and drawn
  * signature the other documents use.
  *
  * EVERY SENTENCE HERE IS ALREADY IN FULL_ACCESS_TERMS (public/js/tier-terms.js,

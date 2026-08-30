@@ -386,11 +386,11 @@ function paidShownCents(c) {
 }
 
 /**
- * THE HOURS CARD, front and center on a Hands-Off case (Eric, 2026-08-29:
+ * THE HOURS CARD, front and center on a Full-Service case (Eric, 2026-08-29:
  * "the client needs to be aware when I'm reaching my hours rough limit and
  * that I pace my work to be most efficient and not waste time. Front and
  * center."). It sits directly under the appointment card, not inside any
- * fold: the Hands-Off clock against the month's included hours, a warmer
+ * fold: the Full-Service clock against the month's included hours, a warmer
  * note as the rough limit nears, and the pacing sentence standing whether
  * or not anything is near anything.
  *
@@ -460,7 +460,7 @@ function workLine(c) {
   const w = c.work || {};
   // TWO CLOCKS, TWO TIERS (Eric, 2026-08-29). Everything up to work.tierMark
   // was the case review; the running figure is the current tier's own clock,
-  // so a Hands-Off month never opens looking half spent. The review hours
+  // so a Full-Service month never opens looking half spent. The review hours
   // are not hidden - they get their own line - they are just not this clock.
   const mark = Math.max(0, Number(w.tierMark) || 0);
   const banked = Math.max(0, (Number(w.seconds) || 0) - mark);
@@ -476,7 +476,7 @@ function workLine(c) {
   };
   const main = total >= 60 || mark < 60
     ? `<p class="dim small" style="margin:.6rem 0 0;">⏱ Time I have worked on your case${
-      mark >= 60 ? ' since Hands-Off began' : ''}: <strong style="color:var(--ink);">${fmt(total)}</strong>${
+      mark >= 60 ? ' since Full-Service began' : ''}: <strong style="color:var(--ink);">${fmt(total)}</strong>${
       w.startedAt ? ' <span style="color:var(--cyan);">· working on it right now</span>' : ''
     }</p>` : '';
   const review = mark >= 60
@@ -692,7 +692,7 @@ function renderProgress(el, c) {
   // old records panel that could not be parked, because a client who has
   // already signed must always be able to read it back and withdraw it.
   //
-  // On EVERY case, not just Hands-Off. He works standard cases too, and the
+  // On EVERY case, not just Full-Service. He works standard cases too, and the
   // log is the answer to "what has he been up to" whichever tier they are on.
   const log = el.querySelector('[data-worklog]');
   if (log) mountCaseLog(log, c);
@@ -1423,7 +1423,7 @@ function addAboutButton(host, id) {
 }
 
 /**
- * Another month on a Hands-Off case, as many times as it needs. The SAME
+ * Another month on a Full-Service case, as many times as it needs. The SAME
  * price as the first month, because it is the same thing - the tier is
  * monthly all the way down. A flat price the Worker also holds, so the
  * compiled-in number here and the number Stripe charges are the same.
@@ -1667,9 +1667,9 @@ function telehealthCard(c) {
         <button class="btn glow" data-th-request>${c.fullAccess ? 'Request it' : 'Pay and request'}</button>
       </div>
       <p class="fu-fine">${c.fullAccess
-        ? 'Included in your Hands-Off Case Management. I confirm every appointment personally.'
+        ? 'Included in your Full-Service Case Management. I confirm every appointment personally.'
         : 'I confirm every appointment personally. If I can\'t attend, or your provider doesn\'t allow it, you get every dollar back.'}
-        I never record your provider's visit — my role on that screen is notes and advocacy only.</p>
+        I never record your provider's visit. My role on that screen is notes and advocacy only.</p>
       <p class="error" data-th-error hidden></p>
     </div>`;
 }
@@ -1772,7 +1772,7 @@ function followUpOffer(c) {
  *
  * NO CREDIT (Eric, 2026-08-29: "Clients don't get discounted their initial
  * cost for a case review. They pay 3400 separately."). The case fee bought
- * the review; a Hands-Off month is a separate service at the full month
+ * the review; a Full-Service month is a separate service at the full month
  * price. The credit this used to apply is in file history at v2.52. `c`
  * stays in the signature so the callers did not have to learn anything.
  */
@@ -1784,7 +1784,7 @@ function upgradeOffer(c) {
   if (new URLSearchParams(location.search).get('upgraded') === '1' && !c.fullAccess)
     return `
       <div class="followup-offer is-done">
-        <h3><span class="fu-tick" aria-hidden="true">\u2713</span> Hands-Off Case Management is open on your case.</h3>
+        <h3><span class="fu-tick" aria-hidden="true">\u2713</span> Full-Service Case Management is open on your case.</h3>
         <p>I will pick this up in your case chat and tell you exactly what I
           need from you to get started. Everything I do on your case appears
           on this page as I do it.</p>
@@ -1798,7 +1798,7 @@ function upgradeOffer(c) {
     && toDate(c.pendingFullAccess.expiresAt).getTime() > Date.now()) return `
     <div class="followup-offer">
       <h3><span class="fu-tick" aria-hidden="true">\u2713</span> I can take your case.</h3>
-      <p>Your first month is ready to start. Hands-Off is its own service,
+      <p>Your first month is ready to start. Full-Service is its own service,
         priced on its own: your case fee paid for the review you already
         have, and the month below is the month.</p>
       <div class="fu-buy">
@@ -1840,7 +1840,7 @@ function upgradeOffer(c) {
     <div class="followup-offer">
       <h3>Want me to deal with them directly?</h3>
       <p>Right now I work beside you: I read everything, we talk it through,
-        and you carry it to your doctors and your insurer. Hands-Off Case Management is where
+        and you carry it to your doctors and your insurer. Full-Service Case Management is where
         I do that part myself. I speak to your clinics, with you on the line or
         alone once you have given me permission in writing, and I write and file
         your insurance appeals.</p>
@@ -2165,7 +2165,7 @@ function pillColor(c) {
 
 async function mountCaseLog(host, c) {
   const full = !!c.fullAccess;
-  // The checklist and the window sentence are Hands-Off furniture, and they
+  // The checklist and the window sentence are Full-Service furniture, and they
   // used to sit on top of the records panel that was parked. They belong at
   // the head of the log now, which is the same place on the page.
   const ready = handsOffReadiness(c);

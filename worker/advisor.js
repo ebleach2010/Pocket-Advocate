@@ -4724,7 +4724,7 @@ Where a chart or a graphic would serve him better than a sentence, write one lin
             type: 'text',
             text: `<case>
 Client: ${c.clientName || 'unknown'} (${c.clientTz || 'timezone unknown'})
-Status: ${c.status || 'unknown'}; tier: ${c.fullAccess ? 'Hands-Off Case Management' : 'standard'}
+Status: ${c.status || 'unknown'}; tier: ${c.fullAccess ? 'Full-Service Case Management' : 'standard'}
 Next call: ${c.appointment?.start ? String(c.appointment.start) : 'unscheduled'}
 </case>
 
