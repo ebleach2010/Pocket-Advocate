@@ -34,7 +34,7 @@ import { getDoc, patchDoc, listDocs, deleteDoc } from './firestore.js';
 // from that same table. Nothing in this file executes an action; see
 // worker/advisor-acts.js for why that is structural rather than a promise.
 import { validateAction, actionTools, money } from './advisor-acts.js';
-import { listIntake, mediaFetch } from './storage.js';
+import { listIntake, listShelf, mediaFetch } from './storage.js';
 
 const MODEL = 'claude-opus-5';
 // Opus at HIGH by default (Eric, 2026-08-22: "Change version to opus 5
@@ -4042,7 +4042,7 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
     });
     await patchDoc(env, draftQueuePath(kind, id), { kind, id, draft: true, at: new Date() },
       { mask: ['kind', 'id', 'draft', 'at'] }).catch(() => {});
-    const [rows, state, style, qa] = await Promise.all([
+    const [rows, state, style, qa, shelf] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
       loadStyle(env),
@@ -4052,6 +4052,9 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
       // the direction it was written for. full, because the relay rule says
       // "drop nothing he said" and the analysis-sized slices dropped plenty.
       loadQa(env, kind, id, { full: true }).catch(() => []),
+      // Names only, no bytes (Eric, 2026-08-30): so "the records request I
+      // uploaded yesterday" in an instruction resolves to a real file.
+      listShelf(env, kind, id).catch(() => []),
     ]);
     const chat = transcript(rows);
     const voice = myVoice(rows);
@@ -4076,6 +4079,14 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
     const lessons = style.examples
       .map((e, i) => `EXAMPLE ${i + 1}\nYOUR DRAFT:\n${e.draft.slice(0, 1200)}\nERIC ACTUALLY SENT:\n${e.sent.slice(0, 1200)}`)
       .join('\n\n');
+    // The shelf by name (Eric, 2026-08-30): what exists, who put it there,
+    // when. Newest sixty entries; a draft never needs more history than that.
+    const shelfNote = shelf.length ? `\nThe case's document shelf, every file by name, oldest first, so a document he references resolves to its real name:\n\n<case_files>\n${shelf.slice(-60).map((f) => {
+      const side = f.folder === 'report' ? 'filed by Eric'
+        : f.folder === 'recording' ? 'recording'
+          : f.folder === 'uploads' ? 'client documents' : 'shared in chat';
+      return `- ${f.name} | ${side}${f.at ? ` | ${new Date(f.at).toISOString().slice(0, 10)}` : ''}`;
+    }).join('\n')}\n</case_files>\nWhen Eric's instruction names a document, use its real name from this list. Never invent a file name, and never tell the client a file exists that is not on it.\n` : '';
     const draft = await ask(env, {
       effort: DRAFT_EFFORT,
       noStream,
@@ -4089,6 +4100,18 @@ Write the next message for Eric to send to this client, as Eric, in his voice.
 Answer the client's MOST RECENT messages: everything they've sent since Eric
 last wrote. That's what the reply is for. The rest of the thread and your
 assessment are context to keep the reply consistent, not material to re-answer.
+
+That is the default WITH NO INSTRUCTION. When Eric gives an instruction, THE
+INSTRUCTION IS THE WHOLE BRIEF (Eric, 2026-08-30: "take whatever message I
+put in there and make it a full message, NOT necessarily including the
+advisor's advice on next steps. Because sometimes I don't agree or I want to
+send a separate message"). Build the entire message from what he asked for
+and nothing else. The thread, the assessment, and your own read are there so
+the message stays accurate and in his voice, never as material to add: do
+not fold in next steps, recommendations, or case updates he did not ask for,
+even when the assessment is full of them and even when you think his
+direction is wrong. If his instruction reads like the message itself in
+rough form, expand it faithfully rather than answering it or replacing it.
 
 One exception outranks that default: when Eric's instruction tells you to
 relay or restate something ("take what I just said to you", "tell him what
@@ -4191,9 +4214,9 @@ anything in the learned profile that follows.`, cache: true },
         }${qa.length ? `${qaBlock(qa)}\nThat discussion is direction AND material. Eric's own words in it are his to send: when his instruction points at the discussion ("what I just said", "what we talked about"), build the message FROM what he said there, keeping his content and his calls, tidied for the client to read. What never reaches the client: YOUR half of the discussion in its own voice, and any mention that the discussion exists.\n` : ''
         }\nThe conversation so far:\n\n<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${
           state?.data.analysis ? `\nYour current assessment of the case:\n\n<assessment>\n${state.data.analysis}\n</assessment>\n` : ''
-        }${baseDraft
+        }${shelfNote}${baseDraft
           ? `\nYour current draft:\n\n<current_draft>\n${baseDraft}\n</current_draft>\n\nEric wants it revised: ${instruction || 'improve it'}. Rewrite the whole message with that change made, keeping everything that already works. Output only the revised message.`
-          : instruction ? `\nEric wants this message to: ${instruction}` : '\nWrite the natural next thing for him to say.'}`,
+          : instruction ? `\nEric's instruction. It is the whole brief; build the entire message from it and nothing else: ${instruction}` : '\nWrite the natural next thing for him to say.'}`,
       }],
     });
     await setState(env, kind, id, {

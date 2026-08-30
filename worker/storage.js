@@ -98,6 +98,23 @@ export async function listIntake(env, kind, id, { max = 100 } = {}) {
 }
 
 /**
+ * The WHOLE shelf by name, both sides' folders, for the draft writer's
+ * inventory (Eric, 2026-08-30: "The advisor should be able to see the
+ * uploads and documents so it knows what I'm referencing if I reference
+ * one"). Names and dates only; nothing here reads a byte of any file.
+ * `report` and `recording` are his own folders and are deliberately
+ * included: the documents he references by name are usually his.
+ */
+export async function listShelf(env, kind, id, { max = 100 } = {}) {
+  const parent = kind === 'case' ? 'cases' : 'subscriptions';
+  const folders = [...INTAKE_FOLDERS, 'report', 'recording'];
+  const lists = await Promise.all(folders.map((f) =>
+    listFiles(env, `${parent}/${id}/${f}/`, { max }).catch(() => [])
+      .then((rows) => rows.map((r) => ({ ...r, folder: f })))));
+  return lists.flat().sort((a, b) => a.at - b.at);
+}
+
+/**
  * ONE OBJECT'S METADATA, without its bytes.
  *
  * Used by the delete route to find out whether Eric has FILED a file. A filed

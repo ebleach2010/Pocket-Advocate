@@ -25,6 +25,7 @@ const W = read('worker/index.js');
 const ADV = read('worker/advisor.js');
 const PANELSRC = read('public/js/advisor.js');
 const ACTSRC = read('worker/advisor-acts.js');
+const STOR = read('worker/storage.js');
 
 const results = [];
 const ck = (name, cond, detail = '') => {
@@ -1353,6 +1354,28 @@ const TABLE = {
     && /an em dash or en dash anywhere/.test(ADV)
     && /If a sentence could open any support email ever written, it is\nnot his/.test(ADV)
     && /\.slice\(0, 5\)\n      \.map\(\(r\) => \(\{ draft: r\.data\.draft, sent: r\.data\.sent \}\)\)/.test(ADV));
+}
+
+// ---- A37-A38: the draft obeys his brief and can see the shelf (2026-08-30)
+{
+  // NEGATIVE CONTROL (run 2026-08-30): cutting the brief paragraph from the
+  // draft prompt made this read
+  //   FAIL  A37 an instruction is the whole brief: nothing is folded in that he did not ask for
+  ck('A37 an instruction is the whole brief: nothing is folded in that he did not ask for',
+    /THE\nINSTRUCTION IS THE WHOLE BRIEF/.test(ADV)
+    && /do\nnot fold in next steps, recommendations, or case updates he did not ask for/.test(ADV)
+    && /expand it faithfully rather than answering it or replacing it/.test(ADV)
+    && /It is the whole brief; build the entire message from it and nothing else/.test(ADV));
+
+  // NEGATIVE CONTROL (run 2026-08-30): dropping listShelf from the draft's
+  // Promise.all made this read
+  //   FAIL  A38 the draft writer sees the whole shelf by name, his folders included, and may not invent one
+  ck('A38 the draft writer sees the whole shelf by name, his folders included, and may not invent one',
+    /listShelf\(env, kind, id\)\.catch\(\(\) => \[\]\)/.test(ADV)
+    && /<case_files>/.test(ADV)
+    && /Never invent a file name/.test(ADV)
+    && /export async function listShelf/.test(STOR)
+    && /\[\.\.\.INTAKE_FOLDERS, 'report', 'recording'\]/.test(STOR));
 }
 
 const failed = results.filter((r) => !r.pass);

@@ -1210,6 +1210,29 @@ ck('L50 both log pages read day by day, with the dated rule styled once',
     `${itemWrites.length} moved: ${itemWrites[0]?.fields.at?.toISOString?.() || '(none)'}`);
 }
 
+// ---- L62: one day per page, and the upload form on top (Eric, 2026-08-30) -
+//
+// "I want the log of tasks done (like calls) separated by days; each one a
+// page. Also, the uploads as well. And the upload button should be at the
+// top not the bottom." The pager is DOM code, so the browser drive proves it
+// moves; these pins prove both panes actually call it, the log wraps its
+// days in sections for it, and the upload form sits above the shelf.
+{
+  const filesSrc = (ADMIN.match(/function paintFiles\(pane\) \{[\s\S]*?\n\}/) || [''])[0];
+  const formAt = filesSrc.indexOf('id="up-cat"');
+  const listAt = filesSrc.indexOf('id="files"');
+  // NEGATIVE CONTROL (run 2026-08-30): removing the uploads pane's pageByDay
+  // call made this read
+  //   FAIL  L62 both panes page by day and the upload form sits above the shelf
+  ck('L62 both panes page by day and the upload form sits above the shelf',
+    /function pageByDay\(key, sections, labels, \{ olderStep \}\)/.test(ADMIN)
+    && /pageByDay\('log', \[\.\.\.pane\.querySelectorAll\('\.log-day-pg'\)\]/.test(ADMIN)
+    && /pageByDay\('files', \[\.\.\.listEl\.querySelectorAll\('\.up-day'\)\]/.test(ADMIN)
+    && /<section class="log-day-pg">/.test(ADMIN)
+    && formAt > 0 && listAt > 0 && formAt < listAt,
+    `form at ${formAt}, list at ${listAt}`);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

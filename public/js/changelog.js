@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.63';
+export const VERSION = '2.64';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '2.63';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // Four asks in one message (Eric, 2026-08-30): the work log and the
+    // uploads shelf on his side now show one day per page with Older and
+    // Newer controls, the upload form moved above the shelf, and a drafted
+    // message is built from HIS instruction alone, with the whole document
+    // shelf visible by name so anything he references resolves. All on his
+    // side of the desk; nothing on a client page moved.
+    version: '2.64',
+    quiet: true,
+    client: [],
+  },
   {
     // The chat resume net (Eric, 2026-08-29: "Got notification for chat but
     // no new message was there"): a phone coming back from the background

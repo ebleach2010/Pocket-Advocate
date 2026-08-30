@@ -2551,7 +2551,6 @@ function paintFiles(pane) {
            button is Update. An instruction naming a control that does not
            exist is worse than no instruction. -->
       <p class="dim small">Everything shared on this case, newest day first. Tap 👨‍⚕️ on a file to hand it to the advisor, then press Update on the Read page.</p>
-      <div class="uploads" id="files"><p class="dim small">Loading…</p></div>
       <label class="small" style="margin-top:.7rem;">Upload the recording
         <input type="file" id="up-recording" accept="video/*,audio/*,.mp4,.m4a,.mp3,.mkv,.webm">
       </label>
@@ -2573,6 +2572,8 @@ function paintFiles(pane) {
       <progress id="bar" max="100" value="0" hidden></progress>
       <p class="error" id="err" hidden></p>
       <p class="saved-note ok" id="up-said" role="status" hidden></p>
+      <hr class="divide">
+      <div class="uploads" id="files"><p class="dim small">Loading…</p></div>
     </div>`;
   pane.querySelector('#up-recording').addEventListener('change', (e) =>
     upload(e.target.files[0], 'recording', 'recording-uploaded'));
@@ -3104,6 +3105,9 @@ async function refreshFiles() {
         <h5 class="up-kind">${esc(g)}<span class="up-n">${day.groups.get(g).length}</span></h5>
         <ul class="filelist">${day.groups.get(g).map(row).join('')}</ul>`).join('')}
     </section>`).join('');
+  // One day per page (Eric, 2026-08-30), same pager as the work log.
+  pageByDay('files', [...listEl.querySelectorAll('.up-day')],
+    [...days.values()].map((d) => d.label), { olderStep: 1 });
   listEl.querySelectorAll('[data-thumb]').forEach((img) => {
     const r = rows[Number(img.dataset.thumb)];
     img.addEventListener('click', () => openLightbox({ name: readName(r), url: r.url }));
@@ -4932,6 +4936,45 @@ let callsKey = null;
 // The kind the select should land on after the next repaint: set when he
 // creates a type, so the thing he just made is the thing selected.
 let pickKindAfterLoad = '';
+// ---- one day per page -----------------------------------------------------
+//
+// Eric, 2026-08-30: "I want the log of tasks done (like calls) separated by
+// days; each one a page. Also, the uploads as well." Every day still renders
+// (the CSV export and every handler keep working against the whole list);
+// this shows one day at a time and remembers which day he was on across the
+// constant repaints both panes do. Newest day is the landing page: the day
+// he is working is the day he came to see.
+const dayPageMemo = {};
+function pageByDay(key, sections, labels, { olderStep }) {
+  if (sections.length <= 1) return;
+  const newest = olderStep > 0 ? 0 : sections.length - 1;
+  let idx = labels.indexOf(dayPageMemo[key]);
+  if (idx < 0) idx = newest;
+  const bar = document.createElement('p');
+  bar.className = 'row day-pager';
+  bar.style.cssText = 'gap:.5rem; align-items:center; justify-content:space-between; margin:.2rem 0 .6rem;';
+  const paint = () => {
+    dayPageMemo[key] = labels[idx];
+    sections.forEach((sec, i) => { sec.hidden = i !== idx; });
+    const back = olderStep > 0 ? idx : sections.length - 1 - idx;
+    const olderOk = idx + olderStep >= 0 && idx + olderStep < sections.length;
+    const newerOk = idx - olderStep >= 0 && idx - olderStep < sections.length;
+    bar.innerHTML = `
+      <button type="button" class="btn quiet tiny" data-pg-old ${olderOk ? '' : 'disabled'}>◀ Older</button>
+      <span class="dim small" style="text-align:center; flex:1;">${esc(labels[idx])}<span style="display:block;">${back ? `${back} day${back === 1 ? '' : 's'} back` : 'most recent day'}</span></span>
+      <button type="button" class="btn quiet tiny" data-pg-new ${newerOk ? '' : 'disabled'}>Newer ▶</button>`;
+  };
+  bar.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    idx += b.hasAttribute('data-pg-old') ? olderStep : -olderStep;
+    idx = Math.max(0, Math.min(sections.length - 1, idx));
+    paint();
+  });
+  sections[0].parentNode.insertBefore(bar, sections[0]);
+  paint();
+}
+
 function paintWorkLog(pane) {
   const load = async () => {
     let items = [];
@@ -4985,6 +5028,7 @@ function paintWorkLog(pane) {
             : ''}</p>
         ${items.length ? `<p style="margin:0 0 .6rem;"><button class="btn quiet tiny" data-log-csv>⬇ Export the log as CSV, with the hours</button></p>` : ''}
         ${dayGroups.map((g) => `
+        <section class="log-day-pg">
         <p class="log-day">${esc(g.label)}</p>` + g.rows.map((i) => {
     const seen = !!String(i.summary || '').trim();
     const k = logKind(i.kind);
@@ -5029,7 +5073,7 @@ function paintWorkLog(pane) {
               <p><button class="btn quiet tiny" data-call-save="${esc(i.id)}">Save</button></p>
             </div>
           </details>`;
-  }).join('')).join('')}
+  }).join('') + '</section>').join('')}
         <details class="faq" data-k="call-new">
           <summary>Log something</summary>
           <div class="faq-a">
@@ -5193,6 +5237,8 @@ function paintWorkLog(pane) {
         summary: pane.querySelector(`[data-call-summary="${b.dataset.callSave}"]`)?.value || '',
       }, e.currentTarget));
     }
+    pageByDay('log', [...pane.querySelectorAll('.log-day-pg')],
+      dayGroups.map((g) => g.label), { olderStep: -1 });
   };
   pane._reload = load;
   load();
