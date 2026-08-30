@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/logo-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pocket Advocate">
+<meta name="theme-color" content="#EAF2FA">
+<title>About your advocate · Pocket Advocate</title>
+<script>
+// Paint in the stored colour scheme before the stylesheet lands, so a scheme
+// never flashes neon on the way in. Mirrors theme.js, which owns the choosing
+// and persisting; this only applies what is already stored. Eric's admin
+// device keeps Neon by default, everyone else gets Calm, and a stored choice
+// always wins.
+(function () {
+  try {
+    var s = localStorage.getItem('pa-scheme');
+    if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
+      s = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'calm' : 'neon';
+    if (s !== 'neon') document.documentElement.dataset.scheme = s;
+    var c = { neon: '#EAF2FA', calm: '#0A1626', paper: '#F3EEE3', contrast: '#000000' }[s];
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m && c) m.setAttribute('content', c);
+  } catch (e) { /* storage blocked: neon is the default and is already correct */ }
+})();
+</script>
+<link rel="stylesheet" href="/css/site.css?v=sp13">
+<link rel="stylesheet" href="/css/glowup.css?v=sp5">
+<script type="module" src="/js/nav-menu.js"></script>
+<style>
+/* One page, one letter. The portrait sits above his words at reading width;
+   the paragraphs keep the site's measure and take a touch more air, because
+   this page is read start to finish, not scanned. */
+.advocate-photo {
+  display: block;
+  width: 100%;
+  max-width: 26rem;
+  border-radius: 14px;
+  margin: 0 0 1.6rem;
+}
+.story-p { line-height: 1.75; }
+.story-sig { margin-top: 1.8rem; font-size: 1.02rem; }
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
+    <nav class="tabs">
+      <a href="/book.html">Book</a>
+      <a href="/services.html">Services</a>
+      <a href="/about.html" class="active">About</a>
+      <a href="/faq.html">Questions</a>
+      <a href="/reviews.html">Reviews</a>
+      <a href="/contact.html">Contact</a>
+      <span data-nav-auth></span>
+    </nav>
+  </div>
+</header>
+<main class="about">
+  <div class="stack">
+    <p class="eyebrow">YOUR ADVOCATE</p>
+    <h1>About your advocate</h1>
+    <hr class="title-rule divide">
+  </div>
+
+  <!-- Eric's story, in his words (2026-08-30). The text below is his copy
+       word for word; edits to it happen only on his say so. -->
+  <section class="land-sec">
+    <img class="advocate-photo" src="/img/advocate-eric.jpg" alt="Eric, founder of Pocket Advocate">
+    <p class="measure story-p">Before I became sick, I was healthy. I worked for years in ophthalmology, including as a surgical coordinator, and also worked as a certified personal trainer. I had a career, independence, and a normal life. I had no idea what it meant to become a “complex patient,” because I had never needed to.</p>
+    <p class="measure story-p">My background was already tied to healthcare. As a surgical coordinator, I worked around physicians, patients, testing, procedures, scheduling, referrals, and the administrative machinery that keeps medical care moving. As a personal trainer, my job was different, but the underlying skill was similar: listen carefully, understand the whole person in front of me, identify what matters, and turn a complicated situation into an actual plan.</p>
+    <p class="measure story-p">Then I became the patient.</p>
+    <p class="measure story-p">What followed was a three-year journey through serious neurological illness, hospitalizations, specialists, extensive testing, conflicting opinions, treatment failures, insurance problems, records spread across multiple health systems, and long stretches where there were far more questions than answers.</p>
+    <p class="measure story-p">I learned what it feels like to sit in front of a physician with ten important questions and leave having asked two.</p>
+    <p class="measure story-p">I learned how easily one abnormal result can disappear into hundreds of pages of records.</p>
+    <p class="measure story-p">I learned that one specialist may never see what another specialist documented six months earlier.</p>
+    <p class="measure story-p">I learned how exhausting it is to repeatedly explain the same history when you’re already sick, scared, cognitively overloaded, or simply too tired to keep managing the logistics of your own care.</p>
+    <p class="measure story-p">And I learned how different a complicated case looks when somebody finally has the time to sit down, organize the whole thing, and start connecting the dots.</p>
+    <p class="measure story-p">That experience changed the direction of my life.</p>
+    <p class="measure story-p">I wanted to become the person I needed.</p>
+    <p class="measure story-p">During the hardest parts of my own illness, there was a type of person I kept wishing existed.</p>
+    <p class="measure story-p">Someone who would actually read everything.</p>
+    <p class="measure story-p">Someone who would understand that the important detail might be buried on page 184 of a hospital record.</p>
+    <p class="measure story-p">Someone who would remember what one specialist said while I was sitting in front of another.</p>
+    <p class="measure story-p">Someone who could make the phone calls when I didn’t have the energy, organize the records when my brain couldn’t handle another portal, prepare the questions when I was too overwhelmed to know where to start, and keep pushing when I had reached my limit.</p>
+    <p class="measure story-p">I wanted someone who could look at the entire mess and say, “Give it to me. I’ll help you make sense of this.”</p>
+    <p class="measure story-p">Eventually, I realized I wanted to become that person for somebody else.</p>
+    <p class="measure story-p">That is why I built Pocket Advocate.</p>
+    <p class="measure story-p">Not because I believe I can replace your doctors. I can’t, and that isn’t the job.</p>
+    <p class="measure story-p">I built it because I know how much can fall between the cracks when a very sick person is also expected to be their own researcher, records department, appointment coordinator, historian, and project manager.</p>
+    <p class="measure story-p">My job is to take some of that weight off you.</p>
+    <p class="measure story-p">To know your case. To organize it. To ask better questions. To find what is missing. To help you understand your options. To make the calls. To follow the loose ends. And when the system becomes too much for you to manage alone, to be the person in your corner who keeps the case moving.</p>
+    <p class="measure story-p">I became an advocate because, for three years, I learned exactly how badly I needed one.</p>
+    <p class="measure story-sig">- Eric, founder of <em>Pocket Advocate</em></p>
+  </section>
+
+  <div class="actions"><a class="btn glow cta" href="/book.html">Go book a case →</a><span id="call-slot"></span></div>
+
+  <footer class="legal">Pocket Advocate is a patient-advocacy service, offered to residents of the United States and Canada. It does not provide diagnosis, treatment, prescriptions, or medical advice, and does not create a doctor-patient relationship. If this is an emergency, call 911.</footer>
+</main>
+<footer class="site-foot">
+  <div class="foot-cols">
+    <nav class="foot-col" aria-label="Explore">
+      <h2>Explore</h2>
+      <a href="/book.html">Book a case</a>
+      <a href="/services.html">Services and pricing</a>
+      <a href="/about.html">About</a>
+      <a href="/advocate.html">Meet your advocate</a>
+      <a href="/faq.html">Questions</a>
+      <a href="/reviews.html">Reviews</a>
+    </nav>
+    <nav class="foot-col" aria-label="Reach me">
+      <h2>Reach me</h2>
+      <a href="/contact.html">Contact</a>
+      <a href="tel:+12086708608">208 670 8608</a>
+      <a href="/signin.html">Client sign in</a>
+      <a href="https://youtube.com/@the_broscientist" rel="noopener" target="_blank">Watch on YouTube</a>
+    </nav>
+  </div>
+  <p class="foot-serving">Serving patients across the United States and Canada.</p>
+  <p class="fine"><strong>Pocket Advocate provides patient advocacy, not medical care.</strong> I do not diagnose, treat, or prescribe, and this service does not replace your care team. If you are having a medical emergency, call 911. Pocket Advocate currently serves clients in the United States and Canada.</p>
+</footer>
+
+<script type="module">
+  import { BUSINESS_PHONE } from '/js/reviews-config.js';
+  // Nav auth state rides the Firebase CDN; loaded soft so the call button
+  // never depends on it.
+  import('/js/auth.js').then((m) => m.hydrateNav()).catch(() => {});
+  if (BUSINESS_PHONE)
+    document.getElementById('call-slot').outerHTML =
+      `<a class="btn quiet" href="tel:${BUSINESS_PHONE}">📞 Call</a>`;
+</script>
+</body>
+</html>

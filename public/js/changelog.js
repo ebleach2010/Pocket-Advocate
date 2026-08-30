@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.68';
+export const VERSION = '2.69';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '2.68';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS STORY (Eric, 2026-08-30: "There needs an 'about your advocate'
+    // page on the landing page with this photo and copy"). New public page
+    // at /advocate.html carrying his photo and his copy word for word,
+    // reachable from the landing page portrait, the About page, and the
+    // site footer.
+    version: '2.69',
+    client: [
+      'New page: About your advocate. The story of why this service exists, in Eric\u2019s own words, with his face on it. Find it from the front page or the site footer under Meet your advocate.',
+    ],
+  },
   {
     // THE RENAME (Eric, 2026-08-30, after a second read of his advert:
     // "'hands-off' reads like you aren't doing much, which is basically the

@@ -648,5 +648,31 @@ ck('clock: all switches share one painter set, so no two can disagree',
     && /input\.value = d\.draft;/.test(ADM));
 }
 
+// ---- the advocate story page (Eric, 2026-08-30) ---------------------------
+//
+// "There needs an 'about your advocate' page on the landing page with this
+// photo and copy." The copy is his, word for word; the pin below holds two
+// full sentences of it hostage so a paraphrase, a re-edit, or a helpful
+// rewording of his story fails the battery instead of shipping.
+{
+  const PAGE = f('public/advocate.html');
+  const IDX = f('public/index.html');
+  // NEGATIVE CONTROL (run 2026-08-30): rewording one word of his sentence
+  // ("exactly how badly" to "just how badly") made this read
+  //   FAIL  advocate page: his story lands word for word, photo and signature included
+  ck('advocate page: his story lands word for word, photo and signature included',
+    PAGE.includes('I became an advocate because, for three years, I learned exactly how badly I needed one.')
+    && PAGE.includes('I learned what it feels like to sit in front of a physician with ten important questions and leave having asked two.')
+    && PAGE.includes('founder of <em>Pocket Advocate</em>')
+    && PAGE.includes('/img/advocate-eric.jpg')
+    && readFileSync(`${R}/public/img/advocate-eric.jpg`).length > 100000);
+  // NEGATIVE CONTROL (run 2026-08-30): retargeting both landing links at
+  // /about.html made this read
+  //   FAIL  advocate page: the landing page opens the door to it
+  ck('advocate page: the landing page opens the door to it',
+    IDX.includes('href="/advocate.html"')
+    && IDX.includes('/img/advocate-eric.jpg'));
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);
