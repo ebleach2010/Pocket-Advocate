@@ -269,10 +269,13 @@ ck('L13b the record route is still his alone',
 // entries and can never add a row, so "only what I log by hand" holds; the
 // count moves 2 -> 4 and the entry-creating routes are still exactly the
 // add action and the projection.
+// Pin updated 2026-08-30: the two-week report's send path READS the log to
+// build the client-safe CSV (midway.mjs M1 runs the builder and proves the
+// private fields never leave). A read, never a writer; 4 -> 5.
 const writers = [...WORKER.matchAll(/private\/clinicCalls\/items/g)].length;
 const collDecls = [...bare(WORKER).matchAll(/`cases\/\$\{id\}\/private\/clinicCalls\/items`/g)].length;
-ck('L14 exactly four places in the Worker touch the log: his route, the projection, and the one-shot repair',
-  writers === 4 && collDecls === 2, `${writers} writers`);
+ck('L14 exactly five places in the Worker touch the log: his route, the projection, the one-shot repair, and the report\'s read',
+  writers === 5 && collDecls === 2, `${writers} writers`);
 // NEGATIVE CONTROL (run 2026-08-27): deleting the summary field from the add
 // action made this read
 //   FAIL  L15 the client line is written by hand, on the entry, by him

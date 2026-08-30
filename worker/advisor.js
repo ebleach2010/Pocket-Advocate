@@ -4237,6 +4237,109 @@ anything in the learned profile that follows.`, cache: true },
 }
 
 /**
+ * The two-week effort report (Eric, 2026-08-30: "At the end of two weeks of
+ * a hands-off case, the client should automatically be delivered a CSV of
+ * the log and chat with your analysis of milestones, things accomplished,
+ * amount of hours I've put in, your analysis of work done on my part, and
+ * how it compares to a typical advocate. Basically a demonstration of the
+ * effort I have put in and where we're at now.").
+ *
+ * This writes the NARRATIVE and parks it on caseMeta (worker-only, no
+ * browser can read it) for his one-tap Send; the CSVs are built fresh at
+ * send time so they cover through the day it actually goes. Everything in
+ * the prompt is fenced to what the client already sees: the client lines of
+ * the log and the chat itself. His private notes never enter the room.
+ */
+export async function runMidwayReport(env, caseId) {
+  const [doc, state, rows, logRaw, style] = await Promise.all([
+    getDoc(env, `cases/${caseId}`),
+    getDoc(env, statePath('case', caseId)).catch(() => null),
+    recentMessages(env, 'case', caseId).catch(() => []),
+    listDocs(env, `cases/${caseId}/private/clinicCalls/items`, { pageSize: 200, all: true })
+      .catch(() => []),
+    loadStyle(env).catch(() => ({ voice: '' })),
+  ]);
+  if (!doc?.data.fullAccess) throw new Error('Not a Hands-Off case.');
+  const c = doc.data;
+  // The clock's three figures, the same arithmetic every display uses.
+  const total = Math.max(0, Math.floor(Number(c.work?.seconds) || 0));
+  const review = Math.min(Math.max(0, Math.floor(Number(c.work?.tierMark) || 0)), total);
+  const tier = total - review;
+  const hm = (s) => `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  // CLIENT LINES ONLY. An entry with no client line does not exist here, and
+  // the private fields are not read at all: this report is a client page.
+  const log = logRaw
+    .filter((r) => String(r.data.summary || '').trim())
+    .sort((a, b) => new Date(a.data.at || a.data.createdAt || 0) - new Date(b.data.at || b.data.createdAt || 0))
+    .map((r) => {
+      const d = new Date(r.data.at || r.data.createdAt || 0);
+      const day = Number.isFinite(d.getTime()) && d.getTime() ? d.toISOString().slice(0, 10) : '';
+      return `- ${day} | ${r.data.kindLabel || r.data.kind || 'work'} | ${String(r.data.summary).trim()}`;
+    }).join('\n');
+  const narrative = await ask(env, {
+    effort: 'high',
+    noStream: true,
+    maxTokens: 8000,
+    system: [{
+      type: 'text',
+      text: `${VOICE}
+
+Write the TWO-WEEK REPORT: a message Eric sends the client at the midpoint of
+their Hands-Off month, demonstrating the effort so far and where the case
+stands now. It goes out under his name after he reads and edits it, as one
+chat message, alongside two spreadsheets (the work log and the whole chat).
+
+Cover, in flowing prose rather than a form:
+- the milestones reached and the concrete things accomplished so far, drawn
+  ONLY from the work log lines and the conversation below;
+- the hours: use the exact figures provided, never a recalculation;
+- what that work amounted to for THIS case, plainly;
+- one honest sentence of scale: independent patient advocates typically put
+  2 to 5 hours a week into an active case, so the client can see what the
+  figures mean. Say it as fact about the field, never as a boast.
+- where things stand now and what the back half of the month is for.
+
+HARD RULES. Only work the log lines and the chat already show the client may
+be referenced: nothing from any other source, nothing invented, no file or
+call that is not in the material. No mention of any assessment, analysis
+system, note system, or anything behind the app: the client only ever hears
+Eric. No diagnosis, no treatment advice, no promises of outcome. Warmth is
+specific, not performed. No em or en dashes, no bullet lists, no headings:
+this is a message, not a memo. Under 1,800 characters; the spreadsheets
+carry the detail. Output the message text and nothing else.`,
+      cache: true,
+    }, { type: 'text', text: style.voice ? `\nA learned profile of how Eric writes, for register only:\n${style.voice}` : ' ' }],
+    messages: [{
+      role: 'user',
+      content: `The client's name: ${c.clientName || 'the client'}.
+
+The clock, exact figures to use verbatim: case review ${hm(review)}, Hands-Off month so far ${hm(tier)}, total ${hm(total)}.
+
+The work log as the client sees it (client lines only, oldest first):
+<work_log>
+${log || '(no logged lines yet)'}
+</work_log>
+
+The conversation so far:
+<transcript>
+${transcript(rows) || '(no messages yet)'}
+</transcript>
+${state?.data.analysis ? `
+Background for accuracy only, never to be referenced or hinted at:
+<assessment>
+${state.data.analysis}
+</assessment>
+` : ''}
+Write the two-week report message now.`,
+    }],
+  });
+  await patchDoc(env, `caseMeta/${caseId}`, {
+    midwayReport: { generatedAt: new Date(), draft: String(narrative || '').trim().slice(0, 2400) },
+  }, { mask: ['midwayReport'] });
+  return { ok: true };
+}
+
+/**
  * Write an insurance appeal letter.
  *
  * A deliberate sibling of runDraft rather than a branch inside it: they share
