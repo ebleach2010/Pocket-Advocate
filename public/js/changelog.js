@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.65';
+export const VERSION = '2.66';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '2.65';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // The star grew a button the same day it was born (Eric, 2026-08-30:
+    // "There should be a star button next to each upload that's just an
+    // outline... It's not a long press, that causes issues"), and the pin
+    // order became the order he starred them. His side's control; the
+    // client's pinned block just keeps his chosen order, nothing new to say.
+    version: '2.66',
+    quiet: true,
+    client: [],
+  },
   {
     // Two asks (Eric, 2026-08-30): the full-message maker moved onto the
     // chat composer where he types ("So it should be on the chat page"),

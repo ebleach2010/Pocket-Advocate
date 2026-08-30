@@ -978,7 +978,8 @@ async function refreshFiles(c, el) {
         rows.push({
           kind, name: item.name, url, ts: new Date(meta.timeCreated), size: meta.size,
           path: item.fullPath, cat: meta.customMetadata?.paCategory || '',
-          starred: meta.customMetadata?.paStarred === '1',
+          starred: !!meta.customMetadata?.paStarred,
+          starAt: Number(meta.customMetadata?.paStarred) || 0,
           // The name it was given AFTER it landed, if it was given one. It
           // arrives on the same metadata the category does, so it costs no
           // extra request either.
@@ -1042,6 +1043,7 @@ async function refreshFiles(c, el) {
   // Starred first (Eric, 2026-08-30): a pinned file is priority, like a form
   // that needs filling, and it outranks every category.
   rows.sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0)
+    || (a.starred && b.starred ? (a.starAt || 0) - (b.starAt || 0) : 0)
     || rank(a) - rank(b) || b.ts - a.ts);
   const starredCount = rows.filter((r) => r.starred).length;
   const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });

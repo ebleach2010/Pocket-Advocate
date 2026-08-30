@@ -1819,7 +1819,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-30-stars-and-pen';
+const BUILD_TAG = 'v2026-08-30-star-buttons';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1827,7 +1827,7 @@ const BUILD_TAG = 'v2026-08-30-stars-and-pen';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.65';
+const VERSION = '2.66';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -4534,10 +4534,13 @@ async function handleFileMeta(request, env) {
   }
   // THE STAR (Eric, 2026-08-30: "I want to be able to pin uploads to the top
   // by 'star-ing' them. They're priority, like forms the client needs to
-  // fill out."). Boolean in, '1' or gone in metadata: a pin either is or is
-  // not, and both listings read it the same way they read the category.
+  // fill out."). Boolean in; the stored value is the MOMENT it was starred
+  // (epoch millis as text), because his second ask the same day was order:
+  // "it pins to the top, in the order of which I've starred them." A legacy
+  // '1' from the first hour of this feature still reads as starred and
+  // sorts first.
   if ('starred' in body) {
-    patch.paStarred = body.starred === true ? '1' : null;
+    patch.paStarred = body.starred === true ? String(Date.now()) : null;
   }
   if (!Object.keys(patch).length)
     return json({ error: 'Nothing to change' }, 400);
@@ -4548,7 +4551,7 @@ async function handleFileMeta(request, env) {
     path: out.path,
     name: out.custom?.paName || '',
     category: out.custom?.paCategory || '',
-    starred: out.custom?.paStarred === '1',
+    starred: !!out.custom?.paStarred,
   });
 }
 

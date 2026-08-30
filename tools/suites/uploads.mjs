@@ -1519,31 +1519,39 @@ console.log(`\nlifted: ${liftTable()}`);
 // metadata riding the same lane the category label uses, so every pin here
 // mirrors a category pin that already exists.
 {
+  // Pins updated the same day (Eric, 2026-08-30, second message): the star
+  // became a visible ☆ button on every row ("It's not a long press, that
+  // causes issues"), and the stored value became the starring MOMENT so the
+  // pinned order is the order he starred them.
   // NEGATIVE CONTROL (run 2026-08-30): dropping the starred branch from the
   // Worker's meta route made this read
-  //   FAIL  the star rides the meta route, boolean in, '1' or gone in the map
-  ck('the star rides the meta route, boolean in, \'1\' or gone in the map',
-    /if \('starred' in body\) \{\n    patch\.paStarred = body\.starred === true \? '1' : null;\n  \}/.test(WORKER)
-    && /starred: out\.custom\?\.paStarred === '1',/.test(WORKER)
-    && /if \('starred' in body\) \{\n        if \(body\.starred === true\) meta\.paStarred = '1'; else delete meta\.paStarred;\n      \}/.test(DEMOAPI));
+  //   FAIL  the star rides the meta route: boolean in, its moment or gone in the map
+  ck('the star rides the meta route: boolean in, its moment or gone in the map',
+    /if \('starred' in body\) \{\n    patch\.paStarred = body\.starred === true \? String\(Date\.now\(\)\) : null;\n  \}/.test(WORKER)
+    && /starred: !!out\.custom\?\.paStarred,/.test(WORKER)
+    && /if \(body\.starred === true\) meta\.paStarred = String\(Date\.now\(\)\); else delete meta\.paStarred;/.test(DEMOAPI));
 
-  // NEGATIVE CONTROL (run 2026-08-30): removing the pinned block from
-  // refreshFiles made this read
-  //   FAIL  his list pins starred files above the day pager, and the menu offers the star
-  ck('his list pins starred files above the day pager, and the menu offers the star',
-    /starred: meta\.customMetadata\?\.paStarred === '1',/.test(ADMINCASE)
-    && /const starred = rows\.filter\(\(r\) => r\.starred\);/.test(ADMINCASE)
+  // NEGATIVE CONTROL (run 2026-08-30): removing the [data-star] wiring made
+  // this read
+  //   FAIL  every row wears a tappable star, the pin holds star order, and the long press lost its star row
+  ck('every row wears a tappable star, the pin holds star order, and the long press lost its star row',
+    /starAt: Number\(meta\.customMetadata\?\.paStarred\) \|\| 0,/.test(ADMINCASE)
+    && /data-star="\$\{i\}"/.test(ADMINCASE)
+    && /\$\{r\.starred \? '★' : '☆'\}/.test(ADMINCASE)
+    && /listEl\.querySelectorAll\('\[data-star\]'\)\.forEach/.test(ADMINCASE)
+    && /\.sort\(\(x, y\) => \(x\.starAt \|\| 0\) - \(y\.starAt \|\| 0\)\);/.test(ADMINCASE)
+    && !/act: 'star'/.test(ADMINCASE)
     && /⭐ Priority/.test(ADMINCASE)
     && /listEl\.innerHTML = short \+ pinnedHtml \+/.test(ADMINCASE)
-    && /act: 'star', emoji: r\.starred \? '☆' : '⭐'/.test(ADMINCASE)
     && /saveFileMeta\(r, \{ starred: !r\.starred \}\)/.test(ADMINCASE));
 
   // NEGATIVE CONTROL (run 2026-08-30): dropping the starred term from the
   // client's sort made this read
-  //   FAIL  the client's Documents put starred files first, under a heading that says why
-  ck('the client\'s Documents put starred files first, under a heading that says why',
-    /starred: meta\.customMetadata\?\.paStarred === '1',/.test(CLIENT)
+  //   FAIL  the client's Documents put starred files first, in his star order, under a heading that says why
+  ck('the client\'s Documents put starred files first, in his star order, under a heading that says why',
+    /starred: !!meta\.customMetadata\?\.paStarred,/.test(CLIENT)
     && /rows\.sort\(\(a, b\) => \(b\.starred \? 1 : 0\) - \(a\.starred \? 1 : 0\)/.test(CLIENT)
+    && /a\.starred && b\.starred \? \(a\.starAt \|\| 0\) - \(b\.starAt \|\| 0\) : 0/.test(CLIENT)
     && /⭐ Needs your attention first/.test(CLIENT)
     && /Everything else/.test(CLIENT));
 }

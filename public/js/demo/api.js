@@ -1525,9 +1525,10 @@ export function demoApi(role, store) {
           return fail(400, 'That is not a document type I know.');
         if (category) meta.paCategory = category; else delete meta.paCategory;
       }
-      // The star (2026-08-30), mirrored: boolean in, '1' or gone in the map.
+      // The star (2026-08-30), mirrored: boolean in, the starring moment or
+      // gone in the map, so the pinned order is the order he starred them.
       if ('starred' in body) {
-        if (body.starred === true) meta.paStarred = '1'; else delete meta.paStarred;
+        if (body.starred === true) meta.paStarred = String(Date.now()); else delete meta.paStarred;
       }
       // The bytes and the path are untouched, which is the whole shape of the
       // real thing: only the metadata map is written.
@@ -1536,7 +1537,7 @@ export function demoApi(role, store) {
       return ok({
         ok: true, path: target,
         name: meta.paName || '', category: meta.paCategory || '',
-        starred: meta.paStarred === '1',
+        starred: !!meta.paStarred,
       });
     }
 

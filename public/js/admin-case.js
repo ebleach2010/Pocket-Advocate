@@ -3009,7 +3009,8 @@ async function listCaseFiles({ onProgress } = {}) {
             // existed has none and reads as a plain report, which is what it
             // is.
             cat: meta.customMetadata?.paCategory || '',
-            starred: meta.customMetadata?.paStarred === '1',
+            starred: !!meta.customMetadata?.paStarred,
+            starAt: Number(meta.customMetadata?.paStarred) || 0,
             // And the name he gave it AFTER it landed, if he gave it one. It
             // rides on the same metadata this line already fetched, so a
             // rename costs no extra request in either listing.
@@ -3152,6 +3153,9 @@ async function refreshFiles() {
         <span class="fname"><span class="kind-pill ${pillClass(r)}">${label(r)}</span><a href="${r.url}" target="_blank" rel="noopener">${esc(readName(r))}</a></span>
         <span class="fmeta">${time.format(r.ts)} · ${prettySize(r.size)}</span>
       </span>
+      <button class="btn quiet file-review" data-star="${i}" style="font-size:1.05rem;"
+        aria-label="${r.starred ? `Unstar ${esc(readName(r))}` : `Star ${esc(readName(r))}: pin to the top`}"
+        title="${r.starred ? 'Unstar: back into its day' : 'Star: pin to the top'}">${r.starred ? '★' : '☆'}</button>
       ${reviewable(r)
         ? `<button class="btn quiet file-review" data-review="${i}"
              aria-label="Hand ${esc(readName(r))} to the advisor to read"
@@ -3163,7 +3167,8 @@ async function refreshFiles() {
   // THE PINNED BLOCK (Eric, 2026-08-30): starred files ride above the day
   // pager, always visible whatever day the pager shows. They keep their spot
   // inside their day too; the pin is a pointer, not a move.
-  const starred = rows.filter((r) => r.starred);
+  const starred = rows.filter((r) => r.starred)
+    .sort((x, y) => (x.starAt || 0) - (y.starAt || 0));
   const pinnedHtml = starred.length ? `
     <section class="up-pinned">
       <h4 class="up-date">⭐ Priority</h4>
@@ -3190,6 +3195,15 @@ async function refreshFiles() {
     const r = rows[Number(li.dataset.frow)];
     if (!r?.path) return;
     wireHeldPress(li, () => { openFileMenu(r); });
+  });
+
+  // The star, A TAP AND NEVER A LONG PRESS (Eric, 2026-08-30: "It's not a
+  // long press, that causes issues"): the outline fills and the file pins,
+  // in the order he starred them. Every copy of a row wears one, the pinned
+  // copy included, so an unstar is one tap wherever he sees the file.
+  listEl.querySelectorAll('[data-star]').forEach((b) => {
+    const r = rows[Number(b.dataset.star)];
+    b.addEventListener('click', () => { b.disabled = true; starCaseFile(r); });
   });
 
   // Toggle to stage the file for the advisor's next analysis; highlighted
@@ -3291,10 +3305,10 @@ async function openFileMenu(r) {
     heading: name,
     label: 'File actions',
     extraRows: [
-      // The pin (Eric, 2026-08-30): priority files sit above the day pages
-      // on both lists. Either side's file can carry it; the star is his to
-      // give and take either way.
-      { act: 'star', emoji: r.starred ? '☆' : '⭐', label: r.starred ? 'Unstar' : 'Star: pin to the top' },
+      // The star moved OUT of this menu the same day it arrived (Eric,
+      // 2026-08-30: "It's not a long press, that causes issues"): it is the
+      // visible ☆ button on every row now. This menu keeps the actions that
+      // genuinely need a menu.
       ...(mine ? [
         { act: 'rename', emoji: '✏️', label: 'Rename' },
         { act: 'file', emoji: '🗂', label: 'File as...' },
@@ -3303,8 +3317,7 @@ async function openFileMenu(r) {
     ],
   });
   if (!pick) return;
-  if (pick.action === 'star') await starCaseFile(r);
-  else if (pick.action === 'rename') await renameCaseFile(r);
+  if (pick.action === 'rename') await renameCaseFile(r);
   else if (pick.action === 'file') await fileCaseFileAs(r);
   else if (pick.action === 'delete') await deleteCaseFile(r);
 }
