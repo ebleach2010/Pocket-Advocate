@@ -511,6 +511,13 @@ export function seed({ set, file }) {
   doc(`cases/${FULL_ID}/uploads/1755000010000-denial-letter.pdf`, 'denial-letter.pdf', 'application/pdf', 96_000, 37);
   doc(`cases/${FULL_ID}/uploads/1755000011000-insurance-card.jpg`, 'insurance-card.jpg', 'image/jpeg', 820_000, 36);
   doc(`cases/${FULL_ID}/uploads/1755000012000-neurology-note-19-may.pdf`, 'neurology-note-19-may.pdf', 'application/pdf', 214_000, 20);
+  // Starred (Eric, 2026-08-30): a form the client needs to fill, pinned at
+  // the top of both file lists so the pin is drivable on camera.
+  file(`cases/${FULL_ID}/report/1755000013000-records-release-form.pdf`, {
+    name: 'records-release-form.pdf', type: 'application/pdf', size: 128_000,
+    at: days(1).toISOString(), url: '',
+    meta: { paCategory: 'formsent', paStarred: '1' },
+  });
 }
 
 export const DEMO_CASE_ID = CASE_ID;

@@ -624,5 +624,29 @@ ck('clock: all switches share one painter set, so no two can disagree',
     && /visibilityState !== 'visible'/.test(CHJ));
 }
 
+// ---- the message maker on the chat composer (Eric, 2026-08-30) ------------
+//
+// "So it should be on the chat page. Not advisor." The composer takes a list
+// of buttons now; the second is the full-message maker, which reads what he
+// typed, runs the same draft machinery as the Read page, and puts the result
+// back in the box.
+{
+  const ADM = f('public/js/admin-case.js');
+  // NEGATIVE CONTROL (run 2026-08-30): reverting the composer wiring to the
+  // single-button call made this read
+  //   FAIL  chat: the composer takes a list of buttons, each handed the box
+  ck('chat: the composer takes a list of buttons, each handed the box',
+    /Array\.isArray\(composerButton\) \? composerButton/.test(CHJ)
+    && /cb\.onClick\(\{ input: container\.querySelector\('\[data-input\]'\), button: btn \}\)/.test(CHJ));
+  // NEGATIVE CONTROL (run 2026-08-30): removing the poll's ready check made
+  // this read
+  //   FAIL  chat: the maker sends what he typed as the brief and fills the box from the state poll
+  ck('chat: the maker sends what he typed as the brief and fills the box from the state poll',
+    /Make what I typed a full message/.test(ADM)
+    && /action: 'draft', kind: 'case', id: caseId, instruction: rough/.test(ADM)
+    && /d\.draftStatus === 'ready' && d\.draft/.test(ADM)
+    && /input\.value = d\.draft;/.test(ADM));
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);

@@ -86,9 +86,9 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
              aria-label="Full screen">⤢</button>
            <label class="attach-btn" title="Attach a file">📎<input type="file" hidden data-attach
              accept=".pdf,.jpg,.jpeg,.png,.heic,.gif,.webp,.dcm,.dicom,.zip,.mp4,.mov,.doc,.docx,.txt"></label>
-           ${composerButton ? `<button type="button" class="attach-btn" data-extra
-             title="${esc(composerButton.title || '')}" aria-label="${esc(composerButton.title || '')}"
-             >${esc(composerButton.icon || '')}</button>` : ''}
+           ${(Array.isArray(composerButton) ? composerButton : composerButton ? [composerButton] : []).map((cb, i) => `<button type="button" class="attach-btn" data-extra="${i}"
+             title="${esc(cb.title || '')}" aria-label="${esc(cb.title || '')}"
+             >${esc(cb.icon || '')}</button>`).join('')}
            <textarea data-input maxlength="2000" rows="1" placeholder="Write a message…"
              autocomplete="off" autocapitalize="sentences"></textarea>
            <button class="btn" type="submit">Send</button>
@@ -536,10 +536,21 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     if (log) log.scrollTop = log.scrollHeight;
   });
 
-  if (composerButton?.onClick) {
-    container.querySelector('[data-extra]')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      composerButton.onClick();
+  // One or many composer buttons. Each click hands the button a handle on
+  // the box, so a button can read what he typed and put something back (the
+  // full-message maker does exactly that); callers that ignore the handle
+  // (the duty-of-care button) keep working unchanged. Callers own what each
+  // button means; this file only knows where they go.
+  {
+    const extras = Array.isArray(composerButton) ? composerButton
+      : composerButton ? [composerButton] : [];
+    container.querySelectorAll('[data-extra]').forEach((btn) => {
+      const cb = extras[Number(btn.dataset.extra)] || extras[0];
+      if (!cb?.onClick) return;
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        cb.onClick({ input: container.querySelector('[data-input]'), button: btn });
+      });
     });
   }
 

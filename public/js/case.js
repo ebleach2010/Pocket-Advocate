@@ -978,6 +978,7 @@ async function refreshFiles(c, el) {
         rows.push({
           kind, name: item.name, url, ts: new Date(meta.timeCreated), size: meta.size,
           path: item.fullPath, cat: meta.customMetadata?.paCategory || '',
+          starred: meta.customMetadata?.paStarred === '1',
           // The name it was given AFTER it landed, if it was given one. It
           // arrives on the same metadata the category does, so it costs no
           // extra request either.
@@ -1038,7 +1039,11 @@ async function refreshFiles(c, el) {
   // A missing rank sorts LAST rather than sorting as NaN, which would put
   // every row in an arbitrary place the moment an unfamiliar category appears.
   const rank = (r) => (filedCat(r) ? CATS[filedCat(r)].at : (order[r.kind] ?? 9));
-  rows.sort((a, b) => rank(a) - rank(b) || b.ts - a.ts);
+  // Starred first (Eric, 2026-08-30): a pinned file is priority, like a form
+  // that needs filling, and it outranks every category.
+  rows.sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0)
+    || rank(a) - rank(b) || b.ts - a.ts);
+  const starredCount = rows.filter((r) => r.starred).length;
   const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
   // The report gets a ✅ the moment the case is delivered. It is the one file
   // they have been waiting for, and "is this the final one" should not be a
@@ -1050,8 +1055,10 @@ async function refreshFiles(c, el) {
   // Caught by looking at the client's own screen at 320px.
   const delivered = c.status === 'delivered' || c.status === 'closed';
   listEl.innerHTML = rows.map((r, i) => `
+    ${starredCount && i === 0 ? '<li class="log-day">⭐ Needs your attention first</li>' : ''}
+    ${starredCount && i === starredCount ? '<li class="log-day">Everything else</li>' : ''}
     <li data-frow="${i}">
-      <span class="fname"><span class="kind-pill ${filedCat(r) || r.kind}">${
+      <span class="fname">${r.starred ? '⭐ ' : ''}<span class="kind-pill ${filedCat(r) || r.kind}">${
         filedCat(r) ? CATS[filedCat(r)].label
           : r.kind === 'saved' || r.kind === 'chat' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
         ${r.kind === 'report' && !r.cat && delivered ? '<span class="delivered-tick" title="Delivered" role="img" aria-label="Delivered">✅</span>' : ''}

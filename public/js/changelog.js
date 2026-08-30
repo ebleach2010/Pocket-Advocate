@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.64';
+export const VERSION = '2.65';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '2.64';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // Two asks (Eric, 2026-08-30): the full-message maker moved onto the
+    // chat composer where he types ("So it should be on the chat page"),
+    // and files can be starred to pin them to the top of both file lists
+    // ("They're priority, like forms the client needs to fill out"). The
+    // client sees the pin on their Documents, so one line.
+    version: '2.65',
+    quiet: true,
+    client: [
+      'Files your advocate marks as priority now sit pinned at the top of your Documents, under a heading that says they need your attention.',
+    ],
+  },
   {
     // Four asks in one message (Eric, 2026-08-30): the work log and the
     // uploads shelf on his side now show one day per page with Older and

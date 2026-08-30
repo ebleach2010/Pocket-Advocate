@@ -1512,6 +1512,42 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
 // not the claim worth making about a slab, green and unchanged is.
 console.log(`\nlifted: ${liftTable()}`);
 
+// ---- the star (Eric, 2026-08-30) ------------------------------------------
+//
+// "I want to be able to pin uploads to the top by 'star-ing' them. They're
+// priority, like forms the client needs to fill out." The pin is Storage
+// metadata riding the same lane the category label uses, so every pin here
+// mirrors a category pin that already exists.
+{
+  // NEGATIVE CONTROL (run 2026-08-30): dropping the starred branch from the
+  // Worker's meta route made this read
+  //   FAIL  the star rides the meta route, boolean in, '1' or gone in the map
+  ck('the star rides the meta route, boolean in, \'1\' or gone in the map',
+    /if \('starred' in body\) \{\n    patch\.paStarred = body\.starred === true \? '1' : null;\n  \}/.test(WORKER)
+    && /starred: out\.custom\?\.paStarred === '1',/.test(WORKER)
+    && /if \('starred' in body\) \{\n        if \(body\.starred === true\) meta\.paStarred = '1'; else delete meta\.paStarred;\n      \}/.test(DEMOAPI));
+
+  // NEGATIVE CONTROL (run 2026-08-30): removing the pinned block from
+  // refreshFiles made this read
+  //   FAIL  his list pins starred files above the day pager, and the menu offers the star
+  ck('his list pins starred files above the day pager, and the menu offers the star',
+    /starred: meta\.customMetadata\?\.paStarred === '1',/.test(ADMINCASE)
+    && /const starred = rows\.filter\(\(r\) => r\.starred\);/.test(ADMINCASE)
+    && /⭐ Priority/.test(ADMINCASE)
+    && /listEl\.innerHTML = short \+ pinnedHtml \+/.test(ADMINCASE)
+    && /act: 'star', emoji: r\.starred \? '☆' : '⭐'/.test(ADMINCASE)
+    && /saveFileMeta\(r, \{ starred: !r\.starred \}\)/.test(ADMINCASE));
+
+  // NEGATIVE CONTROL (run 2026-08-30): dropping the starred term from the
+  // client's sort made this read
+  //   FAIL  the client's Documents put starred files first, under a heading that says why
+  ck('the client\'s Documents put starred files first, under a heading that says why',
+    /starred: meta\.customMetadata\?\.paStarred === '1',/.test(CLIENT)
+    && /rows\.sort\(\(a, b\) => \(b\.starred \? 1 : 0\) - \(a\.starred \? 1 : 0\)/.test(CLIENT)
+    && /⭐ Needs your attention first/.test(CLIENT)
+    && /Everything else/.test(CLIENT));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

@@ -682,14 +682,75 @@ function render(el) {
     // that it is one tap from the conversation rather than four taps away on
     // the last page, because the moment he wants it is not a moment for
     // navigating.
-    composerButton: {
+    composerButton: [{
       icon: '⚕️',
       title: 'Duty of care draft',
       onClick: () => openDutyDraft({
         tz: data.clientTz || '',
         onSend: (text) => chatSend?.(text),
       }),
-    },
+    }, {
+      // THE MESSAGE MAKER, WHERE HE TYPES (Eric, 2026-08-30: "So it should
+      // be on the chat page. Not advisor."). He writes the rough message in
+      // the box he was already in; this turns it into the full one, in
+      // place, through the same machinery as the Read page's Prepare a
+      // response. His rough text is the whole brief, per 2026-08-30's rule.
+      icon: '✍️',
+      title: 'Make what I typed a full message',
+      onClick: async ({ input, button }) => {
+        if (!input || button.disabled) return;
+        const rough = input.value.trim();
+        if (!rough) {
+          alert('Type your rough message first. I turn what is in the box into the full message.');
+          return;
+        }
+        button.disabled = true;
+        const was = button.textContent;
+        button.textContent = '⏳';
+        const started = Date.now();
+        let earlyErr = null;
+        try {
+          const token = await user.getIdToken();
+          const auth = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+          // Fire the run without waiting out its whole life: the state poll
+          // below owns the outcome, and a proxy that cuts a long request
+          // must not read as failure. A refusal that comes back fast (bad
+          // request, signed out) still surfaces through earlyErr.
+          fetch('/api/advisor', {
+            method: 'POST', headers: auth,
+            body: JSON.stringify({ action: 'draft', kind: 'case', id: caseId, instruction: rough }),
+          }).then(async (res) => {
+            if (!res.ok) earlyErr = (await res.json().catch(() => ({}))).error || `Failed (${res.status})`;
+          }).catch(() => { /* the poll decides; a dropped connection is not a verdict */ });
+          for (;;) {
+            await new Promise((r) => setTimeout(r, 2500));
+            if (earlyErr) throw new Error(earlyErr);
+            if (Date.now() - started > 180_000)
+              throw new Error('Still working on it. When it finishes, the message will be waiting under Prepare a response on the Read page.');
+            const st = await fetch(`/api/advisor/state?kind=case&id=${encodeURIComponent(caseId)}`,
+              { headers: { authorization: `Bearer ${token}` } }).catch(() => null);
+            const out = st && st.ok ? await st.json().catch(() => ({})) : {};
+            const d = out.state || {};
+            if (d.draftStatus === 'ready' && d.draft
+              && new Date(d.draftAt || 0).getTime() >= started - 5000) {
+              input.value = d.draft;
+              input.style.height = 'auto';
+              input.style.height = `${input.scrollHeight}px`;
+              input.focus();
+              return;
+            }
+            if (d.draftStatus === 'error' && d.draftError
+              && new Date(d.draftStartedAt || d.draftAt || 0).getTime() >= started - 5000)
+              throw new Error(d.draftError);
+          }
+        } catch (e) {
+          alert(e.message);
+        } finally {
+          button.disabled = false;
+          button.textContent = was;
+        }
+      },
+    }],
   });
 
   // Setting it: the chat module owns the write, because it knows which
@@ -2948,6 +3009,7 @@ async function listCaseFiles({ onProgress } = {}) {
             // existed has none and reads as a plain report, which is what it
             // is.
             cat: meta.customMetadata?.paCategory || '',
+            starred: meta.customMetadata?.paStarred === '1',
             // And the name he gave it AFTER it landed, if he gave it one. It
             // rides on the same metadata this line already fetched, so a
             // rename costs no extra request in either listing.
@@ -3098,7 +3160,16 @@ async function refreshFiles() {
     </li>`;
   };
 
-  listEl.innerHTML = short + [...days.values()].map((day) => `
+  // THE PINNED BLOCK (Eric, 2026-08-30): starred files ride above the day
+  // pager, always visible whatever day the pager shows. They keep their spot
+  // inside their day too; the pin is a pointer, not a move.
+  const starred = rows.filter((r) => r.starred);
+  const pinnedHtml = starred.length ? `
+    <section class="up-pinned">
+      <h4 class="up-date">⭐ Priority</h4>
+      <ul class="filelist">${starred.map(row).join('')}</ul>
+    </section>` : '';
+  listEl.innerHTML = short + pinnedHtml + [...days.values()].map((day) => `
     <section class="up-day">
       <h4 class="up-date">${esc(day.label)}</h4>
       ${FILE_GROUPS.filter((g) => day.groups.has(g)).map((g) => `
@@ -3220,6 +3291,10 @@ async function openFileMenu(r) {
     heading: name,
     label: 'File actions',
     extraRows: [
+      // The pin (Eric, 2026-08-30): priority files sit above the day pages
+      // on both lists. Either side's file can carry it; the star is his to
+      // give and take either way.
+      { act: 'star', emoji: r.starred ? '☆' : '⭐', label: r.starred ? 'Unstar' : 'Star: pin to the top' },
       ...(mine ? [
         { act: 'rename', emoji: '✏️', label: 'Rename' },
         { act: 'file', emoji: '🗂', label: 'File as...' },
@@ -3228,7 +3303,8 @@ async function openFileMenu(r) {
     ],
   });
   if (!pick) return;
-  if (pick.action === 'rename') await renameCaseFile(r);
+  if (pick.action === 'star') await starCaseFile(r);
+  else if (pick.action === 'rename') await renameCaseFile(r);
   else if (pick.action === 'file') await fileCaseFileAs(r);
   else if (pick.action === 'delete') await deleteCaseFile(r);
 }
@@ -3253,6 +3329,18 @@ async function saveFileMeta(r, patch) {
   const out = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
   return out;
+}
+
+async function starCaseFile(r) {
+  try {
+    const out = await saveFileMeta(r, { starred: !r.starred });
+    saidFiles(out.starred
+      ? `Starred. "${readName(r)}" is pinned at the top of the list here and on your client's page.`
+      : 'Star removed. It sits back in its day.');
+    refreshFiles();
+  } catch (err) {
+    saidFiles(`Not changed: ${err.message}`, true);
+  }
 }
 
 async function renameCaseFile(r) {
