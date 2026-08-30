@@ -3095,16 +3095,23 @@ function listingLine({ done, total, files, failed }) {
   return '';
 }
 
+let filesGen = 0;
 async function refreshFiles() {
   const listEl = document.getElementById('files');
   if (!listEl) return;
+  // Two refreshes can be in flight at once (a second star tapped while the
+  // first repaint is still listing), and the real listing is slow enough for
+  // the OLDER pass to finish last and paint stale metadata over the newer
+  // truth: that is how a second pin looked refused (Eric, 2026-08-30).
+  // Newest pass wins; every older one drops its paint.
+  const gen = ++filesGen;
   let last = null;
   const rows = await listCaseFiles({
     onProgress: (p) => {
       last = p;
       // Only while it is still working. Once it is done the list itself is
       // the answer, and a progress line under a list of files is noise.
-      if (p.done < p.total && document.getElementById('files') === listEl) {
+      if (p.done < p.total && gen === filesGen && document.getElementById('files') === listEl) {
         listEl.innerHTML = `<p class="dim small">${esc(listingLine(p))}</p>`;
       }
     },
@@ -3113,6 +3120,7 @@ async function refreshFiles() {
     ? `<p class="saved-note warn" role="status"><span>${esc(listingLine(last))}
          Try opening this page again.</span></p>`
     : '';
+  if (gen !== filesGen) return;
   if (!rows.length) {
     listEl.innerHTML = short || '<p class="dim small">No files yet.</p>';
     return;
@@ -3153,9 +3161,10 @@ async function refreshFiles() {
         <span class="fname"><span class="kind-pill ${pillClass(r)}">${label(r)}</span><a href="${r.url}" target="_blank" rel="noopener">${esc(readName(r))}</a></span>
         <span class="fmeta">${time.format(r.ts)} · ${prettySize(r.size)}</span>
       </span>
-      <button class="btn quiet file-review" data-star="${i}" style="font-size:1.05rem;"
+      ${r.kind === 'saved' ? '' : `<button class="star-tap" data-star="${i}"
+        style="background:none; border:0; padding:.3rem .35rem; font-size:1.25rem; line-height:1; cursor:pointer;${r.starred ? '' : ' opacity:.35; filter:grayscale(1);'}"
         aria-label="${r.starred ? `Unstar ${esc(readName(r))}` : `Star ${esc(readName(r))}: pin to the top`}"
-        title="${r.starred ? 'Unstar: back into its day' : 'Star: pin to the top'}">${r.starred ? '★' : '☆'}</button>
+        title="${r.starred ? 'Unstar: back into its day' : 'Star: pin to the top'}">⭐</button>`}
       ${reviewable(r)
         ? `<button class="btn quiet file-review" data-review="${i}"
              aria-label="Hand ${esc(readName(r))} to the advisor to read"
@@ -3203,7 +3212,14 @@ async function refreshFiles() {
   // copy included, so an unstar is one tap wherever he sees the file.
   listEl.querySelectorAll('[data-star]').forEach((b) => {
     const r = rows[Number(b.dataset.star)];
-    b.addEventListener('click', () => { b.disabled = true; starCaseFile(r); });
+    b.addEventListener('click', () => {
+      b.disabled = true;
+      // Instant truth on the glyph he tapped; the repaint that follows the
+      // save re-renders the whole list with the stored state.
+      b.style.opacity = r.starred ? '.35' : '1';
+      b.style.filter = r.starred ? 'grayscale(1)' : 'none';
+      starCaseFile(r);
+    });
   });
 
   // Toggle to stage the file for the advisor's next analysis; highlighted

@@ -1531,14 +1531,24 @@ console.log(`\nlifted: ${liftTable()}`);
     && /starred: !!out\.custom\?\.paStarred,/.test(WORKER)
     && /if \(body\.starred === true\) meta\.paStarred = String\(Date\.now\(\)\); else delete meta\.paStarred;/.test(DEMOAPI));
 
+  // Pin updated 2026-08-30 (third message): the glyph is the ⭐ emoji, faded
+  // until pinned, with no button box ("this empty star box should simply be
+  // filled with"); the saved shelf gets no star because the meta route
+  // refuses its paths by design; and refreshFiles carries a generation
+  // stamp because two overlapping refreshes let the OLDER paint land last,
+  // which is how a second pin looked refused ("It's not letting me pin
+  // multiple uploads").
   // NEGATIVE CONTROL (run 2026-08-30): removing the [data-star] wiring made
   // this read
-  //   FAIL  every row wears a tappable star, the pin holds star order, and the long press lost its star row
-  ck('every row wears a tappable star, the pin holds star order, and the long press lost its star row',
+  //   FAIL  every row wears a bare tappable star, the pin holds star order, and a stale repaint never wins
+  ck('every row wears a bare tappable star, the pin holds star order, and a stale repaint never wins',
     /starAt: Number\(meta\.customMetadata\?\.paStarred\) \|\| 0,/.test(ADMINCASE)
-    && /data-star="\$\{i\}"/.test(ADMINCASE)
-    && /\$\{r\.starred \? '★' : '☆'\}/.test(ADMINCASE)
+    && /r\.kind === 'saved' \? '' : `<button class="star-tap" data-star="\$\{i\}"/.test(ADMINCASE)
+    && />⭐<\/button>/.test(ADMINCASE)
+    && /opacity:\.35; filter:grayscale\(1\);/.test(ADMINCASE)
     && /listEl\.querySelectorAll\('\[data-star\]'\)\.forEach/.test(ADMINCASE)
+    && /const gen = \+\+filesGen;/.test(ADMINCASE)
+    && /if \(gen !== filesGen\) return;/.test(ADMINCASE)
     && /\.sort\(\(x, y\) => \(x\.starAt \|\| 0\) - \(y\.starAt \|\| 0\)\);/.test(ADMINCASE)
     && !/act: 'star'/.test(ADMINCASE)
     && /⭐ Priority/.test(ADMINCASE)

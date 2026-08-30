@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.66';
+export const VERSION = '2.67';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '2.66';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // Two star reports within the hour (Eric, 2026-08-30): pinning several
+    // files could look refused, because the slow real listing let an OLDER
+    // repaint land last over a newer star, and the client's saved shelf wore
+    // a star its route refuses by design; and the boxed outline glyph should
+    // just be the emoji. Repaints are generation-stamped now, the tapped
+    // star flips instantly, the saved shelf carries no star, and the glyph
+    // is a bare emoji, faded until pinned. His side only.
+    version: '2.67',
+    quiet: true,
+    client: [],
+  },
   {
     // The star grew a button the same day it was born (Eric, 2026-08-30:
     // "There should be a star button next to each upload that's just an
