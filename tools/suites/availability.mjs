@@ -1139,6 +1139,41 @@ check('H: the glow is green, and off is plain manila again',
     flags.length ? flags.join(', ') : 'no auto flag in drawer.js at all');
 }
 
+// ---- clearing the calendar (Eric, 2026-08-30) -----------------------------
+//
+// "Clear my calendar of any open slots. Also, make a button to clear the
+// entire calendar, as well as a small x by the day to clear the day of
+// availability." Three pins: the bulk route only ever deletes what is open
+// at that moment, the one-shot sweep actually runs from the cron, and the
+// two controls exist and stop for a confirm before anything dies.
+{
+  const W = code('worker/index.js');
+  const AV = code('public/js/admin-availability.js');
+  // NEGATIVE CONTROL (run 2026-08-30): replacing the openIds fence with
+  // `true` made this read
+  //   FAIL  X: the bulk clear deletes only slots that are open right now
+  check('X: the bulk clear deletes only slots that are open right now',
+    /'\/api\/admin\/slots-clear' && request\.method === 'POST'/.test(W)
+    && /const openIds = new Set\(open\.map\(\(s\) => s\.id\)\)/.test(W)
+    && /openIds\.has\(id\)/.test(W)
+    && /batchDelete\(env, goners\.map/.test(W));
+  // NEGATIVE CONTROL (run 2026-08-30): deleting the cron waitUntil hook made
+  // this read
+  //   FAIL  X: the one-shot sweep is marked, cron-run, and leaves booked slots be
+  check('X: the one-shot sweep is marked, cron-run, and leaves booked slots be',
+    /migrations\/clear-open-slots-2026-08-30/.test(W)
+    && /ctx\.waitUntil\(clearOpenSlots\(env\)\)/.test(W)
+    && /\[\['state', 'EQUAL', 'open'\]\], 500\)/.test(W));
+  // NEGATIVE CONTROL (run 2026-08-30): guarding the confirm behind
+  // `false &&` made this read
+  //   FAIL  X: clear-all and the day x both exist and both stop for a confirm
+  check('X: clear-all and the day x both exist and both stop for a confirm',
+    /getElementById\('clear-all'\)\.addEventListener/.test(AV)
+    && /data-day-clear=/.test(AV)
+    && /if \(!confirm\(/.test(AV)
+    && /'\/api\/admin\/slots-clear'/.test(AV));
+}
+
 // ---------------------------------------------------------------------------
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

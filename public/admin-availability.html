@@ -78,6 +78,10 @@
   </div>
 
   <h2 style="margin-top:1.5rem;">The calendar</h2>
+  <!-- Eric, 2026-08-30: "make a button to clear the entire calendar, as well
+       as a small x by the day." Hidden until the calendar shows at least one
+       open slot; booked and held appointments are never touched by either. -->
+  <p id="clear-all-row" hidden style="margin:.2rem 0 .7rem;"><button class="btn quiet" id="clear-all">✕ Clear every open slot</button></p>
   <div id="calendar"><p class="dim">Loading…</p></div>
 </main>
 <script type="module" src="/js/admin-availability.js"></script>

@@ -23,6 +23,10 @@ function init() {
       ${h <= 11 ? h + 'am' : h === 12 ? '12pm' : (h - 12) + 'pm'}
     </label>`).join('');
   document.getElementById('create').addEventListener('click', createSlots);
+  // Eric, 2026-08-30: "make a button to clear the entire calendar." Wired
+  // once; the ids it clears are whatever the latest paint found open.
+  document.getElementById('clear-all').addEventListener('click', () =>
+    clearSlots(openNow, 'across the whole calendar'));
   // In or out, on the page where the rest of his calendar decisions live. The
   // same control is on the shelf; both read and write the one settings doc.
   mountOfficeControl(document.getElementById('office'), { getToken: () => user.getIdToken() });
@@ -174,6 +178,34 @@ function zeroSlotReason(dropped, from, to) {
   return `No slots opened: ${reasons.join('; ')}.`;
 }
 
+/**
+ * Bulk clearing (Eric, 2026-08-30: "make a button to clear the entire
+ * calendar, as well as a small x by the day to clear the day").
+ *
+ * One confirm, one request, one repaint. The Worker fences to slots that are
+ * open at that moment, so a slot a client books between paint and tap
+ * survives; booked and held appointments are never in the ids to begin with.
+ */
+let openNow = [];
+
+async function clearSlots(ids, where) {
+  if (!ids.length) return;
+  if (!confirm(`Delete ${ids.length} open ${ids.length === 1 ? 'slot' : 'slots'} ${where}? Booked appointments stay.`)) return;
+  try {
+    const idToken = await user.getIdToken();
+    const res = await fetch('/api/admin/slots-clear', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ ids }),
+    });
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+  } catch (err) {
+    alert(err.message);
+  }
+  loadCalendar();
+}
+
 async function loadCalendar() {
   const el = document.getElementById('calendar');
   let slots = [];
@@ -193,6 +225,8 @@ async function loadCalendar() {
     .filter((s) => s.startDate.getTime() > Date.now() - 86_400_000)
     .filter((s) => s.state !== 'open' || s.startDate.getTime() >= unbookableBefore)
     .sort((a, b) => a.startDate - b.startDate);
+  openNow = slots.filter((s) => s.state === 'open').map((s) => s.id);
+  document.getElementById('clear-all-row').hidden = !openNow.length;
   if (!slots.length) {
     el.innerHTML = '<p class="dim">No upcoming slots. Open some above.</p>';
     return;
@@ -206,12 +240,23 @@ async function loadCalendar() {
     if (!byDay.has(key)) byDay.set(key, []);
     byDay.get(key).push(s);
   }
-  el.innerHTML = [...byDay.entries()].map(([day, list]) => `
-    <div class="day"><h3>${day}</h3><div class="slots">
+  // The small x by the day (Eric, 2026-08-30): only days with something open
+  // wear one, and it takes the day's open slots only.
+  const days = [...byDay.entries()];
+  el.innerHTML = days.map(([day, list], di) => `
+    <div class="day"><h3>${day}${list.some((s) => s.state === 'open')
+      ? ` <button class="day-x" data-day-clear="${di}" title="Clear this day" style="background:none; border:0; color:var(--soft); cursor:pointer; font-size:.9rem; padding:.1rem .4rem;">✕</button>`
+      : ''}</h3><div class="slots">
       ${list.map((s) => s.state === 'open'
         ? `<button class="slot" data-del="${s.id}" title="Tap to delete">${timeFmt.format(s.startDate)} ✕</button>`
         : `<span class="slot booked">${timeFmt.format(s.startDate)} · ${s.state.toUpperCase()}</span>`).join('')}
     </div></div>`).join('');
+
+  el.querySelectorAll('[data-day-clear]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      const [day, list] = days[Number(btn.dataset.dayClear)];
+      clearSlots(list.filter((s) => s.state === 'open').map((s) => s.id), `on ${day}`);
+    }));
 
   el.querySelectorAll('[data-del]').forEach((btn) =>
     btn.addEventListener('click', async () => {

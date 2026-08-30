@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.69';
+export const VERSION = '2.70';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '2.69';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // CLEARING THE CALENDAR (Eric, 2026-08-30: "Clear my calendar of any
+    // open slots. Also, make a button to clear the entire calendar, as well
+    // as a small x by the day."). A one-shot sweep took every open slot off
+    // the live calendar; the editor gained a clear-everything button and a
+    // small x on each day, both fenced to open slots only. His side only.
+    version: '2.70',
+    quiet: true,
+    client: [],
+  },
   {
     // HIS STORY (Eric, 2026-08-30: "There needs an 'about your advocate'
     // page on the landing page with this photo and copy"). New public page

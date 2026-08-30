@@ -85,6 +85,26 @@ export async function batchCreate(env, entries) {
 }
 
 /**
+ * Delete up to 500 documents in ONE request (`:batchWrite`), for the same
+ * reason batchCreate exists: bulk slot clearing cannot loop deleteDoc inside
+ * one Worker invocation. A doc already gone counts as deleted, because the
+ * end state is what was asked for. Returns { deleted }.
+ */
+export async function batchDelete(env, paths) {
+  if (!paths.length) return { deleted: 0 };
+  const docBase = `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+  const res = await authedFetch(env, `${baseUrl(env)}:batchWrite`, {
+    method: 'POST',
+    body: JSON.stringify({ writes: paths.map((p) => ({ delete: `${docBase}/${p}` })) }),
+  });
+  if (!res.ok) throw new Error(`firestore batchWrite: ${res.status} ${await res.text()}`);
+  const out = await res.json();
+  let deleted = 0;
+  for (const s of out.status || []) if (!s.code) deleted++;
+  return { deleted };
+}
+
+/**
  * List a subcollection by path (e.g. `cases/abc/chat`). `queryDocs` can only
  * reach top-level collections — a `runQuery` against a subcollection has to be
  * posted to the parent document — so plain listing is both simpler and enough

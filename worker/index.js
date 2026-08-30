@@ -16,7 +16,7 @@
 import { WorkflowEntrypoint } from 'cloudflare:workers';
 import { requireUser } from './firebase-auth.js';
 import { mintCustomToken, getAccessToken } from './google-auth.js';
-import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, listDocs } from './firestore.js';
+import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, batchDelete, listDocs } from './firestore.js';
 import { deleteFile, objectMeta, patchObjectMeta } from './storage.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import {
@@ -769,6 +769,8 @@ export default {
         return await handleCreateSlots(request, env);
       if (url.pathname.startsWith('/api/admin/slots/') && request.method === 'DELETE')
         return await handleDeleteSlot(request, env, url);
+      if (url.pathname === '/api/admin/slots-clear' && request.method === 'POST')
+        return await handleClearSlots(request, env);
       if (url.pathname === '/api/admin/case-update' && request.method === 'POST')
         return await handleCaseUpdate(request, env);
       if (url.pathname === '/api/admin/client-alert' && request.method === 'POST')
@@ -1093,6 +1095,7 @@ export default {
       // Landed 2026-08-29 ("full 340000 -> 350000"); an instant no-op since.
       ctx.waitUntil(repriceTier(env));
       ctx.waitUntil(fixLogTimes(env));
+      ctx.waitUntil(clearOpenSlots(env));
     }
 
     // Un-gated on purpose: the wedged case should recover on the FIRST
@@ -1653,6 +1656,39 @@ async function fixLogTimes(env) {
   }
 }
 
+/**
+ * Eric, 2026-08-30: "Clear my calendar of any open slots." One shot, run by
+ * the cron the way every migration runs: every open slot goes, whatever its
+ * date. Booked and held appointments are untouched, and the closure switch
+ * keeps saying whatever it says. He reopens from the editor whenever he
+ * likes.
+ */
+async function clearOpenSlots(env) {
+  const MARKER = 'migrations/clear-open-slots-2026-08-30';
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;
+  const done = (result) => patchDoc(env, MARKER, { finishedAt: new Date(), result },
+    { mask: ['finishedAt', 'result'] }).catch(() => {});
+  try {
+    let cleared = 0;
+    // One query is one page, so sweep until a read comes back empty.
+    for (let round = 0; round < 5; round++) {
+      const open = await queryDocs(env, 'availability', [['state', 'EQUAL', 'open']], 500);
+      if (!open.length) break;
+      cleared += (await batchDelete(env, open.map((s) => `availability/${s.id}`))).deleted;
+      if (open.length < 500) break;
+    }
+    return done(`${cleared} open slots cleared`);
+  } catch (err) {
+    console.error('clear open slots:', err.message || err);
+  }
+}
+
 async function seedWorkClock(env) {
   const MARKER = 'migrations/workclock-2026-08-22';
   const CASE_ID = '65cc57c1-2057-47eb-8dee-d82fce8bf5fe';
@@ -1819,7 +1855,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-30-meet-your-advocate';
+const BUILD_TAG = 'v2026-08-30-clear-the-books';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1827,7 +1863,7 @@ const BUILD_TAG = 'v2026-08-30-meet-your-advocate';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.69';
+const VERSION = '2.70';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -7693,6 +7729,25 @@ async function handleDeleteSlot(request, env, url) {
     return json({ error: 'That slot is booked or mid-checkout — it cannot be deleted.' }, 409);
   await deleteDoc(env, `availability/${slotId}`);
   return json({ ok: true });
+}
+
+// POST /api/admin/slots-clear  Body: { ids: [...] } -- bulk delete of OPEN
+// slots (Eric, 2026-08-30: "make a button to clear the entire calendar, as
+// well as a small x by the day"). The fence is the database's current state,
+// not the caller's list: whatever ids arrive, only slots that are open RIGHT
+// NOW go, so a slot booked between paint and tap survives its own deletion.
+async function handleClearSlots(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => null);
+  const ids = body && Array.isArray(body.ids) ? body.ids.map(String) : null;
+  if (!ids || !ids.length || ids.length > 500)
+    return json({ error: 'Provide 1 to 500 slot ids.' }, 400);
+  const open = await queryDocs(env, 'availability', [['state', 'EQUAL', 'open']], 500);
+  const openIds = new Set(open.map((s) => s.id));
+  const goners = [...new Set(ids)].filter((id) => /^[\w-]{1,64}$/.test(id) && openIds.has(id));
+  const { deleted } = await batchDelete(env, goners.map((id) => `availability/${id}`));
+  return json({ deleted, refused: ids.length - goners.length });
 }
 
 // POST /api/admin/case-update  Body: { caseId, action, joinLink?, paidCents?, tierCents? }

@@ -313,6 +313,18 @@ export function demoApi(role, store) {
     // The zone is Eric's own, America/Boise, and NOT the fixed offset the
     // booking calendar above is anchored to. Same reason the real one changed:
     // the light answers what time it is where he is standing.
+    // Bulk slot clearing (Eric, 2026-08-30): same fence as the Worker, only
+    // docs that are open right now go.
+    if (path === '/api/admin/slots-clear' && init.method === 'POST') {
+      const ids = Array.isArray(body.ids) ? body.ids : [];
+      let deleted = 0;
+      for (const id of ids) {
+        const k = `availability/${id}`;
+        const slot = store.docs.get(k);
+        if (slot && slot.state === 'open') { store.docs.delete(k); deleted++; }
+      }
+      return ok({ deleted, refused: ids.length - deleted });
+    }
     if (path === '/api/availability' || path === '/api/admin/office-hours') {
       const key = 'config/officeHours';
       if (path === '/api/admin/office-hours' && init.method === 'POST') {
