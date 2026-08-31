@@ -425,6 +425,8 @@ for (const [n, re] of [
 const ASK_LIFTED = [
   konst('MODEL'), konst('MAX_PAUSE_RESUMES'),
   fn('withCacheBp', '\nfunction withCacheBp('),
+  // todayBlock rides inside turnRequest since 2026-08-31 (the date anchor).
+  fn('todayBlock', '\nfunction todayBlock('),
   fn('turnRequest', '\nfunction turnRequest('),
   fn('stripDashes', '\nfunction stripDashes('),
   fn('extractText', '\nfunction extractText('),

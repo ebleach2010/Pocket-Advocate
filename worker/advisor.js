@@ -205,13 +205,35 @@ function withCacheBp(system) {
  * callers that never wanted a tool send exactly the bytes they always sent,
  * cache prefix included.
  */
+/**
+ * THE CLOCK IN THE ROOM (Eric, 2026-08-31: the console called a three-day-old
+ * fax "day 10"). No prompt in this file carried today's date, so any elapsed
+ * time the model stated was an estimate dressed as a fact: the material's
+ * dates were real and "now" was not. Every turn now ends its system prompt
+ * with the date on Eric's own clock and one rule: day counts are computed
+ * from the material's dates against this line, or not stated at all. Day
+ * granularity on purpose, so the cached prefix survives within a day.
+ */
+function todayBlock() {
+  const day = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Boise', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  }).format(new Date());
+  return {
+    type: 'text',
+    text: `Today is ${day}, Mountain time. Every elapsed-time statement, day count, or "how long since" must be computed from dates in the material against this date, and said as computed. If the material does not date something, call it undated rather than estimating.`,
+  };
+}
+
 function turnRequest({ system, messages, effort, maxTokens = 64000, tools }) {
+  const sys = system == null ? [todayBlock()]
+    : Array.isArray(system) ? [...system, todayBlock()]
+      : [{ type: 'text', text: system }, todayBlock()];
   return {
     model: MODEL,
     max_tokens: maxTokens,
     thinking: { type: 'adaptive' },
     output_config: { effort },
-    system: withCacheBp(system),
+    system: withCacheBp(sys),
     messages,
     ...(tools && tools.length ? { tools } : {}),
   };

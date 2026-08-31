@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.71';
+export const VERSION = '2.72';
 
 /**
  * Newest first.
@@ -51,6 +51,15 @@ export const VERSION = '2.71';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE CLOCK IN THE ROOM (Eric, 2026-08-31: a three-day-old fax called
+    // "day 10" on the Read page). No prompt carried today's date; now every
+    // one ends with the date on his clock and a computed-or-silent rule for
+    // elapsed time. His side only.
+    version: '2.72',
+    quiet: true,
+    client: [],
+  },
   {
     // MILESTONES AND THE TIDY UPLOADS (Eric, 2026-08-30). A milestones feed
     // beside the work log, both tabs under Act on every case now; the

@@ -1378,6 +1378,23 @@ const TABLE = {
     && /\[\.\.\.INTAKE_FOLDERS, 'report', 'recording'\]/.test(STOR));
 }
 
+// ---- the clock in the room (Eric, 2026-08-31) -----------------------------
+//
+// "The five 08/28 faxes are at day 10." They were at day 3. No prompt in
+// advisor.js carried today's date, so every elapsed-time line was a guess.
+// The pin holds the one door: every turnRequest ends its system prompt with
+// today's date on Eric's clock and the computed-or-silent rule, whatever
+// shape the caller passed system in.
+// NEGATIVE CONTROL (run 2026-08-31): passing `system` through untouched made
+// this read
+//   FAIL  A39 every turn knows what day it is, on his clock, and may not estimate elapsed time
+ck('A39 every turn knows what day it is, on his clock, and may not estimate elapsed time',
+  /timeZone: 'America\/Boise', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',/.test(ADV)
+  && /must be computed from dates in the material against this date/.test(ADV)
+  && /call it undated rather than estimating/.test(ADV)
+  && /Array\.isArray\(system\) \? \[\.\.\.system, todayBlock\(\)\]/.test(ADV)
+  && /withCacheBp\(sys\)/.test(ADV));
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }
