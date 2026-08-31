@@ -258,26 +258,20 @@ function render(el) {
     //   Track    where the case stands and what is outstanding
     //   Mine     the things he wrote himself
     groups: [
-      // 'log' is the FOURTH page here, not a fifth anywhere else, and it is
-      // in this group on purpose: the Case group is the client, the
-      // conversation and their files, and the work log is the fourth thing
-      // they can see. It was 'calls' under Act until 2026-08-27. Act only
-      // exists on a Full-Service case, and the client-facing log is on EVERY
-      // case, so leaving the entry form behind a tier gate would have meant a
-      // standard case with a log its client could read and he could not write.
-      { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files', 'log'] },
+      { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files'] },
       { id: 'read', label: 'Advisor', icon: '👨‍⚕️', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
       { id: 'track', label: 'Track', icon: '🗒', pages: ['summary', 'unanswered', 'agenda', 'about'] },
       // 'calldoc' sits in Mine, beside Notes: both start from something Eric
       // wrote himself. A page absent from every group renders no tab at all,
       // which is how the call document first shipped invisible.
       { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'calldoc', 'drafts', 'saved'] },
-      // A FIFTH group rather than a fifth page in an existing one: four per
-      // group is the width constraint, and 'read' and 'track' are both full.
-      // Only rendered for a Full Access case; on a standard case these pages
-      // would be furniture for work that was never bought.
-      ...(data.fullAccess
-        ? [{ id: 'act', label: 'Act', icon: '⚖️', pages: ['appeals'] }] : []),
+      // THE ACT GROUP, ON EVERY CASE NOW (Eric, 2026-08-30: "This and work
+      // log should be tabs under 'act' since it has so much space"). The log
+      // lived under Case since 2026-08-27 because Act only rendered on a
+      // Full-Service case; rather than hide the log behind the tier gate
+      // again, the gate moved: Act now exists everywhere, carrying the log
+      // and the milestones feed, and only Appeals stays Full-Service.
+      { id: 'act', label: 'Act', icon: '⚖️', pages: [...(data.fullAccess ? ['appeals'] : []), 'log', 'milestones'] },
     ],
     // Landing on a page IS having seen it. The badge clears here rather than
     // on some later save, so it never outlives the thing it was pointing at.
@@ -387,6 +381,12 @@ function render(el) {
       {
         id: 'log', title: 'Work log', icon: '🗒',
         render: (pane) => paintWorkLog(pane),
+        onShow: (pane) => pane._reload?.(),
+      },
+      // The achievements feed (Eric, 2026-08-30), beside the log under Act.
+      {
+        id: 'milestones', title: 'Milestones', icon: '🏁',
+        render: (pane) => paintMilestones(pane),
         onShow: (pane) => pane._reload?.(),
       },
       {
@@ -2634,10 +2634,26 @@ function paintFiles(pane) {
       <p class="error" id="err" hidden></p>
       <p class="saved-note ok" id="up-said" role="status" hidden></p>
       <hr class="divide">
+      <label class="small" style="display:block; margin:0 0 .5rem;">Find an upload
+        <input type="search" id="up-search" placeholder="Search by name or label"
+          autocomplete="off" style="width:100%; margin-top:.25rem;"></label>
       <div class="uploads" id="files"><p class="dim small">Loading…</p></div>
     </div>`;
   pane.querySelector('#up-recording').addEventListener('change', (e) =>
     upload(e.target.files[0], 'recording', 'recording-uploaded'));
+  // The search box lives OUTSIDE #files so repaints never eat a keystroke.
+  // A fresh pane always starts unfiltered.
+  fileQuery = '';
+  const searchEl = pane.querySelector('#up-search');
+  let searchTick = 0;
+  searchEl?.addEventListener('input', () => {
+    const tick = ++searchTick;
+    setTimeout(() => {
+      if (tick !== searchTick) return;
+      fileQuery = searchEl.value || '';
+      refreshFiles({ fromCache: true });
+    }, 160);
+  });
   // The category picker drives the sentence AND the route the upload finishes
   // with, so the two can never say different things.
   const cat = pane.querySelector('#up-cat');
@@ -3096,7 +3112,12 @@ function listingLine({ done, total, files, failed }) {
 }
 
 let filesGen = 0;
-async function refreshFiles() {
+// The last full listing and the live search term (Eric, 2026-08-30: "There's
+// a search bar to search for key terms that pull up uploads"). Typing filters
+// the cached listing; it never re-lists Storage per keystroke.
+let filesRows = null;
+let fileQuery = '';
+async function refreshFiles({ fromCache = false } = {}) {
   const listEl = document.getElementById('files');
   if (!listEl) return;
   // Two refreshes can be in flight at once (a second star tapped while the
@@ -3106,16 +3127,22 @@ async function refreshFiles() {
   // Newest pass wins; every older one drops its paint.
   const gen = ++filesGen;
   let last = null;
-  const rows = await listCaseFiles({
-    onProgress: (p) => {
-      last = p;
-      // Only while it is still working. Once it is done the list itself is
-      // the answer, and a progress line under a list of files is noise.
-      if (p.done < p.total && gen === filesGen && document.getElementById('files') === listEl) {
-        listEl.innerHTML = `<p class="dim small">${esc(listingLine(p))}</p>`;
-      }
-    },
-  });
+  let rows;
+  if (fromCache && filesRows) {
+    rows = filesRows;
+  } else {
+    rows = await listCaseFiles({
+      onProgress: (p) => {
+        last = p;
+        // Only while it is still working. Once it is done the list itself is
+        // the answer, and a progress line under a list of files is noise.
+        if (p.done < p.total && gen === filesGen && document.getElementById('files') === listEl) {
+          listEl.innerHTML = `<p class="dim small">${esc(listingLine(p))}</p>`;
+        }
+      },
+    });
+    filesRows = rows;
+  }
   const short = last && last.failed
     ? `<p class="saved-note warn" role="status"><span>${esc(listingLine(last))}
          Try opening this page again.</span></p>`
@@ -3183,15 +3210,27 @@ async function refreshFiles() {
       <h4 class="up-date">⭐ Priority</h4>
       <ul class="filelist">${starred.map(row).join('')}</ul>
     </section>` : '';
-  listEl.innerHTML = short + pinnedHtml + [...days.values()].map((day) => `
+  // THE SEARCH (Eric, 2026-08-30): a term replaces the day pages with one
+  // flat list of everything it pulls up, across every day at once; the
+  // pinned block above rides through untouched. Clearing the box brings the
+  // days back exactly where they were.
+  const q = fileQuery.trim().toLowerCase();
+  const hits = q ? rows.filter((r) => `${readName(r)} ${label(r)}`.toLowerCase().includes(q)) : [];
+  const daysHtml = q ? `
+    <section class="up-day">
+      <h4 class="up-date">🔎 ${hits.length ? `${hits.length} ${hits.length === 1 ? 'match' : 'matches'}` : 'No matches'} for “${esc(fileQuery.trim())}”</h4>
+      <ul class="filelist">${hits.map(row).join('')}</ul>
+    </section>` : [...days.values()].map((day) => `
     <section class="up-day">
       <h4 class="up-date">${esc(day.label)}</h4>
       ${FILE_GROUPS.filter((g) => day.groups.has(g)).map((g) => `
         <h5 class="up-kind">${esc(g)}<span class="up-n">${day.groups.get(g).length}</span></h5>
         <ul class="filelist">${day.groups.get(g).map(row).join('')}</ul>`).join('')}
     </section>`).join('');
-  // One day per page (Eric, 2026-08-30), same pager as the work log.
-  pageByDay('files', [...listEl.querySelectorAll('.up-day')],
+  listEl.innerHTML = short + pinnedHtml + daysHtml;
+  // One day per page (Eric, 2026-08-30), same pager as the work log. A
+  // search shows its one flat section and needs no pager at all.
+  if (!q) pageByDay('files', [...listEl.querySelectorAll('.up-day')],
     [...days.values()].map((d) => d.label), { olderStep: 1 });
   listEl.querySelectorAll('[data-thumb]').forEach((img) => {
     const r = rows[Number(img.dataset.thumb)];
@@ -5090,6 +5129,189 @@ function pageByDay(key, sections, labels, { olderStep }) {
   });
   sections[0].parentNode.insertBefore(bar, sections[0]);
   paint();
+}
+
+/**
+ * MILESTONES (Eric, 2026-08-30: "similar to how activities are logged and I
+ * can create new categories, only they're not separated by days, simply time
+ * stamped, to mark achievements in progress like an appointment scheduled, a
+ * referral out, an insurance authorization"). One feed, newest first, never
+ * split into days. His own types ride the same colour slider the log uses,
+ * and a row marked by mistake comes off with one tap. The two-week report
+ * reads this feed as its progress spine when that ships.
+ */
+const MILESTONE_BASE = [
+  { id: 'appointment', label: 'Appointment scheduled' },
+  { id: 'referral', label: 'Referral out' },
+  { id: 'authorization', label: 'Insurance authorization' },
+];
+let mileKey = null;
+let pickMileKindAfterLoad = '';
+function paintMilestones(pane) {
+  const load = async () => {
+    let items = [];
+    let customs = [];
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/milestones?caseId=${encodeURIComponent(caseId)}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const out = await res.json();
+        items = out.items || [];
+        customs = (out.kinds || []).filter((k) => k && k.id && k.label
+          && (LOG_COLORS[k.color] || /^h\d{1,3}$/.test(String(k.color))));
+      }
+    } catch { /* an unreachable list still offers the form */ }
+    const key = JSON.stringify([items, customs]);
+    if (key === mileKey && pane.querySelector('[data-mile-root]')) return;
+    mileKey = key;
+
+    const stamp = new Intl.DateTimeFormat('en-US',
+      { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const rowHtml = (i) => {
+      const hue = pillColor(i.kindColor || 'blue');
+      const at = new Date(i.at || i.createdAt || 0);
+      return `
+        <li class="mile-row" style="display:flex; gap:.5rem; align-items:flex-start; padding:.45rem 0; border-bottom:1px solid var(--line);">
+          <span style="flex:1 1 12rem;">
+            <span class="kind-pill" style="border-color:${hue}; color:${hue}">${esc(String(i.kindLabel || i.kind || '').toUpperCase())}</span>
+            ${esc(String(i.what || ''))}
+            <span class="dim small" style="display:block;">${Number.isFinite(at.getTime()) && at.getTime() ? esc(stamp.format(at)) : ''}</span>
+          </span>
+          <button class="btn ghost tiny" data-mile-remove="${esc(String(i.id))}"
+            aria-label="Remove this milestone">✕</button>
+        </li>`;
+    };
+
+    pane.innerHTML = `
+      <div class="panel" data-mile-root>
+        <h3 style="margin:0 0 .3rem;">🏁 Milestones</h3>
+        <p class="dim small" style="margin:0 0 .6rem;">What has actually been
+          achieved on this case, newest first: an appointment on the books, a
+          referral out the door, an authorization approved. One time-stamped
+          feed, and the spine of the two-week progress report.</p>
+        <details class="faq" data-k="mile-new">
+          <summary>Mark a milestone</summary>
+          <div class="faq-a">
+            <label class="dim small">What kind
+              <select data-m="kind">
+                ${MILESTONE_BASE.map((k) => `<option value="${esc(k.id)}">${esc(k.label)}</option>`).join('')}
+                ${customs.map((k) => `<option value="${esc(k.id)}">${esc(k.label)}</option>`).join('')}
+                <option value="__new">+ New milestone type</option>
+              </select></label>
+            <div data-newmile hidden style="margin:.4rem 0 .6rem; padding:.6rem; border:1px solid var(--line); border-radius:10px;">
+              <label class="dim small">Call it
+                <input type="text" data-mk-label maxlength="24" placeholder="e.g. Records received"></label>
+              <p class="dim small" style="margin:.5rem 0 .2rem;">Highlight colour.
+                Slide to any colour; the app keeps it readable in every look,
+                day and night.</p>
+              <input type="range" class="nk-hue" data-mk-hue min="0" max="359" value="140"
+                aria-label="Highlight colour hue">
+              <p style="margin:.45rem 0 0;">
+                <span class="kind-pill" data-mk-preview>LIKE THIS</span></p>
+              <p style="margin:.6rem 0 0;"><button class="btn quiet tiny" data-mk-add>Add the type</button></p>
+              ${customs.length ? `
+              <p class="dim small" style="margin:.7rem 0 .2rem;">Your types. Removing one never touches anything already marked.</p>
+              ${customs.map((k) => `
+              <p class="row" style="gap:.4rem; align-items:center; margin:.15rem 0;">
+                <span class="kind-pill" style="border-color:${pillColor(k.color)}; color:${pillColor(k.color)}">${esc(k.label.toUpperCase())}</span>
+                <button class="btn ghost tiny" data-mk-remove="${esc(k.id)}" aria-label="Remove ${esc(k.label)}">Remove</button>
+              </p>`).join('')}` : ''}
+            </div>
+            <label class="dim small">What happened
+              <input type="text" data-m="what" maxlength="300"
+                placeholder="e.g. Neurology appointment set at USF for Oct 3"></label>
+            <label class="dim small">When. Leave it and the mark is now.
+              <input type="datetime-local" data-m="at"></label>
+            <p><button class="btn" data-mile-add>Mark it</button></p>
+          </div>
+        </details>
+        <p class="error" data-mile-err hidden></p>
+        ${items.length
+          ? `<ul class="filelist" style="list-style:none; padding:0; margin:.6rem 0 0;">${items.map(rowHtml).join('')}</ul>`
+          : '<p class="dim small" style="margin:.6rem 0 0;">Nothing marked yet. The first appointment on the books goes here.</p>'}
+      </div>`;
+
+    const post = async (payload, btn) => {
+      const err = pane.querySelector('[data-mile-err]');
+      if (btn) btn.disabled = true;
+      err.hidden = true;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/milestones', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ caseId, ...payload }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+        mileKey = null;
+        load();
+        return out;
+      } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+        if (btn) btn.disabled = false;
+        return null;
+      }
+    };
+
+    const kindSel = pane.querySelector('[data-m="kind"]');
+    const newBox = pane.querySelector('[data-newmile]');
+    if (kindSel && pickMileKindAfterLoad
+      && [...kindSel.options].some((o) => o.value === pickMileKindAfterLoad)) {
+      kindSel.value = pickMileKindAfterLoad;
+      pickMileKindAfterLoad = '';
+    }
+    const syncNewBox = () => { if (newBox) newBox.hidden = kindSel?.value !== '__new'; };
+    kindSel?.addEventListener('change', syncNewBox);
+    syncNewBox();
+    const hueEl = pane.querySelector('[data-mk-hue]');
+    const labelEl = pane.querySelector('[data-mk-label]');
+    const previewEl = pane.querySelector('[data-mk-preview]');
+    const paintPreview = () => {
+      if (!previewEl) return;
+      const c = pillColor(`h${Number(hueEl?.value) || 0}`);
+      previewEl.style.borderColor = c;
+      previewEl.style.color = c;
+      previewEl.textContent = (labelEl?.value.trim() || 'Like this').toUpperCase();
+    };
+    hueEl?.addEventListener('input', paintPreview);
+    labelEl?.addEventListener('input', paintPreview);
+    paintPreview();
+    pane.querySelector('[data-mk-add]')?.addEventListener('click', async (e) => {
+      const label = labelEl?.value.trim() || '';
+      if (!label) { alert('Call it something first.'); return; }
+      const color = `h${Number(hueEl?.value) || 0}`;
+      const out = await post({ action: 'kind-add', label, color }, e.currentTarget);
+      if (out?.id) pickMileKindAfterLoad = out.id;
+    });
+    for (const b of pane.querySelectorAll('[data-mk-remove]')) {
+      b.addEventListener('click', () => {
+        pickMileKindAfterLoad = '__new';
+        post({ action: 'kind-remove', id: b.dataset.mkRemove }, b);
+      });
+    }
+    pane.querySelector('[data-mile-add]')?.addEventListener('click', (e) => {
+      const g = (n) => pane.querySelector(`[data-m="${n}"]`)?.value.trim() || '';
+      if (g('kind') === '__new') { alert('Finish the new type first, or pick one from the list.'); return; }
+      if (!g('what')) { alert('Say what was achieved first.'); return; }
+      post({
+        action: 'add', kind: g('kind'), what: g('what'),
+        // Same rule as the log: the device resolves its own wall clock into
+        // a real instant before the string leaves the phone.
+        at: g('at') ? new Date(g('at')).toISOString() : '',
+      }, e.currentTarget);
+    });
+    for (const b of pane.querySelectorAll('[data-mile-remove]')) {
+      b.addEventListener('click', () => {
+        if (confirm('Take this milestone off the feed?')) post({ action: 'remove', id: b.dataset.mileRemove }, b);
+      });
+    }
+  };
+  pane._reload = load;
+  load();
 }
 
 function paintWorkLog(pane) {

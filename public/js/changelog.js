@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.70';
+export const VERSION = '2.71';
 
 /**
  * Newest first.
@@ -51,6 +51,15 @@ export const VERSION = '2.70';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // MILESTONES AND THE TIDY UPLOADS (Eric, 2026-08-30). A milestones feed
+    // beside the work log, both tabs under Act on every case now; the
+    // uploads page keeps one day on screen with a search box that pulls
+    // matches from every day at once, pins riding on top. His side only.
+    version: '2.71',
+    quiet: true,
+    client: [],
+  },
   {
     // CLEARING THE CALENDAR (Eric, 2026-08-30: "Clear my calendar of any
     // open slots. Also, make a button to clear the entire calendar, as well

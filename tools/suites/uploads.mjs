@@ -1566,6 +1566,30 @@ console.log(`\nlifted: ${liftTable()}`);
     && /Everything else/.test(CLIENT));
 }
 
+// ---- the uploads search (Eric, 2026-08-30) --------------------------------
+//
+// "There's a search bar to search for key terms that pull up uploads."
+// Typing filters the CACHED listing (never a fresh Storage list per
+// keystroke), the day pager stands down while a term is in the box, and the
+// pinned block rides above the results untouched.
+{
+  // NEGATIVE CONTROL (run 2026-08-30): rewiring the keystroke to a plain
+  // refreshFiles() relist made this read
+  //   FAIL  U80 the search box filters from cache and lives outside the repainted list
+  ck('U80 the search box filters from cache and lives outside the repainted list',
+    /id="up-search"/.test(ADMINCASE)
+    && /refreshFiles\(\{ fromCache: true \}\)/.test(ADMINCASE)
+    && /if \(fromCache && filesRows\) \{/.test(ADMINCASE)
+    && /fileQuery = '';/.test(ADMINCASE));
+  // NEGATIVE CONTROL (run 2026-08-30): running the pager while a term was in
+  // the box made this read
+  //   FAIL  U81 a term flattens the days, stands the pager down, and keeps the pins on top
+  ck('U81 a term flattens the days, stands the pager down, and keeps the pins on top',
+    /const hits = q \? rows\.filter\(\(r\) => `\$\{readName\(r\)\} \$\{label\(r\)\}`\.toLowerCase\(\)\.includes\(q\)\)/.test(ADMINCASE)
+    && /listEl\.innerHTML = short \+ pinnedHtml \+ daysHtml;/.test(ADMINCASE)
+    && /if \(!q\) pageByDay\('files'/.test(ADMINCASE));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

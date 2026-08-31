@@ -443,9 +443,16 @@ ck('L27 the log is on the client\'s page, on every case',
 // read
 //   FAIL  L28 ... -- log is behind a tier gate the client's half is not
 const strip = (ADMIN.match(/groups: \[[\s\S]*?\n    \],/) || [''])[0];
+// THE EXPECTATION MOVED, 2026-08-30 (Eric: "This and work log should be tabs
+// under 'act' since it has so much space"). The log lives under Act now, and
+// the TIER GATE MOVED OFF THE GROUP so the entry form is still on every
+// case: Act renders unconditionally, only Appeals stays Full-Service, and
+// the milestones feed sits beside the log. What this pin protects is
+// unchanged: no tier gate between him and logging his own work.
 ck('L28 and his half of it is on every case as well',
-  /pages: \['overview', 'chat', 'files', 'log'\]/.test(strip)
-  && !/'act'[\s\S]{0,60}'log'/.test(strip),
+  /pages: \['overview', 'chat', 'files'\] \}/.test(strip)
+  && /'act', label: 'Act', icon: '⚖️', pages: \[\.\.\.\(data\.fullAccess \? \['appeals'\] : \[\]\), 'log', 'milestones'\]/.test(strip)
+  && !/\.\.\.\(data\.fullAccess\s*\? \[\{ id: 'act'/.test(strip),
   'log is behind a tier gate the client\'s half is not');
 // FOUR TABS PER GROUP AT 320px IS A HARD LIMIT, and he has photographed the
 // defect. Moving a page in must not have pushed a group to five.
@@ -1232,6 +1239,37 @@ ck('L50 both log pages read day by day, with the dated rule styled once',
     && /<section class="log-day-pg">/.test(ADMIN)
     && formAt > 0 && listAt > 0 && formAt < listAt,
     `form at ${formAt}, list at ${listAt}`);
+}
+
+// ---- milestones (Eric, 2026-08-30) ----------------------------------------
+//
+// "Similar to how activities are logged and I can create new categories
+// (only they're not separated by days, simply time stamped) to mark
+// achievements in progress." Two pins: the Worker stamps every entry with
+// its label and colour at write time and serves the feed newest first, and
+// the pane exists with the same new-type flow the log has plus a confirmed
+// remove.
+{
+  const region = WORKER.slice(WORKER.indexOf('async function handleMilestones'),
+    WORKER.indexOf('async function handleClinicCalls'));
+  // NEGATIVE CONTROL (run 2026-08-30): dropping `kindColor: k.color` from the
+  // write made this read
+  //   FAIL  M40 the milestones route stamps entries at write and serves newest first
+  ck('M40 the milestones route stamps entries at write and serves newest first',
+    /'\/api\/milestones'/.test(WORKER)
+    && /what, kind: k\.id, kindLabel: k\.label, kindColor: k\.color,/.test(region)
+    && /mustNotExist: true/.test(region)
+    && /new Date\(b\.at \|\| b\.createdAt \|\| 0\) - new Date\(a\.at \|\| a\.createdAt \|\| 0\)/.test(region));
+  // NEGATIVE CONTROL (run 2026-08-30): posting the remove without its confirm
+  // made this read
+  //   FAIL  M41 the pane is one time-stamped feed with his own types and a confirmed remove
+  ck('M41 the pane is one time-stamped feed with his own types and a confirmed remove',
+    /data-mile-root/.test(ADMIN)
+    && /\+ New milestone type/.test(ADMIN)
+    && /confirm\('Take this milestone off the feed\?'\)/.test(ADMIN)
+    && !/log-day-pg/.test(ADMIN.slice(ADMIN.indexOf('function paintMilestones'), ADMIN.indexOf('function paintWorkLog')))
+    && /'\/api\/milestones'/.test(DEMO)
+    && /milestones\/items\/m1/.test(read('public/js/demo/seed.js')));
 }
 
 const failed = results.filter((r) => !r.pass);

@@ -412,6 +412,17 @@ export function seed({ set, file }) {
   // their own signed forms. In production the split is the same idea done
   // properly: the records sit in the private subtree and the Worker route is
   // what lets each side read its own view.
+  // Two milestones on the feed (2026-08-30), newest first when listed.
+  set(`cases/${FULL_ID}/private/milestones/items/m1`, {
+    what: 'Neurology appointment set at University Hospital for Sep 12',
+    kind: 'appointment', kindLabel: 'Appointment scheduled', kindColor: 'blue',
+    at: days(3), createdAt: days(3),
+  });
+  set(`cases/${FULL_ID}/private/milestones/items/m2`, {
+    what: 'Records release faxed to Lakeside Clinic, confirmation received',
+    kind: 'referral', kindLabel: 'Referral out', kindColor: 'deep',
+    at: days(1), createdAt: days(1),
+  });
   set(`demoAuthority/${FULL_ID}/items/a1`, {
     kind: 'records',
     signedName: 'Jordan Avery', signedAt: days(31), revokedAt: null,

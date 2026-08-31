@@ -925,6 +925,8 @@ export default {
         return await handleSaved(request, env, url);
       if (url.pathname === '/api/clinic-calls')
         return await handleClinicCalls(request, env, url);
+      if (url.pathname === '/api/milestones')
+        return await handleMilestones(request, env, url);
       if (url.pathname === '/api/case-log' && request.method === 'GET')
         return await handleCaseLog(request, env, url);
       if (url.pathname === '/api/authority')
@@ -1855,7 +1857,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-30-clear-the-books';
+const BUILD_TAG = 'v2026-08-30-milestones';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1863,7 +1865,7 @@ const BUILD_TAG = 'v2026-08-30-clear-the-books';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.70';
+const VERSION = '2.71';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -4221,6 +4223,96 @@ function workLogNotice(kind, c, who, customLabel = '') {
  * client, not a third party on the other end, and recording a clinic without
  * asking is a legal trap in every two-party-consent state.
  */
+/**
+ * GET/POST /api/milestones - the achievements feed (Eric, 2026-08-30: "mark
+ * achievements in progress like an appointment scheduled, a referral out, an
+ * insurance authorization"). Like the work log it lives in the case's private
+ * subtree and takes his own categories; unlike the log it is one time-stamped
+ * feed, newest first, never split into days. The two-week report reads it as
+ * the spine of its progress section when that ships.
+ */
+const MILESTONE_KINDS = [
+  { id: 'appointment', label: 'Appointment scheduled', color: 'blue' },
+  { id: 'referral', label: 'Referral out', color: 'deep' },
+  { id: 'authorization', label: 'Insurance authorization', color: 'green' },
+];
+async function customMilestoneKinds(env) {
+  const doc = await getDoc(env, 'config/milestones').catch(() => null);
+  const rows = Array.isArray(doc?.data?.kinds) ? doc.data.kinds : [];
+  return rows.filter((k) => k && typeof k.id === 'string' && typeof k.label === 'string'
+    && validPillColor(k.color));
+}
+async function handleMilestones(request, env, url) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = request.method === 'POST' ? await request.json().catch(() => null) : null;
+  const id = String(body?.caseId || url.searchParams.get('caseId') || '');
+  if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad request' }, 400);
+  const coll = `cases/${id}/private/milestones/items`;
+
+  if (request.method === 'GET') {
+    const rows = await listDocs(env, coll, { pageSize: 200 }).catch(() => []);
+    return json({
+      // Newest first: a feed of what has been achieved, latest on top.
+      items: rows.map((r) => ({ id: r.id, ...r.data }))
+        .sort((a, b) => new Date(b.at || b.createdAt || 0) - new Date(a.at || a.createdAt || 0)),
+      kinds: await customMilestoneKinds(env),
+    });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+
+  // His own milestone types, the same gate and the same rules as the work
+  // log's activity types: plain words, an allowlisted colour, capped.
+  if (body?.action === 'kind-add') {
+    const label = str(body?.label, 24).replace(/\s+/g, ' ');
+    if (!/^[A-Za-z][A-Za-z0-9 &-]{1,23}$/.test(label))
+      return json({ error: 'Name it in plain words: letters and numbers, up to 24 characters.' }, 400);
+    if (!validPillColor(body?.color))
+      return json({ error: 'Pick one of the colours.' }, 400);
+    const kid = label.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    if (kid.length < 2) return json({ error: 'Name it in plain words first.' }, 400);
+    const existing = await customMilestoneKinds(env);
+    if (MILESTONE_KINDS.some((k) => k.id === kid) || existing.some((k) => k.id === kid))
+      return json({ error: 'That milestone type already exists.' }, 409);
+    if (existing.length >= LOG_CUSTOM_MAX)
+      return json({ error: `That is ${LOG_CUSTOM_MAX} of your own types already. Remove one you no longer use first.` }, 400);
+    await patchDoc(env, 'config/milestones',
+      { kinds: [...existing, { id: kid, label, color: body.color }] }, { mask: ['kinds'] });
+    return json({ ok: true, id: kid });
+  }
+  if (body?.action === 'kind-remove') {
+    const kid = String(body?.id || '');
+    if (MILESTONE_KINDS.some((k) => k.id === kid)) return json({ error: 'The built-in types stay.' }, 400);
+    const existing = await customMilestoneKinds(env);
+    // Entries already marked keep the label and colour stamped at write time.
+    await patchDoc(env, 'config/milestones',
+      { kinds: existing.filter((k) => k.id !== kid) }, { mask: ['kinds'] });
+    return json({ ok: true });
+  }
+  if (body?.action === 'add') {
+    const what = str(body?.what, 300);
+    if (!what) return json({ error: 'Say what was achieved.' }, 400);
+    const base = MILESTONE_KINDS.find((k) => k.id === body?.kind);
+    const custom = base ? null : (await customMilestoneKinds(env)).find((k) => k.id === body?.kind);
+    // Every entry is stamped with its label and colour at write time, so a
+    // type he later removes never blanks an old row anywhere it renders.
+    const k = base || custom || MILESTONE_KINDS[0];
+    const at = str(body?.at, 40);
+    await patchDoc(env, `${coll}/${crypto.randomUUID()}`, {
+      what, kind: k.id, kindLabel: k.label, kindColor: k.color,
+      at: at ? (hisWallClock(at) || new Date(at)) : new Date(), createdAt: new Date(),
+    }, { mustNotExist: true });
+    return json({ ok: true });
+  }
+  if (body?.action === 'remove') {
+    const itemId = String(body?.id || '');
+    if (!/^[\w-]{1,64}$/.test(itemId)) return json({ error: 'Bad request' }, 400);
+    await deleteDoc(env, `${coll}/${itemId}`);
+    return json({ ok: true });
+  }
+  return json({ error: 'Bad request' }, 400);
+}
+
 async function handleClinicCalls(request, env, url) {
   const admin = await requireAdmin(request, env);
   if (!admin) return json({ error: 'Not found' }, 404);

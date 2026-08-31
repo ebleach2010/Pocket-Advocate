@@ -994,6 +994,74 @@ export function demoApi(role, store) {
       items.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
       return ok({ items });
     }
+    // Milestones (Eric, 2026-08-30): the achievements feed, mirroring the
+    // Worker: same base kinds, same colour rules, one time-stamped list.
+    if (path === '/api/milestones') {
+      const cid = body.caseId || q.get('caseId') || '';
+      const prefix = `cases/${cid}/private/milestones/items/`;
+      const base = [
+        { id: 'appointment', label: 'Appointment scheduled', color: 'blue' },
+        { id: 'referral', label: 'Referral out', color: 'deep' },
+        { id: 'authorization', label: 'Insurance authorization', color: 'green' },
+      ];
+      const colorIds = ['blue', 'deep', 'green', 'gold', 'orange', 'red'];
+      const validColor = (c) => colorIds.includes(c)
+        || (/^h\d{1,3}$/.test(String(c || '')) && Number(String(c).slice(1)) <= 359);
+      const customKinds = () => {
+        const rows = store.docs.get('config/milestones')?.kinds;
+        return (Array.isArray(rows) ? rows : []).filter((k) => k && k.id && k.label
+          && validColor(k.color));
+      };
+      if ((init.method || 'GET').toUpperCase() === 'GET') {
+        const items = [...store.docs.entries()]
+          .filter(([k]) => k.startsWith(prefix))
+          .map(([k, v]) => ({ id: k.slice(prefix.length), ...v }))
+          .sort((a, b) => new Date(b.at || b.createdAt || 0) - new Date(a.at || a.createdAt || 0));
+        return ok({ items, kinds: customKinds() });
+      }
+      await beat(400);
+      if (body.action === 'kind-add') {
+        const label = String(body.label || '').trim().replace(/\s+/g, ' ').slice(0, 24);
+        if (!/^[A-Za-z][A-Za-z0-9 &-]{1,23}$/.test(label))
+          return fail(400, 'Name it in plain words: letters and numbers, up to 24 characters.');
+        if (!validColor(body.color)) return fail(400, 'Pick one of the colours.');
+        const kid = label.toLowerCase().replace(/[^a-z0-9]+/g, '');
+        if (kid.length < 2) return fail(400, 'Name it in plain words first.');
+        const existing = customKinds();
+        if (base.some((k) => k.id === kid) || existing.some((k) => k.id === kid))
+          return fail(409, 'That milestone type already exists.');
+        if (existing.length >= 12)
+          return fail(400, 'That is 12 of your own types already. Remove one you no longer use first.');
+        store.docs.set('config/milestones', { kinds: [...existing, { id: kid, label, color: body.color }] });
+        store.persist?.();
+        return ok({ ok: true, id: kid });
+      }
+      if (body.action === 'kind-remove') {
+        const kid = String(body.id || '');
+        if (base.some((k) => k.id === kid)) return fail(400, 'The built-in types stay.');
+        store.docs.set('config/milestones', { kinds: customKinds().filter((k) => k.id !== kid) });
+        store.persist?.();
+        return ok({ ok: true });
+      }
+      if (body.action === 'add') {
+        const what = String(body.what || '').trim().slice(0, 300);
+        if (!what) return fail(400, 'Say what was achieved.');
+        const k = base.find((x) => x.id === body.kind)
+          || customKinds().find((x) => x.id === body.kind) || base[0];
+        store.docs.set(`${prefix}m${Date.now()}`, {
+          what, kind: k.id, kindLabel: k.label, kindColor: k.color,
+          at: body.at ? new Date(body.at) : new Date(), createdAt: new Date(),
+        });
+        store.persist?.();
+        return ok({ ok: true });
+      }
+      if (body.action === 'remove') {
+        store.docs.delete(`${prefix}${String(body.id || '')}`);
+        store.persist?.();
+        return ok({ ok: true });
+      }
+      return fail(400, 'Bad request');
+    }
     if (path === '/api/clinic-calls') {
       const cid = body.caseId || q.get('caseId') || '';
       const prefix = `cases/${cid}/private/clinicCalls/items/`;
