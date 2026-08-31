@@ -2190,11 +2190,25 @@ async function mountCaseLog(host, c) {
     ? `Your month starts ${esc(dayFmt.format(boughtAt))}${windowEndOf(c) ? ` and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. Getting me your permission before then is worth doing: a records request can take weeks to come back, so the sooner it is in, the more of your month is spent on your case instead of on waiting.`
     : `Your window started ${esc(dayFmt.format(boughtAt))}${windowEndOf(c) ? `, and runs through ${esc(dayFmt.format(windowEndOf(c)))}` : ''}. The clock runs whether or not this is done.`) : ''}</p>` : '';
 
-  const paint = (items) => {
+  const paint = (items, miles = []) => {
     host.innerHTML = `
       <div class="panel authority" data-worklog-panel>
         <h3>What I have been doing</h3>
         ${head}
+        ${miles.length ? `
+        <p class="log-day" style="margin:.6rem 0 .2rem;">🏁 Milestones</p>
+        <ul class="filelist" data-milestones>
+          ${miles.map((m) => {
+    const at = m.at ? new Date(m.at) : null;
+    const chue = pillColor(m.kindColor);
+    return `
+          <li>
+            <span class="fname"><span class="kind-pill" style="border-color:${chue}; color:${chue}">${esc(String(m.kindLabel || '').toUpperCase())}</span>
+              <span class="logline">${esc(String(m.what || ''))}</span></span>
+            <span class="fmeta">${at && !Number.isNaN(at.getTime()) ? esc(at.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) : ''}</span>
+          </li>`;
+  }).join('')}
+        </ul>` : ''}
         ${items.length ? `
         <ul class="filelist">
           ${(() => {
@@ -2244,7 +2258,8 @@ async function mountCaseLog(host, c) {
     const res = await fetch(`/api/case-log?caseId=${encodeURIComponent(c.id)}`, {
       headers: { authorization: `Bearer ${idToken}` },
     });
-    paint(res.ok ? ((await res.json()).items || []) : []);
+    const out = res.ok ? await res.json() : {};
+    paint(out.items || [], out.milestones || []);
   } catch { /* an unreachable log still shows the panel and says nothing yet */ }
 }
 

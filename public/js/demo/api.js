@@ -992,7 +992,18 @@ export function demoApi(role, store) {
         });
       }
       items.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
-      return ok({ items });
+      // The milestones ride along, four fields wide, mirroring the Worker
+      // (2026-08-31).
+      const mprefix = `cases/${cid}/private/milestones/items/`;
+      const milestones = [...store.docs.entries()]
+        .filter(([k]) => k.startsWith(mprefix))
+        .map(([, v]) => ({
+          what: String(v.what || ''), kindLabel: String(v.kindLabel || v.kind || ''),
+          kindColor: String(v.kindColor || 'blue'), at: v.at || v.createdAt || null,
+        }))
+        .filter((m) => m.what.trim())
+        .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+      return ok({ items, milestones });
     }
     // Milestones (Eric, 2026-08-30): the achievements feed, mirroring the
     // Worker: same base kinds, same colour rules, one time-stamped list.

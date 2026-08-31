@@ -1272,6 +1272,18 @@ ck('L50 both log pages read day by day, with the dated rule styled once',
     && /milestones\/items\/m1/.test(read('public/js/demo/seed.js')));
 }
 
+// NEGATIVE CONTROL (run 2026-08-31): dropping `milestones:` from the
+// case-log answer made this read
+//   FAIL  M42 the client sees the milestones, four fields wide, and is told so on his side
+ck('M42 the client sees the milestones, four fields wide, and is told so on his side',
+  /milestones: miles/.test(WORKER)
+  && /what: String\(r\.data\.what \|\| ''\)/.test(WORKER)
+  && !/notes/.test((WORKER.match(/milestones: miles[\s\S]{0,600}/) || [''])[0])
+  && /data-milestones/.test(CLIENT)
+  && /out\.milestones \|\| \[\]/.test(CLIENT)
+  && /your\s+client sees every entry/.test(ADMIN)
+  && /const milestones = \[\.\.\.store\.docs\.entries\(\)\]/.test(DEMO));
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

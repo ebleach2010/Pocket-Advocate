@@ -5190,7 +5190,8 @@ function paintMilestones(pane) {
         <p class="dim small" style="margin:0 0 .6rem;">What has actually been
           achieved on this case, newest first: an appointment on the books, a
           referral out the door, an authorization approved. One time-stamped
-          feed, and the spine of the two-week progress report.</p>
+          feed, the spine of the two-week progress report, and <strong>your
+          client sees every entry</strong> on their case page.</p>
         <details class="faq" data-k="mile-new">
           <summary>Mark a milestone</summary>
           <div class="faq-a">

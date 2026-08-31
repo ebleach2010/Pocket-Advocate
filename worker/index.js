@@ -1857,7 +1857,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-08-31-clock-in-the-room';
+const BUILD_TAG = 'v2026-08-31-milestones-shared';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1865,7 +1865,7 @@ const BUILD_TAG = 'v2026-08-31-clock-in-the-room';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.72';
+const VERSION = '2.73';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -4135,7 +4135,24 @@ async function handleCaseLog(request, env, url) {
   if (ctx.error) return json({ error: ctx.error }, ctx.code);
   const rows = await listDocs(env, `cases/${id}/private/clinicCalls/items`, { pageSize: 200 })
     .catch(() => []);
-  return json({ items: caseLogProjection(rows) });
+  // The milestones ride along, whole (Eric, 2026-08-31: "I want to be
+  // certain that milestones are seen by the client as well"). Every entry is
+  // an achievement he marked for exactly this audience; only the four fields
+  // a client needs leave the private subtree, projected by name.
+  const miles = await listDocs(env, `cases/${id}/private/milestones/items`, { pageSize: 200 })
+    .catch(() => []);
+  return json({
+    items: caseLogProjection(rows),
+    milestones: miles
+      .map((r) => ({
+        what: String(r.data.what || ''),
+        kindLabel: String(r.data.kindLabel || r.data.kind || ''),
+        kindColor: String(r.data.kindColor || 'blue'),
+        at: r.data.at || r.data.createdAt || null,
+      }))
+      .filter((m) => m.what.trim())
+      .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0)),
+  });
 }
 
 /**
@@ -4229,7 +4246,8 @@ function workLogNotice(kind, c, who, customLabel = '') {
  * insurance authorization"). Like the work log it lives in the case's private
  * subtree and takes his own categories; unlike the log it is one time-stamped
  * feed, newest first, never split into days. The two-week report reads it as
- * the spine of its progress section when that ships.
+ * the spine of its progress section when that ships, and since 2026-08-31 the
+ * client sees the feed too, projected four fields wide through /api/case-log.
  */
 const MILESTONE_KINDS = [
   { id: 'appointment', label: 'Appointment scheduled', color: 'blue' },
