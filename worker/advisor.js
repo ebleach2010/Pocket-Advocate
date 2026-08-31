@@ -4251,11 +4251,15 @@ anything in the learned profile that follows.`, cache: true },
  * the log and the chat itself. His private notes never enter the room.
  */
 export async function runMidwayReport(env, caseId) {
-  const [doc, state, rows, logRaw, style] = await Promise.all([
+  const [doc, state, rows, logRaw, mileRaw, style] = await Promise.all([
     getDoc(env, `cases/${caseId}`),
     getDoc(env, statePath('case', caseId)).catch(() => null),
     recentMessages(env, 'case', caseId).catch(() => []),
     listDocs(env, `cases/${caseId}/private/clinicCalls/items`, { pageSize: 200, all: true })
+      .catch(() => []),
+    // The milestones feed (Eric, 2026-08-30: achievements "will be part of
+    // the biweekly analysis on progress"). Marked by him, for exactly this.
+    listDocs(env, `cases/${caseId}/private/milestones/items`, { pageSize: 200, all: true })
       .catch(() => []),
     loadStyle(env).catch(() => ({ voice: '' })),
   ]);
@@ -4276,6 +4280,15 @@ export async function runMidwayReport(env, caseId) {
       const day = Number.isFinite(d.getTime()) && d.getTime() ? d.toISOString().slice(0, 10) : '';
       return `- ${day} | ${r.data.kindLabel || r.data.kind || 'work'} | ${String(r.data.summary).trim()}`;
     }).join('\n');
+  // The achievements he marked, oldest first so the report reads as a story.
+  const milestones = mileRaw
+    .filter((r) => String(r.data.what || '').trim())
+    .sort((a, b) => new Date(a.data.at || a.data.createdAt || 0) - new Date(b.data.at || b.data.createdAt || 0))
+    .map((r) => {
+      const d = new Date(r.data.at || r.data.createdAt || 0);
+      const day = Number.isFinite(d.getTime()) && d.getTime() ? d.toISOString().slice(0, 10) : '';
+      return `- ${day} | ${r.data.kindLabel || r.data.kind || 'milestone'} | ${String(r.data.what).trim()}`;
+    }).join('\n');
   const narrative = await ask(env, {
     effort: 'high',
     noStream: true,
@@ -4290,8 +4303,9 @@ stands now. It goes out under his name after he reads and edits it, as one
 chat message, alongside two spreadsheets (the work log and the whole chat).
 
 Cover, in flowing prose rather than a form:
-- the milestones reached and the concrete things accomplished so far, drawn
-  ONLY from the work log lines and the conversation below;
+- the milestones reached and the concrete things accomplished so far: the
+  milestones feed below is the spine of this, each entry a marked
+  achievement, fleshed out ONLY from the work log lines and the conversation;
 - the hours: use the exact figures provided, never a recalculation;
 - what that work amounted to for THIS case, plainly;
 - one honest sentence of scale: independent patient advocates typically put
@@ -4299,8 +4313,8 @@ Cover, in flowing prose rather than a form:
   figures mean. Say it as fact about the field, never as a boast.
 - where things stand now and what the back half of the month is for.
 
-HARD RULES. Only work the log lines and the chat already show the client may
-be referenced: nothing from any other source, nothing invented, no file or
+HARD RULES. Only the milestones feed, the log lines, and what the chat
+already shows the client may be referenced: nothing from any other source, nothing invented, no file or
 call that is not in the material. No mention of any assessment, analysis
 system, note system, or anything behind the app: the client only ever hears
 Eric. No diagnosis, no treatment advice, no promises of outcome. Warmth is
@@ -4319,6 +4333,11 @@ The work log as the client sees it (client lines only, oldest first):
 <work_log>
 ${log || '(no logged lines yet)'}
 </work_log>
+
+The milestones he marked on this case (oldest first):
+<milestones>
+${milestones || '(none marked yet)'}
+</milestones>
 
 The conversation so far:
 <transcript>

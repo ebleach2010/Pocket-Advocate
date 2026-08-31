@@ -195,6 +195,20 @@ ck('M8 the demo mirrors the route: a ready draft, a real send, and no second sen
   && /if \(mr\?\.sentAt\) return fail\(409, 'Already sent\.'\);/.test(DEMOAPI)
   && /sentAt: now\.toISOString\(\)/.test(DEMOAPI));
 
+// ---- the milestones feed in the report (Eric, 2026-08-30) -----------------
+//
+// "Will be part of the biweekly analysis on progress." The report fetches
+// the feed he marks achievements on and is told to build its progress
+// section on it, fleshed out only from the log and the chat.
+// NEGATIVE CONTROL (run 2026-08-30): pointing the fetch at a collection that
+// is not the feed made this read
+//   FAIL  M9 the report reads the milestones feed and builds its spine from it
+ck('M9 the report reads the milestones feed and builds its spine from it',
+  /private\/milestones\/items/.test(ADV)
+  && /<milestones>/.test(ADV)
+  && /the spine of this, each entry a marked/.test(ADV)
+  && /\(none marked yet\)/.test(ADV));
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }
