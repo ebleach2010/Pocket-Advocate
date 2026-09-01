@@ -1707,7 +1707,10 @@ function midwayChatCsv(rows, clientName, advocate) {
 /** When a Hands-Off case's report is due: fourteen days after the month began. */
 function midwayDueAt(c) {
   const start = c?.fullAccessAt ? new Date(c.fullAccessAt).getTime() : 0;
-  return start ? start + 14 * 86_400_000 : 0;
+  // A paused case's held time pushes the mark the same way it pushes the
+  // window's end (2026-09-01: Eric paused a month mid-crash; a report that
+  // fired mid-pause would demonstrate effort while none could be happening).
+  return start ? start + 14 * 86_400_000 + heldMs(c) : 0;
 }
 
 /**

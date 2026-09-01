@@ -84,7 +84,10 @@ ck('M2 the chat CSV names both sides and marks shared files',
   && chatCsv.includes('"[shared a file: denial.pdf]"'));
 
 // ---- M3: the sweep, lifted and RUN ----------------------------------------
-const dueSrc = (WORKER.match(/function midwayDueAt\(c\) \{[\s\S]*?\n\}/) || [''])[0];
+// heldMs rides inside midwayDueAt since 2026-09-01 (a paused month pushes
+// the day-14 mark the way it pushes the window's end), so it lifts beside it.
+const heldSrc = (WORKER.match(/function heldMs\(c\) \{[\s\S]*?\n\}/) || [''])[0];
+const dueSrc = `${heldSrc}\n` + (WORKER.match(/function midwayDueAt\(c\) \{[\s\S]*?\n\}/) || [''])[0];
 const sweepSrc = (WORKER.match(/async function sweepMidwayReports\(env, ctx\) \{[\s\S]*?\n\}/) || [''])[0];
 ck('M3a the due mark and the sweep lift out of the shipped Worker',
   dueSrc.length > 0 && sweepSrc.length > 0);
@@ -208,6 +211,13 @@ ck('M9 the report reads the milestones feed and builds its spine from it',
   && /<milestones>/.test(ADV)
   && /the spine of this, each entry a marked/.test(ADV)
   && /\(none marked yet\)/.test(ADV));
+
+// ---- the pause pushes the mark (Eric, 2026-09-01) -------------------------
+// NEGATIVE CONTROL (run 2026-09-01): dropping heldMs from the mark made
+// this read
+//   FAIL  M10 a paused month pushes the day-14 mark exactly as it pushes the window
+ck('M10 a paused month pushes the day-14 mark exactly as it pushes the window',
+  /start \+ 14 \* 86_400_000 \+ heldMs\(c\)/.test(WORKER));
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
