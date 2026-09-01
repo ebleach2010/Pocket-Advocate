@@ -36,6 +36,12 @@ export const BUSINESS_PHONE = '+12086708608';
 
 export const REVIEWS = [
   {
+    // Transcribed 2026-09-01 from the Google notification Eric screenshotted.
+    name: 'Chris',
+    stars: 5,
+    text: 'Nice to talk with someone who understands and wants to help. Who knows how to help.',
+  },
+  {
     // Transcribed 2026-09-01, on Eric's word that it is on the listing.
     name: 'Ann My',
     stars: 5,
