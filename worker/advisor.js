@@ -214,13 +214,31 @@ function withCacheBp(system) {
  * from the material's dates against this line, or not stated at all. Day
  * granularity on purpose, so the cached prefix survives within a day.
  */
+/**
+ * The day distance, computed HERE so the model never does date subtraction
+ * (Eric, 2026-08-31, second sighting of "day 10" on a four-day-old fax: the
+ * first fix anchored today's date, but a delta pass feeds the model its own
+ * previous assessment, and it repeated its own stale arithmetic as fact).
+ * Dated lines in the material now carry the answer precomputed.
+ */
+function daysAgo(v) {
+  const d = new Date(v || 0);
+  if (!Number.isFinite(d.getTime()) || !d.getTime()) return null;
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' });
+  return Math.round((Date.parse(fmt.format(new Date())) - Date.parse(fmt.format(d))) / 86_400_000);
+}
+function agoTag(v) {
+  const n = daysAgo(v);
+  return n == null ? '' : n <= 0 ? ' (today)' : n === 1 ? ' (yesterday)' : ` (${n} days ago)`;
+}
+
 function todayBlock() {
   const day = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Boise', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   }).format(new Date());
   return {
     type: 'text',
-    text: `Today is ${day}, Mountain time. Every elapsed-time statement, day count, or "how long since" must be computed from dates in the material against this date, and said as computed. If the material does not date something, call it undated rather than estimating.`,
+    text: `Today is ${day}, Mountain time. Every elapsed-time statement, day count, or "how long since" must be computed from dates in the material against this date, and said as computed. Where a dated line already carries a computed tag such as (4 days ago), that arithmetic was done for you against today: use it as is. Never carry an elapsed-time figure forward from an earlier assessment or from your own prior text; those numbers aged the day they were written. If the material does not date something, call it undated rather than estimating.`,
   };
 }
 
@@ -3096,7 +3114,8 @@ function workLogNote(log) {
   const one = (s, max) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, max);
   const lines = log.map((e) => {
     const d = new Date(e.at || e.createdAt || 0);
-    const day = Number.isFinite(d.getTime()) && d.getTime() ? d.toISOString().slice(0, 10) : 'undated';
+    const day = Number.isFinite(d.getTime()) && d.getTime()
+      ? d.toISOString().slice(0, 10) + agoTag(d) : 'undated';
     const label = one(e.kindLabel, 24) || one(e.kind, 24) || 'call';
     const parts = [day, label];
     if (e.clinic) parts.push(`with ${one(e.clinic, 120)}`);
@@ -4107,7 +4126,7 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
       const side = f.folder === 'report' ? 'filed by Eric'
         : f.folder === 'recording' ? 'recording'
           : f.folder === 'uploads' ? 'client documents' : 'shared in chat';
-      return `- ${f.name} | ${side}${f.at ? ` | ${new Date(f.at).toISOString().slice(0, 10)}` : ''}`;
+      return `- ${f.name} | ${side}${f.at ? ` | ${new Date(f.at).toISOString().slice(0, 10)}${agoTag(f.at)}` : ''}`;
     }).join('\n')}\n</case_files>\nWhen Eric's instruction names a document, use its real name from this list. Never invent a file name, and never tell the client a file exists that is not on it.\n` : '';
     const draft = await ask(env, {
       effort: DRAFT_EFFORT,

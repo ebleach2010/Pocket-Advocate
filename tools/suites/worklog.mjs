@@ -1065,17 +1065,24 @@ const ADVISOR = read('worker/advisor.js');
   // The note the advisor reads, LIFTED AND RUN: labels win over ids, his
   // notes ride truncated, the pattern instruction and the client guard are
   // the shipped words, and an empty log says nothing at all.
+  // agoTag and daysAgo ride inside workLogNote since 2026-08-31 (the
+  // computed day distances), so they are lifted beside it.
+  const tagSrc = (ADVISOR.match(/function daysAgo\([\s\S]*?\n\}\nfunction agoTag\([\s\S]*?\n\}/) || [''])[0];
   const src = (ADVISOR.match(/function workLogNote\([\s\S]*?\n\}/) || [''])[0];
   let workLogNote = null;
-  try { workLogNote = new Function(`${src}; return workLogNote;`)(); } catch { /* red below */ }
+  try { workLogNote = new Function(`${tagSrc}\n${src}; return workLogNote;`)(); } catch { /* red below */ }
   const out = workLogNote ? workLogNote([
     { at: '2026-08-20T15:00:00Z', kind: 'call', clinic: 'Valley Neurology', summary: 'Chased the notes.', notes: 'N'.repeat(500) },
     { at: '2026-08-21T15:00:00Z', kind: 'em', kindLabel: 'Email', clinic: 'Their insurer', notes: 'asked for the denial letter' },
   ]) : '';
   ck('L49 the advisor note lifts, runs, and carries the log in his words',
     !!workLogNote
-    && /2026-08-20 \| call \| with Valley Neurology \| client line: Chased the notes\./.test(out)
-    && /2026-08-21 \| Email \| with Their insurer/.test(out)
+    // THE EXPECTATION MOVED, 2026-08-31: the day now carries its computed
+    // distance, "2026-08-20 (11 days ago) | call | ...", so the model never
+    // does the subtraction (the second "day 10" sighting). The pin expects
+    // the tag rather than tolerating it.
+    && /2026-08-20 \((\d+) days ago\) \| call \| with Valley Neurology \| client line: Chased the notes\./.test(out)
+    && /2026-08-21 \((\d+) days ago\) \| Email \| with Their insurer/.test(out)
     && /his notes: N{280}(?!N)/.test(out)
     && /form opinions from the PATTERN/.test(out)
     && /refer only to work the client line already told them about/.test(out)

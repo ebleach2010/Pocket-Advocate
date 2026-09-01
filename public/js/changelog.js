@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.73';
+export const VERSION = '2.74';
 
 /**
  * Newest first.
@@ -51,6 +51,15 @@ export const VERSION = '2.73';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE DAY COUNTS ARE COMPUTED NOW (Eric, 2026-08-31, "day 10" seen a
+    // second time on a four-day-old fax). Dated lines on his side carry
+    // (N days ago) worked out in code against his clock, and stale figures
+    // are never carried forward from an earlier read. His side only.
+    version: '2.74',
+    quiet: true,
+    client: [],
+  },
   {
     // MILESTONES, SHARED (Eric, 2026-08-31: "I want to be certain that
     // milestones are seen by the client as well"). The feed he marks now

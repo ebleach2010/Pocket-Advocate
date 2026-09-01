@@ -1395,6 +1395,24 @@ ck('A39 every turn knows what day it is, on his clock, and may not estimate elap
   && /Array\.isArray\(system\) \? \[\.\.\.system, todayBlock\(\)\]/.test(ADV)
   && /withCacheBp\(sys\)/.test(ADV));
 
+// ---- the arithmetic leaves the model (Eric, 2026-08-31, "day 10" again) ---
+//
+// The anchor stopped fresh guessing; the delta pass then repeated its own
+// stale figure out of the previous assessment. So the subtraction is done
+// in code now: dated lines in the log and on the shelf carry (N days ago)
+// computed against his clock, and the anchor says use the tag as is and
+// never carry a figure forward.
+// NEGATIVE CONTROL (run 2026-08-31): stripping the tag off the work-log day
+// made this read
+//   FAIL  A40 day distances are computed in code and stale figures may not be carried forward
+ck('A40 day distances are computed in code and stale figures may not be carried forward',
+  /function daysAgo\(v\)/.test(ADV)
+  && /timeZone: 'America\/Boise' \}\);/.test(ADV)
+  && /d\.toISOString\(\)\.slice\(0, 10\) \+ agoTag\(d\)/.test(ADV)
+  && /\$\{agoTag\(f\.at\)\}/.test(ADV)
+  && /that arithmetic was done for you against today: use it as is/.test(ADV)
+  && /Never carry an elapsed-time figure forward from an earlier assessment/.test(ADV));
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }
