@@ -96,6 +96,18 @@ export function demoApi(role, store) {
     if (path === '/api/admin/session') return ok({ ok: true });
 
     // ---- money, without any -----------------------------------------------
+    // By the numbers: the shapes the approved mock used (2026-09-02). The
+    // real page's figures come off the daily walk in the Worker.
+    if (path === '/api/stats' || path === '/api/admin/stats') {
+      const stats = {
+        computedAt: new Date(Date.now() - 5 * 3600_000).toISOString(), since: 'July 2026', cases: 6,
+        replies: 231, replyMedianMin: 3, withinHourPct: 84, floor: false, messages: 412,
+        reportsOnTime: 4, reportsTotal: 4, hoursLogged: 61,
+        milestones: { appointment: 4, referral: 3, authorization: 2, other: 0, total: 9 },
+        logged: { call: 18, appeal: 3, investigation: 6, appointment: 4, other: 2, total: 33 },
+      };
+      return path === '/api/stats' ? ok(stats) : ok({ ok: true, stats });
+    }
     if (path === '/api/rates') return ok({ caseCents: 120000, addonCents: 32500, subCents: 5000, fullCents: 440000, chatOpenCents: 5000, teleCents: 52500, fullHours: 20 });
     if (path === '/api/admin/rates') return ok({ caseCents: 120000, addonCents: 32500, subCents: 5000, fullCents: 440000, floorCents: 7500, bookings: 0, changed: false, teleCents: 52500, fullHours: 20, caps: { caseCents: 180000, addonCents: 42500, subCents: 10000, fullCents: 440000 } });
     // The nightly study, with a plausible history so the card on the dashboard

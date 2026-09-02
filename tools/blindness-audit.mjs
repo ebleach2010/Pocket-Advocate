@@ -99,6 +99,8 @@ const CLIENT_PAGES = [
   // them, deliberately: the gap between "shipped" and "audited" is exactly
   // where a leak would sit unnoticed.
   '/services', '/faq', '/contact',
+  // 2026-09-02: By the numbers. Measured figures and the words around them.
+  '/stats',
 ];
 
 // Reachable without any page linking to them.

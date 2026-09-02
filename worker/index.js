@@ -7,6 +7,8 @@
 //   POST   /api/stripe/webhook     payments + subscription lifecycle -> Firestore
 //   POST   /api/admin/slots        open availability slots (admin)
 //   DELETE /api/admin/slots/:id    remove an open slot (admin)
+//   GET    /api/stats              By the numbers: aggregate figures, public, cached an hour
+//   POST   /api/admin/stats        recompute the figures now (admin)
 //   POST   /api/admin/case-update  join link / milestones / close (admin)
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
 //   POST   /api/advisor            private LLM advisor: analyse / ask / draft (admin)
@@ -857,6 +859,12 @@ export default {
         return await handleReviewsAdmin(request, env);
       if (url.pathname === '/api/rates' && request.method === 'GET')
         return await handleRates(env);
+      // Public like /api/rates: totals and medians across every case, nothing
+      // per client, computed daily by the cron and served from a cache.
+      if (url.pathname === '/api/stats' && request.method === 'GET')
+        return await handleStats(request, env);
+      if (url.pathname === '/api/admin/stats' && request.method === 'POST')
+        return await handleStatsRecompute(request, env);
       // Public on purpose, like /api/rates: it is the in/out light on the
       // client's own chat. Two keys wide and no wider, for the reason set out
       // on handleAvailability: anonymous and polled once a minute means every
@@ -1106,6 +1114,9 @@ export default {
       ctx.waitUntil(runAppealWarnings(env));
       ctx.waitUntil(runChatOpenNotices(env));
       ctx.waitUntil(cleanupStaleSlots(env));
+      // By the numbers: one document read per quarter hour, a full walk once
+      // a day. See computePublicStats.
+      ctx.waitUntil(computePublicStats(env));
       ctx.waitUntil(repairMissingCaseEmails(env));
       ctx.waitUntil(closeDeliveredCases(env));
       ctx.waitUntil(purgeRecaps(env));
@@ -2166,6 +2177,10 @@ async function handleHold(request, env) {
       totalMs: Math.max(0, Number(hold.totalMs) || 0),
       reason: typeof body?.reason === 'string' ? body.reason.slice(0, 300) : '',
       backBy: body?.backBy ? new Date(body.backBy) : null,
+      // The windows themselves, not only their sum: By the numbers excludes
+      // anything that happened inside one (see holdPeriodsOf). Carried
+      // through untouched here; a period is appended on resume.
+      periods: Array.isArray(hold.periods) ? hold.periods.slice(-50) : [],
     };
     await patchDoc(env, `cases/${caseId}`, { hold: next }, { mask: ['hold'] });
     // Their page will say the case is paused the moment it repaints; the push
@@ -2187,6 +2202,8 @@ async function handleHold(request, env) {
     totalMs: (Math.max(0, Number(hold.totalMs) || 0)) + stretch,
     reason: '',
     backBy: null,
+    periods: [...(Array.isArray(hold.periods) ? hold.periods : []),
+      { from: new Date(hold.pausedAt), to: new Date() }].slice(-50),
   };
   // reportDueAt is a stored absolute date rather than something derived, so
   // it is moved here instead of at every read. Everything else his side
@@ -7837,6 +7854,234 @@ async function handleCreateSlots(request, env) {
   }
   const { created, skipped } = await batchCreate(env, entries);
   return json({ created, skipped: skipped + invalid });
+}
+
+/**
+ * BY THE NUMBERS (Eric, 2026-09-02: "a page of running granular stats from
+ * my performance with other clients like response time, # of messages, tasks
+ * completed within a certain time").
+ *
+ * The strongest competitors win on quantified proof, and none of them show
+ * numbers measured by the practice itself. These are: reply times, hours,
+ * reports against the 7-day promise, milestones, all totals or medians across
+ * every case ever. Nothing per case, no names, no dates that identify a case.
+ *
+ * THE PAUSE RULE, SAID HERE AND NOWHERE A CLIENT READS: a paused case
+ * contributes nothing while it is paused. A reply gap that overlaps a hold
+ * window is dropped, a message inside one is not counted, and the 7-day
+ * clock on a report stops for the length of any hold inside it. The page
+ * says "measured across every case, updated daily" and nothing about why a
+ * window might be missing. Eric's word: "not to be explicitly mentioned".
+ *
+ * Pure: takes the cases and their threads, returns the document. The walk
+ * that gathers them is computePublicStats below; the suite drives this one
+ * over fixtures.
+ */
+const STATS_DOC = 'stats/public';
+const STATS_PROMISE_MS = 7 * 86_400_000;
+const STATS_FLOOR = 3;
+const STATS_REFRESH_MS = 23 * 3600_000;
+
+/** The hold windows of a case as [from, to] pairs, the open one running to now. */
+function holdPeriodsOf(c, now = Date.now()) {
+  const out = [];
+  for (const p of Array.isArray(c?.hold?.periods) ? c.hold.periods : []) {
+    const from = new Date(p?.from).getTime();
+    const to = new Date(p?.to).getTime();
+    if (Number.isFinite(from) && Number.isFinite(to) && to > from) out.push([from, to]);
+  }
+  if (c?.hold?.pausedAt) {
+    const from = new Date(c.hold.pausedAt).getTime();
+    if (Number.isFinite(from) && now > from) out.push([from, now]);
+  }
+  return out;
+}
+const insideHold = (t, periods) => periods.some(([a, b]) => t >= a && t <= b);
+const overlapsHold = (a, b, periods) => periods.some(([x, y]) => a < y && b > x);
+/** Milliseconds of [a, b] that fall inside any hold window. */
+function heldWithin(a, b, periods) {
+  let ms = 0;
+  for (const [x, y] of periods) ms += Math.max(0, Math.min(b, y) - Math.max(a, x));
+  return Math.min(ms, Math.max(0, b - a));
+}
+
+function publicStatsFrom({ cases, threads, now = Date.now() }) {
+  const gaps = [];
+  let messages = 0;
+  for (const t of threads) {
+    const periods = t.holdPeriods || [];
+    const rows = (t.rows || [])
+      .map((r) => ({ role: r.role, ts: new Date(r.ts).getTime() }))
+      .filter((r) => (r.role === 'admin' || r.role === 'client') && Number.isFinite(r.ts))
+      .filter((r) => !insideHold(r.ts, periods))
+      .sort((a, b) => a.ts - b.ts);
+    messages += rows.length;
+    // A run of client messages is one question; the first admin message after
+    // it is the answer. The gap is answer minus the first message of the run.
+    let asked = null;
+    for (const r of rows) {
+      if (r.role === 'client') { if (asked === null) asked = r.ts; continue; }
+      if (asked === null) continue;
+      if (!overlapsHold(asked, r.ts, periods)) gaps.push(r.ts - asked);
+      asked = null;
+    }
+  }
+  gaps.sort((a, b) => a - b);
+  const median = !gaps.length ? null
+    : gaps.length % 2 ? gaps[(gaps.length - 1) / 2]
+      : (gaps[gaps.length / 2 - 1] + gaps[gaps.length / 2]) / 2;
+
+  let reportsTotal = 0;
+  let reportsOnTime = 0;
+  let seconds = 0;
+  let earliest = Infinity;
+  const milestones = { appointment: 0, referral: 0, authorization: 0, other: 0, total: 0 };
+  const logged = { call: 0, appeal: 0, investigation: 0, appointment: 0, other: 0, total: 0 };
+  for (const c of cases) {
+    const created = new Date(c.createdAt).getTime();
+    if (Number.isFinite(created)) earliest = Math.min(earliest, created);
+    seconds += Math.max(0, Number(c.work?.seconds) || 0);
+    const start = new Date(c.appointment?.start).getTime();
+    const done = new Date(c.reportDeliveredAt).getTime();
+    if (c.reportDeliveredAt && Number.isFinite(start) && Number.isFinite(done) && done >= start) {
+      reportsTotal++;
+      const periods = holdPeriodsOf(c, now);
+      // Older holds carry only their sum; a hold with no windows recorded is
+      // credited in full, capped at the span itself.
+      const held = periods.length ? heldWithin(start, done, periods)
+        : Math.min(Math.max(0, Number(c.hold?.totalMs) || 0), done - start);
+      if (done - start - held <= STATS_PROMISE_MS) reportsOnTime++;
+    }
+    for (const m of c.milestones || []) {
+      milestones.total++;
+      if (m.kind in milestones && m.kind !== 'total' && m.kind !== 'other') milestones[m.kind]++;
+      else milestones.other++;
+    }
+    for (const l of c.log || []) {
+      logged.total++;
+      if (l.kind in logged && l.kind !== 'total' && l.kind !== 'other') logged[l.kind]++;
+      else logged.other++;
+    }
+  }
+  const since = Number.isFinite(earliest)
+    ? new Intl.DateTimeFormat('en-US', { timeZone: 'Etc/GMT+7', month: 'long', year: 'numeric' }).format(new Date(earliest))
+    : '';
+  return {
+    computedAt: new Date(now),
+    cases: cases.length,
+    since,
+    replies: gaps.length,
+    replyMedianMin: median === null ? null : Math.round(median / 60_000),
+    withinHourPct: gaps.length ? Math.round((gaps.filter((g) => g <= 3600_000).length / gaps.length) * 100) : null,
+    messages,
+    reportsOnTime,
+    reportsTotal,
+    hoursLogged: Math.round(seconds / 3600),
+    milestones,
+    logged,
+  };
+}
+
+/**
+ * The daily walk. Every case and its chat, milestones and work log; every
+ * subscription and its chat. One document read gates it: the walk runs once
+ * a day, and the cron's quarter-hour firing only reads the stamp.
+ */
+async function computePublicStats(env, { force = false } = {}) {
+  try {
+    if (!force) {
+      const cur = await getDoc(env, STATS_DOC).catch(() => null);
+      const at = cur?.data?.computedAt ? new Date(cur.data.computedAt).getTime() : 0;
+      if (at && Date.now() - at < STATS_REFRESH_MS) return null;
+    }
+    const now = Date.now();
+    const caseRows = await listDocs(env, 'cases', { pageSize: 100, all: true });
+    const cases = [];
+    const threads = [];
+    for (const r of caseRows) {
+      const c = r.data;
+      const periods = holdPeriodsOf(c, now);
+      const [chat, miles, log] = await Promise.all([
+        listDocs(env, `cases/${r.id}/chat`, { pageSize: 300, all: true }).catch(() => []),
+        listDocs(env, `cases/${r.id}/private/milestones/items`, { pageSize: 200 }).catch(() => []),
+        listDocs(env, `cases/${r.id}/private/clinicCalls/items`, { pageSize: 200 }).catch(() => []),
+      ]);
+      cases.push({
+        createdAt: c.createdAt, appointment: c.appointment, reportDeliveredAt: c.reportDeliveredAt,
+        work: c.work, hold: c.hold,
+        milestones: miles.map((m) => ({ kind: m.data.kind })),
+        log: log.map((l) => ({ kind: l.data.kind })),
+      });
+      threads.push({ holdPeriods: periods, rows: chat.map((m) => ({ role: m.data.role, ts: m.data.ts })) });
+    }
+    const subRows = await listDocs(env, 'subscriptions', { pageSize: 100, all: true }).catch(() => []);
+    for (const r of subRows) {
+      const chat = await listDocs(env, `subscriptions/${r.id}/chat`, { pageSize: 300, all: true }).catch(() => []);
+      threads.push({ holdPeriods: [], rows: chat.map((m) => ({ role: m.data.role, ts: m.data.ts })) });
+    }
+    const doc = publicStatsFrom({ cases, threads, now });
+    await patchDoc(env, STATS_DOC, doc);
+    return doc;
+  } catch (err) {
+    console.warn('public stats failed:', err.message || err);
+    return null;
+  }
+}
+
+/**
+ * What a stranger may read. Rounded already; below the floor the ledger is
+ * withheld and only the reply figures (his behaviour, not a client's) and the
+ * count stay. Never a raw per-case field.
+ */
+function publicStatsView(d) {
+  if (!d) return null;
+  const floor = (Number(d.cases) || 0) < STATS_FLOOR;
+  const base = {
+    computedAt: d.computedAt, since: d.since || '', cases: Number(d.cases) || 0,
+    replies: Number(d.replies) || 0,
+    replyMedianMin: d.replyMedianMin === null || d.replyMedianMin === undefined ? null : Number(d.replyMedianMin),
+    withinHourPct: d.withinHourPct === null || d.withinHourPct === undefined ? null : Number(d.withinHourPct),
+    floor,
+  };
+  if (floor) return base;
+  return {
+    ...base,
+    messages: Number(d.messages) || 0,
+    reportsOnTime: Number(d.reportsOnTime) || 0,
+    reportsTotal: Number(d.reportsTotal) || 0,
+    hoursLogged: Number(d.hoursLogged) || 0,
+    milestones: d.milestones || null,
+    logged: d.logged || null,
+  };
+}
+
+/** GET /api/stats   public, an hour in the edge cache and the browser's. */
+async function handleStats(request, env) {
+  const cache = globalThis.caches?.default;
+  const key = cache ? new Request(new URL('/api/stats', request.url).toString()) : null;
+  if (cache) {
+    const hit = await cache.match(key).catch(() => null);
+    if (hit) return hit;
+  }
+  const doc = await getDoc(env, STATS_DOC).catch(() => null);
+  const view = publicStatsView(doc?.data);
+  const res = new Response(JSON.stringify(view || { floor: true, cases: 0, computedAt: null }), {
+    status: 200,
+    headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=3600' },
+  });
+  if (cache) await cache.put(key, res.clone()).catch(() => {});
+  return res;
+}
+
+/** POST /api/admin/stats   recompute now, answer with what a stranger sees. */
+async function handleStatsRecompute(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const doc = await computePublicStats(env, { force: true });
+  if (!doc) return json({ error: 'The walk failed. Check the log.' }, 500);
+  const cache = globalThis.caches?.default;
+  if (cache) await cache.delete(new Request(new URL('/api/stats', request.url).toString())).catch(() => {});
+  return json({ ok: true, stats: publicStatsView(doc) });
 }
 
 // DELETE /api/admin/slots/:id — only slots nobody holds or has booked
