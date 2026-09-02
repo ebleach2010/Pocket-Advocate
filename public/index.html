@@ -144,7 +144,18 @@
            page; a hero with two equal buttons was the "confusing" half of
            Eric's complaint, and the second one was taking the weight off
            the first. -->
-      <a class="act act-c pulse cta" href="/book.html">
+      <!-- 2026-09-01, the landing sweep: every independent advocate surveyed
+           but one opens with a free first conversation, and this page opened
+           with a $1,200 button. Eric: "Yes, add the free fit call." So the
+           free 15-minute call is the first step and the case is the second,
+           at two different weights, which is what keeps this from being the
+           two-equal-buttons hero he called confusing. -->
+      <a class="act act-c cta" href="/fit.html">
+        <span class="act-ico"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg></span>
+        <span class="act-label">Book a free 15-minute call</span>
+        <svg class="ico act-chev" aria-hidden="true"><use href="#i-chev"/></svg>
+      </a>
+      <a class="act act-m" href="/book.html">
         <span class="act-ico"><svg class="ico" aria-hidden="true"><use href="#i-brief"/></svg></span>
         <span class="act-label">Book a case, <span data-rate="case">$1,200</span></span>
         <svg class="ico act-chev" aria-hidden="true"><use href="#i-chev"/></svg>
@@ -255,7 +266,8 @@
       <h2>Ready when you are.</h2>
       <div class="convert-pocket">
         <div class="actions">
-          <a class="btn glow cta" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
+          <a class="btn glow cta" href="/fit.html">Book a free 15-minute call</a>
+          <a class="btn ghost" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
         </div>
       </div>
     </div>
@@ -265,7 +277,7 @@
 <!-- The booking dock: appears only once the hero's own button has scrolled
      away, leaves again at the conversion zone, and never blocks content. -->
 <div class="sticky-book" id="sticky-book" aria-hidden="true">
-  <a class="cta" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
+  <a class="cta" href="/fit.html">Book a free 15-minute call</a>
 </div>
 <script type="module">
   const dock = document.getElementById('sticky-book');
@@ -297,6 +309,7 @@
   <div class="foot-cols">
     <nav class="foot-col" aria-label="Explore">
       <h2>Explore</h2>
+      <a href="/fit.html">Book a free call</a>
       <a href="/book.html">Book a case</a>
       <a href="/services.html">Services and pricing</a>
       <a href="/about.html">About</a>

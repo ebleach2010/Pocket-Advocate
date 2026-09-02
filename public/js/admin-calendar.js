@@ -13,8 +13,11 @@ const LEAD_TIME_HOURS = 72;
 hydrateNav();
 const user = await requireAdmin();
 
-let slots = []; // { id, start: Date, state, caseId }
+let slots = []; // { id, start: Date, state, caseId, kind, leadId }
 let caseInfo = {}; // caseId -> { name, status }
+// leadId -> name, for the free calls. The slot names nobody (availability is
+// world-readable); the name comes off the admin route.
+let leadNames = {};
 let shown = new Date(); // any date inside the displayed month (MST frame)
 
 if (user) init();
@@ -31,7 +34,10 @@ async function init() {
     const unbookableBefore = Date.now() + LEAD_TIME_HOURS * 3600_000;
     slotSnap.forEach((d) => {
       const s = d.data();
-      const slot = { id: d.id, start: toDate(s.start), state: s.state || 'open', caseId: s.caseId || null };
+      const slot = {
+        id: d.id, start: toDate(s.start), state: s.state || 'open', caseId: s.caseId || null,
+        kind: s.kind || null, leadId: s.leadId || null,
+      };
       if (slot.state === 'open' && slot.start.getTime() < unbookableBefore) return;
       slots.push(slot);
     });
@@ -43,6 +49,12 @@ async function init() {
     document.getElementById('cal-grid').innerHTML = `<p class="error">Couldn't load: ${esc(err.message)}</p>`;
     return;
   }
+  // Best effort: a calendar with unnamed free calls is still a calendar.
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/admin/fit-calls', { headers: { authorization: `Bearer ${token}` } });
+    if (res.ok) for (const c of (await res.json()).calls || []) leadNames[c.id] = c.name;
+  } catch { /* unnamed */ }
   document.getElementById('cal-prev').addEventListener('click', () => shift(-1));
   document.getElementById('cal-next').addEventListener('click', () => shift(1));
   document.getElementById('cal-today').addEventListener('click', () => { shown = new Date(); render(); });
@@ -96,12 +108,15 @@ function render() {
   for (let d = 1; d <= daysInMonth; d++) {
     const k = `${p.year}-${String(p.month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const daySlots = (byDay[k] || []).sort((a, b) => a.start - b.start);
-    const booked = daySlots.filter((s) => s.state === 'booked');
+    const fits = daySlots.filter((s) => s.state === 'booked' && s.kind === 'fit');
+    const booked = daySlots.filter((s) => s.state === 'booked' && s.kind !== 'fit');
     const held = daySlots.filter((s) => s.state === 'held');
     const open = daySlots.filter((s) => s.state === 'open');
     const marks =
       booked.slice(0, 2).map((s) => `<div class="cal-mark booked">${timeFmt.format(s.start)} ${esc(shortName(s))}</div>`).join('') +
       (booked.length > 2 ? `<div class="cal-mark booked">+${booked.length - 2} more</div>` : '') +
+      fits.slice(0, 2).map((s) => `<div class="cal-mark fit">${timeFmt.format(s.start)} free ${esc(shortName(s))}</div>`).join('') +
+      (fits.length > 2 ? `<div class="cal-mark fit">+${fits.length - 2} free</div>` : '') +
       (held.length ? `<div class="cal-mark held">${held.length} pending</div>` : '') +
       (open.length ? `<div class="cal-mark open">${open.length} open</div>` : '');
     cells += `<div class="cal-cell${k === todayKey ? ' today' : ''}${daySlots.length ? ' has-events' : ''}" data-day="${k}">
@@ -115,7 +130,8 @@ function render() {
 }
 
 function shortName(s) {
-  const name = s.caseId ? (caseInfo[s.caseId]?.name || 'client') : '';
+  const name = s.caseId ? (caseInfo[s.caseId]?.name || 'client')
+    : s.leadId ? (leadNames[s.leadId] || 'call') : '';
   return name.split(' ')[0] || name;
 }
 
@@ -125,12 +141,17 @@ function showDay(key, daySlots) {
   });
   const timeFmt = new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, hour: 'numeric', minute: '2-digit' });
   const rows = daySlots.sort((a, b) => a.start - b.start).map((s) => {
-    const label = s.state === 'booked'
+    const label = s.kind === 'fit'
+      ? (s.state === 'booked'
+        ? `<strong style="color:var(--orange)">${esc(leadNames[s.leadId] || 'free call')}</strong> <span class="dim small">· free 15-minute call</span>`
+        : '<span class="dim">open free-call slot, 15 min</span>')
+      : s.state === 'booked'
       ? `<strong style="color:var(--cyan)">${esc(caseInfo[s.caseId]?.name || 'client')}</strong> <span class="dim small">· ${(caseInfo[s.caseId]?.status || '').replace('_', ' ')}</span>`
       : s.state === 'held'
         ? '<strong style="color:var(--magenta)">held — awaiting payment</strong>'
         : '<span class="dim">open slot</span>';
-    const link = s.caseId ? ` <a class="small" href="/admin-case.html?id=${s.caseId}">open case →</a>` : '';
+    const link = s.caseId ? ` <a class="small" href="/admin-case.html?id=${s.caseId}">open case →</a>`
+      : s.kind === 'fit' && s.state === 'booked' ? ' <a class="small" href="/admin.html#fit-calls">free calls →</a>' : '';
     return `<li><span class="fname"><strong>${timeFmt.format(s.start)} MST</strong> &nbsp; ${label}</span><span class="fmeta">${link}</span></li>`;
   }).join('');
   document.getElementById('cal-day').innerHTML = `

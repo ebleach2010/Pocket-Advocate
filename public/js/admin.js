@@ -10,6 +10,7 @@ import {
 } from './drawer.js';
 import { unseenBadges } from './seen.js';
 import { mountOfficeControl } from './admin-hours.js';
+import { mountFitCalls } from './admin-fit.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 
@@ -20,6 +21,8 @@ if (user) {
   // on the availability page; both read and write settings/officeHours through
   // the Worker, so they cannot disagree.
   mountOfficeControl(document.getElementById('office'), { getToken: () => user.getIdToken() });
+  // The free calls, off the Worker-only leads collection.
+  mountFitCalls(document.getElementById('fit-calls'), { getToken: () => user.getIdToken() });
   load();
 }
 

@@ -338,6 +338,12 @@ main > p > a.small[href="/admin.html"] {
 .cal-mark.booked { background: var(--cyan); color: var(--on-accent); box-shadow: 0 0 9px rgba(45,226,255,.75); }
 .cal-mark.open { background: var(--green); color: #04180D; box-shadow: 0 0 9px rgba(62,224,138,.7); }
 .cal-mark.held { background: var(--magenta); color: #1A0413; box-shadow: 0 0 9px rgba(255,79,216,.75); }
+/* A booked free call: the warm one, so a fifteen-minute chat never reads as
+   a paid hour on the grid. */
+.cal-mark.fit { background: var(--orange); color: #FFF6EE; box-shadow: 0 0 9px rgba(170,90,38,.6); }
+.fit-row { flex-wrap: wrap; }
+.fit-row .fit-acts { display: flex; gap: .35rem; flex-wrap: wrap; width: 100%; margin-top: .3rem; }
+.fit-row .btn.small { min-height: 36px; padding: .2rem .7rem; font-size: .85rem; }
 .cal-key { display: inline-block; width: .8rem; height: .8rem; border-radius: 3px; vertical-align: -2px; }
 .cal-key.booked { background: var(--cyan); box-shadow: 0 0 7px rgba(45,226,255,.7); }
 .cal-key.open { background: var(--green); box-shadow: 0 0 7px rgba(62,224,138,.65); }

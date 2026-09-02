@@ -71,6 +71,18 @@ whole thing runs as one flow, which is how Eric drives it:
 `book.html` and `signin.html` on a preview host show the **▶ Start the
 demo** button, which is this door.
 
+### The free 15-minute call (2026-09-02)
+
+`/fit` on the landing page's first door. In the demo the seeded free-call
+slots (kind `fit`, fifteen minutes) list there and nowhere else; booking one
+takes a name, an email, phone or video, one line, and the US/Canada tick, and
+lands on the advocate dashboard under FREE CALLS with Link, Done, No-show and
+Cancel. `tools/drives/drive-fit.mjs` walks it end to end at 390px, and
+`tools/suites/fitcall.mjs` lifts the Worker's two routes and drives them over
+the in-memory Firestore: the person never lands on the world-readable slot,
+the lost race is a 409 with nothing written, the honeypot writes nothing, the
+throttle, the closed books, and the cancel that reopens the time.
+
 ### Side doors, by typed code
 
 The old rooms still answer, as codes typed into either sign-in box - useful

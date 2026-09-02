@@ -204,6 +204,16 @@ export function seed({ set, file }) {
       set(`availability/slot-${++slot}`, { state: 'open', start, durationMin: 60 });
     }
   }
+  // Free-call slots (the 15-minute fit call, 2026-09-01): what fit.html
+  // lists, and what book.html must never list. Same window as above.
+  let fit = 0;
+  for (const day of [4, 5, 7]) {
+    for (const [hour, minute] of [[9, 0], [12, 30], [16, 0]]) {
+      const start = inDays(day);
+      start.setHours(hour, minute, 0, 0);
+      set(`availability/fit-${++fit}`, { state: 'open', start, durationMin: 15, kind: 'fit' });
+    }
+  }
 
   // A complete profile, so nothing in the demo ever asks him to make an
   // account (Eric, 2026-08-21: "Skip me having to create an account for God's

@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
 <meta name="theme-color" content="#EAF2FA">
-<title>Admin · Pocket Advocate</title>
+<title>A free 15-minute call · Pocket Advocate</title>
 <script>
 // Paint in the stored colour scheme before the stylesheet lands, so a scheme
 // never flashes neon on the way in. Mirrors theme.js, which owns the choosing
@@ -30,7 +30,7 @@
 })();
 </script>
 <link rel="stylesheet" href="/css/site.css?v=sp13">
-<link rel="stylesheet" href="/css/admin.css?v=stat106">
+<link rel="stylesheet" href="/css/glowup.css?v=sp5">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
@@ -38,25 +38,28 @@
   <div class="bar-inner">
     <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
     <nav class="tabs">
-      <a href="/admin.html" class="active">Clients</a>
-      <a href="/admin-calendar.html">Calendar</a>
-      <a href="/admin-chats.html">Chats</a>
-      <a href="/admin-availability.html">Availability</a>
-      <a href="/admin-dictionary.html">📚 Terms</a>
+      <a href="/book.html">Book</a>
+      <a href="/services.html">Services</a>
+      <a href="/about.html">About</a>
+      <a href="/faq.html">Questions</a>
+      <a href="/reviews.html">Reviews</a>
+      <a href="/contact.html">Contact</a>
       <span data-nav-auth></span>
     </nav>
   </div>
 </header>
 <main>
-  <h1>Clients</h1>
-  <div id="office"></div>
-  <!-- The free 15-minute calls, above the shelves: a person waiting on a
-       call is a decision before the cases are. -->
-  <div id="fit-calls"></div>
-  <div id="list"><p class="dim">Loading…</p></div>
+  <!-- The free 15-minute call (Eric, 2026-09-01). No account, no payment, no
+       agreement: a person who has not decided anything yet is asked for one
+       thing, a time, and then for how to reach them. fit.js renders every
+       step into this one box. -->
+  <p class="error" id="page-error" hidden></p>
+  <div id="fit" class="stack"><p class="muted">Loading…</p></div>
+
+  <footer class="footer-disclaimer">
+    This is patient advocacy, not medical care. No diagnosis, no treatment, no prescriptions, and not a substitute for your own care team. If this is an emergency, call 911.
+  </footer>
 </main>
-<script type="module" src="/js/admin.js"></script>
-<script type="module" src="/js/admin-presence.js"></script>
-<script type="module" src="/js/version-note.js"></script>
+<script type="module" src="/js/fit.js"></script>
 </body>
 </html>
