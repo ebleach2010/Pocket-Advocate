@@ -327,7 +327,8 @@ ck('L17 his own panel no longer counts what he promised not to count',
 // 20-22 hours phrase reworded, each made this read FAIL L18. Restored.
 ck('L18 and the agreement still says he does not meter them item by item',
   /I do not meter them call by call/.test(TIER)
-  && /up to 20-22 hours of comprehensive advocacy/.test(TIER)
+  // "up to 20-22" became "20 included" on 2026-09-02 (cap-and-raise).
+  && /20 included hours of comprehensive advocacy/.test(TIER)
   && !/you will never be told you have used them up/.test(TIER));
 
 // ---- L19-L23: the records release, parked, and the promise kept ----------

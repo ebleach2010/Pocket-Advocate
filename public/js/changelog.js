@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.76';
+export const VERSION = '2.77';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '2.76';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // CAP-AND-RAISE (Eric, 2026-09-02, his pick after the rate comps): the
+    // Full-Service month is $4,400 with 20 included hours said plainly, a
+    // follow-up is $325, telehealth is $525; the case review and Priority
+    // Chat hold. The client's case page shows the included hours as a
+    // fulfillment marker, never a meter, and past them the work carries on at
+    // no extra charge. New price epoch, so the seeds answer on deploy.
+    version: '2.77',
+    client: [
+      'Updated prices: a follow-up session is $325, telehealth appointment advocacy is $525, and a Full-Service month is $4,400 with 20 included hours stated plainly. A case review is still $1,200 and Priority Chat is still $50 a month.',
+      'On a Full-Service case, your case page now shows the included hours as they are delivered, and says so plainly when all 20 are done. Work past them carries on at no extra charge.',
+    ],
+  },
   {
     // CHRIS'S FIVE STARS (Eric, 2026-09-01), transcribed from the Google
     // notification he screenshotted. Site content only.

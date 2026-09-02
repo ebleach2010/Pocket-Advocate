@@ -55,22 +55,22 @@ export const SERVICE_ABOUT = {
 
   handsOff: {
     title: 'Full-Service Case Management',
-    price: '$3,500 a month, every month the same. The case fee is separate: it pays for the review.',
+    price: '$4,400 a month, every month the same. The case fee is separate: it pays for the review.',
     tldr: 'You hand me the case. I do the legwork: the calls, the records, the insurer, the appeals, and we talk at least twice a month so you always know where it stands. A month at a time, for as long as you need it.',
     paragraphs: [
       'In a standard case I work beside you: I read, I explain, and you carry it to your doctors and your insurer. With Full-Service Case Management I work inside the case. I phone your clinics, chase your records, deal with your insurer, and write your appeals myself. Your job shrinks to giving me the permission I need to act for you, which I bring you and walk you through, and from there the legwork is mine.',
       'You ask, and I answer personally. I carry a limited number of these at a time, so this is not something you can simply buy - you send the request, I read it, and I tell you yes or no. Asking costs nothing and takes no card. If I say no, nothing is charged and I will tell you why.',
       'It is billed a month at a time, and I would rather explain why than have you wonder. A single payment for a whole engagement is a large thing to hand over at the exact moment you are least able to think about money. Monthly means the biggest number you ever see is one month, and it means you are never locked into a case that is going nowhere. Most of these run about two months. Some run one. Some run five. You decide each month.',
       'We speak at least twice a month, by phone or video, for as long as the case runs. That rhythm is part of the service, not an option: it is how the case keeps moving, and how you always know what happened without having to push for updates. If something breaks between check-ins, I add calls at no charge.',
-      'If your insurer says no, I write the appeal: the first-level internal appeal, the escalation if they deny it, and I keep writing for as long as the case is mine. If a doctor will not cooperate, a referral that never gets sent, records that never arrive, I put it in writing and go through the channels myself. Appeal help alone typically runs $500 to $2,500 per appeal elsewhere; here it draws from the month\'s hours like everything else.',
-      'A month buys up to 20-22 hours of comprehensive advocacy, with priority access maintained throughout: the check-ins, the calls in your name, the records chased, the appeals written, all from the same hours. Most months use less. If yours genuinely needs more, we talk first: additional substantive casework beyond the included hours is billed at $175 to $225 an hour, agreed in advance.',
+      'If your insurer says no, I write the appeal: the first-level internal appeal, the escalation if they deny it, and I keep writing for as long as the case is mine. If a doctor will not cooperate, a referral that never gets sent, records that never arrive, I put it in writing and go through the channels myself. Appeal help alone typically runs $600 to $1,500 per appeal elsewhere; here it draws from the month\'s hours like everything else.',
+      'A month buys 20 included hours of comprehensive advocacy, with priority access maintained throughout: the check-ins, the calls in your name, the records chased, the appeals written, all from the same hours. Most months use less. If yours genuinely needs more, we talk first: additional substantive casework beyond the included hours is billed at $175 to $225 an hour, agreed in advance.',
       'I cannot make an insurer answer faster and I cannot promise an outcome. What I promise is that somebody who knows these clocks is running yours, and that you hear the truth about how it is going, at least twice a month.',
     ],
     bullets: [
       'Asking costs nothing and takes no card. I answer every request myself',
       'Everything in an Advocacy Case included: the call, the record review, the written report',
       'I do the legwork: your clinics, your records, your insurer, handled by me on your authority',
-      'Up to 20-22 hours of comprehensive advocacy every 30-day service period',
+      '20 included hours of comprehensive advocacy every 30-day service period',
       'Priority access maintained throughout the month',
       'Check-in calls at least twice a month, included; extra calls at my discretion, free',
       'Calls to clinics and your insurer, and written insurance appeals, all from the same hours',
@@ -86,7 +86,7 @@ export const SERVICE_ABOUT = {
 
   extension: {
     title: 'Another month',
-    price: '$3,500 a month, the same as the first',
+    price: '$4,400 a month, the same as the first',
     tldr: 'Another month of everything: the check-ins, the calls on your behalf, the lot. Take as many as your case needs, one at a time. Nothing else changes.',
     paragraphs: [
       'Some cases outlast a month or two through nobody\u2019s fault: a records office takes its full thirty days, a referral sits in a queue, an insurer uses every day it is allowed. Continuing keeps me inside the case while those clocks run.',
@@ -104,7 +104,7 @@ export const SERVICE_ABOUT = {
 
   followup: {
     title: 'Follow-Up Session',
-    price: '$275, at the price you were quoted when you booked',
+    price: '$325, at the price you were quoted when you booked',
     tldr: 'A second full session on the same case, once your report has landed. Same file, no starting over.',
     paragraphs: [
       'The report usually raises things worth talking through: what changed, what a result actually means, which next step to take first. A follow-up is a full session for exactly that, on the same case, with everything we already built still in front of us.',
@@ -120,11 +120,11 @@ export const SERVICE_ABOUT = {
 
   telehealth: {
     title: 'Telehealth Appointment Advocacy',
-    price: '$450 flat. Included with Full-Service Case Management.',
+    price: '$525 flat. Included with Full-Service Case Management.',
     tldr: 'I join your telehealth appointment by video and advocate live. If I cannot attend, or your provider refuses, every dollar comes back.',
     paragraphs: [
       'You name the appointment: the time, the clinic, the provider. I confirm each one personally, and then I am in the visit with you, asking the questions that get lost, keeping the thread when the appointment moves fast, and making sure what was agreed gets said out loud before it ends.',
-      'Your provider still controls their visit and can decline my presence. If that happens, or if I cannot attend, the $450 for that appointment refunds in full, promised before you type a thing. And I never record a provider’s visit: notes and advocacy only.',
+      'Your provider still controls their visit and can decline my presence. If that happens, or if I cannot attend, the $525 for that appointment refunds in full, promised before you type a thing. And I never record a provider’s visit: notes and advocacy only.',
     ],
     bullets: [
       'I attend your telehealth visit by video and advocate live',

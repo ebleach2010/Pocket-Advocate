@@ -44,12 +44,20 @@ export async function paintRates(root = document) {
   if (!spots.length) return;
   const r = await rates();
   if (!r) return;
+  // An explicit map and nothing else (2026-09-02): the old `?? caseCents`
+  // fallback painted the case price on any misspelt key, silently.
+  const map = { case: r.caseCents, addon: r.addonCents, sub: r.subCents, full: r.fullCents, tele: r.teleCents };
   for (const el of spots) {
-    const cents = { addon: r.addonCents, sub: r.subCents, full: r.fullCents, tele: r.teleCents }[el.dataset.rate] ?? r.caseCents;
+    if (!(el.dataset.rate in map)) continue;
+    const cents = map[el.dataset.rate];
     if (!(Number(cents) > 0)) continue;
     const text = el.dataset.rateFmt === 'bare' ? money(cents) : `$${money(cents)}`;
     if (el.textContent !== text) el.textContent = text;
   }
+  // The hours a Full-Service month includes, from the same answer.
+  if (Number(r.fullHours) > 0)
+    for (const el of root.querySelectorAll('[data-hours="full"]'))
+      if (el.textContent !== String(r.fullHours)) el.textContent = String(r.fullHours);
 }
 
 // Any page that has price spots gets them painted; a page with none pays

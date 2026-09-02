@@ -667,7 +667,7 @@ function renderPayment() {
           these are available from the Case Enhancements tab on your case page
           whenever you want them:</p>
         <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Full-Service Case Management</strong><br>
-          I take over the legwork, a month at a time: up to 20-22 hours of
+          I take over the legwork, a month at a time: 20 included hours of
           comprehensive advocacy each 30-day service period, with priority
           access throughout. Check-in calls at least twice a month, calls to
           your clinics and insurer on your behalf, your telehealth visits
@@ -675,9 +675,9 @@ function renderPayment() {
           hours. Most cases take about two months, and every month after the
           first is your choice, not a commitment. It is a separate service at
           its own monthly price; your case fee pays for the case review.</p>
-        <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Follow-up session · $<span data-rate="addon">175</span></strong><br>
+        <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Follow-up session · $<span data-rate="addon">325</span></strong><br>
           A second full discussion on the same case after your report lands. Same case, same file, no starting over.</p>
-        <p class="muted small" style="margin:0;"><strong style="color:var(--ink)">Telehealth appointment advocacy · $<span data-rate="tele">450</span></strong><br>
+        <p class="muted small" style="margin:0;"><strong style="color:var(--ink)">Telehealth appointment advocacy · $<span data-rate="tele">525</span></strong><br>
           I join a telehealth visit with one of your own providers by video and advocate live. I confirm every appointment personally; if I can't attend, or your provider doesn't allow it, you get every dollar back. Included with Full-Service Case Management.</p>
       </div>
     </details>

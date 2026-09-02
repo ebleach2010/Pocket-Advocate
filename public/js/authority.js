@@ -325,7 +325,7 @@ THE WORK
 I work inside your case, not beside it. Once you have authorised it in
 writing, I speak to your clinics and your insurance company myself, and I
 do the legwork: the records I chase, the referrals I follow up, the calls
-I make, and the insurance appeals I write. A service month is up to 20-22
+I make, and the insurance appeals I write. A service month is 20 included
 hours of comprehensive advocacy, with priority access throughout; the
 calls and the appeals draw from those hours rather than being counted one
 by one, and casework beyond them is billed at $175 to $225 an hour,

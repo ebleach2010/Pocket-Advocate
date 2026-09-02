@@ -396,13 +396,19 @@ function paidShownCents(c) {
  *
  * The thresholds are a pure function so the suite can lift and run them:
  * "close" from 80% of the low end of the envelope, "limit" from the high
- * end. Rough on purpose - the agreement says 20-22, not a meter that
- * pretends to a precision the word "rough" was chosen to avoid.
+ * end. A fulfillment marker, not a meter (Eric, 2026-09-01: "I want them to
+ * know I've fulfilled my obligation for the month"): it moves when he clocks
+ * out, never live, and past the included hours it says the work continues at
+ * no extra charge.
  */
+// KEEP IN STEP with FULL_INCLUDED_HOURS in the Worker; pricing.mjs pins the
+// two equal. Eric, 2026-09-02 (cap-and-raise): 20 included hours, stated
+// plainly, and past them the work continues at no extra charge.
+const FULL_INCLUDED_HOURS = 20;
 function hoursState(usedSec, months) {
   const m = Math.max(1, Math.floor(Number(months) || 1));
-  if (usedSec >= m * 22 * 3600) return 'limit';
-  if (usedSec >= 0.8 * m * 20 * 3600) return 'close';
+  if (usedSec >= m * FULL_INCLUDED_HOURS * 3600) return 'limit';
+  if (usedSec >= 0.8 * m * FULL_INCLUDED_HOURS * 3600) return 'close';
   return 'ok';
 }
 function hoursCard(c) {
@@ -410,33 +416,37 @@ function hoursCard(c) {
   const w = c.work || {};
   const mark = Math.max(0, Number(w.tierMark) || 0);
   const banked = Math.max(0, (Number(w.seconds) || 0) - mark);
-  const live = w.startedAt
-    ? Math.max(0, Math.min(Math.floor((Date.now() - toDate(w.startedAt).getTime()) / 1000), 12 * 3600))
-    : 0;
-  const used = banked + live;
+  // Banked time only: the card moves when he clocks out, never while the
+  // clock runs, so it never reads as a meter ticking against the client.
+  const used = banked;
   const months = Math.max(1, Math.floor(Number(c.fullAccessMonths) || 1));
   const state = hoursState(used, months);
+  const includedH = months * FULL_INCLUDED_HOURS;
+  const doneH = Math.floor(used / 3600);
   const fmt = (secs) => {
     const h = Math.floor(secs / 3600);
     const m2 = Math.floor((secs % 3600) / 60);
     return `${h ? `${h}h ` : ''}${m2}m`;
   };
-  const pct = Math.min(100, Math.round((used / (months * 22 * 3600)) * 100));
-  const span = months > 1
-    ? `Your ${months} months include up to ${months * 20}-${months * 22} advocacy hours.`
-    : 'A month includes up to 20-22 advocacy hours.';
+  const pct = Math.min(100, Math.round((used / (includedH * 3600)) * 100));
+  // The three sentences, Eric's choices (2026-09-01).
+  const span = state !== 'limit'
+    ? `Included hours: ${doneH} of ${includedH} delivered.`
+    : doneH > includedH
+      ? `${doneH} hours: ${doneH - includedH} beyond what your month includes, at no extra charge.`
+      : `The ${includedH} hours included in your month are delivered. ✓ Work continues.`;
   const note = state === 'limit'
-    ? 'We are at the rough limit of the included hours. Anything beyond them is agreed with you before the work, exactly as your agreement says.'
+    ? 'Beyond the included hours the work carries on at no extra charge. If a month ever needs a great deal more, we talk first, exactly as your agreement says.'
     : state === 'close'
-      ? 'We are getting close to the included hours. If your case needs more, it is agreed with you before the work, never discovered on a bill.'
+      ? 'We are getting close to the included hours. Past them the work carries on at no extra charge.'
       : '';
   return `
     <section class="card hours-card${state === 'ok' ? '' : ` is-${state}`}" data-hours-card>
-      <p class="eyebrow">HANDS-OFF HOURS</p>
+      <p class="eyebrow">YOUR MONTH'S HOURS</p>
       <p class="hours-line"><strong style="color:var(--ink);">${fmt(used)}</strong> used${
   w.startedAt ? ' <span style="color:var(--cyan);">· working on it right now</span>' : ''
 }</p>
-      <div class="hours-meter" role="img" aria-label="${fmt(used)} of the included advocacy hours used"><span style="width:${pct}%;"></span></div>
+      <div class="hours-meter" role="img" aria-label="${fmt(used)} of the ${includedH} included advocacy hours delivered"><span style="width:${pct}%;"></span></div>
       <p class="dim small" style="margin:0;">${span}</p>
       ${note ? `<p class="small hours-note" style="margin:.4rem 0 0;"><strong>${note}</strong></p>` : ''}
       <p class="dim small" style="margin:.4rem 0 0;">I pace this work to be as
@@ -1346,7 +1356,7 @@ const followUpPrice = (c) =>
 // The Full Access list price, in CENTS, corrected from /api/rates the moment
 // it answers. The upgrade card subtracts what this case already paid, so the
 // number on the button is the difference and never the list price.
-let fullAccessCents = 350000;
+let fullAccessCents = 440000;
 const fullAccessPrice = () => fullAccessCents;
 // Named, because the upgrade card has to know when this has landed. It used
 // to be fire-and-forget, so a slow or failed fetch left the compiled-in price

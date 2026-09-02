@@ -96,8 +96,8 @@ export function demoApi(role, store) {
     if (path === '/api/admin/session') return ok({ ok: true });
 
     // ---- money, without any -----------------------------------------------
-    if (path === '/api/rates') return ok({ caseCents: 120000, addonCents: 27500, subCents: 5000, fullCents: 350000, chatOpenCents: 5000 });
-    if (path === '/api/admin/rates') return ok({ caseCents: 120000, addonCents: 27500, subCents: 5000, fullCents: 350000, floorCents: 7500, bookings: 0, changed: false });
+    if (path === '/api/rates') return ok({ caseCents: 120000, addonCents: 32500, subCents: 5000, fullCents: 440000, chatOpenCents: 5000, teleCents: 52500, fullHours: 20 });
+    if (path === '/api/admin/rates') return ok({ caseCents: 120000, addonCents: 32500, subCents: 5000, fullCents: 440000, floorCents: 7500, bookings: 0, changed: false, teleCents: 52500, fullHours: 20, caps: { caseCents: 180000, addonCents: 42500, subCents: 10000, fullCents: 440000 } });
     // The nightly study, with a plausible history so the card on the dashboard
     // shows what it shows on a real night.
     if (path === '/api/work') {
@@ -794,7 +794,7 @@ export function demoApi(role, store) {
           files: [],
           reportDueAt: null,
           caseRateCents: 120000,
-          addonRateCents: 27500,
+          addonRateCents: 32500,
           fullAccess: false,
           fullAccessAt: null,
           fullAccessRateCents: null,
@@ -818,7 +818,7 @@ export function demoApi(role, store) {
           store.docs.set(key, {
             ...c, addOnFollowUp: true, addOnFollowUpAt: new Date(), pendingFollowUp: null,
             extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), {
-              kind: 'followup', amountCents: Number(c.addonRateCents) || 27500,
+              kind: 'followup', amountCents: Number(c.addonRateCents) || 32500,
               sessionId: `cs_demo_fu_${Date.now()}`, at: new Date(),
             }],
           });

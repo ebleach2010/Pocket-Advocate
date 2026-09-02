@@ -54,6 +54,9 @@ const LIFTED = [
   sfn('workDayString'), sfn('workDayElapsedMs'), sfn('todayByCase'),
   sfn('splitClockAtFlip'),
   fn('bankDaySeconds'), fn('readDaySeconds'),
+  // FULL_INCLUDED_HOURS and markIncludedHours ride inside handleWork's stop
+  // branch since 2026-09-02 (the fulfillment mark), so they lift beside it.
+  konst('FULL_INCLUDED_HOURS'), fn('markIncludedHours'),
   fn('setClockRunning'), fn('stopWorkClock'), fn('handleWork'),
   fn('handleWorkPresence'), fn('runWorkClockNudges'), fn('cronWatchdog'),
 ].join('\n');
@@ -691,14 +694,17 @@ Date.now = realNow;
   const CASEJS = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
   const stateSrc = (CASEJS.match(/function hoursState\([\s\S]*?\n\}/) || [''])[0];
   let hoursState = null;
-  try { hoursState = new Function(`${stateSrc}; return hoursState;`)(); } catch { /* red below */ }
-  check('C51 the thresholds lift and run: close from 80% of 20h, limit from 22h',
+  // FULL_INCLUDED_HOURS rides inside hoursState since 2026-09-02, so it is
+  // lifted beside it; limit is the 20 included hours now, close is 80% of it.
+  try { hoursState = new Function(`const FULL_INCLUDED_HOURS = 20;\n${stateSrc}; return hoursState;`)(); } catch { /* red below */ }
+  check('C51 the thresholds lift and run: close from 80% of 20h, limit from 20h',
     !!hoursState
     && hoursState(15.9 * 3600, 1) === 'ok'
     && hoursState(16 * 3600, 1) === 'close'
-    && hoursState(22 * 3600, 1) === 'limit'
+    && hoursState(19.9 * 3600, 1) === 'close'
+    && hoursState(20 * 3600, 1) === 'limit'
     && hoursState(30 * 3600, 2) === 'ok'
-    && hoursState(44 * 3600, 2) === 'limit',
+    && hoursState(40 * 3600, 2) === 'limit',
     hoursState ? `${hoursState(16 * 3600, 1)}/${hoursState(22 * 3600, 1)}` : 'lift failed');
   const apptAt = CASEJS.indexOf('${primaryAction}');
   const cardAt = CASEJS.indexOf('${hoursCard(c)}');
@@ -707,11 +713,40 @@ Date.now = realNow;
     apptAt > -1 && cardAt > apptAt && foldAt > cardAt
     && /if \(!c\.fullAccess \|\| c\.status === 'closed'\) return '';/.test(CASEJS),
     JSON.stringify({ apptAt, cardAt, foldAt }));
-  check('C51c the pacing sentence and the rough-limit notes are the shipped words',
+  // THE NOTES MOVED, 2026-09-02 (Eric, 2026-09-01: past the included hours
+  // the client is told "at no extra charge"). The pacing sentence and the
+  // review-hours line are unchanged; the two state notes are the new words.
+  check('C51c the pacing sentence and the hours notes are the shipped words',
     /I pace this work to be as\s+efficient as possible with your hours: nothing is padded, and no time\s+is wasted\./.test(CASEJS)
-    && /We are at the rough limit of the included hours\./.test(CASEJS)
-    && /We are getting close to the included hours\./.test(CASEJS)
+    && /Beyond the included hours the work carries on at no extra charge\./.test(CASEJS)
+    && /We are getting close to the included hours\. Past them the work carries on at no extra charge\./.test(CASEJS)
     && /is not counted here/.test(CASEJS));
+}
+
+// ---- C51d-e: the fulfillment mark (Eric, 2026-09-01) -----------------------
+// "I want them to know I've fulfilled my obligation for the month." Three
+// sentences on the client's card, the past-20 one saying "at no extra
+// charge" (his pick), and a Worker hook on clock-out that stamps once, tells
+// the client once, and lands one milestone.
+{
+  const CASEJS = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  const W = readFileSync(__j(__REPO, 'worker/index.js'), 'utf8');
+  // NEGATIVE CONTROL (run 2026-09-02): dropping "at no extra charge" from the
+  // past-20 sentence made C51d read FAIL; dropping `if (!stamped) return;`
+  // from the Worker hook made C51e read FAIL. Both restored.
+  check('C51d the card says delivered, then done with a check, then beyond at no extra charge',
+    /`Included hours: \$\{doneH\} of \$\{includedH\} delivered\.`/.test(CASEJS)
+    && /beyond what your month includes, at no extra charge\.`/.test(CASEJS)
+    && /hours included in your month are delivered\. ✓ Work continues\.`/.test(CASEJS)
+    && /const used = banked;/.test(CASEJS));
+  const hook = (W.match(/async function markIncludedHours\([\s\S]*?\n\}/) || [''])[0];
+  check('C51e the Worker marks the month once on a clock-out: stamp first, one notice, one milestone',
+    /await markIncludedHours\(env, caseId, doc\.data, banked, tierMark\)/.test(W)
+    && /c\.work\?\.includedDoneAt\) return;/.test(hook)
+    && /mask: \['work\.includedDoneAt'\]/.test(hook)
+    && /if \(!stamped\) return;/.test(hook)
+    && /kindLabel: 'Included hours delivered'/.test(hook)
+    && /has delivered the \$\{hours\} hours included in your month\. Work continues\./.test(hook));
 }
 
 // ---- C52: the cron watchdog ------------------------------------------------

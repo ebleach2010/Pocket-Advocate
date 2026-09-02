@@ -87,8 +87,10 @@ export class AdvisorTurn extends WorkflowEntrypoint {
 const CASE_PRICE_CENTS = 120000;
 // The follow-up is a second discussion on the same case, sold from the case
 // after the report lands rather than at checkout. It is NOT included.
-// ~1.25 hours with prep, so $275 is $220/hr.
-const ADDON_PRICE_CENTS = 27500;
+// ~1.5 hours with prep, so $325 is $217/hr. $325 on Eric's word,
+// 2026-09-02 (cap-and-raise): at market against the $200 to $325 band the
+// comparable practices publish for a standard or premium hour.
+const ADDON_PRICE_CENTS = 32500;
 // The chat subscription's SEED. The live number lives on the rates doc like
 // the other two and climbs on its own; see the ratchet below.
 // $50/mo, Eric's call (2026-08-26), against my $300 and the live $95.
@@ -135,16 +137,25 @@ const SUB_PRICE_CENTS = 5000;
 // price stays at market and the billing goes monthly. The largest number a
 // client ever sees is one month.
 //
-// ~15 hours a month, so $3,400 is $227/hr - the middle of the working band,
-// between the comparable practice's $200/hr standard and $250/hr urgent rates.
+// 20 INCLUDED HOURS a month (FULL_INCLUDED_HOURS below), so $4,400 is
+// $220/hr - the middle of the $200 to $300 specialist band the field
+// publishes for complex care, and above the $150 generalist median. The hours
+// cap is the lever: at the 27 hours one month actually took, $3,500 was
+// $131/hr, under the practice's own published overflow rate.
 //
 // Worth knowing: this is ABOVE the $500-3,000/mo band published for monthly
 // retainers. That band is for lighter-touch ongoing support, not fifteen
 // hours a month of records chasing, clinic calls and appeal drafting, so the
 // hourly basis is the right one to price from. The retainer figure is the
 // wrong comparable, not a ceiling being broken.
-// $3,500 on Eric's word, 2026-08-29: "Make it 3500."
-const FULL_MONTH_CENTS = 350000;
+// $3,500 on Eric's word, 2026-08-29: "Make it 3500." Then $4,400 with 20
+// included hours on his word, 2026-09-02 (cap-and-raise), which lands the
+// month AT its ceiling (FULL_CAP_CENTS) from day one.
+const FULL_MONTH_CENTS = 440000;
+// The hours a paid month includes. THE one place this number lives; every
+// client sentence that states it is pinned to this constant by the suites,
+// and the client's case page counts delivered hours against it.
+const FULL_INCLUDED_HOURS = 20;
 // A month of coverage. Every purchase on this tier buys exactly this.
 const FULL_MONTH_DAYS = 30;
 // What the scope note says the engagement realistically takes, and what the
@@ -184,14 +195,15 @@ const FULL_EXTEND = { 30: FULL_MONTH_CENTS };
 const CHAT_OPEN_DAYS = 7;
 const CHAT_OPEN_CENTS = 5000;
 // Telehealth Appointment Advocacy: Eric joins the client's own telehealth
-// visit by video to advocate live. $450 flat per appointment - the realistic
-// 1.5-2h of prep, visit and written debrief priced against the $250/hr URGENT
-// rate rather than the standard one, because he is attending live. NOT on the ratchet -
+// visit by video to advocate live. $525 flat per appointment (Eric,
+// 2026-09-02, cap-and-raise; was $450) - the realistic 1.5-2h of prep, visit
+// and written debrief priced against the $250 to $325 after-hours and live
+// attendance premium the field publishes, because he is attending live. NOT on the ratchet -
 // a flat number he can say in a sentence. Included free on the tier: he
 // confirms or denies every appointment either way, so volume stays his.
 // If he denies, or the clinic refuses him entry, this exact amount refunds -
 // the case fee is never part of it.
-const TELEHEALTH_PRICE_CENTS = 45000;
+const TELEHEALTH_PRICE_CENTS = 52500;
 
 // The ratchet, v2 (Eric, 2026-08-23: "Pricing will now scale exponentially
 // until it hits $1000/case without add-on and $500 cap for f/u add-on. Chat
@@ -223,9 +235,10 @@ const FULL_ROUND_CENTS = 2500;
 // Scaled with the base: about seven bookings from $3,500 to the ceiling,
 // where the scope pays $145-200/hr - the honest top for non-attorney
 // advocacy. Also the manual setter's hard max (RATE_MAX_CENTS), on purpose.
-// A MONTHLY ceiling. $4,400/mo is ~15 hours at $293/hr - inside the $100-350
-// working band, above the $250/hr urgent rate, and the top I would defend for
-// planned work by a non-attorney advocate.
+// A MONTHLY ceiling. $4,400/mo is 20 included hours at $220/hr, the top I
+// would defend for planned work by a non-attorney advocate. Since 2026-09-02
+// the month is SEEDED at this ceiling by Eric's cap-and-raise decision, so
+// the 5% climb is parked from day one and capPings never fires for it.
 const FULL_CAP_CENTS = 440000;
 // Sanity rails on the manual setter, not on the ratchet. A typo that sets the
 // case rate to $5 or $50,000 should bounce rather than take a booking.
@@ -251,7 +264,7 @@ const RATE_MAX_CENTS = 440000;
 // The climb is unaffected: it only ever mattered WITHIN a pricing decision,
 // and a reprice deliberately starts a new one. That is already what
 // restructureRates does, just slower and invisibly.
-const PRICING_EPOCH = '2026-08-26-market';
+const PRICING_EPOCH = '2026-09-02-cap-and-raise';
 const RATES_PATH = 'config/rates';
 // The line under which a case is being worked at a loss, in cents per hour.
 // Eric, 2026-08-23: "I've lost money on my current client." The app counts
@@ -389,12 +402,14 @@ async function raiseSubRate(env, attempt = 0) {
   }
   const now = await readRates(env);
   const subCents = Math.min(SUB_CAP_CENTS, now.subCents + SUB_STEP_CENTS);
+  // The epoch rides along (2026-09-02): a first-ever subscription before any
+  // booking used to write a climb readRates then ignored as stale.
   const opts = now.seeded
-    ? { mask: ['subCents', 'updatedAt'], ifUpdateTime: now.updateTime }
+    ? { mask: ['subCents', 'pricingEpoch', 'updatedAt'], ifUpdateTime: now.updateTime }
     : { mustNotExist: true };
   const body = now.seeded
-    ? { subCents, updatedAt: new Date() }
-    : { caseCents: now.caseCents, addonCents: now.addonCents, fullCents: now.fullCents, subCents, bookings: now.bookings, updatedAt: new Date() };
+    ? { subCents, pricingEpoch: PRICING_EPOCH, updatedAt: new Date() }
+    : { caseCents: now.caseCents, addonCents: now.addonCents, fullCents: now.fullCents, subCents, bookings: now.bookings, pricingEpoch: PRICING_EPOCH, updatedAt: new Date() };
   const won = await patchDoc(env, RATES_PATH, body, opts).catch(() => false);
   if (won === false) return raiseSubRate(env, attempt + 1);
   await capPings(env, now, { ...now, subCents });
@@ -488,7 +503,11 @@ async function handleSetRates(request, env) {
       { ...want, pricingEpoch: PRICING_EPOCH, updatedAt: new Date(), setByHand: true },
       { mask: ['caseCents', 'addonCents', 'subCents', 'fullCents', 'floorCents', 'pricingEpoch', 'updatedAt', 'setByHand'] });
   }
-  return json({ ...want, bookings: now.bookings, changed });
+  return json({
+    ...want, bookings: now.bookings, changed,
+    teleCents: TELEHEALTH_PRICE_CENTS, fullHours: FULL_INCLUDED_HOURS,
+    caps: { caseCents: CASE_CAP_CENTS, addonCents: ADDON_CAP_CENTS, subCents: SUB_CAP_CENTS, fullCents: FULL_CAP_CENTS },
+  });
 }
 
 async function handleRates(env) {
@@ -511,6 +530,9 @@ async function handleRates(env) {
     // permanently on its fallback text, which is a spot that looks plumbed and
     // is not. Caught by curling /api/rates instead of trusting the edit.
     teleCents: TELEHEALTH_PRICE_CENTS,
+    // The hours a Full-Service month includes, from the one constant, so a
+    // page that states the number never has it typed in (2026-09-02).
+    fullHours: FULL_INCLUDED_HOURS,
   });
 }
 // Follow-up sessions expire one month after the first discussion (Eric,
@@ -1094,8 +1116,6 @@ export default {
       ctx.waitUntil(reviveLostSend(env));
       ctx.waitUntil(seedWorkClock(env));
       ctx.waitUntil(restructureRates(env));
-      // Landed 2026-08-29 ("full 340000 -> 350000"); an instant no-op since.
-      ctx.waitUntil(repriceTier(env));
       ctx.waitUntil(fixLogTimes(env));
       ctx.waitUntil(clearOpenSlots(env));
     }
@@ -1568,42 +1588,6 @@ async function restructureRates(env) {
   }
 }
 
-/**
- * The tier moves to $3,500 (Eric, 2026-08-29: "Make it 3500"). One field,
- * one shot: the base prices and the booking ratchet stay exactly where they
- * are, hand-set or not, because he ordered exactly one number. A stored
- * price the ratchet has already grown PAST the new seed is the ratchet's
- * work and is kept; only a price below the seed - the retired $3,400 -
- * moves up. A doc on an older epoch already answers with the seeds, so
- * there is nothing to move there.
- */
-async function repriceTier(env) {
-  const MARKER = 'migrations/tier-3500-2026-08-29';
-  const m = await getDoc(env, MARKER);
-  if (m?.data.finishedAt) return;
-  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
-  const claimed = m
-    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
-    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
-  if (!claimed) return;
-  const done = (result) => patchDoc(env, MARKER, { finishedAt: new Date(), result },
-    { mask: ['finishedAt', 'result'] }).catch(() => {});
-  try {
-    const doc = await getDoc(env, RATES_PATH).catch(() => null);
-    if (!doc) return done('no rates doc; the seeds already answer 350000');
-    const cur = Number(doc.data.fullCents) || 0;
-    if (doc.data.pricingEpoch !== PRICING_EPOCH)
-      return done(`stale epoch; the seeds already answer, stored ${cur} ignored`);
-    if (cur >= FULL_MONTH_CENTS) return done(`kept ${cur}, already at or past the new seed`);
-    const won = await patchDoc(env, RATES_PATH,
-      { fullCents: FULL_MONTH_CENTS, updatedAt: new Date() },
-      { mask: ['fullCents', 'updatedAt'], ifUpdateTime: doc.updateTime }).catch(() => false);
-    if (won === false) return; // someone wrote first; the next firing retries
-    return done(`full ${cur} -> ${FULL_MONTH_CENTS}`);
-  } catch (err) {
-    console.error('reprice tier:', err.message || err);
-  }
-}
 
 /**
  * One-shot: every stored work-log time, moved onto his wall clock.
@@ -1857,7 +1841,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-01-chris-review';
+const BUILD_TAG = 'v2026-09-02-rates-cap-and-raise';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1865,7 +1849,7 @@ const BUILD_TAG = 'v2026-09-01-chris-review';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.76';
+const VERSION = '2.77';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -4903,6 +4887,32 @@ async function setClockRunning(env, caseId, running) {
  * which is the exact overcount the prompt is there to prevent. Banking to the
  * last beacon is the last moment the time is known to be real.
  */
+async function markIncludedHours(env, caseId, c, bankedSeconds, tierMark) {
+  if (!c?.fullAccess || c.status === 'closed' || c.work?.includedDoneAt) return;
+  const months = Math.max(1, Math.floor(Number(c.fullAccessMonths) || 1));
+  const delivered = Math.max(0, bankedSeconds - tierMark);
+  if (delivered < months * FULL_INCLUDED_HOURS * 3600) return;
+  const now = new Date();
+  // Stamp FIRST, so a second stop landing in the same breath finds the mark
+  // and says nothing: one notice is the promise.
+  const stamped = await patchDoc(env, `cases/${caseId}`, { work: { includedDoneAt: now } },
+    { mask: ['work.includedDoneAt'] }).catch(() => false);
+  if (!stamped) return;
+  const hours = months * FULL_INCLUDED_HOURS;
+  await patchDoc(env, `cases/${caseId}/private/milestones/items/${crypto.randomUUID()}`, {
+    what: `The ${hours} hours included in the month are delivered. Work continues.`,
+    kind: 'included', kindLabel: 'Included hours delivered', kindColor: 'green',
+    at: now, createdAt: now,
+  }, { mustNotExist: true }).catch(() => {});
+  if (c.clientUid) {
+    await notifyUser(env, c.clientUid, {
+      title: 'Pocket Advocate',
+      body: `Eric has delivered the ${hours} hours included in your month. Work continues.`,
+      link: `/case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
+}
+
 async function stopWorkClock(env, caseId, w, until = Date.now()) {
   const startedAt = w?.startedAt ? new Date(w.startedAt).getTime() : 0;
   let seconds = Math.max(0, Number(w?.seconds) || 0);
@@ -5138,6 +5148,12 @@ async function handleWork(request, env) {
     if (seen) until = seen;
   }
   const banked = await stopWorkClock(env, caseId, w, until);
+  // THE FULFILLMENT MARK (Eric, 2026-09-01: "I want them to know I've
+  // fulfilled my obligation for the month"). The first clock-out that carries
+  // a Full-Service month past its included hours stamps the moment once,
+  // tells the client once, and lands one milestone on the feed. Never a
+  // meter: this fires on a stop, never while the clock runs, and never again.
+  await markIncludedHours(env, caseId, doc.data, banked, tierMark).catch(() => {});
   return json({
     seconds: banked,
     running: false,

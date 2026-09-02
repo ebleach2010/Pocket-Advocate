@@ -172,10 +172,11 @@ async function load() {
       <p class="dim small" style="margin:.5rem 0 .6rem;">Follow-up
         <strong style="color:var(--ink)">$${dollars(rate.addonCents)}</strong>,
         Priority Chat <strong style="color:var(--ink)">$${dollars(rate.subCents || 5000)}/mo</strong>,
-        Full Access <strong style="color:var(--ink)">$${dollars(rate.fullCents || 340000)}</strong>.
-        Case and follow-up grow 10% per booking (to $1,400 and $400 caps); chat
-        climbs $5 per new client of any type (to $150); Full Access grows 5% to
-        the nearest $25 (to $5,000). ${rate.bookings} booking${rate.bookings === 1 ? ' has' : 's have'}
+        Full-Service <strong style="color:var(--ink)">$${dollars(rate.fullCents || 440000)}/mo</strong>
+        with ${rate.fullHours || 20} included hours, Telehealth <strong style="color:var(--ink)">$${dollars(rate.teleCents || 52500)}</strong> flat.
+        Case and follow-up grow 10% per booking (to $${dollars(rate.caps?.caseCents || 180000)} and $${dollars(rate.caps?.addonCents || 42500)} caps); chat
+        climbs $5 per new client of any type (to $${dollars(rate.caps?.subCents || 10000)}); Full-Service grows 5% to
+        the nearest $25 (to $${dollars(rate.caps?.fullCents || 440000)}). ${rate.bookings} booking${rate.bookings === 1 ? ' has' : 's have'}
         counted so far. Everyone already booked keeps what they were quoted.</p>
       <div class="row" style="gap:.5rem; flex-wrap:wrap;">
         <label class="dim small">Case $
@@ -185,10 +186,10 @@ async function load() {
           <input type="number" id="rate-addon" min="50" step="1" value="${(rate.addonCents / 100)}"
             style="width:6rem;"></label>
         <label class="dim small">Chat $/mo
-          <input type="number" id="rate-sub" min="10" max="150" step="1" value="${((rate.subCents || 15000) / 100)}"
+          <input type="number" id="rate-sub" min="10" max="100" step="1" value="${((rate.subCents || 5000) / 100)}"
             style="width:5rem;"></label>
-        <label class="dim small">Full Access $
-          <input type="number" id="rate-full" min="50" step="25" value="${((rate.fullCents || 260000) / 100)}"
+        <label class="dim small">Full-Service $/mo
+          <input type="number" id="rate-full" min="50" step="25" value="${((rate.fullCents || 440000) / 100)}"
             style="width:7rem;"></label>
       </div>
       <p class="dim small" style="margin:.7rem 0 .35rem;">Tell me when a case

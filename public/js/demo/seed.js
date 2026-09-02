@@ -232,7 +232,7 @@ export function seed({ set, file }) {
     publicElection: { choice: 'private', history: [{ choice: 'private', at: days(11) }] },
     addOnFollowUp: false,
     caseRateCents: 120000,
-    addonRateCents: 27500,
+    addonRateCents: 32500,
     forms: { disclaimer: days(11), privacy: days(11), recording: days(11) },
     reportDueAt: days(-4),
     reportDeliveredAt: hours(20),

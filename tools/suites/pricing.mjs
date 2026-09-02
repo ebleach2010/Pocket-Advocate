@@ -54,8 +54,10 @@ console.log(`# case ${CASE} addon ${ADDON} sub ${SUB} full ${FULL} floor ${FLOOR
 // reasoning is that a low door on the subscription is worth more than the
 // margin. Its ceiling returns to the $100 he named with the $50 seed.
 // FULL moved to 350000 on Eric's word, 2026-08-29 ("Make it 3500").
+// THE EXPECTATION MOVED, 2026-09-02 (Eric, cap-and-raise): ADDON $275 to
+// $325, FULL $3,500 to $4,400 with 20 included hours. Case and chat held.
 check('P1 the new list prices are what was agreed',
-  CASE === 120000 && ADDON === 27500 && SUB === 5000 && FULL === 350000,
+  CASE === 120000 && ADDON === 32500 && SUB === 5000 && FULL === 440000,
   JSON.stringify({ CASE, ADDON, SUB, FULL }));
 check('P2 caps moved with the prices',
   CASE_CAP === 180000 && ADDON_CAP === 42500 && SUB_CAP === 10000 && FULL_CAP === 440000,
@@ -63,11 +65,16 @@ check('P2 caps moved with the prices',
 check('P2e the chat ceiling is a sane multiple of its own seed',
   SUB_CAP === 2 * SUB, `$${SUB / 100} -> $${SUB_CAP / 100}`);
 // Chat is deliberately excluded here: see P1.
+// THE DIVISORS MOVED, 2026-09-02: the month is priced on its 20 INCLUDED
+// hours (FULL_INCLUDED_HOURS, read from source), the follow-up on 1.5h.
+const INCLUDED_H = num('FULL_INCLUDED_HOURS');
 check('P2d every CASE-WORK seed lands in the band middle, not on the average',
   Math.round(CASE / 100 / 5.25) >= 210 && Math.round(CASE / 100 / 5.25) <= 245
-  && Math.round(FULL / 100 / 15) >= 210 && Math.round(FULL / 100 / 15) <= 245
-  && Math.round(ADDON / 100 / 1.25) >= 210 && Math.round(ADDON / 100 / 1.25) <= 245,
-  `case $${Math.round(CASE / 100 / 5.25)}/hr, tier $${Math.round(FULL / 100 / 15)}/hr, follow-up $${Math.round(ADDON / 100 / 1.25)}/hr`);
+  && Math.round(FULL / 100 / INCLUDED_H) >= 210 && Math.round(FULL / 100 / INCLUDED_H) <= 245
+  && Math.round(ADDON / 100 / 1.5) >= 210 && Math.round(ADDON / 100 / 1.5) <= 245,
+  `case $${Math.round(CASE / 100 / 5.25)}/hr, tier $${Math.round(FULL / 100 / INCLUDED_H)}/hr, follow-up $${Math.round(ADDON / 100 / 1.5)}/hr`);
+check('P2f the included hours are one named constant, and it is 20',
+  INCLUDED_H === 20, `FULL_INCLUDED_HOURS = ${INCLUDED_H}`);
 check('P2b the tier price is per MONTH, and the month is defined',
   num('FULL_MONTH_DAYS') === 30 && num('FULL_WINDOW_DAYS') === 30,
   'a paid month buys thirty days; further months add thirty more each');
@@ -97,10 +104,12 @@ check('P7 a price can never round back onto itself',
 // The monthly seed sits closer to its monthly ceiling than the old lump did
 // to its lump ceiling ($2,600 -> $3,400 rather than $3,500 -> $5,000), so the
 // climb is shorter by arithmetic, not by a change of intent. Still gradual.
-let n = FULL, steps = 0;
-while (n < FULL_CAP && steps < 50) { n = growRate(n, FULL_CAP, FULL_GROWTH, FULL_ROUND); steps++; }
-check('P8 full access reaches its ceiling in a sane number of bookings',
-  steps >= 5 && steps <= 14, `${steps} bookings`);
+// THE EXPECTATION INVERTED, 2026-09-02 (Eric, cap-and-raise): the month is
+// SEEDED at its ceiling now, so the climb is parked from day one. What is
+// pinned is that it sits exactly there and growing it changes nothing.
+check('P8 the month sits at its ceiling and the ratchet leaves it there',
+  FULL === FULL_CAP && growRate(FULL, FULL_CAP, FULL_GROWTH, FULL_ROUND) === FULL_CAP,
+  `seed $${FULL / 100}, cap $${FULL_CAP / 100}`);
 
 // ---- the seams that must all know about the new price ---------------------
 for (const seam of [
@@ -335,7 +344,8 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   // Superseded values, each one a real price this product used to charge.
   // Any of these still on a client page is a page nobody updated.
   // 3400 joined the stale list when the month moved to $3,500 (2026-08-29).
-  const STALE = [250, 175, 265, 275.00, 650, 1500, 95, 3700, 3400];
+  // 3500, 450 and 275 joined when the cap-and-raise landed (2026-09-02).
+  const STALE = [250, 175, 265, 275.00, 650, 1500, 95, 3700, 3400, 3500, 450];
   const pages = [];
   for (const d of ['public', 'public/js']) {
     for (const n of readdirSync(__j(__REPO, d))) {
@@ -360,6 +370,10 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
       // is the documented fallback and rates.js overwrites it.
       const before = body.slice(Math.max(0, m.index - 120), m.index);
       if (/data-rate=/.test(before)) continue;
+      // A figure quoted as what OTHER advocates charge per appeal (the sourced
+      // "$600 to $1,500", 2026-09-02) is a comparison, not a price of ours.
+      const after = body.slice(m.index, m.index + 60);
+      if (/per appeal/.test(after)) continue;
       // ALLOWED 2026-08-29, on Eric's word: the Hands-Off overage rate is
       // quoted as "$175 to $225 an hour" in the tier copy. That $175 is a
       // live term he adopted, not the old follow-up price lingering; only
@@ -395,37 +409,61 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
 // stored $3,400 to the new seed, keeps a price the ratchet already grew
 // past it, leaves stale-epoch docs to the seeds, and never touches the
 // base prices.
-// NEGATIVE CONTROL (run 2026-08-29): adding caseCents to the migration's
-// write made P14 read FAIL. Restored.
+// THE LIFT MOVED, 2026-09-02: repriceTier (the one-shot that lifted a stored
+// $3,400 to $3,500) is gone with the cap-and-raise; a price change is a new
+// epoch now and nothing else. What is lifted and RUN is readRates itself: a
+// doc from a superseded epoch, hand-set or not, reads back as the seeds; a
+// doc on the current epoch reads back its own numbers; bookings survive both.
+// NEGATIVE CONTROL (run 2026-09-02): dropping `current &&` from priced()
+// made P14 read FAIL (the stale $3,500 answered). Restored.
 {
-  const fn = (SRC.match(/async function repriceTier\(env\) \{[\s\S]*?\n\}/) || [''])[0];
+  const fn = (SRC.match(/async function readRates\(env\) \{[\s\S]*?\n\}/) || [''])[0];
+  const epoch = (SRC.match(/const PRICING_EPOCH = '([^']+)';/) || [])[1];
   const run = async (ratesDoc) => {
-    const writes = [];
-    const make = new Function('__writes', `
-      const getDoc = async (env, path) => (path === 'config/rates'
-        ? ${JSON.stringify(ratesDoc)} && { data: ${JSON.stringify(ratesDoc)}, updateTime: '1' }
-        : null);
-      const patchDoc = async (env, path, fields) => { __writes.push({ path, fields }); return true; };
+    const make = new Function(`
+      const getDoc = async () => ({ data: ${JSON.stringify(ratesDoc)}, updateTime: '1' });
       const RATES_PATH = 'config/rates';
-      const PRICING_EPOCH = '2026-08-26-market';
-      const FULL_MONTH_CENTS = 350000;
+      const PRICING_EPOCH = ${JSON.stringify(epoch)};
+      const CASE_PRICE_CENTS = ${CASE}; const ADDON_PRICE_CENTS = ${ADDON};
+      const SUB_PRICE_CENTS = ${SUB}; const FULL_MONTH_CENTS = ${FULL};
+      const TELEHEALTH_PRICE_CENTS = ${num('TELEHEALTH_PRICE_CENTS')};
+      const HOURLY_FLOOR_CENTS = 7500;
       ${fn}
-      return repriceTier;
+      return readRates;
     `);
-    await make(writes)({});
-    return writes.filter((w) => w.path === 'config/rates');
+    return make()({});
   };
-  const lifted = await run({ fullCents: 340000, pricingEpoch: '2026-08-26-market', caseCents: 130000 });
-  check('P14 a stored $3,400 on the live epoch is lifted to $3,500, one field only',
-    lifted.length === 1 && lifted[0].fields.fullCents === 350000
-    && lifted[0].fields.caseCents === undefined,
-    JSON.stringify(lifted));
-  const grown = await run({ fullCents: 367500, pricingEpoch: '2026-08-26-market' });
-  check('P14b a price the ratchet grew past the seed is kept',
-    grown.length === 0, JSON.stringify(grown));
-  const stale = await run({ fullCents: 340000, pricingEpoch: 'older' });
-  check('P14c a stale-epoch doc is left to the seeds',
-    stale.length === 0, JSON.stringify(stale));
+  const stale = await run({ fullCents: 350000, addonCents: 27500, pricingEpoch: '2026-08-26-market', setByHand: true, bookings: 4 });
+  check('P14 a hand-set price from a superseded epoch reads back as the seeds, bookings kept',
+    stale.fullCents === FULL && stale.addonCents === ADDON && stale.bookings === 4 && stale.epochCurrent === false,
+    JSON.stringify(stale));
+  const live = await run({ fullCents: 440000, addonCents: 35000, pricingEpoch: epoch, bookings: 2 });
+  check('P14b a price on the current epoch reads back as itself',
+    live.addonCents === 35000 && live.epochCurrent === true, JSON.stringify(live));
+  // NEGATIVE CONTROL (run 2026-09-02): dropping pricingEpoch from raiseSubRate's
+  // mask made this read FAIL. Restored.
+  check('P16b the chat ratchet stamps the epoch too, or its first climb is ignored as stale',
+    /mask: \['subCents', 'pricingEpoch', 'updatedAt'\]/.test(SRC)
+    && /\{ subCents, pricingEpoch: PRICING_EPOCH, updatedAt: new Date\(\) \}/.test(SRC));
+}
+
+// ---- H1-H2: the included hours are stated once, everywhere the same -------
+// Eric, 2026-09-02 (cap-and-raise): "20 included hours stated plainly". One
+// constant in the Worker, one mirror in case.js pinned equal, and every client
+// sentence that names the month's hours names that number; "20-22" is gone.
+{
+  const files = ['public/js/tier-terms.js', 'public/js/service-about.js', 'public/services.html',
+    'public/js/book.js', 'public/js/authority.js'];
+  const bodies = files.map((f) => [f, readFileSync(__j(__REPO, f), 'utf8')]);
+  const CASEJS = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
+  const mirror = Number((CASEJS.match(/const FULL_INCLUDED_HOURS = (\d+);/) || [])[1]);
+  // NEGATIVE CONTROL (run 2026-09-02): putting "up to 20-22 hours" back into
+  // tier-terms.js made H1 read FAIL naming that file. Restored.
+  check('H1 every client file that names the month\'s hours names the constant, and no "20-22" survives',
+    bodies.every(([, b]) => new RegExp(`\\b${INCLUDED_H} included\\s+hours\\b`).test(b) && !/20-22/.test(b)),
+    bodies.filter(([, b]) => !new RegExp(`\\b${INCLUDED_H} included\\s+hours\\b`).test(b) || /20-22/.test(b)).map(([f]) => f).join(', ') || 'all five');
+  check('H2 the client page mirrors the Worker\'s included hours exactly',
+    mirror === INCLUDED_H && !/20-22/.test(CASEJS.replace(/\/\*[\s\S]*?\*\//g, '')), `case.js ${mirror}, worker ${INCLUDED_H}`);
 }
 
 // ---- R1-R6: the hourly must never invent what a client paid -------------
