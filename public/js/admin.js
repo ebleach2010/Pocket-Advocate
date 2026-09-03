@@ -11,6 +11,7 @@ import {
 import { unseenBadges } from './seen.js';
 import { mountOfficeControl } from './admin-hours.js';
 import { mountFitCalls } from './admin-fit.js';
+import { mountPersonal } from './admin-personal.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 
@@ -23,6 +24,8 @@ if (user) {
   mountOfficeControl(document.getElementById('office'), { getToken: () => user.getIdToken() });
   // The free calls, off the Worker-only leads collection.
   mountFitCalls(document.getElementById('fit-calls'), { getToken: () => user.getIdToken() });
+  // Personal Uploads, across every case (Eric, 2026-09-03).
+  mountPersonal(document.getElementById('personal'), { getToken: () => user.getIdToken(), scope: 'all' });
   load();
 }
 

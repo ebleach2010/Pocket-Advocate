@@ -1372,3 +1372,29 @@ main > p > a.small[href="/admin.html"] {
   width: 22px; height: 22px; border-radius: 50%;
   background: var(--panel); border: 3px solid var(--ink);
 }
+
+/* Personal Uploads (Eric, 2026-09-03): a folded panel with one head row. */
+.personal-shelf { padding: 0; overflow: hidden; }
+.personal-head {
+  display: flex; align-items: center; gap: .6rem; width: 100%; min-height: 52px;
+  padding: .6rem .9rem; border: 0; background: none; color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.personal-title { font-weight: 700; font-size: 1.02rem; }
+.personal-count { flex: 1 1 auto; }
+.personal-chev { font-size: 1.4rem; line-height: 1; color: var(--dim); transition: transform .15s ease; }
+.personal-head[aria-expanded="true"] .personal-chev { transform: rotate(90deg); }
+.personal-body { padding: 0 .9rem .9rem; display: grid; gap: .6rem; }
+.personal-note { margin: 0; }
+.personal-row { display: flex; gap: .5rem; align-items: center; }
+.personal-row .personal-search { flex: 1 1 auto; min-width: 0; }
+.personal-up { flex: none; cursor: pointer; }
+.personal-list { margin: 0; }
+.personal-list li { display: flex; align-items: center; gap: .6rem; }
+.personal-list .up-text { flex: 1 1 auto; min-width: 0; }
+.personal-del { flex: none; min-height: 36px; padding: .2rem .6rem; }
+
+/* The doing line under the clock (2026-09-03): what the client reads. */
+.doing-row { display: grid; gap: .3rem; margin: .3rem 0 0; }
+.doing-pills { display: flex; flex-wrap: wrap; gap: .35rem; }
+.doing-pills .pill { font-size: .82rem; min-height: 34px; padding: .2rem .65rem; }

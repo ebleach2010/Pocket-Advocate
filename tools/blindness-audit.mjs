@@ -128,6 +128,7 @@ const ADMIN_ASSETS = [
   // to re-check.
   '/js/admin-hours.js', '/js/admin-presence.js', '/js/admin-ledger.js',
   '/js/admin-fit.js',
+  '/js/admin-personal.js',
   '/js/advisor.js', '/js/notes.js', '/js/duty.js', '/js/prep.js',
   '/js/drawer.js', '/js/seen.js', '/js/panel-bridge.js', '/css/admin.css',
   // The demo's fixtures are advisor output, so they are gated the same way. A

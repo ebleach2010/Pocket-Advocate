@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.77';
+export const VERSION = '2.78';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '2.77';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // Three asks in one evening (Eric, 2026-09-03). The client line is the
+    // one thing a client can see: the doing line under the clock.
+    version: '2.78',
+    client: [
+      'While Eric is clocked in on your case, your case page and the chat say what he is doing right now, in his own words.',
+    ],
+    admin: [
+      'Personal Uploads: a folded shelf on the Clients page and a Personal tab under Mine on every case, for documents only you can open.',
+      'Under the clock on a case: six presets and a free line for what you are doing; the client reads it in place of "working on it right now", and every stop clears it.',
+      'A manual Update now takes over a background read that is still in flight, and a read the provider cannot be reached for is abandoned after half an hour instead of holding the case for three.',
+    ],
+  },
   {
     // CAP-AND-RAISE (Eric, 2026-09-02, his pick after the rate comps): the
     // Full-Service month is $4,400 with 20 included hours said plainly, a
