@@ -8,7 +8,7 @@
 //   POST   /api/admin/slots        open availability slots (admin)
 //   DELETE /api/admin/slots/:id    remove an open slot (admin)
 //   GET/POST/DELETE /api/admin/personal   Personal Uploads: list, add, remove (admin, Worker-only prefix)
-//   GET    /api/admin/personal/file       one personal file's bytes (admin token or admin cookie)
+//   GET    /api/admin/personal/file       one personal file's bytes (admin token or a ten-minute signed link)
 //   POST   /api/admin/case-update  join link / milestones / close (admin)
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
 //   POST   /api/advisor            private LLM advisor: analyse / ask / draft (admin)
@@ -7920,7 +7920,7 @@ function personalPrefix(uid, scope, caseId) {
 /** A leaf name a person will recognise, safe as one path segment. */
 function personalLeaf(name) {
   const clean = String(name || 'file')
-    .replace(/[\u0000-\u001f\u007f\/\\]+/g, ' ')
+    .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069\/\\]+/g, ' ')
     .replace(/\.{2,}/g, '.')
     .replace(/\s+/g, ' ')
     .replace(/^[.\s]+/, '')
@@ -7955,8 +7955,19 @@ async function handlePersonal(request, env, url) {
     try {
       prefix = personalPrefix(uid, url.searchParams.get('scope') || 'all', url.searchParams.get('caseId') || '');
     } catch (e) { return json({ error: e.message }, 400); }
-    const rows = await listFiles(env, prefix, { max: 500 }).catch(() => []);
-    return json({ files: rows.sort((a, b) => b.at - a.at) });
+    let rows;
+    try {
+      rows = await listFiles(env, prefix, { max: 500 });
+    } catch (err) {
+      // A storage failure must not read as an empty shelf (reviewer B).
+      console.error('personal list failed:', err.message || err);
+      return json({ error: 'The shelf could not be read just now. Try again.' }, 502);
+    }
+    rows.sort((a, b) => b.at - a.at);
+    for (const r of rows) r.url = await signFileLink(env, uid, r.path);
+    // File names are the private thing here; nothing on the way back may
+    // keep a copy (reviewer A, 2026-09-03).
+    return noStore(json({ files: rows }));
   }
 
   if (request.method === 'POST') {
@@ -7965,6 +7976,9 @@ async function handlePersonal(request, env, url) {
       prefix = personalPrefix(uid, request.headers.get('x-pa-scope') || 'all', request.headers.get('x-pa-case') || '');
     } catch (e) { return json({ error: e.message }, 400); }
     const declared = Number(request.headers.get('content-length')) || 0;
+    // No declared length means buffering an unknown body before the cap can
+    // be applied (reviewer B); every browser sends one for a File body.
+    if (!declared) return json({ error: 'Length required.' }, 411);
     if (declared > PERSONAL_MAX_BYTES) return json({ error: 'That file is over 50 MB.' }, 413);
     const bytes = await request.arrayBuffer();
     if (!bytes.byteLength) return json({ error: 'Empty file.' }, 400);
@@ -7974,7 +7988,8 @@ async function handlePersonal(request, env, url) {
     const contentType = (request.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim().slice(0, 100);
     const path = prefix + personalLeaf(name.slice(0, 200));
     const row = await putFile(env, path, bytes, contentType);
-    return json({ ok: true, file: row });
+    row.url = await signFileLink(env, uid, row.path);
+    return noStore(json({ ok: true, file: row }));
   }
 
   if (request.method === 'DELETE') {
@@ -7987,41 +8002,79 @@ async function handlePersonal(request, env, url) {
   return json({ error: 'Not found' }, 404);
 }
 
+/** The reply, marked so no cache on the way back keeps it. */
+function noStore(res) {
+  res.headers.set('cache-control', 'private, no-store');
+  return res;
+}
+
 /**
- * GET /api/admin/personal/file?path=   the bytes, inline, to him alone.
+ * A SHORT-LIVED SIGNED LINK to one personal file (reviewer B, 2026-09-03).
  *
- * A plain link in a new tab carries no bearer token, so this route also
- * takes the admin cookie: the same signed, HttpOnly, ADMIN_UID-bound cookie
- * that gates every admin page. Either credential resolves to a uid, and the
- * path has to sit inside THAT uid's prefix. Served under a sandboxing CSP
- * and nosniff, so an uploaded HTML file cannot run as this origin.
+ * A plain link in a new tab carries no bearer token. The first cut let the
+ * fourteen-day admin asset cookie open the file route, which turned a cookie
+ * built to gate static JS into a data credential with no revocation. So the
+ * list and the upload hand back, per file, a link the Worker signed itself:
+ * the admin key over uid, path and an expiry ten minutes out. Unguessable,
+ * self-expiring, minted only for a caller who passed requireAdmin, and no
+ * cookie is read on this route at all.
+ */
+const FILE_LINK_MS = 10 * 60_000;
+async function fileLinkSig(env, uid, path, exp) {
+  const key = await adminKey(env);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`file:${uid}:${path}:${exp}`));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+async function signFileLink(env, uid, path) {
+  const exp = Date.now() + FILE_LINK_MS;
+  const sig = await fileLinkSig(env, uid, path, exp);
+  return `/api/admin/personal/file?path=${encodeURIComponent(path)}&exp=${exp}&sig=${sig}`;
+}
+async function verifyFileLink(env, uid, path, exp, sig) {
+  if (!uid || !/^\d+$/.test(String(exp || '')) || Number(exp) < Date.now()) return false;
+  if (!/^[0-9a-f]{64}$/.test(String(sig || ''))) return false;
+  const want = await fileLinkSig(env, uid, path, exp);
+  return timingSafeEqual(String(sig), want);
+}
+
+/**
+ * GET /api/admin/personal/file?path=&exp=&sig=   the bytes, to him alone.
+ *
+ * Two doors: a bearer token that passes requireAdmin, or a link signed above
+ * for ADMIN_UID within the last ten minutes. Either way the path has to sit
+ * inside that uid's prefix. Served under a sandboxing CSP and nosniff, so an
+ * uploaded HTML or SVG file cannot run as this origin; SVG downloads rather
+ * than rendering, because a scripted SVG opened top-level is a document.
  */
 async function handlePersonalFile(request, env, url) {
   const admin = await requireAdmin(request, env);
+  const path = url.searchParams.get('path') || '';
   let uid = admin?.uid || null;
-  if (!uid) {
-    const cookieUid = await adminCookieUid(request, env).catch(() => null);
-    if (cookieUid) {
-      const profile = await getDoc(env, `users/${cookieUid}`).catch(() => null);
-      if (profile?.data?.role === 'admin') uid = cookieUid;
-    }
+  if (!uid && env.ADMIN_UID && url.searchParams.has('sig')) {
+    const okLink = await verifyFileLink(env, env.ADMIN_UID, path, url.searchParams.get('exp'), url.searchParams.get('sig'));
+    if (okLink) uid = env.ADMIN_UID;
   }
   if (!uid) return notFound(env, request, url);
-  const path = url.searchParams.get('path') || '';
   if (!ownPersonalPath(uid, path)) return json({ error: 'Bad path' }, 400);
   const upstream = await mediaFetch(env, path);
   if (!upstream.ok) return json({ error: 'Not found' }, 404);
   const type = (upstream.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim();
-  const inline = /^(image\/|video\/|audio\/|application\/pdf$|text\/plain$)/.test(type);
+  const inline = /^(image\/|video\/|audio\/|application\/pdf$|text\/plain$)/.test(type) && type !== 'image/svg+xml';
   const leaf = path.split('/').pop().replace(/^\d{10,}-/, '').replace(/["\r\n]/g, '');
+  // ASCII fallback plus the RFC 5987 form, so a non-ASCII name survives.
+  const ascii = leaf.replace(/[^\x20-\x7e]/g, '_') || 'file';
   return new Response(upstream.body, {
     status: 200,
     headers: {
       'content-type': inline ? type : 'application/octet-stream',
-      'content-disposition': `${inline ? 'inline' : 'attachment'}; filename="${leaf}"`,
+      'content-disposition': `${inline ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(leaf)}`,
       'cache-control': 'private, no-store',
       'x-content-type-options': 'nosniff',
-      'content-security-policy': "sandbox; default-src 'none'",
+      // frame-ancestors: no page on any origin may frame a personal file.
+      // no-referrer: an inline document with an outbound link must not hand
+      // the file's URL, name included, to wherever the link goes.
+      'content-security-policy': "sandbox; default-src 'none'; frame-ancestors 'none'",
+      'referrer-policy': 'no-referrer',
       'x-robots-tag': 'noindex',
     },
   });

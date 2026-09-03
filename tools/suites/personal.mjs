@@ -30,9 +30,15 @@
 //   a personal/ rule added to storage.rules          F1
 //   the shelf imported by case.js                    F3
 //   an em dash typed into the shelf's note           G4
+//   the signed-link door removed                     D1, D2
+//   the expiry test dropped (link signed for real    D2
+//     over a past moment)
+//   the link left unsigned                           B1, C1, D1, D2
+//   svg allowed inline again                         C3
+//   the 411 on a missing length dropped              E1, E1b
 //
-// Each break was one red row, restored byte for byte, and the file read
-// 25/25 again after every one (2026-09-03).
+// Each break was restored byte for byte, and the file read green again after
+// every one (2026-09-03; 27 checks after the crosscheck hardening).
 // ===========================================================================
 import { fileURLToPath as __f } from 'node:url';
 import { dirname as __d, join as __j } from 'node:path';
@@ -69,15 +75,18 @@ function konst(name) {
 }
 const LIFTED = [
   konst('PERSONAL_MAX_BYTES'), konst('PERSONAL_SCOPES'), konst('ADMIN_ASSET'),
-  sfn('personalPrefix'), sfn('personalLeaf'), sfn('ownPersonalPath'), sfn('json'),
+  konst('FILE_LINK_MS'),
+  sfn('personalPrefix'), sfn('personalLeaf'), sfn('ownPersonalPath'), sfn('json'), sfn('noStore'), sfn('timingSafeEqual'),
+  fn('fileLinkSig'), fn('signFileLink'), fn('verifyFileLink'),
   fn('handlePersonal'), fn('handlePersonalFile'),
 ].join('\n');
 
 // ---- the world ------------------------------------------------------------
-let who, cookieUid, profiles, store, puts, dels, fetched;
+let who, profiles, store, puts, dels, fetched;
+const KEY = await crypto.subtle.importKey('raw', new TextEncoder().encode('suite-key'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
 const deps = {
   requireAdmin: async () => who,
-  adminCookieUid: async () => cookieUid,
+  adminKey: async () => KEY,
   getDoc: async (env, path) => (profiles[path] ? { data: profiles[path] } : null),
   listFiles: async (env, prefix) => [...store.entries()]
     .filter(([p]) => p.startsWith(prefix) && p.slice(prefix.length).indexOf('/') < 0)
@@ -98,12 +107,12 @@ const deps = {
 };
 const build = new Function(...Object.keys(deps),
   `${LIFTED}
-   return { handlePersonal, handlePersonalFile, personalPrefix, personalLeaf, ownPersonalPath,
-            PERSONAL_MAX_BYTES, PERSONAL_SCOPES, ADMIN_ASSET };`);
+   return { handlePersonal, handlePersonalFile, personalPrefix, personalLeaf, ownPersonalPath, signFileLink, fileLinkSig,
+            PERSONAL_MAX_BYTES, PERSONAL_SCOPES, ADMIN_ASSET, FILE_LINK_MS };`);
 const W = build(...Object.values(deps));
 const env = { ADMIN_UID: 'eric' };
 const reset = () => {
-  who = { uid: 'eric' }; cookieUid = null; puts = []; dels = []; fetched = [];
+  who = { uid: 'eric' }; puts = []; dels = []; fetched = [];
   profiles = { 'users/eric': { role: 'admin' }, 'users/mallory': { role: 'client' } };
   store = new Map([
     ['personal/eric/all/1700000000000-tax.pdf', { type: 'application/pdf', size: 10, at: 1 }],
@@ -115,9 +124,13 @@ const reset = () => {
 };
 const req = (method, { path = '/api/admin/personal', headers = {}, body, bytes } = {}) => {
   const url = new URL(`https://example.com${path}`);
+  // A browser sends the length of a File body; the harness does the same
+  // unless a check sets its own.
+  const h = new Headers(headers);
+  if (method === 'POST' && bytes && bytes.byteLength && !h.has('content-length')) h.set('content-length', String(bytes.byteLength));
   return [{
     method,
-    headers: new Headers(headers),
+    headers: h,
     json: async () => body,
     arrayBuffer: async () => bytes || new ArrayBuffer(0),
   }, env, url];
@@ -127,6 +140,7 @@ const call = async (method, opts) => {
   return { status: r.status, out: await r.json().catch(() => ({})) };
 };
 const file = async (path, headers = {}) => W.handlePersonalFile(...req('GET', { path: `/api/admin/personal/file?path=${encodeURIComponent(path)}`, headers }));
+const link = async (url, headers = {}) => W.handlePersonalFile(...req('GET', { path: url, headers }));
 const CLIMB = ['..', '..'].join('/');
 
 // ---------------------------------------------------------------------------
@@ -165,7 +179,8 @@ reset();
   //   FAIL  B1 an upload lands under the verified uid; a header naming another uid is ignored
   check('B1 an upload lands under the verified uid; a header naming another uid is ignored',
     r.status === 200 && puts.length === 1 && /^personal\/eric\/all\/\d{13}-Tax 2025\.pdf$/.test(puts[0].path)
-    && puts[0].contentType === 'application/pdf' && r.out.file.name === 'Tax 2025.pdf', puts[0]?.path);
+    && puts[0].contentType === 'application/pdf' && r.out.file.name === 'Tax 2025.pdf'
+    && /^\/api\/admin\/personal\/file\?path=personal%2Feric%2Fall%2F\d{13}-Tax%202025\.pdf&exp=\d+&sig=[0-9a-f]{64}$/.test(r.out.file.url), puts[0]?.path);
 }
 reset();
 {
@@ -204,7 +219,11 @@ reset();
     all.status === 200 && all.out.files.map((x) => x.name).join() === 'notes.txt,tax.pdf'
     && one.out.files.map((x) => x.path).join() === 'personal/eric/case/abc/1700000000002-plan.pdf'
     && bad.status === 400
-    && all.out.files.every((x) => !('url' in x)), JSON.stringify(all.out));
+    && all.out.files.every((x) => /^\/api\/admin\/personal\/file\?path=personal%2Feric%2F/.test(x.url) && /&exp=\d+&sig=[0-9a-f]{64}$/.test(x.url)), JSON.stringify(all.out));
+  const rawList = await W.handlePersonal(...req('GET', { path: '/api/admin/personal?scope=all' }));
+  // Reviewer A, 2026-09-03: the names are the private thing; the list reply
+  // must not be cacheable anywhere on the way back.
+  check('C1b the list reply is marked private, no-store', rawList.headers.get('cache-control') === 'private, no-store');
 }
 reset();
 {
@@ -223,16 +242,20 @@ reset();
   const pdf = await file('personal/eric/all/1700000000000-tax.pdf');
   const txt = await file('personal/eric/all/1700000000001-notes.txt');
   store.set('personal/eric/all/1700000000005-page.html', { type: 'text/html', size: 5, at: 6 });
+  store.set('personal/eric/all/1700000000006-logo.svg', { type: 'image/svg+xml', size: 5, at: 7 });
   const html = await file('personal/eric/all/1700000000005-page.html');
+  const svg = await file('personal/eric/all/1700000000006-logo.svg');
   const hers = await file('personal/mallory/all/1700000000003-hers.pdf');
   const missing = await file('personal/eric/all/1700000000009-gone.pdf');
   check('C3 a pdf opens inline, text opens inline, anything else downloads, all under a sandbox and nosniff, never cached',
-    pdf.status === 200 && pdf.headers.get('content-disposition') === 'inline; filename="tax.pdf"'
+    pdf.status === 200 && pdf.headers.get('content-disposition') === `inline; filename="tax.pdf"; filename*=UTF-8''tax.pdf`
     && pdf.headers.get('content-type') === 'application/pdf'
-    && txt.headers.get('content-disposition') === 'inline; filename="notes.txt"'
-    && html.headers.get('content-disposition') === 'attachment; filename="page.html"'
+    && txt.headers.get('content-disposition').startsWith('inline; filename="notes.txt"')
+    && html.headers.get('content-disposition').startsWith('attachment; filename="page.html"')
     && html.headers.get('content-type') === 'application/octet-stream'
-    && [pdf, txt, html].every((r) => r.headers.get('content-security-policy') === "sandbox; default-src 'none'"
+    && svg.headers.get('content-disposition').startsWith('attachment;') && svg.headers.get('content-type') === 'application/octet-stream'
+    && [pdf, txt, html].every((r) => r.headers.get('content-security-policy') === "sandbox; default-src 'none'; frame-ancestors 'none'"
+      && r.headers.get('referrer-policy') === 'no-referrer'
       && r.headers.get('x-content-type-options') === 'nosniff' && r.headers.get('cache-control') === 'private, no-store'));
   // NEGATIVE CONTROL (run 2026-09-03): the ownPersonalPath check dropped from the file route made this read
   //   FAIL  C4 another person's file and a path outside the prefix are refused before any byte is fetched
@@ -241,27 +264,41 @@ reset();
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n--- D. the cookie door on the file route ---');
+console.log('\n--- D. the signed-link door on the file route ---');
 reset();
-who = null; cookieUid = 'eric';
 {
-  const r = await file('personal/eric/all/1700000000000-tax.pdf');
-  check('D1 with no bearer token, the admin cookie opens the file, and only when its uid has the admin role',
-    r.status === 200);
+  const url = await W.signFileLink(env, 'eric', 'personal/eric/all/1700000000000-tax.pdf');
+  who = null;
+  const r = await link(url);
+  // NEGATIVE CONTROL (run 2026-09-03): `if (okLink) uid = env.ADMIN_UID;` deleted made this read
+  //   FAIL  D1 with no bearer token, a link the Worker signed within ten minutes opens the file
+  check('D1 with no bearer token, a link the Worker signed within ten minutes opens the file',
+    r.status === 200 && W.FILE_LINK_MS === 10 * 60_000);
+  // Signed for real, over a moment already gone: the only way to tell an
+  // expiry test from a signature test.
+  const pastExp = Date.now() - 1000;
+  const stale = `/api/admin/personal/file?path=${encodeURIComponent('personal/eric/all/1700000000000-tax.pdf')}&exp=${pastExp}&sig=${await W.fileLinkSig(env, 'eric', 'personal/eric/all/1700000000000-tax.pdf', pastExp)}`;
+  const forged = url.replace(/sig=[0-9a-f]{64}/, `sig=${'0'.repeat(64)}`);
+  const other = url.replace('1700000000000-tax.pdf', '1700000000001-notes.txt').replace('tax.pdf', 'notes.txt');
+  const hers = url.replace('personal%2Feric%2Fall%2F1700000000000-tax.pdf', 'personal%2Fmallory%2Fall%2F1700000000003-hers.pdf');
+  const s1 = await link(stale); const s2 = await link(forged); const s3 = await link(other); const s4 = await link(hers);
+  // NEGATIVE CONTROL (run 2026-09-03): the expiry test dropped from verifyFileLink made this read
+  //   FAIL  D2 an expired link, a forged signature, a signature moved to another path, and another person's path all fall to the site's 404
+  check('D2 an expired link, a forged signature, a signature moved to another path, and another person\'s path all fall to the site\'s 404',
+    s1.status === 404 && s2.status === 404 && s3.status === 404 && s4.status === 404 && fetched.length === 1);
 }
 reset();
-who = null; cookieUid = 'mallory';
-{
-  const r = await file('personal/mallory/all/1700000000003-hers.pdf');
-  // NEGATIVE CONTROL (run 2026-09-03): the role check on the cookie uid dropped made this read
-  //   FAIL  D2 a cookie for a uid that is not an admin opens nothing
-  check('D2 a cookie for a uid that is not an admin opens nothing', r.status === 404 && fetched.length === 0);
-}
+who = null;
+check('D3 no token and no link is the site\'s own 404', (await file('personal/eric/all/1700000000000-tax.pdf')).status === 404);
 reset();
-who = null; cookieUid = null;
-check('D3 no token and no cookie is the site\'s own 404', (await file('personal/eric/all/1700000000000-tax.pdf')).status === 404);
-check('D4 the cookie is never taken on the list, upload or delete routes',
-  !/adminCookieUid/.test(fn('handlePersonal')) && /adminCookieUid/.test(fn('handlePersonalFile')));
+{
+  const noAdmin = await W.handlePersonalFile(...req('GET', { path: await W.signFileLink(env, 'eric', 'personal/eric/all/1700000000000-tax.pdf') }).slice(0, 1), { }, new URL(`https://example.com${await W.signFileLink(env, 'eric', 'personal/eric/all/1700000000000-tax.pdf')}`));
+  void noAdmin;
+  who = null;
+  const r = await W.handlePersonalFile(...(() => { const [q, , u] = req('GET', { path: '/x' }); return [q, {}, u]; })());
+  check('D4 the link door is shut when ADMIN_UID is not set, and no route here reads the admin cookie',
+    r.status === 404 && !/adminCookieUid/.test(fn('handlePersonal') + fn('handlePersonalFile')));
+}
 
 // ---------------------------------------------------------------------------
 console.log('\n--- E. size ---');
@@ -270,10 +307,19 @@ reset();
   const big = await call('POST', { headers: { 'x-pa-scope': 'all', 'x-pa-name': 'x', 'content-length': String(51 * 1024 * 1024) }, bytes: new Uint8Array([1]).buffer });
   const empty = await call('POST', { headers: { 'x-pa-scope': 'all', 'x-pa-name': 'x' }, bytes: new ArrayBuffer(0) });
   const lied = await call('POST', { headers: { 'x-pa-scope': 'all', 'x-pa-name': 'x', 'content-length': '1' }, bytes: new ArrayBuffer(50 * 1024 * 1024 + 1) });
+  const unsized = await (async () => {
+    const [q, e, u] = req('POST', { headers: { 'x-pa-scope': 'all', 'x-pa-name': 'x' }, bytes: new Uint8Array([1]).buffer });
+    q.headers.delete('content-length');
+    const r = await W.handlePersonal(q, e, u); return { status: r.status };
+  })();
   // NEGATIVE CONTROL (run 2026-09-03): the post-read byteLength check dropped made this read
   //   FAIL  E1 over 50 MB is refused on the declared length and again on the bytes; empty is refused
-  check('E1 over 50 MB is refused on the declared length and again on the bytes; empty is refused',
-    big.status === 413 && empty.status === 400 && lied.status === 413 && puts.length === 0);
+  // NEGATIVE CONTROL (run 2026-09-03): the post-read byteLength check dropped made this read
+  //   FAIL  E1 over 50 MB is refused on the declared length and again on the bytes; no length is refused before a byte is read
+  check('E1 over 50 MB is refused on the declared length and again on the bytes; no length is refused before a byte is read',
+    big.status === 413 && lied.status === 413 && unsized.status === 411 && empty.status === 411 && puts.length === 0);
+  const emptyDeclared = await call('POST', { headers: { 'x-pa-scope': 'all', 'x-pa-name': 'x', 'content-length': '3' }, bytes: new ArrayBuffer(0) });
+  check('E1b a body that turns out empty is refused too', emptyDeclared.status === 400 && puts.length === 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -314,7 +360,7 @@ console.log('\n--- G. the two places, and the words ---');
   const mod = code('public/js/admin-personal.js');
   check('G1 the module talks to the Worker only: no Firebase, no case folder, the file link on the cookie route',
     /fetch\(`\/api\/admin\/personal/.test(mod) && !/firebase|uploadBytes|\bref\(storage|getDownloadURL|cases\//.test(mod)
-    && /\/api\/admin\/personal\/file\?path=/.test(mod) && /MAX_BYTES = 50 \* 1024 \* 1024/.test(mod)
+    && /u\.startsWith\('\/api\/admin\/personal\/file\?'\) \|\| u\.startsWith\('blob:'\)/.test(mod) && /MAX_BYTES = 50 \* 1024 \* 1024/.test(mod)
     && /confirm\(/.test(mod));
   check('G2 the Clients page mounts the shelf with scope all, folded; the case page has a Personal tab under Mine, open',
     /id="personal"/.test(f('public/admin.html'))

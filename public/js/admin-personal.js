@@ -13,7 +13,9 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) =>
 const MAX_BYTES = 50 * 1024 * 1024;
 const when = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const size = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
-const fileHref = (path) => `/api/admin/personal/file?path=${encodeURIComponent(path)}`;
+// The link to a file comes from the Worker, signed and good for ten minutes
+// (or, in the demo, the bytes he picked). Anything else is not a link.
+const safeHref = (u) => (typeof u === 'string' && (u.startsWith('/api/admin/personal/file?') || u.startsWith('blob:')) ? u : '');
 
 /**
  * Paints the shelf into `el`. `scope` is 'all' or 'case' (with `caseId`).
@@ -51,7 +53,7 @@ export function mountPersonal(el, { getToken, scope = 'all', caseId = '', open =
         <span class="personal-chev" aria-hidden="true">›</span>
       </button>
       <div class="personal-body" ${unfolded ? '' : 'hidden'}>
-        <p class="dim small personal-note">${scope === 'case' ? 'Documents for this case, for your eyes only.' : 'Documents for your eyes only, across every case.'} Nothing a client can open, nothing the advisor reads, nothing in any export.</p>
+        <p class="dim small personal-note">${scope === 'case' ? 'Documents for this case, for your eyes only.' : 'Documents for your eyes only, across every case.'} Nothing a client can open, nothing the advisor reads, nothing in any export. A link here works for ten minutes; reopen the shelf for a fresh one.</p>
         <div class="personal-row">
           <input type="search" class="personal-search" placeholder="Search" aria-label="Search personal uploads">
           <label class="btn glow personal-up">Upload<input type="file" multiple hidden></label>
@@ -77,7 +79,7 @@ export function mountPersonal(el, { getToken, scope = 'all', caseId = '', open =
     list.innerHTML = rows.length ? rows.map((f, i) => `
       <li data-i="${i}">
         <span class="up-text">
-          <span class="fname"><a href="${f.url ? esc(f.url) : fileHref(f.path)}" target="_blank" rel="noopener">${esc(f.name)}</a></span>
+          <span class="fname">${safeHref(f.url) ? `<a href="${esc(safeHref(f.url))}" target="_blank" rel="noopener">${esc(f.name)}</a>` : esc(f.name)}</span>
           <span class="fmeta">${when.format(new Date(f.at))} · ${size(f.size)}</span>
         </span>
         <button type="button" class="btn quiet small personal-del" data-path="${esc(f.path)}" aria-label="Delete ${esc(f.name)}" title="Delete">✕</button>
@@ -138,6 +140,11 @@ export function mountPersonal(el, { getToken, scope = 'all', caseId = '', open =
     progress.hidden = true;
   });
 
-  if (unfolded) load(); else load();
+  load();
+  // Links are signed for ten minutes, so a shelf left open is re-read when
+  // he comes back to it.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && unfolded && files.length) load();
+  });
   return { refresh: load };
 }
