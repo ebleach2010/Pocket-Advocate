@@ -11,6 +11,8 @@
 //   GET/POST /api/admin/fit-calls  the free calls: list, join link, done, no-show, cancel (admin)
 //   GET    /api/stats              By the numbers: aggregate figures, public, cached an hour
 //   POST   /api/admin/stats        recompute the figures now (admin)
+//   GET/POST/DELETE /api/admin/personal   Personal Uploads: list, add, remove (admin, Worker-only prefix)
+//   GET    /api/admin/personal/file       one personal file's bytes (admin token or a ten-minute signed link)
 //   POST   /api/admin/case-update  join link / milestones / close (admin)
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
 //   POST   /api/advisor            private LLM advisor: analyse / ask / draft (admin)
@@ -21,7 +23,7 @@ import { WorkflowEntrypoint } from 'cloudflare:workers';
 import { requireUser } from './firebase-auth.js';
 import { mintCustomToken, getAccessToken } from './google-auth.js';
 import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, batchDelete, listDocs } from './firestore.js';
-import { deleteFile, objectMeta, patchObjectMeta } from './storage.js';
+import { deleteFile, objectMeta, patchObjectMeta, putFile, listFiles, mediaFetch } from './storage.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import {
   slotTimingProblem, windowProblem, HOLD_MINUTES,
@@ -825,6 +827,10 @@ export default {
         return await handleFitCall(request, env);
       if (url.pathname === '/api/admin/fit-calls')
         return await handleAdminFitCalls(request, env);
+      if (url.pathname === '/api/admin/personal')
+        return await handlePersonal(request, env, url);
+      if (url.pathname === '/api/admin/personal/file' && request.method === 'GET')
+        return await handlePersonalFile(request, env, url);
       if (url.pathname === '/api/admin/case-update' && request.method === 'POST')
         return await handleCaseUpdate(request, env);
       if (url.pathname === '/api/admin/client-alert' && request.method === 'POST')
@@ -1882,7 +1888,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-02-rates-cap-and-raise';
+const BUILD_TAG = 'v2026-09-03-personal-uploads';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1890,7 +1896,7 @@ const BUILD_TAG = 'v2026-09-02-rates-cap-and-raise';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.77';
+const VERSION = '2.78';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -5029,6 +5035,25 @@ async function handleWork(request, env) {
   const on = body?.on === true;
   const auto = body?.auto === true;
   const tierMark = Math.max(0, Number(w.tierMark) || 0);
+  // WHAT HE IS DOING, in his words (Eric, 2026-09-03: "Add 'Eric is on the
+  // phone with a clinic department...' for 'working on' in the chat"). A
+  // short line the client reads while the clock runs, in place of the bare
+  // "working on it right now". Rides on a start, or on its own while the
+  // clock is running; cleared on every stop, so a stale line can never say
+  // he is on the phone at midnight. Eighty characters, one line, no control
+  // characters: it prints on a client's page.
+  const doingIn = body?.doing === undefined ? undefined
+    : String(body.doing ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (doingIn !== undefined && body?.on === undefined) {
+    if (!startedAt) return json({ error: 'Start the clock first.' }, 409);
+    await patchDoc(env, `cases/${caseId}`, {
+      work: { ...w, doing: doingIn || null, updatedAt: new Date() },
+    }, { mask: ['work'] });
+    return json({
+      seconds, running: true, auto: w.auto === true, startedAt: new Date(startedAt), tierMark,
+      doing: doingIn || null, todaySeconds: await readDaySeconds(env, caseId),
+    });
+  }
 
   // RE-STAMP THE TIER MARK BY HAND (Eric, 2026-08-29: "if they upgrade to a
   // full-service, the clock resets. Two clocks for two different tiers."). The
@@ -5165,10 +5190,10 @@ async function handleWork(request, env) {
       await patchDoc(env, `cases/${caseId}`, {
         // Spread first: a start that rebuilt the object from scratch would
         // silently drop tierMark and merge the two tier clocks back together.
-        work: { ...w, seconds, startedAt: now, updatedAt: now, auto, nudged: 0 },
+        work: { ...w, seconds, startedAt: now, updatedAt: now, auto, nudged: 0, doing: doingIn || null },
       }, { mask: ['work'] });
       await setClockRunning(env, caseId, true);
-      return json({ seconds, running: true, auto, startedAt: now, todaySeconds, tierMark });
+      return json({ seconds, running: true, auto, startedAt: now, todaySeconds, tierMark, doing: doingIn || null });
     }
     // Already running: leave the existing start alone rather than resetting
     // it, so a double tap cannot quietly discard time already on the clock.
@@ -5200,6 +5225,17 @@ async function handleWork(request, env) {
     if (seen) until = seen;
   }
   const banked = await stopWorkClock(env, caseId, w, until);
+  // The doing line dies with the clock: a client must never read "on the
+  // phone with a clinic" under a clock that stopped an hour ago.
+  if (w.doing) {
+    // Re-read rather than a dotted mask: the stop above rewrote `work`, and
+    // clearing one field of it means writing the object it left, minus the
+    // line. Best effort; a failure here leaves a line the next start
+    // replaces and the next stop clears.
+    const fresh = await getDoc(env, `cases/${caseId}`).catch(() => null);
+    const left = fresh?.data?.work || {};
+    await patchDoc(env, `cases/${caseId}`, { work: { ...left, doing: null } }, { mask: ['work'] }).catch(() => {});
+  }
   // THE FULFILLMENT MARK (Eric, 2026-09-01: "I want them to know I've
   // fulfilled my obligation for the month"). The first clock-out that carries
   // a Full-Service month past its included hours stamps the moment once,
@@ -7916,6 +7952,70 @@ async function fitThrottled(ip) {
 }
 
 /**
+ * PERSONAL UPLOADS (Eric, 2026-09-03: "a 'Personal Uploads' tab that are
+ * uploads of documents just for me. One in the all cases page where the
+ * upload is universally accessible, and one for the 'Mine' tab. These
+ * uploads are ONLY visible to me.")
+ *
+ * WHERE THE FILES LIVE, AND WHY THAT IS THE WHOLE DESIGN. Everything a
+ * browser can reach in Storage is named in storage.rules, and the last rule
+ * denies the rest. personal/ is in the rest. No browser, signed in as anyone,
+ * can list, read, write or delete under it, and the client SDK on every page
+ * of this app never names the prefix. The one identity that can touch it is
+ * the service account, used here and nowhere else, behind requireAdmin. So
+ * "only visible to me" is not a promise this code keeps carefully; it is a
+ * rule that was already deployed, plus a route only he can call.
+ *
+ * Two shelves, one mechanism:
+ *   personal/{uid}/all/{ts}-{name}            the Clients page, every case
+ *   personal/{uid}/case/{caseId}/{ts}-{name}  a case's Mine tab
+ * {uid} is the caller's, always: a prefix is derived from the verified
+ * token, never read from the request, so nothing typed can point at
+ * another person's shelf, and nothing in a request can climb out of the
+ * prefix (every segment is validated, ".." refused).
+ *
+ * Nothing else reads it: the advisor's file walks (listIntake, listShelf)
+ * name the case folders and only those; the file meta and delete routes
+ * accept case folders and profile shelves and nothing else; the case file
+ * compile lists case folders. A personal file is invisible to all of them.
+ */
+const PERSONAL_MAX_BYTES = 50 * 1024 * 1024;
+const PERSONAL_SCOPES = ['all', 'case'];
+
+/** The caller's own prefix for a scope. Throws on anything malformed. */
+function personalPrefix(uid, scope, caseId) {
+  if (!/^[\w-]{1,128}$/.test(uid || '')) throw new Error('Bad uid');
+  if (!PERSONAL_SCOPES.includes(scope)) throw new Error('Bad scope');
+  if (scope === 'case') {
+    if (!/^[\w-]{1,64}$/.test(caseId || '')) throw new Error('Bad case id');
+    return `personal/${uid}/case/${caseId}/`;
+  }
+  return `personal/${uid}/all/`;
+}
+
+/** A leaf name a person will recognise, safe as one path segment. */
+function personalLeaf(name) {
+  const clean = String(name || 'file')
+    .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069\/\\]+/g, ' ')
+    .replace(/\.{2,}/g, '.')
+    .replace(/\s+/g, ' ')
+    .replace(/^[.\s]+/, '')
+    .trim()
+    .slice(0, 80) || 'file';
+  return `${Date.now()}-${clean}`;
+}
+
+/** True when `path` sits inside the caller's own personal prefix. */
+function ownPersonalPath(uid, path) {
+  if (typeof path !== 'string' || path.length > 512 || path.includes('..') || path.includes('//')) return false;
+  const segs = path.split('/');
+  if (segs[0] !== 'personal' || segs[1] !== uid) return false;
+  if (segs[2] === 'all') return segs.length === 4 && !!segs[3];
+  if (segs[2] === 'case') return segs.length === 5 && /^[\w-]{1,64}$/.test(segs[3]) && !!segs[4];
+  return false;
+}
+
+/**
  * POST /api/fit-call   public, no account
  * Body: { slotId, name, email, phone, method, note, tz, us, website }
  *
@@ -8315,6 +8415,147 @@ async function handleStatsRecompute(request, env) {
   const cache = globalThis.caches?.default;
   if (cache) await cache.delete(new Request(new URL('/api/stats', request.url).toString())).catch(() => {});
   return json({ ok: true, stats: publicStatsView(doc) });
+}
+
+/**
+ * GET    /api/admin/personal?scope=all|case&caseId=   list, newest first
+ * POST   /api/admin/personal                          the bytes, raw, with
+ *        x-pa-name, x-pa-scope, x-pa-case headers; 50 MB cap
+ * DELETE /api/admin/personal   Body: { path }
+ */
+async function handlePersonal(request, env, url) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const uid = admin.uid;
+
+  if (request.method === 'GET') {
+    let prefix;
+    try {
+      prefix = personalPrefix(uid, url.searchParams.get('scope') || 'all', url.searchParams.get('caseId') || '');
+    } catch (e) { return json({ error: e.message }, 400); }
+    let rows;
+    try {
+      rows = await listFiles(env, prefix, { max: 500 });
+    } catch (err) {
+      // A storage failure must not read as an empty shelf (reviewer B).
+      console.error('personal list failed:', err.message || err);
+      return json({ error: 'The shelf could not be read just now. Try again.' }, 502);
+    }
+    rows.sort((a, b) => b.at - a.at);
+    for (const r of rows) r.url = await signFileLink(env, uid, r.path);
+    // File names are the private thing here; nothing on the way back may
+    // keep a copy (reviewer A, 2026-09-03).
+    return noStore(json({ files: rows }));
+  }
+
+  if (request.method === 'POST') {
+    let prefix;
+    try {
+      prefix = personalPrefix(uid, request.headers.get('x-pa-scope') || 'all', request.headers.get('x-pa-case') || '');
+    } catch (e) { return json({ error: e.message }, 400); }
+    const declared = Number(request.headers.get('content-length')) || 0;
+    // No declared length means buffering an unknown body before the cap can
+    // be applied (reviewer B); every browser sends one for a File body.
+    if (!declared) return json({ error: 'Length required.' }, 411);
+    if (declared > PERSONAL_MAX_BYTES) return json({ error: 'That file is over 50 MB.' }, 413);
+    const bytes = await request.arrayBuffer();
+    if (!bytes.byteLength) return json({ error: 'Empty file.' }, 400);
+    if (bytes.byteLength > PERSONAL_MAX_BYTES) return json({ error: 'That file is over 50 MB.' }, 413);
+    let name = '';
+    try { name = decodeURIComponent(request.headers.get('x-pa-name') || ''); } catch { name = ''; }
+    const contentType = (request.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim().slice(0, 100);
+    const path = prefix + personalLeaf(name.slice(0, 200));
+    const row = await putFile(env, path, bytes, contentType);
+    row.url = await signFileLink(env, uid, row.path);
+    return noStore(json({ ok: true, file: row }));
+  }
+
+  if (request.method === 'DELETE') {
+    const body = await request.json().catch(() => ({}));
+    const path = body?.path;
+    if (!ownPersonalPath(uid, path)) return json({ error: 'Bad path' }, 400);
+    await deleteFile(env, path);
+    return json({ ok: true });
+  }
+  return json({ error: 'Not found' }, 404);
+}
+
+/** The reply, marked so no cache on the way back keeps it. */
+function noStore(res) {
+  res.headers.set('cache-control', 'private, no-store');
+  return res;
+}
+
+/**
+ * A SHORT-LIVED SIGNED LINK to one personal file (reviewer B, 2026-09-03).
+ *
+ * A plain link in a new tab carries no bearer token. The first cut let the
+ * fourteen-day admin asset cookie open the file route, which turned a cookie
+ * built to gate static JS into a data credential with no revocation. So the
+ * list and the upload hand back, per file, a link the Worker signed itself:
+ * the admin key over uid, path and an expiry ten minutes out. Unguessable,
+ * self-expiring, minted only for a caller who passed requireAdmin, and no
+ * cookie is read on this route at all.
+ */
+const FILE_LINK_MS = 10 * 60_000;
+async function fileLinkSig(env, uid, path, exp) {
+  const key = await adminKey(env);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`file:${uid}:${path}:${exp}`));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+async function signFileLink(env, uid, path) {
+  const exp = Date.now() + FILE_LINK_MS;
+  const sig = await fileLinkSig(env, uid, path, exp);
+  return `/api/admin/personal/file?path=${encodeURIComponent(path)}&exp=${exp}&sig=${sig}`;
+}
+async function verifyFileLink(env, uid, path, exp, sig) {
+  if (!uid || !/^\d+$/.test(String(exp || '')) || Number(exp) < Date.now()) return false;
+  if (!/^[0-9a-f]{64}$/.test(String(sig || ''))) return false;
+  const want = await fileLinkSig(env, uid, path, exp);
+  return timingSafeEqual(String(sig), want);
+}
+
+/**
+ * GET /api/admin/personal/file?path=&exp=&sig=   the bytes, to him alone.
+ *
+ * Two doors: a bearer token that passes requireAdmin, or a link signed above
+ * for ADMIN_UID within the last ten minutes. Either way the path has to sit
+ * inside that uid's prefix. Served under a sandboxing CSP and nosniff, so an
+ * uploaded HTML or SVG file cannot run as this origin; SVG downloads rather
+ * than rendering, because a scripted SVG opened top-level is a document.
+ */
+async function handlePersonalFile(request, env, url) {
+  const admin = await requireAdmin(request, env);
+  const path = url.searchParams.get('path') || '';
+  let uid = admin?.uid || null;
+  if (!uid && env.ADMIN_UID && url.searchParams.has('sig')) {
+    const okLink = await verifyFileLink(env, env.ADMIN_UID, path, url.searchParams.get('exp'), url.searchParams.get('sig'));
+    if (okLink) uid = env.ADMIN_UID;
+  }
+  if (!uid) return notFound(env, request, url);
+  if (!ownPersonalPath(uid, path)) return json({ error: 'Bad path' }, 400);
+  const upstream = await mediaFetch(env, path);
+  if (!upstream.ok) return json({ error: 'Not found' }, 404);
+  const type = (upstream.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim();
+  const inline = /^(image\/|video\/|audio\/|application\/pdf$|text\/plain$)/.test(type) && type !== 'image/svg+xml';
+  const leaf = path.split('/').pop().replace(/^\d{10,}-/, '').replace(/["\r\n]/g, '');
+  // ASCII fallback plus the RFC 5987 form, so a non-ASCII name survives.
+  const ascii = leaf.replace(/[^\x20-\x7e]/g, '_') || 'file';
+  return new Response(upstream.body, {
+    status: 200,
+    headers: {
+      'content-type': inline ? type : 'application/octet-stream',
+      'content-disposition': `${inline ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(leaf)}`,
+      'cache-control': 'private, no-store',
+      'x-content-type-options': 'nosniff',
+      // frame-ancestors: no page on any origin may frame a personal file.
+      // no-referrer: an inline document with an outbound link must not hand
+      // the file's URL, name included, to wherever the link goes.
+      'content-security-policy': "sandbox; default-src 'none'; frame-ancestors 'none'",
+      'referrer-policy': 'no-referrer',
+      'x-robots-tag': 'noindex',
+    },
+  });
 }
 
 // DELETE /api/admin/slots/:id — only slots nobody holds or has booked

@@ -76,6 +76,45 @@ export async function deleteFile(env, path) {
     throw new Error(`storage delete ${path}: ${res.status} ${await res.text()}`);
 }
 
+/**
+ * Write one object with the service account. The ONLY writer of the
+ * personal/ prefix (Eric, 2026-09-03: "uploads of documents just for me...
+ * ONLY visible to me"): storage.rules deny that prefix to every browser, so
+ * the service account is the one identity that can put a byte there or read
+ * one back, and this Worker is the one place that identity is used.
+ */
+export async function putFile(env, path, bytes, contentType, { retried = false } = {}) {
+  const token = await getAccessToken(env, 'https://www.googleapis.com/auth/devstorage.read_write');
+  const url = new URL(`https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o`);
+  url.searchParams.set('uploadType', 'media');
+  url.searchParams.set('name', path);
+  // Never overwrite: two tabs naming the same file in the same millisecond
+  // must both land (reviewer B, 2026-09-03). A 412 means the name is taken;
+  // one retry with a suffix, then it is an error like any other.
+  url.searchParams.set('ifGenerationMatch', '0');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': contentType || 'application/octet-stream' },
+    body: bytes,
+  });
+  if (res.status === 412 && !retried) {
+    await res.text().catch(() => '');
+    const dot = path.lastIndexOf('.');
+    const slash = path.lastIndexOf('/');
+    const next = dot > slash ? `${path.slice(0, dot)}~1${path.slice(dot)}` : `${path}~1`;
+    return putFile(env, next, bytes, contentType, { retried: true });
+  }
+  if (!res.ok) throw new Error(`storage put ${path}: ${res.status} ${await res.text()}`);
+  const o = await res.json();
+  return {
+    name: leafName(o.name || path),
+    path: o.name || path,
+    contentType: o.contentType || contentType || '',
+    size: Number(o.size) || (bytes.byteLength ?? 0),
+    at: o.timeCreated ? new Date(o.timeCreated).getTime() : Date.now(),
+  };
+}
+
 function leafName(objectPath) {
   const leaf = objectPath.split('/').pop() || 'file';
   // "1755712345678-scan.jpg" reads better as "scan.jpg".

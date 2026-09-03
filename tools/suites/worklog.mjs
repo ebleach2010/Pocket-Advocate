@@ -482,9 +482,14 @@ const defAt = (id) => ADMIN.indexOf(`id: '${id}', title:`);
 ck('L28c and the chart still opens on Overview, not on the log',
   defAt('overview') > 0 && defAt('log') > defAt('overview') && defAt('log') > defAt('files'),
   `overview at ${defAt('overview')}, log at ${defAt('log')}`);
-ck('L28b and no group grew a fifth page doing it',
+// Pin updated 2026-09-03: Mine holds FIVE now, on Eric's word ("a 'Personal
+// Uploads' tab... one for the 'Mine' tab"). The four-per-group rule was a
+// 320px width constraint, and he asked for a tab by name on his own phone;
+// every other group is still held to four, and Mine's fifth is exactly the
+// one he named.
+ck('L28b and no group grew a fifth page doing it (Mine excepted, its fifth is Personal, 2026-09-03)',
   (strip.match(/pages: \[[^\]]*\]/g) || [])
-    .every((p) => (p.match(/'/g) || []).length / 2 <= 4),
+    .every((p) => (p.match(/'/g) || []).length / 2 <= 4 || /'saved', 'personal'\]/.test(p)),
   (strip.match(/pages: \[[^\]]*\]/g) || []).join(' '));
 // It follows the file list's grammar rather than inventing one, and its pills
 // take one token colour instead of four new hues.

@@ -444,7 +444,7 @@ function hoursCard(c) {
     <section class="card hours-card${state === 'ok' ? '' : ` is-${state}`}" data-hours-card>
       <p class="eyebrow">YOUR MONTH'S HOURS</p>
       <p class="hours-line"><strong style="color:var(--ink);">${fmt(used)}</strong> used${
-  w.startedAt ? ' <span style="color:var(--cyan);">· working on it right now</span>' : ''
+  w.startedAt ? ` <span style="color:var(--cyan);">· ${doingText(w)}</span>` : ''
 }</p>
       <div class="hours-meter" role="img" aria-label="${fmt(used)} of the ${includedH} included advocacy hours delivered"><span style="width:${pct}%;"></span></div>
       <p class="dim small" style="margin:0;">${span}</p>
@@ -466,6 +466,15 @@ function hoursCard(c) {
  * Nothing is shown until there is something real to show, because "0m" on a
  * case somebody just paid for reads as neglect rather than as honesty.
  */
+/**
+ * WHAT HE IS DOING, in his words (Eric, 2026-09-03: "Add 'Eric is on the
+ * phone with a clinic department...' for 'working on' in the chat"). The
+ * clock carries a short line he picks or types when he starts it; while it
+ * runs, the client reads that instead of the bare "working on it". Nothing
+ * is shown when the clock is stopped, and the line is his, never invented.
+ */
+const doingText = (w) => (w?.doing ? `${esc(String(w.doing))} right now` : 'working on it right now');
+
 function workLine(c) {
   const w = c.work || {};
   // TWO CLOCKS, TWO TIERS (Eric, 2026-08-29). Everything up to work.tierMark
@@ -487,7 +496,7 @@ function workLine(c) {
   const main = total >= 60 || mark < 60
     ? `<p class="dim small" style="margin:.6rem 0 0;">⏱ Time I have worked on your case${
       mark >= 60 ? ' since Full-Service began' : ''}: <strong style="color:var(--ink);">${fmt(total)}</strong>${
-      w.startedAt ? ' <span style="color:var(--cyan);">· working on it right now</span>' : ''
+      w.startedAt ? ` <span style="color:var(--cyan);">· ${doingText(w)}</span>` : ''
     }</p>` : '';
   const review = mark >= 60
     ? `<p class="dim small" style="margin:.2rem 0 0;">⏱ During your case review: <strong style="color:var(--ink);">${fmt(mark)}</strong></p>`
@@ -772,6 +781,9 @@ function renderChat(el, c) {
     <h2 class="case-sec-h">Chat</h2>
     <p class="dim small" style="margin:.1rem 0 .3rem;">Chat keeps your case moving between calls: records, scheduling, and anything new or urgent with your health. The analysis itself happens on our calls, and everything else goes on the list for the next one.</p>
     <p class="office-row" style="margin:.2rem 0 .3rem;">${officeCueHtml()}</p>
+    ${c.work?.startedAt && c.work?.doing
+    ? `<p class="dim small doing-line" data-doing style="margin:0 0 .4rem;">Eric is ${esc(String(c.work.doing))} right now.</p>`
+    : ''}
     <div class="panel" data-chat></div>
     ${chatLocked ? `
     <div class="panel" data-chat-unlock style="margin-top:.7rem;">

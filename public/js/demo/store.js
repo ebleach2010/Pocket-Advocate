@@ -98,11 +98,16 @@ function persist() {
       // Object URLs do not survive a reload, so only the metadata is kept and
       // a reloaded page shows the file without a preview. Honest, and better
       // than a broken image.
-      files: [...files.entries()].map(([k, v]) => [k, { ...v, url: v.persisted ? v.url : '' }]),
+      // Personal Uploads (2026-09-03) never touch the client half: a
+      // client-demo tab in the same browser must not hold even the names.
+      files: [...files.entries()].filter(([k]) => !/^personal\//.test(k))
+        .map(([k, v]) => [k, { ...v, url: v.persisted ? v.url : '' }]),
     }));
     if (!clientSide) {
       localStorage.setItem(KEY_ADMIN, JSON.stringify({
         docs: [...docs.entries()].filter(([path]) => ADMIN_ONLY(path)),
+        files: [...files.entries()].filter(([k]) => /^personal\//.test(k))
+          .map(([k, v]) => [k, { ...v, url: v.persisted ? v.url : '' }]),
       }));
     }
   } catch { /* quota or private mode: the demo still works for this tab */ }
@@ -123,6 +128,7 @@ function load() {
     if (!clientSide) {
       const adm = JSON.parse(localStorage.getItem(KEY_ADMIN) || 'null');
       for (const [k, v] of adm?.docs || []) docs.set(k, v);
+      for (const [k, v] of adm?.files || []) files.set(k, v);
       // The seamless door enters through the CLIENT side, whose reset() no
       // longer writes the advocate half to disk (see reset). So the first
       // advocate tab after a client-side seed finds its half missing and
