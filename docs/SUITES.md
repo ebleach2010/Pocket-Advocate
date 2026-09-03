@@ -152,6 +152,26 @@ Worker's edit branch; `tools/suites/worklog.mjs` L63-L66 run the correction
 through the route's harness. `tools/drives/drive-contact.mjs` walks the
 card, the pencil and the booking form in the demo at 390px.
 
+### His own case (2026-09-03)
+
+Eric as the patient: a purple button on the Clients page opens one case
+with `self: true`, no client uid and no client email, on its own purple shelf
+and with a purple masthead. Same tabs and controls; the chat is his own
+notes, uploads go to the intake folders, and nothing on the case pings,
+emails, counts or bills anyone: the Worker checks the flag wherever a
+client would otherwise be told or counted (the chat notice and digest, the
+work log notice, the upload actions, the included hours, the delivered-case
+sweep, the chat-open notice, the scheduler, the capacity, the ledger, the
+public stats). Every reading on it runs on the stronger model at high, with
+one more system block saying who it is reading about, carried by an
+AsyncLocalStorage policy from each run's entry; a refused model id falls
+back to the default and says so in the diag log. `tools/suites/selfcase.mjs`
+lifts and runs the policy, the request builder, the fallback and the route,
+and pins every guard and the purple; `tools/suites/worklog.mjs` L67 runs the
+silence through the work log harness. `tools/drives/drive-selfcase.mjs`
+opens the case in the demo at 390px and walks the shelf, the masthead, the
+chat and the uploads.
+
 ### Side doors, by typed code
 
 The old rooms still answer, as codes typed into either sign-in box - useful

@@ -14,6 +14,7 @@
 //   GET/POST/DELETE /api/admin/personal   Personal Uploads: list, add, remove (admin, Worker-only prefix)
 //   GET    /api/admin/personal/file       one personal file's bytes (admin token or a ten-minute signed link)
 //   POST   /api/admin/case-update  join link / milestones / close / contact: phone and home address (admin)
+//   POST   /api/admin/self-case    his own case: open it, or create it once (admin)
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
 //   POST   /api/advisor            private LLM advisor: analyse / ask / draft (admin)
 // Plus a cron (see scheduled()) that emails unread-chat digests.
@@ -38,7 +39,7 @@ import { notifyUser } from './push.js';
 import { validateAction } from './advisor-acts.js';
 import {
   getAdvisorEffort, setAdvisorEffort,
-  runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill,
+  runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
 
@@ -831,6 +832,8 @@ export default {
         return await handlePersonal(request, env, url);
       if (url.pathname === '/api/admin/personal/file' && request.method === 'GET')
         return await handlePersonalFile(request, env, url);
+      if (url.pathname === '/api/admin/self-case' && request.method === 'POST')
+        return await handleSelfCase(request, env);
       if (url.pathname === '/api/admin/case-update' && request.method === 'POST')
         return await handleCaseUpdate(request, env);
       if (url.pathname === '/api/admin/client-alert' && request.method === 'POST')
@@ -1888,7 +1891,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-03-contact-row-log-pencil';
+const BUILD_TAG = 'v2026-09-03-my-own-case';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1896,7 +1899,7 @@ const BUILD_TAG = 'v2026-09-03-contact-row-log-pencil';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.80';
+const VERSION = '2.81';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -1915,6 +1918,8 @@ async function closeDeliveredCases(env) {
       // A held case is not closed at all: his clocks are stopped, and closing
       // would take the chat away from somebody who is waiting on him.
       if (onHold(row.data)) continue;
+      // His own case never closes on its own.
+      if (row.data.self) continue;
       const at = row.data.reportDeliveredAt
         ? new Date(row.data.reportDeliveredAt).getTime() + heldMs(row.data) : 0;
       // No delivery stamp means an older case that predates the field. Leave
@@ -2026,7 +2031,7 @@ async function repairMissingCaseEmails(env) {
     const rows = await queryDocs(env, 'cases', [['clientEmail', 'EQUAL', null]], 25);
     for (const row of rows) {
       const c = row.data;
-      if (!c.clientUid) continue;
+      if (!c.clientUid || c.self) continue;
       const profile = await getDoc(env, `users/${c.clientUid}`);
       const email = profile?.data.email;
       if (!email) continue;
@@ -2355,13 +2360,15 @@ function fullAccessWindowEnd(c) {
 async function fullAccessCapacity(env) {
   const openRows = async () => {
     try {
-      return await queryDocs(env, 'cases', [
+      // His own case carries fullAccess so its tools are on, and it must not
+      // eat a slot that protects his attention from a real client.
+      return (await queryDocs(env, 'cases', [
         ['fullAccess', 'EQUAL', true],
         ['status', 'NOT_EQUAL', 'closed'],
-      ], 200);
+      ], 200)).filter((r) => !r.data.self);
     } catch {
       const all = await queryDocs(env, 'cases', [['fullAccess', 'EQUAL', true]], 200);
-      return all.filter((r) => r.data.status !== 'closed');
+      return all.filter((r) => r.data.status !== 'closed' && !r.data.self);
     }
   };
   const [rows, cfg] = await Promise.all([
@@ -2901,6 +2908,13 @@ export async function runChatDigest(env, now = Date.now()) {
     for (const row of rows) {
       const lm = row.data.lastMessage;
       if (!lm || !lm.ts) continue;
+      // His own case: every message on it is his, and there is no inbox to
+      // digest into. Marked emailed so the query stops returning it.
+      if (row.data.self) {
+        await patchDoc(env, `${coll}/${row.id}`, { lastMessage: { ...lm, emailed: true } },
+          { mask: ['lastMessage'] }).catch(() => {});
+        continue;
+      }
       if (now - new Date(lm.ts).getTime() < DIGEST_MIN_AGE_MS) continue;
 
       if (lm.role === 'admin') {
@@ -3269,6 +3283,9 @@ async function handleNotify(request, env, ctx) {
   if (kind === 'case') {
     const doc = await getDoc(env, `cases/${id}`);
     if (!doc) return json({ error: 'Not found' }, 404);
+    // His own case: nobody to tell, and nothing to stamp. The message is his
+    // own note to himself; the 💬 badge and the admin pings stay dark.
+    if (doc.data.self) return json({ ok: true, self: true });
     clientUid = doc.data.clientUid;
     threadClientName = doc.data.clientName || '';
     adminLink = `/admin-case.html?id=${id}`;
@@ -3677,7 +3694,7 @@ async function handleDaySummary(request, env) {
   // one thread at low effort is a short call, and he pressed a button and is
   // waiting for an answer.
   try {
-    const out = await runDaySummary(env, kind, id, day);
+    const out = await withCasePolicy(env, kind, id, () => runDaySummary(env, kind, id, day));
     if (out.empty) return json({ error: 'Nothing was said that day.' }, 404);
     return json(out);
   } catch (err) {
@@ -4282,7 +4299,8 @@ function workLogNotice(kind, c, who, customLabel = '') {
   if (!tail) return null;
   // Nobody on the other end, or a case that is over. Neither is a client to
   // tell, and a closed case saying "he is making calls" would be a lie.
-  if (!c || !c.clientUid || c.status === 'closed') return null;
+  // His own case is silence too (2026-09-03): the log is his, the reader is him.
+  if (!c || !c.clientUid || c.self || c.status === 'closed') return null;
   // The run test. `logKindTold` is the last kind his client was TOLD about,
   // never the last kind he logged: an entry that told nobody must not end the
   // run, or the next entry of that kind would be swallowed as well.
@@ -5010,7 +5028,8 @@ async function setClockRunning(env, caseId, running) {
  * last beacon is the last moment the time is known to be real.
  */
 async function markIncludedHours(env, caseId, c, bankedSeconds, tierMark) {
-  if (!c?.fullAccess || c.status === 'closed' || c.work?.includedDoneAt) return;
+  // His own case has no included hours: nothing is owed to anyone.
+  if (!c?.fullAccess || c.self || c.status === 'closed' || c.work?.includedDoneAt) return;
   const months = Math.max(1, Math.floor(Number(c.fullAccessMonths) || 1));
   const delivered = Math.max(0, bankedSeconds - tierMark);
   if (delivered < months * FULL_INCLUDED_HOURS * 3600) return;
@@ -5587,6 +5606,9 @@ async function handleLedger(request, env) {
   const byClient = new Map();
   for (const r of rows) {
     const c = r.data;
+    // His own case: no money in it, and a row named after himself would
+    // stand beside real clients. Skipped whole.
+    if (c.self) continue;
     const key = c.clientUid || r.id;
     if (!byClient.has(key)) {
       byClient.set(key, {
@@ -6833,7 +6855,7 @@ async function runChatOpenNotices(env) {
     const now = Date.now();
     for (const r of rows) {
       const c = r.data;
-      if (c.chatOpenNotified || c.chatUnlocked) continue;
+      if (c.chatOpenNotified || c.chatUnlocked || c.self) continue;
       if (['delivered', 'closed'].includes(c.status)) continue;
       const start = c.appointment?.start ? new Date(c.appointment.start).getTime() : 0;
       if (!start) continue;
@@ -7160,6 +7182,18 @@ async function handleAdvisor(request, env, ctx) {
   const parent = kind === 'case' ? 'cases' : 'subscriptions';
   const statePath = `${parent}/${id}/advisor/state`;
 
+  // Every action below runs under the case's turn policy (his own case pins
+  // the stronger model at high; see withCasePolicy in advisor.js), which
+  // AsyncLocalStorage carries through whatever the action starts, including
+  // the runs that keepaliveRun hands to ctx.waitUntil.
+  return withCasePolicy(env, kind, id, () => handleAdvisorAction({
+    request, env, ctx, user, profile, body, kind, id, action, parent, statePath,
+  }));
+}
+
+/** The advisor route's dispatch, split from the preamble so the policy wrap
+ *  above covers every return in it. */
+async function handleAdvisorAction({ request, env, ctx, user, profile, body, kind, id, action, parent, statePath }) {
   if (action === 'pause' || action === 'resume') {
     await patchDoc(env, statePath, { paused: action === 'pause' }, { mask: ['paused'] });
     return json({ ok: true, paused: action === 'pause' });
@@ -7337,7 +7371,8 @@ async function handleAdvisor(request, env, ctx) {
     // The panel fires this on its own when a run stalls; the answer is the
     // provider's, verbatim, on a route only the admin can reach.
     try {
-      return json(await pingModel(env));
+      // `which: 'self'` pings the model his own case runs on.
+      return json(await pingModel(env, body?.which === 'self' ? 'self' : 'default'));
     } catch (err) {
       return json({ ok: false, error: [err.status, err.message || String(err)].filter(Boolean).join(': ') });
     }
@@ -8397,6 +8432,9 @@ async function computePublicStats(env, { force = false } = {}) {
     const threads = [];
     for (const r of caseRows) {
       const c = r.data;
+      // His own case is not a client's case: not a case, a message, an hour
+      // or a milestone in the public figures.
+      if (c.self) continue;
       const periods = holdPeriodsOf(c, now);
       const [chat, miles, log] = await Promise.all([
         listDocs(env, `cases/${r.id}/chat`, { pageSize: 300, all: true }).catch(() => []),
@@ -8659,6 +8697,76 @@ async function handleClearSlots(request, env) {
   return json({ deleted, refused: ids.length - goners.length });
 }
 
+/**
+ * POST /api/admin/self-case   his own case: open it, or create it once.
+ *
+ * HIS OWN CASE (Eric, 2026-09-03: "I would like to use this tool for myself
+ * as I'm entering my fifth relapse. Open an admin case file highlighted
+ * purple. Same controls, only I enter data/information into the chat and
+ * there's NOONE on the other end.")
+ *
+ * The one case this file creates without a payment. It is shaped like every
+ * other case so every pane renders, with three differences that carry the
+ * whole design: `self: true`, no clientUid, no clientEmail. Nobody is on the
+ * other end, so every push and email in this file that keys on those two is
+ * already silent, and `self` is checked besides wherever a count, a clock or
+ * a notice would otherwise take him for a client: the public stats, the
+ * Full-Service capacity, the ledger, the chat digest, the work log notice,
+ * the delivered-case sweep, the chat-open notice, the scheduler, and the
+ * upload actions. fullAccess is on so every tool the tier unlocks is his;
+ * no rate moves, no window ends, no hours are "included".
+ *
+ * One per admin. The id is kept on users/{uid}.selfCaseId; a second call
+ * opens the same case, and a closed one is left closed and a new one made.
+ */
+async function handleSelfCase(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const profile = await getDoc(env, `users/${admin.uid}`).catch(() => null);
+  const existingId = typeof profile?.data.selfCaseId === 'string' ? profile.data.selfCaseId : '';
+  if (existingId) {
+    const existing = await getDoc(env, `cases/${existingId}`).catch(() => null);
+    if (existing?.data.self && existing.data.status !== 'closed')
+      return json({ ok: true, id: existingId, created: false });
+  }
+  const now = new Date();
+  const caseId = crypto.randomUUID();
+  const p = profile?.data || {};
+  const name = p.name || [p.firstName, p.lastName].filter(Boolean).join(' ') || 'Eric';
+  await patchDoc(env, `cases/${caseId}`, {
+    self: true,
+    clientUid: null,
+    clientEmail: null,
+    clientName: name,
+    clientDob: p.dob || null,
+    clientTz: 'America/Boise',
+    clientPhone: null,
+    clientAddress: null,
+    status: 'confirmed',
+    createdAt: now,
+    // So the missing-email repair never "fixes" this one.
+    bookingEmailSentAt: now,
+    appointment: null,
+    publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] },
+    addOnFollowUp: false,
+    forms: {},
+    files: [],
+    reportDueAt: null,
+    caseRateCents: 0,
+    addonRateCents: 0,
+    fullAccess: true,
+    fullAccessAt: now,
+    fullAccessRateCents: 0,
+    fullAccessMonths: 0,
+    fullAccessByHand: true,
+    stripe: null,
+    work: { seconds: 0, startedAt: null },
+    hold: null,
+  }, { mustNotExist: true });
+  await patchDoc(env, `users/${admin.uid}`, { selfCaseId: caseId }, { mask: ['selfCaseId'] });
+  return json({ ok: true, id: caseId, created: true });
+}
+
 // POST /api/admin/case-update  Body: { caseId, action, joinLink?, paidCents?, tierCents? }
 async function handleCaseUpdate(request, env) {
   const admin = await requireAdmin(request, env);
@@ -8887,6 +8995,9 @@ async function handleCaseUpdate(request, env) {
     // strict 7 calendar days; the client is told "7 business days, some take
     // slightly longer" (Eric's leeway, 2026-07-13).
     if (doc.data.status === 'closed') return json({ error: 'Case is closed.' }, 409);
+    // His own case: the recording is filed, and no clock starts and nobody
+    // is written to. There is no 7-day promise to himself.
+    if (doc.data.self) return json({ ok: true, self: true });
     const alreadyStarted = !!doc.data.reportDueAt;
     const fields = { reportDueAt: new Date(now.getTime() + 7 * 86_400_000) };
     if (doc.data.status !== 'delivered') fields.status = 'awaiting_report';
@@ -8938,7 +9049,7 @@ async function handleCaseUpdate(request, env) {
     // His own file name, which is the whole point of asking, bounded and with
     // its line breaks flattened so it cannot rearrange a notification.
     const named = String(body?.fileName || '').replace(/\s+/g, ' ').trim().slice(0, 80);
-    if (doc.data.clientUid) {
+    if (doc.data.clientUid && !doc.data.self) {
       await notifyUser(env, doc.data.clientUid, {
         title: 'Pocket Advocate',
         body: named ? `A new ${what} is on your case: ${named}` : `A new ${what} is on your case.`,
@@ -8948,6 +9059,9 @@ async function handleCaseUpdate(request, env) {
     return json({ ok: true, category: body.category, notified: !!doc.data.clientUid });
   } else if (action === 'report-uploaded') {
     if (doc.data.status === 'closed') return json({ error: 'Case is closed.' }, 409);
+    // His own case: a document filed under "report" is just a document. No
+    // delivered state, no 48-hour close behind it, no email.
+    if (doc.data.self) return json({ ok: true, self: true });
     await patchDoc(env, `cases/${caseId}`, { status: 'delivered', reportDeliveredAt: now }, {
       mask: ['status', 'reportDeliveredAt'],
     });
@@ -9267,6 +9381,9 @@ async function handleAdminSchedule(request, env) {
   const caseDoc = await getDoc(env, `cases/${caseId}`);
   if (!caseDoc) return json({ error: 'No such case' }, 404);
   const c = caseDoc.data;
+  // His own case: there is nobody to book with, and every mode below ends in
+  // an email to the client.
+  if (c.self) return json({ error: 'Your own case has nobody on the other end to book with.' }, 409);
 
   const now = new Date();
 

@@ -64,6 +64,9 @@
   --cyan: #2E6AB8;
   --cyan-dim: #6A91C2;
   --magenta: #27508D;
+  /* His own case (2026-09-03): the one purple in the app, on the card and
+     the page that are about him rather than a client. */
+  --self: #6B3FA0;
   --green: #1E7A4E;
   --blue: #27508D;
   --danger: #B23B3B;
@@ -120,6 +123,7 @@
   --cyan: #7FB3E8;
   --cyan-dim: #4E749E;
   --magenta: #9DB4DF;
+  --self: #C4A6FF;
   --green: #63C695;
   --blue: #9DB4DF;
   --danger: #F07E7E;
@@ -171,6 +175,7 @@
   --cyan: #2E5E9E;
   --cyan-dim: #6882A7;
   --magenta: #3D5684;
+  --self: #5E3C9C;
   --green: #287250;
   --blue: #3D5684;
   --danger: #A63F3F;
@@ -214,6 +219,7 @@
   --cyan: #79C2FF;
   --cyan-dim: #4C7FA9;
   --magenta: #A9C7FF;
+  --self: #D9B8FF;
   --green: #76F1AC;
   --blue: #A9C7FF;
   --danger: #FF8C8C;

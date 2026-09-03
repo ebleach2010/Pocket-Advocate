@@ -973,7 +973,10 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   // would take every check after it down with it.
   let out = null;
   try {
-    out = new Function('cases', `${fn}\nreturn { stripe: byKind('stripe'), hand: byKind('hand') };`)([{
+    // 2026-09-03: the shelf sums `billed`, the cases minus his own, so the
+    // lift is handed that name; the fixture has no self case, so it is the
+    // same list. The rule this block enforces is unchanged.
+    out = new Function('cases', `const billed = cases;\n${fn}\nreturn { stripe: byKind('stripe'), hand: byKind('hand') };`)([{
       stripe: { amountTotal: 17500 },
       extraPayments: [
         { kind: 'fullaccess', amountCents: 340000, byHand: true },

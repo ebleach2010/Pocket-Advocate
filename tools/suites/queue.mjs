@@ -80,6 +80,10 @@ const deps = () => ({
   runCallNotes: async () => { calls.push(['runCallNotes']); },
   runCallDoc: async (env, kind, id, opts) => { calls.push(['runCallDoc', `${kind}/${id}`, opts]); },
   runDraft: async () => { calls.push(['runDraft']); },
+  // Since 2026-09-03 every run the drain starts enters under the case's
+  // turn policy (his own case pins the stronger model). Passed through here:
+  // what this suite proves is which runner wakes, not what model it uses.
+  withCasePolicy: async (env, kind, id, fn) => fn(),
   friendly: (e) => (e && e.message) || String(e),
   console: { error: () => {}, warn: () => {}, log: () => {} },
   // THESE FOUR EXIST SO THE FALL-THROUGH IS REACHABLE, and that matters more

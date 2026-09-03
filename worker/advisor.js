@@ -35,8 +35,80 @@ import { getDoc, patchDoc, listDocs, deleteDoc } from './firestore.js';
 // worker/advisor-acts.js for why that is structural rather than a promise.
 import { validateAction, actionTools, money } from './advisor-acts.js';
 import { listIntake, listShelf, mediaFetch } from './storage.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 const MODEL = 'claude-opus-5';
+/**
+ * HIS OWN CASE (Eric, 2026-09-03: "I would like to use this tool for myself
+ * as I'm entering my fifth relapse... Fable 5.1 high gets used for my case").
+ *
+ * A case with `self: true` on its document is Eric's own: he is the advocate
+ * and the patient, and nobody is on the client side. Every turn on it runs on
+ * the stronger model at high effort, whatever the pass type or the Settings
+ * switch says, and every system prompt gets one more block telling the model
+ * who it is talking to.
+ *
+ * HOW THE POLICY TRAVELS. Ten call sites build turns and one submits batches,
+ * spread over runs that load the case document at different moments or not
+ * at all (runAnalysis never opens it). Threading a model through every one
+ * of them is the kind of change that misses one. So the policy is resolved
+ * ONCE where a run enters (the advisor route, the cron drain, the day
+ * summary) and carried by AsyncLocalStorage, which follows the run through
+ * every await, and turnRequest reads it where the request is built. A run
+ * that enters by a path nobody wrapped simply gets the default model, which
+ * is the old behaviour, not a breakage.
+ */
+const SELF_MODEL = 'claude-fable-5-1';
+const SELF_EFFORT = 'high';
+const turnPolicy = new AsyncLocalStorage();
+
+/** Run `fn` under the turn policy this case calls for. His own case pins the
+ *  stronger model at high; every other case, and every subscription, runs the
+ *  default. One document read; never throws for a missing case. */
+export async function withCasePolicy(env, kind, id, fn) {
+  let policy = null;
+  if (kind === 'case' && id) {
+    const c = await getDoc(env, `cases/${id}`).catch(() => null);
+    if (c?.data.self) policy = { self: true, model: SELF_MODEL, effort: SELF_EFFORT, kind, id };
+  }
+  return turnPolicy.run(policy, fn);
+}
+
+/** The one block that turns every prompt in this file into a prompt about
+ *  Eric himself. Appended LAST, after the date, so it overrides what the
+ *  prompts above it say about a client who is not him. */
+function selfBlock() {
+  return {
+    type: 'text',
+    text: `HIS OWN CASE. This case is Eric's own: he is the advocate reading you AND the patient the case is about, and there is nobody on the client side. Read everything above with that substitution: where the instructions say "the client", "this client" or "the patient", they mean Eric himself. Every chat line, whatever it is labelled, is his own account of his own condition, typed by him as data, not a message sent to anyone. Nothing you write leaves this page: there is no client to message, notify, draft for, or send questions to. Questions you would have him send to a client are questions for him to answer about himself; put them to him directly, as one person. Coaching on how to handle the patient, and anything about what he has or has not told the client, does not apply. His own history as an autoimmune encephalitis survivor is the history of THIS patient: use it. Money, hours and rates play no part in this case.`,
+  };
+}
+
+/** True only when the provider refused the model id itself (unknown, or not
+ *  enabled for this key), and only for a turn that asked for the stronger one. */
+function modelRefused(err, turn) {
+  if (!turn || turn.model === MODEL) return false;
+  const msg = String(err?.message || err || '');
+  return (err?.status === 400 || err?.status === 404) && /model/i.test(msg);
+}
+
+/** Send a turn; if the stronger model is refused, say so once in the diag log
+ *  and send the same turn again on the default. Any other error is the
+ *  caller's, untouched. */
+async function sendWithFallback(env, turn, send) {
+  try {
+    return await send(turn);
+  } catch (err) {
+    if (!modelRefused(err, turn)) throw err;
+    const p = turnPolicy.getStore();
+    await diagLog(env, {
+      ev: 'self-model-fallback', kind: p?.kind || 'case', id: p?.id || '',
+      why: String(err?.message || err).slice(0, 200),
+    });
+    console.warn('the stronger model was refused; the default carries the turn:', err?.message || err);
+    return send({ ...turn, model: MODEL });
+  }
+}
 // Opus at HIGH by default (Eric, 2026-08-22: "Change version to opus 5
 // high... it's taking >5min for a read when I'm sitting staring at a
 // screen"). Max is still available, from the switch in Settings, for a case
@@ -243,14 +315,18 @@ function todayBlock() {
 }
 
 function turnRequest({ system, messages, effort, maxTokens = 64000, tools }) {
+  // His own case: the stronger model, high, and the block that says so.
+  // Read here, where every turn is built, so no caller can forget it.
+  const policy = turnPolicy.getStore();
   const sys = system == null ? [todayBlock()]
     : Array.isArray(system) ? [...system, todayBlock()]
       : [{ type: 'text', text: system }, todayBlock()];
+  if (policy?.self) sys.push(selfBlock());
   return {
-    model: MODEL,
+    model: policy?.model || MODEL,
     max_tokens: maxTokens,
     thinking: { type: 'adaptive' },
-    output_config: { effort },
+    output_config: { effort: policy?.effort || effort },
     system: withCacheBp(sys),
     messages,
     ...(tools && tools.length ? { tools } : {}),
@@ -470,7 +546,8 @@ async function ask(env, {
   const runStartedAt = Date.now();
   const carryOpts = { onBeat, initialStage, deadlineAt, noStream, runStartedAt };
   let convo = messages;
-  let final = await carryTurn(env, turnRequest({ system, messages: convo, effort, maxTokens, tools }), carryOpts);
+  let final = await sendWithFallback(env, turnRequest({ system, messages: convo, effort, maxTokens, tools }),
+    (turn) => carryTurn(env, turn, carryOpts));
   const parts = [extractText(final, toolMeta)];
   if (acts) collectActs(final, acts);
   // pause_turn: the turn is not finished, it is parked. Hand the model back
@@ -479,9 +556,8 @@ async function ask(env, {
   // `tools` as well so no existing caller can ever enter this loop.
   for (let i = 0; tools && tools.length && final.stop_reason === 'pause_turn' && i < MAX_PAUSE_RESUMES; i++) {
     convo = [...convo, { role: 'assistant', content: final.content }];
-    final = await carryTurn(env, turnRequest({ system, messages: convo, effort, maxTokens, tools }), {
-      ...carryOpts, initialStage: 'writing',
-    });
+    final = await sendWithFallback(env, turnRequest({ system, messages: convo, effort, maxTokens, tools }),
+      (turn) => carryTurn(env, turn, { ...carryOpts, initialStage: 'writing' }));
     parts.push(extractText(final, toolMeta));
     if (acts) collectActs(final, acts);
   }
@@ -503,10 +579,12 @@ async function ask(env, {
  * and no clock in this Worker is anywhere near it.
  */
 async function submitTurnBatch(env, turn, customId) {
-  const b = await client(env).messages.batches.create({
-    requests: [{ custom_id: customId, params: turn }],
+  return sendWithFallback(env, turn, async (t) => {
+    const b = await client(env).messages.batches.create({
+      requests: [{ custom_id: customId, params: t }],
+    });
+    return b.id;
   });
-  return b.id;
 }
 
 /**
@@ -1376,13 +1454,15 @@ function hourIn(now, tz) {
  * the key, or the provider" arrives without anyone guessing from a phone.
  * Admin-gated by the route; costs a few tokens.
  */
-export async function pingModel(env) {
+export async function pingModel(env, which = 'default') {
   if (!env.ANTHROPIC_API_KEY) {
     return { ok: false, error: 'ANTHROPIC_API_KEY is not set on the Worker. Set it with: npx wrangler secret put ANTHROPIC_API_KEY' };
   }
   const t0 = Date.now();
+  // `which: 'self'` pings the model his own case runs on, so the first
+  // question about it is answered before the first real turn.
   const res = await client(env).messages.create({
-    model: MODEL, max_tokens: 1,
+    model: which === 'self' ? SELF_MODEL : MODEL, max_tokens: 1,
     messages: [{ role: 'user', content: 'ping' }],
   });
   return { ok: true, ms: Date.now() - t0, model: res.model };
@@ -2742,7 +2822,7 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
           continue;
         }
         await patchDoc(env, `advisorQueue/${row.id}`, { tries }, { mask: ['tries'] }).catch(() => {});
-        await runAppeal(env, kind, id, req.appeal || {}, !!req.revise, req.base || '', true);
+        await withCasePolicy(env, kind, id, () => runAppeal(env, kind, id, req.appeal || {}, !!req.revise, req.base || '', true));
         return true; // one model job per firing
       }
       if (row.data.callNotes) {
@@ -2766,7 +2846,7 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
           continue;
         }
         await patchDoc(env, `advisorQueue/${row.id}`, { tries }, { mask: ['tries'] }).catch(() => {});
-        await runCallNotes(env, kind, id, req.instruction || '', !!req.revise, req.base || '', true);
+        await withCasePolicy(env, kind, id, () => runCallNotes(env, kind, id, req.instruction || '', !!req.revise, req.base || '', true));
         return true; // one model job per firing
       }
       // THE CALL DOCUMENT. This branch did not exist, and its absence was
@@ -2803,7 +2883,7 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
         // only (see runCallDoc), so a rebuild uses whatever is Storage-backed
         // and the skipped list names what it could not get back. That is the
         // honest half of a retry, and better than the nothing it did before.
-        await runCallDoc(env, kind, id, {
+        await withCasePolicy(env, kind, id, () => runCallDoc(env, kind, id, {
           instruction: req.instruction || '',
           revise: !!req.revise,
           base: req.base || '',
@@ -2813,7 +2893,7 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
           search: req.search === true,
           sources: (req.sources || []).filter((s) => s?.path || s?.url),
           noStream: true,
-        });
+        }));
         return true; // one model job per firing
       }
       if (row.data.draft) {
@@ -2855,7 +2935,7 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
             params: { job: 'draft', kind, id, opts: { instruction: req.instruction || '', revise: !!req.revise, base: req.base || '' } },
           });
         } else {
-          await runDraft(env, kind, id, req.instruction || '', !!req.revise, req.base || '', true);
+          await withCasePolicy(env, kind, id, () => runDraft(env, kind, id, req.instruction || '', !!req.revise, req.base || '', true));
         }
         return true; // one model job per firing
       }
@@ -2942,7 +3022,7 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
           params: { job: 'analysis', kind, id, opts: { skipMedia: tries >= 3, counted: true, auto: true } },
         });
       } else {
-        await runAnalysis(env, kind, id, null, { skipMedia: tries >= 3, counted: true, auto: true, deadlineAt });
+        await withCasePolicy(env, kind, id, () => runAnalysis(env, kind, id, null, { skipMedia: tries >= 3, counted: true, auto: true, deadlineAt }));
       }
       return true; // one model job per firing
     }
@@ -3033,6 +3113,9 @@ async function loadEconomics(env, kind, id) {
     getDoc(env, 'config/rates').catch(() => null),
   ]);
   const c = doc?.data || {};
+  // His own case: no money moved and none will. Nothing for the economics
+  // block to say, and no floor for it to trip.
+  if (c.self) return { self: true, paidCents: 0, tipCents: 0, seconds: 0 };
   // A Full Access case paid its own price, which already covers the standard
   // case; caseRateCents on one of those is only the percentage-charge base.
   // paidOverrideCents first: a figure Eric recorded by hand beats every
@@ -3072,7 +3155,7 @@ async function loadEconomics(env, kind, id) {
 }
 
 function economicsNote(econ) {
-  if (!econ || econ.sub) return '';
+  if (!econ || econ.sub || econ.self) return '';
   const dollars = (c) => `$${Math.round(c / 100)}`;
   const hours = econ.seconds / 3600;
   // Floored on BOTH branches. Rounding the minutes against a floored hour
@@ -3393,10 +3476,12 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     // Effort per pass type. Manual runs always honor Eric's own switch; the
     // background never spends max, and a routine text-only delta runs at
     // medium, which is the one-to-two-minute pass.
-    const passEffort = !auto ? effort
+    // His own case (2026-09-03) pins the effort whatever the pass: the
+    // policy is what turnRequest will send, so the diagnostics say the truth.
+    const passEffort = turnPolicy.getStore()?.effort || (!auto ? effort
       : passType === 'full' ? 'high'
         : media.blocks.length ? 'high'
-          : 'medium';
+          : 'medium');
     const passTokens = !auto
       ? (passType === 'full' ? 64000 : 48000)
       : passType === 'full' ? 48000

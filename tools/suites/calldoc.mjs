@@ -427,6 +427,13 @@ const ASK_LIFTED = [
   fn('withCacheBp', '\nfunction withCacheBp('),
   // todayBlock rides inside turnRequest since 2026-08-31 (the date anchor).
   fn('todayBlock', '\nfunction todayBlock('),
+  // Since 2026-09-03 turnRequest reads the case's turn policy (his own case
+  // pins the stronger model) and ask sends through the model fallback, so
+  // the three ride along; the policy store and the diag log are handed in
+  // empty, which is every case but his.
+  fn('selfBlock', '\nfunction selfBlock('),
+  fn('modelRefused', '\nfunction modelRefused('),
+  fn('sendWithFallback', '\nasync function sendWithFallback('),
   fn('turnRequest', '\nfunction turnRequest('),
   fn('stripDashes', '\nfunction stripDashes('),
   fn('extractText', '\nfunction extractText('),
@@ -450,10 +457,12 @@ let finals = [];
 // returns a well-formed Message that no assertion will accept, and the run
 // carries on to the end with one honest FAIL on the line that caught it.
 const overDrawn = { stop_reason: 'end_turn', content: [{ type: 'text', text: '<<UNSCRIPTED EXTRA TURN>>' }] };
-const askEnv = new Function('carryTurn', 'console',
+const askEnv = new Function('carryTurn', 'console', 'turnPolicy', 'diagLog',
   `${ASK_LIFTED}\n return { ask, turnRequest, extractText };`)(
   async (e2, turn) => { carried.push(turn); return finals.length ? finals.shift() : overDrawn; },
   { warn: () => {}, error: () => {} },
+  { getStore: () => null },
+  async () => {},
 );
 const { ask: realAsk, turnRequest, extractText } = askEnv;
 const oneTurn = (opts = {}) => ({ system: [{ type: 'text', text: 'sys' }], messages: [{ role: 'user', content: 'go' }], effort: 'max', maxTokens: 32000, ...opts });

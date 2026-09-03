@@ -307,7 +307,7 @@ function render(el) {
                    state belongs where the state is, not inside a menu you
                    have to know about. -->
               <div class="chat-head">
-                <h3>Chat with the client</h3>
+                <h3>${data.self ? 'Your notes' : 'Chat with the client'}</h3>
                 <label class="status-pick">
                   <span class="dim small">Working on</span>
                   <select data-status-pick aria-label="What you are working on">
@@ -611,7 +611,7 @@ function render(el) {
   // one element. So it moves BELOW the strip, where the folder's own dock
   // puts it first in view, on arrival and after every single tab tap.
   const head = document.createElement('div');
-  head.className = 'case-head';
+  head.className = `case-head${c.self ? ' self' : ''}`;
   // THE MASTHEAD ANSWERS THE FIVE QUESTIONS (visual director pass,
   // 2026-08-29): who, what state, what is waiting, what happens next, when.
   // Everything below is read off the case document this page already holds;
@@ -653,7 +653,7 @@ function render(el) {
   head.innerHTML = `
     <div class="case-who">
       <span class="case-name" data-client>${esc(c.clientName || c.clientEmail || c.clientUid)}</span>
-      <span class="status-pill" data-status>${(c.status || '?').replace('_', ' ').toUpperCase()}</span>
+      <span class="status-pill${c.self ? ' self' : ''}" data-status>${c.self ? 'MY OWN CASE' : (c.status || '?').replace('_', ' ').toUpperCase()}</span>
     </div>
     ${loopRow}
     ${nextLine}
@@ -703,7 +703,9 @@ function render(el) {
     // that it is one tap from the conversation rather than four taps away on
     // the last page, because the moment he wants it is not a moment for
     // navigating.
-    composerButton: [{
+    // His own case (2026-09-03): the chat is his own notes, so the two
+    // message makers, which write to a client, have nothing to make.
+    composerButton: data.self ? [] : [{
       icon: '⚕️',
       title: 'Duty of care draft',
       onClick: () => openDutyDraft({
@@ -1172,6 +1174,8 @@ const DOING_PRESETS = [
 function paintDoing() {
   const row = document.querySelector('[data-doing-row]');
   if (!row) return;
+  // His own case: nobody reads the doing line, so the row stays folded.
+  if (typeof data === 'object' && data && data.self) { row.hidden = true; return; }
   row.hidden = !clock.startedAt;
   if (!clock.startedAt) return;
   const host = row.querySelector('[data-doing-pills]');
@@ -1405,7 +1409,10 @@ function startWorkClock(c) {
     // The save worked and the screen said otherwise, which is the one pair
     // that must never be made to look identical.
     const live = data || c;
-    if (rateEl) {
+    // His own case has no money in it, so the margin line has nothing to
+    // say: hidden, rather than "no payment recorded" beside his own clock.
+    if (rateEl && live.self) rateEl.hidden = true;
+    if (rateEl && !live.self) {
       const hourly = effectiveHourly(live, liveTotalSeconds());
       const paid = paidCents(live);
       // THREE STATES, and the third is the one that most needs saying. It used
@@ -1911,7 +1918,7 @@ function refreshHeader() {
   const name = document.querySelector('[data-client]');
   const pill = document.querySelector('[data-status]');
   if (name) name.textContent = c.clientName || c.clientEmail || c.clientUid;
-  if (pill) pill.textContent = (c.status || '?').replace('_', ' ').toUpperCase();
+  if (pill) pill.textContent = c.self ? 'MY OWN CASE' : (c.status || '?').replace('_', ' ').toUpperCase();
 }
 
 // The working line under the client's name, kept current by the advisor's
@@ -2040,8 +2047,54 @@ const SENDABLE_FORMS = [
  * each. Nothing moved out of reach, nothing was dropped: the same six rows,
  * under three headings and with air between them.
  */
+/**
+ * HIS OWN CASE, the overview (Eric, 2026-09-03: "Same controls, only I enter
+ * data/information into the chat and there's NOONE on the other end"). No
+ * call, no payment, no report clock, no forms, no window, no join link: none
+ * of the furniture the other overview carries applies when he is the
+ * patient. What is left is who it is, the contact row's twin, one plain
+ * sentence about what this case is, and the close.
+ */
+function paintSelfOverview(pane, c) {
+  const bits = contactBits(c.clientPhone || '', c.clientAddress || '');
+  pane.innerHTML = `
+    <div class="facts self-facts">
+      <span class="fact-k">CASE</span>
+      <span class="fact-v"><span class="status-pill self">MY OWN CASE</span></span>
+      <span class="fact-k">WHO</span>
+      <span class="fact-v">${esc(c.clientName || 'You')}${c.clientDob ? ` <span class="dim">· DOB ${esc(c.clientDob)}</span>` : ''}</span>
+      <span class="fact-k">CONTACT</span>
+      <span class="fact-v">${bits.phone} <span class="dim">·</span> ${bits.address}</span>
+    </div>
+    <p class="self-note" data-self-note>Nobody is on the other end. The chat is your own notes and records, the uploads are your files, the log and the milestones are yours to keep, and every reading is about you. Nothing on this case pings, emails, counts, or bills anyone.</p>
+    ${c.status === 'closed' ? '<p class="dim small">This case is closed.</p>' : `
+    <div class="actions"><button type="button" class="btn quiet" data-self-close>Close my own case</button></div>`}
+    <p class="saved-note" data-self-said role="status" hidden></p>`;
+  pane.querySelector('[data-self-close]')?.addEventListener('click', async (e) => {
+    if (!confirm('Close your own case? It stays readable, and nothing is sent to anyone.')) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/admin/close-case', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ caseId, reason: 'my own case' }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      load();
+    } catch (err) {
+      const s = pane.querySelector('[data-self-said]');
+      if (s) { s.textContent = err.message; s.hidden = false; }
+      btn.disabled = false;
+    }
+  });
+}
+
 function paintOverview(pane) {
   const c = data;
+  if (c.self) { paintSelfOverview(pane, c); return; }
   const start = c.appointment && toDate(c.appointment.start);
   const mtFmt = new Intl.DateTimeFormat('en-US', {
     timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -2762,6 +2815,13 @@ function paintFiles(pane) {
   };
   cat.addEventListener('change', sayWhat);
   sayWhat();
+  if (data.self) {
+    // His own case: no categories, because a category is a word for a
+    // client. One sentence says where the file goes.
+    const wrap = cat.closest('label');
+    if (wrap) wrap.hidden = true;
+    note.textContent = 'Your own records: labs, letters, notes, anything. They go straight into the reading, and nobody is told.';
+  }
   pane.querySelector('#up-report').addEventListener('change', (e) => {
     const c = categoryOf(cat.value) || UPLOAD_CATEGORIES[0];
     upload(e.target.files[0], 'report', c.action, c.id);
@@ -2872,7 +2932,15 @@ async function upload(file, kind, milestoneAction, category = '') {
   // first one was gone. He is about to upload many documents with names like
   // that. Both listings strip the prefix for display (`^\d{10,}-`), so a file
   // uploaded before today still reads correctly.
-  const path = `cases/${caseId}/${kind}/${Date.now()}-${safe}`;
+  // His own case (2026-09-03): a document is one of his own records, so it
+  // goes where the reading looks for records (the intake folders), not onto
+  // a report shelf built for a client. A recording still goes where
+  // recordings go.
+  // `typeof` first: uploads.mjs lifts this function and runs it without the
+  // module's case document, and a bare `data` there is a ReferenceError.
+  const own = typeof data === 'object' && data !== null && !!data.self;
+  const folder = own && kind !== 'recording' ? 'uploads' : kind;
+  const path = `cases/${caseId}/${folder}/${Date.now()}-${safe}`;
   const task = uploadBytesResumable(ref(storage, path), file,
     // THE CATEGORY IS A LABEL, NOT A FOLDER. storage.rules names exactly four
     // client-readable folders and prep-shelf.mjs pins that list by string
@@ -2890,14 +2958,27 @@ async function upload(file, kind, milestoneAction, category = '') {
     // The name goes with it. The client's notification says WHAT landed, and
     // the Worker cannot see Storage, so the only place that name can come from
     // is here.
-    await api({ action: milestoneAction, category, fileName: file.name });
+    if (own) {
+      // Nobody to tell and no case to move: the same note the client's own
+      // upload leaves, so the reading knows there is something new.
+      const idToken = await user.getIdToken();
+      await fetch('/api/uploaded', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ kind: 'case', id: caseId, names: [file.name] }),
+      }).catch(() => { /* found on the next pass regardless */ });
+    } else {
+      await api({ action: milestoneAction, category, fileName: file.name });
+    }
     // The bar hides and the list repaints, which up to now was the whole of
     // the feedback: he could not tell an upload that landed from one that
     // silently did not. The Uploads page is not repainted wholesale by load(),
     // so this line can simply stay put.
     if (done) {
       const cat = UPLOAD_CATEGORIES.find((x) => x.id === category);
-      done.textContent = milestoneAction === 'report-uploaded'
+      done.textContent = own
+        ? `“${file.name}” is filed among your records. It is in the next reading.`
+        : milestoneAction === 'report-uploaded'
         ? `“${file.name}” is up. Your client can open it on their case page now, and their page says the report is delivered.`
         : cat
           ? `“${file.name}” is up, filed as a ${cat.label.toLowerCase()}. Your client can open it now and has been notified by name.`
@@ -4428,7 +4509,7 @@ function fullAccessDaysLeft(c) {
  */
 const CHECKIN_DAYS = 14;
 function checkInState(c) {
-  if (!c?.fullAccess || c.status === 'closed') return null;
+  if (!c?.fullAccess || c.self || c.status === 'closed') return null;
   const now = Date.now();
   const all = Array.isArray(c.checkIns) ? c.checkIns : [];
   const future = all.map((x) => toDate(x.start).getTime()).filter((t) => t > now).sort((a, b) => a - b);

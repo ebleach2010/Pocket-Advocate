@@ -749,6 +749,17 @@ const blankReply = await H.post({ caseId: 'c1', action: 'edit', id: 'entry0', ki
 ck('L66 and it will not blank who it was with',
   blankReply.code === 400 && H.written.length === writesBeforeEdit + 1, `${blankReply.code}`);
 
+// HIS OWN CASE (2026-09-03): the log is his, the reader is him. Even with a
+// client uid on the document, the flag alone is silence, and the entry still
+// lands.
+const own = harness({ self: true, clientUid: 'client1', status: 'open' });
+const ownReply = await own.post({ caseId: 'c1', action: 'add', kind: 'call', clinic: 'Neurology, for myself' });
+// NEGATIVE CONTROL (run 2026-09-03): `c.self` dropped from workLogNotice's silence made this read
+//   FAIL  L67 his own case is told nothing, and the entry still lands  -- 1 sent, 1 written
+ck('L67 his own case is told nothing, and the entry still lands',
+  ownReply.obj.ok === true && own.notified.length === 0 && own.written.length === 1,
+  `${own.notified.length} sent, ${own.written.length} written`);
+
 // NOBODY TO TELL, AND A CASE THAT IS OVER. Both are silence, and both still
 // save the entry.
 const noClient = harness({ status: 'open' });

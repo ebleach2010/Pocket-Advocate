@@ -1113,8 +1113,11 @@ check('H: wireFolderClocks still hands its toggle back to a future caller',
   /root\.__paClocksApi = \{[\s\S]*?toggleById/.test(DRAWER)
   && /if \(root\.__paClocks\) return root\.__paClocksApi;/.test(DRAWER));
 
+// 2026-09-03: his own case wears a second modifier, the purple `self`, so
+// the pin now reads the two together. The green glow is still the running
+// clock's alone: `working` is set from nothing but `clock?.running`.
 check('H: the glow is the running clock and nothing else',
-  /class="folder\$\{clock\?\.running \? ' working' : ''\}"/.test(DRAWER));
+  /class="folder\$\{clock\?\.running \? ' working' : ''\}\$\{self \? ' self' : ''\}"/.test(DRAWER));
 // Two paths CHANGE a running clock at runtime - the toggle and the beacon's
 // "this was stopped" event - and both must repaint the folder. The third path,
 // the first paint, is the class in folderCardHtml checked just above.

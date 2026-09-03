@@ -86,10 +86,15 @@ async function load() {
 
   // Three shelves (Eric, 2026-07-15): current clients (call happened, report
   // phase) on top, future booked calls next, former (closed) at the bottom.
-  const former = cases.filter((c) => c.status === 'closed');
-  const future = cases.filter((c) =>
+  // HIS OWN CASE (Eric, 2026-09-03) sits on its own purple shelf above the
+  // three, and is in none of them: it is not a client, so it is not current,
+  // not booked, not former, and not a case in the revenue line.
+  const mine = cases.filter((c) => c.self && c.status !== 'closed');
+  const billed = cases.filter((c) => !c.self);
+  const former = billed.filter((c) => c.status === 'closed');
+  const future = billed.filter((c) =>
     c.status !== 'closed' && c.appointment?.start && toDate(c.appointment.start).getTime() > now);
-  const current = cases.filter((c) => !former.includes(c) && !future.includes(c));
+  const current = billed.filter((c) => !former.includes(c) && !future.includes(c));
   current.sort((a, b) => toDate(a.reportDueAt || 0) - toDate(b.reportDueAt || 0));
   future.sort((a, b) => toDate(a.appointment?.start) - toDate(b.appointment?.start));
   former.sort((a, b) => toDate(b.closedAt || 0) - toDate(a.closedAt || 0));
@@ -120,7 +125,7 @@ async function load() {
   // literally true.
   const handRecorded = (c) => Math.max(0,
     (Number(c.paidOverrideCents) || 0) - (Number(c.stripe?.amountTotal) || 0));
-  const byKind = (want) => cases.reduce((sum, c) => sum
+  const byKind = (want) => billed.reduce((sum, c) => sum
     + (want === 'stripe' ? (c.stripe?.amountTotal || 0) : handRecorded(c))
     // Tips excluded, the way handleLedger already excludes them. A tip is a
     // gift, and counting it flatters the same number.
@@ -239,7 +244,7 @@ async function load() {
     <div class="panel" style="margin-bottom:1rem;">
       <div class="row"><strong>Case revenue (paid via Stripe)</strong>
         <span class="price" style="color:var(--cyan);">$${(cents / 100).toLocaleString()}</span></div>
-      <p class="dim small" style="margin:.3rem 0 0;">${cases.length} case${cases.length === 1 ? '' : 's'}, every one backed by a confirmed payment.
+      <p class="dim small" style="margin:.3rem 0 0;">${billed.length} case${billed.length === 1 ? '' : 's'}, every one backed by a confirmed payment.
         Subscriptions and refunds live in the <a href="https://dashboard.stripe.com" target="_blank" rel="noopener">Stripe dashboard</a>.</p>
       ${handCents > 0 ? `
       <div class="row" style="margin-top:.6rem;"><strong>Recorded by you, paid another way</strong>
@@ -294,6 +299,7 @@ async function load() {
         todayBanked: Number(window.__paDayLog?.[c.id]),
       },
       name: c.clientName || c.clientEmail || c.clientUid,
+      self: !!c.self,
       dx: cover.text || '',
       dxIsMine: cover.by === 'eric',
       badge: badge(c),
@@ -360,7 +366,13 @@ async function load() {
       </a>`).join('')}
     </section>` : '';
 
-  listEl.innerHTML = attBlock + todayBlock +
+  // The purple shelf: his own case when it exists, the button that opens one
+  // when it does not. One per admin; the route keeps it that way.
+  const selfBlock = mine.length
+    ? section('MY OWN CASE', 'var(--self)', mine.map((c) => rowFor(c, 'nobody on the other end')))
+    : `<p class="self-open-row"><button type="button" class="btn self-open" data-self-open>Open a case for myself</button>
+        <span class="dim small">Same tabs, same controls, nobody on the other end.</span></p>`;
+  listEl.innerHTML = attBlock + todayBlock + selfBlock +
     section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
       `${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
        ${followUpFlag(c)}`))) +
@@ -370,6 +382,22 @@ async function load() {
     section('FORMER CLIENTS: CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
       `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`))) +
     `<div class="cmd-quiet">` + rateBlock + voiceBlock + summary + `</div>`;
+  listEl.querySelector('[data-self-open]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/self-case', {
+        method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '{}',
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.id) throw new Error(out.error || `Failed (${res.status})`);
+      location.href = `/admin-case.html?id=${encodeURIComponent(out.id)}`;
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+    }
+  });
 
   const voiceSay = listEl.querySelector('#voice-said');
   const voicePost = async (btn, body, done) => {
@@ -456,6 +484,7 @@ async function load() {
 }
 
 function badge(c) {
+  if (c.self) return 'MY OWN CASE';
   if (c.status === 'awaiting_report' && c.reportDueAt) {
     const days = Math.ceil((toDate(c.reportDueAt) - Date.now()) / 86_400_000);
     return days >= 0 ? `REPORT DUE ${days}d` : `OVERDUE ${-days}d`;
@@ -487,7 +516,7 @@ function followUpFlag(c) {
  * last call of any kind, nothing booked ahead, case open and not paused.
  */
 function checkInDue(c) {
-  if (!c?.fullAccess || c.status === 'closed' || c.hold?.pausedAt) return false;
+  if (!c?.fullAccess || c.self || c.status === 'closed' || c.hold?.pausedAt) return false;
   const now = Date.now();
   const all = Array.isArray(c.checkIns) ? c.checkIns : [];
   if (all.some((x) => toDate(x.start).getTime() > now)) return false;
@@ -507,7 +536,7 @@ function checkInDue(c) {
 }
 
 function dueSoon(c) {
-  if (c.status !== 'awaiting_report' || !c.reportDueAt) return false;
+  if (c.self || c.status !== 'awaiting_report' || !c.reportDueAt) return false;
   return toDate(c.reportDueAt) - Date.now() < 3 * 86_400_000;
 }
 function toDate(v) {

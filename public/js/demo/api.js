@@ -466,6 +466,48 @@ export function demoApi(role, store) {
     // holds it - so against a route that accepts and does not write, the fix
     // correctly reports failure, and the demo could not show him it working.
     // Mirrors handleCaseUpdate in worker/index.js.
+    // His own case (2026-09-03), mirroring the Worker: one per admin, the
+    // same shape as every other case with self on, nobody on the other end.
+    if (path === '/api/admin/self-case') {
+      await beat(300);
+      const key = 'cases/demo-case-mine';
+      const cur = store.docs.get(key);
+      if (cur && cur.self && cur.status !== 'closed') return ok({ ok: true, id: 'demo-case-mine', created: false });
+      const now = new Date();
+      store.docs.set(key, {
+        self: true,
+        clientUid: null,
+        clientEmail: null,
+        clientName: 'Eric Bleach',
+        clientDob: null,
+        clientTz: 'America/Boise',
+        clientPhone: null,
+        clientAddress: null,
+        status: 'confirmed',
+        createdAt: now,
+        bookingEmailSentAt: now,
+        appointment: null,
+        publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] },
+        addOnFollowUp: false,
+        forms: {},
+        files: [],
+        reportDueAt: null,
+        caseRateCents: 0,
+        addonRateCents: 0,
+        fullAccess: true,
+        fullAccessAt: now,
+        fullAccessRateCents: 0,
+        fullAccessMonths: 0,
+        fullAccessByHand: true,
+        stripe: null,
+        work: { seconds: 0, startedAt: null },
+        hold: null,
+      });
+      store.persist?.();
+      store.fire?.(key);
+      return ok({ ok: true, id: 'demo-case-mine', created: true });
+    }
+
     if (path === '/api/admin/case-update') {
       const key = `cases/${body.caseId || DEMO_CASE_ID}`;
       const c = store.docs.get(key);

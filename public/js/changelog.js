@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.80';
+export const VERSION = '2.81';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '2.80';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS OWN CASE (Eric, 2026-09-03: "I would like to use this tool for
+    // myself as I'm entering my fifth relapse. Open an admin case file
+    // highlighted purple. Same controls, only I enter data/information into
+    // the chat and there's NOONE on the other end."). Nothing here reaches a
+    // client, so the client list stays empty and no card opens.
+    version: '2.81',
+    quiet: true,
+    client: [],
+    admin: [
+      'Your own case: a purple button on the Clients page opens a case that is yours, with nobody on the client side. Same tabs, same controls; the chat is your own notes and records, and nothing on it pings, emails, counts, or bills anyone.',
+      'On your own case every reading runs on the strongest setting, and the prompt knows you are the patient it is reading about.',
+    ],
+  },
   {
     // THE CONTACT ROW AND THE LOG PENCIL (Eric, 2026-09-03: "patient's home
     // address and telephone number should be visible on this screen by the
