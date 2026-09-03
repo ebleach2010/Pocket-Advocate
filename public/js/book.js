@@ -60,6 +60,7 @@ const state = {
   requestedStart: null, // Date — a time asked for that isn't on the calendar
   method: 'phone',
   phone: '',
+  address: '', // home address, optional (Eric, 2026-09-03)
 };
 
 const STEPS = [
@@ -226,9 +227,19 @@ async function renderTime() {
         Video call
       </label>
     </div>
-    <div id="phone-row" ${state.method === 'phone' ? '' : 'hidden'}>
-      <label for="phone">Best phone number for the call</label>
-      <input type="tel" id="phone" placeholder="+1 555 555 5555" value="${state.phone}">
+    <!-- Asked for on every booking, video included (Eric, 2026-09-03: the
+         client's phone and home address belong on his overview card). The
+         consent tick below already promises he may call; this is the number
+         it was missing. The address is optional. -->
+    <div id="phone-row">
+      <label for="phone">Best number to reach you</label>
+      <input type="tel" id="phone" autocomplete="tel" placeholder="+1 555 555 5555" value="${state.phone}">
+    </div>
+    <div id="address-row">
+      <label for="address">Home address <span class="muted">(optional)</span></label>
+      <input type="text" id="address" maxlength="300" autocomplete="street-address"
+        placeholder="Street, city, state, ZIP" value="${state.address.replace(/"/g, '&quot;')}">
+      <p class="muted small measure">For records requests and anything I mail you.</p>
     </div>
     <p class="muted small measure" id="video-note" ${state.method === 'video' ? '' : 'hidden'}>
       I'll send you a join link before the call, and it appears on your case page too. Nothing to install.
@@ -445,7 +456,6 @@ async function renderTime() {
       state.method = input.value;
       el.querySelectorAll('.chip-label').forEach((c) => c.classList.remove('selected'));
       input.closest('.chip-label').classList.add('selected');
-      el.querySelector('#phone-row').hidden = input.value !== 'phone';
       el.querySelector('#video-note').hidden = input.value !== 'video';
     })
   );
@@ -469,14 +479,15 @@ async function renderTime() {
         return;
       }
     }
-    if (state.method === 'phone') {
-      state.phone = el.querySelector('#phone').value.trim();
-      if (!/^\+?[\d\s().-]{7,20}$/.test(state.phone)) {
-        err.textContent = 'Enter a valid phone number so I can reach you for the call.';
-        err.hidden = false;
-        return;
-      }
+    // Every booking, whatever the method (2026-09-03). The Worker holds the
+    // same rule, so a stale page cannot slip past it.
+    state.phone = el.querySelector('#phone').value.trim();
+    if (!/^\+?[\d\s().-]{7,20}$/.test(state.phone)) {
+      err.textContent = 'Enter a valid phone number so I can reach you.';
+      err.hidden = false;
+      return;
     }
+    state.address = el.querySelector('#address')?.value.trim().slice(0, 300) || '';
     // Continuity-of-care phone consent (Eric, 2026-08-25). Required for every
     // booking, video included - he calls clients back between sessions
     // whatever the session method. Enforced by the Worker too (REQUIRED_ACKS).
@@ -716,6 +727,7 @@ function renderPayment() {
           requestedStart: state.requestedStart ? state.requestedStart.toISOString() : undefined,
           method: state.method,
           phone: state.phone,
+          address: state.address,
           acks: state.acks,
           // What this screen is showing. If the rate moved between the page
           // loading and this button being pressed, the Worker refuses rather

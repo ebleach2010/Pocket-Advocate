@@ -138,6 +138,20 @@ advisor's flight fix (queue.mjs Q18-Q19): a manual Update takes over a
 batch in flight, and a flight the provider cannot be reached for is
 abandoned after thirty polls.
 
+### The contact row and the log pencil (2026-09-03)
+
+The client's phone and home address on the case overview, tap to call or
+open in Maps, with an Edit beside them; booking asks every client for the
+number and offers the address line, and the webhook copies both onto the
+case. A pencil at the top right of every work log entry corrects who it was
+with, when, the number, who was on it, and the type, and tells the client
+nothing. `tools/suites/contact.mjs` lifts and runs the Worker's cleaners,
+the contact branch of case-update and the card's link maker, and pins the
+booking form, the metadata, the webhook, the pencil's markup and the
+Worker's edit branch; `tools/suites/worklog.mjs` L63-L66 run the correction
+through the route's harness. `tools/drives/drive-contact.mjs` walks the
+card, the pencil and the booking form in the demo at 390px.
+
 ### Side doors, by typed code
 
 The old rooms still answer, as codes typed into either sign-in box - useful

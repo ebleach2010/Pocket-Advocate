@@ -2098,6 +2098,37 @@ function paintOverview(pane) {
       <button class="btn quiet" data-telehealth="deny">Can't make it</button>
     </div>` : ''}`;
 
+  // The contact Edit on the card (2026-09-03): one delegated listener per
+  // pane, so it survives every repaint of this innerHTML. Saves through
+  // case-update and repaints the two links in place, no reload.
+  if (!pane._contactWired) {
+    pane._contactWired = true;
+    pane.addEventListener('click', async (e) => {
+      if (e.target.closest('[data-contact-edit]')) {
+        const f = pane.querySelector('[data-contact-form]');
+        if (f) f.hidden = !f.hidden;
+        return;
+      }
+      const save = e.target.closest('[data-contact-save]');
+      if (!save) return;
+      const said = pane.querySelector('[data-contact-said]');
+      const g = (n) => pane.querySelector(`[data-contact-in="${n}"]`)?.value.trim() || '';
+      save.disabled = true;
+      try {
+        const out = await api({ action: 'contact', phone: g('phone'), address: g('address') });
+        const bits = contactBits(out.phone || '', out.address || '');
+        const ph = pane.querySelector('[data-contact-phone]');
+        if (ph) ph.outerHTML = bits.phone;
+        const ad = pane.querySelector('[data-contact-address]');
+        if (ad) ad.outerHTML = bits.address;
+        if (said) said.textContent = 'Saved. It is on the card now.';
+      } catch (err) {
+        if (said) said.textContent = err.message || 'Could not save.';
+      }
+      save.disabled = false;
+    });
+  }
+
   pane.innerHTML = `
     ${infoBar(c, mtFmt, start, due)}
     ${c.fullAccess ? '<div data-authority-status></div>' : ''}
@@ -3639,6 +3670,28 @@ function followUpUnavailableReason(c) {
 }
 
 /**
+ * THE CLIENT'S PHONE AND HOME ADDRESS (Eric, 2026-09-03: "patient's home
+ * address and telephone number should be visible on this screen by the rest
+ * of his info"). Two fragments from one function, because the overview
+ * paints them at render and again in place after an edit, and two copies of
+ * the markup would drift. Tap the number to call it from the phone this page
+ * is read on; tap the address to open it in Maps. A missing value says so
+ * rather than leaving a blank, so the gap is visible and the Edit beside it
+ * is the obvious next tap.
+ */
+function contactBits(phone, address) {
+  const tel = String(phone || '').replace(/[^\d+]/g, '');
+  return {
+    phone: phone
+      ? `<a href="tel:${esc(tel)}" data-contact-phone>📞 ${esc(phone)}</a>`
+      : '<span class="dim" data-contact-phone>📞 no number on file</span>',
+    address: address
+      ? `<a href="https://maps.apple.com/?q=${esc(encodeURIComponent(address))}" target="_blank" rel="noopener" data-contact-address>📍 ${esc(address)}</a>`
+      : '<span class="dim" data-contact-address>📍 no address on file</span>',
+  };
+}
+
+/**
  * Everything that matters, one section: appointment, session type, money,
  * the report clock (strict 7 calendar days, loud as it tightens), follow-up
  * state, and any payment the client still owes.
@@ -3662,6 +3715,27 @@ function infoBar(c, mtFmt, start, due) {
     const age = c.clientDob ? Math.floor((Date.now() - new Date(c.clientDob + 'T00:00:00').getTime()) / 31_557_600_000) : null;
     row('CLIENT', `${esc(c.clientName || '?')}${c.clientDob ? ` <span class="dim">· DOB ${esc(c.clientDob)}${age !== null ? ` (${age})` : ''}</span>` : ''}${c.clientEmail ? ` <span class="dim">· ${esc(c.clientEmail)}</span>` : ''}`);
   }
+  // THE CLIENT'S PHONE AND HOME ADDRESS (Eric, 2026-09-03: "patient's home
+  // address and telephone number should be visible on this screen by the rest
+  // of his info"). The links come from contactBits so an edit can repaint
+  // them in place; the Edit unfolds two inputs under the row and saves
+  // through case-update. The phone falls back to the number a phone-call
+  // booking left on the appointment.
+  const contactPhone = c.clientPhone || c.appointment?.phone || '';
+  const contactAddress = c.clientAddress || '';
+  const bits = contactBits(contactPhone, contactAddress);
+  row('CONTACT', `${bits.phone} <span class="dim">·</span> ${bits.address}
+    <button class="btn ghost tiny" type="button" data-contact-edit aria-label="Edit phone and address">✏️ Edit</button>
+    <span class="contact-form" data-contact-form hidden>
+      <label class="dim small">Phone
+        <input type="tel" data-contact-in="phone" value="${esc(contactPhone)}" placeholder="+1 555 555 5555"></label>
+      <label class="dim small">Home address
+        <input type="text" data-contact-in="address" value="${esc(contactAddress)}" maxlength="300" placeholder="Street, city, state, ZIP"></label>
+      <span class="row" style="gap:.4rem; align-items:center; margin-top:.3rem;">
+        <button class="btn tiny" type="button" data-contact-save>Save</button>
+        <span class="dim small" data-contact-said></span>
+      </span>
+    </span>`);
   row('CALL', start
     ? `${fmt.format(start)} MST · ${esc(c.appointment.method)}${c.publicElection?.choice === 'public' ? ' · <span style="color:var(--magenta)">PUBLIC</span>' : ''}`
     : 'no appointment', start ? null : 'var(--danger)');
@@ -5463,9 +5537,32 @@ function paintWorkLog(pane) {
               <span class="log-row">
                 ${pillHtml}
                 <span class="log-row-t">${esc(i.clinic || 'Someone')}${i.at ? ` · ${new Date(i.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}</span>
+                <!-- THE PENCIL, top right (Eric, 2026-09-03: "Edit pencil top
+                     right of each log. I misspelled his name, for example").
+                     It sits inside the summary, so its handler stops the tap
+                     from folding the entry. -->
+                <button class="btn ghost tiny log-edit" type="button" data-call-edit="${esc(i.id)}" aria-label="Edit this entry">✏️</button>
                 <span class="log-seen${seen ? ' is-on' : ''}">${seen ? '👁 Shown to your client' : '🔒 Private, not shown'}</span>
               </span></summary>
             <div class="faq-a">
+              <div class="log-edit-form" data-call-edit-form="${esc(i.id)}" hidden>
+                <label class="dim small">What was it
+                  <select data-e="kind">
+                    ${LOG_KINDS.map((k) => `<option value="${esc(k.id)}"${k.id === i.kind ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}
+                    ${customs.map((k) => `<option value="${esc(k.id)}"${k.id === i.kind ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}
+                  </select></label>
+                <label class="dim small">Who it was with
+                  <input type="text" data-e="clinic" maxlength="200" value="${esc(i.clinic || '')}"></label>
+                <label class="dim small">When
+                  <input type="datetime-local" data-e="at" value="${i.at ? esc(localInputValue(new Date(i.at).getTime())) : ''}"></label>
+                <div class="row" style="gap:.5rem; flex-wrap:wrap;">
+                  <label class="dim small" style="flex:1 1 8rem;">Their number, private
+                    <input type="tel" data-e="phone" maxlength="40" value="${esc(i.phone || '')}"></label>
+                  <label class="dim small" style="flex:1 1 8rem;">Who was on it, private
+                    <input type="text" data-e="parties" maxlength="200" value="${esc(i.parties || '')}"></label>
+                </div>
+                <p><button class="btn tiny" type="button" data-call-edit-save="${esc(i.id)}">Save the correction</button></p>
+              </div>
               ${i.phone ? `<p class="dim small">${esc(i.phone)}</p>` : ''}
               ${i.parties ? `<p class="dim small">On it: ${esc(i.parties)}</p>` : ''}
               <label class="dim small">What your client sees, in one line. Leave
@@ -5641,6 +5738,30 @@ function paintWorkLog(pane) {
         notes: pane.querySelector(`[data-call-notes="${b.dataset.callSave}"]`)?.value || '',
         summary: pane.querySelector(`[data-call-summary="${b.dataset.callSave}"]`)?.value || '',
       }, e.currentTarget));
+    }
+    // The pencil and its Save (2026-09-03). The pencil lives inside the
+    // <summary>, so its tap is stopped from folding the entry; it opens the
+    // entry and unfolds the form instead.
+    for (const b of pane.querySelectorAll('[data-call-edit]')) {
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const d = b.closest('details');
+        if (d) d.open = true;
+        const f = pane.querySelector(`[data-call-edit-form="${b.dataset.callEdit}"]`);
+        if (f) f.hidden = !f.hidden;
+      });
+    }
+    for (const b of pane.querySelectorAll('[data-call-edit-save]')) {
+      b.addEventListener('click', (e) => {
+        const f = pane.querySelector(`[data-call-edit-form="${b.dataset.callEditSave}"]`);
+        const g = (n) => f?.querySelector(`[data-e="${n}"]`)?.value.trim() || '';
+        if (!g('clinic')) { alert('Say who it was with first.'); return; }
+        post({
+          action: 'edit', id: b.dataset.callEditSave, kind: g('kind'), clinic: g('clinic'),
+          at: g('at') ? new Date(g('at')).toISOString() : '', phone: g('phone'), parties: g('parties'),
+        }, e.currentTarget);
+      });
     }
     pageByDay('log', [...pane.querySelectorAll('.log-day-pg')],
       dayGroups.map((g) => g.label), { olderStep: -1 });

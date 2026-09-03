@@ -13,7 +13,7 @@
 //   POST   /api/admin/stats        recompute the figures now (admin)
 //   GET/POST/DELETE /api/admin/personal   Personal Uploads: list, add, remove (admin, Worker-only prefix)
 //   GET    /api/admin/personal/file       one personal file's bytes (admin token or a ten-minute signed link)
-//   POST   /api/admin/case-update  join link / milestones / close (admin)
+//   POST   /api/admin/case-update  join link / milestones / close / contact: phone and home address (admin)
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
 //   POST   /api/advisor            private LLM advisor: analyse / ask / draft (admin)
 // Plus a cron (see scheduled()) that emails unread-chat digests.
@@ -1888,7 +1888,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-03-front-page-free-call-numbers';
+const BUILD_TAG = 'v2026-09-03-contact-row-log-pencil';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1896,7 +1896,7 @@ const BUILD_TAG = 'v2026-09-03-front-page-free-call-numbers';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.79';
+const VERSION = '2.80';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2442,6 +2442,22 @@ function followUpLineItems(cents) {
 // requestedStart is a time the client asked for that isn't on the calendar. It
 // takes payment like any booking, but the case is flagged pending until the
 // admin confirms or declines it.
+/**
+ * THE CLIENT'S PHONE AND HOME ADDRESS (Eric, 2026-09-03: "patient's home
+ * address and telephone number should be visible on this screen by the rest
+ * of his info"). Booking asks for both now, and the overview card's Edit
+ * takes them for a case booked before it did. One rule for the number and one
+ * cleaner for each field, shared by checkout and the contact edit, so the two
+ * doors cannot drift apart.
+ */
+const PHONE_RE = /^\+?[\d\s().-]{7,20}$/;
+/** A phone as typed, minus control characters, at most 40 characters. */
+const cleanPhone = (v) => (typeof v === 'string'
+  ? v.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) : '');
+/** A home address on one line: control characters and line breaks become spaces, 300 at most. */
+const cleanAddress = (v) => (typeof v === 'string'
+  ? v.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300) : '');
+
 async function handleCheckout(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in to book.' }, 401);
@@ -2467,8 +2483,13 @@ async function handleCheckout(request, env) {
     }, 400);
 
   if (!METHODS.includes(method)) return json({ error: 'Choose a meeting method.' }, 400);
-  if (method === 'phone' && !/^\+?[\d\s().-]{7,20}$/.test(phone || ''))
-    return json({ error: 'A valid phone number is required for a phone call.' }, 400);
+  // The number is asked for on every booking now, video included (Eric,
+  // 2026-09-03). Every client ticks the between-sessions phone consent a few
+  // lines down this form, and a video client used to tick it without ever
+  // giving a number, so the overview card had nothing to show him.
+  if (!PHONE_RE.test(cleanPhone(phone)))
+    return json({ error: 'A valid phone number is required so I can reach you.' }, 400);
+  const address = cleanAddress(body.address);
   for (const form of REQUIRED_ACKS)
     if (!acks || typeof acks[form] !== 'number')
       return json({ error: 'All acknowledgment forms must be completed first.' }, 400);
@@ -2551,7 +2572,8 @@ async function handleCheckout(request, env) {
       tz: clientTz || '',
       slotId,
       method,
-      phone: method === 'phone' ? phone : '',
+      phone: cleanPhone(phone),
+      address,
       acks: JSON.stringify(acks),
     },
   });
@@ -2623,7 +2645,8 @@ async function checkoutRequestedTime(env, o) {
       slotId: '',
       requestedStart: start.toISOString(),
       method,
-      phone: method === 'phone' ? phone : '',
+      phone: cleanPhone(phone),
+      address: cleanAddress(o.body?.address),
       acks: JSON.stringify(acks),
     },
   });
@@ -3026,6 +3049,10 @@ async function createCaseFromSession(env, session) {
       clientName: m.name || null,
       clientDob: m.dob || null,
       clientTz: m.tz || null,
+      // What booking now asks for (2026-09-03). Beside the name and date of
+      // birth on the client's own document; the overview card reads them.
+      clientPhone: m.phone || null,
+      clientAddress: m.address || null,
       status: allFormsDone ? 'confirmed' : 'forms',
       createdAt: now,
       appointment: {
@@ -4487,6 +4514,43 @@ async function handleClinicCalls(request, env, url) {
         .then(() => patchDoc(env, `cases/${id}`, { logKindTold: kind }, { mask: ['logKindTold'] }))
         .catch(() => { /* the entry is logged either way */ });
     }
+    return json({ ok: true });
+  }
+  if (body?.action === 'edit') {
+    // FIXING WHAT WAS TYPED (Eric, 2026-09-03: "Edit pencil top right of each
+    // log. I misspelled his name, for example, so need to edit to fix that").
+    // Who it was with, when, the number, who was on it, and the type: the
+    // same gates as `add`, field for field.
+    //
+    // NOTHING IS SENT FROM HERE. A correction is not new work, so the client
+    // hears nothing, and logKindTold stays where the last notice left it. A
+    // changed type therefore starts no notified run of its own; the next NEW
+    // entry of that type does, exactly as it always would.
+    //
+    // Looked up before it is written: patchDoc with a mask creates a missing
+    // document, and a correction to an entry that is gone must not raise a
+    // stub with no notes and no summary.
+    const itemId = String(body?.id || '');
+    if (!/^[\w-]{1,64}$/.test(itemId)) return json({ error: 'Bad request' }, 400);
+    const row = await getDoc(env, `${coll}/${itemId}`);
+    if (!row) return json({ error: 'That entry is gone.' }, 404);
+    const clinic = str(body?.clinic, 200);
+    if (!clinic) return json({ error: 'Say who it was with.' }, 400);
+    const at = str(body?.at, 40);
+    let kind = 'call';
+    let kindLabel = '';
+    let kindColor = '';
+    if (LOG_KINDS.includes(body?.kind)) {
+      kind = body.kind;
+    } else {
+      const custom = (await customLogKinds(env)).find((k) => k.id === body?.kind);
+      if (custom) { kind = custom.id; kindLabel = custom.label; kindColor = custom.color; }
+    }
+    await patchDoc(env, `${coll}/${itemId}`, {
+      clinic, phone: str(body?.phone, 40), parties: str(body?.parties, 200),
+      kind, kindLabel, kindColor,
+      at: at ? (hisWallClock(at) || new Date(at)) : null, editedAt: new Date(),
+    }, { mask: ['clinic', 'phone', 'parties', 'kind', 'kindLabel', 'kindColor', 'at', 'editedAt'] });
     return json({ ok: true });
   }
   if (body?.action === 'notes') {
@@ -8619,6 +8683,23 @@ async function handleCaseUpdate(request, env) {
     await patchDoc(env, `cases/${caseId}`, { appointment: { joinLink: joinLink || null } }, {
       mask: ['appointment.joinLink'],
     });
+  } else if (action === 'contact') {
+    // THE CLIENT'S PHONE AND HOME ADDRESS, by his hand (Eric, 2026-09-03:
+    // "patient's home address and telephone number should be visible on this
+    // screen by the rest of his info"). Booking asks for both now; this is how
+    // he fills them in for a case booked before it did, and corrects either
+    // later. They sit on the case document, which is the client's own, beside
+    // the name and date of birth that already do. An empty field clears the
+    // value rather than keeping a stale one: what he typed is what is true.
+    const phone = cleanPhone(body?.phone);
+    if (phone && !PHONE_RE.test(phone))
+      return json({ error: 'That does not look like a phone number.' }, 400);
+    const address = cleanAddress(body?.address);
+    await patchDoc(env, `cases/${caseId}`, {
+      clientPhone: phone || null,
+      clientAddress: address || null,
+    }, { mask: ['clientPhone', 'clientAddress'] });
+    return json({ ok: true, phone: phone || null, address: address || null });
   } else if (action === 'set-paid') {
     // WHAT THEY ACTUALLY PAID, recorded by hand (Eric, 2026-08-26). A case
     // from before caseRateCents existed has no price on it, and the app used

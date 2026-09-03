@@ -714,6 +714,41 @@ ck('L38b and the notes save still cannot change an entry\'s kind',
   notesBranch.length > 0 && !/kind/.test(notesBranch) && !/notifyUser/.test(notesBranch),
   notesBranch ? 'the notes branch touches kind or notifies' : 'could not slice the notes branch');
 
+// THE PENCIL (Eric, 2026-09-03: "Edit pencil top right of each log. I
+// misspelled his name, for example, so need to edit to fix that"). A
+// correction rewrites what was typed and says nothing to anybody. Run, not
+// read: the edit branch is its own door, beside the notes save above, and
+// the kind IS editable here, so the silence is the whole property.
+const beforeEdit = H.notified.length;
+const writesBeforeEdit = H.written.length;
+const editReply = await H.post({
+  caseId: 'c1', action: 'edit', id: 'entry0', kind: 'appeal',
+  clinic: 'Valley Neurology, spelled right', phone: '208 555 0100', parties: 'me, the clerk',
+});
+const editWrite = H.written[writesBeforeEdit];
+// NEGATIVE CONTROL (run 2026-09-03): the edit branch writing `kind: 'call'` whatever was sent made this read
+//   FAIL  L63 the pencil rewrites who it was with, the number, who was on it and the type, on the entry itself
+ck('L63 the pencil rewrites who it was with, the number, who was on it and the type, on the entry itself',
+  editReply.obj.ok === true && H.written.length === writesBeforeEdit + 1
+  && editWrite.path === 'cases/c1/private/clinicCalls/items/entry0'
+  && editWrite.data.clinic === 'Valley Neurology, spelled right' && editWrite.data.kind === 'appeal'
+  && editWrite.data.phone === '208 555 0100' && editWrite.data.parties === 'me, the clerk'
+  && !('summary' in editWrite.data) && !('notes' in editWrite.data),
+  JSON.stringify(editWrite || editReply));
+// NEGATIVE CONTROL (run 2026-09-03): copying the notify-and-stamp block from `add` into `edit` made this read
+//   FAIL  L64 and it tells nobody, and moves no run marker  -- 4 sent, was 3
+ck('L64 and it tells nobody, and moves no run marker',
+  H.notified.length === beforeEdit && !H.written.slice(writesBeforeEdit).some((w) => w.path === 'cases/c1'),
+  `${H.notified.length} sent, was ${beforeEdit}`);
+const goneReply = await H.post({ caseId: 'c1', action: 'edit', id: 'never-logged', kind: 'call', clinic: 'X' });
+// NEGATIVE CONTROL (run 2026-09-03): removing the getDoc look-up before the write made this read
+//   FAIL  L65 a correction to an entry that is gone is a 404, and raises no stub  -- 200
+ck('L65 a correction to an entry that is gone is a 404, and raises no stub',
+  goneReply.code === 404 && H.written.length === writesBeforeEdit + 1, `${goneReply.code}`);
+const blankReply = await H.post({ caseId: 'c1', action: 'edit', id: 'entry0', kind: 'call', clinic: '   ' });
+ck('L66 and it will not blank who it was with',
+  blankReply.code === 400 && H.written.length === writesBeforeEdit + 1, `${blankReply.code}`);
+
 // NOBODY TO TELL, AND A CASE THAT IS OVER. Both are silence, and both still
 // save the entry.
 const noClient = harness({ status: 'open' });

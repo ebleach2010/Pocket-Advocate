@@ -478,6 +478,18 @@ export function demoApi(role, store) {
           ...c,
           appointment: { ...(c.appointment || {}), joinLink: link || null },
         });
+      } else if (body.action === 'contact') {
+        // The client's phone and home address, by his hand (2026-09-03),
+        // mirroring the Worker: the same number rule, the same lengths, an
+        // empty field clears the value.
+        const phone = String(body.phone || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+        if (phone && !/^\+?[\d\s().-]{7,20}$/.test(phone))
+          return fail(400, 'That does not look like a phone number.');
+        const address = String(body.address || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+        store.docs.set(key, { ...c, clientPhone: phone || null, clientAddress: address || null });
+        store.persist?.();
+        store.fire?.(key);
+        return ok({ ok: true, phone: phone || null, address: address || null });
       } else if (body.action === 'recording-uploaded') {
         if (c.status === 'closed') return fail(409, 'Case is closed.');
         const next = { ...c, reportDueAt: new Date(now.getTime() + 7 * 86400000) };
@@ -872,6 +884,8 @@ export function demoApi(role, store) {
           clientName: profile.name || 'Jordan Avery',
           clientDob: profile.dob || null,
           clientTz: body.tz || 'America/Denver',
+          clientPhone: body.phone || null,
+          clientAddress: String(body.address || '').trim().slice(0, 300) || null,
           status: 'confirmed',
           createdAt: now,
           appointment: {
@@ -1228,6 +1242,35 @@ export function demoApi(role, store) {
           summary,
         });
       };
+      if (body.action === 'edit') {
+        // The correction (2026-09-03), mirroring the Worker: the same fields
+        // as add, the type resolved and stamped the same way, nothing sent,
+        // and an entry that is gone is a 404 rather than a stub.
+        const k = prefix + body.id;
+        const cur = store.docs.get(k);
+        if (!cur) return fail(404, 'That entry is gone.');
+        if (!String(body.clinic || '').trim()) return fail(400, 'Say who it was with.');
+        let kind = 'call';
+        let kindLabel = '';
+        let kindColor = '';
+        if (kinds.includes(body.kind)) {
+          kind = body.kind;
+        } else {
+          const cu = customKinds().find((x) => x.id === body.kind);
+          if (cu) { kind = cu.id; kindLabel = cu.label; kindColor = cu.color; }
+        }
+        const next = {
+          ...cur,
+          clinic: String(body.clinic || '').trim().slice(0, 200),
+          phone: String(body.phone || '').slice(0, 40), parties: String(body.parties || '').slice(0, 200),
+          kind, kindLabel, kindColor,
+          at: body.at ? new Date(body.at) : null, editedAt: new Date(),
+        };
+        store.docs.set(k, next);
+        mirror(body.id, next);
+        store.persist?.();
+        return ok({ ok: true });
+      }
       if (body.action === 'notes') {
         const k = prefix + body.id;
         const cur = store.docs.get(k);

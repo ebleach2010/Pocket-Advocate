@@ -230,6 +230,10 @@ export function seed({ set, file }) {
     clientEmail: 'jordan@example.demo',
     clientName: 'Jordan Avery',
     clientTz: 'America/Denver',
+    // What booking asks for now (2026-09-03), so the overview card's CONTACT
+    // row has something to show and the Edit has something to correct.
+    clientPhone: '+1 208 555 0142',
+    clientAddress: '418 Hawthorne Ave, Boise, ID 83702',
     status: 'delivered',
     createdAt: days(11),
     appointment: {
@@ -344,6 +348,8 @@ export function seed({ set, file }) {
     clientName: 'Jordan Avery',
     clientDob: '1988-03-14',
     clientTz: 'America/Denver',
+    clientPhone: '+1 208 555 0142',
+    clientAddress: '418 Hawthorne Ave, Boise, ID 83702',
     status: 'awaiting_report',
     createdAt: days(38),
     appointment: {

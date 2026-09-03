@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.79';
+export const VERSION = '2.80';
 
 /**
  * Newest first.
@@ -51,6 +51,22 @@ export const VERSION = '2.79';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE CONTACT ROW AND THE LOG PENCIL (Eric, 2026-09-03: "patient's home
+    // address and telephone number should be visible on this screen by the
+    // rest of his info", and "Edit pencil top right of each log. I
+    // misspelled his name, for example"). The client line is the one thing a
+    // client meets: booking asks for the number and the address.
+    version: '2.80',
+    quiet: true,
+    client: [
+      'Booking asks for the best number to reach you and, if you like, your home address, so I have them when I need them.',
+    ],
+    admin: [
+      'The case overview has a CONTACT row: the phone, tap to call, and the home address, tap to open in Maps, with an Edit beside them for a case booked before booking asked.',
+      'Every work log entry has a pencil at its top right: fix who it was with, when, the number, who was on it, or the type. A correction tells the client nothing.',
+    ],
+  },
   {
     // MERGE DAY (Eric, 2026-09-03: "Last PR ... can be merged immediately").
     // Three parked branches land together: the free 15-minute call, By the
