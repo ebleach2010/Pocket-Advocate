@@ -379,8 +379,16 @@ console.log('\n--- G. the two places, and the words ---');
   //   FAIL  G4 not one em or en dash in anything new
   check('G4 not one em or en dash in anything new',
     ![f('public/js/admin-personal.js'), region, cssBlock, code('public/js/changelog.js').split('\n').find((l) => /Personal Uploads:/.test(l)) || ''].some((s) => /[–—]/.test(s)));
-  check('G5 the version moved in both places, with the shelf on the admin lines and never on a client line',
-    /const VERSION = '2\.78';/.test(SRC) && /BUILD_TAG = 'v2026-09-03-personal-uploads'/.test(SRC)
+  // 2026-09-03, merge day (v2.79): this pin held the exact number and tag of
+  // the push that shipped the shelf, and the very next push moved both, as
+  // every push must. It now pins what it meant: the Worker's VERSION and the
+  // changelog's agree, and the 2.78 entry keeps the shelf on its admin lines
+  // and never on a client line.
+  // NEGATIVE CONTROL (run 2026-09-03): the Worker's VERSION set to '2.70' made this read
+  //   FAIL  G5 the version moves in both places together, with the shelf on the admin lines and never on a client line
+  check('G5 the version moves in both places together, with the shelf on the admin lines and never on a client line',
+    !!(SRC.match(/\nconst VERSION = '([\d.]+)';/) || [])[1]
+    && (SRC.match(/\nconst VERSION = '([\d.]+)';/) || [])[1] === (f('public/js/changelog.js').match(/export const VERSION = '([\d.]+)';/) || [])[1]
     && /version: '2\.78',[\s\S]{0,400}admin: \[\s*'Personal Uploads:/.test(f('public/js/changelog.js'))
     && !/client: \[[^\]]*Personal Uploads/.test(f('public/js/changelog.js')));
 }

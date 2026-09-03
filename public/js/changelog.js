@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.78';
+export const VERSION = '2.79';
 
 /**
  * Newest first.
@@ -51,6 +51,26 @@ export const VERSION = '2.78';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // MERGE DAY (Eric, 2026-09-03: "Last PR ... can be merged immediately").
+    // Three parked branches land together: the free 15-minute call, By the
+    // numbers, and the front page in the Look A skin on the copy deck he
+    // approved word for word. Silent, per his rule: an unspecified push is a
+    // footer entry, and none of this moves anything on an existing client's
+    // own case page.
+    version: '2.79',
+    quiet: true,
+    client: [
+      'You can now book a free 15-minute call with me from the front page before deciding on a case.',
+      'A new By the numbers page shows how I actually work: reply times, hours, and reports delivered on time, measured across every case and updated daily.',
+      'The front page is easier to read: what I do, how a case runs step by step, and a free call to start.',
+    ],
+    admin: [
+      'FREE CALLS on the dashboard: name, MST time, method, their line, and Link / Done / No-show / Cancel. A video call inside 24 hours with no link is flagged. The calendar wears a fit mark, and the availability page has a Case / Free call radio.',
+      'By the numbers: the figures are walked once a day into stats/public and served from /api/stats; the landing strip stays hidden until the first walk has run.',
+      'The front page reads as Paper by default on a light device; a scheme you have chosen still wins. The icon sprite and the two fonts are self-hosted.',
+    ],
+  },
   {
     // Three asks in one evening (Eric, 2026-09-03). The client line is the
     // one thing a client can see: the doing line under the clock.
