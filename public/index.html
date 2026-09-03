@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-default-scheme="paper">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -9,28 +9,29 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
-<meta name="theme-color" content="#EAF2FA">
+<meta name="theme-color" content="#F3EEE3">
 <title>Pocket Advocate</title>
 <script>
 // Paint in the stored colour scheme before the stylesheet lands, so a scheme
-// never flashes neon on the way in. Mirrors theme.js, which owns the choosing
-// and persisting; this only applies what is already stored. Eric's admin
-// device keeps Neon by default, everyone else gets Calm, and a stored choice
-// always wins.
+// never flashes on the way in. Mirrors theme.js, which owns the choosing and
+// persisting; this only applies what is already stored. A stored choice
+// always wins. With nothing stored, this page reads as Paper on a light
+// device (Look A, "Clinic Note", 2026-09) and Night on a dark one; every
+// other page keeps Daylight, and data-default-scheme above tells theme.js.
 (function () {
   try {
     var s = localStorage.getItem('pa-scheme');
     if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
-      s = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'calm' : 'neon';
+      s = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'calm' : 'paper';
     if (s !== 'neon') document.documentElement.dataset.scheme = s;
     var c = { neon: '#EAF2FA', calm: '#0A1626', paper: '#F3EEE3', contrast: '#000000' }[s];
     var m = document.querySelector('meta[name="theme-color"]');
     if (m && c) m.setAttribute('content', c);
-  } catch (e) { /* storage blocked: neon is the default and is already correct */ }
+  } catch (e) { /* storage blocked: the shipped default is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=sp13">
-<link rel="stylesheet" href="/css/glowup.css?v=sp6">
+<link rel="stylesheet" href="/css/site.css?v=sp14">
+<link rel="stylesheet" href="/css/glowup.css?v=sp7">
 <script>
 // A returning account holder skips the booking page. Inline in <head> so there
 // is no flash of it first; the marker is set at sign-in and cleared at
@@ -46,7 +47,7 @@
       // forwards. Going direct would 404 on a device whose cookie aged out.
       location.replace('/signin.html?to=%2Fadmin.html');
     }
-  } catch (e) { /* storage blocked — land normally */ }
+  } catch (e) { /* storage blocked: land normally */ }
 })();
 </script>
 <script type="module" src="/js/nav-menu.js"></script>
@@ -54,7 +55,7 @@
      for the same window; this only greys the page and says when it lifts. -->
 <script type="module" src="/js/maintenance.js"></script>
 </head>
-<body>
+<body class="landing">
 <header class="bar">
   <div class="bar-inner">
     <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
@@ -69,190 +70,105 @@
     </nav>
   </div>
 </header>
-<!-- The icon set, drawn once and referenced by <use> everywhere below.
-     Inline rather than linked: the page has to render its own icons with no
-     second request and nothing to 404, and a stroke icon inherits currentColor
-     so one shape serves cyan, violet and dim without a second copy. -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
-  <defs>
-    <linearGradient id="g-cv" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="var(--cyan)"/><stop offset="1" stop-color="var(--magenta)"/>
-    </linearGradient>
-    <g id="i-brief" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="2.5" y="7" width="19" height="13" rx="2.5"/>
-      <path d="M8.5 7V5.5a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2V7M2.5 12.5h19"/>
-    </g>
-    <g id="i-chat" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M20.5 11.6c0 4.4-3.8 8-8.5 8a9.6 9.6 0 0 1-2.9-.45L4.2 20.6l1.4-4.05a7.8 7.8 0 0 1-1.6-4.95c0-4.42 3.8-8 8.5-8s8 3.58 8 8z"/>
-      <path d="M8.8 11.6h6.4M8.8 8.9h6.4"/>
-    </g>
-    <g id="i-chev" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5l6.5 6.5-6.5 6.5"/></g>
-    <g id="i-cal" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/>
-    </g>
-    <g id="i-doc" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
-      <path d="M14 3v5h5M9 13.5h6M9 17h4"/>
-    </g>
-    <g id="i-cloud" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M7.2 18.2a4.5 4.5 0 0 1-.5-8.97 6 6 0 0 1 11.55 1.4 3.75 3.75 0 0 1-.75 7.57"/>
-      <path d="M12 11.5v8.5M9 14.5l3-3 3 3"/>
-    </g>
-    <g id="i-lock" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 2.8l7.5 2.9v5.6c0 4.6-3.1 8.5-7.5 9.6-4.4-1.1-7.5-5-7.5-9.6V5.7z"/>
-      <rect x="9.4" y="10.9" width="5.2" height="4.6" rx="1.1"/>
-      <path d="M10.7 10.9V9.6a1.3 1.3 0 0 1 2.6 0v1.3"/>
-    </g>
-    <g id="i-check" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.8 2.8L16.2 9.7"/>
-    </g>
-    <g id="i-user" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/>
-      <path d="M6.3 18.6a6.6 6.6 0 0 1 11.4 0"/>
-    </g>
-    <g id="i-award" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="8.8" r="5.4"/><path d="M8.4 13.3L6.9 21l5.1-2.5L17.1 21l-1.5-7.7"/>
-    </g>
-    <g id="i-heart" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 20.3s-7.6-4.7-7.6-9.8A4.45 4.45 0 0 1 12 7.6a4.45 4.45 0 0 1 7.6 2.9c0 5.1-7.6 9.8-7.6 9.8z"/>
-    </g>
-    <g id="i-arrow" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12h14M12.5 6l6 6-6 6"/></g>
-  </defs>
-</svg>
 
+<!-- LOOK A, "CLINIC NOTE" (Eric, 2026-09-02: "I like A best"). Nine slots in
+     the order the landing sweep settled on: what is wrong, how the work gets
+     done, who I am, proof, price, the ask. EVERY SENTENCE BELOW IS FROM THE
+     COPY DECK HE APPROVED WORD FOR WORD ("Use it as is", 2026-09-02): his
+     own lines from the live site and his story, plus the handful he read as
+     NEW and accepted. Change the deck, then this; never this alone.
+     The icons come from /img/icons.svg, drawn once for the whole site. -->
 <main>
   <section class="land-sec hero">
-    <!-- The brand object itself, not an illustration of it: the tile rides
-         the hero's top edge the way the heart rides the pocket, with its own
-         pool of light behind it. -->
-    <span class="hero-halo" aria-hidden="true"></span>
-    <img class="hero-logo" src="/img/logo-192.png" alt="" width="192" height="192">
-    <div class="stack">
-      <div class="hero-eyebrow eyebrow">PATIENT ADVOCACY</div>
-      <h1>Go into your next appointment with a plan.</h1>
-      <p class="hero-sub measure">I review your labs, imaging, records, and history, then help you sort out what deserves attention, what questions to ask next, and how to present the case clearly to your care team.</p>
-      <p class="hero-cred measure">I'm a professional patient advocate with 5 years' worth of boots on the ground experience, and an autoimmune encephalitis survivor. I know what it is like to have a complicated case that does not fit neatly into a box.</p>
-    </div>
+    <img class="hero-logo" src="/img/logo-192.png" alt="" width="56" height="56">
+    <p class="hero-eyebrow eyebrow">Patient advocacy for complicated neurological conditions. US and Canada.</p>
+    <h1>Go into your next appointment with a plan.</h1>
+    <p class="hero-sub measure">I review your labs, imaging, records, and history, then help you sort out what deserves attention, what questions to ask next, and how to present the case clearly to your care team.</p>
+    <p class="hero-cred measure">I'm a professional patient advocate with 5 years' worth of boots on the ground experience, and an autoimmune encephalitis survivor. I know what it is like to have a complicated case that does not fit neatly into a box.</p>
     <div class="hero-pocket">
-    <div class="acts">
-      <!-- Eric, 2026-08-21: two solid buttons, equal weight, neither one
-           fading into the page. Eric, 2026-08-25: they were flat rectangles
-           with nothing to look at. Now each carries its own icon and a
-           chevron - and the row is a full-width card, which is what a thumb
-           aims at. 2026-08-26: ONE door, not two. The chat line is still
-           sold, three screens down under "What I do" and on the services
-           page; a hero with two equal buttons was the "confusing" half of
-           Eric's complaint, and the second one was taking the weight off
-           the first. -->
-      <!-- 2026-09-01, the landing sweep: every independent advocate surveyed
-           but one opens with a free first conversation, and this page opened
-           with a $1,200 button. Eric: "Yes, add the free fit call." So the
-           free 15-minute call is the first step and the case is the second,
-           at two different weights, which is what keeps this from being the
-           two-equal-buttons hero he called confusing. -->
-      <a class="act act-c cta" href="/fit.html">
-        <span class="act-ico"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg></span>
-        <span class="act-label">Book a free 15-minute call</span>
-        <svg class="ico act-chev" aria-hidden="true"><use href="#i-chev"/></svg>
-      </a>
-      <a class="act act-m" href="/book.html">
-        <span class="act-ico"><svg class="ico" aria-hidden="true"><use href="#i-brief"/></svg></span>
-        <span class="act-label">Book a case, <span data-rate="case">$1,200</span></span>
-        <svg class="ico act-chev" aria-hidden="true"><use href="#i-chev"/></svg>
-      </a>
-    </div>
-    <div class="actions" style="margin-top:.6rem; justify-content:center;">
-      <!-- Eric, 2026-08-25: "Underneath the 'book' button is an 'about'
-           button that explains EVERYTHING they get." One sheet per service:
-           TL;DR, the whole picture, then point by point. -->
-      <button type="button" class="btn ghost" data-about="case">About the Advocacy Case</button>
-    </div>
-    <p class="webapp-note" id="webapp-note">This is a web app</p>
+      <div class="acts">
+        <!-- The free call is the first door at full weight and the case the
+             second at card weight (Eric, 2026-09-01: "Yes, add the free fit
+             call"). Two different weights is what keeps this from being the
+             two-equal-buttons hero he called confusing (2026-08-26). -->
+        <a class="act act-c cta" href="/fit.html">
+          <span class="act-ico"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-chat"/></svg></span>
+          <span class="act-label">Book a free 15-minute call</span>
+          <svg class="ico act-chev" aria-hidden="true"><use href="/img/icons.svg#i-chev"/></svg>
+        </a>
+        <a class="act act-m" href="/book.html">
+          <span class="act-ico"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-brief"/></svg></span>
+          <span class="act-label">Book a case, <span data-rate="case">$1,200</span></span>
+          <svg class="ico act-chev" aria-hidden="true"><use href="/img/icons.svg#i-chev"/></svg>
+        </a>
+      </div>
+      <p class="hero-fine">No hidden fees and no surprise bills. Insurance does not cover this and I do not bill it.</p>
     </div>
   </section>
 
-  <!-- Four things worth knowing before the scroll, in the space a paragraph
-       would have taken. Not decoration: these are the questions a person asks
-       about someone they are about to hand their medical records to. -->
-  <ul class="trust">
-    <li><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span>Confidential<br>&amp; Private</span></li>
-    <li><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>Trauma-aware<br>Support</span></li>
-    <li><svg class="ico" aria-hidden="true"><use href="#i-user"/></svg><span>Personalized<br>Advocacy</span></li>
-    <li><svg class="ico" aria-hidden="true"><use href="#i-award"/></svg><span>BCPA<br>In Progress</span></li>
-  </ul>
-
-  <!-- "How it works" lived here as three step cards and was, word for word,
-       the same three steps as "How a case runs" on about.html. Two copies of
-       the same sequence on the two pages a stranger reads first is the
-       "long-winded" half of Eric's complaint; the copy is untouched and still
-       on about.html, and the step-by-step link below still lands on the page
-       that carries the detail. Not one word was rewritten. -->
-
-  <section class="land-sec">
-    <h2>What I do</h2>
-    <p class="dim measure">Three ways to work with me, each a flat price you see before
-      you pay.</p>
-    <div class="svc-grid">
-      <a class="svc-card svc-feat" href="/services.html">
-        <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="#i-brief"/></svg></span>
-        <h3>Advocacy Case</h3>
-        <span class="svc-price" data-rate="case">$1,200</span>
-        <span class="svc-line">The call, every record you share reviewed, and a written report within 7 days.</span>
-        <span class="svc-go">What is included</span>
-      </a>
-      <a class="svc-card" href="/services.html">
-        <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg></span>
-        <h3>Full-Service Case Management</h3>
-        <span class="svc-price"><span data-rate="full">$4,400</span><span class="svc-per">/month</span></span>
-        <span class="svc-line">I deal with the system myself: your clinics, your insurer, your appeals.</span>
-        <span class="svc-go">What is included</span>
-      </a>
-      <a class="svc-card" href="/services.html">
-        <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg></span>
-        <h3>24/7 Priority Chat</h3>
-        <span class="svc-price"><span data-rate="sub">$50</span><span class="svc-per">/month</span></span>
-        <span class="svc-line">A private line to me from your phone. Cancel anytime.</span>
-        <span class="svc-go">What is included</span>
-      </a>
-    </div>
-    <p class="dim small"><a class="pill" href="/services.html">What happens after you book, step by step</a></p>
+  <section class="land-sec ruled needs">
+    <h2>You might need an advocate if</h2>
+    <ul class="needs-list">
+      <li>You sit in front of a physician with ten important questions and leave having asked two.</li>
+      <li>One abnormal result has disappeared into hundreds of pages of records.</li>
+      <li>One specialist has never seen what another specialist documented six months ago.</li>
+      <li>You are explaining the same history again while sick, scared, cognitively overloaded, or simply too tired to keep managing the logistics of your own care.</li>
+      <li>Your symptoms are being called anxiety.</li>
+    </ul>
   </section>
 
-  <section class="land-sec meet sec-deep">
+  <section class="land-sec ruled how">
+    <h2>How it works</h2>
+    <ol class="steps">
+      <li><span class="num">1</span><div><strong>A free 15-minute call.</strong><span>You tell me what is going on and I tell you honestly whether I can help.</span></div></li>
+      <li><span class="num">2</span><div><span>Choose a time for a phone or video call and give me the basics about your case. Booking takes about two minutes.</span></div></li>
+      <li><span class="num">3</span><div><span>Upload the records you want me to review, including labs, imaging, visit notes, or anything else that helps me understand the case.</span></div></li>
+      <li><span class="num">4</span><div><span>We go through your history together, including what has been tried, what has helped, what has not, and where you are stuck.</span></div></li>
+      <li><span class="num">5</span><div><span>Within 7 days, I send you a written case report that organizes the history, the open questions, and the next steps worth discussing with your care team.</span></div></li>
+    </ol>
+  </section>
+
+  <section class="land-sec ruled who">
     <h2>Who you're hiring</h2>
-    <!-- The face and the story (Eric, 2026-08-30: "There needs an 'about your
-         advocate' page on the landing page"). The portrait IS the link; tap
-         it or the line beside it and his whole story opens. -->
-    <a href="/advocate.html" style="display:flex; align-items:center; gap:.85rem; text-decoration:none; color:inherit; margin:0 0 .9rem;">
-      <img src="/img/advocate-eric.jpg" alt="Eric, founder of Pocket Advocate" loading="lazy" style="width:72px; height:72px; border-radius:50%; object-fit:cover; flex:none;">
-      <span class="dim" style="font-size:.95rem; line-height:1.5;">Meet Eric, your advocate.<br><span style="text-decoration:underline; text-underline-offset:3px;">Read the story of why this service exists →</span></span>
+    <!-- The face IS the link (Eric, 2026-08-30): tap it and his story opens. -->
+    <a class="who-row" href="/advocate.html">
+      <img class="portrait" src="/img/advocate-eric.jpg" alt="Eric, founder of Pocket Advocate" loading="lazy" width="72" height="72">
+      <span class="who-name">Eric, your advocate<br><span class="who-link">My story: why I became an advocate</span></span>
     </a>
-    <div class="mission">
-      <p class="dim measure">I work with patients facing complicated neurological conditions
-        across the US and Canada. I came to advocacy after living through autoimmune
-        encephalitis myself. My mission statement is simply this:
-        <strong>earlier diagnosis and treatment leads to better outcome.</strong></p>
-    </div>
-    <!-- One way out of this section, plus the portrait above. "Watch on
-         YouTube" is still in the site footer on every page and has its own
-         section on about.html; sitting it beside "More about me" made two
-         links of equal weight and neither one read as the next step. -->
-    <div class="actions">
-      <a class="btn ghost" href="/about.html">More about me</a>
-    </div>
+    <p class="dim measure">I work with patients facing complicated neurological conditions across the US and Canada. I came to advocacy after living through autoimmune encephalitis myself and learning how hard it is to make a complicated medical story understandable to the people treating you. My role is to stay on your side of the table and help you make the strongest use of the care you already have.</p>
+    <blockquote class="who-quote"><p>I became an advocate because, for three years, I learned exactly how badly I needed one.</p></blockquote>
   </section>
 
-  <section class="land-sec">
+  <section class="land-sec ruled proof">
     <h2>What clients say</h2>
-    <p class="reviews-label eyebrow">★ GOOGLE REVIEWS</p>
-    <div class="reviews-strip"><div class="reviews-track" id="reviews-track"></div></div>
-    <p class="dim small"><a class="pill" href="/reviews.html">Read all reviews</a></p>
+    <!-- The Google header (Eric, 2026-09-02, from the widget he sent): the
+         wordmark, the real average and count, the write link, the read link.
+         Filled by the script at the foot of the page from the same list the
+         cards use, so the number can never disagree with the cards. -->
+    <div class="ghead">
+      <p class="gtitle"><span class="gword" aria-label="Google"><b>G</b><b>o</b><b>o</b><b>g</b><b>l</b><b>e</b></span> Reviews</p>
+      <p class="gscore"><b id="g-avg">5.0</b> <span class="stars" aria-label="5 out of 5">★★★★★</span> <span class="count">(<span id="g-count">5</span>)</span></p>
+      <div class="gacts">
+        <a class="btn glow cta gbtn" id="g-write" href="https://g.page/r/CUKWU6xlposHEAE/review" target="_blank" rel="noopener">Review us on Google</a>
+        <a class="pill" id="g-read" href="/reviews.html">Read them all</a>
+      </div>
+    </div>
+    <div class="themes">
+      <p class="tlabel">What clients keep saying</p>
+      <p class="tsub">From <span id="g-count-2">5</span> Google reviews</p>
+      <ul id="themes-list"></ul>
+    </div>
+    <div class="rail-wrap">
+      <button type="button" class="rv-arrow l" data-nudge="-1" aria-label="Previous review">‹</button>
+      <div class="reviews-strip"><div class="reviews-track" id="reviews-track"></div></div>
+      <button type="button" class="rv-arrow r" data-nudge="1" aria-label="Next review">›</button>
+    </div>
   </section>
 
   <!-- By the numbers (Eric, 2026-09-02): four measured figures, each a door
        to the full ledger. Hidden until stats.js has real figures behind it,
        so a fresh deploy never shows four ellipses. -->
-  <section class="land-sec" id="numbers" data-numbers-strip hidden>
+  <section class="land-sec ruled" id="numbers" data-numbers-strip hidden>
     <h2>By the numbers</h2>
     <p class="dim measure">How I actually work, measured across every case and updated daily.</p>
     <div class="numbers">
@@ -264,33 +180,60 @@
     <p class="dim small"><a class="pill" href="/stats.html">The whole ledger</a></p>
   </section>
 
-  <hr class="divide">
+  <section class="land-sec ruled cost">
+    <h2>What it costs</h2>
+    <p class="dim measure">Three ways to work with me, each a flat price you see before you pay.</p>
+    <p class="reframe measure">Independent advocates typically bill $100 to $300 an hour against a retainer that runs down. Every price here is written out before you pay, and the work behind each one is spelled out.</p>
+    <div class="svc-grid">
+      <a class="svc-card svc-feat" href="/services.html#case">
+        <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-brief"/></svg></span>
+        <h3>Advocacy Case</h3>
+        <span class="svc-price" data-rate="case">$1,200</span>
+        <span class="svc-line">One flat price for 5-6 hours of research and reporting: our full case overview call, my review of every record you share, and a written report within 7 days.</span>
+        <span class="svc-go">What is included</span>
+      </a>
+      <a class="svc-card" href="/services.html#full">
+        <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-lock"/></svg></span>
+        <h3>Full-Service Case Management</h3>
+        <span class="svc-price"><span data-rate="full">$4,400</span><span class="svc-per">/month</span></span>
+        <span class="svc-line">Everything in a case, then I deal with the system myself, a month at a time. <span data-hours="full">20</span> included hours.</span>
+        <span class="svc-go">What is included</span>
+      </a>
+      <a class="svc-card" href="/services.html#chat">
+        <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-chat"/></svg></span>
+        <h3>24/7 Priority Chat</h3>
+        <span class="svc-price"><span data-rate="sub">$50</span><span class="svc-per">/month</span></span>
+        <span class="svc-line">A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime.</span>
+        <span class="svc-go">What is included</span>
+      </a>
+    </div>
+    <!-- Eric, 2026-08-25: "Underneath the 'book' button is an 'about' button
+         that explains EVERYTHING they get." The sheet lives on; it opens
+         from the price now, which is where the question gets asked. -->
+    <div class="actions"><button type="button" class="btn ghost" data-about="case">About the Advocacy Case</button></div>
+  </section>
 
-  <!-- The closing ends on ONE action. The phone number is in the footer
-       directly below and has its own section on the contact page, and the
-       disclaimer that used to be repeated here is printed word for word in
-       that same footer, a few lines further down the page. Both are still
-       on this page; neither is on it twice any more. -->
-  <section class="land-sec closing sec-deep" id="closing">
-    <div class="convert">
-      <p class="close-line">
-        <span class="close-ico"><svg class="ico" aria-hidden="true"><use href="#i-heart"/></svg></span>
-        <span><strong>You don't have to navigate this alone.</strong><br>
-          <span class="dim">Professional support. Human understanding.</span></span>
-      </p>
-      <h2>Ready when you are.</h2>
-      <div class="convert-pocket">
-        <div class="actions">
-          <a class="btn glow cta" href="/fit.html">Book a free 15-minute call</a>
-          <a class="btn ghost" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
-        </div>
-      </div>
+  <section class="land-sec ruled faq">
+    <h2>Straight answers</h2>
+    <a class="q" href="/faq.html">Is this medical advice? <span>›</span></a>
+    <a class="q" href="/faq.html">Can I stop? <span>›</span></a>
+    <a class="q" href="/faq.html">Is my information private? <span>›</span></a>
+    <p class="dim small">If yours is not here, ask me before you pay for anything.</p>
+  </section>
+
+  <section class="land-sec ruled closing" id="closing">
+    <p class="close-line"><strong>You don't have to navigate this alone.</strong></p>
+    <h2>Ready when you are.</h2>
+    <div class="actions">
+      <a class="btn glow cta" href="/fit.html">Book a free 15-minute call</a>
+      <a class="btn ghost" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
+      <a class="btn quiet" href="tel:+12086708608">📞 Call 208 670 8608</a>
     </div>
   </section>
 </main>
 
 <!-- The booking dock: appears only once the hero's own button has scrolled
-     away, leaves again at the conversion zone, and never blocks content. -->
+     away, leaves again at the closing, and never blocks content. -->
 <div class="sticky-book" id="sticky-book" aria-hidden="true">
   <a class="cta" href="/fit.html">Book a free 15-minute call</a>
 </div>
@@ -300,8 +243,8 @@
   const closing = document.getElementById('closing');
   if (dock && hero && closing && 'IntersectionObserver' in window) {
     // Hidden while ANY of the hero is on screen (its own button is there),
-    // and hidden again once the conversion zone approaches. Not before the
-    // page has been read a little, not over the thing it duplicates.
+    // and hidden again once the closing approaches. Not before the page has
+    // been read a little, not over the thing it duplicates.
     const seen = { hero: true, closing: false };
     const paint = () => {
       const on = !seen.hero && !seen.closing;
@@ -312,7 +255,6 @@
       for (const e of es) seen.hero = e.isIntersecting;
       paint();
     }).observe(hero);
-    // Its own observer, so the early rootMargin only applies to the zone.
     new IntersectionObserver((es) => {
       for (const e of es) seen.closing = e.isIntersecting;
       paint();
@@ -321,6 +263,7 @@
 </script>
 
 <footer class="site-foot">
+  <div class="foot-inner">
   <div class="foot-cols">
     <nav class="foot-col" aria-label="Explore">
       <h2>Explore</h2>
@@ -342,75 +285,87 @@
     </nav>
   </div>
   <p class="foot-serving">Serving patients across the United States and Canada.</p>
+  <!-- "This is a web app" used to sit under the hero's button. It is true
+       and worth knowing, and it is not the first thing a frightened person
+       needs; it lives with the other facts about the site now. -->
+  <p class="webapp-note" id="webapp-note">This is a web app</p>
   <p class="fine"><strong>Pocket Advocate provides patient advocacy, not medical care.</strong> I do not diagnose, treat, or prescribe, and this service does not replace your care team. If you are having a medical emergency, call 911. Pocket Advocate currently serves clients in the United States and Canada.</p>
+  </div>
 </footer>
 
 <script type="module">
-  // The case and follow-up prices move on their own, so nothing on this page
-  // quotes a number that is only true at deploy time. Loaded soft: a failed
-  // fetch leaves the shipped prices, which are real.
+  // The prices move on their own, so nothing on this page quotes a number
+  // that is only true at deploy time. Loaded soft: a failed fetch leaves the
+  // shipped prices, which are real.
   import('/js/rates.js').catch(() => {});
 
-  // Reviews strip: the same embed as reviews.html (same imports, container,
-  // and init call). Kept in its own module with no Firebase dependency, so
-  // the reviews render even if the auth module fails to load.
-  import { GOOGLE_REVIEWS_URL, REVIEWS, loadReviews } from '/js/reviews-config.js';
+  // Reviews: the header, the three theme lines, and the cards, all off ONE
+  // list so the count can never disagree with the cards. No Firebase in it,
+  // so the proof renders even on a day the app cannot.
+  import {
+    GOOGLE_REVIEWS_URL, GOOGLE_REVIEW_WRITE_URL, REVIEWS, REVIEW_THEMES, reviewSummary, loadReviews,
+  } from '/js/reviews-config.js';
   import { enhanceReviewsStrip } from '/js/reviews-strip.js';
   // By the numbers: paints the strip, or leaves it hidden.
   import('/js/stats.js').catch(() => {});
 
-  const esc = (s) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
-  // the draggable strip (clamped teasers)
+  if (GOOGLE_REVIEW_WRITE_URL) document.getElementById('g-write').href = GOOGLE_REVIEW_WRITE_URL;
+  if (GOOGLE_REVIEWS_URL) {
+    const read = document.getElementById('g-read');
+    read.href = GOOGLE_REVIEWS_URL;
+    read.target = '_blank';
+    read.rel = 'noopener';
+    read.textContent = 'Read them all on Google';
+  }
+  document.getElementById('themes-list').innerHTML = REVIEW_THEMES.map((t) =>
+    `<li><span class="tick" aria-hidden="true">✓</span>${esc(t.line)}</li>`).join('');
+
   const card = (r) => `
-    <${GOOGLE_REVIEWS_URL ? `a href="${GOOGLE_REVIEWS_URL}" target="_blank" rel="noopener"` : 'div'} class="review">
-      <span class="stars">${'★'.repeat(r.stars)}</span>
-      ${r.text ? `<span class="rv-text">${esc(r.text)}</span>` : ''}
-      <span class="rv-name">${esc(r.name)}</span>
-    </${GOOGLE_REVIEWS_URL ? 'a' : 'div'}>`;
-  // A rating-only Google review (stars, a name, no words) is real data and it
-  // belongs on the reviews page. In a strip headed "What clients say" it
-  // renders as a card with nothing said on it, which reads as broken rather
-  // than as a five-star rating. So the strip carries the ones with words, and
-  // falls back to the whole list rather than going empty.
+    <article class="review">
+      <span class="rv-top"><strong class="rv-name">${esc(r.name)}</strong><span class="stars" aria-label="${r.stars} out of 5">${'★'.repeat(r.stars)}</span></span>
+      ${r.text ? `<span class="rv-text">${esc(r.text)}</span>` : '<span class="rv-text dim">Rated 5 stars.</span>'}
+      <span class="gmark"><span class="gword" aria-label="Google"><b>G</b><b>o</b><b>o</b><b>g</b><b>l</b><b>e</b></span> review</span>
+    </article>`;
+  // A rating-only review (stars, a name, no words) is real data. In a strip
+  // headed "What clients say" it renders as a card that says nothing, so the
+  // strip carries the ones with words and falls back to the whole list.
   const withWords = (list) => {
     const said = list.filter((r) => r.text && r.text.trim());
     return said.length ? said : list;
   };
   const paint = (list) => {
+    const { avg, count } = reviewSummary(list);
+    document.getElementById('g-avg').textContent = avg;
+    document.getElementById('g-count').textContent = String(count);
+    document.getElementById('g-count-2').textContent = String(count);
     const cards = withWords(list).map(card).join('');
     document.getElementById('reviews-track').innerHTML = cards + cards;
     // enhanceReviewsStrip tears its previous self down, so painting twice is
-    // safe: the Google baseline shows immediately and the fuller list swaps in
-    // when it lands, rather than the strip sitting empty on a network call.
+    // safe: the Google baseline shows immediately and the fuller list swaps
+    // in when it lands.
     enhanceReviewsStrip(document.querySelector('.reviews-strip'));
   };
   paint(REVIEWS);
   loadReviews().then((all) => { if (all.length !== REVIEWS.length) paint(all); });
+  for (const b of document.querySelectorAll('[data-nudge]'))
+    b.addEventListener('click', () => document.querySelector('.reviews-strip').__paNudge?.(Number(b.dataset.nudge)));
 </script>
 <script type="module">
-  // THE EXPLAINER FIRST, AND WITHOUT AUTH. These two lines used to sit below a
-  // STATIC import of the auth module, which meant a day when the auth module
-  // failed to load took the "What a web app means" explainer down with it, on
-  // the one page a stranger arrives at. It is the wrong dependency: the
-  // explainer needs nothing signed in to be worth reading. So it runs first,
-  // off a module that has no auth in it, and everything that genuinely needs
-  // an account is soft-loaded underneath.
+  // THE EXPLAINER, AND WITHOUT AUTH: it needs nothing signed in to be worth
+  // reading, so it runs off a module with no auth in it, and everything that
+  // genuinely needs an account is soft-loaded underneath.
   import { helpButton, wireHelp } from '/js/help.js';
   const note = document.getElementById('webapp-note');
   note.insertAdjacentHTML('beforeend', ' ' + helpButton('app', 'What a web app means, and how to add it to your Home Screen'));
   wireHelp(note);
 
-  // Soft, the way about.html has always done it. Nav hydration and the Home
-  // Screen offer are both nice to have; neither is worth the page for.
   import('/js/auth.js').then(async (auth) => {
     auth.hydrateNav();
     // Offer the Home Screen install once, before booking rather than after
-    // paying. Signed-in only, once per device, and skippable. Never a gate:
-    // the Book button stays live behind it.
+    // paying. Signed-in only, once per device, and skippable.
     const u = await auth.currentUser();
-    // No welcome card here: this is the landing page, and "you're in, this is
-    // your case" is not true of anyone reading it.
     if (!u) return;
     const { initSetupGuide } = await import('/js/onboarding.js');
     initSetupGuide(u, document.querySelector('main'), { welcome: false });

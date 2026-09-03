@@ -7,3 +7,5 @@
   Cache-Control: public, max-age=3600
 /js/*
   Cache-Control: no-store
+/img/*
+  Cache-Control: public, max-age=86400

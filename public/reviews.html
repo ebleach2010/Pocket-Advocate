@@ -29,11 +29,11 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=sp13">
-<link rel="stylesheet" href="/css/glowup.css?v=sp5">
+<link rel="stylesheet" href="/css/site.css?v=sp14">
+<link rel="stylesheet" href="/css/glowup.css?v=sp7">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
-<body>
+<body class="landing">
 <header class="bar">
   <div class="bar-inner">
     <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
@@ -57,6 +57,21 @@
   <div class="stack">
     <p class="eyebrow" id="reviews-label">★ GOOGLE REVIEWS</p>
     <h1>What clients say</h1>
+  </div>
+
+  <!-- The same header and theme lines the landing page carries (Eric,
+       2026-09-02, from the Google widget he sent), off the same list. -->
+  <div class="ghead">
+    <p class="gtitle"><span class="gword" aria-label="Google"><b>G</b><b>o</b><b>o</b><b>g</b><b>l</b><b>e</b></span> Reviews</p>
+    <p class="gscore"><b id="g-avg">5.0</b> <span class="stars" aria-label="5 out of 5">★★★★★</span> <span class="count">(<span id="g-count">5</span>)</span></p>
+    <div class="gacts">
+      <a class="btn glow cta gbtn" id="g-write" href="https://g.page/r/CUKWU6xlposHEAE/review" target="_blank" rel="noopener">Review us on Google</a>
+    </div>
+  </div>
+  <div class="themes">
+    <p class="tlabel">What clients keep saying</p>
+    <p class="tsub">From <span id="g-count-2">5</span> Google reviews</p>
+    <ul id="themes-list"></ul>
   </div>
 
   <div id="reviews-full" class="stack"></div>
@@ -90,7 +105,9 @@
 </footer>
 
 <script type="module">
-  import { GOOGLE_REVIEWS_URL, BUSINESS_PHONE, REVIEWS, loadReviews } from '/js/reviews-config.js';
+  import {
+    GOOGLE_REVIEWS_URL, GOOGLE_REVIEW_WRITE_URL, BUSINESS_PHONE, REVIEWS, REVIEW_THEMES, reviewSummary, loadReviews,
+  } from '/js/reviews-config.js';
   // Nav auth state rides the Firebase CDN — load it soft so the reviews
   // themselves never depend on it.
   import('/js/auth.js').then((m) => m.hydrateNav()).catch(() => {});
@@ -100,7 +117,14 @@
   // Painting twice is still safe: the Google baseline shows immediately and
   // the fuller list swaps in when it lands, rather than the page sitting
   // empty on a network call.
+  if (GOOGLE_REVIEW_WRITE_URL) document.getElementById('g-write').href = GOOGLE_REVIEW_WRITE_URL;
+  document.getElementById('themes-list').innerHTML = REVIEW_THEMES.map((t) =>
+    `<li><span class="tick" aria-hidden="true">✓</span>${esc(t.line)}</li>`).join('');
   const paint = (list) => {
+    const { avg, count } = reviewSummary(list);
+    document.getElementById('g-avg').textContent = avg;
+    document.getElementById('g-count').textContent = String(count);
+    document.getElementById('g-count-2').textContent = String(count);
     // the full, uncropped reviews
     document.getElementById('reviews-full').innerHTML = list.map((r) => `
       <div class="panel review-full">

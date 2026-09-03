@@ -96,6 +96,17 @@ call, the floor of three, the view that never carries a per-case field, and
 the rule about paused cases that lives in code and appears nowhere in copy.
 `tools/drives/drive-stats.mjs` checks the strip and the page at 390px.
 
+### The landing page, Look A (2026-09)
+
+`/` in the Clinic Note look Eric picked, every sentence from the copy deck he
+approved word for word. `tools/suites/landing.mjs` holds two of his sentences
+hostage, pins the nine slots in order, the two doors and their weights, the
+Google header off the same list as the cards, the three theme lines, the
+distinct card anchors on services.html, the sprite file and every `<use>`
+that points into it, the dead CSS that must stay gone, one desktop width,
+and no dashes. `tools/drives/drive-landing.mjs` walks the page at 390px and
+320px in the demo and in all four colour schemes.
+
 ### Side doors, by typed code
 
 The old rooms still answer, as codes typed into either sign-in box - useful

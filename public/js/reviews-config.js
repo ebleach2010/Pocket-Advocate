@@ -65,6 +65,25 @@ export const REVIEWS = [
 ];
 
 /**
+ * "What clients keep saying" (Eric, 2026-09-02, from the Google widget he
+// screenshotted; the label is the honest one for a hand-written list). Three
+ * lines, each distilled from one real review below and approved in the
+ * landing copy deck. Static until he changes them: nothing is generated.
+ */
+export const REVIEW_THEMES = [
+  { line: 'Someone who understands, and who knows how to help', from: 'Chris' },
+  { line: 'Kind, respectful, and easy to talk to', from: 'Jessica Naylor' },
+  { line: 'Real help for autoimmune encephalitis patients who feel lost', from: 'Max GG' },
+];
+
+/** The average, to one decimal, and the count, for the header above the cards. */
+export function reviewSummary(list) {
+  const rated = (list || []).filter((r) => Number(r?.stars) > 0);
+  const avg = rated.length ? rated.reduce((s, r) => s + Number(r.stars), 0) / rated.length : 0;
+  return { avg: avg.toFixed(1), count: rated.length };
+}
+
+/**
  * Every review a page should show: the reviews Eric has published from real
  * cases, newest first, then the transcribed Google ones.
  *

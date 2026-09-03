@@ -675,17 +675,9 @@ summary.btn::-webkit-details-marker { display: none; }
 }
 .land-sec.closing { text-align: center; }
 
-/* The one breathing element on the landing page (Eric, 2026-08-25: "A soft
-   glow should ease in and out in intensity over book a case"). Opt-in via
-   .pulse, on that one button only - the one-glow-per-screen rule holds. */
-@keyframes glow-pulse {
-  0%, 100% { box-shadow: var(--glow-c); }
-  50%      { box-shadow: var(--glow-c-peak); }
-}
-.btn.pulse { animation: glow-pulse 3.2s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) {
-  .btn.pulse { animation: none; }
-}
+/* The pulse is gone (2026-09, Look A): glowup.css had already set it to
+   `animation: none` on the one button that carried it, so the keyframes
+   below it were repainting nothing. */
 /* The About sheets (service-about.js): TL;DR first, depth underneath. */
 .settings-card.about-card { max-width: 34rem; }
 /* dvh, not vh: on iOS vh is the LARGE viewport, so this ran ~10% taller than
@@ -2485,12 +2477,8 @@ body.has-demo-bar .bar { top: var(--demo-bar-h, 2.4rem); }
    that sit below the art with nothing beside them. Floating it lets the
    first lines wrap around it and the rest run full width, which is the
    whole point of the shape. */
-.hero-art {
-  float: right; shape-outside: inset(0 0 12% 8%); shape-margin: .5rem;
-  width: 8.4rem; height: auto; opacity: .55; pointer-events: none;
-  margin: -.1rem -.9rem .2rem .55rem;
-}
-@media (min-width: 26rem) { .hero-art { width: 10.2rem; opacity: .6; } }
+/* .hero-art is gone (2026-09, Look A): no page carried the element any
+   more, and glowup.css had turned it into a watermark nothing rendered. */
 /* Flex and grid children do not wrap around a float, they sit under it.
    By this point the float is spent anyway; clearing says so out loud. */
 .land-sec.hero .acts { clear: both; }
@@ -2526,10 +2514,6 @@ body.has-demo-bar .bar { top: var(--demo-bar-h, 2.4rem); }
 .act-m { box-shadow: var(--glow-m); } .act-m .act-ico { color: var(--magenta); }
 .act-label { flex: 1; }
 .act-chev { color: var(--dim); width: 1.1rem; height: 1.1rem; }
-/* Eric, 2026-08-25: the soft glow eases in and out over "book a case".
-   It moved from .btn to .act with the button; one glow per screen. */
-.act.pulse { animation: glow-pulse 3.2s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) { .act.pulse { animation: none; } }
 
 /* --- the trust bar ------------------------------------------- */
 /* Four at once on any phone: at 2x2 the eye reads it as two facts

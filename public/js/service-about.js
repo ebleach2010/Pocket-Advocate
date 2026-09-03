@@ -161,7 +161,7 @@ export function openServiceAbout(id) {
         <button class="btn quiet" data-x style="flex:none; margin-left:auto;">Close</button>
       </div>
       <div class="about-body" style="overflow-y:auto; margin-top:.7rem;">
-        <p class="about-tldr"><strong>TL;DR</strong> — ${esc(a.tldr)}</p>
+        <p class="about-tldr"><strong>TL;DR:</strong> ${esc(a.tldr)}</p>
         ${a.paragraphs.map((p) => `<p>${esc(p)}</p>`).join('')}
         <h4 style="margin:1rem 0 .3rem;">Point by point</h4>
         <ul class="about-list">${a.bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>

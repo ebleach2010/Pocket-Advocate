@@ -351,8 +351,10 @@ const QUIET = [/paus/i, /\bhold\b/i, /crash/i, /health of/i, /neurolog/i, /unava
     && /ctx\.waitUntil\(computePublicStats\(env\)\)/.test(CODE)
     && /'\/stats'/.test((code('tools/blindness-audit.mjs').match(/const CLIENT_PAGES = \[([\s\S]*?)\];/) || [])[1] || '')
     && /path === '\/api\/stats'/.test(code('public/js/demo/api.js')));
+  // Pin updated 2026-09-03 on the landing branch: Look A moved every page to
+  // sp7, so the pin asks for "at least sp6" rather than sp6 exactly.
   check('D9 the CSS the page needs ships with a bumped stylesheet version on the two pages that use it',
-    /\.numbers \.tile/.test(f('public/css/glowup.css')) && /glowup\.css\?v=sp6/.test(idx) && /glowup\.css\?v=sp6/.test(page)
+    /\.numbers \.tile/.test(f('public/css/glowup.css')) && /glowup\.css\?v=sp([6-9]|\d{2})/.test(idx) && /glowup\.css\?v=sp([6-9]|\d{2})/.test(page)
     && existsSync(__j(__REPO, 'public/stats.html')));
   const region = SRC.slice(SRC.indexOf('BY THE NUMBERS (Eric'), SRC.indexOf('async function handleStatsRecompute'));
   check('D10 nothing new in the Worker is dashed either', !/[–—]/.test(region + fn('handleStatsRecompute')));
