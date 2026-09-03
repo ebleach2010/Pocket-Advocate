@@ -646,6 +646,8 @@ function render(el) {
     if (days < 0) loops.push(['hot', `Report overdue ${-days}d`]);
   }
   if (c.hold?.pausedAt) loops.push(['warm', 'Case paused']);
+  // A family member's case (2026-09-03): free, and said so where he looks.
+  if (c.family) loops.push(['family', `Family, free${c.familyRelation ? `: ${c.familyRelation}` : ''}`]);
   const loopRow = loops.length && c.status !== 'closed'
     ? `<p class="loop-chips">${loops.map(([tone, t]) =>
       `<span class="loop-chip ${tone}">${esc(t)}</span>`).join('')}</p>`
@@ -1411,8 +1413,9 @@ function startWorkClock(c) {
     const live = data || c;
     // His own case has no money in it, so the margin line has nothing to
     // say: hidden, rather than "no payment recorded" beside his own clock.
-    if (rateEl && live.self) rateEl.hidden = true;
-    if (rateEl && !live.self) {
+    const noMoney = !!(live.self || live.family);
+    if (rateEl && noMoney) rateEl.hidden = true;
+    if (rateEl && !noMoney) {
       const hourly = effectiveHourly(live, liveTotalSeconds());
       const paid = paidCents(live);
       // THREE STATES, and the third is the one that most needs saying. It used

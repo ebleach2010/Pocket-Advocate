@@ -46,18 +46,29 @@ await page.evaluate(() => { localStorage.removeItem('pa-demo-store'); localStora
 await page.reload({ waitUntil: 'networkidle' });
 await settle(page);
 const before = await page.evaluate(() => ({
-  button: !!document.querySelector('[data-self-open]'),
-  text: (document.querySelector('[data-self-open]')?.textContent || '').trim(),
+  button: !!document.querySelector('[data-open-door="self"]'),
+  text: (document.querySelector('[data-open-door="self"]')?.textContent || '').trim(),
+  family: !!document.querySelector('[data-open-door="family"]'),
+  formHidden: document.querySelector('[data-open-form="self"]')?.hidden,
   shelf: [...document.querySelectorAll('h2')].some((h) => /MY OWN CASE/.test(h.textContent)),
   count: (document.body.textContent.match(/(\d+) cases?, every one backed/) || [])[1],
 }));
-ok('with no case of his own, the shelf offers the purple button', before.button && before.text === 'Open a case for myself' && !before.shelf, before.text);
-const btnColor = await purple(page, '[data-self-open]');
+ok('with no case of his own, the shelf offers the two purple doors, forms folded', before.button && before.text === 'Open a case for myself' && before.family && before.formHidden === true && !before.shelf, before.text);
+const btnColor = await purple(page, '[data-open-door="self"]');
 ok('and the button is the purple', !!btnColor && btnColor.color === hex2rgb(btnColor.want), btnColor ? `${btnColor.color} vs ${btnColor.want}` : '');
 if (SHOTS) await page.screenshot({ path: `${SHOTS}/01-shelf-button.png` });
 
-console.log('\n--- B. opening it ---');
-await page.click('[data-self-open]');
+console.log('\n--- B. opening it, with his own details ---');
+await page.click('[data-open-door="self"]');
+await page.waitForTimeout(300);
+ok('the door unfolds the form', await page.evaluate(() => document.querySelector('[data-open-form="self"]')?.hidden === false));
+await page.fill('[data-of="self:firstName"]', 'Eric');
+await page.fill('[data-of="self:lastName"]', 'Bleach');
+await page.fill('[data-of="self:dob"]', '1985-02-03');
+await page.fill('[data-of="self:phone"]', '+1 208 555 0100');
+await page.fill('[data-of="self:address"]', '12 Elm St, Boise, ID 83702');
+if (SHOTS) await page.screenshot({ path: `${SHOTS}/01b-self-form.png` });
+await page.click('[data-open-go="self"]');
 // The Worker canonicalises /admin-case.html to /admin-case on the way in.
 await page.waitForURL(/admin-case(\.html)?\?id=/, { timeout: 15000 });
 await settle(page, 2000);
@@ -78,10 +89,13 @@ await page.waitForTimeout(600);
 const ov = await page.evaluate(() => ({
   note: (document.querySelector('[data-self-note]')?.textContent || '').trim(),
   who: [...document.querySelectorAll('.fact-k')].map((k) => k.textContent.trim()),
+  whoText: (() => { const k = [...document.querySelectorAll('.fact-k')].find((x) => x.textContent.trim() === 'WHO'); return (k?.nextElementSibling?.textContent || '').replace(/\s+/g, ' ').trim(); })(),
+  tel: document.querySelector('a[data-contact-phone]')?.getAttribute('href') || '',
   noCall: ![...document.querySelectorAll('.fact-k')].some((k) => /^(CALL|PAID|REPORT|FOLLOW-UP)$/.test(k.textContent.trim())),
   close: !!document.querySelector('[data-self-close]'),
 }));
 ok('the overview says what this case is and carries no call, payment or report furniture', /Nobody is on the other end/.test(ov.note) && ov.noCall && ov.who.includes('WHO') && ov.close, ov.who.join(','));
+ok('and it carries the details he typed', /Eric Bleach/.test(ov.whoText) && /1985-02-03/.test(ov.whoText) && ov.tel === 'tel:+12085550100', `${ov.whoText} | ${ov.tel}`);
 if (SHOTS) await page.screenshot({ path: `${SHOTS}/02-case-overview.png` });
 
 console.log('\n--- C. the chat is his own notes ---');
@@ -159,6 +173,45 @@ ok('the revenue line does not count it', after.count === before.count, `${before
 const cardColor = await purple(page, `.folder[data-id="${caseId}"]`);
 ok('the folder wears the purple outline', !!cardColor && cardColor.outline === hex2rgb(cardColor.want), cardColor ? `${cardColor.outline} vs ${cardColor.want}` : '');
 if (SHOTS) await page.screenshot({ path: `${SHOTS}/05-shelf-after.png` });
+
+console.log('\n--- F. a family case ---');
+ok('the own-case door is gone and the family door stays', await page.evaluate(() => !document.querySelector('[data-open-door="self"]') && !!document.querySelector('[data-open-door="family"]')));
+await page.click('[data-open-door="family"]');
+await page.waitForTimeout(300);
+await page.fill('[data-of="family:firstName"]', 'Ann');
+await page.fill('[data-of="family:lastName"]', 'Bleach');
+await page.fill('[data-of="family:email"]', 'ann@example.com');
+await page.fill('[data-of="family:relation"]', 'my mother');
+await page.fill('[data-of="family:dob"]', '1950-01-02');
+if (SHOTS) await page.screenshot({ path: `${SHOTS}/06-family-form.png` });
+await page.click('[data-open-go="family"]');
+await page.waitForURL(/admin-case(\.html)?\?id=demo-case-family/, { timeout: 15000 });
+await settle(page, 2000);
+const famId = new URL(page.url()).searchParams.get('id');
+const famHead = await page.evaluate(() => ({
+  name: (document.querySelector('[data-client]')?.textContent || '').trim(),
+  pill: (document.querySelector('[data-status]')?.textContent || '').trim(),
+  chip: [...document.querySelectorAll('.loop-chip')].map((x) => x.textContent.trim()).find((t) => /Family, free/.test(t)) || '',
+  selfHead: /\bself\b/.test(document.querySelector('.case-head')?.className || ''),
+}));
+ok('their case opens as an ordinary case with the family chip', famHead.name === 'Ann Bleach' && famHead.pill === 'CONFIRMED' && /Family, free: my mother/.test(famHead.chip) && !famHead.selfHead, `${famHead.name} / ${famHead.pill} / ${famHead.chip}`);
+await page.evaluate(() => { document.querySelector('[data-group="case"]')?.click(); document.querySelector('[data-page="chat"]')?.click(); });
+await settle(page, 800);
+const famRate = await page.evaluate(() => document.querySelector('[data-work-rate]')?.hidden);
+ok('and no money line beside their clock', famRate === true);
+if (SHOTS) await page.screenshot({ path: `${SHOTS}/07-family-case.png` });
+await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
+await settle(page);
+const famShelf = await page.evaluate((id) => {
+  const card = document.querySelector(`.folder[data-id="${id}"]`);
+  return {
+    card: !!card, self: card?.classList.contains('self'),
+    flag: (card?.querySelector('.fld-family')?.textContent || '').trim(),
+    count: (document.body.textContent.match(/(\d+) cases?, every one backed/) || [])[1],
+  };
+}, famId);
+ok('on the shelf it is an ordinary folder wearing the family flag, and the revenue line leaves it out', famShelf.card && !famShelf.self && /FAMILY · FREE, my mother/.test(famShelf.flag) && famShelf.count === before.count, JSON.stringify(famShelf));
+if (SHOTS) await page.screenshot({ path: `${SHOTS}/08-shelf-family.png` });
 
 console.log(`\n${pass} ok, ${fail} failed${errs.length ? `\n${errs.join('\n')}` : ''}`);
 await b.close();

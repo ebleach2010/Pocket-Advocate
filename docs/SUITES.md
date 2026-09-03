@@ -172,6 +172,18 @@ silence through the work log harness. `tools/drives/drive-selfcase.mjs`
 opens the case in the demo at 390px and walks the shelf, the masthead, the
 chat and the uploads.
 
+Later the same day: the own-case door asks for his details first (name,
+date of birth, phone, home address), and a second door opens a **family
+case**: an ordinary case on their side, free (no fees, no Stripe record, no
+rate moves), chat open from the first day, and the email he types is the
+login. If that address already has an account the case is theirs at once;
+otherwise the sign-in code step (`claimFamilyCases`) attaches the uid the
+first time that address signs in, and one email tells them where to sign
+in. The card and the case page carry a purple "family, free" flag, the
+money lines leave it out, and their own page shows no paid extras.
+`selfcase.mjs` S22-S26 run both routes, the details validation and the
+claim; the drive fills both forms.
+
 ### Side doors, by typed code
 
 The old rooms still answer, as codes typed into either sign-in box - useful

@@ -14,7 +14,8 @@
 //   GET/POST/DELETE /api/admin/personal   Personal Uploads: list, add, remove (admin, Worker-only prefix)
 //   GET    /api/admin/personal/file       one personal file's bytes (admin token or a ten-minute signed link)
 //   POST   /api/admin/case-update  join link / milestones / close / contact: phone and home address (admin)
-//   POST   /api/admin/self-case    his own case: open it, or create it once (admin)
+//   POST   /api/admin/self-case    his own case: open it, or create it once, with his details (admin)
+//   POST   /api/admin/family-case  a free case for a family member; the email typed is their login (admin)
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
 //   POST   /api/advisor            private LLM advisor: analyse / ask / draft (admin)
 // Plus a cron (see scheduled()) that emails unread-chat digests.
@@ -834,6 +835,8 @@ export default {
         return await handlePersonalFile(request, env, url);
       if (url.pathname === '/api/admin/self-case' && request.method === 'POST')
         return await handleSelfCase(request, env);
+      if (url.pathname === '/api/admin/family-case' && request.method === 'POST')
+        return await handleFamilyCase(request, env);
       if (url.pathname === '/api/admin/case-update' && request.method === 'POST')
         return await handleCaseUpdate(request, env);
       if (url.pathname === '/api/admin/client-alert' && request.method === 'POST')
@@ -1891,7 +1894,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-03-my-own-case';
+const BUILD_TAG = 'v2026-09-03-own-details-and-family-case';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1899,7 +1902,7 @@ const BUILD_TAG = 'v2026-09-03-my-own-case';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.81';
+const VERSION = '2.82';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -7863,6 +7866,8 @@ async function handleVerifyCode(request, env) {
   const uid = (await lookupUidByEmail(env, email)) || (await deriveUid(email));
   // Guarantee the app always has their email (custom-token accounts carry none).
   await patchDoc(env, `users/${uid}`, { email }, { mask: ['email'] });
+  // A family case Eric opened for this address becomes theirs now (2026-09-03).
+  await claimFamilyCases(env, uid, email).catch(() => {});
   const token = await mintCustomToken(env, uid);
   // One code entry earns this device a token, so the next sign-in on it needs
   // only the email. The token is the second factor that keeps a known address
@@ -8729,19 +8734,24 @@ async function handleSelfCase(request, env) {
     if (existing?.data.self && existing.data.status !== 'closed')
       return json({ ok: true, id: existingId, created: false });
   }
+  // His own details, typed when he opens it (Eric, 2026-09-03: "Have me
+  // enter my own information when opening a case"); the profile only fills
+  // a blank.
+  const body = await request.json().catch(() => ({}));
+  const who = personFields(body, profile?.data || {});
+  if (who.error) return json({ error: who.error }, 400);
+  if (!who.name) return json({ error: 'Your name, please.' }, 400);
   const now = new Date();
   const caseId = crypto.randomUUID();
-  const p = profile?.data || {};
-  const name = p.name || [p.firstName, p.lastName].filter(Boolean).join(' ') || 'Eric';
   await patchDoc(env, `cases/${caseId}`, {
     self: true,
     clientUid: null,
     clientEmail: null,
-    clientName: name,
-    clientDob: p.dob || null,
+    clientName: who.name,
+    clientDob: who.dob,
     clientTz: 'America/Boise',
-    clientPhone: null,
-    clientAddress: null,
+    clientPhone: who.phone,
+    clientAddress: who.address,
     status: 'confirmed',
     createdAt: now,
     // So the missing-email repair never "fixes" this one.
@@ -8765,6 +8775,111 @@ async function handleSelfCase(request, env) {
   }, { mustNotExist: true });
   await patchDoc(env, `users/${admin.uid}`, { selfCaseId: caseId }, { mask: ['selfCaseId'] });
   return json({ ok: true, id: caseId, created: true });
+}
+
+/**
+ * The details he types when opening a case by hand: his own, or a family
+ * member's. Names bounded, the date of birth a plain YYYY-MM-DD or nothing,
+ * the phone through the booking rule, the address through its cleaner. A
+ * blank falls back to what the profile knows, which is how his own case gets
+ * his name when he types nothing.
+ */
+function personFields(body, fallback = {}) {
+  const s = (v, n) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) : '');
+  const first = s(body?.firstName, 60);
+  const last = s(body?.lastName, 60);
+  const name = s(body?.name, 120) || [first, last].filter(Boolean).join(' ')
+    || fallback.name || [fallback.firstName, fallback.lastName].filter(Boolean).join(' ') || '';
+  const dob = s(body?.dob, 10);
+  if (dob && !/^\d{4}-\d{2}-\d{2}$/.test(dob)) return { error: 'The date of birth wants YYYY-MM-DD.' };
+  const phone = cleanPhone(body?.phone);
+  if (phone && !PHONE_RE.test(phone)) return { error: 'That does not look like a phone number.' };
+  return { name, dob: dob || fallback.dob || null, phone: phone || null, address: cleanAddress(body?.address) || null };
+}
+
+/**
+ * POST /api/admin/family-case   a free case for a family member.
+ *
+ * (Eric, 2026-09-03: "Have one for 'open a family case'. Whatever email I
+ * enter is the one they login with, and their case is free of charge.")
+ *
+ * An ordinary case on their side, with three differences: `family: true`,
+ * nothing paid and nothing to pay (the case fee and the follow-up fee are
+ * zero, no Stripe record, no rate moves), and chat open from the first day,
+ * since there is no call a week ahead to open it. The email he types is the
+ * login: if that address already has an account the case is theirs at once;
+ * if not, clientUid stays empty and the sign-in code step (claimFamilyCases)
+ * attaches the uid the first time that address signs in. One email goes to
+ * them, saying where to sign in.
+ */
+async function handleFamilyCase(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 200)
+    return json({ error: 'The email they will sign in with, please.' }, 400);
+  const who = personFields(body);
+  if (who.error) return json({ error: who.error }, 400);
+  if (!who.name) return json({ error: 'Their name, please.' }, 400);
+  const relation = typeof body?.relation === 'string' ? body.relation.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+  const uid = await lookupUidByEmail(env, email).catch(() => null);
+  const now = new Date();
+  const caseId = crypto.randomUUID();
+  await patchDoc(env, `cases/${caseId}`, {
+    family: true,
+    familyRelation: relation || null,
+    clientUid: uid || null,
+    clientEmail: email,
+    clientName: who.name,
+    clientDob: who.dob,
+    clientTz: 'America/Boise',
+    clientPhone: who.phone,
+    clientAddress: who.address,
+    status: 'confirmed',
+    createdAt: now,
+    bookingEmailSentAt: now,
+    appointment: null,
+    publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] },
+    addOnFollowUp: false,
+    forms: {},
+    files: [],
+    reportDueAt: null,
+    caseRateCents: 0,
+    addonRateCents: 0,
+    fullAccess: false,
+    fullAccessAt: null,
+    fullAccessRateCents: null,
+    stripe: null,
+    work: { seconds: 0, startedAt: null },
+    hold: null,
+    chatUnlocked: true,
+    chatUnlockedAt: now,
+    chatOpenNotified: true,
+  }, { mustNotExist: true });
+  await sendEmail(env, {
+    to: email,
+    subject: 'Eric opened a case for you in Pocket Advocate',
+    html: `<p>Hi ${escHtml(firstName(who.name))}, Eric has opened a case for you in Pocket Advocate, at no charge.</p>
+      <p><a href="${env.PUBLIC_BASE_URL}/signin.html">Sign in with this email address</a> (a code comes to this inbox, no password) and your case is waiting: chat with Eric, upload records, and see everything he is doing on it.</p>`,
+  }).catch(() => { /* the case exists either way; he can tell them himself */ });
+  return json({ ok: true, id: caseId, claimed: !!uid });
+}
+
+/**
+ * The first sign-in with an address Eric opened a family case for: the case
+ * is theirs from that moment. Only his family cases, only the ones still
+ * waiting for a uid, and never more than the handful there could be.
+ */
+async function claimFamilyCases(env, uid, email) {
+  const rows = await queryDocs(env, 'cases', [['clientEmail', 'EQUAL', email]], 20).catch(() => []);
+  let claimed = 0;
+  for (const r of rows) {
+    if (!r.data.family || r.data.clientUid) continue;
+    await patchDoc(env, `cases/${r.id}`, { clientUid: uid }, { mask: ['clientUid'] }).catch(() => {});
+    claimed += 1;
+  }
+  return claimed;
 }
 
 // POST /api/admin/case-update  Body: { caseId, action, joinLink?, paidCents?, tierCents? }

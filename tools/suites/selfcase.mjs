@@ -187,10 +187,19 @@ check('S12 the one purple is a token in all four schemes, so his case reads purp
   schemes.every((re) => /--self: #[0-9A-Fa-f]{6};/.test(grab(SITE, re))),
   schemes.map((re, i) => (/--self:/.test(grab(SITE, re)) ? '' : `scheme ${i} missing`)).filter(Boolean).join(', '));
 
-// ---- the route, running ----
+// ---- the routes, running ----
 const routeSrc = lift(WORKER, 'async function handleSelfCase(request, env) {');
-const runRoute = ({ admin = true, profile = { name: 'Eric Bleach', role: 'admin' }, cases = {} } = {}) => {
+// The details go through the booking cleaners (contact.mjs runs those on
+// their own); here they ride along so the routes can be driven whole.
+const phoneRe = grab(WORKER, /const PHONE_RE = \/[^\n]*\/;/);
+const cleanPhoneSrc = grab(WORKER, /const cleanPhone = \(v\) => \([\s\S]*?: ''\);/);
+const cleanAddressSrc = grab(WORKER, /const cleanAddress = \(v\) => \([\s\S]*?: ''\);/);
+const personSrc = lift(WORKER, 'function personFields(body, fallback = {}) {');
+const familySrc = lift(WORKER, 'async function handleFamilyCase(request, env) {');
+const claimSrc = lift(WORKER, 'async function claimFamilyCases(env, uid, email) {');
+const runRoute = ({ admin = true, profile = { name: 'Eric Bleach', role: 'admin' }, cases = {}, body = {}, users = {} } = {}) => {
   const written = [];
+  const mails = [];
   const store = new Map(Object.entries(cases).map(([id, d]) => [`cases/${id}`, d]));
   if (profile) store.set('users/eric', profile);
   const deps = {
@@ -198,26 +207,51 @@ const runRoute = ({ admin = true, profile = { name: 'Eric Bleach', role: 'admin'
     json: (obj, code = 200) => ({ code, obj }),
     getDoc: async (env, path) => (store.has(path) ? { id: path.split('/').pop(), data: store.get(path) } : null),
     patchDoc: async (env, path, data, opts) => { written.push({ path, data, opts }); store.set(path, { ...(store.get(path) || {}), ...data }); return true; },
+    queryDocs: async (env, coll, filters) => [...store.entries()]
+      .filter(([p, d]) => p.startsWith(`${coll}/`) && d[filters[0][0]] === filters[0][2])
+      .map(([p, d]) => ({ id: p.split('/').pop(), data: d })),
+    lookupUidByEmail: async (env, email) => users[email] || null,
+    sendEmail: async (env, m) => { mails.push(m); },
+    escHtml: (s) => String(s),
+    firstName: (v) => String(v || '').trim().split(' ')[0],
     crypto: { randomUUID: () => 'mine-1' },
   };
   // eslint-disable-next-line no-new-func
-  const fn = new Function('deps', `const { requireAdmin, json, getDoc, patchDoc, crypto } = deps; ${routeSrc} return handleSelfCase;`)(deps);
-  return { post: () => fn({}, {}), written };
+  const fn = new Function('deps', `
+    const { requireAdmin, json, getDoc, patchDoc, queryDocs, lookupUidByEmail, sendEmail, escHtml, firstName, crypto } = deps;
+    ${phoneRe}
+    ${cleanPhoneSrc}
+    ${cleanAddressSrc}
+    ${personSrc}
+    ${routeSrc}
+    ${familySrc}
+    ${claimSrc}
+    return { handleSelfCase, handleFamilyCase, claimFamilyCases };
+  `)(deps);
+  const req = { json: async () => body };
+  return {
+    post: () => fn.handleSelfCase(req, {}),
+    family: () => fn.handleFamilyCase(req, {}),
+    claim: (uid, email) => fn.claimFamilyCases({}, uid, email),
+    written, mails, store,
+  };
 };
-const R1 = runRoute();
+const R1 = runRoute({ body: { firstName: ' Eric ', lastName: 'Bleach', dob: '1985-02-03', phone: '+1 208 555 0100', address: ' 12 Elm St, Boise, ID 83702 ' } });
 const made = await R1.post();
 const doc = R1.written.find((w) => w.path === 'cases/mine-1');
 // NEGATIVE CONTROL (run 2026-09-03): the route writing `clientUid: admin.uid` made this read
-//   FAIL  S13 the route makes one case shaped like every other, with self on and nobody on the other end
-check('S13 the route makes one case shaped like every other, with self on and nobody on the other end',
-  !!routeSrc && made.code === 200 && made.obj.ok === true && made.obj.id === 'mine-1' && made.obj.created === true
+//   FAIL  S13 the route makes one case shaped like every other, with self on, nobody on the other end, and the details he typed
+check('S13 the route makes one case shaped like every other, with self on, nobody on the other end, and the details he typed',
+  !!routeSrc && !!personSrc && made.code === 200 && made.obj.ok === true && made.obj.id === 'mine-1' && made.obj.created === true
   && !!doc && doc.data.self === true && doc.data.clientUid === null && doc.data.clientEmail === null
-  && doc.data.clientName === 'Eric Bleach' && doc.data.status === 'confirmed' && doc.data.fullAccess === true
+  && doc.data.clientName === 'Eric Bleach' && doc.data.clientDob === '1985-02-03'
+  && doc.data.clientPhone === '+1 208 555 0100' && doc.data.clientAddress === '12 Elm St, Boise, ID 83702'
+  && doc.data.status === 'confirmed' && doc.data.fullAccess === true
   && doc.data.appointment === null && doc.data.reportDueAt === null && doc.data.caseRateCents === 0
   && doc.data.stripe === null && doc.opts?.mustNotExist === true
   && !!doc.data.bookingEmailSentAt
   && R1.written.some((w) => w.path === 'users/eric' && w.data.selfCaseId === 'mine-1'),
-  JSON.stringify(doc?.data || made).slice(0, 200));
+  JSON.stringify(doc?.data || made).slice(0, 220));
 const R2 = runRoute({ profile: { name: 'Eric Bleach', role: 'admin', selfCaseId: 'mine-0' }, cases: { 'mine-0': { self: true, status: 'confirmed' } } });
 const again = await R2.post();
 // NEGATIVE CONTROL (run 2026-09-03): the existing-case look-up removed made this read
@@ -274,12 +308,13 @@ const DEMO = f('public/js/demo/api.js');
 //   FAIL  S18 the shelf: his case on its own purple shelf, out of the three and out of the revenue line, or the purple button that opens one
 check('S18 the shelf: his case on its own purple shelf, out of the three and out of the revenue line, or the purple button that opens one',
   /const mine = cases\.filter\(\(c\) => c\.self && c\.status !== 'closed'\);/.test(ADMIN)
-  && /const billed = cases\.filter\(\(c\) => !c\.self\);/.test(ADMIN)
-  && /const former = billed\.filter/.test(ADMIN) && /const current = billed\.filter/.test(ADMIN)
+  && /const shelved = cases\.filter\(\(c\) => !c\.self\);/.test(ADMIN)
+  && /const billed = shelved\.filter\(\(c\) => !c\.family\);/.test(ADMIN)
+  && /const former = shelved\.filter/.test(ADMIN) && /const current = shelved\.filter/.test(ADMIN)
   && /billed\.reduce\(/.test(ADMIN) && /\$\{billed\.length\} case/.test(ADMIN)
   && /section\('MY OWN CASE', 'var\(--self\)'/.test(ADMIN)
-  && /data-self-open>Open a case for myself</.test(ADMIN)
-  && /fetch\('\/api\/admin\/self-case'/.test(ADMIN)
+  && /data-open-door="self">Open a case for myself</.test(ADMIN)
+  && /which === 'family' \? '\/api\/admin\/family-case' : '\/api\/admin\/self-case'/.test(ADMIN)
   && /if \(c\.self\) return 'MY OWN CASE';/.test(ADMIN)
   && /if \(c\.self \|\| c\.status !== 'awaiting_report'/.test(ADMIN)
   && /if \(!c\?\.fullAccess \|\| c\.self \|\| c\.status === 'closed' \|\| c\.hold\?\.pausedAt\) return false;/.test(ADMIN)
@@ -297,7 +332,7 @@ check('S19 the page: a purple masthead, an overview built for him, no message ma
   && /const own = typeof data === 'object' && data !== null && !!data\.self;\n\s+const folder = own && kind !== 'recording' \? 'uploads' : kind;/.test(CASE)
   && /if \(own\) \{\n\s+\/\/ Nobody to tell[\s\S]{0,400}fetch\('\/api\/uploaded'/.test(CASE)
   && /<h3>\$\{data\.self \? 'Your notes' : 'Chat with the client'\}<\/h3>/.test(CASE)
-  && /if \(rateEl && live\.self\) rateEl\.hidden = true;/.test(CASE)
+  && /const noMoney = !!\(live\.self \|\| live\.family\);\n\s+if \(rateEl && noMoney\) rateEl\.hidden = true;/.test(CASE)
   && /if \(typeof data === 'object' && data && data\.self\) \{ row\.hidden = true; return; \}/.test(CASE)
   && /if \(!c\?\.fullAccess \|\| c\.self \|\| c\.status === 'closed'\) return null;/.test(CASE)
   && /\.folder\.self \{/.test(ACSS) && /\.status-pill\.self \{/.test(ACSS) && /\.case-head\.self \.case-name \{ color: var\(--self\); \}/.test(ACSS)
@@ -307,16 +342,100 @@ check('S20 the demo mirrors the route, one per admin, the same shape',
   && /self: true,\n\s+clientUid: null,\n\s+clientEmail: null,/.test(DEMO));
 const copy = [
   grab(CASE, /function paintSelfOverview\(pane, c\) \{[\s\S]*?\n\}/),
-  grab(ADMIN, /const selfBlock = mine\.length[\s\S]*?<\/p>`;/),
+  grab(ADMIN, /const person = \(p, withEmail\) => `[\s\S]*?<\/div>`;/),
   grab(CHANGELOG_SRC(), /version: '2\.81',[\s\S]*?\n  \},/),
+  grab(CHANGELOG_SRC(), /version: '2\.82',[\s\S]*?\n  \},/),
   selfBlockFn,
   routeSrc,
+  personSrc,
+  familySrc,
+  claimSrc,
 ];
 function CHANGELOG_SRC() { return f('public/js/changelog.js'); }
 check('S21 not one em or en dash in anything new, and the client list of the entry is empty',
   copy.every((s) => s && !/[–—]/.test(s))
   && /version: '2\.81',\n\s+quiet: true,\n\s+client: \[\],/.test(CHANGELOG_SRC()),
   copy.map((s, i) => (s ? (/[–—]/.test(s) ? `slice ${i} has a dash` : '') : `slice ${i} empty`)).filter(Boolean).join(', '));
+
+// ---- his details, and the family case (Eric, 2026-09-03, later the same day) ----
+const R5 = runRoute({ body: {} });
+const blank = await R5.post();
+const blankDoc = R5.written.find((w) => w.path === 'cases/mine-1');
+const R6 = runRoute({ body: { firstName: 'Eric', dob: '02/03/1985' } });
+const badDob = await R6.post();
+const R7 = runRoute({ body: { firstName: 'Eric', phone: 'call me' } });
+const badPhone = await R7.post();
+// NEGATIVE CONTROL (run 2026-09-03): the date-of-birth rule in personFields neutered (`if (false) return`) made this read
+//   FAIL  S22 a blank form falls back to the profile's name; a date of birth or a phone that is not one is refused with nothing written
+check('S22 a blank form falls back to the profile\'s name; a date of birth or a phone that is not one is refused with nothing written',
+  blank.code === 200 && blankDoc?.data.clientName === 'Eric Bleach' && blankDoc?.data.clientDob === null
+  && badDob.code === 400 && R6.written.length === 0 && badPhone.code === 400 && R7.written.length === 0,
+  `${blank.code}/${blankDoc?.data.clientName} ${badDob.code} ${badPhone.code}`);
+
+const F1 = runRoute({ body: { firstName: 'Ann', lastName: 'Bleach', email: ' Ann@Example.com ', relation: 'my mother', dob: '1950-01-02', phone: '208 555 0199', address: '9 Oak St, Boise, ID 83702' } });
+const fam = await F1.family();
+const famDoc = F1.written.find((w) => w.path === 'cases/mine-1');
+// NEGATIVE CONTROL (run 2026-09-03): the family route writing `caseRateCents: 120000` made this read
+//   FAIL  S23 a family case is an ordinary case, free, chat open from the first day, the typed email lowercased as the login, one email to them and none elsewhere
+check('S23 a family case is an ordinary case, free, chat open from the first day, the typed email lowercased as the login, one email to them and none elsewhere',
+  !!familySrc && fam.code === 200 && fam.obj.ok === true && fam.obj.id === 'mine-1' && fam.obj.claimed === false
+  && !!famDoc && famDoc.data.family === true && famDoc.data.familyRelation === 'my mother'
+  && famDoc.data.clientUid === null && famDoc.data.clientEmail === 'ann@example.com'
+  && famDoc.data.clientName === 'Ann Bleach' && famDoc.data.clientDob === '1950-01-02'
+  && famDoc.data.clientPhone === '208 555 0199' && famDoc.data.clientAddress === '9 Oak St, Boise, ID 83702'
+  && famDoc.data.self !== true && famDoc.data.status === 'confirmed' && famDoc.data.appointment === null
+  && famDoc.data.caseRateCents === 0 && famDoc.data.addonRateCents === 0 && famDoc.data.stripe === null
+  && famDoc.data.fullAccess === false && famDoc.data.chatUnlocked === true && famDoc.data.chatOpenNotified === true
+  && !!famDoc.data.bookingEmailSentAt && famDoc.opts?.mustNotExist === true
+  && F1.mails.length === 1 && F1.mails[0].to === 'ann@example.com'
+  && /signin\.html/.test(F1.mails[0].html) && /no charge/.test(F1.mails[0].html) && /Hi Ann/.test(F1.mails[0].html)
+  && !F1.written.some((w) => w.path.startsWith('users/')),
+  JSON.stringify(famDoc?.data || fam).slice(0, 220));
+const F2 = runRoute({ body: { firstName: 'Ann', lastName: 'Bleach', email: 'ann@example.com' }, users: { 'ann@example.com': 'u-ann' } });
+const famKnown = await F2.family();
+const F3 = runRoute({ body: { firstName: 'Ann', lastName: 'Bleach', email: 'not an email' } });
+const famBad = await F3.family();
+const F4 = runRoute({ admin: false, body: { firstName: 'Ann', lastName: 'Bleach', email: 'ann@example.com' } });
+let famStranger = null;
+try { famStranger = await F4.family(); } catch (e) { famStranger = { code: 500, obj: { threw: e.message } }; }
+// NEGATIVE CONTROL (run 2026-09-03): the account look-up replaced with `const uid = null` made this read
+//   FAIL  S24 an address that already has an account gets the case at once; a bad address and a stranger write nothing  -- 200/false 400 404
+check('S24 an address that already has an account gets the case at once; a bad address and a stranger write nothing',
+  famKnown.code === 200 && famKnown.obj.claimed === true
+  && F2.written.find((w) => w.path === 'cases/mine-1')?.data.clientUid === 'u-ann'
+  && famBad.code === 400 && F3.written.length === 0 && F3.mails.length === 0
+  && famStranger.code === 404 && F4.written.length === 0,
+  `${famKnown.code}/${famKnown.obj.claimed} ${famBad.code} ${famStranger.code}`);
+
+const C1 = runRoute({ cases: {
+  waiting: { family: true, clientEmail: 'ann@example.com', clientUid: null },
+  taken: { family: true, clientEmail: 'ann@example.com', clientUid: 'other' },
+  notfamily: { clientEmail: 'ann@example.com', clientUid: null },
+  elsewhere: { family: true, clientEmail: 'bob@example.com', clientUid: null },
+} });
+const claimed = await C1.claim('u-ann', 'ann@example.com');
+// NEGATIVE CONTROL (run 2026-09-03): the claim dropping its family test (`if (r.data.clientUid) continue;`) made this read
+//   FAIL  S25 the first sign-in with that address takes only the family case still waiting, and the code step calls it
+check('S25 the first sign-in with that address takes only the family case still waiting, and the code step calls it',
+  !!claimSrc && claimed === 1
+  && C1.written.length === 1 && C1.written[0].path === 'cases/waiting' && C1.written[0].data.clientUid === 'u-ann'
+  && (C1.written[0].opts?.mask || []).join(',') === 'clientUid'
+  && /await patchDoc\(env, `users\/\$\{uid\}`, \{ email \}, \{ mask: \['email'\] \}\);\n[^\n]*\n\s+await claimFamilyCases\(env, uid, email\)\.catch\(\(\) => \{\}\);/.test(WORKER)
+  && /url\.pathname === '\/api\/admin\/family-case' && request\.method === 'POST'\)\n\s+return await handleFamilyCase\(request, env\);/.test(WORKER),
+  `${claimed} claimed, wrote ${C1.written.map((w) => w.path).join(',')}`);
+
+const CLIENT = f('public/js/case.js');
+// NEGATIVE CONTROL (run 2026-09-03): the family door renamed to `data-open-door="fam"` made this read
+//   FAIL  S26 both doors and their forms are on the shelf, the family flag rides the card and the page, their page sells nothing, and the demo mirrors it
+check('S26 both doors and their forms are on the shelf, the family flag rides the card and the page, their page sells nothing, and the demo mirrors it',
+  /data-open-door="family">Open a family case</.test(ADMIN)
+  && ['self:firstName', 'self:lastName', 'self:dob', 'self:phone', 'self:address', 'family:email', 'family:relation'].every((k) => new RegExp(`data-of="\\$\\{p\\}:${k.split(':')[1]}"`).test(ADMIN))
+  && /const person = \(p, withEmail\) => `/.test(ADMIN)
+  && /FAMILY · FREE/.test(ADMIN)
+  && /loops\.push\(\['family', `Family, free/.test(CASE)
+  && /if \(c\.family\) \{\n\s+el\.innerHTML = `\n\s+<h2 class="case-sec-h">Case Enhancements<\/h2>\n\s+<p class="dim small"[^>]*>Nothing to buy here: this case is free\./.test(CLIENT)
+  && /path === '\/api\/admin\/family-case'/.test(DEMO) && /family: true,\n\s+familyRelation:/.test(DEMO)
+  && /const typed = \[body\.firstName, body\.lastName\]/.test(DEMO));
 
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);

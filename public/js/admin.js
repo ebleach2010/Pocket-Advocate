@@ -90,11 +90,15 @@ async function load() {
   // three, and is in none of them: it is not a client, so it is not current,
   // not booked, not former, and not a case in the revenue line.
   const mine = cases.filter((c) => c.self && c.status !== 'closed');
-  const billed = cases.filter((c) => !c.self);
-  const former = billed.filter((c) => c.status === 'closed');
-  const future = billed.filter((c) =>
+  const shelved = cases.filter((c) => !c.self);
+  // The money lines count only what was paid for: not his own case, and not
+  // a family member's free one, which sits on the ordinary shelves but is
+  // not "backed by a confirmed payment".
+  const billed = shelved.filter((c) => !c.family);
+  const former = shelved.filter((c) => c.status === 'closed');
+  const future = shelved.filter((c) =>
     c.status !== 'closed' && c.appointment?.start && toDate(c.appointment.start).getTime() > now);
-  const current = billed.filter((c) => !former.includes(c) && !future.includes(c));
+  const current = shelved.filter((c) => !former.includes(c) && !future.includes(c));
   current.sort((a, b) => toDate(a.reportDueAt || 0) - toDate(b.reportDueAt || 0));
   future.sort((a, b) => toDate(a.appointment?.start) - toDate(b.appointment?.start));
   former.sort((a, b) => toDate(b.closedAt || 0) - toDate(a.closedAt || 0));
@@ -308,6 +312,7 @@ async function load() {
         c.needsReschedule ? '<strong class="fld-alert">NEEDS RESCHEDULE</strong>' : ''
       }${checkInDue(c) ? ' <strong class="fld-alert">CHECK-IN DUE</strong>' : ''
       }${c.pendingTelehealth?.state === 'requested' ? ' <strong class="fld-alert">TELEHEALTH, CONFIRM</strong>' : ''
+      }${c.family ? ` <strong class="fld-family">FAMILY · FREE${c.familyRelation ? `, ${esc(c.familyRelation)}` : ''}</strong>` : ''
       }</span>${badges ? `<span class="folder-badges" title="Not looked at yet">${badges}</span>` : ''}`,
     });
   };
@@ -366,12 +371,29 @@ async function load() {
       </a>`).join('')}
     </section>` : '';
 
-  // The purple shelf: his own case when it exists, the button that opens one
-  // when it does not. One per admin; the route keeps it that way.
-  const selfBlock = mine.length
+  // THE TWO DOORS (Eric, 2026-09-03): his own case, which asks for his own
+  // details first, and a family case, which asks for theirs and the email
+  // they will sign in with. Each is a button that unfolds a short form; the
+  // own-case door goes away once his case exists (one per admin; the route
+  // keeps it that way), the family door stays.
+  const person = (p, withEmail) => `
+      <div class="open-form" data-open-form="${p}" hidden>
+        <label class="dim small">First name<input type="text" data-of="${p}:firstName" maxlength="60" autocomplete="off"></label>
+        <label class="dim small">Last name<input type="text" data-of="${p}:lastName" maxlength="60" autocomplete="off"></label>
+        ${withEmail ? `<label class="dim small">The email they will sign in with<input type="email" data-of="${p}:email" maxlength="200" autocomplete="off"></label>
+        <label class="dim small">Who they are to you, if you like<input type="text" data-of="${p}:relation" maxlength="40" placeholder="e.g. my mother"></label>` : ''}
+        <label class="dim small">Date of birth<input type="date" data-of="${p}:dob"></label>
+        <label class="dim small">Phone<input type="tel" data-of="${p}:phone" maxlength="40" placeholder="+1 555 555 5555"></label>
+        <label class="dim small">Home address<input type="text" data-of="${p}:address" maxlength="300" placeholder="Street, city, state, ZIP"></label>
+        <p class="row"><button type="button" class="btn self-open" data-open-go="${p}">${withEmail ? 'Open their case, free' : 'Open my case'}</button>
+          <span class="dim small" data-open-said="${p}"></span></p>
+      </div>`;
+  const selfBlock = (mine.length
     ? section('MY OWN CASE', 'var(--self)', mine.map((c) => rowFor(c, 'nobody on the other end')))
-    : `<p class="self-open-row"><button type="button" class="btn self-open" data-self-open>Open a case for myself</button>
-        <span class="dim small">Same tabs, same controls, nobody on the other end.</span></p>`;
+    : '')
+    + `<div class="open-doors">${mine.length ? '' : '<button type="button" class="btn self-open" data-open-door="self">Open a case for myself</button>'}
+        <button type="button" class="btn self-open" data-open-door="family">Open a family case</button></div>
+      ${mine.length ? '' : person('self', false)}${person('family', true)}`;
   listEl.innerHTML = attBlock + todayBlock + selfBlock +
     section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
       `${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
@@ -382,22 +404,47 @@ async function load() {
     section('FORMER CLIENTS: CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
       `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`))) +
     `<div class="cmd-quiet">` + rateBlock + voiceBlock + summary + `</div>`;
-  listEl.querySelector('[data-self-open]')?.addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch('/api/admin/self-case', {
-        method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '{}',
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok || !out.id) throw new Error(out.error || `Failed (${res.status})`);
-      location.href = `/admin-case.html?id=${encodeURIComponent(out.id)}`;
-    } catch (err) {
-      alert(err.message);
-      btn.disabled = false;
-    }
-  });
+  // A door unfolds its form and folds the other; Open sends the form to its
+  // route and walks into the case it made.
+  for (const door of listEl.querySelectorAll('[data-open-door]')) {
+    door.addEventListener('click', () => {
+      const which = door.dataset.openDoor;
+      for (const f of listEl.querySelectorAll('[data-open-form]')) {
+        if (f.dataset.openForm === which) f.hidden = !f.hidden;
+        else f.hidden = true;
+      }
+      listEl.querySelector(`[data-open-form="${which}"]:not([hidden]) input`)?.focus();
+    });
+  }
+  for (const go of listEl.querySelectorAll('[data-open-go]')) {
+    go.addEventListener('click', async () => {
+      const which = go.dataset.openGo;
+      const said = listEl.querySelector(`[data-open-said="${which}"]`);
+      const val = (n) => listEl.querySelector(`[data-of="${which}:${n}"]`)?.value.trim() || '';
+      const payload = {
+        firstName: val('firstName'), lastName: val('lastName'), dob: val('dob'), phone: val('phone'), address: val('address'),
+      };
+      if (which === 'family') { payload.email = val('email'); payload.relation = val('relation'); }
+      if (!payload.firstName) { if (said) said.textContent = 'First name, please.'; return; }
+      if (which === 'family' && !payload.email) { if (said) said.textContent = 'The email they will sign in with, please.'; return; }
+      go.disabled = true;
+      if (said) said.textContent = 'Opening…';
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(which === 'family' ? '/api/admin/family-case' : '/api/admin/self-case', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok || !out.id) throw new Error(out.error || `Failed (${res.status})`);
+        location.href = `/admin-case.html?id=${encodeURIComponent(out.id)}`;
+      } catch (err) {
+        if (said) said.textContent = err.message;
+        go.disabled = false;
+      }
+    });
+  }
 
   const voiceSay = listEl.querySelector('#voice-said');
   const voicePost = async (btn, body, done) => {

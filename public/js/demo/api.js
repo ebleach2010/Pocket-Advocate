@@ -466,6 +466,52 @@ export function demoApi(role, store) {
     // holds it - so against a route that accepts and does not write, the fix
     // correctly reports failure, and the demo could not show him it working.
     // Mirrors handleCaseUpdate in worker/index.js.
+    // A family case (2026-09-03), mirroring the Worker: free, chat open from
+    // the first day, the typed email as the login, waiting for its uid.
+    if (path === '/api/admin/family-case') {
+      await beat(300);
+      const email = String(body.email || '').trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(400, 'The email they will sign in with, please.');
+      const name = [body.firstName, body.lastName].map((x) => String(x || '').trim()).filter(Boolean).join(' ');
+      if (!name) return fail(400, 'Their name, please.');
+      const id = `demo-case-family-${Math.random().toString(36).slice(2, 6)}`;
+      const now = new Date();
+      store.docs.set(`cases/${id}`, {
+        family: true,
+        familyRelation: String(body.relation || '').trim().slice(0, 40) || null,
+        clientUid: null,
+        clientEmail: email,
+        clientName: name,
+        clientDob: String(body.dob || '') || null,
+        clientTz: 'America/Boise',
+        clientPhone: String(body.phone || '').trim().slice(0, 40) || null,
+        clientAddress: String(body.address || '').trim().slice(0, 300) || null,
+        status: 'confirmed',
+        createdAt: now,
+        bookingEmailSentAt: now,
+        appointment: null,
+        publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] },
+        addOnFollowUp: false,
+        forms: {},
+        files: [],
+        reportDueAt: null,
+        caseRateCents: 0,
+        addonRateCents: 0,
+        fullAccess: false,
+        fullAccessAt: null,
+        fullAccessRateCents: null,
+        stripe: null,
+        work: { seconds: 0, startedAt: null },
+        hold: null,
+        chatUnlocked: true,
+        chatUnlockedAt: now,
+        chatOpenNotified: true,
+      });
+      store.persist?.();
+      store.fire?.(`cases/${id}`);
+      return ok({ ok: true, id, claimed: false });
+    }
+
     // His own case (2026-09-03), mirroring the Worker: one per admin, the
     // same shape as every other case with self on, nobody on the other end.
     if (path === '/api/admin/self-case') {
@@ -474,15 +520,16 @@ export function demoApi(role, store) {
       const cur = store.docs.get(key);
       if (cur && cur.self && cur.status !== 'closed') return ok({ ok: true, id: 'demo-case-mine', created: false });
       const now = new Date();
+      const typed = [body.firstName, body.lastName].map((x) => String(x || '').trim()).filter(Boolean).join(' ');
       store.docs.set(key, {
         self: true,
         clientUid: null,
         clientEmail: null,
-        clientName: 'Eric Bleach',
-        clientDob: null,
+        clientName: typed || 'Eric Bleach',
+        clientDob: String(body.dob || '') || null,
         clientTz: 'America/Boise',
-        clientPhone: null,
-        clientAddress: null,
+        clientPhone: String(body.phone || '').trim().slice(0, 40) || null,
+        clientAddress: String(body.address || '').trim().slice(0, 300) || null,
         status: 'confirmed',
         createdAt: now,
         bookingEmailSentAt: now,

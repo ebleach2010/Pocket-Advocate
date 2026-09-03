@@ -1580,6 +1580,14 @@ function wireExtendOffer(el, c) {
 }
 
 function renderAddons(el, c) {
+  // A family member's case (2026-09-03) is free, and so is everything on it:
+  // no follow-up to buy, no upgrade, no extension, no telehealth fee.
+  if (c.family) {
+    el.innerHTML = `
+    <h2 class="case-sec-h">Case Enhancements</h2>
+    <p class="dim small" style="margin:.2rem 0 .8rem;">Nothing to buy here: this case is free. Anything you need, ask in chat.</p>`;
+    return;
+  }
   el.innerHTML = `
     <h2 class="case-sec-h">Case Enhancements</h2>
     <p class="dim small" style="margin:.2rem 0 .8rem;">Extras you can put on

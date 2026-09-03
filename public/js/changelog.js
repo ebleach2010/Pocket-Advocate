@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.81';
+export const VERSION = '2.82';
 
 /**
  * Newest first.
@@ -51,6 +51,21 @@ export const VERSION = '2.81';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS OWN DETAILS, AND A FAMILY CASE (Eric, 2026-09-03: "Have me enter my
+    // own information when opening a case. Have one for 'open a family
+    // case'. Whatever email I enter is the one they login with, and their
+    // case is free of charge."). A family member's case is an ordinary case
+    // on their side, so nothing here is news to a client; the list stays
+    // empty and no card opens.
+    version: '2.82',
+    quiet: true,
+    client: [],
+    admin: [
+      'Opening your own case now asks for your details first: name, date of birth, phone, home address.',
+      'A second button on the Clients page opens a family case: their name, the email they will sign in with, and their details. The case is free, chat is open from the start, and the moment they sign in with that email the case is theirs.',
+    ],
+  },
   {
     // HIS OWN CASE (Eric, 2026-09-03: "I would like to use this tool for
     // myself as I'm entering my fifth relapse. Open an admin case file
