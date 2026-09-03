@@ -94,6 +94,9 @@ async function createSlots() {
   const to = document.getElementById('to').value;
   const hours = [...document.querySelectorAll('#hours input:checked')].map((i) => Number(i.value));
   const weekdaysOnly = document.getElementById('weekdays').checked;
+  // A free 15-minute call or a case hour. Same start times, different length,
+  // and the Worker stamps kind:'fit' so the paid picker never shows it.
+  const fit = document.querySelector('input[name="kind"]:checked')?.value === 'fit';
   if (!from || !to || !hours.length) {
     errEl.textContent = 'Pick a date range and at least one start time.';
     errEl.hidden = false;
@@ -137,11 +140,11 @@ async function createSlots() {
     const res = await fetch('/api/admin/slots', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-      body: JSON.stringify({ starts, durationMin: 60 }),
+      body: JSON.stringify(fit ? { starts, kind: 'fit' } : { starts, durationMin: 60 }),
     });
     const out = await res.json();
     if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
-    okEl.textContent = `Opened ${out.created} slots (${out.skipped} already existed).`;
+    okEl.textContent = `Opened ${out.created} ${fit ? 'free-call' : 'case'} slots (${out.skipped} already existed).`;
     okEl.hidden = false;
     loadCalendar();
   } catch (err) {
@@ -248,8 +251,8 @@ async function loadCalendar() {
       ? ` <button class="day-x" data-day-clear="${di}" title="Clear this day" style="background:none; border:0; color:var(--soft); cursor:pointer; font-size:.9rem; padding:.1rem .4rem;">✕</button>`
       : ''}</h3><div class="slots">
       ${list.map((s) => s.state === 'open'
-        ? `<button class="slot" data-del="${s.id}" title="Tap to delete">${timeFmt.format(s.startDate)} ✕</button>`
-        : `<span class="slot booked">${timeFmt.format(s.startDate)} · ${s.state.toUpperCase()}</span>`).join('')}
+        ? `<button class="slot" data-del="${s.id}" title="Tap to delete">${timeFmt.format(s.startDate)}${s.kind === 'fit' ? ' <span class="local">free call, 15 min</span>' : ''} ✕</button>`
+        : `<span class="slot booked">${timeFmt.format(s.startDate)} · ${s.kind === 'fit' ? 'FREE CALL' : s.state.toUpperCase()}</span>`).join('')}
     </div></div>`).join('');
 
   el.querySelectorAll('[data-day-clear]').forEach((btn) =>

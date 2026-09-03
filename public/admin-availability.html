@@ -69,7 +69,14 @@
     <h3>Open new slots</h3>
     <label>From <input type="date" id="from"></label>
     <label style="margin-top:.5rem;">Through <input type="date" id="to"></label>
-    <label style="margin-top:.5rem;">Start times (MST, 60-minute sessions)</label>
+    <!-- Which kind of time (Eric, 2026-09-01, the free fit call): a case
+         hour or a free 15-minute call. The Worker fixes the length of a
+         fit slot whatever is sent. -->
+    <div id="kind" style="margin-top:.5rem; display:flex; gap:.9rem; flex-wrap:wrap;">
+      <label class="inline"><input type="radio" name="kind" value="case" checked> Case, 60 minutes</label>
+      <label class="inline"><input type="radio" name="kind" value="fit"> Free call, 15 minutes</label>
+    </div>
+    <label style="margin-top:.5rem;">Start times (MST)</label>
     <div id="hours"></div>
     <label class="inline" style="margin-top:.5rem;"><input type="checkbox" id="weekdays" checked> Weekdays only</label>
     <p class="error" id="create-error" hidden></p>

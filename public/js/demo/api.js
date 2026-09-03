@@ -328,6 +328,72 @@ export function demoApi(role, store) {
     // the light answers what time it is where he is standing.
     // Bulk slot clearing (Eric, 2026-08-30): same fence as the Worker, only
     // docs that are open right now go.
+    // The free 15-minute call (2026-09-01). Mirrors handleFitCall: the same
+    // refusals in the same order, the slot taken with only a leadId on it,
+    // the person written to leads/ where no client page looks. A demo that
+    // waved a bad form through would show him a door the Worker keeps shut.
+    if (path === '/api/fit-call' && init.method === 'POST') {
+      if (typeof body?.website === 'string' && body.website.trim()) return ok({ ok: true });
+      const name = String(body?.name || '').trim();
+      const email = String(body?.email || '').trim().toLowerCase();
+      const phone = String(body?.phone || '').trim();
+      if (name.length < 2) return fail(400, 'Your name, please.');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email))
+        return fail(400, 'A working email address, please. The details of the call go there.');
+      if (!['phone', 'video'].includes(body?.method)) return fail(400, 'Phone or video?');
+      if (body.method === 'phone' && !/^\+?[\d\s().-]{7,20}$/.test(phone))
+        return fail(400, 'A valid phone number is required for a phone call.');
+      if (body.us !== true) return fail(400, 'I can only work with people in the United States and Canada.');
+      const key = `availability/${body.slotId || ''}`;
+      const slot = store.docs.get(key);
+      if (!slot || slot.kind !== 'fit' || slot.state !== 'open')
+        return fail(409, 'That time is no longer available.');
+      const taken = [...store.docs.entries()].some(([k, v]) => k.startsWith('leads/')
+        && v.email === email && v.state === 'booked' && new Date(v.start) > new Date());
+      if (taken) return fail(409, 'You already have a call booked with me. The time is in your email.');
+      await beat(500);
+      const leadId = `lead-${Date.now()}`;
+      store.docs.set(key, { ...slot, state: 'booked', leadId });
+      store.docs.set(`leads/${leadId}`, {
+        name, email, phone: body.method === 'phone' ? phone : '', method: body.method,
+        note: String(body.note || '').trim().slice(0, 280), tz: body.tz || '',
+        slotId: body.slotId, start: new Date(slot.start), durationMin: 15,
+        state: 'booked', joinLink: null, createdAt: new Date(),
+      });
+      store.fire?.(key);
+      return ok({ ok: true, leadId, start: slot.start });
+    }
+    if (path === '/api/admin/fit-calls') {
+      if (role !== 'admin') return fail(404, 'Not found');
+      const leads = [...store.docs.entries()].filter(([k]) => k.startsWith('leads/'))
+        .map(([k, v]) => ({ id: k.slice(6), ...v }));
+      if (init.method !== 'POST') {
+        const since = Date.now() - 14 * 86_400_000;
+        return ok({ calls: leads.filter((l) => new Date(l.start).getTime() > since)
+          .sort((a, b) => new Date(a.start) - new Date(b.start)) });
+      }
+      const k = `leads/${body?.leadId || ''}`;
+      const l = store.docs.get(k);
+      if (!l) return fail(404, 'No such call');
+      const now = new Date();
+      if (body.action === 'join-link') {
+        const joinLink = String(body.joinLink || '').trim();
+        if (!/^https:\/\/\S+$/.test(joinLink)) return fail(400, 'Paste a full https link.');
+        store.docs.set(k, { ...l, joinLink, joinLinkAt: now });
+      } else if (body.action === 'done' || body.action === 'no-show') {
+        store.docs.set(k, { ...l, state: body.action, endedAt: now });
+      } else if (body.action === 'cancel') {
+        if (l.state !== 'booked') return fail(409, 'That call is not booked.');
+        store.docs.set(k, { ...l, state: 'canceled', endedAt: now });
+        const sk = `availability/${l.slotId}`;
+        const slot = store.docs.get(sk);
+        if (slot && slot.leadId === body.leadId && new Date(l.start) > now)
+          store.docs.set(sk, { ...slot, state: 'open', leadId: null });
+        store.fire?.(sk);
+      } else return fail(400, 'Bad action');
+      store.fire?.(k);
+      return ok({ ok: true });
+    }
     if (path === '/api/admin/slots-clear' && init.method === 'POST') {
       const ids = Array.isArray(body.ids) ? body.ids : [];
       let deleted = 0;

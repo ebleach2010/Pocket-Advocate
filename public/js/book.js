@@ -277,6 +277,10 @@ async function renderTime() {
     const horizon = Date.now() + MAX_LEAD_MS;
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
+      // A free-call slot is fifteen minutes he opened for a fit call
+      // (fit.js); it is not an hour to sell. The Worker refuses it at
+      // checkout too, so this is the courtesy half.
+      if (data.kind === 'fit') return;
       const start = data.start && data.start.toDate ? data.start.toDate() : new Date(data.start);
       if (start.getTime() >= cutoff && start.getTime() <= horizon)
         slots.push({ id: docSnap.id, start, durationMin: data.durationMin || 60 });

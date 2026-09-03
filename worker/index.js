@@ -7,6 +7,8 @@
 //   POST   /api/stripe/webhook     payments + subscription lifecycle -> Firestore
 //   POST   /api/admin/slots        open availability slots (admin)
 //   DELETE /api/admin/slots/:id    remove an open slot (admin)
+//   POST   /api/fit-call           book the free 15-minute call (public, no account)
+//   GET/POST /api/admin/fit-calls  the free calls: list, join link, done, no-show, cancel (admin)
 //   GET/POST/DELETE /api/admin/personal   Personal Uploads: list, add, remove (admin, Worker-only prefix)
 //   GET    /api/admin/personal/file       one personal file's bytes (admin token or a ten-minute signed link)
 //   POST   /api/admin/case-update  join link / milestones / close (admin)
@@ -544,6 +546,30 @@ const FOLLOWUP_WARN_DAYS = 7;
 // Admin-priced sessions: a percentage of THAT CLIENT'S case rate, 25% steps.
 const CHARGE_PCTS = [0, 25, 50, 75, 100, 125, 150];
 const METHODS = ['phone', 'video'];
+
+// ---------------------------------------------------------------------------
+// THE FREE 15-MINUTE FIT CALL (Eric, 2026-09-01, choosing it from the landing
+// sweep: "Yes, add the free fit call"). Every independent advocate surveyed
+// but one opens with a free first conversation; this site opened with a
+// $1,200 button. The call is the front page's first step now and the case is
+// the second.
+//
+// HOW IT IS SHAPED, AND WHY. A fit slot is an ordinary availability doc with
+// kind:'fit' and fifteen minutes on it, so the calendar, the stale sweep and
+// the clear buttons already know what to do with it. The PERSON never lands
+// on that doc: availability is world-readable (the paid picker reads it
+// before sign-in), so a taken fit slot carries only { start, durationMin,
+// state, kind, leadId }, and leadId is a random id that names nobody. Their
+// name, email, phone and one-line note go to leads/{leadId}, which sits under
+// the rules' deny tail and is read by the Worker alone. No account, no
+// Stripe, no rules change.
+const FIT_KIND = 'fit';
+const FIT_CALL_MIN = 15;
+// Submissions per connection per hour, counted before anything is read. A
+// free form with no sign-in is the one door on the site a script can lean
+// on, and five an hour is more than a person needs to book one call.
+const FIT_IP_LIMIT = 5;
+const FIT_NOTE_MAX = 280;
 // The Full Access scope note. Not in REQUIRED_ACKS: a standard case must not
 // be blocked on an agreement about a tier it is not buying.
 const FULL_ACCESS_ACK = 'fullAccess';
@@ -795,6 +821,10 @@ export default {
         return await handleDeleteSlot(request, env, url);
       if (url.pathname === '/api/admin/slots-clear' && request.method === 'POST')
         return await handleClearSlots(request, env);
+      if (url.pathname === '/api/fit-call' && request.method === 'POST')
+        return await handleFitCall(request, env);
+      if (url.pathname === '/api/admin/fit-calls')
+        return await handleAdminFitCalls(request, env);
       if (url.pathname === '/api/admin/personal')
         return await handlePersonal(request, env, url);
       if (url.pathname === '/api/admin/personal/file' && request.method === 'GET')
@@ -2437,6 +2467,11 @@ async function handleCheckout(request, env) {
     return json({ error: 'Invalid slot.' }, 400);
   const slot = await getDoc(env, `availability/${slotId}`);
   if (!slot) return json({ error: 'That time is no longer available.' }, 409);
+  // A fit slot is a free call, never a case. The paid picker skips them
+  // (book.js), so a checkout naming one is a stale tab or a hand-built
+  // request, and either way it is refused before anything is held.
+  if (slot.data.kind === FIT_KIND)
+    return json({ error: 'That time is set aside for a free call. Pick a case time.' }, 409);
   const now = new Date();
   const holdExpired =
     slot.data.state === 'held' &&
@@ -7842,7 +7877,11 @@ async function handleCreateSlots(request, env) {
   if (!admin) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => null);
   const starts = body && Array.isArray(body.starts) ? body.starts : null;
-  const durationMin = body && Number(body.durationMin) > 0 ? Number(body.durationMin) : 60;
+  // A fit slot is fifteen minutes whatever the body says: the length is the
+  // product, not a setting (see FIT_CALL_MIN).
+  const kind = body && body.kind === FIT_KIND ? FIT_KIND : null;
+  const durationMin = kind ? FIT_CALL_MIN
+    : body && Number(body.durationMin) > 0 ? Number(body.durationMin) : 60;
   if (!starts || !starts.length || starts.length > 500)
     return json({ error: 'Provide 1–500 slot start times.' }, 400);
 
@@ -7868,11 +7907,31 @@ async function handleCreateSlots(request, env) {
     if (!soon && windowProblem(iso, durationMin)) { invalid++; continue; }
     entries.push({
       path: `availability/${slotIdFor(start)}`,
-      data: { start, durationMin, state: 'open', ...(soon ? { adminCreated: true } : {}) },
+      data: {
+        start, durationMin, state: 'open',
+        ...(kind ? { kind } : {}),
+        ...(soon ? { adminCreated: true } : {}),
+      },
     });
   }
   const { created, skipped } = await batchCreate(env, entries);
   return json({ created, skipped: skipped + invalid });
+}
+
+/**
+ * The per-connection throttle on the free call. Lives on the edge cache like
+ * the PIN throttle, and answers "not throttled" wherever there is no edge
+ * cache at all, which is the suite's harness and nothing else.
+ */
+async function fitThrottled(ip) {
+  const cache = globalThis.caches?.default;
+  if (!cache) return false;
+  const key = new Request(`https://fit-throttle.internal/${encodeURIComponent(ip)}`);
+  const prior = await cache.match(key);
+  const n = prior ? parseInt(await prior.text(), 10) || 0 : 0;
+  if (n >= FIT_IP_LIMIT) return true;
+  await cache.put(key, new Response(String(n + 1), { headers: { 'cache-control': 'max-age=3600' } }));
+  return false;
 }
 
 /**
@@ -7937,6 +7996,180 @@ function ownPersonalPath(uid, path) {
   if (segs[2] === 'all') return segs.length === 4 && !!segs[3];
   if (segs[2] === 'case') return segs.length === 5 && /^[\w-]{1,64}$/.test(segs[3]) && !!segs[4];
   return false;
+}
+
+/**
+ * POST /api/fit-call   public, no account
+ * Body: { slotId, name, email, phone, method, note, tz, us, website }
+ *
+ * Books the free 15-minute call. Modelled on handleCheckout with the money
+ * taken out: the same timing rule, the same closed-books rule, the same
+ * updateTime take of the slot so two people cannot land on one time. What is
+ * different is where the person goes: never onto the world-readable slot,
+ * always into leads/{id} behind the deny tail.
+ *
+ * `website` is the honeypot, a field no person sees. A body that fills it
+ * gets a cheerful 200 and writes nothing, so a script never learns it was
+ * caught.
+ */
+async function handleFitCall(request, env) {
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+  if (await fitThrottled(ip))
+    return json({ error: 'Too many tries from this connection. Wait a while, or use the contact page.' }, 429);
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
+  if (str(body.website, 200)) return json({ ok: true });
+
+  const name = str(body.name, 80);
+  const email = str(body.email, 120).toLowerCase();
+  const phone = str(body.phone, 40);
+  const method = body.method;
+  const note = str(body.note, FIT_NOTE_MAX);
+  const clientTz = validTz(body.tz);
+  if (name.length < 2) return json({ error: 'Your name, please.' }, 400);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email))
+    return json({ error: 'A working email address, please. The details of the call go there.' }, 400);
+  if (!METHODS.includes(method)) return json({ error: 'Phone or video?' }, 400);
+  if (method === 'phone' && !/^\+?[\d\s().-]{7,20}$/.test(phone))
+    return json({ error: 'A valid phone number is required for a phone call.' }, 400);
+  if (body.us !== true)
+    return json({ error: 'I can only work with people in the United States and Canada.' }, 400);
+  if (typeof body.slotId !== 'string' || !/^[\w-]{1,64}$/.test(body.slotId))
+    return json({ error: 'Pick a time.' }, 400);
+
+  const slot = await getDoc(env, `availability/${body.slotId}`);
+  if (!slot || slot.data.kind !== FIT_KIND || slot.data.state !== 'open')
+    return json({ error: 'That time is no longer available.' }, 409);
+  const now = new Date();
+  const timingProblem = slotTimingProblem(slot.data.start, slot.data.durationMin || FIT_CALL_MIN, now);
+  if (timingProblem) return json({ error: timingProblem }, 409);
+  // Closed books close this door too: the call exists to decide on a case,
+  // and while the books are shut there is no case to decide on.
+  const closedUntil = await readBookingClosure(env);
+  if (closedUntil && new Date(slot.data.start).getTime() < closedUntil)
+    return json({ error: closedMessage(closedUntil), closedUntil: new Date(closedUntil) }, 409);
+  // One call per person at a time. The email is the person.
+  const prior = await queryDocs(env, 'leads',
+    [['email', 'EQUAL', email], ['state', 'EQUAL', 'booked']], 5).catch(() => []);
+  if (prior.some((l) => new Date(l.data.start).getTime() > now.getTime()))
+    return json({ error: 'You already have a call booked with me. The time is in your email.' }, 409);
+
+  const leadId = crypto.randomUUID();
+  const start = new Date(slot.data.start);
+  // Take the slot. The updateTime precondition makes two simultaneous takes
+  // impossible: the loser gets a 409 and nothing else of theirs is written.
+  const took = await patchDoc(env, `availability/${body.slotId}`,
+    { state: 'booked', leadId },
+    { ifUpdateTime: slot.updateTime, mask: ['state', 'leadId'] });
+  if (!took) return json({ error: 'Someone just took that time. Pick another.' }, 409);
+  const lead = {
+    name, email, phone: method === 'phone' ? phone : '', method, note,
+    tz: clientTz || '', slotId: body.slotId, start, durationMin: FIT_CALL_MIN,
+    state: 'booked', joinLink: null, createdAt: now,
+  };
+  await patchDoc(env, `leads/${leadId}`, lead, { mustNotExist: true });
+  await fitNotify(env, leadId, lead);
+  return json({ ok: true, leadId, start });
+}
+
+/** Both admin notices and the person's own email, once, on a booked call. */
+async function fitNotify(env, leadId, lead) {
+  const when = `${MT_FMT.format(lead.start)} MST`;
+  const first = firstName(lead.name) || 'Someone';
+  await pingAdmins(env, `${first} booked a free call: ${when}, ${lead.method}.`, '/admin.html#fit-calls');
+  if (env.ADMIN_EMAIL) {
+    await sendEmail(env, {
+      to: env.ADMIN_EMAIL,
+      subject: `Free call booked: ${lead.name}, ${when}`,
+      html: `<p><strong>${escHtml(lead.name)}</strong> booked a free 15-minute ${escHtml(lead.method)} call.</p>
+        <p><strong>${when}</strong></p>
+        <p>${escHtml(lead.email)}${lead.phone ? ` &middot; ${escHtml(lead.phone)}` : ''}</p>
+        ${lead.note ? `<p>In their words: ${escHtml(lead.note)}</p>` : ''}
+        <p><a href="${env.PUBLIC_BASE_URL}/admin.html#fit-calls">Open your free calls</a></p>`,
+    }).catch(() => {});
+  }
+  // No business number in an email, same as every other email here (see
+  // worker/email.js). The contact page carries it for anyone who needs it.
+  await sendEmail(env, {
+    to: lead.email,
+    subject: 'Your free call with Eric is booked',
+    html: `<p>Hi ${escHtml(first)}, your free 15-minute ${escHtml(lead.method)} call is booked.</p>
+      ${whenHtml(lead.start, lead.tz)}
+      ${lead.method === 'phone'
+        ? `<p>I will call you at ${escHtml(lead.phone)}.</p>`
+        : '<p>A join link comes by email before the call. Nothing to install.</p>'}
+      <p>If you already know you want to go ahead, you can <a href="${env.PUBLIC_BASE_URL}/book.html">book a case</a> any time.</p>
+      <p>Need to move it? <a href="${env.PUBLIC_BASE_URL}/contact.html">Reach me here.</a></p>`,
+  }).catch(() => {});
+}
+
+/**
+ * GET  /api/admin/fit-calls               the calls from two weeks back onward
+ * POST /api/admin/fit-calls               Body: { leadId, action, joinLink? }
+ *      action: 'join-link' (emails the person), 'done', 'no-show',
+ *              'cancel' (reopens the slot when the call is still ahead, and
+ *              emails the person a way to pick another time)
+ *
+ * The only reader of leads/. Strangers get the same 404 as every admin route.
+ */
+async function handleAdminFitCalls(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  if (request.method === 'GET') {
+    const rows = await listDocs(env, 'leads', { pageSize: 200 }).catch(() => []);
+    const since = Date.now() - 14 * 86_400_000;
+    const calls = rows
+      .map((r) => ({ id: r.id, ...r.data }))
+      .filter((l) => new Date(l.start).getTime() > since)
+      .sort((a, b) => new Date(a.start) - new Date(b.start));
+    return json({ calls });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const leadId = typeof body?.leadId === 'string' ? body.leadId : '';
+  if (!/^[\w-]{1,64}$/.test(leadId)) return json({ error: 'Bad id' }, 400);
+  const lead = await getDoc(env, `leads/${leadId}`);
+  if (!lead) return json({ error: 'No such call' }, 404);
+  const l = lead.data;
+  const now = new Date();
+  const first = firstName(l.name) || 'there';
+  const when = `${MT_FMT.format(new Date(l.start))} MST`;
+
+  if (body.action === 'join-link') {
+    const joinLink = typeof body.joinLink === 'string' ? body.joinLink.trim().slice(0, 500) : '';
+    if (!/^https:\/\/\S+$/.test(joinLink)) return json({ error: 'Paste a full https link.' }, 400);
+    await patchDoc(env, `leads/${leadId}`, { joinLink, joinLinkAt: now }, { mask: ['joinLink', 'joinLinkAt'] });
+    await sendEmail(env, {
+      to: l.email,
+      subject: 'The link for our call',
+      html: `<p>Hi ${escHtml(first)}, here is the link for our call.</p>
+        ${whenHtml(new Date(l.start), l.tz)}
+        <p><a href="${escHtml(joinLink)}">${escHtml(joinLink)}</a></p>
+        <p>Nothing to install. Open it a minute before we start.</p>`,
+    }).catch(() => {});
+    return json({ ok: true });
+  }
+  if (body.action === 'done' || body.action === 'no-show') {
+    await patchDoc(env, `leads/${leadId}`, { state: body.action, endedAt: now }, { mask: ['state', 'endedAt'] });
+    return json({ ok: true });
+  }
+  if (body.action === 'cancel') {
+    if (l.state !== 'booked') return json({ error: 'That call is not booked.' }, 409);
+    await patchDoc(env, `leads/${leadId}`, { state: 'canceled', endedAt: now }, { mask: ['state', 'endedAt'] });
+    if (new Date(l.start).getTime() > now.getTime() && l.slotId) {
+      const slot = await getDoc(env, `availability/${l.slotId}`);
+      if (slot && slot.data.leadId === leadId)
+        await patchDoc(env, `availability/${l.slotId}`, { state: 'open', leadId: null }, { mask: ['state', 'leadId'] });
+    }
+    await sendEmail(env, {
+      to: l.email,
+      subject: 'Our call needs a new time',
+      html: `<p>Hi ${escHtml(first)}, I have to cancel our call on ${when}, and I am sorry for the trouble.</p>
+        <p><a href="${env.PUBLIC_BASE_URL}/fit.html">Pick another time</a>. It takes a minute.</p>`,
+    }).catch(() => {});
+    return json({ ok: true });
+  }
+  return json({ error: 'Bad action' }, 400);
 }
 
 /**
@@ -8737,6 +8970,9 @@ async function handleAdminSchedule(request, env) {
     slot = await getDoc(env, `availability/${slotId}`);
     if (!slot) return json({ error: 'No such slot' }, 404);
   }
+  // Free-call slots are not case inventory, from this side either.
+  if (slot.data.kind === FIT_KIND)
+    return json({ error: 'That time is a free-call slot. Open a case time instead.' }, 409);
 
   const holdExpired =
     slot.data.state === 'held' &&
