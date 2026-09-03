@@ -2630,19 +2630,36 @@ async function sweepOne(env, t) {
 async function pollFlight(env, kind, id, rowId, flight) {
   const started = flight.submittedAt ? new Date(flight.submittedAt).getTime() : 0;
   let out;
+  let unreachable = false;
   try {
     out = await pollTurnBatch(env, flight.batchId, flight.customId);
   } catch {
     out = { state: 'running' }; // transient transport failure: look again next firing
+    unreachable = true;
   }
+  // AN OUTAGE IS NOT A FLIGHT (Eric, 2026-09-03: "stuck on thinking for over
+  // two hours" after the provider went down). A poll that cannot reach the
+  // provider used to count as "still running" and re-stamp the heartbeat,
+  // every firing, for the full three hours, with "thinking" on his screen
+  // the whole time. The failures are counted on the flight now; thirty in
+  // a row, about half an hour, and the flight is abandoned into the
+  // ordinary retry path, which knows how to wait for the provider to come
+  // back. One reachable poll resets the count.
+  const pollFails = unreachable ? (Number(flight.pollFails) || 0) + 1 : 0;
   if (out.state === 'running') {
-    if (!started || Date.now() - started < 3 * 3_600_000) {
-      await setState(env, kind, id, { status: 'running', stage: 'thinking', progressAt: new Date() })
-        .catch(() => {});
+    if (unreachable && pollFails >= 30) {
+      try { await client(env).messages.batches.cancel(flight.batchId); } catch { /* unreachable, by definition */ }
+      out = { state: 'failed', why: 'The provider could not be reached for half an hour and the background read was abandoned. It retries on its own.' };
+    } else if (!started || Date.now() - started < 3 * 3_600_000) {
+      await setState(env, kind, id, {
+        status: 'running', stage: 'thinking', progressAt: new Date(),
+        batchCtx: { ...flight, pollFails },
+      }).catch(() => {});
       return;
+    } else {
+      try { await client(env).messages.batches.cancel(flight.batchId); } catch { /* best effort */ }
+      out = { state: 'failed', why: 'The background read took too long and was abandoned. It retries on its own.' };
     }
-    try { await client(env).messages.batches.cancel(flight.batchId); } catch { /* best effort */ }
-    out = { state: 'failed', why: 'The background read took too long and was abandoned. It retries on its own.' };
   }
   if (out.state === 'done') {
     try {
@@ -3201,7 +3218,20 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     // flight at three hours, and this guard expires with it.
     const flight = pre?.data.batchCtx;
     if (flight?.batchId
-      && Date.now() - new Date(flight.submittedAt || 0).getTime() < 3 * 3_600_000) return;
+      && Date.now() - new Date(flight.submittedAt || 0).getTime() < 3 * 3_600_000) {
+      if (auto) return;
+      // A TAP TAKES OVER A FLIGHT (Eric, 2026-09-03, after a provider
+      // outage: "The advisor is stuck on thinking for over two hours"). The
+      // guard above kept a flight's case for three hours, and a manual
+      // Update was answered with silence, so the one person who could see
+      // it was stuck had no way to unstick it. His tap now cancels the
+      // flight (best effort: the provider may be the thing that is down),
+      // clears it, and runs the read he asked for. The cron's own takeovers
+      // still defer: they are exactly the runs that must not pay twice.
+      try { await client(env).messages.batches.cancel(flight.batchId); } catch { /* gone, or unreachable */ }
+      await setState(env, kind, id, { batchCtx: null }).catch(() => {});
+      await diagLog(env, { ev: 'flight-takeover', kind, ms: Date.now() - new Date(flight.submittedAt || 0).getTime() });
+    }
     const runT0 = Date.now();
     await diagLog(env, { ev: 'start', kind, auto, skipMedia, hasDeadline: !!deadlineAt });
     await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date(), stage: 'starting' });

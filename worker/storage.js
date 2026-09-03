@@ -76,6 +76,34 @@ export async function deleteFile(env, path) {
     throw new Error(`storage delete ${path}: ${res.status} ${await res.text()}`);
 }
 
+/**
+ * Write one object with the service account. The ONLY writer of the
+ * personal/ prefix (Eric, 2026-09-03: "uploads of documents just for me...
+ * ONLY visible to me"): storage.rules deny that prefix to every browser, so
+ * the service account is the one identity that can put a byte there or read
+ * one back, and this Worker is the one place that identity is used.
+ */
+export async function putFile(env, path, bytes, contentType) {
+  const token = await getAccessToken(env, 'https://www.googleapis.com/auth/devstorage.read_write');
+  const url = new URL(`https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o`);
+  url.searchParams.set('uploadType', 'media');
+  url.searchParams.set('name', path);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': contentType || 'application/octet-stream' },
+    body: bytes,
+  });
+  if (!res.ok) throw new Error(`storage put ${path}: ${res.status} ${await res.text()}`);
+  const o = await res.json();
+  return {
+    name: leafName(o.name || path),
+    path: o.name || path,
+    contentType: o.contentType || contentType || '',
+    size: Number(o.size) || (bytes.byteLength ?? 0),
+    at: o.timeCreated ? new Date(o.timeCreated).getTime() : Date.now(),
+  };
+}
+
 function leafName(objectPath) {
   const leaf = objectPath.split('/').pop() || 'file';
   // "1755712345678-scan.jpg" reads better as "scan.jpg".
