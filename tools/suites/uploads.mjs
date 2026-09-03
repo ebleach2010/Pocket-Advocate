@@ -436,10 +436,13 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   // NEGATIVE CONTROL (run 2026-08-28): lifting the tab strip as '' made this
   // read PASS before the count was added, and now reads
   //   FAIL  U10b and no group in the tab strip grew a fifth page  -- 0 groups found:
+  // Pin updated 2026-09-03: Mine holds five now, on Eric's word ("a 'Personal
+  // Uploads' tab... one for the 'Mine' tab"). Every other group is still held
+  // to four, and Mine's fifth is exactly the one he named.
   const stripGroups = strip.match(/pages: \[[^\]]*\]/g) || [];
-  ck('U10b and no group in the tab strip grew a fifth page',
+  ck('U10b and no group in the tab strip grew a fifth page (Mine excepted, its fifth is Personal, 2026-09-03)',
     stripGroups.length >= 4
-    && stripGroups.every((p) => (p.match(/'/g) || []).length / 2 <= 4),
+    && stripGroups.every((p) => (p.match(/'/g) || []).length / 2 <= 4 || /'saved', 'personal'\]/.test(p)),
     `${stripGroups.length} groups found: ${stripGroups.join(' ')}`);
   // NEGATIVE CONTROL: giving visitfollowup its own colour made this read
   //   FAIL  U11 ... -- 2 new colours

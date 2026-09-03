@@ -84,6 +84,33 @@ call, the floor of three, the view that never carries a per-case field, and
 the rule about paused cases that lives in code and appears nowhere in copy.
 `tools/drives/drive-stats.mjs` checks the strip and the page at 390px.
 
+### Personal Uploads (2026-09-03)
+
+Eric's own documents, on the Clients page (every case) and on a case's Mine
+tab. Every byte goes through the Worker into a `personal/{uid}/` prefix that
+storage.rules deny to every browser; only the service account reaches it,
+behind requireAdmin, and the file link also takes the admin cookie so a plain
+tap opens it. `tools/suites/personal.mjs` lifts the two routes and drives
+them: strangers and clients get 404, a path outside the caller's own prefix
+is refused, no request field can choose the prefix, the advisor's file walks
+never name it, storage.rules carry no rule for it, and no client module
+imports the shelf. `tools/drives/drive-personal.mjs` uploads, lists, opens
+and deletes on both shelves in the demo and checks the client's case page
+never shows the word.
+
+### The doing line (2026-09-03)
+
+What Eric is doing while the clock runs, in his words, read by the client
+in place of "working on it right now": six presets and a free line under the
+⏱ on a case (`DOING_PRESETS` in admin-case.js), carried on `work.doing`
+through `/api/work`, cleared by every stop. `tools/suites/clock.mjs` C60-C67
+lift `handleWork` and pin the start, the change, the cap, the clear, the
+refusal without a clock, and the three client surfaces; `tools/drives/
+drive-doing.mjs` walks both sides in the demo. The same push carries the
+advisor's flight fix (queue.mjs Q18-Q19): a manual Update takes over a
+batch in flight, and a flight the provider cannot be reached for is
+abandoned after thirty polls.
+
 ### Side doors, by typed code
 
 The old rooms still answer, as codes typed into either sign-in box - useful

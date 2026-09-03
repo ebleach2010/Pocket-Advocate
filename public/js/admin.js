@@ -10,6 +10,7 @@ import {
 } from './drawer.js';
 import { unseenBadges } from './seen.js';
 import { mountOfficeControl } from './admin-hours.js';
+import { mountPersonal } from './admin-personal.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 
@@ -20,6 +21,8 @@ if (user) {
   // on the availability page; both read and write settings/officeHours through
   // the Worker, so they cannot disagree.
   mountOfficeControl(document.getElementById('office'), { getToken: () => user.getIdToken() });
+  // Personal Uploads, across every case (Eric, 2026-09-03).
+  mountPersonal(document.getElementById('personal'), { getToken: () => user.getIdToken(), scope: 'all' });
   load();
 }
 

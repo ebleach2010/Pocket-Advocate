@@ -15,6 +15,7 @@ import { STATUS_REACTIONS, openMessageMenu } from './msg-actions.js';
 import { mountAdvisor, sendToClient } from './advisor.js';
 import { mountNotes } from './notes.js';
 import { mountSaved } from './saved.js';
+import { mountPersonal } from './admin-personal.js';
 import { markSeen, isUnseen, PAGE_BADGES } from './seen.js';
 import { openDutyDraft } from './duty.js';
 import { openPrepSheet } from './prep.js';
@@ -264,7 +265,12 @@ function render(el) {
       // 'calldoc' sits in Mine, beside Notes: both start from something Eric
       // wrote himself. A page absent from every group renders no tab at all,
       // which is how the call document first shipped invisible.
-      { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'calldoc', 'drafts', 'saved'] },
+      // A FIFTH TAB UNDER MINE (Eric, 2026-09-03: "a 'Personal Uploads' tab...
+      // one for the 'Mine' tab"). The four-per-group rule above is a 320px
+      // constraint; he asked for a tab by name, on his own phone, so the tab
+      // exists and the strip may wrap on the narrowest screens. Its label is
+      // the shortest word that says what it is.
+      { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'calldoc', 'drafts', 'saved', 'personal'] },
       // THE ACT GROUP, ON EVERY CASE NOW (Eric, 2026-08-30: "This and work
       // log should be tabs under 'act' since it has so much space"). The log
       // lived under Case since 2026-08-27 because Act only rendered on a
@@ -523,6 +529,17 @@ function render(el) {
         },
       },
       {
+        // His documents on this case, for his eyes only (Eric, 2026-09-03).
+        // Through the Worker into a prefix no browser can read; nothing on
+        // the client's page, nothing the advisor walks.
+        id: 'personal', title: 'Personal', icon: '🤫',
+        render: (pane) => {
+          const host = document.createElement('div');
+          pane.appendChild(host);
+          mountPersonal(host, { getToken: () => user.getIdToken(), scope: 'case', caseId, open: true });
+        },
+      },
+      {
         // One day of the thread, read back to him. His side only: he took this
         // off the client's side deliberately.
         id: 'summary', title: 'Summary', icon: '🗒',
@@ -643,7 +660,11 @@ function render(el) {
     ${c.status === 'closed' ? '' : `
     <button type="button" class="btn quiet work-head" data-work-head
       aria-label="Clock in or out of this case">⏱</button>`}
-    <p class="dim small working-line" data-working hidden></p>`;
+    <p class="dim small working-line" data-working hidden></p>
+    <div class="doing-row" data-doing-row hidden>
+      <span class="dim small">The client reads:</span>
+      <span class="doing-pills" data-doing-pills></span>
+    </div>`;
   const strip = el.querySelector('[data-folder] .folder-tabs');
   if (strip) strip.after(head);
   else el.prepend(head);          // no strip is not a reason to lose the clock
@@ -1071,7 +1092,7 @@ let workTick = null;
 // `mark` is work.tierMark: where the case-review clock ended and the
 // Full-Service clock began (Eric, 2026-08-29: "Two clocks for two different
 // tiers"). Zero on a case that never went Full-Service.
-const clock = { seconds: 0, startedAt: 0, mark: 0, loaded: false };
+const clock = { seconds: 0, startedAt: 0, mark: 0, loaded: false, doing: '' };
 const clockPaints = new Set();
 const paintClock = () => {
   for (const f of [...clockPaints]) {
@@ -1133,6 +1154,45 @@ function armClockTick() {
   workTick = setInterval(() => { if (clock.startedAt) paintClock(); }, 30_000);
 }
 
+/**
+ * WHAT HE IS DOING, told to the client (Eric, 2026-09-03: "Add 'Eric is on
+ * the phone with a clinic department...' for 'working on' in the chat").
+ * Six presets and a free line, shown under the ⏱ while the clock runs. The
+ * client's page and chat header read the line in place of "working on it
+ * right now"; the Worker clears it on every stop.
+ */
+const DOING_PRESETS = [
+  'on the phone with a clinic department',
+  'reading your records',
+  'writing your report',
+  'working on an appeal',
+  'chasing a records request',
+  'scheduling with a clinic',
+];
+function paintDoing() {
+  const row = document.querySelector('[data-doing-row]');
+  if (!row) return;
+  row.hidden = !clock.startedAt;
+  if (!clock.startedAt) return;
+  const host = row.querySelector('[data-doing-pills]');
+  const current = clock.doing || '';
+  host.innerHTML = DOING_PRESETS.map((t) =>
+    `<button type="button" class="pill${t === current ? ' on' : ''}" data-doing="${esc(t)}">${esc(t)}</button>`).join('')
+    + `<button type="button" class="pill${current && !DOING_PRESETS.includes(current) ? ' on' : ''}" data-doing-other>${
+      current && !DOING_PRESETS.includes(current) ? esc(current) : 'something else…'}</button>`
+    + (current ? '<button type="button" class="pill" data-doing-clear>clear</button>' : '');
+  host.querySelectorAll('[data-doing]').forEach((b) => b.addEventListener('click', () =>
+    postWork({ doing: b.dataset.doing }).catch((e) => alert(e.message))));
+  host.querySelector('[data-doing-other]')?.addEventListener('click', () => {
+    const typed = prompt('In a few words, what are you doing? The client reads this beside the clock.', current || '');
+    if (typed === null) return;
+    postWork({ doing: typed.trim().slice(0, 80) }).catch((e) => alert(e.message));
+  });
+  host.querySelector('[data-doing-clear]')?.addEventListener('click', () =>
+    postWork({ doing: '' }).catch((e) => alert(e.message)));
+}
+clockPaints.add(paintDoing);
+
 /** One place that talks to /api/work, so every path updates the same state. */
 async function postWork(payload) {
   const token = await user.getIdToken();
@@ -1149,6 +1209,10 @@ async function postWork(payload) {
   // to reset to the banked total.
   clock.startedAt = out.startedAt ? new Date(out.startedAt).getTime() : 0;
   if (out.tierMark !== undefined) clock.mark = Math.max(0, Number(out.tierMark) || 0);
+  // The doing line rides on every answer that carries it; a stop carries none
+  // and the clock's own start clears it, so the pills follow the truth.
+  if (out.doing !== undefined) clock.doing = out.doing || '';
+  if (out.running === false) clock.doing = '';
   clock.loaded = true;
   // Every answer carries today's banked figure, so a stop or a correction
   // moves the day line in the same paint as the total.
@@ -1230,6 +1294,7 @@ function seedClock(c) {
   clock.seconds = Math.max(0, Number(w.seconds) || 0);
   clock.startedAt = w.startedAt ? toDate(w.startedAt).getTime() : 0;
   clock.mark = Math.max(0, Number(w.tierMark) || 0);
+  clock.doing = w.startedAt && typeof w.doing === 'string' ? w.doing : '';
 }
 
 /** The tap every switch shares: flip, tell the Worker, repaint them all. */

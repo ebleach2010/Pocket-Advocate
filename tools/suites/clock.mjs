@@ -786,6 +786,55 @@ Date.now = realNow;
     && /minute, watchdog: false/.test(SRC));
 }
 
+// ---- C60-C67: WHAT HE IS DOING, told to the client (Eric, 2026-09-03: "Add
+// 'Eric is on the phone with a clinic department...' for 'working on' in the
+// chat") -------------------------------------------------------------------
+const f2 = (p) => readFileSync(__j(__REPO, p), 'utf8');
+reset();
+{
+  const r = await W.handleWork(req({ caseId: 'a', on: true, auto: false, doing: 'on the phone with a clinic department' }), env);
+  // NEGATIVE CONTROL (run 2026-09-03): `doing: doingIn || null` dropped from the start write made this read
+  //   FAIL  C60 a start can carry the doing line, and it lands on the case
+  check('C60 a start can carry the doing line, and it lands on the case',
+    r.status === 200 && work('a').doing === 'on the phone with a clinic department' && r.body.doing === 'on the phone with a clinic department');
+  const r2 = await W.handleWork(req({ caseId: 'a', doing: 'writing your report' }), env);
+  check('C61 the line changes on its own while the clock runs, and the clock does not move',
+    r2.status === 200 && work('a').doing === 'writing your report' && !!work('a').startedAt && r2.body.running === true);
+  const ctrl = 'chasing  a  records' + String.fromCharCode(9) + 'request ' + 'x'.repeat(200);
+  const r3 = await W.handleWork(req({ caseId: 'a', doing: ctrl }), env);
+  // NEGATIVE CONTROL (run 2026-09-03): the slice(0, 80) dropped made this read
+  //   FAIL  C62 control characters go, whitespace collapses, eighty characters is the most a client reads
+  check('C62 control characters go, whitespace collapses, eighty characters is the most a client reads',
+    r3.status === 200 && work('a').doing.length === 80 && !/[ -]/.test(work('a').doing) && /^chasing a records request x/.test(work('a').doing));
+  await W.handleWork(req({ caseId: 'a', on: false }), env);
+  // NEGATIVE CONTROL (run 2026-09-03): the stop's `doing: null` patch dropped made this read
+  //   FAIL  C63 a stop clears the line, so a client never reads a stale one
+  check('C63 a stop clears the line, so a client never reads a stale one',
+    !work('a').startedAt && !work('a').doing);
+  const r4 = await W.handleWork(req({ caseId: 'a', doing: 'reading your records' }), env);
+  check('C64 no line without a running clock', r4.status === 409 && !work('a').doing);
+}
+{
+  const CASE = f2('public/js/case.js');
+  const ADMIN = f2('public/js/admin-case.js');
+  const DEMO = f2('public/js/demo/api.js');
+  // NEGATIVE CONTROL (run 2026-09-03): the chat header line deleted from case.js made this read
+  //   FAIL  C65 the client reads the line in place of "working on it", in the hours card, the progress line, and the chat header
+  check('C65 the client reads the line in place of "working on it", in the hours card, the progress line, and the chat header',
+    (CASE.match(/\$\{doingText\(w\)\}/g) || []).length === 2
+    && /const doingText = \(w\) => \(w\?\.doing \? `\$\{esc\(String\(w\.doing\)\)\} right now` : 'working on it right now'\);/.test(CASE)
+    && /Eric is \$\{esc\(String\(c\.work\.doing\)\)\} right now\./.test(CASE));
+  check('C66 his side offers the presets under the clock, posts each through /api/work, and the demo mirrors start, change and stop',
+    /const DOING_PRESETS = \[/.test(ADMIN) && /'on the phone with a clinic department'/.test(ADMIN)
+    && /postWork\(\{ doing: b\.dataset\.doing \}\)/.test(ADMIN) && /clockPaints\.add\(paintDoing\)/.test(ADMIN)
+    && /doingIn !== undefined && body\.on === undefined/.test(DEMO) && /doing: null \}/.test(DEMO));
+  const presets = ADMIN.slice(ADMIN.indexOf('const DOING_PRESETS'), ADMIN.indexOf('const DOING_PRESETS') + 600);
+  const clientLine = CASE.slice(CASE.indexOf('const doingText'), CASE.indexOf('const doingText') + 200);
+  const adminBlock = ADMIN.slice(ADMIN.indexOf('WHAT HE IS DOING'), ADMIN.indexOf('async function postWork'));
+  check('C67 nothing in the presets or the client line names the machinery, and none of it is dashed',
+    !/advisor|\bAI\b/i.test(presets) && ![clientLine, adminBlock].some((x) => /[–—]/.test(x)));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) { for (const f of failed) console.log(`  FAILED: ${f.name}`); process.exit(1); }

@@ -203,6 +203,19 @@ export function demoApi(role, store) {
           todaySeconds, tierMark: wMark,
         });
       }
+      // The doing line (2026-09-03), mirroring the Worker: on its own while
+      // the clock runs, on a start, gone on a stop.
+      const doingIn = body.doing === undefined ? undefined
+        : String(body.doing ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
+      if (doingIn !== undefined && body.on === undefined) {
+        if (!w.startedAt) return fail(409, 'Start the clock first.');
+        store.docs.set(key, { ...c, work: { ...w, doing: doingIn || null } });
+        store.persist?.(); store.fire?.(key);
+        return ok({
+          seconds: w.seconds || 0, running: true, auto: w.auto === true, startedAt: w.startedAt,
+          tierMark: wMark, doing: doingIn || null, todaySeconds: dayBucket()[caseKey] || 0,
+        });
+      }
       // MANUAL ONLY, mirroring the Worker (Eric, 2026-08-25): an `auto`
       // start answers with the current truth and changes nothing.
       if (body.on === true && body.auto === true) {
@@ -214,8 +227,8 @@ export function demoApi(role, store) {
       }
       if (body.on === true) {
         const startedAt = w.startedAt ? new Date(w.startedAt) : new Date();
-        store.docs.set(key, { ...c, work: { ...w, startedAt, auto: false, nudged: 0 } });
-        store.persist?.();
+        store.docs.set(key, { ...c, work: { ...w, startedAt, auto: false, nudged: 0, doing: w.startedAt ? (w.doing || null) : (doingIn || null) } });
+        store.persist?.(); store.fire?.(key);
         // The ORIGINAL start comes back, matching the Worker: a caller that
         // assumed "running now means started now" would paint a long stretch
         // as nothing.
@@ -232,8 +245,8 @@ export function demoApi(role, store) {
       const seconds = (Number(w.seconds) || 0) + add;
       // Spread first, like the Worker: a stop that rebuilds the object
       // would drop tierMark and merge the two tier clocks back together.
-      store.docs.set(key, { ...c, work: { ...w, seconds, startedAt: null, auto: false, nudged: 0 } });
-      store.persist?.();
+      store.docs.set(key, { ...c, work: { ...w, seconds, startedAt: null, auto: false, nudged: 0, doing: null } });
+      store.persist?.(); store.fire?.(key);
       // The stretch banks into today too, clipped at his midnight like the
       // Worker does, so an overnight demo stretch cannot claim the morning.
       const todaySeconds = bankDay(Math.min(add, daySecNow()));
@@ -1609,6 +1622,58 @@ export function demoApi(role, store) {
     // folder check that keeps the client's own shelf out of it, and the
     // refusal of a document type the server does not know are all repeated
     // here rather than assumed.
+    // PERSONAL UPLOADS (2026-09-03), mirrored: the same three verbs, the
+    // same prefix shape under a demo uid, bytes kept as object URLs so a
+    // tap opens what he picked. Admin only, like the real thing.
+    if (path === '/api/admin/personal') {
+      if (role !== 'admin') return fail(404, 'Not found');
+      const uid = 'demo-admin';
+      const prefixOf = (scope, caseId) => {
+        if (scope === 'case') {
+          if (!/^[\w-]{1,64}$/.test(caseId || '')) throw new Error('Bad case id');
+          return `personal/${uid}/case/${caseId}/`;
+        }
+        if (scope !== 'all') throw new Error('Bad scope');
+        return `personal/${uid}/all/`;
+      };
+      const method = (init.method || 'GET').toUpperCase();
+      if (method === 'GET') {
+        const u = new URL(String(typeof input === 'string' ? input : input.url), location.origin);
+        let prefix;
+        try { prefix = prefixOf(u.searchParams.get('scope') || 'all', u.searchParams.get('caseId') || ''); } catch (e) { return fail(400, e.message); }
+        const files = [...store.files.entries()]
+          .filter(([k]) => k.startsWith(prefix) && k.slice(prefix.length).indexOf('/') < 0)
+          .map(([k, f]) => ({ name: f.name, path: k, contentType: f.type, size: f.size, at: new Date(f.at).getTime(), url: f.url }))
+          .sort((a, b) => b.at - a.at);
+        return ok({ files });
+      }
+      if (method === 'POST') {
+        const h = new Headers(init.headers || {});
+        let prefix;
+        try { prefix = prefixOf(h.get('x-pa-scope') || 'all', h.get('x-pa-case') || ''); } catch (e) { return fail(400, e.message); }
+        const blob = init.body;
+        const size = blob?.size || 0;
+        if (!size) return fail(400, 'Empty file.');
+        if (size > 50 * 1024 * 1024) return fail(413, 'That file is over 50 MB.');
+        let name = 'file';
+        try { name = decodeURIComponent(h.get('x-pa-name') || '') || 'file'; } catch { /* keep */ }
+        const key = `${prefix}${Date.now()}-${name.replace(/[/\\]+/g, ' ').slice(0, 80)}`;
+        let url = '';
+        try { url = URL.createObjectURL(blob); } catch { /* no preview */ }
+        const row = { name, type: blob.type || h.get('content-type') || '', size, at: new Date().toISOString(), url, meta: null };
+        store.files.set(key, row);
+        store.persist?.();
+        return ok({ ok: true, file: { name, path: key, contentType: row.type, size, at: Date.now(), url } });
+      }
+      if (method === 'DELETE') {
+        const target = String(body.path || '');
+        if (!target.startsWith(`personal/${uid}/`) || target.includes('..')) return fail(400, 'Bad path');
+        store.files.delete(target);
+        store.persist?.();
+        return ok({ ok: true });
+      }
+      return fail(404, 'Not found');
+    }
     if (path === '/api/file/meta') {
       if (role !== 'admin') return fail(404, 'Not found');
       const target = String(body.path || '');

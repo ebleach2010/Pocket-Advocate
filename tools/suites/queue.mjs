@@ -208,6 +208,22 @@ check('Q15 call notes still routes to its own runner, unchanged',
   calls.some((c) => c[0] === 'runCallNotes') && !calls.some((c) => c[0] === 'runAnalysis'),
   JSON.stringify(calls.map((c) => c[0])));
 
+// ---- Q18-Q19: a flight is not a wall (Eric, 2026-09-03, after a provider
+// outage: "The advisor is stuck on thinking for over two hours") -----------
+// Grep pins over the real source: the two clauses are small and their
+// absence is exactly the two-hour wedge he saw.
+// NEGATIVE CONTROL (run 2026-09-03): `if (auto) return;` changed back to an
+// unconditional `return` made this read
+//   FAIL  Q18 a manual Update takes over an in-flight batch instead of being answered with silence
+check('Q18 a manual Update takes over an in-flight batch instead of being answered with silence',
+  /< 3 \* 3_600_000\) \{\n\s*if \(auto\) return;[\s\S]{0,900}batches\.cancel\(flight\.batchId\)[\s\S]{0,200}setState\(env, kind, id, \{ batchCtx: null \}\)/.test(SRC));
+// NEGATIVE CONTROL (run 2026-09-03): `pollFails >= 30` changed to `>= 3000` made this read
+//   FAIL  Q19 a flight the provider cannot be reached for, thirty polls running, is abandoned into the retry path
+check('Q19 a flight the provider cannot be reached for, thirty polls running, is abandoned into the retry path',
+  /const pollFails = unreachable \? \(Number\(flight\.pollFails\) \|\| 0\) \+ 1 : 0;/.test(SRC)
+  && /if \(unreachable && pollFails >= 30\) \{/.test(SRC)
+  && /batchCtx: \{ \.\.\.flight, pollFails \},/.test(SRC));
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }
