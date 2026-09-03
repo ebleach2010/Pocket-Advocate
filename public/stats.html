@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/logo-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pocket Advocate">
+<meta name="theme-color" content="#EAF2FA">
+<title>By the numbers · Pocket Advocate</title>
+<script>
+// Paint in the stored colour scheme before the stylesheet lands, so a scheme
+// never flashes neon on the way in. Mirrors theme.js, which owns the choosing
+// and persisting; this only applies what is already stored. Eric's admin
+// device keeps Neon by default, everyone else gets Calm, and a stored choice
+// always wins.
+(function () {
+  try {
+    var s = localStorage.getItem('pa-scheme');
+    if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
+      s = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'calm' : 'neon';
+    if (s !== 'neon') document.documentElement.dataset.scheme = s;
+    var c = { neon: '#EAF2FA', calm: '#0A1626', paper: '#F3EEE3', contrast: '#000000' }[s];
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m && c) m.setAttribute('content', c);
+  } catch (e) { /* storage blocked: neon is the default and is already correct */ }
+})();
+</script>
+<link rel="stylesheet" href="/css/site.css?v=sp13">
+<link rel="stylesheet" href="/css/glowup.css?v=sp6">
+<script type="module" src="/js/nav-menu.js"></script>
+</head>
+<body>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
+    <nav class="tabs">
+      <a href="/book.html">Book</a>
+      <a href="/services.html">Services</a>
+      <a href="/about.html">About</a>
+      <a href="/faq.html">Questions</a>
+      <a href="/reviews.html">Reviews</a>
+      <a href="/contact.html">Contact</a>
+      <span data-nav-auth></span>
+    </nav>
+  </div>
+</header>
+<main class="about">
+  <!-- By the numbers (Eric, 2026-09-02). Every figure on this page is a
+       total or a median across every case, computed by the server once a day
+       and painted by stats.js. The shipped text is the "not measured yet"
+       state; a fetch that fails leaves it, which is honest. -->
+  <div class="stack">
+    <p class="eyebrow">BY THE NUMBERS</p>
+    <h1>How I actually work, measured.</h1>
+    <hr class="title-rule divide">
+    <p class="dim measure">Not promises. Reply times, hours, and reports delivered on time, measured across every case and updated daily.</p>
+  </div>
+
+  <section class="land-sec">
+    <div class="numbers" data-numbers>
+      <div class="tile"><b data-stat="replyMedian">…</b><span>median time to reply to a client message</span></div>
+      <div class="tile"><b data-stat="withinHour">…</b><span>of client messages answered within an hour</span></div>
+      <div class="tile"><b data-stat="reports">…</b><span>reports delivered within the 7-day promise</span></div>
+      <div class="tile"><b data-stat="hours">…</b><span>of casework logged</span></div>
+    </div>
+    <p class="dim small" data-stat-floor hidden></p>
+  </section>
+
+  <section class="land-sec" data-ledger>
+    <h2>The rest of the ledger</h2>
+    <ul class="ledger">
+      <li><b data-stat="messages">…</b><span>messages exchanged with clients</span></li>
+      <li><b data-stat="milestones">…</b><span data-stat="milestonesLine">milestones reached</span></li>
+      <li><b data-stat="logged">…</b><span>calls, appeals and other actions logged on clients' behalf</span></li>
+      <li><b data-stat="cases">…</b><span data-stat="casesLine">cases taken</span></li>
+    </ul>
+  </section>
+
+  <section class="land-sec">
+    <h2>How these are measured</h2>
+    <p class="dim small measure">Reply time is the gap between a client's message and my answer, across every message on every case. Reports count as on time when they land inside the 7 days promised at booking.</p>
+    <p class="dim small measure">Nothing here is per client. Every figure is a total or a median across all cases, so no one can be picked out of it.</p>
+    <p class="dim small measure" data-stat="stamp">Measured across every case. Updated daily.</p>
+  </section>
+
+  <div class="actions"><a class="btn glow cta" href="/fit.html">Book a free 15-minute call</a><a class="btn quiet" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a></div>
+
+  <footer class="legal">Pocket Advocate is a patient-advocacy service, offered to residents of the United States and Canada. It does not provide diagnosis, treatment, prescriptions, or medical advice, and does not create a doctor-patient relationship. If this is an emergency, call 911.</footer>
+</main>
+<footer class="site-foot">
+  <div class="foot-cols">
+    <nav class="foot-col" aria-label="Explore">
+      <h2>Explore</h2>
+      <a href="/book.html">Book a case</a>
+      <a href="/services.html">Services and pricing</a>
+      <a href="/about.html">About</a>
+      <a href="/advocate.html">Meet your advocate</a>
+      <a href="/faq.html">Questions</a>
+      <a href="/reviews.html">Reviews</a>
+      <a href="/stats.html">By the numbers</a>
+    </nav>
+    <nav class="foot-col" aria-label="Reach me">
+      <h2>Reach me</h2>
+      <a href="/contact.html">Contact</a>
+      <a href="tel:+12086708608">208 670 8608</a>
+      <a href="/signin.html">Client sign in</a>
+      <a href="https://youtube.com/@the_broscientist" rel="noopener" target="_blank">Watch on YouTube</a>
+    </nav>
+  </div>
+  <p class="foot-serving">Serving patients across the United States and Canada.</p>
+  <p class="fine"><strong>Pocket Advocate provides patient advocacy, not medical care.</strong> I do not diagnose, treat, or prescribe, and this service does not replace your care team. If you are having a medical emergency, call 911. Pocket Advocate currently serves clients in the United States and Canada.</p>
+</footer>
+<script type="module">
+  import('/js/rates.js').catch(() => {});
+  import('/js/auth.js').then((m) => m.hydrateNav()).catch(() => {});
+</script>
+<script type="module" src="/js/stats.js"></script>
+</body>
+</html>
