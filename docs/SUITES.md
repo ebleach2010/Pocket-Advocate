@@ -76,12 +76,16 @@ demo** button, which is this door.
 Eric's own documents, on the Clients page (every case) and on a case's Mine
 tab. Every byte goes through the Worker into a `personal/{uid}/` prefix that
 storage.rules deny to every browser; only the service account reaches it,
-behind requireAdmin, and the file link also takes the admin cookie so a plain
-tap opens it. `tools/suites/personal.mjs` lifts the two routes and drives
+behind requireAdmin. A file opens through a link the Worker signs for ten
+minutes (the list and the upload hand one back per file); no cookie is read
+on that route. `tools/suites/personal.mjs` lifts the two routes and drives
 them: strangers and clients get 404, a path outside the caller's own prefix
-is refused, no request field can choose the prefix, the advisor's file walks
-never name it, storage.rules carry no rule for it, and no client module
-imports the shelf. `tools/drives/drive-personal.mjs` uploads, lists, opens
+is refused, no request field can choose the prefix, an expired or forged
+link is the site's 404, SVG downloads rather than rendering, the advisor's
+file walks never name it, storage.rules carry no rule for it, and no client
+module imports the shelf. Two reviewers crosschecked the build for breaches
+and a third compiled them (2026-09-03); every finding is closed in the
+hardening commit. `tools/drives/drive-personal.mjs` uploads, lists, opens
 and deletes on both shelves in the demo and checks the client's case page
 never shows the word.
 
