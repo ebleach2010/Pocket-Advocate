@@ -29,8 +29,8 @@
   } catch (e) { /* storage blocked: neon is the default and is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=sp13">
-<link rel="stylesheet" href="/css/glowup.css?v=sp5">
+<link rel="stylesheet" href="/css/site.css?v=sp14">
+<link rel="stylesheet" href="/css/glowup.css?v=sp7">
 <script>
 // A returning account holder skips the booking page. Inline in <head> so there
 // is no flash of it first; the marker is set at sign-in and cleared at
@@ -73,52 +73,6 @@
      Inline rather than linked: the page has to render its own icons with no
      second request and nothing to 404, and a stroke icon inherits currentColor
      so one shape serves cyan, violet and dim without a second copy. -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
-  <defs>
-    <linearGradient id="g-cv" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#37E1FF"/><stop offset="1" stop-color="#A97BFF"/>
-    </linearGradient>
-    <g id="i-brief" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="2.5" y="7" width="19" height="13" rx="2.5"/>
-      <path d="M8.5 7V5.5a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2V7M2.5 12.5h19"/>
-    </g>
-    <g id="i-chat" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M20.5 11.6c0 4.4-3.8 8-8.5 8a9.6 9.6 0 0 1-2.9-.45L4.2 20.6l1.4-4.05a7.8 7.8 0 0 1-1.6-4.95c0-4.42 3.8-8 8.5-8s8 3.58 8 8z"/>
-      <path d="M8.8 11.6h6.4M8.8 8.9h6.4"/>
-    </g>
-    <g id="i-chev" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5l6.5 6.5-6.5 6.5"/></g>
-    <g id="i-cal" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/>
-    </g>
-    <g id="i-doc" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
-      <path d="M14 3v5h5M9 13.5h6M9 17h4"/>
-    </g>
-    <g id="i-cloud" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M7.2 18.2a4.5 4.5 0 0 1-.5-8.97 6 6 0 0 1 11.55 1.4 3.75 3.75 0 0 1-.75 7.57"/>
-      <path d="M12 11.5v8.5M9 14.5l3-3 3 3"/>
-    </g>
-    <g id="i-lock" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 2.8l7.5 2.9v5.6c0 4.6-3.1 8.5-7.5 9.6-4.4-1.1-7.5-5-7.5-9.6V5.7z"/>
-      <rect x="9.4" y="10.9" width="5.2" height="4.6" rx="1.1"/>
-      <path d="M10.7 10.9V9.6a1.3 1.3 0 0 1 2.6 0v1.3"/>
-    </g>
-    <g id="i-check" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.8 2.8L16.2 9.7"/>
-    </g>
-    <g id="i-user" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/>
-      <path d="M6.3 18.6a6.6 6.6 0 0 1 11.4 0"/>
-    </g>
-    <g id="i-award" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="8.8" r="5.4"/><path d="M8.4 13.3L6.9 21l5.1-2.5L17.1 21l-1.5-7.7"/>
-    </g>
-    <g id="i-heart" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 20.3s-7.6-4.7-7.6-9.8A4.45 4.45 0 0 1 12 7.6a4.45 4.45 0 0 1 7.6 2.9c0 5.1-7.6 9.8-7.6 9.8z"/>
-    </g>
-    <g id="i-arrow" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12h14M12.5 6l6 6-6 6"/></g>
-  </defs>
-</svg>
 
 <main>
   <section class="land-sec page-head stack">
@@ -133,20 +87,20 @@
     <p class="dim measure">No hidden fees and no surprise bills. Independent advocates
       typically bill $100 to $300 an hour against a retainer that runs down; every price here is written out
       before you pay, and the work behind each one is spelled out.</p>
-    <a class="pack rec-c cta" href="/book.html">
+    <a class="pack rec-c cta" id="case" href="/book.html">
       <span class="tag c eyebrow">COMPREHENSIVE</span>
       <h3>Advocacy Case</h3><span class="price" data-rate="case">$1,200</span>
       <p class="desc">One flat price for 5-6 hours of research and reporting: our full case overview call, my review of every record you share, and a written report within 7 days that organizes the history, the open questions, and the next steps. A follow-up discussion on the same case is <span data-rate="addon">$325</span>.</p>
       <span class="pack-cta">Book a case</span>
     </a>
     <p class="pack-about"><button type="button" class="btn ghost" data-about="case">About the Advocacy Case</button></p>
-    <button type="button" class="pack rec-c" data-about="handsOff">
+    <button type="button" class="pack rec-c" id="full" data-about="handsOff">
       <span class="tag c eyebrow">HANDS-OFF</span>
       <h3>Full-Service Case Management</h3><span class="price"><span data-rate="full">$4,400</span><span style="font-size:.6em; font-weight:400;">/month</span></span>
       <p class="desc">Everything in a case, then I deal with the system myself, a month at a time: <span data-hours="full">20</span> included hours of comprehensive advocacy each 30-day service period, with priority access the whole month. Check-in calls with you at least twice a month, calls to your clinics and insurer on your behalf, me joining your telehealth appointments to advocate live, and written insurance appeals, all drawing from those hours. Appeal help alone typically runs $600 to $1,500 <em>per appeal</em> elsewhere; here it is part of the month's work, and if a month genuinely needs more than the 20 included hours, the extra casework is billed at $175 to $225 an hour, agreed before the work. I take a limited number of these at a time, so you ask and I answer personally, and asking costs nothing. Requested from inside an open case; the case fee paid for your review, and a month is priced on its own.</p>
       <span class="pack-cta">About this service</span>
     </button>
-    <a class="pack rec-m" href="/subscribe.html">
+    <a class="pack rec-m" id="chat" href="/subscribe.html">
       <span class="tag o eyebrow"><span>ON THE GO</span></span>
       <h3>24/7 Priority Chat</h3><span class="price"><span data-rate="sub">$50</span>/mo</span>
       <p class="desc">A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime; your message history stays available to you.</p>
@@ -171,8 +125,10 @@
   <!-- One button, one weight. "Read the questions first" was a second button
        of its own beside the one action this page exists for; it is still
        here, as the quiet link it always was in meaning. -->
+  <!-- Its own closer (2026-09): "Ready when you are." is the landing page's
+       line now and reads there once. -->
   <section class="land-sec closing">
-    <h2>Ready when you are.</h2>
+    <h2>Three ways to work with me.</h2>
     <div class="actions">
       <a class="btn glow cta" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
     </div>
@@ -187,6 +143,7 @@
       <a href="/book.html">Book a case</a>
       <a href="/services.html">Services and pricing</a>
       <a href="/about.html">About</a>
+      <a href="/advocate.html">Meet your advocate</a>
       <a href="/faq.html">Questions</a>
       <a href="/reviews.html">Reviews</a>
     </nav>

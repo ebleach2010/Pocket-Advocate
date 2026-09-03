@@ -29,8 +29,11 @@ const THEME_COLOR = {
 
 export function defaultScheme() {
   try {
-    return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches
-      ? 'calm' : 'neon';
+    if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) return 'calm';
+    // A page may name its own light default (the landing page reads as
+    // Paper since Look A, 2026-09). A stored choice still wins, above.
+    const page = document.documentElement.dataset.defaultScheme;
+    return page && SCHEMES.some((x) => x.id === page) ? page : 'neon';
   } catch {
     return 'neon';
   }

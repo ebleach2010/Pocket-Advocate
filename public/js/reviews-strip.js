@@ -142,10 +142,23 @@ export function enhanceReviewsStrip(strip) {
     }
   }, { capture: true, ...on });
 
+  // The arrows beside the strip (2026-09, Look A) move it one card at a
+  // time through the same engine, so a tap and a drag never fight.
+  strip.__paNudge = (dir) => {
+    auto = false;
+    v = 0;
+    const a = track.children[0];
+    const b = track.children[1];
+    const step = a && b ? b.offsetLeft - a.offsetLeft : 240;
+    x = wrap(x - dir * step);
+    apply();
+  };
+
   strip.__paStrip = () => {
     abort.abort();
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
     delete strip.__paStrip;
+    delete strip.__paNudge;
   };
 }

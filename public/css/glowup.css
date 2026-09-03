@@ -86,13 +86,15 @@
   --r-2: 16px;
   --r-3: 20px;
   --r-4: 26px;
-  --r-hero: 30px;
   --r-pill: 999px;
 
   /* ---- page rhythm. The single biggest lever on "cramped": the gap between
      one section and the next, and how much air the page keeps at its edge. ---- */
   --pad-page: 18px;
-  --gap-section: 4.5rem;
+  /* The page's side padding, named once so a full-bleed band can undo it
+     exactly at every width (the .sec-deep bleed used to over-run by .1rem
+     on narrow phones). */
+  --pad-x: 1.1rem;
   --max-content: 1180px;
   --max-text: 660px;
 
@@ -509,7 +511,7 @@ main {
   display: grid;
   align-content: start;
   gap: var(--s-5);
-  padding: var(--s-4) 1.1rem var(--s-6);
+  padding: var(--s-4) var(--pad-x) var(--s-6);
 }
 main > * { margin-top: 0; margin-bottom: 0; min-width: 0; }
 /* Enumerated because a class beats `main > *` on specificity, and a margin
@@ -773,7 +775,7 @@ main > footer.legal { margin: 0; }
 
 /* The hero is the one lit surface on the page. */
 .land-sec.hero {
-  display: block;                 /* see the note on .hero-art below */
+  display: block;                 /* normal flow; the pocket below is a grid of its own */
   position: relative;
   overflow: hidden;
   padding: var(--s-5) var(--s-4);
@@ -784,29 +786,9 @@ main > footer.legal { margin: 0; }
   box-shadow: var(--el-3);
 }
 
-/* THE ART. site.css floats it so the headline wraps around it, which is why
-   this section stays in normal flow rather than becoming a grid: a float has
-   no effect on a grid item. But at display size the headline needs the whole
-   measure, and an 8.4rem object beside it was a second focal point competing
-   with the first, which is how a hero ends up with no focal point at all. So
-   it becomes a watermark: large, off the corner, well under the text. The
-   hero keeps its depth and its character and stops arguing with itself. */
-.hero-art {
-  position: absolute;
-  z-index: 0;
-  top: calc(var(--s-4) * -1);
-  right: calc(var(--s-5) * -1);
-  float: none;
-  shape-outside: none;
-  width: 13rem;
-  height: auto;
-  margin: 0;
-  opacity: .14;
-  pointer-events: none;
-}
-:root[data-scheme="paper"] .hero-art { opacity: .22; }
-:root[data-scheme="contrast"] .hero-art { opacity: .3; }
-.land-sec.hero > *:not(.hero-art) { position: relative; z-index: 1; }
+/* .hero-art is gone (2026-09, Look A): the watermark it had become was
+   under the text on no page, and the rules were repainting nothing. */
+.land-sec.hero > * { position: relative; z-index: 1; }
 
 /* The eyebrow was a cyan pill with a cyan border and a cyan wash, which made
    the smallest text on the screen one of the loudest things on it. */
@@ -911,11 +893,6 @@ main > footer.legal { margin: 0; }
   color: var(--ink);
 }
 .act-m .act-ico { color: var(--soft); }
-
-/* The pulse animated a box-shadow this element no longer has, so it was
-   animating nothing and repainting for the privilege. */
-.act.pulse,
-.btn.pulse { animation: none; }
 
 .webapp-note {
   justify-content: center;
@@ -1594,7 +1571,7 @@ label { color: var(--dim); font-size: var(--t-small); }
 
 .site-foot {
   margin: var(--s-5) 0 0;
-  padding: var(--s-5) 1.1rem var(--s-6);
+  padding: var(--s-5) var(--pad-x) var(--s-6);
   border-top: 1px solid var(--edge-quiet);
   background: var(--sur-quiet);
 }
@@ -1824,23 +1801,21 @@ label { color: var(--dim); font-size: var(--t-small); }
    ========================================================================== */
 
 @media (max-width: 430px) {
-  main { gap: var(--s-4); padding-inline: var(--s-3); }
+  :root { --pad-x: var(--s-3); }
+  main { gap: var(--s-4); }
   .bar-inner { padding-inline: var(--s-3); }
   .land-sec.hero,
   .land-sec.closing { padding: var(--s-4) var(--s-3); }
-  .hero-art { width: 11rem; right: calc(var(--s-4) * -1); }
   .act { min-height: 58px; }
   .act-c { min-height: 62px; }
   .step-rail .t { font-size: var(--t-micro); }
   .hiw li.step-row { padding-left: var(--s-5); }
   .hiw .step-card { padding: var(--s-3) var(--s-2); }
   .pack { padding: var(--s-3); }
-  .site-foot { padding-inline: var(--s-3); }
 }
 
 @media (max-width: 350px) {
   .trust { grid-template-columns: 1fr; }
-  .hero-art { width: 9rem; }
   .step-rail { display: grid; grid-template-columns: 1fr; }
   .step-rail li { min-height: 48px; }
 }
@@ -1919,8 +1894,8 @@ label { color: var(--dim); font-size: var(--t-small); }
    own ink. This is where a light page earns its value contrast. */
 .sec-deep {
   position: relative;
-  margin-inline: -1.1rem;
-  padding: var(--s-5) 1.1rem;
+  margin-inline: calc(var(--pad-x) * -1);
+  padding: var(--s-5) var(--pad-x);
   border-radius: 30px 30px 0 0;
   background:
     radial-gradient(120% 70% at 85% -10%, color-mix(in srgb, var(--cyan) 22%, transparent), transparent 55%),
@@ -2113,7 +2088,12 @@ main > .trust {
    The phone composition holds to 700px; above it the hero becomes two true
    columns and the deep band breathes wider. */
 @media (min-width: 900px) {
-  main { max-width: var(--max-content); margin-inline: auto; width: 100%; }
+  /* One content width on a desktop: the nav, the page and the footer's
+     inner wrapper all sit on --max-content. Three widths (735px nav, 1180px
+     main, full-bleed footer) read as three different pages. */
+  main,
+  .bar-inner,
+  .site-foot .foot-inner { max-width: var(--max-content); margin-inline: auto; width: 100%; }
   .sec-deep { border-radius: 34px; margin-inline: 0; padding-inline: var(--s-5); }
   .sec-deep:last-child { margin-bottom: 0; }
   /* On a wide canvas the pocket lays its two doors on one line: the filled
@@ -2206,4 +2186,361 @@ a.tile:hover { border-color: var(--edge-lit); background: var(--sur-lit); }
 .ledger span { color: var(--dim); font-size: var(--t-small, .95rem); line-height: 1.4; }
 @media (min-width: 640px) {
   .numbers { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+
+/* ==========================================================================
+   18. LANDING, 2026-09: LOOK A, "CLINIC NOTE"
+
+   Eric picked it from three (2026-09-02: "I like A best"). Paper-scheme
+   tokens by default on the landing page (index.html names its light default;
+   a stored scheme still wins), a serif for display, ruled bands instead of
+   cards, no shadows, a numbered left rail for the steps. Everything below
+   is scoped to body.landing, reads tokens only, and leaves every other page
+   exactly as it was. The one literal colour set is Google's wordmark, which
+   is Google's mark and not ours.
+   ========================================================================== */
+
+/* The two faces, self-hosted latin subsets (Google Fonts' own woff2 files,
+   fetched 2026-09-02). Variable: one file each carries every weight used. */
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/fraunces-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Source Sans 3';
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url('/fonts/source-sans-3-latin.woff2') format('woff2');
+}
+
+body.landing {
+  font-family: 'Source Sans 3', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  font-size: 1.02rem;
+}
+body.landing h1,
+body.landing h2,
+body.landing h3,
+body.landing .num {
+  font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+  font-weight: 500;
+  letter-spacing: -.01em;
+  font-variation-settings: 'opsz' 72;
+  text-wrap: balance;
+}
+body.landing .land-sec > h2 { font-size: 1.65rem; line-height: 1.15; }
+
+/* Ruled bands: a hairline above each section, air below the rule. */
+body.landing .land-sec.ruled {
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--edge-base);
+}
+
+/* ---- the hero: a paper card, the tile small at the top left ---------- */
+body.landing .land-sec.hero {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-4);
+  border: 1px solid var(--edge-base);
+  border-radius: var(--r-3);
+  background: var(--sur-base);
+  box-shadow: none;
+  overflow: visible;
+}
+/* The tile, small and static at the top left. Written at the specificity
+   of the composed hero's own rule (.land-sec.hero > .hero-logo, section 16)
+   plus the page scope, or that rule keeps the tile riding the top edge. */
+body.landing .land-sec.hero > .hero-logo {
+  position: static;
+  top: auto;
+  right: auto;
+  width: 56px;
+  height: 56px;
+  margin: 0 0 var(--s-1);
+  border-radius: 14px;
+  transform: none;
+  box-shadow: none;
+}
+body.landing .land-sec.hero h1 { max-width: none; }
+body.landing .hero-eyebrow { margin: 0; }
+body.landing .land-sec.hero h1 {
+  margin: 0;
+  font-size: clamp(2.3rem, 9vw, 3.1rem);
+  line-height: 1.04;
+  letter-spacing: -.02em;
+}
+body.landing .land-sec.hero .hero-sub { margin-top: var(--s-1); color: var(--ink); font-size: 1.08rem; line-height: 1.5; }
+body.landing .hero-cred {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: var(--soft);
+  font-size: var(--t-body);
+  line-height: 1.5;
+}
+body.landing .land-sec.hero .hero-pocket {
+  display: grid;
+  gap: var(--s-2);
+  margin: var(--s-2) 0 0;
+  padding: var(--s-3) 0 0;
+  border: 0;
+  border-top: 1px solid var(--edge-quiet);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+body.landing .land-sec.hero .hero-pocket .acts { min-width: 0; margin: 0; }
+body.landing .acts { display: grid; gap: var(--s-2); margin: 0; }
+body.landing .act { box-shadow: none; }
+body.landing .act-c { box-shadow: none; }
+body.landing .hero-fine { margin: 0; color: var(--dim); font-size: var(--t-small); line-height: 1.45; }
+
+/* ---- you might need an advocate if ----------------------------------- */
+body.landing .needs-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--s-2);
+}
+body.landing .needs-list li {
+  position: relative;
+  padding-left: 1.3rem;
+  color: var(--soft);
+  line-height: 1.5;
+}
+body.landing .needs-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: .62em;
+  width: .5rem;
+  height: .5rem;
+  border-radius: 50%;
+  background: var(--cyan);
+}
+
+/* ---- how it works: the numbered left rail ----------------------------- */
+body.landing .steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0;
+}
+body.landing .steps li {
+  display: grid;
+  grid-template-columns: 2.1rem minmax(0, 1fr);
+  gap: var(--s-2);
+  position: relative;
+  padding-bottom: var(--s-3);
+}
+body.landing .steps li::before {
+  content: '';
+  position: absolute;
+  left: calc(1.05rem - .5px);
+  top: 2.1rem;
+  bottom: 0;
+  border-left: 1px solid var(--edge-base);
+}
+body.landing .steps li:last-child { padding-bottom: 0; }
+body.landing .steps li:last-child::before { content: none; }
+body.landing .num {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 1px solid var(--edge-lit);
+  border-radius: 50%;
+  background: var(--sur-base);
+  color: var(--ink);
+  font-size: 1.05rem;
+  line-height: 1;
+  position: relative;
+  z-index: 1;
+}
+body.landing .steps li > div { display: grid; gap: .15rem; padding-top: .25rem; }
+body.landing .steps strong { color: var(--ink); }
+body.landing .steps span { color: var(--soft); line-height: 1.5; }
+
+/* ---- who you're hiring ------------------------------------------------ */
+body.landing .who-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  color: inherit;
+  text-decoration: none;
+}
+body.landing .portrait {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+  border: 1px solid var(--edge-base);
+}
+body.landing .who-name { color: var(--ink); font-weight: 600; line-height: 1.45; }
+body.landing .who-link {
+  color: var(--cyan);
+  font-weight: 400;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+body.landing .who-quote {
+  margin: 0;
+  padding: 0 0 0 var(--s-3);
+  border-left: 2px solid var(--edge-lit);
+}
+body.landing .who-quote p {
+  margin: 0;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 1.2rem;
+  line-height: 1.35;
+  color: var(--ink);
+  font-variation-settings: 'opsz' 36;
+}
+
+/* ---- what clients say: the Google header, the themes, the rail --------- */
+body.landing .ghead {
+  display: grid;
+  gap: var(--s-1);
+  padding: var(--s-3);
+  border: 1px solid var(--edge-base);
+  border-radius: var(--r-2);
+  background: var(--sur-base);
+}
+body.landing .gtitle { margin: 0; font-weight: 700; color: var(--ink); }
+body.landing .gword b { font-weight: 700; }
+/* Google's marks, Google's colours. */
+body.landing .gword b:nth-child(1), body.landing .gword b:nth-child(4) { color: #4285F4; }
+body.landing .gword b:nth-child(2), body.landing .gword b:nth-child(6) { color: #EA4335; }
+body.landing .gword b:nth-child(3) { color: #FBBC05; }
+body.landing .gword b:nth-child(5) { color: #34A853; }
+:root[data-scheme="contrast"] body.landing .gword b { color: var(--ink); }
+body.landing .gscore { margin: 0; display: flex; align-items: baseline; gap: .45rem; }
+body.landing .gscore b { font-size: 1.5rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+body.landing .stars { color: var(--gold); letter-spacing: .06em; }
+body.landing .gscore .count { color: var(--dim); }
+body.landing .gacts { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; margin-top: var(--s-1); }
+body.landing .gbtn { box-shadow: none; }
+body.landing .themes {
+  display: grid;
+  gap: var(--s-1);
+  padding: var(--s-3);
+  border: 1px solid var(--edge-quiet);
+  border-radius: var(--r-2);
+  background: var(--sur-quiet);
+}
+body.landing .tlabel { margin: 0; font-weight: 700; color: var(--ink); }
+body.landing .tsub { margin: 0; color: var(--dim); font-size: var(--t-small); }
+body.landing .themes ul { margin: var(--s-1) 0 0; padding: 0; list-style: none; display: grid; gap: .45rem; }
+body.landing .themes li { display: flex; gap: .55rem; color: var(--soft); line-height: 1.4; }
+body.landing .tick { color: var(--green); font-weight: 700; flex: none; }
+body.landing .rail-wrap {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-1);
+}
+body.landing .rv-arrow {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--edge-base);
+  border-radius: 50%;
+  background: var(--sur-base);
+  color: var(--ink);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+body.landing .rv-arrow:hover { border-color: var(--edge-lit); background: var(--sur-lit); }
+body.landing .reviews-track { gap: var(--s-2); }
+body.landing .review {
+  display: grid;
+  gap: .35rem;
+  flex: 0 0 17rem;
+  padding: var(--s-3);
+  border: 1px solid var(--edge-base);
+  border-radius: var(--r-2);
+  background: var(--sur-base);
+  box-shadow: none;
+}
+body.landing .rv-top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-2); }
+body.landing .review .rv-name { color: var(--ink); font-size: var(--t-body); }
+body.landing .review .rv-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--soft);
+  font-size: var(--t-small);
+  line-height: 1.45;
+  margin: 0;
+}
+body.landing .gmark { color: var(--dim); font-size: var(--t-micro); }
+
+/* ---- what it costs ---------------------------------------------------- */
+body.landing .reframe { margin: 0; color: var(--soft); line-height: 1.5; }
+body.landing .svc-card { box-shadow: none; border-color: var(--edge-base); }
+body.landing .svc-card.svc-feat { border-color: var(--cyan); }
+body.landing .svc-price { font-family: 'Fraunces', Georgia, serif; font-weight: 500; letter-spacing: -.01em; }
+
+/* ---- straight answers ------------------------------------------------- */
+body.landing .faq .q {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 48px;
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--edge-quiet);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+body.landing .faq .q span { color: var(--dim); font-size: 1.3rem; line-height: 1; }
+
+/* ---- the closing: a ruled band, one lit button, the number beside it -- */
+body.landing .land-sec.closing {
+  padding: var(--s-4) 0 0;
+  border: 0;
+  border-top: 1px solid var(--edge-base);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  text-align: left;
+}
+body.landing .close-line {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--soft);
+  font-size: 1.05rem;
+}
+body.landing .land-sec.closing h2 { margin: 0; }
+body.landing .land-sec.closing .actions { display: grid; gap: var(--s-2); }
+body.landing .land-sec.closing .btn { justify-content: center; }
+
+/* ---- the footer's note --------------------------------------------- */
+body.landing .site-foot .webapp-note {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin: 0 0 var(--s-2);
+  color: var(--dim);
+  font-size: var(--t-small);
+}
+
+@media (min-width: 640px) {
+  body.landing .land-sec.closing .actions { grid-template-columns: repeat(3, auto); justify-content: start; }
+  body.landing .land-sec.hero .hero-pocket .acts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 900px) {
+  body.landing .land-sec.hero .hero-pocket { display: grid; }
 }
