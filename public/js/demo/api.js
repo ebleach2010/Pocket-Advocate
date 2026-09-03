@@ -567,6 +567,22 @@ export function demoApi(role, store) {
           ...c,
           appointment: { ...(c.appointment || {}), joinLink: link || null },
         });
+      } else if (body.action === 'details') {
+        // Who the case is for, by his hand (2026-09-03), mirroring the
+        // Worker: only his own case and a family case take typed details.
+        if (!c.self && !c.family) return fail(409, 'Only your own case and a family case take typed details.');
+        const name = String(body.name || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+        if (!name) return fail(400, 'A name, please.');
+        store.docs.set(key, {
+          ...c,
+          clientName: name,
+          clientDob: String(body.dob || '') || null,
+          clientPhone: String(body.phone || '').trim().slice(0, 40) || null,
+          clientAddress: String(body.address || '').trim().slice(0, 300) || null,
+        });
+        store.persist?.();
+        store.fire?.(key);
+        return ok({ ok: true, name });
       } else if (body.action === 'contact') {
         // The client's phone and home address, by his hand (2026-09-03),
         // mirroring the Worker: the same number rule, the same lengths, an

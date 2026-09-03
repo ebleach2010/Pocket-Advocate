@@ -437,6 +437,58 @@ check('S26 both doors and their forms are on the shelf, the family flag rides th
   && /path === '\/api\/admin\/family-case'/.test(DEMO) && /family: true,\n\s+familyRelation:/.test(DEMO)
   && /const typed = \[body\.firstName, body\.lastName\]/.test(DEMO));
 
+// ---- the details, editable in place (Eric, 2026-09-03, "Gg Gg") ----
+const updateSrc = lift(WORKER, 'async function handleCaseUpdate(request, env) {');
+const runUpdate = (caseData, body) => {
+  const written = [];
+  const deps = {
+    requireAdmin: async () => ({ uid: 'eric' }),
+    json: (obj, code = 200) => ({ code, obj }),
+    getDoc: async (env, path) => (path === 'cases/c1' ? { id: 'c1', data: caseData } : null),
+    patchDoc: async (env, path, data, opts) => { written.push({ path, data, opts }); return true; },
+  };
+  // eslint-disable-next-line no-new-func
+  const fn = new Function('deps', `
+    const { requireAdmin, json, getDoc, patchDoc } = deps;
+    ${phoneRe}
+    ${cleanPhoneSrc}
+    ${cleanAddressSrc}
+    ${personSrc}
+    ${updateSrc}
+    return handleCaseUpdate;
+  `)(deps);
+  return { post: () => fn({ json: async () => ({ caseId: 'c1', action: 'details', ...body }) }, {}), written };
+};
+const D1 = runUpdate({ self: true, clientName: 'Gg Gg' }, { name: ' Eric  Bleach ', dob: '1985-02-03', phone: '+1 208 555 0100', address: '12 Elm St' });
+const d1 = await D1.post();
+const D2 = runUpdate({ family: true, clientName: 'Ann' }, { name: 'Ann Bleach', dob: '' });
+const d2 = await D2.post();
+const D3 = runUpdate({ clientUid: 'client1', clientName: 'Dana Reyes' }, { name: 'Somebody Else' });
+const d3 = await D3.post();
+const D4 = runUpdate({ self: true }, { name: 'Eric', dob: '02/03/1985' });
+const d4 = await D4.post();
+// NEGATIVE CONTROL (run 2026-09-03): the self-or-family guard on `details` removed made this read
+//   FAIL  S27 the details edit rewrites the four fields on his own case and a family case, refuses a client's case, and refuses a bad date
+check('S27 the details edit rewrites the four fields on his own case and a family case, refuses a client\'s case, and refuses a bad date',
+  !!updateSrc && d1.code === 200 && d1.obj.ok === true
+  && D1.written.length === 1 && D1.written[0].path === 'cases/c1'
+  && Object.keys(D1.written[0].data).sort().join(',') === 'clientAddress,clientDob,clientName,clientPhone'
+  && D1.written[0].data.clientName === 'Eric Bleach' && D1.written[0].data.clientDob === '1985-02-03'
+  && D1.written[0].data.clientPhone === '+1 208 555 0100' && D1.written[0].data.clientAddress === '12 Elm St'
+  && (D1.written[0].opts?.mask || []).slice().sort().join(',') === 'clientAddress,clientDob,clientName,clientPhone'
+  && d2.code === 200 && D2.written[0]?.data.clientName === 'Ann Bleach' && D2.written[0]?.data.clientDob === null
+  && d3.code === 409 && D3.written.length === 0
+  && d4.code === 400 && D4.written.length === 0,
+  `${d1.code} ${d2.code} ${d3.code} ${d4.code} ${JSON.stringify(D1.written[0]?.data)}`);
+// NEGATIVE CONTROL (run 2026-09-03): the Save posting action 'contact' instead of 'details' made this read
+//   FAIL  S28 the Edit sits beside his name on the overview, saves the four fields through the route, and the demo mirrors it
+check('S28 the Edit sits beside his name on the overview, saves the four fields through the route, and the demo mirrors it',
+  /data-self-edit aria-label="Edit the name, date of birth, phone and address"/.test(CASE)
+  && ['name', 'dob', 'phone', 'address'].every((n) => new RegExp(`data-self-in="${n}"`).test(CASE))
+  && /api\(\{ action: 'details', name: g\('name'\), dob: g\('dob'\), phone: g\('phone'\), address: g\('address'\) \}\)/.test(CASE)
+  && /body\.action === 'details'/.test(DEMO)
+  && /if \(!c\.self && !c\.family\) return fail\(409/.test(DEMO));
+
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);
 if (fails) process.exit(1);

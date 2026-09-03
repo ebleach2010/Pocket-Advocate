@@ -182,7 +182,9 @@ first time that address signs in, and one email tells them where to sign
 in. The card and the case page carry a purple "family, free" flag, the
 money lines leave it out, and their own page shows no paid extras.
 `selfcase.mjs` S22-S26 run both routes, the details validation and the
-claim; the drive fills both forms.
+claim; the drive fills both forms. An Edit beside the name on his own
+overview (case-update action `details`, his own case and a family case
+only) corrects the four details in place; S27-S28 run and pin it.
 
 ### Side doors, by typed code
 

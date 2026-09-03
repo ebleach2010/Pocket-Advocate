@@ -2065,7 +2065,22 @@ function paintSelfOverview(pane, c) {
       <span class="fact-k">CASE</span>
       <span class="fact-v"><span class="status-pill self">MY OWN CASE</span></span>
       <span class="fact-k">WHO</span>
-      <span class="fact-v">${esc(c.clientName || 'You')}${c.clientDob ? ` <span class="dim">· DOB ${esc(c.clientDob)}</span>` : ''}</span>
+      <span class="fact-v">${esc(c.clientName || 'You')}${c.clientDob ? ` <span class="dim">· DOB ${esc(c.clientDob)}</span>` : ''}
+        <button class="btn ghost tiny" type="button" data-self-edit aria-label="Edit the name, date of birth, phone and address">✏️ Edit</button>
+        <span class="contact-form" data-self-form hidden>
+          <label class="dim small">Name
+            <input type="text" data-self-in="name" maxlength="120" value="${esc(c.clientName || '')}"></label>
+          <label class="dim small">Date of birth
+            <input type="date" data-self-in="dob" value="${esc(c.clientDob || '')}"></label>
+          <label class="dim small">Phone
+            <input type="tel" data-self-in="phone" maxlength="40" value="${esc(c.clientPhone || '')}" placeholder="+1 555 555 5555"></label>
+          <label class="dim small">Home address
+            <input type="text" data-self-in="address" maxlength="300" value="${esc(c.clientAddress || '')}" placeholder="Street, city, state, ZIP"></label>
+          <span class="row" style="gap:.4rem; align-items:center; margin-top:.3rem;">
+            <button class="btn tiny" type="button" data-self-save>Save</button>
+            <span class="dim small" data-self-edit-said></span>
+          </span>
+        </span></span>
       <span class="fact-k">CONTACT</span>
       <span class="fact-v">${bits.phone} <span class="dim">·</span> ${bits.address}</span>
     </div>
@@ -2073,6 +2088,26 @@ function paintSelfOverview(pane, c) {
     ${c.status === 'closed' ? '<p class="dim small">This case is closed.</p>' : `
     <div class="actions"><button type="button" class="btn quiet" data-self-close>Close my own case</button></div>`}
     <p class="saved-note" data-self-said role="status" hidden></p>`;
+  // The Edit beside his name (2026-09-03, "Gg Gg"): the four details in
+  // place, saved through case-update, then the page reloads so the masthead
+  // and the card say the new name too.
+  pane.querySelector('[data-self-edit]')?.addEventListener('click', () => {
+    const f = pane.querySelector('[data-self-form]');
+    if (f) f.hidden = !f.hidden;
+  });
+  pane.querySelector('[data-self-save]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const said = pane.querySelector('[data-self-edit-said]');
+    const g = (n) => pane.querySelector(`[data-self-in="${n}"]`)?.value.trim() || '';
+    btn.disabled = true;
+    try {
+      await api({ action: 'details', name: g('name'), dob: g('dob'), phone: g('phone'), address: g('address') });
+      load();
+    } catch (err) {
+      if (said) said.textContent = err.message;
+      btn.disabled = false;
+    }
+  });
   pane.querySelector('[data-self-close]')?.addEventListener('click', async (e) => {
     if (!confirm('Close your own case? It stays readable, and nothing is sent to anyone.')) return;
     const btn = e.currentTarget;

@@ -96,6 +96,18 @@ const ov = await page.evaluate(() => ({
 }));
 ok('the overview says what this case is and carries no call, payment or report furniture', /Nobody is on the other end/.test(ov.note) && ov.noCall && ov.who.includes('WHO') && ov.close, ov.who.join(','));
 ok('and it carries the details he typed', /Eric Bleach/.test(ov.whoText) && /1985-02-03/.test(ov.whoText) && ov.tel === 'tel:+12085550100', `${ov.whoText} | ${ov.tel}`);
+// The Edit beside the name: a case opened under the wrong name (his was
+// "Gg Gg", off a test profile) is corrected in place.
+await page.click('[data-self-edit]');
+await page.waitForTimeout(300);
+await page.fill('[data-self-in="name"]', 'Eric J. Bleach');
+await page.click('[data-self-save]');
+await settle(page, 2500);
+const renamed = await page.evaluate(() => ({
+  head: (document.querySelector('[data-client]')?.textContent || '').trim(),
+  who: (() => { const k = [...document.querySelectorAll('.fact-k')].find((x) => x.textContent.trim() === 'WHO'); return (k?.nextElementSibling?.textContent || '').replace(/\s+/g, ' ').trim(); })(),
+}));
+ok('Edit beside the name corrects it in place, masthead and card alike', renamed.head === 'Eric J. Bleach' && /Eric J\. Bleach/.test(renamed.who), `${renamed.head} | ${renamed.who.slice(0, 40)}`);
 if (SHOTS) await page.screenshot({ path: `${SHOTS}/02-case-overview.png` });
 
 console.log('\n--- C. the chat is his own notes ---');

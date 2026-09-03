@@ -1894,7 +1894,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-03-own-details-and-family-case';
+const BUILD_TAG = 'v2026-09-03-edit-own-details';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1902,7 +1902,7 @@ const BUILD_TAG = 'v2026-09-03-own-details-and-family-case';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.82';
+const VERSION = '2.83';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -8906,6 +8906,22 @@ async function handleCaseUpdate(request, env) {
     await patchDoc(env, `cases/${caseId}`, { appointment: { joinLink: joinLink || null } }, {
       mask: ['appointment.joinLink'],
     });
+  } else if (action === 'details') {
+    // WHO THE CASE IS FOR, by his hand (Eric, 2026-09-03, from a screenshot
+    // of his own case named "Gg Gg" after a test profile: the case was opened
+    // before the form asked, and the form only shows before a case exists).
+    // Only on the cases he opens himself, his own and a family member's: a
+    // paying client's name and date of birth came from their booking and
+    // stay theirs.
+    if (!doc.data.self && !doc.data.family)
+      return json({ error: 'Only your own case and a family case take typed details.' }, 409);
+    const who = personFields(body, {});
+    if (who.error) return json({ error: who.error }, 400);
+    if (!who.name) return json({ error: 'A name, please.' }, 400);
+    await patchDoc(env, `cases/${caseId}`, {
+      clientName: who.name, clientDob: who.dob, clientPhone: who.phone, clientAddress: who.address,
+    }, { mask: ['clientName', 'clientDob', 'clientPhone', 'clientAddress'] });
+    return json({ ok: true, name: who.name, dob: who.dob, phone: who.phone, address: who.address });
   } else if (action === 'contact') {
     // THE CLIENT'S PHONE AND HOME ADDRESS, by his hand (Eric, 2026-09-03:
     // "patient's home address and telephone number should be visible on this

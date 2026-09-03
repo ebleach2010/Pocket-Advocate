@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.82';
+export const VERSION = '2.83';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '2.82';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE DETAILS, EDITABLE (Eric, 2026-09-03, a screenshot of his own case
+    // named after a test profile). Admin only; the client list stays empty.
+    version: '2.83',
+    quiet: true,
+    client: [],
+    admin: [
+      'On your own case, the overview has an Edit beside your name: fix the name, date of birth, phone and home address in place. A family case takes the same edit.',
+    ],
+  },
   {
     // HIS OWN DETAILS, AND A FAMILY CASE (Eric, 2026-09-03: "Have me enter my
     // own information when opening a case. Have one for 'open a family
