@@ -269,10 +269,16 @@ ck('L13b the record route is still his alone',
 // entries and can never add a row, so "only what I log by hand" holds; the
 // count moves 2 -> 4 and the entry-creating routes are still exactly the
 // add action and the projection.
+// Pin updated 2026-09-02: By the numbers (computePublicStats) LISTS the log
+// once a day to count entries by kind for the public ledger. A read, never a
+// write: it names the path in one listDocs and creates nothing, so "only
+// what I log by hand" still holds; the count moves 4 -> 5 and the second
+// check below pins that the fifth mention is a listDocs and not a patch.
 const writers = [...WORKER.matchAll(/private\/clinicCalls\/items/g)].length;
 const collDecls = [...bare(WORKER).matchAll(/`cases\/\$\{id\}\/private\/clinicCalls\/items`/g)].length;
-ck('L14 exactly four places in the Worker touch the log: his route, the projection, and the one-shot repair',
-  writers === 4 && collDecls === 2, `${writers} writers`);
+const statsRead = /listDocs\(env, `cases\/\$\{r\.id\}\/private\/clinicCalls\/items`, \{ pageSize: 200 \}\)/.test(WORKER);
+ck('L14 exactly five places in the Worker touch the log: his route, the projection, the one-shot repair, and the daily count',
+  writers === 5 && collDecls === 2 && statsRead, `${writers} writers`);
 // NEGATIVE CONTROL (run 2026-08-27): deleting the summary field from the add
 // action made this read
 //   FAIL  L15 the client line is written by hand, on the entry, by him

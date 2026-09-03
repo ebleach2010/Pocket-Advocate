@@ -83,6 +83,19 @@ the in-memory Firestore: the person never lands on the world-readable slot,
 the lost race is a 409 with nothing written, the honeypot writes nothing, the
 throttle, the closed books, and the cancel that reopens the time.
 
+### By the numbers (2026-09-02)
+
+`/stats`, and a four-tile strip on the landing page. Every figure is a total
+or a median across every case, computed once a day by the cron
+(`computePublicStats` in worker/index.js) into `stats/public` and served by a
+public, cached `GET /api/stats`; the demo answers with the mock's sample
+figures. `tools/suites/stats.mjs` lifts the computation and runs it over
+fixture cases: the reply median and the within-an-hour share, a run of client
+messages counted as one question, the 7-day promise measured against the
+call, the floor of three, the view that never carries a per-case field, and
+the rule about paused cases that lives in code and appears nowhere in copy.
+`tools/drives/drive-stats.mjs` checks the strip and the page at 390px.
+
 ### Personal Uploads (2026-09-03)
 
 Eric's own documents, on the Clients page (every case) and on a case's Mine

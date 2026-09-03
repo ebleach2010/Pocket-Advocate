@@ -30,7 +30,7 @@
 })();
 </script>
 <link rel="stylesheet" href="/css/site.css?v=sp13">
-<link rel="stylesheet" href="/css/glowup.css?v=sp5">
+<link rel="stylesheet" href="/css/glowup.css?v=sp6">
 <script>
 // A returning account holder skips the booking page. Inline in <head> so there
 // is no flash of it first; the marker is set at sign-in and cleared at
@@ -249,6 +249,21 @@
     <p class="dim small"><a class="pill" href="/reviews.html">Read all reviews</a></p>
   </section>
 
+  <!-- By the numbers (Eric, 2026-09-02): four measured figures, each a door
+       to the full ledger. Hidden until stats.js has real figures behind it,
+       so a fresh deploy never shows four ellipses. -->
+  <section class="land-sec" id="numbers" data-numbers-strip hidden>
+    <h2>By the numbers</h2>
+    <p class="dim measure">How I actually work, measured across every case and updated daily.</p>
+    <div class="numbers">
+      <a class="tile" href="/stats.html"><b data-stat="replyMedian">…</b><span>median time to reply</span></a>
+      <a class="tile" href="/stats.html"><b data-stat="withinHour">…</b><span>answered within an hour</span></a>
+      <a class="tile" href="/stats.html"><b data-stat="reports">…</b><span>reports on time</span></a>
+      <a class="tile" href="/stats.html"><b data-stat="hours">…</b><span>of casework logged</span></a>
+    </div>
+    <p class="dim small"><a class="pill" href="/stats.html">The whole ledger</a></p>
+  </section>
+
   <hr class="divide">
 
   <!-- The closing ends on ONE action. The phone number is in the footer
@@ -316,6 +331,7 @@
       <a href="/advocate.html">Meet your advocate</a>
       <a href="/faq.html">Questions</a>
       <a href="/reviews.html">Reviews</a>
+      <a href="/stats.html">By the numbers</a>
     </nav>
     <nav class="foot-col" aria-label="Reach me">
       <h2>Reach me</h2>
@@ -340,6 +356,8 @@
   // the reviews render even if the auth module fails to load.
   import { GOOGLE_REVIEWS_URL, REVIEWS, loadReviews } from '/js/reviews-config.js';
   import { enhanceReviewsStrip } from '/js/reviews-strip.js';
+  // By the numbers: paints the strip, or leaves it hidden.
+  import('/js/stats.js').catch(() => {});
 
   const esc = (s) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 

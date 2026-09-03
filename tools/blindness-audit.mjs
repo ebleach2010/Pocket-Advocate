@@ -102,6 +102,8 @@ const CLIENT_PAGES = [
   // 2026-09-02: the free 15-minute call. A public page with a form on it, and
   // the first page a stranger is now sent to.
   '/fit',
+  // 2026-09-02: By the numbers. Measured figures and the words around them.
+  '/stats',
 ];
 
 // Reachable without any page linking to them.
