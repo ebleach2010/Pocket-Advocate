@@ -87,7 +87,7 @@ export function mountSaved({ container, kind, id, user, myRole }) {
         ${rows.map((r) => `
           <li class="sv-item" data-msg="${esc(r.msgId)}">
             <div class="sv-head">
-              <span class="sv-who">${r.role === 'admin' ? 'Eric' : 'You'}${myRole === 'admin' && r.role !== 'admin' ? 'r client' : ''}</span>
+              <span class="sv-who">${r.role === 'question' ? 'Asked of you' : r.role === 'admin' ? 'Eric' : 'You'}${myRole === 'admin' && r.role === 'client' ? 'r client' : ''}</span>
               <span class="sv-when">${esc(when(r.sentAt))}</span>
               <button type="button" class="sv-drop" data-drop title="Remove from saved"
                 aria-label="Remove from saved">✕</button>

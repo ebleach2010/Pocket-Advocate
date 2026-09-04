@@ -112,6 +112,9 @@ const deps = {
   // Since 2026-09-03 every prompt opens with voice(), the brief picked by the
   // turn policy (his own case has one of its own); here it is every other case.
   voice: () => 'You are Eric.',
+  // And the policy store itself, empty: every case but his (audit, 2026-09-03,
+  // the stances stay off his own case, so the doc builder reads the store).
+  turnPolicy: { getStore: () => null },
   ask: async (env, opts) => { asked = opts; return 'REVIEW BEFORE YOU CALL\n1. *Creatinine read off a chart, check it.\n\nTHE CALL, IN ORDER\nOpen with the March panel.'; },
   console: { error: () => {}, warn: () => {} },
 };

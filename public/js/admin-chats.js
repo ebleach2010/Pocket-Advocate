@@ -57,7 +57,8 @@ async function loadInbox() {
       threads.push({
         kind: 'case',
         href: `/admin-case.html?id=${d.id}`,
-        who: c.clientEmail || c.clientUid,
+        // His own case has no client behind it (audit, 2026-09-03): name it as his.
+        who: c.self ? `${c.clientName || 'My own case'} (mine)` : (c.clientEmail || c.clientUid),
         badge: `CASE · ${(c.status || '?').replace('_', ' ').toUpperCase()}`,
         lm: c.lastMessage || null,
       });

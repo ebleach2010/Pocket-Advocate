@@ -245,6 +245,20 @@ await page.click('[data-open-door="family"]');
 await page.waitForTimeout(300);
 await page.fill('[data-of="family:firstName"]', 'Ann');
 await page.fill('[data-of="family:lastName"]', 'Bleach');
+// An address that already belongs to a client here is refused once, with a
+// button to confirm it really is them (audit, 2026-09-03). The demo's client
+// owns jordan@example.demo; typing it must not open a case straight away.
+await page.fill('[data-of="family:email"]', 'jordan@example.demo');
+await page.click('[data-open-go="family"]');
+let refusal = { text: '', button: false };
+for (let i = 0; i < 12 && !refusal.button; i++) {
+  await page.waitForTimeout(400);
+  refusal = await page.evaluate(() => {
+    const said = document.querySelector('[data-open-said="family"]');
+    return { text: (said?.textContent || '').trim(), button: !!said?.querySelector('[data-open-confirm]') };
+  });
+}
+ok('an address that already has a case here is refused once, with a confirm button', /already belongs to a client/.test(refusal.text) && refusal.button && /admin(\.html)?/.test(page.url()) && !/admin-case/.test(page.url()), refusal.text.slice(0, 80));
 await page.fill('[data-of="family:email"]', 'ann@example.com');
 await page.fill('[data-of="family:relation"]', 'my mother');
 await page.fill('[data-of="family:dob"]', '1950-01-02');

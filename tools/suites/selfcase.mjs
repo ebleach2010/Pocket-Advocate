@@ -279,8 +279,11 @@ check('S16 the route is registered under the admin prefix and named in the heade
 const guards = [
   // Re-pinned 2026-09-03 (oriented to him): the self branch wakes the read
   // before it returns, and still tells and stamps nobody.
-  ['the chat notice', /if \(doc\.data\.self\) \{\n\s+refreshAdvisor\(env, ctx, kind, id\);\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/],
-  ['the chat digest', /if \(row\.data\.self\) \{\n\s+await patchDoc\(env, `\$\{coll\}\/\$\{row\.id\}`, \{ lastMessage: \{ \.\.\.lm, emailed: true \} \}/],
+  // Re-pinned again the same evening (audit): the self branch refuses anyone
+  // but him before it wakes the read.
+  ['the chat notice', /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not your thread' \}, 403\);\n\s+refreshAdvisor\(env, ctx, kind, id\);\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/],
+  // Re-pinned 2026-09-03 (audit): the one-field mask, so lm.ts is never retyped.
+  ['the chat digest', /if \(row\.data\.self\) \{\n[\s\S]{0,200}?\{ lastMessage: \{ emailed: true \} \},\n\s+\{ mask: \['lastMessage\.emailed'\] \}/],
   ['the work log notice', /if \(!c \|\| !c\.clientUid \|\| c\.self \|\| c\.status === 'closed'\) return null;/],
   ['the recording clock', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n\s+const alreadyStarted = !!doc\.data\.reportDueAt;/],
   ['the document push', /if \(doc\.data\.clientUid && !doc\.data\.self\) \{/],
@@ -604,7 +607,8 @@ const finishSrc = lift(ADV, 'async function finishAnalysis(env, kind, id, ctx, m
 check('S34 the finish knows his own case from the flight, keeps the Unanswered list from the chat, and asks the questions after the read is saved',
   !!unFromChatFn && unOut.length === 1 && unOut[0].ask === 'Open one?' && unOut[0].answered === false
   && /effort: passEffort, auto, skipMedia, self,/.test(ADV)
-  && /if \(ctx\.self\) un\.unanswered = unansweredFromChat\(rows\);/.test(finishSrc)
+  // Re-pinned 2026-09-03 (audit): a row he marked Got it is carried over the fresh list.
+  && /if \(ctx\.self\) \{\n[\s\S]{0,400}?un\.unanswered = \[\n\s+\.\.\.unansweredFromChat\(rows\)\.filter\(\(r\) => !done\.has\(flatText\(r\.ask\)\)\),/.test(finishSrc)
   && /if \(ctx\.self && kind === 'case'\) \{\n\s+await askInChat\(env, id, harvestQuestions\(finalText\), rows\)/.test(finishSrc)
   && finishSrc.indexOf('await askInChat(') > finishSrc.indexOf("analysis: finalText, status: 'idle'"),
   JSON.stringify(unOut));
@@ -663,8 +667,9 @@ check('S35 his answer goes through the Worker with the question on it, stamps th
 
 // NEGATIVE CONTROL (run 2026-09-03): the refreshAdvisor call removed from the notify branch made this read
 //   FAIL  S36 a note on his own case wakes the read the way a client message does, and still pings nobody
+// Re-pinned 2026-09-03 (audit): the branch refuses a stranger first.
 check('S36 a note on his own case wakes the read the way a client message does, and still pings nobody',
-  /if \(doc\.data\.self\) \{\n\s+refreshAdvisor\(env, ctx, kind, id\);\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/.test(WORKER));
+  /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not your thread' \}, 403\);\n\s+refreshAdvisor\(env, ctx, kind, id\);\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/.test(WORKER));
 
 // NEGATIVE CONTROL (run 2026-09-03): the Reply button's class renamed to reply-button made this read
 //   FAIL  S37 the chat paints a question with a Reply, his answer with the question above it, the answer goes through the Worker, and the panel and the demo follow
@@ -692,6 +697,121 @@ check('S38 the question, the quote, the Reply and the strip are styled on the ad
   /\.msg\.q \{/.test(ACSS) && /\.msg-quote \{/.test(ACSS) && /\.reply-btn \{/.test(ACSS) && /\.reply-strip \{/.test(ACSS)
   && cssVersions.length === 1 && cssVersions[0] !== 'none' && cssVersions[0] !== 'stat106',
   cssVersions.join(','));
+
+
+// ---- the two-agent audit, patched (Eric, 2026-09-03: "no crossover instructions or breach") ----
+const SAVED = f('public/js/saved.js');
+const CHATS = f('public/js/admin-chats.js');
+const corpusFn = lift(ADV, 'export async function voiceCorpus(env, { exclude = null } = {}) {');
+const isEchoFn = grab(ADV, /const isEcho = \(m, exclude\) => \{[\s\S]*?\n\};/);
+const voiceConsts = ['VOICE_CORPUS_CHARS', 'VOICE_THREAD_MESSAGES', 'VOICE_QA_CHARS'].map((k) => grab(ADV, new RegExp(`const ${k} = [^\\n]+;`))).join('\n');
+const voiceThreads = grab(ADV, /const VOICE_THREADS = \{[\s\S]*?\n\};/);
+const corpusDocs = {
+  cases: [{ id: 'mine', data: { self: true } }, { id: 'c1', data: {} }],
+  subscriptions: [],
+  'cases/mine/chat': [{ id: 'm1', data: { role: 'admin', text: 'Day 3: tremor is back, slept 4 hours.' } }],
+  'cases/c1/chat': [{ id: 'k1', data: { role: 'admin', text: 'I will call the clinic Monday.' } }, { id: 'k2', data: { role: 'client', text: 'thanks' } }],
+  'cases/mine/advisor/state/qa': [{ id: 'q', data: { question: 'Is my taper too fast?', at: 1 } }],
+  'cases/c1/advisor/state/qa': [{ id: 'q', data: { question: 'Should I push for the MRI?', at: 1 } }],
+};
+const corpusReads = [];
+let corpus = { text: '', questions: [] };
+try {
+  // eslint-disable-next-line no-new-func
+  const corpusRun = new Function('listDocs', `${voiceConsts}\n${voiceThreads}\n${isEchoFn}\n${corpusFn.replace(/^export /, '')}\nreturn voiceCorpus;`)(
+    async (env, path) => { corpusReads.push(path); return corpusDocs[path] || []; });
+  corpus = await corpusRun({}, {});
+} catch (e) { corpus = { text: `threw: ${e.message}`, questions: [] }; }
+// NEGATIVE CONTROL (run 2026-09-03): the self skip in voiceCorpus replaced with `if (false) continue;` made this read
+//   FAIL  S39 the voice study never reads his own case: not his entries, not his private questions  -- Day 3: tremor is back, slept 4 hours.
+check('S39 the voice study never reads his own case: not his entries, not his private questions',
+  !!corpusFn && !!isEchoFn && corpus.text.includes('call the clinic') && !corpus.text.includes('tremor')
+  // The remainder pass re-reads the client thread's questions; distinct ones are what matter.
+  && [...new Set(corpus.questions)].join('|') === 'Should I push for the MRI?'
+  && !corpusReads.some((p) => p.startsWith('cases/mine/')),
+  `${corpus.text.slice(0, 60)} | reads ${corpusReads.join(',')}`);
+
+// NEGATIVE CONTROL (run 2026-09-03): the question turn's stance gate dropped (`${stanceNote(style)}` bare) made this read
+//   FAIL  S40 an override on his own case settles that case only, and the standing positions and his client voice stay off it  -- gated x1+3
+check('S40 an override on his own case settles that case only, and the standing positions and his client voice stay off it',
+  /const override = isOverride\(question\);\n[\s\S]{0,300}?const self = !!turnPolicy\.getStore\(\)\?\.self;/.test(ADV)
+  && /if \(override\) \{\n\s+if \(self\) \{[\s\S]*?sectionMatch\(cleaned, 'Stance'\)[\s\S]*?\} else \{\n\s+cleaned = await fileOverride\(env, cleaned\);/.test(ADV)
+  && (ADV.match(/\$\{self \? '' : stanceNote\(style\)\}/g) || []).length === 2
+  && (ADV.match(/turnPolicy\.getStore\(\)\?\.self \? ' ' : \(stanceNote\(style\) \|\| ' '\)/g) || []).length === 3
+  && !/\$\{stanceNote\(style\)\}/.test(ADV) && !/text: stanceNote\(style\) \|\| ' '/.test(ADV)
+  && /const elsewhere = \(!turnPolicy\.getStore\(\)\?\.self && voice\.length < 2500\)/.test(ADV),
+  `gated x${(ADV.match(/\$\{self \? '' : stanceNote\(style\)\}/g) || []).length}+${(ADV.match(/turnPolicy\.getStore\(\)\?\.self \? ' ' : \(stanceNote\(style\) \|\| ' '\)/g) || []).length}`);
+
+// NEGATIVE CONTROL (run 2026-09-03): the draft route's own-case 409 replaced with `if (false)` made this read
+//   FAIL  S41 his own case teaches the profile nothing and takes no draft: the feedback route, the draft route, the distill, and the Workflow entry
+check('S41 his own case teaches the profile nothing and takes no draft: the feedback route, the draft route, the distill, and the Workflow entry',
+  /export const onOwnCase = \(\) => !!turnPolicy\.getStore\(\)\?\.self;/.test(ADV)
+  && /export async function runStyleDistill\(env, kind, id\) \{\n[\s\S]{0,300}?if \(turnPolicy\.getStore\(\)\?\.self\) return;\n\s+try \{/.test(ADV)
+  && /runStyleDistill, withCasePolicy, onOwnCase,/.test(WORKER)
+  && /if \(action === 'draft-feedback'\) \{[\s\S]*?if \(onOwnCase\(\)\) \{[\s\S]*?return json\(\{ ok: true, learned: false \}\);\n\s+\}\n\s+const changed = /.test(WORKER)
+  && /if \(action === 'draft'\) \{\n[\s\S]{0,300}?if \(onOwnCase\(\)\) return json\(\{ error: 'Your own case has nobody to write to\.' \}, 409\);/.test(WORKER)
+  && /step\.do\('turn', \{ retries: \{ limit: 0 \}, timeout: '30 minutes' \}, \(\) =>\n\s+withCasePolicy\(this\.env, kind, id, async \(\) => \{/.test(WORKER));
+
+const notifySrc = lift(WORKER, 'async function handleNotify(request, env, ctx) {');
+// NEGATIVE CONTROL (run 2026-09-03): the isAdmin refusal removed from the notify self branch made this read
+//   FAIL  S42 a stranger with the id of his own case is refused by the notify route, and only he can wake the read
+check('S42 a stranger with the id of his own case is refused by the notify route, and only he can wake the read',
+  !!notifySrc
+  && /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not your thread' \}, 403\);\n\s+refreshAdvisor\(env, ctx, kind, id\);\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/.test(notifySrc)
+  && notifySrc.indexOf("const isAdmin = profile?.data.role === 'admin';") < notifySrc.indexOf('if (doc.data.self) {'));
+
+const RP6 = runReply({ body: { id: 'c1?x' } });
+const rp6 = await RP6.post();
+const RP7 = runReply({ body: { msgId: '../q1' } });
+const rp7 = await RP7.post();
+// NEGATIVE CONTROL (run 2026-09-03): the reply route's id shape checks loosened to `!id || !msgId` made this read
+//   FAIL  S43 the reply route takes only plain ids, for the case and the question alike  -- 404 404
+check('S43 the reply route takes only plain ids, for the case and the question alike',
+  rp6.code === 400 && RP6.written.length === 0 && rp7.code === 400 && RP7.written.length === 0
+  && /if \(body\?\.kind !== 'case' \|\| !\/\^\[\\w-\]\{1,64\}\$\/\.test\(id\) \|\| !\/\^\[\\w-\]\{1,64\}\$\/\.test\(msgId\)\)/.test(WORKER),
+  `${rp6.code} ${rp7.code}`);
+
+const reactSrc = lift(WORKER, 'async function handleChatReact(request, env) {');
+// NEGATIVE CONTROL (run 2026-09-03): the question refusal in handleChatReact replaced with `if (false)` made this read
+//   FAIL  S44 a reaction or a status cannot land on a question row
+check('S44 a reaction or a status cannot land on a question row',
+  !!reactSrc
+  && /const msg = await getDoc\(env, ctx\.path\);\n\s+if \(!msg\) return json\(\{ error: 'No such message' \}, 404\);\n[\s\S]{0,200}?if \(msg\.data\.role === 'question'\)\n\s+return json\(\{ error: 'That is a question to answer, not a message to react to\.' \}, 400\);/.test(reactSrc));
+
+// NEGATIVE CONTROL (run 2026-09-03): the CSV label for a question row changed to 'Q' made this read
+//   FAIL  S45 a question row is named as one wherever a row is labelled (the CSV, the saved shelf, the chats list, the day summary), and the saved shelf on his own case is his
+check('S45 a question row is named as one wherever a row is labelled (the CSV, the saved shelf, the chats list, the day summary), and the saved shelf on his own case is his',
+  /d\.role === 'admin' \? 'Advocate' : d\.role === 'question' \? 'Question' : 'Client',/.test(CHAT)
+  && /d\.quote \? `Re: \$\{d\.quote\}\\n\$\{d\.text \|\| ''\}` : \(d\.text \|\| ''\),/.test(CHAT)
+  && /role: msg\.data\.role === 'admin' \? 'admin' : msg\.data\.role === 'question' \? 'question' : 'client',/.test(WORKER)
+  && /r\.role === 'question' \? 'Asked of you' : r\.role === 'admin' \? 'Eric' : 'You'/.test(SAVED)
+  && /who: c\.self \? `\$\{c\.clientName \|\| 'My own case'\} \(mine\)` : \(c\.clientEmail \|\| c\.clientUid\),/.test(CHATS)
+  && /const who = r\.data\.role === 'admin' \? 'Eric'\n\s+: r\.data\.role === 'question' \? 'Asked of Eric' : 'Client';/.test(ADV)
+  && /const ownDay = !!turnPolicy\.getStore\(\)\?\.self;/.test(ADV) && /\$\{ownDay\n\s+\? `You summarise one day of Eric's own log/.test(ADV)
+  && /saveUid: c\.self \? user\.uid : c\.clientUid,/.test(CASE) && /profiles\/\$\{data\.self \? user\.uid : data\.clientUid\}\/saved/.test(CASE));
+
+// NEGATIVE CONTROL (run 2026-09-03): `if (self) prepBtn.remove();` replaced with `if (false)` made this read
+//   FAIL  S46 nothing on his own case writes to a client: no Prepare a response, no duty of care panel, no Send to client on the agenda; the appeal is his own and the call notes have no pitch
+check('S46 nothing on his own case writes to a client: no Prepare a response, no duty of care panel, no Send to client on the agenda; the appeal is his own and the call notes have no pitch',
+  /if \(self\) prepBtn\.remove\(\);/.test(PANEL)
+  && /\.\.\.\(data\.self \? \[\] : \[\n\s+'<div class="panel">',\n\s+'  <h3>Duty of care<\/h3>',/.test(CASE) && /\[data-duty\]'\)\?\.addEventListener/.test(CASE)
+  && /\$\{ownCase \? '' : '<button class="btn quiet" data-asend>Send to client<\/button>'\}/.test(CASE) && /\[data-asend\]'\)\?\.addEventListener/.test(CASE) && /ownCase = !!data\.self;/.test(CASE)
+  && /\$\{turnPolicy\.getStore\(\)\?\.self\n\s+\? `You are writing an insurance appeal letter for Eric to file for HIMSELF\./.test(ADV)
+  && /No pitch this call/.test(ADV));
+
+const F5 = runRoute({ body: { firstName: 'Ann', lastName: 'Bleach', email: 'jordan@example.com' }, users: { 'jordan@example.com': 'u-jordan' }, cases: { theirs: { clientUid: 'u-jordan', status: 'confirmed' } } });
+let f5; try { f5 = await F5.family(); } catch (e) { f5 = { code: 500, obj: { threw: e.message } }; }
+const F6 = runRoute({ body: { firstName: 'Ann', lastName: 'Bleach', email: 'jordan@example.com', confirmExisting: true }, users: { 'jordan@example.com': 'u-jordan' }, cases: { theirs: { clientUid: 'u-jordan', status: 'confirmed' } } });
+let f6; try { f6 = await F6.family(); } catch (e) { f6 = { code: 500, obj: { threw: e.message } }; }
+// NEGATIVE CONTROL (run 2026-09-03): the family route's existing-address refusal replaced with `if (false) {` made this read
+//   FAIL  S47 a typed address that already owns a case here is refused once, opens on his confirmation, and the form offers the one button  -- 200/{"ok":t...
+check('S47 a typed address that already owns a case here is refused once, opens on his confirmation, and the form offers the one button',
+  f5.code === 409 && f5.obj.existing === true && F5.written.length === 0 && F5.mails.length === 0
+  && f6.code === 200 && F6.written.find((w) => w.path === 'cases/mine-1')?.data.clientUid === 'u-jordan'
+  && /if \(uid && body\?\.confirmExisting !== true\) \{/.test(WORKER)
+  && /if \(go\.dataset\.confirm === '1'\) payload\.confirmExisting = true;/.test(ADMIN) && /data-open-confirm/.test(ADMIN)
+  && /body\.confirmExisting !== true/.test(DEMO) && /existing: true/.test(DEMO),
+  `${f5.code}/${JSON.stringify(f5.obj).slice(0, 80)} ${f6.code}`);
 
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);

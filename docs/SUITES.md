@@ -209,6 +209,26 @@ route and the notify branch, and pin the chat, the panel, the demo and the
 styles; the drive taps Update, sees the two questions arrive, presses Reply,
 answers, and reads the answer back with the question quoted above it.
 
+Walled off (Eric, 2026-09-03: "make sure there's no crossover instructions
+or breach between my personal case and a clients"): two audit sweeps, one
+over every model turn and the learned material, one over every data,
+notification, email, export, stats and rules path. Patched: the voice study
+and the draft writer skip his own case (`voiceCorpus`), an override typed
+there strips its stance instead of filing it globally, the standing
+positions and his client voice stay off his own turns, the feedback route
+and the distill teach the profile nothing from it, the draft route refuses
+it (409) and the panel drops Prepare a response, the Workflow entry runs
+under the case policy, the notify route refuses anyone but him on it, a
+reaction cannot land on a question row, the reply route takes only plain
+ids, the digest masks one field, the CSV, the saved shelf, the chats list
+and the day summary name a question as one, the saved shelf on his case is
+his, the duty of care panel and the agenda's Send to client are gone there,
+the appeal is written for himself and the call notes carry no pitch, and a
+family case for an address that already owns a case here is refused once
+with a confirm button (`confirmExisting`). S39-S47 lift and run the corpus,
+the reply and family routes, and pin the rest; the drive types the demo
+client's address into the family door and reads the refusal.
+
 ### Side doors, by typed code
 
 The old rooms still answer, as codes typed into either sign-in box - useful

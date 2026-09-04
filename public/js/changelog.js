@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.84';
+export const VERSION = '2.85';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '2.84';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE AUDIT (Eric, 2026-09-03: "make sure there's no crossover
+    // instructions or breach between my personal case and a clients. Patch
+    // if needed."). Two sweeps, every finding patched. Admin only; the client
+    // list stays empty.
+    version: '2.85',
+    quiet: true,
+    client: [],
+    admin: [
+      'Your own case is walled off from your client work both ways: nothing you write there teaches how you write to clients, an override typed there settles only your case, your standing positions and client voice stay off it, and nobody but you can wake its read.',
+      'On your own case the write-to-client buttons are gone (Prepare a response, Duty of care, Send to client on the agenda), the appeal letter is written for yourself, the day summary and the CSV name the questions as questions, and a question you mark Got it stays marked.',
+      'Opening a family case for an email that already belongs to a client here now asks you to confirm it is really them before anything opens.',
+    ],
+  },
   {
     // HIS OWN CASE, ORIENTED TO HIM (Eric, 2026-09-03: "It needs context that
     // it's about me. An entirely different set of instructions. If it has

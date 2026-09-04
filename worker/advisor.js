@@ -74,6 +74,10 @@ export async function withCasePolicy(env, kind, id, fn) {
   return turnPolicy.run(policy, fn);
 }
 
+/** True while the current run is on his own case. For the callers outside
+ *  this file that must not teach the global profile from it (2026-09-03). */
+export const onOwnCase = () => !!turnPolicy.getStore()?.self;
+
 /** The one block that turns every prompt in this file into a prompt about
  *  Eric himself. Appended LAST, after the date, so it overrides what the
  *  prompts above it say about a client who is not him. */
@@ -1735,6 +1739,10 @@ export async function voiceCorpus(env, { exclude = null } = {}) {
     const threads = await listDocs(env, coll, { pageSize: spec.cap, orderBy: spec.order })
       .catch(() => listDocs(env, coll, { pageSize: spec.cap }).catch(() => []));
     for (const t of threads) {
+      // His own case (2026-09-03) is his log as the patient, not his writing
+      // to a client: it teaches the profile nothing and never rides into
+      // another case's prompt.
+      if (coll === 'cases' && t.data.self) continue;
       if (used >= budget || chars >= VOICE_CORPUS_CHARS) break;
       const rows = await listDocs(env, `${coll}/${t.id}/chat`, {
         pageSize: VOICE_THREAD_MESSAGES, orderBy: 'ts desc',
@@ -2187,6 +2195,9 @@ export async function setVoiceLoop(env, enabled) {
 
 
 export async function runStyleDistill(env, kind, id) {
+  // His own case never teaches the profile of how he writes to clients
+  // (2026-09-03): the route refuses first; this is the belt to that brace.
+  if (turnPolicy.getStore()?.self) return;
   try {
     const [profile, editsAll, rows] = await Promise.all([
       getDoc(env, STYLE_PATH).catch(() => null),
@@ -2693,10 +2704,13 @@ export async function runDaySummary(env, kind, id, day) {
   }
 
   const transcript = mine.map((r) => {
-    const who = r.data.role === 'admin' ? 'Eric' : 'Client';
+    const who = r.data.role === 'admin' ? 'Eric'
+      : r.data.role === 'question' ? 'Asked of Eric' : 'Client';
     const att = r.data.attachment?.name ? ` [attached: ${r.data.attachment.name}]` : '';
     return `${who}: ${r.data.text || ''}${att}`;
   }).join('\n');
+  // His own case (2026-09-03): a day of his own log, not a chat with a client.
+  const ownDay = !!turnPolicy.getStore()?.self;
 
   // The one model surface that ignored the glossary. Learned terms only:
   // the summary is a facts-only read-back, but it should use HIS vocabulary
@@ -2705,9 +2719,15 @@ export async function runDaySummary(env, kind, id, day) {
   const text = await ask(env, {
     effort: 'low',
     maxTokens: 12000,
-    system: [{ type: 'text', text: `You summarise one day of a patient advocate's
+    system: [{ type: 'text', text: `${ownDay
+      ? `You summarise one day of Eric's own log on his own case, for Eric. He is
+the patient here; "Asked of Eric" lines are questions his own reading put to
+him, and "Eric" lines are his entries and his answers. He reads this to get
+back on top of his own week. Where the headings below say "the client", they
+mean him.`
+      : `You summarise one day of a patient advocate's
 chat with a client, for the advocate himself. He reads this to get back on top
-of a case he has not looked at since yesterday.
+of a case he has not looked at since yesterday.`}
 
 Exactly these four headings, as markdown \`##\`, and nothing else:
 
@@ -3990,7 +4010,7 @@ the thread has actually contradicted it.`, cache: true },
       // one: the standing instructions above are identical from call to
       // call, and gluing the glossary and the profile onto them meant the
       // advisor learning anything busted the cache built to protect them.
-      { type: 'text', text: `${knowledgeNote(knowledge)}${stanceNote(style)}${style.voice && !self ? `
+      { type: 'text', text: `${knowledgeNote(knowledge)}${self ? '' : stanceNote(style)}${style.voice && !self ? `
 
 Two of your sections leave this page as messages FROM ERIC: "Worth asking" and "What's missing". He presses one line and it goes to the client as it stands. Write those two in his voice, from this profile of how he writes:
 ${style.voice}` : ''}` || ' ' }],
@@ -4121,7 +4141,16 @@ async function finishAnalysis(env, kind, id, ctx, message) {
   const un = harvestUnanswered(dx.text, p.unanswered);
   // His own case keeps its Unanswered list from the chat itself: the
   // questions the read put there that he has not answered (2026-09-03).
-  if (ctx.self) un.unanswered = unansweredFromChat(rows);
+  if (ctx.self) {
+    // A row he marked Got it stays marked: the chat cannot know he let a
+    // question go, so the stored flag is carried over the fresh list.
+    const was = Array.isArray(p.unanswered) ? p.unanswered : [];
+    const done = new Set(was.filter((r) => r?.answered).map((r) => flatText(r.ask)));
+    un.unanswered = [
+      ...unansweredFromChat(rows).filter((r) => !done.has(flatText(r.ask))),
+      ...was.filter((r) => r?.answered).map((r) => ({ ...r, firstAskedAt: r.firstAskedAt ? new Date(r.firstAskedAt) : new Date() })),
+    ];
+  }
   const corr = harvestCorrections(un.text, rows, p.corrections);
   // Stamps for the shelf badges. A differential that came back identical is
   // not news, so its stamp holds rather than moving; a badge that lights on
@@ -4343,6 +4372,9 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
   // is valid and stays inside the advisor rules fence.
   const path = `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state/qa/${qaId}`;
   const override = isOverride(question);
+  // His own case (2026-09-03): the standing positions mined from his client
+  // work stay off it, and an override typed here settles this case only.
+  const self = !!turnPolicy.getStore()?.self;
   try {
     const [rows, state, knowledge, style, qa, econ, worklog] = await Promise.all([
       recentMessages(env, kind, id),
@@ -4439,7 +4471,7 @@ ${SELF_NOTE}` },
       // Learned material on its own block, after the cached one, so the
       // glossary growing or the profile updating never busts the cache on
       // the standing instructions above.
-      { type: 'text', text: `${knowledgeNote(knowledge)}${stanceNote(style)}${override ? OVERRIDE_NOTE : ''}${AUTHORITY_NOTE}` || ' ' }],
+      { type: 'text', text: `${knowledgeNote(knowledge)}${self ? '' : stanceNote(style)}${override ? OVERRIDE_NOTE : ''}${AUTHORITY_NOTE}` || ' ' }],
       messages: [{
         role: 'user',
         content: [
@@ -4463,7 +4495,16 @@ ${SELF_NOTE}` },
     let cleaned = await harvestKeyTerms(env, answer);
     cleaned = await applyMastered(env, cleaned);
     cleaned = await applyForgotten(env, cleaned);
-    if (override) cleaned = await fileOverride(env, cleaned);
+    if (override) {
+      if (self) {
+        // Settled for THIS case only: the qa row keeps override:true and
+        // loadQa pins it; the global profile never hears about his own body.
+        const m = sectionMatch(cleaned, 'Stance');
+        if (m) cleaned = cleaned.replace(m[0], '').trim();
+      } else {
+        cleaned = await fileOverride(env, cleaned);
+      }
+    }
     await patchDoc(env, path, {
       answer: cleaned, status: 'done', override,
     }, { mask: ['answer', 'status', 'override'] });
@@ -4528,7 +4569,9 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
     // thread holds little of him, his real messages from every other thread
     // ride in as a second exhibit, through the same echo guard the nightly
     // study uses so his own past drafts are never read back as him.
-    const elsewhere = voice.length < 2500
+    // Never on his own case (2026-09-03): the route refuses a draft there,
+    // and even so his log must not be sat beside other people's threads.
+    const elsewhere = (!turnPolicy.getStore()?.self && voice.length < 2500)
       ? (await voiceCorpus(env, { exclude: style.echo }).catch(() => ({ text: '' })))
         .text.slice(0, 12000)
       : '';
@@ -4739,10 +4782,15 @@ export async function runAppeal(env, kind, id, appeal, revise = false, base = ''
       maxTokens: 20000,
       system: [{ type: 'text', text: `${voice()}
 
-You are writing an insurance appeal letter for Eric to file on his client's
+${turnPolicy.getStore()?.self
+    ? `You are writing an insurance appeal letter for Eric to file for HIMSELF. He
+is the member and the patient. The letter goes out over his own name, in the
+first person, to a plan reviewer who is usually a nurse and sometimes a
+physician.`
+    : `You are writing an insurance appeal letter for Eric to file on his client's
 behalf. He is their authorised representative. The letter goes out over his
 name, on his letterhead, to a plan reviewer who is usually a nurse and
-sometimes a physician.
+sometimes a physician.`}
 
 WHAT AN APPEAL IS
 It is an argument that the plan applied its own rules wrongly to these facts.
@@ -4791,7 +4839,7 @@ RULES
 
 Output the letter and nothing else. No preamble, no notes to Eric outside the
 [NEEDS: ] markers, no closing commentary.` , cache: true },
-      { type: 'text', text: stanceNote(style) || ' ' }],
+      { type: 'text', text: turnPolicy.getStore()?.self ? ' ' : (stanceNote(style) || ' ') }],
       messages: [{
         role: 'user',
         content: [{
@@ -4926,7 +4974,7 @@ Structure, in this exact order:
 
 1. "ACTION PLAN" - short and sweet. The highest-priority item first, then the next, at most five items, each one line of what to do and one line of why now. This is the best plan of action for the call, not a literature review.
 
-2. "THE PITCH" - if an upsell genuinely fits this case (Full Access coordination, a follow-up, telehealth accompaniment), write the pitch out in Eric's voice, word for word, so he can say it as written. Two or three sentences, concrete to THIS case, no pressure tactics. His clients are often cognitively declining, so the pitch must carry its own weight: what it is, what it costs, what it changes for them. If no upsell fits, write "No pitch this call" and one line of why.
+2. "THE PITCH" - if an upsell genuinely fits this case (Full Access coordination, a follow-up, telehealth accompaniment), write the pitch out in Eric's voice, word for word, so he can say it as written. Two or three sentences, concrete to THIS case, no pressure tactics. His clients are often cognitively declining, so the pitch must carry its own weight: what it is, what it costs, what it changes for them. If no upsell fits, write "No pitch this call" and one line of why.${turnPolicy.getStore()?.self ? '\nOn his own case there is nothing to sell and nobody to sell it to: write "No pitch this call" and nothing else under THE PITCH.' : ''}
 
 3. "RESOURCES NEARBY" - university hospitals and academic medical centers within practical reach of where this client is, and the kind of provider there worth a referral, with specialty. The client's location comes ONLY from what the record actually states: the case, Eric's notes, or the conversation. If none of them says where the client is, open the section with "Location not in the record" and name no place; a plausible city guessed from a timezone is worse than a blank line. Anything from your own knowledge rather than the case record gets "(verify)" after it. Never invent a named physician; name departments and programs, and only name a person if the case record itself does.
 
@@ -4941,7 +4989,7 @@ Rules:
         // His stances ride their own block after the cached one, the same
         // reason as runDraft: the nightly study must not bust the cache.
         type: 'text',
-        text: stanceNote(style) || ' ',
+        text: turnPolicy.getStore()?.self ? ' ' : (stanceNote(style) || ' '),
       }],
       messages: [{
         role: 'user',
@@ -5175,7 +5223,7 @@ NEVER:
 Where a chart or a graphic would serve him better than a sentence, write one line [in square brackets] describing exactly the visual, for example [Line chart: creatinine across the last four draws]. The bracketed line stands alone.${withTools ? WEB_SEARCH_RULES : ''}`,
       }, {
         type: 'text',
-        text: stanceNote(style) || ' ',
+        text: turnPolicy.getStore()?.self ? ' ' : (stanceNote(style) || ' '),
       }],
       messages: [{
         role: 'user',

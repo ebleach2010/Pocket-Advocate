@@ -172,6 +172,9 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   const pauseBtn = el('[data-pause]');
   const refreshBtn = el('[data-refresh]');
   const prepBtn = el('[data-prep]');
+  // His own case has nobody to write to (2026-09-03): the button goes, and
+  // the route refuses a draft there anyway.
+  if (self) prepBtn.remove();
   const qBox = el('[data-q]');
 
   // Errors used to paint only on the Read page. The buttons that cause most

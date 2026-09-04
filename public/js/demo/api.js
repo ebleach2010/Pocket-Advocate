@@ -474,6 +474,13 @@ export function demoApi(role, store) {
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(400, 'The email they will sign in with, please.');
       const name = [body.firstName, body.lastName].map((x) => String(x || '').trim()).filter(Boolean).join(' ');
       if (!name) return fail(400, 'Their name, please.');
+      // An address that already owns a case here is refused once and needs
+      // his confirmation (audit, 2026-09-03). Mirrors handleFamilyCase.
+      const owned = [...store.docs.entries()].some(([k, d]) => /^cases\/[^/]+$/.test(k) && d?.clientEmail === email);
+      if (owned && body.confirmExisting !== true) {
+        const error = 'That address already belongs to a client with a case here. If it really is them, confirm below.';
+        return { ...fail(409, error), json: async () => ({ error, existing: true }), text: async () => JSON.stringify({ error, existing: true }) };
+      }
       const id = `demo-case-family-${Math.random().toString(36).slice(2, 6)}`;
       const now = new Date();
       store.docs.set(`cases/${id}`, {

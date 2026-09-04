@@ -424,7 +424,12 @@ async function load() {
       const payload = {
         firstName: val('firstName'), lastName: val('lastName'), dob: val('dob'), phone: val('phone'), address: val('address'),
       };
-      if (which === 'family') { payload.email = val('email'); payload.relation = val('relation'); }
+      if (which === 'family') {
+        payload.email = val('email'); payload.relation = val('relation');
+        // Set by the confirm button below, for an address that already
+        // belongs to a client here (audit, 2026-09-03).
+        if (go.dataset.confirm === '1') payload.confirmExisting = true;
+      }
       if (!payload.firstName) { if (said) said.textContent = 'First name, please.'; return; }
       if (which === 'family' && !payload.email) { if (said) said.textContent = 'The email they will sign in with, please.'; return; }
       go.disabled = true;
@@ -437,6 +442,20 @@ async function load() {
           body: JSON.stringify(payload),
         });
         const out = await res.json().catch(() => ({}));
+        if (res.status === 409 && out.existing && said) {
+          // The address already has a case here. Say so, and offer one
+          // button that sends the same form again as confirmed.
+          said.textContent = `${out.error} `;
+          const yes = document.createElement('button');
+          yes.type = 'button';
+          yes.className = 'btn quiet';
+          yes.setAttribute('data-open-confirm', which);
+          yes.textContent = 'Yes, it is them';
+          yes.addEventListener('click', () => { go.dataset.confirm = '1'; go.click(); });
+          said.appendChild(yes);
+          go.disabled = false;
+          return;
+        }
         if (!res.ok || !out.id) throw new Error(out.error || `Failed (${res.status})`);
         location.href = `/admin-case.html?id=${encodeURIComponent(out.id)}`;
       } catch (err) {

@@ -684,8 +684,8 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         rows.push([
           when ? when.toLocaleDateString('en-CA') : '',   // YYYY-MM-DD
           when ? when.toLocaleTimeString('en-US') : '',
-          d.role === 'admin' ? 'Advocate' : 'Client',
-          d.text || '',
+          d.role === 'admin' ? 'Advocate' : d.role === 'question' ? 'Question' : 'Client',
+          d.quote ? `Re: ${d.quote}\n${d.text || ''}` : (d.text || ''),
           d.attachment?.name || '',
           d.attachment?.url || '',
         ]);

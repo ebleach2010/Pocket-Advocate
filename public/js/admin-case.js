@@ -570,20 +570,24 @@ function render(el) {
             //
             // What is left on this page is one thing, said once: text you edit
             // and then send.
-            '<div class="panel">',
-            '  <h3>Duty of care</h3>',
-            '  <p class="dim small">A draft you can edit before it goes anywhere. Also on the',
-            '    composer in Chat, so it is one tap away when you want it.</p>',
-            // "Draft it" only means anything if you have already read the
-            // heading above it, and he scans buttons, not headings.
-            '  <button class="btn" data-duty>⚕️ Draft a duty of care note</button>',
-            '</div>',
+            // His own case (2026-09-03): nobody to send a duty of care note
+            // to, so the panel is not built there.
+            ...(data.self ? [] : [
+              '<div class="panel">',
+              '  <h3>Duty of care</h3>',
+              '  <p class="dim small">A draft you can edit before it goes anywhere. Also on the',
+              '    composer in Chat, so it is one tap away when you want it.</p>',
+              // "Draft it" only means anything if you have already read the
+              // heading above it, and he scans buttons, not headings.
+              '  <button class="btn" data-duty>⚕️ Draft a duty of care note</button>',
+              '</div>',
+            ]),
           ].join('');
           // Always present, never suggested. It says nothing about this client
           // and looks identical on every case; Eric decides when he is
           // obligated, and this only saves him writing the same thing under
           // pressure at the moment he is least able to.
-          pane.querySelector('[data-duty]').addEventListener('click', () => openDutyDraft({
+          pane.querySelector('[data-duty]')?.addEventListener('click', () => openDutyDraft({
             tz: data.clientTz || '',
             onSend: (text) => chatSend?.(text),
           }));
@@ -688,6 +692,7 @@ function render(el) {
   }
 
   unansweredSelf = !!data.self;
+  ownCase = !!data.self;
   const chat = mountChat({
     // Show what is already set, so it reads as a state and not as a button
     // that fires and forgets.
@@ -701,7 +706,9 @@ function render(el) {
     parentPath: ['cases', caseId],
     user,
     myRole: 'admin',
-    saveUid: c.clientUid,
+    // His own case: the saved shelf is his (audit, 2026-09-03); a null uid
+    // pointed the long-press save at profiles/null.
+    saveUid: c.self ? user.uid : c.clientUid,
     disabled: c.status === 'closed',
     notice: 'Chat ended when this case closed.',
     // Always there, on every case, saying nothing about anyone. The point is
@@ -955,7 +962,7 @@ function paintAgendaPage(pane) {
         <textarea data-atext rows="10" style="width:100%;"></textarea>
         <div class="row" style="gap:.5rem; margin-top:.4rem;">
           <button class="btn quiet" data-acopy>Copy</button>
-          <button class="btn quiet" data-asend>Send to client</button>
+          ${ownCase ? '' : '<button class="btn quiet" data-asend>Send to client</button>'}
         </div>
       </div>
     </div>`;
@@ -1060,7 +1067,7 @@ function paintAgendaPage(pane) {
     } catch { /* the textarea is right there to select by hand */ }
   });
 
-  pane.querySelector('[data-asend]').addEventListener('click', async (e) => {
+  pane.querySelector('[data-asend]')?.addEventListener('click', async (e) => {
     // The chat rejects messages over 2000 characters; a call summary that
     // long should be trimmed in the box first anyway.
     const text = pane.querySelector('[data-atext]').value.trim().slice(0, 1900);
@@ -1743,6 +1750,9 @@ let unKey = null;
 // chat that he has not answered, and asking again means answering there,
 // so the Ask again button has nothing to do.
 let unansweredSelf = false;
+// And the module-level painters that have no case doc in hand (the Agenda
+// page) read this: nothing on his own case sends to a client.
+let ownCase = false;
 function paintUnanswered(pane, rows, readAt) {
   if (!pane) return;
   const key = JSON.stringify([rows, readAt || null, unansweredSelf]);
@@ -3222,7 +3232,7 @@ async function listCaseFiles({ onProgress } = {}) {
     // at all - the second half of the same blind spot that lost Eric's
     // documents. They live under the case, so they belong on the case's page.
     ['chat', `cases/${caseId}/chat-files`],
-    ['saved', `profiles/${data.clientUid}/saved`],
+    ['saved', `profiles/${data.self ? user.uid : data.clientUid}/saved`],
   ];
   let done = 0;
   let files = 0;

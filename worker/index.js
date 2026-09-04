@@ -41,7 +41,7 @@ import { notifyUser } from './push.js';
 import { validateAction } from './advisor-acts.js';
 import {
   getAdvisorEffort, setAdvisorEffort,
-  runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy,
+  runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
 
@@ -57,15 +57,19 @@ export class AdvisorTurn extends WorkflowEntrypoint {
   async run(event, step) {
     const { job, kind, id, opts } = event.payload || {};
     if (!kind || !id) return 'bad payload';
-    await step.do('turn', { retries: { limit: 0 }, timeout: '30 minutes' }, async () => {
-      if (job === 'draft') {
-        const r = opts || {};
-        await runDraft(this.env, kind, id, r.instruction || '', !!r.revise, r.base || '');
-      } else {
-        await runAnalysis(this.env, kind, id, (opts && opts.mediaList) || null, opts || {});
-      }
-      return 'done';
-    });
+    // Under the case's turn policy like every other entry (2026-09-03): his
+    // own case must never reach the model on the client brief, however it
+    // gets there.
+    await step.do('turn', { retries: { limit: 0 }, timeout: '30 minutes' }, () =>
+      withCasePolicy(this.env, kind, id, async () => {
+        if (job === 'draft') {
+          const r = opts || {};
+          await runDraft(this.env, kind, id, r.instruction || '', !!r.revise, r.base || '');
+        } else {
+          await runAnalysis(this.env, kind, id, (opts && opts.mediaList) || null, opts || {});
+        }
+        return 'done';
+      }));
     return 'done';
   }
 }
@@ -1897,7 +1901,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-03-own-case-oriented-to-him';
+const BUILD_TAG = 'v2026-09-03-own-case-walled-off';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1905,7 +1909,7 @@ const BUILD_TAG = 'v2026-09-03-own-case-oriented-to-him';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.84';
+const VERSION = '2.85';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2917,8 +2921,10 @@ export async function runChatDigest(env, now = Date.now()) {
       // His own case: every message on it is his, and there is no inbox to
       // digest into. Marked emailed so the query stops returning it.
       if (row.data.self) {
-        await patchDoc(env, `${coll}/${row.id}`, { lastMessage: { ...lm, emailed: true } },
-          { mask: ['lastMessage'] }).catch(() => {});
+        // The one-field mask, like the write below: spreading lm back would
+        // retype its ts from timestamp to string (audit, 2026-09-03).
+        await patchDoc(env, `${coll}/${row.id}`, { lastMessage: { emailed: true } },
+          { mask: ['lastMessage.emailed'] }).catch(() => {});
         continue;
       }
       if (now - new Date(lm.ts).getTime() < DIGEST_MIN_AGE_MS) continue;
@@ -3294,6 +3300,9 @@ async function handleNotify(request, env, ctx) {
     // read still hears it (2026-09-03): his entries ARE the case material,
     // so each one flags a pass the way a client's message does.
     if (doc.data.self) {
+      // Only he can nudge his own case (audit, 2026-09-03): a stranger with
+      // the id was answered ok here and could queue a read at will.
+      if (!isAdmin) return json({ error: 'Not your thread' }, 403);
       refreshAdvisor(env, ctx, kind, id);
       return json({ ok: true, self: true });
     }
@@ -3521,6 +3530,10 @@ async function handleChatReact(request, env) {
 
   const msg = await getDoc(env, ctx.path);
   if (!msg) return json({ error: 'No such message' }, 404);
+  // A question put to him on his own case is answered, not reacted to
+  // (audit, 2026-09-03): a status hung on one read as a message to nobody.
+  if (msg.data.role === 'question')
+    return json({ error: 'That is a question to answer, not a message to react to.' }, 400);
 
   // A STATUS IS NOT A REACTION, and this is where that distinction was
   // missing. An emoji is a response to somebody else's words, so reacting to
@@ -3792,7 +3805,7 @@ async function handleSaved(request, env, url) {
   const existing = await getDoc(env, path).catch(() => null);
   await patchDoc(env, path, {
     text: String(msg.data.text || '').slice(0, 2000),
-    role: msg.data.role === 'admin' ? 'admin' : 'client',
+    role: msg.data.role === 'admin' ? 'admin' : msg.data.role === 'question' ? 'question' : 'client',
     attachmentName: msg.data.attachment?.name || null,
     sentAt: msg.data.ts || null,
     note,
@@ -5812,7 +5825,8 @@ async function handleChatReply(request, env, ctx) {
   const id = typeof body?.id === 'string' ? body.id : '';
   const msgId = typeof body?.msgId === 'string' ? body.msgId : '';
   const text = typeof body?.text === 'string' ? body.text.trim() : '';
-  if (body?.kind !== 'case' || !id || !msgId) return json({ error: 'Bad request' }, 400);
+  if (body?.kind !== 'case' || !/^[\w-]{1,64}$/.test(id) || !/^[\w-]{1,64}$/.test(msgId))
+    return json({ error: 'Bad request' }, 400);
   if (!text || text.length > 2000) return json({ error: 'Message must be 1 to 2000 characters.' }, 400);
   const c = await getDoc(env, `cases/${id}`);
   if (!c) return json({ error: 'Not found' }, 404);
@@ -7392,6 +7406,12 @@ async function handleAdvisorAction({ request, env, ctx, user, profile, body, kin
     const draft = typeof body?.draft === 'string' ? body.draft.slice(0, 4000) : '';
     const sent = typeof body?.sent === 'string' ? body.sent.slice(0, 2200) : '';
     if (!draft || !sent) return json({ error: 'Bad feedback' }, 400);
+    if (onOwnCase()) {
+      // His own case (2026-09-03): the thread is his log, not his client
+      // voice. Clear the served draft and teach the profile nothing.
+      await patchDoc(env, statePath, { draft: null, draftStatus: null }, { mask: ['draft', 'draftStatus'] });
+      return json({ ok: true, learned: false });
+    }
     const changed = draft.trim() !== sent.trim();
     if (changed) {
       await patchDoc(env, `advisorStyle/profile/edits/${crypto.randomUUID()}`, {
@@ -7667,6 +7687,9 @@ async function handleAdvisorAction({ request, env, ctx, user, profile, body, kin
   }
 
   if (action === 'draft') {
+    // His own case has nobody to write to (2026-09-03); the button is gone
+    // from the panel there, and the route says so to anything else.
+    if (onOwnCase()) return json({ error: 'Your own case has nobody to write to.' }, 409);
     const instruction = typeof body?.instruction === 'string' ? body.instruction.slice(0, 1000) : '';
     // revise: rewrite the existing draft per the instruction instead of
     // starting fresh; `base` carries the draft box's current text so a
@@ -8871,6 +8894,15 @@ async function handleFamilyCase(request, env) {
   if (!who.name) return json({ error: 'Their name, please.' }, 400);
   const relation = typeof body?.relation === 'string' ? body.relation.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
   const uid = await lookupUidByEmail(env, email).catch(() => null);
+  // A typed address that already owns a case here is most likely a typo,
+  // and a typo would hand that client the relative's name, date of birth,
+  // phone, address, chat and files (audit, 2026-09-03). Refused once; he
+  // confirms it really is them and the form sends again with the flag.
+  if (uid && body?.confirmExisting !== true) {
+    const theirs = await queryDocs(env, 'cases', [['clientUid', 'EQUAL', uid]], 1).catch(() => []);
+    if (theirs.length)
+      return json({ error: 'That address already belongs to a client with a case here. If it really is them, confirm below.', existing: true }, 409);
+  }
   const now = new Date();
   const caseId = crypto.randomUUID();
   await patchDoc(env, `cases/${caseId}`, {
