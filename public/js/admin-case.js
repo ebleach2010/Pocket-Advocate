@@ -687,11 +687,14 @@ function render(el) {
     }
   }
 
+  unansweredSelf = !!data.self;
   const chat = mountChat({
     // Show what is already set, so it reads as a state and not as a button
     // that fires and forgets.
     onStatus: (id) => { if (statusPick && statusPick.value !== id) statusPick.value = id; },
     container: folder.el('chat').querySelector('#chat'),
+    // His own case: the box takes notes and answers, not messages (2026-09-03).
+    placeholder: data.self ? 'Add a note, or answer a question above…' : undefined,
     // Show what is already set, so the control reads as a state rather than
     // as a button that fires and forgets.
     onStatus: (id) => { if (statusPick && statusPick.value !== id) statusPick.value = id; },
@@ -820,6 +823,8 @@ function render(el) {
     id: caseId,
     user,
     onSend: (text) => chat.send(text),
+    // His own case: nothing on the panel sends to a client (2026-09-03).
+    self: !!data.self,
     // Drafts live on their own page, not buried inside the panel.
     draftContainer: folder.el('drafts').querySelector('#draft-panel'),
     // The differential renders onto its own page too.
@@ -1734,9 +1739,13 @@ function paintSummary(pane) {
 }
 
 let unKey = null;
+// His own case (2026-09-03): the list is the questions put to him in his
+// chat that he has not answered, and asking again means answering there,
+// so the Ask again button has nothing to do.
+let unansweredSelf = false;
 function paintUnanswered(pane, rows, readAt) {
   if (!pane) return;
-  const key = JSON.stringify([rows, readAt || null]);
+  const key = JSON.stringify([rows, readAt || null, unansweredSelf]);
   if (key === unKey) return;    // a poll that changed nothing must not steal a tap
   unKey = key;
 
@@ -1754,7 +1763,7 @@ function paintUnanswered(pane, rows, readAt) {
     <div class="panel">
       <h3>Unanswered</h3>
       ${open.length ? `
-        <p class="dim small">Things you asked for that have not come back.
+        <p class="dim small">${unansweredSelf ? 'Questions put to you in your chat that you have not answered yet.' : 'Things you asked for that have not come back.'}
           Oldest first.</p>
         <ul class="un-list">
           ${open.map((r) => `
@@ -1766,7 +1775,7 @@ function paintUnanswered(pane, rows, readAt) {
                 ${r.times > 1 ? `<span class="un-times">${r.times}×</span>` : ''}
               </p>
               <div class="un-acts">
-                <button class="btn quiet" data-again="${esc(r.ask)}">Ask again</button>
+                ${unansweredSelf ? '' : `<button class="btn quiet" data-again="${esc(r.ask)}">Ask again</button>`}
                 <button class="btn ghost" data-done="${esc(r.ask)}">Got it</button>
               </div>
             </li>`).join('')}

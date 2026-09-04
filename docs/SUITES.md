@@ -186,6 +186,29 @@ claim; the drive fills both forms. An Edit beside the name on his own
 overview (case-update action `details`, his own case and a family case
 only) corrects the four details in place; S27-S28 run and pin it.
 
+Oriented to him (Eric, 2026-09-03: "It's asking me to fax shit like I'm
+working for a client... An entirely different set of instructions. If it
+has questions it wants answered it can ask in the chat. I can press reply
+to that question to answer it."): every turn on his own case opens with its
+own brief (`SELF_VOICE`, picked by `voice()` from the turn policy where the
+turn is built) and the assessment runs on `SELF_ASSESSMENT`, whole, in place
+of the client one: same machine-read tail, a middle addressed to him about
+himself, no advocacy chores, and a "Questions for you" section. When a pass
+finishes, `askInChat` puts those questions into his chat as Worker-only
+question rows (`role: 'question'`, `from: 'reading'`), once each; the chat
+paints them on the other side with a purple rule and a Reply; Reply puts the
+question over the box and Send goes through `POST /api/chat/reply`, which
+writes his answer with `replyTo` and the quoted question (the browser rules
+allow a message five fields and no more), stamps the question answered, and
+wakes the read. The transcript names the questions it asked (`YOU ASKED
+[id=...]`) and which one an answer answers, the Unanswered page on his case
+lists the questions he has not answered yet (from the chat, not the model),
+and a note of his wakes the read the way a client's message does. S29-S38
+lift and run the brief, the transcript, the harvest, the ask, the reply
+route and the notify branch, and pin the chat, the panel, the demo and the
+styles; the drive taps Update, sees the two questions arrive, presses Reply,
+answers, and reads the answer back with the question quoted above it.
+
 ### Side doors, by typed code
 
 The old rooms still answer, as codes typed into either sign-in box - useful

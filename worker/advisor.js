@@ -190,6 +190,216 @@ needles)", because Eric is learning the territory as he goes, not copying
 your words. Never repeat a gloss. Glosses are for what ERIC reads: never put
 one inside anything that leaves as his own message to a client.`;
 
+/**
+ * HIS OWN CASE (Eric, 2026-09-03: "The personal case needs to be oriented
+ * towards me. It's asking me to fax shit like I'm working for a client. It
+ * needs context that it's about me. An entirely different set of
+ * instructions."). Every turn on his own case opens with this brief instead
+ * of VOICE, and the assessment on it runs on SELF_ASSESSMENT below instead
+ * of the client one. voice() picks by the turn policy, at build time, so no
+ * prompt in this file has to know which case it is on.
+ *
+ * The two dash characters in the writing rule are written as escapes so the
+ * source carries none of them; the model still sees the characters.
+ */
+const SELF_VOICE = `You are reading for Eric, about Eric. He is a professional
+patient advocate working toward his BCPA, an autoimmune encephalitis survivor,
+and on this case he is the PATIENT: this is his own condition, his own log,
+his own records. There is no client. Nobody is on the other end of the chat.
+Every line in it is Eric writing down what is happening to him, as data, and
+every file is his own.
+
+Speak to him directly, as one person, in the second person, the way a sharp
+colleague who knows his history would. He can take a blunt read. He is not a
+physician and neither are you: you are the second set of eyes he cannot be
+for himself while his cognition is poor. Orientation, pattern, and the next
+thing to do; never a diagnosis handed down, never treatment instructions. Say
+so once at most, and only if he seems about to act on a read as if it were a
+prescription.
+
+His history is evidence. He has been through this before, several times.
+Assume he knows the territory of his own illness better than a first-time
+patient and worse than his neurologist, and that a relapse degrades exactly
+the faculties he would use to track it. Short lines, concrete dates, plain
+words. When an entry reads worse than the one before it, say that you
+noticed.
+
+What a move looks like on this case: something HE does for HIMSELF. Ask his
+neurologist for X at the next visit; message the clinic about Y; write down Z
+every morning; go to the ER if A or B happens. Never assign him a task from
+the advocacy side of his life: no faxing, no records requests on someone's
+behalf, no coaching on how to handle a patient, no reports, no billing, no
+hours. Any records he needs are his own to ask for, once, from his own
+portal, and you say so only when a specific record would change what he does
+next.
+
+If you need something from him, ASK HIM, as a plain question, in the section
+for questions. He answers in the chat. Never bury a question inside a
+paragraph, and never ask one you could answer from his log or his files.
+
+HOW TO WRITE, always: never use an em dash or en dash (the long "\u2014" or
+"\u2013") anywhere, in anything. Use a comma, a period, or parentheses
+instead. A plain hyphen inside a range like 3-5 days is fine. Short bits,
+never essays. The first time any medical term or abbreviation appears, follow
+it with a plain-words gloss in parentheses, e.g. "paresthesia (pins and
+needles)". Never repeat a gloss.`;
+
+/** The standing brief for the turn being built: his own brief on his own
+ *  case, the advisor brief everywhere else. Read from the policy, so the
+ *  caller cannot pick wrong. */
+const voice = () => (turnPolicy.getStore()?.self ? SELF_VOICE : VOICE);
+
+/**
+ * The assessment on his own case. Same machine-read tail as the client one
+ * (Key terms, Working line, Differential, Not answered, Corrections), so the
+ * harvesters read it unchanged; different middle, addressed to him about
+ * himself, and one section the client one does not have: "Questions for
+ * you", which the finish puts to him in his own chat, one bubble each
+ * (Eric, 2026-09-03: "If it has questions it wants answered it can ask in
+ * the chat. I can press reply to that question to answer it.").
+ */
+const SELF_ASSESSMENT = `Write your working read of Eric's own situation. He
+reads it on his phone, between entries in his own log, often with poor
+cognition, one section at a time.
+
+Use exactly these headings, in this order, as markdown \`##\` headings:
+
+## Right now
+## Plain English
+## What this could be
+## Worth investigating
+## Questions for you
+## What we know so far
+## What's missing
+## Ruled out
+## Watch for
+## Key terms
+## Working line
+## Differential
+## Not answered
+## Corrections
+
+"Right now": 2 to 4 short sentences, under 120 words, to him. If you have a
+previous read, open with what CHANGED since it (a new entry, a new signal, a
+shift in your read), then the single most useful thing for him to do next.
+This is a running commentary on his own week, not a report.
+
+"Plain English": the same read, said the way you would say it to a smart
+person whose head is not working well today. Under 150 words. Wrap every
+medical term he has not yet mastered in DOUBLE SQUARE BRACKETS the first
+time it appears, in "Right now" and here both, like [[myasthenia gravis]] or
+[[ganglionic AChR antibody]]. His panel paints each bracketed term a colour
+and paints its explanation here the same colour, so his eye pairs them
+without reading. Name the term in "Right now", explain it here, bracket it in
+both. Never bracket a term from his mastered list, and never bracket the same
+term twice in one section. Inside these two sections the brackets replace the
+parenthetical gloss; everywhere else the gloss rule stands.
+
+"What this could be": at most 4 bullets, one line each: possibility, then the
+one thing that would raise or lower it. His own history is evidence: a
+pattern that matches an earlier relapse of his says so, with the year.
+
+"Worth investigating": at most 5 bullets: a specific lab, image, record or
+appointment, what the result would settle either way, and how HE gets it
+started: who he asks (his neurologist, his PCP, the infusion clinic, his own
+portal), in what words, and the honest timeline. A move he cannot start
+himself is not a move. If one of his own records would change the next step,
+say which one and where it lives; otherwise leave records alone.
+
+"Questions for you": at most 4 questions, each on its own bullet, each a
+plain question to Eric about himself, ending in a question mark. Ask what
+would most sharpen the read next: a date, a dose, a symptom he has not
+characterised, what a doctor actually said, how today compares with
+yesterday. Most useful first. Only what you cannot get from his log or his
+files. These are put to him in his chat word for word, one bubble each, and
+he answers there. The transcript shows what you already asked as YOU ASKED
+lines and his answers as ERIC lines marked answering that id. Never ask again
+what stands unanswered. Never ask again what he answered, unless the answer
+left the point genuinely unclear, and then ask the narrower question. Never
+write a preamble, a heading or a parenthetical inside a bullet: just the
+question. If nothing is needed, write "- none".
+
+"What we know so far": the chart note, the thing he can hand a specialist
+about himself. This is a REFERENCE section and the only one with no length
+limit; completeness beats brevity here. Use \`###\` sub-headings, only the
+ones the material supports: History, Medications, Normal results, Abnormal
+results, Imaging, Procedures, This relapse. Facts from his log and his files
+only, each with its date where you have one. Never infer, never round, never
+fill a gap with a typical value. If a section has nothing, leave it out.
+
+"What's missing": at most 5 bullets. Gaps in the picture that would sharpen
+it: a result nobody has pulled, a date not pinned down, a symptom not yet
+characterised. Written as GAPS, not as questions; the questions go under
+"Questions for you".
+
+"Ruled out": what was genuinely on the list and is now off it, one line each,
+\`- Name: the one fact that killed it\`. Like "What we know so far" this is a
+cumulative record: keep every entry the case has earned, however many. Only
+things a specific result or a specific statement actually closed. Never move
+a possibility here because it became unfashionable in your own thinking, and
+never re-litigate something already on this list in a later section. Write
+"- Nothing is closed yet." when nothing has been.
+
+"Watch for": at most 4 bullets: the things that would change what he does
+today. A symptom that means the ER. A change that means calling the
+neurologist that day. A trend in his own entries that means his cognition is
+slipping and the tracking should go to someone else for a while. Each one
+concrete: what he would notice, then what to do about it. Write them so they
+still make sense to him on a bad day.
+
+"Key terms": Eric is learning the territory as he goes. Up to 5 medical terms
+or diagnoses central to THIS read that he has not yet learned, each on its
+own line as \`- Term [Category]: plain-words definition in one sentence, plus
+what it means for his next step if that matters\`, where Category is one of
+Condition, Symptom, Test or lab, Medication, Anatomy, Procedure, Concept.
+A Condition gets three more fields on the same line, pipe separated:
+\`- Name [Condition]: definition | Mechanism: what is physically going wrong |
+Treatment: what is actually done about it | Outlook: how it usually goes\`
+One sentence each, plain words, no hedging filler. Everything else gets the
+definition alone and no pipes. Never include a term from his mastered list,
+never repeat one already in his glossary. If nothing new, write "- none".
+
+The last four sections are machine-read and stripped before Eric sees the
+read (same as Key terms). Eric never sees them as text.
+
+"## Working line": exactly one line, 60 characters or fewer, plain words: the
+single most likely explanation right now. It gets printed on the front of a
+physical case folder, so write a label, not a sentence. No hedging, no
+percentage, no trailing punctuation. If the material cannot support one yet,
+write exactly: Still forming.
+
+"## Differential": up to 7 lines, most likely first, each exactly
+\`- Name [NN%]: why it fits | what would raise or lower it\`
+NN is YOUR confidence as a whole number, and the numbers must not add up to
+more than 100: whatever is left over is "not enough information", which early
+on is most of it. Only possibilities the record supports, and the record
+includes his answers in the chat and your private discussion with him.
+Confidence moves on exactly two things: diagnostic evidence, and points
+settled with him. A point conceded in either direction moves the numbers by
+as much as it actually bears on the ranking. Never move a number to be
+agreeable. Whenever a dangerous but treatable possibility is plausible at
+all, give it a row at its real low percentage, because that is the one worth
+chasing even at long odds. If you have nothing yet, write "- none yet".
+
+"## Not answered": on this case the app keeps this list itself, from the
+chat. Write exactly "- none".
+
+"## Corrections": OPTIONAL. Only when one of ERIC's own recent entries states
+a fact his own records contradict (a dose, a date, a result). Each line
+exactly \`- <id> | what is wrong, one sentence | the entry with the fact
+repaired\` where <id> is the id on his line in the transcript (ERIC [id=...]).
+The repaired entry keeps his wording, his length and his tone, changing ONLY
+what was factually wrong. Facts only, never style or phrasing. Write "- none"
+or leave the section out when there is nothing to fix.
+
+Be specific or say nothing. "Consider further workup" is worthless. If the
+material is too thin for a section, one line saying what you'd need.
+
+Carry forward what still holds. "What we know so far" and "Ruled out"
+especially are cumulative records, not a fresh take each pass: reproduce what
+your previous read had, add what is new, and only remove something when his
+log has actually contradicted it.`;
+
 /** Raw API errors are unreadable on a phone; store plain words instead. */
 function friendly(err) {
   const m = String(err?.message || err);
@@ -661,7 +871,13 @@ async function recentMessages(env, kind, id) {
 function transcript(rows) {
   return rows
     .map((r) => {
-      const who = r.data.role === 'admin' ? `ERIC [id=${r.id}]` : 'CLIENT';
+      // His own case (2026-09-03): the read's own questions sit in the thread
+      // as question rows, and his answer to one names the question it
+      // answers, so the next pass can pair them without guessing.
+      const who = r.data.role === 'question' ? `YOU ASKED [id=${r.id}]`
+        : r.data.role === 'admin'
+          ? `ERIC [id=${r.id}]${r.data.replyTo ? ` (answering id=${r.data.replyTo})` : ''}`
+          : 'CLIENT';
       const parts = [];
       if (r.data.text) parts.push(r.data.text);
       const att = r.data.attachment;
@@ -2331,6 +2547,75 @@ function harvestUnanswered(text, prior) {
 }
 
 /**
+ * "## Questions for you", his own case only: the questions the read wants
+ * answered, one per bullet, at most four. Not stripped (he reads them on the
+ * panel too); the finish ALSO puts them to him in his chat, which is where he
+ * answers (Eric, 2026-09-03: "If it has questions it wants answered it can
+ * ask in the chat. I can press reply to that question to answer it.").
+ */
+function harvestQuestions(text) {
+  const m = sectionMatch(text, 'Questions for you');
+  if (!m) return [];
+  const out = [];
+  for (const line of m[1].split('\n')) {
+    const q = line.replace(/^\s*[-*]\s*/, '').replace(/^\d+[.)]\s*/, '').trim().slice(0, 400);
+    if (!q || /^none( yet)?\.?$/i.test(q) || q.length < 8) continue;
+    if (out.some((x) => flatText(x) === flatText(q))) continue;
+    out.push(q);
+    if (out.length >= 4) break;
+  }
+  return out;
+}
+
+/**
+ * Put the read's questions to him in his own chat, once each. A question
+ * already standing in the thread, answered or not, is not asked again by
+ * text: the transcript shows the read what stands, and it can ask the
+ * narrower question if it truly needs to. Worker-only rows: role 'question',
+ * from 'reading'. Nothing pings, nothing emails; the shelf line follows.
+ */
+async function askInChat(env, id, questions, rows) {
+  if (!questions.length) return 0;
+  const standing = new Set(rows.filter((r) => r.data.role === 'question').map((r) => flatText(r.data.text)));
+  let n = 0;
+  let last = '';
+  for (const q of questions) {
+    if (standing.has(flatText(q))) continue;
+    const now = new Date();
+    await patchDoc(env, `cases/${id}/chat/${crypto.randomUUID()}`, {
+      from: 'reading', role: 'question', text: q, ts: now, askedAt: now,
+    });
+    standing.add(flatText(q));
+    last = q;
+    n++;
+  }
+  if (n) {
+    await patchDoc(env, `cases/${id}`, {
+      lastMessage: { text: `❓ ${last}`.slice(0, 120), from: 'reading', role: 'question', ts: new Date(), emailed: true },
+    }, { mask: ['lastMessage'] }).catch(() => {});
+  }
+  return n;
+}
+
+/**
+ * His own case's Unanswered list comes from the chat, not from the model: a
+ * question row nobody has answered (no answer stamped on it, and no row of
+ * his naming it) is an open one, oldest first.
+ */
+function unansweredFromChat(rows) {
+  const answered = new Set(rows.filter((r) => r.data.replyTo).map((r) => r.data.replyTo));
+  return rows
+    .filter((r) => r.data.role === 'question' && r.data.text && !r.data.answeredAt && !answered.has(r.id))
+    .map((r) => ({
+      ask: String(r.data.text).slice(0, 300),
+      firstAskedAt: r.data.ts ? new Date(r.data.ts.toDate ? r.data.ts.toDate() : r.data.ts) : new Date(),
+      times: 1,
+      answered: false,
+    }))
+    .slice(0, 12);
+}
+
+/**
  * "## Corrections": `- <msgId> | what is wrong | the repaired message`, one
  * row per message of Eric's that got a fact wrong. Rows are resolved against
  * his real messages (a correction that cannot point at one is noise) and
@@ -3502,6 +3787,12 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     // N files" from server truth on ANY trigger (the old local counter only
     // knew about taps made in that same browser session, and froze otherwise).
     await setState(env, kind, id, { mediaPlan: media.included.slice(0, 40) }).catch(() => {});
+    // His own case: the read is about him, and the words around the material
+    // say so (2026-09-03). The finish reads the same flag off the flight.
+    const self = !!turnPolicy.getStore()?.self;
+    const subj = self ? 'Eric' : 'this client';
+    const logNow = self ? 'Eric\'s whole log' : 'the full conversation';
+    const logSoFar = self ? 'Eric\'s log' : 'the conversation';
 
     // The turn does NOT run here. It is submitted to the Batches API and the
     // cron's poll folds the result in when it lands; see submitTurnBatch for
@@ -3509,7 +3800,10 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     const turn = turnRequest({
       effort: passEffort,
       maxTokens: passTokens,
-      system: [{ type: 'text', text: `${VOICE}
+      // His own case reads on its own instructions, whole (Eric, 2026-09-03:
+      // "an entirely different set of instructions"), not on the client
+      // ones with a block appended.
+      system: [{ type: 'text', text: self ? `${SELF_VOICE}\n\n${SELF_ASSESSMENT}` : `${VOICE}
 
 Write Eric's working assessment of this client. He reads it on a phone beside
 a live chat, one section at a time, flipping between them.
@@ -3696,7 +3990,7 @@ the thread has actually contradicted it.`, cache: true },
       // one: the standing instructions above are identical from call to
       // call, and gluing the glossary and the profile onto them meant the
       // advisor learning anything busted the cache built to protect them.
-      { type: 'text', text: `${knowledgeNote(knowledge)}${stanceNote(style)}${style.voice ? `
+      { type: 'text', text: `${knowledgeNote(knowledge)}${stanceNote(style)}${style.voice && !self ? `
 
 Two of your sections leave this page as messages FROM ERIC: "Worth asking" and "What's missing". He presses one line and it goes to the client as it stands. Write those two in his voice, from this profile of how he writes:
 ${style.voice}` : ''}` || ' ' }],
@@ -3709,11 +4003,11 @@ ${style.voice}` : ''}` || ' ' }],
             // it carries weight: what Eric settled with the advisor there has
             // to move this assessment, or the advisor chat is decoration.
             text: (passType === 'delta'
-              ? `Here is your working assessment of this client. It is your memory of the whole case: every earlier message, every file you have read, and everything you and Eric have settled are already folded into it.\n\n<previous>\n${priorText}\n</previous>\n\nThe machine rows you filed after your last pass:\n\n<filed>\nWorking line: ${p.workingDx || 'Still forming'}\nDifferential:\n${(Array.isArray(p.differential) ? p.differential : []).map((r) => `- ${r.name} [${r.pct}%]: ${r.why} | ${r.moves}`).join('\n') || '- none yet'}\n</filed>\n\nSince that assessment, ${fresh.length} new message${fresh.length === 1 ? '' : 's'} ${catchup ? 'are shown this pass (the oldest unread; ' + newerLeft + ' newer ones reach you next pass, so do not treat this as the end of the story)' : 'arrived'}. ${omitted} earlier messages are not shown this pass; your previous assessment already accounts for them. The last ${context.length} messages you have already read are shown first so you can hear the turn of the conversation:\n\n<already_read>\n${transcript(context) || '(none)'}\n</already_read>\n\n<new_messages>\n${transcript(fresh) || '(no new chat; new files or discussion below)'}\n</new_messages>\n${qaBlock(qa)}\nThis is an update pass, not a fresh read. Revise the assessment; do not restart it. Keep every section, and rewrite only what the new material changes:\n\n- Output the complete assessment, every heading, in the required order.\n- A section the new material does not touch comes back from your previous assessment unchanged, word for word. Do not rephrase for variety.\n- "What we know so far" and "Ruled out" are cumulative records: never drop a dated fact because it is old, and never rewrite a value you cannot see this pass. If the new material adds NOTHING to one of these two sections, output just its heading followed by the single word: unchanged. I will keep your previous version of that section exactly as it was. If anything is new, reproduce the section in full with the additions.\n- Open "Right now" with what the new material changed. If nothing of substance changed, say so in one line and leave the rest standing.\n- Re-emit ## Working line, ## Differential, ## Not answered, and ## Corrections in their exact formats every pass. Start the Differential from the filed rows above and move a number only by what the new material actually settles; do not re-derive the list from scratch.\n- If a new message contradicts something in your previous assessment, the new message wins. Change the read, and say plainly in "Right now" what changed and why.`
+              ? `Here is your working assessment of ${subj}. It is your memory of the whole case: every earlier message, every file you have read, and everything you and Eric have settled are already folded into it.\n\n<previous>\n${priorText}\n</previous>\n\nThe machine rows you filed after your last pass:\n\n<filed>\nWorking line: ${p.workingDx || 'Still forming'}\nDifferential:\n${(Array.isArray(p.differential) ? p.differential : []).map((r) => `- ${r.name} [${r.pct}%]: ${r.why} | ${r.moves}`).join('\n') || '- none yet'}\n</filed>\n\nSince that assessment, ${fresh.length} new message${fresh.length === 1 ? '' : 's'} ${catchup ? 'are shown this pass (the oldest unread; ' + newerLeft + ' newer ones reach you next pass, so do not treat this as the end of the story)' : 'arrived'}. ${omitted} earlier messages are not shown this pass; your previous assessment already accounts for them. The last ${context.length} messages you have already read are shown first so you can hear the turn of the conversation:\n\n<already_read>\n${transcript(context) || '(none)'}\n</already_read>\n\n<new_messages>\n${transcript(fresh) || '(no new chat; new files or discussion below)'}\n</new_messages>\n${qaBlock(qa)}\nThis is an update pass, not a fresh read. Revise the assessment; do not restart it. Keep every section, and rewrite only what the new material changes:\n\n- Output the complete assessment, every heading, in the required order.\n- A section the new material does not touch comes back from your previous assessment unchanged, word for word. Do not rephrase for variety.\n- "What we know so far" and "Ruled out" are cumulative records: never drop a dated fact because it is old, and never rewrite a value you cannot see this pass. If the new material adds NOTHING to one of these two sections, output just its heading followed by the single word: unchanged. I will keep your previous version of that section exactly as it was. If anything is new, reproduce the section in full with the additions.\n- Open "Right now" with what the new material changed. If nothing of substance changed, say so in one line and leave the rest standing.\n- Re-emit ## Working line, ## Differential, ## Not answered, and ## Corrections in their exact formats every pass. Start the Differential from the filed rows above and move a number only by what the new material actually settles; do not re-derive the list from scratch.\n- If a new message contradicts something in your previous assessment, the new message wins. Change the read, and say plainly in "Right now" what changed and why.`
               : prior
-                ? `Here is your previous assessment of this client:\n\n<previous>\n${priorText}\n</previous>\n\nHere is the full conversation as it now stands:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nUpdate the assessment. Carry forward what still holds, revise what the new messages change, and say explicitly if something new contradicts an earlier read.${compacting ? `\n\nYour previous assessment has grown long. This pass, consolidate "What we know so far" without losing information: merge duplicate rows, collapse repeated normal results into one dated range (for example "CBC normal x4, Jun 3 to Jul 20"), and keep every abnormal result, every medication change, and every date as its own line. Consolidation means shorter, never emptier: anything a specialist would ask about stays.` : ''}`
-                : `Here is the conversation so far:\n\n<transcript>\n${chat || '(no messages yet; the case material is in the attached files)'}\n</transcript>\n${qaBlock(qa)}\nWrite the first assessment.`)
-              + (qa.length ? `\n\nThe discussion with Eric is part of the case record. A conclusion he reached with you there, a direction he gave, or a possibility you two raised or sank moves this assessment and the Differential section exactly as if he had said it in the client thread. Anything conceded in that discussion, by you or by him, is settled unless new evidence reopens it: move the differential by as much as the conceded point actually bears on it, no more and no less. If that discussion changed your read since the previous assessment, say so in "Right now".` : '')
+                ? `Here is your previous assessment of ${subj}:\n\n<previous>\n${priorText}\n</previous>\n\nHere is ${logNow} as it now stands:\n\n<transcript>\n${chat}\n</transcript>\n${qaBlock(qa)}\nUpdate the assessment. Carry forward what still holds, revise what the new messages change, and say explicitly if something new contradicts an earlier read.${compacting ? `\n\nYour previous assessment has grown long. This pass, consolidate "What we know so far" without losing information: merge duplicate rows, collapse repeated normal results into one dated range (for example "CBC normal x4, Jun 3 to Jul 20"), and keep every abnormal result, every medication change, and every date as its own line. Consolidation means shorter, never emptier: anything a specialist would ask about stays.` : ''}`
+                : `Here is ${logSoFar} so far:\n\n<transcript>\n${chat || '(no messages yet; the case material is in the attached files)'}\n</transcript>\n${qaBlock(qa)}\nWrite the first assessment.`)
+              + (qa.length ? `\n\nThe discussion with Eric is part of the case record. A conclusion he reached with you there, a direction he gave, or a possibility you two raised or sank moves this assessment and the Differential section exactly as if he had said it in ${self ? 'his log' : 'the client thread'}. Anything conceded in that discussion, by you or by him, is settled unless new evidence reopens it: move the differential by as much as the conceded point actually bears on it, no more and no less. If that discussion changed your read since the previous assessment, say so in "Right now".` : '')
               + dxOverrideNote(state)
               + bookkeepingNote(state, { delta: passType === 'delta' })
               + economicsNote(econ)
@@ -3736,7 +4030,7 @@ ${style.voice}` : ''}` || ' ' }],
       batchCtx: {
         batchId, customId, submittedAt: new Date(),
         passType, catchup, newerLeft, freshMsgs: fresh.length,
-        effort: passEffort, auto, skipMedia,
+        effort: passEffort, auto, skipMedia, self,
         newestTs: newestTs ? new Date(newestTs) : null,
         chunkThroughTs: (() => {
           if (!(passType === 'delta' && catchup && fresh.length)) return null;
@@ -3825,6 +4119,9 @@ async function finishAnalysis(env, kind, id, ctx, message) {
   const cover = harvestWorkingLine(await harvestKeyTerms(env, analysis));
   const dx = harvestDifferential(cover.text, p.differential);
   const un = harvestUnanswered(dx.text, p.unanswered);
+  // His own case keeps its Unanswered list from the chat itself: the
+  // questions the read put there that he has not answered (2026-09-03).
+  if (ctx.self) un.unanswered = unansweredFromChat(rows);
   const corr = harvestCorrections(un.text, rows, p.corrections);
   // Stamps for the shelf badges. A differential that came back identical is
   // not news, so its stamp holds rather than moving; a badge that lights on
@@ -3891,6 +4188,14 @@ async function finishAnalysis(env, kind, id, ctx, message) {
       at: new Date(),
     },
   });
+  // His own case: the questions the read wants answered go into his chat,
+  // one bubble each, after the read itself is saved. He answers them there
+  // with Reply (2026-09-03). Best effort: a question that fails to post is
+  // still on the panel.
+  if (ctx.self && kind === 'case') {
+    await askInChat(env, id, harvestQuestions(finalText), rows)
+      .catch((err) => console.warn('own-case questions:', err.message || err));
+  }
   // Mirror the cover so the dashboard shelf paints every folder from one
   // read. It lands on caseMeta, which is Worker-only by rule, NOT on the
   // client-readable case doc: a working diagnosis is Eric's private
@@ -4084,7 +4389,7 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
       // being thought about, and the panel had nothing to go on.
       onBeat: () => patchDoc(env, `${statePath(kind, id)}/qa/${qaId}`,
         { progressAt: new Date() }, { mask: ['progressAt'] }).catch(() => {}),
-      system: [{ type: 'text', cache: true, text: `${VOICE}
+      system: [{ type: 'text', cache: true, text: `${voice()}
 
 Eric is asking you a direct question about this client. Answer it and stop:
 under 120 words unless the question itself demands more. Don't re-summarise
@@ -4249,7 +4554,7 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
       onBeat: () => setState(env, kind, id, { draftProgressAt: new Date() }).catch(() => {}),
       // The visible draft is short, but thinking spends from the same budget.
       maxTokens: 16000,
-      system: [{ type: 'text', text: `${VOICE}
+      system: [{ type: 'text', text: `${voice()}
 
 Write the next message for Eric to send to this client, as Eric, in his voice.
 
@@ -4432,7 +4737,7 @@ export async function runAppeal(env, kind, id, appeal, revise = false, base = ''
       noStream,
       onBeat: () => setState(env, kind, id, { appealProgressAt: new Date() }).catch(() => {}),
       maxTokens: 20000,
-      system: [{ type: 'text', text: `${VOICE}
+      system: [{ type: 'text', text: `${voice()}
 
 You are writing an insurance appeal letter for Eric to file on his client's
 behalf. He is their authorised representative. The letter goes out over his
@@ -4613,7 +4918,7 @@ export async function runCallNotes(env, kind, id, instruction, revise = false, b
       system: [{
         type: 'text',
         cache: true,
-        text: `${VOICE}
+        text: `${voice()}
 
 Write CALL NOTES for Eric: a working document for his own eyes only, to have open during his next call with this client. It is never sent to the client, but write nothing you would be ashamed for the client to read over his shoulder.
 
@@ -4834,7 +5139,7 @@ export async function runCallDoc(env, kind, id, {
       system: [{
         type: 'text',
         cache: true,
-        text: `${VOICE}
+        text: `${voice()}
 
 Build Eric a CALL DOCUMENT: the single sheet he will have open, and read from, while he is on the phone with this client. He is a patient advocate, not a clinician. It is for his eyes only and is never sent to anyone.
 

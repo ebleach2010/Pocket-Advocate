@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.83';
+export const VERSION = '2.84';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '2.83';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS OWN CASE, ORIENTED TO HIM (Eric, 2026-09-03: "It needs context that
+    // it's about me. An entirely different set of instructions. If it has
+    // questions it wants answered it can ask in the chat. I can press reply
+    // to that question to answer it."). Admin only; the client list stays
+    // empty.
+    version: '2.84',
+    quiet: true,
+    client: [],
+    admin: [
+      'Your own case reads about you now, on its own instructions: no client, no chores from the advocacy side, moves you can make for yourself, and a Watch for list.',
+      'When the read has questions for you, they arrive in your chat as bubbles with a Reply. Reply, answer, Send: the answer sits under the question, and the next read uses it.',
+    ],
+  },
   {
     // THE DETAILS, EDITABLE (Eric, 2026-09-03, a screenshot of his own case
     // named after a test profile). Admin only; the client list stays empty.

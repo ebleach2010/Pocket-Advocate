@@ -15,6 +15,7 @@
 //   GET    /api/admin/personal/file       one personal file's bytes (admin token or a ten-minute signed link)
 //   POST   /api/admin/case-update  join link / milestones / close / contact: phone and home address (admin)
 //   POST   /api/admin/self-case    his own case: open it, or create it once, with his details (admin)
+//   POST   /api/chat/reply         his answer to a question the read put in his own chat (admin)
 //   POST   /api/admin/family-case  a free case for a family member; the email typed is their login (admin)
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
 //   POST   /api/advisor            private LLM advisor: analyse / ask / draft (admin)
@@ -851,6 +852,8 @@ export default {
         return await handleChatEdit(request, env);
       if (url.pathname === '/api/chat/pass' && request.method === 'POST')
         return await handleChatPass(request, env);
+      if (url.pathname === '/api/chat/reply' && request.method === 'POST')
+        return await handleChatReply(request, env, ctx);
       if (url.pathname === '/api/advisor' && request.method === 'POST')
         return await handleAdvisor(request, env, ctx);
       if (url.pathname === '/api/advisor/state' && request.method === 'GET')
@@ -1894,7 +1897,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-03-edit-own-details';
+const BUILD_TAG = 'v2026-09-03-own-case-oriented-to-him';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1902,7 +1905,7 @@ const BUILD_TAG = 'v2026-09-03-edit-own-details';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.83';
+const VERSION = '2.84';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3287,8 +3290,13 @@ async function handleNotify(request, env, ctx) {
     const doc = await getDoc(env, `cases/${id}`);
     if (!doc) return json({ error: 'Not found' }, 404);
     // His own case: nobody to tell, and nothing to stamp. The message is his
-    // own note to himself; the 💬 badge and the admin pings stay dark.
-    if (doc.data.self) return json({ ok: true, self: true });
+    // own note to himself; the 💬 badge and the admin pings stay dark. The
+    // read still hears it (2026-09-03): his entries ARE the case material,
+    // so each one flags a pass the way a client's message does.
+    if (doc.data.self) {
+      refreshAdvisor(env, ctx, kind, id);
+      return json({ ok: true, self: true });
+    }
     clientUid = doc.data.clientUid;
     threadClientName = doc.data.clientName || '';
     adminLink = `/admin-case.html?id=${id}`;
@@ -5786,6 +5794,45 @@ async function handleChatEdit(request, env) {
   }
 
   return json({ ok: true, text });
+}
+
+/**
+ * POST /api/chat/reply  Body: { kind: 'case', id, msgId, text }
+ * His answer to a question the read put in his own chat (Eric, 2026-09-03:
+ * "I can press reply to that question to answer it."). Worker-side because
+ * the browser rules allow a message exactly five fields and no more, and the
+ * answer has to carry which question it answers. His own case only: nowhere
+ * else has question rows. The question is stamped answered, the shelf line
+ * follows, and the read is told there is something new. Nothing pings.
+ */
+async function handleChatReply(request, env, ctx) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => null);
+  const id = typeof body?.id === 'string' ? body.id : '';
+  const msgId = typeof body?.msgId === 'string' ? body.msgId : '';
+  const text = typeof body?.text === 'string' ? body.text.trim() : '';
+  if (body?.kind !== 'case' || !id || !msgId) return json({ error: 'Bad request' }, 400);
+  if (!text || text.length > 2000) return json({ error: 'Message must be 1 to 2000 characters.' }, 400);
+  const c = await getDoc(env, `cases/${id}`);
+  if (!c) return json({ error: 'Not found' }, 404);
+  if (!c.data.self) return json({ error: 'Only your own case takes an answer to a question.' }, 409);
+  if (c.data.status === 'closed') return json({ error: 'This case is closed.' }, 409);
+  const q = await getDoc(env, `cases/${id}/chat/${msgId}`);
+  if (!q || q.data.role !== 'question') return json({ error: 'No such question' }, 404);
+  const now = new Date();
+  const replyId = crypto.randomUUID();
+  await patchDoc(env, `cases/${id}/chat/${replyId}`, {
+    from: admin.uid, role: 'admin', text, ts: now,
+    replyTo: msgId, quote: String(q.data.text || '').slice(0, 200),
+  });
+  await patchDoc(env, `cases/${id}/chat/${msgId}`, { answeredAt: now, answerId: replyId },
+    { mask: ['answeredAt', 'answerId'] }).catch(() => {});
+  await patchDoc(env, `cases/${id}`, {
+    lastMessage: { text: text.slice(0, 120), from: admin.uid, role: 'admin', ts: now, emailed: true },
+  }, { mask: ['lastMessage'] }).catch(() => {});
+  refreshAdvisor(env, ctx, 'case', id);
+  return json({ ok: true, id: replyId });
 }
 
 /**

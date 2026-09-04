@@ -67,7 +67,7 @@ export function watchPresence(el) {
  * the composer row, left of the text box. The caller owns what it means; this
  * file only knows where it goes.
  */
-export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null, onStatus = null }) {
+export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null, onStatus = null, placeholder = 'Write a message…' }) {
   container.classList.add('chat-root');
   // The lane chips lived and died on 2026-08-22 (Eric: "Just get rid of all
   // of them. They're pointless. Have it just be a chat."). Do not rebuild a
@@ -81,7 +81,11 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     <div class="chat-log" data-log><p class="dim small">Loading messages…</p></div>
     ${disabled
       ? `<p class="dim small chat-notice">${esc(notice)}</p>`
-      : `<form class="chat-form" data-form>
+      : `<div class="reply-strip" data-reply-strip hidden>
+           <span class="reply-strip-text" data-reply-text></span>
+           <button type="button" class="reply-x" data-reply-x aria-label="Stop answering this question">✕</button>
+         </div>
+         <form class="chat-form" data-form>
            <button type="button" class="attach-btn" data-expand title="Full screen"
              aria-label="Full screen">⤢</button>
            <label class="attach-btn" title="Attach a file">📎<input type="file" hidden data-attach
@@ -89,7 +93,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
            ${(Array.isArray(composerButton) ? composerButton : composerButton ? [composerButton] : []).map((cb, i) => `<button type="button" class="attach-btn" data-extra="${i}"
              title="${esc(cb.title || '')}" aria-label="${esc(cb.title || '')}"
              >${esc(cb.icon || '')}</button>`).join('')}
-           <textarea data-input maxlength="2000" rows="1" placeholder="Write a message…"
+           <textarea data-input maxlength="2000" rows="1" placeholder="${esc(placeholder)}"
              autocomplete="off" autocapitalize="sentences"></textarea>
            <button class="btn" type="submit">Send</button>
          </form>
@@ -164,9 +168,20 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     for (const m of ordered) {
       const data = m.data();
       const mine = data.from === user.uid;
+      // A question row: something asked of him on his own case (2026-09-03).
+      // Only his own case ever carries one, and only the Worker writes them;
+      // a client's thread never has any to paint.
+      const isQ = data.role === 'question';
       const div = document.createElement('div');
-      div.className = `msg ${mine ? 'me' : 'them'}`;
+      div.className = `msg ${mine ? 'me' : 'them'}${isQ ? ' q' : ''}`;
       div.dataset.mid = m.id;
+      if (data.quote) {
+        // His answer carries the question it answers, above his words.
+        const qt = document.createElement('span');
+        qt.className = 'msg-quote';
+        qt.textContent = data.quote;
+        div.appendChild(qt);
+      }
       if (data.text) {
         const span = document.createElement('span');
         span.className = 'msg-text';
@@ -254,7 +269,18 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       // older than three minutes.
       const editable = mine && !!data.text &&
         (myRole === 'admin' || (sentAt && Date.now() - sentAt.getTime() < EDIT_WINDOW_MS));
-      if (!mine || editable || data.text || canStage) {
+      if (isQ) {
+        // Reply is a visible button, not a held press: answering is the
+        // whole point of the row, and there is nothing else to do to it.
+        if (myRole === 'admin' && !disabled) {
+          const rb = document.createElement('button');
+          rb.type = 'button';
+          rb.className = 'reply-btn';
+          rb.textContent = '↩ Reply';
+          rb.addEventListener('click', () => setReply({ id: m.id, text: data.text || '' }));
+          div.appendChild(rb);
+        }
+      } else if (!mine || editable || data.text || canStage) {
         messageLongPress(div, {
           msgId: m.id,
           // Same rule as hasReaction below: no emoji bar over a bubble that
@@ -351,8 +377,35 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     }).catch(() => { /* the chat is a chat without it */ });
   }
 
+  // Answering a question (2026-09-03). The strip above the box names the
+  // question; Send then goes through the Worker, which writes the answer
+  // with the question's id on it, because the browser rules allow a message
+  // exactly five fields and no more.
+  let replyTo = null;
+  const replyStrip = container.querySelector('[data-reply-strip]');
+  function setReply(q) {
+    replyTo = q;
+    if (!replyStrip) return;
+    if (q) {
+      replyStrip.querySelector('[data-reply-text]').textContent = `Answering: ${q.text}`.slice(0, 160);
+      replyStrip.hidden = false;
+      container.querySelector('[data-input]')?.focus();
+    } else {
+      replyStrip.hidden = true;
+    }
+  }
+  replyStrip?.querySelector('[data-reply-x]')?.addEventListener('click', () => setReply(null));
+
   async function send({ text = '', attachment = null }) {
     followNext = true;
+    if (replyTo && text && !attachment && myRole === 'admin') {
+      const q = replyTo;
+      const sent = await post('/api/chat/reply',
+        { kind: kindOf(), id: parentPath[1], msgId: q.id, text }, '');
+      if (!sent) throw new Error('the answer did not go through. Try again.');
+      setReply(null);
+      return;
+    }
     const message = { from: user.uid, role: myRole, text, ts: serverTimestamp() };
     if (attachment) message.attachment = attachment;
     await addDoc(messagesRef, message);

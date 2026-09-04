@@ -109,6 +109,9 @@ const deps = {
     return { bytes: 0, block: { type: 'document', source: { type: 'url', url: 'https://x/y.pdf' } } };
   },
   VOICE: 'You are Eric.',
+  // Since 2026-09-03 every prompt opens with voice(), the brief picked by the
+  // turn policy (his own case has one of its own); here it is every other case.
+  voice: () => 'You are Eric.',
   ask: async (env, opts) => { asked = opts; return 'REVIEW BEFORE YOU CALL\n1. *Creatinine read off a chart, check it.\n\nTHE CALL, IN ORDER\nOpen with the March panel.'; },
   console: { error: () => {}, warn: () => {} },
 };

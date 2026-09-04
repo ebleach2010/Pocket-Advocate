@@ -10,7 +10,7 @@
 // The policy machinery is lifted out of the shipped advisor and RUN, with
 // AsyncLocalStorage from Node standing in for the Worker's (same API, same
 // module name). The wrap sites and the UI are pinned on the source.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname as d, join as j } from 'node:path';
 import { fileURLToPath as f2 } from 'node:url';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -277,7 +277,9 @@ check('S16 the route is registered under the admin prefix and named in the heade
 
 // ---- the guards, pinned where a client would otherwise be told or counted ----
 const guards = [
-  ['the chat notice', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n\s+clientUid = doc\.data\.clientUid;/],
+  // Re-pinned 2026-09-03 (oriented to him): the self branch wakes the read
+  // before it returns, and still tells and stamps nobody.
+  ['the chat notice', /if \(doc\.data\.self\) \{\n\s+refreshAdvisor\(env, ctx, kind, id\);\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/],
   ['the chat digest', /if \(row\.data\.self\) \{\n\s+await patchDoc\(env, `\$\{coll\}\/\$\{row\.id\}`, \{ lastMessage: \{ \.\.\.lm, emailed: true \} \}/],
   ['the work log notice', /if \(!c \|\| !c\.clientUid \|\| c\.self \|\| c\.status === 'closed'\) return null;/],
   ['the recording clock', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n\s+const alreadyStarted = !!doc\.data\.reportDueAt;/],
@@ -488,6 +490,208 @@ check('S28 the Edit sits beside his name on the overview, saves the four fields 
   && /api\(\{ action: 'details', name: g\('name'\), dob: g\('dob'\), phone: g\('phone'\), address: g\('address'\) \}\)/.test(CASE)
   && /body\.action === 'details'/.test(DEMO)
   && /if \(!c\.self && !c\.family\) return fail\(409/.test(DEMO));
+
+
+// ---- oriented to him: its own brief, questions in the chat, Reply (Eric, 2026-09-03) ----
+const CHAT = f('public/js/chat.js');
+const PANEL = f('public/js/advisor.js');
+const between = (src, from, to) => {
+  const a = src.indexOf(from);
+  if (a < 0) return '';
+  const b = src.indexOf(to, a + from.length);
+  return b < 0 ? '' : src.slice(a, b);
+};
+const selfVoiceSrc = between(ADV, 'const SELF_VOICE = `', 'const voice = ()');
+const voiceFn = grab(ADV, /const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/);
+const selfAssessSrc = between(ADV, 'const SELF_ASSESSMENT = `', '/** Raw API errors are unreadable');
+// eslint-disable-next-line no-new-func
+const selfVoice = selfVoiceSrc ? new Function(`${selfVoiceSrc}; return SELF_VOICE;`)() : '';
+// eslint-disable-next-line no-new-func
+const selfAssess = selfAssessSrc ? new Function(`${selfAssessSrc}; return SELF_ASSESSMENT;`)() : '';
+// NEGATIVE CONTROL (run 2026-09-03): the analysis site reduced to `text: `${VOICE}` made this read
+//   FAIL  S29 his own case reads on its own brief and its own assessment, whole, picked by the policy where the turn is built  -- voice() x5, VOICE x1
+check('S29 his own case reads on its own brief and its own assessment, whole, picked by the policy where the turn is built',
+  !!selfVoiceSrc && !!voiceFn && !!selfAssessSrc
+  && (ADV.match(/\$\{voice\(\)\}/g) || []).length === 5
+  && (ADV.match(/\$\{VOICE\}/g) || []).length === 1
+  && /system: \[\{ type: 'text', text: self \? `\$\{SELF_VOICE\}\\n\\n\$\{SELF_ASSESSMENT\}` : `\$\{VOICE\}/.test(ADV)
+  && /const self = !!turnPolicy\.getStore\(\)\?\.self;/.test(ADV)
+  && /style\.voice && !self \? `/.test(ADV),
+  `voice() x${(ADV.match(/\$\{voice\(\)\}/g) || []).length}, VOICE x${(ADV.match(/\$\{VOICE\}/g) || []).length}`);
+
+const HEADINGS = ['Right now', 'Plain English', 'What this could be', 'Worth investigating', 'Questions for you',
+  'What we know so far', "What's missing", 'Ruled out', 'Watch for', 'Key terms', 'Working line', 'Differential',
+  'Not answered', 'Corrections'];
+const headingOrder = HEADINGS.map((h) => selfAssess.indexOf(`## ${h}\n`));
+// NEGATIVE CONTROL (run 2026-09-03): "He answers in the chat" changed to "He answers on the panel" made this read
+//   FAIL  S30 the brief is about him, forbids the advocacy chores, tells the read to ask him, and the assessment carries the questions section and the machine tail
+check('S30 the brief is about him, forbids the advocacy chores, tells the read to ask him, and the assessment carries the questions section and the machine tail',
+  /about Eric/.test(selfVoice) && /There is no client/.test(selfVoice) && /no faxing, no records requests/.test(selfVoice)
+  && /ASK HIM/.test(selfVoice) && /He answers in the chat/.test(selfVoice)
+  && !/[—–]/.test(selfVoiceSrc) && /[—]/.test(selfVoice) && /[–]/.test(selfVoice)
+  && headingOrder.every((i) => i >= 0) && headingOrder.every((i, k) => k === 0 || i > headingOrder[k - 1])
+  && /put to him in his chat word for word, one bubble each/.test(selfAssess)
+  && /"## Not answered": on this case the app keeps this list itself/.test(selfAssess)
+  && !/[—–]/.test(selfAssessSrc),
+  `headings ${headingOrder.join(',')}`);
+
+const transcriptFn = lift(ADV, 'function transcript(rows) {');
+// eslint-disable-next-line no-new-func
+const transcriptRun = new Function(`const mediaKind = () => true; ${transcriptFn}; return transcript;`)();
+const tRows = [
+  { id: 'e1', data: { role: 'admin', text: 'Day 3: tremor is back.' } },
+  { id: 'q1', data: { role: 'question', text: 'What time did it start?' } },
+  { id: 'a1', data: { role: 'admin', text: 'About 6am.', replyTo: 'q1' } },
+  { id: 'c1', data: { role: 'client', text: 'hi' } },
+];
+const tOut = transcriptRun(tRows);
+// NEGATIVE CONTROL (run 2026-09-03): the YOU ASKED label shortened to ASKED made this read
+//   FAIL  S31 the transcript names the questions it asked and which one an answer answers  -- ERIC [id=e1]: Day 3: tremor is back. |  | ASKED [id=q1]: Wha...
+check('S31 the transcript names the questions it asked and which one an answer answers',
+  !!transcriptFn && tOut.includes('ERIC [id=e1]: Day 3') && tOut.includes('YOU ASKED [id=q1]: What time')
+  && tOut.includes('ERIC [id=a1] (answering id=q1): About 6am.') && tOut.includes('CLIENT: hi'),
+  tOut.replace(/\n/g, ' | ').slice(0, 200));
+
+const sectionMatchFn = lift(ADV, 'function sectionMatch(text, name) {');
+const flatTextLine = grab(ADV, /const flatText = \(v\) => [^\n]+;/);
+const harvestQFn = lift(ADV, 'function harvestQuestions(text) {');
+// eslint-disable-next-line no-new-func
+const harvestQ = new Function(`${sectionMatchFn}; ${flatTextLine}; ${harvestQFn}; return harvestQuestions;`)();
+const qText = '## Right now\nfine\n\n## Questions for you\n- What time did the tremor start today?\n- What time did the tremor start today?\n- none\n- How many hours did you sleep last night?\n1. Did the neurologist change the dose?\n- Any fever since Monday?\n- Fifth one that must not make it?\n\n## What we know so far\n- x';
+const qOut = harvestQ(qText);
+// NEGATIVE CONTROL (run 2026-09-03): the four-question cap raised to nine made this read
+//   FAIL  S32 the questions section is read as at most four distinct questions, none and repeats dropped, and no section is no questions  -- ["What time d...
+check('S32 the questions section is read as at most four distinct questions, none and repeats dropped, and no section is no questions',
+  !!harvestQFn && qOut.length === 4 && qOut[0] === 'What time did the tremor start today?'
+  && qOut[1] === 'How many hours did you sleep last night?' && qOut[2] === 'Did the neurologist change the dose?'
+  && qOut[3] === 'Any fever since Monday?' && harvestQ('## Right now\nnothing').length === 0,
+  JSON.stringify(qOut));
+
+const askFn = lift(ADV, 'async function askInChat(env, id, questions, rows) {');
+const askWrites = [];
+// eslint-disable-next-line no-new-func
+const askRun = new Function('patchDoc', `${flatTextLine}; ${askFn}; return askInChat;`)(
+  async (env, path, data, opts) => { askWrites.push({ path, data, opts }); });
+const standingRows = [{ id: 'q0', data: { role: 'question', text: 'What time did the tremor start today?' } }];
+const askedN = await askRun({}, 'mine', ['What time did the tremor start today?', 'How many hours did you sleep last night?'], standingRows);
+const chatWrites = askWrites.filter((w) => /^cases\/mine\/chat\//.test(w.path));
+const shelfWrite = askWrites.find((w) => w.path === 'cases/mine');
+const askedAgain = await askRun({}, 'mine', ['What time did the tremor start today?'], standingRows);
+// NEGATIVE CONTROL (run 2026-09-03): the standing-question skip replaced with `if (false) continue;` made this read
+//   FAIL  S33 a question goes into his chat once, as a question row nobody sent, and a standing one is not asked twice  -- 2 then 1, writes cases/mine/cha...
+check('S33 a question goes into his chat once, as a question row nobody sent, and a standing one is not asked twice',
+  !!askFn && askedN === 1 && chatWrites.length === 1
+  && chatWrites[0].data.role === 'question' && chatWrites[0].data.from === 'reading'
+  && chatWrites[0].data.text === 'How many hours did you sleep last night?'
+  && !!shelfWrite && (shelfWrite.opts?.mask || []).join(',') === 'lastMessage'
+  && shelfWrite.data.lastMessage.text.startsWith('❓ How many hours') && shelfWrite.data.lastMessage.emailed === true
+  && askedAgain === 0 && askWrites.length === 2,
+  `${askedN} then ${askedAgain}, writes ${askWrites.map((w) => w.path).join(',')}`);
+
+const unFromChatFn = lift(ADV, 'function unansweredFromChat(rows) {');
+// eslint-disable-next-line no-new-func
+const unFromChat = new Function(`${unFromChatFn}; return unansweredFromChat;`)();
+const unRows = [
+  { id: 'q1', data: { role: 'question', text: 'Open one?', ts: new Date('2026-09-01T10:00:00Z') } },
+  { id: 'q2', data: { role: 'question', text: 'Stamped one?', answeredAt: new Date() } },
+  { id: 'q3', data: { role: 'question', text: 'Answered by a row?' } },
+  { id: 'a3', data: { role: 'admin', text: 'yes', replyTo: 'q3' } },
+];
+const unOut = unFromChat(unRows);
+const finishSrc = lift(ADV, 'async function finishAnalysis(env, kind, id, ctx, message) {');
+// NEGATIVE CONTROL (run 2026-09-03): the finish's `ctx.self &&` dropped from the ask made this read
+//   FAIL  S34 the finish knows his own case from the flight, keeps the Unanswered list from the chat, and asks the questions after the read is saved
+check('S34 the finish knows his own case from the flight, keeps the Unanswered list from the chat, and asks the questions after the read is saved',
+  !!unFromChatFn && unOut.length === 1 && unOut[0].ask === 'Open one?' && unOut[0].answered === false
+  && /effort: passEffort, auto, skipMedia, self,/.test(ADV)
+  && /if \(ctx\.self\) un\.unanswered = unansweredFromChat\(rows\);/.test(finishSrc)
+  && /if \(ctx\.self && kind === 'case'\) \{\n\s+await askInChat\(env, id, harvestQuestions\(finalText\), rows\)/.test(finishSrc)
+  && finishSrc.indexOf('await askInChat(') > finishSrc.indexOf("analysis: finalText, status: 'idle'"),
+  JSON.stringify(unOut));
+
+const replySrc = lift(WORKER, 'async function handleChatReply(request, env, ctx) {');
+const runReply = ({ admin = { uid: 'eric' }, caseData = { self: true, status: 'confirmed' }, question = { role: 'question', text: 'What time did it start?' }, body = {} } = {}) => {
+  const written = [];
+  const refreshed = [];
+  const deps = {
+    requireAdmin: async () => admin,
+    json: (obj, code = 200) => ({ code, obj }),
+    getDoc: async (env, path) => (path === 'cases/c1' ? { id: 'c1', data: caseData }
+      : path === 'cases/c1/chat/q1' ? (question ? { id: 'q1', data: question } : null) : null),
+    patchDoc: async (env, path, data, opts) => { written.push({ path, data, opts }); return true; },
+    refreshAdvisor: (env, ctx, kind, id) => { refreshed.push(`${kind}/${id}`); },
+  };
+  // eslint-disable-next-line no-new-func
+  const fn = new Function('deps', `
+    const { requireAdmin, json, getDoc, patchDoc, refreshAdvisor } = deps;
+    ${replySrc}
+    return handleChatReply;
+  `)(deps);
+  const req = { json: async () => ({ kind: 'case', id: 'c1', msgId: 'q1', text: 'About 6am, right hand only.', ...body }) };
+  return { post: () => fn(req, {}, {}), written, refreshed };
+};
+const RP1 = runReply();
+const rp1 = await RP1.post();
+const RP2 = runReply({ admin: null });
+const rp2 = await RP2.post();
+const RP3 = runReply({ caseData: { clientUid: 'client1', status: 'confirmed' } });
+const rp3 = await RP3.post();
+const RP4 = runReply({ question: { role: 'admin', text: 'not a question' } });
+const rp4 = await RP4.post();
+const RP5 = runReply({ body: { text: '' } });
+const rp5 = await RP5.post();
+const replyDoc = RP1.written.find((w) => /^cases\/c1\/chat\/(?!q1$)/.test(w.path));
+const stamp = RP1.written.find((w) => w.path === 'cases/c1/chat/q1');
+const shelf = RP1.written.find((w) => w.path === 'cases/c1');
+// NEGATIVE CONTROL (run 2026-09-03): the own-case 409 in handleChatReply replaced with `if (false)` made this read
+//   FAIL  S35 his answer goes through the Worker with the question on it, stamps the question, moves the shelf line, wakes the read, and refuses everyone and everything else
+check('S35 his answer goes through the Worker with the question on it, stamps the question, moves the shelf line, wakes the read, and refuses everyone and everything else',
+  !!replySrc && rp1.code === 200 && rp1.obj.ok === true
+  && !!replyDoc && replyDoc.data.role === 'admin' && replyDoc.data.from === 'eric'
+  && replyDoc.data.replyTo === 'q1' && replyDoc.data.quote === 'What time did it start?'
+  && replyDoc.data.text === 'About 6am, right hand only.'
+  && !!stamp && (stamp.opts?.mask || []).join(',') === 'answeredAt,answerId' && stamp.data.answerId === rp1.obj.id
+  && !!shelf && (shelf.opts?.mask || []).join(',') === 'lastMessage' && shelf.data.lastMessage.emailed === true
+  && RP1.refreshed.join(',') === 'case/c1'
+  && rp2.code === 404 && RP2.written.length === 0
+  && rp3.code === 409 && RP3.written.length === 0
+  && rp4.code === 404 && RP4.written.length === 0
+  && rp5.code === 400 && RP5.written.length === 0
+  && /url\.pathname === '\/api\/chat\/reply' && request\.method === 'POST'\)\n\s+return await handleChatReply\(request, env, ctx\);/.test(WORKER)
+  && /^\/\/   POST   \/api\/chat\/reply /m.test(WORKER),
+  `${rp1.code} ${rp2.code} ${rp3.code} ${rp4.code} ${rp5.code}`);
+
+// NEGATIVE CONTROL (run 2026-09-03): the refreshAdvisor call removed from the notify branch made this read
+//   FAIL  S36 a note on his own case wakes the read the way a client message does, and still pings nobody
+check('S36 a note on his own case wakes the read the way a client message does, and still pings nobody',
+  /if \(doc\.data\.self\) \{\n\s+refreshAdvisor\(env, ctx, kind, id\);\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/.test(WORKER));
+
+// NEGATIVE CONTROL (run 2026-09-03): the Reply button's class renamed to reply-button made this read
+//   FAIL  S37 the chat paints a question with a Reply, his answer with the question above it, the answer goes through the Worker, and the panel and the demo follow
+check('S37 the chat paints a question with a Reply, his answer with the question above it, the answer goes through the Worker, and the panel and the demo follow',
+  /const isQ = data\.role === 'question';/.test(CHAT)
+  && /div\.className = `msg \$\{mine \? 'me' : 'them'\}\$\{isQ \? ' q' : ''\}`;/.test(CHAT)
+  && /qt\.className = 'msg-quote';/.test(CHAT)
+  && /if \(isQ\) \{[\s\S]*?if \(myRole === 'admin' && !disabled\) \{[\s\S]*?rb\.className = 'reply-btn';[\s\S]*?\} else if \(!mine \|\| editable \|\| data\.text \|\| canStage\) \{/.test(CHAT)
+  && /if \(replyTo && text && !attachment && myRole === 'admin'\) \{[\s\S]*?post\('\/api\/chat\/reply',/.test(CHAT)
+  && /data-reply-strip hidden/.test(CHAT) && /placeholder = 'Write a message…' \}\) \{/.test(CHAT)
+  && /self: !!data\.self,/.test(CASE) && /placeholder: data\.self \? /.test(CASE)
+  && /unansweredSelf = !!data\.self;/.test(CASE) && /\$\{unansweredSelf \? '' : `<button class="btn quiet" data-again=/.test(CASE)
+  && /goTo = null, self = false \}\) \{/.test(PANEL)
+  && /const sendable = \(title\) => !self && SENDABLE\.has\(normTitle\(title\)\);/.test(PANEL)
+  && !/SENDABLE\.has\(normTitle\(pg\.title\)\)/.test(PANEL)
+  && /'Questions for you': '❓',/.test(PANEL) && /'Watch for': '🚨',/.test(PANEL)
+  && /path === '\/api\/chat\/reply'/.test(DEMO)
+  && /if \(c\.self && !asked\) \{[\s\S]*?role: 'question'/.test(DEMO));
+
+const cssVersions = [...new Set(readdirSync(j(ROOT, 'public')).filter((n) => /^admin.*\.html$/.test(n))
+  .map((n) => (f(`public/${n}`).match(/admin\.css\?v=([a-z0-9]+)/) || [])[1] || 'none'))];
+// NEGATIVE CONTROL (run 2026-09-03): .reply-strip renamed in admin.css made this read
+//   FAIL  S38 the question, the quote, the Reply and the strip are styled on the admin sheet, and every admin page asks for the same new copy of it  -- st...
+check('S38 the question, the quote, the Reply and the strip are styled on the admin sheet, and every admin page asks for the same new copy of it',
+  /\.msg\.q \{/.test(ACSS) && /\.msg-quote \{/.test(ACSS) && /\.reply-btn \{/.test(ACSS) && /\.reply-strip \{/.test(ACSS)
+  && cssVersions.length === 1 && cssVersions[0] !== 'none' && cssVersions[0] !== 'stat106',
+  cssVersions.join(','));
 
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);

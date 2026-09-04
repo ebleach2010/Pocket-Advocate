@@ -1496,6 +1496,21 @@ export function demoApi(role, store) {
           store.docs.set(`cases/${cid}/advisor/state`, {
             ...state, status: 'idle', updatedAt: new Date(),
           });
+          // His own case: the read's questions land in his chat, one bubble
+          // each, once (2026-09-03). Mirrors askInChat in the Worker.
+          const c = store.docs.get(`cases/${cid}`) || {};
+          const asked = [...store.docs.keys()].some((k) => k.startsWith(`cases/${cid}/chat/`) && store.docs.get(k)?.role === 'question');
+          if (c.self && !asked) {
+            const qs = [
+              'What time did the tremor start today, and is it the right hand only?',
+              'How many hours did you sleep last night, and did you wake with a headache?',
+            ];
+            for (const q of qs) {
+              const p = `cases/${cid}/chat/q${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+              store.docs.set(p, { from: 'reading', role: 'question', text: q, ts: new Date(), askedAt: new Date() });
+              store.fire?.(p);
+            }
+          }
         }, 4000);
         return ok({ ok: true });
       }
@@ -1932,6 +1947,27 @@ export function demoApi(role, store) {
     }
     if (path === '/api/reviews') return ok({ reviews: [] });
     if (path === '/api/uploaded' || path === '/api/notify' || path === '/api/push/test') return ok({ ok: true });
+    if (path === '/api/chat/reply') {
+      // His answer to a question in his own chat (2026-09-03). Mirrors
+      // handleChatReply: the answer carries the question, the question is
+      // stamped answered, and nothing pings.
+      const cid = body.id || 'demo-case-mine';
+      const c = store.docs.get(`cases/${cid}`) || {};
+      if (!c.self) return fail(409, 'Only your own case takes an answer to a question.');
+      const q = store.docs.get(`cases/${cid}/chat/${body.msgId}`);
+      if (!q || q.role !== 'question') return fail(404, 'No such question');
+      const text = String(body.text || '').trim();
+      if (!text || text.length > 2000) return fail(400, 'Message must be 1 to 2000 characters.');
+      const rid = `r${Date.now().toString(36)}`;
+      const p = `cases/${cid}/chat/${rid}`;
+      store.docs.set(p, {
+        from: 'demo-admin', role: 'admin', text, ts: new Date(),
+        replyTo: body.msgId, quote: String(q.text || '').slice(0, 200),
+      });
+      store.docs.set(`cases/${cid}/chat/${body.msgId}`, { ...q, answeredAt: new Date(), answerId: rid });
+      store.fire?.(p);
+      return ok({ ok: true, id: rid });
+    }
     if (path === '/api/chat/react' || path === '/api/chat/pass' || path === '/api/chat/edit') {
       // These write to the message, and in the demo the store is the message.
       // The caller names its case: hardcoding DEMO_CASE_ID here sent the Full

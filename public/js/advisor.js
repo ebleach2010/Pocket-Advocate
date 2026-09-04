@@ -64,6 +64,9 @@ const SECTION_ICON_RAW = {
   "What's missing": '🕳',
   'Ruled out': '🚫',
   'For you': '🎯',
+  // His own case's two sections of its own (2026-09-03).
+  'Questions for you': '❓',
+  'Watch for': '🚨',
   'Key terms': '📚',
   // Older assessments used these headings; keep the icons so a case that has
   // not been re-read since still paints correctly.
@@ -116,7 +119,10 @@ function termPalette(text) {
  */
 export let sendToClient = null;
 
-export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null, diffContainer = null, qaContainer = null, goTo = null }) {
+export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null, diffContainer = null, qaContainer = null, goTo = null, self = false }) {
+  // His own case has no client to send a line to (2026-09-03): the held
+  // press and its hint stay off every page there.
+  const sendable = (title) => !self && SENDABLE.has(normTitle(title));
   container.innerHTML = `
     <div class="advisor">
       <div class="advisor-head">
@@ -516,7 +522,8 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
               <span class="plain-tag">💬 In plain words</span>
               ${md(pg.plain, terms)}
             </div>` : ''}`}</div>
-        ${SENDABLE.has(normTitle(pg.title)) ? '<p class="dim small pg-hint">Press and hold any line to send it to the client.</p>' : ''}
+        ${sendable(pg.title) ? '<p class="dim small pg-hint">Press and hold any line to send it to the client.</p>' : ''}
+        ${self && normTitle(pg.title) === normTitle('Questions for you') ? '<p class="dim small pg-hint">Asked in your chat, one bubble each. Answer there with Reply.</p>' : ''}
       </div>`;
     bodyEl.querySelectorAll('[data-pg]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -525,7 +532,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         drawnKey = '';               // a tap always redraws
         renderPager(pages, terms);
       }));
-    if (SENDABLE.has(normTitle(pg.title))) wireSendable(bodyEl, pg.title);
+    if (sendable(pg.title)) wireSendable(bodyEl, pg.title);
     bodyEl.querySelectorAll('[data-term]').forEach((cb) =>
       cb.addEventListener('change', async () => {
         cb.disabled = true;

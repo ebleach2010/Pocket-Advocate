@@ -144,6 +144,59 @@ for (let i = 0; i < 16 && !landed.found; i++) {
   }, note);
 }
 ok('and it lands in the thread as his own', landed.found && landed.mine, JSON.stringify(landed));
+// The read's questions come to the chat (Eric, 2026-09-03: "If it has
+// questions it wants answered it can ask in the chat. I can press reply to
+// that question to answer it."). Update on the Read page runs the demo's
+// read, which seeds two question rows; Reply on one puts the strip over the
+// box; Send carries the answer through the reply route, and it comes back
+// on his side with the question quoted above it.
+await page.evaluate(() => { document.querySelector('[data-group="read"]')?.click(); document.querySelector('[data-page="advisor"]')?.click(); });
+await page.waitForTimeout(500);
+const refreshBtn = await page.$('[data-refresh]');
+ok('the Read page has its Update', !!refreshBtn);
+if (refreshBtn) await refreshBtn.click();
+await page.evaluate(() => { document.querySelector('[data-group="case"]')?.click(); document.querySelector('[data-page="chat"]')?.click(); });
+let qRows = 0;
+for (let i = 0; i < 24 && qRows < 2; i++) {
+  await page.waitForTimeout(500);
+  qRows = await page.evaluate(() => document.querySelectorAll('.msg.q').length);
+}
+const qShape = await page.evaluate(() => {
+  const q = document.querySelector('.msg.q');
+  return q ? {
+    them: q.classList.contains('them'),
+    reply: !!q.querySelector('.reply-btn'),
+    text: (q.querySelector('.msg-text')?.textContent || '').trim(),
+    placeholder: document.querySelector('[data-form] [data-input]')?.getAttribute('placeholder') || '',
+  } : null;
+});
+ok('two questions arrive in the chat as bubbles on the other side, each with a Reply', qRows === 2 && !!qShape && qShape.them && qShape.reply && /\?$/.test(qShape.text), JSON.stringify(qShape));
+ok('and the box says it takes notes and answers', /answer a question/.test(qShape?.placeholder || ''), qShape?.placeholder);
+if (SHOTS) await page.screenshot({ path: `${SHOTS}/03b-questions.png` });
+await page.click('.msg.q .reply-btn');
+await page.waitForTimeout(300);
+const strip = await page.evaluate(() => {
+  const s = document.querySelector('[data-reply-strip]');
+  return { shown: !!s && !s.hidden, text: (s?.textContent || '').replace(/\s+/g, ' ').trim() };
+});
+ok('Reply puts the question over the box', strip.shown && /^Answering: /.test(strip.text), strip.text.slice(0, 80));
+const answer = 'About 6am, right hand only, worse after the stairs.';
+await page.evaluate((t) => {
+  const box = document.querySelector('[data-form] [data-input]');
+  box.value = t; box.dispatchEvent(new Event('input', { bubbles: true }));
+  document.querySelector('[data-form]')?.requestSubmit();
+}, answer);
+let answered = null;
+for (let i = 0; i < 16 && !answered; i++) {
+  await page.waitForTimeout(500);
+  answered = await page.evaluate((t) => {
+    const m = [...document.querySelectorAll('.msg.me')].find((x) => (x.querySelector('.msg-text')?.textContent || '').includes(t));
+    if (!m) return null;
+    return { quote: (m.querySelector('.msg-quote')?.textContent || '').trim(), stripHidden: !!document.querySelector('[data-reply-strip]')?.hidden };
+  }, answer);
+}
+ok('the answer lands on his side with the question quoted above it, and the strip clears', !!answered && /\?$/.test(answered.quote) && answered.stripHidden, JSON.stringify(answered));
+if (SHOTS) await page.screenshot({ path: `${SHOTS}/03c-answered.png` });
 if (SHOTS) await page.screenshot({ path: `${SHOTS}/03-chat.png` });
 
 console.log('\n--- D. uploads ask for records, not categories ---');
