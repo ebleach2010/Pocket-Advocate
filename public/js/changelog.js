@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.88';
+export const VERSION = '2.89';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '2.88';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS OWN CASE BACK ON ITS OWN SETTING (Eric, 2026-09-04, once reads were
+    // landing again). The setting was never what stalled them. Admin only;
+    // the client list stays empty.
+    version: '2.89',
+    quiet: true,
+    client: [],
+    admin: [
+      'Your own case is back on the setting you picked for it, at the top effort. It was moved off while the stalling was still unexplained, and the stalling turned out to be something else entirely.',
+      'If that setting is ever refused, your case drops to the ordinary one and remembers which setting was refused, so changing it back clears that memory instead of quietly holding you there.',
+    ],
+  },
   {
     // THE READ THAT NEVER LANDED (Eric, 2026-09-04: "It still keeps stalling
     // even with app open"). The scheduler was the only thing that ever

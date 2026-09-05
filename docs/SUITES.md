@@ -189,11 +189,16 @@ system block saying who it is reading about, carried by an AsyncLocalStorage
 policy from each run's entry, and it takes the hand-pressed token ceilings
 because that effort spends most of a ceiling on thinking. A refused model id
 falls back to the default and says so in the diag log, at submit time and
-(since 2026-09-04, after reads that sat on "thinking" and never landed) at
-result time too: a batch create accepts params the run itself will not
-honour, so the failure only surfaces when the result lands, and the read now
-re-runs on the default instead of parking as an error his next note buys
-again. `tools/suites/selfcase.mjs`
+(since 2026-09-04) at result time too: a batch create accepts params the run
+itself will not honour, so the failure only surfaces when the result lands,
+and the read now re-runs on the default instead of parking as an error his
+next note buys again. The stamp that remembers a refusal NAMES the id it
+refused (`modelRefusedId`), so changing the pinned id clears its own
+history: his own case was moved to the default while the stalling was still
+unexplained and moved back on his word once reads were landing, and a
+leftover stamp would otherwise have held it on the default silently and for
+ever. The stalling was never the pinned id; it was that nothing collected a
+finished read, which is the paragraph above. `tools/suites/selfcase.mjs`
 lifts and runs the policy, the request builder, the fallback and the route,
 and pins every guard and the purple; `tools/suites/worklog.mjs` L67 runs the
 silence through the work log harness. `tools/drives/drive-selfcase.mjs`

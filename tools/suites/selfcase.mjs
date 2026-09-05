@@ -845,9 +845,9 @@ check('S48 a refused id on a finished batch falls back and runs again instead of
   && /if \(flight\.model && modelRefused\(\{ status: 400, message: String\(out\.why \|\| ''\) \}, \{ model: flight\.model \}\)\) \{/.test(pollSrc)
   && /effort: passEffort, auto, skipMedia, self, model: turn\.model,/.test(runAnaSrc)
   && /ev: 'self-model-fallback', at: 'result'/.test(pollSrc)
-  && /modelRefusedAt: new Date\(\),/.test(pollSrc)
+  && /modelRefusedAt: new Date\(\), modelRefusedId: flight\.model,/.test(pollSrc)
   && /await markPending\(env, kind, id, \{ force: true \}\)\.catch\(\(\) => \{\}\);\n\s+return;\n\s+\}\n\s+await diagLog\(env, \{\n\s+ev: 'end', ok: false/.test(pollSrc)
-  && /if \(SELF_MODEL !== MODEL\) \{\n\s+const st = await getDoc\(env, statePath\(kind, id\)\)\.catch\(\(\) => null\);\n\s+if \(st\?\.data\.modelRefusedAt\) policy\.model = MODEL;/.test(ADV),
+  && /if \(SELF_MODEL !== MODEL\) \{\n\s+const st = await getDoc\(env, statePath\(kind, id\)\)\.catch\(\(\) => null\);\n\s+if \(st\?\.data\.modelRefusedId === SELF_MODEL\) policy\.model = MODEL;/.test(ADV),
   `fallback at ${fbAt}, park at ${parkAt}`);
 
 // The predicate the new branch uses, run for real: a batch failure naming the
@@ -869,6 +869,33 @@ check('S49 a batch failure naming the id counts as a refusal only when the run w
 check('S50 his own case takes the hand-pressed token ceilings, because the top effort spends most of them on thinking',
   /const passTokens = \(!auto \|\| turnPolicy\.getStore\(\)\?\.self\)\n\s+\? \(passType === 'full' \? 64000 : 48000\)/.test(ADV)
   && /That read asked for a setting this account cannot run\./.test(ADV));
+
+
+// The stamp is a memory of ONE id, not a permanent demotion. He moved his own
+// case off the pinned id while the stall was still unexplained and back onto
+// it once reads were landing ("reintroduce fable 5.1 for my personal case
+// only"), and a stamp left over from that would otherwise have held him on
+// the default silently, for ever.
+const stamped = harness();
+stamped.store.set('cases/mine', { self: true });
+stamped.store.set('cases/mine/advisor/state', { modelRefusedId: stamped.api.SELF_MODEL, modelRefusedAt: new Date() });
+const afterRefusal = await stamped.api.withCasePolicy({}, 'case', 'mine', async () =>
+  stamped.api.turnRequest({ system: 'SYS', messages: [], effort: 'medium', maxTokens: 1000 }));
+const stale = harness();
+stale.store.set('cases/mine', { self: true });
+stale.store.set('cases/mine/advisor/state', { modelRefusedId: 'claude-something-he-has-moved-off', modelRefusedAt: new Date() });
+const afterStale = await stale.api.withCasePolicy({}, 'case', 'mine', async () =>
+  stale.api.turnRequest({ system: 'SYS', messages: [], effort: 'medium', maxTokens: 1000 }));
+// NEGATIVE CONTROL (run 2026-09-04): the stamp read back as `modelRefusedAt`
+// rather than the id it named made this read
+//   FAIL  S51 a refusal is remembered against the id it refused, so changing the pinned id clears its own history
+check('S51 a refusal is remembered against the id it refused, so changing the pinned id clears its own history',
+  stamped.api.SELF_MODEL !== stamped.api.MODEL
+  && afterRefusal.model === stamped.api.MODEL
+  && afterStale.model === stale.api.SELF_MODEL
+  // The effort is his either way: a refused id never costs him the setting.
+  && afterRefusal.output_config.effort === 'max' && afterStale.output_config.effort === 'max',
+  `${afterRefusal.model} / ${afterStale.model}`);
 
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);

@@ -48,12 +48,19 @@ const MODEL = 'claude-opus-5';
  * every system prompt gets one more block telling the model who it is talking
  * to.
  *
- * 2026-09-04, after reads that sat on "thinking" and never landed: the pinned
- * id is the DEFAULT one now, the same one every client case has been running
- * on all along, at max effort. A pinned id the provider will not run is a
- * stall he cannot clear from his phone, and the batch path only learns of a
- * refusal at RESULT time (see pollFlight), which is why that hole is closed
- * below as well.
+ * 2026-09-04, the reads that sat on "thinking" and never landed: the pinned
+ * id was never the cause. Nothing was COLLECTING a finished read (see
+ * pollCaseFlight), and the two successful landings either side of that hour
+ * were on this same pinned id. It was moved to the default while that was
+ * still in doubt and moved back on his word once reads were landing again:
+ * "reintroduce fable 5.1 for my personal case only". Max effort stays.
+ *
+ * The refusal machinery below is what makes pinning an id safe rather than a
+ * gamble: a refusal at submit time falls back within the turn, and one at
+ * RESULT time, which is the only place the batch path can learn of it,
+ * stamps the case so the next run drops to the default. The stamp NAMES the
+ * id it refused, so changing the pin here clears its own history rather than
+ * silently holding him on the default forever.
  *
  * HOW THE POLICY TRAVELS. Ten call sites build turns and one submits batches,
  * spread over runs that load the case document at different moments or not
@@ -65,7 +72,7 @@ const MODEL = 'claude-opus-5';
  * that enters by a path nobody wrapped simply gets the default model, which
  * is the old behaviour, not a breakage.
  */
-const SELF_MODEL = 'claude-opus-5';
+const SELF_MODEL = 'claude-fable-5-1';
 const SELF_EFFORT = 'max';
 const turnPolicy = new AsyncLocalStorage();
 
@@ -80,11 +87,12 @@ export async function withCasePolicy(env, kind, id, fn) {
       policy = { self: true, model: SELF_MODEL, effort: SELF_EFFORT, kind, id };
       // A pinned id the provider has already refused stays refused: the next
       // run takes the default rather than buying the same refusal again and
-      // leaving him watching "thinking" (2026-09-04). Dormant while the
-      // pinned id IS the default, which is the case today.
+      // leaving him watching "thinking" (2026-09-04). The stamp names the id
+      // it refused, so a stamp from an id he has since changed away from
+      // does not hold him on the default for ever.
       if (SELF_MODEL !== MODEL) {
         const st = await getDoc(env, statePath(kind, id)).catch(() => null);
-        if (st?.data.modelRefusedAt) policy.model = MODEL;
+        if (st?.data.modelRefusedId === SELF_MODEL) policy.model = MODEL;
       }
     }
   }
@@ -3153,7 +3161,8 @@ async function pollFlight(env, kind, id, rowId, flight) {
     });
     await setState(env, kind, id, {
       status: 'idle', batchCtx: null, startedAt: null, progressAt: null,
-      stage: null, mediaPlan: null, modelRefusedAt: new Date(),
+      stage: null, mediaPlan: null,
+      modelRefusedAt: new Date(), modelRefusedId: flight.model,
     }).catch(() => {});
     await deleteDoc(env, `advisorQueue/${rowId}`).catch(() => {});
     await markPending(env, kind, id, { force: true }).catch(() => {});
