@@ -128,6 +128,26 @@ export function mountNav() {
   window.addEventListener('orientationchange', () => setTimeout(fit, 120));
 }
 
+/**
+ * NO PINCH ZOOM, IN EVERY BROWSER (Eric, 2026-09-05: "I'd prefer you can't
+ * use your fingers to zoom in at all"). The viewport meta on every page
+ * (maximum-scale=1, user-scalable=no) is honoured by the home-screen app and
+ * by Android; Safari in the browser ignores it, so the pinch is refused here
+ * as well: Safari's own gesture events, and a two-finger touchmove (the
+ * pinch as every browser reports it), both cancelled before the browser
+ * acts on them. One-finger scrolling never passes through here, and
+ * site.css's `touch-action: pan-y` on the root covers the double tap. This
+ * file rides on every page, which is why the guard lives in it.
+ */
+export function refuseZoom(doc = document) {
+  const stop = (e) => { e.preventDefault(); };
+  for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) doc.addEventListener(ev, stop, { passive: false });
+  doc.addEventListener('touchmove', (e) => {
+    if ((e.touches && e.touches.length > 1) || (typeof e.scale === 'number' && e.scale !== 1)) e.preventDefault();
+  }, { passive: false });
+}
+refuseZoom();
+
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', mountNav);
 } else {

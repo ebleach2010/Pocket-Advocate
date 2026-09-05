@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.92';
+export const VERSION = '2.93';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '2.92';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // NO PINCH, NO SIDEWAYS (Eric, 2026-09-05: "I'd prefer you can't use
+    // your fingers to zoom in at all and prevent side to side scroll
+    // altogether"). Client and admin alike; a quiet push.
+    version: '2.93',
+    quiet: true,
+    client: [
+      'The app no longer zooms when you pinch, and it no longer scrolls side to side.',
+    ],
+    admin: [
+      'Same on your side: no pinch zoom, no sideways scroll. Three things that stuck out past the right edge of a phone wrap now: the about page\'s door links, the office fold\'s reason line, and the work clock readout on a case\'s chat page.',
+    ],
+  },
   {
     // THE CLOCK AUTOMATIC READS RUN ON (Eric, 2026-09-05: expand the
     // automatic reads by one hour each time there is no new information, and

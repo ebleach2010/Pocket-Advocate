@@ -1015,6 +1015,10 @@ main > p > a.small[href="/admin.html"] {
   border: 1px dashed var(--line); border-radius: 999px;
   text-decoration: none; cursor: pointer;
 }
+/* The readout is a sentence ("2h 10m on this case, 40m today, running") and
+   a button keeps its label on one line by default, so on a phone it ran past
+   the right edge and the chat page scrolled sideways. It wraps (2026-09-05). */
+.btn.work-total-btn { white-space: normal; text-align: left; max-width: 100%; }
 .work-total-btn .fixit {
   flex: none; font-size: .72rem; letter-spacing: .04em; color: var(--cyan);
 }
@@ -1280,6 +1284,10 @@ main > p > a.small[href="/admin.html"] {
 .office-fold { padding: .6rem .8rem; }
 .office-fold > summary {
   display: flex;
+  /* The label, the status pill and the reason do not all fit on one 320px
+     line, and a row that cannot wrap pushes the dashboard sideways. On a
+     phone the reason takes the second line and reads whole (2026-09-05). */
+  flex-wrap: wrap;
   align-items: center;
   gap: .7rem;
   min-height: 40px;
@@ -1303,7 +1311,10 @@ main > p > a.small[href="/admin.html"] {
 /* Inside the fold's summary the pill must not wrap into a lozenge three
    lines tall at 390px: one line, ellipsis, and the label stays a pill. */
 .office-fold .office-big { white-space: nowrap; flex: 0 0 auto; }
-.office-fold > summary .dim { flex: 0 0 auto; }
+/* Not the why line: it carries .dim too, and this rule used to beat the
+   shrink rule above on it, so a long reason ran 500px off the right edge and
+   dragged the whole dashboard sideways (2026-09-05). */
+.office-fold > summary .dim:not(.office-why) { flex: 0 0 auto; }
 
 /* The masthead's two new lines: what is waiting, and what happens next. */
 .case-next {

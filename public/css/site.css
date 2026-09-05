@@ -303,6 +303,17 @@ html,
    this app ever wants the page itself scrolling horizontally; wide content
    scrolls inside its own container. */
 html, body { overflow-x: hidden; overflow-x: clip; }
+/* NO PINCH, NO SIDEWAYS (Eric, 2026-09-05: "I'd prefer you can't use your
+   fingers to zoom in at all and prevent side to side scroll altogether").
+   pan-y on the root: a finger may only move the page up and down. A pinch
+   and a double tap do nothing, and a sideways drag on the page goes nowhere.
+   Boxes that scroll sideways on purpose (the folder tabs, the calendar) are
+   scroll containers of their own and keep their pan. The viewport meta on
+   every page and the gesture guard in nav-menu.js cover the browsers that
+   read those instead of this, and overscroll-behavior stops the sideways
+   rubber band. */
+html { touch-action: pan-y; overscroll-behavior-x: none; }
+body { overscroll-behavior-x: none; }
 img,
 video { max-width: 100%; }
 body {

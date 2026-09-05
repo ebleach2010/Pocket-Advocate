@@ -183,6 +183,26 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### No pinch, no sideways (2026-09-05)
+
+Eric: "The app has side to side scroll, particularly if zoomed in. I'd
+prefer you can't use your fingers to zoom in at all and prevent side to side
+scroll altogether." Zoom is refused three ways, because no one of them
+reaches every browser: the viewport meta on all 22 pages (`maximum-scale=1,
+user-scalable=no`, honoured by the home-screen app and by Android), the
+gesture guard in `nav-menu.js` (`refuseZoom`: Safari's gesture events and a
+two-finger touchmove cancelled non-passively, since Safari in the browser
+ignores the meta), and `touch-action: pan-y` on the root in site.css, which
+also stops a sideways drag of the page and the double tap, while boxes that
+scroll sideways on purpose keep their own pan. Then the content itself: a
+Playwright sweep of every page and tab at 390px and 320px in both demos
+found three things sticking out past the right edge (the about page's door
+pills, the office fold's reason line, the work clock's readout on the chat
+page), each fixed to wrap. `tools/suites/nosideways.mjs` N1-N4 pin the meta
+on every page, run the lifted guard against a fake document, and pin the
+root rule and the three fixes; `tools/drives/drive-nosideways.mjs` is the
+sweep, failing on the first offender, and runs CLEAN.
+
 ### The contact row and the log pencil (2026-09-03)
 
 The client's phone and home address on the case overview, tap to call or

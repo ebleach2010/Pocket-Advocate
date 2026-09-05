@@ -425,6 +425,10 @@ summary:focus-visible,
 }
 .pill:hover { border-color: var(--edge-lit); }
 .pill:active { transform: translateY(1px); }
+/* A pill standing alone in a paragraph (the about page's two doors) can be
+   longer than a phone is wide. It wraps onto a second line instead of
+   pushing the whole page sideways (2026-09-05). */
+p > .pill { max-width: 100%; white-space: normal; }
 .pill.on,
 .pill.selected,
 .pill[aria-pressed="true"],
