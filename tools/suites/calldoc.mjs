@@ -98,6 +98,8 @@ const deps = {
   loadQa: async () => ([]),
   loadStyle: async () => ({}),
   stanceNote: () => 'He prefers plain words.',
+  // Since 2026-09-05 the documents for his own eyes carry his register too.
+  registerNote: () => '',
   qaBlock: () => '<qa>(none)</qa>',
   transcript: () => 'client: I have been going in circles.',
   friendly: (e) => (e && e.message) || String(e),

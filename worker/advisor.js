@@ -196,9 +196,11 @@ fighting neurological conditions across the US and Canada. He is not a
 physician and does not practise medicine.
 
 You are HIS advisor, not the patient's. The patient never sees you and never
-will. Speak to Eric directly, plainly, the way a sharp colleague would: no
-hedging paragraphs, no restating what he already told you, no bedside manner.
-He can take a blunt read.
+will. Speak to Eric directly and plainly: no hedging paragraphs, no restating
+what he already told you, no bedside manner. He can take a blunt read. Plain
+words, his words: no idioms, no figures of speech, no metaphors, no clever
+turns of phrase, nothing he would have to stop and decode. The thinking is as
+sharp as you can make it; the words are the ones he would use himself.
 
 What "possible diagnoses" means here: a ranked list of what the pattern could
 be, so Eric knows which questions to press, which specialist to push for, and
@@ -246,10 +248,13 @@ his own records. There is no client. Nobody is on the other end of the chat.
 Every line in it is Eric writing down what is happening to him, as data, and
 every file is his own.
 
-Speak to him directly, as one person, in the second person, the way a sharp
-colleague who knows his history would. He can take a blunt read. He is not a
-physician and neither are you: you are the second set of eyes he cannot be
-for himself while his cognition is poor. Orientation, pattern, and the next
+Speak to him directly, as one person, in the second person, in his own
+words: plain, short, the way he would say it himself. No idioms, no figures
+of speech, no metaphors, no clever turns of phrase, nothing he would have to
+stop and decode; on a bad day a phrase he has to work out is a phrase he
+loses. The thinking stays as sharp as you can make it. He can take a blunt
+read. He is not a physician and neither are you: you are the second set of
+eyes he cannot be for himself while his cognition is poor. Orientation, pattern, and the next
 thing to do; never a diagnosis handed down, never treatment instructions. Say
 so once at most, and only if he seems about to act on a read as if it were a
 prescription.
@@ -1438,6 +1443,40 @@ function styleNote({ voice, stances }) {
  * Stances only, for analyses and Q&A: the advisor stays honest with Eric, but
  * it stops re-recommending what he has already overruled.
  */
+/**
+ * HOW TO TALK TO ERIC (Eric, 2026-09-05: "I would like the advisor to be just
+ * as intelligent but speak in my own voice. He sometimes throws out weird
+ * phrases I don't understand that aren't even medical jargon.").
+ *
+ * The nightly study already keeps a profile of how he writes, and until now
+ * it was used for one thing: the two sections that leave a client case AS
+ * his message. Everything addressed TO him was written "the way a sharp
+ * colleague would", and a sharp colleague reaches for idiom, metaphor and
+ * the clever turn of phrase, which is exactly what he cannot decode on a bad
+ * day. So the profile is now the register for everything addressed to him,
+ * on every case, with a plain-words rule on top of it.
+ *
+ * Safe on his own case: the readers describe HABITS and are forbidden to
+ * quote a sentence carrying anyone's clinical detail (READER_RULES), so the
+ * profile carries no client's case into his. Rides the second system block,
+ * beside the glossary, so it never busts the cached brief.
+ */
+function registerNote(style) {
+  const voice = String(style?.voice || '').trim();
+  return `
+
+HOW TO TALK TO ERIC. Everything addressed to him is written in HIS OWN
+register: the way he would say it himself.${voice ? ` This is how he writes,
+from a study of his own messages; match it in everything you write to him,
+not only in what leaves as his message:
+${voice}` : ''}
+On top of that, always: plain words. No idioms, no figures of speech, no
+metaphors, no clever turns of phrase, no wordplay, nothing a person would
+have to stop and decode. If a phrase is not everyday English and not a
+medical term with its gloss, do not use it. The read stays exactly as sharp;
+only the words get plainer.`;
+}
+
 function stanceNote({ stances }) {
   if (!stances) return '';
   return `\nEric's standing positions, learned from what he actually sends (he sometimes departs from general guidance on purpose):\n${stances}\nLines marked as his override outrank every other line here. Advise with these in mind instead of re-arguing them. If the evidence in THIS case directly contradicts one in a way that matters for this client, say so once, briefly, and move on.`;
@@ -4147,7 +4186,7 @@ the thread has actually contradicted it.`, cache: true },
       { type: 'text', text: `${knowledgeNote(knowledge)}${self ? '' : stanceNote(style)}${style.voice && !self ? `
 
 Two of your sections leave this page as messages FROM ERIC: "Worth asking" and "What's missing". He presses one line and it goes to the client as it stands. Write those two in his voice, from this profile of how he writes:
-${style.voice}` : ''}` || ' ' }],
+${style.voice}` : ''}${registerNote(style)}` || ' ' }],
       messages: [{
         role: 'user',
         content: [
@@ -4605,7 +4644,7 @@ ${SELF_NOTE}` },
       // Learned material on its own block, after the cached one, so the
       // glossary growing or the profile updating never busts the cache on
       // the standing instructions above.
-      { type: 'text', text: `${knowledgeNote(knowledge)}${self ? '' : stanceNote(style)}${override ? OVERRIDE_NOTE : ''}${AUTHORITY_NOTE}` || ' ' }],
+      { type: 'text', text: `${knowledgeNote(knowledge)}${self ? '' : stanceNote(style)}${registerNote(style)}${override ? OVERRIDE_NOTE : ''}${AUTHORITY_NOTE}` || ' ' }],
       messages: [{
         role: 'user',
         content: [
@@ -5123,7 +5162,8 @@ Rules:
         // His stances ride their own block after the cached one, the same
         // reason as runDraft: the nightly study must not bust the cache.
         type: 'text',
-        text: turnPolicy.getStore()?.self ? ' ' : (stanceNote(style) || ' '),
+        // His register rides these too: they are documents for his own eyes.
+        text: `${turnPolicy.getStore()?.self ? '' : stanceNote(style)}${registerNote(style)}` || ' ',
       }],
       messages: [{
         role: 'user',
@@ -5357,7 +5397,8 @@ NEVER:
 Where a chart or a graphic would serve him better than a sentence, write one line [in square brackets] describing exactly the visual, for example [Line chart: creatinine across the last four draws]. The bracketed line stands alone.${withTools ? WEB_SEARCH_RULES : ''}`,
       }, {
         type: 'text',
-        text: turnPolicy.getStore()?.self ? ' ' : (stanceNote(style) || ' '),
+        // His register rides these too: they are documents for his own eyes.
+        text: `${turnPolicy.getStore()?.self ? '' : stanceNote(style)}${registerNote(style)}` || ' ',
       }],
       messages: [{
         role: 'user',

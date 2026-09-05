@@ -198,7 +198,24 @@ history: his own case was moved to the default while the stalling was still
 unexplained and moved back on his word once reads were landing, and a
 leftover stamp would otherwise have held it on the default silently and for
 ever. The stalling was never the pinned id; it was that nothing collected a
-finished read, which is the paragraph above. `tools/suites/selfcase.mjs`
+finished read, which is the paragraph above.
+
+His own register (Eric, 2026-09-05: "just as intelligent but speak in my
+own voice. He sometimes throws out weird phrases I don't understand that
+aren't even medical jargon"). Both standing briefs said "the way a sharp
+colleague would", which is a licence for idiom, metaphor and the clever turn
+of phrase. They say plain words now, his words, nothing he would have to
+stop and decode, with the thinking left as sharp as it was. And the profile
+of how he writes, which the nightly study keeps and which was used only for
+the two sections that leave a client case as his message, is now the
+register for everything addressed to him (`registerNote`): the assessment,
+the answer to a question, the call notes and the call document, on every
+case including his own. Safe there because the readers describe habits and
+are forbidden to quote anyone's clinical detail (`READER_RULES`). The appeal
+letter and the client draft are left alone: one goes to an insurer, the
+other already writes as him. `selfcase.mjs` S52 runs the note bare and
+voiced, counts the four sites, and pins both briefs; S40 re-pinned with a
+dated note. `tools/suites/selfcase.mjs`
 lifts and runs the policy, the request builder, the fallback and the route,
 and pins every guard and the purple; `tools/suites/worklog.mjs` L67 runs the
 silence through the work log harness. `tools/drives/drive-selfcase.mjs`

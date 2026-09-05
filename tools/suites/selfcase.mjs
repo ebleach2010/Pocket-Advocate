@@ -755,7 +755,11 @@ check('S40 an override on his own case settles that case only, and the standing 
   /const override = isOverride\(question\);\n[\s\S]{0,300}?const self = !!turnPolicy\.getStore\(\)\?\.self;/.test(ADV)
   && /if \(override\) \{\n\s+if \(self\) \{[\s\S]*?sectionMatch\(cleaned, 'Stance'\)[\s\S]*?\} else \{\n\s+cleaned = await fileOverride\(env, cleaned\);/.test(ADV)
   && (ADV.match(/\$\{self \? '' : stanceNote\(style\)\}/g) || []).length === 2
-  && (ADV.match(/turnPolicy\.getStore\(\)\?\.self \? ' ' : \(stanceNote\(style\) \|\| ' '\)/g) || []).length === 3
+  // Re-pinned 2026-09-05 (his own register): the two documents for his own
+  // eyes carry registerNote beside the gated stances now; the appeal, which
+  // goes to an insurer, keeps the bare form.
+  && (ADV.match(/turnPolicy\.getStore\(\)\?\.self \? ' ' : \(stanceNote\(style\) \|\| ' '\)/g) || []).length === 1
+  && (ADV.match(/text: `\$\{turnPolicy\.getStore\(\)\?\.self \? '' : stanceNote\(style\)\}\$\{registerNote\(style\)\}` \|\| ' ',/g) || []).length === 2
   && !/\$\{stanceNote\(style\)\}/.test(ADV) && !/text: stanceNote\(style\) \|\| ' '/.test(ADV)
   && /const elsewhere = \(!turnPolicy\.getStore\(\)\?\.self && voice\.length < 2500\)/.test(ADV),
   `gated x${(ADV.match(/\$\{self \? '' : stanceNote\(style\)\}/g) || []).length}+${(ADV.match(/turnPolicy\.getStore\(\)\?\.self \? ' ' : \(stanceNote\(style\) \|\| ' '\)/g) || []).length}`);
@@ -905,6 +909,39 @@ check('S51 a refusal is remembered against the id it refused, so changing the pi
   // The effort is his either way: a refused id never costs him the setting.
   && afterRefusal.output_config.effort === 'max' && afterStale.output_config.effort === 'max',
   `${afterRefusal.model} / ${afterStale.model}`);
+
+
+// ---- his own register, in plain words (Eric, 2026-09-05) ----
+// "I would like the advisor to be just as intelligent but speak in my own
+// voice. He sometimes throws out weird phrases I don't understand that aren't
+// even medical jargon."
+const registerFn = lift(ADV, 'function registerNote(style) {');
+// eslint-disable-next-line no-new-func
+const registerRun = new Function(`${registerFn}; return registerNote;`)();
+const bare = registerRun({});
+const voiced = registerRun({ voice: 'Short lines. Starts with the point. Never says "reach out".' });
+const voiceSrc = between(ADV, 'const VOICE = `', 'const SELF_VOICE = `');
+const draftSrc = lift(ADV, "export async function runDraft(env, kind, id, instruction, revise = false, base = '', noStream = false) {");
+const appealSrc = lift(ADV, "export async function runAppeal(env, kind, id, appeal, revise = false, base = '', noStream = false) {");
+const S52_PARTS = {
+  lifted: !!registerFn,
+  bareRule: /HOW TO TALK TO ERIC/.test(bare) && /no idioms, no figures of speech/i.test(bare) && /stop and decode/.test(bare) && !/This is how he writes/.test(bare),
+  voiced: /This is how he writes/.test(voiced) && /Starts with the point/.test(voiced) && /only the words get plainer/.test(voiced),
+  fourSites: (ADV.match(/\$\{registerNote\(style\)\}/g) || []).length === 4,
+  analysisSite: /\$\{style\.voice && !self \? `[\s\S]*?\$\{style\.voice\}` : ''\}\$\{registerNote\(style\)\}` \|\| ' ' \}\],/.test(ADV),
+  questionSite: /\$\{self \? '' : stanceNote\(style\)\}\$\{registerNote\(style\)\}\$\{override \? OVERRIDE_NOTE : ''\}/.test(ADV),
+  draftLeftAlone: !!draftSrc && !/registerNote\(/.test(draftSrc),
+  appealLeftAlone: !!appealSrc && !/registerNote\(/.test(appealSrc),
+  clientBrief: /stop and decode/.test(voiceSrc) && !/sharp colleague/.test(voiceSrc),
+  ownBrief: /stop and decode/.test(selfVoiceSrc) && !/sharp colleague/.test(selfVoiceSrc),
+  noDashes: !/[—–]/.test(registerFn),
+};
+// NEGATIVE CONTROL (run 2026-09-05): registerNote dropped from the question
+// turn's second block (three sites, not four) made this read
+//   FAIL  S52 everything addressed to him is written in his own register and in plain words: the profile rides the four things he reads, both briefs say so, and the letter and the draft are left alone  -- fourSites
+check('S52 everything addressed to him is written in his own register and in plain words: the profile rides the four things he reads, both briefs say so, and the letter and the draft are left alone',
+  Object.values(S52_PARTS).every(Boolean),
+  Object.entries(S52_PARTS).filter(([, v]) => !v).map(([k]) => k).join(',') || 'all parts hold');
 
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);

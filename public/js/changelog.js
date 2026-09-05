@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.90';
+export const VERSION = '2.91';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '2.90';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS OWN REGISTER (Eric, 2026-09-05: "just as intelligent but speak in
+    // my own voice. He sometimes throws out weird phrases I don't understand
+    // that aren't even medical jargon"). Admin only; the client list stays
+    // empty.
+    version: '2.91',
+    quiet: true,
+    client: [],
+    admin: [
+      'The reading talks to you in your own words now, from the standing study of how you write, and in plain ones: no idioms, no figures of speech, no clever phrasing, nothing you would have to stop and decode. Same sharpness, plainer words, on every case.',
+    ],
+  },
   {
     // HIS OWN CASE, PICKED ON COST AND SPEED (Eric, 2026-09-04, with both
     // settings measured on his own case). Admin only; the client list stays
