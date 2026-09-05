@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.91';
+export const VERSION = '2.92';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '2.91';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE CLOCK AUTOMATIC READS RUN ON (Eric, 2026-09-05: expand the
+    // automatic reads by one hour each time there is no new information, and
+    // keep them at thirty minutes when there is). Admin only; the client list
+    // stays empty.
+    version: '2.92',
+    quiet: true,
+    client: [],
+    admin: [
+      'Automatic reads run on a clock now: thirty minutes after a read while notes keep coming, and an hour longer after every look that found nothing new, up to once a day. A new note or file puts it back to thirty minutes. The panel says when the next one is due; tapping Update still reads at once.',
+    ],
+  },
   {
     // HIS OWN REGISTER (Eric, 2026-09-05: "just as intelligent but speak in
     // my own voice. He sometimes throws out weird phrases I don't understand

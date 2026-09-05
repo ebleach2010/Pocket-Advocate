@@ -1021,6 +1021,34 @@ const ANALYSIS_MAX_TRIES = 3;
 // turns, only to stop a message-per-second script buying a read per firing.
 // The no-new-content bail in runAnalysis refuses wasted turns either way.
 const PENDING_FLOOR_MS = 5 * 60_000;
+/**
+ * THE CLOCK AUTOMATIC READS RUN ON (Eric, 2026-09-05: "Expand advisor's
+ * automatic reads by one hour each time there is no new information. If
+ * there is new information, keep it at 30min.").
+ *
+ * A read that lands books the next automatic look thirty minutes out. A
+ * look that finds nothing new costs no turn (the nothing-new bail in
+ * runAnalysis) and pushes the next look an hour further: thirty minutes,
+ * then an hour and a half, then two and a half, up to once a day. A new
+ * note or file at any point puts the clock back to thirty minutes, counted
+ * from the last read, so a quiet case that wakes up is read soon and a busy
+ * one is read twice an hour and no more often. Two fields on the state
+ * document carry it, `autoGapMin` and `nextAutoAt`; his own tap is never
+ * on this clock.
+ */
+const AUTO_GAP_MIN = 30;
+const AUTO_GAP_STEP_MIN = 60;
+const AUTO_GAP_CAP_MIN = 24 * 60;
+/** The gap after a look that found nothing new: an hour longer, up to a day. */
+export function nextAutoGap(prevMin) {
+  const prev = Number(prevMin) || AUTO_GAP_MIN;
+  return Math.min(prev + AUTO_GAP_STEP_MIN, AUTO_GAP_CAP_MIN);
+}
+/** Milliseconds an automatic read still has to wait on this state; 0 when it may run now. */
+export function autoWaitMs(d) {
+  const at = d?.nextAutoAt ? new Date(d.nextAutoAt).getTime() : 0;
+  return at && at > Date.now() ? at - Date.now() : 0;
+}
 const MAX_CARRY_FILES = 40;
 
 function mediaKind(att) {
@@ -2963,9 +2991,29 @@ export async function diagLog(env, entry) {
  * after answering a request, which is exactly where a real analysis dies.
  * Whoever runs next (Eric's open panel, or the cron) picks it up.
  */
-export async function markPending(env, kind, id, { force = false } = {}) {
+export async function markPending(env, kind, id, { force = false, due = force } = {}) {
   const now = new Date();
-  await setState(env, kind, id, { pendingAt: now });
+  // Eric asking by hand always goes through; a client typing waits out the
+  // floor. One read of the state serves the floor and the clock both.
+  const st = force ? null : await getDoc(env, statePath(kind, id)).catch(() => null);
+  const last = st?.data.updatedAt ? new Date(st.data.updatedAt).getTime() : 0;
+  if (!force) {
+    // NEW INFORMATION (2026-09-05): the automatic clock goes back to thirty
+    // minutes, counted from the last read. A note on a case that has been
+    // quiet for hours is read at the next firing; a note two minutes after
+    // a read waits for the half-hour mark, and anything else that lands
+    // meanwhile rides the same read.
+    await setState(env, kind, id, {
+      pendingAt: now,
+      autoGapMin: AUTO_GAP_MIN,
+      nextAutoAt: new Date(Math.max(now.getTime(), last + AUTO_GAP_MIN * 60_000)),
+    });
+  } else {
+    // A forced row is owed work, not a schedule: his tap, a retry, or the
+    // rest of a read that could not fit. Due now unless the caller says
+    // otherwise (a note that arrived mid-flight keeps the clock it has).
+    await setState(env, kind, id, due ? { pendingAt: now, nextAutoAt: now } : { pendingAt: now });
+  }
   // Already waiting to be read? Then it is already going to be read. This
   // check runs for FORCE too: the write below is a full-document replace,
   // and re-writing an existing row reset its tries to zero, so every time
@@ -2973,13 +3021,7 @@ export async function markPending(env, kind, id, { force = false } = {}) {
   // more doomed turns got bought. A row that exists is left alone.
   const q = await getDoc(env, queuePath(kind, id)).catch(() => null);
   if (q) return;
-  // Eric asking by hand always goes through; a client typing waits out the
-  // floor.
-  if (!force) {
-    const st = await getDoc(env, statePath(kind, id)).catch(() => null);
-    const last = st?.data.updatedAt ? new Date(st.data.updatedAt).getTime() : 0;
-    if (last && Date.now() - last < PENDING_FLOOR_MS) return;
-  }
+  if (!force && last && Date.now() - last < PENDING_FLOOR_MS) return;
   await patchDoc(env, queuePath(kind, id), { kind, id, at: now, tries: 0 });
 }
 
@@ -3060,7 +3102,13 @@ async function sweepOne(env, t) {
     && (Number(d.errorRetries) || 0) < 8
     && (!d.errorRetryAt || Date.now() - new Date(d.errorRetryAt).getTime() > 30 * 60_000)
     && errAge > 30 * 60_000;
-  if (!stuckRunning && !owed && !carryOwed && !errRetryDue) return;
+  // THE AUTOMATIC CLOCK (2026-09-05): a case that has been read once is
+  // looked at again when its clock says so, flag or no flag. The look costs
+  // no turn when nothing is new (runAnalysis bails and moves the clock an
+  // hour further out) and is a real read when something is.
+  const autoDue = !!d.analysis && d.status === 'idle' && !d.batchCtx?.batchId
+    && !!d.nextAutoAt && Date.now() >= new Date(d.nextAutoAt).getTime();
+  if (!stuckRunning && !owed && !carryOwed && !errRetryDue && !autoDue) return;
   if (stuckRunning)
     await setState(env, t.kind, t.id, { status: 'idle', startedAt: null, progressAt: null, stage: null })
       .catch(() => {});
@@ -3069,12 +3117,15 @@ async function sweepOne(env, t) {
       status: 'idle',
       errorRetries: (Number(d.errorRetries) || 0) + 1,
       errorRetryAt: new Date(),
+      // A retry is owed work, not a scheduled look: it runs at the next
+      // firing whatever the clock says.
+      nextAutoAt: new Date(),
     }).catch(() => {});
   await patchDoc(env, queuePath(t.kind, t.id), { kind: t.kind, id: t.id, at: new Date(), tries: 0 })
     .catch(() => {});
   await diagLog(env, {
     ev: 'requeue', kind: t.kind,
-    why: stuckRunning ? 'stuck-running' : owed ? 'owed' : carryOwed ? 'carry' : 'error-retry',
+    why: stuckRunning ? 'stuck-running' : owed ? 'owed' : carryOwed ? 'carry' : errRetryDue ? 'error-retry' : 'clock',
   });
   console.warn(`advisor sweep: re-queued stranded ${t.kind}/${t.id}`);
 }
@@ -3165,6 +3216,23 @@ async function pollFlight(env, kind, id, rowId, flight) {
     }
   }
   if (out.state === 'done') {
+    // ONE FINISH PER FLIGHT (2026-09-05). Two pollers can collect the same
+    // landed batch in the same seconds (the recorder showed two `end`
+    // events two seconds apart on one batch), and finishAnalysis ran twice:
+    // two saves, two rounds of questions into his chat. The flight is
+    // stamped as being finished, conditionally on the state document not
+    // having moved since it was read, and the loser returns. A finisher
+    // that dies mid-way leaves a stamp that goes stale in five minutes, and
+    // the next poll takes the flight over.
+    const cur = await getDoc(env, statePath(kind, id)).catch(() => null);
+    const held = cur?.data.batchCtx;
+    if (!held?.batchId || held.batchId !== flight.batchId) return; // finished, or replaced
+    const fin = held.finishingAt ? new Date(held.finishingAt).getTime() : 0;
+    if (fin && Date.now() - fin < 5 * 60_000) return;
+    const won = await patchDoc(env, statePath(kind, id),
+      { batchCtx: { ...held, finishingAt: new Date() } },
+      { mask: ['batchCtx'], ifUpdateTime: cur.updateTime }).catch(() => false);
+    if (won === false) return;
     try {
       await finishAnalysis(env, kind, id, flight, out.message);
       return;
@@ -3413,6 +3481,11 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
         await pollFlight(env, kind, id, row.id, state.data.batchCtx);
         continue;
       }
+      // THE AUTOMATIC CLOCK (2026-09-05): a row whose time has not come is
+      // left standing, untouched, for the firing that is on time. Judged
+      // before the attempt is counted, or waiting would spend the three
+      // tries and park a phantom error on a case that was merely early.
+      if (autoWaitMs(state?.data)) continue;
       // Someone (the panel) is already mid-run: leave it alone while it is
       // ALIVE, which means a fresh heartbeat, not a fresh start. progressAt
       // beats every ~8s while the model streams, so five quiet minutes is a
@@ -3772,6 +3845,11 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       await setState(env, kind, id, { batchCtx: null }).catch(() => {});
       await diagLog(env, { ev: 'flight-takeover', kind, ms: Date.now() - new Date(flight.submittedAt || 0).getTime() });
     }
+    // THE AUTOMATIC CLOCK (2026-09-05). An automatic run before its time
+    // does nothing at all: no claim, no start, and the row and the flag
+    // stay where they are for the run that is on time. A tap is not
+    // automatic and never waits.
+    if (auto && autoWaitMs(pre?.data)) return;
     const runT0 = Date.now();
     // THE CLAIM (2026-09-04). The guards above are read-then-decide, so two
     // triggers judging the same idle case in the same second both passed
@@ -3877,11 +3955,15 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       && state?.data.analyzedThroughTs
       && newestTs <= new Date(state.data.analyzedThroughTs).getTime()
       && qaSig === (state.data.qaSig || '')) {
+      // Nothing new: the next automatic look moves an hour further out
+      // (2026-09-05), up to once a day. The first note to land puts it back.
+      const gapMin = nextAutoGap(state.data.autoGapMin);
       await setState(env, kind, id, {
         status: 'idle', startedAt: null, progressAt: null, stage: null, pendingAt: null,
+        autoGapMin: gapMin, nextAutoAt: new Date(Date.now() + gapMin * 60_000),
       });
       await deleteDoc(env, queuePath(kind, id)).catch(() => {});
-      await diagLog(env, { ev: 'end', ok: true, kind, skipped: 'nothing-new', ms: Date.now() - runT0 });
+      await diagLog(env, { ev: 'end', ok: true, kind, skipped: 'nothing-new', gapMin, ms: Date.now() - runT0 });
       return;
     }
     // FULL or DELTA. A delta pass feeds the model its own previous assessment
@@ -4352,8 +4434,16 @@ async function finishAnalysis(env, kind, id, ctx, message) {
     await setState(env, kind, id, { forceFull: true }).catch(() => {});
     throw new Error('The update pass came back too short and was discarded. A full read runs next.');
   }
+  // This read's own unfinished business: files it could not fit and the
+  // rest of a catch-up backlog. Those run at once; they are not a schedule.
+  const continues = !!((m.carry || []).length || (ctx.catchup && ctx.newerLeft > 0));
   await setState(env, kind, id, {
     diffAt, fileAt, diffHistory,
+    // THE AUTOMATIC CLOCK (2026-09-05): a read that landed books the next
+    // automatic look thirty minutes out, and a look that finds nothing new
+    // then moves it an hour further. See AUTO_GAP_MIN.
+    autoGapMin: AUTO_GAP_MIN,
+    nextAutoAt: continues ? now : new Date(now.getTime() + AUTO_GAP_MIN * 60_000),
     // What this turn folded in. A catch-up chunk stamps only through ITS OWN
     // last message, so the backlog behind it stays owed and the next pass
     // takes the next chunk.
@@ -4430,8 +4520,11 @@ async function finishAnalysis(env, kind, id, ctx, message) {
     return Number.isFinite(t) && t > acc ? t : acc;
   }, 0);
   const behind = ctx.newestTs && newestNow > new Date(ctx.newestTs).getTime();
-  if ((m.carry || []).length || (ctx.catchup && ctx.newerLeft > 0) || behind)
-    await markPending(env, kind, id, { force: true }).catch(() => {});
+  // A note that arrived mid-flight is new information and gets the ordinary
+  // thirty minutes (due: false keeps the clock this read just set); the
+  // read's own leftovers are due now.
+  if (continues || behind)
+    await markPending(env, kind, id, { force: true, due: continues }).catch(() => {});
   await diagLog(env, {
     ev: 'end', ok: true, kind, passType, effort: ctx.effort, auto: ctx.auto !== false,
     batch: true, ms: submittedMs ? Date.now() - submittedMs : 0,

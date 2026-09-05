@@ -160,6 +160,29 @@ Q20-Q25 run the pollers against fakes and pin the wiring, the age gate and
 the claim; Q18 was re-pinned with a dated note because the takeover now sits
 behind that gate.
 
+**The clock automatic reads run on (2026-09-05).** Eric: "Expand advisor's
+automatic reads by one hour each time there is no new information. If there
+is new information, keep it at 30min." Two fields on the state document
+carry it, `autoGapMin` and `nextAutoAt`. A read that lands books the next
+automatic look thirty minutes out (`finishAnalysis`); a look that finds
+nothing new costs no turn (the nothing-new bail) and moves the clock an hour
+further, up to once a day (`nextAutoGap`); a new note or file puts it back
+to thirty minutes counted from the last read (`markPending`, non-force). The
+drain leaves a row alone until its clock comes, judged before the attempt is
+counted so waiting never spends the three tries; `runAnalysis` refuses an
+early automatic run before the claim; the sweep books the scheduled look
+when the clock comes due, flag or no flag, on any case that has been read
+once; a forced row (his tap, a retry, a read's own leftovers) is due now,
+and only a note that arrived mid-flight keeps the clock its read just set
+(`due: false`). The panel volunteers a read only when the clock says so and
+tells him when the next one is due. The same push claims the FINISH of a
+landed batch conditionally (`finishingAt` on the flight, `ifUpdateTime` on
+the state document): the recorder had shown two `end` events two seconds
+apart on one batch, which was `finishAnalysis` running twice. queue.mjs
+Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
+against fakes and pin the helpers, the bail, the finish and the panel; the
+diag route shows each open case's gap and how far off its next look is.
+
 ### The contact row and the log pencil (2026-09-03)
 
 The client's phone and home address on the case overview, tap to call or

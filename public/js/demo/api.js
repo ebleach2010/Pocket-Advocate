@@ -1505,6 +1505,9 @@ export function demoApi(role, store) {
         setTimeout(() => {
           store.docs.set(`cases/${cid}/advisor/state`, {
             ...state, status: 'idle', updatedAt: new Date(),
+            // The automatic clock (2026-09-05): a read that landed books the
+            // next look thirty minutes out. Mirrors finishAnalysis.
+            autoGapMin: 30, nextAutoAt: new Date(Date.now() + 30 * 60_000),
           });
           // His own case: the read's questions land in his chat, one bubble
           // each, once (2026-09-03). Mirrors askInChat in the Worker.

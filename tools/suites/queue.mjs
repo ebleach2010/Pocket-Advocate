@@ -33,6 +33,18 @@ const check = (name, cond, detail = '') => {
 function fn(name) {
   const start = SRC.indexOf(`export async function ${name}(`);
   if (start < 0) throw new Error(`could not lift ${name}`);
+  return liftAt(start, name);
+}
+// Any declaration shape: exported or not, async or not (sweepOne and
+// pollFlight are module-private, the clock helpers are sync).
+function liftAny(name) {
+  for (const pre of ['export async function', 'export function', 'async function', 'function']) {
+    const start = SRC.indexOf(`${pre} ${name}(`);
+    if (start >= 0) return liftAt(start, name);
+  }
+  throw new Error(`could not lift ${name}`);
+}
+function liftAt(start, name) {
   let par = 0, bodyAt = -1;
   for (let k = SRC.indexOf('(', start); k < SRC.length; k++) {
     if (SRC[k] === '(') par++;
@@ -49,9 +61,14 @@ function fn(name) {
     else if (ch === '}') { depth--; if (!depth) { end = i + 1; break; } }
   }
   if (end < 0) throw new Error(`could not find the end of ${name}`);
-  return SRC.slice(start, end).replace('export async function', 'async function');
+  return SRC.slice(start, end).replace(/^export /, '');
 }
 const LIFTED = fn('runQueuedAnalyses');
+// The clock helpers, real ones: the drain calls autoWaitMs on every row it
+// might run, so a fake here would be the silent-pass hazard the comment
+// below describes.
+const CLOCK = new Function(`${liftAny('nextAutoGap')}\n${liftAny('autoWaitMs')}\n return { nextAutoGap, autoWaitMs };`
+  .replace(/AUTO_GAP_MIN/g, '30').replace(/AUTO_GAP_STEP_MIN/g, '60').replace(/AUTO_GAP_CAP_MIN/g, '1440'))();
 
 // ---- the world -----------------------------------------------------------
 let rows, state, calls, deleted, patched;
@@ -98,6 +115,7 @@ const deps = () => ({
   diagLog: async () => {},
   client: () => ({ messages: { batches: { cancel: async () => {} } } }),
   pollFlight: async () => {},
+  autoWaitMs: CLOCK.autoWaitMs,
 });
 const build = (over = {}) => {
   const dd = { ...deps(), ...over };
@@ -327,6 +345,199 @@ check('Q25 only one run of the two that pass the guards together buys the turn',
   // The claim comes before the run announces itself, so the recorder shows
   // one start per turn bought.
   && SRC.indexOf('const claimed = await patchDoc(env, statePath(kind, id),') < SRC.indexOf("ev: 'start', kind, auto, skipMedia"));
+
+// ---- the clock automatic reads run on (Eric, 2026-09-05) ------------------
+// "Expand advisor's automatic reads by one hour each time there is no new
+// information. If there is new information, keep it at 30min."
+const MIN = 60_000;
+const between = (v, lo, hi) => { const t = v ? new Date(v).getTime() : NaN; return t >= lo && t <= hi; };
+const P = readFileSync(j(ROOT, 'public/js/advisor.js'), 'utf8');
+
+{
+  const early = { status: 'idle', analysis: 'prior', updatedAt: new Date(Date.now() - 10 * MIN), nextAutoAt: new Date(Date.now() + 20 * MIN) };
+  const row = () => [{ id: 'case_a', data: { kind: 'case', id: 'a', at: new Date(Date.now() - MIN), tries: 0 } }];
+  reset(row(), early);
+  await build()(env, 0);
+  // NEGATIVE CONTROL (run 2026-09-05): the drain's `if (autoWaitMs(state?.data)) continue;` removed made this read
+  //   FAIL  Q26 a row whose clock has not come is left standing: no run, no try counted, no row deleted
+  check('Q26 a row whose clock has not come is left standing: no run, no try counted, no row deleted',
+    !calls.some((c) => c[0] === 'runAnalysis') && !patched.some(([p]) => /advisorQueue/.test(p)) && deleted.length === 0,
+    JSON.stringify({ calls, patched, deleted }));
+
+  reset(row(), { ...early, nextAutoAt: new Date(Date.now() - MIN) });
+  await build()(env, 0);
+  // NEGATIVE CONTROL (run 2026-09-05): autoWaitMs returning 1 for any stamped clock made this read
+  //   FAIL  Q27 and the same row runs once its clock has come
+  check('Q27 and the same row runs once its clock has come',
+    calls.filter((c) => c[0] === 'runAnalysis').length === 1, JSON.stringify(calls));
+}
+
+// NEGATIVE CONTROL (run 2026-09-05): the step changed to thirty minutes made this read
+//   FAIL  Q28 the clock is thirty minutes, an hour more each empty look, never past a day
+check('Q28 the clock is thirty minutes, an hour more each empty look, never past a day',
+  /const AUTO_GAP_MIN = 30;\nconst AUTO_GAP_STEP_MIN = 60;\nconst AUTO_GAP_CAP_MIN = 24 \* 60;/.test(SRC)
+  && CLOCK.nextAutoGap(undefined) === 90 && CLOCK.nextAutoGap(30) === 90 && CLOCK.nextAutoGap(90) === 150
+  && CLOCK.nextAutoGap(1400) === 1440 && CLOCK.nextAutoGap(1440) === 1440
+  && CLOCK.autoWaitMs({ nextAutoAt: new Date(Date.now() + 5 * MIN) }) > 4 * MIN
+  && CLOCK.autoWaitMs({ nextAutoAt: new Date(Date.now() - MIN) }) === 0
+  && CLOCK.autoWaitMs({}) === 0 && CLOCK.autoWaitMs(null) === 0);
+
+{
+  // markPending, lifted and run: new information puts the clock back to
+  // thirty minutes counted from the last read; a forced row is due now
+  // unless told otherwise.
+  const MP = liftAny('markPending');
+  const run = async (stateDoc, opts) => {
+    const sets = [];
+    const queued = [];
+    const api = new Function('deps', `
+      const { getDoc, setState, patchDoc, statePath, queuePath, PENDING_FLOOR_MS, AUTO_GAP_MIN } = deps;
+      ${MP}
+      return markPending;
+    `)({
+      getDoc: async (env, path) => (/advisor\/state$/.test(path) ? stateDoc : null),
+      setState: async (env, kind, id, fields) => { sets.push(fields); },
+      patchDoc: async (env, path, data) => { queued.push([path, data]); return true; },
+      statePath: (kind, id) => `cases/${id}/advisor/state`,
+      queuePath: (kind, id) => `advisorQueue/${kind}_${id}`,
+      PENDING_FLOOR_MS: 5 * MIN,
+      AUTO_GAP_MIN: 30,
+    });
+    await api({}, 'case', 'a', opts);
+    return { sets, queued };
+  };
+  const readAt = Date.now() - 10 * MIN;
+  const quiet = { data: { updatedAt: new Date(readAt), autoGapMin: 150, nextAutoAt: new Date(Date.now() + 2 * 3600_000) } };
+  const fresh = await run(quiet, {});
+  const s = fresh.sets[0] || {};
+  // NEGATIVE CONTROL (run 2026-09-05): the reset (`autoGapMin: AUTO_GAP_MIN,`) dropped from the new-information write made this read
+  //   FAIL  Q29 a new note puts the clock back to thirty minutes from the last read and books the row
+  check('Q29 a new note puts the clock back to thirty minutes from the last read and books the row',
+    s.autoGapMin === 30 && between(s.nextAutoAt, readAt + 30 * MIN - 2000, readAt + 30 * MIN + 2000)
+    && !!s.pendingAt && fresh.queued.length === 1 && fresh.queued[0][0] === 'advisorQueue/case_a'
+    && fresh.queued[0][1].tries === 0,
+    JSON.stringify(fresh));
+  const old = await run({ data: { updatedAt: new Date(Date.now() - 5 * 3600_000), autoGapMin: 390 } }, {});
+  const tap = await run(quiet, { force: true });
+  const mid = await run(quiet, { force: true, due: false });
+  // NEGATIVE CONTROL (run 2026-09-05): `due ? { pendingAt: now, nextAutoAt: now } : { pendingAt: now }` collapsed to the second branch made this read
+  //   FAIL  Q30 a note on a long-quiet case is due now, a tap is due now, and a mid-flight note keeps the clock it has
+  check('Q30 a note on a long-quiet case is due now, a tap is due now, and a mid-flight note keeps the clock it has',
+    between(old.sets[0]?.nextAutoAt, Date.now() - 2000, Date.now() + 2000)
+    && between(tap.sets[0]?.nextAutoAt, Date.now() - 2000, Date.now() + 2000) && tap.sets[0]?.autoGapMin === undefined
+    && mid.sets[0]?.nextAutoAt === undefined && !!mid.sets[0]?.pendingAt,
+    JSON.stringify({ old: old.sets, tap: tap.sets, mid: mid.sets }));
+}
+
+// NEGATIVE CONTROL (run 2026-09-05): `nextAutoGap(state.data.autoGapMin)` changed to `(state.data.autoGapMin || 30)` made this read
+//   FAIL  Q31 a look that finds nothing new costs no turn and moves the clock an hour further out
+check('Q31 a look that finds nothing new costs no turn and moves the clock an hour further out',
+  /const gapMin = nextAutoGap\(state\.data\.autoGapMin\);\n\s+await setState\(env, kind, id, \{\n\s+status: 'idle', startedAt: null, progressAt: null, stage: null, pendingAt: null,\n\s+autoGapMin: gapMin, nextAutoAt: new Date\(Date\.now\(\) \+ gapMin \* 60_000\),\n\s+\}\);\n\s+await deleteDoc\(env, queuePath\(kind, id\)\)\.catch\(\(\) => \{\}\);\n\s+await diagLog\(env, \{ ev: 'end', ok: true, kind, skipped: 'nothing-new', gapMin,/.test(SRC));
+
+// NEGATIVE CONTROL (run 2026-09-05): `due: continues` changed to `due: true` made this read
+//   FAIL  Q32 a read that landed books thirty minutes, its own leftovers run now, and a mid-flight note waits its thirty
+check('Q32 a read that landed books thirty minutes, its own leftovers run now, and a mid-flight note waits its thirty',
+  /const continues = !!\(\(m\.carry \|\| \[\]\)\.length \|\| \(ctx\.catchup && ctx\.newerLeft > 0\)\);/.test(SRC)
+  && /autoGapMin: AUTO_GAP_MIN,\n\s+nextAutoAt: continues \? now : new Date\(now\.getTime\(\) \+ AUTO_GAP_MIN \* 60_000\),/.test(SRC)
+  && /if \(continues \|\| behind\)\n\s+await markPending\(env, kind, id, \{ force: true, due: continues \}\)\.catch\(\(\) => \{\}\);/.test(SRC));
+
+{
+  // pollFlight, lifted and run against a landed batch: the finish is
+  // claimed once. The fake state document has a server-side updateTime that
+  // can move between the read and the conditional write, which is the race.
+  const PF = liftAny('pollFlight');
+  const run = async ({ serverTime = 'T1', readTime = 'T1', finishingAt = null } = {}) => {
+    const finished = [];
+    const patches = [];
+    const flight = { batchId: 'b1', customId: 'c1', submittedAt: new Date(Date.now() - 200_000), finishingAt };
+    const api = new Function('deps', `
+      const { pollTurnBatch, client, setState, getDoc, patchDoc, statePath, finishAnalysis, diagLog, deleteDoc, markPending, modelRefused, friendly } = deps;
+      ${PF}
+      return pollFlight;
+    `)({
+      pollTurnBatch: async () => ({ state: 'done', message: { content: [] } }),
+      client: () => ({ messages: { batches: { cancel: async () => {} } } }),
+      setState: async () => {},
+      getDoc: async () => ({ data: { batchCtx: flight }, updateTime: readTime }),
+      patchDoc: async (env, path, data, opts) => {
+        patches.push([data, opts]);
+        if (opts?.ifUpdateTime && opts.ifUpdateTime !== serverTime) throw new Error('precondition failed');
+        return true;
+      },
+      statePath: (kind, id) => `cases/${id}/advisor/state`,
+      finishAnalysis: async (env, kind, id, ctx) => { finished.push(ctx.batchId); },
+      diagLog: async () => {},
+      deleteDoc: async () => {},
+      markPending: async () => {},
+      modelRefused: () => false,
+      friendly: (e) => String(e?.message || e),
+    });
+    await api({}, 'case', 'a', 'case_a', flight);
+    return { finished, patches };
+  };
+  const won = await run();
+  const lost = await run({ serverTime: 'T2' });
+  const held = await run({ finishingAt: new Date(Date.now() - MIN) });
+  const stale = await run({ finishingAt: new Date(Date.now() - 10 * MIN) });
+  // NEGATIVE CONTROL (run 2026-09-05): `ifUpdateTime: cur.updateTime` dropped from the finish claim made this read
+  //   FAIL  Q33 a landed batch is finished once: the claim on the state document decides, a fresh stamp defers, a stale one is taken over
+  check('Q33 a landed batch is finished once: the claim on the state document decides, a fresh stamp defers, a stale one is taken over',
+    won.finished.length === 1 && won.patches[0]?.[1]?.mask?.join() === 'batchCtx' && won.patches[0]?.[1]?.ifUpdateTime === 'T1'
+    && !!won.patches[0]?.[0]?.batchCtx?.finishingAt
+    && lost.finished.length === 0
+    && held.finished.length === 0 && held.patches.length === 0
+    && stale.finished.length === 1,
+    JSON.stringify({ won: won.finished, lost: lost.finished, held: held.finished, stale: stale.finished }));
+}
+
+{
+  // sweepOne, lifted and run: the scheduled look books its own row when the
+  // clock comes due, flag or no flag, and not a minute before.
+  const SW = liftAny('sweepOne');
+  const run = async (stateData) => {
+    const queued = [];
+    const logged = [];
+    const api = new Function('deps', `
+      const { getDoc, statePath, queuePath, setState, patchDoc, diagLog, PENDING_FLOOR_MS, console } = deps;
+      ${SW}
+      return sweepOne;
+    `)({
+      getDoc: async (env, path) => (/advisor\/state$/.test(path) ? { data: stateData } : null),
+      statePath: (kind, id) => `cases/${id}/advisor/state`,
+      queuePath: (kind, id) => `advisorQueue/${kind}_${id}`,
+      setState: async () => {},
+      patchDoc: async (env, path, data) => { queued.push([path, data]); return true; },
+      diagLog: async (env, e) => { logged.push(e); },
+      PENDING_FLOOR_MS: 5 * MIN,
+      console: { warn: () => {} },
+    });
+    await api({}, { kind: 'case', id: 'a' });
+    return { queued, logged };
+  };
+  const base = { status: 'idle', analysis: 'prior', updatedAt: new Date(Date.now() - 2 * 3600_000), autoGapMin: 90 };
+  const due = await run({ ...base, nextAutoAt: new Date(Date.now() - MIN) });
+  const early = await run({ ...base, nextAutoAt: new Date(Date.now() + 20 * MIN) });
+  const unread = await run({ ...base, analysis: '', nextAutoAt: new Date(Date.now() - MIN) });
+  // NEGATIVE CONTROL (run 2026-09-05): `&& !autoDue` dropped from the sweep's early return made this read
+  //   FAIL  Q34 the sweep books the scheduled look when the clock comes due, and only then, and only on a case that has been read
+  check('Q34 the sweep books the scheduled look when the clock comes due, and only then, and only on a case that has been read',
+    due.queued.length === 1 && due.queued[0][0] === 'advisorQueue/case_a' && due.queued[0][1].tries === 0
+    && due.logged.some((e) => e.ev === 'requeue' && e.why === 'clock')
+    && early.queued.length === 0 && unread.queued.length === 0,
+    JSON.stringify({ due, early: early.queued, unread: unread.queued }));
+}
+
+// NEGATIVE CONTROL (run 2026-09-05): runAnalysis's `if (auto && autoWaitMs(pre?.data)) return;` changed to `if (false) return;` made this read
+//   FAIL  Q35 an automatic run before its time claims nothing, a tap is due now, and the panel waits for the clock and says when
+check('Q35 an automatic run before its time claims nothing, a tap is due now, and the panel waits for the clock and says when',
+  /if \(auto && autoWaitMs\(pre\?\.data\)\) return;/.test(SRC)
+  && SRC.indexOf('if (auto && autoWaitMs(pre?.data)) return;') < SRC.indexOf('const claimed = await patchDoc(env, statePath(kind, id),')
+  && /if \(autoWaitMs\(state\?\.data\)\) continue;/.test(SRC)
+  && SRC.indexOf('if (autoWaitMs(state?.data)) continue;') < SRC.indexOf('const fresh = await getDoc(env, `advisorQueue/${row.id}`)')
+  && /await markPending\(env, kind, id, \{ force: true, due: !isAuto \}\);/.test(W)
+  && /const clockDue = !!dueAt && Date\.now\(\) >= dueAt && !!d\.analysis;/.test(P)
+  && /if \(\(d\.pendingAt \|\| clockDue\) && \(!dueAt \|\| Date\.now\(\) >= dueAt\)/.test(P)
+  && /next automatic read \$\{whenShort\(nextAt\)\}/.test(P));
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

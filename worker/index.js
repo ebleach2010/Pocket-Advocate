@@ -962,6 +962,11 @@ export default {
             forceFull: !!d.forceFull, paused: !!d.paused,
             batchAgeS: d.batchCtx ? age(d.batchCtx.submittedAt) : null,
             batchPass: d.batchCtx?.passType || null,
+            // The automatic clock (2026-09-05): the gap it is on and how far
+            // off the next look is (negative means overdue and waiting for a
+            // firing).
+            autoGapMin: d.autoGapMin || null,
+            nextAutoInS: d.nextAutoAt ? -age(d.nextAutoAt) : null,
           });
         }
         return json({
@@ -1910,7 +1915,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-05-his-own-register';
+const BUILD_TAG = 'v2026-09-05-reads-on-a-widening-clock';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1918,7 +1923,7 @@ const BUILD_TAG = 'v2026-09-05-his-own-register';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.91';
+const VERSION = '2.92';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -7554,12 +7559,14 @@ async function handleAdvisorAction({ request, env, ctx, user, profile, body, kin
     // whose phone locked mid-run died with no cover at all: status stuck on
     // "running", nothing queued, nothing for the cron to find. That wedge
     // held until he happened to reopen the panel.
-    await markPending(env, kind, id, { force: true });
     // auto rides in from the panel's auto-fire so a noise flag can take the
     // no-new-content exit instead of buying a full turn; a real tap (no auto)
     // also reads files still inside the settle window, because waiting four
     // minutes on files he just uploaded reads as "it ignored my photos".
     const isAuto = body?.auto === true;
+    // A tap is due now; the panel's automatic fire keeps whatever clock the
+    // case is on (2026-09-05), and the run itself waits it out if it is early.
+    await markPending(env, kind, id, { force: true, due: !isAuto });
     // The turn rides the Workflow whenever it can: detached from this
     // connection, a locked phone no longer kills the read. The one case that
     // cannot (inline base64 media exceeds the Workflow payload limit) keeps

@@ -204,7 +204,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   // draft. When it lands, the panel takes him to it instead of leaving it to
   // appear silently on another page.
   let awaitingDraft = false;
-  let firedFor = null; // pendingAt value we already launched an analysis for
+  let firedFor = null; // the pendingAt and clock moment we already launched an analysis for
   // Which page he is on, and it survives leaving the tab and coming back. A
   // closure variable reset him to 1 of 9 every time he looked at the chat.
   const PAGE_KEY = `pa-read-page-${kind}-${id}`;
@@ -396,8 +396,18 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       const readN = near(d.mediaReport?.at) ? (d.mediaReport.read || []).length : 0;
       if (readN) bits.push(`read ${readN} file${readN === 1 ? '' : 's'}`);
       if (near(d.diffAt)) bits.push('differential moved');
+      // When the next automatic read is due (2026-09-05): thirty minutes
+      // after a read, an hour further out for every look that found nothing
+      // new, and back to thirty the moment something lands. Only while it
+      // is idle: a running read is its own status line.
+      const nextAt = d.nextAutoAt && !running && !paused && d.status !== 'error' ? toDate(d.nextAutoAt) : null;
+      const clock = nextAt
+        ? (nextAt.getTime() > Date.now() + 60_000
+          ? ` · next automatic read ${whenShort(nextAt)}`
+          : ' · next automatic read any minute')
+        : '';
       updatedEl.textContent = d.updatedAt
-        ? `Updated ${timeAgo(toDate(d.updatedAt))}${bits.length ? ` · ${bits.join(', ')}` : ''}${paused ? ' · analysis paused' : ''}`
+        ? `Updated ${timeAgo(toDate(d.updatedAt))}${bits.length ? ` · ${bits.join(', ')}` : ''}${paused ? ' · analysis paused' : clock}`
         : '';
     } else if (!running) {
       bodyEl.innerHTML = '<p class="dim small">No assessment yet. Tap <strong>Update</strong> once there are a few messages to read.</p>';
@@ -458,9 +468,19 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     // warm. The per-minute cron owns retries now; the panel only volunteers
     // when nothing has even STARTED in the last three minutes.
     const anyStart = d.startedAt ? toDate(d.startedAt).getTime() : 0;
-    if (d.pendingAt && !running && !paused && d.status !== 'error' && firedFor !== d.pendingAt
+    // THE AUTOMATIC CLOCK (2026-09-05). The panel volunteers a read only
+    // when the case's clock says so: a flag raised two minutes after a read
+    // waits for the half-hour mark, and a case that has been read once is
+    // looked at again when its clock comes due even with no flag raised
+    // (the Worker bails for free when nothing is new and moves the clock an
+    // hour further out). Fired once per moment, not once per poll.
+    const dueAt = d.nextAutoAt ? toDate(d.nextAutoAt).getTime() : 0;
+    const clockDue = !!dueAt && Date.now() >= dueAt && !!d.analysis;
+    const fireKey = `${d.pendingAt || ''}|${clockDue ? dueAt : ''}`;
+    if ((d.pendingAt || clockDue) && (!dueAt || Date.now() >= dueAt)
+      && !running && !paused && d.status !== 'error' && firedFor !== fireKey
       && (!anyStart || Date.now() - anyStart > 3 * 60_000)) {
-      firedFor = d.pendingAt;
+      firedFor = fireKey;
       // auto, so the worker can take the cheap no-new-content exit when the
       // pending flag turns out to be noise; only a real tap forces a read.
       post({ action: 'analyze', auto: true });
@@ -1601,6 +1621,13 @@ function timeAgo(d) {
   if (s < 3600) return `${Math.round(s / 60)} min ago`;
   if (s < 86400) return `${Math.round(s / 3600)}h ago`;
   return d.toLocaleDateString();
+}
+
+/** A moment ahead, the way he would say it: "at 2:35 PM", or "Tue at 9:00 AM" past today. */
+function whenShort(d) {
+  const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return sameDay ? `at ${t}` : `${d.toLocaleDateString([], { weekday: 'short' })} at ${t}`;
 }
 
 function esc(s) {
