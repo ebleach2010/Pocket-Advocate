@@ -40,13 +40,20 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 const MODEL = 'claude-opus-5';
 /**
  * HIS OWN CASE (Eric, 2026-09-03: "I would like to use this tool for myself
- * as I'm entering my fifth relapse... Fable 5.1 high gets used for my case").
+ * as I'm entering my fifth relapse").
  *
  * A case with `self: true` on its document is Eric's own: he is the advocate
- * and the patient, and nobody is on the client side. Every turn on it runs on
- * the stronger model at high effort, whatever the pass type or the Settings
- * switch says, and every system prompt gets one more block telling the model
- * who it is talking to.
+ * and the patient, and nobody is on the client side. Every turn on it runs at
+ * the top effort, whatever the pass type or the Settings switch says, and
+ * every system prompt gets one more block telling the model who it is talking
+ * to.
+ *
+ * 2026-09-04, after reads that sat on "thinking" and never landed: the pinned
+ * id is the DEFAULT one now, the same one every client case has been running
+ * on all along, at max effort. A pinned id the provider will not run is a
+ * stall he cannot clear from his phone, and the batch path only learns of a
+ * refusal at RESULT time (see pollFlight), which is why that hole is closed
+ * below as well.
  *
  * HOW THE POLICY TRAVELS. Ten call sites build turns and one submits batches,
  * spread over runs that load the case document at different moments or not
@@ -58,8 +65,8 @@ const MODEL = 'claude-opus-5';
  * that enters by a path nobody wrapped simply gets the default model, which
  * is the old behaviour, not a breakage.
  */
-const SELF_MODEL = 'claude-fable-5-1';
-const SELF_EFFORT = 'high';
+const SELF_MODEL = 'claude-opus-5';
+const SELF_EFFORT = 'max';
 const turnPolicy = new AsyncLocalStorage();
 
 /** Run `fn` under the turn policy this case calls for. His own case pins the
@@ -69,7 +76,17 @@ export async function withCasePolicy(env, kind, id, fn) {
   let policy = null;
   if (kind === 'case' && id) {
     const c = await getDoc(env, `cases/${id}`).catch(() => null);
-    if (c?.data.self) policy = { self: true, model: SELF_MODEL, effort: SELF_EFFORT, kind, id };
+    if (c?.data.self) {
+      policy = { self: true, model: SELF_MODEL, effort: SELF_EFFORT, kind, id };
+      // A pinned id the provider has already refused stays refused: the next
+      // run takes the default rather than buying the same refusal again and
+      // leaving him watching "thinking" (2026-09-04). Dormant while the
+      // pinned id IS the default, which is the case today.
+      if (SELF_MODEL !== MODEL) {
+        const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+        if (st?.data.modelRefusedAt) policy.model = MODEL;
+      }
+    }
   }
   return turnPolicy.run(policy, fn);
 }
@@ -411,6 +428,8 @@ function friendly(err) {
     return 'Your Anthropic account is out of credits — top up at console.anthropic.com → Plans & Billing, then tap Update.';
   if (/rate.?limit/i.test(m)) return 'Rate limited by the API — wait a minute and tap Update.';
   if (/overloaded|529/i.test(m)) return 'The model is overloaded right now — try again in a minute.';
+  if (/model/i.test(m) && /(not[_ ]found|does not exist|invalid|not available|unsupported|no access)/i.test(m))
+    return 'That read asked for a setting this account cannot run. It falls back on its own and runs again within a few minutes.';
   if (/timed?\s?out|timeout|ETIMEDOUT/i.test(m))
     return 'The model took too long to answer. It retries on its own, or tap Update to run it now.';
   if (/fetch failed|ECONNRESET|connection (error|closed|reset)|network/i.test(m))
@@ -3072,6 +3091,26 @@ async function pollFlight(env, kind, id, rowId, flight) {
     await markPending(env, kind, id, { force: true }).catch(() => {});
     return;
   }
+  // A REFUSED ID IS REFUSED AT RESULT TIME ON THIS PATH (2026-09-04). The
+  // create call is what sendWithFallback wraps, and a batch create is happy
+  // to accept params the run itself will not honour, so a pinned id the
+  // provider will not run came back here as an ordinary failure: parked,
+  // re-queued by his next note, failed again. From his phone that is a read
+  // that never lands. Same fallback as the live path, applied once: stamp the
+  // refusal so the next run drops to the default, and run it again now.
+  if (flight.model && modelRefused({ status: 400, message: String(out.why || '') }, { model: flight.model })) {
+    await diagLog(env, {
+      ev: 'self-model-fallback', at: 'result', kind, id,
+      why: String(out.why || '').slice(0, 200),
+    });
+    await setState(env, kind, id, {
+      status: 'idle', batchCtx: null, startedAt: null, progressAt: null,
+      stage: null, mediaPlan: null, modelRefusedAt: new Date(),
+    }).catch(() => {});
+    await deleteDoc(env, `advisorQueue/${rowId}`).catch(() => {});
+    await markPending(env, kind, id, { force: true }).catch(() => {});
+    return;
+  }
   await diagLog(env, {
     ev: 'end', ok: false, kind, auto: flight.auto !== false, batch: true,
     err: String(out.why || 'batch failed').slice(0, 140),
@@ -3787,7 +3826,11 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       : passType === 'full' ? 'high'
         : media.blocks.length ? 'high'
           : 'medium');
-    const passTokens = !auto
+    // His own case is pinned at the top effort (2026-09-04), where the
+    // thinking share of the ceiling is largest, so it takes the ceilings a
+    // hand-pressed run gets rather than the smaller background ones. A read
+    // truncated mid-section is the one failure he cannot see for himself.
+    const passTokens = (!auto || turnPolicy.getStore()?.self)
       ? (passType === 'full' ? 64000 : 48000)
       : passType === 'full' ? 48000
         : media.blocks.length ? 40000
@@ -4050,7 +4093,7 @@ ${style.voice}` : ''}` || ' ' }],
       batchCtx: {
         batchId, customId, submittedAt: new Date(),
         passType, catchup, newerLeft, freshMsgs: fresh.length,
-        effort: passEffort, auto, skipMedia, self,
+        effort: passEffort, auto, skipMedia, self, model: turn.model,
         newestTs: newestTs ? new Date(newestTs) : null,
         chunkThroughTs: (() => {
           if (!(passType === 'delta' && catchup && fresh.length)) return null;

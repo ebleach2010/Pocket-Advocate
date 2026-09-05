@@ -1,6 +1,6 @@
-// selfcase.mjs - his own case: the turn policy that pins the stronger model
-// at high, the block that tells every prompt who it is reading about, the
-// fallback when the stronger model is refused, and the purple.
+// selfcase.mjs - his own case: the turn policy that pins the top effort, the
+// block that tells every prompt who it is reading about, the fallback when a
+// pinned id is refused (at submit and at result), and the purple.
 //
 // Eric, 2026-09-03: "I would like to use this tool for myself as I'm entering
 // my fifth relapse. Open an admin case file highlighted purple. Same controls,
@@ -67,12 +67,13 @@ const harness = () => {
   const deps = {
     AsyncLocalStorage,
     getDoc: async (env, path) => (store.has(path) ? { id: path.split('/').pop(), data: store.get(path) } : null),
+    statePath: (kind, id) => `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state`,
     diagLog: async (env, entry) => { diag.push(entry); },
     withCacheBp: (blocks) => blocks,
   };
   // eslint-disable-next-line no-new-func
   const api = new Function('deps', `
-    const { AsyncLocalStorage, getDoc, diagLog, withCacheBp } = deps;
+    const { AsyncLocalStorage, getDoc, statePath, diagLog, withCacheBp } = deps;
     ${modelLine}
     ${selfModelLine}
     ${selfEffortLine}
@@ -98,9 +99,13 @@ const mine = await H.api.withCasePolicy({}, 'case', 'mine', async () => build())
 const theirs = await H.api.withCasePolicy({}, 'case', 'theirs', async () => build());
 const sub = await H.api.withCasePolicy({}, 'sub', 'mine', async () => build());
 // NEGATIVE CONTROL (run 2026-09-03): turnRequest reading `policy?.effort ?? 'medium'` with the policy's effort dropped made this read
-//   FAIL  S2 on his own case every turn is the stronger model at high, with the block that says so last
-check('S2 on his own case every turn is the stronger model at high, with the block that says so last',
-  mine.model === H.api.SELF_MODEL && mine.output_config.effort === 'high'
+//   FAIL  S2 on his own case every turn runs at the top effort, over whatever the caller asked for, with the block that says so last
+// Re-pinned 2026-09-04 (Eric, after reads that never landed: "switch him to
+// opus 5 max"): the pinned id is the default one now, so the EFFORT is what
+// this check has to hold, and it must beat the 'medium' the caller passed.
+check('S2 on his own case every turn runs at the top effort, over whatever the caller asked for, with the block that says so last',
+  mine.model === H.api.SELF_MODEL && H.api.SELF_EFFORT === 'max'
+  && mine.output_config.effort === 'max' && plain.output_config.effort === 'medium'
   && mine.system[mine.system.length - 1].text.startsWith('HIS OWN CASE.')
   && /he is the advocate reading you AND the patient/.test(mine.system[mine.system.length - 1].text)
   && /Money, hours and rates play no part/.test(mine.system[mine.system.length - 1].text),
@@ -109,7 +114,9 @@ check('S2 on his own case every turn is the stronger model at high, with the blo
 //   FAIL  S3 every other case, a subscription, and a turn outside any run keep the default model and their own effort, with no block
 check('S3 every other case, a subscription, and a turn outside any run keep the default model and their own effort, with no block',
   [plain, theirs, sub].every((t) => t.model === H.api.MODEL && t.output_config.effort === 'medium'
-    && !t.system.some((b) => /HIS OWN CASE/.test(b.text))),
+    && !t.system.some((b) => /HIS OWN CASE/.test(b.text)))
+  // The efforts have to differ, or this check would pass on a policy that did nothing.
+  && mine.output_config.effort !== plain.output_config.effort,
   [plain, theirs, sub].map((t) => `${t.model}/${t.output_config.effort}/${t.system.length}`).join(' '));
 // The policy follows the run through an await, which is the whole reason it
 // is a store and not an argument.
@@ -120,34 +127,40 @@ const late = await H.api.withCasePolicy({}, 'case', 'mine', async () => {
 check('S4 the policy follows the run across an await', late.model === H.api.SELF_MODEL);
 
 // ---- the fallback ----
-const refused = Object.assign(new Error('model: claude-fable-5-1 is not a valid model'), { status: 404 });
+// Re-pinned 2026-09-04: the pinned id is the DEFAULT one now (Eric, after
+// reads that never landed), so the fallback is driven with an explicit
+// pinned turn, which is the shape it exists to rescue. Driving it through
+// the policy would have tested nothing the day the two ids became one.
+const PINNED = 'claude-something-else';
+const refused = Object.assign(new Error(`model: ${PINNED} is not a valid model`), { status: 404 });
+const pinnedTurn = { ...build(), model: PINNED };
 const sends = [];
 // Caught, not awaited bare: a fallback that rethrows the refusal is this
 // check's FAIL, not the suite's crash.
 let out = null;
 try {
-  out = await H.api.withCasePolicy({}, 'case', 'mine', async () => H.api.sendWithFallback({}, build(), async (t) => {
+  out = await H.api.withCasePolicy({}, 'case', 'mine', async () => H.api.sendWithFallback({}, pinnedTurn, async (t) => {
     sends.push(t.model);
-    if (t.model === H.api.SELF_MODEL) throw refused;
+    if (t.model !== H.api.MODEL) throw refused;
     return 'carried';
   }));
 } catch (e) { out = e; }
 // NEGATIVE CONTROL (run 2026-09-03): modelRefused answering false for a 404 made this read
-//   FAIL  S5 a refused stronger model is noted once in the diag log and the same turn is carried on the default
-check('S5 a refused stronger model is noted once in the diag log and the same turn is carried on the default',
-  out === 'carried' && sends.join(',') === `${H.api.SELF_MODEL},${H.api.MODEL}`
+//   FAIL  S5 a refused pinned id is noted once in the diag log and the same turn is carried on the default
+check('S5 a refused pinned id is noted once in the diag log and the same turn is carried on the default',
+  out === 'carried' && sends.join(',') === `${PINNED},${H.api.MODEL}`
   && H.diag.length === 1 && H.diag[0].ev === 'self-model-fallback' && H.diag[0].id === 'mine',
   `${sends.join(',')} diag ${JSON.stringify(H.diag)}`);
 const other = Object.assign(new Error('overloaded'), { status: 529 });
 let thrown = null;
 try {
-  await H.api.withCasePolicy({}, 'case', 'mine', async () => H.api.sendWithFallback({}, build(), async () => { throw other; }));
+  await H.api.withCasePolicy({}, 'case', 'mine', async () => H.api.sendWithFallback({}, pinnedTurn, async () => { throw other; }));
 } catch (e) { thrown = e; }
 let thrownDefault = null;
 try {
   await H.api.sendWithFallback({}, build(), async () => { throw refused; });
 } catch (e) { thrownDefault = e; }
-check('S6 any other error, and a refusal of the default model itself, are thrown untouched',
+check('S6 any other error, and a refusal of the default id itself, are thrown untouched',
   thrown === other && thrownDefault === refused && H.diag.length === 1);
 
 // ---- the economics ----
@@ -812,6 +825,50 @@ check('S47 a typed address that already owns a case here is refused once, opens 
   && /if \(go\.dataset\.confirm === '1'\) payload\.confirmExisting = true;/.test(ADMIN) && /data-open-confirm/.test(ADMIN)
   && /body\.confirmExisting !== true/.test(DEMO) && /existing: true/.test(DEMO),
   `${f5.code}/${JSON.stringify(f5.obj).slice(0, 80)} ${f6.code}`);
+
+
+// ---- the stall, and the ceilings a pinned max effort needs (2026-09-04) ----
+// Eric: "advisor is stalling on my personal case. Let's switch him to opus 5
+// max." The batch path only learned of a refused id at RESULT time, where
+// nothing looked, so the read parked and his next note bought the same
+// refusal again.
+const pollSrc = lift(ADV, 'async function pollFlight(env, kind, id, rowId, flight) {');
+const runAnaSrc = lift(ADV, 'export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia = false, counted = false, auto = false, deadlineAt = 0, freshFiles = false } = {}) {');
+const parkAt = pollSrc.indexOf("status: 'error', error: friendly(");
+const fbAt = pollSrc.indexOf('modelRefused({ status: 400');
+// NEGATIVE CONTROL (run 2026-09-04): the result-time fallback guard replaced with `if (false && ...)` made this read
+//   FAIL  S48 a refused id on a finished batch falls back and runs again instead of parking, and the flight carries what it ran on  -- fallback at 3616, p...
+check('S48 a refused id on a finished batch falls back and runs again instead of parking, and the flight carries what it ran on',
+  !!pollSrc && fbAt > 0 && parkAt > 0 && fbAt < parkAt
+  // The GUARD, not merely the call: a branch mutated to `if (false && ...)`
+  // still contains every line below it.
+  && /if \(flight\.model && modelRefused\(\{ status: 400, message: String\(out\.why \|\| ''\) \}, \{ model: flight\.model \}\)\) \{/.test(pollSrc)
+  && /effort: passEffort, auto, skipMedia, self, model: turn\.model,/.test(runAnaSrc)
+  && /ev: 'self-model-fallback', at: 'result'/.test(pollSrc)
+  && /modelRefusedAt: new Date\(\),/.test(pollSrc)
+  && /await markPending\(env, kind, id, \{ force: true \}\)\.catch\(\(\) => \{\}\);\n\s+return;\n\s+\}\n\s+await diagLog\(env, \{\n\s+ev: 'end', ok: false/.test(pollSrc)
+  && /if \(SELF_MODEL !== MODEL\) \{\n\s+const st = await getDoc\(env, statePath\(kind, id\)\)\.catch\(\(\) => null\);\n\s+if \(st\?\.data\.modelRefusedAt\) policy\.model = MODEL;/.test(ADV),
+  `fallback at ${fbAt}, park at ${parkAt}`);
+
+// The predicate the new branch uses, run for real: a batch failure naming the
+// id is a refusal when the flight ran on a pinned id, and never when it ran
+// on the default (which is what it runs on today, so this path stays shut).
+const batchWhy = 'model: claude-something-else is not a valid model';
+// NEGATIVE CONTROL (run 2026-09-04): modelRefused matching /nothing/ instead of /model/ made this read
+//   FAIL  S49 a batch failure naming the id counts as a refusal only when the run was pinned to something other than the default
+check('S49 a batch failure naming the id counts as a refusal only when the run was pinned to something other than the default',
+  H.api.sendWithFallback && (() => {
+    const refusedFn2 = new Function('MODEL', `${refusedFn}; return modelRefused;`)(H.api.MODEL);
+    return refusedFn2({ status: 400, message: batchWhy }, { model: 'claude-something-else' }) === true
+      && refusedFn2({ status: 400, message: batchWhy }, { model: H.api.MODEL }) === false
+      && refusedFn2({ status: 500, message: batchWhy }, { model: 'claude-something-else' }) === false;
+  })());
+
+// NEGATIVE CONTROL (run 2026-09-04): the passTokens condition put back to `(!auto)` made this read
+//   FAIL  S50 his own case takes the hand-pressed token ceilings, because the top effort spends most of them on thinking
+check('S50 his own case takes the hand-pressed token ceilings, because the top effort spends most of them on thinking',
+  /const passTokens = \(!auto \|\| turnPolicy\.getStore\(\)\?\.self\)\n\s+\? \(passType === 'full' \? 64000 : 48000\)/.test(ADV)
+  && /That read asked for a setting this account cannot run\./.test(ADV));
 
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);

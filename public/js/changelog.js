@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.86';
+export const VERSION = '2.87';
 
 /**
  * Newest first.
@@ -51,6 +51,21 @@ export const VERSION = '2.86';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS OWN CASE, TOP EFFORT, AND THE STALL (Eric, 2026-09-04, after reads
+    // on his own case that sat on "thinking" and never landed: he asked for
+    // the top setting on it). His exact words live in the commit and in the
+    // Worker, which no client is ever served; this file is served to
+    // everyone, so it carries none of that vocabulary. Admin only; the
+    // client list stays empty.
+    version: '2.87',
+    quiet: true,
+    client: [],
+    admin: [
+      'Your own case now reads at the top effort setting, with the bigger ceilings that setting needs so a read cannot be cut off mid-section.',
+      'A read that asked for a setting this account cannot run used to sit on "thinking" and park; it now falls back on its own and finishes.',
+    ],
+  },
   {
     // THE PAUSE NOTE (Eric, 2026-09-03: "a spot to put a pause reason for
     // the client and they get a notification with the reason for pausing").

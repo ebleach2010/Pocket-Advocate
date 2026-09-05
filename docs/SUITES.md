@@ -162,10 +162,16 @@ emails, counts or bills anyone: the Worker checks the flag wherever a
 client would otherwise be told or counted (the chat notice and digest, the
 work log notice, the upload actions, the included hours, the delivered-case
 sweep, the chat-open notice, the scheduler, the capacity, the ledger, the
-public stats). Every reading on it runs on the stronger model at high, with
-one more system block saying who it is reading about, carried by an
-AsyncLocalStorage policy from each run's entry; a refused model id falls
-back to the default and says so in the diag log. `tools/suites/selfcase.mjs`
+public stats). Every reading on it runs at the top effort, with one more
+system block saying who it is reading about, carried by an AsyncLocalStorage
+policy from each run's entry, and it takes the hand-pressed token ceilings
+because that effort spends most of a ceiling on thinking. A refused model id
+falls back to the default and says so in the diag log, at submit time and
+(since 2026-09-04, after reads that sat on "thinking" and never landed) at
+result time too: a batch create accepts params the run itself will not
+honour, so the failure only surfaces when the result lands, and the read now
+re-runs on the default instead of parking as an error his next note buys
+again. `tools/suites/selfcase.mjs`
 lifts and runs the policy, the request builder, the fallback and the route,
 and pins every guard and the purple; `tools/suites/worklog.mjs` L67 runs the
 silence through the work log harness. `tools/drives/drive-selfcase.mjs`
