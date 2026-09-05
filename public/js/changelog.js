@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.89';
+export const VERSION = '2.90';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '2.89';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS OWN CASE, PICKED ON COST AND SPEED (Eric, 2026-09-04, with both
+    // settings measured on his own case). Admin only; the client list stays
+    // empty.
+    version: '2.90',
+    quiet: true,
+    client: [],
+    admin: [
+      'Your own case is back on the ordinary setting at the top effort, because on your own case it read in about six minutes against ten, for less.',
+    ],
+  },
   {
     // HIS OWN CASE BACK ON ITS OWN SETTING (Eric, 2026-09-04, once reads were
     // landing again). The setting was never what stalled them. Admin only;

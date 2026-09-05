@@ -61,7 +61,12 @@ check('S1 the policy, the block, the fallback and the request builder lift out o
     !fallbackFn && 'sendWithFallback', !turnReqFn && 'turnRequest', !todayFn && 'todayBlock', !econNoteFn && 'economicsNote']
     .filter(Boolean).join(', '));
 
-const harness = () => {
+// `pinnedAs` substitutes the pinned id, so the machinery around pinning can be
+// tested whichever id Eric currently has pinned. He has moved his own case
+// between the default and a named one twice now on cost and speed, and a
+// check that only works while the two differ is a check that quietly stops
+// testing anything the moment they agree.
+const harness = (pinnedAs = null) => {
   const diag = [];
   const store = new Map();
   const deps = {
@@ -75,7 +80,7 @@ const harness = () => {
   const api = new Function('deps', `
     const { AsyncLocalStorage, getDoc, statePath, diagLog, withCacheBp } = deps;
     ${modelLine}
-    ${selfModelLine}
+    ${pinnedAs ? `const SELF_MODEL = '${pinnedAs}';` : selfModelLine}
     ${selfEffortLine}
     ${storeLine}
     ${withPolicy.replace('export async function', 'async function')}
@@ -876,12 +881,13 @@ check('S50 his own case takes the hand-pressed token ceilings, because the top e
 // it once reads were landing ("reintroduce fable 5.1 for my personal case
 // only"), and a stamp left over from that would otherwise have held him on
 // the default silently, for ever.
-const stamped = harness();
+const PINNED_ELSEWHERE = 'claude-pinned-elsewhere';
+const stamped = harness(PINNED_ELSEWHERE);
 stamped.store.set('cases/mine', { self: true });
 stamped.store.set('cases/mine/advisor/state', { modelRefusedId: stamped.api.SELF_MODEL, modelRefusedAt: new Date() });
 const afterRefusal = await stamped.api.withCasePolicy({}, 'case', 'mine', async () =>
   stamped.api.turnRequest({ system: 'SYS', messages: [], effort: 'medium', maxTokens: 1000 }));
-const stale = harness();
+const stale = harness(PINNED_ELSEWHERE);
 stale.store.set('cases/mine', { self: true });
 stale.store.set('cases/mine/advisor/state', { modelRefusedId: 'claude-something-he-has-moved-off', modelRefusedAt: new Date() });
 const afterStale = await stale.api.withCasePolicy({}, 'case', 'mine', async () =>
@@ -889,8 +895,11 @@ const afterStale = await stale.api.withCasePolicy({}, 'case', 'mine', async () =
 // NEGATIVE CONTROL (run 2026-09-04): the stamp read back as `modelRefusedAt`
 // rather than the id it named made this read
 //   FAIL  S51 a refusal is remembered against the id it refused, so changing the pinned id clears its own history
+// Re-pinned 2026-09-04: driven through a harness with an id pinned that is
+// NOT the default, because his own case is back on the default and the two
+// being one id would have left this testing nothing.
 check('S51 a refusal is remembered against the id it refused, so changing the pinned id clears its own history',
-  stamped.api.SELF_MODEL !== stamped.api.MODEL
+  stamped.api.SELF_MODEL === PINNED_ELSEWHERE && stamped.api.SELF_MODEL !== stamped.api.MODEL
   && afterRefusal.model === stamped.api.MODEL
   && afterStale.model === stale.api.SELF_MODEL
   // The effort is his either way: a refused id never costs him the setting.

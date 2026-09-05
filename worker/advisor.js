@@ -51,9 +51,13 @@ const MODEL = 'claude-opus-5';
  * 2026-09-04, the reads that sat on "thinking" and never landed: the pinned
  * id was never the cause. Nothing was COLLECTING a finished read (see
  * pollCaseFlight), and the two successful landings either side of that hour
- * were on this same pinned id. It was moved to the default while that was
- * still in doubt and moved back on his word once reads were landing again:
- * "reintroduce fable 5.1 for my personal case only". Max effort stays.
+ * were on this same pinned id.
+ *
+ * Then, with reads landing and both ids measured on his own case, he chose on
+ * cost and speed: "Opus max for the advisor on my personal case. Fable rating
+ * credits and taking too long." The flight recorder agrees, on his case, at
+ * the same effort: the default landed a read in 5.9 and 6.8 minutes, the
+ * other in 10.3. So the pinned id is the default again, and max effort stays.
  *
  * The refusal machinery below is what makes pinning an id safe rather than a
  * gamble: a refusal at submit time falls back within the turn, and one at
@@ -72,7 +76,7 @@ const MODEL = 'claude-opus-5';
  * that enters by a path nobody wrapped simply gets the default model, which
  * is the old behaviour, not a breakage.
  */
-const SELF_MODEL = 'claude-fable-5-1';
+const SELF_MODEL = 'claude-opus-5';
 const SELF_EFFORT = 'max';
 const turnPolicy = new AsyncLocalStorage();
 
