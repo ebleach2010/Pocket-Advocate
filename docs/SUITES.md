@@ -138,6 +138,28 @@ advisor's flight fix (queue.mjs Q18-Q19): a manual Update takes over a
 batch in flight, and a flight the provider cannot be reached for is
 abandoned after thirty polls.
 
+**Collecting a read without the cron (2026-09-04.** Eric: "It still keeps
+stalling even with app open." A read runs as a batch on the provider's side
+and only a poll brings it home, and the only thing that polled was
+`runQueuedAnalyses`, whose only caller is `scheduled()`. Production's cron
+trigger is not reliable (`diag/cron` carrying `watchdog: true` means the
+heartbeat came from a request standing in), so a finished read was never
+collected: it sat on "thinking" until he tapped Update, and the tap
+cancelled it and bought another nobody would collect either. An hour of the
+flight recorder is that loop, every entry a takeover and a resubmit and not
+one landing. Now `pollCaseFlight` collects one case's flight and
+`pollFlightsNow` walks the queue: the panel's own state poll awaits the
+first before it answers, so the poll that finds the answer is the one that
+paints it, and any `/api/` request runs the second once a minute per
+isolate. His tap polls a flight younger than `TAKEOVER_AFTER_MS` instead of
+throwing it away. And the run that buys a turn now CLAIMS the state document
+conditionally, because two triggers passing the read-then-decide guards in
+the same second were both buying one: the recorder caught two submits 321
+milliseconds apart, only one of which anything would ever collect. queue.mjs
+Q20-Q25 run the pollers against fakes and pin the wiring, the age gate and
+the claim; Q18 was re-pinned with a dated note because the takeover now sits
+behind that gate.
+
 ### The contact row and the log pencil (2026-09-03)
 
 The client's phone and home address on the case overview, tap to call or

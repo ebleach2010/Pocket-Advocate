@@ -219,14 +219,114 @@ check('Q15 call notes still routes to its own runner, unchanged',
 // NEGATIVE CONTROL (run 2026-09-03): `if (auto) return;` changed back to an
 // unconditional `return` made this read
 //   FAIL  Q18 a manual Update takes over an in-flight batch instead of being answered with silence
+// Re-pinned 2026-09-04: the takeover is still here and still his, but it now
+// sits behind the age gate Q24 pins, because a tap on a young flight was
+// destroying work that only needed collecting. The ordering is what this
+// check holds: auto defers, then the gate, then the cancel.
 check('Q18 a manual Update takes over an in-flight batch instead of being answered with silence',
-  /< 3 \* 3_600_000\) \{\n\s*if \(auto\) return;[\s\S]{0,900}batches\.cancel\(flight\.batchId\)[\s\S]{0,200}setState\(env, kind, id, \{ batchCtx: null \}\)/.test(SRC));
+  /< 3 \* 3_600_000\) \{\n\s*if \(auto\) return;[\s\S]{0,2500}batches\.cancel\(flight\.batchId\)[\s\S]{0,200}setState\(env, kind, id, \{ batchCtx: null \}\)/.test(SRC));
 // NEGATIVE CONTROL (run 2026-09-03): `pollFails >= 30` changed to `>= 3000` made this read
 //   FAIL  Q19 a flight the provider cannot be reached for, thirty polls running, is abandoned into the retry path
 check('Q19 a flight the provider cannot be reached for, thirty polls running, is abandoned into the retry path',
   /const pollFails = unreachable \? \(Number\(flight\.pollFails\) \|\| 0\) \+ 1 : 0;/.test(SRC)
   && /if \(unreachable && pollFails >= 30\) \{/.test(SRC)
   && /batchCtx: \{ \.\.\.flight, pollFails \},/.test(SRC));
+
+
+// ---- bringing a read home without the cron (Eric, 2026-09-04) -------------
+// "It still keeps stalling even with app open." The flight recorder showed an
+// hour with no `end` at all: takeover, start, submit, takeover, start,
+// submit. runQueuedAnalyses was the only thing that ever polled a flight and
+// scheduled() was the only thing that called it, so with the trigger
+// unreliable a finished read was never collected.
+const POLL_ONE = fn('pollCaseFlight');
+const POLL_ALL = fn('pollFlightsNow');
+const mkPoll = (docs, { queueRows = [] } = {}) => {
+  const polled = [];
+  const listed = [];
+  // eslint-disable-next-line no-new-func
+  return {
+    polled,
+    listed,
+    api: new Function('deps', `
+      const { getDoc, statePath, pollFlight, listDocs } = deps;
+      ${POLL_ONE.replace('export async function', 'async function')}
+      ${POLL_ALL.replace('export async function', 'async function')}
+      return { pollCaseFlight, pollFlightsNow };
+    `)({
+      getDoc: async (env, path) => (docs[path] ? { id: path, data: docs[path] } : null),
+      statePath: (kind, id) => `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state`,
+      pollFlight: async (env, kind, id, rowId, flight) => { polled.push({ kind, id, rowId, batchId: flight.batchId }); },
+      listDocs: async (env, coll, opts) => { listed.push([coll, opts?.pageSize]); return queueRows; },
+    }),
+  };
+};
+const flightState = (extra = {}) => ({ batchCtx: { batchId: 'batch_1', submittedAt: new Date(Date.now() - 200_000) }, ...extra });
+
+{
+  const H1 = mkPoll({ 'cases/mine/advisor/state': flightState({ progressAt: new Date(Date.now() - 200_000) }) });
+  const did = await H1.api.pollCaseFlight({}, 'case', 'mine');
+  // NEGATIVE CONTROL (run 2026-09-04): pollCaseFlight returning before it
+  // called pollFlight made this read
+  //   FAIL  Q20 a flight nobody has looked at lately is polled, under the queue row id the drain uses
+  check('Q20 a flight nobody has looked at lately is polled, under the queue row id the drain uses',
+    did === true && H1.polled.length === 1 && H1.polled[0].rowId === 'case_mine'
+    && H1.polled[0].batchId === 'batch_1',
+    JSON.stringify(H1.polled));
+
+  const H2 = mkPoll({ 'cases/mine/advisor/state': flightState({ progressAt: new Date() }) });
+  const fresh = await H2.api.pollCaseFlight({}, 'case', 'mine');
+  const H3 = mkPoll({ 'cases/mine/advisor/state': { status: 'idle' } });
+  const none = await H3.api.pollCaseFlight({}, 'case', 'mine');
+  // NEGATIVE CONTROL (run 2026-09-04): the minAgeMs throttle removed made this read
+  //   FAIL  Q21 a flight somebody looked at seconds ago is left alone, and a case with no flight costs one read
+  check('Q21 a flight somebody looked at seconds ago is left alone, and a case with no flight costs one read',
+    fresh === false && H2.polled.length === 0 && none === false && H3.polled.length === 0);
+
+  const H4 = mkPoll({
+    'cases/a/advisor/state': flightState({ progressAt: new Date(Date.now() - 200_000) }),
+    'cases/b/advisor/state': { status: 'idle' },
+  }, { queueRows: [{ id: 'case_a', data: { kind: 'case', id: 'a' } }, { id: 'case_b', data: { kind: 'case', id: 'b' } }, { id: 'junk', data: {} }] });
+  await H4.api.pollFlightsNow({});
+  // NEGATIVE CONTROL (run 2026-09-04): pollFlightsNow walking nothing (the
+  // loop body removed) made this read
+  //   FAIL  Q22 ordinary traffic walks the queue and polls every flight on it, ignoring a malformed row
+  check('Q22 ordinary traffic walks the queue and polls every flight on it, ignoring a malformed row',
+    H4.listed.length === 1 && H4.listed[0][0] === 'advisorQueue'
+    && H4.polled.length === 1 && H4.polled[0].id === 'a',
+    JSON.stringify({ listed: H4.listed, polled: H4.polled }));
+}
+
+const W = readFileSync(j(ROOT, 'worker/index.js'), 'utf8');
+// NEGATIVE CONTROL (run 2026-09-04): the pollCaseFlight call removed from the
+// state route made this read
+//   FAIL  Q23 the panel's own poll collects the read, and any API request collects every other one
+check('Q23 the panel\'s own poll collects the read, and any API request collects every other one',
+  /await pollCaseFlight\(env, kind, id\)\.catch\(\(\) => \{\}\);/.test(W)
+  // Awaited before the panel's reads, or the answer it just collected would
+  // not be in the payload it is answering with.
+  && W.indexOf('await pollCaseFlight(env, kind, id)') < W.indexOf('const [state, qa, knowledge, notesDoc, style] = await Promise.all(')
+  && /ctx\.waitUntil\(pollFlightsNow\(env\)\.catch\(\(\) => \{\}\)\);/.test(W)
+  && /pollCaseFlight, pollFlightsNow,/.test(W));
+
+// NEGATIVE CONTROL (run 2026-09-04): TAKEOVER_AFTER_MS raised so every flight
+// counts as young made this read
+//   FAIL  Q24 his tap polls a young flight instead of throwing it away, and still takes over an old one
+check('Q24 his tap polls a young flight instead of throwing it away, and still takes over an old one',
+  /const TAKEOVER_AFTER_MS = 15 \* 60_000;/.test(SRC)
+  && /if \(flightAge < TAKEOVER_AFTER_MS\) \{\n\s+await pollFlight\(env, kind, id, `\$\{kind\}_\$\{id\}`, flight\)\.catch\(\(\) => \{\}\);\n\s+return;\n\s+\}/.test(SRC)
+  // The takeover still exists, after that gate, for a flight that is old.
+  && SRC.indexOf('if (flightAge < TAKEOVER_AFTER_MS)') < SRC.indexOf("diagLog(env, { ev: 'flight-takeover'"));
+
+// NEGATIVE CONTROL (run 2026-09-04): the claim written unconditionally (no
+// ifUpdateTime) made this read
+//   FAIL  Q25 only one run of the two that pass the guards together buys the turn
+check('Q25 only one run of the two that pass the guards together buys the turn',
+  /const claimed = await patchDoc\(env, statePath\(kind, id\),\n\s+\{ status: 'running', error: null, startedAt: new Date\(\), stage: 'starting' \},\n\s+cur\n\s+\? \{ mask: \[[^\]]*\], ifUpdateTime: cur\.updateTime \}\n\s+: \{ mask: \[[^\]]*\], mustNotExist: true \},\n\s+\)\.catch\(\(\) => false\);/.test(SRC)
+  && /if \(claimed === false\) \{\n\s+await diagLog\(env, \{ ev: 'claim-lost', kind, auto \}\);\n\s+return;\n\s+\}/.test(SRC)
+  // The claim comes before the run announces itself, so the recorder shows
+  // one start per turn bought.
+  && SRC.indexOf('const claimed = await patchDoc(env, statePath(kind, id),') < SRC.indexOf("ev: 'start', kind, auto, skipMedia"));
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

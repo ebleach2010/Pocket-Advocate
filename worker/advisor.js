@@ -164,6 +164,10 @@ const QUESTION_EFFORT = 'high';
 const QUESTION_TOKENS = 12000;
 // Enough history to reason over without pushing a whole case into one request.
 const MAX_MESSAGES = 150;
+// How old a flight has to be before his tap is allowed to throw it away.
+// A read has been landing in about eight minutes, so anything younger than
+// this is work in progress, not a corpse (2026-09-04).
+const TAKEOVER_AFTER_MS = 15 * 60_000;
 // The delta pass (Eric, 2026-08-24: "reading only unread messages and files
 // and relating them to memory, not reading everything beginning to end each
 // time"). A routine update feeds the model its own previous assessment plus
@@ -3031,6 +3035,50 @@ async function sweepOne(env, t) {
  * three hours old: park the error exactly like a turn that died in place
  * used to, and the sweep's bounded error-retry clock buys the next attempt.
  */
+/**
+ * NOTHING BUT THE CRON USED TO LOOK AT A FLIGHT (Eric, 2026-09-04: "It still
+ * keeps stalling even with app open").
+ *
+ * The batch runs on Anthropic's side and only a poll brings the answer home.
+ * The one caller that polls is runQueuedAnalyses, and the one caller of THAT
+ * is scheduled(). When the cron trigger is unreliable, and production's has
+ * been (diag/cron carrying `watchdog: true` means the heartbeat came from a
+ * request standing in, not from the trigger), a submitted read is simply
+ * never collected: it sits on "thinking" until he taps Update, and the tap
+ * used to cancel it and buy another that was never collected either. The
+ * flight recorder shows the whole hour of it, every entry a takeover and a
+ * resubmit, not one landing.
+ *
+ * So the poll no longer belongs to the cron alone. This is the shared way in:
+ * one document read, and a poll only when nobody has looked lately.
+ */
+export async function pollCaseFlight(env, kind, id, { minAgeMs = 15_000 } = {}) {
+  const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+  const flight = st?.data.batchCtx;
+  if (!flight?.batchId) return false;
+  // pollFlight re-stamps progressAt on every look, so the heartbeat is also
+  // the throttle: the panel may ask every two seconds and still cost one
+  // provider GET a quarter minute.
+  const beat = st.data.progressAt ? new Date(st.data.progressAt).getTime() : 0;
+  if (beat && Date.now() - beat < minAgeMs) return false;
+  await pollFlight(env, kind, id, `${kind}_${id}`, flight);
+  return true;
+}
+
+/**
+ * Every flight the queue knows about, polled once. Rides ordinary API
+ * traffic, so the app being open is enough to bring a read home even with
+ * the scheduler down. Five rows, one small read each; never throws.
+ */
+export async function pollFlightsNow(env) {
+  const rows = await listDocs(env, 'advisorQueue', { pageSize: 5 }).catch(() => []);
+  for (const row of rows) {
+    const { kind, id } = row.data;
+    if (!kind || !id) continue;
+    await pollCaseFlight(env, kind, id, { minAgeMs: 45_000 }).catch(() => {});
+  }
+}
+
 async function pollFlight(env, kind, id, rowId, flight) {
   const started = flight.submittedAt ? new Date(flight.submittedAt).getTime() : 0;
   let out;
@@ -3647,6 +3695,19 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     if (flight?.batchId
       && Date.now() - new Date(flight.submittedAt || 0).getTime() < 3 * 3_600_000) {
       if (auto) return;
+      // HIS TAP USED TO DESTROY THE WORK (Eric, 2026-09-04: "It still keeps
+      // stalling even with app open"). With nothing polling, every read sat
+      // on "thinking", he tapped, and the tap below cancelled a batch that
+      // was merely uncollected and bought another one nobody would collect
+      // either. An hour of the flight recorder is that loop and nothing else.
+      // A young flight is now POLLED instead: if it has landed his tap is
+      // what brings it home, and if it is still running it stays running.
+      // Only a flight old enough to be genuinely suspect is taken over.
+      const flightAge = Date.now() - new Date(flight.submittedAt || 0).getTime();
+      if (flightAge < TAKEOVER_AFTER_MS) {
+        await pollFlight(env, kind, id, `${kind}_${id}`, flight).catch(() => {});
+        return;
+      }
       // A TAP TAKES OVER A FLIGHT (Eric, 2026-09-03, after a provider
       // outage: "The advisor is stuck on thinking for over two hours"). The
       // guard above kept a flight's case for three hours, and a manual
@@ -3660,8 +3721,25 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       await diagLog(env, { ev: 'flight-takeover', kind, ms: Date.now() - new Date(flight.submittedAt || 0).getTime() });
     }
     const runT0 = Date.now();
+    // THE CLAIM (2026-09-04). The guards above are read-then-decide, so two
+    // triggers judging the same idle case in the same second both passed
+    // them and both bought a turn: the flight recorder caught two submits
+    // 321 milliseconds apart, and only one of them can be the flight the
+    // state remembers, so the other ran to completion for nobody. The state
+    // document is re-read here and written conditionally on not having moved
+    // since, which is a claim: one run wins it, the loser returns quietly.
+    const cur = await getDoc(env, statePath(kind, id)).catch(() => null);
+    const claimed = await patchDoc(env, statePath(kind, id),
+      { status: 'running', error: null, startedAt: new Date(), stage: 'starting' },
+      cur
+        ? { mask: ['status', 'error', 'startedAt', 'stage'], ifUpdateTime: cur.updateTime }
+        : { mask: ['status', 'error', 'startedAt', 'stage'], mustNotExist: true },
+    ).catch(() => false);
+    if (claimed === false) {
+      await diagLog(env, { ev: 'claim-lost', kind, auto });
+      return;
+    }
     await diagLog(env, { ev: 'start', kind, auto, skipMedia, hasDeadline: !!deadlineAt });
-    await setState(env, kind, id, { status: 'running', error: null, startedAt: new Date(), stage: 'starting' });
     const [rows, state, knowledge, style, qa, effort, econ, worklog] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),

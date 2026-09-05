@@ -42,6 +42,7 @@ import { validateAction } from './advisor-acts.js';
 import {
   getAdvisorEffort, setAdvisorEffort,
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
+  pollCaseFlight, pollFlightsNow,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
 
@@ -796,6 +797,14 @@ export default {
     if (url.pathname.startsWith('/api/') && Date.now() - watchdogCheckedAt > 60_000) {
       watchdogCheckedAt = Date.now();
       ctx.waitUntil(cronWatchdog(env));
+      // And bring home any read the provider has already finished (2026-09-04).
+      // The cron was the only thing that ever collected one, so a firing that
+      // never came left the answer sitting there and Eric watching "thinking".
+      // Ordinary traffic collects it now, which is what "even with app open"
+      // should have meant all along. Unconditional: the watchdog above only
+      // acts on a stale heartbeat, and a read goes uncollected long before
+      // the scheduler looks five minutes dead.
+      ctx.waitUntil(pollFlightsNow(env).catch(() => {}));
     }
     try {
       // Maintenance: refuse the two routes that spend money, before either
@@ -1901,7 +1910,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-04-own-case-top-effort';
+const BUILD_TAG = 'v2026-09-04-collect-the-read';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1909,7 +1918,7 @@ const BUILD_TAG = 'v2026-09-04-own-case-top-effort';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.87';
+const VERSION = '2.88';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -5940,6 +5949,12 @@ async function handleAdvisorState(request, env, url) {
   if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad id' }, 400);
 
   const parent = kind === 'case' ? 'cases' : 'subscriptions';
+  // The panel asks for this every couple of seconds while a read is running,
+  // which makes it the best-placed thing in the app to collect one
+  // (2026-09-04). Awaited, not backgrounded, so the very poll that finds the
+  // answer is the one that paints it. Throttled inside to one provider GET a
+  // quarter minute, and it is one document read when there is no flight.
+  await pollCaseFlight(env, kind, id).catch(() => {});
   // One round of reads for the whole panel. Every one of them degrades to
   // empty: a case with no advisor state, no notes and no glossary is the
   // normal first-visit state, not an error.

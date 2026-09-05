@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.87';
+export const VERSION = '2.88';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '2.87';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE READ THAT NEVER LANDED (Eric, 2026-09-04: "It still keeps stalling
+    // even with app open"). The scheduler was the only thing that ever
+    // collected a finished read, and production's is unreliable. Admin only;
+    // the client list stays empty.
+    version: '2.88',
+    quiet: true,
+    client: [],
+    admin: [
+      'A finished read is now collected by the page you are looking at, and by any request the app makes, instead of only by the scheduler. That is what "open the app and it updates" was supposed to mean.',
+      'Tapping Update on a read that is still working no longer throws it away and starts over. It brings it home if it has finished, and leaves it alone if it has not.',
+      'Two things starting the same read in the same second can no longer both buy one.',
+    ],
+  },
   {
     // HIS OWN CASE, TOP EFFORT, AND THE STALL (Eric, 2026-09-04, after reads
     // on his own case that sat on "thinking" and never landed: he asked for
