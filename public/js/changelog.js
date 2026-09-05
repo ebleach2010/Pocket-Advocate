@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.85';
+export const VERSION = '2.86';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '2.85';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE PAUSE NOTE (Eric, 2026-09-03: "a spot to put a pause reason for
+    // the client and they get a notification with the reason for pausing").
+    // Silent, as every unspecified push is; the client line is real, so it
+    // shows in the footer notes.
+    version: '2.86',
+    quiet: true,
+    client: [
+      'If Eric pauses your case, his note to you shows at the top of your case page, word for word, and comes to you as a notification.',
+    ],
+    admin: [
+      'The Pause or close card has a Why for the client: they read it word for word, and it comes to them as a notification and an email. Your private Why is kept off their record entirely now.',
+    ],
+  },
   {
     // THE AUDIT (Eric, 2026-09-03: "make sure there's no crossover
     // instructions or breach between my personal case and a clients. Patch

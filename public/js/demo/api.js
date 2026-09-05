@@ -710,7 +710,10 @@ export function demoApi(role, store) {
           ...c,
           hold: {
             pausedAt: new Date(), totalMs: Number(hold.totalMs) || 0,
-            reason: body.reason || '', backBy: body.backBy ? new Date(body.backBy) : null,
+            // The client's note rides the document; his own reason stays off it
+            // (2026-09-03), as in the Worker.
+            reason: '', note: String(body.note || '').trim().slice(0, 400),
+            backBy: body.backBy ? new Date(body.backBy) : null,
           },
         });
         store.persist?.();
@@ -720,7 +723,7 @@ export function demoApi(role, store) {
         ? Math.max(0, Date.now() - new Date(hold.pausedAt).getTime()) : 0;
       store.docs.set(key, {
         ...c,
-        hold: { pausedAt: null, totalMs: (Number(hold.totalMs) || 0) + stretch, reason: '', backBy: null },
+        hold: { pausedAt: null, totalMs: (Number(hold.totalMs) || 0) + stretch, reason: '', note: '', backBy: null },
       });
       store.persist?.();
       return ok({ ok: true, paused: false, addedMs: stretch });

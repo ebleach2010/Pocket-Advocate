@@ -1901,7 +1901,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-03-own-case-walled-off';
+const BUILD_TAG = 'v2026-09-03-pause-note-for-the-client';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1909,7 +1909,7 @@ const BUILD_TAG = 'v2026-09-03-own-case-walled-off';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.85';
+const VERSION = '2.86';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2206,9 +2206,13 @@ const onHold = (c) => !!c?.hold?.pausedAt;
  * days resumes with eleven days put back on each of them, not with a
  * fortnight of silent decay to explain.
  *
- * The reason is stored for his own record and is never shown to the client.
- * They are told the case is paused and roughly when he expects to be back;
- * they are not told about his health, his family, or anything else.
+ * Two reasons now (Eric, 2026-09-03: "a spot to put a pause reason for the
+ * client and they get a notification with the reason for pausing"). `note`
+ * is FOR THE CLIENT: it lands on the case document they read, at the top of
+ * their paused notice word for word, and it rides the push and an email.
+ * `reason` is his own record and never reaches them: it lives on caseMeta,
+ * which is Worker-only by rule, and NOT on the case document, which the
+ * client can read whole through the SDK whatever the page chooses to paint.
  */
 async function handleHold(request, env) {
   const admin = await requireAdmin(request, env);
@@ -2223,10 +2227,17 @@ async function handleHold(request, env) {
 
   if (want) {
     if (hold.pausedAt) return json({ ok: true, paused: true, hold });
+    const clean = (v, n) => (typeof v === 'string'
+      ? v.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n) : '');
+    const note = clean(body?.note, 400);
+    const reason = clean(body?.reason, 300);
+    const now = new Date();
     const next = {
-      pausedAt: new Date(),
+      pausedAt: now,
       totalMs: Math.max(0, Number(hold.totalMs) || 0),
-      reason: typeof body?.reason === 'string' ? body.reason.slice(0, 300) : '',
+      // The client's copy. His private reason is deliberately not here.
+      reason: '',
+      note,
       backBy: body?.backBy ? new Date(body.backBy) : null,
       // The windows themselves, not only their sum: By the numbers excludes
       // anything that happened inside one (see holdPeriodsOf). Carried
@@ -2234,14 +2245,30 @@ async function handleHold(request, env) {
       periods: Array.isArray(hold.periods) ? hold.periods.slice(-50) : [],
     };
     await patchDoc(env, `cases/${caseId}`, { hold: next }, { mask: ['hold'] });
+    await patchDoc(env, `caseMeta/${caseId}`, { holdReason: reason, holdReasonAt: now },
+      { mask: ['holdReason', 'holdReasonAt'] }).catch(() => {});
     // Their page will say the case is paused the moment it repaints; the push
-    // is so they are not left refreshing to find out.
-    if (doc.data.clientUid) {
+    // is so they are not left refreshing to find out, and with a note it
+    // carries his words. His own case has nobody to tell.
+    if (doc.data.clientUid && !doc.data.self) {
       await notifyUser(env, doc.data.clientUid, {
         title: 'Pocket Advocate',
-        body: 'Your case is paused for a short while. Open the app for what that means.',
+        body: note
+          ? `Eric has paused your case: ${note}`.slice(0, 200)
+          : 'Your case is paused for a short while. Open the app for what that means.',
         link: `/case.html?id=${caseId}`,
       }).catch(() => {});
+    }
+    if (note && doc.data.clientEmail && !doc.data.self) {
+      const back = next.backBy;
+      await sendEmail(env, {
+        to: doc.data.clientEmail,
+        subject: 'Your case is paused for a short while',
+        html: `<p>${escHtml(note)}</p>
+        <p>Every date on your case has stopped with it, so you lose no time.${
+          back ? ` I expect to pick it back up around <strong>${MT_FMT.format(back)}</strong>.` : ''}</p>
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
+      }).catch(() => { /* the pause stands if the mail fails */ });
     }
     return json({ ok: true, paused: true, hold: next });
   }
@@ -2252,6 +2279,7 @@ async function handleHold(request, env) {
     pausedAt: null,
     totalMs: (Math.max(0, Number(hold.totalMs) || 0)) + stretch,
     reason: '',
+    note: '',
     backBy: null,
     periods: [...(Array.isArray(hold.periods) ? hold.periods : []),
       { from: new Date(hold.pausedAt), to: new Date() }].slice(-50),
@@ -2316,7 +2344,7 @@ async function handleCloseCase(request, env) {
     // on his chart, verbatim.
     closedReason: reason,
     // A closed case has no running clock to bill.
-    hold: { pausedAt: null, totalMs: Math.max(0, Number(doc.data.hold?.totalMs) || 0), reason: '', backBy: null },
+    hold: { pausedAt: null, totalMs: Math.max(0, Number(doc.data.hold?.totalMs) || 0), reason: '', note: '', backBy: null },
     // And nothing to extend: an open extension checkout would otherwise stay
     // payable and put thirty days onto a case that has already wrapped.
     pendingExtend: null,

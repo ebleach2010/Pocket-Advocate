@@ -145,6 +145,83 @@ ck('a held case is never auto-closed out from under him',
 ck('closing stops any running hold, so nothing keeps banking',
    /hold: \{ pausedAt: null, totalMs: Math\.max\(0, Number\(doc\.data\.hold\?\.totalMs\) \|\| 0\)/.test(W));
 
+// ---- the note for the client (Eric, 2026-09-03) --------------------------
+// "I would like to have a spot to put a pause reason for the client and they
+// get a notification with the reason for pausing." The route is lifted and
+// run: the client's note lands on the case document, cleaned, and rides the
+// push and an email; his private reason lands on caseMeta and nowhere the
+// client can read; his own case tells nobody.
+const holdSrc = W.match(/\nasync function handleHold\(request, env\) \{[\s\S]*?\n\}/)[0];
+const runHold = ({ caseData, body }) => {
+  const written = []; const pushes = []; const mails = [];
+  const deps = {
+    requireAdmin: async () => ({ uid: 'eric' }),
+    json: (obj, code = 200) => ({ code, obj }),
+    getDoc: async (env, path) => (path === 'cases/c1' ? { id: 'c1', data: caseData } : null),
+    patchDoc: async (env, path, data, opts) => { written.push({ path, data, opts }); return true; },
+    notifyUser: async (env, uid, msg) => { pushes.push({ uid, ...msg }); },
+    sendEmail: async (env, m) => { mails.push(m); },
+    escHtml: (v) => String(v).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])),
+    MT_FMT: { format: () => 'Monday, September 7' },
+  };
+  // eslint-disable-next-line no-new-func
+  const fn = new Function('deps', `const { requireAdmin, json, getDoc, patchDoc, notifyUser, sendEmail, escHtml, MT_FMT } = deps;${holdSrc}\n return handleHold;`)(deps);
+  return { post: () => fn({ json: async () => ({ caseId: 'c1', on: true, ...body }) }, { PUBLIC_BASE_URL: 'https://x' }), written, pushes, mails };
+};
+const client = { clientUid: 'u1', clientEmail: 'jordan@example.com', hold: {} };
+const P1 = runHold({ caseData: client, body: { note: ' Out for a  procedure until Monday <3 ', reason: 'migraine week', backBy: '2026-09-07T12:00:00-07:00' } });
+const p1 = await P1.post();
+const caseW = P1.written.find((w) => w.path === 'cases/c1');
+const metaW = P1.written.find((w) => w.path === 'caseMeta/c1');
+// NEGATIVE CONTROL (run 2026-09-03): the case write carrying `reason` again instead of '' made this read
+//   FAIL  the note for the client is cleaned and stored on the case, and his own reason goes to caseMeta and not to the case
+ck('the note for the client is cleaned and stored on the case, and his own reason goes to caseMeta and not to the case',
+   p1.code === 200 && !!caseW && caseW.data.hold.note === 'Out for a procedure until Monday <3' && caseW.data.hold.reason === ''
+   && (caseW.opts?.mask || []).join(',') === 'hold'
+   && !!metaW && metaW.data.holdReason === 'migraine week' && (metaW.opts?.mask || []).join(',') === 'holdReason,holdReasonAt'
+   && !JSON.stringify(caseW.data).includes('migraine'),
+   JSON.stringify({ hold: caseW?.data.hold, meta: metaW?.data }).slice(0, 200));
+// NEGATIVE CONTROL (run 2026-09-03): the push body flattened to 'Eric has paused your case.' made this read
+//   FAIL  the push carries the note and the email carries it word for word, escaped, with the date he expects to be back
+ck('the push carries the note and the email carries it word for word, escaped, with the date he expects to be back',
+   P1.pushes.length === 1 && P1.pushes[0].uid === 'u1' && P1.pushes[0].body === 'Eric has paused your case: Out for a procedure until Monday <3'
+   && P1.mails.length === 1 && P1.mails[0].to === 'jordan@example.com'
+   && /Out for a procedure until Monday &lt;3/.test(P1.mails[0].html) && /Monday, September 7/.test(P1.mails[0].html)
+   && /case\.html\?id=c1/.test(P1.mails[0].html),
+   `${P1.pushes[0]?.body} | ${P1.mails[0]?.html?.slice(0, 80)}`);
+const P2 = runHold({ caseData: client, body: { reason: 'private only' } });
+await P2.post();
+// NEGATIVE CONTROL (run 2026-09-03): the email guard dropping its `note &&` made this read
+//   FAIL  with no note the push is the plain line and no email goes
+ck('with no note the push is the plain line and no email goes',
+   P2.pushes.length === 1 && /paused for a short while/.test(P2.pushes[0].body) && !/Eric has paused/.test(P2.pushes[0].body)
+   && P2.mails.length === 0 && P2.written.find((w) => w.path === 'cases/c1')?.data.hold.note === '');
+const P3 = runHold({ caseData: { self: true, clientUid: null, clientEmail: null, hold: {} }, body: { note: 'resting', reason: 'r' } });
+await P3.post();
+// NEGATIVE CONTROL (run 2026-09-03): the push guard loosened to `!doc.data.clientUid || !doc.data.self` made this read
+//   FAIL  his own case pauses with nobody to tell
+ck('his own case pauses with nobody to tell', P3.pushes.length === 0 && P3.mails.length === 0
+   && P3.written.find((w) => w.path === 'cases/c1')?.data.hold.note === 'resting');
+{
+  const live = f('public/js/case.js').replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  // NEGATIVE CONTROL (run 2026-09-03): the client page painting hold.reason instead of hold.note made this read
+//   FAIL  the client page shows his note at the top of the paused notice, word for word, and nothing of his own reason
+ck('the client page shows his note at the top of the paused notice, word for word, and nothing of his own reason',
+     /From Eric:<\/strong> \$\{esc\(c\.hold\.note\)\}/.test(live) && !/hold\?\.reason|hold\.reason/.test(live));
+}
+{
+  const ADMIN = f('public/js/admin-case.js');
+  // NEGATIVE CONTROL (run 2026-09-03): the form posting the private Why as the note made this read
+//   FAIL  the pause form has the spot for their note, says they read it and get a notification, posts it, and the close label carries no dash
+ck('the pause form has the spot for their note, says they read it and get a notification, posts it, and the close label carries no dash',
+     /data-hold-note maxlength="400"/.test(ADMIN)
+     && /they read this word for word, and it comes to them as a notification/.test(ADMIN)
+     && /note: pane\.querySelector\('\[data-hold-note\]'\)\?\.value \|\| '',/.test(ADMIN)
+     && /Your note to them: <em>\$\{esc\(c\.hold\.note\)\}<\/em>/.test(ADMIN)
+     && !/Why — /.test(ADMIN) && !/required — /.test(ADMIN)
+     && /note: String\(body\.note \|\| ''\)\.trim\(\)\.slice\(0, 400\)/.test(f('public/js/demo/api.js')));
+}
+
 // ---- the terms ----------------------------------------------------------
 const ST = f('public/js/service-terms.js');
 ck('there is a no-guarantees clause, and it says what IS promised',

@@ -2467,7 +2467,7 @@ function paintOverview(pane) {
           <p class="dim small" style="margin:.2rem 0 .6rem;">Paused since
             <strong>${esc(new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric' }).format(toDate(c.hold.pausedAt)))}</strong>. Every deadline on
             this case is stopped. Their page says so and says their dates moved
-            with it.</p>
+            with it.${c.hold.note ? `<br>Your note to them: <em>${esc(c.hold.note)}</em>` : ''}</p>
           <div class="actions"><button class="btn glow" data-hold-off>Resume the case</button></div>`
         : `
           <p class="dim small" style="margin:.2rem 0 .6rem;">Stops every clock
@@ -2477,8 +2477,11 @@ function paintOverview(pane) {
             belongs to the plan, not to you.</p>
           <label class="dim small" style="display:block; margin-bottom:.4rem;">Back around (optional)
             <input type="date" data-hold-back style="margin-left:.4rem;"></label>
+          <label class="dim small" style="display:block; margin-bottom:.6rem;">Why, for the client: <strong style="color:var(--orange)">they read this word for word, and it comes to them as a notification</strong>
+            <input type="text" data-hold-note maxlength="400" placeholder="optional, e.g. I am out for a procedure until Monday"
+              style="width:100%; margin-top:.2rem;"></label>
           <label class="dim small" style="display:block; margin-bottom:.6rem;">Why, for your record only
-            <input type="text" data-hold-why maxlength="300" placeholder="never shown to them"
+            <input type="text" data-hold-why maxlength="300" placeholder="never shown to them, and not on their record"
               style="width:100%; margin-top:.2rem;"></label>
           <div class="actions"><button class="btn secondary" data-hold-on>Pause this case</button></div>`}
         <hr style="margin:.9rem 0; border:0; border-top:1px solid var(--line);">
@@ -2488,8 +2491,8 @@ function paintOverview(pane) {
           <p class="dim small" style="margin:.2rem 0 .6rem;">Closing ends the
             case at your discretion, for any reason. They keep everything in
             it, and they can still leave a review.</p>
-          <label class="dim small" style="display:block; margin-bottom:.6rem;">Why — <strong style="color:var(--orange)">the client reads this, word for word</strong>
-            <input type="text" data-close-reason maxlength="500" placeholder="required — shown on their case page"
+          <label class="dim small" style="display:block; margin-bottom:.6rem;">Why: <strong style="color:var(--orange)">the client reads this, word for word</strong>
+            <input type="text" data-close-reason maxlength="500" placeholder="required, shown on their case page"
               style="width:100%; margin-top:.2rem;"></label>
           <div class="actions"><button class="btn quiet" data-close-case>Close this case</button></div>`}
         <p class="error" data-hold-error hidden style="margin:.5rem 0 0;"></p>
@@ -2645,13 +2648,15 @@ function wireHoldAndClose(pane) {
     const back = pane.querySelector('[data-hold-back]')?.value || '';
     post('/api/admin/hold', {
       on: true,
+      // Theirs, word for word (Eric, 2026-09-03), and his own, never theirs.
+      note: pane.querySelector('[data-hold-note]')?.value || '',
       reason: pane.querySelector('[data-hold-why]')?.value || '',
       // A bare date means the whole MST day, the same rule the rest of the
       // app uses; without the offset it would mean UTC midnight and land a
       // day early on his own screen.
       backBy: back ? `${back}T12:00:00-07:00` : null,
     }, e.currentTarget,
-    'Paused. Their page now says the case is on hold and that their dates moved with it.',
+    'Paused. Their page now says the case is on hold, with your note if you wrote one, and that their dates moved with it.',
     (c2) => !!c2?.hold?.pausedAt);
   });
 

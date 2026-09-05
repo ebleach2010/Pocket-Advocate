@@ -292,6 +292,13 @@ advocacy from a client suite first and the chart grows the confirm/deny
 card - denying pings the refund. The **Pause / close** card requires the
 closing reason and says, before you type, that the client reads it word for
 word; close with one and the client's page shows "Why this case closed."
+Pausing has two reasons since 2026-09-03: a note **for the client** (they
+read it word for word at the top of their paused notice, and it reaches them
+as a push and an email; `hold.note` on the case document) and his own reason
+(`caseMeta.holdReason`, Worker-only, no longer on the client-readable case
+document). `tools/suites/hold.mjs` lifts and runs the route for both, and
+`tools/drives/drive-hold.mjs` pauses a demo case with a note and reads it
+back on the client's page.
 The **Work log** is the fourth page of the Case group, on EVERY case: pick one
 of his four categories, say who it was with, and write the one line the client
 sees, or leave that box empty and the entry stays his. Each row says which it

@@ -513,8 +513,9 @@ function workLine(c) {
  * moved with it, and the one thing that did NOT stop, which is the part that
  * could actually hurt them if they assumed otherwise.
  *
- * It does not say why. His health and his family are not the client's
- * business, and `hold.reason` is never sent to this page.
+ * It says why only when Eric wrote a note for them (`hold.note`, 2026-09-03),
+ * and then word for word. His own reason is not on this document at all: it
+ * lives Worker-side, where no client can read it.
  */
 function pausedNotice(c) {
   if (!c?.hold?.pausedAt) return '';
@@ -525,6 +526,7 @@ function pausedNotice(c) {
   return `
     <div class="panel" style="border-color:var(--magenta);">
       <h3 style="margin:0 0 .3rem;">Your case is paused</h3>
+      ${c.hold.note ? `<p style="margin:0 0 .5rem;"><strong>From Eric:</strong> ${esc(c.hold.note)}</p>` : ''}
       <p style="margin:0 0 .5rem;">I have had to stop work for a short while.
         Every date on your case has stopped with it, so nothing is running
         down while I am away and you lose no time.${
