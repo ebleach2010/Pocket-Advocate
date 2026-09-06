@@ -794,6 +794,57 @@ export function demoApi(role, store) {
       return ok({ ok: true });
     }
 
+    // THE SHOWCASE and DELETE (2026-09-06). The demo's Joe Bloe is a sketch
+    // of the Worker's: the same man, a few of the fifty messages, no files.
+    if (path === '/api/admin/showcase-case') {
+      await beat(300);
+      const key = 'cases/demo-case-showcase';
+      if (store.docs.get(key)) return ok({ ok: true, id: 'demo-case-showcase', existing: true });
+      const now = Date.now();
+      const ago = (days, h = 9) => { const t = new Date(now - days * 86400000); t.setUTCHours(h + 7, 0, 0, 0); return t; };
+      store.docs.set(key, {
+        showcase: true, clientUid: null, clientEmail: 'joe.bloe@example.com',
+        clientName: 'Joe Bloe', clientDob: '1979-04-12', clientTz: 'America/Boise',
+        clientPhone: '+1 208 555 0147', clientAddress: '1188 Juniper Ridge Rd, Nampa, ID 83686',
+        status: 'delivered', createdAt: ago(22, 16), bookingEmailSentAt: ago(22, 16),
+        appointment: { start: ago(14, 10), durationMin: 60, method: 'video', phone: null, joinLink: null, requested: false },
+        publicElection: { choice: 'private', history: [{ choice: 'private', at: ago(22, 16) }] },
+        addOnFollowUp: false, forms: {}, files: [],
+        reportDueAt: ago(7, 17), reportDeliveredAt: ago(7, 12),
+        caseRateCents: 120000, addonRateCents: 32500,
+        fullAccess: true, fullAccessAt: ago(10), fullAccessRateCents: 440000, fullAccessMonths: 1, fullAccessByHand: true,
+        stripe: null, work: { seconds: 24000, startedAt: null, tierMark: 3600 }, hold: null,
+        chatUnlocked: true, chatOpenNotified: true,
+      });
+      const lines = [
+        ['client', 20, 'Hi Eric. Thanks for taking this on. Quick version: five months of headaches, a blind spot in my right eye that comes and goes, and my left ear went muffled three weeks ago. Two doctors said migraine and stress. I do not buy it.'],
+        ['admin', 20, 'Good. I do not buy it either, not yet. Three things, in order: what happened first, what has been tested, and who has seen you. Start with the first symptom and the date.'],
+        ['client', 15, 'MRI report from the portal.'],
+        ['admin', 15, 'This is the most useful thing so far. The report describes small lesions in the middle of the corpus callosum (the bridge between the two halves of the brain). That location is not typical for migraine.'],
+        ['client', 2, 'Dye test done. The doctor said there were several blocked small artery branches in the right eye and one in the left I did not even know about. She used the word Susac.'],
+        ['admin', 2, 'Yes. Susac syndrome. Brain, eye, ear, all three, and it is treatable. This is not a diagnosis from me, it is from her, and she is the right person to make it.'],
+      ];
+      lines.forEach(([role, days, text], i) => store.docs.set(`${key}/chat/s${i}`, {
+        from: role === 'admin' ? 'demo-admin' : 'showcase-joe-bloe', role, text, ts: ago(days, 9 + i),
+      }));
+      store.persist?.();
+      store.fire?.(key);
+      return ok({ ok: true, id: 'demo-case-showcase', existing: false });
+    }
+    if (path === '/api/admin/delete-case') {
+      await beat(300);
+      const id = String(body.caseId || '');
+      const c = store.docs.get(`cases/${id}`);
+      if (!c) return ok({ ok: true, gone: true });
+      if (c.clientUid || !(c.self || c.showcase))
+        return fail(409, 'Only a case with nobody real behind it can be deleted: your own, or the showcase. A client\'s case is closed, never deleted.');
+      let docs = 0;
+      for (const k of [...store.docs.keys()]) {
+        if (k === `cases/${id}` || k.startsWith(`cases/${id}/`) || k === `caseMeta/${id}`) { store.docs.delete(k); docs++; }
+      }
+      store.persist?.();
+      return ok({ ok: true, docs, files: 0 });
+    }
     if (path === '/api/admin/hold' || path === '/api/admin/close-case') {
       const key = `cases/${body.caseId || DEMO_CASE_ID}`;
       const c = store.docs.get(key) || {};

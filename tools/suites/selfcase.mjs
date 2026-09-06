@@ -323,19 +323,21 @@ const guards = [
   // but him before it wakes the read.
   ['the chat notice', /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not your thread' \}, 403\);\n\s+refreshAdvisor\(env, ctx, kind, id\);\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/],
   // Re-pinned 2026-09-03 (audit): the one-field mask, so lm.ts is never retyped.
-  ['the chat digest', /if \(row\.data\.self\) \{\n[\s\S]{0,200}?\{ lastMessage: \{ emailed: true \} \},\n\s+\{ mask: \['lastMessage\.emailed'\] \}/],
+  // Re-pinned 2026-09-06 (Joe Bloe): five of these skip the showcase the same
+  // way they skip his own case, and the pins read both flags.
+  ['the chat digest', /if \(row\.data\.self \|\| row\.data\.showcase\) \{\n[\s\S]{0,200}?\{ lastMessage: \{ emailed: true \} \},\n\s+\{ mask: \['lastMessage\.emailed'\] \}/],
   ['the work log notice', /if \(!c \|\| !c\.clientUid \|\| c\.self \|\| c\.status === 'closed'\) return null;/],
   ['the recording clock', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n\s+const alreadyStarted = !!doc\.data\.reportDueAt;/],
   ['the document push', /if \(doc\.data\.clientUid && !doc\.data\.self\) \{/],
   ['the delivered state', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n\s+await patchDoc\(env, `cases\/\$\{caseId\}`, \{ status: 'delivered'/],
   ['the included hours', /if \(!c\?\.fullAccess \|\| c\.self \|\| c\.status === 'closed' \|\| c\.work\?\.includedDoneAt\) return;/],
-  ['the delivered-case sweep', /if \(onHold\(row\.data\)\) continue;\n[^\n]*\n\s+if \(row\.data\.self\) continue;/],
-  ['the chat-open notice', /if \(c\.chatOpenNotified \|\| c\.chatUnlocked \|\| c\.self\) continue;/],
+  ['the delivered-case sweep', /if \(onHold\(row\.data\)\) continue;\n[^\n]*\n\s+if \(row\.data\.self \|\| row\.data\.showcase\) continue;/],
+  ['the chat-open notice', /if \(c\.chatOpenNotified \|\| c\.chatUnlocked \|\| c\.self \|\| c\.showcase\) continue;/],
   ['the missing-email repair', /if \(!c\.clientUid \|\| c\.self\) continue;/],
   ['the scheduler', /if \(c\.self\) return json\(\{ error: 'Your own case has nobody on the other end to book with\.' \}, 409\);/],
   ['the capacity, both paths', /\]\, 200\)\)\.filter\(\(r\) => !r\.data\.self\);[\s\S]{0,200}r\.data\.status !== 'closed' && !r\.data\.self\)/],
-  ['the ledger', /const c = r\.data;\n[^\n]*\n[^\n]*\n\s+if \(c\.self\) continue;\n\s+const key = c\.clientUid \|\| r\.id;/],
-  ['the public stats', /const c = r\.data;\n[^\n]*\n[^\n]*\n\s+if \(c\.self\) continue;\n\s+const periods = holdPeriodsOf\(c, now\);/],
+  ['the ledger', /const c = r\.data;\n[^\n]*\n[^\n]*\n[^\n]*\n\s+if \(c\.self \|\| c\.showcase\) continue;\n\s+const key = c\.clientUid \|\| r\.id;/],
+  ['the public stats', /const c = r\.data;\n[^\n]*\n[^\n]*\n[^\n]*\n\s+if \(c\.self \|\| c\.showcase\) continue;\n\s+const periods = holdPeriodsOf\(c, now\);/],
 ];
 // NEGATIVE CONTROL (run 2026-09-03): the ledger's skip removed made this read
 //   FAIL  S17 every place a client would be told or counted checks the flag  -- the ledger

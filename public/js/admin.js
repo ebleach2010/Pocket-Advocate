@@ -408,11 +408,12 @@ async function load() {
     ])
     : '')
     + `<div class="open-doors"><button type="button" class="btn self-open" data-open-door="self">${ownAll.length ? '+ Open another case for myself' : 'Open a case for myself'}</button>
-        <button type="button" class="btn self-open" data-open-door="family">Open a family case</button></div>
+        <button type="button" class="btn self-open" data-open-door="family">Open a family case</button>
+        ${cases.some((c) => c.showcase) ? '' : '<button type="button" class="btn quiet" data-showcase-door>Build the showcase case (Joe Bloe)</button>'}</div>
       ${person('self', false, pullPicker)}${person('family', true)}`;
   listEl.innerHTML = attBlock + todayBlock + selfBlock +
     section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
-      `${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
+      `${c.showcase ? '<strong style="color:var(--orange)">SHOWCASE, nobody behind it</strong> · ' : ''}${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
        ${followUpFlag(c)}`))) +
     section('BOOKED: UPCOMING CALLS', 'var(--green)', future.map((c) => rowFor(c,
       `<strong style="color:var(--manila-strong)">${mtFmt.format(toDate(c.appointment.start))} MST</strong> · ${esc(c.appointment.method)}
@@ -486,6 +487,28 @@ async function load() {
       }
     });
   }
+
+  // THE SHOWCASE (Eric, 2026-09-06: "Create a completely fake case for me to
+  // show off on YouTube"). One tap builds Joe Bloe, invented end to end, and
+  // walks into him; the door goes away while he exists and comes back once
+  // he is deleted.
+  listEl.querySelector('[data-showcase-door]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Building the showcase… half a minute';
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/showcase-case', {
+        method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '{}',
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.id) throw new Error(out.error || `Failed (${res.status})`);
+      location.href = `/admin-case.html?id=${encodeURIComponent(out.id)}`;
+    } catch (err) {
+      btn.textContent = err.message;
+      btn.disabled = false;
+    }
+  });
 
   const voiceSay = listEl.querySelector('#voice-said');
   const voicePost = async (btn, body, done) => {

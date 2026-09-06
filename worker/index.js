@@ -16,6 +16,8 @@
 //   POST   /api/admin/case-update  join link / milestones / close / contact: phone and home address (admin)
 //   POST   /api/admin/self-case    a new case of his own, with his details, pulling from the personal cases he ticks (admin)
 //   POST   /api/admin/self-case/next  close his own case with its top diagnosis confirmed and open the next one from it (admin)
+//   POST   /api/admin/showcase-case  build the showcase case, Joe Bloe, invented end to end, or find the one that exists (admin)
+//   POST   /api/admin/delete-case    delete a case with nobody real behind it, his own or the showcase, whole (admin)
 //   POST   /api/chat/reply         his answer to a question the read put in his own chat (admin)
 //   POST   /api/admin/family-case  a free case for a family member; the email typed is their login (admin)
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
@@ -28,6 +30,7 @@ import { requireUser } from './firebase-auth.js';
 import { mintCustomToken, getAccessToken } from './google-auth.js';
 import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, batchDelete, listDocs } from './firestore.js';
 import { deleteFile, objectMeta, patchObjectMeta, putFile, listFiles, mediaFetch } from './storage.js';
+import { buildShowcase, wipeCase } from './showcase.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import {
   slotTimingProblem, windowProblem, HOLD_MINUTES,
@@ -852,6 +855,10 @@ export default {
         return await handleSelfCase(request, env);
       if (url.pathname === '/api/admin/self-case/next' && request.method === 'POST')
         return await handleSelfCaseNext(request, env);
+      if (url.pathname === '/api/admin/showcase-case' && request.method === 'POST')
+        return await handleShowcaseCase(request, env);
+      if (url.pathname === '/api/admin/delete-case' && request.method === 'POST')
+        return await handleDeleteCase(request, env);
       if (url.pathname === '/api/admin/family-case' && request.method === 'POST')
         return await handleFamilyCase(request, env);
       if (url.pathname === '/api/admin/case-update' && request.method === 'POST')
@@ -939,6 +946,13 @@ export default {
       if (url.pathname === '/api/diag' && request.method === 'GET') {
         if (url.searchParams.get('k') !== 'b6e6f406dc540d5459188b00716ab631')
           return json({ error: 'Not found' }, 404);
+        // The showcase, built from here as well as from the shelf (Eric,
+        // 2026-09-06: "You can push it to the app"), so it can be pushed
+        // without a phone in hand. Same builder, same one-per-app rule.
+        if (url.searchParams.get('do') === 'showcase') {
+          const out = await buildShowcase(env, { adminUid: env.ADMIN_UID || '' });
+          return json({ ok: true, ...out });
+        }
         const [cron, adv, queueRows, caseRows] = await Promise.all([
           getDoc(env, 'diag/cron').catch(() => null),
           getDoc(env, 'diag/advisor').catch(() => null),
@@ -1918,7 +1932,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-05-cases-in-sequence';
+const BUILD_TAG = 'v2026-09-06-joe-bloe';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1926,7 +1940,7 @@ const BUILD_TAG = 'v2026-09-05-cases-in-sequence';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.96';
+const VERSION = '2.97';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -1945,8 +1959,8 @@ async function closeDeliveredCases(env) {
       // A held case is not closed at all: his clocks are stopped, and closing
       // would take the chat away from somebody who is waiting on him.
       if (onHold(row.data)) continue;
-      // His own case never closes on its own.
-      if (row.data.self) continue;
+      // His own case never closes on its own; neither does the showcase.
+      if (row.data.self || row.data.showcase) continue;
       const at = row.data.reportDeliveredAt
         ? new Date(row.data.reportDeliveredAt).getTime() + heldMs(row.data) : 0;
       // No delivery stamp means an older case that predates the field. Leave
@@ -2964,8 +2978,9 @@ export async function runChatDigest(env, now = Date.now()) {
       const lm = row.data.lastMessage;
       if (!lm || !lm.ts) continue;
       // His own case: every message on it is his, and there is no inbox to
-      // digest into. Marked emailed so the query stops returning it.
-      if (row.data.self) {
+      // digest into. Marked emailed so the query stops returning it. The
+      // showcase (Joe Bloe, 2026-09-06) has nobody behind it either.
+      if (row.data.self || row.data.showcase) {
         // The one-field mask, like the write below: spreading lm back would
         // retype its ts from timestamp to string (audit, 2026-09-03).
         await patchDoc(env, `${coll}/${row.id}`, { lastMessage: { emailed: true } },
@@ -5676,8 +5691,9 @@ async function handleLedger(request, env) {
   for (const r of rows) {
     const c = r.data;
     // His own case: no money in it, and a row named after himself would
-    // stand beside real clients. Skipped whole.
-    if (c.self) continue;
+    // stand beside real clients. Skipped whole. The showcase (Joe Bloe,
+    // 2026-09-06) is invented money and is skipped the same way.
+    if (c.self || c.showcase) continue;
     const key = c.clientUid || r.id;
     if (!byClient.has(key)) {
       byClient.set(key, {
@@ -6974,7 +6990,7 @@ async function runChatOpenNotices(env) {
     const now = Date.now();
     for (const r of rows) {
       const c = r.data;
-      if (c.chatOpenNotified || c.chatUnlocked || c.self) continue;
+      if (c.chatOpenNotified || c.chatUnlocked || c.self || c.showcase) continue;
       if (['delivered', 'closed'].includes(c.status)) continue;
       const start = c.appointment?.start ? new Date(c.appointment.start).getTime() : 0;
       if (!start) continue;
@@ -8565,8 +8581,9 @@ async function computePublicStats(env, { force = false } = {}) {
     for (const r of caseRows) {
       const c = r.data;
       // His own case is not a client's case: not a case, a message, an hour
-      // or a milestone in the public figures.
-      if (c.self) continue;
+      // or a milestone in the public figures. Nor is the showcase, which is
+      // invented from end to end (Joe Bloe, 2026-09-06).
+      if (c.self || c.showcase) continue;
       const periods = holdPeriodsOf(c, now);
       const [chat, miles, log] = await Promise.all([
         listDocs(env, `cases/${r.id}/chat`, { pageSize: 300, all: true }).catch(() => []),
@@ -9029,6 +9046,44 @@ async function handleSelfCaseNext(request, env) {
   const made = await createSelfCase(env, admin, who, [source]);
   await patchDoc(env, `cases/${caseId}`, { continuedIn: made.id }, { mask: ['continuedIn'] }).catch(() => {});
   return json({ ok: true, id: made.id, confirmedDx, closed: caseId });
+}
+
+/**
+ * POST /api/admin/showcase-case   admin only
+ *
+ * (Eric, 2026-09-06: "Create a completely fake case for me to show off on
+ * YouTube... You can push it to the app as a personal case.") Joe Bloe,
+ * invented end to end, built by worker/showcase.js; one per app, and the
+ * one that exists is handed back rather than doubled.
+ */
+async function handleShowcaseCase(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const out = await buildShowcase(env, { adminUid: admin.uid });
+  return json({ ok: true, ...out });
+}
+
+/**
+ * POST /api/admin/delete-case   Body: { caseId }   admin only
+ *
+ * (Eric, 2026-09-06: "For personal cases, let me be able to delete it, next
+ * to the pause/close buttons.") Only a case with nobody real behind it: his
+ * own, or the showcase, and never one carrying a client's uid. A client's
+ * case is closed, never deleted; they keep what is in it. Everything the
+ * case owns goes with it (wipeCase).
+ */
+async function handleDeleteCase(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+  const doc = await getDoc(env, `cases/${caseId}`);
+  if (!doc) return json({ ok: true, gone: true });
+  if (doc.data.clientUid || !(doc.data.self || doc.data.showcase))
+    return json({ error: 'Only a case with nobody real behind it can be deleted: your own, or the showcase. A client\'s case is closed, never deleted.' }, 409);
+  const out = await wipeCase(env, caseId, { adminUid: admin.uid });
+  return json({ ok: true, ...out });
 }
 
 /**

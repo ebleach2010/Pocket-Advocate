@@ -2171,10 +2171,14 @@ function paintSelfOverview(pane, c) {
       <p class="row" style="gap:.4rem; align-items:center; justify-content:flex-start;">
         <button type="button" class="btn self-open" data-self-next-go>Confirm and open the next case</button>
         <button type="button" class="btn quiet" data-self-close>Just close it</button>
+        <button type="button" class="btn quiet danger" data-delete-case>Delete it</button>
       </p>
       <span class="dim small" data-self-next-said></span>
     </div>`}
+    ${c.status === 'closed' ? '<p class="row" style="justify-content:flex-start;"><button type="button" class="btn quiet danger" data-delete-case>Delete this case</button></p>' : ''}
     <p class="saved-note" data-self-said role="status" hidden></p>`;
+  // Delete, whole (2026-09-06): nobody is behind his own case, so it can go.
+  pane.querySelector('[data-delete-case]')?.addEventListener('click', (e) => deleteCase(e.currentTarget));
   // CLOSE AND CONTINUE (Eric, 2026-09-05: "When I close one, it confirms the
   // diagnosis that's top of the differential, and then opens the new case
   // with that diagnosis and condensed information from the previous case").
@@ -2595,6 +2599,12 @@ function paintOverview(pane) {
             <input type="text" data-close-reason maxlength="500" placeholder="required, shown on their case page"
               style="width:100%; margin-top:.2rem;"></label>
           <div class="actions"><button class="btn quiet" data-close-case>Close this case</button></div>`}
+        ${c.showcase || c.self ? `
+        <hr style="margin:.9rem 0; border:0; border-top:1px solid var(--line);">
+        <p class="dim small" style="margin:.2rem 0 .6rem;">${c.showcase
+          ? 'This is the showcase case: invented from end to end, nobody behind it. Delete it when you are done filming; it can be built again from the Clients page.'
+          : 'Nobody is behind this case, so it can be deleted whole.'} Deleting takes the chat, the files, the reading, the log and the milestones with it. Nothing is kept.</p>
+        <div class="actions"><button class="btn quiet danger" data-delete-case>Delete this case</button></div>` : ''}
         <p class="error" data-hold-error hidden style="margin:.5rem 0 0;"></p>
         ${saidHtml('hold')}
       </div>
@@ -2773,6 +2783,32 @@ function wireHoldAndClose(pane) {
       'Closed. Their page now shows your reason word for word, and they can still leave a review.',
       (c2) => c2?.status === 'closed');
   });
+  pane.querySelector('[data-delete-case]')?.addEventListener('click', (e) => deleteCase(e.currentTarget));
+}
+
+/**
+ * DELETE, for a case with nobody real behind it (Eric, 2026-09-06: "For
+ * personal cases, let me be able to delete it, next to the pause/close
+ * buttons"). The route refuses anything with a client on it. Everything the
+ * case owns goes; the page walks back to the shelf.
+ */
+async function deleteCase(btn) {
+  if (!confirm('Delete this case, whole? The chat, the files, the reading, the log and the milestones all go. Nothing is kept and nothing can bring it back.')) return;
+  btn.disabled = true;
+  try {
+    const idToken = await user.getIdToken();
+    const res = await fetch('/api/admin/delete-case', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ caseId }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+    location.href = '/admin.html';
+  } catch (err) {
+    alert(err.message);
+    btn.disabled = false;
+  }
 }
 
 /** Repaint Overview in place, keeping whichever rows Eric had open. */

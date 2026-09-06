@@ -73,8 +73,19 @@ export function homeScreenTips(baseUrl) {
   </div>`;
 }
 
+/**
+ * An address nobody real reads. The showcase case (Joe Bloe, 2026-09-06) is
+ * wired like a client's so every path treats it as one, and this is the one
+ * gate every path shares: mail to an example or invalid domain is never
+ * sent, whatever wrote it.
+ */
+export function unmailable(to) {
+  return /@example\.(com|org|net)$|\.invalid$|\.test$|\.example$/i.test(String(to || '').trim());
+}
+
 export async function sendEmail(env, { to, subject, html }) {
   if (!env.RESEND_API_KEY || !env.EMAIL_FROM || !to) return false;
+  if (unmailable(to)) return false;
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',

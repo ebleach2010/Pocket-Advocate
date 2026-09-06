@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.96';
+export const VERSION = '2.97';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '2.96';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE SHOWCASE AND DELETE (Eric, 2026-09-06: "Create a completely fake
+    // case for me to show off on YouTube... For personal cases, let me be
+    // able to delete it, next to the pause/close buttons. Name the guy Joe
+    // Bloe"). Admin only; the client list stays empty.
+    version: '2.97',
+    quiet: true,
+    client: [],
+    admin: [
+      'A showcase case, Joe Bloe: invented from end to end (name, address, phone, a rare illness, a fifty-message chat, ten documents, milestones and a work log), built in half a minute from a button on the Clients page, so you can film how the app works with nobody real on screen. It is wired like a client case, marked as the showcase on the shelf, and nothing on it mails, pings, counts or bills anyone.',
+      'Delete, beside pause and close, on any case with nobody real behind it: your own cases and the showcase. Everything the case owns goes with it. A client\'s case is closed, never deleted.',
+    ],
+  },
   {
     // HIS OWN CASES IN SEQUENCE (Eric, 2026-09-05: "open more than one case
     // for myself, in sequence. When I close one, it confirms the diagnosis

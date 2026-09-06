@@ -183,6 +183,41 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### Joe Bloe, the showcase, and Delete (2026-09-06)
+
+Eric: "Create a completely fake case for me to show off on YouTube. Enter a
+chat log of maybe 50 back and forth messages, fake name, address, phone
+number, rare disease, fake document uploads, everything to make it an
+interactable environment where I can show how the system works without
+exposing patient information. You can push it to the app as a personal
+case. For personal cases, let me be able to delete it, next to the
+pause/close buttons. Name the guy Joe Bloe." `worker/showcase.js` holds
+the man (a 555 number, an address at example.com that `email.js` now
+refuses to send to, no uid), a fifty-message chat both ways over three
+weeks (Susac syndrome: brain, eye and ear, first called migraine), ten
+documents written as real text PDFs by a hand-rolled writer (ER discharge,
+MRI, labs, audiogram, eye and ENT notes, a medication list, the denial, the
+appeal and the case report), six milestones and seven log entries, and the
+builder: a client-shaped case flagged `showcase: true`, Full-Service by
+hand, the PDFs put in the case's own folders with download tokens so the
+chat and the Documents tab open them, the chat dot set, and the first read
+flagged. One per app; the one that exists is handed back. It can be built
+from a door on the Clients page (`/api/admin/showcase-case`) or from the
+keyed diag door (`do=showcase`), which is how it was pushed to production.
+The parts that tell, count or bill a client skip the showcase the way they
+skip his own case (the auto-close sweep, the digest, the ledger, the
+chat-open notice, the public figures). Delete (`/api/admin/delete-case`,
+`wipeCase`) takes a case with nobody real behind it whole (his own or the
+showcase, never one with a uid): chat, reading and questions, notes,
+milestones, log, authority, agenda, meta, every queue row waiting on it,
+every file in its folders, the document last, and the profile's pointer;
+the button sits under Pause or close and on his own case's card.
+`tools/suites/showcase.mjs` X1-X6 hold the story, run the PDF writer, the
+builder, the wipe and the delete route against fakes, and pin the guards,
+the page, the shelf and the demo; `tools/drives/drive-delete.mjs` builds
+Joe from the door in the demo, deletes him under Pause or close, and
+deletes his own case from its card.
+
 ### His own cases in sequence (2026-09-05)
 
 Eric: "I would like to open more than one case for myself, in sequence. When

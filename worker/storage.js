@@ -16,7 +16,7 @@ import { getAccessToken } from './google-auth.js';
 // Firebase's default bucket for this project. The browser SDK is configured
 // with the same name in public/js/firebase-config.js; if that ever changes,
 // both move together.
-const BUCKET = 'pocket-advocate-f3148.firebasestorage.app';
+export const BUCKET = 'pocket-advocate-f3148.firebasestorage.app';
 const GCS = 'https://storage.googleapis.com/storage/v1/b';
 const SCOPE = 'https://www.googleapis.com/auth/devstorage.read_only';
 
