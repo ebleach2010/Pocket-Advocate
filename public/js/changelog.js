@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.93';
+export const VERSION = '2.94';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '2.93';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS OWN SENTENCES (Eric, 2026-09-05: "still doesn't sound like me at
+    // all"). Admin only; the client list stays empty.
+    version: '2.94',
+    quiet: true,
+    client: [],
+    admin: [
+      'The reading writes in your own sentences now: thirteen of your lines from your story and your pages ride on every read as the voice to match, the document habits are banned by name (no "it\'s worth noting", no "clinical picture", no "consistent with"), each section on your own case has a hard length cap, and every read ends with a read-back in your voice. The nightly study also learns how you talk to your own tools, for your own case only.',
+    ],
+  },
   {
     // NO PINCH, NO SIDEWAYS (Eric, 2026-09-05: "I'd prefer you can't use
     // your fingers to zoom in at all and prevent side to side scroll

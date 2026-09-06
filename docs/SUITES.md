@@ -183,6 +183,26 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### His own sentences (2026-09-05)
+
+Eric, after the register push: "the advisor still doesn't sound like me at
+all. He sounds like Claude autism 3000." A description of a voice is
+imitated badly; the voice itself is imitated well. `ERIC_LINES` in
+advisor.js holds thirteen of his sentences word for word, from his story,
+the questions page and the front page (his own approved words, so no
+client's material rides with them), and `registerNote` quotes them on
+everything he reads, bans the document habits by name ("it's worth noting",
+"clinical picture", "consistent with", "further evaluation" and the rest),
+says how he actually talks (short, the point first, plain verbs, an opinion
+stated as one, say the thing then stop), and ends every turn with a
+read-back in his voice. His own case gets hard length caps in
+`SELF_ASSESSMENT` (over means cut, never squeezed into jargon). The nightly
+study gains an own-register reader that looks only at how he talks to his
+own tools and writes a fourth profile section, `selfVoice`, which
+`registerNote` reads on his own case only. selfcase.mjs S53-S55 hold every
+line against the page it came from, run the note bare and with a profile,
+and pin the reader, the merge section, the mask and the caps.
+
 ### No pinch, no sideways (2026-09-05)
 
 Eric: "The app has side to side scroll, particularly if zoomed in. I'd

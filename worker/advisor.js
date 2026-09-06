@@ -248,12 +248,13 @@ his own records. There is no client. Nobody is on the other end of the chat.
 Every line in it is Eric writing down what is happening to him, as data, and
 every file is his own.
 
-Speak to him directly, as one person, in the second person, in his own
-words: plain, short, the way he would say it himself. No idioms, no figures
-of speech, no metaphors, no clever turns of phrase, nothing he would have to
-stop and decode; on a bad day a phrase he has to work out is a phrase he
-loses. The thinking stays as sharp as you can make it. He can take a blunt
-read. He is not a physician and neither are you: you are the second set of
+Talk to him the way he talks. His own sentences are further down, under HOW
+TO TALK TO ERIC; that is the voice, and this whole read is written in it: a
+person talking, not a document. Short, plain, direct, second person. No
+idioms, no figures of speech, no metaphors, no clever turns of phrase,
+nothing he would have to stop and decode; on a bad day a phrase he has to
+work out is a phrase he loses. The thinking stays as sharp as you can make
+it. He can take a blunt read, and he would rather have one. He is not a physician and neither are you: you are the second set of
 eyes he cannot be for himself while his cognition is poor. Orientation, pattern, and the next
 thing to do; never a diagnosis handed down, never treatment instructions. Say
 so once at most, and only if he seems about to act on a read as if it were a
@@ -320,6 +321,12 @@ Use exactly these headings, in this order, as markdown \`##\` headings:
 ## Differential
 ## Not answered
 ## Corrections
+
+Length caps on this case, and they are caps: over means cut, never squeezed
+into jargon. "Right now" under 120 words. "Plain English" under 150. Every
+bullet in every capped section is one line, 25 words or fewer. Everything
+outside "What we know so far" and "Ruled out" together under 700 words. He
+reads this on a bad day; a read he cannot finish is a read he did not get.
 
 "Right now": 2 to 4 short sentences, under 120 words, to him. If you have a
 previous read, open with what CHANGED since it (a new entry, a new signal, a
@@ -1436,6 +1443,9 @@ async function loadStyle(env) {
     voice: profile?.data.voice || '',
     stances: profile?.data.stances || '',
     coaching: profile?.data.coaching || '',
+    // How he talks to his own tools (the own-register reader, 2026-09-05):
+    // read only on his own case, by registerNote.
+    selfVoice: profile?.data.selfVoice || '',
     // The freshest real edits ride along as worked examples for the draft
     // writer; drafts he sent unchanged teach nothing new there. Five, up
     // from three (Eric, 2026-08-29: "It still reeks of AI, not my voice"):
@@ -1489,20 +1499,84 @@ function styleNote({ voice, stances }) {
  * profile carries no client's case into his. Rides the second system block,
  * beside the glossary, so it never busts the cached brief.
  */
+/**
+ * HIS OWN SENTENCES (Eric, 2026-09-05: "the advisor still doesn't sound like
+ * me at all"). A description of a voice gets imitated badly; the voice
+ * itself gets imitated well. These are his, word for word, from the pages he
+ * wrote and approved (his story, the questions page, the front page), so
+ * they carry no client's material and can ride on every case. The study's
+ * profile describes his habits beside them; this is what the habits sound
+ * like. selfcase.mjs holds every line against the page it came from.
+ */
+const ERIC_LINES = [
+  'I learned what it feels like to sit in front of a physician with ten important questions and leave having asked two.',
+  'I learned how easily one abnormal result can disappear into hundreds of pages of records.',
+  'Someone who would actually read everything.',
+  'I wanted someone who could look at the entire mess and say, "Give it to me. I\'ll help you make sense of this."',
+  'Not because I believe I can replace your doctors. I can\'t, and that isn\'t the job.',
+  'My job is to take some of that weight off you.',
+  'I became an advocate because, for three years, I learned exactly how badly I needed one.',
+  'No. I do not diagnose, treat, or prescribe.',
+  'Ask me first. Nothing about this is designed to catch you out.',
+  'No hidden fees and no surprise bills. Insurance does not cover this and I do not bill it.',
+  'Your symptoms are being called anxiety.',
+  'I know what it is like to have a complicated case that does not fit neatly into a box.',
+  'You tell me what is going on and I tell you honestly whether I can help.',
+];
+
+/**
+ * The one note about register that rides on everything he reads. Rewritten
+ * 2026-09-05 after "He sounds like Claude autism 3000": the description
+ * alone did not land, so his own sentences go in verbatim, the document
+ * habits are banned by name, and the turn ends with a read-back in his
+ * voice. On his own case the study's account of how he talks to his own
+ * tools rides along too (turnPolicy is read defensively so the function can
+ * be lifted and run without it).
+ */
 function registerNote(style) {
   const voice = String(style?.voice || '').trim();
+  const own = String(style?.selfVoice || '').trim();
+  const self = typeof turnPolicy !== 'undefined' && !!turnPolicy.getStore()?.self;
   return `
 
 HOW TO TALK TO ERIC. Everything addressed to him is written in HIS OWN
-register: the way he would say it himself.${voice ? ` This is how he writes,
-from a study of his own messages; match it in everything you write to him,
-not only in what leaves as his message:
-${voice}` : ''}
+register: the way he would say it himself. These are his own sentences, word
+for word, from pages he wrote. This is what he sounds like, and everything
+you write to him sounds like this:
+${ERIC_LINES.map((l) => `  - ${l}`).join('\n')}
+Notice what they do. Short sentences. One idea each. The point first. Plain
+verbs: read, ask, push, call, check, stop. "I" and "you". Nothing before the
+point and no cushion after it. When he does not know, he says so.
+${voice ? `This is how he writes, from a study of his own messages; match it in everything you write to him, not only in what leaves as his message:
+${voice}
+` : ''}${self && own ? `On his own case, this is how he talks when nobody but him is reading; match that here:
+${own}
+` : ''}
+TALK LIKE A PERSON, NOT A DOCUMENT. Never write: "it's worth noting", "it is
+important to", "notably", "importantly", "overall", "in summary", "in short",
+"that said", "additionally", "furthermore", "moreover", "of note", "at this
+time", "going forward", "in the context of", "clinical picture",
+"constellation", "presentation" (for symptoms), "warrants", "workup",
+"consistent with", "suggestive of", "raise concern for", "further
+evaluation", "consider discussing", "may be worth", "it is possible that",
+"it should be noted", "it's understandable that", "be kind to yourself",
+"you're doing the right thing". No "not X, but Y" sentences. No sentence
+whose only job is to soften the one before it. No bold labels inside prose.
+No list where a sentence would do. Never address him by name. Contractions
+are fine. An opinion is stated as one: "I think this is X" beats "this may
+be consistent with X". A number is a number. When something is stupid, say
+it is stupid. When you do not know, say so, and say what would settle it.
+Say the thing, then stop.
+
 On top of that, always: plain words. No idioms, no figures of speech, no
 metaphors, no clever turns of phrase, no wordplay, nothing a person would
 have to stop and decode. If a phrase is not everyday English and not a
 medical term with its gloss, do not use it. The read stays exactly as sharp;
-only the words get plainer.`;
+only the words get plainer.
+
+BEFORE YOU FINISH: read every sentence back in his voice. Any sentence he
+would not say, rewrite it or cut it. Any section over its length cap, cut
+it down.`;
 }
 
 function stanceNote({ stances }) {
@@ -1995,6 +2069,26 @@ mention.
 
 One observation per line.`,
   },
+  {
+    // HIS OWN REGISTER (Eric, 2026-09-05: "the advisor still doesn't sound
+    // like me at all"). What he sounds like when nobody but him is reading
+    // is the register the reading on his own case needs, and none of the
+    // other readers is allowed to look at it.
+    id: 'own',
+    what: 'his own register, how he talks to his own tools',
+    ask: `Read ONLY the sections headed HIS PRIVATE QUESTIONS AND INSTRUCTIONS TO HIS ADVISOR and WHAT HE ASKED TO HAVE CHANGED IN DRAFTS. Ignore every other part of the evidence.
+
+This is how Eric talks when nobody but him is reading, and it is the
+register another model needs when it writes to him about his own case.
+Sentence length. Bluntness. Swearing, if he swears, and what sets it off.
+How he asks for a thing. What he skips (greetings, explanations, softening).
+How he says something is wrong. How much he explains and how much he
+expects you to already know.
+
+One observation per line, habits only, never a quote: a phrase from a
+client's case is a breach here too. If the evidence is thin, say so in one
+line and stop.`,
+  },
 ];
 
 const READER_RULES = `
@@ -2019,9 +2113,9 @@ messages to OTHER clients, and a phrase from somebody else's case surfacing in
 theirs is a breach, not a style note.
 
 The evidence may include his private questions to his advisor and his revise
-instructions. Those are evidence for the beliefs and persona reader ONLY:
-every other reader ignores them entirely, because how he talks to his own
-tools is not how he talks to clients.
+instructions. Those are evidence for the beliefs and persona reader and for
+the own-register reader ONLY: every other reader ignores them entirely,
+because how he talks to his own tools is not how he talks to clients.
 
 Never use an em dash or an en dash, anywhere, in anything.`;
 
@@ -2115,7 +2209,7 @@ write chat drafts as him.
 Carry forward what still holds. Drop what newer evidence contradicts. Merge
 duplicates rather than listing them twice. Newer evidence beats older.
 
-Write exactly three markdown sections and nothing else:
+Write exactly four markdown sections and nothing else:
 
 ## Voice
 How he writes: everything the diction, syntax, cadence, tone, detail, and
@@ -2145,6 +2239,12 @@ in the evidence rather than a generality. Never guess at motives, never comment
 on his health, and never pad it to look balanced. 160 words max. If the
 evidence is too thin, write "- not enough to say yet".
 
+## Own register
+How he talks when nobody but him is reading, from the own-register reader's
+findings only: what another model must match when it writes to him about his
+own case. One observation per line, habits only, never a quote. 120 words
+max. If that reader found too little, write "- none yet".
+
 Plain text under each heading. Never use an em dash or en dash. No preamble.` }],
     messages: [{
       role: 'user',
@@ -2162,6 +2262,8 @@ Plain text under each heading. Never use an em dash or en dash. No preamble.` }]
   if (/^-?\s*none yet\.?$/i.test(rawStances)) rawStances = '';
   let rawCoaching = sectionOf(text, 'Coaching');
   if (/^-?\s*not enough to say yet\.?$/i.test(rawCoaching)) rawCoaching = '';
+  let rawOwn = sectionOf(text, 'Own register');
+  if (/^-?\s*none yet\.?$/i.test(rawOwn)) rawOwn = '';
 
   // A section the merge failed to produce keeps what it had. A truncated reply
   // must never erase weeks of learning, and on a daily loop this gets 365
@@ -2169,6 +2271,7 @@ Plain text under each heading. Never use an em dash or en dash. No preamble.` }]
   const voice = rawVoice || prior.voice || '';
   let stances = rawStances || prior.stances || '';
   const coaching = rawCoaching || prior.coaching || '';
+  const selfVoice = rawOwn || prior.selfVoice || '';
   if (!rawVoice && !rawStances && !rawCoaching) return { wrote: false, reason: 'merge produced no sections' };
   if (!voice && !stances) return { wrote: false, reason: 'nothing to write' };
 
@@ -2186,10 +2289,11 @@ Plain text under each heading. Never use an em dash or en dash. No preamble.` }]
     voice: cleanCut(voice, 2000),
     stances: capStances(st),
     coaching: cleanCut(coaching, 2000),
+    selfVoice: cleanCut(selfVoice, 1200),
     updatedAt: new Date(),
     lastLesson: { kind: 'voice-study', id: '', at: new Date() },
   });
-  const mask = ['voice', 'stances', 'coaching', 'updatedAt', 'lastLesson'];
+  const mask = ['voice', 'stances', 'coaching', 'selfVoice', 'updatedAt', 'lastLesson'];
   // The fresh read above closes most of the race; the lock closes the rest.
   // An override filed in the seconds between that read and this write fails
   // the precondition, and one re-read folds it in before the retry.

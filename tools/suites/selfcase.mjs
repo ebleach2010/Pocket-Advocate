@@ -916,8 +916,11 @@ check('S51 a refusal is remembered against the id it refused, so changing the pi
 // voice. He sometimes throws out weird phrases I don't understand that aren't
 // even medical jargon."
 const registerFn = lift(ADV, 'function registerNote(style) {');
+// His own sentences ride inside the note since 2026-09-05, so the lift
+// carries ERIC_LINES with it (S53 below holds each line to its page).
+const linesSrc = between(ADV, 'const ERIC_LINES = [', '\n];');
 // eslint-disable-next-line no-new-func
-const registerRun = new Function(`${registerFn}; return registerNote;`)();
+const registerRun = new Function(`${linesSrc}\n];\n${registerFn}; return registerNote;`)();
 const bare = registerRun({});
 const voiced = registerRun({ voice: 'Short lines. Starts with the point. Never says "reach out".' });
 const voiceSrc = between(ADV, 'const VOICE = `', 'const SELF_VOICE = `');
@@ -942,6 +945,64 @@ const S52_PARTS = {
 check('S52 everything addressed to him is written in his own register and in plain words: the profile rides the four things he reads, both briefs say so, and the letter and the draft are left alone',
   Object.values(S52_PARTS).every(Boolean),
   Object.entries(S52_PARTS).filter(([, v]) => !v).map(([k]) => k).join(',') || 'all parts hold');
+
+// ---- his own sentences, verbatim, on everything he reads (Eric, 2026-09-05) ----
+// "the advisor still doesn't sound like me at all. He sounds like Claude
+// autism 3000." A description of a voice is imitated badly; the voice itself
+// is imitated well, so his own sentences ride along word for word, and each
+// one is held here against the page he wrote it on.
+// eslint-disable-next-line no-new-func
+const ericLines = linesSrc ? new Function(`${linesSrc}\n]; return ERIC_LINES;`)() : [];
+const pageText = (p) => readFileSync(j(ROOT, 'public', p), 'utf8')
+  .replace(/<script[\s\S]*?<\/script>/g, ' ').replace(/<[^>]+>/g, ' ')
+  .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&')
+  .replace(/[‘’ʼ]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ');
+const hisPages = ['advocate.html', 'faq.html', 'index.html'].map(pageText).join(' ');
+const notHis = ericLines.filter((l) => !hisPages.includes(l));
+const bareNote = registerRun({});
+const ownNote = registerRun({ selfVoice: 'Blunt. Swears when annoyed.' });
+// NEGATIVE CONTROL (run 2026-09-05): one of his lines reworded ("ten important questions" to "ten questions") made this read
+//   FAIL  S53 his own sentences ride on everything he reads, each one word for word from a page he wrote, the document habits are banned by name, and the read-back closes every turn
+check('S53 his own sentences ride on everything he reads, each one word for word from a page he wrote, the document habits are banned by name, and the read-back closes every turn',
+  ericLines.length >= 10 && notHis.length === 0
+  && ericLines.every((l) => bareNote.includes(`  - ${l}\n`))
+  && ['"it\'s worth noting"', '"clinical picture"', '"consistent with"', '"further\nevaluation"', '"be kind to yourself"', 'Never address him by name', 'Say the thing, then stop.']
+    .every((s) => bareNote.includes(s))
+  && /BEFORE YOU FINISH: read every sentence back in his voice/.test(bareNote)
+  // His own register from the study rides only on his own case: run bare
+  // (no policy) it stays out, and the source gates it on the policy.
+  && !/Blunt\. Swears/.test(ownNote) && /\$\{self && own \? `/.test(registerFn)
+  && /typeof turnPolicy !== 'undefined' && !!turnPolicy\.getStore\(\)\?\.self/.test(registerFn)
+  && !/[—–]/.test(linesSrc),
+  `${ericLines.length} lines; not on his pages: ${JSON.stringify(notHis)}`);
+
+const readersSrc = between(ADV, 'const READERS = [', 'const READER_RULES');
+const readerRules = between(ADV, 'const READER_RULES = `', '/**');
+// NEGATIVE CONTROL (run 2026-09-05): `selfVoice` dropped from the nightly merge's write mask made this read
+//   FAIL  S54 the nightly study reads how he talks to his own tools with its own reader, writes it as a fourth section, and the profile carries it to his own case
+check('S54 the nightly study reads how he talks to his own tools with its own reader, writes it as a fourth section, and the profile carries it to his own case',
+  /id: 'own',/.test(readersSrc)
+  && /Read ONLY the sections headed HIS PRIVATE QUESTIONS AND INSTRUCTIONS TO HIS ADVISOR and WHAT HE ASKED TO HAVE CHANGED IN DRAFTS/.test(readersSrc)
+  && /habits only, never a quote/.test(readersSrc)
+  && /for the beliefs and persona reader and for\nthe own-register reader ONLY/.test(readerRules)
+  && /Write exactly four markdown sections and nothing else:\n\n## Voice/.test(ADV)
+  && /## Own register\nHow he talks when nobody but him is reading/.test(ADV)
+  && /let rawOwn = sectionOf\(text, 'Own register'\);/.test(ADV)
+  && /const selfVoice = rawOwn \|\| prior\.selfVoice \|\| '';/.test(ADV)
+  && /selfVoice: cleanCut\(selfVoice, 1200\),/.test(ADV)
+  && /const mask = \['voice', 'stances', 'coaching', 'selfVoice', 'updatedAt', 'lastLesson'\];/.test(ADV)
+  && /selfVoice: profile\?\.data\.selfVoice \|\| '',/.test(ADV));
+
+// NEGATIVE CONTROL (run 2026-09-05): the whole-read cap raised from 700 to 7000 words made this read
+//   FAIL  S55 his own read is capped hard, and its brief says a person talking, not a document
+check('S55 his own read is capped hard, and its brief says a person talking, not a document',
+  /Length caps on this case, and they are caps: over means cut, never squeezed\ninto jargon\./.test(selfAssess)
+  && /"Right now" under 120 words\. "Plain English" under 150\./.test(selfAssess)
+  && /one line, 25 words or fewer/.test(selfAssess)
+  && /together under 700 words/.test(selfAssess)
+  && /Talk to him the way he talks\./.test(selfVoice)
+  && /a\s+person talking, not a document/.test(selfVoice)
+  && /HOW\s+TO TALK TO ERIC/.test(selfVoice));
 
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);
