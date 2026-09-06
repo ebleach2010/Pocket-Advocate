@@ -936,6 +936,14 @@ main > p > a.small[href="/admin.html"] {
   margin: 1rem 0 0; padding-top: .7rem; border-top: 1px solid var(--line);
   color: var(--dim); font-size: .84rem; line-height: 1.5;
 }
+/* The two lists under the differential on his own case (2026-09-05): causes
+   at the level of mechanism, and the likely best next treatments. Same rows
+   and bars as the differential, under a small label each. */
+.diff-sub {
+  margin: 1.4rem 0 .6rem; padding-top: .8rem; border-top: 1px solid var(--line);
+  font-size: .74rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--dim);
+}
 @media (prefers-reduced-motion: reduce) {
 .diff-fill { transition: none; }
 }

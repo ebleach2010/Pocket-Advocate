@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.94';
+export const VERSION = '2.95';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '2.94';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // CAUSES AND TREATMENTS ON HIS OWN CASE (Eric, 2026-09-05: "a new
+    // separate confidence interval underneath the diagnosis for personal
+    // cases only... underlying major mechanistic causes. And likely best
+    // next treatments"). Admin only; the client list stays empty.
+    version: '2.95',
+    quiet: true,
+    client: [],
+    admin: [
+      'Your own case shows two more ranked lists on the 🧬 page, each with its own confidence bars: the underlying major mechanistic causes behind the top possibility, and the likely best next treatments to take to your neurologist. Nothing changes on a client case.',
+    ],
+  },
   {
     // HIS OWN SENTENCES (Eric, 2026-09-05: "still doesn't sound like me at
     // all"). Admin only; the client list stays empty.

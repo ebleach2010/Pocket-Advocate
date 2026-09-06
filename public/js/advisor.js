@@ -670,7 +670,8 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   let diffKey = null;
   function renderDiff(d) {
     if (!diffContainer) return;
-    const key = JSON.stringify([d.workingLine, d.dxOverride, d.differential, (d.diffHistory || []).length]);
+    const key = JSON.stringify([d.workingLine, d.dxOverride, d.differential, (d.diffHistory || []).length,
+      d.causes, (d.causesHistory || []).length, d.treatments, (d.treatmentsHistory || []).length]);
     if (key === diffKey) return;
     diffKey = key;
     const line = (d.dxOverride && d.dxOverride.text) || d.workingLine || '';
@@ -679,24 +680,40 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     // replaced. Matched on flattened name, so a renamed row paints once as
     // new; that is acceptable.
     const flat = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-    const prevSnap = (d.diffHistory || [])[1];
-    const prevPct = new Map((prevSnap?.rows || []).map((r) => [flat(r.name), Math.round(Number(r.pct) || 0)]));
-    const rows = (d.differential || []).map((r, i) => {
-      const pct = Math.max(0, Math.min(100, Math.round(Number(r.pct) || 0)));
-      const was = prevSnap ? prevPct.get(flat(r.name)) : undefined;
-      const move = was === undefined
-        ? (prevSnap ? '<span class="diff-move new">new this read</span>' : '')
-        : was === pct ? ''
-          : `<span class="diff-move ${pct > was ? 'up' : 'down'}">${pct > was ? 'up' : 'down'} from ${was}%</span>`;
+    const rowsOf = (list, history) => {
+      const prevSnap = (history || [])[1];
+      const prevPct = new Map((prevSnap?.rows || []).map((r) => [flat(r.name), Math.round(Number(r.pct) || 0)]));
+      return (list || []).map((r, i) => {
+        const pct = Math.max(0, Math.min(100, Math.round(Number(r.pct) || 0)));
+        const was = prevSnap ? prevPct.get(flat(r.name)) : undefined;
+        const move = was === undefined
+          ? (prevSnap ? '<span class="diff-move new">new this read</span>' : '')
+          : was === pct ? ''
+            : `<span class="diff-move ${pct > was ? 'up' : 'down'}">${pct > was ? 'up' : 'down'} from ${was}%</span>`;
+        return `
+          <div class="diff-row${i === 0 ? ' diff-top' : ''}">
+            <span class="diff-name">${esc(r.name || '')}</span>
+            <span class="diff-pct">${pct}% ${move}</span>
+            <div class="diff-bar"><div class="diff-fill" style="width:${pct}%"></div></div>
+            <p class="diff-note">${esc(r.why || r.note || '')}</p>
+            ${r.moves ? `<p class="diff-moves"><span>Moves on:</span> ${esc(r.moves)}</p>` : ''}
+          </div>`;
+      });
+    };
+    const rows = rowsOf(d.differential, d.diffHistory);
+    // HIS OWN CASE ONLY (Eric, 2026-09-05): two more lists under the
+    // differential, same bars. Underlying major mechanistic causes, and the
+    // likely best next treatments to take to his neurologist. Never on a
+    // client's case, whatever the payload carries.
+    const sub = (title, list, history, empty) => {
+      const r = rowsOf(list, history);
       return `
-        <div class="diff-row${i === 0 ? ' diff-top' : ''}">
-          <span class="diff-name">${esc(r.name || '')}</span>
-          <span class="diff-pct">${pct}% ${move}</span>
-          <div class="diff-bar"><div class="diff-fill" style="width:${pct}%"></div></div>
-          <p class="diff-note">${esc(r.why || r.note || '')}</p>
-          ${r.moves ? `<p class="diff-moves"><span>Moves on:</span> ${esc(r.moves)}</p>` : ''}
-        </div>`;
-    });
+        <h4 class="diff-sub">${title}</h4>
+        ${r.length ? `<div class="diff-list">${r.join('')}</div>` : `<p class="dim small">${empty}</p>`}`;
+    };
+    const own = self ? `
+      ${sub('Causes', d.causes, d.causesHistory, 'No cause the read can support yet.')}
+      ${sub('Next treatments', d.treatments, d.treatmentsHistory, 'No next treatment the read can support yet.')}` : '';
     diffContainer.innerHTML = `
       ${line ? `
         <div class="diff-head">
@@ -705,7 +722,8 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       ${rows.length
         ? `<div class="diff-list">${rows.join('')}</div>`
         : '<p class="dim small">No differential yet. Run an analysis with some conversation to read.</p>'}
-      <p class="diff-disclaimer">These are my confidence levels, not clinical probabilities. Orientation for advocacy, not a diagnosis.</p>`;
+      ${own}
+      <p class="diff-disclaimer">These are my confidence levels, not clinical probabilities. Orientation for advocacy, not a diagnosis.${self ? ' The next treatments are for your neurologist to weigh, not for you to start.' : ''}</p>`;
   }
 
   /**
@@ -822,6 +840,11 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           unanswered: out.unanswered || [],
           differential: out.differential || [],
           diffHistory: out.state?.diffHistory || [],
+          // The two lists under the differential on his own case (2026-09-05).
+          causes: out.causes || [],
+          causesHistory: out.state?.causesHistory || [],
+          treatments: out.treatments || [],
+          treatmentsHistory: out.state?.treatmentsHistory || [],
           workingLine: out.workingLine || '',
           dxOverride: out.dxOverride || null,
           // The Education and About-you folder pages ride this same poll, so

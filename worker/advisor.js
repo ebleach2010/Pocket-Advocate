@@ -319,6 +319,8 @@ Use exactly these headings, in this order, as markdown \`##\` headings:
 ## Key terms
 ## Working line
 ## Differential
+## Causes
+## Treatments
 ## Not answered
 ## Corrections
 
@@ -408,7 +410,7 @@ One sentence each, plain words, no hedging filler. Everything else gets the
 definition alone and no pipes. Never include a term from his mastered list,
 never repeat one already in his glossary. If nothing new, write "- none".
 
-The last four sections are machine-read and stripped before Eric sees the
+The last six sections are machine-read and stripped before Eric sees the
 read (same as Key terms). Eric never sees them as text.
 
 "## Working line": exactly one line, 60 characters or fewer, plain words: the
@@ -429,6 +431,29 @@ as much as it actually bears on the ranking. Never move a number to be
 agreeable. Whenever a dangerous but treatable possibility is plausible at
 all, give it a row at its real low percentage, because that is the one worth
 chasing even at long odds. If you have nothing yet, write "- none yet".
+
+"## Causes": his own case only. Up to 5 lines, most likely first, each
+exactly \`- Name [NN%]: the mechanism in one plain sentence | what would raise
+or lower it\`. These are UNDERLYING MAJOR MECHANISTIC CAUSES: what is
+physically driving the condition at the top of the differential, at the
+level of mechanism (an antibody against a receptor, a virus reactivating, a
+blood supply problem, a gene fault, a medication doing this), never a
+contributor or a trigger (stress, sleep, weather, effort) unless the
+trigger is the mechanism itself. NN is your confidence that THIS is the
+driver, a whole number; the rows need not add up to 100. Only mechanisms
+the record and the medicine actually support, with his history as evidence.
+If nothing is supportable yet, write "- none yet".
+
+"## Treatments": his own case only. Up to 5 lines, most likely to help
+first, each exactly \`- Name [NN%]: why it is the likely best next step for
+him | what would raise or lower it\`. LIKELY BEST NEXT TREATMENTS: what a
+neurologist who agreed with your read would most likely try next, or should
+be asked about, given what he has already had and how it went. NN is your
+confidence that this is the best next move, a whole number; the rows need
+not add up to 100. Concrete: the drug, the procedure, the dose change, the
+referral, never "optimise care". These are for him to take to his
+neurologist, never to start on his own; say that once, in the read, only if
+he seems about to. If nothing is supportable yet, write "- none yet".
 
 "## Not answered": on this case the app keeps this list itself, from the
 chat. Write exactly "- none".
@@ -2716,6 +2741,55 @@ function harvestDifferential(text, prior) {
 }
 
 /**
+ * A ranked list under any heading, in the differential's own row shape
+ * (`- Name [NN%]: why | what would raise or lower it`), most likely first.
+ * His own case carries two beside the differential (Eric, 2026-09-05: "a new
+ * separate confidence interval underneath the diagnosis for personal cases
+ * only... underlying major mechanistic causes. And likely best next
+ * treatments"). Same fail-safes as harvestDifferential: a reply that lost
+ * the heading, or gave it with no parseable row, keeps the stored list
+ * rather than blanking the page. Returns { text, rows }.
+ */
+function harvestRanked(text, heading, prior, max = 5) {
+  const was = Array.isArray(prior) ? prior : [];
+  const m = sectionMatch(text, heading);
+  if (!m) return { text, rows: was };
+  const rows = [];
+  for (const line of m[1].split('\n')) {
+    const t = line.match(/^\s*[-*]\s*\**(.+?)\**\s*\[\s*(\d{1,3})\s*%\s*\]\s*:\s*(.+)$/);
+    if (!t) continue;
+    const name = t[1].trim();
+    if (!name || /^none( yet)?$/i.test(name)) continue;
+    const pct = Math.max(0, Math.min(100, parseInt(t[2], 10)));
+    const [why, ...moves] = t[3].split('|');
+    rows.push({
+      name: name.slice(0, 120),
+      pct,
+      why: why.trim().slice(0, 400),
+      moves: moves.join('|').trim().slice(0, 400),
+    });
+    if (rows.length >= max) break;
+  }
+  const stripped = text.replace(m[0], '').trim();
+  // "- none yet" is an honest empty list and clears the stored one; a heading
+  // with rows that failed to parse is format drift and keeps it.
+  const saidNone = /^\s*[-*]?\s*none( yet)?\.?\s*$/i.test(m[1].trim());
+  if (!rows.length && !saidNone && was.length) {
+    console.warn(`advisor: ${heading} section had no parseable rows; keeping the stored list`);
+    return { text: stripped, rows: was };
+  }
+  return { text: stripped, rows };
+}
+
+/** A slim snapshot per pass that changed a ranked list, newest first, so the
+ *  panel can say "up from 45%". Same shape as diffHistory. */
+function rankHistory(prevHistory, before, after, now) {
+  const prev = Array.isArray(prevHistory) ? prevHistory : [];
+  if (sameDifferential(before, after) || !after.length) return prev;
+  return [{ at: now, rows: after.map((r) => ({ name: r.name, pct: r.pct })) }, ...prev].slice(0, 12);
+}
+
+/**
  * "## Not answered": `- what he asked | YYYY-MM-DD | how many times`.
  *
  * Things ERIC asked the client for and never got. Not gaps in the medical
@@ -4497,7 +4571,13 @@ async function finishAnalysis(env, kind, id, ctx, message) {
   // it reaches the assessment Eric actually reads.
   const cover = harvestWorkingLine(await harvestKeyTerms(env, analysis));
   const dx = harvestDifferential(cover.text, p.differential);
-  const un = harvestUnanswered(dx.text, p.unanswered);
+  // The two lists under the differential on his own case (2026-09-05):
+  // underlying major mechanistic causes, and likely best next treatments.
+  // Harvested and stripped on every case, so a stray section never reaches
+  // a read as text; stored on his own case only.
+  const ca = harvestRanked(dx.text, 'Causes', p.causes, 5);
+  const tr = harvestRanked(ca.text, 'Treatments', p.treatments, 5);
+  const un = harvestUnanswered(tr.text, p.unanswered);
   // His own case keeps its Unanswered list from the chat itself: the
   // questions the read put there that he has not answered (2026-09-03).
   if (ctx.self) {
@@ -4571,6 +4651,10 @@ async function finishAnalysis(env, kind, id, ctx, message) {
     // folder cover over a formatting slip reads as the case going backwards.
     workingDx: cover.workingDx || p.workingDx || '',
     differential: dx.differential,
+    causes: ctx.self ? ca.rows : null,
+    treatments: ctx.self ? tr.rows : null,
+    causesHistory: ctx.self ? rankHistory(p.causesHistory, p.causes, ca.rows, now) : null,
+    treatmentsHistory: ctx.self ? rankHistory(p.treatmentsHistory, p.treatments, tr.rows, now) : null,
     unanswered: un.unanswered,
     corrections: corr.corrections,
     readFiles: [...alreadyRead, ...(m.readKeys || [])].slice(-MAX_READ_MEMORY),

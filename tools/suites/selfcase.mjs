@@ -1004,6 +1004,74 @@ check('S55 his own read is capped hard, and its brief says a person talking, not
   && /a\s+person talking, not a document/.test(selfVoice)
   && /HOW\s+TO TALK TO ERIC/.test(selfVoice));
 
+// ---- causes and treatments under the differential, his own case only (Eric, 2026-09-05) ----
+// "a new separate confidence interval underneath the diagnosis for personal
+// cases only... By causes I don't mean contributors. I mean underlying major
+// mechanistic causes. And likely best next treatments."
+// NEGATIVE CONTROL (run 2026-09-05): `## Causes` dropped from his heading list made this read
+//   FAIL  S56 his own read carries two more machine-read lists under the differential, causes at the level of mechanism and the likely best next treatments, and the client read carries neither
+check('S56 his own read carries two more machine-read lists under the differential, causes at the level of mechanism and the likely best next treatments, and the client read carries neither',
+  /## Working line\n## Differential\n## Causes\n## Treatments\n## Not answered\n## Corrections/.test(selfAssess)
+  && /"## Causes": his own case only\./.test(selfAssess)
+  && /UNDERLYING MAJOR MECHANISTIC CAUSES/.test(selfAssess)
+  && /never a\s+contributor or a trigger/.test(selfAssess)
+  && /"## Treatments": his own case only\./.test(selfAssess)
+  && /LIKELY BEST NEXT TREATMENTS/.test(selfAssess)
+  && /never to start on his own/.test(selfAssess)
+  && /The last six sections are machine-read/.test(selfAssess)
+  // The client read's list goes straight from Differential to Not answered,
+  // and no other heading list in the file names Causes.
+  && /## Working line\n## Differential\n## Not answered\n## Corrections/.test(ADV)
+  && (ADV.match(/^## Causes$/gm) || []).length === 1);
+
+{
+  const rankedFn = lift(ADV, 'function harvestRanked(text, heading, prior, max = 5) {');
+  const sectionMatchFn = lift(ADV, 'function sectionMatch(text, name) {');
+  // eslint-disable-next-line no-new-func
+  const ranked = new Function('console', `${sectionMatchFn}\n${rankedFn}; return harvestRanked;`)({ warn: () => {} });
+  const sample = '## Right now\nfine\n\n## Causes\n- Antibody against a receptor [50%]: the mechanism | the panel\n- Virus reactivating [20%]: timing | viral panel\n- A [5%]: a | a\n- B [5%]: b | b\n- C [5%]: c | c\n- D [5%]: d | d\n\n## Treatments\n- none yet\n\n## Not answered\n- none';
+  const got = ranked(sample, 'Causes', [{ name: 'old', pct: 1 }], 5);
+  const none = ranked(got.text, 'Treatments', [{ name: 'old', pct: 1 }], 5);
+  const missing = ranked('## Right now\nx', 'Causes', [{ name: 'kept', pct: 9 }], 5);
+  const drift = ranked('## Causes\nsomething without a percentage\n\n## Not answered\n- none', 'Causes', [{ name: 'kept', pct: 9 }], 5);
+  // NEGATIVE CONTROL (run 2026-09-05): the cap raised from `max` to 50 made this read
+  //   FAIL  S57 the harvester reads a ranked list under any heading, caps it, clears on an honest none, keeps the stored list when the heading is lost or drifts, and the finish stores both lists on his own case only
+  check('S57 the harvester reads a ranked list under any heading, caps it, clears on an honest none, keeps the stored list when the heading is lost or drifts, and the finish stores both lists on his own case only',
+    !!rankedFn && got.rows.length === 5 && got.rows[0].name === 'Antibody against a receptor' && got.rows[0].pct === 50
+    && got.rows[0].why === 'the mechanism' && got.rows[0].moves === 'the panel' && !/## Causes/.test(got.text)
+    && none.rows.length === 0 && !/## Treatments/.test(none.text)
+    && missing.rows.length === 1 && missing.rows[0].name === 'kept'
+    && drift.rows.length === 1 && drift.rows[0].name === 'kept'
+    && /const ca = harvestRanked\(dx\.text, 'Causes', p\.causes, 5\);/.test(ADV)
+    && /const tr = harvestRanked\(ca\.text, 'Treatments', p\.treatments, 5\);/.test(ADV)
+    && /const un = harvestUnanswered\(tr\.text, p\.unanswered\);/.test(ADV)
+    && /causes: ctx\.self \? ca\.rows : null,/.test(ADV) && /treatments: ctx\.self \? tr\.rows : null,/.test(ADV)
+    && /causesHistory: ctx\.self \? rankHistory\(p\.causesHistory, p\.causes, ca\.rows, now\) : null,/.test(ADV)
+    && /treatmentsHistory: ctx\.self \? rankHistory\(p\.treatmentsHistory, p\.treatments, tr\.rows, now\) : null,/.test(ADV),
+    JSON.stringify({ got: got.rows.length, none: none.rows.length, missing: missing.rows, drift: drift.rows }));
+}
+
+{
+  const IDX = f('worker/index.js');
+  const PANEL = f('public/js/advisor.js');
+  const DEMO = f('public/js/demo/api.js');
+  const demoSelf = between(DEMO, "if (path === '/api/admin/self-case') {", "if (path === '/api/admin/case-update') {");
+  // NEGATIVE CONTROL (run 2026-09-05): the panel's `const own = self ?` gate changed to `true ?` made this read
+  //   FAIL  S58 the state route returns both lists, the 🧬 page paints them under the differential on his own case only, and the demo's own case has rows to paint
+  check('S58 the state route returns both lists, the 🧬 page paints them under the differential on his own case only, and the demo\'s own case has rows to paint',
+    /causes: Array\.isArray\(state\?\.data\.causes\) \? state\.data\.causes : \[\],/.test(IDX)
+    && /treatments: Array\.isArray\(state\?\.data\.treatments\) \? state\.data\.treatments : \[\],/.test(IDX)
+    && /causes: out\.causes \|\| \[\],/.test(PANEL) && /treatments: out\.treatments \|\| \[\],/.test(PANEL)
+    && /causesHistory: out\.state\?\.causesHistory \|\| \[\],/.test(PANEL)
+    && /const own = self \? `/.test(PANEL)
+    && /sub\('Causes', d\.causes, d\.causesHistory,/.test(PANEL)
+    && /sub\('Next treatments', d\.treatments, d\.treatmentsHistory,/.test(PANEL)
+    && /d\.causes, \(d\.causesHistory \|\| \[\]\)\.length, d\.treatments/.test(PANEL)
+    && /causes: \[\n/.test(demoSelf) && /treatments: \[\n/.test(demoSelf)
+    && /causes: state\.causes \|\| \[\],\n\s+treatments: state\.treatments \|\| \[\],/.test(DEMO)
+    && /^\.diff-sub \{/m.test(ACSS));
+}
+
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);
 if (fails) process.exit(1);

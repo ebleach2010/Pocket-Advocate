@@ -557,6 +557,26 @@ export function demoApi(role, store) {
         work: { seconds: 0, startedAt: null },
         hold: null,
       });
+      // The 🧬 page on his own case carries two lists under the differential
+      // (2026-09-05): underlying major mechanistic causes and the likely best
+      // next treatments. Invented rows so the page has something to paint
+      // before the demo's read runs; the read keeps them.
+      store.docs.set(`${key}/advisor/state`, {
+        status: 'idle', updatedAt: now,
+        workingDx: 'Autoimmune encephalitis, early relapse',
+        differential: [
+          { name: 'Autoimmune encephalitis, relapse', pct: 55, why: 'Same order as 2023 and 2025: cognition first, then the tremor, then sleep.', moves: 'A repeat antibody panel and an MRI with contrast.' },
+          { name: 'Post-viral flare', pct: 20, why: 'Started ten days after the cold.', moves: 'Whether the fever comes back.' },
+        ],
+        causes: [
+          { name: 'An antibody against a nerve cell receptor', pct: 50, why: 'An antibody attacking receptors on nerve cells is the mechanism the earlier episodes followed.', moves: 'The repeat antibody panel.' },
+          { name: 'A virus reactivating', pct: 20, why: 'Fits the timing after the cold.', moves: 'A viral panel, and whether the fever returns.' },
+        ],
+        treatments: [
+          { name: 'A steroid course, then IVIG if it does not hold', pct: 45, why: 'What worked in 2023, and the fastest test of the read.', moves: 'How the first week on it goes.' },
+          { name: 'Rituximab', pct: 25, why: 'The next step if this is the third relapse in two years.', moves: 'The antibody result.' },
+        ],
+      });
       store.persist?.();
       store.fire?.(key);
       return ok({ ok: true, id: 'demo-case-mine', created: true });
@@ -1476,6 +1496,9 @@ export function demoApi(role, store) {
         workingLine: state.workingDx || '',
         dxOverride: null,
         differential: state.differential || [],
+        // The two lists under the differential on his own case (2026-09-05).
+        causes: state.causes || [],
+        treatments: state.treatments || [],
         corrections: (state.corrections || []).filter((c) => !c.dismissed),
         unanswered: (state.unanswered || []).filter((r) => !r.answered),
         mediaReport: state.mediaReport || null,

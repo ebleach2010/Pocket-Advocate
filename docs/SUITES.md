@@ -183,6 +183,24 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### Causes and treatments on his own case (2026-09-05)
+
+Eric: "a new separate confidence interval underneath the diagnosis for
+personal cases only... By causes I don't mean contributors. I mean
+underlying major mechanistic causes. And likely best next treatments." His
+own read carries two more machine-read sections after the Differential,
+`## Causes` and `## Treatments`, in the differential's own row shape;
+`harvestRanked` reads any such list (cap, fail-safes for a missing heading
+and for format drift, an honest "- none yet" clears), `finishAnalysis`
+harvests and strips both on every case and stores `causes`, `treatments`
+and their slim histories on his own case only, the state route returns
+them, and the panel's 🧬 page paints them under the differential with the
+same bars, on his own case only whatever the payload carries. The demo's
+own case seeds invented rows so the page has something to paint. selfcase.mjs
+S56-S58 pin the prompt (and that the client read has neither section), run
+the lifted harvester over a sample read, and pin the route, the panel gate
+and the demo.
+
 ### His own sentences (2026-09-05)
 
 Eric, after the register push: "the advisor still doesn't sound like me at
