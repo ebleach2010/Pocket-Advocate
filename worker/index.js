@@ -14,7 +14,8 @@
 //   GET/POST/DELETE /api/admin/personal   Personal Uploads: list, add, remove (admin, Worker-only prefix)
 //   GET    /api/admin/personal/file       one personal file's bytes (admin token or a ten-minute signed link)
 //   POST   /api/admin/case-update  join link / milestones / close / contact: phone and home address (admin)
-//   POST   /api/admin/self-case    his own case: open it, or create it once, with his details (admin)
+//   POST   /api/admin/self-case    a new case of his own, with his details, pulling from the personal cases he ticks (admin)
+//   POST   /api/admin/self-case/next  close his own case with its top diagnosis confirmed and open the next one from it (admin)
 //   POST   /api/chat/reply         his answer to a question the read put in his own chat (admin)
 //   POST   /api/admin/family-case  a free case for a family member; the email typed is their login (admin)
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
@@ -849,6 +850,8 @@ export default {
         return await handlePersonalFile(request, env, url);
       if (url.pathname === '/api/admin/self-case' && request.method === 'POST')
         return await handleSelfCase(request, env);
+      if (url.pathname === '/api/admin/self-case/next' && request.method === 'POST')
+        return await handleSelfCaseNext(request, env);
       if (url.pathname === '/api/admin/family-case' && request.method === 'POST')
         return await handleFamilyCase(request, env);
       if (url.pathname === '/api/admin/case-update' && request.method === 'POST')
@@ -1915,7 +1918,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-05-causes-and-treatments';
+const BUILD_TAG = 'v2026-09-05-cases-in-sequence';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1923,7 +1926,7 @@ const BUILD_TAG = 'v2026-09-05-causes-and-treatments';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.95';
+const VERSION = '2.96';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -8852,30 +8855,68 @@ async function handleSelfCase(request, env) {
   const admin = await requireAdmin(request, env);
   if (!admin) return json({ error: 'Not found' }, 404);
   const profile = await getDoc(env, `users/${admin.uid}`).catch(() => null);
-  const existingId = typeof profile?.data.selfCaseId === 'string' ? profile.data.selfCaseId : '';
-  if (existingId) {
-    const existing = await getDoc(env, `cases/${existingId}`).catch(() => null);
-    if (existing?.data.self && existing.data.status !== 'closed')
-      return json({ ok: true, id: existingId, created: false });
-  }
-  // His own details, typed when he opens it (Eric, 2026-09-03: "Have me
-  // enter my own information when opening a case"); the profile only fills
-  // a blank.
   const body = await request.json().catch(() => ({}));
-  const who = personFields(body, profile?.data || {});
+  // MORE THAN ONE, IN SEQUENCE (Eric, 2026-09-05: "I would like to open more
+  // than one case for myself, in sequence... A + -> open new personal cases
+  // -> pull information from [select other personal cases]"). This route
+  // used to hand back the open case when one existed; now every call opens
+  // a new one, and the personal cases he ticked hand their information over
+  // to it (createSelfCase).
+  const pull = await pullFromOf(env, body);
+  if (pull.error) return json({ error: pull.error }, 400);
+  // His own details, typed when he opens it (Eric, 2026-09-03: "Have me
+  // enter my own information when opening a case"); a blank falls back to
+  // the newest case he is pulling from, then to the profile.
+  const newest = pull.cases[0]?.data || {};
+  const fallback = { ...(profile?.data || {}) };
+  if (newest.clientName) fallback.name = newest.clientName;
+  if (newest.clientDob) fallback.dob = newest.clientDob;
+  const who = personFields(body, fallback);
   if (who.error) return json({ error: who.error }, 400);
   if (!who.name) return json({ error: 'Your name, please.' }, 400);
+  who.phone = who.phone || newest.clientPhone || null;
+  who.address = who.address || newest.clientAddress || null;
+  const made = await createSelfCase(env, admin, who, pull.cases);
+  return json({ ok: true, id: made.id, created: true, pulledFrom: made.priorCases });
+}
+
+/** The personal cases the body names in pullFrom, each checked to be one of
+ *  his own; newest first. An id that is not his refuses the whole call. */
+async function pullFromOf(env, body) {
+  const ids = [...new Set((Array.isArray(body?.pullFrom) ? body.pullFrom : [])
+    .filter((v) => typeof v === 'string' && /^[\w-]{1,64}$/.test(v)))].slice(0, 10);
+  const cases = [];
+  for (const id of ids) {
+    const c = await getDoc(env, `cases/${id}`).catch(() => null);
+    if (!c?.data.self) return { error: 'One of the cases to pull from is not one of your own.', cases: [] };
+    cases.push(c);
+  }
+  cases.sort((a, b) => new Date(b.data.createdAt || 0) - new Date(a.data.createdAt || 0));
+  return { cases };
+}
+
+/**
+ * One personal case, made. The diagnoses confirmed on the cases it pulls
+ * from ride onto it as carriedDx (oldest first, each name once), its advisor
+ * state is seeded so the first read knows what it inherits, and a handover
+ * row goes on the queue: the drain condenses one source case per firing into
+ * a brief on the new case (runHandover in advisor.js) and marks the state
+ * ready when the last one lands.
+ */
+async function createSelfCase(env, admin, who, sources = []) {
   const now = new Date();
   const caseId = crypto.randomUUID();
+  const priorCases = sources.map((c) => c.id);
+  const carriedDx = carriedDxOf(sources);
   await patchDoc(env, `cases/${caseId}`, {
     self: true,
     clientUid: null,
     clientEmail: null,
     clientName: who.name,
-    clientDob: who.dob,
+    clientDob: who.dob || null,
     clientTz: 'America/Boise',
-    clientPhone: who.phone,
-    clientAddress: who.address,
+    clientPhone: who.phone || null,
+    clientAddress: who.address || null,
     status: 'confirmed',
     createdAt: now,
     // So the missing-email repair never "fixes" this one.
@@ -8896,9 +8937,98 @@ async function handleSelfCase(request, env) {
     stripe: null,
     work: { seconds: 0, startedAt: null },
     hold: null,
+    priorCases,
+    carriedDx,
   }, { mustNotExist: true });
+  await patchDoc(env, `cases/${caseId}/advisor/state`, {
+    priorCases, carriedDx, handovers: [],
+    handoverStatus: priorCases.length ? 'running' : null,
+  }, { mask: ['priorCases', 'carriedDx', 'handovers', 'handoverStatus'] });
+  if (priorCases.length) {
+    await patchDoc(env, `advisorQueue/handover_case_${caseId}`, {
+      kind: 'case', id: caseId, handover: true, from: priorCases, at: now, tries: 0,
+    });
+  }
   await patchDoc(env, `users/${admin.uid}`, { selfCaseId: caseId }, { mask: ['selfCaseId'] });
-  return json({ ok: true, id: caseId, created: true });
+  return { id: caseId, priorCases, carriedDx };
+}
+
+/** Every diagnosis confirmed on the source cases, and on the cases they in
+ *  turn carried, oldest first and each name once. */
+function carriedDxOf(sources) {
+  const flat = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const all = [];
+  for (const c of sources) {
+    for (const d of (Array.isArray(c.data.carriedDx) ? c.data.carriedDx : [])) all.push(d);
+    if (c.data.confirmedDx?.name) all.push({ ...c.data.confirmedDx, fromCase: c.id });
+  }
+  all.sort((a, b) => new Date(a?.at || 0) - new Date(b?.at || 0));
+  const seen = new Set();
+  return all
+    .filter((d) => d?.name && !seen.has(flat(d.name)) && seen.add(flat(d.name)))
+    .map((d) => ({
+      name: String(d.name).slice(0, 120),
+      pct: Number.isFinite(Number(d.pct)) && d.pct !== null ? Number(d.pct) : null,
+      at: d.at ? new Date(d.at) : new Date(),
+      fromCase: String(d.fromCase || ''),
+    }));
+}
+
+/**
+ * POST /api/admin/self-case/next   Body: { caseId, confirmedDx? }   admin only
+ *
+ * (Eric, 2026-09-05: "When I close one, it confirms the diagnosis that's top
+ * of the differential, and then opens the new case with that diagnosis and
+ * condensed information from the previous case.")
+ *
+ * The diagnosis at the top of the case's differential (or the name he typed
+ * over it) is stamped on the case as confirmed, the case closes, and the
+ * next personal case opens with it carried and a handover queued. The old
+ * case closes first, so the new one is made from a source that already
+ * carries the confirmation.
+ */
+async function handleSelfCaseNext(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+  const doc = await getDoc(env, `cases/${caseId}`);
+  if (!doc?.data.self) return json({ error: 'Only your own case continues into a next one.' }, 409);
+  if (doc.data.status === 'closed') return json({ error: 'That case is already closed.' }, 409);
+  const state = await getDoc(env, `cases/${caseId}/advisor/state`).catch(() => null);
+  const top = (Array.isArray(state?.data.differential) ? state.data.differential : [])[0] || null;
+  const typed = typeof body?.confirmedDx === 'string'
+    ? body.confirmedDx.replace(/\p{Cc}+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+  const name = typed || String(top?.name || '');
+  if (!name) return json({ error: 'Name the diagnosis to confirm, or run a read first.' }, 400);
+  const flat = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const now = new Date();
+  const confirmedDx = {
+    name,
+    pct: top && flat(top.name) === flat(name) && Number.isFinite(Number(top.pct)) ? Number(top.pct) : null,
+    at: now,
+  };
+  await patchDoc(env, `cases/${caseId}`, {
+    confirmedDx,
+    status: 'closed',
+    closedAt: now,
+    closedBy: 'advocate',
+    closedReason: 'Continued in the next case.',
+    hold: { pausedAt: null, totalMs: Math.max(0, Number(doc.data.hold?.totalMs) || 0), reason: '', note: '', backBy: null },
+    pendingExtend: null,
+  }, { mask: ['confirmedDx', 'status', 'closedAt', 'closedBy', 'closedReason', 'hold', 'pendingExtend'] });
+  // Nothing more is owed on a closed case; a read already in flight lands
+  // harmlessly on it.
+  await deleteDoc(env, `advisorQueue/case_${caseId}`).catch(() => {});
+  const source = { id: caseId, data: { ...doc.data, confirmedDx } };
+  const who = {
+    name: doc.data.clientName || '', dob: doc.data.clientDob || null,
+    phone: doc.data.clientPhone || null, address: doc.data.clientAddress || null,
+  };
+  const made = await createSelfCase(env, admin, who, [source]);
+  await patchDoc(env, `cases/${caseId}`, { continuedIn: made.id }, { mask: ['continuedIn'] }).catch(() => {});
+  return json({ ok: true, id: made.id, confirmedDx, closed: caseId });
 }
 
 /**

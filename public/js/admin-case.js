@@ -1958,6 +1958,9 @@ document.addEventListener('pa-panel-state', (e) => {
   const d = e.detail || {};
   if (d.id && d.id !== caseId) return;
   panelState = d;
+  // His own case's overview: the briefs it inherited, and the confirmed
+  // diagnosis box, both come off this poll (2026-09-05).
+  selfOverviewRepaint?.();
   if (folder?.el('appeals')) folder.el('appeals')._reload?.();
   // The call-notes workbench reads from the same broadcast. It moved to the
   // My doc page, beside the other two sheets he holds on a call.
@@ -2077,8 +2080,57 @@ const SENDABLE_FORMS = [
  * patient. What is left is who it is, the contact row's twin, one plain
  * sentence about what this case is, and the close.
  */
+/** The self overview's repainter for what the case inherited, set while it is
+ *  mounted so the panel's poll can drive it (the briefs ride that poll). */
+let selfOverviewRepaint = null;
+const fmtDay = (v) => {
+  const d = toDate(v);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+};
+/** A brief's markdown, the little of it there is: ### headings, - rows, lines. */
+function briefHtml(text) {
+  const out = [];
+  let list = [];
+  const flush = () => { if (list.length) { out.push(`<ul>${list.join('')}</ul>`); list = []; } };
+  for (const raw of String(text || '').split('\n')) {
+    const line = raw.trim();
+    if (!line) { flush(); continue; }
+    const h = line.match(/^#{2,4}\s+(.+)$/);
+    if (h) { flush(); out.push(`<h4>${esc(h[1])}</h4>`); continue; }
+    const li = line.match(/^[-*]\s+(.+)$/);
+    if (li) { list.push(`<li>${esc(li[1])}</li>`); continue; }
+    flush();
+    out.push(`<p>${esc(line)}</p>`);
+  }
+  flush();
+  return out.join('');
+}
+/** What this case carried over, from the panel's last poll: the briefs, or
+ *  the wait for them; and the confirmed-diagnosis box filled from the top of
+ *  the list once a read has run, unless he has typed in it. */
+function paintHandovers(pane) {
+  const dxIn = pane.querySelector('[data-self-dx]');
+  if (dxIn && !dxIn.dataset.touched && !dxIn.value) dxIn.value = (panelState.differential || [])[0]?.name || '';
+  const host = pane.querySelector('[data-handovers]');
+  if (!host) return;
+  const st = panelState.handoverStatus;
+  const list = Array.isArray(panelState.handovers) ? panelState.handovers : [];
+  host.innerHTML = `
+    <span class="fact-k">CARRIED OVER</span>
+    ${st === 'running' ? '<p class="dim small">Condensing your earlier case into a brief. A minute or two.</p>' : ''}
+    ${st === 'error' ? `<p class="error small">${esc(panelState.handoverError || 'The handover failed.')}</p>` : ''}
+    ${list.map((h) => `
+      <details class="handover">
+        <summary>From the case opened ${esc(fmtDay(h.openedAt))}${h.confirmedDx?.name ? ` · confirmed <strong>${esc(h.confirmedDx.name)}</strong>` : ''}</summary>
+        <div class="handover-brief">${briefHtml(h.brief)}</div>
+      </details>`).join('')}
+    ${!list.length && st !== 'running' && st !== 'error' ? '<p class="dim small">Nothing carried over yet.</p>' : ''}`;
+}
+
 function paintSelfOverview(pane, c) {
   const bits = contactBits(c.clientPhone || '', c.clientAddress || '');
+  const carried = (Array.isArray(c.carriedDx) ? c.carriedDx : []).filter((d) => d?.name);
+  const topNow = (panelState.differential || [])[0]?.name || '';
   pane.innerHTML = `
     <div class="facts self-facts">
       <span class="fact-k">CASE</span>
@@ -2104,9 +2156,57 @@ function paintSelfOverview(pane, c) {
       <span class="fact-v">${bits.phone} <span class="dim">·</span> ${bits.address}</span>
     </div>
     <p class="self-note" data-self-note>Nobody is on the other end. The chat is your own notes and records, the uploads are your files, the log and the milestones are yours to keep, and every reading is about you. Nothing on this case pings, emails, counts, or bills anyone.</p>
-    ${c.status === 'closed' ? '<p class="dim small">This case is closed.</p>' : `
-    <div class="actions"><button type="button" class="btn quiet" data-self-close>Close my own case</button></div>`}
+    ${carried.length ? `
+    <div class="carried" data-carried>
+      <span class="fact-k">CONFIRMED SO FAR</span>
+      <ul class="carried-list">${carried.map((d) => `<li><strong>${esc(d.name)}</strong>${d.pct != null ? ` <span class="dim">${esc(String(d.pct))}%</span>` : ''}${d.at ? ` <span class="dim small">· ${esc(fmtDay(d.at))}</span>` : ''}</li>`).join('')}</ul>
+    </div>` : ''}
+    ${(Array.isArray(c.priorCases) && c.priorCases.length) ? '<div class="handovers" data-handovers></div>' : ''}
+    ${c.status === 'closed' ? `<p class="dim small">This case is closed.${c.confirmedDx?.name ? ` Confirmed: <strong>${esc(c.confirmedDx.name)}</strong>.` : ''}${c.continuedIn ? ` <a href="/admin-case.html?id=${encodeURIComponent(c.continuedIn)}">Open the next case</a>.` : ''}</p>` : `
+    <div class="self-next" data-self-next>
+      <h3 class="self-next-h">Close this case and open the next</h3>
+      <p class="dim small">Closing confirms the diagnosis at the top of the list. The next case opens with it, and with a condensed handover of everything in this one.</p>
+      <label class="dim small">Confirmed diagnosis
+        <input type="text" data-self-dx maxlength="120" value="${esc(topNow)}" placeholder="Run a read first, or type it"></label>
+      <p class="row" style="gap:.4rem; align-items:center; justify-content:flex-start;">
+        <button type="button" class="btn self-open" data-self-next-go>Confirm and open the next case</button>
+        <button type="button" class="btn quiet" data-self-close>Just close it</button>
+      </p>
+      <span class="dim small" data-self-next-said></span>
+    </div>`}
     <p class="saved-note" data-self-said role="status" hidden></p>`;
+  // CLOSE AND CONTINUE (Eric, 2026-09-05: "When I close one, it confirms the
+  // diagnosis that's top of the differential, and then opens the new case
+  // with that diagnosis and condensed information from the previous case").
+  // The top of the list is filled in from the panel's last poll; he can type
+  // over it. The route closes this case, stamps the confirmation, opens the
+  // next one and queues the handover; the page walks into the new case.
+  pane.querySelector('[data-self-dx]')?.addEventListener('input', (e) => { e.currentTarget.dataset.touched = '1'; });
+  pane.querySelector('[data-self-next-go]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const said = pane.querySelector('[data-self-next-said]');
+    const dx = pane.querySelector('[data-self-dx]')?.value.trim() || '';
+    if (!dx) { if (said) said.textContent = 'Name the diagnosis to confirm, or run a read first.'; return; }
+    if (!confirm(`Confirm "${dx}", close this case, and open the next one with a handover?`)) return;
+    btn.disabled = true;
+    if (said) said.textContent = 'Closing this one and opening the next…';
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/admin/self-case/next', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ caseId, confirmedDx: dx }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.id) throw new Error(out.error || `Failed (${res.status})`);
+      location.href = `/admin-case.html?id=${encodeURIComponent(out.id)}`;
+    } catch (err) {
+      if (said) said.textContent = err.message;
+      btn.disabled = false;
+    }
+  });
+  paintHandovers(pane);
+  selfOverviewRepaint = () => paintHandovers(pane);
   // The Edit beside his name (2026-09-03, "Gg Gg"): the four details in
   // place, saved through case-update, then the page reloads so the masthead
   // and the card say the new name too.

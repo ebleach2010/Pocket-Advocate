@@ -116,6 +116,8 @@ const deps = () => ({
   client: () => ({ messages: { batches: { cancel: async () => {} } } }),
   pollFlight: async () => {},
   autoWaitMs: CLOCK.autoWaitMs,
+  // The handover (2026-09-05): a recorder, like the runners above.
+  runHandover: async (env, id, from) => { calls.push(['runHandover', `${id}<${from}`]); },
 });
 const build = (over = {}) => {
   const dd = { ...deps(), ...over };
@@ -538,6 +540,31 @@ check('Q35 an automatic run before its time claims nothing, a tap is due now, an
   && /const clockDue = !!dueAt && Date\.now\(\) >= dueAt && !!d\.analysis;/.test(P)
   && /if \(\(d\.pendingAt \|\| clockDue\) && \(!dueAt \|\| Date\.now\(\) >= dueAt\)/.test(P)
   && /next automatic read \$\{whenShort\(nextAt\)\}/.test(P));
+
+// ---- the handover row (Eric, 2026-09-05: his own cases in sequence) ------
+{
+  const row = (tries = 0) => [{ id: 'handover_case_n', data: { kind: 'case', id: 'n', handover: true, from: ['a', 'b'], at: new Date(), tries } }];
+  reset(row(), { handovers: [{ fromCase: 'a' }], handoverStatus: 'running' });
+  await build()(env, 0);
+  const one = { calls: [...calls], patched: [...patched], deleted: [...deleted] };
+  reset(row(), { handovers: [{ fromCase: 'a' }, { fromCase: 'b' }], handoverStatus: 'running' });
+  await build()(env, 0);
+  const done = { calls: [...calls], deleted: [...deleted], status: state.handoverStatus };
+  reset(row(3), { handovers: [], handoverStatus: 'running' });
+  await build()(env, 0);
+  const gaveUp = { calls: [...calls], deleted: [...deleted], status: state.handoverStatus, err: state.handoverError };
+  // NEGATIVE CONTROL (run 2026-09-05): the drain's `if (row.data.handover) {` branch changed to `if (false) {` made this read
+  //   FAIL  Q36 a handover row condenses the next source still owed, one per firing, buys no analysis, is gone once every source is in, and gives up honestly after three tries
+  check('Q36 a handover row condenses the next source still owed, one per firing, buys no analysis, is gone once every source is in, and gives up honestly after three tries',
+    one.calls.filter((c) => c[0] === 'runHandover').length === 1 && one.calls[0][1] === 'n<b'
+    && !one.calls.some((c) => c[0] === 'runAnalysis')
+    && one.patched.some(([p, d]) => /advisorQueue\/handover_case_n/.test(p) && d.tries === 1)
+    && one.patched.some(([p, d]) => /advisorQueue\/handover_case_n/.test(p) && d.tries === 0)
+    && !one.deleted.length
+    && !done.calls.length && done.deleted.includes('advisorQueue/handover_case_n') && done.status === 'ready'
+    && !gaveUp.calls.length && gaveUp.deleted.includes('advisorQueue/handover_case_n') && gaveUp.status === 'error' && /kept failing/.test(gaveUp.err),
+    JSON.stringify({ one, done, gaveUp }).slice(0, 400));
+}
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

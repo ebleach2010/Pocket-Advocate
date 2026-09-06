@@ -936,6 +936,33 @@ main > p > a.small[href="/admin.html"] {
   margin: 1rem 0 0; padding-top: .7rem; border-top: 1px solid var(--line);
   color: var(--dim); font-size: .84rem; line-height: 1.5;
 }
+/* His own cases in sequence (2026-09-05): the close-and-continue card on the
+   overview, the pull-from picker on the shelf's door, and what a case
+   inherited. */
+.self-next {
+  margin: 1rem 0 0; padding: .9rem 1rem;
+  border: 1px dashed var(--self); border-radius: 12px;
+}
+.self-next-h { margin: 0 0 .3rem; font-size: 1rem; color: var(--self); }
+.self-next label { display: block; margin: .5rem 0; }
+.self-next input { display: block; width: 100%; min-height: 44px; margin-top: .2rem; }
+.pull-from { border: 1px solid var(--line); border-radius: 10px; padding: .4rem .7rem .6rem; margin: .4rem 0; }
+.pull-from legend { padding: 0 .3rem; }
+.pull-row { display: flex; gap: .55rem; align-items: flex-start; padding: .35rem 0; font-size: .9rem; min-height: 44px; }
+.pull-row input { flex: none; width: 20px; height: 20px; margin-top: .15rem; }
+.carried { margin: .9rem 0 0; }
+.carried-list { margin: .25rem 0 0; padding-left: 1.1rem; }
+.carried-list li { margin: .15rem 0; }
+.handovers { margin: .9rem 0 0; }
+.handover { margin: .45rem 0; border: 1px solid var(--line); border-radius: 10px; padding: .3rem .75rem .5rem; }
+.handover > summary { cursor: pointer; min-height: 40px; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.handover-brief { font-size: .9rem; line-height: 1.5; color: var(--soft); }
+.handover-brief h4 {
+  margin: .8rem 0 .2rem; font-size: .74rem; font-weight: 800;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--dim);
+}
+.handover-brief ul { margin: .2rem 0; padding-left: 1.1rem; }
+.handover-brief p { margin: .3rem 0; }
 /* The two lists under the differential on his own case (2026-09-05): causes
    at the level of mechanism, and the likely best next treatments. Same rows
    and bars as the differential, under a small label each. */

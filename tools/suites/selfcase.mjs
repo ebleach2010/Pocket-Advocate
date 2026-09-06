@@ -215,9 +215,17 @@ const cleanAddressSrc = grab(WORKER, /const cleanAddress = \(v\) => \([\s\S]*?: 
 const personSrc = lift(WORKER, 'function personFields(body, fallback = {}) {');
 const familySrc = lift(WORKER, 'async function handleFamilyCase(request, env) {');
 const claimSrc = lift(WORKER, 'async function claimFamilyCases(env, uid, email) {');
+// Since 2026-09-05 the route makes its case through createSelfCase, checks
+// the cases it pulls from with pullFromOf, and /next closes into the next
+// one; all four ride along so the routes can be driven whole.
+const pullSrc = lift(WORKER, 'async function pullFromOf(env, body) {');
+const createSrc = lift(WORKER, 'async function createSelfCase(env, admin, who, sources = []) {');
+const carriedSrc = lift(WORKER, 'function carriedDxOf(sources) {');
+const nextSrc = lift(WORKER, 'async function handleSelfCaseNext(request, env) {');
 const runRoute = ({ admin = true, profile = { name: 'Eric Bleach', role: 'admin' }, cases = {}, body = {}, users = {} } = {}) => {
   const written = [];
   const mails = [];
+  const deleted = [];
   const store = new Map(Object.entries(cases).map(([id, d]) => [`cases/${id}`, d]));
   if (profile) store.set('users/eric', profile);
   const deps = {
@@ -225,6 +233,7 @@ const runRoute = ({ admin = true, profile = { name: 'Eric Bleach', role: 'admin'
     json: (obj, code = 200) => ({ code, obj }),
     getDoc: async (env, path) => (store.has(path) ? { id: path.split('/').pop(), data: store.get(path) } : null),
     patchDoc: async (env, path, data, opts) => { written.push({ path, data, opts }); store.set(path, { ...(store.get(path) || {}), ...data }); return true; },
+    deleteDoc: async (env, path) => { deleted.push(path); store.delete(path); return true; },
     queryDocs: async (env, coll, filters) => [...store.entries()]
       .filter(([p, d]) => p.startsWith(`${coll}/`) && d[filters[0][0]] === filters[0][2])
       .map(([p, d]) => ({ id: p.split('/').pop(), data: d })),
@@ -236,22 +245,27 @@ const runRoute = ({ admin = true, profile = { name: 'Eric Bleach', role: 'admin'
   };
   // eslint-disable-next-line no-new-func
   const fn = new Function('deps', `
-    const { requireAdmin, json, getDoc, patchDoc, queryDocs, lookupUidByEmail, sendEmail, escHtml, firstName, crypto } = deps;
+    const { requireAdmin, json, getDoc, patchDoc, deleteDoc, queryDocs, lookupUidByEmail, sendEmail, escHtml, firstName, crypto } = deps;
     ${phoneRe}
     ${cleanPhoneSrc}
     ${cleanAddressSrc}
     ${personSrc}
+    ${pullSrc}
+    ${carriedSrc}
+    ${createSrc}
     ${routeSrc}
+    ${nextSrc}
     ${familySrc}
     ${claimSrc}
-    return { handleSelfCase, handleFamilyCase, claimFamilyCases };
+    return { handleSelfCase, handleSelfCaseNext, handleFamilyCase, claimFamilyCases };
   `)(deps);
   const req = { json: async () => body };
   return {
     post: () => fn.handleSelfCase(req, {}),
+    next: () => fn.handleSelfCaseNext(req, {}),
     family: () => fn.handleFamilyCase(req, {}),
     claim: (uid, email) => fn.claimFamilyCases({}, uid, email),
-    written, mails, store,
+    written, mails, deleted, store,
   };
 };
 const R1 = runRoute({ body: { firstName: ' Eric ', lastName: 'Bleach', dob: '1985-02-03', phone: '+1 208 555 0100', address: ' 12 Elm St, Boise, ID 83702 ' } });
@@ -272,13 +286,18 @@ check('S13 the route makes one case shaped like every other, with self on, nobod
   JSON.stringify(doc?.data || made).slice(0, 220));
 const R2 = runRoute({ profile: { name: 'Eric Bleach', role: 'admin', selfCaseId: 'mine-0' }, cases: { 'mine-0': { self: true, status: 'confirmed' } } });
 const again = await R2.post();
-// NEGATIVE CONTROL (run 2026-09-03): the existing-case look-up removed made this read
-//   FAIL  S14 a second call opens the same case and writes nothing; a closed one is left closed and a new one made
+// Re-pinned 2026-09-05 (Eric: "I would like to open more than one case for
+// myself, in sequence"): a second call used to hand back the open case and
+// write nothing; now it opens a second case beside it, and the open one is
+// left exactly as it was.
+// NEGATIVE CONTROL (run 2026-09-05): the route answering with the profile's selfCaseId and created:false made this read
+//   FAIL  S14 a second call opens a second case beside the open one and leaves the open one alone; a closed one is left closed and a new one made
 const R3 = runRoute({ profile: { name: 'Eric Bleach', role: 'admin', selfCaseId: 'mine-0' }, cases: { 'mine-0': { self: true, status: 'closed' } } });
 const afterClose = await R3.post();
-check('S14 a second call opens the same case and writes nothing; a closed one is left closed and a new one made',
-  again.code === 200 && again.obj.id === 'mine-0' && again.obj.created === false && R2.written.length === 0
-  && afterClose.obj.id === 'mine-1' && afterClose.obj.created === true,
+check('S14 a second call opens a second case beside the open one and leaves the open one alone; a closed one is left closed and a new one made',
+  again.code === 200 && again.obj.id === 'mine-1' && again.obj.created === true
+  && !R2.written.some((w) => w.path === 'cases/mine-0') && R2.store.get('cases/mine-0').status === 'confirmed'
+  && afterClose.obj.id === 'mine-1' && afterClose.obj.created === true && R3.store.get('cases/mine-0').status === 'closed',
   `${JSON.stringify(again.obj)} then ${JSON.stringify(afterClose.obj)}`);
 const R4 = runRoute({ admin: false });
 // NEGATIVE CONTROL (run 2026-09-03): the admin refusal neutered (`if (!admin && false)`) made this read
@@ -291,7 +310,10 @@ check('S15 a stranger gets the site\'s 404 and nothing is written', stranger.cod
 //   FAIL  S16 the route is registered under the admin prefix and named in the header table
 check('S16 the route is registered under the admin prefix and named in the header table',
   /url\.pathname === '\/api\/admin\/self-case' && request\.method === 'POST'\)\n\s+return await handleSelfCase\(request, env\);/.test(WORKER)
-  && /^\/\/   POST   \/api\/admin\/self-case\s+his own case/m.test(WORKER));
+  // Re-pinned 2026-09-05: the header line says what the route does now (a
+  // new case of his own, pulling from the ones he ticks), and names /next.
+  && /^\/\/   POST   \/api\/admin\/self-case\s+a new case of his own/m.test(WORKER)
+  && /^\/\/   POST   \/api\/admin\/self-case\/next\s+close his own case/m.test(WORKER));
 
 // ---- the guards, pinned where a client would otherwise be told or counted ----
 const guards = [
@@ -336,7 +358,9 @@ check('S18 the shelf: his case on its own purple shelf, out of the three and out
   && /const former = shelved\.filter/.test(ADMIN) && /const current = shelved\.filter/.test(ADMIN)
   && /billed\.reduce\(/.test(ADMIN) && /\$\{billed\.length\} case/.test(ADMIN)
   && /section\('MY OWN CASE', 'var\(--self\)'/.test(ADMIN)
-  && /data-open-door="self">Open a case for myself</.test(ADMIN)
+  // Re-pinned 2026-09-05: the door is always there, and reads as a plus once
+  // he has a case of his own.
+  && /data-open-door="self">\$\{ownAll\.length \? '\+ Open another case for myself' : 'Open a case for myself'\}</.test(ADMIN)
   && /which === 'family' \? '\/api\/admin\/family-case' : '\/api\/admin\/self-case'/.test(ADMIN)
   && /if \(c\.self\) return 'MY OWN CASE';/.test(ADMIN)
   && /if \(c\.self \|\| c\.status !== 'awaiting_report'/.test(ADMIN)
@@ -360,12 +384,15 @@ check('S19 the page: a purple masthead, an overview built for him, no message ma
   && /if \(!c\?\.fullAccess \|\| c\.self \|\| c\.status === 'closed'\) return null;/.test(CASE)
   && /\.folder\.self \{/.test(ACSS) && /\.status-pill\.self \{/.test(ACSS) && /\.case-head\.self \.case-name \{ color: var\(--self\); \}/.test(ACSS)
   && /\.btn\.self-open \{/.test(ACSS));
+// Re-pinned 2026-09-05: the demo names its own cases by count now
+// (demo-case-mine, then -2, -3), so the first is `base` rather than `key`.
 check('S20 the demo mirrors the route, one per admin, the same shape',
-  /path === '\/api\/admin\/self-case'/.test(DEMO) && /const key = 'cases\/demo-case-mine';/.test(DEMO)
+  /path === '\/api\/admin\/self-case'/.test(DEMO) && /const base = 'cases\/demo-case-mine';/.test(DEMO)
   && /self: true,\n\s+clientUid: null,\n\s+clientEmail: null,/.test(DEMO));
 const copy = [
   grab(CASE, /function paintSelfOverview\(pane, c\) \{[\s\S]*?\n\}/),
-  grab(ADMIN, /const person = \(p, withEmail\) => `[\s\S]*?<\/div>`;/),
+  // (p, withEmail, extra) since 2026-09-05: the self form carries the pull-from picker.
+  grab(ADMIN, /const person = \(p, withEmail, extra = ''\) => `[\s\S]*?<\/div>`;/),
   grab(CHANGELOG_SRC(), /version: '2\.81',[\s\S]*?\n  \},/),
   grab(CHANGELOG_SRC(), /version: '2\.82',[\s\S]*?\n  \},/),
   selfBlockFn,
@@ -453,12 +480,14 @@ const CLIENT = f('public/js/case.js');
 check('S26 both doors and their forms are on the shelf, the family flag rides the card and the page, their page sells nothing, and the demo mirrors it',
   /data-open-door="family">Open a family case</.test(ADMIN)
   && ['self:firstName', 'self:lastName', 'self:dob', 'self:phone', 'self:address', 'family:email', 'family:relation'].every((k) => new RegExp(`data-of="\\$\\{p\\}:${k.split(':')[1]}"`).test(ADMIN))
-  && /const person = \(p, withEmail\) => `/.test(ADMIN)
+  && /const person = \(p, withEmail, extra = ''\) => `/.test(ADMIN)
   && /FAMILY · FREE/.test(ADMIN)
   && /loops\.push\(\['family', `Family, free/.test(CASE)
   && /if \(c\.family\) \{\n\s+el\.innerHTML = `\n\s+<h2 class="case-sec-h">Case Enhancements<\/h2>\n\s+<p class="dim small"[^>]*>Nothing to buy here: this case is free\./.test(CLIENT)
   && /path === '\/api\/admin\/family-case'/.test(DEMO) && /family: true,\n\s+familyRelation:/.test(DEMO)
-  && /const typed = \[body\.firstName, body\.lastName\]/.test(DEMO));
+  // Re-pinned 2026-09-05: the demo's own-case door builds the name through
+  // its cleaner now, the same two fields.
+  && /name: \[s\(body\.firstName, 60\), s\(body\.lastName, 60\)\]/.test(DEMO));
 
 // ---- the details, editable in place (Eric, 2026-09-03, "Gg Gg") ----
 const updateSrc = lift(WORKER, 'async function handleCaseUpdate(request, env) {');
@@ -533,7 +562,9 @@ const selfAssess = selfAssessSrc ? new Function(`${selfAssessSrc}; return SELF_A
 //   FAIL  S29 his own case reads on its own brief and its own assessment, whole, picked by the policy where the turn is built  -- voice() x5, VOICE x1
 check('S29 his own case reads on its own brief and its own assessment, whole, picked by the policy where the turn is built',
   !!selfVoiceSrc && !!voiceFn && !!selfAssessSrc
-  && (ADV.match(/\$\{voice\(\)\}/g) || []).length === 5
+  // Six since 2026-09-05: the handover brief is written under the case's
+  // brief too.
+  && (ADV.match(/\$\{voice\(\)\}/g) || []).length === 6
   && (ADV.match(/\$\{VOICE\}/g) || []).length === 1
   && /system: \[\{ type: 'text', text: self \? `\$\{SELF_VOICE\}\\n\\n\$\{SELF_ASSESSMENT\}` : `\$\{VOICE\}/.test(ADV)
   && /const self = !!turnPolicy\.getStore\(\)\?\.self;/.test(ADV)
@@ -1055,7 +1086,9 @@ check('S56 his own read carries two more machine-read lists under the differenti
   const IDX = f('worker/index.js');
   const PANEL = f('public/js/advisor.js');
   const DEMO = f('public/js/demo/api.js');
-  const demoSelf = between(DEMO, "if (path === '/api/admin/self-case') {", "if (path === '/api/admin/case-update') {");
+  // The demo's door mirrors /next too since 2026-09-05, so the block starts
+  // on the wider test.
+  const demoSelf = between(DEMO, "if (path === '/api/admin/self-case' || path === '/api/admin/self-case/next') {", "if (path === '/api/admin/case-update') {");
   // NEGATIVE CONTROL (run 2026-09-05): the panel's `const own = self ?` gate changed to `true ?` made this read
   //   FAIL  S58 the state route returns both lists, the 🧬 page paints them under the differential on his own case only, and the demo's own case has rows to paint
   check('S58 the state route returns both lists, the 🧬 page paints them under the differential on his own case only, and the demo\'s own case has rows to paint',
@@ -1070,6 +1103,191 @@ check('S56 his own read carries two more machine-read lists under the differenti
     && /causes: \[\n/.test(demoSelf) && /treatments: \[\n/.test(demoSelf)
     && /causes: state\.causes \|\| \[\],\n\s+treatments: state\.treatments \|\| \[\],/.test(DEMO)
     && /^\.diff-sub \{/m.test(ACSS));
+}
+
+// ---- his own cases in sequence (Eric, 2026-09-05) ----
+// "open more than one case for myself, in sequence. When I close one, it
+// confirms the diagnosis that's top of the differential, and then opens the
+// new case with that diagnosis and condensed information from the previous
+// case... A + -> open new personal cases -> pull information from [select
+// other personal cases]"
+{
+  const src = {
+    self: true, status: 'confirmed', clientName: 'Eric Bleach', clientDob: '1985-02-03',
+    clientPhone: '+1 208 555 0100', clientAddress: '12 Elm St, Boise, ID 83702', createdAt: '2026-08-01T00:00:00Z',
+    confirmedDx: { name: 'First thing', pct: 60, at: '2026-08-20T00:00:00Z' },
+    carriedDx: [{ name: 'Older thing', pct: 40, at: '2026-06-01T00:00:00Z', fromCase: 'mine-9' }],
+  };
+  const R = runRoute({ profile: { name: 'Eric Bleach', role: 'admin', selfCaseId: 'mine-0' },
+    cases: { 'mine-0': src, other: { self: false, status: 'confirmed' } }, body: { pullFrom: ['mine-0'] } });
+  const made = await R.post();
+  const c = R.written.find((w) => w.path === 'cases/mine-1');
+  const st = R.written.find((w) => w.path === 'cases/mine-1/advisor/state');
+  const q = R.written.find((w) => w.path === 'advisorQueue/handover_case_mine-1');
+  const bad = runRoute({ profile: { name: 'Eric Bleach', role: 'admin' }, cases: { other: { self: false, status: 'confirmed' } }, body: { firstName: 'Eric', pullFrom: ['other'] } });
+  const refused = await bad.post();
+  // NEGATIVE CONTROL (run 2026-09-05): the handover row's write dropped from createSelfCase made this read
+  //   FAIL  S59 the door opens a new case from the personal cases he ticked: his details from the newest, every confirmed diagnosis carried oldest first, the state seeded, the handover queued, and a case that is not his refuses the call
+  check('S59 the door opens a new case from the personal cases he ticked: his details from the newest, every confirmed diagnosis carried oldest first, the state seeded, the handover queued, and a case that is not his refuses the call',
+    !!pullSrc && !!createSrc && !!carriedSrc && made.code === 200 && made.obj.id === 'mine-1' && made.obj.created === true
+    && JSON.stringify(made.obj.pulledFrom) === '["mine-0"]'
+    && !!c && c.data.self === true && c.data.clientName === 'Eric Bleach' && c.data.clientDob === '1985-02-03'
+    && c.data.clientPhone === '+1 208 555 0100' && c.data.clientAddress === '12 Elm St, Boise, ID 83702'
+    && JSON.stringify(c.data.priorCases) === '["mine-0"]'
+    && c.data.carriedDx.length === 2 && c.data.carriedDx[0].name === 'Older thing' && c.data.carriedDx[1].name === 'First thing'
+    && c.data.carriedDx[1].pct === 60 && c.data.carriedDx[1].fromCase === 'mine-0' && c.opts?.mustNotExist === true
+    && !!st && st.data.handoverStatus === 'running' && JSON.stringify(st.data.priorCases) === '["mine-0"]'
+    && !!q && q.data.handover === true && JSON.stringify(q.data.from) === '["mine-0"]' && q.data.tries === 0 && q.data.kind === 'case' && q.data.id === 'mine-1'
+    && R.written.some((w) => w.path === 'users/eric' && w.data.selfCaseId === 'mine-1')
+    && refused.code === 400 && /not one of your own/.test(refused.obj.error) && !bad.written.some((w) => w.path.startsWith('cases/')),
+    JSON.stringify({ made: made.obj, refused: refused.obj, carried: c?.data.carriedDx }).slice(0, 300));
+
+  const open = { self: true, status: 'confirmed', clientName: 'Eric Bleach', clientDob: '1985-02-03', createdAt: '2026-08-01T00:00:00Z', hold: { totalMs: 5 } };
+  const N = runRoute({ profile: { name: 'Eric Bleach', role: 'admin', selfCaseId: 'mine-0' }, cases: { 'mine-0': open }, body: { caseId: 'mine-0' } });
+  N.store.set('cases/mine-0/advisor/state', { differential: [{ name: 'Autoimmune encephalitis', pct: 55 }, { name: 'Other', pct: 20 }] });
+  const out = await N.next();
+  const oldW = N.written.filter((w) => w.path === 'cases/mine-0');
+  const closed = oldW.find((w) => w.data.status === 'closed');
+  const newC = N.written.find((w) => w.path === 'cases/mine-1');
+  const T = runRoute({ profile: { name: 'Eric Bleach', role: 'admin' }, cases: { 'mine-0': open }, body: { caseId: 'mine-0', confirmedDx: '  Something   he typed ' } });
+  T.store.set('cases/mine-0/advisor/state', { differential: [{ name: 'Autoimmune encephalitis', pct: 55 }] });
+  const typed = await T.next();
+  const C = runRoute({ profile: { name: 'Eric Bleach', role: 'admin' }, cases: { 'mine-0': { ...open, status: 'closed' } }, body: { caseId: 'mine-0' } });
+  const already = await C.next();
+  const X = runRoute({ profile: { name: 'Eric Bleach', role: 'admin' }, cases: { 'mine-0': { ...open, self: false } }, body: { caseId: 'mine-0' } });
+  const notHis = await X.next();
+  const E = runRoute({ profile: { name: 'Eric Bleach', role: 'admin' }, cases: { 'mine-0': open }, body: { caseId: 'mine-0' } });
+  const noDx = await E.next();
+  // NEGATIVE CONTROL (run 2026-09-05): `closedReason: 'Continued in the next case.'` blanked made this read
+  //   FAIL  S60 closing into the next confirms the top of the list (or the name he typed, at no number), closes with the reason, opens the next case carrying it, links the two, and refuses a closed case, a case that is not his, and a case with nothing to confirm
+  check('S60 closing into the next confirms the top of the list (or the name he typed, at no number), closes with the reason, opens the next case carrying it, links the two, and refuses a closed case, a case that is not his, and a case with nothing to confirm',
+    !!nextSrc && out.code === 200 && out.obj.id === 'mine-1' && out.obj.closed === 'mine-0'
+    && out.obj.confirmedDx.name === 'Autoimmune encephalitis' && out.obj.confirmedDx.pct === 55
+    && !!closed && closed.data.closedReason === 'Continued in the next case.' && closed.data.closedBy === 'advocate'
+    && closed.data.confirmedDx.name === 'Autoimmune encephalitis' && closed.data.hold.totalMs === 5 && closed.data.pendingExtend === null
+    && N.deleted.includes('advisorQueue/case_mine-0')
+    && !!newC && newC.data.carriedDx.length === 1 && newC.data.carriedDx[0].name === 'Autoimmune encephalitis'
+    && newC.data.carriedDx[0].pct === 55 && newC.data.carriedDx[0].fromCase === 'mine-0'
+    && JSON.stringify(newC.data.priorCases) === '["mine-0"]' && newC.data.clientName === 'Eric Bleach'
+    && oldW.some((w) => w.data.continuedIn === 'mine-1')
+    && N.written.some((w) => w.path === 'advisorQueue/handover_case_mine-1')
+    && typed.code === 200 && typed.obj.confirmedDx.name === 'Something he typed' && typed.obj.confirmedDx.pct === null
+    && already.code === 409 && notHis.code === 409 && noDx.code === 400 && /run a read first/.test(noDx.obj.error),
+    JSON.stringify({ out: out.obj, typed: typed.obj?.confirmedDx, already: already.code, notHis: notHis.code, noDx: noDx.obj }).slice(0, 300));
+}
+
+{
+  // runHandover, lifted and run: the material it sends, the brief it keeps,
+  // the state it leaves, and the flag it raises.
+  const handSrc = lift(ADV, 'export async function runHandover(env, id, fromId) {').replace(/^export /, '');
+  const whenSrc = grab(ADV, /const when = \(v\) => \{[\s\S]*?\n\};/);
+  const briefSrc = between(ADV, 'const HANDOVER_BRIEF = `', '/**\n * Condense one source case');
+  const run = async ({ selfSource = true, reply = '### Confirmed at close\nX.\n### Timeline\n- 2023: a.', priors = ['a'] } = {}) => {
+    const sets = [];
+    const asks = [];
+    const pend = [];
+    const docs = {
+      'cases/a': { self: selfSource, createdAt: '2026-08-01T00:00:00Z', closedAt: '2026-08-30T00:00:00Z', confirmedDx: { name: 'Autoimmune encephalitis', pct: 55 }, carriedDx: [{ name: 'Older thing' }] },
+      'cases/a/advisor/state': { analysis: 'THE LAST READ TEXT', workingDx: 'AE relapse', differential: [{ name: 'AE', pct: 55, why: 'fits', moves: 'panel' }], causes: [{ name: 'Antibody', pct: 50, why: 'mech' }], treatments: [{ name: 'Steroids', pct: 45, why: 'worked' }], readFiles: ['cases/a/x/mri.pdf'], handovers: [{ fromCase: 'z', openedAt: '2026-01-01', brief: 'OLDER BRIEF' }] },
+      'cases/n/advisor/state': { priorCases: priors, handovers: [] },
+    };
+    const api = new Function('deps', `
+      const { getDoc, statePath, recentMessages, loadStyle, transcript, ask, voice, registerNote, setState, markPending, diagLog } = deps;
+      ${whenSrc}
+      const HANDOVER_BRIEF = ${JSON.stringify(briefSrc.slice('const HANDOVER_BRIEF = `'.length))};
+      ${handSrc}
+      return runHandover;
+    `)({
+      getDoc: async (env, path) => (docs[path] ? { id: path.split('/').pop(), data: docs[path] } : null),
+      statePath: (kind, id) => `cases/${id}/advisor/state`,
+      recentMessages: async () => [{ id: 'm1', data: { from: 'me', text: 'Day 3, tremor back.', ts: new Date('2026-08-10') } }],
+      loadStyle: async () => ({ voice: '' }),
+      transcript: (rows) => rows.map((r) => `ERIC [id=${r.id}]: ${r.data.text}`).join('\n'),
+      ask: async (env, opts) => { asks.push(opts); return reply; },
+      voice: () => 'VOICE',
+      registerNote: () => 'REGISTER',
+      setState: async (env, kind, id, fields) => { sets.push([kind, id, fields]); },
+      markPending: async (env, kind, id, opts) => { pend.push([kind, id, opts]); },
+      diagLog: async () => {},
+    });
+    let threw = null;
+    let entry = null;
+    try { entry = await api({}, 'n', 'a'); } catch (e) { threw = e.message; }
+    return { sets, asks, pend, threw, entry };
+  };
+  const good = await run();
+  const content = String(good.asks[0]?.messages?.[0]?.content || '');
+  const two = await run({ priors: ['a', 'b'] });
+  const notSelf = await run({ selfSource: false });
+  const noHeads = await run({ reply: 'just prose' });
+  // NEGATIVE CONTROL (run 2026-09-05): the markPending after the last brief removed made this read
+  //   FAIL  S61 the handover condenses the log, the last read, the three lists, the files and the earlier brief into a brief on the new case, marks it ready when the last source is in and flags the first read, and refuses a source that is not his or a reply without its headings
+  check('S61 the handover condenses the log, the last read, the three lists, the files and the earlier brief into a brief on the new case, marks it ready when the last source is in and flags the first read, and refuses a source that is not his or a reply without its headings',
+    !!handSrc && !good.threw && good.asks.length === 1 && good.asks[0].effort === 'medium' && good.asks[0].noStream === true
+    && /VOICE/.test(good.asks[0].system[0].text) && /### Confirmed at close/.test(good.asks[0].system[0].text) && good.asks[0].system[0].cache === true
+    && good.asks[0].system[1].text === 'REGISTER'
+    && /CONFIRMED AT CLOSE: Autoimmune encephalitis \[55%\]/.test(content) && /Older thing/.test(content)
+    && /Day 3, tremor back\./.test(content) && /THE LAST READ TEXT/.test(content) && /WORKING LINE: AE relapse/.test(content)
+    && /CAUSES AS THEY STOOD:\n- Antibody \[50%\]: mech/.test(content) && /TREATMENTS AS THEY STOOD:\n- Steroids \[45%\]/.test(content)
+    && /FILES IT READ: mri\.pdf/.test(content) && /OLDER BRIEF/.test(content)
+    && good.sets.length === 1 && good.sets[0][2].handoverStatus === 'ready' && good.sets[0][2].handovers.length === 1
+    && good.sets[0][2].handovers[0].fromCase === 'a' && good.sets[0][2].handovers[0].confirmedDx.name === 'Autoimmune encephalitis'
+    && /### Confirmed at close/.test(good.sets[0][2].handovers[0].brief) && good.sets[0][2].handoverError === null
+    && good.pend.length === 1 && good.pend[0][1] === 'n' && good.pend[0][2].force === true
+    && two.sets[0][2].handoverStatus === 'running' && two.pend.length === 0
+    && /not one of his own/.test(notSelf.threw || '') && notSelf.sets.length === 0
+    && /without its headings/.test(noHeads.threw || '') && noHeads.sets.length === 0,
+    JSON.stringify({ threw: good.threw, sets: good.sets.map((s) => s[2].handoverStatus), pend: good.pend.length, two: two.sets[0]?.[2].handoverStatus }));
+}
+
+{
+  // priorCasesNote, lifted: nothing without priors, the whole picture with
+  // them, and wired into the read, the question and the empty-thread bail
+  // on his own case only.
+  const noteSrc = lift(ADV, 'function priorCasesNote(st) {');
+  const whenSrc = grab(ADV, /const when = \(v\) => \{[\s\S]*?\n\};/);
+  const note = new Function(`${whenSrc}\n${noteSrc}; return priorCasesNote;`)();
+  const full = note({
+    carriedDx: [{ name: 'Older thing', pct: null, at: '2026-06-01T00:00:00Z' }, { name: 'Autoimmune encephalitis', pct: 55, at: '2026-08-30T00:00:00Z' }],
+    handovers: [{ openedAt: '2026-08-01T00:00:00Z', closedAt: '2026-08-30T00:00:00Z', confirmedDx: { name: 'Autoimmune encephalitis' }, brief: 'THE BRIEF' }],
+    handoverStatus: 'ready',
+  });
+  const pending = note({ carriedDx: [{ name: 'X' }], handovers: [], handoverStatus: 'running' });
+  // NEGATIVE CONTROL (run 2026-09-05): the note dropped from the read's dynamic block (`${self ? priorCasesNote(state?.data) : ''}` left in the question turn only) made this read
+  //   FAIL  S62 a read on a case with priors is told what was confirmed and what the briefs hold, that this case is about now, never to re-derive and never to re-ask, on his own case only, and the briefs count as material
+  check('S62 a read on a case with priors is told what was confirmed and what the briefs hold, that this case is about now, never to re-derive and never to re-ask, on his own case only, and the briefs count as material',
+    !!noteSrc && note({}) === '' && note(null) === '' && note({ carriedDx: [], handovers: [] }) === ''
+    && /PRIOR CASES\. This is not his first case on himself\./.test(full)
+    && /- Older thing \(confirmed 2026-06-01\)\n- Autoimmune encephalitis \[55%\] \(confirmed 2026-08-30\)/.test(full)
+    && /BRIEF FROM THE CASE OPENED 2026-08-01, CLOSED 2026-08-30, CONFIRMED Autoimmune encephalitis:\nTHE BRIEF/.test(full)
+    && /Never re-derive a confirmed diagnosis from scratch, and never ask him for a fact a brief already carries\./.test(full)
+    && /differential on THIS case is about what is going on NOW/.test(full)
+    && !/still being written/.test(full) && /still being written/.test(pending)
+    && (ADV.match(/\$\{self \? priorCasesNote\(state\?\.data\) : ''\}/g) || []).length === 2
+    && /&& !\(turnPolicy\.getStore\(\)\?\.self && priorCasesNote\(state\?\.data\)\)\) \{/.test(ADV)
+    && !/[—–]/.test(noteSrc));
+}
+
+{
+  const IDX = f('worker/index.js');
+  const CASEJS = f('public/js/admin-case.js');
+  const ADMINJS = f('public/js/admin.js');
+  const PANEL = f('public/js/advisor.js');
+  const DEMO2 = f('public/js/demo/api.js');
+  // NEGATIVE CONTROL (run 2026-09-05): the shelf's `payload.pullFrom = ` line removed made this read
+  //   FAIL  S63 the overview carries the close-and-continue card, what was confirmed and what came over; the shelf's door is always there as a plus with a pull-from picker; the routes are wired; the demo mirrors both
+  check('S63 the overview carries the close-and-continue card, what was confirmed and what came over; the shelf\'s door is always there as a plus with a pull-from picker; the routes are wired; the demo mirrors both',
+    /Close this case and open the next/.test(CASEJS) && /data-self-dx/.test(CASEJS) && /data-self-next-go/.test(CASEJS)
+    && /fetch\('\/api\/admin\/self-case\/next'/.test(CASEJS) && /CONFIRMED SO FAR/.test(CASEJS) && /CARRIED OVER/.test(CASEJS)
+    && /function paintHandovers\(pane\)/.test(CASEJS) && /selfOverviewRepaint\?\.\(\);/.test(CASEJS) && /Condensing your earlier case/.test(CASEJS)
+    && /data-self-close>Just close it</.test(CASEJS)
+    && /\+ Open another case for myself/.test(ADMINJS) && /class="pull-from"/.test(ADMINJS) && /payload\.pullFrom = /.test(ADMINJS)
+    && /person\('self', false, pullPicker\)/.test(ADMINJS) && /ownClosed\.map/.test(ADMINJS)
+    && /handovers: out\.state\?\.handovers \|\| \[\],/.test(PANEL) && /handoverStatus: out\.state\?\.handoverStatus \|\| null,/.test(PANEL)
+    && /url\.pathname === '\/api\/admin\/self-case\/next' && request\.method === 'POST'/.test(IDX)
+    && /POST   \/api\/admin\/self-case\/next/.test(IDX)
+    && /path === '\/api\/admin\/self-case' \|\| path === '\/api\/admin\/self-case\/next'/.test(DEMO2) && /handoverStatus: 'ready',/.test(DEMO2)
+    && /^\.self-next \{/m.test(ACSS) && /^\.pull-from \{/m.test(ACSS) && /^\.handover-brief \{/m.test(ACSS));
 }
 
 const fails = results.filter((r) => !r.pass).length;

@@ -845,6 +845,11 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           causesHistory: out.state?.causesHistory || [],
           treatments: out.treatments || [],
           treatmentsHistory: out.state?.treatmentsHistory || [],
+          // What his own case inherited from the ones before it (2026-09-05):
+          // the briefs, and whether the last one has landed yet.
+          handovers: out.state?.handovers || [],
+          handoverStatus: out.state?.handoverStatus || null,
+          handoverError: out.state?.handoverError || '',
           workingLine: out.workingLine || '',
           dxOverride: out.dxOverride || null,
           // The Education and About-you folder pages ride this same poll, so

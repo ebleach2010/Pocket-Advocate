@@ -2740,6 +2740,142 @@ function harvestDifferential(text, prior) {
   return { text: text.replace(m[0], '').trim(), differential };
 }
 
+/** A date the way a brief says it: the day, or "date unknown". */
+const when = (v) => {
+  const t = v ? new Date(v.toDate ? v.toDate() : v) : null;
+  return t && !Number.isNaN(t.getTime()) ? t.toISOString().slice(0, 10) : 'date unknown';
+};
+
+/**
+ * THE HANDOVER (Eric, 2026-09-05: "opens the new case with that diagnosis
+ * and condensed information from the previous case so it can transfer
+ * information in general over to my new personal case"). One of his earlier
+ * cases condensed into one brief on the new case's state. The reading on the
+ * new case gets the briefs before every pass (priorCasesNote), and he reads
+ * them himself on the overview.
+ */
+const HANDOVER_BRIEF = `Condense one of Eric's own earlier cases into a brief his next case starts from. He is the patient on both. The brief is reference material, read by the reading on the next case before every pass and by Eric himself, so it has to be complete where it counts and short everywhere else.
+
+Write exactly these markdown \`###\` headings, in this order, and nothing before the first:
+
+### Confirmed at close
+The diagnosis confirmed when the case closed, with its confidence if given, in one line. If none was confirmed, say so.
+### Timeline
+Dated entries, oldest first, one line each: onset, relapses, hospital stays, key visits, key results. Dates as he gave them; a date you do not have is written "date unknown", never guessed.
+### Medications
+Every drug named, with dose and dates where known, and what happened on it.
+### Tests and results
+Abnormal results first with values and dates, then the normal ones grouped. Imaging and procedures with dates.
+### Treatments tried
+What was tried, when, and how it went, one line each.
+### Ruled out
+What a specific result or statement closed, one line each.
+### Still open
+Questions, tests and loose ends that were unresolved when the case closed.
+### Mechanistic causes and next treatments as they stood
+The Causes and Treatments rows from the last read, with their percentages, as they stood; say if there were none.
+
+Facts from the material only, with their dates. Never infer, never round, never fill a gap with a typical value, never add a possibility the material did not carry. Under 900 words. Plain words, no idioms. Never use an em dash or an en dash anywhere.`;
+
+/**
+ * Condense one source case into a brief on case `id`. Runs from the drain
+ * under the case policy, one source per firing; throws so the drain's bounded
+ * tries count it. When the last source is in, the state goes ready and the
+ * new case is flagged for its first read, because the briefs are material.
+ */
+export async function runHandover(env, id, fromId) {
+  const [src, srcState, rows, style, mine] = await Promise.all([
+    getDoc(env, `cases/${fromId}`),
+    getDoc(env, statePath('case', fromId)).catch(() => null),
+    recentMessages(env, 'case', fromId),
+    loadStyle(env),
+    getDoc(env, statePath('case', id)).catch(() => null),
+  ]);
+  if (!src?.data.self) throw new Error('The case to hand over from is not one of his own.');
+  const s = srcState?.data || {};
+  const rank = (list) => (Array.isArray(list) ? list : [])
+    .map((r) => `- ${r.name} [${r.pct}%]: ${r.why || ''}${r.moves ? ` | ${r.moves}` : ''}`).join('\n') || '- none';
+  const earlier = (Array.isArray(s.handovers) ? s.handovers : [])
+    .filter((h) => h?.brief)
+    .map((h) => `BRIEF THAT CASE ITSELF STARTED FROM (the case before it, opened ${when(h.openedAt)}${h.closedAt ? `, closed ${when(h.closedAt)}` : ''}):\n${String(h.brief).slice(0, 6000)}`)
+    .join('\n\n');
+  const dx = src.data.confirmedDx;
+  const material = `THE CASE, opened ${when(src.data.createdAt)}${src.data.closedAt ? `, closed ${when(src.data.closedAt)}` : ', still open'}.
+CONFIRMED AT CLOSE: ${dx?.name ? `${dx.name}${dx.pct != null ? ` [${dx.pct}%]` : ''}` : 'nothing confirmed'}
+DIAGNOSES CARRIED INTO IT FROM EARLIER CASES: ${(Array.isArray(src.data.carriedDx) ? src.data.carriedDx : []).map((d) => d?.name).filter(Boolean).join('; ') || 'none'}
+
+HIS OWN LOG (every line is Eric writing about himself; YOU ASKED lines are questions the reading put to him, and ERIC lines answering an id are his answers):
+${transcript(rows) || '(no entries)'}
+
+THE LAST READ ON IT:
+${String(s.analysis || '(no read)').slice(0, 30000)}
+
+WORKING LINE: ${s.workingDx || 'none'}
+DIFFERENTIAL AS IT STOOD:
+${rank(s.differential)}
+CAUSES AS THEY STOOD:
+${rank(s.causes)}
+TREATMENTS AS THEY STOOD:
+${rank(s.treatments)}
+FILES IT READ: ${(Array.isArray(s.readFiles) ? s.readFiles : []).map((k) => String(k).split('/').pop()).slice(-60).join(', ') || 'none'}${earlier ? `\n\n${earlier}` : ''}`;
+  const brief = await ask(env, {
+    effort: 'medium',
+    maxTokens: 12000,
+    noStream: true,
+    system: [
+      { type: 'text', text: `${voice()}\n\n${HANDOVER_BRIEF}`, cache: true },
+      { type: 'text', text: registerNote(style) || ' ' },
+    ],
+    messages: [{ role: 'user', content: material }],
+  });
+  const text = String(brief || '').trim();
+  if (!/###\s*Confirmed at close/i.test(text)) throw new Error('The handover came back without its headings.');
+  const cur = mine?.data || {};
+  const have = (Array.isArray(cur.handovers) ? cur.handovers : []).filter((h) => h?.fromCase !== fromId);
+  const entry = {
+    fromCase: fromId,
+    at: new Date(),
+    openedAt: src.data.createdAt ? new Date(src.data.createdAt) : null,
+    closedAt: src.data.closedAt ? new Date(src.data.closedAt) : null,
+    confirmedDx: dx?.name ? { name: String(dx.name), pct: dx.pct ?? null } : null,
+    brief: text.slice(0, 12000),
+  };
+  const handovers = [...have, entry].sort((a, b) => new Date(a.openedAt || 0) - new Date(b.openedAt || 0));
+  const priors = Array.isArray(cur.priorCases) ? cur.priorCases : [];
+  const done = new Set(handovers.map((h) => h.fromCase));
+  const allIn = priors.every((p) => done.has(p));
+  await setState(env, 'case', id, {
+    handovers,
+    handoverStatus: allIn ? 'ready' : 'running',
+    handoverError: null,
+  });
+  // The briefs are material: the first read on the new case runs off them.
+  if (allIn) await markPending(env, 'case', id, { force: true }).catch(() => {});
+  await diagLog(env, { ev: 'handover', kind: 'case', ok: true, chars: text.length, allIn });
+  return entry;
+}
+
+/**
+ * What a read on one of his own cases is told about the cases before it
+ * (2026-09-05). Nothing when there are none, so every other case is
+ * untouched by this.
+ */
+function priorCasesNote(st) {
+  const d = st || {};
+  const carried = (Array.isArray(d.carriedDx) ? d.carriedDx : []).filter((x) => x?.name);
+  const briefs = (Array.isArray(d.handovers) ? d.handovers : []).filter((h) => h?.brief);
+  if (!carried.length && !briefs.length) return '';
+  const pending = d.handoverStatus === 'running';
+  return `
+
+PRIOR CASES. This is not his first case on himself. The ones before it were closed with the diagnosis at the top of the differential confirmed by him, and what they held was condensed into the briefs below. Treat a confirmed diagnosis as established unless his log now contradicts it, and say so plainly if it does. The differential on THIS case is about what is going on NOW: a relapse of the confirmed condition, a complication of it, a second condition, or something new. Never re-derive a confirmed diagnosis from scratch, and never ask him for a fact a brief already carries. A fact in a brief is a fact with its date; nothing beyond the briefs is known about those cases.${pending ? ' A brief is still being written; work from what is here and expect it next pass.' : ''}
+CONFIRMED SO FAR, oldest first:
+${carried.map((x) => `- ${x.name}${x.pct != null ? ` [${x.pct}%]` : ''}${x.at ? ` (confirmed ${when(x.at)})` : ''}`).join('\n') || '- none yet'}
+${briefs.map((h) => `
+BRIEF FROM THE CASE OPENED ${when(h.openedAt)}${h.closedAt ? `, CLOSED ${when(h.closedAt)}` : ''}${h.confirmedDx?.name ? `, CONFIRMED ${h.confirmedDx.name}` : ''}:
+${String(h.brief).slice(0, 8000)}`).join('\n')}`;
+}
+
 /**
  * A ranked list under any heading, in the differential's own row shape
  * (`- Name [NN%]: why | what would raise or lower it`), most likely first.
@@ -3586,6 +3722,36 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
         }));
         return true; // one model job per firing
       }
+      // THE HANDOVER (2026-09-05): one source case condensed per firing into
+      // a brief on the new case. Same shape as the other rescues: bounded
+      // tries, an honest error on the state when they run out, the row gone
+      // after. A finished source is skipped, so a retry never condenses the
+      // same case twice.
+      if (row.data.handover) {
+        const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+        const done = new Set((Array.isArray(st?.data.handovers) ? st.data.handovers : []).map((h) => h?.fromCase));
+        const left = (Array.isArray(row.data.from) ? row.data.from : []).filter((f) => !done.has(f));
+        if (!left.length || st?.data.handoverStatus === 'error') {
+          if (!left.length && st?.data.handoverStatus === 'running')
+            await setState(env, kind, id, { handoverStatus: 'ready' }).catch(() => {});
+          await deleteDoc(env, `advisorQueue/${row.id}`);
+          continue;
+        }
+        const tries = Number(row.data.tries || 0) + 1;
+        if (tries > 3) {
+          await setState(env, kind, id, {
+            handoverStatus: 'error',
+            handoverError: 'The handover from your earlier case kept failing. Everything is still on that case; open it from the shelf.',
+          }).catch(() => {});
+          await deleteDoc(env, `advisorQueue/${row.id}`);
+          continue;
+        }
+        await patchDoc(env, `advisorQueue/${row.id}`, { tries }, { mask: ['tries'] }).catch(() => {});
+        await withCasePolicy(env, kind, id, () => runHandover(env, id, left[0]));
+        // A source that landed resets the count for the next one.
+        await patchDoc(env, `advisorQueue/${row.id}`, { tries: 0 }, { mask: ['tries'] }).catch(() => {});
+        return true; // one model job per firing
+      }
       if (row.data.draft) {
         const st = await getDoc(env, statePath(kind, id)).catch(() => null);
         const req = st?.data.draftReq;
@@ -4110,7 +4276,11 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     // Nothing to read at all: no chat AND no files. Clean up completely (the
     // row and the flag included) so the queue slot is not burned again next
     // firing on the same nothing.
-    if (!chat && !media.blocks.length && !media.carry.length) {
+    // A handover brief is material too (2026-09-05): the first read on a case
+    // that starts from an earlier one runs off the briefs before he has
+    // typed a line.
+    if (!chat && !media.blocks.length && !media.carry.length
+      && !(turnPolicy.getStore()?.self && priorCasesNote(state?.data))) {
       await setState(env, kind, id, {
         status: 'idle', startedAt: null, progressAt: null, stage: null,
         pendingAt: null, updatedAt: new Date(),
@@ -4443,7 +4613,7 @@ the thread has actually contradicted it.`, cache: true },
       // one: the standing instructions above are identical from call to
       // call, and gluing the glossary and the profile onto them meant the
       // advisor learning anything busted the cache built to protect them.
-      { type: 'text', text: `${knowledgeNote(knowledge)}${self ? '' : stanceNote(style)}${style.voice && !self ? `
+      { type: 'text', text: `${knowledgeNote(knowledge)}${self ? priorCasesNote(state?.data) : ''}${self ? '' : stanceNote(style)}${style.voice && !self ? `
 
 Two of your sections leave this page as messages FROM ERIC: "Worth asking" and "What's missing". He presses one line and it goes to the client as it stands. Write those two in his voice, from this profile of how he writes:
 ${style.voice}` : ''}${registerNote(style)}` || ' ' }],
@@ -4925,7 +5095,7 @@ ${SELF_NOTE}` },
       // Learned material on its own block, after the cached one, so the
       // glossary growing or the profile updating never busts the cache on
       // the standing instructions above.
-      { type: 'text', text: `${knowledgeNote(knowledge)}${self ? '' : stanceNote(style)}${registerNote(style)}${override ? OVERRIDE_NOTE : ''}${AUTHORITY_NOTE}` || ' ' }],
+      { type: 'text', text: `${knowledgeNote(knowledge)}${self ? priorCasesNote(state?.data) : ''}${self ? '' : stanceNote(style)}${registerNote(style)}${override ? OVERRIDE_NOTE : ''}${AUTHORITY_NOTE}` || ' ' }],
       messages: [{
         role: 'user',
         content: [

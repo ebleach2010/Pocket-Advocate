@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.95';
+export const VERSION = '2.96';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '2.95';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS OWN CASES IN SEQUENCE (Eric, 2026-09-05: "open more than one case
+    // for myself, in sequence. When I close one, it confirms the diagnosis
+    // that's top of the list, and then opens the new case with that
+    // diagnosis and condensed information from the previous case... A + ->
+    // open new personal cases -> pull information from [select other
+    // personal cases]"). Admin only; the client list stays empty.
+    version: '2.96',
+    quiet: true,
+    client: [],
+    admin: [
+      'Your own cases now run in sequence. On your case\'s overview, Close this case and open the next confirms the diagnosis at the top of the list (or the one you type), closes the case, and opens the next one with that diagnosis carried and a condensed handover of everything in it, written within a minute or two. On the Clients page the purple door is always there as + Open another case for myself, with a list of your earlier cases to pull information from. Every read on a case that started from an earlier one knows what was confirmed and what the handover holds.',
+    ],
+  },
   {
     // CAUSES AND TREATMENTS ON HIS OWN CASE (Eric, 2026-09-05: "a new
     // separate confidence interval underneath the diagnosis for personal

@@ -33,6 +33,30 @@ const ok = (body) => ({
   json: async () => body,
   text: async () => JSON.stringify(body),
 });
+/** The brief the demo hands a new personal case a few seconds after it opens
+ *  (2026-09-05). Invented, in the shape the Worker's handover writes. */
+const DEMO_BRIEF = `### Confirmed at close
+Autoimmune encephalitis, relapse [55%].
+### Timeline
+- 2023: first episode, hospital, steroids then IVIG.
+- 2025-03: second relapse, milder, steroids only.
+- 2026-08-26: a cold. 2026-09-05: cognition down, right hand tremor back.
+### Medications
+- Prednisone 60 mg taper, 2023 and 2025: worked both times.
+- IVIG, 2023: held for 18 months.
+### Tests and results
+- NMDA receptor antibody, 2023: positive, titre not recorded.
+- MRI with contrast, 2025-03: normal.
+### Treatments tried
+- Steroids: fast response both times. IVIG: held longest.
+### Ruled out
+- Stroke: 2023 MRI clean.
+### Still open
+- Repeat antibody panel not yet drawn this relapse.
+### Mechanistic causes and next treatments as they stood
+- Causes: an antibody against a nerve cell receptor [50%]; a virus reactivating [20%].
+- Treatments: a steroid course, then IVIG if it does not hold [45%]; rituximab [25%].`;
+
 const fail = (status, error) => ({
   ok: false,
   status,
@@ -521,22 +545,66 @@ export function demoApi(role, store) {
 
     // His own case (2026-09-03), mirroring the Worker: one per admin, the
     // same shape as every other case with self on, nobody on the other end.
-    if (path === '/api/admin/self-case') {
+    if (path === '/api/admin/self-case' || path === '/api/admin/self-case/next') {
       await beat(300);
-      const key = 'cases/demo-case-mine';
-      const cur = store.docs.get(key);
-      if (cur && cur.self && cur.status !== 'closed') return ok({ ok: true, id: 'demo-case-mine', created: false });
+      // MORE THAN ONE, IN SEQUENCE (2026-09-05). The first is demo-case-mine,
+      // the next demo-case-mine-2, and so on. /next closes the case named
+      // with its top diagnosis confirmed and opens the next one from it; the
+      // plain route opens one that pulls from the cases ticked. Either way an
+      // invented brief lands on the new case a few seconds later, the way
+      // the Worker's drain would write a real one.
+      const base = 'cases/demo-case-mine';
+      const own = [...store.docs.entries()].filter(([k, v]) => /^cases\/[^/]+$/.test(k) && v?.self);
       const now = new Date();
-      const typed = [body.firstName, body.lastName].map((x) => String(x || '').trim()).filter(Boolean).join(' ');
+      const s = (v, n) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, n);
+      let sources = [];
+      let who = {
+        name: [s(body.firstName, 60), s(body.lastName, 60)].filter(Boolean).join(' '),
+        dob: s(body.dob, 10) || null, phone: s(body.phone, 40) || null, address: s(body.address, 300) || null,
+      };
+      if (path.endsWith('/next')) {
+        const oldKey = `cases/${body.caseId}`;
+        const old = store.docs.get(oldKey);
+        if (!old?.self) return fail(409, 'Only your own case continues into a next one.');
+        if (old.status === 'closed') return fail(409, 'That case is already closed.');
+        const st = store.docs.get(`${oldKey}/advisor/state`) || {};
+        const top = (st.differential || [])[0];
+        const name = s(body.confirmedDx, 120) || top?.name || '';
+        if (!name) return fail(400, 'Name the diagnosis to confirm, or run a read first.');
+        const confirmedDx = { name, pct: top && top.name === name ? top.pct : null, at: now };
+        store.docs.set(oldKey, {
+          ...old, confirmedDx, status: 'closed', closedAt: now, closedBy: 'advocate',
+          closedReason: 'Continued in the next case.',
+        });
+        sources = [[oldKey, store.docs.get(oldKey)]];
+        who = { name: old.clientName, dob: old.clientDob || null, phone: old.clientPhone || null, address: old.clientAddress || null };
+      } else {
+        for (const pid of (Array.isArray(body.pullFrom) ? body.pullFrom : [])) {
+          const c = store.docs.get(`cases/${pid}`);
+          if (!c?.self) return fail(400, 'One of the cases to pull from is not one of your own.');
+          sources.push([`cases/${pid}`, c]);
+        }
+        const newest = sources[0]?.[1];
+        if (!who.name && newest) who = { name: newest.clientName, dob: newest.clientDob || null, phone: newest.clientPhone || null, address: newest.clientAddress || null };
+        if (!who.name) who.name = 'Eric Bleach';
+      }
+      const key = own.length ? `${base}-${own.length + 1}` : base;
+      const id = key.slice(6);
+      const priorCases = sources.map(([k]) => k.slice(6));
+      const carriedDx = [];
+      for (const [k, c] of sources) {
+        for (const d of (Array.isArray(c.carriedDx) ? c.carriedDx : [])) carriedDx.push(d);
+        if (c.confirmedDx?.name) carriedDx.push({ ...c.confirmedDx, fromCase: k.slice(6) });
+      }
       store.docs.set(key, {
         self: true,
         clientUid: null,
         clientEmail: null,
-        clientName: typed || 'Eric Bleach',
-        clientDob: String(body.dob || '') || null,
+        clientName: who.name,
+        clientDob: who.dob,
         clientTz: 'America/Boise',
-        clientPhone: String(body.phone || '').trim().slice(0, 40) || null,
-        clientAddress: String(body.address || '').trim().slice(0, 300) || null,
+        clientPhone: who.phone,
+        clientAddress: who.address,
         status: 'confirmed',
         createdAt: now,
         bookingEmailSentAt: now,
@@ -556,13 +624,29 @@ export function demoApi(role, store) {
         stripe: null,
         work: { seconds: 0, startedAt: null },
         hold: null,
+        priorCases,
+        carriedDx,
       });
+      if (path.endsWith('/next')) {
+        const oldKey = `cases/${body.caseId}`;
+        store.docs.set(oldKey, { ...store.docs.get(oldKey), continuedIn: id });
+      }
+      // The brief lands on the next state read a few seconds from now (the
+      // state route below writes it), the way the Worker's drain would. A
+      // timer would die with this page when it walks into the new case.
+      const handoverPending = sources.map(([k, c]) => ({
+        fromCase: k.slice(6), openedAt: c.createdAt || now, closedAt: c.closedAt || null,
+        confirmedDx: c.confirmedDx?.name ? { name: c.confirmedDx.name, pct: c.confirmedDx.pct ?? null } : null,
+      }));
       // The 🧬 page on his own case carries two lists under the differential
       // (2026-09-05): underlying major mechanistic causes and the likely best
       // next treatments. Invented rows so the page has something to paint
       // before the demo's read runs; the read keeps them.
       store.docs.set(`${key}/advisor/state`, {
         status: 'idle', updatedAt: now,
+        priorCases, carriedDx, handovers: [],
+        handoverStatus: priorCases.length ? 'running' : null,
+        handoverPending, handoverQueuedAt: now,
         workingDx: 'Autoimmune encephalitis, early relapse',
         differential: [
           { name: 'Autoimmune encephalitis, relapse', pct: 55, why: 'Same order as 2023 and 2025: cognition first, then the tremor, then sleep.', moves: 'A repeat antibody panel and an MRI with contrast.' },
@@ -579,7 +663,7 @@ export function demoApi(role, store) {
       });
       store.persist?.();
       store.fire?.(key);
-      return ok({ ok: true, id: 'demo-case-mine', created: true });
+      return ok({ ok: true, id, created: true });
     }
 
     if (path === '/api/admin/case-update') {
@@ -1479,7 +1563,20 @@ export function demoApi(role, store) {
       // hardcoding the id showed the wrong case's work on the right case's
       // page.
       const cid = q.get('id') || body.id || DEMO_CASE_ID;
-      const state = store.docs.get(`cases/${cid}/advisor/state`) || {};
+      let state = store.docs.get(`cases/${cid}/advisor/state`) || {};
+      // A handover queued a few seconds ago lands now (2026-09-05): the
+      // demo's stand-in for the Worker's drain writing the brief.
+      if (state.handoverStatus === 'running' && Array.isArray(state.handoverPending)
+        && Date.now() - new Date(state.handoverQueuedAt || 0).getTime() > 2500) {
+        state = {
+          ...state,
+          handovers: state.handoverPending.map((h) => ({ ...h, at: new Date(), brief: DEMO_BRIEF })),
+          handoverPending: [],
+          handoverStatus: 'ready',
+        };
+        store.docs.set(`cases/${cid}/advisor/state`, state);
+        store.persist?.();
+      }
       const style = store.docs.get('advisorStyle/profile') || {};
       const notes = store.docs.get(`cases/${cid}/private/notes/doc`) || {};
       const { readFiles, pendingMedia, ...panelState } = state;

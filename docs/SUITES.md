@@ -183,6 +183,42 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### His own cases in sequence (2026-09-05)
+
+Eric: "I would like to open more than one case for myself, in sequence. When
+I close one, it confirms the diagnosis that's top of the differential, and
+then opens the new case with that diagnosis and condensed information from
+the previous case so it can transfer information in general over to my new
+personal case... A + -> open new personal cases -> pull information from
+[select other personal cases]." Two routes: `/api/admin/self-case` no longer
+bounces to the open case; every call opens a new one, and `pullFrom` names
+the personal cases (his only, or the call is refused) whose information
+hands over. `/api/admin/self-case/next` stamps `confirmedDx` (the top of the
+case's differential, or the name he typed over it) on the case, closes it
+with "Continued in the next case.", opens the next one from it and links
+the two (`continuedIn`). `createSelfCase` carries every confirmed diagnosis
+down the chain as `carriedDx` (oldest first, each name once), seeds the new
+case's advisor state and queues a `handover_case_*` row; the drain
+condenses one source per firing (`runHandover`: log, last read, the three
+ranked lists, the files read, and the briefs that case itself started from,
+into a fixed-heading brief under 900 words, facts and dates only), marks
+the state ready when the last one lands, and flags the first read, because
+the briefs are material (the empty-thread bail counts them). Every read and
+every question on a case with priors gets `priorCasesNote`: the confirmed
+diagnoses are established, this case's differential is about now, never
+re-derive, never ask for a fact a brief carries. The overview of his own
+case carries CONFIRMED SO FAR, the briefs (CARRIED OVER, off the panel's
+poll, "Condensing…" until they land), and the close-and-continue card with
+the top of the list in an editable box; the shelf's purple door is always
+there as "+ Open another case for myself" with a pull-from picker, and
+closed own cases sit under MY OWN CASE with what was confirmed. The demo
+mirrors both routes and writes an invented brief a few seconds after.
+selfcase.mjs S59-S64 run the lifted routes and the drain branch against
+fakes and pin the prompt, the note, the page and the demo; S14 and S20 were
+re-pinned with dated notes (a second call now opens a second case; the demo
+names its cases by count). `tools/drives/drive-selfchain.mjs` closes a case
+into the next in the demo and opens a third from the door with a pick.
+
 ### Causes and treatments on his own case (2026-09-05)
 
 Eric: "a new separate confidence interval underneath the diagnosis for

@@ -373,10 +373,15 @@ async function load() {
 
   // THE TWO DOORS (Eric, 2026-09-03): his own case, which asks for his own
   // details first, and a family case, which asks for theirs and the email
-  // they will sign in with. Each is a button that unfolds a short form; the
-  // own-case door goes away once his case exists (one per admin; the route
-  // keeps it that way), the family door stays.
-  const person = (p, withEmail) => `
+  // they will sign in with. Each is a button that unfolds a short form.
+  //
+  // MORE THAN ONE OF HIS OWN, IN SEQUENCE (Eric, 2026-09-05: "A + -> open
+  // new personal cases -> pull information from [select other personal
+  // cases]"). The own-case door no longer goes away once a case exists: it
+  // reads "+ Open another case for myself", and its form carries a picker of
+  // every personal case he has, open or closed, each with what was confirmed
+  // on it. The ticked ones hand their information over to the new case.
+  const person = (p, withEmail, extra = '') => `
       <div class="open-form" data-open-form="${p}" hidden>
         <label class="dim small">First name<input type="text" data-of="${p}:firstName" maxlength="60" autocomplete="off"></label>
         <label class="dim small">Last name<input type="text" data-of="${p}:lastName" maxlength="60" autocomplete="off"></label>
@@ -385,15 +390,26 @@ async function load() {
         <label class="dim small">Date of birth<input type="date" data-of="${p}:dob"></label>
         <label class="dim small">Phone<input type="tel" data-of="${p}:phone" maxlength="40" placeholder="+1 555 555 5555"></label>
         <label class="dim small">Home address<input type="text" data-of="${p}:address" maxlength="300" placeholder="Street, city, state, ZIP"></label>
+        ${extra}
         <p class="row"><button type="button" class="btn self-open" data-open-go="${p}">${withEmail ? 'Open their case, free' : 'Open my case'}</button>
           <span class="dim small" data-open-said="${p}"></span></p>
       </div>`;
-  const selfBlock = (mine.length
-    ? section('MY OWN CASE', 'var(--self)', mine.map((c) => rowFor(c, 'nobody on the other end')))
+  const ownAll = cases.filter((c) => c.self).sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
+  const ownClosed = ownAll.filter((c) => c.status === 'closed');
+  const pullPicker = ownAll.length ? `
+        <fieldset class="pull-from">
+          <legend class="dim small">Pull information from</legend>
+          ${ownAll.map((c) => `<label class="pull-row"><input type="checkbox" data-pull="${esc(c.id)}"> <span>${esc(c.clientName || 'Me')} · opened ${c.createdAt ? dateFmt.format(toDate(c.createdAt)) : 'no date'}${c.status === 'closed' ? ` · closed${c.confirmedDx?.name ? `, confirmed ${esc(c.confirmedDx.name)}` : ''}` : ' · open'}</span></label>`).join('')}
+        </fieldset>` : '';
+  const selfBlock = ((mine.length || ownClosed.length)
+    ? section('MY OWN CASE', 'var(--self)', [
+      ...mine.map((c) => rowFor(c, 'nobody on the other end')),
+      ...ownClosed.map((c) => rowFor(c, `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>${c.confirmedDx?.name ? ` · confirmed ${esc(c.confirmedDx.name)}` : ''}`)),
+    ])
     : '')
-    + `<div class="open-doors">${mine.length ? '' : '<button type="button" class="btn self-open" data-open-door="self">Open a case for myself</button>'}
+    + `<div class="open-doors"><button type="button" class="btn self-open" data-open-door="self">${ownAll.length ? '+ Open another case for myself' : 'Open a case for myself'}</button>
         <button type="button" class="btn self-open" data-open-door="family">Open a family case</button></div>
-      ${mine.length ? '' : person('self', false)}${person('family', true)}`;
+      ${person('self', false, pullPicker)}${person('family', true)}`;
   listEl.innerHTML = attBlock + todayBlock + selfBlock +
     section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
       `${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
@@ -430,7 +446,13 @@ async function load() {
         // belongs to a client here (audit, 2026-09-03).
         if (go.dataset.confirm === '1') payload.confirmExisting = true;
       }
-      if (!payload.firstName) { if (said) said.textContent = 'First name, please.'; return; }
+      if (which === 'self') {
+        // The personal cases he ticked to pull information from (2026-09-05).
+        payload.pullFrom = [...listEl.querySelectorAll('[data-open-form="self"] [data-pull]:checked')].map((i) => i.dataset.pull);
+      }
+      // A blank name on his own door is fine when he is pulling from a case
+      // that already carries it; the route fills it from there.
+      if (!payload.firstName && !(which === 'self' && payload.pullFrom?.length)) { if (said) said.textContent = 'First name, please.'; return; }
       if (which === 'family' && !payload.email) { if (said) said.textContent = 'The email they will sign in with, please.'; return; }
       go.disabled = true;
       if (said) said.textContent = 'Opening…';
