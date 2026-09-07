@@ -183,6 +183,34 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### A seasoned colleague (2026-09-07)
+
+Eric: "the advisor's language is driving me insane. Some turns of phrase
+make no sense. He needs personality, and some of his direct 'orders' are
+not advisor language. He'll say things like 'Two things: this and this,
+faxed today.' It's fucking annoying." The 2026-09-05 register made the read
+imitate his own sentences ("Short sentences. One idea each. The point
+first... Nothing before the point and no cushion after it... Say the thing,
+then stop."), on top of both briefs' "Short bits, never essays. Five short
+lines beat twenty long ones", and that is a recipe for telegrams and orders.
+Asked how it should sound, he chose a seasoned colleague. Both briefs
+(`VOICE`, `SELF_VOICE`) now describe one: twenty years at this, dry, warm,
+direct, opinions with their reasons, a little humor; whole sentences; "You
+advise; he decides", every recommendation in the first person with its
+reason ("I'd get the records request faxed today, because the clinic takes
+ten days and the appointment is in twelve", never "Fax the records request
+today"); "Two things: this and this, faxed today." named as the shape never
+written; "Brief, and whole: short paragraphs of complete sentences, never a
+telegram." `registerNote` says the same, keeps the banned document phrases,
+drops the imitation (his own sentences no longer ride; `ERIC_LINES` is gone;
+the study's profile rides "so you read him right and meet him where he is,
+not so you imitate him"), and ends every turn with a read-back that turns
+any fragment into a sentence and any order into advice with its reason. The
+bullets in the capped sections are whole sentences now. Plain words and the
+dash ban stand. `tools/suites/register.mjs` R1-R3 hold the briefs, the note
+and the bullets, and the version note; `selfcase.mjs` S52, S53 and S55
+re-pinned with dated notes.
+
 ### Only what came up (2026-09-07)
 
 Eric: "I'm not sure why the dictionary has that many terms. We have by no

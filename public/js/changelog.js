@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '3.2';
+export const VERSION = '3.3';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '3.2';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // A SEASONED COLLEAGUE (Eric, 2026-09-07: "the language is driving me
+    // insane. Some turns of phrase make no sense. He needs personality, and
+    // some of his direct 'orders' are not the right language. He'll say
+    // things like 'Two things: this and this, faxed today.'").
+    // Asked how it should sound, he chose a seasoned colleague. Admin only.
+    version: '3.3',
+    quiet: true,
+    client: [],
+    admin: [
+      'Every reading, answer and note written to you comes from a seasoned colleague now: whole sentences, an opinion with its reason, a suggestion in the first person rather than an order, plain words, a little humor when it fits. The clipped orders ("Two things: this and this, faxed today.") are named as the shape never written, and every turn ends with a read-back that turns any fragment into a sentence and any order into advice. The study of how you write still rides, so it reads you right; it no longer imitates you.',
+    ],
+  },
   {
     // ONLY WHAT CAME UP, THE CUT STREAM, THE STALE FAILURE (Eric,
     // 2026-09-07: "I'm not sure why the dictionary has that many terms";

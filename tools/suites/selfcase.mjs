@@ -951,11 +951,11 @@ check('S51 a refusal is remembered against the id it refused, so changing the pi
 // voice. He sometimes throws out weird phrases I don't understand that aren't
 // even medical jargon."
 const registerFn = lift(ADV, 'function registerNote(style) {');
-// His own sentences ride inside the note since 2026-09-05, so the lift
-// carries ERIC_LINES with it (S53 below holds each line to its page).
-const linesSrc = between(ADV, 'const ERIC_LINES = [', '\n];');
+// Re-pinned 2026-09-07: his own sentences (ERIC_LINES) no longer ride inside
+// the note; the register is a seasoned colleague's (S53 below), so the lift
+// is the function alone.
 // eslint-disable-next-line no-new-func
-const registerRun = new Function(`${linesSrc}\n];\n${registerFn}; return registerNote;`)();
+const registerRun = new Function(`${registerFn}; return registerNote;`)();
 const bare = registerRun({});
 const voiced = registerRun({ voice: 'Short lines. Starts with the point. Never says "reach out".' });
 const voiceSrc = between(ADV, 'const VOICE = `', 'const SELF_VOICE = `');
@@ -981,35 +981,34 @@ check('S52 everything addressed to him is written in his own register and in pla
   Object.values(S52_PARTS).every(Boolean),
   Object.entries(S52_PARTS).filter(([, v]) => !v).map(([k]) => k).join(',') || 'all parts hold');
 
-// ---- his own sentences, verbatim, on everything he reads (Eric, 2026-09-05) ----
-// "the advisor still doesn't sound like me at all. He sounds like Claude
-// autism 3000." A description of a voice is imitated badly; the voice itself
-// is imitated well, so his own sentences ride along word for word, and each
-// one is held here against the page he wrote it on.
-// eslint-disable-next-line no-new-func
-const ericLines = linesSrc ? new Function(`${linesSrc}\n]; return ERIC_LINES;`)() : [];
-const pageText = (p) => readFileSync(j(ROOT, 'public', p), 'utf8')
-  .replace(/<script[\s\S]*?<\/script>/g, ' ').replace(/<[^>]+>/g, ' ')
-  .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&')
-  .replace(/[‘’ʼ]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ');
-const hisPages = ['advocate.html', 'faq.html', 'index.html'].map(pageText).join(' ');
-const notHis = ericLines.filter((l) => !hisPages.includes(l));
+// ---- a seasoned colleague, on everything he reads (Eric, 2026-09-07) ----
+// Re-pinned 2026-09-07. The 2026-09-05 version made the note imitate his own
+// sentences ("Short sentences. One idea each. The point first... Say the
+// thing, then stop."), which came out as telegrams and orders: "the
+// advisor's language is driving me insane... He needs personality, and some
+// of his direct 'orders' are not advisor language. He'll say things like
+// 'Two things: this and this, faxed today.'" He chose a seasoned colleague:
+// its own personality, whole sentences, advice with its reason, never a
+// command. register.mjs holds the rest of that change; this holds the note.
 const bareNote = registerRun({});
 const ownNote = registerRun({ selfVoice: 'Blunt. Swears when annoyed.' });
-// NEGATIVE CONTROL (run 2026-09-05): one of his lines reworded ("ten important questions" to "ten questions") made this read
-//   FAIL  S53 his own sentences ride on everything he reads, each one word for word from a page he wrote, the document habits are banned by name, and the read-back closes every turn
-check('S53 his own sentences ride on everything he reads, each one word for word from a page he wrote, the document habits are banned by name, and the read-back closes every turn',
-  ericLines.length >= 10 && notHis.length === 0
-  && ericLines.every((l) => bareNote.includes(`  - ${l}\n`))
-  && ['"it\'s worth noting"', '"clinical picture"', '"consistent with"', '"further\nevaluation"', '"be kind to yourself"', 'Never address him by name', 'Say the thing, then stop.']
+// NEGATIVE CONTROL (run 2026-09-07): registerNote's `You advise; he decides.` changed to `You decide.` made this read
+//   FAIL  S53 the note on everything he reads is a seasoned colleague's: whole sentences, advice in the first person with its reason and never an order, the telegram named as the shape never written, his own sentences no longer imitated, the document habits still banned by name, and a read-back that turns fragments into sentences and orders into advice
+check('S53 the note on everything he reads is a seasoned colleague\'s: whole sentences, advice in the first person with its reason and never an order, the telegram named as the shape never written, his own sentences no longer imitated, the document habits still banned by name, and a read-back that turns fragments into sentences and orders into advice',
+  /You are a seasoned colleague, not a document and not\nhim/.test(bareNote)
+  && /Whole sentences, every one\./.test(bareNote) && /You advise; he decides\./.test(bareNote)
+  && /"Two things: this and this, faxed\ntoday\." is the shape you never write\./.test(bareNote)
+  && /Never an order, never a telegram/.test(bareNote)
+  && !/Say the thing, then stop/.test(bareNote) && !/Short sentences\. One idea each/.test(bareNote)
+  && !/ERIC_LINES/.test(ADV) && !/HIS OWN\nregister/.test(bareNote)
+  && ['"it\'s worth noting"', '"clinical picture"', '"consistent with"', '"further\nevaluation"', '"be kind to yourself"', 'Never address him by name']
     .every((s) => bareNote.includes(s))
-  && /BEFORE YOU FINISH: read every sentence back in his voice/.test(bareNote)
+  && /BEFORE YOU FINISH: read every sentence back aloud\. Any fragment, make it a\nsentence\. Any order, make it advice with its reason\./.test(bareNote)
   // His own register from the study rides only on his own case: run bare
   // (no policy) it stays out, and the source gates it on the policy.
   && !/Blunt\. Swears/.test(ownNote) && /\$\{self && own \? `/.test(registerFn)
   && /typeof turnPolicy !== 'undefined' && !!turnPolicy\.getStore\(\)\?\.self/.test(registerFn)
-  && !/[—–]/.test(linesSrc),
-  `${ericLines.length} lines; not on his pages: ${JSON.stringify(notHis)}`);
+  && !/[—–]/.test(registerFn));
 
 const readersSrc = between(ADV, 'const READERS = [', 'const READER_RULES');
 const readerRules = between(ADV, 'const READER_RULES = `', '/**');
@@ -1033,10 +1032,13 @@ check('S54 the nightly study reads how he talks to his own tools with its own re
 check('S55 his own read is capped hard, and its brief says a person talking, not a document',
   /Length caps on this case, and they are caps: over means cut, never squeezed\ninto jargon\./.test(selfAssess)
   && /"Right now" under 120 words\. "Plain English" under 150\./.test(selfAssess)
-  && /one line, 25 words or fewer/.test(selfAssess)
+  // Re-pinned 2026-09-07 (a seasoned colleague): a bullet is a whole
+  // sentence now, and the brief names the colleague rather than telling the
+  // read to talk the way he talks.
+  && /one whole sentence, 25 words or fewer/.test(selfAssess)
   && /together under 700 words/.test(selfAssess)
-  && /Talk to him the way he talks\./.test(selfVoice)
-  && /a\s+person talking, not a document/.test(selfVoice)
+  && /The same seasoned colleague talks to him here, about him/.test(selfVoice)
+  && /a\s+person talking,\s+not a document/.test(selfVoice)
   && /HOW\s+TO TALK TO ERIC/.test(selfVoice));
 
 // ---- causes and treatments under the differential, his own case only (Eric, 2026-09-05) ----
