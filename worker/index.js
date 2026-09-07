@@ -953,11 +953,22 @@ export default {
           const out = await buildShowcase(env, { adminUid: env.ADMIN_UID || '' });
           return json({ ok: true, ...out });
         }
-        const [cron, adv, queueRows, caseRows] = await Promise.all([
+        // And the way out (Eric, 2026-09-06: "Get rid of Joe bloe"): every
+        // case flagged showcase is wiped whole, subcollections, files, queue
+        // rows and the doc itself. Nothing else is eligible.
+        if (url.searchParams.get('do') === 'unshowcase') {
+          const rows = await queryDocs(env, 'cases', [['showcase', 'EQUAL', true]], 5).catch(() => []);
+          const wiped = [];
+          for (const r of rows) wiped.push({ id: r.id, ...(await wipeCase(env, r.id, { adminUid: env.ADMIN_UID || '' })) });
+          return json({ ok: true, wiped });
+        }
+        const [cron, adv, queueRows, caseRows, knowledgeRows] = await Promise.all([
           getDoc(env, 'diag/cron').catch(() => null),
           getDoc(env, 'diag/advisor').catch(() => null),
           listDocs(env, 'advisorQueue', { pageSize: 10 }).catch(() => []),
           listDocs(env, 'cases', { pageSize: 50, all: true }).catch(() => []),
+          // How big the dictionary is (2026-09-06): a count, no terms.
+          listDocs(env, 'advisorKnowledge', { pageSize: 300, all: true }).catch(() => []),
         ]);
         // Sanitized machine state for the open cases: ages and counters only,
         // no ids and no case content, so "why is nothing even queueing" is
@@ -968,6 +979,10 @@ export default {
           const st = await getDoc(env, `cases/${c.id}/advisor/state`).catch(() => null);
           const d = st?.data || {};
           states.push({
+            // Two flags and no id: which rows are his own case and the
+            // showcase, so "drafting stopped" can be read against the one
+            // kind of case where the route refuses a draft by design.
+            self: !!c.data.self, showcase: !!c.data.showcase,
             status: d.status || null, stage: d.stage || null,
             error: d.error ? String(d.error).slice(0, 140) : null,
             errorRetries: d.errorRetries || 0,
@@ -984,12 +999,19 @@ export default {
             // firing).
             autoGapMin: d.autoGapMin || null,
             nextAutoInS: d.nextAutoAt ? -age(d.nextAutoAt) : null,
+            // The draft path (2026-09-06, "Drafting has stopped working"):
+            // where the last draft got to, how old it is, and what it said
+            // if it fell over.
+            draftStatus: d.draftStatus || null,
+            draftAgeS: age(d.draftStartedAt),
+            draftError: d.draftError ? String(d.draftError).slice(0, 140) : null,
           });
         }
         return json({
           now: new Date(), cron: cron?.data || null,
           queue: queueRows.map((r) => ({ kind: r.data.kind, draft: !!r.data.draft, tries: r.data.tries || 0, ageS: age(r.data.at) })),
           states,
+          knowledgeCount: knowledgeRows.length,
           runs: adv?.data.runs || [],
         });
       }
@@ -1932,7 +1954,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-06-joe-bloe';
+const BUILD_TAG = 'v2026-09-07-joe-gone-dictionary-whole';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1940,7 +1962,7 @@ const BUILD_TAG = 'v2026-09-06-joe-bloe';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.97';
+const VERSION = '2.98';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -5988,7 +6010,9 @@ async function handleAdvisorState(request, env, url) {
     // questions on one thread a new answer was never in the page: the panel
     // kept showing "thinking..." while the real answer sat in Firestore.
     listDocs(env, `${parent}/${id}/advisor/state/qa`, { pageSize: 20, orderBy: 'at desc' }).catch(() => []),
-    listDocs(env, 'advisorKnowledge', { pageSize: 200 }).catch(() => []),
+    // Every page, for the same reason as the dictionary route (2026-09-06):
+    // the Key terms page and the learned filter must see the whole list.
+    listDocs(env, 'advisorKnowledge', { pageSize: 300, all: true }).catch(() => []),
     getDoc(env, `${parent}/${id}/private/notes`).catch(() => null),
     getDoc(env, 'advisorStyle/profile').catch(() => null),
   ]);
@@ -7206,7 +7230,12 @@ async function handleDictionary(request, env) {
     return json({ ok: true });
   }
 
-  const rows = await listDocs(env, 'advisorKnowledge', { pageSize: 300 }).catch(() => []);
+  // Every page (2026-09-06, "Tapping on a term does not bring me to it in
+  // the dictionary"): one page of 300 was the whole dictionary until it
+  // grew past that, and then every term past the three hundredth slug was
+  // simply not on the page he was sent to. The painted terms come from the
+  // reading itself, not from this list, so the two drifted apart silently.
+  const rows = await listDocs(env, 'advisorKnowledge', { pageSize: 300, all: true }).catch(() => []);
   return json({
     terms: rows.map((r) => ({
       id: r.id,

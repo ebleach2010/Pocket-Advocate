@@ -280,6 +280,35 @@ check('X6 Delete sits beside pause and close on a case with nobody behind it and
   && /^\.btn\.danger \{/m.test(ACSS)
   && !/[—–]/.test(SRC));
 
+// ---- the way out (Eric, 2026-09-06: "Get rid of Joe bloe") ----------------
+// The keyed diag door that wipes every showcase case, lifted whole and run
+// against fakes: it asks for the cases flagged showcase and nothing else,
+// wipes each one as the admin, and answers with what it wiped.
+{
+  const block = (W.match(/if \(url\.searchParams\.get\('do'\) === 'unshowcase'\) \{[\s\S]*?return json\(\{ ok: true, wiped \}\);\n\s+\}/) || [''])[0];
+  const calls = { query: [], wipe: [] };
+  let out = null;
+  if (block) {
+    const run = new Function('url', 'env', 'queryDocs', 'wipeCase', 'json', `return (async () => { ${block} return null; })();`);
+    out = await run(
+      new URL('https://x.test/api/diag?k=b6e6f406dc540d5459188b00716ab631&do=unshowcase'),
+      { ADMIN_UID: 'eric' },
+      async (...a) => { calls.query.push(a); return [{ id: 'joe', data: { showcase: true } }]; },
+      async (...a) => { calls.wipe.push(a); return { docs: 3, files: 10 }; },
+      (o, s = 200) => ({ o, s }),
+    ).catch((e) => ({ err: String(e) }));
+  }
+  // NEGATIVE CONTROL (run 2026-09-07): the query's `[['showcase', 'EQUAL', true]]` changed to `[['self', 'EQUAL', true]]` made this read
+  //   FAIL  X7 the keyed diag's unshowcase door asks for the cases flagged showcase and nothing else, wipes each one whole as the admin, answers with what it wiped, and sits behind the key like the showcase door
+  check('X7 the keyed diag\'s unshowcase door asks for the cases flagged showcase and nothing else, wipes each one whole as the admin, answers with what it wiped, and sits behind the key like the showcase door',
+    !!block && out?.s === 200 && out?.o?.ok === true
+    && calls.query.length === 1 && calls.query[0][1] === 'cases' && JSON.stringify(calls.query[0][2]) === JSON.stringify([['showcase', 'EQUAL', true]])
+    && calls.wipe.length === 1 && calls.wipe[0][1] === 'joe' && calls.wipe[0][2]?.adminUid === 'eric'
+    && out.o.wiped.length === 1 && out.o.wiped[0].id === 'joe' && out.o.wiped[0].docs === 3
+    && W.indexOf("url.searchParams.get('k') !== 'b6e6f406dc540d5459188b00716ab631'") < W.indexOf("url.searchParams.get('do') === 'unshowcase'"),
+    JSON.stringify({ out, calls }));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

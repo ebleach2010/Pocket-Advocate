@@ -1628,6 +1628,18 @@ export function demoApi(role, store) {
         store.docs.set(`cases/${cid}/advisor/state`, state);
         store.persist?.();
       }
+      // A draft asked for a few seconds ago lands now (2026-09-06), the same
+      // way: the demo's stand-in for the Worker writing it.
+      if (state.draftStatus === 'running' && typeof state.draftPending === 'string'
+        && Date.now() - new Date(state.draftQueuedAt || 0).getTime() > 2500) {
+        state = {
+          ...state,
+          draft: state.draftPending, draftStatus: 'ready', draftError: null, draftAt: new Date(),
+          draftStartedAt: null, draftProgressAt: null, draftPending: null,
+        };
+        store.docs.set(`cases/${cid}/advisor/state`, state);
+        store.persist?.();
+      }
       const style = store.docs.get('advisorStyle/profile') || {};
       const notes = store.docs.get(`cases/${cid}/private/notes/doc`) || {};
       const { readFiles, pendingMedia, ...panelState } = state;
@@ -1702,6 +1714,26 @@ export function demoApi(role, store) {
         store.docs.set(`cases/${cid}/advisor/state`, {
           ...state, dxOverride: body.text || null, dxOverrideAt: new Date(),
         });
+        return ok({ ok: true });
+      }
+      // Prepare a response (2026-09-06, "Drafting has stopped working"): the
+      // demo used to answer a bare ok and nothing ever landed, which is the
+      // one thing the real button must never do. The run is marked, and the
+      // state route lands the draft a few seconds later (a timer would die
+      // with the page). His own case refuses, exactly as the Worker does.
+      if (body.action === 'draft') {
+        const c = store.docs.get(`cases/${cid}`) || {};
+        if (c.self) return fail(409, 'Your own case has nobody to write to.');
+        const rough = String(body.instruction || '').trim();
+        store.docs.set(`cases/${cid}/advisor/state`, {
+          ...state,
+          draftStatus: 'running', draftError: null, draftStartedAt: new Date(), draftProgressAt: new Date(),
+          draftPending: rough
+            ? `${rough}\n\nI will have the referral chased by Thursday and I will tell you what they say the same day. If anything in that is wrong, tell me and I will fix it before it goes anywhere.`
+            : 'Thanks for sending those through. I have read all three, and the discharge summary says more than anyone told you at the time. I will walk you through it on our call, and I am chasing the referral that was mentioned but never confirmed. Nothing for you to do today.',
+          draftQueuedAt: new Date(),
+        });
+        store.persist?.();
         return ok({ ok: true });
       }
       if (body.action === 'unanswered-answered') {
@@ -1918,7 +1950,25 @@ export function demoApi(role, store) {
     if (path === '/api/advisor/covers') {
       return ok({ covers: { [DEMO_CASE_ID]: { text: 'Two years unexplained, bloods never actually seen', by: 'advisor', at: new Date() } } });
     }
-    if (path === '/api/advisor/dictionary') return ok({ terms: [] });
+    // The dictionary page reads the same terms the reading paints (2026-09-06):
+    // an empty list here meant a tapped term could never land anywhere in
+    // the demo, so the door could not be driven.
+    if (path === '/api/advisor/dictionary') {
+      if (init.method === 'POST') {
+        const p = `advisorKnowledge/${body.termId}`;
+        const t = store.docs.get(p);
+        if (t) { store.docs.set(p, { ...t, learnedAt: body.learned ? new Date() : null }); store.persist?.(); }
+        return ok({ ok: true });
+      }
+      return ok({
+        terms: [...store.docs.entries()]
+          .filter(([p]) => p.startsWith('advisorKnowledge/'))
+          .map(([p, d]) => ({
+            id: p.split('/').pop(), term: d.term, definition: d.definition,
+            category: d.category || 'General', learned: !!d.learnedAt, learnedVia: d.learnedVia || null,
+          })),
+      });
+    }
 
     // ---- one day, read back ----------------------------------------------
     if (path === '/api/summary') {

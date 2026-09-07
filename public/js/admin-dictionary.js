@@ -72,6 +72,16 @@ async function load() {
       hit.classList.add('dict-hit');
       hit.scrollIntoView({ block: 'center' });
       setTimeout(() => hit.classList.remove('dict-hit'), 2600);
+    } else {
+      // Say so (2026-09-06, "Tapping on a term does not bring me to it"):
+      // landing silently at the top read as the door being broken. The
+      // reading logs a term a little after it first paints it, so the
+      // honest line is "not yet", with the word he tapped.
+      const note = document.createElement('p');
+      note.className = 'dim small';
+      note.setAttribute('data-dict-missing', '');
+      note.textContent = `"${want}" is not in your dictionary yet. Terms arrive a little after the reading that first used them.`;
+      el.prepend(note);
     }
   }
 

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.97';
+export const VERSION = '2.98';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '2.97';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // JOE GONE, THE DICTIONARY WHOLE (Eric, 2026-09-06: "Get rid of Joe
+    // bloe. Since his implementation some things have broken. Drafting has
+    // stopped working. Tapping on a term does not bring me to it in the
+    // dictionary."). Admin only; the client list stays empty.
+    version: '2.98',
+    quiet: true,
+    client: [],
+    admin: [
+      'The showcase case is gone from the app. The door on the Clients page can build it again whenever you want to film.',
+      'The dictionary now holds every term, not just the first three hundred by name, so tapping a painted term in a reading lands on it and lights it. A term the reading has used but not logged yet says so at the top of the dictionary, with the word you tapped, instead of leaving you at the top of the page.',
+      'Drafting: on your own cases and the showcase there is nobody to write to, so the Ask page offers no Prepare a response there and the chat carries no message maker. On a client\'s case both work as before.',
+    ],
+  },
   {
     // THE SHOWCASE AND DELETE (Eric, 2026-09-06: "Create a completely fake
     // case for me to show off on YouTube... For personal cases, let me be

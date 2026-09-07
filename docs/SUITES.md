@@ -183,6 +183,39 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### Joe gone, the dictionary whole (2026-09-06)
+
+Eric: "Get rid of Joe bloe. Since his implementation some things have
+broken. Drafting has stopped working. Tapping on a term does not bring me
+to it in the dictionary." The keyed diag gained `do=unshowcase`, which asks
+for every case flagged showcase and wipes each one whole through `wipeCase`;
+that is how Joe left production. The term: the reading paints every
+`[[term]]` it wrote, but the dictionary page read ONE page of three hundred
+terms by slug, so once the dictionary grew past that (a fifty-message
+rare-disease read logs a lot of words) every term past the three hundredth
+was not on the page he was sent to, and the page landed at the top without
+a word. Now the dictionary route, the panel's glossary and the diag's count
+all walk every page, and a term the page does not hold says so at the top,
+with the word he tapped: "is not in your dictionary yet. Terms arrive a
+little after the reading that first used them." The draft: the Worker's
+draft path did not change in any of the four pushes since v2.93, and on his
+own case (which is how the showcase was built) the Ask page offers no
+Prepare a response, the chat carries no message maker, and the route
+refuses a draft asked for straight with "Your own case has nobody to write
+to."; the diag now carries each case's draft
+status, age and error, the dictionary's size and which rows are his own or
+the showcase, so a draft that fails on a client's case can be read from
+outside. The demo used to answer Prepare a response with a bare ok and
+nothing landed; it now marks the run and lands the draft on the next poll,
+serves the dictionary page the same terms the reading paints, and refuses
+his own case the way the Worker does. `tools/suites/dictionary.mjs` K1-K4
+pin the reads, the page, the demo and the diag; `tools/suites/showcase.mjs`
+X7 lifts the unshowcase door and runs it against fakes;
+`tools/drives/drive-terms.mjs` taps a painted term and the Key terms link
+into a lit dictionary row, reads the "not yet" line, lands a draft from
+Prepare a response and from the chat's message maker, and finds his own
+case offering neither and refusing a draft asked for straight, with why.
+
 ### Joe Bloe, the showcase, and Delete (2026-09-06)
 
 Eric: "Create a completely fake case for me to show off on YouTube. Enter a
