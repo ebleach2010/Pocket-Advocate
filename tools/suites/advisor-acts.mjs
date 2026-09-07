@@ -1324,8 +1324,11 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-29): lowering the thin-thread threshold to
   // 0 (so the fallback never fires) made this read
   //   FAIL  A33 a thin thread pulls his real messages from every other thread, echo-guarded
+  // Re-pinned 2026-09-07: the thread's sample is hisVoice now. Its old name,
+  // voice, shadowed the shared voice() block the draft prompt is built from
+  // and killed every draft on arrival (dictionary.mjs K5).
   ck('A33 a thin thread pulls his real messages from every other thread, echo-guarded',
-    /voice\.length < 2500/.test(ADV)
+    /hisVoice\.length < 2500/.test(ADV)
     && /voiceCorpus\(env, \{ exclude: style\.echo \}\)/.test(ADV)
     && /<his_voice_elsewhere>/.test(ADV)
     && /echo: new Set\(editsRaw\.map\(\(r\) => r\.data\.sent\)\.filter\(Boolean\)\.map\(flatText\)\)/.test(ADV));

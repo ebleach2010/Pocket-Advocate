@@ -794,7 +794,9 @@ check('S40 an override on his own case settles that case only, and the standing 
   && (ADV.match(/turnPolicy\.getStore\(\)\?\.self \? ' ' : \(stanceNote\(style\) \|\| ' '\)/g) || []).length === 1
   && (ADV.match(/text: `\$\{turnPolicy\.getStore\(\)\?\.self \? '' : stanceNote\(style\)\}\$\{registerNote\(style\)\}` \|\| ' ',/g) || []).length === 2
   && !/\$\{stanceNote\(style\)\}/.test(ADV) && !/text: stanceNote\(style\) \|\| ' '/.test(ADV)
-  && /const elsewhere = \(!turnPolicy\.getStore\(\)\?\.self && voice\.length < 2500\)/.test(ADV),
+  // Re-pinned 2026-09-07: the thread's sample is hisVoice now; its old name
+  // shadowed the shared voice() block and killed every draft (dictionary.mjs K5).
+  && /const elsewhere = \(!turnPolicy\.getStore\(\)\?\.self && hisVoice\.length < 2500\)/.test(ADV),
   `gated x${(ADV.match(/\$\{self \? '' : stanceNote\(style\)\}/g) || []).length}+${(ADV.match(/turnPolicy\.getStore\(\)\?\.self \? ' ' : \(stanceNote\(style\) \|\| ' '\)/g) || []).length}`);
 
 // NEGATIVE CONTROL (run 2026-09-03): the draft route's own-case 409 replaced with `if (false)` made this read

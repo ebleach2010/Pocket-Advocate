@@ -81,6 +81,41 @@ check('K4 the keyed diag carries the draft state per case (status, age, error), 
   && /self: !!c\.data\.self, showcase: !!c\.data\.showcase,\n\s+status: d\.status \|\| null, stage: d\.stage \|\| null,/.test(W)
   && !/states\.push\(\{[\s\S]{0,1600}?\bid: c\.id/.test(W));
 
+// ---- the draft that died on arrival ---------------------------------------
+// What the diag then showed (2026-09-07): two cases with draftStatus 'error'
+// and "voice2 is not a function". The draft writer builds its system block
+// from voice(), the shared block that picks the register by case, inside a
+// function that already held a local `voice`, the thread's sample of his
+// messages; the local shadowed the function and every draft failed the
+// moment it started. The local is hisVoice now, and this scans every
+// function in the file for the same shadow: a body that calls voice() must
+// not bind a local named voice.
+{
+  const ADV = f('worker/advisor.js');
+  // Code only: comments talk about `const voice` and `voice()` in words, and
+  // the one legitimate top-level definition of voice() is not a shadow.
+  const code = ADV
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:'"`])\/\/[^\n]*/gm, '$1')
+    .replace(/const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/, '');
+  const heads = [...code.matchAll(/^(?:export )?(?:async )?function \w+\(/gm)].map((m) => m.index);
+  const shadowed = [];
+  for (let i = 0; i < heads.length; i++) {
+    const body = code.slice(heads[i], heads[i + 1] ?? code.length);
+    if (/\bvoice\(\)/.test(body) && /\b(?:const|let|var) voice\b/.test(body))
+      shadowed.push(body.slice(0, body.indexOf('(')));
+  }
+  // NEGATIVE CONTROL (run 2026-09-07): runDraft's `const hisVoice = myVoice(rows);` changed back to `const voice = myVoice(rows);` made this read
+  //   FAIL  K5 the draft writer reads the thread's sample of his messages as hisVoice and builds its system block from the shared voice() block, and no function in the file that calls voice() binds a local named voice
+  check('K5 the draft writer reads the thread\'s sample of his messages as hisVoice and builds its system block from the shared voice() block, and no function in the file that calls voice() binds a local named voice',
+    /const hisVoice = myVoice\(rows\);/.test(ADV)
+    && /const elsewhere = \(!turnPolicy\.getStore\(\)\?\.self && hisVoice\.length < 2500\)/.test(ADV)
+    && /<his_voice>\\n\$\{hisVoice \|\| '\(nothing in this thread yet/.test(ADV)
+    && /const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/.test(ADV)
+    && heads.length > 50 && shadowed.length === 0,
+    shadowed.length ? `shadowed in: ${shadowed.join(', ')}` : `${heads.length} functions scanned`);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

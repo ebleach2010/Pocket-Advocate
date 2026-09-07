@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.98';
+export const VERSION = '2.99';
 
 /**
  * Newest first.
@@ -52,6 +52,17 @@ export const VERSION = '2.98';
  */
 export const CHANGELOG = [
   {
+    // DRAFTS BACK (Eric, 2026-09-06: "Drafting has stopped working"). The
+    // cause, read from the diag 2.98 added: every draft died the moment it
+    // started, on a code error in the draft writer. Admin only.
+    version: '2.99',
+    quiet: true,
+    client: [],
+    admin: [
+      'Prepare a response and the chat\'s message maker work again. Every draft since 3 September died the moment it started, on a code error inside the draft writer; the Drafts page said "Draft failed" and nothing landed. Fixed, with a check that catches the same mistake anywhere in that file.',
+    ],
+  },
+  {
     // JOE GONE, THE DICTIONARY WHOLE (Eric, 2026-09-06: "Get rid of Joe
     // bloe. Since his implementation some things have broken. Drafting has
     // stopped working. Tapping on a term does not bring me to it in the
@@ -62,7 +73,7 @@ export const CHANGELOG = [
     admin: [
       'The showcase case is gone from the app. The door on the Clients page can build it again whenever you want to film.',
       'The dictionary now holds every term, not just the first three hundred by name, so tapping a painted term in a reading lands on it and lights it. A term the reading has used but not logged yet says so at the top of the dictionary, with the word you tapped, instead of leaving you at the top of the page.',
-      'Drafting: on your own cases and the showcase there is nobody to write to, so the Ask page offers no Prepare a response there and the chat carries no message maker. On a client\'s case both work as before.',
+      'Drafting: on your own cases there is nobody to write to, so the Ask page offers no Prepare a response there and the chat carries no message maker. The diag now shows what happened to the last draft on every case, which is what found the real fault (see 2.99).',
     ],
   },
   {

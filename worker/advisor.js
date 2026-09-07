@@ -5183,7 +5183,12 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
       listShelf(env, kind, id).catch(() => []),
     ]);
     const chat = transcript(rows);
-    const voice = myVoice(rows);
+    // hisVoice, not voice: this used to be `const voice`, which shadowed the
+    // shared voice() block the system prompt below is built from, so every
+    // draft died the moment it started ("voice2 is not a function", found
+    // on two cases through the diag, 2026-09-07). dictionary.mjs K5 scans
+    // for the same shadow anywhere in this file.
+    const hisVoice = myVoice(rows);
     // THE THIN-THREAD FIX (Eric, 2026-08-29: "The app still isn't picking up
     // my tone at all and it has 30 pages of my writing"). It did have the
     // pages; the draft writer never saw them. myVoice reads THIS thread only,
@@ -5195,7 +5200,7 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
     // study uses so his own past drafts are never read back as him.
     // Never on his own case (2026-09-03): the route refuses a draft there,
     // and even so his log must not be sat beside other people's threads.
-    const elsewhere = (!turnPolicy.getStore()?.self && voice.length < 2500)
+    const elsewhere = (!turnPolicy.getStore()?.self && hisVoice.length < 2500)
       ? (await voiceCorpus(env, { exclude: style.echo }).catch(() => ({ text: '' })))
         .text.slice(0, 12000)
       : '';
@@ -5335,7 +5340,7 @@ anything in the learned profile that follows.`, cache: true },
       { type: 'text', text: styleNote(style) || ' ' }],
       messages: [{
         role: 'user',
-        content: `Here is how Eric writes, in his own messages to this client:\n\n<his_voice>\n${voice || '(nothing in this thread yet: match his messages from other threads below if given; otherwise plain, warm and brief)'}\n</his_voice>\n${
+        content: `Here is how Eric writes, in his own messages to this client:\n\n<his_voice>\n${hisVoice || '(nothing in this thread yet: match his messages from other threads below if given; otherwise plain, warm and brief)'}\n</his_voice>\n${
           elsewhere ? `\nHis own messages to other clients, because this thread holds little of him yet. Same authority as the block above:\n\n<his_voice_elsewhere>\n${elsewhere}\n</his_voice_elsewhere>\n` : ''
         }${
           lessons ? `\nHow he edited your recent drafts before sending (each difference is an instruction):\n\n<his_edits>\n${lessons}\n</his_edits>\n` : ''
