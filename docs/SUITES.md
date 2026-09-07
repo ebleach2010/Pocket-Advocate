@@ -239,13 +239,12 @@ a question that answered "The server answered with something this page
 could not read" is the keepalive stream ending without its JSON, which the
 rows left on "thinking" say is the Worker dying mid-answer. The flight
 recorder now logs `ask-start` and `ask-end` (ok, ms, or the error), the diag
-carries each case's newest question (status, age, error), `wrangler.jsonc`
-raises the CPU limit to five minutes (the default thirty seconds is a kill
-with no error), and the panel treats a 200 with no JSON as work still going
-and keeps polling. `tools/suites/dictionary.mjs` K6 lifts the harvester and
+carries each case's newest question (status, age, error), and the panel
+treats a 200 with no JSON as work still going and keeps polling. A CPU
+limit of five minutes in `wrangler.jsonc` was tried and withdrawn the same
+day: the two builds that carried it never deployed (v3.4). `tools/suites/dictionary.mjs` K6 lifts the harvester and
 runs it; K7 pins the prompts, lifts the wipe door, and pins the paint and
-the page; K8 pins the recorder, the diag, the limit, the clear and the cut
-stream.
+the page; K8 pins the recorder, the diag, the clear and the cut stream.
 
 ### Charge on approval (2026-09-06)
 

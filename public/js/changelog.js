@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '3.3';
+export const VERSION = '3.4';
 
 /**
  * Newest first.
@@ -52,6 +52,17 @@ export const VERSION = '3.3';
  */
 export const CHANGELOG = [
   {
+    // THE LINE THAT WOULD NOT DEPLOY (2026-09-07): 3.2 and 3.3 carried a
+    // processing-limit line in the Worker config and neither build landed.
+    // Withdrawn; everything else in them ships here.
+    version: '3.4',
+    quiet: true,
+    client: [],
+    admin: [
+      'The 3.2 and 3.3 builds never deployed. The one line they shared, a processing-limit setting in the Worker config, is withdrawn, and everything else in both is live now.',
+    ],
+  },
+  {
     // A SEASONED COLLEAGUE (Eric, 2026-09-07: "the language is driving me
     // insane. Some turns of phrase make no sense. He needs personality, and
     // some of his direct 'orders' are not the right language. He'll say
@@ -74,7 +85,7 @@ export const CHANGELOG = [
     client: [],
     admin: [
       'The dictionary starts from scratch. A term is added only when it came up: in the chat, in a question you asked or the answer you got, or in a document the reading read. Terms the reading brought in on its own no longer land. In a reading, only terms your dictionary holds are painted, so a tap always lands.',
-      'A question whose connection is cut while the answer is being written now says so and keeps polling; the answer lands on its own. The Worker may spend five minutes of processing on one answer instead of thirty seconds.',
+      'A question whose connection is cut while the answer is being written now says so and keeps polling; the answer lands on its own.',
       'The draft failure from the bug fixed in 2.99 is cleared from the case it was stuck on, and a failure older than a day no longer repaints.',
     ],
   },

@@ -231,14 +231,16 @@ check('K4 the keyed diag carries the draft state per case (status, age, error), 
   // The cut stream and the stale failure (Eric, 2026-09-07: "The server
   // answered with something this page could not read"; "I get Draft failed:
   // voice2 is not a function still").
+  // Re-pinned 2026-09-07 (v3.4): the CPU limit line was withdrawn, the two
+  // builds that carried it never deployed; the config must carry no limits.
   // NEGATIVE CONTROL (run 2026-09-07): the panel's `return { ok: true, cut: true };` changed to `return null;` made this read
-  //   FAIL  K8 an answer records its start, its end and its failure on the flight recorder, the diag carries the newest question's state, the Worker may spend five minutes of CPU on a stream instead of thirty seconds, a stale failure from the fixed bug is cleared once on the next read, a draft failure repaints for a day and no longer, and a stream cut short with a 200 is treated as work still going rather than an answer that failed
-  check('K8 an answer records its start, its end and its failure on the flight recorder, the diag carries the newest question\'s state, the Worker may spend five minutes of CPU on a stream instead of thirty seconds, a stale failure from the fixed bug is cleared once on the next read, a draft failure repaints for a day and no longer, and a stream cut short with a 200 is treated as work still going rather than an answer that failed',
+  //   FAIL  K8 an answer records its start, its end and its failure on the flight recorder, the diag carries the newest question's state, the Worker config carries no limits block, a stale failure from the fixed bug is cleared once on the next read, a draft failure repaints for a day and no longer, and a stream cut short with a 200 is treated as work still going rather than an answer that failed
+  check('K8 an answer records its start, its end and its failure on the flight recorder, the diag carries the newest question\'s state, the Worker config carries no limits block, a stale failure from the fixed bug is cleared once on the next read, a draft failure repaints for a day and no longer, and a stream cut short with a 200 is treated as work still going rather than an answer that failed',
     /await diagLog\(env, \{ ev: 'ask-start', kind, self \}\)\.catch\(\(\) => \{\}\);\n\s+try \{/.test(ADV)
     && /await diagLog\(env, \{ ev: 'ask-end', ok: true, kind, ms: Date\.now\(\) - t0 \}\)/.test(ADV)
     && /await diagLog\(env, \{ ev: 'ask-end', ok: false, kind, ms: Date\.now\(\) - t0, err: String\(err\.message \|\| err\)\.slice\(0, 140\) \}\)/.test(ADV)
     && /qaLast: q \? \{ status: q\.status \|\| null, ageS: age\(q\.at\), error: q\.status === 'error' \? String\(q\.answer \|\| ''\)\.slice\(0, 140\) : null \} : null,/.test(W2)
-    && /"limits": \{ "cpu_ms": 300000 \},/.test(CFG)
+    && !/"limits"\s*:/.test(CFG) && /No "limits" block here/.test(CFG)
     && /if \(state\?\.data\.draftStatus === 'error' && \/is not a function\/\.test\(String\(state\.data\.draftError \|\| ''\)\)\) \{\n\s+await patchDoc\(env, `\$\{parent\}\/\$\{id\}\/advisor\/state`, \{ draftStatus: null, draftError: null \},\n\s+\{ mask: \['draftStatus', 'draftError'\] \}\)\.catch\(\(\) => \{\}\);/.test(W2)
     && /const dFresh = dFailedAt && Date\.now\(\) - toDate\(dFailedAt\)\.getTime\(\) < 24 \* 3600_000;\n\s+if \(d\.draftStatus === 'error' && d\.draftError && dFresh\) \{/.test(P)
     && /if \(res\.ok\) \{\n\s+showErr\('The connection was cut while the server was still working\. That does not stop it: '\n[^\n]*\n\s+setTimeout\(refresh, 2000\);\n\s+return \{ ok: true, cut: true \};\n\s+\}\n\s+throw new Error\(`The server refused that \(\$\{res\.status\}\)\.`\);/.test(P)
