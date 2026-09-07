@@ -964,7 +964,11 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   // threw ReferenceError on the call, which is why V2 is a separate check and
   // why the construction and the call both sit inside the try below. The rule
   // this block enforces is unchanged.
-  const a = ADMIN.indexOf('  const handRecorded = (c) =>');
+  // UPDATED 2026-09-07 (charge on approval): the lift starts one line
+  // earlier, at stripeTook, because handRecorded and byKind both call it: a
+  // held card is not money, and what Stripe took on a held case is what was
+  // captured. Same rule, same fixture.
+  const a = ADMIN.indexOf('  const stripeTook = (c) =>');
   const b2 = ADMIN.indexOf(': 0), 0);', a);
   const fn = a >= 0 && b2 >= 0 ? ADMIN.slice(a, b2 + ': 0), 0);'.length) : '';
   check('V1 the shelf splits Stripe money from hand-recorded money', fn.length > 0);

@@ -90,6 +90,16 @@ function paidCents(c) {
   //    moved outside it.
   const recorded = Number(c?.paidOverrideCents);
   if (recorded > 0) return recorded + addOns();
+  // 1b. THE HOLD (2026-09-06). A case that opened on a hold paid what was
+  //     captured and nothing else: nothing while it waits, nothing if it
+  //     was declined or comped. On the tier, the month rides on top the way
+  //     the old case fee did.
+  if (c?.charge && c.charge.state) {
+    const booked = c.charge.state === 'captured' ? Math.max(0, Number(c.charge.capturedCents) || 0) : 0;
+    const month = c?.fullAccess && Number(c.fullAccessRateCents) > 0
+      ? Math.max(0, Number(c.fullAccessRateCents) - (Number(c.caseRateCents) || 0)) : 0;
+    return booked + month + addOns();
+  }
   // 2. THE TIER TOTAL, on a case that is on the tier. This has to come before
   //    the Stripe receipt below, and did not: `stripe.amountTotal` is the
   //    ORIGINAL booking, so an upgraded case answered with the case fee and
@@ -2253,6 +2263,106 @@ function paintSelfOverview(pane, c) {
   });
 }
 
+/**
+ * THE APPROVAL SCREEN (Eric, 2026-09-06: "only once I approve their case do
+ * they get charged, and on the approval/denial screen I can tap on the
+ * amount charged and change it to any value"). Booking holds the card; this
+ * card, first under Waiting on you, is where he decides. The amount is the
+ * hold by default; tapping it opens a box; zero takes the case at no charge
+ * and releases the hold; Decline asks for the reason the client reads word
+ * for word, releases the hold and closes the case. A hold the network let go
+ * says so, and Approve sends a payment link for the amount instead.
+ */
+const CHARGE_OPEN = ['held', 'lapsed', 'invoiced'];
+function chargeUndecided(ch) { return !!ch && CHARGE_OPEN.includes(ch.state); }
+function chargeCard(c) {
+  const ch = c.charge;
+  const held = ch.state === 'held';
+  const day = new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric' });
+  const cap = Math.max(0, Number(ch.authorizedCents) || 0);
+  const linkOpen = ch.state === 'invoiced' && ch.invoice?.expiresAt && toDate(ch.invoice.expiresAt).getTime() > Date.now();
+  const amount = ch.state === 'invoiced' ? Number(ch.invoice?.cents || ch.invoiceCents) || cap : cap;
+  return `
+    <div class="panel" data-charge-card style="border-color:var(--orange); box-shadow:var(--glow-o);">
+      <h3 style="margin:0 0 .3rem; color:var(--orange);">New case: approve or decline</h3>
+      <p class="small" style="margin:0 0 .2rem;">${held
+        ? `Their card is holding <strong>$${dollars(cap)}</strong> since ${esc(day.format(toDate(ch.heldAt)))}. The hold lapses ${esc(day.format(toDate(ch.expiresAt)))}. Nothing is charged until you approve.`
+        : linkOpen
+          ? `A payment link for <strong>$${dollars(amount)}</strong> went out ${esc(day.format(toDate(ch.decidedAt)))}. Waiting on them; the case opens fully when they pay.`
+          : `The hold on their card lapsed${ch.lapsedAt ? ` ${esc(day.format(toDate(ch.lapsedAt)))}` : ''}; nothing was charged. Approving sends them a payment link for the amount below.`}</p>
+      ${linkOpen ? '' : `
+      <p class="charge-line">Charge them
+        <button type="button" class="charge-amt" data-charge-tap title="Tap to change the amount">$<span data-charge-show>${dollars(amount)}</span></button>
+        <span class="charge-edit" data-charge-edit hidden>$<input type="text" inputmode="decimal" data-charge-in value="${dollars(amount).replace(/,/g, '')}" aria-label="Amount in dollars"></span>
+      </p>
+      <p class="dim small" style="margin:0 0 .7rem;">Tap the amount to change it. ${held ? `Up to $${dollars(cap)}, what their card is holding; ` : ''}0 takes the case at no charge.</p>
+      <button class="btn" data-charge="approve">Approve and charge $<span data-charge-btn>${dollars(amount)}</span></button>`}
+      <button class="btn quiet" data-charge="decline">Decline</button>
+      <p class="error" data-charge-error hidden></p>
+    </div>`;
+}
+function wireChargeCard(card, c) {
+  const ch = c.charge || {};
+  const cap = Math.max(0, Number(ch.authorizedCents) || 0);
+  const show = card.querySelector('[data-charge-show]');
+  const edit = card.querySelector('[data-charge-edit]');
+  const input = card.querySelector('[data-charge-in]');
+  const btnAmt = card.querySelector('[data-charge-btn]');
+  const err = card.querySelector('[data-charge-error]');
+  const say = (m) => { if (err) { err.textContent = m; err.hidden = !m; } };
+  // Dollars typed, cents sent: "900", "900.00" and "$900" all mean the same.
+  const cents = () => {
+    const v = String(input?.value || '').replace(/[^0-9.]/g, '');
+    const n = Math.round(Number(v) * 100);
+    return v && Number.isFinite(n) ? n : NaN;
+  };
+  card.querySelector('[data-charge-tap]')?.addEventListener('click', () => {
+    if (edit) edit.hidden = false;
+    input?.focus();
+    input?.select();
+  });
+  input?.addEventListener('input', () => {
+    const n = cents();
+    const ok = Number.isInteger(n) && n >= 0;
+    if (show) show.textContent = ok ? dollars(n) : '?';
+    if (btnAmt) btnAmt.textContent = ok ? dollars(n) : '?';
+    say(ok ? '' : 'A number of dollars, zero or more.');
+  });
+  card.querySelectorAll('[data-charge]').forEach((b) => b.addEventListener('click', async () => {
+    const decision = b.dataset.charge;
+    let amountCents;
+    let reason = '';
+    if (decision === 'approve') {
+      amountCents = input ? cents() : cap;
+      if (!Number.isInteger(amountCents) || amountCents < 0) { say('A number of dollars, zero or more.'); return; }
+      if (ch.state === 'held' && amountCents > cap) { say(`Up to $${dollars(cap)}, what their card is holding.`); return; }
+      const ask = amountCents === 0 ? 'Take the case at no charge? The hold on their card is released.'
+        : ch.state === 'held' ? `Charge $${dollars(amountCents)} and take the case?`
+          : `Send them a payment link for $${dollars(amountCents)}?`;
+      if (!confirm(ask)) return;
+    } else {
+      reason = (prompt('Why can\'t you take this one? They read this word for word, and nothing is charged.') || '').trim();
+      if (!reason) return;
+    }
+    b.disabled = true;
+    say('');
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/case-charge', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ caseId, decision, amountCents, reason }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      load();
+    } catch (e) {
+      say(e.message);
+      b.disabled = false;
+    }
+  }));
+}
+
 function paintOverview(pane) {
   const c = data;
   if (c.self) { paintSelfOverview(pane, c); return; }
@@ -2268,6 +2378,7 @@ function paintOverview(pane) {
   // lever, because it is the only part of this page with someone else's clock
   // attached to it, and it used to sit fourth in a stack of identical rows.
   const waiting = `
+    ${chargeUndecided(c.charge) ? chargeCard(c) : ''}
     ${c.appointment?.requested ? `
     <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
       <h3 style="margin:0 0 .3rem; color:var(--orange);">Booking request — not on your calendar</h3>
@@ -2304,9 +2415,13 @@ function paintOverview(pane) {
         · ${esc(c.pendingTelehealth.clinicName || '(clinic)')}
         ${c.pendingTelehealth.provider ? ` · ${esc(c.pendingTelehealth.provider)}` : ''}</p>
       <p class="dim small" style="margin:0 0 .7rem;">
-        ${c.pendingTelehealth.paidCents
-          ? `Paid $${(c.pendingTelehealth.paidCents / 100).toFixed(0)}. Declining pings you to refund it — the copy promises every dollar back.`
-          : 'Included in their Full Access — no payment moved.'}
+        ${c.pendingTelehealth.holdState === 'held'
+          ? `Their card is holding $${(Number(c.pendingTelehealth.heldCents) / 100).toFixed(0)}, not charged. Confirming asks what to charge, up to that or 0; declining releases it.`
+          : c.pendingTelehealth.holdState === 'lapsed'
+            ? 'The hold on their card lapsed; nothing can be charged now. Confirm at no charge, or decline.'
+            : c.pendingTelehealth.paidCents
+              ? `Paid $${(c.pendingTelehealth.paidCents / 100).toFixed(0)}. Declining pings you to refund it; the copy promises every dollar back.`
+              : 'Included in their Full Access; no payment moved.'}
         They attested to inviting you in. You never record their clinic's visit.</p>
       <button class="btn" data-telehealth="confirm">I'll be there</button>
       <button class="btn quiet" data-telehealth="deny">Can't make it</button>
@@ -2633,17 +2748,34 @@ function paintOverview(pane) {
     sendBlankForms([...pane.querySelectorAll('[data-form-pick]:checked')]
       .map((x) => x.dataset.formPick), e.currentTarget)
       .catch(() => { /* already said, on the panel */ }));
+  const chargeEl = pane.querySelector('[data-charge-card]');
+  if (chargeEl) wireChargeCard(chargeEl, c);
   pane.querySelectorAll('[data-telehealth]').forEach((b) =>
     b.addEventListener('click', async () => {
       const action = b.dataset.telehealth;
-      if (action === 'deny' && !confirm('Decline this appointment? They are told, and if they paid you are pinged to refund it in full.')) return;
+      const p = c.pendingTelehealth || {};
+      const heldTele = !!p.paymentIntentId && p.holdState === 'held';
+      if (action === 'deny' && !confirm(heldTele
+        ? 'Decline this appointment? They are told, and the hold on their card is released; nothing is charged.'
+        : 'Decline this appointment? They are told, and if they paid you are pinged to refund it in full.')) return;
+      // A held card (2026-09-06): what to charge, up to the hold, zero for
+      // no charge. Asked here rather than assumed, because the amount is his.
+      let amountCents;
+      if (action === 'confirm' && heldTele) {
+        const cap = Number(p.heldCents) || 0;
+        const typed = prompt(`Charge them how much? Their card is holding $${dollars(cap)}; any amount up to that, or 0 for no charge.`, dollars(cap).replace(/,/g, ''));
+        if (typed === null) return;
+        const n = Math.round(Number(String(typed).replace(/[^0-9.]/g, '')) * 100);
+        if (!Number.isInteger(n) || n < 0 || n > cap) { alert(`A number of dollars from 0 to ${dollars(cap)}.`); return; }
+        amountCents = n;
+      }
       b.disabled = true;
       try {
         const token = await user.getIdToken();
         const res = await fetch('/api/admin/telehealth', {
           method: 'POST',
           headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ caseId, action }),
+          body: JSON.stringify({ caseId, action, amountCents }),
         });
         const out = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
@@ -2659,13 +2791,22 @@ function paintOverview(pane) {
       const decision = b.dataset.fullRequest;
       const errEl = pane.querySelector('[data-full-request-error]');
       let reason = '';
+      let amountCents;
       if (decision === 'decline') {
         // His words, verbatim, the same as a case closure: the client reads
         // this and nothing was charged, so it had better say something.
         reason = (prompt('Why can\'t you take this one? They read this word for word.') || '').trim();
         if (!reason) return;
-      } else if (!confirm('Approve this? They get a link to start month one at the rate they were quoted.')) {
-        return;
+      } else {
+        // The amount is his (2026-09-06): the quoted month by default, any
+        // figure he types, and zero opens Full-Service with no link at all.
+        const quoted = Number(c.fullAccessRequest?.firstMonthCents) || 0;
+        const typed = prompt(`First month, in dollars. They were quoted $${dollars(quoted)}; change it to anything, or 0 to open Full-Service at no charge.`, dollars(quoted).replace(/,/g, ''));
+        if (typed === null) return;
+        const n = Math.round(Number(String(typed).replace(/[^0-9.]/g, '')) * 100);
+        if (!Number.isInteger(n) || n < 0) { alert('A number of dollars, zero or more.'); return; }
+        amountCents = n;
+        if (!confirm(n === 0 ? 'Open Full-Service on this case at no charge?' : `Approve this? They get a link to start month one at $${dollars(n)}.`)) return;
       }
       b.disabled = true;
       if (errEl) errEl.hidden = true;
@@ -2674,7 +2815,7 @@ function paintOverview(pane) {
         const res = await fetch('/api/admin/full-request', {
           method: 'POST',
           headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ caseId, decision, reason }),
+          body: JSON.stringify({ caseId, decision, reason, amountCents }),
         });
         const out = await res.json().catch(() => ({}));
         if (res.status === 409 && out.error === 'full-booked') {
@@ -2692,7 +2833,7 @@ function paintOverview(pane) {
           const again = await fetch('/api/admin/full-request', {
             method: 'POST',
             headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-            body: JSON.stringify({ caseId, decision, reason, overrideCap: true }),
+            body: JSON.stringify({ caseId, decision, reason, amountCents, overrideCap: true }),
           });
           const out2 = await again.json().catch(() => ({}));
           if (!again.ok) throw new Error(out2.error || `Failed (${again.status})`);

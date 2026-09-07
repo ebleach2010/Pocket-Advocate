@@ -127,10 +127,16 @@ async function load() {
   // charged (a refund he settled outside the app) the headline still means
   // what Stripe took, which is the one sentence on this card that has to stay
   // literally true.
+  // A HELD CARD IS NOT MONEY (2026-09-06): a case that opened on a hold
+  // counts what was captured, nothing while it waits, nothing if it was
+  // declined or comped. stripe.amountTotal on such a case is the hold.
+  const stripeTook = (c) => (c.charge && c.charge.state
+    ? (c.charge.state === 'captured' ? Number(c.charge.capturedCents) || 0 : 0)
+    : (Number(c.stripe?.amountTotal) || 0));
   const handRecorded = (c) => Math.max(0,
-    (Number(c.paidOverrideCents) || 0) - (Number(c.stripe?.amountTotal) || 0));
+    (Number(c.paidOverrideCents) || 0) - stripeTook(c));
   const byKind = (want) => billed.reduce((sum, c) => sum
-    + (want === 'stripe' ? (c.stripe?.amountTotal || 0) : handRecorded(c))
+    + (want === 'stripe' ? stripeTook(c) : handRecorded(c))
     // Tips excluded, the way handleLedger already excludes them. A tip is a
     // gift, and counting it flatters the same number.
     + (Array.isArray(c.extraPayments)
@@ -413,10 +419,10 @@ async function load() {
       ${person('self', false, pullPicker)}${person('family', true)}`;
   listEl.innerHTML = attBlock + todayBlock + selfBlock +
     section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
-      `${c.showcase ? '<strong style="color:var(--orange)">SHOWCASE, nobody behind it</strong> · ' : ''}${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
+      `${chargeTag(c)}${c.showcase ? '<strong style="color:var(--orange)">SHOWCASE, nobody behind it</strong> · ' : ''}${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
        ${followUpFlag(c)}`))) +
     section('BOOKED: UPCOMING CALLS', 'var(--green)', future.map((c) => rowFor(c,
-      `<strong style="color:var(--manila-strong)">${mtFmt.format(toDate(c.appointment.start))} MST</strong> · ${esc(c.appointment.method)}
+      `${chargeTag(c)}<strong style="color:var(--manila-strong)">${mtFmt.format(toDate(c.appointment.start))} MST</strong> · ${esc(c.appointment.method)}
        ${followUpFlag(c)}`))) +
     section('FORMER CLIENTS: CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
       `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`))) +
@@ -603,6 +609,17 @@ function badge(c) {
   return (c.status || '?').replace('_', ' ').toUpperCase();
 }
 /** Loud follow-up state in the list: paid+countdown, booked, or expired. */
+/** THE HOLD on the shelf (2026-09-06): a case waiting on his approve or
+ *  decline says so first, with what the card is holding. */
+function chargeTag(c) {
+  const ch = c.charge;
+  if (!ch || !['held', 'lapsed', 'invoiced'].includes(ch.state)) return '';
+  const cents = ch.state === 'invoiced' ? Number(ch.invoice?.cents || ch.invoiceCents) || 0 : Number(ch.authorizedCents) || 0;
+  const what = ch.state === 'held' ? `$${(cents / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })} held`
+    : ch.state === 'lapsed' ? 'hold lapsed' : 'payment link out';
+  return `<strong style="color:var(--orange)">APPROVE OR DECLINE · ${what}</strong> · `;
+}
+
 function followUpFlag(c) {
   if (c.followUp) {
     const fmt = new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric' });

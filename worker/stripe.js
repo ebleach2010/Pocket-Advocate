@@ -17,6 +17,17 @@ export async function stripePost(env, path, params) {
   return data;
 }
 
+/** Read one object back (2026-09-06): the hold's intent, to know whether it
+ *  still stands, was captured by hand, or lapsed. */
+export async function stripeGet(env, path) {
+  const res = await fetch(`${API}${path}`, {
+    headers: { authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`stripe ${path}: ${data.error ? data.error.message : res.status}`);
+  return data;
+}
+
 /** Flattens nested objects/arrays into Stripe's bracketed form encoding. */
 function encodeForm(params) {
   const pairs = [];

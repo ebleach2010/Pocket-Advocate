@@ -662,16 +662,20 @@ function renderPayment() {
     </section>
     ${isRequest ? `<p class="notice-box pending">
       <strong>This time is a request.</strong> It isn't on my calendar yet. Your case opens and
-      your payment is taken as normal, and I'll confirm this time, or offer you the nearest one
+      your card is held as normal, and I'll confirm this time, or offer you the nearest one
       that works, before the date. Nothing is lost either way.
     </p>` : ''}
     <p class="error" id="pay-error" hidden></p>
-    <button class="btn cta" id="pay">Pay $${money(caseCents)} and book</button>
+    <button class="btn cta" id="pay">Book, $${money(caseCents)} held</button>
+    <!-- THE HOLD (Eric, 2026-09-06): the card is held today and charged only
+         when he takes the case. Said before the button is pressed, in the
+         same words the case page and the mail use. -->
+    <p class="muted small measure" data-hold-line>Your card is held today, not charged. I read every new case before I take it on, and you are charged only when I do. If I cannot take your case, the hold is released and nothing is charged.</p>
     <!-- The terms sit under the button rather than over it. They are what
          pressing it agrees to, they are still on screen before any card is,
          and above it they were a paragraph of small print standing between a
          person and the only thing this step is for. -->
-    <p class="muted small measure">${isRequest ? 'Requested times are not held while you complete payment.' : 'Your selected time is held while you complete payment.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once your slot is booked. If I reschedule you more than once, you're entitled to a full refund on request.</p>
+    <p class="muted small measure">${isRequest ? 'Requested times are not held while you complete checkout.' : 'Your selected time is held while you complete checkout.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once I have taken your case. If I reschedule you more than once, you're entitled to a full refund on request.</p>
     <!-- Nothing in here is decided today, so it is context for after the
          decision, not a fourth thing competing with it. -->
     <details class="faq card-quiet" id="addons-preview">

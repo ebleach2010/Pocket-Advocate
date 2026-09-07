@@ -18,6 +18,7 @@
 //   POST   /api/admin/self-case/next  close his own case with its top diagnosis confirmed and open the next one from it (admin)
 //   POST   /api/admin/showcase-case  build the showcase case, Joe Bloe, invented end to end, or find the one that exists (admin)
 //   POST   /api/admin/delete-case    delete a case with nobody real behind it, his own or the showcase, whole (admin)
+//   POST   /api/admin/case-charge    approve a held case at the amount he sets (zero included) or decline it and release the hold (admin)
 //   POST   /api/chat/reply         his answer to a question the read put in his own chat (admin)
 //   POST   /api/admin/family-case  a free case for a family member; the email typed is their login (admin)
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
@@ -31,6 +32,10 @@ import { mintCustomToken, getAccessToken } from './google-auth.js';
 import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, batchDelete, listDocs } from './firestore.js';
 import { deleteFile, objectMeta, patchObjectMeta, putFile, listFiles, mediaFetch } from './storage.js';
 import { buildShowcase, wipeCase } from './showcase.js';
+import {
+  HOLD_META, HOLD_INTENT, HOLD_DAYS, HOLD_REMIND_AFTER_DAYS, heldChargeOf,
+  chargeDecision, caseBookingCents, dollars as chargeDollars, CHARGE_COPY, captureHold, cancelHold, readIntent,
+} from './charge.js';
 import { stripePost, verifyWebhook } from './stripe.js';
 import {
   slotTimingProblem, windowProblem, HOLD_MINUTES,
@@ -913,6 +918,8 @@ export default {
         return await handleUpgradeCheckout(request, env);
       if (url.pathname === '/api/admin/full-request' && request.method === 'POST')
         return await handleFullRequestDecision(request, env);
+      if (url.pathname === '/api/admin/case-charge' && request.method === 'POST')
+        return await handleCaseCharge(request, env);
       if (url.pathname === '/api/followup' && request.method === 'POST')
         return await handleFollowUpCheckout(request, env);
       if (url.pathname === '/api/extend' && request.method === 'POST')
@@ -983,6 +990,9 @@ export default {
             // showcase, so "drafting stopped" can be read against the one
             // kind of case where the route refuses a draft by design.
             self: !!c.data.self, showcase: !!c.data.showcase,
+            // The hold's state (2026-09-06): held, captured, comped,
+            // declined, lapsed, invoiced; null on a case paid outright.
+            charge: c.data.charge?.state || null,
             status: d.status || null, stage: d.stage || null,
             error: d.error ? String(d.error).slice(0, 140) : null,
             errorRetries: d.errorRetries || 0,
@@ -1222,6 +1232,9 @@ export default {
       ctx.waitUntil(repairMissingCaseEmails(env));
       ctx.waitUntil(closeDeliveredCases(env));
       ctx.waitUntil(purgeRecaps(env));
+      // The clock on every held card (2026-09-06): a reminder two days out,
+      // and the record made to say what Stripe says once the hold is past.
+      ctx.waitUntil(holdSweep(env));
       // Run-once migrations: instant no-ops on every fire after their first.
       ctx.waitUntil(grandfatherFollowUps(env));
       ctx.waitUntil(openTuesdaySlots(env));
@@ -1954,7 +1967,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-07-drafts-back';
+const BUILD_TAG = 'v2026-09-07-charge-on-approval';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1962,7 +1975,7 @@ const BUILD_TAG = 'v2026-09-07-drafts-back';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '2.99';
+const VERSION = '3.0';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2412,6 +2425,215 @@ async function handleCloseCase(request, env) {
   return json({ ok: true });
 }
 
+/**
+ * POST /api/admin/case-charge   Body: { caseId, decision: 'approve'|'decline', amountCents?, reason? }
+ *
+ * THE APPROVAL SCREEN'S ROUTE (Eric, 2026-09-06: "only once I approve their
+ * case do they get charged, and on the approval/denial screen I can tap on
+ * the amount charged and change it to any value"). The decision table in
+ * worker/charge.js says what a tap means; this does it, in an order that
+ * keeps money and record together:
+ *
+ *   capture   Stripe first, then the record. If Stripe refuses, the intent
+ *             is read back: captured already (a double tap) counts as done,
+ *             gone (the seven days ran out) marks the hold lapsed and says so,
+ *             anything else is reported and nothing is written.
+ *   cancel    the record first, then the release, so the webhook for the
+ *             cancellation finds a decision already made and leaves it.
+ *   invoice   a payment link for the amount, since the hold is gone.
+ *
+ * Approving raises the rate the way a booking used to (a declined case is
+ * not a client). Declining closes the case with his reason, which the client
+ * reads word for word, and gives the slot back.
+ */
+async function handleCaseCharge(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c) return json({ error: 'Not found' }, 404);
+  if (c.data.self || c.data.showcase) return json({ error: 'Nobody paid for this case.' }, 409);
+  const now = new Date();
+  const d = chargeDecision(c.data.charge, {
+    decision: body?.decision, amountCents: body?.amountCents, reason: body?.reason,
+  }, now);
+  if (d.error) return json({ error: d.error, cap: d.cap ?? null }, d.code);
+  const ch = c.data.charge;
+  let next = { ...ch, ...d.next };
+
+  if (d.op === 'capture') {
+    try {
+      const got = await captureHold(env, ch.paymentIntentId, next.capturedCents);
+      if (Number(got?.amount_received) > 0) next.capturedCents = Number(got.amount_received);
+    } catch (err) {
+      const pi = await readIntent(env, ch.paymentIntentId).catch(() => null);
+      if (pi?.status === 'succeeded') {
+        next.capturedCents = Number(pi.amount_received) || next.capturedCents;
+      } else if (pi?.status === 'canceled') {
+        await patchDoc(env, `cases/${caseId}`, { charge: { ...ch, state: 'lapsed', lapsedAt: now } }, { mask: ['charge'] });
+        return json({
+          error: 'The hold on their card lapsed (Stripe lets a hold go after seven days). Tap Approve again to send them a payment link for this amount instead.',
+          lapsed: true,
+        }, 409);
+      } else {
+        return json({ error: `Stripe would not capture it: ${err.message}` }, 502);
+      }
+    }
+  } else if (d.op === 'invoice') {
+    const expiresAt = new Date(now.getTime() + 23 * 3600_000);
+    const session = await stripePost(env, '/checkout/sessions', {
+      mode: 'payment',
+      customer_email: c.data.clientEmail || undefined,
+      line_items: caseLineItems(next.invoiceCents),
+      success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&paid=1`,
+      cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
+      expires_at: Math.floor(expiresAt.getTime() / 1000),
+      metadata: { kind: 'casecharge', caseId, uid: c.data.clientUid || '' },
+    });
+    next.invoice = { sessionId: session.id, url: session.url, cents: next.invoiceCents, createdAt: now, expiresAt };
+  }
+
+  const approved = next.state === 'captured' || next.state === 'comped';
+  if (approved && !next.ratedAt) next.ratedAt = now;
+  const fields = { charge: next };
+  const mask = ['charge'];
+  if (next.state === 'declined') {
+    Object.assign(fields, {
+      status: 'closed', closedAt: now, closedBy: 'advocate', closedReason: next.reason,
+      hold: { pausedAt: null, totalMs: Math.max(0, Number(c.data.hold?.totalMs) || 0), reason: '', note: '', backBy: null },
+      pendingExtend: null,
+    });
+    mask.push('status', 'closedAt', 'closedBy', 'closedReason', 'hold', 'pendingExtend');
+  }
+  await patchDoc(env, `cases/${caseId}`, fields, { mask });
+
+  if (d.op === 'cancel') await cancelHold(env, ch.paymentIntentId).catch((err) => console.warn('release hold:', err.message || err));
+  if (approved && !ch.ratedAt) await raiseRates(env).catch((err) => console.warn('rate raise:', err.message || err));
+  if (next.state === 'declined') await releaseSlotOfCase(env, caseId).catch(() => {});
+
+  // The client's words, the same in the push and the mail.
+  const said = next.state === 'captured' ? CHARGE_COPY.approvedCharged(next.capturedCents)
+    : next.state === 'comped' ? CHARGE_COPY.approvedFree
+      : next.state === 'invoiced' ? CHARGE_COPY.invoiced(next.invoiceCents)
+        : `${next.reason} ${CHARGE_COPY.declined}`;
+  if (c.data.clientUid) {
+    await notifyUser(env, c.data.clientUid, {
+      title: 'Pocket Advocate',
+      body: next.state === 'declined' ? `I cannot take your case. ${CHARGE_COPY.declined}` : said,
+      link: `/case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
+  if (c.data.clientEmail) {
+    await sendEmail(env, {
+      to: c.data.clientEmail,
+      subject: next.state === 'declined' ? 'About your Pocket Advocate case'
+        : next.state === 'invoiced' ? 'A payment link for your Pocket Advocate case'
+          : 'I have taken your case',
+      html: `<p>${escHtml(next.state === 'declined' ? `I cannot take your case. ${next.reason}` : said)}</p>
+        ${next.state === 'declined' ? `<p>${escHtml(CHARGE_COPY.declined)}</p>` : ''}
+        ${next.state === 'invoiced' ? `<p><a href="${next.invoice.url}">Pay and open your case</a></p>` : ''}
+        <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
+    }).catch(() => {});
+  }
+  return json({ ok: true, charge: next });
+}
+
+/** A declined booking gives its time back: the slot booked for this case
+ *  reopens, or goes away if it was made by hand for this client only. */
+async function releaseSlotOfCase(env, caseId) {
+  const rows = await queryDocs(env, 'availability', [['caseId', 'EQUAL', caseId]], 3).catch(() => []);
+  for (const s of rows) {
+    if (s.data.adminCreated) await deleteDoc(env, `availability/${s.id}`).catch(() => {});
+    else {
+      await patchDoc(env, `availability/${s.id}`, {
+        state: 'open', caseId: null, holdExpiresAt: null, heldByUid: null, heldBySession: null,
+      }, { mask: ['state', 'caseId', 'holdExpiresAt', 'heldByUid', 'heldBySession'] }).catch(() => {});
+    }
+  }
+}
+
+/**
+ * The webhook half of a lapsed hold: the payment link he sent was paid. The
+ * record flips to captured for what was paid, the rate rises if it has not
+ * for this case, and the client hears it. Money that arrives for a case
+ * already captured is written down rather than dropped.
+ */
+async function confirmCaseCharge(env, session) {
+  const caseId = session.metadata?.caseId;
+  if (!caseId) return;
+  const c = await getDoc(env, `cases/${caseId}`);
+  if (!c) return;
+  const ch = c.data.charge || {};
+  if (ch.paidSessionId === session.id) return; // replay
+  const now = new Date();
+  const cents = Number(session.amount_total) || 0;
+  if (ch.state === 'captured') {
+    const payments = Array.isArray(c.data.extraPayments) ? [...c.data.extraPayments] : [];
+    payments.push({ kind: 'casecharge', amountCents: cents, sessionId: session.id, at: now, duplicate: true });
+    await patchDoc(env, `cases/${caseId}`, { extraPayments: payments }, { mask: ['extraPayments'] }).catch(() => {});
+    await pingAdmins(env, `${firstName(c.data.clientName)} paid a case link their case had already paid. Refund it from Stripe.`, `/admin-case.html?id=${caseId}`);
+    return;
+  }
+  const next = {
+    ...ch, state: 'captured', capturedCents: cents, capturedAt: now, invoice: null,
+    paidSessionId: session.id, ratedAt: ch.ratedAt || now,
+  };
+  await patchDoc(env, `cases/${caseId}`, { charge: next }, { mask: ['charge'] });
+  if (!ch.ratedAt) await raiseRates(env).catch((err) => console.warn('rate raise:', err.message || err));
+  if (c.data.clientUid) {
+    await notifyUser(env, c.data.clientUid, {
+      title: 'Pocket Advocate', body: CHARGE_COPY.approvedCharged(cents), link: `/case.html?id=${caseId}`,
+    }).catch(() => {});
+  }
+  await pingAdmins(env, `${firstName(c.data.clientName)} paid the case link: $${chargeDollars(cents)}.`, `/admin-case.html?id=${caseId}`);
+}
+
+/**
+ * The clock on every hold, on the quarter hour. Two days before a hold runs
+ * out he is reminded once; once the seven days are past, the intent is read
+ * back and the record made to say what Stripe says: gone means lapsed (and
+ * he is told), captured by hand in the dashboard means captured here too.
+ */
+async function holdSweep(env) {
+  const rows = await queryDocs(env, 'cases', [['charge.state', 'EQUAL', 'held']], 50).catch(() => []);
+  const now = Date.now();
+  for (const r of rows) {
+    const ch = r.data.charge || {};
+    const heldAt = ch.heldAt ? new Date(ch.heldAt).getTime() : 0;
+    if (!heldAt) continue;
+    const ageDays = (now - heldAt) / 86_400_000;
+    if (ageDays >= HOLD_DAYS + 0.25 && ch.paymentIntentId) {
+      const pi = await readIntent(env, ch.paymentIntentId).catch(() => null);
+      if (pi?.status === 'canceled') {
+        await patchDoc(env, `cases/${r.id}`, { charge: { ...ch, state: 'lapsed', lapsedAt: new Date() } }, { mask: ['charge'] }).catch(() => {});
+        await pingAdmins(env,
+          `The hold on ${firstName(r.data.clientName)}'s card lapsed before you decided. Approving now sends them a payment link.`,
+          `/admin-case.html?id=${r.id}`);
+        if (r.data.clientUid) {
+          await notifyUser(env, r.data.clientUid, { title: 'Pocket Advocate', body: CHARGE_COPY.lapsed, link: `/case.html?id=${r.id}` }).catch(() => {});
+        }
+        continue;
+      }
+      if (pi?.status === 'succeeded') {
+        const cents = Number(pi.amount_received) || Number(ch.authorizedCents) || 0;
+        await patchDoc(env, `cases/${r.id}`, {
+          charge: { ...ch, state: 'captured', capturedCents: cents, capturedAt: new Date(), decidedAt: new Date(), byHand: true, ratedAt: ch.ratedAt || new Date() },
+        }, { mask: ['charge'] }).catch(() => {});
+        if (!ch.ratedAt) await raiseRates(env).catch(() => {});
+        continue;
+      }
+    }
+    if (ageDays >= HOLD_REMIND_AFTER_DAYS && !ch.remindedAt) {
+      await patchDoc(env, `cases/${r.id}`, { charge: { ...ch, remindedAt: new Date() } }, { mask: ['charge'] }).catch(() => {});
+      await pingAdmins(env,
+        `The hold on ${firstName(r.data.clientName)}'s card lapses in about two days. Approve or decline the case.`,
+        `/admin-case.html?id=${r.id}`);
+    }
+  }
+}
+
 function fullAccessWindowEnd(c) {
   const bought = c?.fullAccessAt ? new Date(c.fullAccessAt).getTime() : 0;
   const firstCall = c?.appointment?.start ? new Date(c.appointment.start).getTime() : 0;
@@ -2655,14 +2877,20 @@ async function handleCheckout(request, env) {
   }
   const lineItems = caseLineItems(priceCents);
 
+  // A HOLD, NOT A CHARGE (Eric, 2026-09-06: "only once I approve their case
+  // do they get charged"). The card is authorized for the case fee and
+  // nothing is captured; his approval captures the amount he sets, his
+  // decline releases it. worker/charge.js holds the rest.
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: identity.email || user.email || undefined,
     line_items: lineItems,
+    payment_intent_data: HOLD_INTENT,
     success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.PUBLIC_BASE_URL}/book.html?canceled=1`,
     expires_at: Math.floor(holdExpiresAt.getTime() / 1000),
     metadata: {
+      ...HOLD_META,
       uid: user.uid,
       email: identity.email || user.email || '',
       name: identity.name,
@@ -2727,14 +2955,18 @@ async function checkoutRequestedTime(env, o) {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + HOLD_MINUTES * 60_000);
   const lineItems = caseLineItems(priceCents);
+  // The same hold as the slot path (2026-09-06): authorized, captured on his
+  // approval at the amount he sets.
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: identity.email || user.email || undefined,
     line_items: lineItems,
+    payment_intent_data: HOLD_INTENT,
     success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.PUBLIC_BASE_URL}/book.html?canceled=1`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),
     metadata: {
+      ...HOLD_META,
       uid: user.uid,
       email: identity.email || user.email || '',
       name: identity.name,
@@ -2869,6 +3101,13 @@ async function handleWebhook(request, env) {
     // (Post-2.2 audit, 2026-08-21.)
     if (obj.mode === 'subscription') {
       if (event.type === 'checkout.session.completed') await activateSubscription(env, obj);
+    } else if (obj.metadata?.hold === '1' && obj.payment_intent) {
+      // A HOLD, not a payment (2026-09-06). A completed manual-capture
+      // session reports payment_status 'unpaid', so the branch below would
+      // wait for a settlement that is never coming. The intent is read back
+      // from Stripe and only a standing hold (or a capture already made by
+      // hand) opens anything.
+      if (event.type === 'checkout.session.completed') await onHeldSession(env, obj);
     } else if (obj.payment_status && obj.payment_status !== 'paid') {
       // Not settled yet; the success event will come back through here.
     } else if (obj.metadata?.kind === 'tip') await confirmTip(env, obj);
@@ -2878,7 +3117,12 @@ async function handleWebhook(request, env) {
     else if (obj.metadata?.kind === 'extend') await confirmExtensionPurchase(env, obj);
     else if (obj.metadata?.kind === 'telehealth') await confirmTelehealthPurchase(env, obj);
     else if (obj.metadata?.kind === 'fullaccess') await confirmFullAccessPurchase(env, obj);
+    else if (obj.metadata?.kind === 'casecharge') await confirmCaseCharge(env, obj);
     else await createCaseFromSession(env, obj);
+  } else if (event.type === 'payment_intent.canceled') {
+    // A hold the network let go (seven days) before he decided, or one he
+    // released himself a moment ago: only the first changes anything.
+    await onIntentCanceled(env, obj);
   } else if (event.type === 'checkout.session.async_payment_failed') {
     // The money never arrived: give the slot back, exactly as an expiry does.
     await releaseHold(env, obj);
@@ -3115,7 +3359,47 @@ async function resolveClientEmail(env, uid, metadataEmail, session) {
   return session?.customer_details?.email || session?.customer_email || null;
 }
 
-async function createCaseFromSession(env, session) {
+/**
+ * A held session landed (2026-09-06). The intent is read back so the record
+ * says what Stripe says: a standing hold opens the case (or the telehealth
+ * request) waiting on his decision; an intent already captured (by hand, in
+ * the dashboard) opens it paid, the way the old flow did; anything else is
+ * not money and opens nothing.
+ */
+async function onHeldSession(env, session) {
+  const pi = await readIntent(env, session.payment_intent).catch(() => null);
+  if (!pi) return;
+  let held = null;
+  if (pi.status === 'requires_capture') held = pi;
+  else if (pi.status !== 'succeeded') return;
+  if (session.metadata?.kind === 'telehealth') return confirmTelehealthPurchase(env, session, { held });
+  return createCaseFromSession(env, session, { held });
+}
+
+/**
+ * The network let a hold go before he decided (payment_intent.canceled),
+ * or he released it himself a moment ago. Only a case still waiting moves,
+ * to 'lapsed', and he is told; the decision he made already stands.
+ */
+async function onIntentCanceled(env, pi) {
+  if (!pi?.id) return;
+  const rows = await queryDocs(env, 'cases', [['charge.paymentIntentId', 'EQUAL', pi.id]], 1).catch(() => []);
+  const c = rows[0];
+  if (!c || c.data.charge?.state !== 'held') return;
+  await patchDoc(env, `cases/${c.id}`, {
+    charge: { ...c.data.charge, state: 'lapsed', lapsedAt: new Date() },
+  }, { mask: ['charge'], ifUpdateTime: c.updateTime }).catch(() => {});
+  await pingAdmins(env,
+    `The hold on ${firstName(c.data.clientName)}'s card lapsed before you decided. Approving now sends them a payment link.`,
+    `/admin-case.html?id=${c.id}`);
+  if (c.data.clientUid) {
+    await notifyUser(env, c.data.clientUid, {
+      title: 'Pocket Advocate', body: CHARGE_COPY.lapsed, link: `/case.html?id=${c.id}`,
+    }).catch(() => {});
+  }
+}
+
+async function createCaseFromSession(env, session, { held = null } = {}) {
   const m = session.metadata || {};
   if (!m.uid || (!m.slotId && !m.requestedStart)) return;
 
@@ -3218,14 +3502,24 @@ async function createCaseFromSession(env, session) {
         paymentIntentId: session.payment_intent || null,
         amountTotal: session.amount_total || null,
       },
+      // The hold (2026-09-06): what the card is holding, waiting on his
+      // approval. Absent on a case paid outright, which is what every case
+      // before this was, and what a hand-captured intent still is.
+      charge: held ? heldChargeOf(session, held, now) : null,
     },
     { mustNotExist: true }
   );
 
   // mustNotExist returns falsy when the document already existed, which is how
   // a replayed Stripe webhook shows up. Raising here and only here means a
-  // replay cannot bump the rate a second time.
-  if (created) await raiseRates(env).catch((err) => console.warn('rate raise:', err.message || err));
+  // replay cannot bump the rate a second time. A held case raises the rate
+  // when he approves it, not before: a booking he declines is not a client.
+  if (created && !held) await raiseRates(env).catch((err) => console.warn('rate raise:', err.message || err));
+  if (created && held) {
+    await pingAdmins(env,
+      `${firstName(m.name) || 'A client'} booked a case. Their card is held, not charged: approve or decline it.`,
+      `/admin-case.html?id=${caseId}`);
+  }
 
   if (isRequest && start) {
     const mt = new Intl.DateTimeFormat('en-US', {
@@ -3260,8 +3554,8 @@ async function createCaseFromSession(env, session) {
     });
     await sendEmail(env, {
       to: clientEmail,
-      subject: 'Your Pocket Advocate case is open',
-      html: `<p>Payment confirmed — your case file is live.</p>
+      subject: held ? 'Your Pocket Advocate case is in' : 'Your Pocket Advocate case is open',
+      html: `<p>${held ? escHtml(CHARGE_COPY.held) : 'Payment confirmed. Your case file is live.'}</p>
         ${whenHtml(start, m.tz)}
         <p>Meeting method: ${m.method}.</p>
         <p>Upload labs, imaging, or records any time before the call.</p>
@@ -5731,8 +6025,9 @@ async function handleLedger(request, env) {
     // ledger being wrong about the one thing it is for. It REPLACES the
     // booking figure rather than adding to it - it is the whole of what they
     // paid for the case - and extraPayments below are still counted on top.
-    g.paidCents += Number(c.paidOverrideCents) || Number(c.payment?.amountTotal)
-      || Number(c.stripe?.amountTotal) || Number(c.caseRateCents) || 0;
+    // A held case (2026-09-06) counts what was captured and nothing else:
+    // a hold is not money, a declined case took none, a comped one took none.
+    g.paidCents += Number(c.paidOverrideCents) || caseBookingCents(c);
     for (const p of (Array.isArray(c.extraPayments) ? c.extraPayments : [])) {
       const cents = Number(p?.amountCents) || 0;
       if (p?.kind === 'tip') g.tipCents += cents;
@@ -6293,9 +6588,35 @@ async function handleFullRequestDecision(request, env) {
     return json({ error: 'full-booked', open: cap.open, max: cap.max }, 409);
 
   // The price they were quoted when they asked, not whatever the rate has
-  // climbed to while it sat on his desk.
-  const cents = Number(req.firstMonthCents) > 0
+  // climbed to while it sat on his desk. Or the figure he typed on the card
+  // (2026-09-06, "change it to any value"): any whole amount, and zero opens
+  // the month at no charge with no link at all.
+  const quoted = Number(req.firstMonthCents) > 0
     ? Number(req.firstMonthCents) : upgradeCents(c.data, (await readRates(env)).fullCents);
+  const asked = body?.amountCents;
+  const cents = asked === undefined || asked === null ? quoted : Number(asked);
+  if (!Number.isInteger(cents) || cents < 0 || cents > 2_000_000)
+    return json({ error: 'The amount has to be a whole number of cents, zero or more, under $20,000.' }, 400);
+  if (cents === 0) {
+    const wrote = await patchDoc(env, `cases/${caseId}`, {
+      fullAccessRequest: { ...req, state: 'approved', decidedAt: new Date(), compedAt: new Date() },
+    }, { mask: ['fullAccessRequest'], ifUpdateTime: c.updateTime });
+    if (wrote === false) return json({ error: 'Try that once more.' }, 409);
+    // The same landing a paid link has, with nothing paid: the grant, the
+    // clock split, the forms, the mail.
+    await confirmFullAccessPurchase(env, {
+      id: `comp_${caseId}_${Date.now()}`, amount_total: 0,
+      metadata: { caseId, ackAt: String(req.ackAt || Date.now()), comped: '1' },
+    });
+    if (c.data.clientUid) {
+      await notifyUser(env, c.data.clientUid, {
+        title: 'Pocket Advocate',
+        body: 'Good news - I can take your case. Full-Service is open on it, at no charge.',
+        link: `/case.html?id=${caseId}`,
+      }).catch(() => {});
+    }
+    return json({ ok: true, state: 'started', cents: 0, comped: true });
+  }
   // 23 hours, like every other checkout here. It was seven days, which reads
   // generously and is not a thing Stripe will do: a Checkout Session's
   // expires_at may be at most 24 hours out, so the whole call was refused and
@@ -6768,14 +7089,19 @@ async function handleTelehealthRequest(request, env) {
   }
 
   const expiresAt = new Date(Date.now() + 23 * 3600_000);
+  // Held, not charged (2026-09-06): the card is authorized when they ask and
+  // captured, at the amount he sets, when he confirms he can be there. A
+  // decline releases it, so nothing needs refunding any more.
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: c.data.clientEmail || undefined,
     line_items: telehealthLineItems(TELEHEALTH_PRICE_CENTS),
+    payment_intent_data: HOLD_INTENT,
     success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&telehealth=1`,
     cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),
     metadata: {
+      ...HOLD_META,
       kind: 'telehealth', caseId, uid: c.data.clientUid,
       when: when.toISOString(), clinicName, provider, attestAt: String(body.attestAt),
     },
@@ -6796,22 +7122,26 @@ function telehealthLineItems(cents) {
       currency: 'usd', unit_amount: cents,
       product_data: {
         name: 'Telehealth Appointment Advocacy',
-        description: 'Your advocate joins your telehealth appointment by video to advocate on your behalf. Fully refunded if he cannot attend or your provider does not allow it.',
+        description: 'Your advocate joins your telehealth appointment by video to advocate on your behalf. Your card is held now and charged only when he confirms he can attend.',
       },
     },
   }];
 }
 
-/** Paid. The request now waits on Eric's confirmation, and the money is written down. */
-async function confirmTelehealthPurchase(env, session) {
+/** Held (or, for a session captured by hand, paid). The request now waits on
+ *  Eric's confirmation. Money moved is written down; a hold is not money and
+ *  is written on the request only, to be captured or released with it. */
+async function confirmTelehealthPurchase(env, session, { held = null } = {}) {
   const caseId = session.metadata?.caseId;
   if (!caseId) return;
   const c = await getDoc(env, `cases/${caseId}`);
   if (!c) return;
   const payments = Array.isArray(c.data.extraPayments) ? c.data.extraPayments : [];
   if (payments.some((x) => x.sessionId === session.id)) return;
-  const paid = session.amount_total || TELEHEALTH_PRICE_CENTS;
-  payments.push({ kind: 'telehealth', amountCents: paid, sessionId: session.id, at: new Date() });
+  if (held && c.data.pendingTelehealth?.sessionId === session.id && c.data.pendingTelehealth.holdState) return;
+  const total = session.amount_total || TELEHEALTH_PRICE_CENTS;
+  const paid = held ? 0 : total;
+  if (!held) payments.push({ kind: 'telehealth', amountCents: paid, sessionId: session.id, at: new Date() });
   // Rebuilt from the SESSION's metadata, not from pendingTelehealth: the
   // checkout carried everything, so a pending field that was cleared or
   // overwritten between pay and webhook cannot lose the request.
@@ -6823,12 +7153,19 @@ async function confirmTelehealthPurchase(env, session) {
       attestAt: Number(session.metadata.attestAt) ? new Date(Number(session.metadata.attestAt)) : null,
       requestedAt: new Date(),
       state: 'requested', paidCents: paid, sessionId: session.id,
+      // The hold (2026-09-06): what the card is holding and the intent to
+      // capture or release when he decides.
+      heldCents: held ? (Number(held.amount_capturable) || total) : 0,
+      paymentIntentId: held ? held.id : null,
+      holdState: held ? 'held' : null,
     },
     extraPayments: payments,
   }, { mask: ['pendingTelehealth', 'extraPayments'], ifUpdateTime: c.updateTime });
-  if (ok === false) return confirmTelehealthPurchase(env, session);
-  await pingAdmins(env, `${firstName(c.data.clientName)} paid for telehealth appointment advocacy. Confirm or decline it.`,
-    `/admin-case.html?id=${caseId}`);
+  if (ok === false) return confirmTelehealthPurchase(env, session, { held });
+  await pingAdmins(env, held
+    ? `${firstName(c.data.clientName)} asked for telehealth appointment advocacy. Their card is held for $${chargeDollars(total)}, not charged. Confirm or decline it.`
+    : `${firstName(c.data.clientName)} paid for telehealth appointment advocacy. Confirm or decline it.`,
+  `/admin-case.html?id=${caseId}`);
 }
 
 /**
@@ -6855,14 +7192,46 @@ async function handleTelehealthDecide(request, env) {
 
   if (action === 'confirm') {
     const visits = Array.isArray(c.data.telehealthVisits) ? c.data.telehealthVisits : [];
+    // THE HOLD, DECIDED (2026-09-06). A held request is captured at the
+    // amount he set, up to what the card holds; zero releases it and
+    // confirms at no charge. A hold the network let go can only be confirmed
+    // at no charge. Money captured is written down like a payment.
+    let paidCents = p.paidCents || 0;
+    const payments = Array.isArray(c.data.extraPayments) ? [...c.data.extraPayments] : [];
+    if (p.paymentIntentId && (p.holdState === 'held' || p.holdState === 'lapsed')) {
+      const cap = Math.max(0, Number(p.heldCents) || 0);
+      const asked = body?.amountCents === undefined || body?.amountCents === null ? cap : Number(body.amountCents);
+      if (!Number.isInteger(asked) || asked < 0 || asked > cap)
+        return json({ error: `Up to $${chargeDollars(cap)}, the amount their card is holding; 0 confirms at no charge.`, cap }, 400);
+      if (p.holdState === 'lapsed' && asked > 0)
+        return json({ error: 'The hold on their card lapsed, so nothing can be charged now. Confirm at no charge, or decline and ask them to request again.', cap: 0 }, 409);
+      if (asked > 0) {
+        try {
+          const got = await captureHold(env, p.paymentIntentId, asked);
+          paidCents = Number(got?.amount_received) || asked;
+        } catch (err) {
+          const pi = await readIntent(env, p.paymentIntentId).catch(() => null);
+          if (pi?.status === 'succeeded') paidCents = Number(pi.amount_received) || asked;
+          else if (pi?.status === 'canceled') {
+            await patchDoc(env, `cases/${caseId}`, { pendingTelehealth: { ...p, holdState: 'lapsed' } }, { mask: ['pendingTelehealth'] });
+            return json({ error: 'The hold on their card lapsed (Stripe lets a hold go after seven days). Confirm at no charge, or decline and ask them to request again.', lapsed: true }, 409);
+          } else return json({ error: `Stripe would not capture it: ${err.message}` }, 502);
+        }
+        payments.push({ kind: 'telehealth', amountCents: paidCents, sessionId: p.sessionId || null, at: new Date() });
+      } else {
+        paidCents = 0;
+        if (p.holdState === 'held') await cancelHold(env, p.paymentIntentId).catch(() => {});
+      }
+    }
     await patchDoc(env, `cases/${caseId}`, {
       telehealthVisits: [...visits, {
         when: p.when, clinicName: p.clinicName, provider: p.provider,
-        paidCents: p.paidCents || 0, sessionId: p.sessionId || null,
+        paidCents, sessionId: p.sessionId || null,
         attestAt: p.attestAt || null, confirmedAt: new Date(),
       }],
       pendingTelehealth: null,
-    }, { mask: ['telehealthVisits', 'pendingTelehealth'] });
+      extraPayments: payments,
+    }, { mask: ['telehealthVisits', 'pendingTelehealth', 'extraPayments'] });
     const start = new Date(p.when);
     await sendEmail(env, {
       to: c.data.clientEmail,
@@ -6882,14 +7251,18 @@ async function handleTelehealthDecide(request, env) {
     return json({ ok: true, confirmed: true });
   }
 
-  // Deny.
+  // Deny. A held card is released (2026-09-06), so there is nothing to
+  // refund; a request paid outright the old way still pings him to refund.
+  const heldNow = !!p.paymentIntentId && p.holdState === 'held';
   await patchDoc(env, `cases/${caseId}`, {
     pendingTelehealth: null,
     telehealthDenied: {
       when: p.when, clinicName: p.clinicName, at: new Date(),
       refundCents: p.paidCents || 0,
+      released: !!p.paymentIntentId && !p.paidCents,
     },
   }, { mask: ['pendingTelehealth', 'telehealthDenied'] });
+  if (heldNow) await cancelHold(env, p.paymentIntentId).catch(() => {});
   if (p.paidCents > 0) {
     await pingAdmins(env,
       `You declined ${firstName(c.data.clientName)}'s telehealth request. Refund the $${(p.paidCents / 100).toFixed(0)} from Stripe - the copy promises it in full.`,
@@ -6897,7 +7270,9 @@ async function handleTelehealthDecide(request, env) {
   }
   await notifyUser(env, c.data.clientUid, {
     title: 'Pocket Advocate',
-    body: 'An update on your appointment request. Open the app.',
+    body: p.paymentIntentId && !p.paidCents
+      ? 'An update on your appointment request. Nothing was charged; the hold on your card is released.'
+      : 'An update on your appointment request. Open the app.',
     link: `/case.html?id=${caseId}`,
   }).catch(() => {});
   return json({ ok: true, denied: true });

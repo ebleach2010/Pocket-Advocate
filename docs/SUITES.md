@@ -183,6 +183,47 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### Charge on approval (2026-09-06)
+
+Eric: "I would like to be able to comp somebody or change charges. So they
+purchase a tier, but only once I approve their case do the get charged, and
+on the approval/denial screen I can tap on the amount charged and change it
+to any value." A purchase now AUTHORIZES the card and captures nothing: the
+three checkouts that open something he decides on (a case off a slot, a
+case at a requested time, a telehealth request) carry Stripe's manual
+capture and a hold flag; the subscription does not. The webhook reads the
+intent back rather than trusting payment_status (unpaid on a completed
+hold) and opens the case with a `charge` record in state held; a case paid
+outright, or an intent captured by hand, opens as before. `worker/charge.js`
+holds the record a hold opens with, the decision table (`chargeDecision`:
+approve captures the amount he set up to the hold, zero releases and comps,
+decline needs the reason and releases; a lapsed hold invoices or comps; an
+open link blocks; a decided case refuses), the booking figure the ledger and
+the case page read (`caseBookingCents`, what was captured and nothing else),
+the client's words, and the three Stripe calls. `POST /api/admin/case-charge`
+does it in the order that keeps money and record together: capture then
+write (a refusal reads the intent back: gone marks lapsed and says so,
+captured already counts as done), write then release, a link for a lapsed
+hold. Approving raises the rate the way a booking used to; declining closes
+the case with his reason and gives the slot back. The sweep on the quarter
+hour reminds him two days before a hold runs out and, past seven days, makes
+the record say what Stripe says; `payment_intent.canceled` does the same the
+moment it arrives. On his overview the first card under Waiting on you is
+the approval screen: the amount tappable, the two buttons; the shelf row
+says APPROVE OR DECLINE. The client's pill reads AWAITING APPROVAL, a card
+under it says the Worker's exact words, the booking page says the card is
+held before the button and the return page after, and a declined case says
+nothing was charged under the reason. Telehealth confirms ask what to
+charge up to the hold and declines release it; Full-Service approvals take
+the first month figure he types, and zero opens the month at no charge
+through the same landing a paid link has. `tools/suites/charge.mjs` CH1-CH8
+run the decision table whole, lift the route, the held branch, the lapse and
+the sweep against fakes, and pin the checkouts, the halves, the pages, the
+money lines, the demo and the drive; `tools/drives/drive-approval.mjs` books
+in the demo, reads AWAITING APPROVAL, opens his card, types 900 and
+approves, declines a second booking with a reason the client reads with
+"nothing was charged", and takes a third at no charge.
+
 ### Joe gone, the dictionary whole (2026-09-06)
 
 Eric: "Get rid of Joe bloe. Since his implementation some things have

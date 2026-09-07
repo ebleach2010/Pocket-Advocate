@@ -47,6 +47,35 @@ const STATUS_LABEL = {
   awaiting_report: 'REPORT DUE', delivered: 'REPORT READY', closed: 'CLOSED',
 };
 
+/**
+ * THE HOLD (Eric, 2026-09-06: "only once I approve their case do they get
+ * charged"). Booking holds the card; the case waits on his approval; the pill
+ * and one plain card say so, and say what happens either way. The words are
+ * the Worker's (worker/charge.js CHARGE_COPY), so the page, the mail and the
+ * push agree.
+ */
+const CHARGE_WAITING = ['held', 'lapsed', 'invoiced'];
+function chargeLabel(c) {
+  return CHARGE_WAITING.includes(c?.charge?.state) ? 'AWAITING APPROVAL' : '';
+}
+function chargeNotice(c) {
+  const ch = c?.charge;
+  if (!ch || !CHARGE_WAITING.includes(ch.state)) return '';
+  const cents = (n) => (Math.round(Number(n) || 0) / 100).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  const linkOpen = ch.state === 'invoiced' && ch.invoice?.url && ch.invoice?.expiresAt
+    && toDate(ch.invoice.expiresAt).getTime() > Date.now();
+  return `
+    <div class="panel" data-charge-notice style="margin:0 0 1rem;">
+      <h3 style="margin:0 0 .35rem;">${ch.state === 'held' ? 'Your card is held, not charged' : 'About your card'}</h3>
+      <p style="margin:0;">${ch.state === 'held'
+        ? 'Your card is held, not charged. I read every new case before I take it on, and you are charged only when I do. If I cannot take your case, the hold is released and nothing is charged.'
+        : linkOpen
+          ? `The hold on your card lapsed before I could take your case. Pay $${cents(ch.invoice.cents)} here to open it.`
+          : 'The hold on your card lapsed before I decided, so nothing was charged. If I take your case I will send you a link to pay.'}</p>
+      ${linkOpen ? `<p style="margin:.6rem 0 0;"><a class="btn glow" href="${esc(ch.invoice.url)}">Pay $${cents(ch.invoice.cents)} and open your case</a></p>` : ''}
+    </div>`;
+}
+
 hydrateNav();
 let user = null;
 let cases = [];
@@ -303,7 +332,7 @@ function refreshSections() {
   const pill = container.querySelector('[data-status-pill]');
   if (pill) {
     pill.className = `status-pill ${c.status === 'closed' ? 'closed' : ''}`;
-    pill.textContent = STATUS_LABEL[c.status] || c.status;
+    pill.textContent = chargeLabel(c) || STATUS_LABEL[c.status] || c.status;
   }
   const progress = folder?.el('progress');
   const docs = folder?.el('docs');
@@ -553,6 +582,7 @@ function closedNotice(c) {
     <div class="panel" style="margin:0 0 1rem;">
       <h3 style="margin:0 0 .35rem;">Why this case closed</h3>
       <p style="margin:0;">${esc(c.closedReason)}</p>
+      ${c.charge?.state === 'declined' ? '<p style="margin:.5rem 0 0;" data-charge-released>Nothing was charged. The hold on your card is released.</p>' : ''}
       <p class="dim small" style="margin:.5rem 0 0;">Everything in the case
         stays yours to read and download, for as long as you want it. If you
         would like to leave a review, that stays open too, here or
@@ -651,9 +681,10 @@ function renderProgress(el, c) {
     <div class="stack">
     ${pausedNotice(c)}
     ${closedNotice(c)}
+    ${chargeNotice(c)}
     <section class="card card-lit stack-tight" data-appt>
       <p class="eyebrow">
-        <span class="status-pill ${closed ? 'closed' : ''}" data-status-pill>${STATUS_LABEL[c.status] || c.status}</span>
+        <span class="status-pill ${closed ? 'closed' : ''}" data-status-pill>${chargeLabel(c) || STATUS_LABEL[c.status] || c.status}</span>
         Advocacy Case
       </p>
       ${start ? `
@@ -1650,16 +1681,18 @@ function telehealthCard(c) {
   if (new URLSearchParams(location.search).get('telehealth') === '1' && (!p || p.state !== 'requested') && !visits.length)
     return `
       <div class="followup-offer is-done">
-        <h3><span class="fu-tick" aria-hidden="true">✓</span> Paid — your appointment is on my desk.</h3>
-        <p>I confirm every appointment personally. You'll hear from me shortly,
-          and if I can't make it, every dollar comes straight back.</p>
+        <h3><span class="fu-tick" aria-hidden="true">✓</span> Your appointment is on my desk.</h3>
+        <p>Your card is held, not charged, until I confirm. I confirm every
+          appointment personally. You'll hear from me shortly, and if I can't
+          make it, the hold is released and nothing is charged.</p>
       </div>`;
   if (p?.state === 'requested') return `
     <div class="followup-offer">
       <h3>Appointment advocacy — waiting on my confirmation</h3>
       <p><strong>${esc(fmt.format(toDate(p.when)))}</strong> · ${esc(p.clinicName || '')}${p.provider ? ` · ${esc(p.provider)}` : ''}</p>
-      <p class="dim small">I confirm every appointment personally. If I can't
-        make it${p.paidCents ? ', your payment comes back in full' : ''}.</p>
+      <p class="dim small">I confirm every appointment personally. ${p.paymentIntentId && !p.paidCents
+        ? 'Your card is held, not charged, until I do. If I can\'t make it, the hold is released and nothing is charged.'
+        : `If I can't make it${p.paidCents ? ', your payment comes back in full' : ''}.`}</p>
       ${upcoming}
     </div>`;
   if (p?.state === 'checkout' && p.url && toDate(p.expiresAt).getTime() > Date.now()) return `
@@ -1672,7 +1705,7 @@ function telehealthCard(c) {
   if (c.status === 'closed') return '';
   const denied = c.telehealthDenied && !visits.length ? `
     <p class="dim small" style="margin:0 0 .6rem;">I couldn't make your last
-      request${Number(c.telehealthDenied.refundCents) > 0 ? ' — your refund is on its way' : ''}.
+      request${Number(c.telehealthDenied.refundCents) > 0 ? '; your refund is on its way' : c.telehealthDenied.released ? '. Nothing was charged; the hold on your card is released' : ''}.
       You're welcome to ask again for another appointment.</p>` : '';
   const price = c.fullAccess
     ? '<span class="price" style="font-size:1rem;">Included</span>'

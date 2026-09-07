@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '2.99';
+export const VERSION = '3.0';
 
 /**
  * Newest first.
@@ -51,6 +51,26 @@ export const VERSION = '2.99';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // CHARGE ON APPROVAL (Eric, 2026-09-06: "I would like to be able to comp
+    // somebody or change charges. So they purchase a tier, but only once I
+    // approve their case do the get charged, and on the approval/denial
+    // screen I can tap on the amount charged and change it to any value.").
+    // Silent, as every unspecified push is; the client lines say what
+    // changed on their side of the screen.
+    version: '3.0',
+    quiet: true,
+    client: [
+      'Booking a case now holds your card instead of charging it. You are charged only when I take your case, and if I cannot take it, the hold is released and nothing is charged. Your case page says so while it waits.',
+      'Bringing me to a telehealth appointment works the same way: your card is held when you ask, charged only when I confirm I can be there, and released if I cannot.',
+    ],
+    admin: [
+      'A new case opens with its card held, not charged. On its overview, under Waiting on you, the first card is Approve or decline: tap the amount to change it to anything up to the hold, 0 takes the case at no charge, Approve charges that figure, Decline asks for the reason they read word for word and releases the hold. The shelf row says APPROVE OR DECLINE until you do.',
+      'A hold stands for seven days. You are reminded two days before it lapses; past that, Approve sends them a payment link for the amount instead, and the case opens fully when they pay.',
+      'Telehealth requests and Full-Service approvals ask the same question: confirming a held telehealth request asks what to charge, up to the hold; approving a Full-Service request asks for the first month figure, and 0 opens it at no charge with no link.',
+      'The rate ladder now steps up when you approve a case, not when it is booked, so a declined booking moves nothing. The ledger and the case page count what was captured and nothing else.',
+    ],
+  },
   {
     // DRAFTS BACK (Eric, 2026-09-06: "Drafting has stopped working"). The
     // cause, read from the diag 2.98 added: every draft died the moment it

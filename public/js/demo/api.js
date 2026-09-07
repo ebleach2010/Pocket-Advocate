@@ -845,6 +845,41 @@ export function demoApi(role, store) {
       store.persist?.();
       return ok({ ok: true, docs, files: 0 });
     }
+    // THE APPROVAL SCREEN (2026-09-06): approve at the amount he set, zero
+    // included, or decline with his reason. No Stripe here, so the capture
+    // and the release are the record alone, shaped as the Worker shapes it.
+    if (path === '/api/admin/case-charge') {
+      const key = `cases/${body.caseId || DEMO_CASE_ID}`;
+      const c = store.docs.get(key);
+      const ch = c?.charge;
+      if (!c) return fail(404, 'Not found');
+      if (!ch || !['held', 'lapsed', 'invoiced'].includes(ch.state)) return fail(409, 'This case has no held payment to decide.');
+      const now = new Date();
+      if (body.decision === 'decline') {
+        const reason = String(body.reason || '').trim().slice(0, 500);
+        if (!reason) return fail(400, 'Write the reason. The client reads it word for word.');
+        store.docs.set(key, {
+          ...c, status: 'closed', closedAt: now, closedBy: 'advocate', closedReason: reason,
+          charge: { ...ch, state: 'declined', decidedAt: now, releasedAt: now, reason },
+        });
+        store.persist?.(); store.fire?.(key);
+        return ok({ ok: true, charge: store.docs.get(key).charge });
+      }
+      if (body.decision !== 'approve') return fail(400, 'Bad request');
+      const cap = Number(ch.authorizedCents) || 0;
+      const amount = body.amountCents === undefined || body.amountCents === null ? cap : Number(body.amountCents);
+      if (!Number.isInteger(amount) || amount < 0) return fail(400, 'The amount has to be a whole number of cents, zero or more.');
+      if (ch.state === 'held' && amount > cap)
+        return fail(400, `Up to $${(cap / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}, the amount their card is holding. For more, approve at that and charge the rest from Schedule a session.`);
+      const next = amount === 0
+        ? { ...ch, state: 'comped', capturedCents: 0, decidedAt: now, releasedAt: now, ratedAt: now }
+        : ch.state === 'held'
+          ? { ...ch, state: 'captured', capturedCents: amount, decidedAt: now, capturedAt: now, ratedAt: now }
+          : { ...ch, state: 'invoiced', invoiceCents: amount, decidedAt: now, invoice: { sessionId: `cs_demo_link_${Date.now()}`, url: '#', cents: amount, createdAt: now, expiresAt: new Date(now.getTime() + 23 * 3600_000) } };
+      store.docs.set(key, { ...c, charge: next });
+      store.persist?.(); store.fire?.(key);
+      return ok({ ok: true, charge: next });
+    }
     if (path === '/api/admin/hold' || path === '/api/admin/close-case') {
       const key = `cases/${body.caseId || DEMO_CASE_ID}`;
       const c = store.docs.get(key) || {};
@@ -1021,8 +1056,13 @@ export function demoApi(role, store) {
         return ok({ ok: true, state: 'declined' });
       }
       // Approving is what starts month one. In the demo there is no Stripe,
-      // so the "checkout" lands straight where paying would have.
-      const amount = Number(req.firstMonthCents) || 0;
+      // so the "checkout" lands straight where paying would have. The amount
+      // is the one he typed (2026-09-06), the quoted figure by default, and
+      // zero opens the month at no charge.
+      const asked = body.amountCents === undefined || body.amountCents === null ? null : Number(body.amountCents);
+      if (asked !== null && (!Number.isInteger(asked) || asked < 0))
+        return fail(400, 'The amount has to be a whole number of cents, zero or more, under $20,000.');
+      const amount = asked === null ? (Number(req.firstMonthCents) || 0) : asked;
       // The clock resets at the flip, mirroring the Worker (Eric,
       // 2026-08-29): review hours behind work.tierMark, a running stretch
       // banked by re-anchor.
@@ -1056,16 +1096,32 @@ export function demoApi(role, store) {
       if (!p || p.state !== 'requested') return fail(409, 'No telehealth request is waiting on this case.');
       if (body.action === 'confirm') {
         const visits = Array.isArray(c.telehealthVisits) ? c.telehealthVisits : [];
+        // A held card (2026-09-06) is captured at the amount he set, up to
+        // the hold; zero confirms at no charge.
+        let paidCents = p.paidCents || 0;
+        if (p.paymentIntentId && p.holdState === 'held') {
+          const cap = Number(p.heldCents) || 0;
+          const asked = body.amountCents === undefined || body.amountCents === null ? cap : Number(body.amountCents);
+          if (!Number.isInteger(asked) || asked < 0 || asked > cap)
+            return fail(400, `Up to $${(cap / 100).toFixed(0)}, the amount their card is holding; 0 confirms at no charge.`);
+          paidCents = asked;
+        }
         store.docs.set(key, {
           ...c, pendingTelehealth: null,
-          telehealthVisits: [...visits, { ...p, state: undefined, confirmedAt: new Date() }],
+          telehealthVisits: [...visits, { ...p, state: undefined, paidCents, confirmedAt: new Date() }],
+          extraPayments: paidCents > 0 && p.holdState === 'held'
+            ? [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), { kind: 'telehealth', amountCents: paidCents, sessionId: p.sessionId || null, at: new Date() }]
+            : c.extraPayments,
         });
         store.persist?.();
         return ok({ ok: true, confirmed: true });
       }
       store.docs.set(key, {
         ...c, pendingTelehealth: null,
-        telehealthDenied: { when: p.when, clinicName: p.clinicName, at: new Date(), refundCents: p.paidCents || 0 },
+        telehealthDenied: {
+          when: p.when, clinicName: p.clinicName, at: new Date(), refundCents: p.paidCents || 0,
+          released: !!p.paymentIntentId && !p.paidCents,
+        },
       });
       store.persist?.();
       return ok({ ok: true, denied: true });
@@ -1176,6 +1232,14 @@ export function demoApi(role, store) {
           stripe: {
             sessionId: 'cs_demo_booked', paymentIntentId: 'pi_demo_booked',
             amountTotal: 120000,
+          },
+          // The hold (2026-09-06): held, not charged, waiting on his approval,
+          // the way the Worker writes it.
+          charge: {
+            state: 'held', kind: 'case', authorizedCents: 120000, capturedCents: 0,
+            paymentIntentId: 'pi_demo_booked', sessionId: 'cs_demo_booked',
+            heldAt: now, expiresAt: new Date(now.getTime() + 7 * 86_400_000),
+            decidedAt: null, capturedAt: null, remindedAt: null, ratedAt: null,
           },
           work: { seconds: 0, startedAt: null },
         });

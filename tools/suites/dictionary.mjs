@@ -78,7 +78,9 @@ check('K3 the demo serves the dictionary page the same terms the reading paints 
 check('K4 the keyed diag carries the draft state per case (status, age, error), the dictionary\'s size, and which rows are his own case or the showcase, with no id and no term',
   /draftStatus: d\.draftStatus \|\| null,\n\s+draftAgeS: age\(d\.draftStartedAt\),\n\s+draftError: d\.draftError \? String\(d\.draftError\)\.slice\(0, 140\) : null,\n\s+\}\);/.test(W)
   && /knowledgeCount: knowledgeRows\.length,/.test(W)
-  && /self: !!c\.data\.self, showcase: !!c\.data\.showcase,\n\s+status: d\.status \|\| null, stage: d\.stage \|\| null,/.test(W)
+  // Re-pinned 2026-09-07 (charge on approval): the hold's state rides
+  // between the two flags and the status, a word and no id.
+  && /self: !!c\.data\.self, showcase: !!c\.data\.showcase,\n[\s\S]{0,300}?charge: c\.data\.charge\?\.state \|\| null,\n\s+status: d\.status \|\| null, stage: d\.stage \|\| null,/.test(W)
   && !/states\.push\(\{[\s\S]{0,1600}?\bid: c\.id/.test(W));
 
 // ---- the draft that died on arrival ---------------------------------------
