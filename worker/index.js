@@ -51,7 +51,7 @@ import { validateAction } from './advisor-acts.js';
 import {
   getAdvisorEffort, setAdvisorEffort,
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
-  pollCaseFlight, pollFlightsNow,
+  pollCaseFlight, pollFlightsNow, pollAskFlight,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
 
@@ -1002,7 +1002,11 @@ export default {
           const qaRows = await listDocs(env, `cases/${c.id}/advisor/state/qa`, { pageSize: 1, orderBy: 'at desc' }).catch(() => []);
           const q = qaRows[0]?.data || null;
           states.push({
-            qaLast: q ? { status: q.status || null, ageS: age(q.at), error: q.status === 'error' ? String(q.answer || '').slice(0, 140) : null } : null,
+            qaLast: q ? { status: q.status || null, ageS: age(q.at), error: q.status === 'error' ? String(q.answer || '').slice(0, 140) : null,
+              // On the batch or not, and how long since anyone polled it
+              // (2026-09-07): a running row with a batch and a stale beat is
+              // a flight nobody is collecting.
+              batch: !!q.batch?.batchId, beatAgeS: age(q.progressAt) } : null,
             // Two flags and no id: which rows are his own case and the
             // showcase, so "drafting stopped" can be read against the one
             // kind of case where the route refuses a draft by design.
@@ -1984,7 +1988,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-07-without-the-limit';
+const BUILD_TAG = 'v2026-09-07-the-answer-rides-the-batch';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1992,7 +1996,7 @@ const BUILD_TAG = 'v2026-09-07-without-the-limit';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '3.4';
+const VERSION = '3.5';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -6316,18 +6320,34 @@ async function handleAdvisorState(request, env, url) {
   // One round of reads for the whole panel. Every one of them degrades to
   // empty: a case with no advisor state, no notes and no glossary is the
   // normal first-visit state, not an error.
-  const [state, qa, knowledge, notesDoc, style] = await Promise.all([
+  const qaPage = () => listDocs(env, `${parent}/${id}/advisor/state/qa`, { pageSize: 20, orderBy: 'at desc' }).catch(() => []);
+  const [state, qaFirst, knowledge, notesDoc, style] = await Promise.all([
     getDoc(env, `${parent}/${id}/advisor/state`).catch(() => null),
     // Newest first. Ascending returned the twenty OLDEST, so past twenty
     // questions on one thread a new answer was never in the page: the panel
     // kept showing "thinking..." while the real answer sat in Firestore.
-    listDocs(env, `${parent}/${id}/advisor/state/qa`, { pageSize: 20, orderBy: 'at desc' }).catch(() => []),
+    qaPage(),
     // Every page, for the same reason as the dictionary route (2026-09-06):
     // the Key terms page and the learned filter must see the whole list.
     listDocs(env, 'advisorKnowledge', { pageSize: 300, all: true }).catch(() => []),
     getDoc(env, `${parent}/${id}/private/notes`).catch(() => null),
     getDoc(env, 'advisorStyle/profile').catch(() => null),
   ]);
+  // A question in flight is collected here too (2026-09-07): the panel polls
+  // this route every couple of seconds while a row says running, so it is
+  // the first to know the batch has landed. Under the case policy, because
+  // the finish learns from the exchange. Throttled inside to one provider
+  // GET a quarter minute per question, and a touched row is re-read so the
+  // poll that found the answer is the poll that paints it.
+  let qa = qaFirst;
+  const inFlight = qa.filter((r) => r.data.status === 'running' && r.data.batch?.batchId).slice(0, 3);
+  if (inFlight.length) {
+    let touched = false;
+    await withCasePolicy(env, kind, id, async () => {
+      for (const r of inFlight) touched = (await pollAskFlight(env, kind, id, r.id).catch(() => false)) || touched;
+    });
+    if (touched) qa = await qaPage();
+  }
   // A draft failure from a bug since fixed (2026-09-07, "voice2 is not a
   // function") sat on the case for a day and repainted on every poll. It is
   // cleared here, once, so the line stops; a fresh failure still shows.
@@ -6352,7 +6372,8 @@ async function handleAdvisorState(request, env, url) {
   const { readFiles, pendingMedia, callNotesReq, callDocReq, ...panelState } = state?.data || {};
   return json({
     state: panelState,
-    qa: qa.map((r) => r.data),
+    // The file reference a resend needs stays here; the panel never uses it.
+    qa: qa.map(({ data: { fileRef, ...rest } }) => { void fileRef; return rest; }),
     glossary: knowledge.map((r) => ({
       id: r.id, term: r.data.term, definition: r.data.definition,
       category: r.data.category || 'General', learned: !!r.data.learnedAt,
@@ -8213,7 +8234,7 @@ async function handleAdvisorAction({ request, env, ctx, user, profile, body, kin
 
   if (action === 'ask') {
     const question = typeof body?.question === 'string' ? body.question.trim() : '';
-    if (!question || question.length > 2000) return json({ error: 'Ask something (1–2000 chars).' }, 400);
+    if (!question || question.length > 2000) return json({ error: 'Ask something, up to 2000 characters.' }, 400);
     // Optional file to review ("send to the advisor"). Only the shape is
     // checked here; the URL itself is fence-checked in the advisor (Firebase
     // Storage host, this thread's own folder) before anything is fetched.
@@ -8232,6 +8253,10 @@ async function handleAdvisorAction({ request, env, ctx, user, profile, body, kin
       question, answer: null, status: 'running', at: new Date(),
       ...(attachment ? { file: attachment.name } : {}),
     });
+    // runQuestion builds the turn and submits it to the batch (2026-09-07);
+    // it is back in seconds, and the answer is collected by the polls. The
+    // keepalive stays only so a slow attachment fetch cannot hit a gateway
+    // clock on the way to the submit.
     return keepaliveRun(ctx, runQuestion(env, kind, id, qaId, question, attachment), { raw: true });
   }
 

@@ -510,16 +510,27 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
 
   let lastQa = [];
   /**
-   * A question that has been "thinking" for four minutes is not thinking.
-   *
-   * Unlike the analysis and the draft, the Q&A path writes no heartbeat and
-   * has no cron backstop, so a Worker that died mid-answer left a spinner on
-   * screen with nothing to say otherwise, forever.
+   * A question is judged by its heartbeat, not its age (2026-09-07). The
+   * answer rides the batch now, and every poll that finds it still running
+   * stamps progressAt on the row, so a live flight beats at least once a
+   * minute however long the model takes. Five quiet minutes is a flight
+   * nobody is collecting, and only then does the row say so. Before this a
+   * four-minute age alone read "No answer came back", which was exactly
+   * the moment a long answer used to die and is now the moment it is
+   * still being written.
    */
-  const QA_STALL_MS = 4 * 60_000;
+  const QA_STALL_MS = 5 * 60_000;
+  const QA_LONG_MS = 90_000;
+  const qaBeat = (q) => Math.max(
+    q.at ? toDate(q.at)?.getTime() || 0 : 0,
+    q.progressAt ? toDate(q.progressAt)?.getTime() || 0 : 0);
   const qaStalled = (q) => {
-    const at = q.at ? toDate(q.at)?.getTime() : 0;
-    return !!at && Date.now() - at > QA_STALL_MS;
+    const beat = qaBeat(q);
+    return !!beat && Date.now() - beat > QA_STALL_MS;
+  };
+  const qaLong = (q) => {
+    const at = q.at ? toDate(q.at)?.getTime() || 0 : 0;
+    return !!at && Date.now() - at > QA_LONG_MS;
   };
 
   function renderQa(qa) {
@@ -534,7 +545,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         <div class="advisor-a">${q.status === 'running' && qaStalled(q)
           ? '<span class="dim">No answer came back. Ask it again.</span>'
           : q.status === 'running'
-          ? '<span class="dim small">thinking…</span>'
+          ? `<span class="dim small">thinking…${qaLong(q) ? ' A long answer takes a few minutes and lands on its own.' : ''}</span>`
           : md(q.answer || '')}</div>
       </div>`);
     if (localQ) rows.push(`

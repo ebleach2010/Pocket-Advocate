@@ -321,11 +321,13 @@ const W = readFileSync(j(ROOT, 'worker/index.js'), 'utf8');
 // NEGATIVE CONTROL (run 2026-09-04): the pollCaseFlight call removed from the
 // state route made this read
 //   FAIL  Q23 the panel's own poll collects the read, and any API request collects every other one
+// Re-pinned 2026-09-07 (v3.5): the state route's first qa page is `qaFirst`
+// now, re-read after a question in flight was polled (askflight.mjs AF3).
 check('Q23 the panel\'s own poll collects the read, and any API request collects every other one',
   /await pollCaseFlight\(env, kind, id\)\.catch\(\(\) => \{\}\);/.test(W)
   // Awaited before the panel's reads, or the answer it just collected would
   // not be in the payload it is answering with.
-  && W.indexOf('await pollCaseFlight(env, kind, id)') < W.indexOf('const [state, qa, knowledge, notesDoc, style] = await Promise.all(')
+  && W.indexOf('await pollCaseFlight(env, kind, id)') < W.indexOf('const [state, qaFirst, knowledge, notesDoc, style] = await Promise.all(')
   && /ctx\.waitUntil\(pollFlightsNow\(env\)\.catch\(\(\) => \{\}\)\);/.test(W)
   && /pollCaseFlight, pollFlightsNow,/.test(W));
 

@@ -183,6 +183,45 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### An answer rides the batch (2026-09-07)
+
+Eric, 2026-09-07: "now when asking the advisor something: The server answered
+with something this page could not read", with a desktop screenshot of three
+questions sitting on "thinking". The question route carried its model turn
+inside the HTTP invocation, streamed, and a streamed turn inside any
+invocation burns the CPU budget this plan cannot raise (measured 2026-08-24;
+the limits key and the workflows key were both rejected at deploy on
+2026-08-23, and the limits key again on 2026-09-07 as 3.2 and 3.3). A short
+answer landed; a long one died near four minutes with the stream cut and the
+row left on running, which is what the page reported.
+
+So a question is built and SUBMITTED, exactly as a read is: one small POST to
+the Batches API, the batch on the qa row (`batch: { batchId, customId,
+submittedAt, model, self, override, pollFails }`), a marker on the queue
+(`advisorQueue/ask_<kind>_<id>_<qaId>`), and the answer collected by whoever
+polls first: the per-minute drain, any API request through `pollFlightsNow`,
+or the panel's own state poll, each under the case policy and throttled to
+one provider GET a quarter minute per question. `finishQuestion` reads the
+landed message exactly as the live path did (the tool_use blocks written
+down and never run, the dictionary harvest with the person's material,
+mastered and forgotten, the override, the parked proposal after the answer,
+the stale flag). `askFlightNext` is the pure verdict on one poll: finish,
+wait with the unreachable count, or fail (thirty unreachable polls, or two
+hours, cancel the batch and say ask again). A refused stronger model at
+result time is stamped and the question sent once more on the default, never
+twice. The panel judges a question by its heartbeat, not its age: five quiet
+minutes say no answer came back, and after a minute and a half the row says
+a long answer takes a few minutes and lands on its own. The demo mirrors the
+ask and lands it four seconds later.
+
+    node tools/suites/askflight.mjs
+
+AF1 the submit and never the carried turn, AF2 the pure verdict run over
+every branch, AF3 the three pollers and the one finish per flight, AF4 the
+finish's learning protocol and its failure line, AF5 the panel's heartbeat
+rule and the demo, AF6 the version note and the config comment. Every one
+proven able to fail with its control recorded beside it.
+
 ### A seasoned colleague (2026-09-07)
 
 Eric: "the advisor's language is driving me insane. Some turns of phrase

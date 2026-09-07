@@ -1704,13 +1704,30 @@ export function demoApi(role, store) {
         store.docs.set(`cases/${cid}/advisor/state`, state);
         store.persist?.();
       }
+      // A question asked a few seconds ago lands now (2026-09-07), the same
+      // way the draft does: the demo's stand-in for the poll collecting the
+      // batch. Newest first, as the Worker hands them back.
+      const qaPrefix = `cases/${cid}/advisor/state/qa/`;
+      for (const [p, d] of [...store.docs.entries()]) {
+        if (!p.startsWith(qaPrefix) || d.status !== 'running') continue;
+        if (Date.now() - new Date(d.at || 0).getTime() < 4000) continue;
+        store.docs.set(p, {
+          ...d, status: 'done', batch: null,
+          answer: 'I would give the clinic until Thursday before chasing it, because the fax went Monday and their intake takes three working days to log anything. If nothing is on the portal by then, I would call the department directly rather than the main line, since that is who actually holds the referral. You have what you need for the call; the next move is theirs.',
+        });
+        store.persist?.();
+      }
+      const qaRows = [...store.docs.entries()]
+        .filter(([p]) => p.startsWith(qaPrefix))
+        .map(([, d]) => d)
+        .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
       const style = store.docs.get('advisorStyle/profile') || {};
       const notes = store.docs.get(`cases/${cid}/private/notes/doc`) || {};
       const { readFiles, pendingMedia, ...panelState } = state;
       void readFiles; void pendingMedia;
       return ok({
         state: panelState,
-        qa: [],
+        qa: qaRows,
         glossary: [...store.docs.entries()]
           .filter(([p]) => p.startsWith('advisorKnowledge/'))
           .map(([p, d]) => ({ id: p.split('/').pop(), ...d, learned: !!d.learnedAt })),
@@ -1778,6 +1795,22 @@ export function demoApi(role, store) {
         store.docs.set(`cases/${cid}/advisor/state`, {
           ...state, dxOverride: body.text || null, dxOverrideAt: new Date(),
         });
+        return ok({ ok: true });
+      }
+      // A question (2026-09-07, "The server answered with something this
+      // page could not read"): the row is written running with a batch on
+      // it, exactly as the Worker submits one, and the state route lands the
+      // answer a few seconds later, the demo's stand-in for the poll.
+      if (body.action === 'ask') {
+        const question = String(body.question || '').trim();
+        if (!question) return fail(400, 'Ask something, up to 2000 characters.');
+        const qid = `q${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+        store.docs.set(`cases/${cid}/advisor/state/qa/${qid}`, {
+          question, answer: null, status: 'running', at: new Date(), progressAt: new Date(),
+          batch: { batchId: 'demo-batch', submittedAt: new Date() },
+          ...(body.attachment?.name ? { file: body.attachment.name } : {}),
+        });
+        store.persist?.();
         return ok({ ok: true });
       }
       // Prepare a response (2026-09-06, "Drafting has stopped working"): the

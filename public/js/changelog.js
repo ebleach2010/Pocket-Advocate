@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '3.4';
+export const VERSION = '3.5';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '3.4';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // AN ANSWER RIDES THE BATCH (Eric, 2026-09-07: "The server answered
+    // with something this page could not read", three questions sitting on
+    // thinking). A question's turn ran inside the connection from his phone
+    // and a long one died near four minutes. Admin only.
+    version: '3.5',
+    quiet: true,
+    client: [],
+    admin: [
+      'A question you ask is handed to the same background lane the readings use and collected as the page polls, instead of running inside the connection from your phone, where a long answer died near four minutes and the page said the server answered with something it could not read. A long answer can take a few minutes now and lands on its own, phone locked or not; the row says so after a minute and a half, and only five quiet minutes make it say no answer came back.',
+    ],
+  },
   {
     // THE LINE THAT WOULD NOT DEPLOY (2026-09-07): 3.2 and 3.3 carried a
     // processing-limit line in the Worker config and neither build landed.

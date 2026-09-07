@@ -3270,6 +3270,14 @@ const callNotesQueuePath = (kind, id) => `advisorQueue/callnotes_${kind}_${id}`;
 // The call document (runCallDoc): the longest and most expensive turn in the
 // app, so if anything survives a closed lid it is this one.
 const callDocQueuePath = (kind, id) => `advisorQueue/calldoc_${kind}_${id}`;
+// A question in flight (2026-09-07): its marker names the row, so one poll
+// reads one document and the marker deletes itself when the row is done.
+const askQueuePath = (kind, id, qaId) => `advisorQueue/ask_${kind}_${id}_${qaId}`;
+// How long a question may sit on the batch before it is abandoned, and how
+// many unreachable polls in a row (about half an hour at the cron's pace)
+// mean the provider is down rather than slow.
+const ASK_ABANDON_MS = 2 * 3_600_000;
+const ASK_POLL_FAILS_MAX = 30;
 // How many documents one call document may be built from. The cap is about
 // the model's attention as much as the bytes: past a point another chart does
 // not make the sheet better, it makes every line of it vaguer.
@@ -3557,6 +3565,10 @@ export async function pollFlightsNow(env) {
   for (const row of rows) {
     const { kind, id } = row.data;
     if (!kind || !id) continue;
+    if (row.data.ask) {
+      await withCasePolicy(env, kind, id, () => pollAskFlight(env, kind, id, String(row.data.qaId || ''), { minAgeMs: 45_000 })).catch(() => {});
+      continue;
+    }
     await pollCaseFlight(env, kind, id, { minAgeMs: 45_000 }).catch(() => {});
   }
 }
@@ -3688,6 +3700,13 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
     for (const row of rows) {
       const { kind, id } = row.data;
       if (!kind || !id) { await deleteDoc(env, `advisorQueue/${row.id}`); continue; }
+      // A question in flight (2026-09-07): one look at its batch, never the
+      // firing's model job, and never the analysis claim below. The marker
+      // deletes itself once the row is done.
+      if (row.data.ask) {
+        await withCasePolicy(env, kind, id, () => pollAskFlight(env, kind, id, String(row.data.qaId || ''))).catch(() => {});
+        continue;
+      }
       // A draft marker: rescue a draft whose connection died mid-run. It
       // ignores paused (the draft was an explicit request, not automation)
       // and counts as this firing's one model job.
@@ -5069,6 +5088,24 @@ async function parkAct(env, kind, id, raws) {
   });
 }
 
+/**
+ * AN ANSWER RIDES THE BATCH (Eric, 2026-09-07: "The server answered with
+ * something this page could not read", three questions sitting on
+ * "thinking" in the screenshot). The question used to carry its model turn
+ * inside the HTTP invocation, streamed, under keepaliveRun; and a streamed
+ * turn inside any invocation burns the CPU budget this plan cannot raise
+ * (measured 2026-08-24; the limits key and the workflows key were both
+ * rejected at deploy, 2026-08-23 and again 2026-09-07). A short answer
+ * landed. A long one, a cover letter or a timeline, died near four minutes
+ * with the stream cut and the row left on "running".
+ *
+ * So the question is built here and SUBMITTED, exactly as an analysis is:
+ * one small POST to the Batches API, the batch on the qa row, a marker on
+ * the queue, and the answer is collected by whoever polls first (the
+ * per-minute cron, any API request through pollFlightsNow, or the panel's
+ * own state poll) and read by finishQuestion below. Nothing in this Worker
+ * holds a clock against the model any more.
+ */
 export async function runQuestion(env, kind, id, qaId, question, attachment = null) {
   // Nested under the state DOC, not beside it: Firestore paths alternate
   // collection/document, so `…/advisor/qa/{qaId}` is not a valid document path
@@ -5079,9 +5116,9 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
   // His own case (2026-09-03): the standing positions mined from his client
   // work stay off it, and an override typed here settles this case only.
   const self = !!turnPolicy.getStore()?.self;
-  // The flight recorder (2026-09-07, "The server answered with something
-  // this page could not read"): an ask that starts and never ends here is
-  // an isolate that died; one that ends in error says why.
+  // The flight recorder (2026-09-07): an ask that starts and never submits
+  // died building the turn; one that submits and never ends is a flight
+  // nobody collected; one that ends in error says why.
   const t0 = Date.now();
   await diagLog(env, { ev: 'ask-start', kind, self }).catch(() => {});
   try {
@@ -5107,29 +5144,19 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
       fileBlocks = [out.block];
       fileNote = `\nEric attached the file "${attachment.name}" for review; it follows this message. Read it directly and answer from what you actually see.`;
     }
-    // Named actions ride back in here. THEY ARE NOT EXECUTED: ask() collects
-    // the tool_use blocks and never sends a tool_result, so the turn ends with
-    // a request written down beside its answer and nothing else happens.
+    // Named actions ride back on the landed message. THEY ARE NOT EXECUTED:
+    // finishQuestion writes the tool_use blocks down beside the answer and
+    // never sends a tool_result, so the turn ends with a request parked and
+    // nothing else happens.
     //
     // Only the ASK flow carries these. The analysis is a background read of a
     // case nobody tapped for, and a read that can propose to change the app is
     // a different thing from a read; if that is ever wanted it is a separate
     // decision with its own reasons.
-    //
-    // Passing tools does re-prime the prompt cache for this one flow, once.
-    // Every other caller passes none and sends exactly the bytes it always
-    // sent, prefix included.
-    const acts = [];
-    const answer = await ask(env, {
+    const turn = turnRequest({
       effort: QUESTION_EFFORT,
       maxTokens: QUESTION_TOKENS,
       tools: actionTools(),
-      acts,
-      // The same heartbeat the analysis and the draft write. Without it a
-      // question that died mid-answer was indistinguishable from one still
-      // being thought about, and the panel had nothing to go on.
-      onBeat: () => patchDoc(env, `${statePath(kind, id)}/qa/${qaId}`,
-        { progressAt: new Date() }, { mask: ['progressAt'] }).catch(() => {}),
       system: [{ type: 'text', cache: true, text: `${voice()}
 
 Eric is asking you a direct question about this client. Answer it and stop:
@@ -5201,6 +5228,52 @@ ${SELF_NOTE}` },
         ],
       }],
     });
+    const customId = `ask-${kind}-${String(id).slice(0, 40)}-${String(qaId).slice(0, 8)}-${t0}`;
+    const batchId = await submitTurnBatch(env, turn, customId);
+    // Everything the finish needs that the row does not already carry: the
+    // batch, when it left, which model carried it, and the file reference
+    // for the one resend a refused model is allowed.
+    await patchDoc(env, path, {
+      progressAt: new Date(),
+      batch: { batchId, customId, submittedAt: new Date(), model: turn.model, self, override, pollFails: 0 },
+      ...(attachment ? { fileRef: attachment } : {}),
+    }, { mask: ['progressAt', 'batch', ...(attachment ? ['fileRef'] : [])] });
+    // The marker is the poll's to-do entry. Masked, so a resend never resets
+    // anything a poll has written on it.
+    await patchDoc(env, askQueuePath(kind, id, qaId), { kind, id, qaId, ask: true, at: new Date() },
+      { mask: ['kind', 'id', 'qaId', 'ask', 'at'] }).catch(() => {});
+    await diagLog(env, { ev: 'ask-submit', kind, self, ms: Date.now() - t0 }).catch(() => {});
+  } catch (err) {
+    console.error('advisor question:', err.stack || err);
+    await patchDoc(env, path, {
+      answer: `Couldn't answer: ${friendly(err)}`, status: 'error',
+    }, { mask: ['answer', 'status'] }).catch(() => {});
+    await diagLog(env, { ev: 'ask-end', ok: false, kind, ms: Date.now() - t0, err: String(err.message || err).slice(0, 140) }).catch(() => {});
+  }
+}
+
+/**
+ * The second half of a question: the landed Message, read exactly as the
+ * live path used to read it. Runs under the case policy (every poller wraps
+ * it), so his own case keeps its stance off the global profile here too.
+ */
+async function finishQuestion(env, kind, id, qaId, flight, message) {
+  const path = `${statePath(kind, id)}/qa/${qaId}`;
+  const self = !!turnPolicy.getStore()?.self;
+  const t0 = flight?.submittedAt ? new Date(flight.submittedAt).getTime() : Date.now();
+  try {
+    const row = await getDoc(env, path);
+    const question = String(row?.data.question || '');
+    const override = !!flight?.override;
+    const attachment = row?.data.fileRef || (row?.data.file ? { name: row.data.file } : null);
+    // THE ONLY THING DONE WITH A tool_use BLOCK: written down, never run.
+    const acts = [];
+    collectActs(message, acts);
+    const answer = extractText(message);
+    const [rows, qa] = await Promise.all([
+      recentMessages(env, kind, id),
+      loadQa(env, kind, id, { skip: qaId }),
+    ]);
     // Same learning protocol as assessments: new jargon lands in the
     // dictionary, fluent use in his question counts as mastery, and asking
     // what a mastered term means counts the other way.
@@ -5224,8 +5297,8 @@ ${SELF_NOTE}` },
       }
     }
     await patchDoc(env, path, {
-      answer: cleaned, status: 'done', override,
-    }, { mask: ['answer', 'status', 'override'] });
+      answer: cleaned, status: 'done', override, batch: null,
+    }, { mask: ['answer', 'status', 'override', 'batch'] });
     await diagLog(env, { ev: 'ask-end', ok: true, kind, ms: Date.now() - t0 }).catch(() => {});
     // The answer lands first, then the proposal beside it. A parked proposal
     // with no answer to explain it is a card with no sentence attached, and a
@@ -5241,10 +5314,99 @@ ${SELF_NOTE}` },
   } catch (err) {
     console.error('advisor question:', err.stack || err);
     await patchDoc(env, path, {
-      answer: `Couldn't answer: ${friendly(err)}`, status: 'error',
-    }, { mask: ['answer', 'status'] }).catch(() => {});
+      answer: `Couldn't answer: ${friendly(err)}`, status: 'error', batch: null,
+    }, { mask: ['answer', 'status', 'batch'] }).catch(() => {});
     await diagLog(env, { ev: 'ask-end', ok: false, kind, ms: Date.now() - t0, err: String(err.message || err).slice(0, 140) }).catch(() => {});
   }
+}
+
+/**
+ * What one look at a question's batch means. Pure, so the suite can run
+ * every branch: `poll` is pollTurnBatch's answer, or { state: 'unreachable' }
+ * when the provider could not be asked at all. An unreachable provider is
+ * counted, not waited on for ever (the same lesson pollFlight learned on
+ * 2026-09-03); a reachable poll resets the count.
+ */
+export function askFlightNext(flight, poll, now = Date.now()) {
+  const started = flight?.submittedAt ? new Date(flight.submittedAt).getTime() : 0;
+  const unreachable = poll?.state === 'unreachable';
+  const pollFails = unreachable ? (Number(flight?.pollFails) || 0) + 1 : 0;
+  if (poll?.state === 'done') return { op: 'finish' };
+  if (poll?.state === 'failed') return { op: 'fail', why: String(poll.why || 'The answer failed.') };
+  if (unreachable && pollFails >= ASK_POLL_FAILS_MAX)
+    return { op: 'fail', cancel: true, why: 'The provider could not be reached for half an hour and this answer was abandoned. Ask it again.' };
+  if (started && now - started > ASK_ABANDON_MS)
+    return { op: 'fail', cancel: true, why: 'This answer took more than two hours and was abandoned. Ask it again.' };
+  return { op: 'wait', pollFails };
+}
+
+/**
+ * One look at a question in flight. Returns true when it touched the row
+ * (a heartbeat, a landing, or a failure written), false when it had nothing
+ * to do. Throttled by the row's own heartbeat, so the panel may ask every
+ * two seconds and still cost one provider GET a quarter minute. Called under
+ * the case policy by every poller.
+ */
+export async function pollAskFlight(env, kind, id, qaId, { minAgeMs = 15_000 } = {}) {
+  const path = `${statePath(kind, id)}/qa/${qaId}`;
+  const marker = askQueuePath(kind, id, qaId);
+  const row = qaId ? await getDoc(env, path).catch(() => null) : null;
+  const flight = row?.data.batch;
+  if (!row || row.data.status !== 'running' || !flight?.batchId) {
+    // Landed, failed, reset or gone: the marker has nothing left to do.
+    await deleteDoc(env, marker).catch(() => {});
+    return false;
+  }
+  const beat = row.data.progressAt ? new Date(row.data.progressAt).getTime() : 0;
+  if (beat && Date.now() - beat < minAgeMs) return false;
+  let poll;
+  try {
+    poll = await pollTurnBatch(env, flight.batchId, flight.customId);
+  } catch {
+    poll = { state: 'unreachable' };
+  }
+  const next = askFlightNext(flight, poll, Date.now());
+  const t0 = flight.submittedAt ? new Date(flight.submittedAt).getTime() : Date.now();
+  if (next.op === 'wait') {
+    await patchDoc(env, path, { progressAt: new Date(), batch: { ...flight, pollFails: next.pollFails } },
+      { mask: ['progressAt', 'batch'] }).catch(() => {});
+    return true;
+  }
+  if (next.op === 'finish') {
+    // ONE FINISH PER FLIGHT, the same way pollFlight does it: two pollers can
+    // find the same landed batch in the same seconds, so the finish is
+    // claimed conditionally on the row not having moved since it was read,
+    // and a claim that dies mid-way goes stale in five minutes.
+    const fin = flight.finishingAt ? new Date(flight.finishingAt).getTime() : 0;
+    if (fin && Date.now() - fin < 5 * 60_000) return false;
+    const won = await patchDoc(env, path, { batch: { ...flight, finishingAt: new Date() } },
+      { mask: ['batch'], ifUpdateTime: row.updateTime }).catch(() => false);
+    if (won === false) return false;
+    await finishQuestion(env, kind, id, qaId, flight, poll.message);
+    await deleteDoc(env, marker).catch(() => {});
+    return true;
+  }
+  if (next.cancel) {
+    try { await client(env).messages.batches.cancel(flight.batchId); } catch { /* gone, or unreachable */ }
+  }
+  // A REFUSED ID IS REFUSED AT RESULT TIME ON THIS PATH, as pollFlight
+  // learned on 2026-09-04: the batch create accepts a model id the run will
+  // not honour. Stamp the refusal so the policy drops to the default, and
+  // send the same question once more; never twice.
+  if (flight.model && !row.data.resent
+    && modelRefused({ status: 400, message: String(next.why || '') }, { model: flight.model })) {
+    await diagLog(env, { ev: 'self-model-fallback', at: 'result', kind, id, why: String(next.why || '').slice(0, 200) });
+    await setState(env, kind, id, { modelRefusedAt: new Date(), modelRefusedId: flight.model }).catch(() => {});
+    await patchDoc(env, path, { batch: null, resent: true }, { mask: ['batch', 'resent'] }).catch(() => {});
+    await withCasePolicy(env, kind, id, () => runQuestion(env, kind, id, qaId, String(row.data.question || ''), row.data.fileRef || null));
+    return true;
+  }
+  await patchDoc(env, path, {
+    answer: `Couldn't answer: ${friendly(new Error(next.why || 'The answer failed.'))}`, status: 'error', batch: null,
+  }, { mask: ['answer', 'status', 'batch'] }).catch(() => {});
+  await diagLog(env, { ev: 'ask-end', ok: false, kind, ms: Date.now() - t0, err: String(next.why || 'batch failed').slice(0, 140) }).catch(() => {});
+  await deleteDoc(env, marker).catch(() => {});
+  return true;
 }
 
 /**
