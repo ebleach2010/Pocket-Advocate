@@ -88,7 +88,7 @@ const missing = await page.evaluate(() => ({
   lit: !!document.querySelector('.dict-hit'),
   first: (document.querySelector('#dict p')?.textContent || '').trim(),
 }));
-ok('the line at the top names the word and says not yet', /^"no such term" is not in your dictionary yet\. Terms arrive a little after the reading that first used them\.$/.test(missing.note) && !missing.lit && missing.first === missing.note, JSON.stringify(missing));
+ok('the line at the top names the word and says how a term gets in', /^"no such term" is not in your dictionary\. A term is added when it comes up in your chat, in a question you ask or the answer you get, or in a document, a little after the reading that met it there\.$/.test(missing.note) && !missing.lit && missing.first === missing.note, JSON.stringify(missing));
 if (SHOTS) await page.screenshot({ path: `${SHOTS}/03-dictionary-missing.png` });
 
 console.log('\n--- C. the Key terms page links the same way ---');

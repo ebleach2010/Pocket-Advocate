@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '3.1';
+export const VERSION = '3.2';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '3.1';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // ONLY WHAT CAME UP, THE CUT STREAM, THE STALE FAILURE (Eric,
+    // 2026-09-07: "I'm not sure why the dictionary has that many terms";
+    // "with drafting, I get ... still"; "The server answered with something
+    // this page could not read"). Admin only.
+    version: '3.2',
+    quiet: true,
+    client: [],
+    admin: [
+      'The dictionary starts from scratch. A term is added only when it came up: in the chat, in a question you asked or the answer you got, or in a document the reading read. Terms the reading brought in on its own no longer land. In a reading, only terms your dictionary holds are painted, so a tap always lands.',
+      'A question whose connection is cut while the answer is being written now says so and keeps polling; the answer lands on its own. The Worker may spend five minutes of processing on one answer instead of thirty seconds.',
+      'The draft failure from the bug fixed in 2.99 is cleared from the case it was stuck on, and a failure older than a day no longer repaints.',
+    ],
+  },
   {
     // THE TWO LINES THAT STILL SAID PAID (2026-09-07, seen on the 3.0
     // screenshots): the client's status line under the appointment and the

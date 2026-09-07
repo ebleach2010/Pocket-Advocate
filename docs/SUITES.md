@@ -183,6 +183,42 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### Only what came up (2026-09-07)
+
+Eric: "I'm not sure why the dictionary has that many terms. We have by no
+means spoken about all of those, either with the advisor or client. It
+seems to just be pulling related terms, not ones always discussed." It was:
+every reading and every answer asked for up to five terms "central to THIS
+read", which is the reading's own vocabulary, and 585 of them piled up. He
+chose to start from scratch (the keyed diag door `do=wipe-terms` deletes
+every term, no backup, at his word) and a rule for what counts: a word a
+person wrote (the client's chat, his messages, his questions), a word in an
+answer he got, or a word in a document the reading read. The three prompts
+say so and end each term with where it came up (`| From: chat`, `question`,
+`answer`, `document <name>`); `harvestKeyTerms` now takes the material
+(`personMaterial`: the chat as people wrote it, never the reading's own
+questions, plus the questions and answers) and the names of the documents
+read, keeps a term only when `termMentioned` finds it as whole words
+(plurals and a parenthesised acronym allowed) or the From names a document
+on the list, and strips the section either way. The panel paints only terms
+the dictionary holds, so a tap always lands, and the dictionary page's
+not-found line says how a term gets in. Two more things from the same
+message: the draft failure from the bug fixed in 2.99 sat on its case as
+`draftStatus: 'error'` and repainted on every poll ("I get Draft failed:
+voice2 is not a function still"), so the state route clears that one
+failure once and the panel repaints a failure for a day and no longer; and
+a question that answered "The server answered with something this page
+could not read" is the keepalive stream ending without its JSON, which the
+rows left on "thinking" say is the Worker dying mid-answer. The flight
+recorder now logs `ask-start` and `ask-end` (ok, ms, or the error), the diag
+carries each case's newest question (status, age, error), `wrangler.jsonc`
+raises the CPU limit to five minutes (the default thirty seconds is a kill
+with no error), and the panel treats a 200 with no JSON as work still going
+and keeps polling. `tools/suites/dictionary.mjs` K6 lifts the harvester and
+runs it; K7 pins the prompts, lifts the wipe door, and pins the paint and
+the page; K8 pins the recorder, the diag, the limit, the clear and the cut
+stream.
+
 ### Charge on approval (2026-09-06)
 
 Eric: "I would like to be able to comp somebody or change charges. So they

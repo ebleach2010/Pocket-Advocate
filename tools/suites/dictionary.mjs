@@ -34,12 +34,29 @@ const check = (name, cond, detail = '') => {
   results.push({ name, pass: !!cond });
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${cond || !detail ? '' : `  -- ${detail}`}`);
 };
+const DASH = /[—–]/;
+function lift(src, decl) {
+  const start = src.indexOf(decl);
+  if (start < 0) return '';
+  let depth = 0;
+  let inTpl = false;
+  for (let i = src.indexOf('{', start + decl.length - 1); i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '\\') { i++; continue; }
+    if (ch === '`') { inTpl = !inTpl; continue; }
+    if (inTpl) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) return src.slice(start, i + 1); }
+  }
+  return '';
+}
 
 // ---- the reads ------------------------------------------------------------
 // NEGATIVE CONTROL (run 2026-09-07): the dictionary route's `all: true` removed made this read
 //   FAIL  K1 every dictionary read walks every page: the dictionary route, the panel's glossary and the diag count all ask for all pages, and no first-page-only read of the dictionary is left in the Worker
 check('K1 every dictionary read walks every page: the dictionary route, the panel\'s glossary and the diag count all ask for all pages, and no first-page-only read of the dictionary is left in the Worker',
-  (W.match(/listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)/g) || []).length === 3
+  // Re-pinned 2026-09-07: the wipe door is the fourth whole-dictionary read.
+  (W.match(/listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)/g) || []).length === 4
   && !/listDocs\(env, 'advisorKnowledge', \{ pageSize: \d+ \}\)/.test(W)
   && /const rows = await listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)\.catch\(\(\) => \[\]\);\n  return json\(\{\n    terms: rows\.map/.test(W)
   && /listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)\.catch\(\(\) => \[\]\),\n    getDoc\(env, `\$\{parent\}\/\$\{id\}\/private\/notes`\)/.test(W),
@@ -50,7 +67,9 @@ check('K1 every dictionary read walks every page: the dictionary route, the pane
 //   FAIL  K2 the dictionary page lands lit on the term it was sent to, says "not in your dictionary yet" with the word at the top when it holds no such term, and the painted mark, the Key terms link and the page normalise a term the same way
 check('K2 the dictionary page lands lit on the term it was sent to, says "not in your dictionary yet" with the word at the top when it holds no such term, and the painted mark, the Key terms link and the page normalise a term the same way',
   /hit\.classList\.add\('dict-hit'\);\n\s+hit\.scrollIntoView\(\{ block: 'center' \}\);/.test(DICT)
-  && /\} else \{\n[\s\S]{0,700}?note\.setAttribute\('data-dict-missing', ''\);\n\s+note\.textContent = `"\$\{want\}" is not in your dictionary yet\. Terms arrive a little after the reading that first used them\.`;\n\s+el\.prepend\(note\);\n\s+\}/.test(DICT)
+  // Re-pinned 2026-09-07 (only what came up): the line says how a term gets
+  // in, since the reading's own words no longer put one there.
+  && /\} else \{\n[\s\S]{0,700}?note\.setAttribute\('data-dict-missing', ''\);\n\s+note\.textContent = `"\$\{want\}" is not in your dictionary\. A term is added when it comes up in your chat, in a question you ask or the answer you get, or in a document, a little after the reading that met it there\.`;\n\s+el\.prepend\(note\);\n\s+\}/.test(DICT)
   && /const m = e\.target\.closest\?\.\('mark\.tm\[data-tm\]'\);\n\s+if \(m\) location\.href = `\/admin-dictionary\.html#k=\$\{encodeURIComponent\(m\.dataset\.tm\)\}`;/.test(P)
   && /<a class="term-jump" href="\/admin-dictionary\.html#k=\$\{encodeURIComponent\(termKey\(g\.term\)\)\}">/.test(P)
   && (P.match(/\.toLowerCase\(\)\.replace\(\/\[\^a-z0-9\]\+\/g, ' '\)\.trim\(\)/g) || []).length >= 2
@@ -116,6 +135,114 @@ check('K4 the keyed diag carries the draft state per case (status, age, error), 
     && /const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/.test(ADV)
     && heads.length > 50 && shadowed.length === 0,
     shadowed.length ? `shadowed in: ${shadowed.join(', ')}` : `${heads.length} functions scanned`);
+}
+
+// ---- only what came up (Eric, 2026-09-07) -----------------------------------
+// "We have by no means spoken about all of those, either with the advisor or
+// client. It seems to just be pulling related terms, not ones always
+// discussed." A term lands only when a person wrote it (the chat, his
+// questions, the answers he got) or a read document carries it by name.
+{
+  const ADV = f('worker/advisor.js');
+  const W2 = f('worker/index.js');
+  const CFG = f('wrangler.jsonc');
+  const parts = ['function normText(s) {', 'function personMaterial(rows = [], qa = [], extra = []) {',
+    'function termMentioned(term, material) {', 'function termCameUp(term, from, material, docNames) {',
+    'function sectionMatch(text, name) {',
+    'async function harvestKeyTerms(env, text, { material = null, docNames = [] } = {}) {']
+    .map((d) => lift(ADV, d));
+  // termSlug is an arrow, lifted by its shape rather than by braces.
+  parts.push((ADV.match(/const termSlug = \(term\) =>[\s\S]*?\.slice\(0, 60\);/) || [''])[0]);
+  const made = [];
+  const fakes = {
+    patchDoc: async (env, path, data, opts) => { made.push({ path, data, opts }); return true; },
+    getDoc: async () => null,
+  };
+  const built = new Function('patchDoc', 'getDoc', `${parts.join('\n')}\nreturn { harvestKeyTerms, personMaterial, termMentioned, termCameUp };`);
+  const lib = parts.every(Boolean) ? built(fakes.patchDoc, fakes.getDoc) : null;
+  const text = ['## Right now', 'blah', '## Key terms',
+    '- Myasthenia gravis [Condition]: a muscle weakness disease | Mechanism: x | Treatment: y | Outlook: z | From: chat',
+    '- Ferritin [Test or lab]: iron in storage | From: document labs-march.pdf',
+    '- Sarcoidosis [Condition]: granulomas | Mechanism: a | Treatment: b | Outlook: c | From: answer',
+    '- Paresthesia [Symptom]: pins and needles',
+    '## Working line', 'x'].join('\n');
+  const rows = [
+    { data: { role: 'client', text: 'My neurologist mentioned Myasthenia Gravis last week.' } },
+    { data: { role: 'question', from: 'reading', text: 'Do you have sarcoidosis?' } },
+  ];
+  const qa = [{ data: { question: 'what about the ferritin?', answer: 'Low, and worth a recheck.' } }];
+  let out = null; let legacy = null; let names = []; let legacyNames = [];
+  if (lib) {
+    const material = lib.personMaterial(rows, qa);
+    out = await lib.harvestKeyTerms({}, text, { material, docNames: ['cases/x/uploads/labs-march.pdf'] });
+    names = made.map((x) => x.path);
+    made.length = 0;
+    legacy = await lib.harvestKeyTerms({}, text);
+    legacyNames = made.map((x) => x.path);
+  }
+  const tm = lib ? [
+    lib.termMentioned('MRI', 'he had an mri on tuesday'),
+    lib.termMentioned('Migraine', 'his migraines started in march'),
+    lib.termMentioned('Magnetic resonance imaging (MRI)', 'an mri yesterday'),
+    !lib.termMentioned('ANA', 'banana bread for breakfast'),
+    !lib.termMentioned('Sarcoidosis', 'nothing here'),
+    lib.termCameUp('Ferritin', 'document labs-march.pdf', '', ['cases/x/uploads/labs-march.pdf']),
+    !lib.termCameUp('Ferritin', 'document labs-march.pdf', '', ['cases/x/uploads/mri.pdf']),
+    !lib.termCameUp('Ferritin', 'answer', '', ['cases/x/uploads/labs-march.pdf']),
+  ] : [];
+  // NEGATIVE CONTROL (run 2026-09-07): the harvester's `if (material !== null && !termCameUp(...)) continue;` changed to `if (false) continue;` made this read
+  //   FAIL  K6 the harvester keeps a term the client or Eric wrote, a term his question or the answer holds, and a term the reading says came from a document that was actually read by that name; it drops a term only the reading spoke (its own question in the chat included) and a term with no From, strips the section either way, and a caller with no material keeps the old open behaviour; whole words only, plurals and a parenthesised acronym allowed
+  check('K6 the harvester keeps a term the client or Eric wrote, a term his question or the answer holds, and a term the reading says came from a document that was actually read by that name; it drops a term only the reading spoke (its own question in the chat included) and a term with no From, strips the section either way, and a caller with no material keeps the old open behaviour; whole words only, plurals and a parenthesised acronym allowed',
+    !!lib && names.length === 2 && names.includes('advisorKnowledge/myasthenia-gravis') && names.includes('advisorKnowledge/ferritin')
+    && !/Key terms/.test(out) && /## Working line/.test(out)
+    && legacyNames.length === 4 && legacyNames.includes('advisorKnowledge/sarcoidosis') && legacyNames.includes('advisorKnowledge/paresthesia') && !/Key terms/.test(legacy)
+    && tm.length === 8 && tm.every(Boolean)
+    && /material: personMaterial\(rows, qaRows\),\n\s+docNames: \[\.\.\.\(m\.included \|\| \[\]\), \.\.\.alreadyRead\],/.test(ADV)
+    && /material: personMaterial\(rows, qa, \[question, answer\]\),\n\s+docNames: attachment\?\.name \? \[attachment\.name\] : \[\],/.test(ADV)
+    && /loadQa\(env, kind, id, \{ full: true \}\)\.catch\(\(\) => \[\]\),\n\s+\]\);\n\s+const p = state\?\.data \|\| \{\};/.test(ADV),
+    JSON.stringify({ names, legacyNames, tm }));
+
+  // The doors and the words: the three prompts say only what came up and
+  // ask where, the wipe door empties the dictionary whole, the panel paints
+  // only terms the dictionary holds, and the page says how a term gets in.
+  const block = (W2.match(/if \(url\.searchParams\.get\('do'\) === 'wipe-terms'\) \{[\s\S]*?return json\(\{ ok: true, total: rows\.length, deleted \}\);\n\s+\}/) || [''])[0];
+  const calls = { list: 0, del: [] };
+  let wiped = null;
+  if (block) {
+    const run = new Function('url', 'env', 'listDocs', 'batchDelete', 'json', `return (async () => { ${block} return null; })();`);
+    wiped = await run(new URL('https://x.test/api/diag?k=x&do=wipe-terms'), {},
+      async () => { calls.list++; return [{ id: 'a' }, { id: 'b' }, { id: 'c' }]; },
+      async (env, paths) => { calls.del.push(...paths); return { deleted: paths.length }; },
+      (o, s = 200) => ({ o, s })).catch((e) => ({ err: String(e) }));
+  }
+  // NEGATIVE CONTROL (run 2026-09-07): the panel's `if (!inBook.has(k)) terms.delete(k);` changed to `if (inBook.has(k))` made this read
+  //   FAIL  K7 both readings and the answer ask only for a term that came up and where it came up, the wipe door lists every term and deletes each one, the panel paints only terms the dictionary holds and redraws when it grows, and the dictionary page says how a term gets in
+  check('K7 both readings and the answer ask only for a term that came up and where it came up, the wipe door lists every term and deletes each one, the panel paints only terms the dictionary holds and redraws when it grows, and the dictionary page says how a term gets in',
+    (ADV.match(/ONLY A TERM THAT CAME UP IN THE CASE/g) || []).length === 2
+    && /AND that came up in the case: in the chat, in his question, in this\nanswer, or in a document\. Never one you only thought of\./.test(ADV)
+    && (ADV.match(/\| From: chat/g) || []).length >= 3 && (ADV.match(/A line with no From is dropped unread\./g) || []).length === 2
+    && !!block && wiped?.s === 200 && wiped.o.total === 3 && wiped.o.deleted === 3 && calls.list === 1
+    && JSON.stringify(calls.del) === JSON.stringify(['advisorKnowledge/a', 'advisorKnowledge/b', 'advisorKnowledge/c'])
+    && /const inBook = new Set\(glossary\.map\(\(g\) => termKey\(g\.term\)\)\);\n\s+for \(const k of \[\.\.\.terms\.keys\(\)\]\) if \(!inBook\.has\(k\)\) terms\.delete\(k\);/.test(P)
+    && /const key = `\$\{pagesKey\}\|\$\{pageIdx\}\|\$\{pages\.length\}\|\$\{learned\.size\}\|\$\{glossary\.length\}`;/.test(P)
+    && /is not in your dictionary\. A term is added when it comes up in your chat/.test(DICT),
+    JSON.stringify({ wiped, calls }));
+
+  // The cut stream and the stale failure (Eric, 2026-09-07: "The server
+  // answered with something this page could not read"; "I get Draft failed:
+  // voice2 is not a function still").
+  // NEGATIVE CONTROL (run 2026-09-07): the panel's `return { ok: true, cut: true };` changed to `return null;` made this read
+  //   FAIL  K8 an answer records its start, its end and its failure on the flight recorder, the diag carries the newest question's state, the Worker may spend five minutes of CPU on a stream instead of thirty seconds, a stale failure from the fixed bug is cleared once on the next read, a draft failure repaints for a day and no longer, and a stream cut short with a 200 is treated as work still going rather than an answer that failed
+  check('K8 an answer records its start, its end and its failure on the flight recorder, the diag carries the newest question\'s state, the Worker may spend five minutes of CPU on a stream instead of thirty seconds, a stale failure from the fixed bug is cleared once on the next read, a draft failure repaints for a day and no longer, and a stream cut short with a 200 is treated as work still going rather than an answer that failed',
+    /await diagLog\(env, \{ ev: 'ask-start', kind, self \}\)\.catch\(\(\) => \{\}\);\n\s+try \{/.test(ADV)
+    && /await diagLog\(env, \{ ev: 'ask-end', ok: true, kind, ms: Date\.now\(\) - t0 \}\)/.test(ADV)
+    && /await diagLog\(env, \{ ev: 'ask-end', ok: false, kind, ms: Date\.now\(\) - t0, err: String\(err\.message \|\| err\)\.slice\(0, 140\) \}\)/.test(ADV)
+    && /qaLast: q \? \{ status: q\.status \|\| null, ageS: age\(q\.at\), error: q\.status === 'error' \? String\(q\.answer \|\| ''\)\.slice\(0, 140\) : null \} : null,/.test(W2)
+    && /"limits": \{ "cpu_ms": 300000 \},/.test(CFG)
+    && /if \(state\?\.data\.draftStatus === 'error' && \/is not a function\/\.test\(String\(state\.data\.draftError \|\| ''\)\)\) \{\n\s+await patchDoc\(env, `\$\{parent\}\/\$\{id\}\/advisor\/state`, \{ draftStatus: null, draftError: null \},\n\s+\{ mask: \['draftStatus', 'draftError'\] \}\)\.catch\(\(\) => \{\}\);/.test(W2)
+    && /const dFresh = dFailedAt && Date\.now\(\) - toDate\(dFailedAt\)\.getTime\(\) < 24 \* 3600_000;\n\s+if \(d\.draftStatus === 'error' && d\.draftError && dFresh\) \{/.test(P)
+    && /if \(res\.ok\) \{\n\s+showErr\('The connection was cut while the server was still working\. That does not stop it: '\n[^\n]*\n\s+setTimeout\(refresh, 2000\);\n\s+return \{ ok: true, cut: true \};\n\s+\}\n\s+throw new Error\(`The server refused that \(\$\{res\.status\}\)\.`\);/.test(P)
+    && !DASH.test((P.match(/The connection was cut while the server was still working[^\n]*\n[^\n]*/) || [''])[0]));
 }
 
 const failed = results.filter((r) => !r.pass);

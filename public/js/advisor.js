@@ -264,9 +264,19 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           setTimeout(refresh, 2000);
           return null;
         }
-        throw new Error(res.ok
-          ? 'The server answered with something this page could not read.'
-          : `The server refused that (${res.status}).`);
+        // A 200 with no JSON at the end is the keepalive stream cut short
+        // (2026-09-07, "The server answered with something this page could
+        // not read"): the phone slept or the network changed while the
+        // spaces were coming. The work is inside waitUntil and the row is
+        // written, so the answer lands on its own; say that and keep polling
+        // rather than calling a question that was accepted a failure.
+        if (res.ok) {
+          showErr('The connection was cut while the server was still working. That does not stop it: '
+            + 'this page shows the result when it lands. Leave it open, or come back in a few minutes.');
+          setTimeout(refresh, 2000);
+          return { ok: true, cut: true };
+        }
+        throw new Error(`The server refused that (${res.status}).`);
       }
 
       // Long actions stream keepalive whitespace and always return HTTP 200 —
@@ -379,9 +389,14 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         .map((g) => g.term.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()));
       const terms = termPalette(d.analysis);
       for (const k of learned) terms.delete(k);
+      // Painted only when the dictionary holds it (2026-09-07): a painted
+      // term is a door, and a door has to open on something. A term the
+      // reading wrote but nobody discussed stays plain text.
+      const inBook = new Set(glossary.map((g) => termKey(g.term)));
+      for (const k of [...terms.keys()]) if (!inBook.has(k)) terms.delete(k);
       // Only redraw when the content or the page actually changed. A poll that
       // changed nothing must not take his place away.
-      const key = `${pagesKey}|${pageIdx}|${pages.length}|${learned.size}`;
+      const key = `${pagesKey}|${pageIdx}|${pages.length}|${learned.size}|${glossary.length}`;
       if (key !== drawnKey) {
         drawnKey = key;
         renderPager(pages, terms);
@@ -432,7 +447,12 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       draftCard.hidden = true;
       draftCard.innerHTML = '';
     }
-    if (d.draftStatus === 'error' && d.draftError) {
+    // A failure shows for a day and then stops repainting (2026-09-07): the
+    // line from a bug long fixed sat on a case for thirteen hours and read
+    // as the bug still being there.
+    const dFailedAt = d.draftStatus === 'error' ? (d.draftStartedAt || d.draftAt) : null;
+    const dFresh = dFailedAt && Date.now() - toDate(dFailedAt).getTime() < 24 * 3600_000;
+    if (d.draftStatus === 'error' && d.draftError && dFresh) {
       awaitingDraft = false;
       showErr(`Draft failed: ${d.draftError}`);
     }

@@ -963,6 +963,18 @@ export default {
         // And the way out (Eric, 2026-09-06: "Get rid of Joe bloe"): every
         // case flagged showcase is wiped whole, subcollections, files, queue
         // rows and the doc itself. Nothing else is eligible.
+        // The dictionary, started from scratch (Eric, 2026-09-07: "remove.
+        // Don't keep backup. Start from scratch."): every term goes. From
+        // here on a term lands only when it came up in the case.
+        if (url.searchParams.get('do') === 'wipe-terms') {
+          const rows = await listDocs(env, 'advisorKnowledge', { pageSize: 300, all: true }).catch(() => []);
+          let deleted = 0;
+          for (let i = 0; i < rows.length; i += 400) {
+            const out = await batchDelete(env, rows.slice(i, i + 400).map((r) => `advisorKnowledge/${r.id}`));
+            deleted += out.deleted || 0;
+          }
+          return json({ ok: true, total: rows.length, deleted });
+        }
         if (url.searchParams.get('do') === 'unshowcase') {
           const rows = await queryDocs(env, 'cases', [['showcase', 'EQUAL', true]], 5).catch(() => []);
           const wiped = [];
@@ -985,7 +997,12 @@ export default {
         for (const c of caseRows.filter((r) => r.data.status !== 'closed').slice(0, 5)) {
           const st = await getDoc(env, `cases/${c.id}/advisor/state`).catch(() => null);
           const d = st?.data || {};
+          // The newest question (2026-09-07): its state, age and, on a
+          // failure, the reason. The text of the question never rides.
+          const qaRows = await listDocs(env, `cases/${c.id}/advisor/state/qa`, { pageSize: 1, orderBy: 'at desc' }).catch(() => []);
+          const q = qaRows[0]?.data || null;
           states.push({
+            qaLast: q ? { status: q.status || null, ageS: age(q.at), error: q.status === 'error' ? String(q.answer || '').slice(0, 140) : null } : null,
             // Two flags and no id: which rows are his own case and the
             // showcase, so "drafting stopped" can be read against the one
             // kind of case where the route refuses a draft by design.
@@ -1967,7 +1984,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-07-hold-said-plainly';
+const BUILD_TAG = 'v2026-09-07-only-what-came-up';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1975,7 +1992,7 @@ const BUILD_TAG = 'v2026-09-07-hold-said-plainly';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '3.1';
+const VERSION = '3.2';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -6311,6 +6328,15 @@ async function handleAdvisorState(request, env, url) {
     getDoc(env, `${parent}/${id}/private/notes`).catch(() => null),
     getDoc(env, 'advisorStyle/profile').catch(() => null),
   ]);
+  // A draft failure from a bug since fixed (2026-09-07, "voice2 is not a
+  // function") sat on the case for a day and repainted on every poll. It is
+  // cleared here, once, so the line stops; a fresh failure still shows.
+  if (state?.data.draftStatus === 'error' && /is not a function/.test(String(state.data.draftError || ''))) {
+    await patchDoc(env, `${parent}/${id}/advisor/state`, { draftStatus: null, draftError: null },
+      { mask: ['draftStatus', 'draftError'] }).catch(() => {});
+    state.data.draftStatus = null;
+    state.data.draftError = null;
+  }
   // keyConfigured: admin-only visibility into whether the ANTHROPIC_API_KEY
   // secret is actually bound to the running version — "saved in the dashboard"
   // and "attached to the deployment" are different states in Cloudflare, and

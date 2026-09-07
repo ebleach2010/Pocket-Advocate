@@ -80,7 +80,7 @@ async function load() {
       const note = document.createElement('p');
       note.className = 'dim small';
       note.setAttribute('data-dict-missing', '');
-      note.textContent = `"${want}" is not in your dictionary yet. Terms arrive a little after the reading that first used them.`;
+      note.textContent = `"${want}" is not in your dictionary. A term is added when it comes up in your chat, in a question you ask or the answer you get, or in a document, a little after the reading that met it there.`;
       el.prepend(note);
     }
   }

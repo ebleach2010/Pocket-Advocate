@@ -409,6 +409,13 @@ Treatment: what is actually done about it | Outlook: how it usually goes\`
 One sentence each, plain words, no hedging filler. Everything else gets the
 definition alone and no pipes. Never include a term from his mastered list,
 never repeat one already in his glossary. If nothing new, write "- none".
+ONLY A TERM THAT CAME UP IN THE CASE: a word he wrote in his chat, a word in
+a question he asked you or in an answer you gave him, or a word in a document
+you read. Never a term you brought in on your own, however central to your
+reasoning; that belongs in the read, not in his dictionary. Use the term as he
+or the document wrote it. End every line with where it came up, as one more
+pipe field: \`| From: chat\`, \`| From: question\`, \`| From: answer\`, or
+\`| From: document <the file's name>\`. A line with no From is dropped unread.
 
 The last six sections are machine-read and stripped before Eric sees the
 read (same as Key terms). Eric never sees them as text.
@@ -2566,7 +2573,69 @@ no closing note.` }],
  * panel renders the glossary as its own page with an "I understand" checkbox
  * per term.
  */
-async function harvestKeyTerms(env, text) {
+/** Lower case, letters and digits, single spaces: one shape for a term and
+ *  for the text it has to be found in. */
+function normText(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/**
+ * Everything a person wrote or read on this thread, in one normalized string
+ * (Eric, 2026-09-07, on a dictionary of 585 terms: "We have by no means
+ * spoken about all of those, either with the advisor or client. It seems to
+ * just be pulling related terms, not ones always discussed."). The chat as
+ * the client and Eric wrote it (never the reading's own questions), the
+ * questions he asked and the answers he got, and anything extra the caller
+ * hands in (the question being answered, the answer itself).
+ */
+function personMaterial(rows = [], qa = [], extra = []) {
+  const bits = [];
+  for (const r of rows) {
+    const d = r?.data || r || {};
+    if (d.role === 'question' || d.from === 'reading') continue;
+    if (d.text) bits.push(d.text);
+  }
+  for (const q of qa) {
+    const d = q?.data || q || {};
+    if (d.question) bits.push(d.question);
+    if (d.answer) bits.push(d.answer);
+  }
+  for (const s of extra) if (s) bits.push(String(s));
+  return normText(bits.join('\n'));
+}
+
+/** Whether the term, its plural or singular, or an acronym it carries in
+ *  parentheses, appears as whole words in the material. */
+function termMentioned(term, material) {
+  const m = ` ${material || ''} `;
+  const base = normText(term);
+  if (!base) return false;
+  const parts = [base, ...(String(term).match(/\(([^)]{2,20})\)/g) || []).map((x) => normText(x))].filter(Boolean);
+  const forms = new Set();
+  for (const p of parts) {
+    forms.add(p);
+    if (p.endsWith('es')) forms.add(p.slice(0, -2));
+    if (p.endsWith('s')) forms.add(p.slice(0, -1));
+    else forms.add(`${p}s`);
+  }
+  return [...forms].some((f) => f.length >= 3 && m.includes(` ${f} `));
+}
+
+/** A term qualifies for the dictionary when a person wrote it (the material
+ *  holds it) or when the model says it came from a document that was actually
+ *  read, by a name that matches one on the list. Its own reasoning does not. */
+function termCameUp(term, from, material, docNames) {
+  if (termMentioned(term, material)) return true;
+  if (!/^document/.test(String(from || ''))) return false;
+  const named = normText(String(from).replace(/^document\s*/i, ''));
+  if (!named) return false;
+  return (docNames || []).some((n) => {
+    const base = normText(String(n || '').split('/').pop());
+    return !!base && (named.includes(base) || base.includes(named));
+  });
+}
+
+async function harvestKeyTerms(env, text, { material = null, docNames = [] } = {}) {
   // Tolerant, not exact: any case, two hashes or three, and the decoration a
   // low-effort reply sometimes puts round a heading. An exact match failed
   // silently here and emptied a whole page, or printed raw ids into his read.
@@ -2589,6 +2658,10 @@ async function harvestKeyTerms(env, text) {
       return hit ? hit.slice(hit.indexOf(':') + 1).trim().slice(0, 400) : '';
     };
     if (!term || !definition || /^none$/i.test(term)) continue;
+    // Only what came up (2026-09-07): with material in hand, a term nobody
+    // wrote and no read document carries is stripped from the read and never
+    // written. A caller with no material keeps the old, open behaviour.
+    if (material !== null && !termCameUp(term, field('From').toLowerCase(), material, docNames)) continue;
     const slug = termSlug(term);
     const facts = {
       mechanism: field('Mechanism'),
@@ -4566,6 +4639,14 @@ definition alone and no pipes.
 Never include a term from his
 mastered list, never repeat one already in his glossary. If nothing new, write
 "- none".
+ONLY A TERM THAT CAME UP IN THE CASE (Eric, 2026-09-07): a word the client or
+Eric wrote in the chat, a word in a question Eric asked you or in an answer
+you gave him, or a word in a document you read. Never a term you brought in
+on your own, however central to your reasoning; that belongs in the read, not
+in his dictionary. Use the term as the person or the document wrote it. End
+every line with where it came up, as one more pipe field: \`| From: chat\`,
+\`| From: question\`, \`| From: answer\`, or \`| From: document <the file's
+name>\`. A line with no From is dropped unread.
 
 The last three sections are machine-read and stripped before Eric sees the
 assessment (same as Key terms). Eric never sees them as text.
@@ -4727,9 +4808,12 @@ ${style.voice}` : ''}${registerNote(style)}` || ' ' }],
  */
 async function finishAnalysis(env, kind, id, ctx, message) {
   const analysis = extractText(message);
-  const [rows, state] = await Promise.all([
+  const [rows, state, qaRows] = await Promise.all([
     recentMessages(env, kind, id),
     getDoc(env, statePath(kind, id)),
+    // What he and the reading said to each other, for the dictionary's
+    // "only what came up" rule (2026-09-07).
+    loadQa(env, kind, id, { full: true }).catch(() => []),
   ]);
   const p = state?.data || {};
   const prior = p.analysis;
@@ -4739,7 +4823,10 @@ async function finishAnalysis(env, kind, id, ctx, message) {
   const submittedMs = ctx.submittedAt ? new Date(ctx.submittedAt).getTime() : 0;
   // Each machine-read section is pulled out and stripped in turn, so none of
   // it reaches the assessment Eric actually reads.
-  const cover = harvestWorkingLine(await harvestKeyTerms(env, analysis));
+  const cover = harvestWorkingLine(await harvestKeyTerms(env, analysis, {
+    material: personMaterial(rows, qaRows),
+    docNames: [...(m.included || []), ...alreadyRead],
+  }));
   const dx = harvestDifferential(cover.text, p.differential);
   // The two lists under the differential on his own case (2026-09-05):
   // underlying major mechanistic causes, and likely best next treatments.
@@ -4999,6 +5086,11 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
   // His own case (2026-09-03): the standing positions mined from his client
   // work stay off it, and an override typed here settles this case only.
   const self = !!turnPolicy.getStore()?.self;
+  // The flight recorder (2026-09-07, "The server answered with something
+  // this page could not read"): an ask that starts and never ends here is
+  // an isolate that died; one that ends in error says why.
+  const t0 = Date.now();
+  await diagLog(env, { ev: 'ask-start', kind, self }).catch(() => {});
   try {
     const [rows, state, knowledge, style, qa, econ, worklog] = await Promise.all([
       recentMessages(env, kind, id),
@@ -5059,9 +5151,12 @@ naming the step that gets him there.
 After the answer, three optional machine-read sections (they are stripped
 before he sees the answer):
 \`## Key terms\`: any medical term central to your answer that is not in his
-glossary, one per line as \`- Term [Category]: plain-words definition\`
-(Category: Condition, Symptom, Test or lab, Medication, Anatomy, Procedure,
-Concept). Skip the section if there are none.
+glossary AND that came up in the case: in the chat, in his question, in this
+answer, or in a document. Never one you only thought of. One per line as
+\`- Term [Category]: plain-words definition | From: chat\` (or \`question\`,
+\`answer\`, \`document <file name>\`; Category: Condition, Symptom, Test or
+lab, Medication, Anatomy, Procedure, Concept). Skip the section if there are
+none.
 \`## Mastered\`: any not-yet-mastered glossary term his QUESTION shows he
 already understands: he used it correctly and fluently, not asking what it
 means. One term per line as \`- Term\`. Asking about a term is the opposite of
@@ -5116,7 +5211,13 @@ ${SELF_NOTE}` },
     // Same learning protocol as assessments: new jargon lands in the
     // dictionary, fluent use in his question counts as mastery, and asking
     // what a mastered term means counts the other way.
-    let cleaned = await harvestKeyTerms(env, answer);
+    let cleaned = await harvestKeyTerms(env, answer, {
+      // His question and this answer both count (Eric, 2026-09-07: the
+      // advisor's answers to him are a conversation); the reading's own
+      // assessment does not.
+      material: personMaterial(rows, qa, [question, answer]),
+      docNames: attachment?.name ? [attachment.name] : [],
+    });
     cleaned = await applyMastered(env, cleaned);
     cleaned = await applyForgotten(env, cleaned);
     if (override) {
@@ -5132,6 +5233,7 @@ ${SELF_NOTE}` },
     await patchDoc(env, path, {
       answer: cleaned, status: 'done', override,
     }, { mask: ['answer', 'status', 'override'] });
+    await diagLog(env, { ev: 'ask-end', ok: true, kind, ms: Date.now() - t0 }).catch(() => {});
     // The answer lands first, then the proposal beside it. A parked proposal
     // with no answer to explain it is a card with no sentence attached, and a
     // failure to park must never lose the answer he asked for.
@@ -5148,6 +5250,7 @@ ${SELF_NOTE}` },
     await patchDoc(env, path, {
       answer: `Couldn't answer: ${friendly(err)}`, status: 'error',
     }, { mask: ['answer', 'status'] }).catch(() => {});
+    await diagLog(env, { ev: 'ask-end', ok: false, kind, ms: Date.now() - t0, err: String(err.message || err).slice(0, 140) }).catch(() => {});
   }
 }
 

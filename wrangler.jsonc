@@ -12,6 +12,11 @@
   // never runs, but the imports still have to resolve or the Worker fails to
   // load at all — which would take the whole site down, not just the advisor.
   "compatibility_flags": ["nodejs_compat"],
+  // CPU, not wall time (2026-09-07). An answer streams for minutes while the
+  // Worker parses every delta; the default thirty seconds of CPU is a kill
+  // with no error, a stream that just stops, and a question left on
+  // "thinking". Five minutes is the most the plan allows.
+  "limits": { "cpu_ms": 300000 },
   "assets": {
     "directory": "public",
     "binding": "ASSETS",
