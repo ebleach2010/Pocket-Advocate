@@ -405,6 +405,34 @@ check('CH8 the ledger reads what was captured, the demo\'s booking opens on a ho
   && !DASH.test(lift(W, 'async function handleCaseCharge(request, env) {'))
   && !DASH.test((CL.match(/version: '3\.0',[\s\S]*?\},/) || [''])[0]));
 
+// ---- CH9: the two lines that still said paid (v3.1) --------------------------
+{
+  const line = lift(CASE, 'function confirmedLine(c) {');
+  const shown = lift(CASE, 'function paidShownCents(c) {');
+  const paidShownCents = new Function(`return ${shown}`)();
+  const confirmedLine = new Function('paidShownCents', `return ${line}`)(paidShownCents);
+  const held = { status: 'confirmed', charge: { state: 'held', authorizedCents: 120000 }, stripe: { amountTotal: 120000 } };
+  const cap = { status: 'confirmed', charge: { state: 'captured', capturedCents: 90000 }, stripe: { amountTotal: 120000 } };
+  const comp = { status: 'confirmed', charge: { state: 'comped', capturedCents: 0 }, stripe: { amountTotal: 120000 } };
+  const lapsed = { status: 'confirmed', charge: { state: 'lapsed' }, stripe: { amountTotal: 120000 } };
+  const old = { status: 'confirmed', stripe: { amountTotal: 120000 } };
+  const paidRow = (ADMC.match(/const ch = c\.charge && c\.charge\.state \? c\.charge : null;[\s\S]*?row\('PAID', holdNote, 'var\(--orange\)'\);/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-09-07): confirmedLine's `if (ch.state === 'held') return` changed to `if (false) return` made this read
+  //   FAIL  CH9 the client's line under the appointment says card held and not charged, charged with the figure, or no charge, and never "received" for a hold; what the client's page shows as paid is what was captured; and his PAID row prints the hold in words, never as money
+  check('CH9 the client\'s line under the appointment says card held and not charged, charged with the figure, or no charge, and never "received" for a hold; what the client\'s page shows as paid is what was captured; and his PAID row prints the hold in words, never as money',
+    !!line && !!shown
+    && confirmedLine(held) === 'Card held, $1,200, not charged'
+    && confirmedLine(cap) === 'Charged $900'
+    && confirmedLine(comp) === 'No charge'
+    && confirmedLine(lapsed) === 'Nothing charged yet'
+    && /^Payment confirmed, \$1,200 received$/.test(confirmedLine(old))
+    && paidShownCents(held) === null && paidShownCents(cap) === 90000 && paidShownCents(comp) === null && paidShownCents(old) === 120000
+    && !!paidRow && /ch\.state === 'captured' \? Number\(ch\.capturedCents\) \|\| 0 : 0/.test(paidRow)
+    && /`\$\{whole\(ch\.authorizedCents\)\} held, not charged`/.test(paidRow) && /'declined, nothing charged'/.test(paidRow) && /'no charge'/.test(paidRow)
+    && !DASH.test(paidRow) && !DASH.test(line),
+    JSON.stringify({ held: confirmedLine(held), cap: confirmedLine(cap), comp: confirmedLine(comp), lapsed: confirmedLine(lapsed), old: confirmedLine(old), shown: [paidShownCents(held), paidShownCents(cap), paidShownCents(comp), paidShownCents(old)] }));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

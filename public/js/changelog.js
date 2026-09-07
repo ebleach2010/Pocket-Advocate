@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '3.0';
+export const VERSION = '3.1';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '3.0';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE TWO LINES THAT STILL SAID PAID (2026-09-07, seen on the 3.0
+    // screenshots): the client's status line under the appointment and the
+    // PAID row on his overview both printed the hold as money.
+    version: '3.1',
+    quiet: true,
+    client: [
+      'The line under your appointment now says when your card is held and not charged, and what was charged once I take your case.',
+    ],
+    admin: [
+      'The PAID row on a case that opened on a hold says held, charged, no charge or nothing, never the hold\'s figure as if it were paid.',
+    ],
+  },
   {
     // CHARGE ON APPROVAL (Eric, 2026-09-06: "I would like to be able to comp
     // somebody or change charges. So they purchase a tier, but only once I

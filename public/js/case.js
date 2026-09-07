@@ -375,6 +375,16 @@ function busyInside(pane) {
  */
 function confirmedLine(c) {
   if (c.status === 'closed') return '';
+  // A case that opened on a hold (2026-09-06) says so here too: the hold is
+  // not money, and "received" would be a lie until he takes the case.
+  const ch = c.charge;
+  if (ch && ch.state) {
+    const whole = (n) => `$${(Math.round(Number(n) || 0) / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+    if (ch.state === 'held') return `Card held, ${whole(ch.authorizedCents)}, not charged`;
+    if (ch.state === 'lapsed' || ch.state === 'invoiced') return 'Nothing charged yet';
+    if (ch.state === 'captured') return `Charged ${whole(ch.capturedCents)}`;
+    if (ch.state === 'comped') return 'No charge';
+  }
   const paid = paidShownCents(c);
   // Grouped. This used to be toFixed(2) with the trailing zeroes trimmed,
   // which reads fine for the $175 it was only ever given and prints "$3400"
@@ -410,6 +420,11 @@ function paidShownCents(c) {
   if (recorded > 0) return recorded;
   const tier = Number(c?.fullAccessRateCents);
   if (c?.fullAccess && tier > 0) return tier;
+  // A hold is not money (2026-09-06): what was captured, or nothing.
+  if (c?.charge && c.charge.state) {
+    const got = c.charge.state === 'captured' ? Number(c.charge.capturedCents) : 0;
+    return got > 0 ? got : null;
+  }
   const charged = Number(c?.stripe?.amountTotal);
   return charged > 0 ? charged : null;
 }

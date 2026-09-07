@@ -4173,10 +4173,24 @@ function infoBar(c, mtFmt, start, due) {
   const extraCents = Array.isArray(c.extraPayments)
     ? c.extraPayments.reduce((x, p) => x + (p.amountCents || 0), 0) : 0;
   const recordedCents = Number(c.paidOverrideCents) > 0 ? Number(c.paidOverrideCents) : 0;
-  const caseCents = recordedCents || (c.stripe?.amountTotal || 0);
+  // A HOLD IS NOT MONEY (2026-09-06). A case that opened on a hold counts
+  // what was captured; while it waits, or if it was declined or comped, the
+  // row says so in words rather than printing the hold as if it were paid.
+  const ch = c.charge && c.charge.state ? c.charge : null;
+  const caseCents = recordedCents || (ch ? (ch.state === 'captured' ? Number(ch.capturedCents) || 0 : 0) : (c.stripe?.amountTotal || 0));
   const totalCents = caseCents + extraCents;
+  const whole = (n) => `$${(Math.round(Number(n) || 0) / 100).toLocaleString()}`;
+  const holdNote = !recordedCents && ch
+    ? (ch.state === 'held' ? `${whole(ch.authorizedCents)} held, not charged`
+      : ch.state === 'lapsed' ? 'hold lapsed, nothing charged'
+        : ch.state === 'invoiced' ? `payment link out for ${whole(ch.invoice?.cents || ch.invoiceCents)}`
+          : ch.state === 'declined' ? 'declined, nothing charged'
+            : ch.state === 'comped' ? 'no charge' : '')
+    : '';
   if (totalCents)
     row('PAID', `$${(totalCents / 100).toLocaleString()}${extraCents ? ` <span class="dim">(case $${(caseCents / 100).toLocaleString()} + sessions $${(extraCents / 100).toLocaleString()})</span>` : ''}${recordedCents ? ' <span class="dim">· recorded by you</span>' : ''}`, 'var(--cyan)');
+  else if (holdNote)
+    row('PAID', holdNote, 'var(--orange)');
 
   // The report clock — strict 7 calendar days on this side of the counter.
   if (c.status === 'delivered' || c.status === 'closed')
