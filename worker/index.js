@@ -1167,7 +1167,23 @@ export default {
       }
     } catch (err) {
       console.error(`${url.pathname}:`, err.stack || err);
-      return json({ error: 'Internal error' }, 500);
+      // THE DAY THE READS RAN OUT (Eric, 2026-09-09, from a hospital bed:
+      // "I'm getting internal errors at a critical moment for this case").
+      //
+      // Every route here reads something, and requireAdmin reads his profile
+      // before it does anything at all, so when the database began refusing
+      // reads EVERY door in the app answered with the words "Internal
+      // error". That is the least useful true sentence available: it reads
+      // as "the app is broken and your work may be gone" when the real state
+      // is "one bill is unpaid, nothing is lost, and writes are still fine".
+      //
+      // The database answers 429 RESOURCE_EXHAUSTED once the project is over
+      // its daily allowance, which is where a disabled billing account puts
+      // it. Nothing in this Worker can fix that, so it says what is true and
+      // who can fix it. A client gets the same fact without the machinery:
+      // they can do nothing about it and should not be frightened by it.
+      const outOfReads = quotaFault(err, url);
+      return json(outOfReads || { error: 'Internal error' }, outOfReads ? 503 : 500);
     }
 
     const demo = demoRole(request, url);
@@ -2039,7 +2055,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-09-fewer-reads';
+const BUILD_TAG = 'v2026-09-09-say-what-is-wrong';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2047,7 +2063,7 @@ const BUILD_TAG = 'v2026-09-09-fewer-reads';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '4.0';
+const VERSION = '4.1';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -9290,6 +9306,23 @@ function personalWhy(err, size) {
   if (/\b41[34]\b|too large|entity/i.test(m))
     return `Storage would not take a file this size (${mb}).`;
   return `The upload did not reach storage (${mb}). It said: ${m.slice(0, 200)}`;
+}
+
+/**
+ * A read refused for want of allowance, said plainly, or null for any other
+ * failure. Split by who is asking: his own routes get the fact and the
+ * remedy, a client gets the reassurance and none of the plumbing.
+ */
+function quotaFault(err, url) {
+  const m = String(err?.message || err);
+  if (!/\b429\b|RESOURCE_EXHAUSTED|Quota exceeded/i.test(m)) return null;
+  const mine = url.pathname.startsWith('/api/admin/') || url.pathname === '/api/diag';
+  return {
+    quota: true,
+    error: mine
+      ? 'The database is refusing reads: this project is over its daily free allowance, which is where a disabled cloud billing account puts it. Nothing has been lost and writes still work. Restore the billing account and this clears straight away; otherwise the allowance resets at midnight Pacific.'
+      : 'This part of the app cannot be reached just now. Nothing you did caused it, nothing you have sent is lost, and it comes back on its own. Please try again a little later.',
+  };
 }
 
 /** The reply, marked so no cache on the way back keeps it. */

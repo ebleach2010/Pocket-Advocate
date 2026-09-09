@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '4.0';
+export const VERSION = '4.1';
 
 /**
  * Newest first.
@@ -51,6 +51,21 @@ export const VERSION = '4.0';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // SAY WHAT IS WRONG (Eric, 2026-09-09, from a hospital bed: "I'm getting
+    // internal errors at a critical moment for this case"). Every door in
+    // the app answered with those two words, because every route reads
+    // something and reads were being refused. The client line is here on
+    // purpose: the message they would see changed too.
+    version: '4.1',
+    quiet: true,
+    client: [
+      'If a part of the app cannot be reached, it now says so in a sentence: that nothing you did caused it, that nothing you have sent is lost, and that it comes back on its own. It used to say only "Internal error", which told you nothing and sounded much worse than it was.',
+    ],
+    admin: [
+      'A failure caused by the database being over its daily allowance now says exactly that, and that restoring the billing account clears it, instead of the words "Internal error" on every screen at once. Every route reads something before it does anything, so when reads are refused every door in the app fails together; the two words gave you no way to tell that from your work being gone.',
+    ],
+  },
   {
     // FEWER READS (2026-09-09): the database refused every read with a
     // quota error, and the arithmetic behind it was one open panel polling

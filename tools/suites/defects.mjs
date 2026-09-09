@@ -675,5 +675,42 @@ ck('clock: all switches share one painter set, so no two can disagree',
     && IDX.includes('/img/advocate-eric.jpg'));
 }
 
+// ---- the day the reads ran out (2026-09-09) -----------------------------
+// Eric, from a hospital bed: "I'm getting internal errors at a critical moment
+// for this case." Every route in the Worker reads something, requireAdmin reads
+// his profile before anything else, and the database was refusing every read
+// with 429 while still taking writes. So every door answered "Internal error",
+// which reads as "the app is broken and your work is gone" when the truth was
+// "one bill is unpaid, nothing is lost". The function is lifted and run here
+// rather than pattern-matched, because what matters is what it actually says
+// to each of the two people who can see it.
+{
+  const src = W.match(/function quotaFault\(err, url\) \{[\s\S]*?\n\}/);
+  const quotaFault = src ? new Function(`${src[0]}; return quotaFault;`)() : null;
+  const outOfReads = new Error('firestore get config/rates: 429 {"error":{"code":429,"message":"Quota exceeded.","status":"RESOURCE_EXHAUSTED"}}');
+  const somethingElse = new Error('firestore get cases/x: 500 upstream boom');
+  const mine = quotaFault && quotaFault(outOfReads, { pathname: '/api/admin/advisor' });
+  const theirs = quotaFault && quotaFault(outOfReads, { pathname: '/api/case' });
+  const diag = quotaFault && quotaFault(outOfReads, { pathname: '/api/diag' });
+  // NEGATIVE CONTROL (run 2026-09-09): the 429 test in quotaFault narrowed to
+  // /RESOURCE_EXHAUSTED/ alone, so a plain "429 Quota exceeded." fell through
+  // to the old wording, made this read
+  //   FAIL  a read refused for want of allowance says so, and says it differently to him and to a client
+  ck('a read refused for want of allowance says so, and says it differently to him and to a client',
+    !!mine && !!theirs && !!diag
+    && mine.quota === true && theirs.quota === true
+    && /daily free allowance/.test(mine.error) && /billing account/.test(mine.error)
+    && /Nothing has been lost/.test(mine.error)
+    && /Nothing you did caused it/.test(theirs.error) && /nothing you have sent is lost/.test(theirs.error)
+    && !/billing|allowance|database|quota/i.test(theirs.error)
+    && mine.error === diag.error
+    && quotaFault(somethingElse, { pathname: '/api/admin/advisor' }) === null,
+    JSON.stringify({ mine: mine && mine.error.slice(0, 40), theirs: theirs && theirs.error.slice(0, 40) }));
+  // And the catch has to actually use it, with a status that is not 500: a
+  // 500 is what a broken app returns, and this app is not broken.
+  ck('and the top-level catch answers with it, at 503, keeping Internal error for everything else',
+    /const outOfReads = quotaFault\(err, url\);\n\s+return json\(outOfReads \|\| \{ error: 'Internal error' \}, outOfReads \? 503 : 500\);/.test(W));
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);
