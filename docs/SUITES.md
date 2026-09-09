@@ -183,6 +183,60 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### The name that was too long (2026-09-09)
+
+Eric, 2026-09-09: "I restarted my claude subscription and since then
+everything, including ask the advisor, is down. everything but chat". It was
+neither his account nor the provider. The flight recorder had it in one line:
+`requests.0.custom_id: String should have at most 64 characters`. The ask's
+batch name, added on 2026-09-07, came to 72 characters with a real case id in
+it, so every question was refused the moment it was asked; the reading's name,
+at 59, kept working, which is exactly the half of the app he could still see
+running. A reading landed twenty two minutes before the failed question, which
+is what ruled his key and his credits out.
+
+`batchCustomId(prefix, id, stamp)` now builds every batch name in one place:
+the stamp goes on in base 36, the id is trimmed to whatever room is left under
+`BATCH_ID_MAX`, and the part that varies is never the part that gets cut. Both
+callers use it. A name that somehow got past it is refused at the submit with
+its own length in the message, never quietly trimmed, because a trimmed name
+is one no result can be matched against.
+
+askflight.mjs AF8 lifts the shipped builder and RUNS it over the longest input
+either caller can hand it, then measures what comes out: both land on 64
+exactly, and a real question comes to 47.
+
+### The shelf says why, and a selection holds (2026-09-09)
+
+Two from the same morning. A screenshot of his own Personal Uploads reading
+"Christopher_Miller_UCHealth_Record_Packet.pdf: Internal error": `putFile`
+threw, nothing caught it, and the Worker's top-level catch turned every
+possible cause into one word. The list route has caught its own failures since
+the day the shelf shipped; the upload never did. It answers 502 with what
+storage actually said and the size of the file now, and a body that stops
+partway says that instead. `do=personal-probe&bytes=N` puts one throwaway
+object under his own prefix the same way, reports what came back and deletes
+it, so the size a real records packet fails at can be found without asking him
+to try it over and over.
+
+And: "when I go to select text from the advisor, it only selects it for maybe
+two seconds, making it extremely difficult to copy to paste". The answers were
+rewritten whole on every poll, and the panel polls every two and a half
+seconds while anything runs, so a selection was taken away about as fast as he
+could make one. The reading has had a redraw guard since it was written, in
+those words: a poll that changed nothing must not take his place away. The
+answers now paint row by row, and an unchanged answer keeps its own node.
+
+    node tools/suites/personal.mjs      H1, H1b, H2, H3, H4
+    node tools/suites/askflight.mjs     AF7
+    PA_PORT=9377 node tools/drives/drive-selection.mjs
+
+The drive is the one that matters for the selection: it selects a whole answer
+while a second question is still running under it, holds it through several
+polls and through the second answer landing. Run against the old paint it
+failed three steps with the selection at zero characters; against this one it
+passes eight of eight.
+
 ### An answer rides the batch (2026-09-07)
 
 Eric, 2026-09-07: "now when asking the advisor something: The server answered

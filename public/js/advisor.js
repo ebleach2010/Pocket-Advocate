@@ -509,6 +509,9 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   }
 
   let lastQa = [];
+  // The answer rows as they are painted right now, one string each, so a poll
+  // that changed nothing repaints nothing. See renderQa.
+  let qaDrawn = [];
   /**
    * A question is judged by its heartbeat, not its age (2026-09-07). The
    * answer rides the batch now, and every poll that finds it still running
@@ -553,7 +556,28 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         <p class="advisor-q">${esc(localQ)}</p>
         <div class="advisor-a"><span class="dim small">thinking…</span></div>
       </div>`);
-    qaEl.innerHTML = rows.join('');
+    // ROW BY ROW, AND ONLY WHERE IT CHANGED (Eric, 2026-09-09: "when I go to
+    // select text from the advisor, it only selects it for maybe two seconds,
+    // making it extremely difficult to copy to paste"). This container was
+    // rewritten whole on every poll, and the panel polls every two and a half
+    // seconds while anything is running, so a selection inside an answer was
+    // taken away about as fast as he could make one. The reading has had this
+    // guard since it was written, in those words: a poll that changed nothing
+    // must not take his place away. The answers never did. Now an answer that
+    // has not changed keeps its own node, and the selection inside it, even
+    // while a question below it is still being answered.
+    const html = rows.map((r) => r.trim());
+    if (html.length !== qaDrawn.length) {
+      qaEl.innerHTML = html.join('');
+    } else {
+      for (let i = 0; i < html.length; i++) {
+        if (html[i] === qaDrawn[i]) continue;
+        const node = qaEl.children[i];
+        if (node) node.outerHTML = html[i];
+        else qaEl.insertAdjacentHTML('beforeend', html[i]);
+      }
+    }
+    qaDrawn = html;
   }
 
   /** One note page at a time, flipped with ‹ › or a sideways swipe. */

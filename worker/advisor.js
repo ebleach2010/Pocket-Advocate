@@ -837,6 +837,9 @@ function collectActs(final, out) {
 
 const MAX_PAUSE_RESUMES = 3;
 
+/** The provider's cap on a batch request's custom_id. */
+const BATCH_ID_MAX = 64;
+
 /**
  * `tools`: server tools only (they execute on Anthropic's side, so there is no
  * client-side execution loop here and never should be). Omit it and every
@@ -884,7 +887,31 @@ async function ask(env, {
  * folds it in when it lands. Usually done in minutes, half the token price,
  * and no clock in this Worker is anywhere near it.
  */
+/**
+ * THE NAME A BATCH REQUEST IS FILED UNDER, and why it is built in one place.
+ *
+ * The provider caps custom_id at 64 characters and answers a longer one with
+ * a 400. Eric, 2026-09-09: "everything, including ask the advisor, is down".
+ * It was not his account and not the provider: the ask's id, added on
+ * 2026-09-07, ran to 72 characters with a real case id in it, so every
+ * question failed the moment it was asked while the reading, at 59, carried
+ * on working. Building it here means the cap is kept by construction rather
+ * than by each caller counting, and the part that varies (the stamp) is
+ * never the part that gets cut.
+ */
+function batchCustomId(prefix, id, stamp) {
+  const tail = `-${Number(stamp).toString(36)}`;
+  const head = `${prefix}-`;
+  const room = Math.max(0, BATCH_ID_MAX - head.length - tail.length);
+  return `${head}${String(id).replace(/[^\w-]/g, '').slice(0, room)}${tail}`;
+}
+
 async function submitTurnBatch(env, turn, customId) {
+  // Loudly, and at the source: a silent trim here would leave the caller
+  // holding an id the result can never be matched against, which reads as a
+  // batch that vanished. batchCustomId above makes this unreachable.
+  if (String(customId).length > BATCH_ID_MAX)
+    throw new Error(`The batch name is ${String(customId).length} characters and the limit is ${BATCH_ID_MAX}.`);
   return sendWithFallback(env, turn, async (t) => {
     const b = await client(env).messages.batches.create({
       requests: [{ custom_id: customId, params: t }],
@@ -4735,7 +4762,7 @@ ${style.voice}` : ''}${registerNote(style)}` || ' ' }],
       }],
     });
 
-    const customId = `${kind}-${String(id).slice(0, 40)}-${runT0}`;
+    const customId = batchCustomId(kind, id, runT0);
     const batchId = await submitTurnBatch(env, turn, customId);
     // Everything the finish needs that cannot be recomputed when the result
     // lands. The thread keeps moving while the batch runs, so the stamps are
@@ -5228,7 +5255,7 @@ ${SELF_NOTE}` },
         ],
       }],
     });
-    const customId = `ask-${kind}-${String(id).slice(0, 40)}-${String(qaId).slice(0, 8)}-${t0}`;
+    const customId = batchCustomId(`ask-${kind}`, `${id}-${String(qaId).slice(0, 8)}`, t0);
     const batchId = await submitTurnBatch(env, turn, customId);
     // Everything the finish needs that the row does not already carry: the
     // batch, when it left, which model carried it, and the file reference

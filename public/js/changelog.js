@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '3.5';
+export const VERSION = '3.6';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '3.5';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE SHELF SAYS WHY, AND A SELECTION HOLDS (Eric, 2026-09-09: a
+    // screenshot of a personal upload reading "Internal error", and "when I
+    // go to select text ... it only selects it for maybe two seconds, making
+    // it extremely difficult to copy to paste"). Admin only.
+    version: '3.6',
+    quiet: true,
+    client: [],
+    admin: [
+      'Questions work again. Since Sunday every question came back "Couldn\'t answer" the moment it was asked: the name each one is filed under in the background lane ran four characters over a limit of sixty four, and the lane refused it. Nothing was wrong with your account, and the readings, whose names were shorter, never stopped. That name is now built in one place that cannot go over.',
+      'A personal upload that does not land now tells you what storage actually said, and how big the file was, instead of the word "Internal error". A file that stops partway says that instead of failing outright.',
+      'Selecting an answer to copy it holds now. The answers were repainted every couple of seconds whether or not anything had changed, which took the selection with them; each answer keeps its place until its own words change.',
+    ],
+  },
   {
     // AN ANSWER RIDES THE BATCH (Eric, 2026-09-07: "The server answered
     // with something this page could not read", three questions sitting on

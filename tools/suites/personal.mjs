@@ -77,12 +77,16 @@ const LIFTED = [
   konst('PERSONAL_MAX_BYTES'), konst('PERSONAL_SCOPES'), konst('ADMIN_ASSET'),
   konst('FILE_LINK_MS'),
   sfn('personalPrefix'), sfn('personalLeaf'), sfn('ownPersonalPath'), sfn('json'), sfn('noStore'), sfn('timingSafeEqual'),
+  sfn('personalWhy'),
   fn('fileLinkSig'), fn('signFileLink'), fn('verifyFileLink'),
   fn('handlePersonal'), fn('handlePersonalFile'),
 ].join('\n');
 
 // ---- the world ------------------------------------------------------------
 let who, profiles, store, puts, dels, fetched;
+// When set, the next write fails the way storage does, so the reply the
+// shelf gives him can be read rather than guessed at (2026-09-09).
+let putFail = null;
 const KEY = await crypto.subtle.importKey('raw', new TextEncoder().encode('suite-key'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
 const deps = {
   requireAdmin: async () => who,
@@ -93,6 +97,7 @@ const deps = {
     .map(([p, o]) => ({ name: p.split('/').pop().replace(/^\d{10,}-/, ''), path: p, contentType: o.type, size: o.size, at: o.at }))
     .sort((a, b) => a.at - b.at),
   putFile: async (env, path, bytes, contentType) => {
+    if (putFail) throw new Error(putFail);
     puts.push({ path, size: bytes.byteLength, contentType });
     store.set(path, { type: contentType, size: bytes.byteLength, at: Date.now() });
     return { name: path.split('/').pop().replace(/^\d{10,}-/, ''), path, contentType, size: bytes.byteLength, at: Date.now() };
@@ -108,11 +113,11 @@ const deps = {
 const build = new Function(...Object.keys(deps),
   `${LIFTED}
    return { handlePersonal, handlePersonalFile, personalPrefix, personalLeaf, ownPersonalPath, signFileLink, fileLinkSig,
-            PERSONAL_MAX_BYTES, PERSONAL_SCOPES, ADMIN_ASSET, FILE_LINK_MS };`);
+            personalWhy, PERSONAL_MAX_BYTES, PERSONAL_SCOPES, ADMIN_ASSET, FILE_LINK_MS };`);
 const W = build(...Object.values(deps));
 const env = { ADMIN_UID: 'eric' };
 const reset = () => {
-  who = { uid: 'eric' }; puts = []; dels = []; fetched = [];
+  who = { uid: 'eric' }; puts = []; dels = []; fetched = []; putFail = null;
   profiles = { 'users/eric': { role: 'admin' }, 'users/mallory': { role: 'client' } };
   store = new Map([
     ['personal/eric/all/1700000000000-tax.pdf', { type: 'application/pdf', size: 10, at: 1 }],
@@ -391,6 +396,75 @@ console.log('\n--- G. the two places, and the words ---');
     && (SRC.match(/\nconst VERSION = '([\d.]+)';/) || [])[1] === (f('public/js/changelog.js').match(/export const VERSION = '([\d.]+)';/) || [])[1]
     && /version: '2\.78',[\s\S]{0,400}admin: \[\s*'Personal Uploads:/.test(f('public/js/changelog.js'))
     && !/client: \[[^\]]*Personal Uploads/.test(f('public/js/changelog.js')));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n--- H. when it does not land, it says why ---');
+// Eric, 2026-09-09, a screenshot of his own shelf:
+// "Christopher_Miller_UCHealth_Record_Packet.pdf: Internal error". putFile
+// threw, nothing caught it, and the Worker's top-level catch turned every
+// possible cause into one word. The list route has caught its own failures
+// since the day this shipped; the upload never did.
+reset();
+{
+  putFail = 'storage put personal/eric/all/1-x.pdf: 403 {"error":{"message":"does not have storage.objects.create access"}}';
+  const bad = await call('POST', { headers: { 'x-pa-scope': 'all', 'x-pa-name': 'packet.pdf' }, bytes: new Uint8Array(3).buffer });
+  putFail = null;
+  const good = await call('POST', { headers: { 'x-pa-scope': 'all', 'x-pa-name': 'packet.pdf' }, bytes: new Uint8Array(3).buffer });
+  // NEGATIVE CONTROL (run 2026-09-09): the catch's reply put back to the site's own `{ error: 'Internal error' }, 500` made this read
+  //   FAIL  H1 a write storage refuses comes back as the reason and a 502, never the site's own Internal error, and a good one still lands
+  check('H1 a write storage refuses comes back as the reason and a 502, never the site\'s own Internal error, and a good one still lands',
+    bad.status === 502 && /Storage refused the write/.test(bad.out.error || '')
+    && !/Internal error/.test(bad.out.error || '') && puts.length === 1
+    && good.status === 200 && good.out.file.name === 'packet.pdf', JSON.stringify(bad.out));
+}
+reset();
+{
+  const [rq, e, u] = req('POST', { headers: { 'x-pa-scope': 'all', 'x-pa-name': 'x.pdf' }, bytes: new Uint8Array(3).buffer });
+  rq.arrayBuffer = async () => { throw new Error('stream disconnected'); };
+  const res = await W.handlePersonal(rq, e, u);
+  const out = await res.json().catch(() => ({}));
+  // NEGATIVE CONTROL (run 2026-09-09): the half-uploaded reply reworded to a bare 'Upload failed.' made this read
+  //   FAIL  H1b an upload that stops partway says so, and writes nothing
+  check('H1b an upload that stops partway says so, and writes nothing',
+    res.status === 400 && /did not finish uploading/.test(out.error || '') && puts.length === 0, JSON.stringify(out));
+}
+{
+  const why = (m, n) => W.personalWhy(new Error(m), n);
+  // NEGATIVE CONTROL (run 2026-09-09): personalWhy's 401/403 branch deleted made this read
+  //   FAIL  H2 the reason names the cause and always carries the size and what storage said
+  check('H2 the reason names the cause and always carries the size and what storage said',
+    /Storage refused the write \(1\.0 MB\)/.test(why('storage put x: 403 no access', 1048576))
+    && /rate limiting or out of quota/.test(why('storage put x: 429 slow down', 1))
+    && /server error/.test(why('storage put x: 503 oops', 1))
+    && /would not take a file this size/.test(why('storage put x: 413 too large', 1))
+    && /It said: boom/.test(why('boom', 1))
+    && /\d+\.\d MB/.test(why('boom', 1)));
+}
+{
+  // The probe puts one throwaway object under his own prefix the way the
+  // shelf does, says what storage said, and deletes it again. Behind the
+  // diag key like every other door there, and it reads nothing of his.
+  const probe = (SRC.match(/if \(url\.searchParams\.get\('do'\) === 'personal-probe'\)[\s\S]*?\n        \}/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-09-09): the probe's deleteFile line removed made this read
+  //   FAIL  H3 the probe writes under his own prefix only, reports what storage said, and deletes what it wrote
+  check('H3 the probe writes under his own prefix only, reports what storage said, and deletes what it wrote',
+    probe.length > 300
+    && /const path = `personal\/\$\{uid\}\/all\/\$\{Date\.now\(\)\}-probe\.bin`;/.test(probe)
+    && /Math\.min\(Math\.max\(Number\(url\.searchParams\.get\('bytes'\)\) \|\| 1024, 1\), PERSONAL_MAX_BYTES\)/.test(probe)
+    && /if \(made\) await deleteFile\(env, made\.path\)\.catch\(\(\) => \{\}\);/.test(probe)
+    && /error: why, said: personalWhy/.test(probe)
+    && !/listFiles|mediaFetch/.test(probe), `${probe.length} chars`);
+}
+{
+  const cl = f('public/js/changelog.js');
+  const entry = (cl.match(/version: '3\.6',[\s\S]*?\n  \},/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-09-09): the 3.6 note's storage line moved from admin to client made this read
+  //   FAIL  H4 the version moves in both places and the shelf's own trouble stays on the admin lines
+  check('H4 the version moves in both places and the shelf\'s own trouble stays on the admin lines',
+    (SRC.match(/\nconst VERSION = '([\d.]+)';/) || [])[1] === (cl.match(/export const VERSION = '([\d.]+)';/) || [])[1]
+    && /what storage actually said/.test(entry) && /client: \[\],/.test(entry)
+    && !/\badvisor\b/i.test(entry) && !/[\u2014\u2013]/.test(entry), entry.slice(0, 80));
 }
 
 const fails = results.filter((r) => !r.pass).length;

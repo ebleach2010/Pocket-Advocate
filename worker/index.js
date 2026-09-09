@@ -975,6 +975,30 @@ export default {
           }
           return json({ ok: true, total: rows.length, deleted });
         }
+        // THE SAME WRITE, ASKED FOR FROM HERE (2026-09-09). His shelf is
+        // admin-only and its failures were invisible, so this puts one
+        // throwaway object under his own prefix exactly the way the shelf
+        // does, reports what storage said, and deletes it again. `bytes`
+        // says how big, so the size a real records packet fails at can be
+        // found without asking him to try it over and over. Nothing of his
+        // is read, written or listed.
+        if (url.searchParams.get('do') === 'personal-probe') {
+          const uid = env.ADMIN_UID || '';
+          if (!/^[\w-]{1,128}$/.test(uid)) return json({ error: 'No admin uid on this Worker.' }, 400);
+          const want = Math.min(Math.max(Number(url.searchParams.get('bytes')) || 1024, 1), PERSONAL_MAX_BYTES);
+          const path = `personal/${uid}/all/${Date.now()}-probe.bin`;
+          const t0 = Date.now();
+          let made = null;
+          let why = null;
+          try {
+            made = await putFile(env, path, new Uint8Array(want), 'application/octet-stream');
+          } catch (err) {
+            why = String(err?.message || err).slice(0, 400);
+          }
+          const ms = Date.now() - t0;
+          if (made) await deleteFile(env, made.path).catch(() => {});
+          return json({ ok: !why, bytes: want, ms, ...(why ? { error: why, said: personalWhy(new Error(why), want) } : { wrote: made.size }) });
+        }
         if (url.searchParams.get('do') === 'unshowcase') {
           const rows = await queryDocs(env, 'cases', [['showcase', 'EQUAL', true]], 5).catch(() => []);
           const wiped = [];
@@ -1988,7 +2012,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-07-the-answer-rides-the-batch';
+const BUILD_TAG = 'v2026-09-09-the-name-that-was-too-long';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -1996,7 +2020,7 @@ const BUILD_TAG = 'v2026-09-07-the-answer-rides-the-batch';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '3.5';
+const VERSION = '3.6';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -9164,14 +9188,35 @@ async function handlePersonal(request, env, url) {
     // be applied (reviewer B); every browser sends one for a File body.
     if (!declared) return json({ error: 'Length required.' }, 411);
     if (declared > PERSONAL_MAX_BYTES) return json({ error: 'That file is over 50 MB.' }, 413);
-    const bytes = await request.arrayBuffer();
+    let bytes;
+    try {
+      bytes = await request.arrayBuffer();
+    } catch (err) {
+      // The upload stopped partway: a phone that slept, a network that
+      // changed. Nothing was written, and saying so beats a 500.
+      console.error('personal body failed:', err.message || err);
+      return json({ error: 'The file did not finish uploading. Try it again.' }, 400);
+    }
     if (!bytes.byteLength) return json({ error: 'Empty file.' }, 400);
     if (bytes.byteLength > PERSONAL_MAX_BYTES) return json({ error: 'That file is over 50 MB.' }, 413);
     let name = '';
     try { name = decodeURIComponent(request.headers.get('x-pa-name') || ''); } catch { name = ''; }
     const contentType = (request.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim().slice(0, 100);
     const path = prefix + personalLeaf(name.slice(0, 200));
-    const row = await putFile(env, path, bytes, contentType);
+    // WHY A FAILED UPLOAD NOW SAYS WHY (Eric, 2026-09-09, a screenshot of his
+    // own shelf reading "Christopher_Miller_UCHealth_Record_Packet.pdf:
+    // Internal error"). putFile threw, nothing here caught it, and the
+    // Worker's top-level catch turned every possible cause into one word he
+    // could do nothing with. The list route has caught its own failures since
+    // the day this shipped; the upload never did. This shelf is his alone, so
+    // the reason storage gave is his to read.
+    let row;
+    try {
+      row = await putFile(env, path, bytes, contentType);
+    } catch (err) {
+      console.error('personal put failed:', err.stack || err);
+      return json({ error: personalWhy(err, bytes.byteLength) }, 502);
+    }
     row.url = await signFileLink(env, uid, row.path);
     return noStore(json({ ok: true, file: row }));
   }
@@ -9184,6 +9229,24 @@ async function handlePersonal(request, env, url) {
     return json({ ok: true });
   }
   return json({ error: 'Not found' }, 404);
+}
+
+/**
+ * Why an upload did not land, in words, with what storage actually said kept
+ * on the end. Only ever read by Eric: this route is his alone.
+ */
+function personalWhy(err, size) {
+  const m = String(err?.message || err);
+  const mb = `${(size / 1048576).toFixed(1)} MB`;
+  if (/\b(401|403)\b/.test(m))
+    return `Storage refused the write (${mb}). The Worker's service account may have lost permission to write.`;
+  if (/\b429\b|rateLimit|quota/i.test(m))
+    return `Storage is rate limiting or out of quota right now (${mb}). Try again in a minute.`;
+  if (/\b5\d\d\b/.test(m))
+    return `Storage had a server error (${mb}). Try again.`;
+  if (/\b41[34]\b|too large|entity/i.test(m))
+    return `Storage would not take a file this size (${mb}).`;
+  return `The upload did not reach storage (${mb}). It said: ${m.slice(0, 200)}`;
 }
 
 /** The reply, marked so no cache on the way back keeps it. */

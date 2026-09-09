@@ -140,7 +140,10 @@ check('AF4 the finish reads the landed message as the live path did: the tool_us
 // ---- AF5: the panel's heartbeat rule and the demo -----------------------------
 // NEGATIVE CONTROL (run 2026-09-07): the panel's `QA_STALL_MS = 5 * 60_000` put back to `4 * 60_000` made this read
 //   FAIL  AF5 the panel judges a question by its heartbeat, not its age: ...
-const qaBlock = (P.match(/const QA_STALL_MS = [\s\S]*?function renderQa\(qa\) \{[\s\S]*?qaEl\.innerHTML = rows\.join\(''\);/) || [''])[0];
+// Re-pinned 2026-09-09 (v3.6): the slab used to end on `qaEl.innerHTML =
+// rows.join('')`, the very line that took his selection away every poll. It
+// ends on the row-by-row paint's own last line now; AF7 holds that paint.
+const qaBlock = (P.match(/const QA_STALL_MS = [\s\S]*?function renderQa\(qa\) \{[\s\S]*?qaDrawn = html;/) || [''])[0];
 check('AF5 the panel judges a question by its heartbeat, not its age: five quiet minutes on the newer of at and progressAt say no answer came back, after a minute and a half a running row says a long answer takes a few minutes and lands on its own, and the demo mirrors the ask as a running row with a batch that lands a few seconds later, newest first',
   /const QA_STALL_MS = 5 \* 60_000;\n\s+const QA_LONG_MS = 90_000;/.test(qaBlock)
   && /const qaBeat = \(q\) => Math\.max\(\n\s+q\.at \? toDate\(q\.at\)\?\.getTime\(\) \|\| 0 : 0,\n\s+q\.progressAt \? toDate\(q\.progressAt\)\?\.getTime\(\) \|\| 0 : 0\);/.test(qaBlock)
@@ -163,6 +166,50 @@ check('AF6 the version note says a question rides the background lane and lands 
   && !/\badvisor\b/i.test(entry) && !/\bmodel\b/i.test(entry) && !DASH.test(entry)
   && /every long model turn rides the Batches API instead/.test(CFG) && /a "workflows" key beside it, were rejected/.test(CFG)
   && !/"limits"\s*:/.test(CFG) && !/"workflows"\s*:/.test(CFG));
+
+// ---- AF7: a selection in an answer survives a poll -----------------------------
+// Eric, 2026-09-09: "when I go to select text from the advisor, it only selects
+// it for maybe two seconds, making it extremely difficult to copy to paste".
+// The container was rewritten whole on every poll, and the panel polls every
+// two and a half seconds while anything runs.
+// NEGATIVE CONTROL (run 2026-09-09): the row loop replaced by `qaEl.innerHTML = html.join('')` again made this read
+//   FAIL  AF7 the answers are painted row by row and only where the words changed, ...
+const renderQaSrc = (P.match(/function renderQa\(qa\) \{[\s\S]*?\n  \}/) || [''])[0];
+check('AF7 the answers are painted row by row and only where the words changed, so a selection inside an answer survives a poll that changed nothing: the whole container is rewritten only when the number of rows changes, an unchanged row keeps its own node, and nothing rewrites the container on every poll any more',
+  renderQaSrc.length > 400
+  && /const html = rows\.map\(\(r\) => r\.trim\(\)\);/.test(renderQaSrc)
+  && /if \(html\.length !== qaDrawn\.length\) \{\n\s+qaEl\.innerHTML = html\.join\(''\);\n\s+\} else \{/.test(renderQaSrc)
+  && /if \(html\[i\] === qaDrawn\[i\]\) continue;/.test(renderQaSrc)
+  && /const node = qaEl\.children\[i\];\n\s+if \(node\) node\.outerHTML = html\[i\];/.test(renderQaSrc)
+  && /qaDrawn = html;/.test(renderQaSrc)
+  && /let qaDrawn = \[\];/.test(P)
+  && !/qaEl\.innerHTML = rows\.join\(''\);/.test(P),
+  `${renderQaSrc.length} chars`);
+
+// ---- AF8: the name a batch is filed under fits the provider's cap -------------
+// Eric, 2026-09-09: "everything, including ask the advisor, is down. everything
+// but chat". Not his account and not the provider: the ask's custom_id, added
+// two days earlier, came to 72 characters with a real case id in it, and the
+// provider caps it at 64, so every question 400d the moment it was asked while
+// the reading, at 59, carried on working. This runs the shipped builder over
+// the worst input either caller can hand it and measures what comes out.
+// NEGATIVE CONTROL (run 2026-09-09): BATCH_ID_MAX raised to 80, so the builder went back over the real cap, made this read
+//   FAIL  AF8 every name a batch is filed under fits the provider's 64 characters, ...
+const idMax = (ADV.match(/const BATCH_ID_MAX = \d+;/) || [''])[0];
+const idFn = (ADV.match(/function batchCustomId\(prefix, id, stamp\) \{[\s\S]*?\n\}/) || [''])[0];
+const buildId = idMax && idFn ? new Function(`${idMax}\n${idFn}\nreturn batchCustomId;`)() : null;
+const FAR = 4102444800000;
+const worstAsk = buildId ? buildId('ask-case', `${'i'.repeat(64)}-${'q'.repeat(8)}`, FAR) : 'x'.repeat(99);
+const worstRead = buildId ? buildId('case', 'i'.repeat(64), FAR) : 'x'.repeat(99);
+check('AF8 every name a batch is filed under fits the provider\'s 64 characters, measured by running the shipped builder over the longest input either caller can give it; both callers use that builder, and a name that somehow got past it is refused at the submit rather than quietly trimmed into one no result can be matched against',
+  !!buildId && worstAsk.length <= 64 && worstRead.length <= 64
+  && worstAsk.startsWith('ask-case-') && worstRead.startsWith('case-')
+  && /const customId = batchCustomId\(kind, id, runT0\);/.test(ADV)
+  && /const customId = batchCustomId\(`ask-\$\{kind\}`, `\$\{id\}-\$\{String\(qaId\)\.slice\(0, 8\)\}`, t0\);/.test(ADV)
+  && !/const customId = `/.test(ADV)
+  && /if \(String\(customId\)\.length > BATCH_ID_MAX\)\n\s+throw new Error\(/.test(ADV)
+  && /const BATCH_ID_MAX = 64;/.test(ADV),
+  `ask ${worstAsk.length}, read ${worstRead.length}`);
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
