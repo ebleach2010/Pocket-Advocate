@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '3.8';
+export const VERSION = '3.9';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '3.8';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // WHAT THE DATABASE SAYS (2026-09-09): every read came back empty at
+    // once, the diagnostics included, and every call site catches a failure
+    // and degrades quietly, so there was nothing to read. A keyed door asks
+    // for a token, a read and a write, uncaught, and reports each.
+    version: '3.9',
+    quiet: true,
+    client: [],
+    admin: [
+      'A keyed door now asks the database for a token, one read and one write and reports exactly what each one answered. Everything in the app degrades quietly when a read fails, which is right for a page a client is looking at and leaves nothing to go on when the whole thing goes quiet at once.',
+    ],
+  },
   {
     // THE TOP SETTING ON EVERY CASE (Eric, 2026-09-09, asking for the
     // strongest setting on all cases, his own included). His exact words are

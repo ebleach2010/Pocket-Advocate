@@ -981,6 +981,29 @@ export default {
         // says how big, so the size a real records packet fails at can be
         // found without asking him to try it over and over. Nothing of his
         // is read, written or listed.
+        // WHY EVERY READ CAME BACK EMPTY (2026-09-09). Every call site in
+        // this Worker catches a Firestore failure and degrades to a default,
+        // which is right for a client's page and useless for finding out
+        // what is wrong: the diag itself went blank, cron and all. This asks
+        // the three questions in order, uncaught, and says what each one
+        // answered: can the service account get a token, can it read one
+        // document, can it write one. Touches diag/probe and nothing of his.
+        if (url.searchParams.get('do') === 'firestore-probe') {
+          const out = {};
+          for (const [name, run] of [
+            ['token', async () => ({ length: String(await getAccessToken(env)).length })],
+            ['read', async () => ({ found: !!(await getDoc(env, 'config/rates')) })],
+            ['write', async () => { await patchDoc(env, 'diag/probe', { at: new Date() }, { mask: ['at'] }); return { wrote: true }; }],
+          ]) {
+            const t0 = Date.now();
+            try {
+              out[name] = { ok: true, ms: Date.now() - t0, ...(await run()) };
+            } catch (err) {
+              out[name] = { ok: false, ms: Date.now() - t0, error: String(err?.message || err).slice(0, 400) };
+            }
+          }
+          return json(out);
+        }
         if (url.searchParams.get('do') === 'personal-probe') {
           const uid = env.ADMIN_UID || '';
           if (!/^[\w-]{1,128}$/.test(uid)) return json({ error: 'No admin uid on this Worker.' }, 400);
@@ -2009,7 +2032,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-09-max-on-every-case';
+const BUILD_TAG = 'v2026-09-09-what-firestore-says';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2017,7 +2040,7 @@ const BUILD_TAG = 'v2026-09-09-max-on-every-case';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '3.8';
+const VERSION = '3.9';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

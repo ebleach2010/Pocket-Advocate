@@ -474,6 +474,23 @@ reset();
     && !/\badvisor\b/i.test(entry) && !/[\u2014\u2013]/.test(entry), entry.slice(0, 80));
 }
 
+{
+  // The database probe, added the same day for the same reason as the storage
+  // one: every call site catches a failure and degrades, so when the whole
+  // thing went quiet at once there was nothing to read. Uncaught on purpose,
+  // in order, and it touches diag/probe and nothing of his.
+  const probe = (SRC.match(/if \(url\.searchParams\.get\('do'\) === 'firestore-probe'\)[\s\S]*?\n        \}/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-09-09): the probe's write step pointed at 'cases/probe' made this read
+  //   FAIL  H5 the database probe asks for a token, a read and a write, in that order, reports what each answered and writes only to its own diag document
+  check('H5 the database probe asks for a token, a read and a write, in that order, reports what each answered and writes only to its own diag document',
+    probe.length > 200
+    && /\['token', async \(\) => \(\{ length: String\(await getAccessToken\(env\)\)\.length \}\)\]/.test(probe)
+    && /\['read', async \(\) => \(\{ found: !!\(await getDoc\(env, 'config\/rates'\)\) \}\)\]/.test(probe)
+    && /patchDoc\(env, 'diag\/probe'/.test(probe)
+    && /error: String\(err\?\.message \|\| err\)\.slice\(0, 400\)/.test(probe)
+    && !/cases\/|advisorKnowledge|personal\//.test(probe), `${probe.length} chars`);
+}
+
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);
 if (fails) process.exit(1);
