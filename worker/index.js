@@ -2012,7 +2012,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-09-the-name-that-was-too-long';
+const BUILD_TAG = 'v2026-09-09-the-billing-account';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2020,7 +2020,7 @@ const BUILD_TAG = 'v2026-09-09-the-name-that-was-too-long';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '3.6';
+const VERSION = '3.7';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -9238,6 +9238,12 @@ async function handlePersonal(request, env, url) {
 function personalWhy(err, size) {
   const m = String(err?.message || err);
   const mb = `${(size / 1048576).toFixed(1)} MB`;
+  // The one that actually happened (2026-09-09): Google answered every write
+  // with 403 "The billing account for the owning project is disabled in state
+  // delinquent". Nothing in the app can fix that, so the message says where to
+  // go instead of sending him hunting for a permission bug.
+  if (/billing|delinquent|accountDisabled/i.test(m))
+    return `Storage is refusing writes (${mb}) because the Google Cloud billing account for this project is disabled. Fix the billing account and uploads work again with no change here.`;
   if (/\b(401|403)\b/.test(m))
     return `Storage refused the write (${mb}). The Worker's service account may have lost permission to write.`;
   if (/\b429\b|rateLimit|quota/i.test(m))

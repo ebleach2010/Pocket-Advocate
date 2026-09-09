@@ -237,6 +237,14 @@ polls and through the second answer landing. Run against the old paint it
 failed three steps with the selection at zero characters; against this one it
 passes eight of eight.
 
+The probe answered on the first try, and it was not the file and not its
+size: every write comes back `403 The billing account for the owning project
+is disabled in state delinquent`. Nothing in this repository can fix that, so
+personalWhy names it, ahead of the plain 403 branch it would otherwise be
+mistaken for, and says that fixing the billing account is the whole of the
+work. 1 KB, 1 MB and 5 MB all fail identically, which is what rules the file
+out.
+
 ### An answer rides the batch (2026-09-07)
 
 Eric, 2026-09-07: "now when asking the advisor something: The server answered

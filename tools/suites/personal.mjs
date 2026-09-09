@@ -431,10 +431,17 @@ reset();
 }
 {
   const why = (m, n) => W.personalWhy(new Error(m), n);
-  // NEGATIVE CONTROL (run 2026-09-09): personalWhy's 401/403 branch deleted made this read
+  // The one that actually happened, found by the probe on the first try
+  // (2026-09-09): 403 "The billing account for the owning project is disabled
+  // in state delinquent". It arrives as a 403, so it has to be named BEFORE
+  // the plain 403 branch or it reads as a permissions problem and sends him
+  // looking in the wrong place.
+  // NEGATIVE CONTROL (run 2026-09-09): personalWhy's billing branch moved below the 401/403 branch made this read
   //   FAIL  H2 the reason names the cause and always carries the size and what storage said
   check('H2 the reason names the cause and always carries the size and what storage said',
-    /Storage refused the write \(1\.0 MB\)/.test(why('storage put x: 403 no access', 1048576))
+    /billing account for this project is disabled/.test(why('storage put x: 403 {"message":"The billing account for the owning project is disabled in state delinquent"}', 1048576))
+    && /Fix the billing account/.test(why('storage put x: 403 accountDisabled', 1))
+    && /Storage refused the write \(1\.0 MB\)/.test(why('storage put x: 403 no access', 1048576))
     && /rate limiting or out of quota/.test(why('storage put x: 429 slow down', 1))
     && /server error/.test(why('storage put x: 503 oops', 1))
     && /would not take a file this size/.test(why('storage put x: 413 too large', 1))

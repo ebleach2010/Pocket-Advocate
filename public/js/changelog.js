@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '3.6';
+export const VERSION = '3.7';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '3.6';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE REASON, NAMED (2026-09-09): the probe added in 3.6 answered on the
+    // first try, and it was not the file or its size. Every write to storage
+    // is refused because the project's cloud billing account is disabled.
+    // Nothing here can fix that, so the shelf says where to go.
+    version: '3.7',
+    quiet: true,
+    client: [],
+    admin: [
+      'An upload refused because the cloud billing account for the project is disabled now says exactly that, and that fixing the billing account is all it takes. It was reading as a permissions problem, which would have sent you looking in the wrong place.',
+    ],
+  },
   {
     // THE SHELF SAYS WHY, AND A SELECTION HOLDS (Eric, 2026-09-09: a
     // screenshot of a personal upload reading "Internal error", and "when I
