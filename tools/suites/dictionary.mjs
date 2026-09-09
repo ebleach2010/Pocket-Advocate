@@ -64,7 +64,11 @@ check('K1 every dictionary read walks every page: the dictionary route, the pane
   (W.match(/listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)/g) || []).length === 4
   && !/listDocs\(env, 'advisorKnowledge', \{ pageSize: \d+ \}\)/.test(W)
   && /const rows = await listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)\.catch\(\(\) => \[\]\);\n  return json\(\{\n    terms: rows\.map/.test(W)
-  && /slowRead\('knowledge', \(\) => listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)\.catch\(\(\) => \[\]\)\),\n    getDoc\(env, `\$\{parent\}\/\$\{id\}\/private\/notes`\)/.test(W)
+  // Re-pinned again 2026-09-09 (v4.2): the catch moved OUT of the reader and
+  // into slowRead, which answers the fallback and remembers nothing on a
+  // failure, so a refused read is never held for a minute as an empty list.
+  && /slowRead\('knowledge', \(\) => listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\), \[\]\),\n    getDoc\(env, `\$\{parent\}\/\$\{id\}\/private\/notes`\)/.test(W)
+  && /try \{ value = await read\(\); \} catch \{ return fallback; \}/.test(W)
   && /const SLOW_TTL_MS = 60_000;/.test(W) && /const QA_PAGE = 5;/.test(W),
   String((W.match(/listDocs\(env, 'advisorKnowledge'[^\n]*/g) || []).join(' | ')));
 

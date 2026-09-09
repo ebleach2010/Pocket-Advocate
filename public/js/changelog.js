@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '4.1';
+export const VERSION = '4.2';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '4.1';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // WHOSE SCREEN (2026-09-09, his screenshot): the plain client wording
+    // came up on an admin page, because most admin routes sit outside the
+    // /api/admin/ prefix the split keyed on. It keys on his signed cookie
+    // now, which every admin page carries.
+    version: '4.2',
+    quiet: true,
+    client: [],
+    admin: [
+      'The unavailable message now tells your pages apart from a client\'s by your signed sign-in, not by the address of the route, so you get the version that names the cause and the remedy on every screen of yours, not only some.',
+      'Reloading one of your pages while the database is refusing reads no longer signs this phone out. The page used to take "your profile could not be read" as "this is not the admin", clear the trusted device and the PIN pad, and send you to the front page. An unreadable profile on a device that already carries your sign-in now leaves you where you are.',
+      'A refused read of the dictionary or your style profile is no longer remembered for a minute as an empty answer, so the Key terms page fills the moment reads come back rather than a minute later.',
+    ],
+  },
   {
     // SAY WHAT IS WRONG (Eric, 2026-09-09, from a hospital bed: "I'm getting
     // internal errors at a critical moment for this case"). Every door in

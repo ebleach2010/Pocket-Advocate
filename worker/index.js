@@ -1182,7 +1182,13 @@ export default {
       // it. Nothing in this Worker can fix that, so it says what is true and
       // who can fix it. A client gets the same fact without the machinery:
       // they can do nothing about it and should not be frightened by it.
-      const outOfReads = quotaFault(err, url);
+      // Whose screen this is (2026-09-09, his screenshot of the client
+      // wording on an admin page): most admin routes do not live under
+      // /api/admin/, but every admin page carries his signed cookie, and
+      // checking it costs one HMAC and no read.
+      const his = url.pathname.startsWith('/api/admin/') || url.pathname === '/api/diag'
+        || !!(await adminCookieUid(request, env).catch(() => null));
+      const outOfReads = quotaFault(err, his);
       return json(outOfReads || { error: 'Internal error' }, outOfReads ? 503 : 500);
     }
 
@@ -2055,7 +2061,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-09-say-what-is-wrong';
+const BUILD_TAG = 'v2026-09-09-whose-screen';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2063,7 +2069,7 @@ const BUILD_TAG = 'v2026-09-09-say-what-is-wrong';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '4.1';
+const VERSION = '4.2';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -6363,10 +6369,14 @@ function keepaliveRun(ctx, work, { raw = false } = {}) {
 const QA_PAGE = 5;
 const SLOW_TTL_MS = 60_000;
 const slowCache = new Map();
-async function slowRead(key, read) {
+async function slowRead(key, read, fallback) {
   const hit = slowCache.get(key);
   if (hit && Date.now() - hit.at < SLOW_TTL_MS) return hit.value;
-  const value = await read();
+  // A failure is answered with the fallback and NOT remembered (2026-09-09):
+  // caching an empty dictionary for a minute meant the Key terms page stayed
+  // blank for a minute after the reads came back.
+  let value;
+  try { value = await read(); } catch { return fallback; }
   slowCache.set(key, { at: Date.now(), value });
   return value;
 }
@@ -6406,9 +6416,9 @@ async function handleAdvisorState(request, env, url) {
     // the Key terms page and the learned filter must see the whole list. Held
     // for a minute per isolate (2026-09-09): it is the same list on every poll
     // and it only changes when a reading lands.
-    slowRead('knowledge', () => listDocs(env, 'advisorKnowledge', { pageSize: 300, all: true }).catch(() => [])),
+    slowRead('knowledge', () => listDocs(env, 'advisorKnowledge', { pageSize: 300, all: true }), []),
     getDoc(env, `${parent}/${id}/private/notes`).catch(() => null),
-    slowRead('style', () => getDoc(env, 'advisorStyle/profile').catch(() => null)),
+    slowRead('style', () => getDoc(env, 'advisorStyle/profile'), null),
   ]);
   // A question in flight is collected here too (2026-09-07): the panel polls
   // this route every couple of seconds while a row says running, so it is
@@ -9313,10 +9323,9 @@ function personalWhy(err, size) {
  * failure. Split by who is asking: his own routes get the fact and the
  * remedy, a client gets the reassurance and none of the plumbing.
  */
-function quotaFault(err, url) {
+function quotaFault(err, mine) {
   const m = String(err?.message || err);
   if (!/\b429\b|RESOURCE_EXHAUSTED|Quota exceeded/i.test(m)) return null;
-  const mine = url.pathname.startsWith('/api/admin/') || url.pathname === '/api/diag';
   return {
     quota: true,
     error: mine

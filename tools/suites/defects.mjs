@@ -685,13 +685,17 @@ ck('clock: all switches share one painter set, so no two can disagree',
 // rather than pattern-matched, because what matters is what it actually says
 // to each of the two people who can see it.
 {
-  const src = W.match(/function quotaFault\(err, url\) \{[\s\S]*?\n\}/);
+  const src = W.match(/function quotaFault\(err, mine\) \{[\s\S]*?\n\}/);
   const quotaFault = src ? new Function(`${src[0]}; return quotaFault;`)() : null;
   const outOfReads = new Error('firestore get config/rates: 429 {"error":{"code":429,"message":"Quota exceeded.","status":"RESOURCE_EXHAUSTED"}}');
   const somethingElse = new Error('firestore get cases/x: 500 upstream boom');
-  const mine = quotaFault && quotaFault(outOfReads, { pathname: '/api/admin/advisor' });
-  const theirs = quotaFault && quotaFault(outOfReads, { pathname: '/api/case' });
-  const diag = quotaFault && quotaFault(outOfReads, { pathname: '/api/diag' });
+  // Re-pinned 2026-09-09 (v4.2): the split is by WHO is asking, not by the
+  // path. His screenshot showed the client wording on an admin page, because
+  // most admin routes do not live under /api/admin/; the catch now also
+  // honours his signed admin cookie, which every admin page carries.
+  const mine = quotaFault && quotaFault(outOfReads, true);
+  const theirs = quotaFault && quotaFault(outOfReads, false);
+  const diag = quotaFault && quotaFault(outOfReads, true);
   // NEGATIVE CONTROL (run 2026-09-09): the 429 test in quotaFault narrowed to
   // /RESOURCE_EXHAUSTED/ alone, so a plain "429 Quota exceeded." fell through
   // to the old wording, made this read
@@ -704,12 +708,33 @@ ck('clock: all switches share one painter set, so no two can disagree',
     && /Nothing you did caused it/.test(theirs.error) && /nothing you have sent is lost/.test(theirs.error)
     && !/billing|allowance|database|quota/i.test(theirs.error)
     && mine.error === diag.error
-    && quotaFault(somethingElse, { pathname: '/api/admin/advisor' }) === null,
+    && quotaFault(somethingElse, true) === null,
     JSON.stringify({ mine: mine && mine.error.slice(0, 40), theirs: theirs && theirs.error.slice(0, 40) }));
   // And the catch has to actually use it, with a status that is not 500: a
   // 500 is what a broken app returns, and this app is not broken.
   ck('and the top-level catch answers with it, at 503, keeping Internal error for everything else',
-    /const outOfReads = quotaFault\(err, url\);\n\s+return json\(outOfReads \|\| \{ error: 'Internal error' \}, outOfReads \? 503 : 500\);/.test(W));
+    /const his = url\.pathname\.startsWith\('\/api\/admin\/'\) \|\| url\.pathname === '\/api\/diag'\n\s+\|\| !!\(await adminCookieUid\(request, env\)\.catch\(\(\) => null\)\);\n\s+const outOfReads = quotaFault\(err, his\);\n\s+return json\(outOfReads \|\| \{ error: 'Internal error' \}, outOfReads \? 503 : 500\);/.test(W));
+}
+
+// ---- a refused read is not a refusal (2026-09-09) ------------------------
+// The browser gate read "cannot read your profile" as "not the admin", wiped
+// the trusted-device flag and the PIN pad off the one phone he had, and sent
+// him to the marketing page, while the database was refusing every read. The
+// gate keeps three answers now, and only a definite no clears the device.
+{
+  const AUTH = f('public/js/auth.js');
+  const isAdminSrc = (AUTH.match(/export async function isAdmin\(user\) \{[\s\S]*?\n\}/) || [''])[0];
+  const gateSrc = (AUTH.match(/export async function requireAdmin\(\) \{[\s\S]*?location\.href = '\/';\n\s+return null;\n\s+\}/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-09-09): isAdmin's catch put back to `return false;` made this read
+  //   FAIL  the browser gate answers null when the profile cannot be read, and a device that already carries the admin hint is left signed in on that answer; only a definite no clears the device
+  ck('the browser gate answers null when the profile cannot be read, and a device that already carries the admin hint is left signed in on that answer; only a definite no clears the device',
+    /\} catch \{\n\s+return null;\n\s+\}/.test(isAdminSrc)
+    && /const admin = await isAdmin\(user\);/.test(gateSrc)
+    && /const unknownButHis = admin === null && !!localStorage\.getItem\('pa-admin-device'\);/.test(gateSrc)
+    && /if \(!admin && !unknownButHis\) \{/.test(gateSrc)
+    && /localStorage\.removeItem\('pa-admin-device'\);\n\s+localStorage\.removeItem\('pa-admin-door'\);/.test(gateSrc)
+    && !/if \(!\(await isAdmin\(user\)\)\) \{/.test(AUTH),
+    `${isAdminSrc.length}/${gateSrc.length} chars`);
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

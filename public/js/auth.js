@@ -103,13 +103,19 @@ async function ensureAdminSession(user) {
   } catch { /* offline, or already holding a good cookie */ }
 }
 
-/** True when the signed-in user is the admin (Eric). */
+/**
+ * True when the signed-in user is the admin (Eric), false when the profile
+ * says otherwise, and NULL when the profile could not be read at all. The
+ * third answer is new (2026-09-09) and it is not the same as no: the
+ * database was refusing every read, this returned false, and the page below
+ * took that as proof this was not his phone.
+ */
 export async function isAdmin(user) {
   try {
     const snapshot = await getDoc(doc(db, 'users', user.uid));
     return snapshot.exists() && snapshot.data().role === 'admin';
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -117,7 +123,16 @@ export async function isAdmin(user) {
 export async function requireAdmin() {
   const user = await requireUser();
   if (!user) return null;
-  if (!(await isAdmin(user))) {
+  const admin = await isAdmin(user);
+  // A REFUSED READ IS NOT A REFUSAL (Eric, 2026-09-09, in hospital, with the
+  // database over its daily read allowance). The profile could not be read,
+  // isAdmin said false, and this wiped the trusted-device flag and the PIN
+  // pad off the one phone he had and sent him to the marketing page. A
+  // device that already carries the admin hint, when the answer is unknown,
+  // is left alone: every real door is still the Worker's, which checks for
+  // itself, so nothing is opened by staying on the page.
+  const unknownButHis = admin === null && !!localStorage.getItem('pa-admin-device');
+  if (!admin && !unknownButHis) {
     // Clear the open-to-admin hint BEFORE bouncing to '/', or a stale hint on
     // a non-admin device would bounce '/' right back here, forever. The PIN
     // pad goes with it: this is not his phone.

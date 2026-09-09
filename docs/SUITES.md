@@ -183,6 +183,74 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### The day the reads ran out (2026-09-09, v3.9 to v4.2)
+
+Eric, from a hospital bed, mid relapse: "I'm getting internal errors at a
+critical moment for this case. patch asap." Then: "the whole app is fucking
+failing." Then: "Every aspect of the app but chat is failing."
+
+What it was. The Google Cloud billing account was already disabled that
+morning (storage writes refused, `The billing account for the owning project
+is disabled in state delinquent`). A disabled billing account puts the
+Firestore project on the free daily read allowance, and the app spent it by
+lunchtime. Every read, from the service account and from an anonymous caller
+with the public web key alike, answered `429 Quota exceeded`. Writes still
+landed. Nothing in this repository restores a spent allowance: a current
+billing account (or a fresh one linked to the project) lifts the cap at once,
+and otherwise it resets at midnight Pacific.
+
+Why chat looked fine: the phone shows its own messages from the SDK's local
+cache and his sends still go through, because writes work. Nothing new from a
+client was reaching him.
+
+What shipped, in order:
+
+`do=firestore-probe` (v3.9) asks for a token, one read and one write,
+uncaught, and reports each. Every call site catches a database failure and
+degrades to a default, which is right on a client's page and leaves nothing
+to go on when the whole thing goes quiet at once; the diag itself had gone
+blank, cron and all.
+
+Fewer reads (v4.0): the case panel fetched twenty question rows to paint
+three, plus the whole dictionary and the style profile, every two and a half
+seconds while anything ran and every twelve when nothing did. One tab left
+open was the biggest reader in the app. Five rows now, the two slow documents
+held a minute per isolate, idle at thirty seconds; busy is untouched. The
+stranded-case sweep, which reads every open case, moved from every five
+minutes to every fifteen.
+
+Say what is wrong (v4.1): the Worker's top-level catch recognises a refusal
+for want of allowance and answers 503 with the fact and the remedy on his
+routes and a plain reassurance on a client's, instead of "Internal error" on
+every screen at once. `quotaFault` is lifted and RUN in defects.mjs on both
+audiences and on an unrelated failure.
+
+Whose screen (v4.2): his screenshot showed the client wording on an admin
+page, because the split keyed on the `/api/admin/` prefix and most admin
+routes sit outside it. It keys on his signed admin cookie now, one HMAC and no
+read. Same push: the browser gate read "cannot read your profile" as "not the
+admin", wiped `pa-admin-device` and `pa-admin-door` and bounced him to the
+front page; `isAdmin` answers null on a failed read and a device carrying the
+hint stays. And `slowRead` no longer remembers a failure for a minute.
+
+The audit. A five-surface workflow hunted the dangerous pattern, a caught
+read whose null is then written on: `getDoc(...).catch(() => null)` followed
+by a create, an overwrite, a delete or a notification. It was cut off by an
+interrupt after all five sweeps and six verdicts; the results were recovered
+from its journal. Nearly every alarming finding was refuted on reachability:
+an EARLIER, UNCAUGHT read kills the route or the cron job before the caught
+read is reached. The run-once migrations read their marker uncaught; the
+queue drain lists the queue uncaught; the stats walk lists cases uncaught;
+the clock nudge reads the clock document caught, gets null, and returns
+before the loop. All fail closed today. The two that were real and reachable
+from the phone are the two fixed in v4.2. The rest are latent, for a PARTIAL
+outage where one read fails and its neighbour succeeds, and are listed in
+the session's notes for a calmer day.
+
+    node tools/suites/defects.mjs     the quota message, run; the browser gate
+    node tools/suites/personal.mjs    H5 the database probe
+    node tools/suites/dictionary.mjs  K1, re-pinned twice with dated notes
+
 ### The top setting on every case (2026-09-09)
 
 Eric, 2026-09-09: "make sure we're using opus max with the API key for all
