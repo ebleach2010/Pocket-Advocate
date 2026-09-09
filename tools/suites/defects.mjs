@@ -737,5 +737,54 @@ ck('clock: all switches share one painter set, so no two can disagree',
     `${isAdminSrc.length}/${gateSrc.length} chars`);
 }
 
+// ---- three answers, not two (2026-09-09) ---------------------------------
+// tryGet and tryQuery are lifted and RUN against a stub that throws, a stub
+// that answers 404 as null, and a stub that answers a document: the three
+// answers have to be three different values. Then the guards are counted at
+// the sites where a write or a delete used to follow the guess.
+{
+  const FS = f('worker/firestore.js');
+  const sym = (FS.match(/export const READ_FAILED = Symbol\('read failed'\);/) || [''])[0];
+  const tg = (FS.match(/export async function tryGet\(env, path\) \{[\s\S]*?\n\}/) || [''])[0];
+  const tq = (FS.match(/export async function tryQuery\(env, collectionId, filters, limit = 20\) \{[\s\S]*?\n\}/) || [''])[0];
+  const mk = (getDoc, queryDocs) => new Function('getDoc', 'queryDocs',
+    `${sym.replace('export ', '')} ${tg.replace('export ', '')} ${tq.replace('export ', '')} return { READ_FAILED, tryGet, tryQuery };`)(getDoc, queryDocs);
+  const boom = async () => { throw new Error('firestore get x: 429 Quota exceeded.'); };
+  const none = async () => null;
+  const some = async () => ({ data: { a: 1 } });
+  const run = async () => {
+    const r = {};
+    const a = mk(boom, boom); r.failedGet = await a.tryGet({}, 'x'); r.failedQuery = await a.tryQuery({}, 'c', []); r.sym = a.READ_FAILED;
+    const b = mk(none, async () => []); r.missing = await b.tryGet({}, 'x'); r.empty = await b.tryQuery({}, 'c', []);
+    const c = mk(some, async () => [1]); r.found = await c.tryGet({}, 'x');
+    return r;
+  };
+  const r = await run();
+  const guards = (src) => (src.match(/=== READ_FAILED/g) || []).length;
+  // NEGATIVE CONTROL (run 2026-09-09): tryGet's catch returning null instead of READ_FAILED made this read
+  //   FAIL  a read that fails is a third answer, distinct from a document that is not there, and every site where a write or a delete followed the guess now stops on it
+  ck('a read that fails is a third answer, distinct from a document that is not there, and every site where a write or a delete followed the guess now stops on it',
+    !!sym && !!tg && !!tq
+    && r.failedGet === r.sym && r.failedQuery === r.sym && typeof r.sym === 'symbol'
+    && r.missing === null && Array.isArray(r.empty) && r.empty.length === 0 && r.found && r.found.data.a === 1
+    // Twelve and four: the fifth Worker site, the free-call guard, has no
+    // catch at all any more, which is its own way of stopping.
+    && guards(ADV) >= 12 && guards(W) >= 4
+    && /if \(c === READ_FAILED\) throw new Error\('The case could not be read, so no turn runs on it\.'\);/.test(ADV)
+    && /if \(q === READ_FAILED \|\| q\) return;\n\s+if \(!force && last/.test(ADV)
+    && /if \(st === READ_FAILED\) continue; \/\/ unreadable is not finished/.test(ADV)
+    && (ADV.match(/if \(st === READ_FAILED\) continue; \/\/ unreadable is not finished/g) || []).length === 5
+    && /if \(row === READ_FAILED\) return false;/.test(ADV)
+    && /if \(profile === READ_FAILED\) return cleaned;/.test(ADV)
+    && /if \(mine === READ_FAILED\) throw new Error\(/.test(ADV)
+    && /if \(rows === READ_FAILED\) throw new Error\('The case for this hold could not be read; Stripe will retry\.'\);/.test(W)
+    && /if \(existing === READ_FAILED\) throw new Error\(/.test(W)
+    && /if \(c === READ_FAILED\) continue; \/\/ unreadable is not stopped/.test(W)
+    && /if \(cur === READ_FAILED\) return null;/.test(W)
+    && /\[\['email', 'EQUAL', email\], \['state', 'EQUAL', 'booked'\]\], 5\);/.test(W)
+    && !/\[\['email', 'EQUAL', email\], \['state', 'EQUAL', 'booked'\]\], 5\)\.catch/.test(W),
+    JSON.stringify({ failedGet: String(r.failedGet), missing: r.missing, guardsAdv: guards(ADV), guardsW: guards(W) }));
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);

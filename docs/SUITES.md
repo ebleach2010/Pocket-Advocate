@@ -183,6 +183,55 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### Three answers, not two (2026-09-09, v4.3)
+
+The audit behind v4.2 hunted one pattern: `getDoc(...).catch(() => null)`
+followed by a write or a delete. That idiom folds "the database would not
+answer" into "there is no such document", and while reads were refused and
+writes were not, the fold is the whole hazard. Every alarming case was masked
+that afternoon by an earlier uncaught read killing the job first. In a
+partial outage, at the edges when an allowance runs out or comes back mid
+request, or under a per-minute limit, they are live.
+
+`worker/firestore.js` gains `READ_FAILED`, `tryGet` and `tryQuery`: a read
+that fails is a third answer, distinct from null. Every site where a write
+or a delete followed the guess now stops on it:
+
+- `withCasePolicy` throws rather than run a turn on an unreadable case as
+  though it were a client's, which would file his own stance onto the global
+  profile.
+- `markPending` and `sweepOne` never rewrite a queue row they could not read;
+  the full replace was what rewound the give-up counter.
+- The five rescue branches in `runQueuedAnalyses` leave the row alone on a
+  failed state read, instead of deleting the only record a job is owed.
+- `pollAskFlight` never deletes the marker on a failed row read, so a paid
+  answer is still collected.
+- `diagLog` keeps its thirty entries rather than rebuilding the ring from a
+  read that did not happen.
+- `fileOverride` never rewrites the stances over a prior nobody could read;
+  the stance stays on the qa row, which loadQa pins.
+- `runHandover` throws rather than overwrite the briefs already on a new case.
+- `onIntentCanceled` and `activateSubscription` throw, which is a 503, which
+  Stripe retries, instead of acknowledging a lapse or an activation on a guess.
+- `runWorkClockNudges` never stops a clock whose case could not be read.
+- `computePublicStats` skips rather than treat an unreadable gate as never
+  computed.
+- `handleFitCall`'s one-call-per-person guard has no catch at all now.
+
+Left as it was and noted: `readOfficeHours` falls back to the schedule on a
+failed read, so the client's door sign can say "In office" during an outage.
+Display only, no write; fixing it honestly means teaching the client pill an
+"unknown" state, for a calmer day.
+
+    node tools/suites/defects.mjs
+
+The check lifts `tryGet` and `tryQuery` and RUNS them against a stub that
+throws, a stub that answers null, and a stub that answers a document: the
+three answers have to be three different values. Then it counts the guards
+at the sites above. Six harnesses (charge, clock, stats, queue twice,
+selfcase twice) were taught the same two-line shim on their own stubs, so
+every existing check kept its meaning.
+
 ### The day the reads ran out (2026-09-09, v3.9 to v4.2)
 
 Eric, from a hospital bed, mid relapse: "I'm getting internal errors at a

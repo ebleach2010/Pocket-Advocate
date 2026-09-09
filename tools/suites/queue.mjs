@@ -121,6 +121,9 @@ const deps = () => ({
 });
 const build = (over = {}) => {
   const dd = { ...deps(), ...over };
+  // The third answer (2026-09-09), on whatever getDoc this build was handed.
+  dd.READ_FAILED = Symbol('read failed');
+  dd.tryGet = async (env, p) => { try { return await dd.getDoc(env, p); } catch { return dd.READ_FAILED; } };
   return new Function(...Object.keys(dd), `${LIFTED}\n return runQueuedAnalyses;`)(...Object.values(dd));
 };
 const env = {};
@@ -396,6 +399,7 @@ check('Q28 the clock is thirty minutes, an hour more each empty look, never past
     const queued = [];
     const api = new Function('deps', `
       const { getDoc, setState, patchDoc, statePath, queuePath, PENDING_FLOOR_MS, AUTO_GAP_MIN } = deps;
+      const READ_FAILED = Symbol('read failed'); const tryGet = async (env, p) => { try { return await getDoc(env, p); } catch { return READ_FAILED; } };
       ${MP}
       return markPending;
     `)({
@@ -503,6 +507,7 @@ check('Q32 a read that landed books thirty minutes, its own leftovers run now, a
     const logged = [];
     const api = new Function('deps', `
       const { getDoc, statePath, queuePath, setState, patchDoc, diagLog, PENDING_FLOOR_MS, console } = deps;
+      const READ_FAILED = Symbol('read failed'); const tryGet = async (env, p) => { try { return await getDoc(env, p); } catch { return READ_FAILED; } };
       ${SW}
       return sweepOne;
     `)({

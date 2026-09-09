@@ -29,7 +29,7 @@
 import { WorkflowEntrypoint } from 'cloudflare:workers';
 import { requireUser } from './firebase-auth.js';
 import { mintCustomToken, getAccessToken } from './google-auth.js';
-import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, batchDelete, listDocs } from './firestore.js';
+import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, batchDelete, listDocs, tryGet, tryQuery, READ_FAILED } from './firestore.js';
 import { deleteFile, objectMeta, patchObjectMeta, putFile, listFiles, mediaFetch } from './storage.js';
 import { buildShowcase, wipeCase } from './showcase.js';
 import {
@@ -2061,7 +2061,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-09-whose-screen';
+const BUILD_TAG = 'v2026-09-09-three-answers';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2069,7 +2069,7 @@ const BUILD_TAG = 'v2026-09-09-whose-screen';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '4.2';
+const VERSION = '4.3';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3242,7 +3242,11 @@ async function activateSubscription(env, session) {
   // Read BEFORE the write below creates the doc: a first-ever subscription is
   // a new client, and a new client of any type lifts the chat price one step.
   // A renewal or reactivation has a doc already and lifts nothing.
-  const existing = await getDoc(env, `subscriptions/${uid}`).catch(() => null);
+  const existing = await tryGet(env, `subscriptions/${uid}`);
+  // A returning subscriber read back as brand new on a refused read and
+  // lifted the chat price for everyone (2026-09-09). A throw is a 503 and a
+  // Stripe retry; the subscription activates when the read can be made.
+  if (existing === READ_FAILED) throw new Error('The subscription could not be read; Stripe will retry.');
   const email = await resolveClientEmail(env, uid, session.metadata.email, session);
   await patchDoc(env, `subscriptions/${uid}`, {
     stripeCustomerId: session.customer || null,
@@ -3477,7 +3481,11 @@ async function onHeldSession(env, session) {
  */
 async function onIntentCanceled(env, pi) {
   if (!pi?.id) return;
-  const rows = await queryDocs(env, 'cases', [['charge.paymentIntentId', 'EQUAL', pi.id]], 1).catch(() => []);
+  const rows = await tryQuery(env, 'cases', [['charge.paymentIntentId', 'EQUAL', pi.id]], 1);
+  // A refused read used to answer "no such case", and the webhook said 200,
+  // so Stripe never sent the lapse again (2026-09-09). A throw here is a
+  // 503, which Stripe retries, which is what a lapse deserves.
+  if (rows === READ_FAILED) throw new Error('The case for this hold could not be read; Stripe will retry.');
   const c = rows[0];
   if (!c || c.data.charge?.state !== 'held') return;
   await patchDoc(env, `cases/${c.id}`, {
@@ -5977,7 +5985,8 @@ async function runWorkClockNudges(env) {
     if (!rung) return;
 
     for (const id of running) {
-      const c = await getDoc(env, `cases/${id}`).catch(() => null);
+      const c = await tryGet(env, `cases/${id}`);
+      if (c === READ_FAILED) continue; // unreadable is not stopped (2026-09-09)
       const w = c?.data.work;
       if (!w?.startedAt) { await setClockRunning(env, id, false); continue; }
       if (Number(w.nudged || 0) >= rung) continue;
@@ -8855,8 +8864,10 @@ async function handleFitCall(request, env) {
   if (closedUntil && new Date(slot.data.start).getTime() < closedUntil)
     return json({ error: closedMessage(closedUntil), closedUntil: new Date(closedUntil) }, 409);
   // One call per person at a time. The email is the person.
+  // Uncaught on purpose (2026-09-09): a refused read here used to answer
+  // "no prior call", and the same person could take a second slot.
   const prior = await queryDocs(env, 'leads',
-    [['email', 'EQUAL', email], ['state', 'EQUAL', 'booked']], 5).catch(() => []);
+    [['email', 'EQUAL', email], ['state', 'EQUAL', 'booked']], 5);
   if (prior.some((l) => new Date(l.data.start).getTime() > now.getTime()))
     return json({ error: 'You already have a call booked with me. The time is in your email.' }, 409);
 
@@ -9112,7 +9123,8 @@ function publicStatsFrom({ cases, threads, now = Date.now() }) {
 async function computePublicStats(env, { force = false } = {}) {
   try {
     if (!force) {
-      const cur = await getDoc(env, STATS_DOC).catch(() => null);
+      const cur = await tryGet(env, STATS_DOC);
+      if (cur === READ_FAILED) return null; // not "never computed" (2026-09-09)
       const at = cur?.data?.computedAt ? new Date(cur.data.computedAt).getTime() : 0;
       if (at && Date.now() - at < STATS_REFRESH_MS) return null;
     }

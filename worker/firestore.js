@@ -220,3 +220,25 @@ function fromValue(v) {
   if ('mapValue' in v) return fromFields(v.mapValue.fields || {});
   return null;
 }
+
+/**
+ * THREE ANSWERS, NOT TWO (2026-09-09, the day the reads ran out).
+ *
+ * getDoc answers a document or null, and every caller that wrote
+ * `.catch(() => null)` folded "the database would not answer" into "there is
+ * no such document". While reads were refused and writes were not, that fold
+ * was the whole hazard: a queue row re-created with its tries rewound, a
+ * marker deleted for a job still owed, a list of briefs overwritten with the
+ * one just written, a case treated as somebody else's. These answer
+ * READ_FAILED instead, so a caller can tell the two apart and, when a write
+ * or a delete would follow, do neither.
+ */
+export const READ_FAILED = Symbol('read failed');
+
+export async function tryGet(env, path) {
+  try { return await getDoc(env, path); } catch { return READ_FAILED; }
+}
+
+export async function tryQuery(env, collectionId, filters, limit = 20) {
+  try { return await queryDocs(env, collectionId, filters, limit); } catch { return READ_FAILED; }
+}

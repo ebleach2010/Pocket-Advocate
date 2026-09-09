@@ -95,6 +95,9 @@ const deps = {
   requireAdmin: async () => (adminOk ? { uid: 'eric' } : null),
   notifyUser: async (env, uid, msg) => { pushes.push(msg); },
 };
+// The third answer (2026-09-09), on the harness's own stub.
+deps.READ_FAILED = Symbol('read failed');
+deps.tryGet = async (env, p) => { try { return await deps.getDoc(env, p); } catch { return deps.READ_FAILED; } };
 const build = new Function(...Object.keys(deps),
   `${LIFTED}
    return { holdPeriodsOf, heldWithin, publicStatsFrom, publicStatsView, computePublicStats,

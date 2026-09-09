@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '4.2';
+export const VERSION = '4.3';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '4.2';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THREE ANSWERS, NOT TWO (2026-09-09): the audit behind 4.2 found every
+    // place a read that merely failed was taken for a document that did not
+    // exist, and something was then written or deleted on that belief.
+    // Masked today by an earlier read failing first; live in a partial
+    // outage. Admin only, and about the machinery under every screen.
+    version: '4.3',
+    quiet: true,
+    client: [],
+    admin: [
+      'A read that fails is now told apart from a document that does not exist, everywhere something used to be written or deleted on the difference: a queue row is never rewritten with its retry count reset because it could not be read; a rescue marker is never deleted for a job that could not be checked; the briefs carried onto a new case of yours are never overwritten because the case could not be read; a filed stance never wipes the ones already on file; your running clock is never stopped because its case could not be read; and a question in flight never loses the marker that collects its answer.',
+      'Two Stripe events now ask Stripe to retry rather than be acknowledged on a guess: a card hold that lapsed, and a subscription activating. And the free-call guard that stops one person booking twice fails closed.',
+    ],
+  },
   {
     // WHOSE SCREEN (2026-09-09, his screenshot): the plain client wording
     // came up on an admin page, because most admin routes sit outside the

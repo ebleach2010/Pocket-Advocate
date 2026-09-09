@@ -29,7 +29,7 @@
 // a single well-scoped request whose state lives in Firestore.
 
 import Anthropic from '@anthropic-ai/sdk';
-import { getDoc, patchDoc, listDocs, deleteDoc } from './firestore.js';
+import { getDoc, patchDoc, listDocs, deleteDoc, tryGet, READ_FAILED } from './firestore.js';
 // The allowlist the advisor may propose within, and the tool definitions built
 // from that same table. Nothing in this file executes an action; see
 // worker/advisor-acts.js for why that is structural rather than a promise.
@@ -111,7 +111,11 @@ export async function withCasePolicy(env, kind, id, fn) {
   // case still overrides it below with the pinned id and its own stamp.
   let policy = { self: false, model: MODEL, effort: CASE_EFFORT, kind, id };
   if (kind === 'case' && id) {
-    const c = await getDoc(env, `cases/${id}`).catch(() => null);
+    const c = await tryGet(env, `cases/${id}`);
+    // An unreadable case is not a client's case (2026-09-09): running a turn
+    // on the wrong brief would file his own stance onto the global profile.
+    // The run stops here instead, into whatever the caller does with a throw.
+    if (c === READ_FAILED) throw new Error('The case could not be read, so no turn runs on it.');
     if (c?.data.self) {
       policy = { self: true, model: SELF_MODEL, effort: SELF_EFFORT, kind, id };
       // A pinned id the provider has already refused stays refused: the next
@@ -1717,7 +1721,11 @@ async function fileOverride(env, text) {
   const stance = m[1].replace(/^\s*[-*]\s*/, '').trim().replace(/\s+/g, ' ').slice(0, 300);
   const cleaned = text.replace(m[0], '').trim();
   if (!stance) return cleaned;
-  const profile = await getDoc(env, STYLE_PATH).catch(() => null);
+  const profile = await tryGet(env, STYLE_PATH);
+  // The stance stays on the qa row (override: true), which loadQa pins, so
+  // nothing is lost by not filing it now; filing it over a prior nobody could
+  // read would have wiped every stance already there (2026-09-09).
+  if (profile === READ_FAILED) return cleaned;
   const prior = profile?.data.stances || '';
   const flat = (v) => v.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   // An override repeated is one stance, not two.
@@ -2887,8 +2895,9 @@ export async function runHandover(env, id, fromId) {
     getDoc(env, statePath('case', fromId)).catch(() => null),
     recentMessages(env, 'case', fromId),
     loadStyle(env),
-    getDoc(env, statePath('case', id)).catch(() => null),
+    tryGet(env, statePath('case', id)),
   ]);
+  if (mine === READ_FAILED) throw new Error('The new case could not be read; the handover runs again on the next firing.');
   if (!src?.data.self) throw new Error('The case to hand over from is not one of his own.');
   const s = srcState?.data || {};
   const rank = (list) => (Array.isArray(list) ? list : [])
@@ -3398,7 +3407,8 @@ async function setState(env, kind, id, fields) {
  */
 export async function diagLog(env, entry) {
   try {
-    const doc = await getDoc(env, 'diag/advisor').catch(() => null);
+    const doc = await tryGet(env, 'diag/advisor');
+    if (doc === READ_FAILED) return; // the ring keeps its thirty rather than losing them to a guess
     const runs = Array.isArray(doc?.data.runs) ? doc.data.runs : [];
     runs.unshift({ at: new Date(), ...entry });
     await patchDoc(env, 'diag/advisor', { runs: runs.slice(0, 30) }, { mask: ['runs'] });
@@ -3415,8 +3425,8 @@ export async function markPending(env, kind, id, { force = false, due = force } 
   const now = new Date();
   // Eric asking by hand always goes through; a client typing waits out the
   // floor. One read of the state serves the floor and the clock both.
-  const st = force ? null : await getDoc(env, statePath(kind, id)).catch(() => null);
-  const last = st?.data.updatedAt ? new Date(st.data.updatedAt).getTime() : 0;
+  const st = force ? null : await tryGet(env, statePath(kind, id));
+  const last = st !== READ_FAILED && st?.data.updatedAt ? new Date(st.data.updatedAt).getTime() : 0;
   if (!force) {
     // NEW INFORMATION (2026-09-05): the automatic clock goes back to thirty
     // minutes, counted from the last read. A note on a case that has been
@@ -3439,8 +3449,12 @@ export async function markPending(env, kind, id, { force = false, due = force } 
   // and re-writing an existing row reset its tries to zero, so every time
   // Eric opened the app mid-cycle the give-up counter rewound and three
   // more doomed turns got bought. A row that exists is left alone.
-  const q = await getDoc(env, queuePath(kind, id)).catch(() => null);
-  if (q) return;
+  // And a row that could not be READ is left alone too (2026-09-09): the
+  // write below is a full replace, and writing over a row nobody could see
+  // is how the give-up counter was rewound on every flag while the database
+  // was refusing reads and taking writes.
+  const q = await tryGet(env, queuePath(kind, id));
+  if (q === READ_FAILED || q) return;
   if (!force && last && Date.now() - last < PENDING_FLOOR_MS) return;
   await patchDoc(env, queuePath(kind, id), { kind, id, at: now, tries: 0 });
 }
@@ -3489,11 +3503,12 @@ export async function requeueStranded(env) {
 }
 
 async function sweepOne(env, t) {
-  const st = await getDoc(env, statePath(t.kind, t.id)).catch(() => null);
+  const st = await tryGet(env, statePath(t.kind, t.id));
+  if (st === READ_FAILED) return; // nothing is re-queued on a guess (2026-09-09)
   const d = st?.data;
   if (!d || d.paused) return;
-  const q = await getDoc(env, queuePath(t.kind, t.id)).catch(() => null);
-  if (q) return; // already on the drain's plate
+  const q = await tryGet(env, queuePath(t.kind, t.id));
+  if (q === READ_FAILED || q) return; // already on the drain's plate, or unknowable
   const startedTs = d.startedAt ? new Date(d.startedAt).getTime() : 0;
   const beat = Math.max(startedTs, d.progressAt ? new Date(d.progressAt).getTime() : 0);
   const stuckRunning = d.status === 'running'
@@ -3745,7 +3760,8 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
       // An appeal letter whose run died. Same rescue as a draft, and it
       // matters more: this one is written against a filing deadline.
       if (row.data.appeal) {
-        const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+        const st = await tryGet(env, statePath(kind, id));
+        if (st === READ_FAILED) continue; // unreadable is not finished: the row stays (2026-09-09)
         const req = st?.data.appealReq;
         if (st?.data.appealStatus !== 'running' || !req) {
           await deleteDoc(env, `advisorQueue/${row.id}`);
@@ -3769,7 +3785,8 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
         return true; // one model job per firing
       }
       if (row.data.callNotes) {
-        const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+        const st = await tryGet(env, statePath(kind, id));
+        if (st === READ_FAILED) continue; // unreadable is not finished: the row stays (2026-09-09)
         const req = st?.data.callNotesReq;
         if (st?.data.callNotesStatus !== 'running' || !req) {
           await deleteDoc(env, `advisorQueue/${row.id}`);
@@ -3802,7 +3819,8 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
       // actually died was never retried once. It sorts before `case_` too, so
       // it was drained first and took the one model job per firing with it.
       if (row.data.callDoc) {
-        const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+        const st = await tryGet(env, statePath(kind, id));
+        if (st === READ_FAILED) continue; // unreadable is not finished: the row stays (2026-09-09)
         const req = st?.data.callDocReq;
         if (st?.data.callDocStatus !== 'running' || !req) {
           await deleteDoc(env, `advisorQueue/${row.id}`);
@@ -3845,7 +3863,8 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
       // after. A finished source is skipped, so a retry never condenses the
       // same case twice.
       if (row.data.handover) {
-        const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+        const st = await tryGet(env, statePath(kind, id));
+        if (st === READ_FAILED) continue; // unreadable is not finished: the row stays (2026-09-09)
         const done = new Set((Array.isArray(st?.data.handovers) ? st.data.handovers : []).map((h) => h?.fromCase));
         const left = (Array.isArray(row.data.from) ? row.data.from : []).filter((f) => !done.has(f));
         if (!left.length || st?.data.handoverStatus === 'error') {
@@ -3870,7 +3889,8 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
         return true; // one model job per firing
       }
       if (row.data.draft) {
-        const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+        const st = await tryGet(env, statePath(kind, id));
+        if (st === READ_FAILED) continue; // unreadable is not finished: the row stays (2026-09-09)
         const req = st?.data.draftReq;
         // Finished or failed on its own since the marker was written.
         if (st?.data.draftStatus !== 'running' || !req) {
@@ -5380,7 +5400,11 @@ export function askFlightNext(flight, poll, now = Date.now()) {
 export async function pollAskFlight(env, kind, id, qaId, { minAgeMs = 15_000 } = {}) {
   const path = `${statePath(kind, id)}/qa/${qaId}`;
   const marker = askQueuePath(kind, id, qaId);
-  const row = qaId ? await getDoc(env, path).catch(() => null) : null;
+  const row = qaId ? await tryGet(env, path) : null;
+  // Unreadable is not landed (2026-09-09): the marker used to be deleted on
+  // a refused read, and with it the only thing that would ever collect a
+  // paid-for answer.
+  if (row === READ_FAILED) return false;
   const flight = row?.data.batch;
   if (!row || row.data.status !== 'running' || !flight?.batchId) {
     // Landed, failed, reset or gone: the marker has nothing left to do.

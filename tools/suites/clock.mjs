@@ -98,6 +98,10 @@ class FakeDate extends Date {
   static now() { return NOW; }
 }
 
+// The third answer (2026-09-09): built on the harness's own stub, so every
+// check keeps its meaning and a refused read can be staged by making getDoc throw.
+deps.READ_FAILED = Symbol('read failed');
+deps.tryGet = async (env, p) => { try { return await deps.getDoc(env, p); } catch { return deps.READ_FAILED; } };
 const build = new Function(
   ...Object.keys(deps), 'Date',
   `${LIFTED}
