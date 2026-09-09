@@ -49,7 +49,6 @@ import { notifyUser } from './push.js';
 // narrowed for.
 import { validateAction } from './advisor-acts.js';
 import {
-  getAdvisorEffort, setAdvisorEffort,
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
   pollCaseFlight, pollFlightsNow, pollAskFlight,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
@@ -1086,8 +1085,6 @@ export default {
         return await handleHold(request, env);
       if (url.pathname === '/api/admin/close-case' && request.method === 'POST')
         return await handleCloseCase(request, env);
-      if (url.pathname === '/api/admin/effort')
-        return await handleEffort(request, env);
       if (url.pathname === '/api/admin/voice')
         return await handleVoiceLoop(request, env, ctx);
       if (url.pathname === '/api/version' && request.method === 'GET') {
@@ -2012,7 +2009,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-09-the-billing-account';
+const BUILD_TAG = 'v2026-09-09-max-on-every-case';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2020,7 +2017,7 @@ const BUILD_TAG = 'v2026-09-09-the-billing-account';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '3.7';
+const VERSION = '3.8';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -6017,23 +6014,6 @@ async function runWorkClockNudges(env) {
   }
 }
 
-/**
- * GET/POST /api/admin/effort
- *
- * How hard the advisor thinks on an analysis. High is the default and is
- * what Eric reads on; max is there for a case worth waiting on. Stored
- * server side so the choice follows him between devices, and read per run,
- * so the switch takes effect on the very next Update.
- */
-async function handleEffort(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
-  if (request.method === 'POST') {
-    const body = await request.json().catch(() => ({}));
-    return json(await setAdvisorEffort(env, body?.effort));
-  }
-  return json(await getAdvisorEffort(env));
-}
 
 /**
  * GET /api/admin/ledger

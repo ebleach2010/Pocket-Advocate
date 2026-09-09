@@ -78,13 +78,38 @@ const MODEL = 'claude-opus-5';
  */
 const SELF_MODEL = 'claude-opus-5';
 const SELF_EFFORT = 'max';
+/**
+ * MAX ON EVERY CASE (Eric, 2026-09-09: "make sure we're using opus max with
+ * the API key for all cases, including personal").
+ *
+ * His own case has run at the top effort since 2026-09-04. Every other case
+ * ran at high, and a routine automatic pass with no new files dropped to
+ * medium, because on 2026-08-22 he was watching a read take more than five
+ * minutes with his own eyes and asked for the faster setting.
+ *
+ * What changed since is where the turn runs. A reading has been submitted to
+ * the Batches API rather than carried inside an invocation since 2026-08-24,
+ * and a question since 2026-09-07, so nothing he is looking at is holding a
+ * clock open while the model thinks. The wait he was objecting to is not the
+ * wait he has now, and the effort is his to choose. It is one constant, so
+ * it is one line to change back.
+ *
+ * This is pinned on the POLICY rather than passed by each caller, for the
+ * reason written above: ten call sites build turns, and threading a setting
+ * through every one of them is the change that misses one. A turn that runs
+ * under a case, whatever kind of turn it is, sends this.
+ */
+const CASE_EFFORT = 'max';
 const turnPolicy = new AsyncLocalStorage();
 
 /** Run `fn` under the turn policy this case calls for. His own case pins the
  *  stronger model at high; every other case, and every subscription, runs the
  *  default. One document read; never throws for a missing case. */
 export async function withCasePolicy(env, kind, id, fn) {
-  let policy = null;
+  // Every case and every subscription carries a policy now (2026-09-09), so
+  // the effort is decided in one place instead of at each call site. His own
+  // case still overrides it below with the pinned id and its own stamp.
+  let policy = { self: false, model: MODEL, effort: CASE_EFFORT, kind, id };
   if (kind === 'case' && id) {
     const c = await getDoc(env, `cases/${id}`).catch(() => null);
     if (c?.data.self) {
@@ -142,37 +167,17 @@ async function sendWithFallback(env, turn, send) {
     return send({ ...turn, model: MODEL });
   }
 }
-// Opus at HIGH by default (Eric, 2026-08-22: "Change version to opus 5
-// high... it's taking >5min for a read when I'm sitting staring at a
-// screen"). Max is still available, from the switch in Settings, for a case
-// worth waiting on. The stored choice is read per run, so flipping the
-// switch changes the very next Update with no redeploy.
-const ANALYSIS_EFFORT = 'high';
-const EFFORT_PATH = 'config/advisor';
-
-/** The stored analysis effort, or the default. Never throws. */
-async function loadEffort(env) {
-  const doc = await getDoc(env, EFFORT_PATH).catch(() => null);
-  return doc?.data.analysisEffort === 'max' ? 'max' : ANALYSIS_EFFORT;
-}
-
-/** Read the switch, for the Settings panel. */
-export async function getAdvisorEffort(env) {
-  return { effort: await loadEffort(env) };
-}
-
-/** Set it. Anything but 'max' means the fast default. */
-export async function setAdvisorEffort(env, effort) {
-  const want = effort === 'max' ? 'max' : 'high';
-  await patchDoc(env, EFFORT_PATH, { analysisEffort: want, updatedAt: new Date() },
-    { mask: ['analysisEffort', 'updatedAt'] });
-  return { effort: want };
-}
-const DRAFT_EFFORT = 'high';
+// THE DEEP READ SWITCH IS GONE (2026-09-09). It chose between high and max
+// for the reading, and it was the last thing that could put a case below
+// CASE_EFFORT. With max the answer everywhere, a switch that still said
+// "Off" would have been the app lying about what it was doing, which is the
+// one thing it is not allowed to do. The route and the Settings row went
+// with it; the stored config/advisor document is simply no longer read.
+const DRAFT_EFFORT = CASE_EFFORT;
 // The Q&A prompt says "answer it and stop, under 120 words". It was running at
 // max effort with a 64k ceiling, which is the most expensive setting in the
 // product spent on its cheapest job, several times a day.
-const QUESTION_EFFORT = 'high';
+const QUESTION_EFFORT = CASE_EFFORT;
 const QUESTION_TOKENS = 12000;
 // Enough history to reason over without pushing a whole case into one request.
 const MAX_MESSAGES = 150;
@@ -2912,7 +2917,7 @@ TREATMENTS AS THEY STOOD:
 ${rank(s.treatments)}
 FILES IT READ: ${(Array.isArray(s.readFiles) ? s.readFiles : []).map((k) => String(k).split('/').pop()).slice(-60).join(', ') || 'none'}${earlier ? `\n\n${earlier}` : ''}`;
   const brief = await ask(env, {
-    effort: 'medium',
+    effort: CASE_EFFORT,
     maxTokens: 12000,
     noStream: true,
     system: [
@@ -3226,7 +3231,7 @@ export async function runDaySummary(env, kind, id, day) {
   // rather than talking down. Cached per day, so this shapes future days.
   const knowledge = await loadKnowledge(env).catch(() => ({ learned: [], pending: [] }));
   const text = await ask(env, {
-    effort: 'low',
+    effort: CASE_EFFORT,
     maxTokens: 12000,
     system: [{ type: 'text', text: `${ownDay
       ? `You summarise one day of Eric's own log on his own case, for Eric. He is
@@ -4326,13 +4331,12 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       return;
     }
     await diagLog(env, { ev: 'start', kind, auto, skipMedia, hasDeadline: !!deadlineAt });
-    const [rows, state, knowledge, style, qa, effort, econ, worklog] = await Promise.all([
+    const [rows, state, knowledge, style, qa, econ, worklog] = await Promise.all([
       recentMessages(env, kind, id),
       getDoc(env, statePath(kind, id)),
       loadKnowledge(env),
       loadStyle(env),
       loadQa(env, kind, id),
-      loadEffort(env),
       loadEconomics(env, kind, id),
       loadWorkLog(env, kind, id),
     ]);
@@ -4489,15 +4493,14 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     // EVERY background pass full at high effort, forever, since only
     // consolidation can bring it back under.
     const compacting = full && String(prior || '').length > COMPACT_AT_CHARS;
-    // Effort per pass type. Manual runs always honor Eric's own switch; the
-    // background never spends max, and a routine text-only delta runs at
-    // medium, which is the one-to-two-minute pass.
-    // His own case (2026-09-03) pins the effort whatever the pass: the
-    // policy is what turnRequest will send, so the diagnostics say the truth.
-    const passEffort = turnPolicy.getStore()?.effort || (!auto ? effort
-      : passType === 'full' ? 'high'
-        : media.blocks.length ? 'high'
-          : 'medium');
+    // One effort, whatever the pass type and whoever the case belongs to
+    // (Eric, 2026-09-09: "opus max ... for all cases, including personal").
+    // This used to fall to medium on a routine automatic delta and high on a
+    // full pass, which was the right trade while a read was carried inside an
+    // invocation Eric was waiting on. It is not carried there any more. The
+    // policy is what turnRequest actually sends, so reading it here is what
+    // keeps the diagnostics honest rather than hopeful.
+    const passEffort = turnPolicy.getStore()?.effort || CASE_EFFORT;
     // His own case is pinned at the top effort (2026-09-04), where the
     // thinking share of the ceiling is largest, so it takes the ceilings a
     // hand-pressed run gets rather than the smaller background ones. A read
@@ -5690,7 +5693,7 @@ export async function runAppeal(env, kind, id, appeal, revise = false, base = ''
     const a = appeal || {};
 
     const letter = await ask(env, {
-      effort: 'high',
+      effort: CASE_EFFORT,
       noStream,
       onBeat: () => setState(env, kind, id, { appealProgressAt: new Date() }).catch(() => {}),
       maxTokens: 20000,
@@ -5873,7 +5876,7 @@ export async function runCallNotes(env, kind, id, instruction, revise = false, b
       .some((x) => new Date(x.start).getTime() > Date.now());
 
     const out = await ask(env, {
-      effort: 'high',
+      effort: CASE_EFFORT,
       noStream,
       onBeat: () => setState(env, kind, id, { callNotesProgressAt: new Date() }).catch(() => {}),
       maxTokens: 16000,
@@ -6089,7 +6092,7 @@ export async function runCallDoc(env, kind, id, {
       .filter(Boolean).join('\n').slice(0, 8000);
 
     const askOpts = (withTools) => ({
-      effort: 'max',
+      effort: CASE_EFFORT,
       noStream,
       onBeat: () => setState(env, kind, id, { callDocProgressAt: new Date() }).catch(() => {}),
       maxTokens: 32000,

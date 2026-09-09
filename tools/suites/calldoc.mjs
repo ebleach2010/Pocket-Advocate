@@ -70,6 +70,7 @@ function konst(name) {
 // suite asserts on has to be the REAL one out of advisor.js, or this file
 // happily proves that a constant it wrote itself has the right shape.
 const LIFTED = [
+  konst('CASE_EFFORT'),
   konst('MAX_CALLDOC_SOURCES'), konst('escAttr'),
   konst('WEB_SEARCH_MAX_USES'), konst('WEB_SEARCH_TOOL'), konst('WEB_SEARCH_RULES'),
   fn('runCallDoc'),
@@ -431,7 +432,7 @@ for (const [n, re] of [
 // Anything that indexes, maps or spreads that field crashes on the failure
 // path only. So the REAL extractText is lifted and driven with both shapes.
 const ASK_LIFTED = [
-  konst('MODEL'), konst('MAX_PAUSE_RESUMES'),
+  konst('MODEL'), konst('MAX_PAUSE_RESUMES'), konst('CASE_EFFORT'),
   fn('withCacheBp', '\nfunction withCacheBp('),
   // todayBlock rides inside turnRequest since 2026-08-31 (the date anchor).
   fn('todayBlock', '\nfunction todayBlock('),

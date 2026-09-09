@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '3.7';
+export const VERSION = '3.8';
 
 /**
  * Newest first.
@@ -51,6 +51,21 @@ export const VERSION = '3.7';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE TOP SETTING ON EVERY CASE (Eric, 2026-09-09, asking for the
+    // strongest setting on all cases, his own included). His exact words are
+    // in the commit and in docs/SUITES.md; they are not repeated here,
+    // because this file is served to every page a client opens. Admin only:
+    // the setting is his side of the screen and no client line describes it.
+    version: '3.8',
+    quiet: true,
+    client: [],
+    admin: [
+      'Every case runs at the top effort now, yours and every client\'s alike, and on every kind of turn: the reading, a question you ask, a draft, an appeal letter, call notes, a call document, a handover between your own cases, and a day summary. Until now only your own case was set that way; a client case ran one step below it, and a routine automatic reading dropped another step below that.',
+      'The Deep read switch is gone from Settings. It chose between the two settings this replaces, so leaving it there would have meant a switch reading "Off" while every case ran at the top setting anyway.',
+      'Expect a reading to take longer and cost more than it did. Nothing you are looking at waits on one: a reading and a question both run in the background lane and land on their own. The nightly study of how you write is deliberately left cheap, since it reads your old messages rather than a case.',
+    ],
+  },
   {
     // THE REASON, NAMED (2026-09-09): the probe added in 3.6 answered on the
     // first try, and it was not the file or its size. Every write to storage

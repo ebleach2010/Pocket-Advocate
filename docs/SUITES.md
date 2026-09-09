@@ -183,6 +183,46 @@ Q26-Q35 run the drain, `markPending`, `pollFlight` and `sweepOne` lifted
 against fakes and pin the helpers, the bail, the finish and the panel; the
 diag route shows each open case's gap and how far off its next look is.
 
+### The top setting on every case (2026-09-09)
+
+Eric, 2026-09-09: "make sure we're using opus max with the API key for all
+cases, including personal."
+
+What it was: his own case ran at max, every client case ran at high, and a
+routine automatic reading with no new files dropped to medium. That trade was
+made on 2026-08-22, in his words at the time, because he was watching a read
+take more than five minutes with his own eyes. What changed since is where the
+turn runs: a reading has been submitted to the Batches API rather than carried
+inside an invocation since 2026-08-24, and a question since 2026-09-07, so
+nothing he is looking at holds a clock open while it thinks.
+
+So `CASE_EFFORT` is max, and it is pinned on the POLICY rather than passed by
+each caller, for the reason the policy exists at all: ten call sites build
+turns, and threading a setting through every one is the change that misses one.
+`withCasePolicy` now returns a policy for every case and every subscription,
+not only his own, and `turnRequest` sends it. That covers the reading, a
+question, a draft, an appeal, call notes, the call document, a handover and a
+day summary. The nightly study of how he writes is deliberately left at low:
+it reads his old messages rather than a case, and paying max for it nightly
+would buy nothing.
+
+The Deep read switch went with it, from the Settings panel, the Worker route
+and the demo. It chose between the two settings this replaces, so leaving it
+would have meant a switch reading "Off" while every case ran at the top
+setting, and this app does not get to lie to him about itself.
+
+    node tools/suites/selfcase.mjs      S2, S3, S10, S61, S64
+
+S64 is the one that keeps it true: it collects every `effort:` the advisor
+module actually asks for, sorts them into the turns a case buys and the ones
+it does not, and holds that the only ones still written as a word are the
+three turns of the nightly study. A new turn added at high fails it.
+
+S3, S10 and S61 moved with the change and carry dated notes. The stale control
+for the old S3 was replaced rather than kept: with every case carrying a
+policy, the mutation it described no longer breaks the check it was written
+for.
+
 ### The name that was too long (2026-09-09)
 
 Eric, 2026-09-09: "I restarted my claude subscription and since then

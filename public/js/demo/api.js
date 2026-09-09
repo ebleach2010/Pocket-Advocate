@@ -1126,10 +1126,6 @@ export function demoApi(role, store) {
       store.persist?.();
       return ok({ ok: true, denied: true });
     }
-    if (path === '/api/admin/effort') {
-      if (init.method === 'POST') demoEffort = body.effort === 'max' ? 'max' : 'high';
-      return ok({ effort: demoEffort });
-    }
     if (path === '/api/admin/voice') {
       if (typeof body.enabled === 'boolean') demoVoice.enabled = body.enabled;
       if (body.run === true) {

@@ -98,54 +98,20 @@ export function adminSettingsHtml() {
       <button class="btn tiny" data-cap="0" disabled>No limit</button>
     </div>
     <p class="dim small" data-cap-said style="margin:.45rem 0 0;">Reading it back…</p>
-
-    <div class="toggle-row" style="margin-top:1rem;">
-      <span><strong>Deep read</strong><br><span class="dim small">Your second opinion thinks harder on every Update. Better on a knotty case, several minutes slower. Off is the normal setting.</span></span>
-      <button class="switch" data-effort aria-pressed="false" aria-label="Deep read" disabled></button>
-    </div>`;
+`;
 }
 
 /**
- * Wire the rows. The effort switch is server-stored so it follows him between
- * devices, painted from the server rather than assumed, and stays disabled
- * until the real answer is in so it can never show a state it is not in.
+ * Wire the rows. The Deep read switch used to live here and was retired on
+ * 2026-09-09, when every case went to the top effort: a switch that still
+ * said "Off" while the app ran at max would have been the app lying about
+ * itself. Its discipline is kept by the rows below, and named in the money
+ * row's own comment: render disabled, ask the server what is true, paint
+ * that, and only then let him touch it.
  */
 export function wireAdminSettings(overlay, user) {
   wirePaid(overlay, user);
   wireCapacity(overlay, user);
-  const effortBtn = overlay.querySelector('[data-effort]');
-  if (effortBtn) {
-    const paint = (on) => {
-      effortBtn.classList.toggle('on', on);
-      effortBtn.setAttribute('aria-pressed', String(on));
-      effortBtn.disabled = false;
-    };
-    (async () => {
-      try {
-        const token = await user.getIdToken();
-        const res = await fetch('/api/admin/effort', { headers: { authorization: `Bearer ${token}` } });
-        if (res.ok) paint((await res.json()).effort === 'max');
-      } catch { /* leave it disabled rather than lying about the state */ }
-    })();
-    effortBtn.addEventListener('click', async () => {
-      const want = !effortBtn.classList.contains('on');
-      effortBtn.disabled = true;
-      try {
-        const token = await user.getIdToken();
-        const res = await fetch('/api/admin/effort', {
-          method: 'POST',
-          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ effort: want ? 'max' : 'high' }),
-        });
-        const out = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(out.error || 'Failed');
-        paint(out.effort === 'max');
-      } catch {
-        paint(!want); // put the switch back where it was
-      }
-    });
-  }
-
   overlay.querySelector('[data-open-admin]')?.addEventListener('click', (e) => {
     const btn = e.currentTarget;
     const on = !btn.classList.contains('on');
@@ -156,7 +122,7 @@ export function wireAdminSettings(overlay, user) {
 }
 
 /**
- * The money row, wired on the same discipline as the Deep read switch above:
+ * The money row, wired on the discipline the Deep read switch used to carry:
  * render disabled, ask the SERVER what is true, paint that, and only then let
  * him touch it. A control that starts out claiming a state it has not checked
  * is how a save that never happened looks exactly like one that did.

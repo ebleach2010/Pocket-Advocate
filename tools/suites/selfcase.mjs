@@ -42,6 +42,7 @@ const grab = (src, re) => (src.match(re) || [''])[0];
 const modelLine = grab(ADV, /const MODEL = '[^']+';/);
 const selfModelLine = grab(ADV, /const SELF_MODEL = '[^']+';/);
 const selfEffortLine = grab(ADV, /const SELF_EFFORT = '[^']+';/);
+const caseEffortLine = grab(ADV, /const CASE_EFFORT = '[^']+';/);
 const storeLine = grab(ADV, /const turnPolicy = new AsyncLocalStorage\(\);/);
 const withPolicy = lift(ADV, 'export async function withCasePolicy(env, kind, id, fn) {');
 const selfBlockFn = lift(ADV, 'function selfBlock() {');
@@ -82,6 +83,7 @@ const harness = (pinnedAs = null) => {
     ${modelLine}
     ${pinnedAs ? `const SELF_MODEL = '${pinnedAs}';` : selfModelLine}
     ${selfEffortLine}
+${caseEffortLine}
     ${storeLine}
     ${withPolicy.replace('export async function', 'async function')}
     ${selfBlockFn}
@@ -90,7 +92,7 @@ const harness = (pinnedAs = null) => {
     ${todayFn}
     ${turnReqFn}
     ${econNoteFn}
-    return { withCasePolicy, turnRequest, sendWithFallback, economicsNote, MODEL, SELF_MODEL, SELF_EFFORT };
+    return { withCasePolicy, turnRequest, sendWithFallback, economicsNote, MODEL, SELF_MODEL, SELF_EFFORT, CASE_EFFORT };
   `)(deps);
   return { api, diag, store };
 };
@@ -115,13 +117,25 @@ check('S2 on his own case every turn runs at the top effort, over whatever the c
   && /he is the advocate reading you AND the patient/.test(mine.system[mine.system.length - 1].text)
   && /Money, hours and rates play no part/.test(mine.system[mine.system.length - 1].text),
   `${mine.model} ${mine.output_config.effort} last block: ${mine.system[mine.system.length - 1].text.slice(0, 40)}`);
-// NEGATIVE CONTROL (run 2026-09-03): withCasePolicy building a policy for every case (the `self` test dropped) made this read
-//   FAIL  S3 every other case, a subscription, and a turn outside any run keep the default model and their own effort, with no block
-check('S3 every other case, a subscription, and a turn outside any run keep the default model and their own effort, with no block',
-  [plain, theirs, sub].every((t) => t.model === H.api.MODEL && t.output_config.effort === 'medium'
+// Re-pinned 2026-09-09 (Eric: "make sure we're using opus max with the API
+// key for all cases, including personal"). Every case and every subscription
+// carries a policy now, so what this check holds is no longer "no policy": it
+// is that a case which is not his own gets the DEFAULT model and the top
+// effort and none of his own case's block. A turn outside any run is the one
+// that still keeps whatever the caller asked for, and it is what keeps this
+// check honest, because the two have to differ.
+// NEGATIVE CONTROL (run 2026-09-09, the same break that held the old check):
+// withCasePolicy's `if (c?.data.self)` loosened to `if (c)`, so another
+// person's case took his own case's policy and its block, made this read
+//   FAIL  S3 a case that is not his own, and a subscription, run the default model at the top effort with no block; only a turn outside any run keeps the effort its caller asked for
+check('S3 a case that is not his own, and a subscription, run the default model at the top effort with no block; only a turn outside any run keeps the effort its caller asked for',
+  [theirs, sub].every((t) => t.model === H.api.MODEL && t.output_config.effort === H.api.CASE_EFFORT
     && !t.system.some((b) => /HIS OWN CASE/.test(b.text)))
+  && H.api.CASE_EFFORT === 'max'
+  && plain.model === H.api.MODEL && plain.output_config.effort === 'medium'
+  && !plain.system.some((b) => /HIS OWN CASE/.test(b.text))
   // The efforts have to differ, or this check would pass on a policy that did nothing.
-  && mine.output_config.effort !== plain.output_config.effort,
+  && theirs.output_config.effort !== plain.output_config.effort,
   [plain, theirs, sub].map((t) => `${t.model}/${t.output_config.effort}/${t.system.length}`).join(' '));
 // The policy follows the run through an await, which is the whole reason it
 // is a store and not an argument.
@@ -190,8 +204,12 @@ check('S9 the advisor route and the day summary enter under the policy too',
   /return withCasePolicy\(env, kind, id, \(\) => handleAdvisorAction\(\{/.test(WORKER)
   && /const out = await withCasePolicy\(env, kind, id, \(\) => runDaySummary\(env, kind, id, day\)\);/.test(WORKER)
   && /withCasePolicy,/.test(grab(WORKER, /import \{[\s\S]*?\} from '\.\/advisor\.js';/)));
+// Re-pinned 2026-09-09 (v3.8): the pass no longer chooses between high and
+// medium by pass type. Eric asked for the top effort on every case, so the
+// policy is the only source and CASE_EFFORT is the floor under it.
 check('S10 the analysis pass pins its effort from the policy, so the diagnostics tell the truth',
-  /const passEffort = turnPolicy\.getStore\(\)\?\.effort \|\| \(!auto \? effort/.test(ADV));
+  /const passEffort = turnPolicy\.getStore\(\)\?\.effort \|\| CASE_EFFORT;/.test(ADV)
+  && !/passType === 'full' \? 'high'/.test(ADV));
 check('S11 the ping can ask the stronger model by name, from the route',
   /export async function pingModel\(env, which = 'default'\)/.test(ADV)
   && /model: which === 'self' \? SELF_MODEL : MODEL, max_tokens: 1,/.test(ADV)
@@ -1199,6 +1217,7 @@ check('S56 his own read carries two more machine-read lists under the differenti
     };
     const api = new Function('deps', `
       const { getDoc, statePath, recentMessages, loadStyle, transcript, ask, voice, registerNote, setState, markPending, diagLog } = deps;
+      ${caseEffortLine}
       ${whenSrc}
       const HANDOVER_BRIEF = ${JSON.stringify(briefSrc.slice('const HANDOVER_BRIEF = `'.length))};
       ${handSrc}
@@ -1226,10 +1245,12 @@ check('S56 his own read carries two more machine-read lists under the differenti
   const two = await run({ priors: ['a', 'b'] });
   const notSelf = await run({ selfSource: false });
   const noHeads = await run({ reply: 'just prose' });
+  // Re-pinned 2026-09-09 (v3.8): the brief ran at medium and runs at the top
+  // effort now, like every other turn a case buys.
   // NEGATIVE CONTROL (run 2026-09-05): the markPending after the last brief removed made this read
   //   FAIL  S61 the handover condenses the log, the last read, the three lists, the files and the earlier brief into a brief on the new case, marks it ready when the last source is in and flags the first read, and refuses a source that is not his or a reply without its headings
   check('S61 the handover condenses the log, the last read, the three lists, the files and the earlier brief into a brief on the new case, marks it ready when the last source is in and flags the first read, and refuses a source that is not his or a reply without its headings',
-    !!handSrc && !good.threw && good.asks.length === 1 && good.asks[0].effort === 'medium' && good.asks[0].noStream === true
+    !!handSrc && !good.threw && good.asks.length === 1 && good.asks[0].effort === 'max' && good.asks[0].noStream === true
     && /VOICE/.test(good.asks[0].system[0].text) && /### Confirmed at close/.test(good.asks[0].system[0].text) && good.asks[0].system[0].cache === true
     && good.asks[0].system[1].text === 'REGISTER'
     && /CONFIRMED AT CLOSE: Autoimmune encephalitis \[55%\]/.test(content) && /Older thing/.test(content)
@@ -1294,6 +1315,31 @@ check('S56 his own read carries two more machine-read lists under the differenti
     && /POST   \/api\/admin\/self-case\/next/.test(IDX)
     && /path === '\/api\/admin\/self-case' \|\| path === '\/api\/admin\/self-case\/next'/.test(DEMO2) && /handoverStatus: 'ready',/.test(DEMO2)
     && /^\.self-next \{/m.test(ACSS) && /^\.pull-from \{/m.test(ACSS) && /^\.handover-brief \{/m.test(ACSS));
+}
+
+// ---- S64: max on every case, and nothing left below it ---------------------
+// Eric, 2026-09-09: "make sure we're using opus max with the API key for all
+// cases, including personal". Rather than trusting a reading of the diff, this
+// collects every effort the advisor module actually asks for and sorts them
+// into the turns a case buys and the ones it does not. The only literals left
+// are the nightly study of how Eric writes, which is not a case and would cost
+// money every night for nothing.
+{
+  const efforts = [...ADV.matchAll(/^\s*effort: ([^,\n]+),/gm)].map((m) => m[1].trim());
+  const byCase = efforts.filter((e) => /CASE_EFFORT|QUESTION_EFFORT|DRAFT_EFFORT|passEffort/.test(e));
+  const literals = efforts.filter((e) => /^'/.test(e));
+  // NEGATIVE CONTROL (run 2026-09-09): the appeal letter's effort put back to 'high' made this read
+  //   FAIL  S64 every turn a case buys asks for the top effort, ...
+  check('S64 every turn a case buys asks for the top effort, the constant that carries it is max, the only efforts still written as words are the three turns of the nightly study of his writing, and the switch that could put a case below it is gone from the Worker, its route and the Settings panel',
+    /const CASE_EFFORT = 'max';/.test(ADV)
+    && /const DRAFT_EFFORT = CASE_EFFORT;/.test(ADV) && /const QUESTION_EFFORT = CASE_EFFORT;/.test(ADV)
+    && byCase.length >= 7
+    && literals.length === 3 && literals.every((e) => e === "'low'")
+    && !/const ANALYSIS_EFFORT/.test(ADV) && !/loadEffort/.test(ADV)
+    && !/getAdvisorEffort|setAdvisorEffort/.test(ADV) && !/getAdvisorEffort|setAdvisorEffort|handleEffort/.test(WORKER)
+    && !/api\/admin\/effort/.test(WORKER) && !/api\/admin\/effort/.test(f('public/js/demo/api.js'))
+    && !/data-effort/.test(f('public/js/admin-settings.js')),
+    `${byCase.length} by the case, literals: ${literals.join(' ') || 'none'}`);
 }
 
 const fails = results.filter((r) => !r.pass).length;
