@@ -258,6 +258,7 @@ const day = 86_400_000;
       // and stops on READ_FAILED; the harness answers the same rows it always did.
       tryQuery: async () => rows,
       READ_FAILED: Symbol('read failed'),
+      readFailedError: (m) => new Error(m),
       patchDoc: async (env, path, fields) => { log.push(['patch', path, fields]); return true; },
       pingAdmins: async (env, body) => { log.push(['ping', body]); },
       notifyUser: async (env, uid, n) => { log.push(['notify', uid, n.body]); },
@@ -271,7 +272,7 @@ const day = 86_400_000;
     };
     return { log, fakes };
   };
-  const names = ['queryDocs', 'tryQuery', 'READ_FAILED', 'patchDoc', 'pingAdmins', 'notifyUser', 'readIntent', 'raiseRates', 'firstName', 'CHARGE_COPY', 'HOLD_DAYS', 'HOLD_REMIND_AFTER_DAYS'];
+  const names = ['queryDocs', 'tryQuery', 'READ_FAILED', 'readFailedError', 'patchDoc', 'pingAdmins', 'notifyUser', 'readIntent', 'raiseRates', 'firstName', 'CHARGE_COPY', 'HOLD_DAYS', 'HOLD_REMIND_AFTER_DAYS'];
   const runCanceled = async (row) => {
     const { log, fakes } = mkFakes(row ? [row] : [], null);
     await new Function(...names, `return ${canceled}`)(...names.map((n) => fakes[n]))({}, { id: 'pi_1' });

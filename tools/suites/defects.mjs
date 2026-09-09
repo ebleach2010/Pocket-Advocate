@@ -745,10 +745,14 @@ ck('clock: all switches share one painter set, so no two can disagree',
 {
   const FS = f('worker/firestore.js');
   const sym = (FS.match(/export const READ_FAILED = Symbol\('read failed'\);/) || [''])[0];
+  // The reason rides (v4.4): tryGet and tryQuery record the failure they
+  // swallowed, so the lift carries that slot and the error builder with it.
+  const why = (FS.match(/let lastReadError = null;/) || [''])[0];
   const tg = (FS.match(/export async function tryGet\(env, path\) \{[\s\S]*?\n\}/) || [''])[0];
   const tq = (FS.match(/export async function tryQuery\(env, collectionId, filters, limit = 20\) \{[\s\S]*?\n\}/) || [''])[0];
+  const rfe = (FS.match(/export function readFailedError\(message\) \{[\s\S]*?\n\}/) || [''])[0];
   const mk = (getDoc, queryDocs) => new Function('getDoc', 'queryDocs',
-    `${sym.replace('export ', '')} ${tg.replace('export ', '')} ${tq.replace('export ', '')} return { READ_FAILED, tryGet, tryQuery };`)(getDoc, queryDocs);
+    `${sym.replace('export ', '')} ${why} ${tg.replace('export ', '')} ${tq.replace('export ', '')} ${rfe.replace('export ', '')} return { READ_FAILED, tryGet, tryQuery, readFailedError };`)(getDoc, queryDocs);
   const boom = async () => { throw new Error('firestore get x: 429 Quota exceeded.'); };
   const none = async () => null;
   const some = async () => ({ data: { a: 1 } });
@@ -770,20 +774,98 @@ ck('clock: all switches share one painter set, so no two can disagree',
     // Twelve and four: the fifth Worker site, the free-call guard, has no
     // catch at all any more, which is its own way of stopping.
     && guards(ADV) >= 12 && guards(W) >= 4
-    && /if \(c === READ_FAILED\) throw new Error\('The case could not be read, so no turn runs on it\.'\);/.test(ADV)
+    // Re-pinned 2026-09-09 (v4.4): the four throwing sites throw
+    // readFailedError, which carries the read's reason; see the check below.
+    && /if \(c === READ_FAILED\) throw readFailedError\('The case could not be read, so no turn runs on it\.'\);/.test(ADV)
     && /if \(q === READ_FAILED \|\| q\) return;\n\s+if \(!force && last/.test(ADV)
     && /if \(st === READ_FAILED\) continue; \/\/ unreadable is not finished/.test(ADV)
     && (ADV.match(/if \(st === READ_FAILED\) continue; \/\/ unreadable is not finished/g) || []).length === 5
     && /if \(row === READ_FAILED\) return false;/.test(ADV)
     && /if \(profile === READ_FAILED\) return cleaned;/.test(ADV)
-    && /if \(mine === READ_FAILED\) throw new Error\(/.test(ADV)
-    && /if \(rows === READ_FAILED\) throw new Error\('The case for this hold could not be read; Stripe will retry\.'\);/.test(W)
-    && /if \(existing === READ_FAILED\) throw new Error\(/.test(W)
+    && /if \(mine === READ_FAILED\) throw readFailedError\(/.test(ADV)
+    && /if \(rows === READ_FAILED\) throw readFailedError\('The case for this hold could not be read; Stripe will retry\.'\);/.test(W)
+    && /if \(existing === READ_FAILED\) throw readFailedError\(/.test(W)
     && /if \(c === READ_FAILED\) continue; \/\/ unreadable is not stopped/.test(W)
     && /if \(cur === READ_FAILED\) return null;/.test(W)
     && /\[\['email', 'EQUAL', email\], \['state', 'EQUAL', 'booked'\]\], 5\);/.test(W)
     && !/\[\['email', 'EQUAL', email\], \['state', 'EQUAL', 'booked'\]\], 5\)\.catch/.test(W),
     JSON.stringify({ failedGet: String(r.failedGet), missing: r.missing, guardsAdv: guards(ADV), guardsW: guards(W) }));
+}
+
+// ---- the reason rides (2026-09-09, v4.4) ----------------------------------
+// "I paid. still internal errors." A site that stops on READ_FAILED throws,
+// and the throw reached the top-level catch with no trace of WHY the read
+// failed, so the honest 503 written for a refused read came out as "Internal
+// error" on the Ask page's own state poll. readFailedError puts the read's
+// reason on the thrown message, and the lifted quotaFault is RUN on it.
+{
+  const FS = f('worker/firestore.js');
+  const lift = (re) => (FS.match(re) || [''])[0].replace('export ', '');
+  const parts = [
+    lift(/export const READ_FAILED = Symbol\('read failed'\);/),
+    lift(/let lastReadError = null;/),
+    lift(/export async function tryGet\(env, path\) \{[\s\S]*?\n\}/),
+    lift(/export function readFailedError\(message\) \{[\s\S]*?\n\}/),
+  ];
+  const qf = (W.match(/function quotaFault\(err, mine\) \{[\s\S]*?\n\}/) || [''])[0];
+  const boomErr = new Error('firestore get cases/x: 429 {"error":{"code":429,"message":"Quota exceeded.","status":"RESOURCE_EXHAUSTED"}}');
+  const api = parts.every(Boolean) && qf
+    ? new Function('getDoc', `${parts.join('\n')}\n${qf}\nreturn { tryGet, readFailedError, quotaFault };`)(async () => { throw boomErr; })
+    : null;
+  let got = null;
+  if (api) {
+    const failed = await api.tryGet({}, 'cases/x');
+    const e = api.readFailedError('The case could not be read, so no turn runs on it.');
+    got = { failed: typeof failed === 'symbol', message: e.message, cause: e.cause === boomErr, fault: api.quotaFault(e, true) };
+  }
+  // NEGATIVE CONTROL (run 2026-09-09): readFailedError building the Error from the message alone, the reason dropped, made this read
+  //   FAIL  a site that stops on READ_FAILED throws with the read's own reason on it, so a refused read reaches him as the honest 503 and not as an internal error
+  ck("a site that stops on READ_FAILED throws with the read's own reason on it, so a refused read reaches him as the honest 503 and not as an internal error",
+    !!api && got.failed && got.cause
+    && /^The case could not be read, so no turn runs on it\. firestore get cases\/x: 429/.test(got.message)
+    && !!got.fault && got.fault.quota === true
+    && /import \{[^}]*readFailedError[^}]*\} from '\.\/firestore\.js';/.test(ADV)
+    && /import \{[^}]*readFailedError[^}]*\} from '\.\/firestore\.js';/.test(W)
+    && /if \(c === READ_FAILED\) throw readFailedError\('The case could not be read, so no turn runs on it\.'\);/.test(ADV)
+    && /if \(mine === READ_FAILED\) throw readFailedError\(/.test(ADV)
+    && /if \(rows === READ_FAILED\) throw readFailedError\(/.test(W)
+    && /if \(existing === READ_FAILED\) throw readFailedError\(/.test(W)
+    && !/READ_FAILED\) throw new Error\(/.test(ADV) && !/READ_FAILED\) throw new Error\(/.test(W)
+    && /which can take a while; otherwise the allowance resets at midnight Pacific\./.test(W)
+    && !/clears straight away/.test(W),
+    JSON.stringify(got && { message: got.message.slice(0, 80), fault: !!got.fault }));
+}
+
+// ---- a read is retried on 429 (2026-09-09, v4.4) ---------------------------
+// readFetch is lifted and RUN: against a fetch that answers 429, 429, 200 it
+// returns the 200; against one that never stops answering 429 it returns the
+// 429 after exactly four tries (one and three retries). Then the file is read
+// for WHICH calls go through it: the three reads, and never a write.
+{
+  const FS = f('worker/firestore.js');
+  const pauses = (FS.match(/const READ_RETRY_PAUSES_MS = \[[^\]]*\];/) || [''])[0];
+  const rf = (FS.match(/async function readFetch\(env, url, init\) \{[\s\S]*?\n\}/) || [''])[0];
+  let calls = 0;
+  let answers = [429, 429, 200];
+  const authedFetch = async () => ({ status: answers[Math.min(calls++, answers.length - 1)] });
+  const api = pauses && rf ? new Function('authedFetch', `${pauses}\n${rf}\nreturn readFetch;`)(authedFetch) : null;
+  const res = api ? await api({}, 'u', {}) : null;
+  const firstCalls = calls;
+  calls = 0; answers = [429, 429, 429, 429, 429];
+  const still = api ? await api({}, 'u', {}) : null;
+  const stillCalls = calls;
+  // NEGATIVE CONTROL (run 2026-09-09): READ_RETRY_PAUSES_MS emptied, so a 429 was final on the first try, made this read
+  //   FAIL  a read refused with 429 is retried, three times with a short pause between, a read refused on every try fails as a 429, and no write is ever retried
+  ck('a read refused with 429 is retried, three times with a short pause between, a read refused on every try fails as a 429, and no write is ever retried',
+    !!api && !!res && res.status === 200 && firstCalls === 3 && !!still && still.status === 429 && stillCalls === 4
+    && /export async function getDoc\(env, path\) \{\n  const res = await readFetch\(env, `\$\{baseUrl\(env\)\}\/\$\{path\}`\);/.test(FS)
+    && /const res = await readFetch\(env, `\$\{baseUrl\(env\)\}\/\$\{collectionPath\}\?\$\{params\}`\);/.test(FS)
+    && /const res = await readFetch\(env, `\$\{baseUrl\(env\)\}:runQuery`, \{/.test(FS)
+    && (FS.match(/await readFetch\(/g) || []).length === 3
+    && /export async function patchDoc\(env, path, data, options = \{\}\) \{[\s\S]*?await authedFetch\(/.test(FS)
+    && /const res = await authedFetch\(env, `\$\{baseUrl\(env\)\}\/\$\{path\}`, \{ method: 'DELETE' \}\);/.test(FS)
+    && (FS.match(/await authedFetch\(env, `\$\{baseUrl\(env\)\}:batchWrite`, \{/g) || []).length === 2,
+    JSON.stringify({ res: res && res.status, firstCalls, still: still && still.status, stillCalls }));
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

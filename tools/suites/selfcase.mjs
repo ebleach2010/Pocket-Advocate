@@ -81,6 +81,7 @@ const harness = (pinnedAs = null) => {
   const api = new Function('deps', `
     const { AsyncLocalStorage, getDoc, statePath, diagLog, withCacheBp } = deps;
     const READ_FAILED = Symbol('read failed'); const tryGet = async (env, p) => { try { return await getDoc(env, p); } catch { return READ_FAILED; } };
+    const readFailedError = (m) => new Error(m);
     ${modelLine}
     ${pinnedAs ? `const SELF_MODEL = '${pinnedAs}';` : selfModelLine}
     ${selfEffortLine}
@@ -1219,6 +1220,7 @@ check('S56 his own read carries two more machine-read lists under the differenti
     const api = new Function('deps', `
       const { getDoc, statePath, recentMessages, loadStyle, transcript, ask, voice, registerNote, setState, markPending, diagLog } = deps;
       const READ_FAILED = Symbol('read failed'); const tryGet = async (env, p) => { try { return await getDoc(env, p); } catch { return READ_FAILED; } };
+      const readFailedError = (m) => new Error(m);
       ${caseEffortLine}
       ${whenSrc}
       const HANDOVER_BRIEF = ${JSON.stringify(briefSrc.slice('const HANDOVER_BRIEF = `'.length))};

@@ -232,6 +232,37 @@ at the sites above. Six harnesses (charge, clock, stats, queue twice,
 selfcase twice) were taught the same two-line shim on their own stubs, so
 every existing check kept its meaning.
 
+### The reason rides, and a read tries again (v4.4)
+
+Eric, 2026-09-09, after restoring the billing account: "I paid. still internal
+errors." Two things were true at once. Google was letting reads through one in
+three, then two in three, as it noticed the account, so a screen that makes
+five reads failed if any one of them did. And the honest line written in 4.1
+for a refused read was not what he saw: 4.3 taught the sites that stop on a
+failed read to throw, and the throw reached the top of the Worker as "The case
+could not be read", with no 429 in it for the catch to recognise, so it came
+out as "Internal error". The state poll behind the Ask page runs under the case
+policy, and that was the one on his screen.
+
+`readFailedError` in `worker/firestore.js` builds the thrown error with the
+failed read's own reason on the message (and as its cause), so `quotaFault`
+tells a refused read from a broken app again. The four throwing sites use it.
+And `readFetch` retries a read refused with 429 three times, after 250 ms,
+750 ms and 1.5 s, before it counts as refused; writes are never retried, because a refused write
+is refused for a reason that will not change in a second, and a write repeated
+is a write doubled. The quota line no longer promises that a restored billing
+account clears it "straight away", because it did not.
+
+defects.mjs: the lift behind the three-answers check now carries
+`lastReadError` and `readFailedError`, and its four throw pins moved with a
+dated note. One new check RUNS `readFailedError` after a 429 and passes the
+result through the lifted `quotaFault`, and pins the four sites and the
+reworded line. Another RUNS `readFetch` against a fetch that answers 429, 429,
+200 and one that never stops answering 429 (four tries, then the 429), and
+pins which calls retry and which never do. Both proven able to fail with their controls recorded. The
+three harness shims that lift a throwing site (charge, and the policy and
+handover harnesses in selfcase) gained `readFailedError`.
+
 ### The day the reads ran out (2026-09-09, v3.9 to v4.2)
 
 Eric, from a hospital bed, mid relapse: "I'm getting internal errors at a

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '4.3';
+export const VERSION = '4.4';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '4.3';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE REASON RIDES (2026-09-09): "I paid. still internal errors." A read
+    // that failed was stopped on, and the stop reached the top of the Worker
+    // with no trace of why, so the honest line written for a refused read
+    // came out as "Internal error". Admin only.
+    version: '4.4',
+    quiet: true,
+    client: [],
+    admin: [
+      'When a read fails and something stops on it, the reason the read failed now rides on the stop, so a refused read reaches your screen as the plain "over its daily allowance" line rather than "Internal error". The state poll behind the Ask page was the one you were seeing.',
+      'A read refused with a 429 is retried three times, with a short pause between, before it counts as refused. While Google was noticing the restored billing account, reads were coming back one in three, then two in three, and a screen that makes five reads failed if any one of them did.',
+    ],
+  },
   {
     // THREE ANSWERS, NOT TWO (2026-09-09): the audit behind 4.2 found every
     // place a read that merely failed was taken for a document that did not

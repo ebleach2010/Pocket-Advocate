@@ -29,7 +29,7 @@
 // a single well-scoped request whose state lives in Firestore.
 
 import Anthropic from '@anthropic-ai/sdk';
-import { getDoc, patchDoc, listDocs, deleteDoc, tryGet, READ_FAILED } from './firestore.js';
+import { getDoc, patchDoc, listDocs, deleteDoc, tryGet, READ_FAILED, readFailedError } from './firestore.js';
 // The allowlist the advisor may propose within, and the tool definitions built
 // from that same table. Nothing in this file executes an action; see
 // worker/advisor-acts.js for why that is structural rather than a promise.
@@ -115,7 +115,7 @@ export async function withCasePolicy(env, kind, id, fn) {
     // An unreadable case is not a client's case (2026-09-09): running a turn
     // on the wrong brief would file his own stance onto the global profile.
     // The run stops here instead, into whatever the caller does with a throw.
-    if (c === READ_FAILED) throw new Error('The case could not be read, so no turn runs on it.');
+    if (c === READ_FAILED) throw readFailedError('The case could not be read, so no turn runs on it.');
     if (c?.data.self) {
       policy = { self: true, model: SELF_MODEL, effort: SELF_EFFORT, kind, id };
       // A pinned id the provider has already refused stays refused: the next
@@ -2897,7 +2897,7 @@ export async function runHandover(env, id, fromId) {
     loadStyle(env),
     tryGet(env, statePath('case', id)),
   ]);
-  if (mine === READ_FAILED) throw new Error('The new case could not be read; the handover runs again on the next firing.');
+  if (mine === READ_FAILED) throw readFailedError('The new case could not be read; the handover runs again on the next firing.');
   if (!src?.data.self) throw new Error('The case to hand over from is not one of his own.');
   const s = srcState?.data || {};
   const rank = (list) => (Array.isArray(list) ? list : [])

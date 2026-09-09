@@ -29,7 +29,7 @@
 import { WorkflowEntrypoint } from 'cloudflare:workers';
 import { requireUser } from './firebase-auth.js';
 import { mintCustomToken, getAccessToken } from './google-auth.js';
-import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, batchDelete, listDocs, tryGet, tryQuery, READ_FAILED } from './firestore.js';
+import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, batchDelete, listDocs, tryGet, tryQuery, READ_FAILED, readFailedError } from './firestore.js';
 import { deleteFile, objectMeta, patchObjectMeta, putFile, listFiles, mediaFetch } from './storage.js';
 import { buildShowcase, wipeCase } from './showcase.js';
 import {
@@ -2061,7 +2061,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-09-three-answers';
+const BUILD_TAG = 'v2026-09-09-the-reason-rides';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2069,7 +2069,7 @@ const BUILD_TAG = 'v2026-09-09-three-answers';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '4.3';
+const VERSION = '4.4';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3246,7 +3246,7 @@ async function activateSubscription(env, session) {
   // A returning subscriber read back as brand new on a refused read and
   // lifted the chat price for everyone (2026-09-09). A throw is a 503 and a
   // Stripe retry; the subscription activates when the read can be made.
-  if (existing === READ_FAILED) throw new Error('The subscription could not be read; Stripe will retry.');
+  if (existing === READ_FAILED) throw readFailedError('The subscription could not be read; Stripe will retry.');
   const email = await resolveClientEmail(env, uid, session.metadata.email, session);
   await patchDoc(env, `subscriptions/${uid}`, {
     stripeCustomerId: session.customer || null,
@@ -3485,7 +3485,7 @@ async function onIntentCanceled(env, pi) {
   // A refused read used to answer "no such case", and the webhook said 200,
   // so Stripe never sent the lapse again (2026-09-09). A throw here is a
   // 503, which Stripe retries, which is what a lapse deserves.
-  if (rows === READ_FAILED) throw new Error('The case for this hold could not be read; Stripe will retry.');
+  if (rows === READ_FAILED) throw readFailedError('The case for this hold could not be read; Stripe will retry.');
   const c = rows[0];
   if (!c || c.data.charge?.state !== 'held') return;
   await patchDoc(env, `cases/${c.id}`, {
@@ -9341,7 +9341,7 @@ function quotaFault(err, mine) {
   return {
     quota: true,
     error: mine
-      ? 'The database is refusing reads: this project is over its daily free allowance, which is where a disabled cloud billing account puts it. Nothing has been lost and writes still work. Restore the billing account and this clears straight away; otherwise the allowance resets at midnight Pacific.'
+      ? 'The database is refusing reads: this project is over its daily free allowance, which is where a disabled cloud billing account puts it. Nothing has been lost and writes still work. Restore the billing account and reads come back as Google notices, which can take a while; otherwise the allowance resets at midnight Pacific.'
       : 'This part of the app cannot be reached just now. Nothing you did caused it, nothing you have sent is lost, and it comes back on its own. Please try again a little later.',
   };
 }

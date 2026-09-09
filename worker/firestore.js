@@ -23,9 +23,31 @@ async function authedFetch(env, url, init = {}) {
   });
 }
 
+// A READ IS RETRIED ON 429 (2026-09-09, v4.4). The day the free daily read
+// allowance ran out, reads came back as Google noticed the restored billing
+// account: one in three succeeded, then two in three, for a good while. A
+// screen that makes five reads fails if any one of them is refused, so at two
+// in three a screen worked about one time in eight, and it fell back to one
+// in three while this was written. Three retries after a short pause turn
+// one in three into four in five per read, and two in three into better than
+// ninety-nine in a hundred. Only reads:
+// a refused write is refused for a reason that will not change in a second,
+// and a write repeated is a write doubled.
+const READ_RETRY_PAUSES_MS = [250, 750, 1500];
+
+async function readFetch(env, url, init) {
+  let res = await authedFetch(env, url, init);
+  for (const pause of READ_RETRY_PAUSES_MS) {
+    if (res.status !== 429) break;
+    await new Promise((r) => setTimeout(r, pause));
+    res = await authedFetch(env, url, init);
+  }
+  return res;
+}
+
 /** Returns { data, updateTime } or null if the document does not exist. */
 export async function getDoc(env, path) {
-  const res = await authedFetch(env, `${baseUrl(env)}/${path}`);
+  const res = await readFetch(env, `${baseUrl(env)}/${path}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`firestore get ${path}: ${res.status} ${await res.text()}`);
   const doc = await res.json();
@@ -128,7 +150,7 @@ export async function listDocs(env, collectionPath, { pageSize = 100, orderBy, a
     const params = new URLSearchParams({ pageSize: String(pageSize) });
     if (orderBy) params.set('orderBy', orderBy);
     if (pageToken) params.set('pageToken', pageToken);
-    const res = await authedFetch(env, `${baseUrl(env)}/${collectionPath}?${params}`);
+    const res = await readFetch(env, `${baseUrl(env)}/${collectionPath}?${params}`);
     if (!res.ok) throw new Error(`firestore list ${collectionPath}: ${res.status} ${await res.text()}`);
     const page = await res.json();
     for (const d of page.documents || []) {
@@ -166,7 +188,7 @@ export async function queryDocs(env, collectionId, filters, limit = 20) {
     },
     limit,
   };
-  const res = await authedFetch(env, `${baseUrl(env)}:runQuery`, {
+  const res = await readFetch(env, `${baseUrl(env)}:runQuery`, {
     method: 'POST',
     body: JSON.stringify({ structuredQuery }),
   });
@@ -235,10 +257,28 @@ function fromValue(v) {
  */
 export const READ_FAILED = Symbol('read failed');
 
+// THE REASON RIDES (2026-09-09, v4.4; Eric: "I paid. still internal errors").
+// A Symbol carries nothing, and the site that turns READ_FAILED into a thrown
+// error needs the read's reason on it: the top-level catch tells a refused
+// read from a broken app by the message, and "The case could not be read" on
+// its own came out as "Internal error" on his screen for the whole of an
+// outage that had an honest sentence waiting for it. This is the reason
+// behind the last READ_FAILED in this isolate. It is shared across the
+// requests one isolate is serving, so under load the reason attached can
+// belong to a neighbouring read; it is diagnostic text, and during an outage
+// every reason is the same one.
+let lastReadError = null;
+
 export async function tryGet(env, path) {
-  try { return await getDoc(env, path); } catch { return READ_FAILED; }
+  try { return await getDoc(env, path); } catch (err) { lastReadError = err; return READ_FAILED; }
 }
 
 export async function tryQuery(env, collectionId, filters, limit = 20) {
-  try { return await queryDocs(env, collectionId, filters, limit); } catch { return READ_FAILED; }
+  try { return await queryDocs(env, collectionId, filters, limit); } catch (err) { lastReadError = err; return READ_FAILED; }
+}
+
+/** The Error a site throws when it stops on READ_FAILED, with the read's own reason on it. */
+export function readFailedError(message) {
+  const why = lastReadError ? String(lastReadError.message || lastReadError) : '';
+  return new Error(why ? `${message} ${why}` : message, { cause: lastReadError });
 }
