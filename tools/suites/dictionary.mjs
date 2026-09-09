@@ -56,10 +56,16 @@ function lift(src, decl) {
 //   FAIL  K1 every dictionary read walks every page: the dictionary route, the panel's glossary and the diag count all ask for all pages, and no first-page-only read of the dictionary is left in the Worker
 check('K1 every dictionary read walks every page: the dictionary route, the panel\'s glossary and the diag count all ask for all pages, and no first-page-only read of the dictionary is left in the Worker',
   // Re-pinned 2026-09-07: the wipe door is the fourth whole-dictionary read.
+  // Re-pinned 2026-09-09: the panel's glossary read is HELD FOR A MINUTE per
+  // isolate now, after the database began refusing reads over quota and one
+  // open panel turned out to be re-reading the whole dictionary several times
+  // a minute. It still walks every page when it does read; what changed is
+  // how often, not how much.
   (W.match(/listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)/g) || []).length === 4
   && !/listDocs\(env, 'advisorKnowledge', \{ pageSize: \d+ \}\)/.test(W)
   && /const rows = await listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)\.catch\(\(\) => \[\]\);\n  return json\(\{\n    terms: rows\.map/.test(W)
-  && /listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)\.catch\(\(\) => \[\]\),\n    getDoc\(env, `\$\{parent\}\/\$\{id\}\/private\/notes`\)/.test(W),
+  && /slowRead\('knowledge', \(\) => listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)\.catch\(\(\) => \[\]\)\),\n    getDoc\(env, `\$\{parent\}\/\$\{id\}\/private\/notes`\)/.test(W)
+  && /const SLOW_TTL_MS = 60_000;/.test(W) && /const QA_PAGE = 5;/.test(W),
   String((W.match(/listDocs\(env, 'advisorKnowledge'[^\n]*/g) || []).join(' | ')));
 
 // ---- the page and its doors -----------------------------------------------

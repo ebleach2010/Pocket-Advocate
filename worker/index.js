@@ -1344,7 +1344,14 @@ export default {
     // seconds, well inside the post-event grace.
     const ranAnalysis = await runQueuedAnalyses(env, deadlineAt);
     if (minute % 5 === 0) {
-      await requeueStranded(env);
+      // The sweep reads every open case and subscription and each one's
+      // advisor state, so it is the most expensive thing on this clock. It
+      // moved from every five minutes to every fifteen on 2026-09-09, when
+      // the database began refusing reads over quota. It is a backstop: the
+      // drain above runs every minute and owns the actual work, so the cost
+      // of the slower sweep is that a stranded case waits at most a quarter
+      // hour instead of five minutes for someone to notice it.
+      if (minute % 15 === 0) await requeueStranded(env);
       if (!ranAnalysis) await maybeVoiceStudy(env);
     }
   },
@@ -2032,7 +2039,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-09-what-firestore-says';
+const BUILD_TAG = 'v2026-09-09-fewer-reads';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2040,7 +2047,7 @@ const BUILD_TAG = 'v2026-09-09-what-firestore-says';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '3.9';
+const VERSION = '4.0';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -6323,6 +6330,31 @@ function keepaliveRun(ctx, work, { raw = false } = {}) {
  * firestore.rules still lock the subtree down for whenever they are published;
  * until then default-deny already keeps clients out of it entirely.)
  */
+/**
+ * WHAT ONE OPEN PANEL COSTS (2026-09-09, "internal errors at a critical
+ * moment"). The database answered `429 Quota exceeded` to every read, and the
+ * arithmetic behind that is this route: the panel polls it every two and a
+ * half seconds while anything runs and every twelve when nothing does, and
+ * each poll read the case's state, TWENTY question rows to paint three, the
+ * whole dictionary, the notes and the style profile. One tab left open ran to
+ * tens of thousands of reads an hour, which nobody notices while the project
+ * is billed by usage and takes the whole app down the moment it is not.
+ *
+ * So: three question rows are what the panel draws, five are what it asks
+ * for, and the two documents that barely change are held for a minute per
+ * isolate. None of it changes what he sees.
+ */
+const QA_PAGE = 5;
+const SLOW_TTL_MS = 60_000;
+const slowCache = new Map();
+async function slowRead(key, read) {
+  const hit = slowCache.get(key);
+  if (hit && Date.now() - hit.at < SLOW_TTL_MS) return hit.value;
+  const value = await read();
+  slowCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
 async function handleAdvisorState(request, env, url) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Not found' }, 404);
@@ -6347,7 +6379,7 @@ async function handleAdvisorState(request, env, url) {
   // One round of reads for the whole panel. Every one of them degrades to
   // empty: a case with no advisor state, no notes and no glossary is the
   // normal first-visit state, not an error.
-  const qaPage = () => listDocs(env, `${parent}/${id}/advisor/state/qa`, { pageSize: 20, orderBy: 'at desc' }).catch(() => []);
+  const qaPage = () => listDocs(env, `${parent}/${id}/advisor/state/qa`, { pageSize: QA_PAGE, orderBy: 'at desc' }).catch(() => []);
   const [state, qaFirst, knowledge, notesDoc, style] = await Promise.all([
     getDoc(env, `${parent}/${id}/advisor/state`).catch(() => null),
     // Newest first. Ascending returned the twenty OLDEST, so past twenty
@@ -6355,10 +6387,12 @@ async function handleAdvisorState(request, env, url) {
     // kept showing "thinking..." while the real answer sat in Firestore.
     qaPage(),
     // Every page, for the same reason as the dictionary route (2026-09-06):
-    // the Key terms page and the learned filter must see the whole list.
-    listDocs(env, 'advisorKnowledge', { pageSize: 300, all: true }).catch(() => []),
+    // the Key terms page and the learned filter must see the whole list. Held
+    // for a minute per isolate (2026-09-09): it is the same list on every poll
+    // and it only changes when a reading lands.
+    slowRead('knowledge', () => listDocs(env, 'advisorKnowledge', { pageSize: 300, all: true }).catch(() => [])),
     getDoc(env, `${parent}/${id}/private/notes`).catch(() => null),
-    getDoc(env, 'advisorStyle/profile').catch(() => null),
+    slowRead('style', () => getDoc(env, 'advisorStyle/profile').catch(() => null)),
   ]);
   // A question in flight is collected here too (2026-09-07): the panel polls
   // this route every couple of seconds while a row says running, so it is

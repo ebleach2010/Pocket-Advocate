@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '3.9';
+export const VERSION = '4.0';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '3.9';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // FEWER READS (2026-09-09): the database refused every read with a
+    // quota error, and the arithmetic behind it was one open panel polling
+    // a route that fetched twenty question rows to paint three, plus the
+    // whole dictionary, several times a minute, all day.
+    version: '4.0',
+    quiet: true,
+    client: [],
+    admin: [
+      'The case panel asks the database for a great deal less. It was fetching twenty of your questions to show three, and the whole dictionary, every couple of seconds that a page stayed open. It now asks for five, holds the dictionary and your style profile for a minute at a time, and checks every thirty seconds instead of twelve when nothing is running. What you see is unchanged; while something is running it still checks every two and a half seconds.',
+      'The background sweep that looks for a stranded case now runs every fifteen minutes rather than every five. It reads every open case each time, so it was the most expensive thing on the clock. The queue that does the actual work still runs every minute.',
+    ],
+  },
   {
     // WHAT THE DATABASE SAYS (2026-09-09): every read came back empty at
     // once, the diagnostics included, and every call site catches a failure

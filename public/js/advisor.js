@@ -970,7 +970,11 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         document.dispatchEvent(new CustomEvent('pa-panel-state', { detail }));
       }
     } catch { /* transient — the next tick tries again */ }
-    timer = setTimeout(refresh, busy ? 2500 : 12000);
+    // Idle went from twelve seconds to thirty (2026-09-09). Busy is untouched
+    // at two and a half: that is the cadence he watches while an answer is on
+    // its way. Idle is a tab left open, and at twelve seconds a tab left open
+    // was the single biggest reader in the app.
+    timer = setTimeout(refresh, busy ? 2500 : 30000);
   }
   refresh();
 
