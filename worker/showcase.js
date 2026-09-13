@@ -515,7 +515,7 @@ export async function buildShowcase(env, { adminUid } = {}) {
   await patchDoc(env, `caseMeta/${id}`, { clientMsgAt: lastFromJoe }, { mask: ['clientMsgAt'] }).catch(() => {});
   // The first read runs on the next firing, so the 🧬 page and the reading
   // are there when the camera is.
-  await markPending(env, 'case', id, { force: true }).catch(() => {});
+  await markPending(env, 'case', id).catch(() => {}); // owed work, due now (2026-09-13: no options)
   return { id, existing: false, messages: rows.length, documents: docs.length, milestones: MILESTONES.length, log: WORK_LOG.length, permissions: AUTHORITY.length };
 }
 

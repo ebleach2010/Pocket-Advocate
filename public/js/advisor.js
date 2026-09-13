@@ -129,7 +129,6 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         <h3>👨‍⚕️ Advisor</h3>
         <div class="advisor-controls">
           <span class="advisor-status" data-status></span>
-          <button class="btn quiet tiny" data-pause title="Pause or resume automatic analysis">Pause</button>
           <button class="btn quiet tiny" data-refresh title="Re-read the conversation now">Update</button>
         </div>
       </div>
@@ -169,7 +168,6 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   const readEl = el('[data-read]');
   const qaEl = el('[data-qa]');
   const errEl = el('[data-err]');
-  const pauseBtn = el('[data-pause]');
   const refreshBtn = el('[data-refresh]');
   const prepBtn = el('[data-prep]');
   // His own case has nobody to write to (2026-09-03): the button goes, and
@@ -198,13 +196,11 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   const mediaSel = new Map();
   window.__paMediaSel = mediaSel;
 
-  let paused = false;
   let draftRendered = null; // the server draft the card was last built from
   // He pressed Prepare a response (or Revise) this session and is owed a
   // draft. When it lands, the panel takes him to it instead of leaving it to
   // appear silently on another page.
   let awaitingDraft = false;
-  let firedFor = null; // the pendingAt and clock moment we already launched an analysis for
   // Which page he is on, and it survives leaving the tab and coming back. A
   // closure variable reset him to 1 of 9 every time he looked at the chat.
   const PAGE_KEY = `pa-read-page-${kind}-${id}`;
@@ -296,10 +292,6 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   };
 
   function apply(d, qa, glossary = []) {
-    paused = !!d.paused;
-    pauseBtn.textContent = paused ? 'Resume' : 'Pause';
-    pauseBtn.classList.toggle('on', paused);
-
     // The worker heartbeats progressAt every ~8s while the model streams
     // (thinking included). No beat for 2 minutes = the run is dead — say so
     // instead of showing "thinking" forever.
@@ -334,7 +326,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       ? '⚠ no API key on the Worker'
       : alive
         ? `● ${stageLabel}${mins ? ` · ${mins}m` : ''}`
-        : stalled ? '⚠ stalled — tap Update' : paused ? '‖ paused' : '';
+        : stalled ? '⚠ stalled, tap Update' : '';
     statusEl.className = `advisor-status${alive ? ' live' : ''}`;
     if (noKey) {
       showErr('ANTHROPIC_API_KEY is not set on the Worker, so the '
@@ -411,18 +403,10 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       const readN = near(d.mediaReport?.at) ? (d.mediaReport.read || []).length : 0;
       if (readN) bits.push(`read ${readN} file${readN === 1 ? '' : 's'}`);
       if (near(d.diffAt)) bits.push('differential moved');
-      // When the next automatic read is due (2026-09-05): thirty minutes
-      // after a read, an hour further out for every look that found nothing
-      // new, and back to thirty the moment something lands. Only while it
-      // is idle: a running read is its own status line.
-      const nextAt = d.nextAutoAt && !running && !paused && d.status !== 'error' ? toDate(d.nextAutoAt) : null;
-      const clock = nextAt
-        ? (nextAt.getTime() > Date.now() + 60_000
-          ? ` · next automatic read ${whenShort(nextAt)}`
-          : ' · next automatic read any minute')
-        : '';
+      // No clock line (2026-09-13): nothing reads the case but his tap, so
+      // there is no next look to announce.
       updatedEl.textContent = d.updatedAt
-        ? `Updated ${timeAgo(toDate(d.updatedAt))}${bits.length ? ` · ${bits.join(', ')}` : ''}${paused ? ' · analysis paused' : clock}`
+        ? `Updated ${timeAgo(toDate(d.updatedAt))}${bits.length ? ` · ${bits.join(', ')}` : ''}`
         : '';
     } else if (!running) {
       bodyEl.innerHTML = '<p class="dim small">No assessment yet. Tap <strong>Update</strong> once there are a few messages to read.</p>';
@@ -477,34 +461,9 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     lastQa = qa || [];
     renderQa(lastQa);
 
-    // The thread changed since the last assessment and nothing is on it yet —
-    // run the analysis from here. This open panel is what holds the connection
-    // alive through a long Opus turn; the cron only covers the panel being
-    // closed. Fire once per pending flag, not once per poll.
-    // Never auto-fire into a standing error (credits out, etc.) — that loops.
-    // The error shows above; a manual Update or the cron retries it.
-    // Cooldown: firedFor is a per-page-load closure, so every app re-entry
-    // used to auto-fire a fresh run while the last one's corpse was still
-    // warm. The per-minute cron owns retries now; the panel only volunteers
-    // when nothing has even STARTED in the last three minutes.
-    const anyStart = d.startedAt ? toDate(d.startedAt).getTime() : 0;
-    // THE AUTOMATIC CLOCK (2026-09-05). The panel volunteers a read only
-    // when the case's clock says so: a flag raised two minutes after a read
-    // waits for the half-hour mark, and a case that has been read once is
-    // looked at again when its clock comes due even with no flag raised
-    // (the Worker bails for free when nothing is new and moves the clock an
-    // hour further out). Fired once per moment, not once per poll.
-    const dueAt = d.nextAutoAt ? toDate(d.nextAutoAt).getTime() : 0;
-    const clockDue = !!dueAt && Date.now() >= dueAt && !!d.analysis;
-    const fireKey = `${d.pendingAt || ''}|${clockDue ? dueAt : ''}`;
-    if ((d.pendingAt || clockDue) && (!dueAt || Date.now() >= dueAt)
-      && !running && !paused && d.status !== 'error' && firedFor !== fireKey
-      && (!anyStart || Date.now() - anyStart > 3 * 60_000)) {
-      firedFor = fireKey;
-      // auto, so the worker can take the cheap no-new-content exit when the
-      // pending flag turns out to be noise; only a real tap forces a read.
-      post({ action: 'analyze', auto: true });
-    }
+    // Nothing fires from here (2026-09-13): a read starts on his tap and at
+    // no other time. The block that volunteered one, on a flag or a clock,
+    // went with the clock.
     return { ...d, running, draftAlive };
   }
 
@@ -1076,7 +1035,6 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     // after he pressed the button.
     setTimeout(refresh, 700);
   });
-  pauseBtn.addEventListener('click', () => post({ action: paused ? 'resume' : 'pause' }));
   // window.prompt() silently does nothing in iOS Home-Screen apps — a real
   // overlay or the button reads as broken.
   prepBtn.addEventListener('click', () => {

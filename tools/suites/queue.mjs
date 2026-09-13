@@ -64,11 +64,6 @@ function liftAt(start, name) {
   return SRC.slice(start, end).replace(/^export /, '');
 }
 const LIFTED = fn('runQueuedAnalyses');
-// The clock helpers, real ones: the drain calls autoWaitMs on every row it
-// might run, so a fake here would be the silent-pass hazard the comment
-// below describes.
-const CLOCK = new Function(`${liftAny('nextAutoGap')}\n${liftAny('autoWaitMs')}\n return { nextAutoGap, autoWaitMs };`
-  .replace(/AUTO_GAP_MIN/g, '30').replace(/AUTO_GAP_STEP_MIN/g, '60').replace(/AUTO_GAP_CAP_MIN/g, '1440'))();
 
 // ---- the world -----------------------------------------------------------
 let rows, state, calls, deleted, patched;
@@ -115,7 +110,6 @@ const deps = () => ({
   diagLog: async () => {},
   client: () => ({ messages: { batches: { cancel: async () => {} } } }),
   pollFlight: async () => {},
-  autoWaitMs: CLOCK.autoWaitMs,
   // The handover (2026-09-05): a recorder, like the runners above.
   runHandover: async (env, id, from) => { calls.push(['runHandover', `${id}<${from}`]); },
 });
@@ -353,101 +347,106 @@ check('Q25 only one run of the two that pass the guards together buys the turn',
   // one start per turn bought.
   && SRC.indexOf('const claimed = await patchDoc(env, statePath(kind, id),') < SRC.indexOf("ev: 'start', kind, auto, skipMedia"));
 
-// ---- the clock automatic reads run on (Eric, 2026-09-05) ------------------
-// "Expand advisor's automatic reads by one hour each time there is no new
-// information. If there is new information, keep it at 30min."
+// ---- nothing reads but his tap (Eric, 2026-09-13) ------------------------
+// "Stop automatic updates. I'll manually press update so it doesn't burn
+// through tokens." The clock that lived here from 2026-09-05 (thirty minutes,
+// an hour more each empty look, back to thirty on a new note, the panel
+// firing the look itself) is gone whole. Q26 to Q35 keep their names and
+// were re-pointed at the new world on 2026-09-13, each with its own control:
+// what they hold now is that nothing books a read, nothing waits on a
+// clock, and the one thing that starts a read is his tap.
 const MIN = 60_000;
-const between = (v, lo, hi) => { const t = v ? new Date(v).getTime() : NaN; return t >= lo && t <= hi; };
 const P = readFileSync(j(ROOT, 'public/js/advisor.js'), 'utf8');
+const DEMO = readFileSync(j(ROOT, 'public/js/demo/api.js'), 'utf8');
+
+// Re-pinned 2026-09-13: the drain used to leave a row standing until its
+// clock came (autoWaitMs); there is no clock to wait on.
+// NEGATIVE CONTROL (run 2026-09-13): a wait on a stale nextAutoAt put back before the claim made this read
+//   FAIL  Q26 the drain carries no clock: no wait, no field read
+check('Q26 the drain carries no clock: no wait, no field read',
+  !/autoWaitMs|nextAutoAt|autoGapMin/.test(LIFTED));
 
 {
-  const early = { status: 'idle', analysis: 'prior', updatedAt: new Date(Date.now() - 10 * MIN), nextAutoAt: new Date(Date.now() + 20 * MIN) };
+  // The drain, run: a row on a state that still carries a stale clock in the
+  // future (an old document) runs at this firing all the same.
+  const stale = { status: 'idle', analysis: 'prior', updatedAt: new Date(Date.now() - 10 * MIN), nextAutoAt: new Date(Date.now() + 20 * MIN) };
   const row = () => [{ id: 'case_a', data: { kind: 'case', id: 'a', at: new Date(Date.now() - MIN), tries: 0 } }];
-  reset(row(), early);
+  reset(row(), stale);
   await build()(env, 0);
-  // NEGATIVE CONTROL (run 2026-09-05): the drain's `if (autoWaitMs(state?.data)) continue;` removed made this read
-  //   FAIL  Q26 a row whose clock has not come is left standing: no run, no try counted, no row deleted
-  check('Q26 a row whose clock has not come is left standing: no run, no try counted, no row deleted',
-    !calls.some((c) => c[0] === 'runAnalysis') && !patched.some(([p]) => /advisorQueue/.test(p)) && deleted.length === 0,
-    JSON.stringify({ calls, patched, deleted }));
-
-  reset(row(), { ...early, nextAutoAt: new Date(Date.now() - MIN) });
-  await build()(env, 0);
-  // NEGATIVE CONTROL (run 2026-09-05): autoWaitMs returning 1 for any stamped clock made this read
-  //   FAIL  Q27 and the same row runs once its clock has come
-  check('Q27 and the same row runs once its clock has come',
+  // NEGATIVE CONTROL (run 2026-09-13): the same wait as Q26's control made this read
+  //   FAIL  Q27 a queued row runs at the next firing whatever stale clock its state still carries
+  check('Q27 a queued row runs at the next firing whatever stale clock its state still carries',
     calls.filter((c) => c[0] === 'runAnalysis').length === 1, JSON.stringify(calls));
 }
 
-// NEGATIVE CONTROL (run 2026-09-05): the step changed to thirty minutes made this read
-//   FAIL  Q28 the clock is thirty minutes, an hour more each empty look, never past a day
-check('Q28 the clock is thirty minutes, an hour more each empty look, never past a day',
-  /const AUTO_GAP_MIN = 30;\nconst AUTO_GAP_STEP_MIN = 60;\nconst AUTO_GAP_CAP_MIN = 24 \* 60;/.test(SRC)
-  && CLOCK.nextAutoGap(undefined) === 90 && CLOCK.nextAutoGap(30) === 90 && CLOCK.nextAutoGap(90) === 150
-  && CLOCK.nextAutoGap(1400) === 1440 && CLOCK.nextAutoGap(1440) === 1440
-  && CLOCK.autoWaitMs({ nextAutoAt: new Date(Date.now() + 5 * MIN) }) > 4 * MIN
-  && CLOCK.autoWaitMs({ nextAutoAt: new Date(Date.now() - MIN) }) === 0
-  && CLOCK.autoWaitMs({}) === 0 && CLOCK.autoWaitMs(null) === 0);
+// NEGATIVE CONTROL (run 2026-09-13): a `nextAutoAt: null` put back on the landed read's state write made this read
+//   FAIL  Q28 the clock is gone from the module, the Worker, the panel and the demo: no constants, no helpers, no field booked, no line about the next look
+check('Q28 the clock is gone from the module, the Worker, the panel and the demo: no constants, no helpers, no field booked, no line about the next look',
+  !/AUTO_GAP_MIN|AUTO_GAP_STEP_MIN|AUTO_GAP_CAP_MIN|nextAutoGap|autoWaitMs|nextAutoAt|autoGapMin/.test(SRC)
+  && !/nextAutoAt|autoGapMin|nextAutoInS/.test(W)
+  && !/nextAutoAt|autoGapMin|next automatic read|clockDue|firedFor/.test(P)
+  && !/nextAutoAt|autoGapMin/.test(DEMO)
+  && /NOTHING READS BUT HIS TAP \(Eric, 2026-09-13/.test(SRC));
 
 {
-  // markPending, lifted and run: new information puts the clock back to
-  // thirty minutes counted from the last read; a forced row is due now
-  // unless told otherwise.
+  // markPending, lifted and run: owed work, due now. One state write, one
+  // queue row, and no read of the state at all (the read that served the
+  // clock went with the clock).
   const MP = liftAny('markPending');
-  const run = async (stateDoc, opts) => {
+  const run = async (existingRow) => {
     const sets = [];
     const queued = [];
+    let reads = 0;
     const api = new Function('deps', `
-      const { getDoc, setState, patchDoc, statePath, queuePath, PENDING_FLOOR_MS, AUTO_GAP_MIN } = deps;
+      const { getDoc, setState, patchDoc, statePath, queuePath, PENDING_FLOOR_MS } = deps;
       const READ_FAILED = Symbol('read failed'); const tryGet = async (env, p) => { try { return await getDoc(env, p); } catch { return READ_FAILED; } };
       ${MP}
       return markPending;
     `)({
-      getDoc: async (env, path) => (/advisor\/state$/.test(path) ? stateDoc : null),
+      getDoc: async (env, path) => { if (/advisor\/state$/.test(path)) reads += 1; return /advisorQueue/.test(path) ? existingRow : null; },
       setState: async (env, kind, id, fields) => { sets.push(fields); },
       patchDoc: async (env, path, data) => { queued.push([path, data]); return true; },
       statePath: (kind, id) => `cases/${id}/advisor/state`,
       queuePath: (kind, id) => `advisorQueue/${kind}_${id}`,
       PENDING_FLOOR_MS: 5 * MIN,
-      AUTO_GAP_MIN: 30,
     });
-    await api({}, 'case', 'a', opts);
-    return { sets, queued };
+    await api({}, 'case', 'a');
+    return { sets, queued, reads };
   };
-  const readAt = Date.now() - 10 * MIN;
-  const quiet = { data: { updatedAt: new Date(readAt), autoGapMin: 150, nextAutoAt: new Date(Date.now() + 2 * 3600_000) } };
-  const fresh = await run(quiet, {});
-  const s = fresh.sets[0] || {};
-  // NEGATIVE CONTROL (run 2026-09-05): the reset (`autoGapMin: AUTO_GAP_MIN,`) dropped from the new-information write made this read
-  //   FAIL  Q29 a new note puts the clock back to thirty minutes from the last read and books the row
-  check('Q29 a new note puts the clock back to thirty minutes from the last read and books the row',
-    s.autoGapMin === 30 && between(s.nextAutoAt, readAt + 30 * MIN - 2000, readAt + 30 * MIN + 2000)
-    && !!s.pendingAt && fresh.queued.length === 1 && fresh.queued[0][0] === 'advisorQueue/case_a'
-    && fresh.queued[0][1].tries === 0,
-    JSON.stringify(fresh));
-  const old = await run({ data: { updatedAt: new Date(Date.now() - 5 * 3600_000), autoGapMin: 390 } }, {});
-  const tap = await run(quiet, { force: true });
-  const mid = await run(quiet, { force: true, due: false });
-  // NEGATIVE CONTROL (run 2026-09-05): `due ? { pendingAt: now, nextAutoAt: now } : { pendingAt: now }` collapsed to the second branch made this read
-  //   FAIL  Q30 a note on a long-quiet case is due now, a tap is due now, and a mid-flight note keeps the clock it has
-  check('Q30 a note on a long-quiet case is due now, a tap is due now, and a mid-flight note keeps the clock it has',
-    between(old.sets[0]?.nextAutoAt, Date.now() - 2000, Date.now() + 2000)
-    && between(tap.sets[0]?.nextAutoAt, Date.now() - 2000, Date.now() + 2000) && tap.sets[0]?.autoGapMin === undefined
-    && mid.sets[0]?.nextAutoAt === undefined && !!mid.sets[0]?.pendingAt,
-    JSON.stringify({ old: old.sets, tap: tap.sets, mid: mid.sets }));
+  const tap = await run(null);
+  const again = await run({ data: { kind: 'case', id: 'a', tries: 2 } });
+  const s = tap.sets[0] || {};
+  // NEGATIVE CONTROL (run 2026-09-13): `nextAutoAt: now` put back beside pendingAt in the one state write made this read
+  //   FAIL  Q29 a tap is owed work, due now: pendingAt stamped, nothing else booked, the row queued once and never rewritten
+  check('Q29 a tap is owed work, due now: pendingAt stamped, nothing else booked, the row queued once and never rewritten',
+    tap.sets.length === 1 && !!s.pendingAt && Object.keys(s).join() === 'pendingAt'
+    && tap.queued.length === 1 && tap.queued[0][0] === 'advisorQueue/case_a' && tap.queued[0][1].tries === 0
+    && again.sets.length === 1 && again.queued.length === 0,
+    JSON.stringify({ tap, again }));
+  // NEGATIVE CONTROL (run 2026-09-13): a read of the state put back at the top of markPending made this read
+  //   FAIL  Q30 and it reads nothing: the state read that served the clock went with the clock
+  check('Q30 and it reads nothing: the state read that served the clock went with the clock',
+    tap.reads === 0 && again.reads === 0 && /export async function markPending\(env, kind, id\) \{/.test(SRC),
+    JSON.stringify({ reads: tap.reads }));
 }
 
-// NEGATIVE CONTROL (run 2026-09-05): `nextAutoGap(state.data.autoGapMin)` changed to `(state.data.autoGapMin || 30)` made this read
-//   FAIL  Q31 a look that finds nothing new costs no turn and moves the clock an hour further out
-check('Q31 a look that finds nothing new costs no turn and moves the clock an hour further out',
-  /const gapMin = nextAutoGap\(state\.data\.autoGapMin\);\n\s+await setState\(env, kind, id, \{\n\s+status: 'idle', startedAt: null, progressAt: null, stage: null, pendingAt: null,\n\s+autoGapMin: gapMin, nextAutoAt: new Date\(Date\.now\(\) \+ gapMin \* 60_000\),\n\s+\}\);\n\s+await deleteDoc\(env, queuePath\(kind, id\)\)\.catch\(\(\) => \{\}\);\n\s+await diagLog\(env, \{ ev: 'end', ok: true, kind, skipped: 'nothing-new', gapMin,/.test(SRC));
+// Re-pinned 2026-09-13: the nothing-new exit used to move the clock an hour
+// further out; it books nothing now, and only a drain-run rescue reaches it,
+// since nothing schedules a look.
+// NEGATIVE CONTROL (run 2026-09-13): `gapMin: 0,` put back on the exit's recorder entry made this read
+//   FAIL  Q31 a drain-run pass that finds nothing new costs no turn and books nothing
+check('Q31 a drain-run pass that finds nothing new costs no turn and books nothing',
+  /await setState\(env, kind, id, \{\n\s+status: 'idle', startedAt: null, progressAt: null, stage: null, pendingAt: null,\n\s+\}\);\n\s+await deleteDoc\(env, queuePath\(kind, id\)\)\.catch\(\(\) => \{\}\);\n\s+await diagLog\(env, \{ ev: 'end', ok: true, kind, skipped: 'nothing-new', ms: Date\.now\(\) - runT0 \}\);\n\s+return;/.test(SRC));
 
-// NEGATIVE CONTROL (run 2026-09-05): `due: continues` changed to `due: true` made this read
-//   FAIL  Q32 a read that landed books thirty minutes, its own leftovers run now, and a mid-flight note waits its thirty
-check('Q32 a read that landed books thirty minutes, its own leftovers run now, and a mid-flight note waits its thirty',
+// Re-pinned 2026-09-13: a landed read used to book thirty minutes; it books
+// nothing, and its own leftovers and a catch-up backlog are queued as owed
+// work, due now.
+// NEGATIVE CONTROL (run 2026-09-13): the leftovers' markPending given back a `{ due: continues }` made this read
+//   FAIL  Q32 a read that landed books nothing, and its own leftovers run at the next firing
+check('Q32 a read that landed books nothing, and its own leftovers run at the next firing',
   /const continues = !!\(\(m\.carry \|\| \[\]\)\.length \|\| \(ctx\.catchup && ctx\.newerLeft > 0\)\);/.test(SRC)
-  && /autoGapMin: AUTO_GAP_MIN,\n\s+nextAutoAt: continues \? now : new Date\(now\.getTime\(\) \+ AUTO_GAP_MIN \* 60_000\),/.test(SRC)
-  && /if \(continues \|\| behind\)\n\s+await markPending\(env, kind, id, \{ force: true, due: continues \}\)\.catch\(\(\) => \{\}\);/.test(SRC));
+  && /if \(continues \|\| behind\)\n\s+await markPending\(env, kind, id\)\.catch\(\(\) => \{\}\);/.test(SRC)
+  && !/markPending\(env, [^)]*\{ (?:force|due)/.test(SRC));
 
 {
   // pollFlight, lifted and run against a landed batch: the finish is
@@ -499,8 +498,10 @@ check('Q32 a read that landed books thirty minutes, its own leftovers run now, a
 }
 
 {
-  // sweepOne, lifted and run: the scheduled look books its own row when the
-  // clock comes due, flag or no flag, and not a minute before.
+  // sweepOne, lifted and run: it rescues work he asked for and books nothing
+  // of its own. A case with nothing owed is left alone whatever stale clock
+  // its document still carries; a tap owed past the settle window is booked
+  // as owed; the old paused flag no longer stops a rescue.
   const SW = liftAny('sweepOne');
   const run = async (stateData) => {
     const queued = [];
@@ -523,30 +524,35 @@ check('Q32 a read that landed books thirty minutes, its own leftovers run now, a
     await api({}, { kind: 'case', id: 'a' });
     return { queued, logged };
   };
-  const base = { status: 'idle', analysis: 'prior', updatedAt: new Date(Date.now() - 2 * 3600_000), autoGapMin: 90 };
-  const due = await run({ ...base, nextAutoAt: new Date(Date.now() - MIN) });
-  const early = await run({ ...base, nextAutoAt: new Date(Date.now() + 20 * MIN) });
-  const unread = await run({ ...base, analysis: '', nextAutoAt: new Date(Date.now() - MIN) });
-  // NEGATIVE CONTROL (run 2026-09-05): `&& !autoDue` dropped from the sweep's early return made this read
-  //   FAIL  Q34 the sweep books the scheduled look when the clock comes due, and only then, and only on a case that has been read
-  check('Q34 the sweep books the scheduled look when the clock comes due, and only then, and only on a case that has been read',
-    due.queued.length === 1 && due.queued[0][0] === 'advisorQueue/case_a' && due.queued[0][1].tries === 0
-    && due.logged.some((e) => e.ev === 'requeue' && e.why === 'clock')
-    && early.queued.length === 0 && unread.queued.length === 0,
-    JSON.stringify({ due, early: early.queued, unread: unread.queued }));
+  const base = { status: 'idle', analysis: 'prior', updatedAt: new Date(Date.now() - 2 * 3600_000) };
+  const quiet = await run({ ...base, autoGapMin: 90, nextAutoAt: new Date(Date.now() - MIN) });
+  const owed = await run({ ...base, pendingAt: new Date(Date.now() - 6 * MIN) });
+  const pausedOwed = await run({ ...base, pendingAt: new Date(Date.now() - 6 * MIN), paused: true });
+  // NEGATIVE CONTROL (run 2026-09-13): the sweep's early return given back a stale-clock clause made this read
+  //   FAIL  Q34 the sweep books a tap that is owed, never a look of its own, and a stale clock or an old paused flag on the document changes nothing
+  check('Q34 the sweep books a tap that is owed, never a look of its own, and a stale clock or an old paused flag on the document changes nothing',
+    quiet.queued.length === 0 && quiet.logged.length === 0
+    && owed.queued.length === 1 && owed.queued[0][0] === 'advisorQueue/case_a' && owed.queued[0][1].tries === 0
+    && owed.logged.some((e) => e.ev === 'requeue' && e.why === 'owed')
+    && pausedOwed.queued.length === 1
+    && !/'clock'/.test(SW) && !/paused/.test(SW),
+    JSON.stringify({ quiet: quiet.queued, owed: owed.queued, pausedOwed: pausedOwed.queued }));
 }
 
-// NEGATIVE CONTROL (run 2026-09-05): runAnalysis's `if (auto && autoWaitMs(pre?.data)) return;` changed to `if (false) return;` made this read
-//   FAIL  Q35 an automatic run before its time claims nothing, a tap is due now, and the panel waits for the clock and says when
-check('Q35 an automatic run before its time claims nothing, a tap is due now, and the panel waits for the clock and says when',
-  /if \(auto && autoWaitMs\(pre\?\.data\)\) return;/.test(SRC)
-  && SRC.indexOf('if (auto && autoWaitMs(pre?.data)) return;') < SRC.indexOf('const claimed = await patchDoc(env, statePath(kind, id),')
-  && /if \(autoWaitMs\(state\?\.data\)\) continue;/.test(SRC)
-  && SRC.indexOf('if (autoWaitMs(state?.data)) continue;') < SRC.indexOf('const fresh = await getDoc(env, `advisorQueue/${row.id}`)')
-  && /await markPending\(env, kind, id, \{ force: true, due: !isAuto \}\);/.test(W)
-  && /const clockDue = !!dueAt && Date\.now\(\) >= dueAt && !!d\.analysis;/.test(P)
-  && /if \(\(d\.pendingAt \|\| clockDue\) && \(!dueAt \|\| Date\.now\(\) >= dueAt\)/.test(P)
-  && /next automatic read \$\{whenShort\(nextAt\)\}/.test(P));
+// Re-pinned 2026-09-13: the panel used to fire a read itself when the clock
+// came or a flag stood, and carried a Pause for that automation. Neither
+// exists: the Update button is the one way a read starts, and the route
+// behind it runs a tap as a tap.
+// NEGATIVE CONTROL (run 2026-09-13): `post({ action: 'analyze', auto: true })` put back after the Update tap's poll made this read
+//   FAIL  Q35 the panel volunteers nothing and has nothing to pause; the Update button and the route behind it are the one way a read starts
+check('Q35 the panel volunteers nothing and has nothing to pause; the Update button and the route behind it are the one way a read starts',
+  !/auto: true/.test(P) && !/data-pause|pauseBtn|analysis paused/.test(P)
+  && /data-refresh/.test(P) && /post\(\{ action: 'analyze'/.test(P)
+  && /Nothing fires from here \(2026-09-13\)/.test(P)
+  && /await markPending\(env, kind, id\);\n(?:.*\n){0,12}?\s+return keepaliveRun\(ctx, runAnalysis\(env, kind, id, media, \{ auto: false, freshFiles: true \}\), \{ raw: true \}\);/.test(W)
+  && !/body\?\.auto === true/.test(W.slice(W.indexOf('async function handleAdvisorAction')))
+  && !/action === 'pause'/.test(W) && !/refreshAdvisor/.test(W)
+  && /No read is booked here any more \(2026-09-13\)/.test(W));
 
 // ---- the handover row (Eric, 2026-09-05: his own cases in sequence) ------
 {

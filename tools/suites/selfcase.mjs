@@ -341,7 +341,9 @@ const guards = [
   // before it returns, and still tells and stamps nobody.
   // Re-pinned again the same evening (audit): the self branch refuses anyone
   // but him before it wakes the read.
-  ['the chat notice', /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not your thread' \}, 403\);\n\s+refreshAdvisor\(env, ctx, kind, id\);\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/],
+  // Re-pinned 2026-09-13 (v4.5): it wakes nothing now; the refusal and the
+  // silence toward everyone else are what this guard holds.
+  ['the chat notice', /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not your thread' \}, 403\);\n\s+\/\/ Nothing is booked for a read here \(2026-09-13\); his tap reads it\.\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/],
   // Re-pinned 2026-09-03 (audit): the one-field mask, so lm.ts is never retyped.
   // Re-pinned 2026-09-06 (Joe Bloe): five of these skip the showcase the same
   // way they skip his own case, and the pins read both flags.
@@ -720,14 +722,18 @@ const stamp = RP1.written.find((w) => w.path === 'cases/c1/chat/q1');
 const shelf = RP1.written.find((w) => w.path === 'cases/c1');
 // NEGATIVE CONTROL (run 2026-09-03): the own-case 409 in handleChatReply replaced with `if (false)` made this read
 //   FAIL  S35 his answer goes through the Worker with the question on it, stamps the question, moves the shelf line, wakes the read, and refuses everyone and everything else
-check('S35 his answer goes through the Worker with the question on it, stamps the question, moves the shelf line, wakes the read, and refuses everyone and everything else',
+// Re-pinned and renamed 2026-09-13 (v4.5): his reply used to wake the read
+// (refreshAdvisor); nothing books a read now but his tap.
+// NEGATIVE CONTROL (run 2026-09-13): a `refreshAdvisor(env, ctx, 'case', id);` put back before the reply route's return made this read
+//   FAIL  S35 his answer goes through the Worker with the question on it, stamps the question, moves the shelf line, books no read, and refuses everyone and everything else
+check('S35 his answer goes through the Worker with the question on it, stamps the question, moves the shelf line, books no read, and refuses everyone and everything else',
   !!replySrc && rp1.code === 200 && rp1.obj.ok === true
   && !!replyDoc && replyDoc.data.role === 'admin' && replyDoc.data.from === 'eric'
   && replyDoc.data.replyTo === 'q1' && replyDoc.data.quote === 'What time did it start?'
   && replyDoc.data.text === 'About 6am, right hand only.'
   && !!stamp && (stamp.opts?.mask || []).join(',') === 'answeredAt,answerId' && stamp.data.answerId === rp1.obj.id
   && !!shelf && (shelf.opts?.mask || []).join(',') === 'lastMessage' && shelf.data.lastMessage.emailed === true
-  && RP1.refreshed.join(',') === 'case/c1'
+  && RP1.refreshed.length === 0
   && rp2.code === 404 && RP2.written.length === 0
   && rp3.code === 409 && RP3.written.length === 0
   && rp4.code === 404 && RP4.written.length === 0
@@ -739,8 +745,13 @@ check('S35 his answer goes through the Worker with the question on it, stamps th
 // NEGATIVE CONTROL (run 2026-09-03): the refreshAdvisor call removed from the notify branch made this read
 //   FAIL  S36 a note on his own case wakes the read the way a client message does, and still pings nobody
 // Re-pinned 2026-09-03 (audit): the branch refuses a stranger first.
-check('S36 a note on his own case wakes the read the way a client message does, and still pings nobody',
-  /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not your thread' \}, 403\);\n\s+refreshAdvisor\(env, ctx, kind, id\);\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/.test(WORKER));
+// Re-pinned and renamed 2026-09-13 (v4.5): a note on his own case used to
+// wake the read (refreshAdvisor); nothing books a read now but his tap.
+// NEGATIVE CONTROL (run 2026-09-13): the dated comment in the self branch replaced by a `markPending(env, kind, id);` call made this read
+//   FAIL  S36 a note on his own case books no read and pings nobody: it is read at his tap
+check('S36 a note on his own case books no read and pings nobody: it is read at his tap',
+  /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not your thread' \}, 403\);\n\s+\/\/ Nothing is booked for a read here \(2026-09-13\); his tap reads it\.\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/.test(WORKER)
+  && !/refreshAdvisor/.test(WORKER));
 
 // NEGATIVE CONTROL (run 2026-09-03): the Reply button's class renamed to reply-button made this read
 //   FAIL  S37 the chat paints a question with a Reply, his answer with the question above it, the answer goes through the Worker, and the panel and the demo follow
@@ -832,9 +843,14 @@ check('S41 his own case teaches the profile nothing and takes no draft: the feed
 const notifySrc = lift(WORKER, 'async function handleNotify(request, env, ctx) {');
 // NEGATIVE CONTROL (run 2026-09-03): the isAdmin refusal removed from the notify self branch made this read
 //   FAIL  S42 a stranger with the id of his own case is refused by the notify route, and only he can wake the read
-check('S42 a stranger with the id of his own case is refused by the notify route, and only he can wake the read',
+// Re-pinned and renamed 2026-09-13 (v4.5): the refusal stands; the wake it
+// used to guard is gone, since nothing books a read but his tap.
+// NEGATIVE CONTROL (run 2026-09-13): the same mutation as S36's made this read
+//   FAIL  S42 a stranger with the id of his own case is refused by the notify route, and nobody, not even he, wakes a read from it
+check('S42 a stranger with the id of his own case is refused by the notify route, and nobody, not even he, wakes a read from it',
   !!notifySrc
-  && /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not your thread' \}, 403\);\n\s+refreshAdvisor\(env, ctx, kind, id\);\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/.test(notifySrc)
+  && /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not your thread' \}, 403\);\n\s+\/\/ Nothing is booked for a read here \(2026-09-13\); his tap reads it\.\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/.test(notifySrc)
+  && !/markPending|refreshAdvisor/.test(notifySrc)
   && notifySrc.indexOf("const isAdmin = profile?.data.role === 'admin';") < notifySrc.indexOf('if (doc.data.self) {'));
 
 const RP6 = runReply({ body: { id: 'c1?x' } });
@@ -910,7 +926,9 @@ check('S48 a refused id on a finished batch falls back and runs again instead of
   && /effort: passEffort, auto, skipMedia, self, model: turn\.model,/.test(runAnaSrc)
   && /ev: 'self-model-fallback', at: 'result'/.test(pollSrc)
   && /modelRefusedAt: new Date\(\), modelRefusedId: flight\.model,/.test(pollSrc)
-  && /await markPending\(env, kind, id, \{ force: true \}\)\.catch\(\(\) => \{\}\);\n\s+return;\n\s+\}\n\s+await diagLog\(env, \{\n\s+ev: 'end', ok: false/.test(pollSrc)
+  // Re-pinned 2026-09-13 (v4.5): markPending takes no options; every call is
+  // owed work, due now, since nothing but his tap books a read.
+  && /await markPending\(env, kind, id\)\.catch\(\(\) => \{\}\);\n\s+return;\n\s+\}\n\s+await diagLog\(env, \{\n\s+ev: 'end', ok: false/.test(pollSrc)
   && /if \(SELF_MODEL !== MODEL\) \{\n\s+const st = await getDoc\(env, statePath\(kind, id\)\)\.catch\(\(\) => null\);\n\s+if \(st\?\.data\.modelRefusedId === SELF_MODEL\) policy\.model = MODEL;/.test(ADV),
   `fallback at ${fbAt}, park at ${parkAt}`);
 
@@ -1264,7 +1282,8 @@ check('S56 his own read carries two more machine-read lists under the differenti
     && good.sets.length === 1 && good.sets[0][2].handoverStatus === 'ready' && good.sets[0][2].handovers.length === 1
     && good.sets[0][2].handovers[0].fromCase === 'a' && good.sets[0][2].handovers[0].confirmedDx.name === 'Autoimmune encephalitis'
     && /### Confirmed at close/.test(good.sets[0][2].handovers[0].brief) && good.sets[0][2].handoverError === null
-    && good.pend.length === 1 && good.pend[0][1] === 'n' && good.pend[0][2].force === true
+    // Re-pinned 2026-09-13 (v4.5): no options on markPending any more.
+    && good.pend.length === 1 && good.pend[0][1] === 'n' && good.pend[0][2] === undefined
     && two.sets[0][2].handoverStatus === 'running' && two.pend.length === 0
     && /not one of his own/.test(notSelf.threw || '') && notSelf.sets.length === 0
     && /without its headings/.test(noHeads.threw || '') && noHeads.sets.length === 0,

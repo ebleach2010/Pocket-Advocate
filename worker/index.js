@@ -1068,14 +1068,9 @@ export default {
             pendingAgeS: age(d.pendingAt), updatedAgeS: age(d.updatedAt),
             startedAgeS: age(d.startedAt), beatAgeS: age(d.progressAt),
             analyzedThroughAgeS: age(d.analyzedThroughTs),
-            forceFull: !!d.forceFull, paused: !!d.paused,
+            forceFull: !!d.forceFull,
             batchAgeS: d.batchCtx ? age(d.batchCtx.submittedAt) : null,
             batchPass: d.batchCtx?.passType || null,
-            // The automatic clock (2026-09-05): the gap it is on and how far
-            // off the next look is (negative means overdue and waiting for a
-            // firing).
-            autoGapMin: d.autoGapMin || null,
-            nextAutoInS: d.nextAutoAt ? -age(d.nextAutoAt) : null,
             // The draft path (2026-09-06, "Drafting has stopped working"):
             // where the last draft got to, how old it is, and what it said
             // if it fell over.
@@ -1944,7 +1939,7 @@ async function unparkAdvisor(env) {
     for (const c of cases.filter((r) => r.data.status !== 'closed')) {
       const st = await getDoc(env, `cases/${c.id}/advisor/state`).catch(() => null);
       const d = st?.data;
-      if (!d || d.paused) continue;
+      if (!d) continue;
       const owed = d.pendingAt && (!d.updatedAt || new Date(d.pendingAt) > new Date(d.updatedAt));
       // A "running" with a live beat is real work: leave it. A stale one is a
       // corpse from the pre-batch era (every in-place background turn died),
@@ -1957,7 +1952,7 @@ async function unparkAdvisor(env) {
         status: 'idle', error: null, errorRetries: null, errorRetryAt: null,
         startedAt: null, progressAt: null, stage: null, batchCtx: null,
       }, { mask: ['status', 'error', 'errorRetries', 'errorRetryAt', 'startedAt', 'progressAt', 'stage', 'batchCtx'] });
-      await markPending(env, 'case', c.id, { force: true }).catch(() => {});
+      await markPending(env, 'case', c.id).catch(() => {});
       fixed += 1;
     }
     return done(`un-parked ${fixed}`);
@@ -2061,7 +2056,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-09-the-reason-rides';
+const BUILD_TAG = 'v2026-09-13-nothing-reads-but-his-tap';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2069,7 +2064,7 @@ const BUILD_TAG = 'v2026-09-09-the-reason-rides';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '4.4';
+const VERSION = '4.5';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3776,12 +3771,12 @@ async function handleNotify(request, env, ctx) {
     // His own case: nobody to tell, and nothing to stamp. The message is his
     // own note to himself; the 💬 badge and the admin pings stay dark. The
     // read still hears it (2026-09-03): his entries ARE the case material,
-    // so each one flags a pass the way a client's message does.
+    // so each one is read at his next tap, the way a client's message is.
     if (doc.data.self) {
       // Only he can nudge his own case (audit, 2026-09-03): a stranger with
       // the id was answered ok here and could queue a read at will.
       if (!isAdmin) return json({ error: 'Not your thread' }, 403);
-      refreshAdvisor(env, ctx, kind, id);
+      // Nothing is booked for a read here (2026-09-13); his tap reads it.
       return json({ ok: true, self: true });
     }
     clientUid = doc.data.clientUid;
@@ -3798,16 +3793,14 @@ async function handleNotify(request, env, ctx) {
   }
 
   if (user.uid === clientUid) {
-    // Client wrote — nudge every admin device, and let the advisor re-read the
-    // case so Eric's panel is current before he even opens it.
-    refreshAdvisor(env, ctx, kind, id);
+    // Client wrote: nudge every admin device. No read is booked (2026-09-13);
+    // the case is read when he taps Update.
     // The 💬 on the folder, and the dot on the Chat tab, both come from this.
     // It goes on BOTH docs deliberately: the shelf reads caseMeta for every
     // case in one call, and the open case reads its own advisor state on a
     // poll, so neither surface needs an extra request to know a client wrote.
-    // Only this branch stamps it. refreshAdvisor runs for Eric's messages too,
-    // and a badge that lights on his own writing is a badge he learns to
-    // ignore.
+    // Only this branch stamps it: a badge that lights on his own writing is
+    // a badge he learns to ignore.
     ctx.waitUntil((async () => {
       const now = new Date();
       const parent = kind === 'case' ? 'cases' : 'subscriptions';
@@ -3832,9 +3825,7 @@ async function handleNotify(request, env, ctx) {
       });
     }
   } else if (isAdmin) {
-    // Eric wrote — the advisor should fold his side in too, so its read stays
-    // current through the whole exchange, not just the client's half.
-    refreshAdvisor(env, ctx, kind, id);
+    // Eric wrote. His side is folded in at his next tap (2026-09-13).
     await notifyUser(env, clientUid, {
       title: 'Pocket Advocate',
       body: `${advocateName(profile)} sent you a message.`,
@@ -4130,7 +4121,8 @@ async function handleUploaded(request, env) {
   const isAdmin = profile?.data.role === 'admin';
   if (!isAdmin && user.uid !== clientUid) return json({ error: 'Not your case' }, 403);
 
-  await markPending(env, kind, id);
+  // No read is booked here any more (2026-09-13): a file that lands is
+  // read when he taps Update, and not before.
 
   // Tell him what landed and what they called it. He asked for the name in the
   // notification, and the name is now their own description of the thing
@@ -6309,7 +6301,6 @@ async function handleChatReply(request, env, ctx) {
   await patchDoc(env, `cases/${id}`, {
     lastMessage: { text: text.slice(0, 120), from: admin.uid, role: 'admin', ts: now, emailed: true },
   }, { mask: ['lastMessage'] }).catch(() => {});
-  refreshAdvisor(env, ctx, 'case', id);
   return json({ ok: true, id: replyId });
 }
 
@@ -7876,11 +7867,6 @@ async function handleAdvisor(request, env, ctx) {
 /** The advisor route's dispatch, split from the preamble so the policy wrap
  *  above covers every return in it. */
 async function handleAdvisorAction({ request, env, ctx, user, profile, body, kind, id, action, parent, statePath }) {
-  if (action === 'pause' || action === 'resume') {
-    await patchDoc(env, statePath, { paused: action === 'pause' }, { mask: ['paused'] });
-    return json({ ok: true, paused: action === 'pause' });
-  }
-
   if (action === 'term') {
     // "I understand this now." Checked terms are never explained again and
     // become part of how the advisor gauges what level to pitch at.
@@ -8129,14 +8115,11 @@ async function handleAdvisorAction({ request, env, ctx, user, profile, body, kin
     // whose phone locked mid-run died with no cover at all: status stuck on
     // "running", nothing queued, nothing for the cron to find. That wedge
     // held until he happened to reopen the panel.
-    // auto rides in from the panel's auto-fire so a noise flag can take the
-    // no-new-content exit instead of buying a full turn; a real tap (no auto)
-    // also reads files still inside the settle window, because waiting four
-    // minutes on files he just uploaded reads as "it ignored my photos".
-    const isAuto = body?.auto === true;
-    // A tap is due now; the panel's automatic fire keeps whatever clock the
-    // case is on (2026-09-05), and the run itself waits it out if it is early.
-    await markPending(env, kind, id, { force: true, due: !isAuto });
+    // Only a tap reaches here (2026-09-13): the panel's own auto-fire is
+    // gone, so this is never a noise flag. A tap reads files still inside
+    // the settle window, because waiting four minutes on files he just
+    // uploaded reads as "it ignored my photos".
+    await markPending(env, kind, id);
     // The turn rides the Workflow whenever it can: detached from this
     // connection, a locked phone no longer kills the read. The one case that
     // cannot (inline base64 media exceeds the Workflow payload limit) keeps
@@ -8144,11 +8127,11 @@ async function handleAdvisorAction({ request, env, ctx, user, profile, body, kin
     const hasInlineData = Array.isArray(media) && media.some((m) => m.data);
     if (env.ADVISOR_WF && !hasInlineData) {
       await env.ADVISOR_WF.create({
-        params: { job: 'analysis', kind, id, opts: { auto: isAuto, freshFiles: !isAuto, mediaList: media || null } },
+        params: { job: 'analysis', kind, id, opts: { auto: false, freshFiles: true, mediaList: media || null } },
       });
       return json({ ok: true, started: true });
     }
-    return keepaliveRun(ctx, runAnalysis(env, kind, id, media, { auto: isAuto, freshFiles: !isAuto }), { raw: true });
+    return keepaliveRun(ctx, runAnalysis(env, kind, id, media, { auto: false, freshFiles: true }), { raw: true });
   }
 
   // The appeal workbench. Same 404 gate and same keepalive contract as every
@@ -8357,28 +8340,6 @@ async function handleAdvisorAction({ request, env, ctx, user, profile, body, kin
   }
 
   return json({ error: 'Unknown action' }, 400);
-}
-
-/**
- * A client wrote something — refresh the advisor's read of the case in the
- * background, unless Eric paused it. Best-effort: the advisor is a convenience,
- * never a reason for a message to fail.
- */
-function refreshAdvisor(env, ctx, kind, id) {
-  ctx.waitUntil((async () => {
-    try {
-      const parent = kind === 'case' ? 'cases' : 'subscriptions';
-      const state = await getDoc(env, `${parent}/${id}/advisor/state`);
-      if (state?.data.paused) return;
-      // Only FLAG the work here — never run it. This executes in the ~30s of
-      // background grace after the client's request completes, which is not
-      // enough for an Opus turn; the actual analysis runs from Eric's open
-      // panel (which holds a connection) or the cron.
-      await markPending(env, kind, id);
-    } catch (err) {
-      console.warn('advisor refresh:', err.message || err);
-    }
-  })());
 }
 
 // POST /api/push/test — send a notification to the caller's OWN devices.

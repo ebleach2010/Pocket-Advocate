@@ -160,6 +160,9 @@ Q20-Q25 run the pollers against fakes and pin the wiring, the age gate and
 the claim; Q18 was re-pinned with a dated note because the takeover now sits
 behind that gate.
 
+_Retired 2026-09-13 in v4.5 ("Nothing reads but his tap", below). Kept as the
+record of what ran from 2026-09-05 to 2026-09-13._
+
 **The clock automatic reads run on (2026-09-05).** Eric: "Expand advisor's
 automatic reads by one hour each time there is no new information. If there
 is new information, keep it at 30min." Two fields on the state document
@@ -262,6 +265,41 @@ reworded line. Another RUNS `readFetch` against a fetch that answers 429, 429,
 pins which calls retry and which never do. Both proven able to fail with their controls recorded. The
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
+
+### Nothing reads but his tap (2026-09-13, v4.5)
+
+Eric: "Stop automatic updates. I'll manually press update so it doesn't burn
+through tokens." Since 2026-09-05 a clock had booked a look at every case:
+thirty minutes after a read, an hour further for every look that found
+nothing new, back to thirty the moment a message or a file landed; the panel
+fired the look itself while the case was open and the cron while it was not.
+Every look was a turn at the top effort, and most of them read a case he was
+not asking about.
+
+Gone whole, in one push: the constants and helpers (`AUTO_GAP_*`,
+`nextAutoGap`, `autoWaitMs`), the two fields on the state document
+(`autoGapMin`, `nextAutoAt`), the wait in the drain and in `runAnalysis`,
+the sweep's scheduled look, the flag a message or an upload raised
+(`refreshAdvisor` and the upload route's `markPending`), the panel's
+auto-fire and its "next automatic read" line, and Pause, which had nothing
+left to pause (the button, the route action, the `paused` guards).
+`markPending` takes no options now: every call is owed work, due now, and it
+no longer reads the state at all. What the cron still does is look after the
+read he tapped: a pass that died, a pass that errored, and the files a pass
+could not fit, plus the nothing-new exit for a drain-run rescue that finds
+nothing to read.
+
+queue.mjs Q26 to Q35 keep their names and were re-pointed on 2026-09-13,
+each with a fresh control: the drain carries no clock and runs a row whatever
+stale clock its state still carries (Q26, Q27, RUN); no clock word survives
+in the module, the Worker, the panel or the demo (Q28); `markPending` RUN
+stamps `pendingAt` alone, queues once, never rewrites a row and reads nothing
+(Q29, Q30); the nothing-new exit and a landed read book nothing (Q31, Q32);
+`sweepOne` RUN books an owed tap and never a look of its own, a stale clock
+or an old `paused` flag changing nothing (Q34); the panel volunteers nothing,
+has nothing to pause, and the route behind Update runs a tap as a tap (Q35).
+S48, S61 and the three-answers check in defects.mjs moved with `markPending`'s
+signature, each with a dated note.
 
 ### The day the reads ran out (2026-09-09, v3.9 to v4.2)
 

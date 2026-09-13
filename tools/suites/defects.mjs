@@ -777,7 +777,9 @@ ck('clock: all switches share one painter set, so no two can disagree',
     // Re-pinned 2026-09-09 (v4.4): the four throwing sites throw
     // readFailedError, which carries the read's reason; see the check below.
     && /if \(c === READ_FAILED\) throw readFailedError\('The case could not be read, so no turn runs on it\.'\);/.test(ADV)
-    && /if \(q === READ_FAILED \|\| q\) return;\n\s+if \(!force && last/.test(ADV)
+    // Re-pinned 2026-09-13 (v4.5): the floor line under the guard went with
+    // the clock; the queue write follows the guard directly.
+    && /if \(q === READ_FAILED \|\| q\) return;\n\s+await patchDoc\(env, queuePath\(kind, id\), \{ kind, id, at: now, tries: 0 \}\);/.test(ADV)
     && /if \(st === READ_FAILED\) continue; \/\/ unreadable is not finished/.test(ADV)
     && (ADV.match(/if \(st === READ_FAILED\) continue; \/\/ unreadable is not finished/g) || []).length === 5
     && /if \(row === READ_FAILED\) return false;/.test(ADV)

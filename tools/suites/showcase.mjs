@@ -165,7 +165,7 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
     && perms.some((e) => e.data.kind === 'representative' && e.data.planName === 'Basin Health Plan')
     && perms.some((e) => e.data.kind === 'scope' && e.data.contactOk === true)
     && built.writes.some((w) => w.path === `caseMeta/${id}` && w.data.clientMsgAt)
-    && built.pend.length === 1 && built.pend[0][1] === id && built.pend[0][2].force === true
+    && built.pend.length === 1 && built.pend[0][1] === id && built.pend[0][2] === undefined /* re-pinned 2026-09-13 (v4.5): no options on markPending */
     && again.out.existing === true && again.out.id === 'old-showcase' && again.writes.length === 0 && again.puts.length === 0,
     JSON.stringify({ out: built.out, chat: chat.length, files: withFiles.length, puts: built.puts.length, miles: miles.length, log: log.length, pend: built.pend.length, again: again.out }));
 }

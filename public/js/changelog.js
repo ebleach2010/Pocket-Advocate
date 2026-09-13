@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '4.4';
+export const VERSION = '4.5';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '4.4';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // NOTHING READS BUT HIS TAP (2026-09-13): "Stop automatic updates. I'll
+    // manually press update so it doesn't burn through tokens." Admin only:
+    // the clock behind the case reading is gone, and only his tap runs one.
+    version: '4.5',
+    quiet: true,
+    client: [],
+    admin: [
+      'Nothing reads a case but your tap on Update. The half-hour clock, the hour-longer-each-empty-look backoff, the read that a new message or upload used to book, and the panel firing a read on its own are all gone. Pause went with them, having nothing left to pause.',
+      'A read you tapped is still looked after: a pass that died or errored is retried by the cron, and the files a pass could not fit are read next.',
+    ],
+  },
   {
     // THE REASON RIDES (2026-09-09): "I paid. still internal errors." A read
     // that failed was stopped on, and the stop reached the top of the Worker
