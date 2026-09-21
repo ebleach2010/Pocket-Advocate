@@ -504,7 +504,7 @@ your previous read had, add what is new, and only remove something when his
 log has actually contradicted it.`;
 
 /** Raw API errors are unreadable on a phone; store plain words instead. */
-function friendly(err) {
+export function friendly(err) {
   const m = String(err?.message || err);
   if (/credit balance is too low/i.test(m))
     return 'Your Anthropic account is out of credits — top up at console.anthropic.com → Plans & Billing, then tap Update.';
@@ -521,7 +521,9 @@ function friendly(err) {
   return m.length > 200 ? m.slice(0, 200) + '…' : m;
 }
 
-function client(env) {
+// Exported since 2026-09-21: the Trade portal (worker/trade.js) borrows the
+// client, the batch helpers and the text helpers rather than copying them.
+export function client(env) {
   if (!env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set on the Worker.');
   // Fifteen minutes, because a scheduled event has fifteen and a max-effort
   // turn over a large document set can pass ten. No SDK retries: on a timeout
@@ -669,7 +671,7 @@ function turnRequest({ system, messages, effort, maxTokens = 64000, tools }) {
  * day the cap is hit and never once in testing. Hence Array.isArray first,
  * every time, before anything touches it.
  */
-function extractText(final, meta) {
+export function extractText(final, meta) {
   if (final.stop_reason === 'refusal')
     throw new Error('The model declined this request.');
   if (final.stop_reason === 'max_tokens')
@@ -908,7 +910,7 @@ async function ask(env, {
  * than by each caller counting, and the part that varies (the stamp) is
  * never the part that gets cut.
  */
-function batchCustomId(prefix, id, stamp) {
+export function batchCustomId(prefix, id, stamp) {
   const tail = `-${Number(stamp).toString(36)}`;
   const head = `${prefix}-`;
   const room = Math.max(0, BATCH_ID_MAX - head.length - tail.length);
@@ -935,7 +937,7 @@ async function submitTurnBatch(env, turn, customId) {
  * { state: 'failed', why }. A transient transport failure throws; the caller
  * just looks again next firing.
  */
-async function pollTurnBatch(env, batchId, customId) {
+export async function pollTurnBatch(env, batchId, customId) {
   const batch = await client(env).messages.batches.retrieve(batchId);
   if (batch.processing_status !== 'ended') return { state: 'running' };
   if (!batch.results_url) return { state: 'failed', why: 'The batch ended without results.' };
@@ -966,7 +968,7 @@ async function pollTurnBatch(env, batchId, customId) {
  * digit ranges become plain hyphens, dashes opening a line vanish, and the
  * rest become commas. Matters most in drafts, which go out as Eric.
  */
-function stripDashes(t) {
+export function stripDashes(t) {
   return t
     .replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2')
     .replace(/^[—–]\s*/gm, '')

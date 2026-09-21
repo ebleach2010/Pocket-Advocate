@@ -545,6 +545,49 @@ export function seed({ set, file }) {
     at: days(1).toISOString(), url: '',
     meta: { paCategory: 'formsent', paStarred: '1' },
   });
+  // ---- the Trade portal (2026-09-21) ----------------------------------
+  // His desk, seeded so every tab has something to show: a key on file, a
+  // scan two hours ago with two plays and a note, a note yesterday, an
+  // answered question, and fifteen trading days of balances so the
+  // projections render. Every figure invented.
+  const dk = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+  set('trade/settings', {
+    finnhubKey: 'demo-finnhub-key-1234', accountType: 'cash',
+    watchlist: ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AAPL', 'AMD', 'META', 'AMZN', 'MSFT', 'COIN'],
+    scansOn: true, pushOn: true, startedAt: dk(21), startCents: 200000, setByHand: true,
+  });
+  set('trade/state', { lastSlot: `${dk(0)}T09:30`, lastScanAt: hours(2), lastScanResult: 'plays', lastError: null, seenAt: days(1), searchOff: false });
+  set('trade/plays/items/p-demo-1', {
+    at: hours(2), slot: '09:30', feedId: 'f-demo-scan', ticker: 'NVDA', side: 'long', instrument: 'spread', structure: 'Oct 17 650/655 call debit spread',
+    entry: 2.1, stop: 1.3, targets: [3.4, 4.6], holdMinutes: 180,
+    why: 'NVDA gapped up 2% on volume and held the opening range through 09:15. The spread caps the cost while implied volatility is high after the conference.',
+    catalyst: 'Data center guidance raised at the developer conference, 07:00 ET.',
+    risk: 'A break back below 648 on the stock ends the trade. The spread loses its premium fast after 13:00.',
+    profitLow: 55, profitHigh: 65, sizeDollars: 420, overnight: { ok: false, why: 'The move is intraday. Nothing after the bell.' },
+    status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 4 * 3600_000),
+  });
+  set('trade/plays/items/p-demo-2', {
+    at: hours(2), slot: '09:30', feedId: 'f-demo-scan', ticker: 'TSLA', side: 'short', instrument: 'stock', structure: 'shares',
+    entry: 412, stop: 418, targets: [402, 396], holdMinutes: 60,
+    why: 'TSLA rejected VWAP twice in the first half hour on falling volume. The short is the side with the trend on the day.',
+    catalyst: 'Delivery numbers below the street estimate, out at 06:00 ET.',
+    risk: 'A reclaim of 415 with volume flips the day. Cover there.',
+    profitLow: 45, profitHigh: 55, sizeDollars: 800, overnight: { ok: false, why: 'Short into an overnight headline is not a trade with an edge.' },
+    status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 2 * 3600_000),
+  });
+  set('trade/feed/items/f-demo-scan', {
+    at: hours(2), kind: 'scan', slot: '09:30', text: 'The index is up 0.4% on light volume. Chips lead, autos lag. Two plays stand out and one thing is worth knowing.',
+    notes: [{ text: 'The Fed minutes land at 12:00 MT. Expect a volatility spike in the ten minutes after.' }],
+    playIds: ['p-demo-1', 'p-demo-2'], quiet: false, searched: { queries: 4, results: 15 }, landedMs: 300000,
+  });
+  set('trade/feed/items/f-demo-note', { at: days(1), kind: 'note', text: 'CPI comes out Thursday 06:30 MT. Size down before the print.' });
+  set('trade/feed/items/f-demo-q', {
+    at: days(2), kind: 'question', text: 'Is a 0DTE SPY call ever worth it with my account size?', status: 'done', answeredAt: days(2),
+    answer: 'Rarely. A same day contract loses value every minute it does not move, and a $2,000 account cannot absorb a fast zero. If you take one, size it at 1% of the account, enter on a confirmed break with volume, and exit within fifteen minutes either way. A one to two day expiry with the same strike gives the trade room to be right.',
+  });
+  for (const [n, cents] of [[20, 200000], [17, 205000], [14, 212000], [9, 208000], [5, 220000], [0, 238000]])
+    set(`trade/balances/items/${dk(n)}`, { date: dk(n), at: days(n), cents, note: n === 0 ? 'after close' : '' });
+
 }
 
 export const DEMO_CASE_ID = CASE_ID;

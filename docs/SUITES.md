@@ -266,6 +266,64 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The Trade portal (2026-09-21, v4.6)
+
+Eric: "An entirely different page, separate for anything else. The financial
+advisor. He is trained on day trading techniques, data, stays up to date on
+news, and shoots me a message every 2 hours on week days on potential day
+trade opportunities with options and stocks. I can ask him questions. I have
+a spot to tally my account total, started at 2000 ... He uses fable. It's
+just admin side. Trade portal." And, on approval: the starting amount is his
+to adjust.
+
+Its own module (`worker/trade.js`), its own documents (`trade/`, unreadable
+by clients under the rules' closing deny), its own page
+(`public/admin-trade.html` and `public/js/admin-trade.js`, both named so the
+asset gate covers them). What it borrows from the advisor is the plumbing
+that survived production: the batch submit, the poll, the one-finish claim,
+the pure verdict on a poll (`askFlightNext`), and the flight recorder. Four
+scans on a trading day at 07:30, 09:30, 11:30 and 13:30 Mountain (two on an
+early-close day), each a batch turn on the pinned id with web search and the
+Finnhub packet (quotes for the watchlist, the last twelve hours of general
+headlines, today's earnings), coming back as one JSON object the Worker
+reads strictly (`parseScan`, every play validated, the bad ones dropped and
+counted) and decides on (`scanVerdict`): nothing written for a quiet scan,
+a feed row and a badge for notes, a feed row plus play rows plus a push to
+his phone for a strong play (`profitLow >= 55` with a named catalyst). His
+question is a feed row that carries its own answer, submitted the same way.
+The cron's minute costs nothing outside the four twenty-minute windows
+(`slotKeyFor` runs before any read) and claims the slot conditionally inside
+one. The arithmetic (`public/js/trade-math.js`) is one module shared by the
+Worker, the demo and the checks: trading days, not calendar days; the
+geometric average; the target line from his own start; both projections
+after fourteen trading days.
+
+trade.mjs T1 to T35, each with a control recorded: the constants and the
+model; `slotKeyFor` across DST and its window; the calendar (weekends,
+holidays, early closes and their two slots); `scanDue` and its reasons;
+`maybeTradeScan` RUN (a lost claim runs nothing, a won claim runs one,
+`ifUpdateTime` with a state document and `mustNotExist` without, zero reads
+outside a window); the turn shape (no thinking key, effort, one tool with
+eight uses, no cache_control); the register and playbook words; `parseScan`
+and `validPlay` RUN; `scanVerdict` RUN over quiet, notes, strong, weak and
+pushes off; `finishScan` RUN (quiet writes only state; plays write rows and
+one push with the right link; unreadable writes an error row);
+`pollTradeFlights` RUN (the claim decides, a fresh finishingAt defers);
+the verdict reused from the advisor; `submitTradeBatch` RUN over the two
+resubmits and the one rethrow; Finnhub (a real secret wins, the key never
+in the content or the payload, a refused quote is named missing); the
+metrics on a fixture and its thirteen-day twin; the chart series; the SVG
+(tokens, no hex); `handleTrade` RUN (404 to a stranger on every sub-path, a
+TradeError's status, anything else rethrown); the settings, balance, play
+and ask routes RUN with their exact sentences; the hooks in the Worker; no
+dashes; the version and the entry's words; the audit and drive lists and the
+asset gate; the demo's list, seed and sentences; the nav on seven pages.
+calldoc.mjs re-pinned two lifts on the newly exported helpers, with a note.
+drive-trade.mjs: the five tabs, a question landing on its own, a balance
+saved and painted, the chart with its two lines and the target sentence, a
+play taken and closed, the key tail and a switch that paints only after the
+server answers.
+
 ### Nothing reads but his tap (2026-09-13, v4.5)
 
 Eric: "Stop automatic updates. I'll manually press update so it doesn't burn

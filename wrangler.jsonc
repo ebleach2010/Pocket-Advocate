@@ -61,4 +61,6 @@
   //   RESEND_API_KEY             re_...
   //   ANTHROPIC_API_KEY          sk-ant-...  (the 👨‍⚕️ Advisor; without it the
   //                              advisor panel shows an error and nothing else breaks)
+  //   FINNHUB_KEY                optional (the Trade portal): a real secret here wins over
+  //                              the key he pastes into the portal's Settings
 }

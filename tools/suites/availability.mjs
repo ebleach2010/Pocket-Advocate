@@ -1056,7 +1056,7 @@ for (const page of ['public/js/subscription.js', 'public/js/admin-chats.js',
   check('G: every admin- module in public/js is in the audit\'s own list',
     ['admin-hours.js', 'admin-presence.js', 'admin-ledger.js', 'admin.js',
       'admin-case.js', 'admin-chats.js', 'admin-calendar.js',
-      'admin-availability.js', 'admin-dictionary.js', 'admin-settings.js']
+      'admin-availability.js', 'admin-dictionary.js', 'admin-settings.js', 'admin-trade.js']
       .every((x) => AUDIT.includes(`/js/${x}`)),
     ['admin-hours.js', 'admin-presence.js', 'admin-ledger.js']
       .filter((x) => !AUDIT.includes(`/js/${x}`)).join(', ') || 'listed');

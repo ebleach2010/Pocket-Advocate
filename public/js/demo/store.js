@@ -70,7 +70,9 @@ const KEY = 'pa-demo-store';
  * any of these. The advocate half keeps everything, because that is his side.
  */
 const NOT_FOR_CLIENTS = [/\/advisor\//, /^advisorStyle\//, /^advisorKnowledge\//,
-  /^caseMeta\//, /^advisorQueue\//, /\/private\//];
+  /^caseMeta\//, /^advisorQueue\//, /\/private\//,
+  // The Trade portal (2026-09-21): his desk, never a client's.
+  /^trade\//];
 let clientSide = false;
 
 // ---------------------------------------------------------------- the store

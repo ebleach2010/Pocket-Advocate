@@ -444,10 +444,13 @@ const ASK_LIFTED = [
   fn('modelRefused', '\nfunction modelRefused('),
   fn('sendWithFallback', '\nasync function sendWithFallback('),
   fn('turnRequest', '\nfunction turnRequest('),
-  fn('stripDashes', '\nfunction stripDashes('),
-  fn('extractText', '\nfunction extractText('),
+  // Re-pinned 2026-09-21 (v4.6): both are exported now, for the Trade portal.
+  fn('stripDashes', '\nexport function stripDashes('),
+  fn('extractText', '\nexport function extractText('),
   fn('ask', '\nasync function ask('),
-].join('\n');
+  // Two of these are exported since 2026-09-21 (the Trade portal borrows
+  // them); a Function body cannot carry the keyword.
+].join('\n').replace(/\nexport /g, '\n');
 let carried = [];
 let finals = [];
 // WHEN THE SCRIPT RUNS OUT, SAY SO - DO NOT HAND BACK undefined.

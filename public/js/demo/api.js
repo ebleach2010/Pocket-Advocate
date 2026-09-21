@@ -9,6 +9,8 @@
 // UI, not AI: nothing in the demo calls a model.
 
 import { DEMO_CASE_ID } from './seed.js';
+// The Trade portal's arithmetic (2026-09-21): the same module the Worker uses, so the demo's numbers are the real numbers.
+import { tradeMetrics, chartSeries } from '../trade-math.js';
 // The same two vocabularies the pages read, so the demo cannot answer with a
 // reaction the UI has no name for.
 import { EMOJI_REACTIONS, STATUS_REACTIONS } from '../msg-actions.js';
@@ -1665,6 +1667,178 @@ export function demoApi(role, store) {
         store.persist?.();
       }
       return ok({ url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&demo=1&chatopen=1` });
+    }
+
+    // ---- the Trade portal (2026-09-21), from fixtures ---------------------
+    // The desk's routes, mirrored with the Worker's own refusal sentences
+    // (worker/trade.js SAY). A flight lands a few seconds after it opens:
+    // the state route is the demo's stand-in for the poll collecting the
+    // batch, and the answer and the play are fixtures. Nothing here talks
+    // to a market or a model of any kind.
+    if (path.startsWith('/api/admin/trade/')) {
+      if (role !== 'admin') return fail(404, 'Not found');
+      const sub = path.slice('/api/admin/trade/'.length);
+      const SAY = {
+        askEmpty: 'Ask something, up to 2000 characters.',
+        noKey: 'Add your Finnhub key in Settings first.',
+        scanRunning: 'A scan is already running. It lands on its own.',
+        badDate: 'Pick a date like 2026-09-21, not in the future.',
+        badCents: 'Enter the balance in dollars, 0 or more, under ten million.',
+        badStart: 'Starting amount: whole dollars, 1 or more, under ten million.',
+        noPlay: 'No such play.',
+        badStatus: 'Status must be took, skipped, or closed.',
+        badOutcome: 'Closed at needs a dollar figure, plus or minus.',
+        badKey: 'That key does not look like a Finnhub key.',
+        badAccount: 'Account type is cash or margin.',
+        badWatchlist: 'Watchlist: up to 20 tickers, letters and dots only.',
+      };
+      const DEFAULT_WATCHLIST = ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AAPL', 'AMD', 'META', 'AMZN', 'MSFT', 'COIN'];
+      const TICKER_RE = /^[A-Z][A-Z.]{0,5}$/;
+      const todayMT = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' }).format(new Date());
+      const realDate = (k) => /^\d{4}-\d{2}-\d{2}$/.test(k) && new Date(`${k}T12:00:00Z`).toISOString().slice(0, 10) === k;
+      const rows = (prefix) => [...store.docs.entries()].filter(([k]) => k.startsWith(prefix)).map(([k, v]) => ({ id: k.slice(prefix.length), ...v }));
+      const settings = () => store.docs.get('trade/settings') || {};
+      const state = () => store.docs.get('trade/state') || {};
+      const rid = (p) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+      const pub = (s) => ({
+        accountType: s.accountType === 'margin' ? 'margin' : 'cash',
+        watchlist: Array.isArray(s.watchlist) && s.watchlist.length ? s.watchlist : DEFAULT_WATCHLIST,
+        scansOn: s.scansOn !== false, pushOn: s.pushOn !== false,
+        startedAt: s.startedAt || null,
+        startCents: Number.isInteger(s.startCents) && s.startCents > 0 ? s.startCents : 200000,
+      });
+      const keyOf = (s) => String(s.finnhubKey || '');
+      if (sub === 'state' && init.method !== 'POST') {
+        for (const fl of rows('trade/flights/items/')) {
+          if (Date.now() - new Date(fl.submittedAt || 0).getTime() < 4000) continue;
+          if (fl.kind === 'ask') {
+            const q = store.docs.get(`trade/feed/items/${fl.feedId}`);
+            if (q) store.docs.set(`trade/feed/items/${fl.feedId}`, { ...q, status: 'done', answeredAt: new Date(), answer: 'NVDA is holding above the opening range on twice its normal volume, so the long side is the side with the wind. The 650 to 655 call debit spread for this Friday costs about 2.10 and pays 5.00 at 655 by the close. Stop is a break back below 648 on the stock. Chance of profit 55 to 62%. Size: 2 contracts, 420 dollars at risk, which is under 2% of the account.' });
+          } else {
+            const pid = rid('p');
+            const fid = rid('f');
+            store.docs.set(`trade/plays/items/${pid}`, {
+              at: new Date(), slot: 'manual', feedId: fid, ticker: 'AMD', side: 'long', instrument: 'call', structure: 'Oct 17 170 call',
+              entry: 4.2, stop: 3.1, targets: [5.6, 6.4], holdMinutes: 90, why: 'AMD reclaimed VWAP at 09:48 on rising volume after the data center note. The 168 level held twice this morning. The call is the fast way to play a run at 172.',
+              catalyst: 'Analyst note on data center orders, published 08:30 ET.', risk: 'Chip names fade fast when the index turns. Exit on a break of 168.',
+              profitLow: 56, profitHigh: 64, sizeDollars: 420, overnight: { ok: false, why: 'No catalyst after the bell.' },
+              status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 3 * 3600_000),
+            });
+            store.docs.set(`trade/feed/items/${fid}`, {
+              at: new Date(), kind: 'scan', slot: 'manual', text: 'The index is flat and chips are leading. Volume is above average for the hour. One play stands out and one thing is worth knowing.',
+              notes: [{ text: 'Fed minutes at 12:00 MT. Expect a volatility spike in the ten minutes after.' }], playIds: [pid], quiet: false, searched: { queries: 3, results: 12 }, landedMs: 240000,
+            });
+            store.docs.set('trade/state', { ...state(), lastScanAt: new Date(), lastScanResult: 'plays', lastError: null });
+          }
+          store.docs.delete(`trade/flights/items/${fl.id}`);
+        }
+        store.persist?.();
+        const s = settings();
+        const st = state();
+        const p = pub(s);
+        const balances = rows('trade/balances/items/').map((b) => ({ date: b.date || b.id, cents: b.cents, note: b.note || '' }));
+        const metrics = tradeMetrics(balances, { startedAt: p.startedAt, startCents: p.startCents });
+        const byAt = (a, b) => new Date(b.at || 0) - new Date(a.at || 0);
+        const feed = rows('trade/feed/items/').sort(byAt).slice(0, 30);
+        const seenAt = st.seenAt ? new Date(st.seenAt).getTime() : 0;
+        return ok({
+          settings: p, hasKey: !!keyOf(s), keyTail: keyOf(s).slice(-4),
+          state: { lastSlot: st.lastSlot || null, lastScanAt: st.lastScanAt || null, lastScanResult: st.lastScanResult || null, lastError: st.lastError || null, seenAt: st.seenAt || null, searchOff: st.searchOff === true },
+          flights: rows('trade/flights/items/').map((fl) => ({ id: fl.id, kind: fl.kind, submittedAt: fl.submittedAt, feedId: fl.feedId || null })),
+          feed, plays: rows('trade/plays/items/').sort(byAt).slice(0, 50),
+          balances: metrics.entries, metrics, chart: chartSeries(metrics),
+          unseen: feed.filter((r) => r.kind !== 'question' && new Date(r.at || 0).getTime() > seenAt).length,
+          nextSlot: { key: `${todayMT}T13:30`, dateKey: todayMT, slot: '13:30', atMs: Date.now() + 3600_000 },
+          tradingDay: 'full', today: todayMT, now: new Date().toISOString(),
+        });
+      }
+      if (init.method !== 'POST') return fail(404, 'Not found');
+      if (sub === 'ask') {
+        const question = String(body.question || '').trim();
+        if (!question || question.length > 2000) return fail(400, SAY.askEmpty);
+        const fid = rid('f');
+        store.docs.set(`trade/feed/items/${fid}`, { at: new Date(), kind: 'question', text: question, status: 'running', answer: '', answeredAt: null });
+        store.docs.set(`trade/flights/items/${rid('t')}`, { kind: 'ask', feedId: fid, batchId: 'demo-batch', submittedAt: new Date() });
+        store.persist?.();
+        return ok({ ok: true, feedId: fid });
+      }
+      if (sub === 'scan') {
+        if (!keyOf(settings())) return fail(409, SAY.noKey);
+        if (rows('trade/flights/items/').some((fl) => fl.kind === 'scan')) return fail(409, SAY.scanRunning);
+        const id = rid('t');
+        store.docs.set(`trade/flights/items/${id}`, { kind: 'scan', batchId: 'demo-batch', submittedAt: new Date(), manual: true });
+        store.persist?.();
+        return ok({ ok: true, flightId: id });
+      }
+      if (sub === 'balance') {
+        const date = String(body.date || '').trim();
+        if (!realDate(date) || date > todayMT) return fail(400, SAY.badDate);
+        if (body.remove === true) { store.docs.delete(`trade/balances/items/${date}`); store.persist?.(); return ok({ ok: true, removed: date }); }
+        const cents = Number(body.cents);
+        if (!Number.isInteger(cents) || cents < 0 || cents >= 1e9) return fail(400, SAY.badCents);
+        store.docs.set(`trade/balances/items/${date}`, { date, at: new Date(), cents, note: String(body.note || '').trim().slice(0, 140) });
+        store.persist?.();
+        return ok({ ok: true, date, cents });
+      }
+      if (sub === 'settings') {
+        const s = settings();
+        const patch = {};
+        if (body.finnhubKey !== undefined) {
+          const key = String(body.finnhubKey || '').trim();
+          if (key && !/^[A-Za-z0-9_-]{16,64}$/.test(key)) return fail(400, SAY.badKey);
+          patch.finnhubKey = key;
+        }
+        if (body.accountType !== undefined) {
+          if (!['cash', 'margin'].includes(body.accountType)) return fail(400, SAY.badAccount);
+          patch.accountType = body.accountType;
+        }
+        if (body.watchlist !== undefined) {
+          const raw = Array.isArray(body.watchlist) ? body.watchlist : String(body.watchlist || '').split(/[\s,]+/);
+          const list = [...new Set(raw.map((t) => String(t || '').toUpperCase().trim()).filter(Boolean))];
+          if (list.length > 20 || !list.every((t) => TICKER_RE.test(t))) return fail(400, SAY.badWatchlist);
+          patch.watchlist = list.length ? list : DEFAULT_WATCHLIST;
+        }
+        if (body.scansOn !== undefined) patch.scansOn = body.scansOn === true;
+        if (body.pushOn !== undefined) patch.pushOn = body.pushOn === true;
+        if (body.startedAt !== undefined) {
+          if (!realDate(String(body.startedAt || ''))) return fail(400, SAY.badDate);
+          patch.startedAt = String(body.startedAt);
+        }
+        if (body.startCents !== undefined) {
+          const c = Number(body.startCents);
+          if (!Number.isInteger(c) || c < 100 || c >= 1e9) return fail(400, SAY.badStart);
+          patch.startCents = c;
+        }
+        if (!s.startedAt && !patch.startedAt) patch.startedAt = todayMT;
+        const next = { ...s, ...patch, setByHand: true, updatedAt: new Date() };
+        store.docs.set('trade/settings', next);
+        store.persist?.();
+        return ok({ ok: true, settings: pub(next), hasKey: !!keyOf(next), keyTail: keyOf(next).slice(-4) });
+      }
+      if (sub === 'play') {
+        const id = String(body.id || '');
+        const play = store.docs.get(`trade/plays/items/${id}`);
+        const status = String(body.status || '');
+        if (!['took', 'skipped', 'closed'].includes(status)) return fail(400, SAY.badStatus);
+        if (!play) return fail(404, SAY.noPlay);
+        const patch = { status };
+        const now = new Date();
+        if (status === 'took') patch.tookAt = now;
+        if (status === 'closed') {
+          const cents = Number(body.outcomeCents);
+          if (!Number.isInteger(cents) || Math.abs(cents) >= 1e9) return fail(400, SAY.badOutcome);
+          patch.outcomeCents = cents; patch.closedAt = now; if (!play.tookAt) patch.tookAt = now;
+        }
+        store.docs.set(`trade/plays/items/${id}`, { ...play, ...patch });
+        store.persist?.();
+        return ok({ ok: true, play: { id, ...play, ...patch } });
+      }
+      if (sub === 'seen') {
+        store.docs.set('trade/state', { ...state(), seenAt: new Date() });
+        store.persist?.();
+        return ok({ ok: true, unseen: 0 });
+      }
+      return fail(404, 'Not found');
     }
 
     // ---- the advisor, from a fixture -------------------------------------

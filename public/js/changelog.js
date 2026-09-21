@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '4.5';
+export const VERSION = '4.6';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '4.5';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE TRADE PORTAL (2026-09-21): "An entirely different page, separate
+    // for anything else ... Essentially a mini app within the app just for
+    // me." Admin only: his desk, on its own page.
+    version: '4.6',
+    quiet: true,
+    client: [],
+    admin: [
+      'A Trade portal, under 📈 Trade. The desk scans the market four times on a trading day (7:30, 9:30, 11:30 and 1:30 Mountain), reads live quotes and the morning\'s headlines, and writes what stands out: plays with a chance of profit as a range, notes worth knowing, or nothing at all when nothing stands out. A strong play pushes to your phone. Notes only badge.',
+      'Ask the desk anything from the Desk tab. Plays shows each open play with entry, stop, targets, hold, size and why, and takes Took it, Skip and Closed at. Account takes your balance whenever you type it and, after 14 trading days, projects the year two ways. Stats charts your balance against the 3% a day line, in yellow. Settings holds your Finnhub key, the account type, the watchlist, the starting amount and the two switches.',
+    ],
+  },
   {
     // NOTHING READS BUT HIS TAP (2026-09-13): "Stop automatic updates. I'll
     // manually press update so it doesn't burn through tokens." Admin only:

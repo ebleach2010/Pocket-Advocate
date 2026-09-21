@@ -53,6 +53,8 @@ import {
   pollCaseFlight, pollFlightsNow, pollAskFlight,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
+// The Trade portal (2026-09-21): his desk, in its own module.
+import { tradeRoute, TradeError, maybeTradeScan, pollTradeFlights } from './trade.js';
 
 /**
  * The advisor's model turns, out of harm's way. A Workflow step has no wall
@@ -813,6 +815,8 @@ export default {
       // acts on a stale heartbeat, and a read goes uncollected long before
       // the scheduler looks five minutes dead.
       ctx.waitUntil(pollFlightsNow(env).catch(() => {}));
+      // And the desk's flights (2026-09-21), for the same reason.
+      ctx.waitUntil(pollTradeFlights(env, { minAgeMs: 45_000 }).catch(() => {}));
     }
     try {
       // Maintenance: refuse the two routes that spend money, before either
@@ -1105,6 +1109,9 @@ export default {
         return await handleCloseCase(request, env);
       if (url.pathname === '/api/admin/voice')
         return await handleVoiceLoop(request, env, ctx);
+      // The Trade portal (2026-09-21): one prefix, one gate, one dispatch.
+      if (url.pathname.startsWith('/api/admin/trade/'))
+        return await handleTrade(request, env, url);
       if (url.pathname === '/api/version' && request.method === 'GET') {
         // The reprice diag came off once the stored rate read 350000
         // (2026-08-29, marker "full 340000 -> 350000"). The HEARTBEAT
@@ -1341,6 +1348,10 @@ export default {
     // a quarter hour of the old behaviour after the deploy is a quarter hour
     // in which somebody can buy a case he has said he cannot take.
     ctx.waitUntil(closeBookingsAug2026(env));
+    // The Trade portal (2026-09-21): a scan at its slot, and the flights
+    // polled home. Both finish in seconds and never touch the awaited drain.
+    ctx.waitUntil(maybeTradeScan(env, fired).catch(() => {}));
+    ctx.waitUntil(pollTradeFlights(env, { minAgeMs: 45_000 }).catch(() => {}));
     // THE KILL, found by the flight recorder (2026-08-24). Cloudflare's
     // fifteen minute guarantee attaches to the promise scheduled() RETURNS:
     // "The runtime waits for the promise returned by the scheduled() handler
@@ -2056,7 +2067,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-13-nothing-reads-but-his-tap';
+const BUILD_TAG = 'v2026-09-21-trade-portal';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2064,7 +2075,7 @@ const BUILD_TAG = 'v2026-09-13-nothing-reads-but-his-tap';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '4.5';
+const VERSION = '4.6';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -8640,6 +8651,25 @@ async function requireAdmin(request, env) {
   const profile = await getDoc(env, `users/${user.uid}`);
   if (!profile || profile.data.role !== 'admin') return null;
   return user;
+}
+
+/**
+ * The Trade portal's routes (2026-09-21), all under one prefix and one gate:
+ * a stranger, a client and an unknown sub-path get the same 404. The work
+ * lives in worker/trade.js; a TradeError there is a status he sees, and
+ * anything else is the ordinary catch above this dispatch.
+ */
+async function handleTrade(request, env, url) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const sub = url.pathname.slice('/api/admin/trade/'.length);
+  const body = request.method === 'POST' ? await request.json().catch(() => ({})) : null;
+  try {
+    return json(await tradeRoute(env, { sub, method: request.method, body }));
+  } catch (err) {
+    if (err instanceof TradeError) return json({ error: err.message }, err.status);
+    throw err;
+  }
 }
 
 function slotIdFor(start) {
