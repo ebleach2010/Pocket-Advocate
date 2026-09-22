@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.11';
+export const VERSION = '6.12';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '6.11';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // SCAN AT HIGH, UPDATE AT MAX (Eric, 2026-09-22, asked and choosing it).
+    // One carve-out from the top setting he asked for on 2026-09-09, for the
+    // button whose job is right now. Admin only.
+    version: '6.12',
+    quiet: true,
+    client: [],
+    admin: [
+      'Scan runs one step below Update now, by your choice, so it comes back sooner. Same eight searches, same contract, less deliberation. Update, a question, and every other case keep the top setting.',
+    ],
+  },
   {
     // THE TICKER BACK AT THE HEAD (Eric, 2026-09-22: "Stock names have
     // disappeared"). 6.7 left it mid sentence at body weight. Admin only.

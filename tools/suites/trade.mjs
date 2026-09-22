@@ -83,7 +83,7 @@ const NAMES = ['patchDoc', 'deleteDoc', 'listDocs', 'tryGet', 'READ_FAILED', 're
   'tradeStats', 'liveBalance',
   // The note's cut, on the read side (2026-09-22, v6.9).
   'noteOnly', 'noteBullets'];
-const EXPORTS = ['TRADE_MODEL', 'TRADE_EFFORT', 'TRADE_TZ', 'MARKET_OPEN', 'MARKET_CLOSE', 'STRONG_PROFIT_LOW', 'WATCHLIST_MAX', 'DEFAULT_WATCHLIST',
+const EXPORTS = ['TRADE_MODEL', 'TRADE_EFFORT', 'TRADE_SCAN_EFFORT', 'TRADE_TZ', 'MARKET_OPEN', 'MARKET_CLOSE', 'STRONG_PROFIT_LOW', 'WATCHLIST_MAX', 'DEFAULT_WATCHLIST',
   'TRADE_WEB_SEARCH_TOOL', 'TRADE_CATEGORIES', 'DESK_NAME', 'SAY', 'SETTINGS_PATH', 'STATE_PATH', 'PLAYS', 'BALANCES',
   'TRADE_INSTRUCTIONS', 'TRADE_CONTRACT', 'TRADE_ASK_NOTE', 'realDate', 'dollars', 'stripDashes', 'sectionMatch', 'mtParts', 'mtInstant', 'mtLabel',
   'KEY_RE', 'keyTail', 'resolveKey', 'watchlistOf', 'startOf', 'marketSnapshot', 'deskMetrics', 'standingLine', 'tradeStanding', 'refreshStanding',
@@ -213,13 +213,17 @@ ${JSON.stringify({ plays: [PLAY, { ...PLAY, ticker: 'TSLA', side: 'short', instr
 // gets, and the three slots, their window and the whole calendar of them are gone from the module.
 // NEGATIVE CONTROL (run 2026-09-22): `TRADE_EFFORT = 'max'` changed back to 'high' made this read
 //   FAIL  T1 the desk runs on the same model and effort as every other case for every turn, 55 as the strong line, eight trading categories, one web search tool of eight uses, and 2000 as the default start
+// RE-PINNED 2026-09-22 (v6.12): one carve-out by his choice. Scan runs at high; Update, a question
+// and every other case keep max. The constant this check used to forbid is now the one it requires.
+// NEGATIVE CONTROL (run 2026-09-22, v6.12): `TRADE_SCAN_EFFORT = 'high'` changed to 'max' made this read
+//   FAIL  T1 the desk runs on the same model and effort as every other case for every turn ...
 check('T1 the desk runs on the same model and effort as every other case for every turn, 55 as the strong line, eight trading categories, one web search tool of eight uses, and 2000 as the default start',
-  K.TRADE_MODEL === 'claude-opus-5' && K.TRADE_EFFORT === 'max' && K.TRADE_TZ === 'America/Boise'
+  K.TRADE_MODEL === 'claude-opus-5' && K.TRADE_EFFORT === 'max' && K.TRADE_SCAN_EFFORT === 'high' && K.TRADE_TZ === 'America/Boise'
   && K.STRONG_PROFIT_LOW === 55 && K.DESK_NAME === 'Trade desk' && K.TRADE_CATEGORIES.join() === 'Setup,Indicator,Level,Order,Risk,Options,Market,Instrument'
   && K.TRADE_WEB_SEARCH_TOOL.type === 'web_search_20260209' && K.TRADE_WEB_SEARCH_TOOL.max_uses === 8
   // RE-PINNED 2026-09-22 (v5.2): his aim is a rule (2% by default), and the module's constant reads it.
   && math.TARGET_DAILY === 0.02 && math.defaultRules().dayAimPct === 2 && math.PROJECTION_MIN_DAYS === 14 && math.TRADING_DAYS_PER_YEAR === 252 && math.DEFAULT_START_CENTS === 200000
-  && /^export const TRADE_EFFORT = 'max';$/m.test(TD) && !/TRADE_SCAN_EFFORT|TRADE_ASK_EFFORT|TRADE_FALLBACK_MODEL/.test(TD + T));
+  && /^export const TRADE_EFFORT = 'max';$/m.test(TD) && /^export const TRADE_SCAN_EFFORT = 'high';$/m.test(TD) && !/TRADE_ASK_EFFORT|TRADE_FALLBACK_MODEL/.test(TD + T));
 
 // T2 USED TO PIN THE SLOT CLOCK (07:00 Mountain is 13:00Z in July, 14:00Z in January). Eric,
 // 2026-09-22: "I manually update either scan individually. No automatic." There is no clock to pin,
@@ -478,7 +482,8 @@ check('T12 the reading on the desk: the brief is three-way from the policy, the 
   && /if \(auto && !skipMedia && prior && !media\.blocks\.length && !media\.carry\.length\n(?:\s*\/\/[^\n]*\n)*\s+&& !turnPolicy\.getStore\(\)\?\.trade\n/.test(ADV)
   // RE-PINNED 2026-09-22 (nothing runs but his tap): the advisor takes the scan's contract, the
   // desk's state path and its sentences too, because the scan he taps lives there with the reading.
-  && /^import \{\n\s+TRADE_MODEL, TRADE_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,\n\s+SCAN_CONTRACT, TRADE_STATE_PATH, SAY as TRADE_SAY,\n\s+tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,\n\s+harvestDocument, fileDocument, stripDashes as deskStripDashes,\n\} from '\.\/trade-desk\.js';/m.test(ADV)
+  // RE-PINNED 2026-09-22 (v6.12): the scan's own strength rides in the same import.
+  && /^import \{\n\s+TRADE_MODEL, TRADE_EFFORT, TRADE_SCAN_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,\n\s+SCAN_CONTRACT, TRADE_STATE_PATH, SAY as TRADE_SAY,\n\s+tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,\n\s+harvestDocument, fileDocument, stripDashes as deskStripDashes,\n\} from '\.\/trade-desk\.js';/m.test(ADV)
   && !/from '\.\/advisor\.js'/.test(TD));
 
 // ---- T13 to T16: the harvest and the records, run ----------------------------------
@@ -1306,10 +1311,14 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry610 = (CL.match(/\{\n\s+\/\/ THE SCAN CAN SEE THE MARKET[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v6.11): the ticker back at the head of every card.
   const entry611 = (CL.match(/\{\n\s+\/\/ THE TICKER BACK AT THE HEAD[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v6.12): Scan at high, Update at max, by his choice.
+  const entry612 = (CL.match(/\{\n\s+\/\/ SCAN AT HIGH, UPDATE AT MAX[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
+  // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
+  //   FAIL  T36 both versions read 6.12 with the new tag, the 4.7 through 6.11 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.11): 'back at the head of every setup' reworded to 'back at the top of every setup' in the 6.11 entry made this read
-  //   FAIL  T36 both versions read 6.11 with the new tag, the 4.7 through 6.10 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
+  //   FAIL  T36 both versions read 6.12 with the new tag, the 4.7 through 6.11 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.10): 'can look at the market now' reworded to 'can see the market now' in the 6.10 entry made this read
   //   FAIL  T36 both versions read 6.11 with the new tag, the 4.7 through 6.10 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.9): 'without a new scan' reworded to 'without another scan' in the 6.9 entry made this read
@@ -1330,8 +1339,10 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   //   FAIL  T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v5.2): 'has a calculator' reworded to 'has a calculator now' in the 5.2 entry made this read
   //   FAIL  T36 both versions read 5.3 with the new tag, the 4.7 through 5.3 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 6.11 with the new tag, the 4.7 through 6.10 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '6\.11';/.test(CL) && /const VERSION = '6\.11';/.test(W) && /const BUILD_TAG = 'v2026-09-22-ticker-back';/.test(W)
+  check('T36 both versions read 6.12 with the new tag, the 4.7 through 6.11 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '6\.12';/.test(CL) && /const VERSION = '6\.12';/.test(W) && /const BUILD_TAG = 'v2026-09-22-scan-at-high';/.test(W)
+    && /version: '6\.12',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry612)
+    && /one step below Update/.test(entry612) && !DASH.test(entry612)
     && /version: '6\.11',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry611)
     && /back at the head of every setup/.test(entry611) && !DASH.test(entry611)
     && /version: '6\.10',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry610)
@@ -2226,6 +2237,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
       noteOnly: math.noteOnly,
       // The scan carries the search tool itself (2026-09-22, v6.10).
       TRADE_WEB_SEARCH_TOOL: K.TRADE_WEB_SEARCH_TOOL,
+      // And runs one step below Update (2026-09-22, v6.12).
+      TRADE_SCAN_EFFORT: K.TRADE_SCAN_EFFORT,
     };
     const names = Object.keys(deps).join(', ');
     const api = new Function('deps', `
@@ -2308,6 +2321,10 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     //   scan's turn made this read    FAIL  T51 the scan's flight RUNS: ...
     && JSON.stringify(first.w.submitted[0].turn.tools) === JSON.stringify([K.TRADE_WEB_SEARCH_TOOL])
     && K.TRADE_WEB_SEARCH_TOOL.max_uses === 8 && K.TRADE_WEB_SEARCH_TOOL.type === 'web_search_20260209'
+    // RE-PINNED 2026-09-22 (v6.12): the scan's turn asks for high, not max, by his choice.
+    // NEGATIVE CONTROL (run 2026-09-22, v6.12): the scan's `effort: TRADE_SCAN_EFFORT` put back to
+    //   `TRADE_EFFORT` made this read    FAIL  T51 the scan's flight RUNS: ...
+    && first.w.submitted[0].turn.effort === 'high'
     && first.w.submitted[0].customId.startsWith('scan-c1-')
     && first.w.patches.some((p) => p.path === K.STATE_PATH && p.data.scanStatus === 'running')
     && first.w.patches.some((p) => p.path === K.STATE_PATH && p.data.scanCtx?.batchId === 'batch-1')

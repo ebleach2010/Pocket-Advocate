@@ -42,6 +42,13 @@ import {
 // this when the scan was still on a clock.
 export const TRADE_MODEL = 'claude-opus-5';
 export const TRADE_EFFORT = 'max';
+// ONE CARVE-OUT, BY HIS CHOICE (Eric, 2026-09-22, asked "Which strength should
+// Scan run at?" and choosing "Scan at high, Update stays max"). Scan's job is
+// right now; today's took eight minutes thinking over ten prices and it
+// searches as well since 6.10. One step down for that button alone. Update, a
+// question, and every other case keep the top setting he asked for on
+// 2026-09-09.
+export const TRADE_SCAN_EFFORT = 'high';
 export const TRADE_TZ = 'America/Boise';
 export const MARKET_OPEN = '07:30';
 export const MARKET_CLOSE = '14:00';

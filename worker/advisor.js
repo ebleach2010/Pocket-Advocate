@@ -39,7 +39,7 @@ import { listIntake, listShelf, mediaFetch } from './storage.js';
 // with its own model, effort, tools and instructions, and what the reading
 // files once it lands. A leaf, so this import is not a cycle.
 import {
-  TRADE_MODEL, TRADE_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,
+  TRADE_MODEL, TRADE_EFFORT, TRADE_SCAN_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,
   SCAN_CONTRACT, TRADE_STATE_PATH, SAY as TRADE_SAY,
   tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,
   harvestDocument, fileDocument, stripDashes as deskStripDashes,
@@ -5591,7 +5591,8 @@ export async function runTradeScan(env, caseId, { now = Date.now() } = {}) {
   try {
     const note = await tradeNote(env, { now });
     const turn = turnRequest({
-      effort: TRADE_EFFORT,
+      // One step below Update, by his choice (2026-09-22, v6.12): see the constant.
+      effort: TRADE_SCAN_EFFORT,
       // THE SCAN CAN SEE THE MARKET NOW (Eric, 2026-09-22: "Scanning is
       // taking more than 5 minutes. Normal?"). The reading gets web search
       // through the desk's policy; this turn is built outside any policy and
