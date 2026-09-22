@@ -28,7 +28,7 @@ import { VERSION } from './changelog.js';
 import { md, splitPages } from './advisor.js';
 import {
   rulesOf, RULE_RANGES, dayStatus, tradeCalc, isMarketOpen, isTradingDay,
-  HORIZONS, HORIZON_WORDS, sizeFor, sharesForDollars, dollarsForShares, fmtQty,
+  HORIZONS, HORIZON_WORDS, sizeFor, sharesForDollars, dollarsForShares, fmtQty, playSizing, vehicleLabel,
 } from './trade-math.js';
 import {
   money, shortMoney, dayShort, dayName, agoShort, tradeCall,
@@ -501,7 +501,14 @@ function openPositionSheet(play) {
     ticker: play.ticker, side: play.side, horizon: play.horizon,
     instrument: play.instrument || 'stock', structure: play.structure || '',
     entry: play.entry, stop: play.stop ?? '', target: (play.targets || [])[0] || '',
-  } : { ticker: '', side: 'long', horizon: 'intraday', instrument: 'stock', structure: '', entry: '', stop: '', target: '' };
+    // THE CONTRACT COMES WITH THE PLAY (2026-09-22). He should never retype a
+    // strike or an expiration the scan already named.
+    strike: play.strike ?? '', strike2: play.strike2 ?? '',
+    expiry: play.expiry || '', optionType: play.optionType || '', credit: play.credit === true,
+  } : {
+    ticker: '', side: 'long', horizon: 'intraday', instrument: 'stock', structure: '', entry: '', stop: '', target: '',
+    strike: '', strike2: '', expiry: '', optionType: '', credit: false,
+  };
   const { sheet, close } = openSheet(`
     <h3>${play ? `Take ${esc(play.ticker)} ${esc(play.side)}` : 'New position'}</h3>
     <div class="sum">${play ? esc(play.structure || play.instrument || 'shares') : 'What you are actually in, in your own numbers.'}</div>
@@ -514,9 +521,16 @@ function openPositionSheet(play) {
         <span class="qtyhead">Quantity<button type="button" class="unit" id="np-unit" data-unit="shares">shares</button></span>
         <input id="np-qty" class="num" inputmode="decimal" value="">
       </label>
-      <label>Entry<input id="np-entry" class="num" inputmode="decimal" value="${esc(guess.entry)}"></label>
+      <label><span id="np-entry-k">Entry</span><input id="np-entry" class="num" inputmode="decimal" value="${esc(guess.entry)}"></label>
       <label>Stop<input id="np-stop" class="num" inputmode="decimal" value="${esc(guess.stop)}"></label>
       <label>Target<input id="np-target" class="num" inputmode="decimal" value="${esc(guess.target)}"></label>
+    </div>
+    <div class="grid2 optonly" id="np-opt" hidden>
+      <label>Strike<input id="np-strike" class="num" inputmode="decimal" value="${esc(guess.strike)}"></label>
+      <label class="sp2only">Second strike<input id="np-strike2" class="num" inputmode="decimal" value="${esc(guess.strike2)}"></label>
+      <label>Expiration<input id="np-expiry" type="date" value="${esc(guess.expiry)}"></label>
+      <label class="sp2only">Calls or puts<select id="np-legs">${[['', 'not said'], ['call', 'Calls'], ['put', 'Puts']].map(([v, w]) => `<option value="${v}"${guess.optionType === v ? ' selected' : ''}>${w}</option>`).join('')}</select></label>
+      <label class="check sp2only"><input type="checkbox" id="np-credit"${guess.credit ? ' checked' : ''}> Credit spread</label>
     </div>
     <label>What it is<input id="np-structure" value="${esc(guess.structure)}" placeholder="shares, or the contract"></label>
     <div class="row" style="margin-bottom:8px"><button type="button" class="btn tiny quiet" id="np-last">Get the price</button><span class="said" id="np-said"></span></div>
@@ -549,13 +563,24 @@ function openPositionSheet(play) {
     if (unit !== 'dollars' || !isShares()) return typed;
     return sharesForDollars(typed, entryNow()) ?? 0;
   };
+  // Whether a field is even asked for depends on what he picked (2026-09-22).
+  // Shares want no strike; a single option wants one strike and no second leg;
+  // a spread wants both, which way round and whether it is a credit.
   const paintUnit = () => {
     const stock = isShares();
+    const inst = f('#np-inst').value;
     if (!stock) unit = 'shares';
     unitEl.hidden = !stock;
     unitEl.dataset.unit = unit;
     unitEl.textContent = unit === 'dollars' ? '$' : (stock ? 'shares' : 'contracts');
     f('#np-qty').setAttribute('inputmode', stock ? 'decimal' : 'numeric');
+    f('#np-opt').hidden = stock;
+    for (const el of sheet.querySelectorAll('.sp2only')) el.hidden = inst !== 'spread';
+    // Entry means three different things, so it says which one.
+    f('#np-entry-k').textContent = stock ? 'Entry' : inst === 'spread' ? 'Debit or credit' : 'Premium';
+    // "What it is" writes itself from the fields, unless he has typed over it.
+    const st = f('#np-structure');
+    if (!st.dataset.touched) st.value = vehicleLabel({ ...read(), instrument: inst });
   };
   unitEl.addEventListener('click', () => {
     if (!isShares()) return;
@@ -575,6 +600,9 @@ function openPositionSheet(play) {
     qty: qtyTyped(), entry: f('#np-entry').value.trim(),
     stop: f('#np-stop').value.trim(), target: f('#np-target').value.trim(),
     structure: f('#np-structure').value.trim(),
+    strike: f('#np-strike').value.trim(), strike2: f('#np-strike2').value.trim(),
+    expiry: f('#np-expiry').value.trim(), optionType: f('#np-legs').value,
+    credit: f('#np-credit').checked,
   });
   const calc = () => {
     const v = read();
@@ -595,11 +623,22 @@ function openPositionSheet(play) {
       ? ` · buys ${fmtQty(v.qty)} shares` : '';
     box.innerHTML = `<b>Risk ${money(c.riskCents ?? 0)}</b> <span class="dim">of ${money(allowed)} allowed${bought} · your size is ${size.qty == null ? '?' : fmtQty(size.qty)} ${word}${c.ladder ? ` · 1R ${c.ladder.levels[0].price}` : ''}</span>`;
   };
+  f('#np-structure').addEventListener('input', (e) => { e.currentTarget.dataset.touched = '1'; });
   for (const i of sheet.querySelectorAll('input, select')) i.addEventListener('input', calc);
+  for (const i of sheet.querySelectorAll('#np-opt input, #np-opt select')) i.addEventListener('input', paintUnit);
+  f('#np-legs').addEventListener('change', paintUnit);
   if (play) {
-    const want = sizeFor({ accountCents: accountNow(), rules: rulesNow(), pos: { instrument: guess.instrument, entry: guess.entry, stop: guess.stop, side: guess.side } }).qty;
-    f('#np-qty').value = want > 0
-      ? String(unit === 'dollars' && guess.instrument === 'stock' ? (dollarsForShares(want, Number(guess.entry)) ?? '') : fmtQty(want))
+    // THE LESSER OF THE TWO (2026-09-22). The play suggests an allocation and
+    // his rule caps the risk; the box opens on whichever is smaller, because a
+    // suggestion does not get to break Rules to hold. A stock opens in dollars,
+    // which is what he types at a broker.
+    // In whichever unit he last chose. Taking a play is not a reason to change
+    // how he sizes, and silently rewriting his remembered choice would.
+    const sz = playSizing({ play, rules: rulesNow(), accountCents: accountNow() });
+    f('#np-qty').value = sz.takeQty
+      ? String(unit === 'dollars' && guess.instrument === 'stock'
+        ? (dollarsForShares(sz.takeQty, Number(guess.entry)) ?? '')
+        : fmtQty(sz.takeQty))
       : '';
   }
   f('#np-inst').addEventListener('change', () => { paintUnit(); calc(); });

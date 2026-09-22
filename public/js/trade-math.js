@@ -283,6 +283,95 @@ export function sizeFor({ accountCents, rules, pos }) {
   return { unitRisk: u, budgetCents, qty: pos?.instrument === 'stock' ? r4(exact) : Math.floor(exact) };
 }
 
+/**
+ * WHAT IT ACTUALLY IS (Eric, 2026-09-22: "make it clear if it's suggesting
+ * call, put, spread at what price/expiration or total value in stocks, not
+ * shares").
+ *
+ * A vehicle in one short line: the strike, the kind and when it expires, or
+ * the word shares. Built from the real fields when they are there and from
+ * whatever `structure` says when they are not, so an older play still reads.
+ */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** 2026-10-17 as "17 Oct". Never parsed through the local clock, which would move the day. */
+export function expiryWords(key) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key || ''));
+  if (!m) return '';
+  const mon = MONTHS[Number(m[2]) - 1];
+  return mon ? `${Number(m[3])} ${mon}` : '';
+}
+export function vehicleLabel(p) {
+  const inst = String(p?.instrument || 'stock');
+  if (inst === 'stock') return 'shares';
+  const k = fin(p?.strike); const k2 = fin(p?.strike2);
+  const when = expiryWords(p?.expiry);
+  // A spread is calls or puts, and which one changes the trade entirely, so it
+  // is said when the play says it.
+  const leg = ['call', 'put'].includes(String(p?.optionType || '')) ? `${p.optionType} ` : '';
+  const kind = inst === 'spread'
+    ? `${leg}${p?.credit ? 'credit' : 'debit'} spread`
+    : inst;
+  const strikes = k == null ? '' : (inst === 'spread' && k2 != null ? `${k}/${k2} ` : `${k} `);
+  const built = `${strikes}${kind}${when ? `, ${when}` : ''}`.trim();
+  // Nothing typed at all: fall back to whatever the play called itself.
+  return strikes || when ? built : (String(p?.structure || '').trim() || kind);
+}
+
+/**
+ * WHAT A PLAY IS TELLING HIM TO PUT IN, and what that buys.
+ *
+ * Risk and allocation are two different numbers and the card only ever showed
+ * one of them. On his own figures: $44.90 of risk on a $4,490 account is
+ * 17.2692 shares of NVDA at 228.9, which is $3,952 of capital, or 88% of
+ * everything he has. The risk rule never says that out loud.
+ *
+ * So a play carries allocPct, the share of the account to put in, and this
+ * turns it into the thing he actually does: dollars for a stock, a count of
+ * contracts for anything else. `takeQty` is the LESSER of what the play
+ * suggests and what his one-trade risk rule allows, because a suggestion does
+ * not get to break Rules to hold.
+ */
+export function playSizing({ play, rules, accountCents }) {
+  const A = Math.max(0, Number(accountCents) || 0);
+  const R = rulesOf({ rules });
+  const inst = String(play?.instrument || 'stock');
+  const entry = fin(play?.entry);
+  const pos = { instrument: inst, side: play?.side, entry, stop: fin(play?.stop), credit: !!play?.credit, width: fin(play?.width) };
+  const size = sizeFor({ accountCents: A, rules: R, pos });
+  const pct = fin(play?.allocPct);
+  const asked = fin(play?.sizeDollars);
+  // His percent if the play gave one; otherwise the dollars it asked for,
+  // read as a percent of the account so both arrive at the same place.
+  const allocCents = pct != null && pct > 0 ? Math.round((A * pct) / 100)
+    : asked != null && asked > 0 ? Math.round(asked * 100) : null;
+  const allocPct = allocCents != null && A ? r2((allocCents / A) * 100) : null;
+  const perUnitCents = entry == null ? null : Math.round(entry * multOf(pos) * 100);
+  let qty = null;
+  if (allocCents != null && perUnitCents != null && perUnitCents > 0) {
+    qty = inst === 'stock'
+      ? r4(allocCents / perUnitCents)
+      : Math.floor(allocCents / perUnitCents);
+  }
+  const costCents = qty == null || perUnitCents == null ? null : Math.round(qty * perUnitCents);
+  const u = unitRisk(pos);
+  const riskCents = qty == null || u == null ? null : Math.round(u * qty * 100);
+  const overRule = riskCents != null && riskCents > size.budgetCents;
+  // What Take it should put in the box: never more than the rule allows.
+  const ruleQty = size.qty;
+  const takeQty = qty == null ? ruleQty
+    : ruleQty == null ? qty
+      : Math.min(qty, ruleQty);
+  return {
+    allocPct, allocCents, vehicle: vehicleLabel(play), instrument: inst,
+    shares: inst === 'stock' ? qty : null,
+    contracts: inst === 'stock' ? null : qty,
+    perUnitCents, costCents, riskCents,
+    budgetCents: size.budgetCents, ruleQty, overRule,
+    takeQty: takeQty == null || takeQty <= 0 ? null : takeQty,
+    takeCents: !takeQty || takeQty <= 0 || perUnitCents == null ? null : Math.round(takeQty * perUnitCents),
+  };
+}
+
 /** The price ladder around the entry: the stop's distance as R, breakeven, then 1R, 2R and 3R the right way round. */
 export function ladder({ side, entry, stop }) {
   const e = fin(entry); const s = fin(stop);

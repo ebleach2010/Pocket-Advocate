@@ -105,9 +105,19 @@ function validPosition(body, existing = null, now = Date.now()) {
   const target = price(body?.target ?? base.target ?? null, false);
   const mark = price(body?.mark ?? base.mark ?? null, false);
   const credit = body?.credit === undefined ? base.credit === true : body.credit === true;
+  // THE CONTRACT, IN FIELDS (Eric, 2026-09-22: "make it clear if it's
+  // suggesting call, put, spread at what price/expiration"). The strike and
+  // the expiration were only ever in the free text of `structure`, so nothing
+  // could read them back. They are typed now, and a spread's width comes from
+  // its two strikes rather than being asked for a third time.
+  const strike = price(body?.strike ?? base.strike ?? null, false);
+  const strike2 = price(body?.strike2 ?? base.strike2 ?? null, false);
+  const optionType = ['call', 'put'].includes(String(body?.optionType ?? base.optionType ?? '').toLowerCase())
+    ? String(body?.optionType ?? base.optionType).toLowerCase() : null;
   let width = null;
   if (instrument === 'spread') {
-    const w = body?.width ?? base.width ?? null;
+    const fromStrikes = strike != null && strike2 != null ? Math.abs(strike - strike2) : null;
+    const w = body?.width ?? base.width ?? fromStrikes;
     if (w !== null && w !== '' && w !== undefined) {
       const n = Number(w);
       if (!Number.isFinite(n) || n <= 0) throw new TradeError(400, SAY.badWidth);
@@ -119,6 +129,7 @@ function validPosition(body, existing = null, now = Date.now()) {
   const { dateKey } = mtParts(now);
   return {
     ticker, side, instrument, horizon, qty, entry, stop, target, mark, credit, width,
+    strike, strike2, optionType,
     expiry: expiry ? String(expiry) : null,
     structure: stripDashes(String(body?.structure ?? base.structure ?? '')).trim().slice(0, 120),
     note: stripDashes(String(body?.note ?? base.note ?? '')).trim().slice(0, 300),

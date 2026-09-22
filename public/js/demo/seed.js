@@ -695,7 +695,10 @@ export function seed({ set, file }) {
     risk: 'The spread costs 2.10 and can go to zero; 2 contracts is $420, about 2% of the account at the stop of 1.30.',
     watch: 'The 10:30 volume bar against the 10:00 one.',
     catalyst: 'Data center guidance raised at the developer conference, 07:00 ET.',
-    profitLow: 55, profitHigh: 65, sizeDollars: 420, overnight: { ok: false, why: 'The move is intraday. Nothing after the bell.' },
+    profitLow: 55, profitHigh: 65, sizeDollars: 420, allocPct: 17.6,
+    // The vehicle in fields (2026-09-22), so the card can say it the way a broker would.
+    strike: 650, strike2: 655, optionType: 'call', credit: false, expiry: '2026-10-17',
+    overnight: { ok: false, why: 'The move is intraday. Nothing after the bell.' },
     status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 4 * 3600_000),
   });
   set('trade/plays/items/p-demo-2', {
@@ -708,7 +711,7 @@ export function seed({ set, file }) {
     risk: '$6 a share on 25 shares is $150; 12 shares keeps it near $70.',
     watch: 'Whether 412 holds as resistance on the next test.',
     catalyst: 'Delivery numbers below the street estimate, out at 06:00 ET.',
-    profitLow: 45, profitHigh: 55, sizeDollars: 800, overnight: { ok: false, why: 'Short into an overnight headline is not a trade with an edge.' },
+    profitLow: 45, profitHigh: 55, sizeDollars: 800, allocPct: 33.6, overnight: { ok: false, why: 'Short into an overnight headline is not a trade with an edge.' },
     status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 2 * 3600_000),
   });
   // A swing, allowed when it serves the benchmarks and out before the
@@ -723,7 +726,7 @@ export function seed({ set, file }) {
     risk: '$3.50 a share. Held overnight, so a gap against it is the real risk; out before the weekend either way.',
     watch: 'Whether 170 takes two tries or one.',
     catalyst: 'Supply deal reported before the open.',
-    profitLow: 50, profitHigh: 60, sizeDollars: 500, overnight: { ok: true, why: 'A swing by design, flat before Friday closes.' },
+    profitLow: 50, profitHigh: 60, sizeDollars: 500, allocPct: 21, overnight: { ok: true, why: 'A swing by design, flat before Friday closes.' },
     status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 48 * 3600_000),
   });
   // HIS OWN TRADES (2026-09-22): what he is actually in, which is not the

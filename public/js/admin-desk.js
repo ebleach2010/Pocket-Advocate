@@ -14,7 +14,7 @@
 // this file is a 404 to anyone but him.
 
 import {
-  tradeCalc, rulesOf, HORIZON_WORDS, WARNING_TEXT, fmtPct, sizeFor, fmtQty,
+  tradeCalc, rulesOf, HORIZON_WORDS, WARNING_TEXT, fmtPct, sizeFor, fmtQty, playSizing,
 } from './trade-math.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -95,7 +95,16 @@ export function playFaceHtml(p, { rules, accountCents } = {}) {
   const calc = tradeCalc({ pos: { ...p, qty: size.qty || 0 }, rules: R, accountCents });
   const per = p.instrument === 'stock' ? 'a share' : 'a contract';
   const unit = calc.unitRisk == null ? 'not capped' : money(Math.round(calc.unitRisk * 100));
-  const inst = `hold ${holdWords(p)} · ${money(Number(p.sizeDollars) * 100)} · ${p.structure || p.instrument}`;
+  // WHAT IT IS AND WHAT TO PUT IN (Eric, 2026-09-22). The tags line names the
+  // vehicle the way he would say it at a broker: the strike, the kind and the
+  // expiration, or the word shares. The In cell carries the money, because a
+  // stock setup is a dollar figure to him and never a share count.
+  const sz = playSizing({ play: p, rules: R, accountCents });
+  const count = p.instrument === 'stock'
+    ? '' : `${sz.contracts == null ? '' : `${sz.contracts} × `}`;
+  const inst = `hold ${holdWords(p)} · ${count}${sz.vehicle}`;
+  const inCell = sz.allocCents == null ? '' :
+    `${money(sz.allocCents)}${sz.allocPct == null ? '' : `<span class="later"> · ${sz.allocPct}%</span>`}`;
   const state = p.status === 'took' ? 'Taken' : p.status === 'closed' ? `Closed ${money(p.outcomeCents, true)}` : p.status === 'skipped' ? 'Skipped' : expired ? 'Expired' : '';
   const rows = [
     ['Catalyst', p.catalyst], ['Bull', p.bull], ['Bear', p.bear],
@@ -112,6 +121,7 @@ export function playFaceHtml(p, { rules, accountCents } = {}) {
       ${cell('Target', `${targets[0] || ''}${targets.length > 1 ? `<span class="later"> · ${targets.slice(1).join(' · ')}</span>` : ''}`, 'tgt')}
       ${cell('Stop', p.stop == null ? 'none' : esc(p.stop), 'stop')}
       ${cell('Risk', esc(unit), '', per)}
+      ${inCell ? cell('In', inCell, sz.overRule ? 'stop' : '', sz.overRule ? 'over your rule' : 'of the account') : ''}
     </div>
     <details><summary><span>Why, and what to watch</span><span class="chev">&#9662;</span></summary>
       <dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>

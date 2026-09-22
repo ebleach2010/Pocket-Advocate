@@ -176,14 +176,54 @@ const backToShares = await page.evaluate(async () => {
 });
 ok('and back again, holding the fraction rather than rounding it away',
   backToShares.unit === 'shares' && Number(backToShares.qty) > 0 && Number(backToShares.qty) < 1, JSON.stringify(backToShares));
-// A contract cannot be bought in pieces, so the chip is not offered on one.
+// A contract cannot be bought in pieces, so the chip is not offered on one. And picking one asks
+// for the strike and the expiration, which used to be nowhere on this sheet at all (Eric,
+// 2026-09-22: "make it clear if it's suggesting call, put, spread at what price/expiration").
 const onCall = await page.evaluate(async () => {
   const i = document.getElementById('np-inst');
   i.value = 'call'; i.dispatchEvent(new Event('change'));
   await new Promise((r) => setTimeout(r, 200));
-  return { hidden: !!document.getElementById('np-unit').hidden };
+  const seen = (id) => { const el = document.getElementById(id); return !!el && !!el.offsetParent; };
+  return {
+    hidden: !!document.getElementById('np-unit').hidden,
+    strike: seen('np-strike'), expiry: seen('np-expiry'), second: seen('np-strike2'),
+    entryK: document.getElementById('np-entry-k').textContent.trim(),
+  };
 });
 ok('a contract is never sized in dollars, because it cannot be bought in pieces', onCall.hidden === true, JSON.stringify(onCall));
+ok('picking a call asks for the strike and the expiration, and not for a second leg',
+  onCall.strike && onCall.expiry && !onCall.second, JSON.stringify(onCall));
+ok('and the entry says it is a premium, not a share price', onCall.entryK === 'Premium', onCall.entryK);
+const onSpread = await page.evaluate(async () => {
+  const i = document.getElementById('np-inst');
+  i.value = 'spread'; i.dispatchEvent(new Event('change'));
+  await new Promise((r) => setTimeout(r, 200));
+  const set = (id, v) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event('input')); };
+  set('np-strike', '650'); set('np-strike2', '655'); set('np-expiry', '2026-10-17');
+  const legs = document.getElementById('np-legs'); legs.value = 'call'; legs.dispatchEvent(new Event('change'));
+  await new Promise((r) => setTimeout(r, 250));
+  const seen = (id) => { const el = document.getElementById(id); return !!el && !!el.offsetParent; };
+  return {
+    second: seen('np-strike2'), legs: seen('np-legs'), credit: !!document.getElementById('np-credit'),
+    entryK: document.getElementById('np-entry-k').textContent.trim(),
+    structure: document.getElementById('np-structure').value,
+  };
+});
+ok('a spread asks for both strikes, which way round it runs and whether it is a credit',
+  onSpread.second && onSpread.legs && onSpread.credit, JSON.stringify(onSpread));
+ok('it writes What it is for him from the fields he filled',
+  onSpread.structure === '650/655 call debit spread, 17 Oct', onSpread.structure);
+ok('and the entry says debit or credit on a spread', onSpread.entryK === 'Debit or credit', onSpread.entryK);
+await shot('D-spread');
+const backToShares2 = await page.evaluate(async () => {
+  const i = document.getElementById('np-inst');
+  i.value = 'stock'; i.dispatchEvent(new Event('change'));
+  await new Promise((r) => setTimeout(r, 200));
+  const el = document.getElementById('np-strike');
+  return { strike: !!el && !!el.offsetParent, entryK: document.getElementById('np-entry-k').textContent.trim() };
+});
+ok('shares are never asked for a strike or an expiration',
+  backToShares2.strike === false && backToShares2.entryK === 'Entry', JSON.stringify(backToShares2));
 await page.evaluate(async (sh) => {
   const i = document.getElementById('np-inst');
   i.value = 'stock'; i.dispatchEvent(new Event('change'));

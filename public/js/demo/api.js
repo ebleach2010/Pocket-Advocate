@@ -2067,6 +2067,10 @@ export function demoApi(role, store) {
         const key = id || `pos-${Date.now().toString(36)}`;
         const row = {
           ticker, side, instrument, horizon, qty, entry, stop, target, mark, credit, width,
+          // The contract in fields (2026-09-22), the same as the Worker keeps.
+          strike: body.strike === '' || body.strike == null ? null : Number(body.strike),
+          strike2: body.strike2 === '' || body.strike2 == null ? null : Number(body.strike2),
+          optionType: ['call', 'put'].includes(String(body.optionType || '')) ? String(body.optionType) : null,
           expiry: body.expiry ?? base.expiry ?? null,
           structure: String(body.structure ?? base.structure ?? '').trim().slice(0, 120),
           note: String(body.note ?? base.note ?? '').trim().slice(0, 300),

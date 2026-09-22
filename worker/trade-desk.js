@@ -394,9 +394,13 @@ Use exactly these headings, in this order, as markdown ## headings:
 
 "Working line": exactly one line, 60 characters or fewer, plain words: where his trading stands right now, as a label for the front of the folder. No hedging, no trailing punctuation. If the log cannot support one yet, write exactly: Still forming.
 
+WHAT TO PUT IN, AND IN WHAT (Eric, 2026-09-22: "It also needs to suggest % allocation and make it clear if it's suggesting call, put, spread at what price/expiration or total value in stocks, not shares"). Every setup says two different numbers and never confuses them. The RISK is what he loses at the stop. The ALLOCATION is what he puts in, said as a percent of his account, and it is usually the larger by far: a 1% risk on a stock with a tight stop can be most of the account in capital, which is a thing he needs told. Say the allocation as a percent and in dollars at the balance in the desk note, and never let it breach a position he could not get out of.
+
+Say the vehicle exactly. A stock setup says the TOTAL DOLLARS to put in, never a number of shares, because he buys fractional shares and the dollar figure is what he types. An option setup says which it is, the strike, and the expiration date: "the 650 call expiring 17 October at 2.10", not "calls". A spread says both strikes, whether it is calls or puts, whether it is a debit or a credit, and the expiration. If you would not name the strike and the date, the setup is not ready and does not get filed.
+
 "Plays": one fenced json block and nothing else, in this shape:
 { "plays": [ ... ], "portfolio": null }
-One play object per setup above, in the same order, with these fields: horizon ("scalp", "intraday" or "swing"), holdDays (a whole number 1 to 3, swing only, 0 otherwise), ticker, side ("long" or "short"), instrument ("stock", "call", "put" or "spread"), structure (the exact instrument, for example "Oct 17 150/155 call debit spread" or "shares"), entry, stop, targets (a list of prices), holdMinutes (an integer), profitLow and profitHigh (whole percents), sizeDollars (an integer), catalyst, overnightOk (true or false), overnightWhy, picture, bull, bear, levels (a list of short strings), risk, watch. picture, bull, bear, risk and watch repeat the six lines of the setup, in full. portfolio is null unless a screenshot among the NEW messages shows his broker's portfolio total; then it is { "totalCents": the total in cents as an integer, "asOf": the date of the message it came with, as YYYY-MM-DD }. Never take a total from memory or from an earlier screenshot.
+One play object per setup above, in the same order, with these fields: horizon ("scalp", "intraday" or "swing"), holdDays (a whole number 1 to 3, swing only, 0 otherwise), ticker, side ("long" or "short"), instrument ("stock", "call", "put" or "spread"), structure (the exact instrument, for example "Oct 17 150/155 call debit spread" or "shares"), entry, stop, targets (a list of prices), holdMinutes (an integer), profitLow and profitHigh (whole percents), allocPct (the share of his account to put into this trade, as a number of percent, for example 12.5), sizeDollars (an integer, the same allocation in dollars at his current balance), strike (the strike, options only), strike2 (the second strike, spreads only), optionType ("call" or "put", spreads only), credit (true for a credit spread, false for a debit), expiry (the expiration as YYYY-MM-DD, options only), catalyst, overnightOk (true or false), overnightWhy, picture, bull, bear, levels (a list of short strings), risk, watch. picture, bull, bear, risk and watch repeat the six lines of the setup, in full. portfolio is null unless a screenshot among the NEW messages shows his broker's portfolio total; then it is { "totalCents": the total in cents as an integer, "asOf": the date of the message it came with, as YYYY-MM-DD }. Never take a total from memory or from an earlier screenshot.
 
 "Corrections": rare, and only when one of his own log lines misstates a price or a level. Each line exactly \`- <id> | what is wrong, one sentence | the full repaired line\`. Write "- none" otherwise.
 
@@ -429,9 +433,13 @@ Use exactly these headings, in this order, as markdown ## headings:
 
 "Setups": at most 4, each under a ### heading of the ticker and the side, for example ### NVDA long. Under it exactly these six labelled lines, in this order: Current picture, Bull case, Bear case, Levels, Risk, What I would watch next. Then one line: Chance of profit: NN to NN%. Only a setup you would watch yourself right now. Sized for his account, with the risk at the stop said in dollars. Write nothing under this heading when there is nothing to take.
 
+WHAT TO PUT IN, AND IN WHAT (Eric, 2026-09-22: "It also needs to suggest % allocation and make it clear if it's suggesting call, put, spread at what price/expiration or total value in stocks, not shares"). Every setup says two different numbers and never confuses them. The RISK is what he loses at the stop. The ALLOCATION is what he puts in, said as a percent of his account, and it is usually the larger by far: a 1% risk on a stock with a tight stop can be most of the account in capital, which is a thing he needs told. Say the allocation as a percent and in dollars at the balance in the desk note, and never let it breach a position he could not get out of.
+
+Say the vehicle exactly. A stock setup says the TOTAL DOLLARS to put in, never a number of shares, because he buys fractional shares and the dollar figure is what he types. An option setup says which it is, the strike, and the expiration date: "the 650 call expiring 17 October at 2.10", not "calls". A spread says both strikes, whether it is calls or puts, whether it is a debit or a credit, and the expiration. If you would not name the strike and the date, the setup is not ready and does not get filed.
+
 "Plays": one fenced json block and nothing else, in this shape:
 { "plays": [ ... ], "portfolio": null }
-One play object per setup above, in the same order, with these fields: horizon ("scalp", "intraday" or "swing"), holdDays (a whole number 1 to 3, swing only, 0 otherwise), ticker, side ("long" or "short"), instrument ("stock", "call", "put" or "spread"), structure (the exact instrument, for example "Oct 17 150/155 call debit spread" or "shares"), entry, stop, targets (a list of prices), holdMinutes (an integer), profitLow and profitHigh (whole percents), sizeDollars (an integer), catalyst, overnightOk (true or false), overnightWhy, picture, bull, bear, levels (a list of short strings), risk, watch. picture, bull, bear, risk and watch repeat the six lines of the setup, in full. portfolio is always null on a scan. An empty scan is { "plays": [], "portfolio": null }.
+One play object per setup above, in the same order, with these fields: horizon ("scalp", "intraday" or "swing"), holdDays (a whole number 1 to 3, swing only, 0 otherwise), ticker, side ("long" or "short"), instrument ("stock", "call", "put" or "spread"), structure (the exact instrument, for example "Oct 17 150/155 call debit spread" or "shares"), entry, stop, targets (a list of prices), holdMinutes (an integer), profitLow and profitHigh (whole percents), allocPct (the share of his account to put into this trade, as a number of percent, for example 12.5), sizeDollars (an integer, the same allocation in dollars at his current balance), strike (the strike, options only), strike2 (the second strike, spreads only), optionType ("call" or "put", spreads only), credit (true for a credit spread, false for a debit), expiry (the expiration as YYYY-MM-DD, options only), catalyst, overnightOk (true or false), overnightWhy, picture, bull, bear, levels (a list of short strings), risk, watch. picture, bull, bear, risk and watch repeat the six lines of the setup, in full. portfolio is always null on a scan. An empty scan is { "plays": [], "portfolio": null }.
 
 Plain words, and never an em dash or an en dash anywhere: use a comma, a colon, or the word to.
 
@@ -774,6 +782,18 @@ export function validPlay(p) {
   const horizon = horizonOf(String(p.horizon || '').toLowerCase()) || horizonFor(holdMinutes);
   const holdDays = horizon === 'swing' ? Math.min(3, Math.max(1, Math.floor(Number(p.holdDays) || 1))) : 0;
   const sizeDollars = int(p.sizeDollars, 0, 10_000_000);
+  // WHAT TO PUT IN, AND IN WHAT (Eric, 2026-09-22: "It also needs to suggest %
+  // allocation and make it clear if it's suggesting call, put, spread at what
+  // price/expiration or total value in stocks, not shares"). A percent of the
+  // account rather than a dollar figure, because the dollar figure goes stale
+  // the moment the account moves. sizeDollars stays as the fallback so a play
+  // filed before today still reads.
+  const allocPct = num(p.allocPct);
+  const price = (v) => { const n = num(v); return n != null && n > 0 ? n : null; };
+  const strike = price(p.strike);
+  const strike2 = price(p.strike2);
+  const expiry = realDate(String(p.expiry || '')) ? String(p.expiry) : null;
+  const optionType = ['call', 'put'].includes(String(p.optionType || '').toLowerCase()) ? String(p.optionType).toLowerCase() : null;
   const entry = numOrNaN(p.entry);
   const stop = numOrNaN(p.stop);
   const targets = Array.isArray(p.targets) ? p.targets.map(num).filter((n) => Number.isFinite(n)).slice(0, 4) : [];
@@ -783,6 +803,10 @@ export function validPlay(p) {
   if (!picture) return null;
   return {
     ticker, side, instrument, structure: str(p.structure, 120), entry, stop, targets, holdMinutes, horizon, holdDays,
+    // The vehicle, said in fields rather than left inside a sentence.
+    allocPct: Number.isFinite(allocPct) && allocPct > 0 && allocPct <= 100 ? Math.round(allocPct * 10) / 10 : null,
+    strike, strike2,
+    expiry, optionType, credit: p.credit === true,
     why: str(p.why, 800), catalyst: str(p.catalyst, 300), risk: str(p.risk, 400),
     profitLow, profitHigh, sizeDollars,
     overnight: { ok: p.overnightOk === true, why: str(p.overnightWhy, 300) },

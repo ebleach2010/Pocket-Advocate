@@ -160,6 +160,8 @@ const FIX = [{ date: '2026-09-01', cents: 205000 }, { date: '2026-09-04', cents:
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
 const PLAY = {
   ticker: 'nvda', side: 'long', instrument: 'spread', structure: 'Oct 17 650/655 call debit spread', entry: 2.1, stop: 1.3, targets: [3.4], holdMinutes: 180,
+  // The vehicle in fields (2026-09-22): the strikes, which way round, and when it expires.
+  strike: 650, strike2: 655, optionType: 'call', expiry: '2026-10-17', allocPct: 17.6,
   profitLow: 56, profitHigh: 64, sizeDollars: 420, catalyst: 'Guidance raised.', overnightOk: false, overnightWhy: 'Intraday.',
   picture: 'Holding above the opening range — volume is real.', bull: 'Through 652 opens 655.', bear: 'Below 648 ends it.', levels: ['648', '650', '652', '655'], risk: 'Break of 648.', watch: 'The 10:30 bar.',
 };
@@ -934,6 +936,11 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const play = { id: 'p1', ...K.validPlay(PLAY), status: 'open' };
   const rules = math.defaultRules();
   const card = mod.playFaceHtml(play, { rules, accountCents: 238000 });
+  // A stock setup is a dollar figure to him and never a share count (2026-09-22).
+  const stockPlay = { id: 'p9', ...K.validPlay({ ...PLAY, instrument: 'stock', structure: 'shares', strike: null, strike2: null, optionType: null, expiry: null, allocPct: 21, entry: 228.9, stop: 226.3, targets: [231.5] }), status: 'open' };
+  const stockCard = mod.playFaceHtml(stockPlay, { rules, accountCents: 449000 });
+  // An allocation that risks more than his one trade rule says so on its face.
+  const overCard = mod.playFaceHtml({ ...stockPlay, allocPct: 90 }, { rules, accountCents: 449000 });
   const expired = mod.playFaceHtml({ ...play, id: 'p2', status: 'expired' }, { rules, accountCents: 238000 });
   const took = mod.playFaceHtml({ ...play, id: 'p3', status: 'took' }, { rules, accountCents: 238000 });
   const closedPlay = mod.playFaceHtml({ ...play, id: 'p4', status: 'closed', outcomeCents: 4500 }, { rules, accountCents: 238000 });
@@ -956,7 +963,24 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && !/#[0-9a-fA-F]{3,6}\b/.test(svg) && mod.deskChartSvg(null) === '' && mod.deskChartSvg({ points: [] }) === ''
     && /against the 2% a day line/.test(svg) && /against the 2\.5% a day line/.test(svgAim)
     && /<span class="tk">NVDA<\/span>/.test(card) && /class="chip neon c-green">Long</.test(card) && /Intraday<\/span>/.test(card)
-    && /<div class="v">56 to 64%<\/div>/.test(card) && /hold 3h · \$420\.00 · Oct 17 650\/655 call debit spread/.test(card)
+    && /<div class="v">56 to 64%<\/div>/.test(card)
+    // RE-PINNED 2026-09-22 (v6.6): the tags line names the vehicle the way he would say it at a
+    // broker, with the count in front, and the In cell carries what to put in and what share of the
+    // account that is. A stock's line says shares and never a share count.
+    // NEGATIVE CONTROL (run 2026-09-22, v6.6): the count dropped from the tags line, so a card said
+    //   what the contract was but never how many of it, made this read
+    //   FAIL  T34 the desk's view module RUNS: ...
+    && /hold 3h · 1 × 650\/655 call debit spread, 17 Oct/.test(card)
+    // One spread contract risks $80 against a $23.80 budget on this account, so the card says so on
+    // its face rather than leaving him to work it out.
+    && /class="k">In<\/div><div class="v stop">\$418\.88<span class="later"> · 17\.6%<\/span>/.test(card)
+    && /<div class="sub">over your rule<\/div>/.test(card)
+    // A stock names no share count anywhere, and sits inside the rule at 21%.
+    && /hold 3h · shares/.test(stockCard) && !/× shares/.test(stockCard) && !/ sh</.test(stockCard)
+    && /class="k">In<\/div><div class="v ">\$942\.90<span class="later"> · 21%<\/span>/.test(stockCard)
+    && /<div class="sub">of the account<\/div>/.test(stockCard)
+    && /class="k">In<\/div><div class="v stop">\$4,041\.00<span class="later"> · 90%<\/span>/.test(overCard)
+    && /<div class="sub">over your rule<\/div>/.test(overCard)
     && ['Catalyst', 'Bull', 'Bear', 'Levels', 'Risk', 'Watch', 'Overnight'].every((k) => card.includes(`<dt>${k}</dt>`))
     && /648 · 650 · 652 · 655/.test(card) && /data-act="take"[^>]*>Take it</.test(card) && /data-act="skip">Skip</.test(card) && !/data-act="closed"/.test(card)
     && /class="outlined play expired"/.test(expired) && />Expired</.test(expired) && /data-act="take"/.test(expired)
@@ -1250,10 +1274,14 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry64 = (CL.match(/\{\n\s+\/\/ AN EMPTY SCAN IS A FAILED SCAN[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v6.5): dollars or shares, and a share can be held in pieces.
   const entry65 = (CL.match(/\{\n\s+\/\/ DOLLARS OR SHARES[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v6.6): what to put in, and in what.
+  const entry66 = (CL.match(/\{\n\s+\/\/ WHAT TO PUT IN, AND IN WHAT[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
+  // NEGATIVE CONTROL (run 2026-09-22, v6.6): 'That is a different number from the risk' reworded to 'That is another number from the risk' in the 6.6 entry made this read
+  //   FAIL  T36 both versions read 6.6 with the new tag, the 4.7 through 6.5 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.5): 'Shares can be fractional now' reworded to 'Shares can be partial now' in the 6.5 entry made this read
-  //   FAIL  T36 both versions read 6.5 with the new tag, the 4.7 through 6.4 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
+  //   FAIL  T36 both versions read 6.6 with the new tag, the 4.7 through 6.5 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.4): 'treated as a failed scan' reworded to 'handled as a failed scan' in the 6.4 entry made this read
   //   FAIL  T36 both versions read 6.5 with the new tag, the 4.7 through 6.4 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.3): 'can no longer be lost' reworded to 'can no longer go missing' in the 6.3 entry made this read
@@ -1262,8 +1290,11 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   //   FAIL  T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v5.2): 'has a calculator' reworded to 'has a calculator now' in the 5.2 entry made this read
   //   FAIL  T36 both versions read 5.3 with the new tag, the 4.7 through 5.3 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 6.5 with the new tag, the 4.7 through 6.4 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '6\.5';/.test(CL) && /const VERSION = '6\.5';/.test(W) && /const BUILD_TAG = 'v2026-09-22-fractional-shares';/.test(W)
+  check('T36 both versions read 6.6 with the new tag, the 4.7 through 6.5 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '6\.6';/.test(CL) && /const VERSION = '6\.6';/.test(W) && /const BUILD_TAG = 'v2026-09-22-what-to-put-in';/.test(W)
+    && /version: '6\.6',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry66)
+    && /a different number from the risk/.test(entry66) && /never a number of shares/.test(entry66)
+    && /can never break Rules to hold/.test(entry66) && !DASH.test(entry66)
     && /version: '6\.5',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry65)
     && /Shares can be fractional now/.test(entry65) && /half a contract is not a thing/.test(entry65) && !DASH.test(entry65)
     && (entry65.match(/^\s+'[^\n]+',$/gm) || []).length === 3
@@ -1551,6 +1582,93 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && /a contract is never sized in dollars/.test(DRIVE3)
     && !DASH.test(APP3),
     `${APP3.length} app chars`);
+}
+
+// ---- T60: what a play is telling him to do (Eric, 2026-09-22) -------------------------------
+// "It also needs to suggest % allocation and make it clear if it's suggesting call, put, spread at
+// what price/expiration or total value in stocks, not shares."
+{
+  const APP4 = f('public/js/admin-deskapp.js');
+  const SEED4 = f('public/js/demo/seed.js');
+  const D4 = f('public/js/demo/api.js');
+  const DRIVE4 = f('tools/drives/drive-trade.mjs');
+  const R4 = math.defaultRules();
+  const A4 = 449000;
+  // His own figures: 1% of $4,490 is $44.90 of RISK, which at $2.60 a share is 17.2692 shares, or
+  // $3,952 of CAPITAL. The two numbers are a factor of 88 apart and only one of them used to show.
+  const stock = math.playSizing({ play: { instrument: 'stock', side: 'long', entry: 228.9, stop: 226.3, allocPct: 21 }, rules: R4, accountCents: A4 });
+  const big = math.playSizing({ play: { instrument: 'stock', side: 'long', entry: 228.9, stop: 226.3, allocPct: 90 }, rules: R4, accountCents: A4 });
+  const call = math.playSizing({ play: { instrument: 'call', side: 'long', entry: 2.10, stop: 1.30, strike: 650, expiry: '2026-10-17', allocPct: 18 }, rules: R4, accountCents: A4 });
+  // No allocPct at all: the dollars an older play asked for, read as a percent of the account.
+  const old = math.playSizing({ play: { instrument: 'stock', side: 'long', entry: 228.9, stop: 226.3, sizeDollars: 449 }, rules: R4, accountCents: A4 });
+  const bare = math.playSizing({ play: { instrument: 'stock', side: 'long', entry: 228.9, stop: 226.3 }, rules: R4, accountCents: A4 });
+
+  // NEGATIVE CONTROL (run 2026-09-22, v6.6): takeQty's `Math.min(qty, ruleQty)` changed to `qty`,
+  //   so a suggestion could break Rules to hold, made this read
+  //   FAIL  T60 a play says what to put in and in what: ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.6): vehicleLabel's expiry dropped from the built string,
+  //   so a contract never said when it expires, made this read
+  //   FAIL  T60 a play says what to put in and in what: ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.6): the sheet's `f('#np-opt').hidden = stock;` line
+  //   removed, so shares asked for a strike, made this read
+  //   FAIL  T60 a play says what to put in and in what: ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.6): validPlay's allocPct forced to null, so a scan could
+  //   file a setup that never says what to put into it, made this read
+  //   FAIL  T60 a play says what to put in and in what: ...
+  check('T60 a play says what to put in and in what RUNS: the allocation is a share of the account and not the same number as the risk, a stock turns it into dollars and a fraction of a share while a contract turns it into a whole count, Take it opens on the LESSER of the suggestion and what his one trade rule allows so a suggestion can never break Rules to hold, an older play with only its dollars still reads, and a play with neither says nothing rather than guessing; the vehicle names the strike, which way round a spread runs and the date it expires, and falls back to whatever the play called itself; the sheet asks for a strike and an expiration the moment he picks a contract and never for shares, labels the entry as the premium, writes What it is for him until he types over it, and carries the play\'s own contract in; both contracts tell the scan to give the percent, the strikes, the legs and the date; and the demo seeds and keeps all of it',
+    // The two numbers, and that they are different numbers.
+    stock.allocPct === 21 && stock.allocCents === 94290 && stock.shares === 4.1193 && stock.contracts === null
+    && stock.riskCents === 1071 && stock.budgetCents === 4490 && stock.overRule === false
+    && stock.vehicle === 'shares' && stock.takeQty === 4.1193
+    // 90% of the account risks $2,101 against a $44.90 rule, and Take it opens on the rule.
+    && big.overRule === true && big.takeQty === 17.2692 && big.takeQty === big.ruleQty
+    && call.contracts === 3 && call.shares === null && call.costCents === 63000
+    && call.vehicle === '650 call, 17 Oct' && call.perUnitCents === 21000
+    && old.allocCents === 44900 && old.allocPct === 10 && bare.allocCents === null && bare.allocPct === null
+    && math.vehicleLabel({ instrument: 'spread', strike: 650, strike2: 655, optionType: 'call', expiry: '2026-10-17' }) === '650/655 call debit spread, 17 Oct'
+    && math.vehicleLabel({ instrument: 'spread', strike: 650, strike2: 655, optionType: 'put', credit: true, expiry: '2026-10-17' }) === '650/655 put credit spread, 17 Oct'
+    && math.vehicleLabel({ instrument: 'put', strike: 220, expiry: '2026-10-17' }) === '220 put, 17 Oct'
+    && math.vehicleLabel({ instrument: 'call', structure: 'Oct 17 650 call' }) === 'Oct 17 650 call'
+    && math.vehicleLabel({ instrument: 'stock' }) === 'shares'
+    && math.expiryWords('2026-10-17') === '17 Oct' && math.expiryWords('') === '' && math.expiryWords('nope') === ''
+    // The validator keeps every one of the new fields, rounds the percent to a tenth, and throws
+    // away a percent or a date that is not one.
+    && K.validPlay({ ...PLAY, allocPct: 17.64, strike: 650, strike2: 655, optionType: 'CALL', expiry: '2026-10-17', credit: true }).allocPct === 17.6
+    && K.validPlay({ ...PLAY, strike: 650, strike2: 655, optionType: 'CALL', expiry: '2026-10-17', credit: true }).strike === 650
+    && K.validPlay({ ...PLAY, strike: 650, strike2: 655, optionType: 'CALL', expiry: '2026-10-17', credit: true }).strike2 === 655
+    && K.validPlay({ ...PLAY, strike: 650, strike2: 655, optionType: 'CALL', expiry: '2026-10-17', credit: true }).optionType === 'call'
+    && K.validPlay({ ...PLAY, strike: 650, strike2: 655, optionType: 'CALL', expiry: '2026-10-17', credit: true }).expiry === '2026-10-17'
+    && K.validPlay({ ...PLAY, strike: 650, strike2: 655, optionType: 'CALL', expiry: '2026-10-17', credit: true }).credit === true
+    && K.validPlay({ ...PLAY, allocPct: 0 }).allocPct === null && K.validPlay({ ...PLAY, allocPct: 150 }).allocPct === null
+    && K.validPlay({ ...PLAY, expiry: '2026-02-31' }).expiry === null && K.validPlay({ ...PLAY, strike: -5 }).strike === null
+    && K.validPlay({ ...PLAY, optionType: 'straddle' }).optionType === null
+    // The sheet: the fields appear with the instrument and never before it.
+    && /<div class="grid2 optonly" id="np-opt" hidden>/.test(APP4)
+    && /<label>Strike<input id="np-strike"/.test(APP4)
+    && /<label class="sp2only">Second strike<input id="np-strike2"/.test(APP4)
+    && /<label>Expiration<input id="np-expiry" type="date"/.test(APP4)
+    && /f\('#np-opt'\)\.hidden = stock;/.test(APP4)
+    && /for \(const el of sheet\.querySelectorAll\('\.sp2only'\)\) el\.hidden = inst !== 'spread';/.test(APP4)
+    && /f\('#np-entry-k'\)\.textContent = stock \? 'Entry' : inst === 'spread' \? 'Debit or credit' : 'Premium';/.test(APP4)
+    && /if \(!st\.dataset\.touched\) st\.value = vehicleLabel\(\{ \.\.\.read\(\), instrument: inst \}\);/.test(APP4)
+    && /e\.currentTarget\.dataset\.touched = '1';/.test(APP4)
+    && /strike: play\.strike \?\? '', strike2: play\.strike2 \?\? '',/.test(APP4)
+    && /const sz = playSizing\(\{ play, rules: rulesNow\(\), accountCents: accountNow\(\) \}\);/.test(APP4)
+    && /f\('#np-qty'\)\.value = sz\.takeQty/.test(APP4)
+    // Both contracts ask for it, and neither carries a dash.
+    && /allocPct \(the share of his account to put into this trade/.test(K.SCAN_CONTRACT)
+    && /allocPct \(the share of his account to put into this trade/.test(K.TRADE_CONTRACT)
+    && [K.SCAN_CONTRACT, K.TRADE_CONTRACT].every((c) => /strike \(the strike, options only\)/.test(c)
+      && /expiry \(the expiration as YYYY-MM-DD, options only\)/.test(c)
+      && /never a number of shares/.test(c) && /the strike and the date/.test(c) && !DASH.test(c))
+    // The demo seeds a real contract and keeps the fields it is sent.
+    && /strike: 650, strike2: 655, optionType: 'call', credit: false, expiry: '2026-10-17',/.test(SEED4)
+    && /allocPct: 17\.6,/.test(SEED4) && /allocPct: 33\.6,/.test(SEED4) && /allocPct: 21,/.test(SEED4)
+    && /optionType: \['call', 'put'\]\.includes\(String\(body\.optionType \|\| ''\)\) \? String\(body\.optionType\) : null,/.test(D4)
+    && /strike, strike2, optionType,/.test(T)
+    && /the strike and the expiration/.test(DRIVE4)
+    && !DASH.test(APP4) && !DASH.test(SEED4.slice(SEED4.indexOf('p-demo-1'), SEED4.indexOf('p-demo-2'))),
+    JSON.stringify({ stock, call, old: old.allocPct, bare: bare.allocCents }));
 }
 
 // ---- T56: a scan in flight is not a reading (Eric, 2026-09-22: "It's not producing a scan rn") ----

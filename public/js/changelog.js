@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.5';
+export const VERSION = '6.6';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '6.5';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // WHAT TO PUT IN, AND IN WHAT (Eric, 2026-09-22: "It also needs to suggest
+    // % allocation and make it clear if it's suggesting call, put, spread at
+    // what price/expiration or total value in stocks, not shares"). Admin only.
+    version: '6.6',
+    quiet: true,
+    client: [],
+    admin: [
+      'A setup now says what to put into it, as a share of your account and in dollars. That is a different number from the risk and it was never on the card: a 1% risk on a stock with a tight stop can be most of the account in capital, and nothing said so. The card carries both, and it marks the ones whose allocation would breach your one trade rule.',
+      'A setup also says exactly what it is. An option names the strike and the date it expires, a spread names both strikes, whether it is calls or puts and whether it is a debit or a credit. A stock setup says the total dollars to put in and never a number of shares, because dollars are what you type.',
+      'The new position sheet follows. Pick Call, Put or Spread and it asks for the strike, the second strike and the expiration instead of leaving you to write them into a text box, the entry says whether it means a premium or a debit, and What it is fills itself in until you type over it. Take it opens on the smaller of what the setup suggests and what your rule allows, so a suggestion can never break Rules to hold.',
+    ],
+  },
   {
     // DOLLARS OR SHARES (Eric, 2026-09-22: "It should have an option for
     // fractional shares. So essentially it changes dollars to shares").
