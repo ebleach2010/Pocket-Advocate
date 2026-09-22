@@ -1,26 +1,21 @@
-// The trade desk's cron minute and its routes (Eric, 2026-09-22: "Make it a
-// case file highlighted green. run it automatically at 7am, 10am, noon on
-// trading days. Just like with medical cases I can pause it or manually
-// update.").
+// The trade desk's routes (Eric, 2026-09-22: "Make it a case file
+// highlighted green ... Just like with medical cases I can pause it or
+// manually update", and then, when the clock was still in it: "I manually
+// update either scan individually. No automatic.").
 //
-// The desk is a case on the shelf now (v4.7), read by the advisor's own
-// pipeline on the case's rails: the cron's minute books a reading at each
-// slot the way his tap does (markPending), and the reading itself runs,
-// lands and files through advisor.js. What lives here is the calendar, the
-// slot claim, and the routes the folder's Stats and Desk pages talk to:
-// open a desk, the state, a balance he types, the settings (Pause is a
-// setting), and a play he took, skipped or closed. Everything the reading
-// files is in trade-desk.js, which this imports.
-//
-// Three slots on a trading day, 07:00, 10:00 and 12:00 Mountain (his
-// hours), two on an early-close day, none on a weekend or an exchange
-// holiday. The cron's minute costs nothing outside the three twenty-minute
-// windows: the slot is computed before any read, and inside a window the
-// slot is claimed conditionally on the state document so two isolates
-// never both book the same reading.
+// The desk is a case on the shelf (v4.7), read by the advisor's own
+// pipeline on the case's rails. It has two runs and he starts both of them
+// himself: Scan, which looks only for new entries and files the setups it
+// would watch, and Update, which is the full reading of his log, his
+// trades and his rules. Nothing else starts either one. What lives here
+// are the routes the folder's pages talk to: open a desk, the state, the
+// two runs, a balance he types, the settings, his positions, a quote, and
+// a play he took, skipped or closed. Everything a run files is in
+// trade-desk.js, which this imports; the runs themselves are in
+// advisor.js, where every model turn lives.
 
 import { patchDoc, deleteDoc, listDocs, tryGet, READ_FAILED, readFailedError } from './firestore.js';
-import { markPending, diagLog } from './advisor.js';
+import { markPending, diagLog, runTradeScan } from './advisor.js';
 import {
   isTradingDay, tradeMetrics, chartSeries, PROJECTION_MIN_DAYS,
   rulesOf, RULE_RANGES, defaultRules, dayStatus, realizedToday, openRisk, tradeCalc, closePnl,
@@ -33,88 +28,17 @@ import {
 } from './trade-desk.js';
 
 // ---- constants ------------------------------------------------------------
-// "run it automatically at 7am, 10am, noon on trading days": 07:00 is before
-// the 07:30 open, a premarket read; noon is inside the last two hours.
-export const SCAN_SLOTS = ['07:00', '10:00', '12:00'];
-// An early close is 13:00 Eastern, which is 11:00 Mountain: noon would
-// already be after the bell.
-export const EARLY_CLOSE_SLOTS = ['07:00', '10:00'];
-// A slot fires on the first cron firing inside this many minutes after it.
-export const SCAN_WINDOW_MIN = 20;
+// NOTHING ON THE DESK RUNS BUT HIS TAP (Eric, 2026-09-22: "I manually update
+// either scan individually. No automatic."). Three slots a trading day used
+// to live here, with the window a cron firing could claim one in, the
+// calendar that walked to the next, and the claim that kept two isolates
+// from booking the same reading. All of it is gone. What is left is the
+// market calendar itself, which the desk still needs to say whether the
+// market is open today, and the two runs he starts: Scan and Update.
 // ---- end constants --------------------------------------------------------
 
 export class TradeError extends Error {
   constructor(status, message, extra = null) { super(message); this.status = status; this.extra = extra; }
-}
-
-// ---- the calendar, on his clock ------------------------------------------
-const slotMinute = (slot) => Number(slot.slice(0, 2)) * 60 + Number(slot.slice(3, 5));
-
-/** The slots a given day gets: none, the two before an early close, or all three. */
-export function slotsFor(dateKey) {
-  const day = isTradingDay(dateKey);
-  if (!day) return [];
-  return day === 'early' ? EARLY_CLOSE_SLOTS : SCAN_SLOTS;
-}
-
-/** The slot `now` sits inside, or null: the latest slot whose minute has passed within the window. */
-export function slotKeyFor(now = Date.now()) {
-  const { dateKey, minuteOfDay } = mtParts(now);
-  for (const slot of [...slotsFor(dateKey)].reverse()) {
-    const m = slotMinute(slot);
-    if (minuteOfDay >= m && minuteOfDay - m < SCAN_WINDOW_MIN) return { key: `${dateKey}T${slot}`, dateKey, slot };
-  }
-  return null;
-}
-
-/** The next reading after `now`, walking up to two weeks of days. */
-export function nextSlotAfter(now = Date.now()) {
-  for (let i = 0; i < 14; i++) {
-    const at = now + i * 86_400_000;
-    const { dateKey, minuteOfDay } = mtParts(at);
-    for (const slot of slotsFor(dateKey)) {
-      if (i === 0 && slotMinute(slot) <= minuteOfDay) continue;
-      return { key: `${dateKey}T${slot}`, dateKey, slot, atMs: mtInstant(dateKey, slot) };
-    }
-  }
-  return null;
-}
-
-/** Whether a reading is owed right now, and why not when it is not. Pure. */
-export function scanDue({ state, settings, now = Date.now() }) {
-  const slot = slotKeyFor(now);
-  if (!slot) return { due: false, key: null, why: 'no slot' };
-  if (settings?.scansOn === false) return { due: false, key: slot.key, why: 'paused' };
-  if (!settings?.caseId) return { due: false, key: slot.key, why: 'no desk' };
-  if (state?.lastSlot === slot.key) return { due: false, key: slot.key, why: 'already ran' };
-  return { due: true, key: slot.key, why: 'due' };
-}
-
-/**
- * The cron's minute: cheap outside the three windows (no read at all), and
- * inside one a conditional claim on the slot before a reading is booked, so
- * two isolates on the same minute never both book it. A desk that is
- * closed, deleted or paused books nothing. What it books is exactly what
- * his tap books: a pending reading on the case, which the drain runs.
- */
-export async function maybeTradeScan(env, now = Date.now()) {
-  const slot = slotKeyFor(now);
-  if (!slot) return { ran: false, why: 'no slot' };
-  const settingsDoc = await tryGet(env, SETTINGS_PATH);
-  const stateDoc = await tryGet(env, STATE_PATH);
-  if (settingsDoc === READ_FAILED || stateDoc === READ_FAILED) return { ran: false, why: 'unreadable' };
-  const settings = settingsDoc?.data || {};
-  const due = scanDue({ state: stateDoc?.data || {}, settings, now });
-  if (!due.due) return { ran: false, why: due.why };
-  const caseDoc = await tryGet(env, `cases/${settings.caseId}`);
-  if (caseDoc === READ_FAILED) return { ran: false, why: 'unreadable' };
-  if (!caseDoc || !caseDoc.data.trade || caseDoc.data.status === 'closed') return { ran: false, why: 'no desk' };
-  const claimed = await patchDoc(env, STATE_PATH, { lastSlot: slot.key, claimedAt: new Date() },
-    stateDoc ? { mask: ['lastSlot', 'claimedAt'], ifUpdateTime: stateDoc.updateTime } : { mask: ['lastSlot', 'claimedAt'], mustNotExist: true }).catch(() => false);
-  if (!claimed) { await diagLog(env, { ev: 'trade-claim-lost', slot: slot.key }); return { ran: false, why: 'claim lost' }; }
-  await markPending(env, 'case', settings.caseId);
-  await diagLog(env, { ev: 'trade-slot', slot: slot.key, caseId: settings.caseId });
-  return { ran: true, why: 'due', key: slot.key, caseId: settings.caseId };
 }
 
 // ---- documents --------------------------------------------------------------
@@ -128,7 +52,6 @@ function publicSettings(settings) {
   return {
     accountType: settings?.accountType === 'margin' ? 'margin' : 'cash',
     watchlist: watchlistOf(settings),
-    scansOn: settings?.scansOn !== false,
     pushOn: settings?.pushOn !== false,
     startedAt: settings?.startedAt || null,
     startCents: startOf(settings),
@@ -382,10 +305,11 @@ export async function tradeOpen(env, { now = new Date() } = {}) {
 
 /** The Stats and Desk pages in one answer. The key never rides; only whether one is on file and its last four characters. */
 export async function tradeState(env, { now = Date.now() } = {}) {
-  const [settingsDoc, plays, balances] = await Promise.all([
+  const [settingsDoc, plays, balances, stateDoc] = await Promise.all([
     readSettings(env),
     listDocs(env, PLAYS, { pageSize: 50, orderBy: 'at desc' }).catch(() => []),
     listDocs(env, BALANCES, { pageSize: 400, orderBy: 'date asc', all: true }).catch(() => []),
+    tryGet(env, STATE_PATH).catch(() => null),
   ]);
   const settings = settingsDoc?.data || {};
   const key = resolveKey(env, settings);
@@ -400,26 +324,47 @@ export async function tradeState(env, { now = Date.now() } = {}) {
     plays: plays.map((r) => ({ id: r.id, ...r.data })),
     balances: metrics.entries.map((e) => ({ ...e, source: sources.get(e.date) || 'typed' })),
     metrics, chart: chartSeries(metrics),
-    nextSlot: nextSlotAfter(now), tradingDay: isTradingDay(dateKey), today: dateKey, scansOn: pub.scansOn,
+    tradingDay: isTradingDay(dateKey), today: dateKey,
+    scan: scanBlock(stateDoc),
     now: new Date(now).toISOString(),
+  };
+}
+
+/**
+ * What his Scan button needs to know: whether one is in the air, what the
+ * last one said, and when. Pure apart from the read it is handed, so the
+ * page and the panel read the scan the same way (2026-09-22).
+ */
+export function scanBlock(stateDoc) {
+  const st = (stateDoc && stateDoc !== READ_FAILED ? stateDoc.data : null) || {};
+  const note = st.scanNote || null;
+  return {
+    status: st.scanStatus === 'running' ? 'running' : st.scanStatus === 'error' ? 'error' : 'idle',
+    error: st.scanError || null,
+    at: st.lastScanAt ? new Date(st.lastScanAt).toISOString() : null,
+    note: note ? { text: String(note.text || ''), at: note.at ? new Date(note.at).toISOString() : null, plays: Number(note.plays) || 0 } : null,
   };
 }
 
 /** What the advisor panel needs on its poll: the plays for the Plays page, the standing, the next read, the two switches. Three small reads. */
 export async function tradePanelBlock(env, { now = Date.now() } = {}) {
   const settings = (await readSettings(env))?.data || {};
-  const [plays, meta] = await Promise.all([
+  // Three reads, in one round trip: the plays, the cover's standing, and
+  // whether a scan he tapped is still in the air (2026-09-22).
+  const [plays, meta, state] = await Promise.all([
     listDocs(env, PLAYS, { pageSize: 30, orderBy: 'at desc' }).catch(() => []),
     settings.caseId ? tryGet(env, `caseMeta/${settings.caseId}`) : Promise.resolve(null),
+    tryGet(env, STATE_PATH).catch(() => null),
   ]);
   const key = resolveKey(env, settings);
   const { dateKey } = mtParts(now);
   return {
     plays: plays.map((r) => ({ id: r.id, ...r.data })),
     standing: meta && meta !== READ_FAILED ? (meta.data?.tradeStanding || null) : null,
-    nextSlot: nextSlotAfter(now), scansOn: settings.scansOn !== false, pushOn: settings.pushOn !== false,
+    pushOn: settings.pushOn !== false,
     hasKey: !!key, tradingDay: isTradingDay(dateKey), today: dateKey,
     rules: rulesOf(settings),
+    scan: scanBlock(state),
   };
 }
 
@@ -441,7 +386,23 @@ export async function tradeBalance(env, body, now = Date.now()) {
   return { ok: true, date, cents, standing };
 }
 
-/** The settings, by his hand. scansOn is the Pause. The case id is the desk's own and never taken from a body. */
+/**
+ * THE SCAN, ON HIS TAP (Eric, 2026-09-22: "I manually update either scan
+ * individually. No automatic."). Looks only for new entries: it files the
+ * setups it would watch right now and a short note saying why, and touches
+ * nothing else on the desk. The full reading is the other button, and books
+ * itself the way his tap has always booked one, through markPending.
+ */
+async function tradeScan(env, { now = Date.now() } = {}) {
+  const settings = (await readSettings(env))?.data || {};
+  if (!settings.caseId) throw new TradeError(404, SAY.noDesk);
+  const out = await runTradeScan(env, settings.caseId, { now });
+  if (!out.ok && out.why === SAY.scanRunning) throw new TradeError(409, SAY.scanRunning);
+  if (!out.ok) throw new TradeError(502, out.why || SAY.scanRunning);
+  return { ok: true, status: 'running', caseId: settings.caseId };
+}
+
+/** The settings, by his hand. The case id is the desk's own and never taken from a body. */
 export async function tradeSettings(env, body) {
   const patch = {};
   const cur0 = (await readSettings(env))?.data || {};
@@ -461,7 +422,6 @@ export async function tradeSettings(env, body) {
     if (list.length > WATCHLIST_MAX || !list.every((t) => /^[A-Z][A-Z.]{0,5}$/.test(t))) throw new TradeError(400, SAY.badWatchlist);
     patch.watchlist = list.length ? list : DEFAULT_WATCHLIST;
   }
-  if (body?.scansOn !== undefined) patch.scansOn = body.scansOn === true;
   if (body?.pushOn !== undefined) patch.pushOn = body.pushOn === true;
   if (body?.celebrate !== undefined) patch.celebrate = body.celebrate === true;
   // His rules, the ones the whole calculator reads (2026-09-22). Each one
@@ -537,6 +497,7 @@ export async function tradeRoute(env, { sub, method, body, query = {}, now = Dat
   if (sub === 'balance') return tradeBalance(env, body, now);
   if (sub === 'settings') return tradeSettings(env, body);
   if (sub === 'play') return tradePlay(env, body);
+  if (sub === 'scan') return tradeScan(env, { now });
   if (sub === 'position') return tradePosition(env, body, now);
   if (sub === 'close') return tradeClose(env, body, now);
   if (sub === 'remove') return tradeRemove(env, body);

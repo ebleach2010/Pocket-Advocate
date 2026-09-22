@@ -83,7 +83,7 @@ const purpleWant = await page.evaluate(() => getComputedStyle(document.documentE
 ok('and it wears the green, not the purple', !!outline && outline.got === hex2rgb(outline.want) && outline.got !== hex2rgb(purpleWant), outline ? `${outline.got} vs ${outline.want}` : '');
 await shot('01-shelf');
 
-console.log('\n--- B. the case: the masthead, the groups, the overview with Pause ---');
+console.log('\n--- B. the case: the masthead, the groups, the overview and its Scan ---');
 await page.click('.folder.trade');
 await page.waitForURL(/admin-case(\.html)?\?id=demo-case-trade/, { timeout: 15000 });
 await settle(page, 2000);
@@ -116,16 +116,12 @@ const ov = await until(() => {
   const k = [...document.querySelectorAll('.fact-k')].map((x) => x.textContent.trim());
   const st = document.querySelector('[data-trade-standing]')?.textContent.trim();
   if (!st || /no reading yet/.test(st)) return null;
-  return { k, st, next: document.querySelector('[data-trade-next]')?.textContent.trim(), note: document.querySelector('[data-self-note]')?.textContent.trim(), today: document.querySelector('[data-trade-today]')?.textContent.trim(), pause: document.querySelector('[data-trade-pause]')?.textContent.trim(), close: !!document.querySelector('[data-self-close]'), del: !!document.querySelector('[data-delete-case]') };
+  return { k, st, next: document.querySelector('[data-trade-next]')?.textContent.trim(), note: document.querySelector('[data-self-note]')?.textContent.trim(), today: document.querySelector('[data-trade-today]')?.textContent.trim(), scan: document.querySelector('[data-trade-scan]')?.textContent.trim(), close: !!document.querySelector('[data-self-close]'), del: !!document.querySelector('[data-delete-case]') };
 });
-ok('the overview carries CASE, STANDING, NEXT READ and a TODAY that already says where the day stands against his rules, the desk\'s note, and Pause, close and Delete', !!ov && ov.k.join() === 'CASE,STANDING,NEXT READ,TODAY' && /pts under 2% a day/.test(ov.st) && /^Realized \$0\.00, under the floor\. Aim is \$47\.60\./.test(ov.today || '') && /MT$/.test(ov.next || '') && /trade log/.test(ov.note || '') && ov.pause === 'Pause the readings' && ov.close && ov.del, JSON.stringify(ov));
-await page.click('[data-trade-pause]');
-const paused = await until(() => (document.querySelector('[data-trade-pause]')?.textContent.trim() === 'Resume the readings' ? 'resumeable' : null), 10000);
-const pausedNext = await until(() => (/^Paused$/.test(document.querySelector('[data-trade-next]')?.textContent.trim() || '') ? 'paused' : null), 10000);
-ok('Pause posts the setting and paints Resume and Paused from the answer', paused === 'resumeable' && pausedNext === 'paused');
-await page.click('[data-trade-pause]');
-const resumed = await until(() => (document.querySelector('[data-trade-pause]')?.textContent.trim() === 'Pause the readings' ? 'paused-again' : null), 10000);
-ok('Resume puts it back', resumed === 'paused-again');
+// NOTHING RUNS BUT HIS TAP (Eric, 2026-09-22): "I manually update either scan individually. No
+// automatic." No next read to announce, no Pause to offer: the fact says when the last scan ran.
+ok('the overview carries CASE, STANDING, LAST SCAN and a TODAY that already says where the day stands against his rules, the desk\'s note, and Scan, close and Delete', !!ov && ov.k.join() === 'CASE,STANDING,LAST SCAN,TODAY' && /pts under 2% a day/.test(ov.st) && /^Realized \$0\.00, under the floor\. Aim is \$47\.60\./.test(ov.today || '') && /2 setups$/.test(ov.next || '') && /trade log/.test(ov.note || '') && ov.scan === 'Scan for new entries' && ov.close && ov.del, JSON.stringify(ov));
+ok('and the desk\'s note says nothing runs on a clock', /Nothing runs on a clock: Scan looks for new entries, Update reads the whole desk, and both wait for your tap\./.test(ov?.note || ''), (ov?.note || '').slice(0, 80));
 await shot('02-overview');
 
 console.log('\n--- C. the chat is the trade log ---');
@@ -155,9 +151,9 @@ const read = await until(() => {
   const h3 = document.querySelector('#advisor .advisor-head h3')?.textContent.trim();
   const sub = document.querySelector('#advisor [data-desk-sub]')?.textContent.trim();
   if (!sub) return null;
-  return { h3, sub, pause: document.querySelector('#advisor [data-desk-pause]')?.textContent.trim(), update: document.querySelector('#advisor [data-refresh]')?.textContent.trim(), prep: !!document.querySelector('#advisor [data-prep]') };
+  return { h3, sub, scan: document.querySelector('#advisor [data-desk-scan]')?.textContent.trim(), update: document.querySelector('#advisor [data-refresh]')?.textContent.trim(), prep: !!document.querySelector('#advisor [data-prep]') };
 });
-ok('the head reads Trade desk with Pause beside Update, the line under it names the next read, and no Prepare a response', !!read && read.h3 === '📈 Trade desk' && /^Next read /.test(read.sub) && read.pause === 'Pause' && read.update === 'Update' && !read.prep, JSON.stringify(read));
+ok('the head reads Trade desk with Scan beside Update, the line under it says nothing runs but his tap and when the last scan was, and no Prepare a response', !!read && read.h3 === '📈 Trade desk' && /^Nothing runs but your tap\. Scan looks for new entries; Update reads the whole desk\. Last scan .*, 2 setups filed\./.test(read.sub) && read.scan === 'Scan' && read.update === 'Update' && !read.prep, JSON.stringify(read));
 const titles = [];
 for (let i = 0; i < 12; i++) {
   const t = await page.evaluate(() => document.querySelector('#advisor .advisor-page-head h4')?.textContent.trim() || '');
@@ -253,13 +249,13 @@ await show('read', 'stats');
 const legend = await until(() => { const t = document.querySelector('.trade-legend')?.textContent || ''; return /from \$2,500\.00/.test(t) ? t : null; }, 10000);
 ok('a changed starting amount moves the target line', startSaved === 'saved' && !!legend, legend || '');
 await show('read', 'desk');
-const wasOn = await until(() => document.querySelector('[data-sw="scansOn"]')?.getAttribute('aria-pressed') === 'true' && !document.querySelector('[data-sw="scansOn"]').disabled ? 'on' : null, 10000);
-await page.click('[data-sw="scansOn"]');
-const flipped = await until(() => (document.querySelector('[data-sw="scansOn"]')?.getAttribute('aria-pressed') === 'false' ? 'off' : null), 10000);
-ok('the readings switch paints off only once the server has answered', wasOn === 'on' && flipped === 'off');
-await show('read', 'advisor');
-const pausedSub = await until(() => (/^Paused\./.test(document.querySelector('#advisor [data-desk-sub]')?.textContent || '') && document.querySelector('#advisor [data-desk-pause]')?.textContent.trim() === 'Resume' ? 'paused' : null), 12000);
-ok('the Read page then says Paused and offers Resume', pausedSub === 'paused');
+// The Readings switch went with the clock (2026-09-22): what is left is the push, and it still
+// paints from the server's answer rather than from its own tap.
+const wasOn = await until(() => document.querySelector('[data-sw="pushOn"]')?.getAttribute('aria-pressed') === 'true' && !document.querySelector('[data-sw="pushOn"]').disabled ? 'on' : null, 10000);
+await page.click('[data-sw="pushOn"]');
+const flipped = await until(() => (document.querySelector('[data-sw="pushOn"]')?.getAttribute('aria-pressed') === 'false' ? 'off' : null), 10000);
+const noReadings = await page.evaluate(() => !document.querySelector('[data-sw="scansOn"]') && !/Readings/.test(document.body.textContent));
+ok('the push switch paints off only once the server has answered, and there is no Readings switch left to pause', wasOn === 'on' && flipped === 'off' && noReadings);
 await shot('08-desk');
 
 console.log('\n--- I. Terms: the trading half here, and not on a medical case ---');
@@ -380,6 +376,47 @@ const followed = await until(() => {
   return /646\.5/.test(row('Stop')) ? { stop: row('Stop'), risk: row('Risk'), ladder: row('Ladder') } : null;
 }, 15000);
 ok('and the Trades card follows it: the new stop, the new risk and a ladder measured from it', !!followed && /^646\.5 /.test(followed.stop) && followed.risk === '$19.00 (0.78%), your rule allows $24.50' && followed.ladder === 'stop 646.5 · breakeven 648.4 · 1R 650.3 · 2R 652.2 · 3R 654.1', JSON.stringify(followed));
+
+console.log('\n--- M. Scan: his tap, the note it writes and the setups it files ---');
+// NOTHING RUNS BUT HIS TAP (Eric, 2026-09-22): "I manually update either scan individually. No
+// automatic." The demo lands a scan four seconds after the tap, which is the shape production has.
+await show('read', 'dx');
+await settle(page, 600);
+const before = await until(() => {
+  const bar = document.querySelector('.scan-bar');
+  if (!bar) return null;
+  return {
+    btn: bar.querySelector('[data-scan-now]')?.textContent.trim(),
+    said: bar.querySelector('[data-scan-said]')?.textContent.trim(),
+    note: document.querySelector('.scan-note')?.textContent.trim() || '',
+    open: [...document.querySelectorAll('.play-card')].filter((c) => !/Expired|Closed|Skipped/.test(c.textContent || '')).length,
+  };
+}, 15000);
+ok('the Plays page opens with the last scan\'s note above the cards and a button to buy another', !!before && before.btn === 'Scan for new entries' && /^Last scan /.test(before.said || '') && /indexes opened into yesterday/i.test(before.note) && before.open >= 1, JSON.stringify({ btn: before?.btn, said: before?.said, open: before?.open }));
+await page.click('[data-scan-now]');
+const scanning = await until(() => {
+  const b = document.querySelector('[data-scan-now]');
+  return b && b.disabled && /Scanning/.test(b.textContent || '') ? document.querySelector('[data-scan-said]')?.textContent.trim() : null;
+}, 10000);
+ok('the tap disables the button at once and says a scan is in the air', scanning === 'Looking at the tape now. It lands on its own.', scanning || '');
+const landed = await until(() => {
+  const b = document.querySelector('[data-scan-now]');
+  if (!b || b.disabled) return null;
+  const cards = [...document.querySelectorAll('.play-card')];
+  const qqq = cards.find((c) => /QQQ/.test(c.querySelector('.play-ticker')?.textContent || ''));
+  return qqq ? { said: document.querySelector('[data-scan-said]')?.textContent.trim(), note: document.querySelector('.scan-note')?.textContent.trim() || '', expired: cards.filter((c) => /Expired/.test(c.textContent || '')).length } : null;
+}, 25000);
+ok('the scan lands on its own: a new note, the setup it filed, and the ones the last scan left expired', !!landed && /^Last scan /.test(landed.said || '') && /holding their opening ranges/i.test(landed.note) && landed.expired >= 1, JSON.stringify({ said: landed?.said, expired: landed?.expired }));
+await shot('14-scan');
+await show('read', 'advisor');
+const headScan = await until(() => {
+  const sub = document.querySelector('#advisor [data-desk-sub]')?.textContent || '';
+  return /1 setup filed/.test(sub) ? sub : null;
+}, 15000);
+ok('the Read page\'s line follows the same scan without a reload', !!headScan && /^Nothing runs but your tap\./.test(headScan), (headScan || '').slice(0, 90));
+await show('case', 'overview');
+const factScan = await until(() => { const t = document.querySelector('[data-trade-next]')?.textContent.trim() || ''; return /1 setup$/.test(t) ? t : null; }, 15000);
+ok('and the overview\'s LAST SCAN says when it ran and what it filed', !!factScan, factScan || '');
 
 console.log('\n--- J. Delete, the door back on the shelf, a new desk from it ---');
 await page.goto(`${P}/admin-case.html?id=demo-case-trade&demo=admin`, { waitUntil: 'networkidle' });

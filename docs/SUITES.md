@@ -266,6 +266,63 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### Nothing on the desk runs but his tap (2026-09-22, v5.3)
+
+Eric: "I manually update either scan individually. No automatic." The desk
+had two things it could do and a clock for one of them; now it has two
+buttons and he starts both. Scan looks only for new entries and files the
+setups it would watch with a few lines saying why. Update is the whole
+reading: his log, his trades, his rules.
+
+The clock comes out entirely. `worker/trade.js` loses `SCAN_SLOTS`,
+`EARLY_CLOSE_SLOTS`, `SCAN_WINDOW_MIN`, `slotsFor`, `slotKeyFor`,
+`nextSlotAfter`, `scanDue` and `maybeTradeScan`; `worker/index.js` books
+nothing on the desk at the cron's minute, and the only thing a firing still
+does for the desk is collect a flight one of his taps put in the air. The
+market calendar itself stays, because the desk still says whether the
+market is open today. `scansOn` was the Pause on that clock and goes with
+it, from the settings route, the Desk page's switch, the Read page's head
+and the overview's button.
+
+The scan is a model turn of its own. `SCAN_CONTRACT` in
+`worker/trade-desk.js` asks for three headings and nothing else, a note,
+at most four setups and the same Plays JSON the reading writes, and says
+outright not to grade his trades or revise his rules. `runTradeScan`,
+`pollScanFlight` and `finishTradeScan` in `worker/advisor.js` ride the ask
+flight's machinery: submitted to the batch, parked on the desk's own state
+(never the case's), collected by whichever poller gets there first, and
+filed through `fileDeskReading`, the same call the reading's finish uses,
+so the plays, their expiry, the push and the cover behave identically
+whichever button bought them. `pollFlightsNow` routes a `scan` marker
+between the ask's and the case's. Both runs and a question now take the
+same model and effort every other case gets, and the desk's turns take the
+thinking key with it.
+
+The Scan button sits in three places, all one route: beside Update on the
+Read page, at the top of the Plays page above the note the last scan wrote,
+and on the desk's overview where Pause used to be. The overview's NEXT READ
+fact is LAST SCAN, saying when it ran and what it filed.
+
+trade.mjs T51 RUNS the flight against recorders: a tap reads the desk note,
+builds the turn off his instructions and the scan's contract alone, parks
+the handle with its own marker and books no reading; a second tap while it
+is in the air is refused and a two hour old flight is restarted; a submit
+that throws parks the error; a poll heartbeats; a landed one files the
+plays and keeps the note; the loser of a race writes nothing; and a flight
+still up after two hours is cancelled. T2, T3, T5, T6 and T7 stand where
+the five clock checks did, each with a control recorded: the slot names are
+gone from the module, the scan route refuses a second tap with its own
+sentence, the contract asks for three headings, `scanBlock` reads the state
+for the button, and both reads carry it. T1, T9, T10, T12, T26, T27, T30,
+T32, T33 and T36 re-pinned with dated notes, and askflight AF3 for the new
+route in `pollFlightsNow`.
+
+drive-trade.mjs section M taps Scan in the demo: the button disables at
+once and says a scan is in the air, the scan lands on its own with a new
+note and the setup it filed, the setups the last scan left are expired, and
+the Read page's line and the overview's LAST SCAN both follow it without a
+reload.
+
 ### The calculator and his own positions (2026-09-22, v5.2)
 
 Eric: "I'd like to create a calculator to help me with take profits and

@@ -2048,7 +2048,7 @@ let callDocRepaint = null;
 document.addEventListener('pa-desk-settings', (e) => {
   const out = e.detail || {};
   if (!panelState.trade || !out.settings) return;
-  panelState = { ...panelState, trade: { ...panelState.trade, scansOn: out.settings.scansOn !== false, pushOn: out.settings.pushOn !== false, hasKey: out.hasKey !== false } };
+  panelState = { ...panelState, trade: { ...panelState.trade, pushOn: out.settings.pushOn !== false, hasKey: out.hasKey !== false } };
   tradeOverviewRepaint?.();
 });
 
@@ -2187,6 +2187,13 @@ const fmtDay = (v) => {
   const d = toDate(v);
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 };
+/** A stamp on the desk's overview: the time today, the weekday and time before that. */
+const fmtWhen = (v) => {
+  const d = toDate(v);
+  if (Number.isNaN(d.getTime())) return '';
+  const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? t : `${d.toLocaleDateString([], { weekday: 'short' })} ${t}`;
+};
 /** A brief's markdown, the little of it there is: ### headings, - rows, lines. */
 function briefHtml(text) {
   const out = [];
@@ -2245,25 +2252,31 @@ document.addEventListener('pa-desk-day', (e) => {
 });
 function paintTradeOverview(pane, c) {
   const t = panelState.trade || {};
-  const nextOf = (x) => (x.scansOn === false ? 'Paused'
-    : x.nextSlot ? `${x.nextSlot.dateKey === x.today ? 'today' : fmtDay(`${x.nextSlot.dateKey}T12:00:00Z`)} ${String(x.nextSlot.slot).replace(/^0/, '')} MT`
-      : 'market closed today');
+  // NOTHING RUNS BUT HIS TAP (Eric, 2026-09-22), so there is no next read to
+  // announce: the fact says when the last scan ran and what it filed.
+  const scanOf = (x) => {
+    const sc = x.scan || {};
+    if (sc.status === 'running') return 'scanning now';
+    if (!sc.at) return 'no scan yet';
+    const n = sc.note?.plays || 0;
+    return `${fmtWhen(sc.at)}, ${n ? `${n} setup${n === 1 ? '' : 's'}` : 'nothing filed'}`;
+  };
   pane.innerHTML = `
     <div class="facts trade-facts">
       <span class="fact-k">CASE</span>
       <span class="fact-v"><span class="status-pill trade">TRADE DESK</span></span>
       <span class="fact-k">STANDING</span>
       <span class="fact-v" data-trade-standing>${esc(t.standing?.text || 'no reading yet')}</span>
-      <span class="fact-k">NEXT READ</span>
-      <span class="fact-v" data-trade-next>${esc(nextOf(t))}</span>
+      <span class="fact-k">LAST SCAN</span>
+      <span class="fact-v" data-trade-next>${esc(scanOf(t))}</span>
       <span class="fact-k">TODAY</span>
       <span class="fact-v" data-trade-today>${esc(deskDayLine || 'no trades logged today')}</span>
     </div>
-    <p class="self-note trade-note" data-self-note>Nobody is on the other end. The chat is your trade log, the uploads are your screenshots, and every reading is about your trading. Three reads on a trading day at 7:00, 10:00 and noon Mountain, plus any Update you tap. A screenshot posted to the log inside four minutes of a read is picked up by the next one; the 📷 on Ask reads it now.</p>
+    <p class="self-note trade-note" data-self-note>Nobody is on the other end. The chat is your trade log, the uploads are your screenshots, and every reading is about your trading. Nothing runs on a clock: Scan looks for new entries, Update reads the whole desk, and both wait for your tap. A screenshot posted to the log is read by the next Update; the 📷 on Ask reads it now.</p>
     ${c.status === 'closed' ? `<p class="dim small">This desk is closed.</p>
     <p class="row" style="justify-content:flex-start;"><button type="button" class="btn quiet danger" data-delete-case>Delete this case</button></p>` : `
     <p class="row" style="gap:.4rem; align-items:center; justify-content:flex-start;">
-      <button type="button" class="btn trade-open" data-trade-pause>${t.scansOn === false ? 'Resume the readings' : 'Pause the readings'}</button>
+      <button type="button" class="btn trade-open" data-trade-scan${(t.scan || {}).status === 'running' ? ' disabled' : ''}>${(t.scan || {}).status === 'running' ? 'Scanning…' : 'Scan for new entries'}</button>
       <button type="button" class="btn quiet" data-self-close>Just close it</button>
       <button type="button" class="btn quiet danger" data-delete-case>Delete this case</button>
     </p>`}
@@ -2274,34 +2287,38 @@ function paintTradeOverview(pane, c) {
     if (td) td.textContent = deskDayLine || 'no trades logged today';
     const st = pane.querySelector('[data-trade-standing]');
     const nx = pane.querySelector('[data-trade-next]');
-    const pb = pane.querySelector('[data-trade-pause]');
+    const sb = pane.querySelector('[data-trade-scan]');
     if (st) st.textContent = x.standing?.text || 'no reading yet';
-    if (nx) nx.textContent = nextOf(x);
-    if (pb && !pb.disabled) pb.textContent = x.scansOn === false ? 'Resume the readings' : 'Pause the readings';
+    if (nx) nx.textContent = scanOf(x);
+    if (sb) {
+      const running = (x.scan || {}).status === 'running';
+      sb.disabled = running;
+      sb.textContent = running ? 'Scanning…' : 'Scan for new entries';
+    }
   };
-  pane.querySelector('[data-trade-pause]')?.addEventListener('click', async (e) => {
+  // The same tap as the one on the Read page and the Plays page: one run,
+  // started from wherever he happens to be standing.
+  pane.querySelector('[data-trade-scan]')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget;
-    const on = (panelState.trade || {}).scansOn !== false;
     btn.disabled = true;
+    btn.textContent = 'Scanning…';
     try {
       const idToken = await user.getIdToken();
-      const res = await fetch('/api/admin/trade/settings', {
+      const res = await fetch('/api/admin/trade/scan', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ scansOn: !on }),
+        body: '{}',
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
-      panelState = { ...panelState, trade: { ...(panelState.trade || {}), scansOn: out.settings?.scansOn !== false } };
-      btn.disabled = false;
+      panelState = { ...panelState, trade: { ...(panelState.trade || {}), scan: { ...((panelState.trade || {}).scan || {}), status: 'running', error: null } } };
       tradeOverviewRepaint?.();
-      // The panel's Pause and its next-read line follow at once, not on
-      // the next poll.
-      document.dispatchEvent(new CustomEvent('pa-desk-settings', { detail: out }));
+      document.dispatchEvent(new CustomEvent('pa-desk-scan', { detail: { status: 'running' } }));
     } catch (err) {
       const s = pane.querySelector('[data-self-said]');
       if (s) { s.textContent = err.message; s.hidden = false; }
       btn.disabled = false;
+      btn.textContent = 'Scan for new entries';
     }
   });
   pane.querySelector('[data-self-close]')?.addEventListener('click', async (e) => {

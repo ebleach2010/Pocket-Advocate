@@ -56,7 +56,7 @@ export function actDispatch(act) {
 
 // The trade desk (2026-09-22): the play cards the Plays page paints, and the
 // storage the 📷 on Ask uploads to.
-import { playCardHtml, wirePlayCards, dayShort as deskDay } from './admin-desk.js';
+import { playCardHtml, wirePlayCards } from './admin-desk.js';
 import { storage, ref, uploadBytesResumable, getDownloadURL } from './firebase.js';
 
 const SECTION_ICON_RAW = {
@@ -139,8 +139,8 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         <h3>${trade ? '📈 Trade desk' : '👨‍⚕️ Advisor'}</h3>
         <div class="advisor-controls">
           <span class="advisor-status" data-status></span>
-          ${trade ? '<button class="btn quiet tiny" data-desk-pause title="Pause or resume the three readings a day">Pause</button>' : ''}
-          <button class="btn quiet tiny" data-refresh title="${trade ? 'Read the desk now' : 'Re-read the conversation now'}">Update</button>
+          ${trade ? '<button class="btn quiet tiny" data-desk-scan title="Look for new entries now, and nothing else">Scan</button>' : ''}
+          <button class="btn quiet tiny" data-refresh title="${trade ? 'Read the whole desk now' : 'Re-read the conversation now'}">Update</button>
         </div>
       </div>
       <p class="dim small advisor-sub" data-updated>Reading the case…</p>
@@ -189,57 +189,61 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   if (self) prepBtn.remove();
   const qBox = el('[data-q]');
 
-  // THE DESK'S PAUSE (Eric, 2026-09-22: "Just like with medical cases I can
-  // pause it or manually update"). The three readings a day are a setting
-  // on the desk; the button posts it and paints from the answer, never
-  // from its own tap. The line under the updated line says what is next.
-  const deskPauseBtn = el('[data-desk-pause]');
+  // THE DESK'S TWO RUNS, BOTH ON HIS TAP (Eric, 2026-09-22: "I manually
+  // update either scan individually. No automatic."). Scan looks for new
+  // entries and files setups; Update is the whole reading. Neither one
+  // happens on a clock, so the line under the head says what each button
+  // buys and when it last ran, and there is nothing left to pause.
+  const deskScanBtn = el('[data-desk-scan]');
   const deskSub = el('[data-desk-sub]');
-  let deskScansOn = true;
   let lastTrade = null;
-  const paintPause = (on) => {
-    deskScansOn = on !== false;
-    if (deskPauseBtn) { deskPauseBtn.textContent = deskScansOn ? 'Pause' : 'Resume'; deskPauseBtn.disabled = false; }
-  };
   function paintDeskSub(t) {
     if (!deskSub || !t) return;
     lastTrade = t;
-    paintPause(t.scansOn);
-    const next = t.nextSlot;
-    const line = t.scansOn === false
-      ? 'Paused. Nothing reads the desk but your tap on Update.'
-      : !next
-        ? 'Market closed today. Update reads it now.'
-        : `Next read ${next.dateKey === t.today ? '' : `${deskDay(next.dateKey)} `}${String(next.slot).replace(/^0/, '')} MT${t.tradingDay === false ? ', market closed today' : ''}. Update reads it now.`;
-    deskSub.textContent = line + (t.hasKey === false ? ' No market data key yet: add it on Desk.' : '');
+    const scan = t.scan || {};
+    if (deskScanBtn) {
+      deskScanBtn.disabled = scan.status === 'running';
+      deskScanBtn.textContent = scan.status === 'running' ? 'Scanning…' : 'Scan';
+    }
+    const last = scan.status === 'running'
+      ? 'Scanning for new entries now.'
+      : scan.at
+        ? `Last scan ${timeAgo(new Date(scan.at))}, ${scan.note?.plays ? `${scan.note.plays} setup${scan.note.plays === 1 ? '' : 's'} filed` : 'nothing filed'}.`
+        : 'No scan yet.';
+    const line = `Nothing runs but your tap. Scan looks for new entries; Update reads the whole desk. ${last}`;
+    deskSub.textContent = line
+      + (scan.status === 'error' && scan.error ? ` ${scan.error}` : '')
+      + (t.hasKey === false ? ' No market data key yet: add it on Desk.' : '');
   }
-  deskPauseBtn?.addEventListener('click', async () => {
-    deskPauseBtn.disabled = true;
+  deskScanBtn?.addEventListener('click', async () => {
+    deskScanBtn.disabled = true;
+    deskScanBtn.textContent = 'Scanning…';
     try {
       const token = await user.getIdToken();
-      const res = await fetch('/api/admin/trade/settings', {
+      const res = await fetch('/api/admin/trade/scan', {
         method: 'POST',
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ scansOn: !deskScansOn }),
+        body: '{}',
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
-      paintDeskSub({ ...(lastTrade || {}), scansOn: out.settings?.scansOn !== false });
-      // The overview's button follows at once, not on the next poll.
-      document.dispatchEvent(new CustomEvent('pa-desk-settings', { detail: out }));
+      paintDeskSub({ ...(lastTrade || {}), scan: { ...(lastTrade?.scan || {}), status: 'running', error: null } });
+      // The Plays page and the overview follow this tap at once, not on
+      // whichever poll happens to land next.
+      document.dispatchEvent(new CustomEvent('pa-desk-scan', { detail: { status: 'running' } }));
       setTimeout(refresh, 300);
     } catch (err) {
       showErr(err.message);
-      deskPauseBtn.disabled = false;
+      paintDeskSub({ ...(lastTrade || {}), scan: { ...(lastTrade?.scan || {}), status: 'idle' } });
     }
   });
-  // The desk's settings moved on another page (the Desk page's switches,
-  // the overview's button): the line and the button here follow at once.
+  // The desk's settings moved on another page (the Desk page's switches):
+  // the line here follows at once.
   if (trade) {
     document.addEventListener('pa-desk-settings', (e) => {
       const out = e.detail || {};
       if (!out.settings) return;
-      paintDeskSub({ ...(lastTrade || {}), scansOn: out.settings.scansOn !== false, pushOn: out.settings.pushOn !== false, hasKey: out.hasKey !== false });
+      paintDeskSub({ ...(lastTrade || {}), pushOn: out.settings.pushOn !== false, hasKey: out.hasKey !== false });
     });
   }
 
@@ -775,18 +779,31 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     if (trade) {
       const t = d.trade || {};
       const plays = Array.isArray(t.plays) ? t.plays : [];
-      const key = JSON.stringify([d.workingLine, d.dxOverride, plays]);
+      const scan = t.scan || {};
+      const key = JSON.stringify([d.workingLine, d.dxOverride, plays, scan.status, scan.at, scan.error]);
       if (key === diffKey) return;
       diffKey = key;
       const line = (d.dxOverride && d.dxOverride.text) || d.workingLine || '';
       const live = plays.filter((p) => p.status === 'open' || p.status === 'took');
       const done = plays.filter((p) => ['closed', 'skipped', 'expired'].includes(p.status)).slice(0, 10);
+      // THE SCAN'S OWN NOTE (Eric, 2026-09-22), above the cards it filed:
+      // what the tape is doing and why these setups, in its own few lines.
+      // The button that buys another one sits with it, because this is the
+      // page he is on when he wants new entries.
       diffContainer.innerHTML = `
         ${line ? `<div class="diff-head"><h3 class="diff-line">${esc(line)}${d.dxOverride ? ' <span class="dim small">(your call)</span>' : ''}</h3></div>` : ''}
-        ${live.length ? live.map(playCardHtml).join('') : '<p class="dim small">No open plays. A reading that finds a setup puts it here.</p>'}
+        <div class="scan-bar">
+          <button type="button" class="btn tiny" data-scan-now${scan.status === 'running' ? ' disabled' : ''}>${scan.status === 'running' ? 'Scanning…' : 'Scan for new entries'}</button>
+          <span class="dim small" data-scan-said>${esc(scan.status === 'running' ? 'Looking at the tape now. It lands on its own.'
+            : scan.status === 'error' && scan.error ? scan.error
+              : scan.at ? `Last scan ${whenShort(new Date(scan.at))}.` : 'No scan yet.')}</span>
+        </div>
+        ${scan.note && scan.note.text ? `<div class="panel scan-note">${md(scan.note.text)}</div>` : ''}
+        ${live.length ? live.map(playCardHtml).join('') : '<p class="dim small">No open plays. Tap Scan for new entries, or Update for the whole reading.</p>'}
         ${done.length ? `<h4 class="diff-sub">Recent</h4>${done.map(playCardHtml).join('')}` : ''}
         <p class="diff-disclaimer">Ideas, not orders. Every trade is your decision.</p>`;
       wirePlayCards(diffContainer, { getToken: () => user.getIdToken(), onSaved: () => { diffKey = null; setTimeout(refresh, 300); } });
+      diffContainer.querySelector('[data-scan-now]')?.addEventListener('click', () => deskScanBtn?.click());
       return;
     }
     const key = JSON.stringify([d.workingLine, d.dxOverride, d.differential, (d.diffHistory || []).length,
@@ -946,6 +963,11 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         busy = d.running || d.draftAlive
           || out.state?.callDocStatus === 'running'
           || out.state?.callNotesStatus === 'running'
+          // A SCAN HE TAPPED IS A LONG TURN LIKE ANY OTHER (2026-09-22). Left
+          // off this list, the desk polled at the idle cadence while it ran,
+          // and a scan that had already landed sat on screen as "Scanning…"
+          // for up to half a minute. The drive caught it.
+          || out.trade?.scan?.status === 'running'
           || (out.qa || []).some((q) => q.status === 'running');
         // The folder pages (differential, notes, the header line) and the
         // chat's correction marks all feed off this one poll. This panel only

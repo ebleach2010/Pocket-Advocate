@@ -33,12 +33,15 @@ import {
 } from '../public/js/trade-math.js';
 
 // ---- constants ------------------------------------------------------------
-// "He uses fable." Thinking is always on for this model, so a desk turn
-// carries no thinking key at all (see turnRequest in advisor.js). Every
-// desk turn, the reading and a question alike, runs one step below the
-// top: a setup is time-sensitive, and the reading runs three times a day.
-export const TRADE_MODEL = 'claude-fable-5-1';
-export const TRADE_EFFORT = 'high';
+// NOTHING RUNS BUT HIS TAP (Eric, 2026-09-22: "I manually update either scan
+// individually. No automatic."). The desk used to read itself three times a
+// trading day, which is why it ran one step below the top on a smaller
+// model: a background turn he did not ask for should not cost the most.
+// Nothing is a background turn any more, so both of his buttons buy the
+// strongest reading there is, and so does a question. He asked for exactly
+// this when the scan was still on a clock.
+export const TRADE_MODEL = 'claude-opus-5';
+export const TRADE_EFFORT = 'max';
 export const TRADE_TZ = 'America/Boise';
 export const MARKET_OPEN = '07:30';
 export const MARKET_CLOSE = '14:00';
@@ -92,13 +95,18 @@ export const SAY = {
   noQuoteKey: 'No market data key on file. Add it on Desk.',
   quoteMany: 'Quotes: up to 10 tickers at a time.',
   quoteBudget: 'Quotes are rate limited; try again in a minute.',
-  noNext: 'The trade desk does not continue into a next case. Pause it, close it or delete it.',
+  scanRunning: 'A scan is already running. It lands on its own.',
+  noDesk: 'The trade desk is not open.',
+  noNext: 'The trade desk does not continue into a next case. Close it or delete it.',
   noPull: 'The trade desk cannot be pulled from.',
 };
 // ---- end constants --------------------------------------------------------
 
 export const SETTINGS_PATH = 'trade/settings';
 export const STATE_PATH = 'trade/state';
+// The same path, under the name the advisor imports it by: the desk's state
+// is where a scan he started parks its flight (2026-09-22).
+export const TRADE_STATE_PATH = STATE_PATH;
 export const PLAYS = 'trade/plays/items';
 export const BALANCES = 'trade/balances/items';
 export const POSITIONS = 'trade/positions/items';
@@ -383,6 +391,39 @@ One play object per setup above, in the same order, with these fields: horizon (
 "Corrections": rare, and only when one of his own log lines misstates a price or a level. Each line exactly \`- <id> | what is wrong, one sentence | the full repaired line\`. Write "- none" otherwise.
 
 Everything outside Rules to hold and Setups stays under 700 words. Plain words, and never an em dash or an en dash anywhere: use a comma, a colon, or the word to.
+
+You never make a trade for him and you never tell him to make one. A setup is what you would watch and how you would size it, not an order. Every trade is his decision.`;
+
+// THE SCAN (Eric, 2026-09-22: "when it runs it's just looking at new
+// entries. Not doing an update like the advisor. That's a separate thing
+// altogether. That runs only when I press update."). A short turn of its
+// own: no log to read back through, no previous reading to revise, no
+// rules, no grading of his trades. It looks at the tape and files what it
+// would watch right now, and says in a few lines why. The Setups and Plays
+// blocks are word for word the reading's, so one harvest reads both.
+export const SCAN_CONTRACT = `This is Eric's trading desk, and this is a scan, not a reading. He tapped Scan because he wants to know what is worth watching right now, nothing else. There is no client and no patient anywhere on this. You never ask him a question.
+
+Do not grade his trades, do not revise his rules, do not summarise his log and do not write any heading that is not listed below. If the material shows nothing worth taking, say so in the note and file no setups: an empty scan is a real answer and a filler setup costs him money.
+
+THE THREE KINDS OF TRADE, AND THE WEEKEND (Eric, 2026-09-22): "I want trades separated from scalps (1-10min) intraday (1-8hr) and swing (8hr-3 days). We don't hold over weekends." Day trading is the priority, and a swing is allowed when it serves his benchmarks, which are a floor of 1% a day, an aim of 2%, and a stop for the day at a 3% realized loss or a 10% realized gain. Every setup says which kind it is: a scalp lives one to ten minutes, an intraday trade one to eight hours and is flat by the close, a swing runs eight hours to three days and is flat before the weekend. Never write a swing that would be held over a Saturday; on the last trading day of a week, a swing is only a swing if it can be closed that day. A swing says its overnight risk plainly, in its own words, in the Risk line.
+
+The desk note at the end of the material carries his balance, his rules in dollars, where his day stands, the positions he is already in, the setups still open from the last scan, the quotes, the headlines and today's earnings. Take the prices from it; use web search for what a quote cannot tell you, and prefer a fresh source over a stale one. Do not file a setup on a ticker he is already in unless it is a different trade, and say in its Current picture how it sits against the position he holds. A setup the last scan already filed is refiled only if it still stands; otherwise leave it out and take the new one.
+
+Use exactly these headings, in this order, as markdown ## headings:
+
+## Note
+## Setups
+## Plays
+
+"Note": under 120 words. What the tape is doing right now, why these setups and not others, and anything about his day that should change how he takes them, for example how little he has left to risk today. When you file nothing, this is where you say what you would need to see.
+
+"Setups": at most 4, each under a ### heading of the ticker and the side, for example ### NVDA long. Under it exactly these six labelled lines, in this order: Current picture, Bull case, Bear case, Levels, Risk, What I would watch next. Then one line: Chance of profit: NN to NN%. Only a setup you would watch yourself right now. Sized for his account, with the risk at the stop said in dollars. Write nothing under this heading when there is nothing to take.
+
+"Plays": one fenced json block and nothing else, in this shape:
+{ "plays": [ ... ], "portfolio": null }
+One play object per setup above, in the same order, with these fields: horizon ("scalp", "intraday" or "swing"), holdDays (a whole number 1 to 3, swing only, 0 otherwise), ticker, side ("long" or "short"), instrument ("stock", "call", "put" or "spread"), structure (the exact instrument, for example "Oct 17 150/155 call debit spread" or "shares"), entry, stop, targets (a list of prices), holdMinutes (an integer), profitLow and profitHigh (whole percents), sizeDollars (an integer), catalyst, overnightOk (true or false), overnightWhy, picture, bull, bear, levels (a list of short strings), risk, watch. picture, bull, bear, risk and watch repeat the six lines of the setup, in full. portfolio is always null on a scan. An empty scan is { "plays": [], "portfolio": null }.
+
+Plain words, and never an em dash or an en dash anywhere: use a comma, a colon, or the word to.
 
 You never make a trade for him and you never tell him to make one. A setup is what you would watch and how you would size it, not an order. Every trade is his decision.`;
 

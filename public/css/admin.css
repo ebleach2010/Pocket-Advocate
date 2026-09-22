@@ -1559,6 +1559,13 @@ main > p > a.small[href="/admin.html"] {
 .form-grid input, .form-grid select { min-width: 0; }
 .calc-card .form-grid { margin: .4rem 0; }
 .closed-head { margin: 1.1rem 0 .4rem; }
+/* THE SCAN, ON HIS TAP (2026-09-22): the button that buys new entries and the
+   few lines the last one wrote, above the cards it filed. */
+.scan-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0 0 .6rem; }
+.scan-note { padding: .7rem .85rem; margin: 0 0 .8rem; border-left: 3px solid var(--trade); }
+.scan-note h2, .scan-note h3 { font-size: 1rem; margin: 0 0 .3rem; }
+.scan-note p { margin: 0 0 .5rem; }
+.scan-note :last-child { margin-bottom: 0; }
 /* THE DESK MAKES A PDF (2026-09-22): the file an answer filed, as a link
    under the answer at thumb size, in the desk's green. */
 .ask-doc { margin: .5rem 0 0; }

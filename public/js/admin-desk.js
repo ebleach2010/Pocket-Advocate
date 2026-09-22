@@ -290,8 +290,7 @@ export function mountTradeDesk(pane, { getToken }) {
       <label>Tickers, comma separated, up to 20 <input type="text" data-watch disabled></label>
       <div class="row"><button type="button" class="btn tiny" data-watch-save disabled>Save watchlist</button></div>
       <h3>Switches</h3>
-      <div class="toggle-row"><span><strong>Readings</strong><br><span class="dim small">Three on a trading day, 7:00, 10:00 and noon Mountain. Off is Pause; Update still reads on a tap.</span></span><button type="button" class="switch" data-sw="scansOn" aria-pressed="false" aria-label="Readings" disabled></button></div>
-      <div class="toggle-row"><span><strong>Pushes</strong><br><span class="dim small">A push to your phone when a reading finds a strong play.</span></span><button type="button" class="switch" data-sw="pushOn" aria-pressed="false" aria-label="Pushes" disabled></button></div>
+      <div class="toggle-row"><span><strong>Pushes</strong><br><span class="dim small">A push to your phone when a scan or a reading finds a strong play.</span></span><button type="button" class="switch" data-sw="pushOn" aria-pressed="false" aria-label="Pushes" disabled></button></div>
       <p class="trade-said" data-set-said></p>
     </div>
     <p class="trade-foot">Ideas, not orders. Every trade is your decision.</p>`;

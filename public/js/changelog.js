@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '5.2';
+export const VERSION = '5.3';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '5.2';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // NOTHING RUNS BUT HIS TAP (Eric, 2026-09-22): "I manually update either
+    // scan individually. No automatic." Admin only: the desk is his alone.
+    version: '5.3',
+    quiet: true,
+    client: [],
+    admin: [
+      'Nothing on the trade desk runs on a clock any more. It has two buttons and you start both: Scan looks only for new entries and files the setups it would watch right now with a few lines saying why, and Update is the whole reading of your log, your trades and your rules. Scan sits beside Update on Read, at the top of Plays, and on the desk overview.',
+      'Pause is gone, because there is nothing left to pause. Both runs now take the same reading strength every other case gets, which you only pay for when you tap.',
+    ],
+  },
   {
     // THE CALCULATOR AND HIS POSITIONS (2026-09-22): "a calculator to help me
     // with take profits and stop losses ... Most useful when the information

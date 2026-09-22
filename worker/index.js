@@ -56,7 +56,7 @@ import {
 } from './advisor.js';
 // The trade desk (2026-09-21; a case file since 2026-09-22): its slots and
 // its routes, and the leaf both stand on.
-import { tradeRoute, TradeError, maybeTradeScan, tradePanelBlock } from './trade.js';
+import { tradeRoute, TradeError, tradePanelBlock } from './trade.js';
 import { TRADE_CATEGORIES, SAY as TRADE_SAY } from './trade-desk.js';
 
 /**
@@ -1349,10 +1349,13 @@ export default {
     // a quarter hour of the old behaviour after the deploy is a quarter hour
     // in which somebody can buy a case he has said he cannot take.
     ctx.waitUntil(closeBookingsAug2026(env));
-    // The trade desk (2026-09-21; a case file since 2026-09-22): at one of
-    // its three slots this books a reading on the desk's case, which the
-    // awaited drain below runs like any other. A few reads, never a turn.
-    ctx.waitUntil(maybeTradeScan(env, fired).catch(() => {}));
+    // THE DESK BOOKS NOTHING HERE ANY MORE (Eric, 2026-09-22: "I manually
+    // update either scan individually. No automatic."). This used to claim
+    // one of three slots a trading day and book a reading on the desk's
+    // case. The clock is gone, the slots with it: the only thing that
+    // starts a desk turn is his tap on Scan or on Update, and the only
+    // thing this firing still does for the desk is collect a flight one of
+    // those taps put in the air, which the poll below does for every case.
     // THE KILL, found by the flight recorder (2026-08-24). Cloudflare's
     // fifteen minute guarantee attaches to the promise scheduled() RETURNS:
     // "The runtime waits for the promise returned by the scheduled() handler
@@ -2068,7 +2071,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-22-desk-calculator';
+const BUILD_TAG = 'v2026-09-22-desk-his-tap';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2076,7 +2079,7 @@ const BUILD_TAG = 'v2026-09-22-desk-calculator';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '5.2';
+const VERSION = '5.3';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

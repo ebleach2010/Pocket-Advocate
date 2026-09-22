@@ -40,8 +40,9 @@ import { listIntake, listShelf, mediaFetch } from './storage.js';
 // files once it lands. A leaf, so this import is not a cycle.
 import {
   TRADE_MODEL, TRADE_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,
+  SCAN_CONTRACT, TRADE_STATE_PATH, SAY as TRADE_SAY,
   tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,
-  harvestDocument, fileDocument,
+  harvestDocument, fileDocument, stripDashes as deskStripDashes,
 } from './trade-desk.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
@@ -674,9 +675,11 @@ function turnRequest({ system, messages, effort, maxTokens = 64000, tools }) {
   return {
     model: policy?.model || MODEL,
     max_tokens: maxTokens,
-    // The desk's model thinks on its own, so no thinking key rides a desk
-    // turn (v4.6 sent none).
-    ...(policy?.trade ? {} : { thinking: { type: 'adaptive' } }),
+    // THE DESK THINKS LIKE EVERY OTHER CASE (2026-09-22). It used to run a
+    // model that thinks on its own, so a desk turn carried no thinking key
+    // at all; both of his buttons buy the same model every other case gets
+    // now, and it takes the same key.
+    thinking: { type: 'adaptive' },
     output_config: { effort: policy?.effort || effort },
     system: withCacheBp(kept),
     messages,
@@ -3622,6 +3625,12 @@ export async function pollFlightsNow(env) {
       await withCasePolicy(env, kind, id, () => pollAskFlight(env, kind, id, String(row.data.qaId || ''), { minAgeMs: 45_000 })).catch(() => {});
       continue;
     }
+    // THE DESK'S SCAN (2026-09-22) has its own flight on the desk's own
+    // state, so it is collected here rather than on the case's.
+    if (row.data.scan) {
+      await pollScanFlight(env, id, { minAgeMs: 45_000 }).catch(() => {});
+      continue;
+    }
     await pollCaseFlight(env, kind, id, { minAgeMs: 45_000 }).catch(() => {});
   }
 }
@@ -5512,6 +5521,171 @@ export async function pollAskFlight(env, kind, id, qaId, { minAgeMs = 15_000 } =
   await diagLog(env, { ev: 'ask-end', ok: false, kind, ms: Date.now() - t0, err: String(next.why || 'batch failed').slice(0, 140) }).catch(() => {});
   await deleteDoc(env, marker).catch(() => {});
   return true;
+}
+
+
+// ---- the desk's scan (Eric, 2026-09-22) ----------------------------------
+//
+// "when it runs it's just looking at new entries. Not doing an update like
+// the advisor. That's a separate thing altogether. That runs only when I
+// press update." And then, when the schedule was still in it: "I manually
+// update either scan individually. No automatic."
+//
+// So the desk has two runs and he starts both. The reading is runAnalysis,
+// the nine sections, his log read back through and his rules revised. The
+// scan is this: the tape, his positions, the setups already open, and
+// nothing else. It files what it would watch right now and writes a few
+// lines saying why.
+//
+// It rides the ask flight's machinery rather than the reading's, because
+// that is the pattern for a turn with its own row: submit to the batch,
+// park the handle, let the cron's poll bring it home. The handle lives on
+// the desk's own state document, never on the case's, so a scan in flight
+// and a reading in flight never see each other's fields.
+const SCAN_MARKER = (caseId) => `advisorQueue/scan_case_${caseId}`;
+// A scan is a short turn; it lands in minutes or it is not landing.
+const SCAN_ABANDON_MS = 2 * 3_600_000;
+
+/** The desk's state, or an empty object. A refused read throws, as everywhere else. */
+async function deskState(env) {
+  const doc = await tryGet(env, TRADE_STATE_PATH);
+  if (doc === READ_FAILED) throw readFailedError('The desk state could not be read.');
+  return doc;
+}
+
+/**
+ * Start a scan. Refuses a second one while the first is in flight: he taps
+ * a button, and two taps must not buy two turns. Returns what the page
+ * should paint.
+ */
+export async function runTradeScan(env, caseId, { now = Date.now() } = {}) {
+  const doc = await deskState(env);
+  const st = doc?.data || {};
+  const flying = st.scanStatus === 'running' && st.scanCtx?.batchId
+    && st.scanAt && now - new Date(st.scanAt).getTime() < SCAN_ABANDON_MS;
+  if (flying) return { ok: false, why: TRADE_SAY.scanRunning, status: 'running' };
+  await patchDoc(env, TRADE_STATE_PATH, {
+    scanStatus: 'running', scanError: null, scanAt: new Date(now), scanCtx: null, scanProgressAt: new Date(now),
+  }, { mask: ['scanStatus', 'scanError', 'scanAt', 'scanCtx', 'scanProgressAt'] });
+  try {
+    const note = await tradeNote(env, { now });
+    const turn = turnRequest({
+      effort: TRADE_EFFORT,
+      // Three headings and at most four setups: a fraction of a reading's
+      // ceiling, which is the whole point of the button.
+      maxTokens: 16000,
+      system: [{ type: 'text', text: `${TRADE_INSTRUCTIONS}\n\n${SCAN_CONTRACT}` }],
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'text',
+          text: `Eric tapped Scan. Look at the tape and file what is worth watching right now, in the three headings, and nothing else.${note}`,
+        }],
+      }],
+    });
+    const customId = batchCustomId('scan', String(caseId), now);
+    const batchId = await submitTurnBatch(env, turn, customId);
+    await patchDoc(env, TRADE_STATE_PATH, {
+      scanCtx: { batchId, customId, submittedAt: new Date(now), model: turn.model, pollFails: 0 },
+      scanProgressAt: new Date(),
+    }, { mask: ['scanCtx', 'scanProgressAt'] });
+    await patchDoc(env, SCAN_MARKER(caseId), { kind: 'case', id: caseId, scan: true, at: new Date() },
+      { mask: ['kind', 'id', 'scan', 'at'] }).catch(() => {});
+    await diagLog(env, { ev: 'scan-submit', caseId, ms: Date.now() - now }).catch(() => {});
+    return { ok: true, status: 'running' };
+  } catch (err) {
+    console.error('desk scan:', err.stack || err);
+    await patchDoc(env, TRADE_STATE_PATH, {
+      scanStatus: 'error', scanError: `Couldn't scan: ${friendly(err)}`, scanCtx: null,
+    }, { mask: ['scanStatus', 'scanError', 'scanCtx'] }).catch(() => {});
+    await diagLog(env, { ev: 'scan-end', ok: false, err: String(err.message || err).slice(0, 140) }).catch(() => {});
+    return { ok: false, why: friendly(err), status: 'error' };
+  }
+}
+
+/**
+ * One look at a scan in flight, on the same terms as a question's: the
+ * heartbeat throttles it, one poller wins the finish, an unreachable
+ * provider is counted rather than believed, and a landed batch files its
+ * plays through the same call the reading's finish uses.
+ */
+export async function pollScanFlight(env, caseId, { minAgeMs = 15_000 } = {}) {
+  const marker = SCAN_MARKER(caseId);
+  let doc;
+  try { doc = await deskState(env); } catch { return false; }
+  const st = doc?.data || {};
+  const flight = st.scanCtx;
+  if (st.scanStatus !== 'running' || !flight?.batchId) {
+    await deleteDoc(env, marker).catch(() => {});
+    return false;
+  }
+  const beat = st.scanProgressAt ? new Date(st.scanProgressAt).getTime() : 0;
+  if (beat && Date.now() - beat < minAgeMs) return false;
+  let poll;
+  try {
+    poll = await pollTurnBatch(env, flight.batchId, flight.customId);
+  } catch {
+    poll = { state: 'unreachable' };
+  }
+  const next = askFlightNext(flight, poll, Date.now());
+  if (next.op === 'wait') {
+    await patchDoc(env, TRADE_STATE_PATH, { scanProgressAt: new Date(), scanCtx: { ...flight, pollFails: next.pollFails } },
+      { mask: ['scanProgressAt', 'scanCtx'] }).catch(() => {});
+    return true;
+  }
+  if (next.op === 'finish') {
+    const fin = flight.finishingAt ? new Date(flight.finishingAt).getTime() : 0;
+    if (fin && Date.now() - fin < 5 * 60_000) return false;
+    const won = await patchDoc(env, TRADE_STATE_PATH, { scanCtx: { ...flight, finishingAt: new Date() } },
+      { mask: ['scanCtx'], ifUpdateTime: doc.updateTime }).catch(() => false);
+    if (won === false) return false;
+    await finishTradeScan(env, caseId, flight, poll.message);
+    await deleteDoc(env, marker).catch(() => {});
+    return true;
+  }
+  if (next.cancel) {
+    try { await client(env).messages.batches.cancel(flight.batchId); } catch { /* gone, or unreachable */ }
+  }
+  await patchDoc(env, TRADE_STATE_PATH, {
+    scanStatus: 'error', scanError: `Couldn't scan: ${friendly(new Error(next.why || 'The scan failed.'))}`, scanCtx: null,
+  }, { mask: ['scanStatus', 'scanError', 'scanCtx'] }).catch(() => {});
+  await diagLog(env, { ev: 'scan-end', ok: false, err: String(next.why || 'batch failed').slice(0, 140) }).catch(() => {});
+  await deleteDoc(env, marker).catch(() => {});
+  return true;
+}
+
+/**
+ * The landed scan: the note he reads, and the setups filed through the same
+ * call a reading files through, so the plays, their expiry, the push for a
+ * strong one and the cover's standing all behave identically whichever
+ * button bought them.
+ */
+async function finishTradeScan(env, caseId, flight, message) {
+  const t0 = flight?.submittedAt ? new Date(flight.submittedAt).getTime() : Date.now();
+  try {
+    const text = deskStripDashes(extractText(message));
+    const pl = harvestPlays(text);
+    const filed = await fileDeskReading(env, caseId, { ...pl, portfolio: null }, { now: Date.now() })
+      .catch((err) => { console.warn('scan filing:', err.message || err); return null; });
+    // The note is what is left once the Plays block is cut out: the Note
+    // heading and the setups under it, which is exactly what the Plays page
+    // shows above the cards.
+    await patchDoc(env, TRADE_STATE_PATH, {
+      scanStatus: 'idle', scanError: null, scanCtx: null,
+      lastScanAt: new Date(),
+      scanNote: { text: pl.text.slice(0, 6000), at: new Date(), plays: filed?.plays ?? 0 },
+    }, { mask: ['scanStatus', 'scanError', 'scanCtx', 'lastScanAt', 'scanNote'] });
+    await diagLog(env, {
+      ev: 'scan-end', ok: true, plays: filed?.plays ?? 0, expired: filed?.expired ?? 0,
+      dropped: pl.dropped, missing: pl.missing, pushed: !!filed?.pushed, ms: Date.now() - t0,
+    }).catch(() => {});
+  } catch (err) {
+    console.error('desk scan finish:', err.stack || err);
+    await patchDoc(env, TRADE_STATE_PATH, {
+      scanStatus: 'error', scanError: `Couldn't scan: ${friendly(err)}`, scanCtx: null,
+    }, { mask: ['scanStatus', 'scanError', 'scanCtx'] }).catch(() => {});
+    await diagLog(env, { ev: 'scan-end', ok: false, err: String(err.message || err).slice(0, 140) }).catch(() => {});
+  }
 }
 
 /**

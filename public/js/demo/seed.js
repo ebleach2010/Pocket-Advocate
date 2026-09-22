@@ -674,9 +674,17 @@ export function seed({ set, file }) {
     caseId: TRADE_ID, openedAt: days(21),
     finnhubKey: 'demo-finnhub-key-1234', accountType: 'cash',
     watchlist: ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AAPL', 'AMD', 'META', 'AMZN', 'MSFT', 'COIN'],
-    scansOn: true, pushOn: true, startedAt: dk(21), startCents: 200000, setByHand: true,
+    pushOn: true, startedAt: dk(21), startCents: 200000, setByHand: true,
   });
-  set('trade/state', { lastSlot: `${dk(0)}T10:00`, claimedAt: hours(2) });
+  // NOTHING RUNS BUT HIS TAP (2026-09-22): no slot was ever claimed here
+  // again, and what the state carries now is the last scan he asked for.
+  set('trade/state', {
+    scanStatus: 'idle', scanError: null, lastScanAt: hours(2),
+    scanNote: {
+      at: hours(2), plays: 2,
+      text: '## Note\n\nThe indexes opened into yesterday\'s range and have stayed inside it, so there is nothing clean on the big names yet. The two below are what I would watch, and both die with the session.',
+    },
+  });
   set('trade/plays/items/p-demo-1', {
     at: hours(2), slot: '10:02', caseId: TRADE_ID, ticker: 'NVDA', side: 'long', instrument: 'spread', structure: 'Oct 17 650/655 call debit spread',
     entry: 2.1, stop: 1.3, targets: [3.4, 4.6], holdMinutes: 180, horizon: 'intraday', holdDays: 0,

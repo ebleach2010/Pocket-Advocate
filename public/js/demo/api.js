@@ -57,6 +57,21 @@ function deskRefreshStanding(store) {
   store.docs.set(`caseMeta/${s.caseId}`, { ...meta, tradeStanding: st });
   return st;
 }
+// THE SCAN, ON HIS TAP (2026-09-22). The demo mirrors the Worker's shape
+// exactly: a scan is running, or it has a note and a stamp, or it has
+// neither. The demo lands one four seconds after he taps, the way it lands
+// a question.
+function deskScanBlock(store) {
+  const st = store.docs.get('trade/state') || {};
+  const note = st.scanNote || null;
+  return {
+    status: st.scanStatus === 'running' ? 'running' : st.scanStatus === 'error' ? 'error' : 'idle',
+    error: st.scanError || null,
+    at: st.lastScanAt ? new Date(st.lastScanAt).toISOString() : null,
+    note: note ? { text: String(note.text || ''), at: note.at ? new Date(note.at).toISOString() : null, plays: Number(note.plays) || 0 } : null,
+  };
+}
+
 function deskPanelBlock(store) {
   const s = store.docs.get('trade/settings') || {};
   const today = deskToday();
@@ -64,9 +79,9 @@ function deskPanelBlock(store) {
   const plays = deskRows(store, 'trade/plays/items/').sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
   return {
     plays, standing: meta.tradeStanding || null,
-    nextSlot: { key: `${today}T12:00`, dateKey: today, slot: '12:00', atMs: Date.now() + 3600_000 },
-    scansOn: s.scansOn !== false, pushOn: s.pushOn !== false, hasKey: !!s.finnhubKey, tradingDay: 'full', today,
+    pushOn: s.pushOn !== false, hasKey: !!s.finnhubKey, tradingDay: 'full', today,
     rules: rulesOf(s),
+    scan: deskScanBlock(store),
   };
 }
 
@@ -639,7 +654,7 @@ export function demoApi(role, store) {
         const oldKey = `cases/${body.caseId}`;
         const old = store.docs.get(oldKey);
         if (!old?.self) return fail(409, 'Only your own case continues into a next one.');
-        if (old.trade) return fail(409, 'The trade desk does not continue into a next case. Pause it, close it or delete it.');
+        if (old.trade) return fail(409, 'The trade desk does not continue into a next case. Close it or delete it.');
         if (old.status === 'closed') return fail(409, 'That case is already closed.');
         const st = store.docs.get(`${oldKey}/advisor/state`) || {};
         const top = (st.differential || [])[0];
@@ -1775,6 +1790,8 @@ export function demoApi(role, store) {
         closedAlready: 'That position is already closed.',
         badExit: 'Sold at needs the exit price, or the profit or loss in dollars.',
         badRules: 'Rules: risk 0.1 to 5% a trade, day loss 0.5 to 20%, floor under aim under cap, cap up to 50%, target 0.5R to 5R.',
+        scanRunning: 'A scan is already running. It lands on its own.',
+        noDesk: 'The trade desk is not open.',
         noQuoteKey: 'No market data key on file. Add it on Desk.',
         quoteMany: 'Quotes: up to 10 tickers at a time.',
         quoteBudget: 'Quotes are rate limited; try again in a minute.',
@@ -1787,7 +1804,7 @@ export function demoApi(role, store) {
       const pub = (s) => ({
         accountType: s.accountType === 'margin' ? 'margin' : 'cash',
         watchlist: Array.isArray(s.watchlist) && s.watchlist.length ? s.watchlist : DEFAULT_WATCHLIST,
-        scansOn: s.scansOn !== false, pushOn: s.pushOn !== false,
+        pushOn: s.pushOn !== false,
         startedAt: s.startedAt || null,
         startCents: Number.isInteger(s.startCents) && s.startCents > 0 ? s.startCents : 200000,
         rules: rulesOf(s),
@@ -1806,7 +1823,7 @@ export function demoApi(role, store) {
           plays: block.plays.slice(0, 50),
           balances: metrics.entries.map((e) => ({ ...e, source: sources.get(e.date) || 'typed' })),
           metrics, chart: chartSeries(metrics),
-          nextSlot: block.nextSlot, tradingDay: 'full', today: todayMT, scansOn: p.scansOn, now: new Date().toISOString(),
+          tradingDay: 'full', today: todayMT, scan: deskScanBlock(store), now: new Date().toISOString(),
         });
       }
       // READ ROUTES SIT ABOVE THE POST GATE (2026-09-22): positions and quote
@@ -1898,7 +1915,6 @@ export function demoApi(role, store) {
           if (list.length > 20 || !list.every((t) => TICKER_RE.test(t))) return fail(400, SAY.badWatchlist);
           patch.watchlist = list.length ? list : DEFAULT_WATCHLIST;
         }
-        if (body.scansOn !== undefined) patch.scansOn = body.scansOn === true;
         if (body.pushOn !== undefined) patch.pushOn = body.pushOn === true;
         if (body.celebrate !== undefined) patch.celebrate = body.celebrate === true;
         if (body.rules !== undefined) {
@@ -2025,6 +2041,52 @@ export function demoApi(role, store) {
         store.docs.delete(`trade/positions/items/${id}`);
         store.persist?.();
         return ok({ ok: true, removed: id });
+      }
+      // THE SCAN, ON HIS TAP (Eric, 2026-09-22): refused while one is in the
+      // air, and otherwise it lands four seconds later with a note and the
+      // setups it filed, which is the shape production has.
+      if (sub === 'scan') {
+        const st = store.docs.get('trade/state') || {};
+        if (st.scanStatus === 'running') return fail(409, SAY.scanRunning);
+        const s0 = settings();
+        if (!s0.caseId) return fail(404, SAY.noDesk);
+        store.docs.set('trade/state', { ...st, scanStatus: 'running', scanError: null, scanAt: new Date() });
+        store.persist?.();
+        setTimeout(() => {
+          const was = store.docs.get('trade/state') || {};
+          if (was.scanStatus !== 'running') return;
+          // The plays a scan files expire what the last one left, exactly as
+          // the Worker's recordPlays does.
+          for (const r of deskRows(store, 'trade/plays/items/')) {
+            if (r.status === 'open') store.docs.set(`trade/plays/items/${r.id}`, { ...r, status: 'expired', expiredAt: new Date() });
+          }
+          const id = `p-scan-${Date.now().toString(36)}`;
+          store.docs.set(`trade/plays/items/${id}`, {
+            at: new Date(), slot: 'scan', caseId: s0.caseId,
+            ticker: 'QQQ', side: 'long', instrument: 'stock', structure: 'shares', horizon: 'intraday', holdDays: 0,
+            entry: 498.2, stop: 496.4, targets: [501.5, 504], holdMinutes: 180,
+            profitLow: 56, profitHigh: 64, sizeDollars: 600,
+            catalyst: 'Holding above the opening range on rising volume.',
+            overnightOk: false, overnightWhy: 'Flat by the close.',
+            picture: 'Broke the opening range and held it on the retest.',
+            bull: 'Buyers defended the retest at the range high.',
+            bear: 'A failed retest puts it back inside the range.',
+            levels: ['Range high 498.0', 'VWAP 497.1', 'Prior close 495.8'],
+            risk: '$1.80 to the stop, about $24 on 13 shares.',
+            watch: 'A close back under the range high on volume.',
+            status: 'open', outcomeCents: null, tookAt: null, closedAt: null,
+            expiresAt: new Date(Date.now() + 3 * 3600_000),
+          });
+          store.docs.set('trade/state', {
+            ...was, scanStatus: 'idle', scanError: null, lastScanAt: new Date(),
+            scanNote: {
+              text: '## Note\n\nIndexes are holding their opening ranges on better volume than yesterday, and the one thing worth taking is the continuation in QQQ. You have $24.50 to risk on a trade and the day is still under its floor, so one clean entry does the work.\n\n### QQQ long\n\nCurrent picture: Broke the opening range and held it on the retest.',
+              at: new Date(), plays: 1,
+            },
+          });
+          store.persist?.();
+        }, 4000);
+        return ok({ ok: true, status: 'running', caseId: s0.caseId });
       }
       if (sub === 'play') {
         const id = String(body.id || '');
