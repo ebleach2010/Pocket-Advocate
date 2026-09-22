@@ -14,7 +14,7 @@
 // this file is a 404 to anyone but him.
 
 import {
-  tradeCalc, rulesOf, HORIZON_WORDS, WARNING_TEXT, fmtPct, sizeFor,
+  tradeCalc, rulesOf, HORIZON_WORDS, WARNING_TEXT, fmtPct, sizeFor, fmtQty,
 } from './trade-math.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -132,7 +132,7 @@ export function playFaceHtml(p, { rules, accountCents } = {}) {
 export function positionFaceHtml(p, calc, { quote = null } = {}) {
   const up = (calc.unrealizedCents ?? 0) >= 0;
   const closed = p.status === 'closed';
-  const qtyText = p.instrument === 'stock' ? `${p.qty} sh` : `${p.qty} × ${p.structure || p.instrument}`;
+  const qtyText = p.instrument === 'stock' ? `${fmtQty(p.qty)} sh` : `${fmtQty(p.qty)} × ${p.structure || p.instrument}`;
   const lad = calc.ladder;
   const rungs = lad ? lad.levels.map((l) => l.price) : [];
   const pnl = closed ? p.pnlCents : calc.unrealizedCents;
@@ -155,7 +155,7 @@ export function positionFaceHtml(p, calc, { quote = null } = {}) {
     <div class="editgrid" hidden>
       <label class="k">Stop<input type="number" step="0.0001" inputmode="decimal" class="num" data-f="stop" value="${p.stop ?? ''}"></label>
       <label class="k">Target<input type="number" step="0.0001" inputmode="decimal" class="num" data-f="target" value="${p.target ?? ''}"></label>
-      <label class="k">Quantity<input type="number" step="1" min="1" inputmode="numeric" class="num" data-f="qty" value="${esc(p.qty)}"></label>
+      <label class="k">Quantity<input type="number" step="${p.instrument === 'stock' ? '0.0001' : '1'}" min="${p.instrument === 'stock' ? '0.0001' : '1'}" inputmode="${p.instrument === 'stock' ? 'decimal' : 'numeric'}" class="num" data-f="qty" value="${esc(fmtQty(p.qty))}"></label>
       ${p.instrument === 'stock' ? '' : `<label class="k">Mark<input type="number" step="0.0001" inputmode="decimal" class="num" data-f="mark" value="${p.mark ?? ''}"></label>`}
       <div class="acts"><button type="button" class="btn primary" data-act="save">Save</button><button type="button" class="btn quiet" data-act="cancel">Cancel</button><button type="button" class="btn tiny quiet end" data-act="remove">Remove</button></div>
     </div>`}
@@ -368,7 +368,7 @@ export function streamRowHtml(row, { md = (t) => esc(t), stalled = false } = {})
 
 /** A line for his log when he sells, in the words the reading grades from. */
 export function logLineFor(p, pnlCents, exitPrice) {
-  const what = p.instrument === 'stock' ? `${p.qty} shares` : `${p.qty} ${p.structure || p.instrument}`;
+  const what = p.instrument === 'stock' ? `${fmtQty(p.qty)} shares` : `${fmtQty(p.qty)} ${p.structure || p.instrument}`;
   const out = exitPrice != null && exitPrice !== '' ? ` Out at ${exitPrice},` : '';
   return `${p.ticker} ${p.side} ${what} at ${p.entry}${p.stop == null ? '' : `, stop ${p.stop}`}.${out} ${pnlCents >= 0 ? 'plus' : 'minus'} ${Math.abs(pnlCents / 100).toFixed(2)}.`;
 }

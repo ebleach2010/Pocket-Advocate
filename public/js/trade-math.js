@@ -234,12 +234,53 @@ export function unitRisk(pos) {
   return stop != null && stop < entry ? r4((entry - stop) * M) : r4(entry * M);
 }
 
+/**
+ * FRACTIONAL SHARES (Eric, 2026-09-22: "It should have an option for
+ * fractional shares. So essentially it changes dollars to shares").
+ *
+ * A share can be bought in pieces; a contract cannot. So a stock position's
+ * quantity is a real number to four places, and an option or a spread is
+ * still a whole number of contracts. Four places is well inside what a broker
+ * will fill and keeps every cents figure exact.
+ *
+ * Every arithmetic site reads the quantity through here rather than flooring
+ * it for itself, which is what used to turn 0.4 shares into nothing at all.
+ */
+export const QTY_DP = 4;
+export function qtyOf(pos) {
+  const n = Number(pos?.qty);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return pos?.instrument === 'stock' ? r4(n) : Math.floor(n);
+}
+/** What a dollar amount buys at a price, in shares to four places. */
+export function sharesForDollars(dollars, entry) {
+  const d = fin(dollars); const e = fin(entry);
+  if (d == null || e == null || e <= 0 || d <= 0) return null;
+  return r4(d / e);
+}
+/** What a share count costs at a price, in dollars to the cent. */
+export function dollarsForShares(qty, entry) {
+  const q = fin(qty); const e = fin(entry);
+  if (q == null || e == null || q <= 0 || e <= 0) return null;
+  return r2(q * e);
+}
+/** A quantity as a person reads it: 17, not 17.0000; 17.2692, not 17.26920000000001. */
+export function fmtQty(qty) {
+  const n = Number(qty);
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  return Number.isInteger(n) ? String(n) : String(r4(n));
+}
+
 /** The size the rule allows: the risk budget over the unit risk, rounded down; null when nothing caps the risk. */
 export function sizeFor({ accountCents, rules, pos }) {
   const u = unitRisk(pos);
   const budgetCents = Math.round((Number(accountCents) || 0) * ((rules || defaultRules()).riskPct) / 100);
   if (u == null || u <= 0) return { unitRisk: u, budgetCents, qty: null };
-  return { unitRisk: u, budgetCents, qty: Math.floor(budgetCents / (u * 100)) };
+  const exact = budgetCents / (u * 100);
+  // A stock takes the budget exactly, because a share can be bought in
+  // pieces (2026-09-22). A contract cannot, so it still rounds down, and
+  // one contract already over the budget is still a size of zero.
+  return { unitRisk: u, budgetCents, qty: pos?.instrument === 'stock' ? r4(exact) : Math.floor(exact) };
 }
 
 /** The price ladder around the entry: the stop's distance as R, breakeven, then 1R, 2R and 3R the right way round. */
@@ -253,7 +294,7 @@ export function ladder({ side, entry, stop }) {
 
 /** The profit or loss of a close, in cents: the move times the side, times 100 a contract, times the quantity. A credit spread gains when the premium falls. */
 export function closePnl({ pos, exitPrice }) {
-  const entry = fin(pos?.entry); const exit = fin(exitPrice); const qty = Math.max(0, Math.floor(Number(pos?.qty) || 0));
+  const entry = fin(pos?.entry); const exit = fin(exitPrice); const qty = qtyOf(pos);
   if (entry == null || exit == null) return null;
   const M = multOf(pos);
   const per = pos.instrument === 'spread' && pos.credit ? (entry - exit) * M : (exit - entry) * signOf(pos) * M;
@@ -286,7 +327,7 @@ export function tradeCalc({ pos, rules, accountCents, quote = null, todayKey = n
   const A = Number(accountCents) || 0;
   const M = multOf(pos); const sign = signOf(pos);
   const entry = fin(pos.entry); const stop = fin(pos.stop);
-  const qty = Math.max(0, Math.floor(Number(pos.qty) || 0));
+  const qty = qtyOf(pos);
   const u = unitRisk(pos);
   const size = sizeFor({ accountCents: A, rules: R, pos });
   const riskCents = u == null ? null : Math.round(u * qty * 100);

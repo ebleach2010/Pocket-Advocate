@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.4';
+export const VERSION = '6.5';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '6.4';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // DOLLARS OR SHARES (Eric, 2026-09-22: "It should have an option for
+    // fractional shares. So essentially it changes dollars to shares").
+    // Admin only: his desk, his sizing.
+    version: '6.5',
+    quiet: true,
+    client: [],
+    admin: [
+      'Shares can be fractional now. The Quantity box on a position has a chip beside it that says what the number in it means: tap it and the box takes dollars instead, and the desk works out the fraction of a share that buys at your entry price. Tap it back and the shares return. Whichever way it is showing, what gets saved is the share count.',
+      'Your size follows. The rule used to round down to a whole share and quietly leave part of your risk budget unspent: at $44.90 allowed and $2.60 a share it said 17 when the honest answer is 17.2692. It says the honest answer now, and the risk, the cost and the return all carry the fraction through to the cent.',
+      'Contracts are untouched, because half a contract is not a thing. The chip is not offered on a call, a put or a spread, and those are still refused unless they are whole.',
+    ],
+  },
   {
     // AN EMPTY SCAN IS A FAILED SCAN (Eric, 2026-09-22, a screenshot of the
     // desk still reading Scanning: "It's stuck"). The flight 6.3 finally

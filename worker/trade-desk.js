@@ -91,7 +91,11 @@ export const SAY = {
   badSide: 'Side is long or short.',
   badInstrument: 'Instrument is stock, call, put or spread.',
   badHorizon: 'Horizon is scalp, intraday or swing.',
-  badQty: 'Quantity: a whole number, 1 or more.',
+  // FRACTIONAL SHARES (Eric, 2026-09-22): a contract is whole or it is not a
+  // contract, but a share can be bought in pieces, so the two are refused in
+  // two different sentences rather than one that is wrong half the time.
+  badQty: 'Contracts: a whole number, 1 or more.',
+  badShares: 'Shares: any amount above zero, fractions welcome, to four places.',
   badPrice: 'Entry, stop and target are prices above zero, four decimals at most.',
   badWidth: 'Spread width: the distance between the strikes, above zero.',
   noPosition: 'No such position.',

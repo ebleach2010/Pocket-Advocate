@@ -1248,18 +1248,25 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry63 = (CL.match(/\{\n\s+\/\/ THE FLIGHT NOBODY WAS LOOKING AT[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v6.4): an empty scan is a failure and never eats the note he had.
   const entry64 = (CL.match(/\{\n\s+\/\/ AN EMPTY SCAN IS A FAILED SCAN[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v6.5): dollars or shares, and a share can be held in pieces.
+  const entry65 = (CL.match(/\{\n\s+\/\/ DOLLARS OR SHARES[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
+  // NEGATIVE CONTROL (run 2026-09-22, v6.5): 'Shares can be fractional now' reworded to 'Shares can be partial now' in the 6.5 entry made this read
+  //   FAIL  T36 both versions read 6.5 with the new tag, the 4.7 through 6.4 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.4): 'treated as a failed scan' reworded to 'handled as a failed scan' in the 6.4 entry made this read
-  //   FAIL  T36 both versions read 6.4 with the new tag, the 4.7 through 6.3 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
+  //   FAIL  T36 both versions read 6.5 with the new tag, the 4.7 through 6.4 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.3): 'can no longer be lost' reworded to 'can no longer go missing' in the 6.3 entry made this read
   //   FAIL  T36 both versions read 6.4 with the new tag, the 4.7 through 6.3 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.2): 'lands on its own again' reworded to 'lands by itself again' in the 6.2 entry made this read
   //   FAIL  T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v5.2): 'has a calculator' reworded to 'has a calculator now' in the 5.2 entry made this read
   //   FAIL  T36 both versions read 5.3 with the new tag, the 4.7 through 5.3 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 6.4 with the new tag, the 4.7 through 6.3 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '6\.4';/.test(CL) && /const VERSION = '6\.4';/.test(W) && /const BUILD_TAG = 'v2026-09-22-empty-is-failed';/.test(W)
+  check('T36 both versions read 6.5 with the new tag, the 4.7 through 6.4 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '6\.5';/.test(CL) && /const VERSION = '6\.5';/.test(W) && /const BUILD_TAG = 'v2026-09-22-fractional-shares';/.test(W)
+    && /version: '6\.5',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry65)
+    && /Shares can be fractional now/.test(entry65) && /half a contract is not a thing/.test(entry65) && !DASH.test(entry65)
+    && (entry65.match(/^\s+'[^\n]+',$/gm) || []).length === 3
     && /version: '6\.4',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry64)
     && /treated as a failed scan/.test(entry64) && /twice the room to answer/.test(entry64) && !DASH.test(entry64)
     && /version: '6\.3',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry63)
@@ -1493,6 +1500,59 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     JSON.stringify({ collected, nothing, deskless, blind, warmed, polls: up.w.polls.length, reads: quiet.w.reads }));
 }
 
+// ---- T59: the dollars or shares chip (Eric, 2026-09-22) -------------------------------------
+// "It should have an option for fractional shares. So essentially it changes dollars to shares."
+// One field, one chip, and the number that leaves the page is always a share or contract count.
+{
+  const APP3 = f('public/js/admin-deskapp.js');
+  const VIEW = f('public/js/admin-desk.js');
+  const CSS3 = f('public/css/admin.css');
+  const D3 = f('public/js/demo/api.js');
+  const DRIVE3 = f('tools/drives/drive-trade.mjs');
+  // NEGATIVE CONTROL (run 2026-09-22, v6.5): `qty: qtyTyped()` in the sheet's read() put back to
+  //   `qty: Number(f('#np-qty').value)`, so dollars would have been saved as a share count, made this read
+  //   FAIL  T59 the quantity field says what its number means: ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.5): the `if (!stock) unit = 'shares';` line dropped from
+  //   paintUnit, so a contract could be sized in dollars, made this read
+  //   FAIL  T59 the quantity field says what its number means: ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.5): one `fmtQty(p.qty)` on the card's face put back to a
+  //   raw `p.qty`, so a fraction would have printed to fifteen places, made this read
+  //   FAIL  T59 the quantity field says what its number means: ...
+  check('T59 the quantity field says what its number means: a chip beside it flips between shares and dollars, what leaves the page is always a share or contract count whichever way it is showing, a contract is never offered the chip because it cannot be bought in pieces, the choice is remembered for next time and a private window is not a reason to fail, the line says how many shares the money buys, every place a quantity is printed prints it through the shared formatter rather than raw, the demo refuses exactly as the Worker does, and the drive flips it both ways',
+    /<button type="button" class="unit" id="np-unit" data-unit="shares">shares<\/button>/.test(APP3)
+    && /const qtyTyped = \(\) => \{/.test(APP3)
+    && /if \(unit !== 'dollars' \|\| !isShares\(\)\) return typed;\n\s+return sharesForDollars\(typed, entryNow\(\)\) \?\? 0;/.test(APP3)
+    && /qty: qtyTyped\(\), entry:/.test(APP3)
+    && !/qty: Number\(f\('#np-qty'\)\.value\)/.test(APP3)
+    && /if \(!stock\) unit = 'shares';/.test(APP3) && /unitEl\.hidden = !stock;/.test(APP3)
+    && /const UNIT_KEY = 'pa-desk-qty-unit';/.test(APP3)
+    && /try \{ localStorage\.setItem\(UNIT_KEY, unit\); \} catch \{[^\n]*\}/.test(APP3)
+    && /buys \$\{fmtQty\(v\.qty\)\} shares/.test(APP3)
+    && /f\('#np-inst'\)\.addEventListener\('change', \(\) => \{ paintUnit\(\); calc\(\); \}\);/.test(APP3)
+    // Nothing prints a raw quantity any more, on either module.
+    && !/\$\{p\.qty\} sh/.test(APP3) && !/\$\{p\.qty\} sh/.test(VIEW) && !/\$\{p\.qty\} shares/.test(VIEW)
+    && (VIEW.match(/fmtQty\(p\.qty\)/g) || []).length >= 4
+    && /step="\$\{p\.instrument === 'stock' \? '0\.0001' : '1'\}"/.test(VIEW)
+    && /sharesForDollars, dollarsForShares, fmtQty,/.test(APP3)
+    // The chip has a look of its own, and it disappears rather than sitting there dead.
+    && /html\[data-desk\]:root \.sheet \.unit \{/.test(CSS3)
+    && /html\[data-desk\]:root \.sheet \.unit\[data-unit="dollars"\] \{/.test(CSS3)
+    && /html\[data-desk\]:root \.sheet \.unit\[hidden\] \{ display: none; \}/.test(CSS3)
+    && !DASH.test(CSS3.slice(CSS3.indexOf('DOLLARS OR SHARES'), CSS3.indexOf('DOLLARS OR SHARES') + 1200))
+    // The demo refuses with the same two sentences, by the same rule.
+    && /const whole = instrument !== 'stock';/.test(D3)
+    && /return fail\(400, whole \? SAY\.badQty : SAY\.badShares\);/.test(D3)
+    && K.SAY.badQty === 'Contracts: a whole number, 1 or more.'
+    && K.SAY.badShares === 'Shares: any amount above zero, fractions welcome, to four places.'
+    && !DASH.test(K.SAY.badQty) && !DASH.test(K.SAY.badShares)
+    // And the drive actually taps it.
+    && /one tap turns the share count into what it costs/.test(DRIVE3)
+    && /a dollar amount under one share still buys a fraction of one/.test(DRIVE3)
+    && /a contract is never sized in dollars/.test(DRIVE3)
+    && !DASH.test(APP3),
+    `${APP3.length} app chars`);
+}
+
 // ---- T56: a scan in flight is not a reading (Eric, 2026-09-22: "It's not producing a scan rn") ----
 {
   const sweep = lift(ADV, 'export async function runQueuedAnalyses(env, deadlineAt = 0) {');
@@ -1568,16 +1628,38 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const lad = math.ladder({ side: 'long', entry: 231.10, stop: 230.40 });
   const ladShort = math.ladder({ side: 'short', entry: 412.10, stop: 414 });
   // NEGATIVE CONTROL (run 2026-09-22): the option multiplier dropped from unitRisk (`* M` removed on the long branch) made this read
-  //   FAIL  T45 the risk of one share or one contract, the ladder and the size his rule allows: a stock risks the distance to the stop, a long option its premium or the distance to a stop premium, a debit spread its debit, a credit spread the width less the credit, and a naked short option is not capped; the ladder runs the right way for a long and a short; and the size is the budget over the risk, rounded down, zero when one contract is already over
-  check('T45 the risk of one share or one contract, the ladder and the size his rule allows: a stock risks the distance to the stop, a long option its premium or the distance to a stop premium, a debit spread its debit, a credit spread the width less the credit, and a naked short option is not capped; the ladder runs the right way for a long and a short; and the size is the budget over the risk, rounded down, zero when one contract is already over',
+  //   FAIL  T45 the risk of one share or one contract, the ladder and the size his rule allows: ...
+  check('T45 the risk of one share or one contract, the ladder and the size his rule allows: a stock risks the distance to the stop, a long option its premium or the distance to a stop premium, a debit spread its debit, a credit spread the width less the credit, and a naked short option is not capped; the ladder runs the right way for a long and a short; and the size is the budget over the risk, exactly for a stock and rounded down for a contract, zero when one contract is already over; a share can be held in pieces and a contract cannot, dollars convert to shares and back, and a fraction of a share earns a fraction of the move',
     math.unitRisk(stock) === 0.7 && math.unitRisk(short) === 1.9
     && math.unitRisk(call) === 140 && math.unitRisk(callNoStop) === 420
     && math.unitRisk(debit) === 80 && math.unitRisk(credit) === 380 && math.unitRisk(naked) === null
     && lad.r === 0.7 && lad.breakeven === 231.10 && lad.levels.map((l) => l.price).join() === '231.8,232.5,233.2'
     && ladShort.levels.map((l) => l.price).join() === '410.2,408.3,406.4'
-    && math.sizeFor({ accountCents: 400000, rules: R, pos: stock }).qty === 57
+    // RE-PINNED 2026-09-22 (v6.5, fractional shares): a share can be bought in pieces, so a stock
+    // takes the budget EXACTLY rather than rounding down and leaving 0.1428 of the rule unspent.
+    // A contract cannot be split, so it still rounds down and one already over the budget is zero.
+    // NEGATIVE CONTROL (run 2026-09-22, v6.5): sizeFor's stock arm removed, so everything rounded
+    //   down again, made this read    FAIL  T45 the risk of one share or one contract ...
+    // NEGATIVE CONTROL (run 2026-09-22, v6.5): qtyOf's stock arm removed, so a share could not be
+    //   held in pieces, made this read    FAIL  T45 the risk of one share or one contract ...
+    && math.sizeFor({ accountCents: 400000, rules: R, pos: stock }).qty === 57.1429
     && math.sizeFor({ accountCents: 400000, rules: R, pos: call }).qty === 0
     && math.sizeFor({ accountCents: 400000, rules: R, pos: naked }).qty === null
+    // The quantity itself, read the way every arithmetic site reads it.
+    && math.qtyOf({ instrument: 'stock', qty: 17.26923 }) === 17.2692
+    && math.qtyOf({ instrument: 'call', qty: 2.9 }) === 2
+    && math.qtyOf({ instrument: 'stock', qty: 0 }) === 0 && math.qtyOf({ instrument: 'stock', qty: -3 }) === 0
+    && math.qtyOf({}) === 0 && math.qtyOf(null) === 0
+    // Dollars in, shares out, and back again.
+    // Four places is the limit, so the trip back can land a cent away from where it started. That
+    // is the rounding being honest rather than a bug: 500 buys 2.1844 shares, which cost 500.01.
+    && math.sharesForDollars(500, 228.9) === 2.1844 && math.dollarsForShares(2.1844, 228.9) === 500.01
+    && math.sharesForDollars(500, 0) === null && math.sharesForDollars(0, 228.9) === null
+    && math.dollarsForShares(17.2692, 228.9) === 3952.92
+    && math.fmtQty(17) === '17' && math.fmtQty(17.2692) === '17.2692' && math.fmtQty(17.00) === '17'
+    && math.fmtQty(0) === '0' && math.fmtQty(null) === '0' && math.QTY_DP === 4
+    // A fraction of a share earns a fraction of the move, to the cent.
+    && math.closePnl({ pos: { ...stock, qty: 0.5 }, exitPrice: 232.60 }) === 75
     && math.closePnl({ pos: stock, exitPrice: 232.60 }) === 5100
     && math.closePnl({ pos: short, exitPrice: 409.80 }) === 5750
     && math.closePnl({ pos: call, exitPrice: 6.50 }) === 46000
@@ -1602,7 +1684,14 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // NEGATIVE CONTROL (run 2026-09-22): the noise threshold tightened from a quarter of today's range to a twentieth made this read
   //   FAIL  T46 what a card shows RUNS: the risk in dollars and as a share of the account, what the rule allows, the cost and its share, the ladder, the target as an R multiple with its reward, the distance from the entry and from the last price, the unrealized figure, today's range off the quote, and one warning for each thing worth saying
   check('T46 what a card shows RUNS: the risk in dollars and as a share of the account, what the rule allows, the cost and its share, the ladder, the target as an R multiple with its reward, the distance from the entry and from the last price, the unrealized figure, today\'s range off the quote, and one warning for each thing worth saying',
-    c.riskCents === 2380 && c.riskPct === 0.0060 && c.budgetCents === 4000 && c.suggestedQty === 57
+    // RE-PINNED 2026-09-22 (v6.5, fractional shares): the size a stock's rule allows is exact now.
+    // NEGATIVE CONTROL (run 2026-09-22, v6.5): tradeCalc's `qtyOf(pos)` put back to a floor, so
+    //   half a share carried no risk at all, made this read    FAIL  T46 what a card shows RUNS ...
+    c.riskCents === 2380 && c.riskPct === 0.0060 && c.budgetCents === 4000 && c.suggestedQty === 57.1429
+    // A fraction of a share carries its fraction of the risk, the cost and the unrealized figure.
+    && math.tradeCalc({ pos: { ...pos, qty: 0.5 }, rules: R, accountCents: A, quote }).riskCents === 35
+    && math.tradeCalc({ pos: { ...pos, qty: 0.5 }, rules: R, accountCents: A, quote }).positionCents === 11555
+    && math.tradeCalc({ pos: { ...pos, qty: 0.5 }, rules: R, accountCents: A, quote }).unrealizedCents === 75
     && c.positionCents === 785740 && c.rr === 2.71 && c.rewardCents === 6460 && c.target === 233
     && c.last === 232.60 && c.unrealizedCents === 5100
     && c.distances.stopFromEntry.dollars === -0.7 && c.distances.targetFromLast.dollars === 0.4
@@ -1656,13 +1745,23 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const listed = await mk({ positions: [open1, open2, closed] }).api.tradePositions({ ...env }, { now: nowMs });
   const made = mk();
   const created = await made.api.tradePosition(env, { ticker: 'aapl', side: 'long', instrument: 'stock', horizon: 'intraday', qty: 34, entry: 231.1, stop: 230.4, target: 233 }, nowMs);
+  const fracWorld = mk();
+  const frac = await fracWorld.api.tradePosition(env, { ticker: 'nvda', side: 'long', instrument: 'stock', horizon: 'intraday', qty: 17.2692, entry: 228.9, stop: 226.3 }, nowMs);
   const refusals = [];
   for (const [body, want] of [
     [{ ticker: '1BAD', side: 'long', instrument: 'stock', qty: 1, entry: 1 }, K.SAY.badTicker],
     [{ ticker: 'AAPL', side: 'sideways', instrument: 'stock', qty: 1, entry: 1 }, K.SAY.badSide],
     [{ ticker: 'AAPL', side: 'long', instrument: 'future', qty: 1, entry: 1 }, K.SAY.badInstrument],
     [{ ticker: 'AAPL', side: 'long', instrument: 'stock', horizon: 'day', qty: 1, entry: 1 }, K.SAY.badHorizon],
-    [{ ticker: 'AAPL', side: 'long', instrument: 'stock', qty: 0, entry: 1 }, K.SAY.badQty],
+    // RE-PINNED 2026-09-22 (v6.5, fractional shares): a stock and a contract are refused in two
+    // different sentences, because half a share is a position and half a contract is not a thing.
+    // NEGATIVE CONTROL (run 2026-09-22, v6.5): the validator's `whole ? SAY.badQty : SAY.badShares`
+    //   flattened back to one sentence made this read    FAIL  T48 the position routes RUN ...
+    [{ ticker: 'AAPL', side: 'long', instrument: 'stock', qty: 0, entry: 1 }, K.SAY.badShares],
+    [{ ticker: 'AAPL', side: 'long', instrument: 'stock', qty: 1.00005, entry: 1 }, K.SAY.badShares],
+    [{ ticker: 'AAPL', side: 'long', instrument: 'stock', qty: -2, entry: 1 }, K.SAY.badShares],
+    [{ ticker: 'AAPL', side: 'long', instrument: 'call', qty: 1.5, entry: 1 }, K.SAY.badQty],
+    [{ ticker: 'AAPL', side: 'long', instrument: 'call', qty: 0, entry: 1 }, K.SAY.badQty],
     [{ ticker: 'AAPL', side: 'long', instrument: 'stock', qty: 1, entry: 0 }, K.SAY.badPrice],
     [{ ticker: 'AAPL', side: 'long', instrument: 'spread', credit: true, qty: 1, entry: 1.2 }, K.SAY.badWidth],
   ]) {
@@ -1681,13 +1780,15 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const gone = mk({ positions: [open2] });
   const removed = await gone.api.tradeRemove(env, { id: 'x2' });
   // NEGATIVE CONTROL (run 2026-09-22): `celebrate` answered on a loss too (`pnlCents !== 0`) made this read
-  //   FAIL  T48 the position routes RUN: every bad field is refused with its own sentence, a new trade stores the risk the rule measures, the list puts the open ones first by kind with today's closes after them, the day rides every answer, Sold reads the exit price or the dollars he types, stamps the day it closed and celebrates only a profit and only when the switch is on, a second Sold is refused, and Remove takes the row away
-  check('T48 the position routes RUN: every bad field is refused with its own sentence, a new trade stores the risk the rule measures, the list puts the open ones first by kind with today\'s closes after them, the day rides every answer, Sold reads the exit price or the dollars he types, stamps the day it closed and celebrates only a profit and only when the switch is on, a second Sold is refused, and Remove takes the row away',
+  //   FAIL  T48 the position routes RUN: every bad field is refused with its own sentence and a share and a contract get different ones, a new trade stores the risk the rule measures and a fractional share count is kept as typed, the list puts the open ones first by kind with today's closes after them, the day rides every answer, Sold reads the exit price or the dollars he types, stamps the day it closed and celebrates only a profit and only when the switch is on, a second Sold is refused, and Remove takes the row away
+  check('T48 the position routes RUN: every bad field is refused with its own sentence and a share and a contract get different ones, a new trade stores the risk the rule measures and a fractional share count is kept as typed, the list puts the open ones first by kind with today\'s closes after them, the day rides every answer, Sold reads the exit price or the dollars he types, stamps the day it closed and celebrates only a profit and only when the switch is on, a second Sold is refused, and Remove takes the row away',
     refusals.every((r) => r === 'said it')
     && listed.positions.map((p) => p.id).join() === 'x2,x1,x3' && listed.openCount === 2
     && listed.accountCents === 400000 && listed.rules.dayAimPct === 2 && listed.dayStatus.realizedTodayCents === 5750
     && listed.positions[0].calc.riskCents === 350 && listed.today === '2026-09-22' && listed.accountType === 'cash'
-    && created.position.ticker === 'AAPL' && created.position.riskCents === 2380 && created.calc.suggestedQty === 57
+    && created.position.ticker === 'AAPL' && created.position.riskCents === 2380 && created.calc.suggestedQty === 57.1429
+    // And a fractional share count is stored as typed, with the risk it really carries.
+    && frac.position.qty === 17.2692 && frac.position.riskCents === 4490
     && made.w.patches.some((p) => p.path.startsWith('trade/positions/items/') && p.data.riskCents === 2380 && p.data.status === 'open')
     && sold.pnlCents === 750 && sold.celebrate === true && sold.position.closedDay === '2026-09-22' && sold.dayStatus.state === 'below-floor'
     && world4.w.patches.some((p) => p.data.status === 'closed' && p.data.closeNote === 'Out at the target.')

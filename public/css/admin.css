@@ -2093,6 +2093,15 @@ html[data-desk]:root .sheet .handle { width: 36px; height: 4px; border-radius: 2
 html[data-desk]:root .sheet h3 { margin: 0 0 4px; font-family: var(--display); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; font-size: 14px; color: var(--ink); }
 html[data-desk]:root .sheet .sum { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-bottom: 12px; }
 html[data-desk]:root .sheet label { display: grid; gap: 4px; font-size: 12px; color: var(--dim); margin-bottom: 10px; }
+/* DOLLARS OR SHARES (Eric, 2026-09-22): one field, and a chip on its own label
+   that says what the number in it means. It sits on the label row so the field
+   below keeps the full width every other field has, and it is hidden outright
+   on a contract, which cannot be bought in pieces. */
+html[data-desk]:root .sheet label.qtyf { gap: 4px; }
+html[data-desk]:root .sheet .qtyhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 18px; }
+html[data-desk]:root .sheet .unit { min-height: 22px; padding: 2px 9px; border-radius: 999px; border: 1px solid rgba(120,160,255,.22); background: var(--raised); color: var(--dim); font-family: var(--display); font-weight: 700; font-size: 11px; line-height: 1; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }
+html[data-desk]:root .sheet .unit[data-unit="dollars"] { color: var(--ink); border-color: rgba(79,216,255,.55); box-shadow: 0 0 10px rgba(79,216,255,.28); }
+html[data-desk]:root .sheet .unit[hidden] { display: none; }
 html[data-desk]:root .sheet .check { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink); min-height: 44px; margin-bottom: 4px; }
 html[data-desk]:root .sheet .check input { width: 22px; height: 22px; padding: 0; accent-color: var(--green); }
 html[data-desk]:root .sheet .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

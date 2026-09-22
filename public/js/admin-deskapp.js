@@ -28,7 +28,7 @@ import { VERSION } from './changelog.js';
 import { md, splitPages } from './advisor.js';
 import {
   rulesOf, RULE_RANGES, dayStatus, tradeCalc, isMarketOpen, isTradingDay,
-  HORIZONS, HORIZON_WORDS, sizeFor,
+  HORIZONS, HORIZON_WORDS, sizeFor, sharesForDollars, dollarsForShares, fmtQty,
 } from './trade-math.js';
 import {
   money, shortMoney, dayShort, dayName, agoShort, tradeCall,
@@ -510,7 +510,10 @@ function openPositionSheet(play) {
       <label>Side<select id="np-side">${['long', 'short'].map((v) => `<option value="${v}"${guess.side === v ? ' selected' : ''}>${v === 'long' ? 'Long' : 'Short'}</option>`).join('')}</select></label>
       <label>Kind<select id="np-hz">${HORIZONS.map((v) => `<option value="${v}"${guess.horizon === v ? ' selected' : ''}>${esc(HORIZON_WORDS[v])}</option>`).join('')}</select></label>
       <label>Instrument<select id="np-inst">${Object.entries(INSTRUMENT_WORDS).map(([v, w]) => `<option value="${v}"${guess.instrument === v ? ' selected' : ''}>${w}</option>`).join('')}</select></label>
-      <label>Quantity<input id="np-qty" class="num" inputmode="numeric" value=""></label>
+      <label class="qtyf">
+        <span class="qtyhead">Quantity<button type="button" class="unit" id="np-unit" data-unit="shares">shares</button></span>
+        <input id="np-qty" class="num" inputmode="decimal" value="">
+      </label>
       <label>Entry<input id="np-entry" class="num" inputmode="decimal" value="${esc(guess.entry)}"></label>
       <label>Stop<input id="np-stop" class="num" inputmode="decimal" value="${esc(guess.stop)}"></label>
       <label>Target<input id="np-target" class="num" inputmode="decimal" value="${esc(guess.target)}"></label>
@@ -521,10 +524,55 @@ function openPositionSheet(play) {
     <button type="button" class="btn tall wide primary" id="np-go">Save the position</button>
     <button type="button" class="btn quiet wide" data-x style="margin-top:8px">Cancel</button>`);
   const f = (id) => sheet.querySelector(id);
+  /**
+   * DOLLARS OR SHARES (Eric, 2026-09-22: "It should have an option for
+   * fractional shares. So essentially it changes dollars to shares").
+   *
+   * One field, one chip. On `shares` the number is a share count and may be
+   * fractional. On `$` it is what he is putting in, and the share count is
+   * that over the entry price. Contracts cannot be bought in pieces, so the
+   * chip is not offered on a call, a put or a spread, and the field goes back
+   * to whole contracts the moment the instrument changes.
+   *
+   * Which unit he last used is remembered, because a person who sizes in
+   * dollars sizes in dollars every time.
+   */
+  const UNIT_KEY = 'pa-desk-qty-unit';
+  const unitEl = f('#np-unit');
+  const isShares = () => f('#np-inst').value === 'stock';
+  let unit = isShares() && localStorage.getItem(UNIT_KEY) === 'dollars' ? 'dollars' : 'shares';
+  const entryNow = () => Number(f('#np-entry').value.trim());
+  // What goes to the server is always a share or contract count.
+  const qtyTyped = () => {
+    const typed = Number(f('#np-qty').value);
+    if (!Number.isFinite(typed) || typed <= 0) return 0;
+    if (unit !== 'dollars' || !isShares()) return typed;
+    return sharesForDollars(typed, entryNow()) ?? 0;
+  };
+  const paintUnit = () => {
+    const stock = isShares();
+    if (!stock) unit = 'shares';
+    unitEl.hidden = !stock;
+    unitEl.dataset.unit = unit;
+    unitEl.textContent = unit === 'dollars' ? '$' : (stock ? 'shares' : 'contracts');
+    f('#np-qty').setAttribute('inputmode', stock ? 'decimal' : 'numeric');
+  };
+  unitEl.addEventListener('click', () => {
+    if (!isShares()) return;
+    const had = qtyTyped();                       // hold the position, change the unit
+    unit = unit === 'dollars' ? 'shares' : 'dollars';
+    try { localStorage.setItem(UNIT_KEY, unit); } catch { /* a private window is not a reason to fail */ }
+    const e = entryNow();
+    if (had > 0 && e > 0) {
+      f('#np-qty').value = unit === 'dollars' ? String(dollarsForShares(had, e) ?? '') : String(fmtQty(had));
+    }
+    paintUnit();
+    calc();
+  });
   const read = () => ({
     ticker: f('#np-tk').value.toUpperCase().trim(),
     side: f('#np-side').value, horizon: f('#np-hz').value, instrument: f('#np-inst').value,
-    qty: Number(f('#np-qty').value), entry: f('#np-entry').value.trim(),
+    qty: qtyTyped(), entry: f('#np-entry').value.trim(),
     stop: f('#np-stop').value.trim(), target: f('#np-target').value.trim(),
     structure: f('#np-structure').value.trim(),
   });
@@ -540,10 +588,22 @@ function openPositionSheet(play) {
     const size = sizeFor({ accountCents, rules, pos });
     const allowed = Math.round((accountCents * rules.riskPct) / 100);
     box.classList.toggle('over', (c.riskCents ?? 0) > allowed);
-    box.innerHTML = `<b>Risk ${money(c.riskCents ?? 0)}</b> <span class="dim">of ${money(allowed)} allowed · your size is ${size.qty} ${v.instrument === 'stock' ? 'shares' : 'contracts'}${c.ladder ? ` · 1R ${c.ladder.levels[0].price}` : ''}</span>`;
+    const word = v.instrument === 'stock' ? 'shares' : 'contracts';
+    // In dollars, the line says what that money actually buys, because the
+    // number in the box is no longer the number he is holding.
+    const bought = unit === 'dollars' && isShares() && v.qty > 0
+      ? ` · buys ${fmtQty(v.qty)} shares` : '';
+    box.innerHTML = `<b>Risk ${money(c.riskCents ?? 0)}</b> <span class="dim">of ${money(allowed)} allowed${bought} · your size is ${size.qty == null ? '?' : fmtQty(size.qty)} ${word}${c.ladder ? ` · 1R ${c.ladder.levels[0].price}` : ''}</span>`;
   };
   for (const i of sheet.querySelectorAll('input, select')) i.addEventListener('input', calc);
-  if (play) f('#np-qty').value = String(sizeFor({ accountCents: accountNow(), rules: rulesNow(), pos: { instrument: guess.instrument, entry: guess.entry, stop: guess.stop, side: guess.side } }).qty || '');
+  if (play) {
+    const want = sizeFor({ accountCents: accountNow(), rules: rulesNow(), pos: { instrument: guess.instrument, entry: guess.entry, stop: guess.stop, side: guess.side } }).qty;
+    f('#np-qty').value = want > 0
+      ? String(unit === 'dollars' && guess.instrument === 'stock' ? (dollarsForShares(want, Number(guess.entry)) ?? '') : fmtQty(want))
+      : '';
+  }
+  f('#np-inst').addEventListener('change', () => { paintUnit(); calc(); });
+  paintUnit();
   calc();
   f('#np-last').addEventListener('click', (e) => busy(e.currentTarget, 'Reading…', async () => {
     const tk = f('#np-tk').value.toUpperCase().trim();
@@ -578,7 +638,7 @@ function openCloseSheet(p) {
   const guess = p.calc?.unrealizedCents;
   const { sheet, close } = openSheet(`
     <h3>Close ${esc(p.ticker)} ${esc(p.side)}</h3>
-    <div class="sum">${esc(p.instrument === 'stock' ? `${p.qty} sh` : `${p.qty} × ${p.structure || p.instrument}`)} at ${esc(p.entry)}${p.stop == null ? '' : ` · stop ${esc(p.stop)}`}</div>
+    <div class="sum">${esc(p.instrument === 'stock' ? `${fmtQty(p.qty)} sh` : `${fmtQty(p.qty)} × ${p.structure || p.instrument}`)} at ${esc(p.entry)}${p.stop == null ? '' : ` · stop ${esc(p.stop)}`}</div>
     <label>The return, in dollars (plus or minus)<input id="cl-pl" class="num" inputmode="decimal" value="${Number.isFinite(guess) ? (guess / 100).toFixed(2) : ''}"></label>
     <label>Or the price you got out at<input id="cl-px" class="num" inputmode="decimal" placeholder="optional"></label>
     <label>Note<input id="cl-note" placeholder="optional"></label>

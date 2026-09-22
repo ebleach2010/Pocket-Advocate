@@ -92,8 +92,14 @@ function validPosition(body, existing = null, now = Date.now()) {
   if (!INSTRUMENTS.includes(instrument)) throw new TradeError(400, SAY.badInstrument);
   const horizon = horizonOf(String(body?.horizon ?? base.horizon ?? 'intraday').toLowerCase());
   if (!horizon) throw new TradeError(400, SAY.badHorizon);
+  // A share can be bought in pieces, a contract cannot (2026-09-22). Four
+  // places is the limit, so a quantity that cannot survive the rounding is
+  // refused here rather than silently becoming a different position.
   const qty = Number(body?.qty ?? base.qty);
-  if (!Number.isInteger(qty) || qty < 1 || qty > 1_000_000) throw new TradeError(400, SAY.badQty);
+  const whole = instrument !== 'stock';
+  const bad = !Number.isFinite(qty) || qty <= 0 || qty > 1_000_000
+    || (whole ? !Number.isInteger(qty) : Math.round(qty * 10_000) / 10_000 !== qty);
+  if (bad) throw new TradeError(400, whole ? SAY.badQty : SAY.badShares);
   const entry = price(body?.entry ?? base.entry);
   const stop = price(body?.stop ?? base.stop ?? null, false);
   const target = price(body?.target ?? base.target ?? null, false);

@@ -137,6 +137,61 @@ ok('the sheet knows which play it came from and fills the four figures',
   /^Take /.test(sheet.h3 || '') && !!sheet.tk && !!sheet.entry && !!sheet.stop && !!sheet.qty, JSON.stringify(sheet).slice(0, 160));
 ok('it says what the trade risks against what the rule allows', /Risk \$/.test(sheet.risk || '') && /allowed/.test(sheet.risk || ''), sheet.risk);
 await shot('D-sheet');
+
+// DOLLARS OR SHARES (Eric, 2026-09-22: "It should have an option for fractional shares. So
+// essentially it changes dollars to shares"). The chip flips the unit and holds the position: the
+// share count becomes what it costs, and typing dollars buys a fraction of a share.
+const unit0 = await page.evaluate(() => {
+  const u = document.getElementById('np-unit');
+  return { text: u?.textContent.trim(), unit: u?.dataset.unit, hidden: !!u?.hidden, qty: document.getElementById('np-qty').value };
+});
+ok('the quantity field says what its number means, and it starts in shares',
+  unit0.unit === 'shares' && /shares/i.test(unit0.text || '') && !unit0.hidden, JSON.stringify(unit0));
+const flipped = await page.evaluate(async () => {
+  document.getElementById('np-unit').click();
+  await new Promise((r) => setTimeout(r, 250));
+  const u = document.getElementById('np-unit');
+  return { unit: u.dataset.unit, text: u.textContent.trim(), qty: document.getElementById('np-qty').value, risk: document.getElementById('np-risk').textContent.trim() };
+});
+const entryPx = Number(sheet.entry);
+ok('one tap turns the share count into what it costs, at the entry price',
+  flipped.unit === 'dollars' && flipped.text === '$'
+  && Math.abs(Number(flipped.qty) - Number(sheet.qty) * entryPx) < 0.02,
+  `${sheet.qty} sh at ${entryPx} -> ${flipped.qty}`);
+ok('and the line says how many shares that money buys',
+  /buys [\d.]+ shares/.test(flipped.risk), flipped.risk.slice(0, 140));
+const fracBuy = await page.evaluate(async (px) => {
+  const q = document.getElementById('np-qty');
+  q.value = String(Math.round(px / 2));            // half a share's worth, near enough
+  q.dispatchEvent(new Event('input'));
+  await new Promise((r) => setTimeout(r, 250));
+  return document.getElementById('np-risk').textContent.trim();
+}, entryPx);
+ok('a dollar amount under one share still buys a fraction of one', /buys 0\.\d+ shares/.test(fracBuy), fracBuy.slice(0, 140));
+await shot('D-dollars');
+const backToShares = await page.evaluate(async () => {
+  document.getElementById('np-unit').click();
+  await new Promise((r) => setTimeout(r, 250));
+  return { unit: document.getElementById('np-unit').dataset.unit, qty: document.getElementById('np-qty').value };
+});
+ok('and back again, holding the fraction rather than rounding it away',
+  backToShares.unit === 'shares' && Number(backToShares.qty) > 0 && Number(backToShares.qty) < 1, JSON.stringify(backToShares));
+// A contract cannot be bought in pieces, so the chip is not offered on one.
+const onCall = await page.evaluate(async () => {
+  const i = document.getElementById('np-inst');
+  i.value = 'call'; i.dispatchEvent(new Event('change'));
+  await new Promise((r) => setTimeout(r, 200));
+  return { hidden: !!document.getElementById('np-unit').hidden };
+});
+ok('a contract is never sized in dollars, because it cannot be bought in pieces', onCall.hidden === true, JSON.stringify(onCall));
+await page.evaluate(async (sh) => {
+  const i = document.getElementById('np-inst');
+  i.value = 'stock'; i.dispatchEvent(new Event('change'));
+  const q = document.getElementById('np-qty');
+  q.value = sh; q.dispatchEvent(new Event('input'));
+  await new Promise((r) => setTimeout(r, 200));
+}, sheet.qty);
+
 const takenTicker = sheet.tk;
 await page.evaluate(() => document.getElementById('np-go').click());
 await page.waitForTimeout(2500);

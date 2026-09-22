@@ -1808,7 +1808,8 @@ export function demoApi(role, store) {
         badSide: 'Side is long or short.',
         badInstrument: 'Instrument is stock, call, put or spread.',
         badHorizon: 'Horizon is scalp, intraday or swing.',
-        badQty: 'Quantity: a whole number, 1 or more.',
+        badQty: 'Contracts: a whole number, 1 or more.',
+        badShares: 'Shares: any amount above zero, fractions welcome, to four places.',
         badPrice: 'Entry, stop and target are prices above zero, four decimals at most.',
         badWidth: 'Spread width: the distance between the strikes, above zero.',
         noPosition: 'No such position.',
@@ -2038,8 +2039,13 @@ export function demoApi(role, store) {
         if (!INSTRUMENTS.includes(instrument)) return fail(400, SAY.badInstrument);
         const horizon = horizonOf(String(body.horizon ?? base.horizon ?? 'intraday').toLowerCase());
         if (!horizon) return fail(400, SAY.badHorizon);
+        // Fractional shares, whole contracts (2026-09-22), the same rule the
+        // Worker applies and the same two sentences.
         const qty = Number(body.qty ?? base.qty);
-        if (!Number.isInteger(qty) || qty < 1) return fail(400, SAY.badQty);
+        const whole = instrument !== 'stock';
+        if (!Number.isFinite(qty) || qty <= 0 || qty > 1_000_000
+          || (whole ? !Number.isInteger(qty) : Math.round(qty * 10_000) / 10_000 !== qty))
+          return fail(400, whole ? SAY.badQty : SAY.badShares);
         const num = (v, req) => {
           if (v === '' || v === null || v === undefined) { if (req) return NaN; return null; }
           const n = Number(v);
