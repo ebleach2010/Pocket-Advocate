@@ -942,6 +942,9 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // An allocation that risks more than his one trade rule says so on its face.
   const overCard = mod.playFaceHtml({ ...stockPlay, allocPct: 90 }, { rules, accountCents: 449000 });
   const expired = mod.playFaceHtml({ ...play, id: 'p2', status: 'expired' }, { rules, accountCents: 238000 });
+  // The one from his screenshot (2026-09-22): still marked open, but its hour has gone. That is
+  // the card that sat at the top of his board saying Expired with Take it still on it.
+  const ranOut = mod.playFaceHtml({ ...play, id: 'p5', status: 'open', expiresAt: new Date(Date.now() - 3600_000) }, { rules, accountCents: 238000 });
   const took = mod.playFaceHtml({ ...play, id: 'p3', status: 'took' }, { rules, accountCents: 238000 });
   const closedPlay = mod.playFaceHtml({ ...play, id: 'p4', status: 'closed', outcomeCents: 4500 }, { rules, accountCents: 238000 });
   const pos = { id: 't1', ticker: 'NVDA', side: 'long', instrument: 'stock', horizon: 'intraday', qty: 10, entry: 648.4, stop: 646.9, target: 652, mark: null, status: 'open' };
@@ -962,28 +965,26 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && (svg.match(/<polyline /g) || []).length === 5 && /stroke="var\(--gold\)"/.test(svg) && /fill="var\(--green\)"/.test(svg)
     && !/#[0-9a-fA-F]{3,6}\b/.test(svg) && mod.deskChartSvg(null) === '' && mod.deskChartSvg({ points: [] }) === ''
     && /against the 2% a day line/.test(svg) && /against the 2\.5% a day line/.test(svgAim)
-    && /<span class="tk">NVDA<\/span>/.test(card) && /class="chip neon c-green">Long</.test(card) && /Intraday<\/span>/.test(card)
-    && /<div class="v">56 to 64%<\/div>/.test(card)
-    // RE-PINNED 2026-09-22 (v6.6): the tags line names the vehicle the way he would say it at a
-    // broker, with the count in front, and the In cell carries what to put in and what share of the
-    // account that is. A stock's line says shares and never a share count.
-    // NEGATIVE CONTROL (run 2026-09-22, v6.6): the count dropped from the tags line, so a card said
-    //   what the contract was but never how many of it, made this read
-    //   FAIL  T34 the desk's view module RUNS: ...
-    && /hold 3h · 1 × 650\/655 call debit spread, 17 Oct/.test(card)
-    // One spread contract risks $80 against a $23.80 budget on this account, so the card says so on
-    // its face rather than leaving him to work it out.
-    && /class="k">In<\/div><div class="v stop">\$418\.88<span class="later"> · 17\.6%<\/span>/.test(card)
-    && /<div class="sub">over your rule<\/div>/.test(card)
-    // A stock names no share count anywhere, and sits inside the rule at 21%.
-    && /hold 3h · shares/.test(stockCard) && !/× shares/.test(stockCard) && !/ sh</.test(stockCard)
-    && /class="k">In<\/div><div class="v ">\$942\.90<span class="later"> · 21%<\/span>/.test(stockCard)
-    && /<div class="sub">of the account<\/div>/.test(stockCard)
-    && /class="k">In<\/div><div class="v stop">\$4,041\.00<span class="later"> · 90%<\/span>/.test(overCard)
-    && /<div class="sub">over your rule<\/div>/.test(overCard)
-    && ['Catalyst', 'Bull', 'Bear', 'Levels', 'Risk', 'Watch', 'Overnight'].every((k) => card.includes(`<dt>${k}</dt>`))
+    // RE-PINNED 2026-09-22 (v6.7, Eric: "Make the plays fucking plain English. For example. 3
+    // hours, NVDA, $248, stop loss price, take profit price. If call, date strike expiration.").
+    // The face is his sentence and one line under it. The odds block, the two chips, the why line
+    // and all five cells are gone, because every one of them was a thing he had to translate.
+    && /<p class="plain">3 hours, buy \$419 of the NVDA 650\/655 call debit spread expiring 17 Oct, stop loss 1\.30, take profit 3\.40<\/p>/.test(card)
+    && /<p class="under over">Get in near 2\.10\. You lose about \$80\.00 if the stop hits\. That is more than the \$23\.80 you allow one trade\. Chance of profit 56 to 64%\.<\/p>/.test(card)
+    && !/class="odds"/.test(card) && !/class="tags"/.test(card) && !/class="cells"/.test(card) && !/class="why"/.test(card)
+    && /<p class="plain">3 hours, buy \$943 of NVDA, stop loss 226\.30, take profit 231\.50<\/p>/.test(stockCard)
+    && /You lose about \$10\.71 if the stop hits\./.test(stockCard) && !/ sh</.test(stockCard)
+    && /<p class="under over">/.test(overCard)
+    && ['Why', 'Catalyst', 'Bull', 'Bear', 'Levels', 'Risk', 'Watch', 'Overnight'].every((k) => card.includes(`<dt>${k}</dt>`))
     && /648 · 650 · 652 · 655/.test(card) && /data-act="take"[^>]*>Take it</.test(card) && /data-act="skip">Skip</.test(card) && !/data-act="closed"/.test(card)
-    && /class="outlined play expired"/.test(expired) && />Expired</.test(expired) && /data-act="take"/.test(expired)
+    // RE-PINNED 2026-09-22 (v6.7): an expired setup has no Take it on it, because it is not a
+    // setup any more. It says Expired and waits in Recent.
+    // NEGATIVE CONTROL (run 2026-09-22, v6.7): the card's `&& !expired` dropped from `live`, so a
+    //   setup whose hour had gone still offered Take it, made this read
+    //   FAIL  T34 the desk's view module RUNS: ...
+    && /class="outlined play expired"/.test(expired) && />Expired</.test(expired) && !/data-act="take"/.test(expired)
+    && /class="outlined play expired"/.test(ranOut) && />Expired</.test(ranOut)
+    && !/data-act="take"/.test(ranOut) && !/data-act="skip"/.test(ranOut)
     && />Taken</.test(took) && /data-act="closed">Closed at</.test(took)
     && /Closed \+\$45\.00/.test(closedPlay) && !/data-act=/.test(closedPlay)
     && /data-pos="t1"/.test(posCard) && /<span class="u up">\+\$28\.00<\/span>/.test(posCard) && /<span class="r">1\.9R<\/span>/.test(posCard)
@@ -1276,10 +1277,14 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry65 = (CL.match(/\{\n\s+\/\/ DOLLARS OR SHARES[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v6.6): what to put in, and in what.
   const entry66 = (CL.match(/\{\n\s+\/\/ WHAT TO PUT IN, AND IN WHAT[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v6.7): plain English, a board that refreshes, a wider net.
+  const entry67 = (CL.match(/\{\n\s+\/\/ PLAIN ENGLISH, A BOARD THAT REFRESHES[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
+  // NEGATIVE CONTROL (run 2026-09-22, v6.7): 'A setup is one sentence now' reworded to 'A setup is a single sentence now' in the 6.7 entry made this read
+  //   FAIL  T36 both versions read 6.7 with the new tag, the 4.7 through 6.6 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.6): 'That is a different number from the risk' reworded to 'That is another number from the risk' in the 6.6 entry made this read
-  //   FAIL  T36 both versions read 6.6 with the new tag, the 4.7 through 6.5 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
+  //   FAIL  T36 both versions read 6.7 with the new tag, the 4.7 through 6.6 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.5): 'Shares can be fractional now' reworded to 'Shares can be partial now' in the 6.5 entry made this read
   //   FAIL  T36 both versions read 6.6 with the new tag, the 4.7 through 6.5 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.4): 'treated as a failed scan' reworded to 'handled as a failed scan' in the 6.4 entry made this read
@@ -1290,8 +1295,12 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   //   FAIL  T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v5.2): 'has a calculator' reworded to 'has a calculator now' in the 5.2 entry made this read
   //   FAIL  T36 both versions read 5.3 with the new tag, the 4.7 through 5.3 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 6.6 with the new tag, the 4.7 through 6.5 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '6\.6';/.test(CL) && /const VERSION = '6\.6';/.test(W) && /const BUILD_TAG = 'v2026-09-22-what-to-put-in';/.test(W)
+  check('T36 both versions read 6.7 with the new tag, the 4.7 through 6.6 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '6\.7';/.test(CL) && /const VERSION = '6\.7';/.test(W) && /const BUILD_TAG = 'v2026-09-22-plain-english';/.test(W)
+    && /version: '6\.7',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry67)
+    && /A setup is one sentence now/.test(entry67) && /Expired setups are off the board/.test(entry67)
+    && /a starting point, not the whole hunt/.test(entry67) && /the note again/.test(entry67) && !DASH.test(entry67)
+    && (entry67.match(/^\s+'[^\n]+',$/gm) || []).length === 4
     && /version: '6\.6',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry66)
     && /a different number from the risk/.test(entry66) && /never a number of shares/.test(entry66)
     && /can never break Rules to hold/.test(entry66) && !DASH.test(entry66)
@@ -1671,6 +1680,71 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     JSON.stringify({ stock, call, old: old.allocPct, bare: bare.allocCents }));
 }
 
+// ---- T61: plain English, a board that refreshes, and a wider net (Eric, 2026-09-22) ---------
+// "Make the plays fucking plain English... Why do I have expired plays? Those should just refresh.
+// And it shouldnt just look at mega cap companies. Jesus. Also the long blurb here is dumb."
+{
+  const APP5 = f('public/js/admin-deskapp.js');
+  const CSS5 = f('public/css/admin.css');
+  const DRIVE5 = f('tools/drives/drive-trade.mjs');
+  const D5 = f('public/js/demo/api.js');
+  const R5 = math.defaultRules();
+  const A5 = 449000;
+  const P = (over) => math.playLine({ ticker: 'NVDA', side: 'long', instrument: 'stock', entry: 228.9, stop: 226.3, targets: [231.5], holdMinutes: 180, allocPct: 5.5, ...over }, { rules: R5, accountCents: A5 });
+  const noteOnly = new Function(`${grab(ADV, /function sectionMatch\(text, name\) \{[\s\S]*?\n\}/)}\n${grab(ADV, /function noteOnly\(text\) \{[\s\S]*?\n\}/)}\nreturn noteOnly;`)();
+  const wall = '## Note\n\nThe tape is holding its ranges.\n\nOne more line of the note.\n\n## Setups\n\n### AMD long\nCurrent picture: eight hundred words of it.\nChance of profit: 45 to 55%\n\n### META long\nCurrent picture: more.';
+
+  // NEGATIVE CONTROL (run 2026-09-22, v6.7): playLine's hold dropped from the front of the line,
+  //   so the sentence no longer opened with how long he is in it, made this read
+  //   FAIL  T61 a setup reads as one plain sentence: ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.7): 'expired' put back into the page's LIVE set, so a
+  //   setup that had run out of time sat on the board with Take it on it, made this read
+  //   FAIL  T61 a setup reads as one plain sentence: ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.7): noteOnly's sectionMatch arm removed, so the whole
+  //   Setups section came back into the note, made this read
+  //   FAIL  T61 a setup reads as one plain sentence: ...
+  check('T61 a setup reads as one plain sentence in his own order and nothing else RUNS: how long he is in it, buy or short with how much money, the contract with its strike and the date it expires when there is one, then the stop loss and the take profit, with no R, no share count and no abbreviation to expand; the board carries only what still stands, so a setup past its hour drops to Recent instead of sitting at the top with Take it on it; the note kept on the desk is the Note section alone rather than the whole reading; and the watchlist is a starting point the scan is told to look past, with a default his account can actually take',
+    // His example: "3 hours, NVDA, $248, stop loss price, take profit price."
+    P() === '3 hours, buy $247 of NVDA, stop loss 226.30, take profit 231.50'
+    && P({ side: 'short' }) === '3 hours, short $247 of NVDA, stop loss 226.30, take profit 231.50'
+    // "If call, date strike expiration."
+    && P({ instrument: 'call', entry: 2.1, stop: 1.3, targets: [3.4], strike: 650, expiry: '2026-10-17' })
+      === '3 hours, buy $247 of NVDA 650 call expiring 17 Oct, stop loss 1.30, take profit 3.40'
+    && P({ instrument: 'spread', entry: 2.1, stop: 1.3, targets: [3.4], strike: 650, strike2: 655, optionType: 'call', expiry: '2026-10-17' })
+      === '3 hours, buy $247 of the NVDA 650/655 call debit spread expiring 17 Oct, stop loss 1.30, take profit 3.40'
+    // A hold he would say out loud, and a price he would read out loud.
+    && math.holdPlain({ holdMinutes: 10 }) === '10 minutes' && math.holdPlain({ holdMinutes: 60 }) === '1 hour'
+    && math.holdPlain({ holdMinutes: 180 }) === '3 hours' && math.holdPlain({ horizon: 'swing', holdDays: 1 }) === '1 day'
+    && math.holdPlain({ horizon: 'swing', holdDays: 3 }) === '3 days'
+    && math.priceWords(226.3) === '226.30' && math.priceWords(402) === '402' && math.priceWords(null) === ''
+    // Nothing missing is invented: no stop, no stop clause; no money, no money.
+    && P({ stop: null }) === '3 hours, buy $247 of NVDA, take profit 231.50'
+    && P({ allocPct: null, sizeDollars: null }) === '3 hours, buy NVDA, stop loss 226.30, take profit 231.50'
+    && P({ targets: [] }) === '3 hours, buy $247 of NVDA, stop loss 226.30'
+    // The board carries only what still stands.
+    && /const LIVE = new Set\(\['open'\]\);/.test(APP5)
+    && /LIVE\.has\(p\.status\) && !expired\(p\)/.test(APP5)
+    && /Nothing still standing\. The last setups have run out of time\./.test(APP5)
+    // The note is the Note.
+    && noteOnly(wall) === 'The tape is holding its ranges.\n\nOne more line of the note.'
+    && noteOnly('Just a sentence, no headings.') === 'Just a sentence, no headings.'
+    && !/Setups/.test(noteOnly(wall)) && !/###/.test(noteOnly(wall))
+    && !/### QQQ long/.test(D5)
+    // A wider net, and a default list his account can take.
+    && K.DEFAULT_WATCHLIST.includes('IWM') && K.DEFAULT_WATCHLIST.length === 10
+    && !['META', 'MSFT', 'AMZN', 'AAPL'].some((t) => K.DEFAULT_WATCHLIST.includes(t))
+    && [K.SCAN_CONTRACT, K.TRADE_CONTRACT].every((c) => /a starting point, not the universe/.test(c)
+      && /Mid caps and small caps are in scope/.test(c)
+      && /Do not file four mega caps because they are the names in front of you/.test(c)
+      && /leaves room for a real position inside his rule/.test(c) && !DASH.test(c))
+    // The look, and the drive that walks it.
+    && /html\[data-desk\]:root \.play \.plain \{/.test(CSS5) && /html\[data-desk\]:root \.play \.under \{/.test(CSS5)
+    && /each card is one plain sentence/.test(DRIVE5) && /nothing expired is on the board/.test(DRIVE5)
+    && /the scan refreshes the board rather than piling up on it/.test(DRIVE5)
+    && /the note is the note, not the whole reading/.test(DRIVE5),
+    JSON.stringify({ stock: P(), call: P({ instrument: 'call', entry: 2.1, stop: 1.3, targets: [3.4], strike: 650, expiry: '2026-10-17' }), note: noteOnly(wall) }));
+}
+
 // ---- T56: a scan in flight is not a reading (Eric, 2026-09-22: "It's not producing a scan rn") ----
 {
   const sweep = lift(ADV, 'export async function runQueuedAnalyses(env, deadlineAt = 0) {');
@@ -1700,7 +1774,11 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && /const SCAN_MARKER = \(caseId\) => `advisorQueue\/scan_case_\$\{caseId\}`;/.test(ADV)
     // A landed scan says which silence it was: nothing worth taking, or no
     // setups list at all. The page has a sentence for the second.
-    && /scanNote: \{ text: pl\.text\.slice\(0, 6000\), at: new Date\(\), plays: filed\?\.plays \?\? 0, missing: !!pl\.missing \},/.test(ADV)
+    // RE-PINNED 2026-09-22 (v6.7): the note kept everything but the Plays json, which meant the
+    // whole Setups section ran into one wall of text on his Plays page. It is the Note section
+    // alone now, and a fifth of the length.
+    && /scanNote: \{ text: noteOnly\(pl\.text\)\.slice\(0, 1200\), at: new Date\(\), plays: filed\?\.plays \?\? 0, missing: !!pl\.missing \},/.test(ADV)
+    && /const m = sectionMatch\(String\(text \|\| ''\), 'Note'\);/.test(ADV)
     && /plays: Number\(note\.plays\) \|\| 0, missing: note\.missing === true,/.test(T)
     && /plays: Number\(note\.plays\) \|\| 0, missing: note\.missing === true,/.test(D)
     && /That scan came back without its setups list, so nothing was filed\. Tap Scan again\./.test(APP2)
@@ -1995,6 +2073,9 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     lift(ADV, 'export async function runTradeScan(env, caseId, { now = Date.now() } = {}) {'),
     lift(ADV, 'export async function pollScanFlight(env, caseId, { minAgeMs = 15_000 } = {}) {'),
     lift(ADV, 'async function finishTradeScan(env, caseId, flight, message) {'),
+    // The note is the Note section only (2026-09-22), so the cutter and the matcher ride along.
+    lift(ADV, 'function noteOnly(text) {'),
+    lift(ADV, 'function sectionMatch(text, name) {'),
     lift(ADV, 'async function deskState(env) {'),
     lift(ADV, 'export function askFlightNext(flight, poll, now = Date.now()) {'),
   ].join('\n');

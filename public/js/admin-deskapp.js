@@ -153,7 +153,12 @@ const accountNow = () => (Number.isFinite(S.positions?.accountCents) ? S.positio
     : Number(S.state?.settings?.startCents) || 0);
 const scanNow = () => S.panel?.trade?.scan || S.state?.scan || { status: 'idle', note: null, at: null, error: null };
 const hasKeyNow = () => !!(S.state?.hasKey ?? S.panel?.trade?.hasKey);
-const LIVE = new Set(['open', 'expired']);
+// WHAT IS LIVE (Eric, 2026-09-22: "Why do I have expired plays? Those should
+// just refresh."). `expired` used to be in here, so a setup that had timed out
+// sat at the top of the board with Take it still on it and the word Expired
+// beside it. A setup past its hour is not a setup; it drops to Recent with the
+// skipped and the closed, and the board shows only what still stands.
+const LIVE = new Set(['open']);
 const expired = (p) => p.status === 'expired' || (p.status === 'open' && p.expiresAt && new Date(p.expiresAt).getTime() < Date.now());
 const chanceOf = (p) => (Number(p.profitLow) + Number(p.profitHigh)) / 2 || 0;
 
@@ -216,19 +221,19 @@ function paintTicks() {
 function tickSymbols() {
   const watch = S.state?.settings?.watchlist || [];
   const mine = (S.positions?.positions || []).filter((p) => p.status === 'open').map((p) => p.ticker);
-  const top = S.plays.filter((p) => LIVE.has(p.status)).sort((a, b) => chanceOf(b) - chanceOf(a))[0]?.ticker;
+  const top = S.plays.filter((p) => LIVE.has(p.status) && !expired(p)).sort((a, b) => chanceOf(b) - chanceOf(a))[0]?.ticker;
   return [...new Set([...mine, top, ...watch].filter(Boolean))].slice(0, 3);
 }
 function paintPlays() {
   const box = $('#plays');
   const rules = rulesNow();
   const accountCents = accountNow();
-  const live = S.plays.filter((p) => LIVE.has(p.status) || (p.status === 'took' && !p.closedAt))
-    .sort((a, b) => (Number(expired(a)) - Number(expired(b))) || (chanceOf(b) - chanceOf(a)) || String(b.at || '').localeCompare(String(a.at || '')));
+  const live = S.plays.filter((p) => (LIVE.has(p.status) && !expired(p)) || (p.status === 'took' && !p.closedAt))
+    .sort((a, b) => (chanceOf(b) - chanceOf(a)) || String(b.at || '').localeCompare(String(a.at || '')));
   const rest = S.plays.filter((p) => !live.includes(p)).slice(0, 10);
   box.innerHTML = live.length
     ? live.map((p) => playFaceHtml(p, { rules, accountCents })).join('')
-    : `<div class="panel empty"><span>${S.plays.length ? 'Nothing open right now.' : 'Nothing worth taking right now.'}</span><button type="button" class="btn primary" data-scan-here>Scan for new entries</button></div>`;
+    : `<div class="panel empty"><span>${S.plays.length ? 'Nothing still standing. The last setups have run out of time.' : 'Nothing worth taking right now.'}</span><button type="button" class="btn primary" data-scan-here>Scan for new entries</button></div>`;
   box.querySelector('[data-scan-here]')?.addEventListener('click', () => $('#scan-go').click());
   for (const b of box.querySelectorAll('[data-act]')) {
     b.addEventListener('click', () => {

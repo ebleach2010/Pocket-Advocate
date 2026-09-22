@@ -103,28 +103,50 @@ const plays = await until(() => {
   if (!cards.length) return null;
   return {
     n: cards.length,
-    tickers: cards.map((c) => c.querySelector('.tk')?.textContent.trim()),
-    odds: cards.map((c) => c.querySelector('.odds .v')?.textContent.trim()),
+    // THE PLAIN SENTENCE (Eric, 2026-09-22): the whole face is one line now, so the drive reads
+    // the line rather than hunting for chips and cells that no longer exist.
+    lines: cards.map((c) => c.querySelector('.plain')?.textContent.trim()),
+    unders: cards.map((c) => c.querySelector('.under')?.textContent.trim()),
     note: document.getElementById('note-p')?.textContent.trim().slice(0, 40),
+    noteLen: (document.getElementById('note-p')?.textContent || '').length,
     mkt: document.getElementById('mkt-word')?.textContent.trim(),
     ticks: document.querySelectorAll('#ticks .tq').length,
-    risk: cards[0].querySelector('.cells .v')?.textContent.trim(),
+    stale: cards.filter((c) => c.className.includes('expired')).length,
   };
 });
-ok('three plays, best chance first', !!plays && plays.n === 3 && plays.tickers.join() === 'NVDA,AMD,TSLA', plays?.tickers.join());
-ok('each card leads with its odds and its entry', !!plays && plays.odds[0] === '55 to 65%' && plays.risk === '2.1', JSON.stringify(plays?.odds));
+ok('three plays, best chance first', !!plays && plays.n === 3
+  && plays.lines.map((l) => (l.match(/\b[A-Z]{1,5}\b/) || [''])[0]).join() === 'NVDA,AMD,TSLA', plays?.lines.join(' | '));
+// "3 hours, NVDA, $248, stop loss price, take profit price. If call, date strike expiration."
+ok('each card is one plain sentence: the hold, what to buy with how much, the stop loss and the take profit',
+  !!plays && plays.lines.every((l) => /^\d+(\.\d+)? (minutes?|hours?|days?), (buy|short) \$[\d,]+ of /.test(l)
+    && /stop loss [\d.]+/.test(l) && /take profit [\d.]+/.test(l)),
+  plays?.lines[0]);
+ok('and the contract names its strike and when it expires',
+  !!plays && plays.lines.some((l) => /call expiring \d+ \w{3}|call debit spread expiring \d+ \w{3}/.test(l))
+    || plays.lines.every((l) => !/call|put|spread/.test(l)), plays?.lines.join(' | '));
+ok('the line under it says what he loses in dollars and the chance, with no R and no share count',
+  !!plays && plays.unders.every((u) => /You lose about \$[\d,.]+ if the stop hits\./.test(u) && !/\dR\b/.test(u) && !/ sh\b/.test(u)),
+  plays?.unders[0]);
+ok('nothing expired is on the board', !!plays && plays.stale === 0, `${plays?.stale} expired cards`);
+ok('the note is the note, not the whole reading', !!plays && plays.noteLen > 0 && plays.noteLen <= 1200, `${plays?.noteLen} chars`);
 ok('the scan\'s note sits above them and the market line reads his clock', !!plays && /The indexes opened/.test(plays.note || '') && /^\d\d:\d\d · /.test(plays.mkt || ''), plays?.mkt);
 ok('the prices he is in are on the strip', !!plays && plays.ticks >= 1, `${plays?.ticks} tiles`);
 await shot('C-plays');
 await page.evaluate(() => document.getElementById('scan-go').click());
 const scanning = await until(() => document.getElementById('scan').getAttribute('aria-busy') === 'true', 6000);
 ok('Scan says it is scanning and disables itself', !!scanning && await page.evaluate(() => document.getElementById('scan-go').disabled));
+// RE-PINNED 2026-09-22 (v6.7, Eric: "Why do I have expired plays? Those should just refresh."). A
+// scan replaces the board: it expires what was standing and files what stands now, so the count
+// after a scan is what the scan filed, not that plus the stale ones it just retired.
 const landed = await until(() => {
   const busy = document.getElementById('scan').getAttribute('aria-busy') === 'true';
-  const n = document.querySelectorAll('#plays [data-play]').length;
-  return !busy && n === 4 ? { n, txt: document.getElementById('scan-txt').textContent.trim() } : null;
+  const cards = [...document.querySelectorAll('#plays [data-play]')];
+  return !busy && cards.length === 1
+    ? { n: cards.length, line: cards[0].querySelector('.plain')?.textContent.trim(), txt: document.getElementById('scan-txt').textContent.trim() }
+    : null;
 }, 25000);
-ok('the scan lands on the page\'s own poll, with the new play on the desk', !!landed && landed.n === 4, JSON.stringify(landed));
+ok('the scan refreshes the board rather than piling up on it', !!landed && landed.n === 1, JSON.stringify(landed));
+ok('and what it filed reads as one plain sentence', !!landed && /^3 hours, buy \$[\d,]+ of QQQ, stop loss 496\.40, take profit 501\.50$/.test(landed.line || ''), landed?.line);
 
 console.log('\n--- D. Take it: the sheet comes pre-filled and the saved position marks the play ---');
 await page.evaluate(() => document.querySelector('#plays [data-play] [data-act="take"]').click());

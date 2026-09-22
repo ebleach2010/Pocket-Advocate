@@ -317,6 +317,52 @@ export function vehicleLabel(p) {
   return strikes || when ? built : (String(p?.structure || '').trim() || kind);
 }
 
+/** A hold in the words a person says out loud: 10 minutes, 3 hours, 2 days. */
+export function holdPlain(p) {
+  if (p?.horizon === 'swing') { const d = Number(p.holdDays) || 3; return `${d} day${d === 1 ? '' : 's'}`; }
+  const m = Math.round(Number(p?.holdMinutes) || 0);
+  if (m < 60) return `${m} minute${m === 1 ? '' : 's'}`;
+  const h = Math.round((m / 60) * 10) / 10;
+  return `${h} hour${h === 1 ? '' : 's'}`;
+}
+/** A price as he would read it aloud: 226.30, not 226.3, and 402 stays 402. */
+export function priceWords(v) {
+  const n = fin(v);
+  if (n == null) return '';
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+const px = priceWords;
+
+/**
+ * A SETUP IN ONE PLAIN SENTENCE (Eric, 2026-09-22: "Make the plays fucking
+ * plain English. For example. 3 hours, NVDA, $248, stop loss price, take
+ * profit price. If call, date strike expiration. Simplify. Don't make me guess
+ * what it means.").
+ *
+ * His order, his words. The hold first, then what to do and with how much
+ * money, then the contract if it is one, then the two prices that end it. No
+ * chips, no R multiples, no share counts, no abbreviations he has to expand
+ * in his head.
+ */
+export function playLine(p, { rules, accountCents } = {}) {
+  const sz = playSizing({ play: p, rules, accountCents });
+  const verb = p?.side === 'short' ? 'short' : 'buy';
+  const money = sz.allocCents == null ? '' : `$${Math.round(sz.allocCents / 100).toLocaleString('en-US')} of `;
+  // Inside a sentence the date reads better as a word than as another comma,
+  // which would be the fourth in the line.
+  const phrase = sz.vehicle.replace(/, ([^,]+)$/, ' expiring $1');
+  const what = p?.instrument === 'stock'
+    ? `${p?.ticker || ''}`
+    : p?.instrument === 'spread'
+      ? `the ${p?.ticker || ''} ${phrase}`
+      : `${p?.ticker || ''} ${phrase}`;
+  const bits = [holdPlain(p), `${verb} ${money}${what}`.trim()];
+  if (p?.stop != null && p.stop !== '') bits.push(`stop loss ${px(p.stop)}`);
+  const t = (p?.targets || [])[0];
+  if (t != null) bits.push(`take profit ${px(t)}`);
+  return bits.filter(Boolean).join(', ');
+}
+
 /**
  * WHAT A PLAY IS TELLING HIM TO PUT IN, and what that buys.
  *

@@ -5690,6 +5690,21 @@ export async function pollScanFlight(env, caseId, { minAgeMs = 15_000 } = {}) {
  * strong one and the cover's standing all behave identically whichever
  * button bought them.
  */
+/**
+ * The `## Note` section on its own, with its heading taken off. Anything else
+ * the answer wrote is either on a card already or was not asked for. With no
+ * Note heading at all, the first paragraph, because something is better than
+ * the whole essay (2026-09-22).
+ */
+function noteOnly(text) {
+  const m = sectionMatch(String(text || ''), 'Note');
+  // The whole Note section when there is one: it is under 120 words by
+  // contract and may run to two paragraphs, and cutting it would be the
+  // opposite mistake. Only the fallback takes one paragraph.
+  if (m) return String(m[1]).trim();
+  return String(text || '').replace(/^#{1,6}[^\n]*\n+/, '').trim().split(/\n{2,}/)[0].trim();
+}
+
 async function finishTradeScan(env, caseId, flight, message) {
   const t0 = flight?.submittedAt ? new Date(flight.submittedAt).getTime() : Date.now();
   try {
@@ -5738,7 +5753,14 @@ async function finishTradeScan(env, caseId, flight, message) {
       // is not the same as a scan that filed nothing on purpose. The page
       // says which it was, because "0 on the desk" reads as broken either way
       // (Eric, 2026-09-22: "It's not producing a scan rn").
-      scanNote: { text: pl.text.slice(0, 6000), at: new Date(), plays: filed?.plays ?? 0, missing: !!pl.missing },
+      // THE NOTE IS THE NOTE (Eric, 2026-09-22: "the long blurb here is dumb.
+      // Get rid of it."). It used to keep everything the answer said except
+      // the Plays json, which meant the whole Setups section, headings and
+      // all, ran into one wall of text on the Plays page: he was reading
+      // "Chance of profit: 45 to 55% ### META long Current picture:" mid
+      // paragraph. Every word of that is already on the cards. What is left is
+      // the Note heading's own section, which is under 120 words by contract.
+      scanNote: { text: noteOnly(pl.text).slice(0, 1200), at: new Date(), plays: filed?.plays ?? 0, missing: !!pl.missing },
     }, { mask: ['scanStatus', 'scanError', 'scanCtx', 'lastScanAt', 'scanNote'] });
     await diagLog(env, {
       ev: 'scan-end', ok: true, plays: filed?.plays ?? 0, expired: filed?.expired ?? 0,

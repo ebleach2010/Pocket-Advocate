@@ -14,7 +14,7 @@
 // this file is a 404 to anyone but him.
 
 import {
-  tradeCalc, rulesOf, HORIZON_WORDS, WARNING_TEXT, fmtPct, sizeFor, fmtQty, playSizing,
+  tradeCalc, rulesOf, HORIZON_WORDS, WARNING_TEXT, fmtPct, sizeFor, fmtQty, playSizing, playLine, priceWords,
 } from './trade-math.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -81,48 +81,38 @@ export function holdWords(p) {
 }
 
 /**
- * A play, as he reads it in a second: the ticker and which way, the odds, one
- * line on why, then entry, target, stop and what it risks in his dollars. The
- * six setup lines are behind a tap, because a card he has to read twice is a
- * card he does not read.
+ * A SETUP IN ONE PLAIN SENTENCE (Eric, 2026-09-22: "Make the plays fucking
+ * plain English. For example. 3 hours, NVDA, $248, stop loss price, take
+ * profit price. If call, date strike expiration. Simplify. Don't make me guess
+ * what it means.").
+ *
+ * So the face is his sentence and one line under it, and that is all. The
+ * odds block, the two chips, the four cells and the In cell are gone: every
+ * one of them made him translate something. What he loses if the stop hits is
+ * said in dollars rather than as an R, the chance is said as a chance, and
+ * everything else is behind the tap it was always behind.
  */
 export function playFaceHtml(p, { rules, accountCents } = {}) {
   const R = rulesOf({ rules });
   const past = p.expiresAt && new Date(p.expiresAt).getTime() < Date.now() && p.status === 'open';
   const expired = p.status === 'expired' || past;
-  const targets = (p.targets || []).map((t) => esc(t));
-  const size = sizeFor({ accountCents, rules: R, pos: { instrument: p.instrument, entry: p.entry, stop: p.stop, side: p.side, credit: !!p.credit, width: p.width } });
-  const calc = tradeCalc({ pos: { ...p, qty: size.qty || 0 }, rules: R, accountCents });
-  const per = p.instrument === 'stock' ? 'a share' : 'a contract';
-  const unit = calc.unitRisk == null ? 'not capped' : money(Math.round(calc.unitRisk * 100));
-  // WHAT IT IS AND WHAT TO PUT IN (Eric, 2026-09-22). The tags line names the
-  // vehicle the way he would say it at a broker: the strike, the kind and the
-  // expiration, or the word shares. The In cell carries the money, because a
-  // stock setup is a dollar figure to him and never a share count.
   const sz = playSizing({ play: p, rules: R, accountCents });
-  const count = p.instrument === 'stock'
-    ? '' : `${sz.contracts == null ? '' : `${sz.contracts} × `}`;
-  const inst = `hold ${holdWords(p)} · ${count}${sz.vehicle}`;
-  const inCell = sz.allocCents == null ? '' :
-    `${money(sz.allocCents)}${sz.allocPct == null ? '' : `<span class="later"> · ${sz.allocPct}%</span>`}`;
+  const line = playLine(p, { rules: R, accountCents });
+  const loses = sz.riskCents == null ? '' : `You lose about ${money(sz.riskCents)} if the stop hits.`;
+  const chance = p.profitLow == null ? '' : `Chance of profit ${p.profitLow} to ${p.profitHigh}%.`;
+  const over = sz.overRule ? `That is more than the ${money(sz.budgetCents)} you allow one trade.` : '';
+  const near = p.entry == null ? '' : `Get in near ${priceWords(p.entry)}.`;
   const state = p.status === 'took' ? 'Taken' : p.status === 'closed' ? `Closed ${money(p.outcomeCents, true)}` : p.status === 'skipped' ? 'Skipped' : expired ? 'Expired' : '';
   const rows = [
-    ['Catalyst', p.catalyst], ['Bull', p.bull], ['Bear', p.bear],
+    ['Why', p.picture], ['Catalyst', p.catalyst], ['Bull', p.bull], ['Bear', p.bear],
     ['Levels', (p.levels || []).join(' · ')], ['Risk', p.risk], ['Watch', p.watch],
     ['Overnight', p.overnight?.ok ? `Yes. ${p.overnight.why || ''}` : `No. ${p.overnight?.why || ''}`],
   ].filter(([, v]) => v);
-  const live = p.status === 'open' || expired;
+  const live = p.status === 'open' && !expired;
   return `<article class="outlined play${expired ? ' expired' : ''}" data-kind="${esc(p.horizon || 'intraday')}" data-play="${esc(p.id)}">
-    <div class="head"><span class="tk">${esc(p.ticker)}</span><span class="co">${esc(state)}</span><span class="odds"><div class="k">Odds</div><div class="v">${esc(p.profitLow)} to ${esc(p.profitHigh)}%</div></span></div>
-    <div class="tags">${SIDE(p.side)}${KIND(p.horizon)}<div class="inst">${esc(inst)}</div></div>
-    <p class="why">${esc(p.picture || p.why || p.catalyst || '')}</p>
-    <div class="cells">
-      ${cell('Entry', esc(p.entry))}
-      ${cell('Target', `${targets[0] || ''}${targets.length > 1 ? `<span class="later"> · ${targets.slice(1).join(' · ')}</span>` : ''}`, 'tgt')}
-      ${cell('Stop', p.stop == null ? 'none' : esc(p.stop), 'stop')}
-      ${cell('Risk', esc(unit), '', per)}
-      ${inCell ? cell('In', inCell, sz.overRule ? 'stop' : '', sz.overRule ? 'over your rule' : 'of the account') : ''}
-    </div>
+    ${state ? `<div class="head"><span class="co">${esc(state)}</span></div>` : ''}
+    <p class="plain">${esc(line)}</p>
+    <p class="under${sz.overRule ? ' over' : ''}">${esc([near, loses, over, chance].filter(Boolean).join(' '))}</p>
     <details><summary><span>Why, and what to watch</span><span class="chev">&#9662;</span></summary>
       <dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
     </details>

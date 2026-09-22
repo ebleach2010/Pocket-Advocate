@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.6';
+export const VERSION = '6.7';
 
 /**
  * Newest first.
@@ -51,6 +51,21 @@ export const VERSION = '6.6';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // PLAIN ENGLISH, A BOARD THAT REFRESHES, A WIDER NET (Eric, 2026-09-22:
+    // "Make the plays fucking plain English... Why do I have expired plays?
+    // Those should just refresh. And it shouldnt just look at mega cap
+    // companies. Jesus. Also the long blurb here is dumb."). Admin only.
+    version: '6.7',
+    quiet: true,
+    client: [],
+    admin: [
+      'A setup is one sentence now, in the order you asked for it: how long you are in it, buy or short with how much money, the contract with its strike and the date it expires if it is one, then the stop loss and the take profit. Under it, one line saying what you lose in dollars if the stop hits and the chance of profit. The odds box, the two chips and all five cells are gone. Nothing on the face needs translating and everything else is still behind the tap.',
+      'Expired setups are off the board. One that had run out of time used to sit at the top with Take it still on it and the word Expired beside it; now it drops to Recent with the skipped and the closed, and a scan replaces the board rather than piling onto it.',
+      'The watchlist is a starting point, not the whole hunt. The desk is told to look at what is actually moving, gainers and losers, unusual volume, gaps and news, in mid caps and small caps too, and to prefer names whose price leaves room for a real position inside your rule. A seven hundred dollar share cannot be taken on your account at all, and it now says so instead of filing it. The starting watchlist changed to match; yours, if you set one in Settings, still wins.',
+      'The note on Plays is the note again. It was keeping everything the desk wrote except the setups list, so the whole reading ran into one wall of text with headings buried mid paragraph. Every word of that is on the cards.',
+    ],
+  },
   {
     // WHAT TO PUT IN, AND IN WHAT (Eric, 2026-09-22: "It also needs to suggest
     // % allocation and make it clear if it's suggesting call, put, spread at

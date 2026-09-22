@@ -50,7 +50,16 @@ export const MARKET_CLOSE = '14:00';
 // this from the fields, never the prompt's mood.
 export const STRONG_PROFIT_LOW = 55;
 export const WATCHLIST_MAX = 20;
-export const DEFAULT_WATCHLIST = ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AAPL', 'AMD', 'META', 'AMZN', 'MSFT', 'COIN'];
+// THE STARTING LIST, NOT THE UNIVERSE (Eric, 2026-09-22: "it shouldnt just
+// look at mega cap companies. Jesus."). Every name on the old list was a mega
+// cap, and on his account most of them cannot be taken at all: his own scan
+// note said it out loud, "META moved most, but at 741 it will not size inside
+// $44.90". A $4,490 account with a 1% rule needs names whose price leaves room
+// for a real position. So the two index proxies for the tape, the small cap
+// index beside them, and liquid names across sectors that a few hundred
+// dollars can actually buy. It is only a default: his own list, whenever he
+// sets one in Settings, wins, and the scan is told to look past both.
+export const DEFAULT_WATCHLIST = ['SPY', 'QQQ', 'IWM', 'NVDA', 'AMD', 'SOFI', 'PLTR', 'F', 'INTC', 'BAC'];
 export const TRADE_SEARCH_MAX_USES = 8;
 export const TRADE_WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search', max_uses: TRADE_SEARCH_MAX_USES };
 // The dictionary's trading half (2026-09-22: "Terms are a thing here as
@@ -368,6 +377,10 @@ The update text you are given below was written for a medical case and uses its 
 
 THE THREE KINDS OF TRADE, AND THE WEEKEND (Eric, 2026-09-22): "I want trades separated from scalps (1-10min) intraday (1-8hr) and swing (8hr-3 days). We don't hold over weekends." Day trading is the priority, and a swing opportunity is allowed when it serves his benchmarks, which are a floor of 1% a day, an aim of 2%, and a stop for the day at a 3% realized loss or a 10% realized gain. Every setup you write says which kind it is: a scalp lives one to ten minutes, an intraday trade one to eight hours and is flat by the close, a swing runs eight hours to three days and is flat before the weekend. Never write a swing that would be held over a Saturday; on the last trading day of a week, a swing is only a swing if it can be closed that day. A swing says its overnight risk plainly, in its own words, in the Risk line.
 
+WHERE TO LOOK (Eric, 2026-09-22: "it shouldnt just look at mega cap companies. Jesus."). The watchlist in the desk note is a starting point, not the universe. Use web search for what is actually moving right now: the day's gainers and losers, unusual volume, gaps, news movers, sector moves, and anything the calendar put in play. Mid caps and small caps are in scope and often the better setup. Do not file four mega caps because they are the names in front of you.
+
+His account is small and his risk rule is one percent of it, so a name at seven hundred dollars a share can rarely be taken at all: at his balance one share is more than the whole trade allows, and the setup is useless to him however good it looks. Prefer names whose price leaves room for a real position inside his rule, and say in the Risk line what the trade actually costs him. If the only thing worth watching is out of his reach, say that in the note rather than filing it.
+
 Use exactly these headings, in this order, as markdown ## headings:
 
 ## Right now
@@ -422,6 +435,10 @@ Do not grade his trades, do not revise his rules, do not summarise his log and d
 THE THREE KINDS OF TRADE, AND THE WEEKEND (Eric, 2026-09-22): "I want trades separated from scalps (1-10min) intraday (1-8hr) and swing (8hr-3 days). We don't hold over weekends." Day trading is the priority, and a swing is allowed when it serves his benchmarks, which are a floor of 1% a day, an aim of 2%, and a stop for the day at a 3% realized loss or a 10% realized gain. Every setup says which kind it is: a scalp lives one to ten minutes, an intraday trade one to eight hours and is flat by the close, a swing runs eight hours to three days and is flat before the weekend. Never write a swing that would be held over a Saturday; on the last trading day of a week, a swing is only a swing if it can be closed that day. A swing says its overnight risk plainly, in its own words, in the Risk line.
 
 The desk note at the end of the material carries his balance, his rules in dollars, where his day stands, the positions he is already in, the setups still open from the last scan, the quotes, the headlines and today's earnings. Take the prices from it; use web search for what a quote cannot tell you, and prefer a fresh source over a stale one. Do not file a setup on a ticker he is already in unless it is a different trade, and say in its Current picture how it sits against the position he holds. A setup the last scan already filed is refiled only if it still stands; otherwise leave it out and take the new one.
+
+WHERE TO LOOK (Eric, 2026-09-22: "it shouldnt just look at mega cap companies. Jesus."). The watchlist in the desk note is a starting point, not the universe. Use web search for what is actually moving right now: the day's gainers and losers, unusual volume, gaps, news movers, sector moves, and anything the calendar put in play. Mid caps and small caps are in scope and often the better setup. Do not file four mega caps because they are the names in front of you.
+
+His account is small and his risk rule is one percent of it, so a name at seven hundred dollars a share can rarely be taken at all: at his balance one share is more than the whole trade allows, and the setup is useless to him however good it looks. Prefer names whose price leaves room for a real position inside his rule, and say in the Risk line what the trade actually costs him. If the only thing worth watching is out of his reach, say that in the note rather than filing it.
 
 Use exactly these headings, in this order, as markdown ## headings:
 

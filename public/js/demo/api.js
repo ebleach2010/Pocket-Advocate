@@ -2169,7 +2169,9 @@ export function demoApi(role, store) {
           store.docs.set('trade/state', {
             ...was, scanStatus: 'idle', scanError: null, lastScanAt: new Date(),
             scanNote: {
-              text: '## Note\n\nIndexes are holding their opening ranges on better volume than yesterday, and the one thing worth taking is the continuation in QQQ. You have $24.50 to risk on a trade and the day is still under its floor, so one clean entry does the work.\n\n### QQQ long\n\nCurrent picture: Broke the opening range and held it on the retest.',
+              // The Note section alone (2026-09-22), the way the Worker files it now. The setups
+              // that used to trail after it are on the cards and nowhere else.
+              text: 'Indexes are holding their opening ranges on better volume than yesterday, and the one thing worth taking is the continuation in QQQ. You have $24.50 to risk on a trade and the day is still under its floor, so one clean entry does the work.',
               at: new Date(), plays: 1, missing: false,
             },
           });
