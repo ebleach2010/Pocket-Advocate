@@ -776,11 +776,21 @@ check('T31 the shelf: the desk is off his own shelf and off the pull-from picker
   && /\.status-pill\.trade \{/.test(CSS) && /\.case-head\.trade \.case-name \{ color: var\(--trade\); \}/.test(CSS) && /\.btn\.trade-open \{/.test(CSS)
   && !/\.trade-tabs|\.trade-badge/.test(CSS) && /\.ask-attach \{/.test(CSS) && /\.play-card\.expired/.test(CSS));
 
-// NEGATIVE CONTROL (run 2026-09-22): `...(data.trade ? { groups: DESK_GROUPS } : {})` removed from mountFolder's options made this read
-//   FAIL  T32 the folder page: a desk gets four groups with six pages under Desk and none that talk to a client, the Dx page is Plays, Stats and Desk mount the desk's module and refetch on show, the masthead and the pill test the desk first and wear green, the chat is the Trade log with its own placeholder, the overview is the desk's with its note and Pause, close and Delete, the eight categories are in the order, and the panel gets the flag
-check('T32 the folder page: a desk gets four groups with six pages under Desk and none that talk to a client, the Dx page is Plays, Stats and Desk mount the desk\'s module and refetch on show, the masthead and the pill test the desk first and wear green, the chat is the Trade log with its own placeholder, the overview is the desk\'s with its note and Pause, close and Delete, the eight categories are in the order, and the panel gets the flag',
+// NEGATIVE CONTROL (run 2026-09-22, v4.8): the `.filter((p) => !data.trade || DESK_PAGE_IDS.has(p.id))` on the pages array replaced by a bare `],` made this read
+//   FAIL  T32 the folder page: a desk gets four groups with six pages under Desk and none that talk to a client, only the pages its groups name, no clock button, no clock row and no Working on dropdown, its own uploads sentence, the Dx page is Plays, Stats and Desk mount the desk's module and refetch on show, the masthead and the pill test the desk first and wear green, the chat is the Trade log with its own placeholder, the overview is the desk's with its note and Pause, close and Delete, the eight categories are in the order, and the panel gets the flag
+check('T32 the folder page: a desk gets four groups with six pages under Desk and none that talk to a client, only the pages its groups name, no clock button, no clock row and no Working on dropdown, its own uploads sentence, the Dx page is Plays, Stats and Desk mount the desk\'s module and refetch on show, the masthead and the pill test the desk first and wear green, the chat is the Trade log with its own placeholder, the overview is the desk\'s with its note and Pause, close and Delete, the eight categories are in the order, and the panel gets the flag',
   /const DESK_GROUPS = \[\n\s+\{ id: 'case', label: 'Case', icon: '📁', pages: \['overview', 'chat', 'files'\] \},\n\s+\{ id: 'read', label: 'Desk', icon: '📈', pages: \['advisor', 'dx', 'advisor-chat', 'education', 'stats', 'desk'\] \},\n\s+\{ id: 'mine', label: 'Mine', icon: '🔒', pages: \['notes', 'saved', 'personal'\] \},\n\s+\{ id: 'track', label: 'Track', icon: '🗒', pages: \['unanswered'\] \},\n\];/.test(CASE)
   && /\.\.\.\(data\.trade \? \{ groups: DESK_GROUPS \} : \{\}\),/.test(CASE)
+  // ERIC, 2026-09-22, the screenshot: folder.js sweeps every unclaimed page into the first group, so the desk filters
+  // the array to the pages its groups name, and wears neither the clock nor the Working on line.
+  && /const DESK_PAGE_IDS = new Set\(DESK_GROUPS\.flatMap\(\(g\) => g\.pages\)\);/.test(CASE)
+  && /\]\.filter\(\(p\) => !data\.trade \|\| DESK_PAGE_IDS\.has\(p\.id\)\),\n\s+\}\);/.test(CASE)
+  && /\$\{c\.status === 'closed' \|\| c\.trade \? '' : `\n\s+<button type="button" class="btn quiet work-head" data-work-head/.test(CASE)
+  && /\$\{data\.trade \? '' : `\n\s+<label class="status-pick">/.test(CASE)
+  && /\$\{data\.trade \? '' : `\n\s+<div class="row" data-workclock/.test(CASE)
+  // The panel's draft container is looked up on a page the desk no longer has: null, not a throw (the drive caught it).
+  && /draftContainer: folder\.el\('drafts'\)\?\.querySelector\('#draft-panel'\) \|\| null,/.test(CASE)
+  && /note\.textContent = data\.trade\n\s+\? 'Your screenshots: positions, portfolio totals, charts\. They go straight into the next reading, and nobody is told\.'\n\s+: 'Your own records: labs, letters, notes, anything\. They go straight into the reading, and nobody is told\.';/.test(CASE)
   && CASE.indexOf("{ id: 'act', label: 'Act', icon: '⚖️'") < CASE.indexOf('...(data.trade ? { groups: DESK_GROUPS } : {}),')
   && /id: 'dx', title: data\.trade \? 'Plays' : 'Dx', icon: data\.trade \? '📈' : '🧬',/.test(CASE)
   && /id: 'stats', title: 'Stats', icon: '📊',\n\s+render: \(pane\) => mountTradeStats\(pane, \{ getToken: \(\) => user\.getIdToken\(\) \}\),\n\s+onShow: \(pane\) => pane\._reload\?\.\(\),/.test(CASE)
@@ -890,17 +900,44 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
 // ---- T36: the versions and the words --------------------------------------------------------
 {
   const entry = (CL.match(/\{\n\s+\/\/ THE TRADE DESK AS A CASE FILE[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v4.8): both versions read 4.8 and the tag is the furniture push; the 4.7 entry keeps its words.
+  const entry48 = (CL.match(/\{\n\s+\/\/ THE DESK SHOWS ONLY ITS OWN FURNITURE[\s\S]*?\n  \},/) || [''])[0];
   const cssDesk = CSS.slice(CSS.indexOf('/* THE TRADE DESK (Eric, 2026-09-22'), CSS.indexOf('/* The two doors on the shelf'));
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
-  // NEGATIVE CONTROL (run 2026-09-22): 'Trade log' lowercased in the entry's second line made this read
-  //   FAIL  T36 both versions read 4.7 with the new tag, the entry is quiet and admin-only with its two lines in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 4.7 with the new tag, the entry is quiet and admin-only with its two lines in the desk\'s words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet\'s green or the demo\'s desk',
-    /export const VERSION = '4\.7';/.test(CL) && /const VERSION = '4\.7';/.test(W) && /const BUILD_TAG = 'v2026-09-22-trade-desk-case';/.test(W)
+  // NEGATIVE CONTROL (run 2026-09-22, v4.8): 'only its own pages' reworded to 'only its own tabs' in the 4.8 entry made this read
+  //   FAIL  T36 both versions read 4.8 with the new tag, the 4.7 entry and the 4.8 entry are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
+  check('T36 both versions read 4.8 with the new tag, the 4.7 entry and the 4.8 entry are quiet and admin-only in the desk\'s words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet\'s green or the demo\'s desk',
+    /export const VERSION = '4\.8';/.test(CL) && /const VERSION = '4\.8';/.test(W) && /const BUILD_TAG = 'v2026-09-22-desk-furniture-only';/.test(W)
+    && /version: '4\.8',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry48) && (entry48.match(/^\s+'[^\n]+',$/gm) || []).length >= 2
+    && /only its own pages/.test(entry48) && /opens on Overview/.test(entry48) && /work clock/.test(entry48) && /Working on line/.test(entry48) && !DASH.test(entry48)
     && /version: '4\.7',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry) && (entry.match(/^\s+'[^\n]+',$/gm) || []).length >= 2
     && /trade desk is a case file/.test(entry) && /Trade log/.test(entry) && /Read page/.test(entry) && /Plays page/.test(entry) && /7:00, 10:00 and noon Mountain/.test(entry)
     && HARD.every((re) => !re.test(CL)) && HARD.every((re) => !re.test(AUTH))
     && !DASH.test(entry) && !DASH.test(DRIVE) && !DASH.test(cssDesk),
     HARD.filter((re) => re.test(CL)).map(String).join(', '));
+}
+
+// ---- T37: the desk's page filter RUNS (Eric, 2026-09-22, the screenshot) ---------------------
+{
+  const groupsSrc = grab(CASE, /const DESK_GROUPS = \[[\s\S]*?\n\];/);
+  const setSrc = grab(CASE, /const DESK_PAGE_IDS = new Set\([^\n]*\);/);
+  const expr = (CASE.match(/\]\.filter\(\(p\) => ([^\n]*?)\),\n\s+\}\);/) || [])[1] || 'false';
+  const { DESK_GROUPS, DESK_PAGE_IDS } = new Function(`${groupsSrc}\n${setSrc}\nreturn { DESK_GROUPS, DESK_PAGE_IDS };`)();
+  const keep = new Function('data', 'DESK_PAGE_IDS', 'p', `return ${expr};`);
+  const ids = [...CASE.matchAll(/id: '([\w-]+)', title:/g)].map((m) => m[1]);
+  const pages = ids.map((id) => ({ id }));
+  const desk = pages.filter((p) => keep({ self: true, trade: true }, DESK_PAGE_IDS, p)).map((p) => p.id);
+  const medical = pages.filter((p) => keep({ fullAccess: true }, DESK_PAGE_IDS, p)).map((p) => p.id);
+  const own = pages.filter((p) => keep({ self: true }, DESK_PAGE_IDS, p)).map((p) => p.id);
+  const gone = ['appeals', 'log', 'milestones', 'about', 'calldoc', 'agenda', 'summary', 'drafts'];
+  // NEGATIVE CONTROL (run 2026-09-22): `.concat(['log'])` on DESK_PAGE_IDS made this read
+  //   FAIL  T37 the desk's page filter RUNS: of the twenty-one pages the file declares, the desk keeps exactly the thirteen its four groups name, Overview first, and drops the appeal form, the work log, the milestones, About you, My doc, the agenda, the summary and the drafts; a medical case and his own case keep all twenty-one
+  check('T37 the desk\'s page filter RUNS: of the twenty-one pages the file declares, the desk keeps exactly the thirteen its four groups name, Overview first, and drops the appeal form, the work log, the milestones, About you, My doc, the agenda, the summary and the drafts; a medical case and his own case keep all twenty-one',
+    ids.length === 21 && DESK_GROUPS.length === 4 && DESK_PAGE_IDS.size === 13
+    && desk.length === 13 && desk.every((id) => DESK_PAGE_IDS.has(id)) && [...DESK_PAGE_IDS].every((id) => desk.includes(id))
+    && desk[0] === 'overview' && gone.every((id) => ids.includes(id) && !desk.includes(id))
+    && medical.length === 21 && own.length === 21,
+    JSON.stringify({ ids: ids.length, size: DESK_PAGE_IDS.size, desk }));
 }
 
 const fails = results.filter((r) => !r.pass).length;

@@ -334,6 +334,30 @@ been asserting the shelf from before 2026-09-05. drive-trade.mjs drives the shel
 case, the log, the Read page, the Plays page, Ask with a screenshot, Stats,
 Desk, Terms on both kinds of case, Delete and the door, at 390px.
 
+### The desk shows only its own furniture (2026-09-22, v4.8)
+
+Eric, a screenshot of the desk on his phone: "Trade desk is a clusterfuck
+of what I described and what is normally there for a medical client."
+folder.js hands every page no group claims to the first group, and v4.7
+handed the desk the whole medical page array with its own four groups, so
+the Case row carried Appeals, the work log, the milestones, About you, My
+doc, the agenda, the summary and the drafts, and opened on the Appeal
+form; the masthead wore the work clock and the Trade log the Working on
+dropdown and the clock row. admin-case.js now filters the pages array on
+the desk to `DESK_PAGE_IDS` (the ids its groups name), leaves the clock
+button, the status dropdown and the clock row unpainted on the desk, and
+says on Uploads that the files are his screenshots.
+
+trade.mjs T32 pins the set, the filter, the three gates and the uploads
+sentence; T37 RUNS the filter over every page id the file declares (found
+by regex): the desk keeps exactly the thirteen, Overview first, drops the
+eight, and a medical case and his own case keep all twenty-one; T36
+re-pinned to 4.8 and the 4.8 entry. Each with a control recorded.
+drive-trade.mjs section B reads the Case row (Overview, Chat, Uploads,
+thirteen tabs in all, opened on Overview), the Desk row, and the absence
+of the clock button, the clock row and the dropdown; section I proves the
+medical demo case still carries all three and every page.
+
 ### The Trade portal (2026-09-21, v4.6)
 
 Eric: "An entirely different page, separate for anything else. The financial

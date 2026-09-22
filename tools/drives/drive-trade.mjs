@@ -97,6 +97,20 @@ ok('the masthead says TRADE DESK in green with the desk\'s name', /\btrade\b/.te
 const pillColor = await green('[data-status]');
 ok('and the pill is the green', !!pillColor && pillColor.got === hex2rgb(pillColor.want), pillColor ? `${pillColor.got} vs ${pillColor.want}` : '');
 ok('four groups, no Act', head.groups.join() === 'case,read,mine,track', head.groups.join(','));
+// ERIC, 2026-09-22, the screenshot: every medical page swept into the Case row, the Appeal form
+// on top, the clock in the masthead. The desk gets its own furniture and nothing else.
+const furniture = await page.evaluate(() => ({
+  on: document.querySelector('a[data-page].on')?.dataset.page || '',
+  caseRow: [...document.querySelectorAll('a[data-page]')].filter((a) => !a.hidden).map((a) => a.dataset.page).join(),
+  all: document.querySelectorAll('a[data-page]').length,
+  head: !!document.querySelector('[data-work-head]'), clock: !!document.querySelector('[data-workclock]'), pick: !!document.querySelector('[data-status-pick]'),
+}));
+ok('the Case row is Overview, Chat and Uploads with nothing medical swept in, thirteen tabs in all, and the folder opened on Overview', furniture.caseRow === 'overview,chat,files' && furniture.all === 13 && furniture.on === 'overview', JSON.stringify(furniture));
+ok('no clock button in the masthead, no clock row and no Working on dropdown anywhere on the desk', !furniture.head && !furniture.clock && !furniture.pick, JSON.stringify(furniture));
+await page.evaluate(() => document.querySelector('[data-group="read"]')?.click());
+await page.waitForTimeout(400);
+const deskRow = await page.evaluate(() => [...document.querySelectorAll('a[data-page]')].filter((a) => !a.hidden).map((a) => a.dataset.page).join());
+ok('the Desk row is Read, Plays, Ask, Terms, Stats and Desk', deskRow === 'advisor,dx,advisor-chat,education,stats,desk', deskRow);
 await show('case', 'overview');
 const ov = await until(() => {
   const k = [...document.querySelectorAll('.fact-k')].map((x) => x.textContent.trim());
@@ -231,6 +245,12 @@ const terms = await until(() => { const t = document.querySelector('[data-page-i
 ok('the desk\'s Terms page carries VWAP and Opening range', terms === 'terms');
 await page.goto(`${P}/admin-case.html?id=demo-case&demo=admin`, { waitUntil: 'networkidle' });
 await settle(page, 2000);
+const medFurniture = await page.evaluate(() => ({
+  head: !!document.querySelector('[data-work-head]'), clock: !!document.querySelector('[data-workclock]'), pick: !!document.querySelector('[data-status-pick]'),
+  all: document.querySelectorAll('a[data-page]').length,
+}));
+// Eighteen on the demo's medical case: no Appeals without Full-Service, and Stats and Desk are the desk's own.
+ok('a medical case keeps its clock button, its clock row, its Working on dropdown and every one of its pages', medFurniture.head && medFurniture.clock && medFurniture.pick && medFurniture.all === 18, JSON.stringify(medFurniture));
 await show('read', 'education');
 const medTerms = await until(() => { const t = document.body.textContent; return /Ferritin|Serology/.test(t) ? (/VWAP/.test(t) ? 'leak' : 'clean') : null; }, 10000);
 ok('a medical case\'s Terms page carries its own terms and not the desk\'s', medTerms === 'clean', medTerms || '');

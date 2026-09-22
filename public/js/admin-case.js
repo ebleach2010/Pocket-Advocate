@@ -249,6 +249,13 @@ const DESK_GROUPS = [
   { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'saved', 'personal'] },
   { id: 'track', label: 'Track', icon: '🗒', pages: ['unanswered'] },
 ];
+// ERIC, 2026-09-22, a screenshot of the desk on his phone: "Trade desk is a
+// clusterfuck of what I described and what is normally there for a medical
+// client." folder.js hands every page no group claims to the FIRST group, so
+// the desk's Case row carried Appeals, the work log, the milestones, the
+// agenda, the summary, the drafts, About you and My doc, and landed him on
+// the Appeal form. The desk gets only the pages its four groups name.
+const DESK_PAGE_IDS = new Set(DESK_GROUPS.flatMap((g) => g.pages));
 
 function render(el) {
   const c = data;
@@ -338,13 +345,19 @@ function render(el) {
                    have to know about. -->
               <div class="chat-head">
                 <h3>${data.trade ? 'Trade log' : data.self ? 'Your notes' : 'Chat with the client'}</h3>
+                ${data.trade ? '' : `
                 <label class="status-pick">
                   <span class="dim small">Working on</span>
                   <select data-status-pick aria-label="What you are working on">
                     <option value="">Nothing right now</option>
                   </select>
-                </label>
+                </label>`}
               </div>
+              <!-- THE DESK HAS NO CLOCK AND NOTHING TO BE WORKING ON (Eric,
+                   2026-09-22): the hours are billed to a client, and there is
+                   no client on the desk. startWorkClock returns when the row
+                   is absent; the status wiring is null-safe. -->
+              ${data.trade ? '' : `
               <div class="row" data-workclock style="gap:.5rem; align-items:center; margin:.1rem 0 .5rem;">
                 <button class="btn quiet" data-work-toggle style="flex:none;">▶ Start working</button>
                 <!-- The total is a BUTTON and it did not look like one: 30px
@@ -356,7 +369,7 @@ function render(el) {
                 <button class="btn quiet work-total-btn" data-work-total
                   style="flex:none;" title="Add or subtract time on this case"></button>
                 <span class="work-rate" data-work-rate hidden></span>
-              </div>
+              </div>`}
               <p class="dim small" data-client-gate style="margin:.1rem 0 .4rem;" hidden></p>
               <div id="chat"></div>
             </div>`;
@@ -646,7 +659,7 @@ function render(el) {
         id: 'unanswered', title: 'Unanswered', icon: '⚠️',
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
-    ],
+    ].filter((p) => !data.trade || DESK_PAGE_IDS.has(p.id)),
   });
 
   // ---- who this is, and whether the clock is running -----------------------
@@ -712,7 +725,7 @@ function render(el) {
     </div>
     ${loopRow}
     ${nextLine}
-    ${c.status === 'closed' ? '' : `
+    ${c.status === 'closed' || c.trade ? '' : `
     <button type="button" class="btn quiet work-head" data-work-head
       aria-label="Clock in or out of this case">⏱</button>`}
     <p class="dim small working-line" data-working hidden></p>
@@ -883,8 +896,9 @@ function render(el) {
     self: !!data.self,
     // The trade desk (2026-09-22): Pause, the 📷 on Ask, the Plays page.
     trade: !!data.trade,
-    // Drafts live on their own page, not buried inside the panel.
-    draftContainer: folder.el('drafts').querySelector('#draft-panel'),
+    // Drafts live on their own page, not buried inside the panel. The desk
+    // has no Drafts page (2026-09-22), and the panel takes null for that.
+    draftContainer: folder.el('drafts')?.querySelector('#draft-panel') || null,
     // The differential renders onto its own page too.
     diffContainer: folder.el('dx'),
     // And the Q&A - asking the advisor - onto its own Chat page.
@@ -3303,7 +3317,9 @@ function paintFiles(pane) {
     // client. One sentence says where the file goes.
     const wrap = cat.closest('label');
     if (wrap) wrap.hidden = true;
-    note.textContent = 'Your own records: labs, letters, notes, anything. They go straight into the reading, and nobody is told.';
+    note.textContent = data.trade
+      ? 'Your screenshots: positions, portfolio totals, charts. They go straight into the next reading, and nobody is told.'
+      : 'Your own records: labs, letters, notes, anything. They go straight into the reading, and nobody is told.';
   }
   pane.querySelector('#up-report').addEventListener('change', (e) => {
     const c = categoryOf(cat.value) || UPLOAD_CATEGORIES[0];

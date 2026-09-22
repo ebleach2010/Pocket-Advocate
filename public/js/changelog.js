@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '4.7';
+export const VERSION = '4.8';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '4.7';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE DESK SHOWS ONLY ITS OWN FURNITURE (2026-09-22): "Trade desk is a
+    // clusterfuck of what I described and what is normally there for a
+    // medical client." Admin only: the desk's page row and its head.
+    version: '4.8',
+    quiet: true,
+    client: [],
+    admin: [
+      'The trade desk shows only its own pages now: Overview, Trade log and Uploads under Case; Read, Plays, Ask, Terms, Stats and Desk under Desk; Notes, Saved and Personal under Mine; Unanswered under Track. The appeal form, the work log, the milestones, the agenda, the summary, the drafts, About you and My doc are off it, and it opens on Overview.',
+      'The work clock and the Working on line are off the desk too, and its Uploads page says what the files are: your screenshots.',
+    ],
+  },
   {
     // THE TRADE DESK AS A CASE FILE (2026-09-22): "Make it a case file
     // highlighted green. run it automatically at 7am, 10am, noon on trading
