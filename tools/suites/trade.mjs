@@ -1231,12 +1231,19 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // The desk's own sheet (2026-09-22, v6.0), which is most of what he looks at now.
   const cssApp = CSS.slice(CSS.indexOf('/* ===== THE TRADE DESK, AS ONE APP'));
   const entry60 = (CL.match(/\{\n\s+\/\/ THE DESK AS ONE APP[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v6.1): the scan's own window, added the same day.
+  const entry61 = (CL.match(/\{\n\s+\/\/ THE SCAN, FROM OUTSIDE[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v5.2): 'has a calculator' reworded to 'has a calculator now' in the 5.2 entry made this read
   //   FAIL  T36 both versions read 5.3 with the new tag, the 4.7 through 5.3 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 6.0 with the new tag, the 4.7 through 6.0 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '6\.0';/.test(CL) && /const VERSION = '6\.0';/.test(W) && /const BUILD_TAG = 'v2026-09-22-desk-one-app';/.test(W)
+  check('T36 both versions read 6.1 with the new tag, the 4.7 through 6.0 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '6\.1';/.test(CL) && /const VERSION = '6\.1';/.test(W) && /const BUILD_TAG = 'v2026-09-22-desk-probe';/.test(W)
+    && /version: '6\.1',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry61)
+    && /looked at from outside/.test(entry61) && !DASH.test(entry61)
+    // The window itself: read only, and it says what the flight is doing.
+    && /if \(url\.searchParams\.get\('do'\) === 'desk'\) \{/.test(W)
+    && /submittedAgeS: age\(d\.scanCtx\.submittedAt\)/.test(W) && /head: String\(d\.scanNote\.text \|\| ''\)\.slice\(0, 600\)/.test(W)
     && /version: '6\.0',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry60)
     && /its own app now/.test(entry60) && /Plays, Positions, News, Stats and Desk/.test(entry60)
     && /question mark is a question/.test(entry60) && /7:00 Mountain/.test(entry60) && !DASH.test(entry60)

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.0';
+export const VERSION = '6.1';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '6.0';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE SCAN, FROM OUTSIDE (Eric, 2026-09-22: "It's not producing a scan
+    // rn"). A scan lives on the desk's own state and nothing reported it, so
+    // a stuck one was invisible from anywhere but his phone. Admin only, and
+    // it reads rather than writes.
+    version: '6.1',
+    quiet: true,
+    client: [],
+    admin: [
+      'The desk\'s scan can be looked at from outside now: what it is doing, how long the one in the air has been there, what the last one filed and what its note said. Nothing on your screen changes; this is so a scan that never lands can be found without a phone in hand.',
+    ],
+  },
   {
     // THE DESK AS ONE APP (Eric, 2026-09-22): "The current Trading Desk is
     // too fragmented. Remove the excessive tabs and consolidate the app into

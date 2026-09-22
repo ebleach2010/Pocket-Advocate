@@ -993,6 +993,43 @@ export default {
         // the three questions in order, uncaught, and says what each one
         // answered: can the service account get a token, can it read one
         // document, can it write one. Touches diag/probe and nothing of his.
+        // THE DESK'S SCAN, FROM OUTSIDE (Eric, 2026-09-22: "It's not producing
+        // a scan rn"). A scan lives on trade/state and nothing else reports
+        // it, so a stuck one was invisible from anywhere but his phone. This
+        // reads the two desk documents and says what the scan is doing, how
+        // old the flight is, what the last one filed and what the last note
+        // said. Read only: it writes nothing and taps nothing.
+        if (url.searchParams.get('do') === 'desk') {
+          const age = (v) => (v ? Math.round((Date.now() - new Date(v).getTime()) / 1000) : null);
+          const st = await getDoc(env, 'trade/state').catch(() => null);
+          const cfg = await getDoc(env, 'trade/settings').catch(() => null);
+          const d = st?.data || {};
+          const caseId = cfg?.data?.caseId || null;
+          const adv = caseId ? await getDoc(env, `cases/${caseId}/advisor/state`).catch(() => null) : null;
+          const rows = await listDocs(env, 'advisorQueue', { pageSize: 10 }).catch(() => []);
+          return json({
+            caseId,
+            scan: {
+              status: d.scanStatus || 'idle',
+              error: d.scanError || null,
+              lastScanAgeS: age(d.lastScanAt),
+              flight: d.scanCtx ? {
+                batchId: String(d.scanCtx.batchId || '').slice(0, 24),
+                submittedAgeS: age(d.scanCtx.submittedAt),
+                pollFails: d.scanCtx.pollFails || 0,
+                finishingAgeS: age(d.scanCtx.finishingAt),
+              } : null,
+              beatAgeS: age(d.scanProgressAt),
+              note: d.scanNote ? { plays: d.scanNote.plays ?? null, ageS: age(d.scanNote.at), head: String(d.scanNote.text || '').slice(0, 600) } : null,
+            },
+            morning: { day: d.morningDay || null, ageS: age(d.morningAt) },
+            reading: adv?.data ? {
+              status: adv.data.status || null, error: adv.data.error || null,
+              updatedAgeS: age(adv.data.updatedAt), batchAgeS: age(adv.data.batch?.submittedAt),
+            } : null,
+            queue: rows.map((r) => ({ id: r.id, kind: r.data?.kind || null, scan: !!r.data?.scan, ask: !!r.data?.ask, tries: r.data?.tries || 0, ageS: age(r.data?.at) })),
+          });
+        }
         if (url.searchParams.get('do') === 'firestore-probe') {
           const out = {};
           for (const [name, run] of [
@@ -2076,7 +2113,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-22-desk-one-app';
+const BUILD_TAG = 'v2026-09-22-desk-probe';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2084,7 +2121,7 @@ const BUILD_TAG = 'v2026-09-22-desk-one-app';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '6.0';
+const VERSION = '6.1';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
