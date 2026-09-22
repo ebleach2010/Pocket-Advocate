@@ -15,7 +15,7 @@
 // advisor.js, where every model turn lives.
 
 import { patchDoc, deleteDoc, listDocs, tryGet, READ_FAILED, readFailedError } from './firestore.js';
-import { markPending, diagLog, runTradeScan } from './advisor.js';
+import { markPending, diagLog, runTradeScan, pollScanFlight } from './advisor.js';
 import {
   isTradingDay, tradeMetrics, chartSeries, PROJECTION_MIN_DAYS,
   rulesOf, RULE_RANGES, defaultRules, dayStatus, realizedToday, openRisk, tradeCalc, closePnl,
@@ -536,6 +536,38 @@ export async function maybeMorningRead(env, { now = Date.now() } = {}) {
   if (claimed === false) return { ran: false, why: 'another isolate booked it' };
   await markPending(env, 'case', settings.caseId);
   return { ran: true, caseId: settings.caseId, day: dateKey };
+}
+
+/**
+ * THE FLIGHT NOBODY WAS LOOKING AT (Eric, 2026-09-22: "It's not producing a
+ * scan rn"). v6.2 stopped the queue sweeper from throwing a scan's row away,
+ * and made every look at a running scan put the row back. Neither of those
+ * helps a flight whose row is ALREADY gone, and one was: submitted 13:27,
+ * still in the air at 15:24, queue empty. Nothing on a clock could see it, so
+ * the desk said Scanning until he opened the page himself.
+ *
+ * So the cron stops asking the queue and asks the desk. One read of the
+ * desk's own state a minute, which is one document whether or not anything is
+ * flying, and a poll only when a scan is genuinely up. pollScanFlight owns
+ * everything after that: the heartbeat gate, putting the row back, finishing
+ * a landed scan, and cancelling one that has been up two hours. A scan can no
+ * longer be lost, whatever loses its row.
+ *
+ * This is not the clock coming back (Eric, 2026-09-22: "I manually update
+ * either scan individually. No automatic."). Nothing here starts a scan. It
+ * collects one he started.
+ */
+export async function maybeCollectScan(env) {
+  const doc = await tryGet(env, STATE_PATH);
+  if (doc === READ_FAILED) return { ran: false, why: 'state unreadable' };
+  const st = doc?.data || {};
+  if (st.scanStatus !== 'running' || !st.scanCtx?.batchId) return { ran: false, why: 'nothing in the air' };
+  const settings = (await readSettings(env))?.data || {};
+  if (!settings.caseId) return { ran: false, why: 'no desk' };
+  // The same 45 seconds the ordinary traffic's poller waits, so a minute's
+  // firing and a page open together still cost one look at the provider.
+  const looked = await pollScanFlight(env, settings.caseId, { minAgeMs: 45_000 }).catch(() => false);
+  return { ran: looked === true, caseId: settings.caseId };
 }
 
 /** The settings, by his hand. The case id is the desk's own and never taken from a body. */

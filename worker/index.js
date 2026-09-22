@@ -56,7 +56,7 @@ import {
 } from './advisor.js';
 // The trade desk (2026-09-21; a case file since 2026-09-22): its slots and
 // its routes, and the leaf both stand on.
-import { tradeRoute, TradeError, tradePanelBlock, maybeMorningRead } from './trade.js';
+import { tradeRoute, TradeError, tradePanelBlock, maybeMorningRead, maybeCollectScan } from './trade.js';
 import { TRADE_CATEGORIES, SAY as TRADE_SAY } from './trade-desk.js';
 
 /**
@@ -1378,6 +1378,10 @@ export default {
     // never missed; the day stamp inside makes every firing after the first a
     // single document read.
     ctx.waitUntil(maybeMorningRead(env).catch(() => {}));
+    // AND COLLECT A SCAN HE STARTED (2026-09-22, v6.3). Asks the desk rather
+    // than the queue, so a flight whose queue row has gone is still looked at.
+    // One read of one document a minute; nothing here starts anything.
+    ctx.waitUntil(maybeCollectScan(env).catch(() => {}));
     // Un-gated on purpose: the wedged case should recover on the FIRST
     // firing after this deploys, not up to a quarter hour later. One marker
     // read per firing once finished; remove with the diag scaffolding.
@@ -2113,7 +2117,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-22-scan-lands';
+const BUILD_TAG = 'v2026-09-22-scan-collected';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2121,7 +2125,7 @@ const BUILD_TAG = 'v2026-09-22-scan-lands';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '6.2';
+const VERSION = '6.3';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

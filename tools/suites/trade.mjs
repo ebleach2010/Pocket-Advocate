@@ -74,7 +74,7 @@ const strip = (src) => src.replace(/^import [\s\S]*?from '[^']+';\n/gm, '').repl
 
 // ---- the two modules, evaluated with their imports replaced ---------------------
 const NAMES = ['patchDoc', 'deleteDoc', 'listDocs', 'tryGet', 'READ_FAILED', 'readFailedError', 'notifyUser',
-  'markPending', 'diagLog', 'runTradeScan', 'isTradingDay', 'tradeMetrics', 'chartSeries', 'TARGET_DAILY', 'PROJECTION_MIN_DAYS', 'DEFAULT_START_CENTS', 'fetch', 'crypto',
+  'markPending', 'diagLog', 'runTradeScan', 'pollScanFlight', 'isTradingDay', 'tradeMetrics', 'chartSeries', 'TARGET_DAILY', 'PROJECTION_MIN_DAYS', 'DEFAULT_START_CENTS', 'fetch', 'crypto',
   'putFile', 'patchObjectMeta', 'BUCKET', 'textPdf',
   // The calculator's arithmetic (2026-09-22), the same module the pages read.
   'rulesOf', 'RULE_RANGES', 'defaultRules', 'dayStatus', 'realizedToday', 'openRisk', 'tradeCalc', 'closePnl',
@@ -95,7 +95,7 @@ const EXPORTS = ['TRADE_MODEL', 'TRADE_EFFORT', 'TRADE_TZ', 'MARKET_OPEN', 'MARK
   // The desk as one app (2026-09-22): the News, Stats and stream routes, the
   // cached feeds behind the first, and the one reading the cron books.
   'tradeNews', 'tradeHistory', 'tradeQa', 'HISTORY_MAX', 'QA_LIST_MAX',
-  'maybeMorningRead', 'MORNING_MIN', 'MORNING_WINDOW_MIN',
+  'maybeMorningRead', 'MORNING_MIN', 'MORNING_WINDOW_MIN', 'maybeCollectScan',
   'newsRows', 'earningsRows', 'newsCached', 'earningsCached', 'NEWS_HOURS', 'NEWS_MAX', 'NEWS_TTL_MS', 'EARNINGS_TTL_MS'];
 const READ_FAILED = Symbol('read failed');
 const BODY = `${strip(TD)}\n${strip(T)}`;
@@ -103,7 +103,7 @@ const BODY = `${strip(TD)}\n${strip(T)}`;
 /** A world: recorders for every write, fixtures for every read, a fake market. */
 function world(over = {}) {
   const w = {
-    docs: new Map(), patches: [], deletes: [], pushes: [], diag: [], pending: [], scans: [], fetches: [], puts: [], metas: [],
+    docs: new Map(), patches: [], deletes: [], pushes: [], diag: [], pending: [], scans: [], polls: [], fetches: [], puts: [], metas: [],
     claim: true, listed: {}, reads: 0, fetchStatus: 200, putFails: false, ...over,
   };
   const deps = {
@@ -120,6 +120,7 @@ function world(over = {}) {
     notifyUser: async (env, uid, n) => { w.pushes.push({ uid, ...n }); },
     markPending: async (env, kind, id) => { w.pending.push({ kind, id }); },
     runTradeScan: async (env, caseId, opts) => { w.scans.push({ caseId, opts }); return over.scanOut || { ok: true, status: 'running' }; },
+    pollScanFlight: async (env, caseId, opts) => { w.polls.push({ caseId, opts }); return over.pollOut !== undefined ? over.pollOut : true; },
     diagLog: async (env, e) => { w.diag.push(e); },
     isTradingDay: math.isTradingDay, tradeMetrics: math.tradeMetrics, chartSeries: math.chartSeries,
     TARGET_DAILY: math.TARGET_DAILY, PROJECTION_MIN_DAYS: math.PROJECTION_MIN_DAYS, DEFAULT_START_CENTS: math.DEFAULT_START_CENTS,
@@ -836,9 +837,15 @@ check('T23 a question on the desk: the desk note rides the user text, the ask no
 // morning reading Eric asked for at 7:00 Mountain, and the state route collects a scan his tap put
 // in the air so the page does not wait for the cron.
 check('T30 the Worker imports the desk\'s routes, panel block, morning reading and categories, books the 7:00 reading at the cron\'s firing, polls a scan in flight on the state route and re-reads the block, hands the panel the desk\'s block and the trading half of the glossary on a desk, prints the standing on the covers, refuses to pull from the desk or continue it, and a deleted desk clears the settings\' pointer',
-  /import \{ tradeRoute, TradeError, tradePanelBlock, maybeMorningRead \} from '\.\/trade\.js';\nimport \{ TRADE_CATEGORIES, SAY as TRADE_SAY \} from '\.\/trade-desk\.js';/.test(W)
+  // RE-PINNED 2026-09-22 (v6.3): the cron also collects a scan already in the air, asking the desk
+  // rather than the queue, because a flight whose queue row had gone was invisible to every clock.
+  // NEGATIVE CONTROL (run 2026-09-22, v6.3): the collector's waitUntil replaced with a resolved
+  // promise made this read
+  //   FAIL  T30 the Worker imports the desk's routes, panel block, morning reading and categories, ...
+  /import \{ tradeRoute, TradeError, tradePanelBlock, maybeMorningRead, maybeCollectScan \} from '\.\/trade\.js';\nimport \{ TRADE_CATEGORIES, SAY as TRADE_SAY \} from '\.\/trade-desk\.js';/.test(W)
   && !/maybeTradeScan/.test(W)
   && /ctx\.waitUntil\(maybeMorningRead\(env\)\.catch\(\(\) => \{\}\)\);/.test(W)
+  && /ctx\.waitUntil\(maybeCollectScan\(env\)\.catch\(\(\) => \{\}\)\);/.test(W)
   && /pollCaseFlight, pollFlightsNow, pollAskFlight, pollScanFlight,/.test(W)
   && /if \(tradeBlock\?\.scan\?\.status === 'running' && await pollScanFlight\(env, id\)\.catch\(\(\) => false\)\) \{\n\s+tradeBlock = await tradePanelBlock\(env\)\.catch\(\(\) => tradeBlock\);\n\s+\}/.test(W)
   && !/pollTradeFlights/.test(W) && !/pollTradeFlights|submitTradeBatch|tradeAsk|tradeSeen|tradeScanNow|trade\/feed|trade\/flights/.test(T)
@@ -849,7 +856,9 @@ check('T30 the Worker imports the desk\'s routes, panel block, morning reading a
   && /if \(doc\.data\.trade\) return json\(\{ error: TRADE_SAY\.noNext \}, 409\);/.test(W)
   && /^\/\/   GET\/POST \/api\/admin\/trade\/\* /m.test(W)
   && /const desk = await getDoc\(env, 'trade\/settings'\)\.catch\(\(\) => null\);\n\s+if \(desk\?\.data\.caseId === id\)\n\s+await patchDoc\(env, 'trade\/settings', \{ caseId: null \}, \{ mask: \['caseId'\] \}\)\.catch\(\(\) => \{\}\);\n\s+return \{ docs: deleted, files: files\.length \};/.test(SHOW)
-  && /^export function client\(env\) \{/m.test(ADV) && /^export async function markPending\(/m.test(ADV) && /import \{ markPending, diagLog, runTradeScan \} from '\.\/advisor\.js';/.test(T));
+  // RE-PINNED 2026-09-22 (v6.3): the desk's module also takes the scan poller, because the cron's
+  // collector lives beside the morning reading and asks the desk rather than the queue.
+  && /^export function client\(env\) \{/m.test(ADV) && /^export async function markPending\(/m.test(ADV) && /import \{ markPending, diagLog, runTradeScan, pollScanFlight \} from '\.\/advisor\.js';/.test(T));
 
 // ---- T31 to T34: the shelf, the page, the panel, the desk's module ----------------------
 // NEGATIVE CONTROL (run 2026-09-22): `if (c.trade) return 'TRADE DESK';` removed from badge() made this read
@@ -1235,14 +1244,20 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry61 = (CL.match(/\{\n\s+\/\/ THE SCAN, FROM OUTSIDE[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v6.2): the scan lands on its own again.
   const entry62 = (CL.match(/\{\n\s+\/\/ THE SCAN THAT NEVER LANDED[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v6.3): a flight whose queue row has gone is collected too.
+  const entry63 = (CL.match(/\{\n\s+\/\/ THE FLIGHT NOBODY WAS LOOKING AT[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
+  // NEGATIVE CONTROL (run 2026-09-22, v6.3): 'can no longer be lost' reworded to 'can no longer go missing' in the 6.3 entry made this read
+  //   FAIL  T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.2): 'lands on its own again' reworded to 'lands by itself again' in the 6.2 entry made this read
-  //   FAIL  T36 both versions read 6.2 with the new tag, the 4.7 through 6.1 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
+  //   FAIL  T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v5.2): 'has a calculator' reworded to 'has a calculator now' in the 5.2 entry made this read
   //   FAIL  T36 both versions read 5.3 with the new tag, the 4.7 through 5.3 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 6.2 with the new tag, the 4.7 through 6.1 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '6\.2';/.test(CL) && /const VERSION = '6\.2';/.test(W) && /const BUILD_TAG = 'v2026-09-22-scan-lands';/.test(W)
+  check('T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '6\.3';/.test(CL) && /const VERSION = '6\.3';/.test(W) && /const BUILD_TAG = 'v2026-09-22-scan-collected';/.test(W)
+    && /version: '6\.3',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry63)
+    && /can no longer be lost/.test(entry63) && /It still starts nothing/.test(entry63) && !DASH.test(entry63)
     && /version: '6\.2',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry62)
     && /lands on its own again/.test(entry62) && /which silence it is/.test(entry62) && !DASH.test(entry62)
     && /version: '6\.1',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry61)
@@ -1419,6 +1434,57 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && !/DESK_GROUPS/.test(CASE)
     && /if \(c\.self && !c\.trade && !asked\) \{/.test(D),
     JSON.stringify({ found: api.harvestQuestions(withSection), inReading: api.harvestQuestions(reading).length, un: api.unansweredFromChat(rows).length }));
+}
+
+// ---- T57: the cron collects a scan already in the air (v6.3) --------------------------------
+// The other half of T56. T56 keeps a scan's queue row from being thrown away; this is what happens
+// to a flight whose row has ALREADY gone, which is the state his desk was actually in: submitted
+// 13:27, still up at 15:24, queue empty, nothing on any clock able to see it.
+{
+  const set = { caseId: 'c1', startedAt: '2026-08-31', startCents: 200000 };
+  const flying = { batchId: 'b1', customId: 'scan-c1-x', submittedAt: '2026-09-22T19:27:00Z', pollFails: 0 };
+  const mk2 = (over = {}) => {
+    const { w, api } = world(over.world || {});
+    w.docs.set('trade/settings', { data: { ...set, ...(over.settings || {}) } });
+    if (over.state !== undefined) w.docs.set('trade/state', over.state);
+    return { w, api };
+  };
+  const up = mk2({ state: { data: { scanStatus: 'running', scanCtx: flying } } });
+  const collected = await up.api.maybeCollectScan(env);
+  const quiet = mk2({ state: { data: { scanStatus: 'idle', scanCtx: null } } });
+  const nothing = await quiet.api.maybeCollectScan(env);
+  const none = mk2({});
+  const noState = await none.api.maybeCollectScan(env);
+  const noDesk2 = mk2({ state: { data: { scanStatus: 'running', scanCtx: flying } }, settings: { caseId: null } });
+  const deskless = await noDesk2.api.maybeCollectScan(env);
+  const unreadable = mk2({ state: READ_FAILED });
+  const blind = await unreadable.api.maybeCollectScan(env);
+  // A poll that says it did nothing (the heartbeat was still warm) is not a collection, but the
+  // look still happened: what is counted is the look, not its answer.
+  const warm = mk2({ state: { data: { scanStatus: 'running', scanCtx: flying } }, world: { pollOut: false } });
+  const warmed = await warm.api.maybeCollectScan(env);
+  // A flight parked with no batch id is not a flight.
+  const halfway = mk2({ state: { data: { scanStatus: 'running', scanCtx: { pollFails: 0 } } } });
+  const skipped = await halfway.api.maybeCollectScan(env);
+  const seven = [up, quiet, none, noDesk2, unreadable, warm, halfway];
+
+  // NEGATIVE CONTROL (run 2026-09-22, v6.3): `{ minAgeMs: 45_000 }` on the collector's poll changed
+  // to `{ minAgeMs: 0 }` made this read
+  //   FAIL  T57 the cron collects a scan already in the air RUNS: ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.3): the collector's `|| !st.scanCtx?.batchId` dropped, so a
+  // half parked flight would have been polled, made this read
+  //   FAIL  T57 the cron collects a scan already in the air RUNS: ...
+  check('T57 the cron collects a scan already in the air RUNS: it asks the desk rather than the queue, so a flight whose queue row has gone is still looked at; the look costs one document when nothing is flying and reads the desk\'s id only when something is; it waits the same forty five seconds ordinary traffic waits; a half parked flight, a shut desk and a state it cannot read are each answered rather than polled; and not one of the seven cases starts a scan or books a reading',
+    collected.ran === true && collected.caseId === 'c1'
+    && up.w.polls.length === 1 && up.w.polls[0].caseId === 'c1' && up.w.polls[0].opts?.minAgeMs === 45_000
+    && nothing.ran === false && nothing.why === 'nothing in the air' && quiet.w.polls.length === 0 && quiet.w.reads === 1
+    && noState.ran === false && noState.why === 'nothing in the air' && none.w.polls.length === 0
+    && deskless.ran === false && deskless.why === 'no desk' && noDesk2.w.polls.length === 0
+    && blind.ran === false && blind.why === 'state unreadable' && unreadable.w.polls.length === 0 && unreadable.w.reads === 1
+    && warmed.ran === false && warm.w.polls.length === 1
+    && skipped.ran === false && skipped.why === 'nothing in the air' && halfway.w.polls.length === 0
+    && seven.every((x) => x.w.scans.length === 0 && x.w.pending.length === 0),
+    JSON.stringify({ collected, nothing, deskless, blind, warmed, polls: up.w.polls.length, reads: quiet.w.reads }));
 }
 
 // ---- T56: a scan in flight is not a reading (Eric, 2026-09-22: "It's not producing a scan rn") ----

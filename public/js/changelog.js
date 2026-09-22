@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.2';
+export const VERSION = '6.3';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '6.2';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE FLIGHT NOBODY WAS LOOKING AT (Eric, 2026-09-22: "It's not producing
+    // a scan rn"). 6.2 stopped a scan's queue row being thrown away. This is
+    // the other half: a flight whose row has already gone is collected too,
+    // because the clock asks the desk now rather than the queue. Admin only.
+    version: '6.3',
+    quiet: true,
+    client: [],
+    admin: [
+      'A scan can no longer be lost. The minute clock used to look only at a list of jobs, so a scan whose entry on that list had gone was invisible and sat in the air until you opened the desk yourself. It looks at the desk itself now, so a scan you started gets collected, finished or given up on whether or not you have the page open. It still starts nothing: Scan and Update are your buttons.',
+    ],
+  },
   {
     // THE SCAN THAT NEVER LANDED (Eric, 2026-09-22: "It's not producing a
     // scan rn"). The sweeper on the clock had no branch for a scan, so it
