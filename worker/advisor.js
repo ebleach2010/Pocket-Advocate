@@ -660,6 +660,16 @@ function turnRequest({ system, messages, effort, maxTokens = 64000, tools }) {
   // The trade desk (2026-09-22) is self without the block: its own
   // instructions say who it is talking to.
   if (policy?.self && !policy.trade) sys.push(selfBlock());
+  // A BLANK BLOCK IS REFUSED, NOT IGNORED (Eric, 2026-09-22, the desk's Read
+  // page: "Analysis failed: system: text content blocks must contain
+  // non-whitespace text"). Seven callers fall back to a single space when a
+  // note has nothing to say, and the API rejects a whitespace-only text block
+  // outright. The desk had no trading terms yet, so its second block was that
+  // space, and every reading since v4.7 died at submit, four times in the
+  // ring tonight. Dropped here, where every request is built, so no caller's
+  // fallback can reach the wire. The today block is always last and never
+  // blank, so the trailing breakpoint still lands where it did.
+  const kept = sys.filter((b) => b.type !== 'text' || /\S/.test(String(b.text ?? '')));
   return {
     model: policy?.model || MODEL,
     max_tokens: maxTokens,
@@ -667,7 +677,7 @@ function turnRequest({ system, messages, effort, maxTokens = 64000, tools }) {
     // turn (v4.6 sent none).
     ...(policy?.trade ? {} : { thinking: { type: 'adaptive' } }),
     output_config: { effort: policy?.effort || effort },
-    system: withCacheBp(sys),
+    system: withCacheBp(kept),
     messages,
     // Under the desk's policy its tools replace the caller's: web search,
     // and never the action tools.

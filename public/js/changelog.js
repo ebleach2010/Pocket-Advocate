@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '4.8';
+export const VERSION = '4.9';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '4.8';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // A BLANK BLOCK IS REFUSED (2026-09-22, the desk's Read page on his
+    // phone: "Analysis failed: system: text content blocks must contain
+    // non-whitespace text"). Admin only: every desk reading since 4.7 died
+    // at submit on a one-space block, sent when the desk had no trading
+    // terms yet.
+    version: '4.9',
+    quiet: true,
+    client: [],
+    admin: [
+      'The trade desk reads again. Every reading since 4.7 failed at submit with "text content blocks must contain non-whitespace text": a blank line rode along when the desk had no trading terms yet, and it is dropped before anything is sent now. Tap Update on the Read page for a reading.',
+    ],
+  },
   {
     // THE DESK SHOWS ONLY ITS OWN FURNITURE (2026-09-22): "Trade desk is a
     // clusterfuck of what I described and what is normally there for a

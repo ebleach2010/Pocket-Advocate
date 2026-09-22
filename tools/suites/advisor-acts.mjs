@@ -1396,7 +1396,9 @@ ck('A39 every turn knows what day it is, on his clock, and may not estimate elap
   && /must be computed from dates in the material against this date/.test(ADV)
   && /call it undated rather than estimating/.test(ADV)
   && /Array\.isArray\(system\) \? \[\.\.\.system, todayBlock\(\)\]/.test(ADV)
-  && /withCacheBp\(sys\)/.test(ADV));
+  // Re-pinned 2026-09-22 (v4.9): the blocks pass through a blank-block filter
+  // (`kept`) before the breakpoints; the today block still rides last.
+  && /const kept = sys\.filter\(/.test(ADV) && /withCacheBp\(kept\)/.test(ADV));
 
 // ---- the arithmetic leaves the model (Eric, 2026-08-31, "day 10" again) ---
 //

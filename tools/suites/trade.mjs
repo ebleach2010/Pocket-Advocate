@@ -299,6 +299,9 @@ const storeLine = grab(ADV, /const turnPolicy = new AsyncLocalStorage\(\);/);
 const withPolicy = lift(ADV, 'export async function withCasePolicy(env, kind, id, fn) {');
 const selfBlockFn = lift(ADV, 'function selfBlock() {');
 const todayFn = lift(ADV, 'function todayBlock() {');
+// The real breakpoint helper, not a pass-through (2026-09-22, v4.9): T38 proves the caller's flagged block
+// and the trailing today block still carry their breakpoints once a blank block is dropped between them.
+const withCacheBpFn = lift(ADV, 'function withCacheBp(system) {');
 const turnReqFn = lift(ADV, 'function turnRequest({ system, messages, effort, maxTokens = 64000, tools }) {');
 const loadKnowledgeFn = lift(ADV, 'async function loadKnowledge(env) {');
 const harness = () => {
@@ -307,14 +310,14 @@ const harness = () => {
     AsyncLocalStorage,
     getDoc: async (env2, path) => (store.has(path) ? { id: path.split('/').pop(), data: store.get(path) } : null),
     statePath: (kind, id) => `${kind === 'case' ? 'cases' : 'subscriptions'}/${id}/advisor/state`,
-    withCacheBp: (blocks) => blocks,
     TRADE_MODEL: K.TRADE_MODEL, TRADE_EFFORT: K.TRADE_EFFORT, TRADE_WEB_SEARCH_TOOL: K.TRADE_WEB_SEARCH_TOOL, TRADE_CATEGORIES: K.TRADE_CATEGORIES,
     listDocs: async () => store.get('advisorKnowledge') || [],
   };
   const api = new Function('deps', `
-    const { AsyncLocalStorage, getDoc, statePath, withCacheBp, TRADE_MODEL, TRADE_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_CATEGORIES, listDocs } = deps;
+    const { AsyncLocalStorage, getDoc, statePath, TRADE_MODEL, TRADE_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_CATEGORIES, listDocs } = deps;
     const READ_FAILED = Symbol('read failed'); const tryGet = async (env, p) => { try { return await getDoc(env, p); } catch { return READ_FAILED; } };
     const readFailedError = (m) => new Error(m);
+    ${withCacheBpFn}
     ${modelLine}
     ${selfModelLine}
     ${selfEffortLine}
@@ -362,6 +365,25 @@ const harness = () => {
     && onMine.thinking?.type === 'adaptive' && onMine.tools[0].name === 'set_price' && onMine.system.some((b) => /HIS OWN CASE/.test(b.text))
     && /if \(policy\?\.self && !policy\.trade\) sys\.push\(selfBlock\(\)\);/.test(ADV),
     JSON.stringify({ desk: Object.keys(onDesk), tools: onDesk.tools }));
+
+  // ERIC, 2026-09-22, the desk's Read page: "Analysis failed: system: text content blocks must contain
+  // non-whitespace text". The reading's second block falls back to one space when the desk has no
+  // trading terms, and the API refuses a whitespace-only block. Four dead reads in the ring.
+  const blanks = () => H.api.turnRequest({ system: [{ type: 'text', text: 'SYS', cache: true }, { type: 'text', text: ' ' }, { type: 'text', text: '' }], messages: [], effort: 'medium', maxTokens: 1000 });
+  const blankDesk = await H.api.withCasePolicy({}, 'case', 'desk', async () => blanks());
+  const blankMine = await H.api.withCasePolicy({}, 'case', 'mine', async () => blanks());
+  const blankNone = blanks();
+  const noBlank = (t) => t.system.every((b) => b.type !== 'text' || /\S/.test(b.text));
+  // NEGATIVE CONTROL (run 2026-09-22): the filter's test loosened to `/[\s\S]*/` (a space passes) made this read
+  //   FAIL  T38 a blank system block never rides: a one-space block and an empty block are dropped on the desk, on his own case and outside any policy, the caller's flagged block keeps its breakpoint, the today block is still last with the trailing breakpoint, and the drop sits in turnRequest where every request is built
+  check('T38 a blank system block never rides: a one-space block and an empty block are dropped on the desk, on his own case and outside any policy, the caller\'s flagged block keeps its breakpoint, the today block is still last with the trailing breakpoint, and the drop sits in turnRequest where every request is built',
+    noBlank(blankDesk) && noBlank(blankMine) && noBlank(blankNone)
+    && blankDesk.system.length === 2 && blankDesk.system[0].text === 'SYS' && blankDesk.system[0].cache_control?.type === 'ephemeral'
+    && /^Today is /.test(blankDesk.system[1].text) && blankDesk.system[1].cache_control?.type === 'ephemeral'
+    && blankMine.system.length === 3 && /HIS OWN CASE/.test(blankMine.system[2].text) && blankNone.system.length === 2
+    && /const kept = sys\.filter\(\(b\) => b\.type !== 'text' \|\| \/\\S\/\.test\(String\(b\.text \?\? ''\)\)\);/.test(ADV)
+    && /system: withCacheBp\(kept\),/.test(ADV),
+    JSON.stringify({ desk: blankDesk.system.map((b) => b.text.slice(0, 12)), mine: blankMine.system.length }));
 
   H.store.set('advisorKnowledge', [
     { id: 'vwap', data: { term: 'VWAP', category: 'Indicator', learnedAt: null } },
@@ -902,12 +924,15 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
   const entry = (CL.match(/\{\n\s+\/\/ THE TRADE DESK AS A CASE FILE[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v4.8): both versions read 4.8 and the tag is the furniture push; the 4.7 entry keeps its words.
   const entry48 = (CL.match(/\{\n\s+\/\/ THE DESK SHOWS ONLY ITS OWN FURNITURE[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v4.9): the blank-block push carries its own quiet entry.
+  const entry49 = (CL.match(/\{\n\s+\/\/ A BLANK BLOCK IS REFUSED[\s\S]*?\n  \},/) || [''])[0];
   const cssDesk = CSS.slice(CSS.indexOf('/* THE TRADE DESK (Eric, 2026-09-22'), CSS.indexOf('/* The two doors on the shelf'));
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
-  // NEGATIVE CONTROL (run 2026-09-22, v4.8): 'only its own pages' reworded to 'only its own tabs' in the 4.8 entry made this read
-  //   FAIL  T36 both versions read 4.8 with the new tag, the 4.7 entry and the 4.8 entry are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 4.8 with the new tag, the 4.7 entry and the 4.8 entry are quiet and admin-only in the desk\'s words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet\'s green or the demo\'s desk',
-    /export const VERSION = '4\.8';/.test(CL) && /const VERSION = '4\.8';/.test(W) && /const BUILD_TAG = 'v2026-09-22-desk-furniture-only';/.test(W)
+  // NEGATIVE CONTROL (run 2026-09-22, v4.9): 'The trade desk reads again.' reworded to 'The trade desk is reading again.' in the 4.9 entry made this read
+  //   FAIL  T36 both versions read 4.9 with the new tag, the 4.7, 4.8 and 4.9 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
+  check('T36 both versions read 4.9 with the new tag, the 4.7, 4.8 and 4.9 entries are quiet and admin-only in the desk\'s words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet\'s green or the demo\'s desk',
+    /export const VERSION = '4\.9';/.test(CL) && /const VERSION = '4\.9';/.test(W) && /const BUILD_TAG = 'v2026-09-22-desk-blank-block';/.test(W)
+    && /version: '4\.9',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry49) && /The trade desk reads again\./.test(entry49) && /non-whitespace text/.test(entry49) && !DASH.test(entry49)
     && /version: '4\.8',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry48) && (entry48.match(/^\s+'[^\n]+',$/gm) || []).length >= 2
     && /only its own pages/.test(entry48) && /opens on Overview/.test(entry48) && /work clock/.test(entry48) && /Working on line/.test(entry48) && !DASH.test(entry48)
     && /version: '4\.7',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry) && (entry.match(/^\s+'[^\n]+',$/gm) || []).length >= 2

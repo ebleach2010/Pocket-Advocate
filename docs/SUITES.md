@@ -266,6 +266,22 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### A blank block is refused (2026-09-22, v4.9)
+
+Eric, the desk's Read page on his phone: "Analysis failed: system: text
+content blocks must contain non-whitespace text". Four dead reads in the
+ring, all at submit. The reading's second system block falls back to one
+space when the knowledge note has nothing to say, and the API refuses a
+whitespace-only text block; the desk had no trading terms yet, so every
+reading since v4.7 died that way. turnRequest now drops any text block
+with no visible character before the breakpoints are placed, where every
+request is built. trade.mjs T38 RUNS turnRequest with a one-space block
+and an empty block on the desk, on his own case and outside any policy,
+with the real breakpoint helper lifted into the harness, and proves both
+are dropped while the flagged block and the today block keep their
+breakpoints. T36 re-pinned to 4.9; advisor-acts A39 re-pinned with a
+note. Controls recorded.
+
 ### The trade desk as a case file (2026-09-22, v4.7)
 
 Eric, on seeing the Trade portal behind the phone's menu: "Where." Then:
