@@ -44,6 +44,9 @@ import {
   tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,
   harvestDocument, fileDocument, stripDashes as deskStripDashes,
 } from './trade-desk.js';
+// The note's cut lives with the shared arithmetic (2026-09-22), so the read
+// side and the demo cut the same way this write does.
+import { noteOnly } from '../public/js/trade-math.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 const MODEL = 'claude-opus-5';
@@ -5690,21 +5693,6 @@ export async function pollScanFlight(env, caseId, { minAgeMs = 15_000 } = {}) {
  * strong one and the cover's standing all behave identically whichever
  * button bought them.
  */
-/**
- * The `## Note` section on its own, with its heading taken off. Anything else
- * the answer wrote is either on a card already or was not asked for. With no
- * Note heading at all, the first paragraph, because something is better than
- * the whole essay (2026-09-22).
- */
-function noteOnly(text) {
-  const m = sectionMatch(String(text || ''), 'Note');
-  // The whole Note section when there is one: it is under 120 words by
-  // contract and may run to two paragraphs, and cutting it would be the
-  // opposite mistake. Only the fallback takes one paragraph.
-  if (m) return String(m[1]).trim();
-  return String(text || '').replace(/^#{1,6}[^\n]*\n+/, '').trim().split(/\n{2,}/)[0].trim();
-}
-
 async function finishTradeScan(env, caseId, flight, message) {
   const t0 = flight?.submittedAt ? new Date(flight.submittedAt).getTime() : Date.now();
   try {

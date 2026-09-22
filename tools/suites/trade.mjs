@@ -80,7 +80,9 @@ const NAMES = ['patchDoc', 'deleteDoc', 'listDocs', 'tryGet', 'READ_FAILED', 're
   'rulesOf', 'RULE_RANGES', 'defaultRules', 'dayStatus', 'realizedToday', 'openRisk', 'tradeCalc', 'closePnl',
   'fmtMoney', 'fmtPct', 'HORIZONS', 'HORIZON_WORDS', 'horizonOf', 'horizonFor', 'swingLastDay', 'isMarketOpen', 'INSTRUMENTS',
   // The desk as one app (2026-09-22): his statistics and the big number.
-  'tradeStats', 'liveBalance'];
+  'tradeStats', 'liveBalance',
+  // The note's cut, on the read side (2026-09-22, v6.9).
+  'noteOnly', 'noteBullets'];
 const EXPORTS = ['TRADE_MODEL', 'TRADE_EFFORT', 'TRADE_TZ', 'MARKET_OPEN', 'MARKET_CLOSE', 'STRONG_PROFIT_LOW', 'WATCHLIST_MAX', 'DEFAULT_WATCHLIST',
   'TRADE_WEB_SEARCH_TOOL', 'TRADE_CATEGORIES', 'DESK_NAME', 'SAY', 'SETTINGS_PATH', 'STATE_PATH', 'PLAYS', 'BALANCES',
   'TRADE_INSTRUCTIONS', 'TRADE_CONTRACT', 'TRADE_ASK_NOTE', 'realDate', 'dollars', 'stripDashes', 'sectionMatch', 'mtParts', 'mtInstant', 'mtLabel',
@@ -148,6 +150,7 @@ function world(over = {}) {
     HORIZONS: math.HORIZONS, HORIZON_WORDS: math.HORIZON_WORDS, horizonOf: math.horizonOf, horizonFor: math.horizonFor,
     swingLastDay: math.swingLastDay, isMarketOpen: math.isMarketOpen, INSTRUMENTS: math.INSTRUMENTS,
     tradeStats: math.tradeStats, liveBalance: math.liveBalance,
+    noteOnly: math.noteOnly, noteBullets: math.noteBullets,
     ...(over.deps || {}),
   };
   const api = new Function('deps', `const { ${NAMES.join(', ')} } = deps;\n${BODY}\nreturn { ${EXPORTS.join(', ')} };`)(deps);
@@ -289,7 +292,10 @@ check('T6 scanBlock reads the desk\'s state for the button: running, error with 
   && K.scanBlock(READ_FAILED).status === 'idle'
   && (() => {
     const b = K.scanBlock({ data: { scanStatus: 'idle', lastScanAt: new Date('2026-09-21T16:05:00Z'), scanNote: { text: '## Note\n\nQuiet.', at: new Date('2026-09-21T16:05:00Z'), plays: 2 } } });
-    return b.status === 'idle' && b.at === '2026-09-21T16:05:00.000Z' && b.note.plays === 2 && b.note.text === '## Note\n\nQuiet.';
+    // RE-PINNED 2026-09-22 (v6.9): the read cuts the note to the Note section and hands the page
+    // its bullets, so the heading is gone from the text and the one line is the one bullet.
+    return b.status === 'idle' && b.at === '2026-09-21T16:05:00.000Z' && b.note.plays === 2 && b.note.text === 'Quiet.'
+      && Array.isArray(b.note.bullets) && b.note.bullets.join('|') === 'Quiet.';
   })());
 
 // T7 USED TO RUN THE CRON'S MINUTE. There is no minute. In its place: both reads carry the scan
@@ -1289,10 +1295,14 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry67 = (CL.match(/\{\n\s+\/\/ PLAIN ENGLISH, A BOARD THAT REFRESHES[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v6.8): the chance of profit back on the face.
   const entry68 = (CL.match(/\{\n\s+\/\/ THE CHANCE, BACK WHERE HE READS IT[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v6.9): the note is at most five bullets, on every path.
+  const entry69 = (CL.match(/\{\n\s+\/\/ AT MOST FIVE BULLETS[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
+  // NEGATIVE CONTROL (run 2026-09-22, v6.9): 'without a new scan' reworded to 'without another scan' in the 6.9 entry made this read
+  //   FAIL  T36 both versions read 6.9 with the new tag, the 4.7 through 6.8 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.8): 'back at the top right of every setup' reworded to 'back at the top of every setup' in the 6.8 entry made this read
-  //   FAIL  T36 both versions read 6.8 with the new tag, the 4.7 through 6.7 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
+  //   FAIL  T36 both versions read 6.9 with the new tag, the 4.7 through 6.8 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.7): 'A setup is one sentence now' reworded to 'A setup is a single sentence now' in the 6.7 entry made this read
   //   FAIL  T36 both versions read 6.8 with the new tag, the 4.7 through 6.7 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.6): 'That is a different number from the risk' reworded to 'That is another number from the risk' in the 6.6 entry made this read
@@ -1307,8 +1317,10 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   //   FAIL  T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v5.2): 'has a calculator' reworded to 'has a calculator now' in the 5.2 entry made this read
   //   FAIL  T36 both versions read 5.3 with the new tag, the 4.7 through 5.3 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 6.8 with the new tag, the 4.7 through 6.7 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '6\.8';/.test(CL) && /const VERSION = '6\.8';/.test(W) && /const BUILD_TAG = 'v2026-09-22-odds-back';/.test(W)
+  check('T36 both versions read 6.9 with the new tag, the 4.7 through 6.8 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '6\.9';/.test(CL) && /const VERSION = '6\.9';/.test(W) && /const BUILD_TAG = 'v2026-09-22-five-bullets';/.test(W)
+    && /version: '6\.9',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry69)
+    && /at most five bullets/.test(entry69) && /without a new scan/.test(entry69) && !DASH.test(entry69)
     && /version: '6\.8',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry68)
     && /back at the top right of every setup/.test(entry68) && !DASH.test(entry68)
     && /version: '6\.7',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry67)
@@ -1705,7 +1717,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const R5 = math.defaultRules();
   const A5 = 449000;
   const P = (over) => math.playLine({ ticker: 'NVDA', side: 'long', instrument: 'stock', entry: 228.9, stop: 226.3, targets: [231.5], holdMinutes: 180, allocPct: 5.5, ...over }, { rules: R5, accountCents: A5 });
-  const noteOnly = new Function(`${grab(ADV, /function sectionMatch\(text, name\) \{[\s\S]*?\n\}/)}\n${grab(ADV, /function noteOnly\(text\) \{[\s\S]*?\n\}/)}\nreturn noteOnly;`)();
+  // RE-PINNED 2026-09-22 (v6.9): noteOnly moved to the shared arithmetic so the read side cuts too.
+  const noteOnly = math.noteOnly;
   const wall = '## Note\n\nThe tape is holding its ranges.\n\nOne more line of the note.\n\n## Setups\n\n### AMD long\nCurrent picture: eight hundred words of it.\nChance of profit: 45 to 55%\n\n### META long\nCurrent picture: more.';
 
   // NEGATIVE CONTROL (run 2026-09-22, v6.7): playLine's hold dropped from the front of the line,
@@ -1755,8 +1768,70 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && /html\[data-desk\]:root \.play \.plain \{/.test(CSS5) && /html\[data-desk\]:root \.play \.under \{/.test(CSS5)
     && /each card is one plain sentence/.test(DRIVE5) && /nothing expired is on the board/.test(DRIVE5)
     && /the scan refreshes the board rather than piling up on it/.test(DRIVE5)
-    && /the note is the note, not the whole reading/.test(DRIVE5),
+    // RE-PINNED 2026-09-22 (v6.9): the drive counts bullets now rather than characters.
+    && /the note is at most five bullets and has no more button/.test(DRIVE5),
     JSON.stringify({ stock: P(), call: P({ instrument: 'call', entry: 2.1, stop: 1.3, targets: [3.4], strike: 650, expiry: '2026-10-17' }), note: noteOnly(wall) }));
+}
+
+// ---- T62: the note is at most five bullets, on every path (Eric, 2026-09-22) -----------------
+// "This needs to disappear or be shortened to 5 bullet points." His screenshot was a note filed
+// before v6.7's write-time cut, so the whole reading was still stored, and the clamp that was
+// supposed to hide it was written for a p while the note was a div. Now the cut runs on the read.
+{
+  const APP6 = f('public/js/admin-deskapp.js');
+  const HTML6 = f('public/admin-desk.html');
+  const CSS6 = f('public/css/admin.css');
+  const D6 = f('public/js/demo/api.js');
+  const DRIVE6 = f('tools/drives/drive-trade.mjs');
+  const wall = '## Note\n\nTwo hours in, the tape is rotational, not trending: QQQ +0.41% while SPY is flat on its session low. MSFT has the cleanest trend, but a cash account cannot short shares. NVDA is dropped: it lags AMD in the same sector. The 10:00 to 12:00 slow window is next, so favor pullbacks over breakout chases. The three below are closely correlated longs, and $4,490 cash funds about one round trip. One more sentence that should be the sixth and fall off.\n\n## Setups\n\n### AMD long\nCurrent picture: AMD is 619.98, up 0.72%, after opening at 609.02.\nChance of profit: 45 to 55%';
+  const fromWall = math.noteBullets(wall);
+  const asBullets = math.noteBullets('## Note\n\n- one\n- two\n- three\n- four\n- five\n- six\n\n## Setups\n\n### X long\nCurrent picture: y.');
+  const longOne = math.noteBullets(`## Note\n\n- ${'word '.repeat(60).trim()}`);
+  const decimals = math.noteBullets('AMD is 619.98, up 0.72%, after opening at 609.02 and it held. Then it ran.');
+  const headless = math.noteBullets('Two hours in. Then more.\n\n## Setups\n### X');
+  const empty = [math.noteBullets(''), math.noteBullets('## Note\n\n'), math.noteBullets(null)];
+  // The read side: scanBlock hands the page bullets cut from whatever is stored.
+  const stored = { data: { scanStatus: 'idle', lastScanAt: new Date('2026-09-22T15:50:00Z'), scanNote: { text: wall, at: new Date('2026-09-22T15:50:00Z'), plays: 3 } } };
+  const block6 = K.scanBlock(stored);
+
+  // NEGATIVE CONTROL (run 2026-09-22, v6.9): NOTE_BULLETS_MAX raised from 5 to 50 made this read
+  //   FAIL  T62 the note is at most five bullets ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.9): noteBullets given the whole text rather than
+  //   noteOnly(text), so the Setups section came back as bullets, made this read
+  //   FAIL  T62 the note is at most five bullets ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.9): the page's `<li>` map put back to textContent of the
+  //   text made this read
+  //   FAIL  T62 the note is at most five bullets ...
+  check('T62 the note is at most five bullets on every path RUNS: the wall from his screenshot, stored in full, gives five sentences from the Note section and none from the setups; a note written as bullets gives those bullets and drops the sixth; a bullet past 160 characters is cut at a word; a decimal or a clock time never splits a sentence; a note with no heading still stops at the first one; nothing gives nothing; the Worker and the demo both cut on the READ so the wall already on his desk comes down without a new scan; the page renders a list and has no clamp and no more button; the scan contract asks for five bullets under 15 words and the reading contract never had a Note heading to ask with; and the drive counts them',
+    fromWall.length === 5
+    && fromWall[0] === 'Two hours in, the tape is rotational, not trending: QQQ +0.41% while SPY is flat on its session low.'
+    && fromWall[1] === 'MSFT has the cleanest trend, but a cash account cannot short shares.'
+    && fromWall[3] === 'The 10:00 to 12:00 slow window is next, so favor pullbacks over breakout chases.'
+    && fromWall[4] === 'The three below are closely correlated longs, and $4,490 cash funds about one round trip.'
+    && fromWall.every((b) => !/Setups|###|Current picture|sixth/.test(b))
+    && asBullets.join('|') === 'one|two|three|four|five'
+    && longOne.length === 1 && longOne[0].length <= 160 && longOne[0].length > 120 && !/ $/.test(longOne[0])
+    && decimals.length === 2 && decimals[0] === 'AMD is 619.98, up 0.72%, after opening at 609.02 and it held.' && decimals[1] === 'Then it ran.'
+    && headless.join('|') === 'Two hours in.|Then more.'
+    && empty.every((e) => Array.isArray(e) && e.length === 0)
+    && math.NOTE_BULLETS_MAX === 5 && math.NOTE_BULLET_CHARS === 160
+    && math.noteOnly(wall).startsWith('Two hours in') && !/Setups/.test(math.noteOnly(wall))
+    && Array.isArray(block6.note.bullets) && block6.note.bullets.length === 5 && !/Setups/.test(block6.note.text)
+    && /text: noteOnly\(note\.text\), bullets: noteBullets\(note\.text\),/.test(T)
+    && /text: noteOnly\(note\.text\), bullets: noteBullets\(note\.text\),/.test(D6)
+    && /liveBalance, tradeStats, noteOnly, noteBullets,\n\} from '\.\.\/trade-math\.js';/.test(D6)
+    && /<ul id="note-p" class="bul"><\/ul>/.test(HTML6) && !/id="note-more"/.test(HTML6) && !/class="panel say clamp"/.test(HTML6)
+    && /const bullets = Array\.isArray\(note\?\.bullets\) \? note\.bullets : noteBullets\(note\?\.text \|\| ''\);/.test(APP6)
+    && /\$\('#note-p'\)\.innerHTML = bullets\.map\(\(b\) => `<li>\$\{esc\(b\)\}<\/li>`\)\.join\(''\);/.test(APP6)
+    && !/#note-more/.test(APP6) && !/classList\.toggle\('clamp'\)/.test(APP6)
+    && /html\[data-desk\]:root \.say \.bul \{ margin: 0; padding-left: 18px;/.test(CSS6)
+    && /html\[data-desk\]:root \.say \{ position: relative; margin-bottom: 12px; padding: 12px 14px 10px 14px;/.test(CSS6)
+    && /"Note": at most five bullet points and nothing that is not a bullet\./.test(K.SCAN_CONTRACT)
+    && /is under 15 words/.test(K.SCAN_CONTRACT) && /No paragraphs under this heading, ever/.test(K.SCAN_CONTRACT)
+    && !/"Note": under 120 words/.test(K.SCAN_CONTRACT) && !/"Note":/.test(K.TRADE_CONTRACT) && !DASH.test(K.SCAN_CONTRACT)
+    && /the note is at most five bullets and has no more button/.test(DRIVE6)
+    && !DASH.test(APP6) && !DASH.test(f('public/js/trade-math.js')),
+    JSON.stringify({ fromWall, asBullets, longOne: longOne[0]?.length, decimals, headless, block: block6.note.bullets?.length }));
 }
 
 // ---- T56: a scan in flight is not a reading (Eric, 2026-09-22: "It's not producing a scan rn") ----
@@ -1792,7 +1867,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     // whole Setups section ran into one wall of text on his Plays page. It is the Note section
     // alone now, and a fifth of the length.
     && /scanNote: \{ text: noteOnly\(pl\.text\)\.slice\(0, 1200\), at: new Date\(\), plays: filed\?\.plays \?\? 0, missing: !!pl\.missing \},/.test(ADV)
-    && /const m = sectionMatch\(String\(text \|\| ''\), 'Note'\);/.test(ADV)
+    // RE-PINNED 2026-09-22 (v6.9): the cut is imported from the shared arithmetic, not local.
+    && /import \{ noteOnly \} from '\.\.\/public\/js\/trade-math\.js';/.test(ADV) && !/function noteOnly\(/.test(ADV)
     && /plays: Number\(note\.plays\) \|\| 0, missing: note\.missing === true,/.test(T)
     && /plays: Number\(note\.plays\) \|\| 0, missing: note\.missing === true,/.test(D)
     && /That scan came back without its setups list, so nothing was filed\. Tap Scan again\./.test(APP2)
@@ -2087,9 +2163,6 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     lift(ADV, 'export async function runTradeScan(env, caseId, { now = Date.now() } = {}) {'),
     lift(ADV, 'export async function pollScanFlight(env, caseId, { minAgeMs = 15_000 } = {}) {'),
     lift(ADV, 'async function finishTradeScan(env, caseId, flight, message) {'),
-    // The note is the Note section only (2026-09-22), so the cutter and the matcher ride along.
-    lift(ADV, 'function noteOnly(text) {'),
-    lift(ADV, 'function sectionMatch(text, name) {'),
     lift(ADV, 'async function deskState(env) {'),
     lift(ADV, 'export function askFlightNext(flight, poll, now = Date.now()) {'),
   ].join('\n');
@@ -2132,6 +2205,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
       SCAN_CONTRACT: K.SCAN_CONTRACT,
       TRADE_SAY: K.SAY,
       readFailedError: (m) => new Error(m),
+      // The note's cut is the shared one now (2026-09-22, v6.9).
+      noteOnly: math.noteOnly,
     };
     const names = Object.keys(deps).join(', ');
     const api = new Function('deps', `

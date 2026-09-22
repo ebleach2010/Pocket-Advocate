@@ -28,7 +28,7 @@ import { VERSION } from './changelog.js';
 import { md, splitPages } from './advisor.js';
 import {
   rulesOf, RULE_RANGES, dayStatus, tradeCalc, isMarketOpen, isTradingDay,
-  HORIZONS, HORIZON_WORDS, sizeFor, sharesForDollars, dollarsForShares, fmtQty, playSizing, vehicleLabel,
+  HORIZONS, HORIZON_WORDS, sizeFor, sharesForDollars, dollarsForShares, fmtQty, playSizing, vehicleLabel, noteBullets,
 } from './trade-math.js';
 import {
   money, shortMoney, dayShort, dayName, agoShort, tradeCall,
@@ -194,13 +194,18 @@ function paintScan() {
       : (!running && sc.note?.missing) ? 'That scan came back without its setups list, so nothing was filed. Tap Scan again.'
         : '');
 }
+// AT MOST FIVE BULLETS (Eric, 2026-09-22: "This needs to disappear or be
+// shortened to 5 bullet points"). The server sends them cut; a server that
+// sent only text is cut here the same way, so an old Worker and a new page
+// still agree. The clamp and the more button that used to sit here never
+// worked: the clamp was written for a p and the note was a div.
 function paintNote() {
   const note = scanNow().note;
   const box = $('#note');
-  box.hidden = !note || !note.text;
+  const bullets = Array.isArray(note?.bullets) ? note.bullets : noteBullets(note?.text || '');
+  box.hidden = !bullets.length;
   if (box.hidden) return;
-  // The note comes back with its own heading on it, which the page already has.
-  $('#note-p').textContent = String(note.text || '').replace(/^#{1,3}\s+[^\n]*\n+/, '').trim();
+  $('#note-p').innerHTML = bullets.map((b) => `<li>${esc(b)}</li>`).join('');
   $('#note-when').textContent = note.at ? `read ${agoShort(note.at)}` : '';
 }
 function tickHtml(q) {
@@ -278,11 +283,6 @@ $('#scan-go').addEventListener('click', async () => {
     paintScan();
     kickPoll();
   } catch (err) { say('#scan-said', err.message); }
-});
-$('#note-more').addEventListener('click', () => {
-  const n = $('#note');
-  n.classList.toggle('clamp');
-  $('#note-more').textContent = n.classList.contains('clamp') ? 'more' : 'less';
 });
 
 // ---- NEWS ---------------------------------------------------------------------

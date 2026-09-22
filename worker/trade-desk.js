@@ -446,7 +446,7 @@ Use exactly these headings, in this order, as markdown ## headings:
 ## Setups
 ## Plays
 
-"Note": under 120 words. What the tape is doing right now, why these setups and not others, and anything about his day that should change how he takes them, for example how little he has left to risk today. When you file nothing, this is where you say what you would need to see.
+"Note": at most five bullet points and nothing that is not a bullet. Each one starts with "- " on its own line and is under 15 words. What the tape is doing right now, why these setups and not others, and anything about his day that should change how he takes them, for example how little he has left to risk today. When you file nothing, the bullets say what you would need to see. No paragraphs under this heading, ever: he reads this on a phone in a second.
 
 "Setups": at most 4, each under a ### heading of the ticker and the side, for example ### NVDA long. Under it exactly these six labelled lines, in this order: Current picture, Bull case, Bear case, Levels, Risk, What I would watch next. Then one line: Chance of profit: NN to NN%. Only a setup you would watch yourself right now. Sized for his account, with the risk at the stop said in dollars. Write nothing under this heading when there is nothing to take.
 

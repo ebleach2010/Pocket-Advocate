@@ -12,7 +12,7 @@ import { DEMO_CASE_ID } from './seed.js';
 // The Trade portal's arithmetic (2026-09-21): the same module the Worker uses, so the demo's numbers are the real numbers.
 import {
   tradeMetrics, chartSeries, rulesOf, defaultRules, RULE_RANGES, dayStatus, realizedToday, openRisk,
-  tradeCalc, closePnl, horizonOf, INSTRUMENTS, isMarketOpen, liveBalance, tradeStats,
+  tradeCalc, closePnl, horizonOf, INSTRUMENTS, isMarketOpen, liveBalance, tradeStats, noteOnly, noteBullets,
 } from '../trade-math.js';
 // The desk makes a PDF (2026-09-22): the same writer the Worker files with, so the demo's document is a real one.
 import { textPdf } from '../textpdf.js';
@@ -68,8 +68,10 @@ function deskScanBlock(store) {
     status: st.scanStatus === 'running' ? 'running' : st.scanStatus === 'error' ? 'error' : 'idle',
     error: st.scanError || null,
     at: st.lastScanAt ? new Date(st.lastScanAt).toISOString() : null,
+    // The same read-side cut the Worker makes (2026-09-22).
     note: note ? {
-      text: String(note.text || ''), at: note.at ? new Date(note.at).toISOString() : null,
+      text: noteOnly(note.text), bullets: noteBullets(note.text),
+      at: note.at ? new Date(note.at).toISOString() : null,
       plays: Number(note.plays) || 0, missing: note.missing === true,
     } : null,
   };

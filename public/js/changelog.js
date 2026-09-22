@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.8';
+export const VERSION = '6.9';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '6.8';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // AT MOST FIVE BULLETS (Eric, 2026-09-22: "This needs to disappear or be
+    // shortened to 5 bullet points"). The cut of 6.7 ran only when a scan
+    // landed, so the wall filed before it stayed on the desk; and the clamp
+    // never worked. Admin only.
+    version: '6.9',
+    quiet: true,
+    client: [],
+    admin: [
+      'The note on Plays is at most five bullets now, one line each, and it is cut on the way to the page rather than only when a scan lands, so the wall already on your desk comes down on reload without a new scan. The more button is gone with the clamp it was meant to open, which had never worked. The scan is asked for five bullets in the first place.',
+    ],
+  },
   {
     // THE CHANCE, BACK WHERE HE READS IT (Eric, 2026-09-22: "Why is the
     // confidence interval gone"). 6.7 left it as the last words of the small

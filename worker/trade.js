@@ -19,7 +19,7 @@ import { markPending, diagLog, runTradeScan, pollScanFlight } from './advisor.js
 import {
   isTradingDay, tradeMetrics, chartSeries, PROJECTION_MIN_DAYS,
   rulesOf, RULE_RANGES, defaultRules, dayStatus, realizedToday, openRisk, tradeCalc, closePnl,
-  horizonOf, isMarketOpen, INSTRUMENTS, tradeStats, liveBalance,
+  horizonOf, isMarketOpen, INSTRUMENTS, tradeStats, liveBalance, noteOnly, noteBullets,
 } from '../public/js/trade-math.js';
 import {
   TRADE_TZ, DESK_NAME, SAY, SETTINGS_PATH, STATE_PATH, PLAYS, BALANCES, POSITIONS, DEFAULT_WATCHLIST, WATCHLIST_MAX, KEY_RE,
@@ -460,8 +460,14 @@ export function scanBlock(stateDoc) {
     status: st.scanStatus === 'running' ? 'running' : st.scanStatus === 'error' ? 'error' : 'idle',
     error: st.scanError || null,
     at: st.lastScanAt ? new Date(st.lastScanAt).toISOString() : null,
+    // CUT ON THE READ (Eric, 2026-09-22: "This needs to disappear or be
+    // shortened to 5 bullet points"). The write-time cut of 6.7 left every
+    // note filed before it sitting on the desk in full, and the wall on his
+    // screen was one of those. Whatever is stored, the page gets the Note
+    // section and at most five bullets of it.
     note: note ? {
-      text: String(note.text || ''), at: note.at ? new Date(note.at).toISOString() : null,
+      text: noteOnly(note.text), bullets: noteBullets(note.text),
+      at: note.at ? new Date(note.at).toISOString() : null,
       plays: Number(note.plays) || 0, missing: note.missing === true,
     } : null,
   };

@@ -317,6 +317,48 @@ export function vehicleLabel(p) {
   return strikes || when ? built : (String(p?.structure || '').trim() || kind);
 }
 
+/**
+ * THE NOTE, AT MOST FIVE BULLETS (Eric, 2026-09-22: "This needs to disappear or
+ * be shortened to 5 bullet points").
+ *
+ * noteOnly keeps the Note section of a scan's answer and nothing after it.
+ * noteBullets turns that into at most five short lines: the lines written as
+ * bullets when there are any, otherwise one line a sentence. Both run on the
+ * READ side as well as the write side, so a note filed before this rule
+ * existed is cut down the moment a page asks for it, without a new scan.
+ * Shared here so the Worker, the page, the demo and the checks all cut the
+ * same way.
+ */
+export function noteOnly(text) {
+  const t = String(text || '');
+  const m = t.match(/^\s*\**#{2,3}\s*\**\s*Note\s*\**\s*\n([\s\S]*?)(?=^\s*\**#{2,3}\s|$(?![\s\S]))/im);
+  if (m) return m[1].trim();
+  // No Note heading: whatever comes before the first heading, first paragraph.
+  return t.replace(/^#{1,6}[^\n]*\n+/, '').split(/\n\s*#{2,3}\s/)[0].trim().split(/\n{2,}/)[0].trim();
+}
+export const NOTE_BULLETS_MAX = 5;
+export const NOTE_BULLET_CHARS = 160;
+export function noteBullets(text, { max = NOTE_BULLETS_MAX, chars = NOTE_BULLET_CHARS } = {}) {
+  const body = noteOnly(text);
+  if (!body) return [];
+  let items = body.split('\n').map((l) => l.trim())
+    .filter((l) => /^[-*\u2022]\s+/.test(l)).map((l) => l.replace(/^[-*\u2022]\s+/, '').trim());
+  if (!items.length) {
+    // Prose: a sentence ends at . ! or ? followed by a space and a capital, a
+    // digit, a dollar sign or a quote, so 619.98 and 10:00 to 12:00 stay whole.
+    items = body.replace(/\s+/g, ' ').trim()
+      .replace(/([.!?])\s+(?=[A-Z0-9$"'(])/g, '$1\u0001').split('\u0001')
+      .map((x) => x.trim()).filter(Boolean);
+  }
+  const cut = (x) => {
+    if (x.length <= chars) return x;
+    const head = x.slice(0, chars);
+    const at = head.lastIndexOf(' ');
+    return (at > chars / 2 ? head.slice(0, at) : head).trim();
+  };
+  return items.slice(0, max).map(cut).filter(Boolean);
+}
+
 /** A hold in the words a person says out loud: 10 minutes, 3 hours, 2 days. */
 export function holdPlain(p) {
   if (p?.horizon === 'swing') { const d = Number(p.holdDays) || 3; return `${d} day${d === 1 ? '' : 's'}`; }

@@ -109,7 +109,8 @@ const plays = await until(() => {
     odds: cards.map((c) => c.querySelector('.odds .v')?.textContent.trim()),
     unders: cards.map((c) => c.querySelector('.under')?.textContent.trim()),
     note: document.getElementById('note-p')?.textContent.trim().slice(0, 40),
-    noteLen: (document.getElementById('note-p')?.textContent || '').length,
+    bullets: document.querySelectorAll('#note-p li').length,
+    more: !!document.getElementById('note-more'),
     mkt: document.getElementById('mkt-word')?.textContent.trim(),
     ticks: document.querySelectorAll('#ticks .tq').length,
     stale: cards.filter((c) => c.className.includes('expired')).length,
@@ -133,7 +134,8 @@ ok('the chance of profit is on the face of every card, first thing on the right'
   !!plays && plays.odds.length === plays.n && plays.odds.every((o) => /^\d+ to \d+%$/.test(o || '')), JSON.stringify(plays?.odds));
 ok('and the small line no longer repeats it', !!plays && plays.unders.every((u) => !/Chance of profit/.test(u)), plays?.unders[0]);
 ok('nothing expired is on the board', !!plays && plays.stale === 0, `${plays?.stale} expired cards`);
-ok('the note is the note, not the whole reading', !!plays && plays.noteLen > 0 && plays.noteLen <= 1200, `${plays?.noteLen} chars`);
+// v6.9 (Eric: "This needs to disappear or be shortened to 5 bullet points").
+ok('the note is at most five bullets and has no more button', !!plays && plays.bullets >= 1 && plays.bullets <= 5 && !plays.more, `${plays?.bullets} bullets, more=${plays?.more}`);
 ok('the scan\'s note sits above them and the market line reads his clock', !!plays && /The indexes opened/.test(plays.note || '') && /^\d\d:\d\d · /.test(plays.mkt || ''), plays?.mkt);
 ok('the prices he is in are on the strip', !!plays && plays.ticks >= 1, `${plays?.ticks} tiles`);
 await shot('C-plays');

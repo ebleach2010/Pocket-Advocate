@@ -1842,13 +1842,17 @@ html[data-desk]:root .scanrow.landed { animation: dk-landed .5s ease-out; }
 @keyframes dk-breathe { 0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 0 18px rgba(var(--blue-rgb),.18); } 50% { box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 0 30px rgba(var(--blue-rgb),.40); } }
 @keyframes dk-sweep { from { background-position: -96px 0; } to { background-position: 110% 0; } }
 @keyframes dk-landed { 50% { box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 0 30px rgba(var(--blue-rgb),.55); } }
-html[data-desk]:root .say { position: relative; margin-bottom: 12px; padding: 12px 64px 10px 14px; box-shadow: inset 3px 0 0 var(--green), inset 0 1px 0 rgba(255,255,255,.1), 0 1px 2px rgba(0,0,0,.7), 0 14px 32px -8px rgba(0,0,0,.95); }
+html[data-desk]:root .say { position: relative; margin-bottom: 12px; padding: 12px 14px 10px 14px; box-shadow: inset 3px 0 0 var(--green), inset 0 1px 0 rgba(255,255,255,.1), 0 1px 2px rgba(0,0,0,.7), 0 14px 32px -8px rgba(0,0,0,.95); }
 html[data-desk]:root .say .who { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
 html[data-desk]:root .say .who b { font-family: var(--display); font-weight: 600; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--green-core); text-shadow: 0 0 2px var(--green-core), 0 0 6px rgba(var(--green-rgb),.8); }
 html[data-desk]:root .say .who span { font-size: 12px; color: var(--dim); font-family: var(--mono); }
 html[data-desk]:root .say p { margin: 0; font-size: 15px; }
 html[data-desk]:root .say.clamp p { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 html[data-desk]:root .say .more { position: absolute; right: 6px; top: 6px; min-height: 44px; padding: 0 10px; color: var(--blue); font-size: 13px; }
+/* AT MOST FIVE BULLETS (Eric, 2026-09-22). The note is a short list now; the clamp
+   and the more rules above are kept for any other .say, of which there is none today. */
+html[data-desk]:root .say .bul { margin: 0; padding-left: 18px; font-size: 15px; line-height: 1.4; color: var(--ink); }
+html[data-desk]:root .say .bul li { margin: 2px 0; }
 html[data-desk]:root .play, html[data-desk]:root .pos { position: relative; padding: 14px 14px 14px 17px; }
 html[data-desk]:root .play::before, html[data-desk]:root .pos::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 14px 0 0 14px; background: var(--kind); box-shadow: 0 0 8px rgba(var(--kind-rgb),.7); }
 html[data-desk]:root .play .head, html[data-desk]:root .pos .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
