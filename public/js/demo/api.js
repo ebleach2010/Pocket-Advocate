@@ -10,7 +10,10 @@
 
 import { DEMO_CASE_ID } from './seed.js';
 // The Trade portal's arithmetic (2026-09-21): the same module the Worker uses, so the demo's numbers are the real numbers.
-import { tradeMetrics, chartSeries } from '../trade-math.js';
+import {
+  tradeMetrics, chartSeries, rulesOf, defaultRules, RULE_RANGES, dayStatus, realizedToday, openRisk,
+  tradeCalc, closePnl, horizonOf, INSTRUMENTS, isMarketOpen,
+} from '../trade-math.js';
 // The desk makes a PDF (2026-09-22): the same writer the Worker files with, so the demo's document is a real one.
 import { textPdf } from '../textpdf.js';
 // The same two vocabularies the pages read, so the demo cannot answer with a
@@ -39,9 +42,10 @@ const deskRows = (store, prefix) => [...store.docs.entries()].filter(([k]) => k.
 function deskStanding(store) {
   const s = store.docs.get('trade/settings') || {};
   const rows = deskRows(store, 'trade/balances/items/').map((b) => ({ date: b.date || b.id, cents: b.cents, note: b.note || '' }));
-  const m = tradeMetrics(rows, { startedAt: s.startedAt || null, startCents: Number.isInteger(s.startCents) && s.startCents > 0 ? s.startCents : 200000 });
+  const R = rulesOf(s);
+  const m = tradeMetrics(rows, { startedAt: s.startedAt || null, startCents: Number.isInteger(s.startCents) && s.startCents > 0 ? s.startCents : 200000, target: R.dayAimPct / 100 });
   const text = m.days && m.entries.length
-    ? `${deskMoney(m.currentCents)} · ${m.days} trading day${m.days === 1 ? '' : 's'} · ${Math.abs(m.offTargetPoints).toFixed(2)} pts ${m.offTargetCents < 0 ? 'under' : 'over'} 3% a day`
+    ? `${deskMoney(m.currentCents)} · ${m.days} trading day${m.days === 1 ? '' : 's'} · ${Math.abs(m.offTargetPoints).toFixed(2)} pts ${m.offTargetCents < 0 ? 'under' : 'over'} ${Math.round(R.dayAimPct * 100) / 100}% a day`
     : `${deskMoney(m.currentCents)} · no entries yet`;
   return { text, at: new Date() };
 }
@@ -62,8 +66,36 @@ function deskPanelBlock(store) {
     plays, standing: meta.tradeStanding || null,
     nextSlot: { key: `${today}T12:00`, dateKey: today, slot: '12:00', atMs: Date.now() + 3600_000 },
     scansOn: s.scansOn !== false, pushOn: s.pushOn !== false, hasKey: !!s.finnhubKey, tradingDay: 'full', today,
+    rules: rulesOf(s),
   };
 }
+
+// His positions in the demo, with the same arithmetic and the same sentences
+// the Worker refuses with (2026-09-22).
+const DEMO_QUOTES = {
+  NVDA: { ticker: 'NVDA', last: 651.2, chg: 2.8, chgPct: 0.43, open: 648.9, high: 653.8, low: 646.1, prevClose: 648.4 },
+  SPY: { ticker: 'SPY', last: 574.1, chg: 1.2, chgPct: 0.21, open: 573.2, high: 575.4, low: 572.4, prevClose: 572.9 },
+  TSLA: { ticker: 'TSLA', last: 409.8, chg: -2.3, chgPct: -0.56, open: 412.4, high: 413.1, low: 408.2, prevClose: 412.1 },
+  AAPL: { ticker: 'AAPL', last: 232.6, chg: 1.5, chgPct: 0.65, open: 231, high: 233.2, low: 230.6, prevClose: 231.1 },
+  AMD: { ticker: 'AMD', last: 168.4, chg: 1.1, chgPct: 0.66, open: 167.2, high: 169.1, low: 166.8, prevClose: 167.3 },
+};
+const deskPositions = (store) => deskRows(store, 'trade/positions/items/');
+const deskAccountCents = (store) => {
+  const s = store.docs.get('trade/settings') || {};
+  const rows = deskRows(store, 'trade/balances/items/').sort((a, b) => String(b.date || b.id).localeCompare(String(a.date || a.id)));
+  const c = rows[0]?.cents;
+  return Number.isFinite(Number(c)) ? Math.round(Number(c)) : (Number.isInteger(s.startCents) && s.startCents > 0 ? s.startCents : 200000);
+};
+const deskSort = (rows) => {
+  const rank = { scalp: 0, intraday: 1, swing: 2 };
+  return [...rows].sort((a, b) => {
+    const open = (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1);
+    if (open) return open;
+    const h = (rank[a.horizon] ?? 1) - (rank[b.horizon] ?? 1);
+    if (h) return h;
+    return new Date(b.openedAt || 0) - new Date(a.openedAt || 0);
+  });
+};
 
 const beat = (ms = 320) => new Promise((r) => setTimeout(r, ms));
 
@@ -1732,6 +1764,20 @@ export function demoApi(role, store) {
         badKey: 'That key does not look like a Finnhub key.',
         badAccount: 'Account type is cash or margin.',
         badWatchlist: 'Watchlist: up to 20 tickers, letters and dots only.',
+        badTicker: 'Ticker: letters and dots only, up to six.',
+        badSide: 'Side is long or short.',
+        badInstrument: 'Instrument is stock, call, put or spread.',
+        badHorizon: 'Horizon is scalp, intraday or swing.',
+        badQty: 'Quantity: a whole number, 1 or more.',
+        badPrice: 'Entry, stop and target are prices above zero, four decimals at most.',
+        badWidth: 'Spread width: the distance between the strikes, above zero.',
+        noPosition: 'No such position.',
+        closedAlready: 'That position is already closed.',
+        badExit: 'Sold at needs the exit price, or the profit or loss in dollars.',
+        badRules: 'Rules: risk 0.1 to 5% a trade, day loss 0.5 to 20%, floor under aim under cap, cap up to 50%, target 0.5R to 5R.',
+        noQuoteKey: 'No market data key on file. Add it on Desk.',
+        quoteMany: 'Quotes: up to 10 tickers at a time.',
+        quoteBudget: 'Quotes are rate limited; try again in a minute.',
       };
       const DEFAULT_WATCHLIST = ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AAPL', 'AMD', 'META', 'AMZN', 'MSFT', 'COIN'];
       const TICKER_RE = /^[A-Z][A-Z.]{0,5}$/;
@@ -1744,13 +1790,15 @@ export function demoApi(role, store) {
         scansOn: s.scansOn !== false, pushOn: s.pushOn !== false,
         startedAt: s.startedAt || null,
         startCents: Number.isInteger(s.startCents) && s.startCents > 0 ? s.startCents : 200000,
+        rules: rulesOf(s),
+        celebrate: s.celebrate !== false,
       });
       const keyOf = (s) => String(s.finnhubKey || '');
       if (sub === 'state' && init.method !== 'POST') {
         const s = settings();
         const p = pub(s);
         const balances = deskRows(store, 'trade/balances/items/').map((b) => ({ date: b.date || b.id, cents: b.cents, note: b.note || '', source: b.source || 'typed' }));
-        const metrics = tradeMetrics(balances, { startedAt: p.startedAt, startCents: p.startCents });
+        const metrics = tradeMetrics(balances, { startedAt: p.startedAt, startCents: p.startCents, target: p.rules.dayAimPct / 100 });
         const sources = new Map(balances.map((b) => [b.date, b.source]));
         const block = deskPanelBlock(store);
         return ok({
@@ -1760,6 +1808,35 @@ export function demoApi(role, store) {
           metrics, chart: chartSeries(metrics),
           nextSlot: block.nextSlot, tradingDay: 'full', today: todayMT, scansOn: p.scansOn, now: new Date().toISOString(),
         });
+      }
+      // READ ROUTES SIT ABOVE THE POST GATE (2026-09-22): positions and quote
+      // are both GETs, and the gate on the next line turns every GET below it
+      // into a 404. The drive caught the Trades page loading nothing.
+      if (sub === 'positions' && init.method !== 'POST') {
+        const s = settings();
+        const rows = deskPositions(store);
+        const rules = rulesOf(s);
+        const accountCents = deskAccountCents(store);
+        const accountType = s.accountType === 'margin' ? 'margin' : 'cash';
+        const open = rows.filter((p) => p.status === 'open');
+        const closedToday = rows.filter((p) => p.status === 'closed' && p.closedDay === todayMT);
+        const recent = rows.filter((p) => p.status === 'closed' && p.closedDay !== todayMT).slice(0, 10);
+        const withCalc = (p) => ({ ...p, calc: tradeCalc({ pos: p, rules, accountCents, todayKey: todayMT, accountType }) });
+        return ok({
+          positions: [...deskSort(open), ...closedToday, ...recent].map(withCalc),
+          openCount: open.length, rules, accountCents, accountType,
+          today: todayMT, tradingDay: 'full', marketOpen: true, hasKey: !!keyOf(s),
+          dayStatus: dayStatus({ rules, accountCents, realizedTodayCents: realizedToday(rows, todayMT), openRiskCents: openRisk(rows) }),
+          now: new Date().toISOString(),
+        });
+      }
+      if (sub === 'quote' && init.method !== 'POST') {
+        const s = settings();
+        if (!keyOf(s)) return fail(404, SAY.noQuoteKey);
+        const list = [...new Set(String(q.get('symbols') || '').split(/[\s,]+/).map((t) => t.toUpperCase().trim()).filter(Boolean))];
+        if (!list.length || list.length > 10) return fail(400, SAY.quoteMany);
+        if (!list.every((t) => TICKER_RE.test(t))) return fail(400, SAY.badTicker);
+        return ok({ quotes: list.map((t) => DEMO_QUOTES[t]).filter(Boolean), missing: list.filter((t) => !DEMO_QUOTES[t]), at: new Date().toISOString() });
       }
       if (init.method !== 'POST') return fail(404, 'Not found');
       if (sub === 'open') {
@@ -1823,6 +1900,21 @@ export function demoApi(role, store) {
         }
         if (body.scansOn !== undefined) patch.scansOn = body.scansOn === true;
         if (body.pushOn !== undefined) patch.pushOn = body.pushOn === true;
+        if (body.celebrate !== undefined) patch.celebrate = body.celebrate === true;
+        if (body.rules !== undefined) {
+          const r = body.rules;
+          if (!r || typeof r !== 'object') return fail(400, SAY.badRules);
+          const next = { ...rulesOf(s) };
+          for (const k of Object.keys(defaultRules())) {
+            if (r[k] === undefined) continue;
+            const v = Number(r[k]);
+            const [lo, hi] = RULE_RANGES[k];
+            if (!Number.isFinite(v) || v < lo || v > hi) return fail(400, SAY.badRules);
+            next[k] = Math.round(v * 100) / 100;
+          }
+          if (!(next.dayFloorPct < next.dayAimPct && next.dayAimPct < next.dayCapPct)) return fail(400, SAY.badRules);
+          patch.rules = next;
+        }
         if (body.startedAt !== undefined) {
           if (!realDate(String(body.startedAt || ''))) return fail(400, SAY.badDate);
           patch.startedAt = String(body.startedAt);
@@ -1835,9 +1927,104 @@ export function demoApi(role, store) {
         if (!s.startedAt && !patch.startedAt) patch.startedAt = todayMT;
         const next = { ...s, ...patch, setByHand: true, updatedAt: new Date() };
         store.docs.set('trade/settings', next);
-        if (patch.startCents !== undefined || patch.startedAt !== undefined) deskRefreshStanding(store);
+        if (patch.startCents !== undefined || patch.startedAt !== undefined || patch.rules !== undefined) deskRefreshStanding(store);
         store.persist?.();
         return ok({ ok: true, settings: pub(next), hasKey: !!keyOf(next), keyTail: keyOf(next).slice(-4) });
+      }
+      if (sub === 'position') {
+        const s = settings();
+        const id = String(body.id || '');
+        const existing = id ? store.docs.get(`trade/positions/items/${id}`) : null;
+        if (id && !existing) return fail(404, SAY.noPosition);
+        if (existing && existing.status === 'closed') return fail(409, SAY.closedAlready);
+        const base = existing || {};
+        const ticker = String(body.ticker ?? base.ticker ?? '').toUpperCase().trim();
+        if (!TICKER_RE.test(ticker)) return fail(400, SAY.badTicker);
+        const side = String(body.side ?? base.side ?? '').toLowerCase();
+        if (!['long', 'short'].includes(side)) return fail(400, SAY.badSide);
+        const instrument = String(body.instrument ?? base.instrument ?? '').toLowerCase();
+        if (!INSTRUMENTS.includes(instrument)) return fail(400, SAY.badInstrument);
+        const horizon = horizonOf(String(body.horizon ?? base.horizon ?? 'intraday').toLowerCase());
+        if (!horizon) return fail(400, SAY.badHorizon);
+        const qty = Number(body.qty ?? base.qty);
+        if (!Number.isInteger(qty) || qty < 1) return fail(400, SAY.badQty);
+        const num = (v, req) => {
+          if (v === '' || v === null || v === undefined) { if (req) return NaN; return null; }
+          const n = Number(v);
+          return Number.isFinite(n) && n > 0 ? n : NaN;
+        };
+        const entry = num(body.entry ?? base.entry, true);
+        const stop = num(body.stop ?? base.stop ?? null, false);
+        const target = num(body.target ?? base.target ?? null, false);
+        const mark = num(body.mark ?? base.mark ?? null, false);
+        if ([entry, stop, target, mark].some((n) => Number.isNaN(n))) return fail(400, SAY.badPrice);
+        const credit = body.credit === undefined ? base.credit === true : body.credit === true;
+        let width = base.width ?? null;
+        if (instrument === 'spread' && body.width !== undefined) {
+          const w = Number(body.width);
+          if (body.width !== null && body.width !== '' && (!Number.isFinite(w) || w <= 0)) return fail(400, SAY.badWidth);
+          width = body.width === '' || body.width === null ? null : w;
+        }
+        if (instrument === 'spread' && credit && width == null) return fail(400, SAY.badWidth);
+        const key = id || `pos-${Date.now().toString(36)}`;
+        const row = {
+          ticker, side, instrument, horizon, qty, entry, stop, target, mark, credit, width,
+          expiry: body.expiry ?? base.expiry ?? null,
+          structure: String(body.structure ?? base.structure ?? '').trim().slice(0, 120),
+          note: String(body.note ?? base.note ?? '').trim().slice(0, 300),
+          openedAt: base.openedAt || new Date(), openedDay: base.openedDay || todayMT,
+          status: base.status || 'open', fromPlay: base.fromPlay || body.fromPlay || null,
+        };
+        const rules = rulesOf(s);
+        const accountCents = deskAccountCents(store);
+        const calc = tradeCalc({ pos: row, rules, accountCents, todayKey: todayMT, accountType: s.accountType === 'margin' ? 'margin' : 'cash' });
+        store.docs.set(`trade/positions/items/${key}`, { ...row, riskCents: calc.riskCents, updatedAt: new Date() });
+        if (!id && row.fromPlay) {
+          const play = store.docs.get(`trade/plays/items/${row.fromPlay}`);
+          if (play) store.docs.set(`trade/plays/items/${row.fromPlay}`, { ...play, status: 'took', tookAt: new Date(), positionId: key });
+        }
+        store.persist?.();
+        const all = deskPositions(store);
+        return ok({
+          ok: true, position: { id: key, ...row, riskCents: calc.riskCents }, calc,
+          dayStatus: dayStatus({ rules, accountCents, realizedTodayCents: realizedToday(all, todayMT), openRiskCents: openRisk(all) }),
+        });
+      }
+      if (sub === 'close') {
+        const s = settings();
+        const id = String(body.id || '');
+        const pos = store.docs.get(`trade/positions/items/${id}`);
+        if (!pos) return fail(404, SAY.noPosition);
+        if (pos.status === 'closed') return fail(409, SAY.closedAlready);
+        let pnlCents = null;
+        let exitPrice = null;
+        if (body.exitPrice !== undefined && body.exitPrice !== '' && body.exitPrice !== null) {
+          exitPrice = Number(body.exitPrice);
+          if (!Number.isFinite(exitPrice) || exitPrice <= 0) return fail(400, SAY.badPrice);
+          pnlCents = closePnl({ pos, exitPrice });
+        } else if (body.pnlCents !== undefined) {
+          const c = Number(body.pnlCents);
+          if (!Number.isInteger(c) || Math.abs(c) >= 1e9) return fail(400, SAY.badExit);
+          pnlCents = c;
+        }
+        if (pnlCents === null || !Number.isFinite(pnlCents)) return fail(400, SAY.badExit);
+        const patch = { status: 'closed', closedAt: new Date(), closedDay: todayMT, exitPrice, pnlCents, closeNote: String(body.note || '').trim().slice(0, 300) };
+        store.docs.set(`trade/positions/items/${id}`, { ...pos, ...patch });
+        store.persist?.();
+        const all = deskPositions(store);
+        const rules = rulesOf(s);
+        const accountCents = deskAccountCents(store);
+        return ok({
+          ok: true, position: { id, ...pos, ...patch }, pnlCents,
+          dayStatus: dayStatus({ rules, accountCents, realizedTodayCents: realizedToday(all, todayMT), openRiskCents: openRisk(all) }),
+          celebrate: pnlCents > 0 && s.celebrate !== false,
+        });
+      }
+      if (sub === 'remove') {
+        const id = String(body.id || '');
+        store.docs.delete(`trade/positions/items/${id}`);
+        store.persist?.();
+        return ok({ ok: true, removed: id });
       }
       if (sub === 'play') {
         const id = String(body.id || '');

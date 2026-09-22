@@ -17,7 +17,7 @@ import { mountNotes } from './notes.js';
 import { mountSaved } from './saved.js';
 import { mountPersonal } from './admin-personal.js';
 // The trade desk's two pages of its own (2026-09-22): Stats and Desk.
-import { mountTradeStats, mountTradeDesk } from './admin-desk.js';
+import { mountTradeStats, mountTradeDesk, mountTrades, mountCalc } from './admin-desk.js';
 import { markSeen, isUnseen, PAGE_BADGES } from './seen.js';
 import { openDutyDraft } from './duty.js';
 import { openPrepSheet } from './prep.js';
@@ -245,7 +245,7 @@ async function load() {
  */
 const DESK_GROUPS = [
   { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files'] },
-  { id: 'read', label: 'Desk', icon: '📈', pages: ['advisor', 'dx', 'advisor-chat', 'education', 'stats', 'desk'] },
+  { id: 'read', label: 'Desk', icon: '📈', pages: ['advisor', 'dx', 'trades', 'calc', 'advisor-chat', 'education', 'stats', 'desk'] },
   { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'saved', 'personal'] },
 ];
 // ERIC, 2026-09-22, a screenshot of the desk on his phone: "Trade desk is a
@@ -403,6 +403,27 @@ function render(el) {
         // The advisor owns this page and repaints it on every state poll.
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
+      // HIS OWN TRADES AND THE CALCULATOR (Eric, 2026-09-22): "input any
+      // active trades ... Most useful when the information is calculated and
+      // displayed neatly by the trade", and "another tab is trade
+      // calculations and any editable variables can be changed there for any
+      // active trade." They sit here, straight after the reading's plays,
+      // because the strip renders in this array's order.
+      ...(data.trade ? [
+        {
+          id: 'trades', title: 'Trades', icon: '💹',
+          render: (pane) => mountTrades(pane, {
+            getToken: () => user.getIdToken(),
+            onLog: (text) => chatSend?.(text),
+          }),
+          onShow: (pane) => pane._reload?.(),
+        },
+        {
+          id: 'calc', title: 'Calc', icon: '🧮',
+          render: (pane) => mountCalc(pane, { getToken: () => user.getIdToken() }),
+          onShow: (pane) => pane._reload?.(),
+        },
+      ] : []),
       {
         // Talking to the advisor, out of the bottom of Read and onto its own
         // page. mountAdvisor moves its Q&A here when given the container.
@@ -564,7 +585,7 @@ function render(el) {
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
       // THE DESK'S OWN TWO (Eric, 2026-09-22). Stats: his balance, the
-      // entries and the chart against the 3% a day line. Desk: the key, the
+      // entries and the chart against his aim a day. Desk: the key, the
       // account, the start, the watchlist and the switches. Both refetch on
       // every show.
       ...(data.trade ? [
@@ -2208,11 +2229,20 @@ function paintHandovers(pane) {
 
 /**
  * THE DESK'S OVERVIEW (Eric, 2026-09-22). No person to describe: the case,
- * where he stands against 3% a day, the next read, and three buttons:
+ * where he stands against his aim a day, the next read, and three buttons:
  * Pause or Resume the readings, close, delete. The standing and the next
  * read ride the panel's poll; the buttons post and paint from the answer.
  */
 let tradeOverviewRepaint = null;
+// Where today stands against his rules. The Trades and Calc pages fetch it
+// with their own load and say so here, so the overview costs no extra poll.
+let deskDayLine = '';
+document.addEventListener('pa-desk-day', (e) => {
+  const ds = e.detail?.dayStatus;
+  if (!ds) return;
+  deskDayLine = ds.line;
+  tradeOverviewRepaint?.();
+});
 function paintTradeOverview(pane, c) {
   const t = panelState.trade || {};
   const nextOf = (x) => (x.scansOn === false ? 'Paused'
@@ -2226,6 +2256,8 @@ function paintTradeOverview(pane, c) {
       <span class="fact-v" data-trade-standing>${esc(t.standing?.text || 'no reading yet')}</span>
       <span class="fact-k">NEXT READ</span>
       <span class="fact-v" data-trade-next>${esc(nextOf(t))}</span>
+      <span class="fact-k">TODAY</span>
+      <span class="fact-v" data-trade-today>${esc(deskDayLine || 'no trades logged today')}</span>
     </div>
     <p class="self-note trade-note" data-self-note>Nobody is on the other end. The chat is your trade log, the uploads are your screenshots, and every reading is about your trading. Three reads on a trading day at 7:00, 10:00 and noon Mountain, plus any Update you tap. A screenshot posted to the log inside four minutes of a read is picked up by the next one; the 📷 on Ask reads it now.</p>
     ${c.status === 'closed' ? `<p class="dim small">This desk is closed.</p>
@@ -2238,6 +2270,8 @@ function paintTradeOverview(pane, c) {
     <p class="saved-note" data-self-said role="status" hidden></p>`;
   tradeOverviewRepaint = () => {
     const x = panelState.trade || {};
+    const td = pane.querySelector('[data-trade-today]');
+    if (td) td.textContent = deskDayLine || 'no trades logged today';
     const st = pane.querySelector('[data-trade-standing]');
     const nx = pane.querySelector('[data-trade-next]');
     const pb = pane.querySelector('[data-trade-pause]');

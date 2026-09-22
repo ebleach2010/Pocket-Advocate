@@ -75,7 +75,10 @@ const strip = (src) => src.replace(/^import [\s\S]*?from '[^']+';\n/gm, '').repl
 // ---- the two modules, evaluated with their imports replaced ---------------------
 const NAMES = ['patchDoc', 'deleteDoc', 'listDocs', 'tryGet', 'READ_FAILED', 'readFailedError', 'notifyUser',
   'markPending', 'diagLog', 'isTradingDay', 'tradeMetrics', 'chartSeries', 'TARGET_DAILY', 'PROJECTION_MIN_DAYS', 'DEFAULT_START_CENTS', 'fetch', 'crypto',
-  'putFile', 'patchObjectMeta', 'BUCKET', 'textPdf'];
+  'putFile', 'patchObjectMeta', 'BUCKET', 'textPdf',
+  // The calculator's arithmetic (2026-09-22), the same module the pages read.
+  'rulesOf', 'RULE_RANGES', 'defaultRules', 'dayStatus', 'realizedToday', 'openRisk', 'tradeCalc', 'closePnl',
+  'fmtMoney', 'fmtPct', 'HORIZONS', 'HORIZON_WORDS', 'horizonOf', 'horizonFor', 'swingLastDay', 'isMarketOpen', 'INSTRUMENTS'];
 const EXPORTS = ['TRADE_MODEL', 'TRADE_EFFORT', 'TRADE_TZ', 'MARKET_OPEN', 'MARKET_CLOSE', 'STRONG_PROFIT_LOW', 'WATCHLIST_MAX', 'DEFAULT_WATCHLIST',
   'TRADE_WEB_SEARCH_TOOL', 'TRADE_CATEGORIES', 'DESK_NAME', 'SAY', 'SETTINGS_PATH', 'STATE_PATH', 'PLAYS', 'BALANCES',
   'TRADE_INSTRUCTIONS', 'TRADE_CONTRACT', 'TRADE_ASK_NOTE', 'realDate', 'dollars', 'stripDashes', 'sectionMatch', 'mtParts', 'mtInstant', 'mtLabel',
@@ -83,7 +86,10 @@ const EXPORTS = ['TRADE_MODEL', 'TRADE_EFFORT', 'TRADE_TZ', 'MARKET_OPEN', 'MARK
   'tradeNote', 'validPlay', 'validPortfolio', 'harvestPlays', 'recordPlays', 'recordPortfolio', 'scanVerdict', 'pushStrongPlay', 'fileDeskReading', 'portfolioLineOf',
   'SCAN_SLOTS', 'EARLY_CLOSE_SLOTS', 'SCAN_WINDOW_MIN', 'TradeError', 'slotsFor', 'slotKeyFor', 'nextSlotAfter', 'scanDue', 'maybeTradeScan',
   'tradeOpen', 'tradeState', 'tradePanelBlock', 'tradeBalance', 'tradeSettings', 'tradePlay', 'tradeRoute',
-  'harvestDocument', 'safeDocName', 'fileDocument', 'DOC_TITLE_MAX', 'DOC_BODY_MAX', 'DOC_DEFAULT_TITLE'];
+  'harvestDocument', 'safeDocName', 'fileDocument', 'DOC_TITLE_MAX', 'DOC_BODY_MAX', 'DOC_DEFAULT_TITLE',
+  'POSITIONS', 'QUOTE_TTL_MS', 'QUOTE_BUDGET', 'QUOTE_MAX', 'quoteCached', 'quoteBudgetLeft', 'rid',
+  'readPositions', 'sortPositions', 'positionLine',
+  'tradePositions', 'tradePosition', 'tradeClose', 'tradeRemove', 'tradeQuote'];
 const READ_FAILED = Symbol('read failed');
 const BODY = `${strip(TD)}\n${strip(T)}`;
 
@@ -127,6 +133,11 @@ function world(over = {}) {
     patchObjectMeta: async (env, path, custom) => { w.metas.push({ path, custom }); return { path, custom }; },
     BUCKET: 'bucket.appspot.com',
     textPdf: pdf.textPdf,
+    rulesOf: math.rulesOf, RULE_RANGES: math.RULE_RANGES, defaultRules: math.defaultRules,
+    dayStatus: math.dayStatus, realizedToday: math.realizedToday, openRisk: math.openRisk,
+    tradeCalc: math.tradeCalc, closePnl: math.closePnl, fmtMoney: math.fmtMoney, fmtPct: math.fmtPct,
+    HORIZONS: math.HORIZONS, HORIZON_WORDS: math.HORIZON_WORDS, horizonOf: math.horizonOf, horizonFor: math.horizonFor,
+    swingLastDay: math.swingLastDay, isMarketOpen: math.isMarketOpen, INSTRUMENTS: math.INSTRUMENTS,
     ...(over.deps || {}),
   };
   const api = new Function('deps', `const { ${NAMES.join(', ')} } = deps;\n${BODY}\nreturn { ${EXPORTS.join(', ')} };`)(deps);
@@ -188,7 +199,8 @@ check('T1 the desk runs on the pinned id at high for every turn, three Mountain 
   && K.SCAN_SLOTS.join() === '07:00,10:00,12:00' && K.EARLY_CLOSE_SLOTS.join() === '07:00,10:00' && K.SCAN_WINDOW_MIN === 20
   && K.STRONG_PROFIT_LOW === 55 && K.DESK_NAME === 'Trade desk' && K.TRADE_CATEGORIES.join() === 'Setup,Indicator,Level,Order,Risk,Options,Market,Instrument'
   && K.TRADE_WEB_SEARCH_TOOL.type === 'web_search_20260209' && K.TRADE_WEB_SEARCH_TOOL.max_uses === 8
-  && math.TARGET_DAILY === 0.03 && math.PROJECTION_MIN_DAYS === 14 && math.TRADING_DAYS_PER_YEAR === 252 && math.DEFAULT_START_CENTS === 200000
+  // RE-PINNED 2026-09-22 (v5.2): his aim is a rule (2% by default), and the module's constant reads it.
+  && math.TARGET_DAILY === 0.02 && math.defaultRules().dayAimPct === 2 && math.PROJECTION_MIN_DAYS === 14 && math.TRADING_DAYS_PER_YEAR === 252 && math.DEFAULT_START_CENTS === 200000
   && /^export const TRADE_EFFORT = 'high';$/m.test(TD) && !/TRADE_SCAN_EFFORT|TRADE_ASK_EFFORT|TRADE_FALLBACK_MODEL/.test(TD + T));
 
 // NEGATIVE CONTROL (run 2026-09-22): `SCAN_SLOTS[0]` changed to '06:00' made this read
@@ -517,12 +529,12 @@ check('T12 the reading on the desk: the brief is three-way from the policy, the 
   const { api: bare } = world();
   const noDesk = await bare.refreshStanding(env);
   // NEGATIVE CONTROL (run 2026-09-22): `under` and `over` swapped in standingLine made this read
-  //   FAIL  T17 the standing line reads the balance, the trading days and the points under or over 3% a day from the same arithmetic, an empty desk reads no entries yet, and the refresh writes it onto the desk's cover and nowhere without a desk
-  check('T17 the standing line reads the balance, the trading days and the points under or over 3% a day from the same arithmetic, an empty desk reads no entries yet, and the refresh writes it onto the desk\'s cover and nowhere without a desk',
-    K.standingLine(m) === '$2,380.00 · 14 trading days · 1.75 pts under 3% a day'
-    && K.standingLine(math.tradeMetrics([{ date: '2026-09-21', cents: 320000 }], { startedAt: '2026-08-31' })).endsWith('pts over 3% a day')
+  //   FAIL  T17 the standing line reads the balance, the trading days and the points under or over his daily aim from the same arithmetic, an empty desk reads no entries yet, and the refresh writes it onto the desk's cover and nowhere without a desk
+  check('T17 the standing line reads the balance, the trading days and the points under or over his daily aim from the same arithmetic, an empty desk reads no entries yet, and the refresh writes it onto the desk\'s cover and nowhere without a desk',
+    K.standingLine(m) === '$2,380.00 · 14 trading days · 0.75 pts under 2% a day'
+    && K.standingLine(math.tradeMetrics([{ date: '2026-09-21', cents: 320000 }], { startedAt: '2026-08-31' })).endsWith('pts over 2% a day')
     && K.standingLine(math.tradeMetrics([], { startedAt: '2026-08-31' })) === '$2,000.00 · no entries yet'
-    && st.text === '$2,380.00 · 14 trading days · 1.75 pts under 3% a day' && st.currentCents === 238000 && st.days === 14
+    && st.text === '$2,380.00 · 14 trading days · 0.75 pts under 2% a day' && st.currentCents === 238000 && st.days === 14
     && refreshed.text === st.text && w.patches.some((p) => p.path === 'caseMeta/c1' && p.data.tradeStanding.text === st.text)
     && noDesk === null && !DASH.test(st.text),
     JSON.stringify({ line: K.standingLine(m), st }));
@@ -561,7 +573,7 @@ check('T12 the reading on the desk: the brief is three-way from the policy, the 
   // NEGATIVE CONTROL (run 2026-09-22): the push dropped from fileDeskReading (`if (false)`) made this read
   //   FAIL  T19 what a landed reading files: two plays as rows with the old one expired, the portfolio total as a balance, one push, and the standing; a reading with no Plays section files nothing and still computes the standing; a reading with an empty list expires the old play, files none and pushes nothing
   check('T19 what a landed reading files: two plays as rows with the old one expired, the portfolio total as a balance, one push, and the standing; a reading with no Plays section files nothing and still computes the standing; a reading with an empty list expires the old play, files none and pushes nothing',
-    full.out.plays === 2 && full.out.expired === 1 && full.out.dropped === 0 && full.out.missing === false && full.out.portfolio?.ok === true && full.out.pushed === true && /pts under 3% a day$/.test(full.out.standing?.text || '')
+    full.out.plays === 2 && full.out.expired === 1 && full.out.dropped === 0 && full.out.missing === false && full.out.portfolio?.ok === true && full.out.pushed === true && /pts under 2% a day$/.test(full.out.standing?.text || '')
     && full.w.patches.filter((p) => p.path.startsWith('trade/plays/items/') && p.data.status === 'open').length === 2
     && full.w.patches.some((p) => p.path === 'trade/balances/items/2026-09-22' && p.data.cents === 241000)
     && full.w.pushes.length === 1 && full.w.pushes[0].link === '/admin-case.html?id=c1'
@@ -601,8 +613,10 @@ check('T12 the reading on the desk: the brief is three-way from the policy, the 
   // NEGATIVE CONTROL (run 2026-09-22): tradeNote fetching the market without a key made this read
   //   FAIL  T21 the desk note carries the account, the standing, the quotes, the headlines, today's earnings, his plays and his last entries with a screenshot row marked, fetches the watchlist with the key and never prints it; without a key it fetches nothing and says so; a real secret on the Worker wins
   check('T21 the desk note carries the account, the standing, the quotes, the headlines, today\'s earnings, his plays and his last entries with a screenshot row marked, fetches the watchlist with the key and never prints it; without a key it fetches nothing and says so; a real secret on the Worker wins',
-    /<desk>/.test(note) && /Account: \$2,380\.00, margin account, started at \$2,000\.00 on 2026-08-31/.test(note) && /Standing: \$2,380\.00 · 14 trading days · 1\.75 pts under 3% a day/.test(note)
-    && /Target today: 3%, which is \$71\.40/.test(note) && /SPY 100\.5/.test(note) && /Chips lead the open/.test(note) && /ORCL amc/.test(note)
+    /<desk>/.test(note) && /Account: \$2,380\.00, margin account, started at \$2,000\.00 on 2026-08-31/.test(note) && /Standing: \$2,380\.00 · 14 trading days · 0\.75 pts under 2% a day/.test(note)
+    && /His rules today: aim 2%, which is \$47\.60; floor 1%, \$23\.80; stop the day at a 3% loss, \$71\.40, or at a 10% gain, \$238\.00\./.test(note)
+    && /He risks 1% of the account on one trade, \$23\.80, and writes targets at 2R\./.test(note)
+    && /Today: Realized \$0\.00, under the floor\./.test(note) && /His open positions \(his own, not the plays\):\nNone open\./.test(note) && /SPY 100\.5/.test(note) && /Chips lead the open/.test(note) && /ORCL amc/.test(note)
     && /NVDA long shares \(07:02\): closed, closed \$45\.00; chance 55 to 65%/.test(note) && /2026-09-21 \$2,380\.00 \(from a screenshot\)/.test(note)
     && w.fetches.some((u) => /quote\?symbol=NVDA&token=abcdefghijklmnop1234/.test(u)) && w.fetches.length === 4 && !/abcdefghijklmnop1234/.test(note) && !DASH.test(note)
     && w2.fetches.length === 0 && /No market data key is on file/.test(bare) && !/Quotes \(Finnhub/.test(bare)
@@ -675,7 +689,8 @@ check('T23 a question on the desk: the desk note rides the user text, the ask no
     });
     const req = (method) => ({ method, json: async () => ({}) });
     const out = {};
-    for (const [m, p] of [['GET', 'state'], ['POST', 'open'], ['POST', 'nope'], ['GET', '']]) out[`${m} ${p}`] = await api(req(m), env, { pathname: `/api/admin/trade/${p}` });
+    // Re-pinned 2026-09-22 (v5.2): the query string rides too, for the quote route.
+    for (const [m, p] of [['GET', 'state'], ['POST', 'open'], ['POST', 'nope'], ['GET', '']]) out[`${m} ${p}`] = await api(req(m), env, { pathname: `/api/admin/trade/${p}`, searchParams: new URLSearchParams('symbols=NVDA') });
     return { out, calls };
   };
   const stranger = await run({ admin: null, route: () => ({ ok: true }) });
@@ -821,9 +836,9 @@ check('T31 the shelf: the desk is off his own shelf and off the pull-from picker
   && !/\.trade-tabs|\.trade-badge/.test(CSS) && /\.ask-attach \{/.test(CSS) && /\.play-card\.expired/.test(CSS));
 
 // NEGATIVE CONTROL (run 2026-09-22, v4.8): the `.filter((p) => !data.trade || DESK_PAGE_IDS.has(p.id))` on the pages array replaced by a bare `],` made this read
-//   FAIL  T32 the folder page: a desk gets three groups with six pages under Desk and no Track row and none that talk to a client, only the pages its groups name, no clock button, no clock row and no Working on dropdown, its own uploads sentence, the Dx page is Plays, Stats and Desk mount the desk's module and refetch on show, the masthead and the pill test the desk first and wear green, the chat is the Trade log with its own placeholder, the overview is the desk's with its note and Pause, close and Delete, the eight categories are in the order, and the panel gets the flag
-check('T32 the folder page: a desk gets three groups with six pages under Desk and no Track row and none that talk to a client, only the pages its groups name, no clock button, no clock row and no Working on dropdown, its own uploads sentence, the Dx page is Plays, Stats and Desk mount the desk\'s module and refetch on show, the masthead and the pill test the desk first and wear green, the chat is the Trade log with its own placeholder, the overview is the desk\'s with its note and Pause, close and Delete, the eight categories are in the order, and the panel gets the flag',
-  /const DESK_GROUPS = \[\n\s+\{ id: 'case', label: 'Case', icon: '📁', pages: \['overview', 'chat', 'files'\] \},\n\s+\{ id: 'read', label: 'Desk', icon: '📈', pages: \['advisor', 'dx', 'advisor-chat', 'education', 'stats', 'desk'\] \},\n\s+\{ id: 'mine', label: 'Mine', icon: '🔒', pages: \['notes', 'saved', 'personal'\] \},\n\];/.test(CASE)
+//   FAIL  T32 the folder page: a desk gets three groups with eight pages under Desk and no Track row and none that talk to a client, only the pages its groups name, no clock button, no clock row and no Working on dropdown, its own uploads sentence, the Dx page is Plays, Stats and Desk mount the desk's module and refetch on show, the masthead and the pill test the desk first and wear green, the chat is the Trade log with its own placeholder, the overview is the desk's with its note and Pause, close and Delete, the eight categories are in the order, and the panel gets the flag
+check('T32 the folder page: a desk gets three groups with eight pages under Desk and no Track row and none that talk to a client, only the pages its groups name, no clock button, no clock row and no Working on dropdown, its own uploads sentence, the Dx page is Plays, Stats and Desk mount the desk\'s module and refetch on show, the masthead and the pill test the desk first and wear green, the chat is the Trade log with its own placeholder, the overview is the desk\'s with its note and Pause, close and Delete, the eight categories are in the order, and the panel gets the flag',
+  /const DESK_GROUPS = \[\n\s+\{ id: 'case', label: 'Case', icon: '📁', pages: \['overview', 'chat', 'files'\] \},\n\s+\{ id: 'read', label: 'Desk', icon: '📈', pages: \['advisor', 'dx', 'trades', 'calc', 'advisor-chat', 'education', 'stats', 'desk'\] \},\n\s+\{ id: 'mine', label: 'Mine', icon: '🔒', pages: \['notes', 'saved', 'personal'\] \},\n\];/.test(CASE)
   && !/'track'|'unanswered'/.test(grab(CASE, /const DESK_GROUPS = \[[\s\S]*?\n\];/))
   && /\.\.\.\(data\.trade \? \{ groups: DESK_GROUPS \} : \{\}\),/.test(CASE)
   // ERIC, 2026-09-22, the screenshot: folder.js sweeps every unclaimed page into the first group, so the desk filters
@@ -840,7 +855,12 @@ check('T32 the folder page: a desk gets three groups with six pages under Desk a
   && /id: 'dx', title: data\.trade \? 'Plays' : 'Dx', icon: data\.trade \? '📈' : '🧬',/.test(CASE)
   && /id: 'stats', title: 'Stats', icon: '📊',\n\s+render: \(pane\) => mountTradeStats\(pane, \{ getToken: \(\) => user\.getIdToken\(\) \}\),\n\s+onShow: \(pane\) => pane\._reload\?\.\(\),/.test(CASE)
   && /id: 'desk', title: 'Desk', icon: '⚙️',\n\s+render: \(pane\) => mountTradeDesk\(pane, \{ getToken: \(\) => user\.getIdToken\(\) \}\),\n\s+onShow: \(pane\) => pane\._reload\?\.\(\),/.test(CASE)
-  && /import \{ mountTradeStats, mountTradeDesk \} from '\.\/admin-desk\.js';/.test(CASE)
+  // RE-PINNED 2026-09-22 (v5.2): the calculator's two pages come from the same gated module.
+  && /import \{ mountTradeStats, mountTradeDesk, mountTrades, mountCalc \} from '\.\/admin-desk\.js';/.test(CASE)
+  && /id: 'trades', title: 'Trades', icon: '💹',\n\s+render: \(pane\) => mountTrades\(pane, \{\n\s+getToken: \(\) => user\.getIdToken\(\),\n\s+onLog: \(text\) => chatSend\?\.\(text\),\n\s+\}\),/.test(CASE)
+  && /id: 'calc', title: 'Calc', icon: '🧮',\n\s+render: \(pane\) => mountCalc\(pane, \{ getToken: \(\) => user\.getIdToken\(\) \}\),/.test(CASE)
+  && /<span class="fact-k">TODAY<\/span>\n\s+<span class="fact-v" data-trade-today>/.test(CASE)
+  && /document\.addEventListener\('pa-desk-day'/.test(CASE)
   && /head\.className = `case-head\$\{c\.trade \? ' trade' : c\.self \? ' self' : ''\}`;/.test(CASE)
   && /<span class="status-pill\$\{c\.trade \? ' trade' : c\.self \? ' self' : ''\}" data-status>\$\{c\.trade \? 'TRADE DESK' : c\.self \? 'MY OWN CASE' : /.test(CASE)
   && /pill\.textContent = c\.trade \? 'TRADE DESK' : c\.self \? 'MY OWN CASE' : /.test(CASE)
@@ -884,6 +904,7 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
   const c = math.chartSeries(m);
   const mod = await import('../../public/js/admin-desk.js');
   const svg = mod.svgChart(c);
+  const svgAim = mod.svgChart(c, { aim: '2.5%' });
   const card = mod.playCardHtml({ id: 'p1', ...K.validPlay(PLAY), status: 'open', slot: '07:02', expiresAt: new Date(Date.now() + 3600_000).toISOString() });
   const expired = mod.playCardHtml({ id: 'p2', ...K.validPlay(PLAY), status: 'expired' });
   const took = mod.playCardHtml({ id: 'p3', ...K.validPlay(PLAY), status: 'took' });
@@ -894,6 +915,11 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
     /^<svg viewBox="0 0 340 200" width="100%" role="img" aria-label="[^"]+"/.test(svg.trim())
     && (svg.match(/<polyline /g) || []).length === 2 && /stroke="var\(--target\)"/.test(svg) && /stroke="var\(--cyan\)"/.test(svg)
     && (svg.match(/<circle /g) || []).length === 6 && !/#[0-9a-fA-F]{3,6}\b/.test(svg) && mod.svgChart(null) === ''
+    // RE-PINNED 2026-09-22 (the calculator): the target line is his aim on the Calc page, so the chart
+    // takes the words from the rule instead of carrying a number of its own.
+    && / a day line">/.test(svg) && /against the 2\.5% a day line">/.test(svgAim) && !/3% a day/.test(DESK)
+    && /const aim = pct\(m\.target, 0\);/.test(DESK) && /svgChart\(S\.chart, \{ aim \}\)/.test(DESK)
+    && /\$\{esc\(aim\)\} a day from \$\{esc\(money\(m\.startCents\)\)\}/.test(DESK)
     && /:root \{ --target: #B58A00; \}/.test(CSS) && /data-scheme="calm"\] \{ --target: #FFD54A; \}/.test(CSS)
     && /class="play-ticker">NVDA</.test(card) && /class="play-side">long</.test(card) && /56 to 64% chance of profit/.test(card)
     && ['Current picture', 'Bull case', 'Bear case', 'Levels', 'Risk', 'What to watch next', 'Catalyst', 'Overnight'].every((k) => card.includes(`<dt>${k}</dt>`))
@@ -919,7 +945,7 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
   //   FAIL  T35 the portal page and its module are gone and no admin page links them; the six pages ask for the stylesheet at its new version; the audit proves the desk's module 404s to a stranger and no longer names the page; the sideways drive walks the desk's case; the asset gate covers admin-desk.js and not trade.js; the demo seeds the desk as a self and trade case with its log, its reading, its plays with their setups, typed balances, two trading terms and its cover, mirrors open with the open desk's id, the state, the desk's block, the trading half of the glossary, the Logged sentence, the refusals and the clearing on delete, keeps its desk off the client half, and refuses with the Worker's exact sentences
   check('T35 the portal page and its module are gone and no admin page links them; the six pages ask for the stylesheet at its new version; the audit proves the desk\'s module 404s to a stranger and no longer names the page; the sideways drive walks the desk\'s case; the asset gate covers admin-desk.js and not trade.js; the demo seeds the desk as a self and trade case with its log, its reading, its plays with their setups, typed balances, two trading terms and its cover, mirrors open with the open desk\'s id, the state, the desk\'s block, the trading half of the glossary, the Logged sentence, the refusals and the clearing on delete, keeps its desk off the client half, and refuses with the Worker\'s exact sentences',
     !has('public/admin-trade.html') && !has('public/js/admin-trade.js')
-    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat113/.test(f(`public/${p}.html`)))
+    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat114/.test(f(`public/${p}.html`)))
     && /'\/js\/admin-desk\.js',/.test(AUDIT) && !/admin-trade/.test(AUDIT) && /'\/admin-case\.html\?id=demo-case-trade&demo=admin'/.test(NOSIDE) && !/admin-trade/.test(NOSIDE)
     && !!ADMIN_ASSET && ADMIN_ASSET.test('/js/admin-desk.js') && ADMIN_ASSET.test('/js/advisor.js') && !ADMIN_ASSET.test('/js/trade.js') && !ADMIN_ASSET.test('/js/trade-math.js') && !ADMIN_ASSET.test('/js/textpdf.js')
     && /\/\^trade\\\/\//.test(STORE)
@@ -930,7 +956,7 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
     && !/role: 'question'/.test(seedDesk) && !/replyTo: 'tq1'|answerId: 'tr1'/.test(SEED)
     && /Where I want this going: 3% a day on the account/.test(seedDesk)
     && /caseId: TRADE_ID, openedAt: days\(21\),/.test(SEED) && /picture: 'Holding above the opening range at 650/.test(SEED) && (seedDesk.match(/source: 'typed'/g) || []).length === 1
-    && /set\('advisorKnowledge\/vwap', \{ term: 'VWAP', category: 'Indicator'/.test(SEED) && /tradeStanding: \{ text: '\$2,380\.00 · 14 trading days · 1\.75 pts under 3% a day'/.test(SEED)
+    && /set\('advisorKnowledge\/vwap', \{ term: 'VWAP', category: 'Indicator'/.test(SEED) && /tradeStanding: \{ text: '\$2,380\.00 · 14 trading days · 0\.75 pts under 2% a day'/.test(SEED)
     && !/trade\/feed|trade\/flights/.test(SEED) && !/trade\/feed|trade\/flights/.test(D)
     && /if \(role !== 'admin'\) return fail\(404, 'Not found'\);/.test(mirror) && sentences.every((s) => mirror.includes(`'${s.replace(/'/g, "\\'")}'`))
     && /return fail\(409, SAY\.deskOpen, \{ existing: s\.caseId \}\);/.test(mirror) && /const fail = \(status, error, extra = null\) => \(\{/.test(D)
@@ -957,12 +983,15 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
   const entry50 = (CL.match(/\{\n\s+\/\/ THE DESK MAKES A PDF[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v5.1): the desk asks him nothing; its own quiet entry.
   const entry51 = (CL.match(/\{\n\s+\/\/ THE DESK ASKS HIM NOTHING[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v5.2): the calculator and his positions.
+  const entry52 = (CL.match(/\{\n\s+\/\/ THE CALCULATOR AND HIS POSITIONS[\s\S]*?\n  \},/) || [''])[0];
   const cssDesk = CSS.slice(CSS.indexOf('/* THE TRADE DESK (Eric, 2026-09-22'), CSS.indexOf('/* The two doors on the shelf'));
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
-  // NEGATIVE CONTROL (run 2026-09-22, v5.1): 'no longer asks you anything' reworded to 'does not ask you anything' in the 5.1 entry made this read
-  //   FAIL  T36 both versions read 5.1 with the new tag, the 4.7 through 5.1 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 5.1 with the new tag, the 4.7 through 5.1 entries are quiet and admin-only in the desk\'s words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet\'s green or the demo\'s desk',
-    /export const VERSION = '5\.1';/.test(CL) && /const VERSION = '5\.1';/.test(W) && /const BUILD_TAG = 'v2026-09-22-desk-asks-nothing';/.test(W)
+  // NEGATIVE CONTROL (run 2026-09-22, v5.2): 'has a calculator' reworded to 'has a calculator now' in the 5.2 entry made this read
+  //   FAIL  T36 both versions read 5.2 with the new tag, the 4.7 through 5.2 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
+  check('T36 both versions read 5.2 with the new tag, the 4.7 through 5.2 entries are quiet and admin-only in the desk\'s words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet\'s green or the demo\'s desk',
+    /export const VERSION = '5\.2';/.test(CL) && /const VERSION = '5\.2';/.test(W) && /const BUILD_TAG = 'v2026-09-22-desk-calculator';/.test(W)
+    && /version: '5\.2',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry52) && /has a calculator/.test(entry52) && /scalps, intraday and swing/.test(entry52) && /held over a weekend/.test(entry52) && !DASH.test(entry52)
     && /version: '5\.1',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry51) && /no longer asks you anything/.test(entry51) && /yours to dump into/.test(entry51) && !DASH.test(entry51)
     && /version: '4\.9',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry49) && /The trade desk reads again\./.test(entry49) && /non-whitespace text/.test(entry49) && !DASH.test(entry49)
     && /version: '5\.0',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry50) && /📄 link to a real PDF/.test(entry50) && /Uploads page under Reports/.test(entry50) && !DASH.test(entry50)
@@ -989,12 +1018,12 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
   const own = pages.filter((p) => keep({ self: true }, DESK_PAGE_IDS, p)).map((p) => p.id);
   const gone = ['appeals', 'log', 'milestones', 'about', 'calldoc', 'agenda', 'summary', 'drafts', 'unanswered'];
   // NEGATIVE CONTROL (run 2026-09-22): `.concat(['log'])` on DESK_PAGE_IDS made this read
-  //   FAIL  T37 the desk's page filter RUNS: of the twenty-one pages the file declares, the desk keeps exactly the twelve its three groups name, Overview first, and drops the appeal form, the work log, the milestones, About you, My doc, the agenda, the summary, the drafts and the unanswered list; a medical case and his own case keep all twenty-one
-  check('T37 the desk\'s page filter RUNS: of the twenty-one pages the file declares, the desk keeps exactly the twelve its three groups name, Overview first, and drops the appeal form, the work log, the milestones, About you, My doc, the agenda, the summary, the drafts and the unanswered list; a medical case and his own case keep all twenty-one',
-    ids.length === 21 && DESK_GROUPS.length === 3 && DESK_PAGE_IDS.size === 12
-    && desk.length === 12 && desk.every((id) => DESK_PAGE_IDS.has(id)) && [...DESK_PAGE_IDS].every((id) => desk.includes(id))
+  //   FAIL  T37 the desk's page filter RUNS: of the twenty-three pages the file declares, the desk keeps exactly the fourteen its three groups name, Overview first, and drops the appeal form, the work log, the milestones, About you, My doc, the agenda, the summary, the drafts and the unanswered list; a medical case and his own case keep all twenty-one
+  check('T37 the desk\'s page filter RUNS: of the twenty-three pages the file declares, the desk keeps exactly the fourteen its three groups name, Overview first, and drops the appeal form, the work log, the milestones, About you, My doc, the agenda, the summary, the drafts and the unanswered list; a medical case and his own case keep all twenty-one',
+    ids.length === 23 && DESK_GROUPS.length === 3 && DESK_PAGE_IDS.size === 14
+    && desk.length === 14 && desk.every((id) => DESK_PAGE_IDS.has(id)) && [...DESK_PAGE_IDS].every((id) => desk.includes(id))
     && desk[0] === 'overview' && gone.every((id) => ids.includes(id) && !desk.includes(id))
-    && medical.length === 21 && own.length === 21,
+    && medical.length === 23 && own.length === 23,
     JSON.stringify({ ids: ids.length, size: DESK_PAGE_IDS.size, desk }));
 }
 
@@ -1134,6 +1163,236 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
     && /if \(c\.self && !c\.trade && !asked\) \{/.test(D)
     && /the desk asks him nothing|asks him nothing|no Track row/.test(CASE),
     JSON.stringify({ found: api.harvestQuestions(withSection), inReading: api.harvestQuestions(reading).length, un: api.unansweredFromChat(rows).length }));
+}
+
+// ---- T44 to T49: the calculator (Eric, 2026-09-22: "a calculator to help me with take profits and stop losses") ----
+{
+  const R = math.defaultRules();
+  const clamped = math.rulesOf({ rules: { riskPct: 99, dayLossPct: 0.01, targetR: 2.5 } });
+  const bad = math.rulesOf({ rules: { dayFloorPct: 9, dayAimPct: 2, dayCapPct: 10 } });
+  const weekEnd = math.lastTradingDayOfWeek('2026-09-23');
+  // NEGATIVE CONTROL (run 2026-09-22): `swingLastDay` returning `d` without the week-end clamp made this read
+  //   FAIL  T44 the rules and the three kinds of trade: the defaults are 1% a trade, a 3% day loss, a 1% floor, a 2% aim, a 10% cap and 2R; a rule out of range is clamped and a floor above the aim falls back to all three; the market opens at 07:30 and closes at 14:00 on his clock, 11:00 on an early close; a hold of ten minutes is a scalp, three hours intraday, a day and a half swing; and a swing never runs past the last close of its week
+  check('T44 the rules and the three kinds of trade: the defaults are 1% a trade, a 3% day loss, a 1% floor, a 2% aim, a 10% cap and 2R; a rule out of range is clamped and a floor above the aim falls back to all three; the market opens at 07:30 and closes at 14:00 on his clock, 11:00 on an early close; a hold of ten minutes is a scalp, three hours intraday, a day and a half swing; and a swing never runs past the last close of its week',
+    R.riskPct === 1 && R.dayLossPct === 3 && R.dayFloorPct === 1 && R.dayAimPct === 2 && R.dayCapPct === 10 && R.targetR === 2
+    && clamped.riskPct === 5 && clamped.dayLossPct === 0.5 && clamped.targetR === 2.5
+    && bad.dayFloorPct === 1 && bad.dayAimPct === 2 && bad.dayCapPct === 10
+    && math.isMarketOpen({ dateKey: '2026-09-22', minuteOfDay: 450 }) === true && math.isMarketOpen({ dateKey: '2026-09-22', minuteOfDay: 449 }) === false
+    && math.isMarketOpen({ dateKey: '2026-09-22', minuteOfDay: 840 }) === false && math.isMarketOpen({ dateKey: '2026-11-27', minuteOfDay: 700 }) === false
+    && math.isMarketOpen({ dateKey: '2026-09-26', minuteOfDay: 600 }) === false
+    && math.horizonFor(10) === 'scalp' && math.horizonFor(180) === 'intraday' && math.horizonFor(2000) === 'swing'
+    && math.HORIZONS.join() === 'scalp,intraday,swing' && math.horizonOf('swing') === 'swing' && math.horizonOf('day') === null
+    && weekEnd === '2026-09-25' && math.swingLastDay('2026-09-23', 3) === '2026-09-25' && math.swingLastDay('2026-09-21', 2) === '2026-09-23',
+    JSON.stringify({ clamped, bad, weekEnd }));
+}
+
+{
+  const R = math.defaultRules();
+  const stock = { ticker: 'AAPL', side: 'long', instrument: 'stock', horizon: 'intraday', qty: 34, entry: 231.10, stop: 230.40, target: 233 };
+  const short = { ticker: 'TSLA', side: 'short', instrument: 'stock', horizon: 'scalp', qty: 25, entry: 412.10, stop: 414, target: 405 };
+  const call = { ticker: 'SPY', side: 'long', instrument: 'call', horizon: 'swing', qty: 2, entry: 4.20, stop: 2.80 };
+  const callNoStop = { ...call, stop: null };
+  const debit = { ticker: 'NVDA', side: 'long', instrument: 'spread', qty: 1, entry: 2.10, stop: 1.30, width: 5 };
+  const credit = { ticker: 'SPY', side: 'short', instrument: 'spread', credit: true, qty: 1, entry: 1.20, width: 5 };
+  const naked = { ticker: 'SPY', side: 'short', instrument: 'call', qty: 1, entry: 3 };
+  const lad = math.ladder({ side: 'long', entry: 231.10, stop: 230.40 });
+  const ladShort = math.ladder({ side: 'short', entry: 412.10, stop: 414 });
+  // NEGATIVE CONTROL (run 2026-09-22): the option multiplier dropped from unitRisk (`* M` removed on the long branch) made this read
+  //   FAIL  T45 the risk of one share or one contract, the ladder and the size his rule allows: a stock risks the distance to the stop, a long option its premium or the distance to a stop premium, a debit spread its debit, a credit spread the width less the credit, and a naked short option is not capped; the ladder runs the right way for a long and a short; and the size is the budget over the risk, rounded down, zero when one contract is already over
+  check('T45 the risk of one share or one contract, the ladder and the size his rule allows: a stock risks the distance to the stop, a long option its premium or the distance to a stop premium, a debit spread its debit, a credit spread the width less the credit, and a naked short option is not capped; the ladder runs the right way for a long and a short; and the size is the budget over the risk, rounded down, zero when one contract is already over',
+    math.unitRisk(stock) === 0.7 && math.unitRisk(short) === 1.9
+    && math.unitRisk(call) === 140 && math.unitRisk(callNoStop) === 420
+    && math.unitRisk(debit) === 80 && math.unitRisk(credit) === 380 && math.unitRisk(naked) === null
+    && lad.r === 0.7 && lad.breakeven === 231.10 && lad.levels.map((l) => l.price).join() === '231.8,232.5,233.2'
+    && ladShort.levels.map((l) => l.price).join() === '410.2,408.3,406.4'
+    && math.sizeFor({ accountCents: 400000, rules: R, pos: stock }).qty === 57
+    && math.sizeFor({ accountCents: 400000, rules: R, pos: call }).qty === 0
+    && math.sizeFor({ accountCents: 400000, rules: R, pos: naked }).qty === null
+    && math.closePnl({ pos: stock, exitPrice: 232.60 }) === 5100
+    && math.closePnl({ pos: short, exitPrice: 409.80 }) === 5750
+    && math.closePnl({ pos: call, exitPrice: 6.50 }) === 46000
+    && math.closePnl({ pos: credit, exitPrice: 0.40 }) === 8000,
+    JSON.stringify({ stock: math.unitRisk(stock), call: math.unitRisk(call), credit: math.unitRisk(credit), qty: math.sizeFor({ accountCents: 400000, rules: R, pos: stock }).qty }));
+}
+
+{
+  const R = math.defaultRules();
+  const A = 400000;
+  const pos = { ticker: 'AAPL', side: 'long', instrument: 'stock', horizon: 'intraday', qty: 34, entry: 231.10, stop: 230.40, target: 233, openedDay: '2026-09-22' };
+  const quote = { ticker: 'AAPL', last: 232.60, high: 233.20, low: 230.60, prevClose: 231.10 };
+  const c = math.tradeCalc({ pos, rules: R, accountCents: A, quote, todayKey: '2026-09-22', accountType: 'margin' });
+  const over = math.tradeCalc({ pos: { ...pos, qty: 400 }, rules: R, accountCents: A, todayKey: '2026-09-22', accountType: 'margin' });
+  const noStop = math.tradeCalc({ pos: { ...pos, stop: null }, rules: R, accountCents: A, todayKey: '2026-09-22', accountType: 'margin' });
+  const wrong = math.tradeCalc({ pos: { ...pos, stop: 232 }, rules: R, accountCents: A, todayKey: '2026-09-22', accountType: 'margin' });
+  const cash = math.tradeCalc({ pos, rules: R, accountCents: A, todayKey: '2026-09-22', accountType: 'cash' });
+  const stale = math.tradeCalc({ pos: { ...pos, openedDay: '2026-09-21' }, rules: R, accountCents: A, todayKey: '2026-09-22', accountType: 'margin' });
+  const weekend = math.tradeCalc({ pos: { ...pos, horizon: 'swing' }, rules: R, accountCents: A, todayKey: '2026-09-25', accountType: 'margin' });
+  const noise = math.tradeCalc({ pos: { ...pos, stop: 230.95 }, rules: R, accountCents: A, quote, todayKey: '2026-09-22', accountType: 'margin' });
+  const shortCall = math.tradeCalc({ pos: { ticker: 'SPY', side: 'short', instrument: 'call', qty: 1, entry: 3 }, rules: R, accountCents: A, todayKey: '2026-09-22', accountType: 'margin' });
+  // NEGATIVE CONTROL (run 2026-09-22): the noise threshold tightened from a quarter of today's range to a twentieth made this read
+  //   FAIL  T46 what a card shows RUNS: the risk in dollars and as a share of the account, what the rule allows, the cost and its share, the ladder, the target as an R multiple with its reward, the distance from the entry and from the last price, the unrealized figure, today's range off the quote, and one warning for each thing worth saying
+  check('T46 what a card shows RUNS: the risk in dollars and as a share of the account, what the rule allows, the cost and its share, the ladder, the target as an R multiple with its reward, the distance from the entry and from the last price, the unrealized figure, today\'s range off the quote, and one warning for each thing worth saying',
+    c.riskCents === 2380 && c.riskPct === 0.0060 && c.budgetCents === 4000 && c.suggestedQty === 57
+    && c.positionCents === 785740 && c.rr === 2.71 && c.rewardCents === 6460 && c.target === 233
+    && c.last === 232.60 && c.unrealizedCents === 5100
+    && c.distances.stopFromEntry.dollars === -0.7 && c.distances.targetFromLast.dollars === 0.4
+    && c.todaysRange.high === 233.20 && c.todaysRange.low === 230.60
+    && c.warnings.length === 1 && c.warnings[0] === 'position-over-half'
+    && over.warnings.includes('risk-over-rule') && noStop.warnings.includes('no-stop') && wrong.warnings.includes('stop-wrong-side')
+    && cash.warnings.includes('cash-t1') && stale.warnings.includes('day-past-close') && weekend.warnings.includes('weekend-ahead')
+    && noise.warnings.includes('stop-in-noise') && shortCall.warnings.includes('short-option-uncapped') && shortCall.riskCents === null
+    && Object.keys(math.WARNING_TEXT).every((k) => math.WARNING_TEXT[k] && !DASH.test(math.WARNING_TEXT[k])),
+    JSON.stringify({ risk: c.riskCents, pct: c.riskPct, rr: c.rr, warn: c.warnings }));
+}
+
+{
+  const R = math.defaultRules();
+  const A = 400000;
+  const swingOpen = { id: 'p2', status: 'open', horizon: 'swing', riskCents: 3000 };
+  const rows = [
+    { id: 'p1', status: 'closed', horizon: 'scalp', closedDay: '2026-09-22', pnlCents: 4500 },
+    { id: 'p3', status: 'closed', horizon: 'swing', closedDay: '2026-09-21', pnlCents: 9000 },
+    swingOpen,
+  ];
+  const at = (cents) => math.dayStatus({ rules: R, accountCents: A, realizedTodayCents: cents, openRiskCents: math.openRisk(rows) });
+  const day = at(math.realizedToday(rows, '2026-09-22'));
+  // NEGATIVE CONTROL (run 2026-09-22): the cap test loosened from `>=` to `>` made this read
+  //   FAIL  T47 the day against his rules RUNS: the four lines in dollars from the account, the state at a 3% loss, under the floor, on the floor, at the aim and at the 10% cap, what is left to risk after the open trades, and a swing that counts its risk today but never its unrealized figure
+  check('T47 the day against his rules RUNS: the four lines in dollars from the account, the state at a 3% loss, under the floor, on the floor, at the aim and at the 10% cap, what is left to risk after the open trades, and a swing that counts its risk today but never its unrealized figure',
+    day.lossLimitCents === -12000 && day.floorCents === 4000 && day.aimCents === 8000 && day.capCents === 40000
+    && math.realizedToday(rows, '2026-09-22') === 4500 && math.openRisk(rows) === 3000
+    && day.state === 'on-floor' && day.remainingRiskCents === 13500
+    && at(-12000).state === 'stop-loss' && at(-12000).remainingRiskCents === 0
+    && at(-11999).state === 'below-floor' && at(3999).state === 'below-floor'
+    && at(8000).state === 'on-aim' && at(40000).state === 'stop-cap' && at(40000).remainingRiskCents === 0
+    && /Realized \+\$45\.00, on the floor\. Aim is \$80\.00\. \$135\.00 left to risk today\./.test(day.line) && !DASH.test(day.line),
+    JSON.stringify({ day, floor: at(3999).state, aim: at(8000).state }));
+}
+
+{
+  const nowMs = at('2026-09-22T16:00:00Z');
+  const settings = { caseId: 'c1', startedAt: '2026-08-31', startCents: 200000, accountType: 'cash', finnhubKey: 'abcdefghijklmnop1234' };
+  const mk = (over = {}) => {
+    const { w, api } = world();
+    w.docs.set('trade/settings', { data: settings });
+    w.listed['trade/balances/items'] = [{ id: '2026-09-22', data: { date: '2026-09-22', cents: 400000 } }];
+    w.listed['trade/positions/items'] = over.positions || [];
+    for (const r of (over.positions || [])) w.docs.set(`trade/positions/items/${r.id}`, { data: r.data });
+    return { w, api };
+  };
+  const open1 = { id: 'x1', data: { ticker: 'NVDA', side: 'long', instrument: 'stock', horizon: 'swing', qty: 10, entry: 648.4, stop: 646.9, status: 'open', riskCents: 1500, openedAt: '2026-09-20T15:00:00Z', openedDay: '2026-09-20' } };
+  const open2 = { id: 'x2', data: { ticker: 'AAPL', side: 'long', instrument: 'stock', horizon: 'scalp', qty: 5, entry: 231.1, stop: 230.4, status: 'open', riskCents: 350, openedAt: '2026-09-22T15:00:00Z', openedDay: '2026-09-22' } };
+  const closed = { id: 'x3', data: { ticker: 'TSLA', side: 'short', instrument: 'stock', horizon: 'scalp', qty: 25, entry: 412.1, status: 'closed', closedDay: '2026-09-22', pnlCents: 5750, openedAt: '2026-09-22T14:00:00Z' } };
+  const listed = await mk({ positions: [open1, open2, closed] }).api.tradePositions({ ...env }, { now: nowMs });
+  const made = mk();
+  const created = await made.api.tradePosition(env, { ticker: 'aapl', side: 'long', instrument: 'stock', horizon: 'intraday', qty: 34, entry: 231.1, stop: 230.4, target: 233 }, nowMs);
+  const refusals = [];
+  for (const [body, want] of [
+    [{ ticker: '1BAD', side: 'long', instrument: 'stock', qty: 1, entry: 1 }, K.SAY.badTicker],
+    [{ ticker: 'AAPL', side: 'sideways', instrument: 'stock', qty: 1, entry: 1 }, K.SAY.badSide],
+    [{ ticker: 'AAPL', side: 'long', instrument: 'future', qty: 1, entry: 1 }, K.SAY.badInstrument],
+    [{ ticker: 'AAPL', side: 'long', instrument: 'stock', horizon: 'day', qty: 1, entry: 1 }, K.SAY.badHorizon],
+    [{ ticker: 'AAPL', side: 'long', instrument: 'stock', qty: 0, entry: 1 }, K.SAY.badQty],
+    [{ ticker: 'AAPL', side: 'long', instrument: 'stock', qty: 1, entry: 0 }, K.SAY.badPrice],
+    [{ ticker: 'AAPL', side: 'long', instrument: 'spread', credit: true, qty: 1, entry: 1.2 }, K.SAY.badWidth],
+  ]) {
+    try { await mk().api.tradePosition(env, body, nowMs); refusals.push('served'); } catch (e) { refusals.push(e.message === want ? 'said it' : e.message); }
+  }
+  const world4 = mk({ positions: [open2] });
+  const sold = await world4.api.tradeClose(env, { id: 'x2', exitPrice: 232.6, note: 'Out at the target.' }, nowMs);
+  let twice = '';
+  world4.w.docs.set('trade/positions/items/x2', { data: { ...open2.data, status: 'closed' } });
+  try { await world4.api.tradeClose(env, { id: 'x2', exitPrice: 233 }, nowMs); } catch (e) { twice = e.message; }
+  const world5 = mk({ positions: [open2] });
+  const typed = await world5.api.tradeClose(env, { id: 'x2', pnlCents: -1200 }, nowMs);
+  const world6 = mk({ positions: [open2] });
+  world6.w.docs.set('trade/settings', { data: { ...settings, celebrate: false } });
+  const quiet = await world6.api.tradeClose(env, { id: 'x2', exitPrice: 232.6 }, nowMs);
+  const gone = mk({ positions: [open2] });
+  const removed = await gone.api.tradeRemove(env, { id: 'x2' });
+  // NEGATIVE CONTROL (run 2026-09-22): `celebrate` answered on a loss too (`pnlCents !== 0`) made this read
+  //   FAIL  T48 the position routes RUN: every bad field is refused with its own sentence, a new trade stores the risk the rule measures, the list puts the open ones first by kind with today's closes after them, the day rides every answer, Sold reads the exit price or the dollars he types, stamps the day it closed and celebrates only a profit and only when the switch is on, a second Sold is refused, and Remove takes the row away
+  check('T48 the position routes RUN: every bad field is refused with its own sentence, a new trade stores the risk the rule measures, the list puts the open ones first by kind with today\'s closes after them, the day rides every answer, Sold reads the exit price or the dollars he types, stamps the day it closed and celebrates only a profit and only when the switch is on, a second Sold is refused, and Remove takes the row away',
+    refusals.every((r) => r === 'said it')
+    && listed.positions.map((p) => p.id).join() === 'x2,x1,x3' && listed.openCount === 2
+    && listed.accountCents === 400000 && listed.rules.dayAimPct === 2 && listed.dayStatus.realizedTodayCents === 5750
+    && listed.positions[0].calc.riskCents === 350 && listed.today === '2026-09-22' && listed.accountType === 'cash'
+    && created.position.ticker === 'AAPL' && created.position.riskCents === 2380 && created.calc.suggestedQty === 57
+    && made.w.patches.some((p) => p.path.startsWith('trade/positions/items/') && p.data.riskCents === 2380 && p.data.status === 'open')
+    && sold.pnlCents === 750 && sold.celebrate === true && sold.position.closedDay === '2026-09-22' && sold.dayStatus.state === 'below-floor'
+    && world4.w.patches.some((p) => p.data.status === 'closed' && p.data.closeNote === 'Out at the target.')
+    && twice === K.SAY.closedAlready && typed.pnlCents === -1200 && typed.celebrate === false && quiet.celebrate === false
+    && removed.removed === 'x2' && gone.w.deletes.includes('trade/positions/items/x2'),
+    JSON.stringify({ refusals, order: listed.positions.map((p) => p.id), sold: sold.pnlCents, twice }));
+}
+
+{
+  const nowMs = at('2026-09-22T16:00:00Z');
+  const mk = (settings) => {
+    const { w, api } = world();
+    w.docs.set('trade/settings', { data: settings });
+    return { w, api };
+  };
+  const keyed = mk({ finnhubKey: 'abcdefghijklmnop1234' });
+  // The fetch count is read as each call lands, not at the end: by then the cold one has already run.
+  const one = await keyed.api.tradeQuote(env, { symbols: 'nvda,NVDA' }, nowMs);
+  const afterOne = keyed.w.fetches.length;
+  const again = await keyed.api.tradeQuote(env, { symbols: 'NVDA' }, nowMs + 1000);
+  const afterAgain = keyed.w.fetches.length;
+  const fresh = await keyed.api.tradeQuote(env, { symbols: 'NVDA' }, nowMs + 30_000);
+  const afterFresh = keyed.w.fetches.length;
+  const noKey = mk({});
+  const errs = [];
+  for (const [w2, q, when] of [[noKey, { symbols: 'NVDA' }, nowMs], [keyed, { symbols: 'A,B,C,D,E,F,G,H,I,J,K' }, nowMs], [keyed, { symbols: '' }, nowMs], [keyed, { symbols: '1BAD' }, nowMs]]) {
+    try { await w2.api.tradeQuote(env, q, when); errs.push('served'); } catch (e) { errs.push(`${e.status} ${e.message}`); }
+  }
+  const spent = mk({ finnhubKey: 'abcdefghijklmnop1234' });
+  // Fifty DISTINCT tickers: a repeat would answer from the cache and cost the minute nothing.
+  const tick = (i) => `T${String.fromCharCode(65 + Math.floor(i / 26))}${String.fromCharCode(65 + (i % 26))}`;
+  for (let i = 0; i < 50; i++) await spent.api.tradeQuote(env, { symbols: tick(i) }, nowMs).catch(() => {});
+  let over = '';
+  try { await spent.api.tradeQuote(env, { symbols: 'NVDA' }, nowMs); } catch (e) { over = `${e.status} ${e.message}`; }
+  // NEGATIVE CONTROL (run 2026-09-22): the cache's TTL read as 0 (`now - hit.at < 0`) made this read
+  //   FAIL  T49 the quote route RUNS: no key is a 404 with the sentence that says where to put one, eleven tickers and none at all are refused, a bad ticker is refused, the same ticker twice in twenty seconds costs one call, a colder one costs another, and the minute's budget answers 429 rather than calling out
+  check('T49 the quote route RUNS: no key is a 404 with the sentence that says where to put one, eleven tickers and none at all are refused, a bad ticker is refused, the same ticker twice in twenty seconds costs one call, a colder one costs another, and the minute\'s budget answers 429 rather than calling out',
+    one.quotes.length === 1 && one.quotes[0].ticker === 'NVDA' && afterOne === 1
+    && again.quotes.length === 1 && afterAgain === 1
+    && fresh.quotes.length === 1 && afterFresh === 2
+    && errs[0] === `404 ${K.SAY.noQuoteKey}` && errs[1] === `400 ${K.SAY.quoteMany}` && errs[2] === `400 ${K.SAY.quoteMany}` && errs[3] === `400 ${K.SAY.badTicker}`
+    && over === `429 ${K.SAY.quoteBudget}` && K.QUOTE_BUDGET === 50 && K.QUOTE_TTL_MS === 20_000 && K.QUOTE_MAX === 10,
+    JSON.stringify({ afterOne, afterAgain, afterFresh, errs, over }));
+}
+
+{
+  const nowMs = at('2026-09-21T15:35:00Z');
+  const { w, api } = world();
+  w.docs.set('trade/settings', { data: { caseId: 'c1', startedAt: '2026-08-31', startCents: 200000, accountType: 'cash' } });
+  w.listed['trade/balances/items'] = [{ id: '2026-09-21', data: { date: '2026-09-21', cents: 238000 } }];
+  w.listed['trade/positions/items'] = [
+    { id: 'x1', data: { ticker: 'NVDA', side: 'long', instrument: 'stock', horizon: 'swing', qty: 10, entry: 648.4, stop: 646.9, target: 652, status: 'open', riskCents: 1500, openedAt: '2026-09-18T15:00:00Z', openedDay: '2026-09-18' } },
+    { id: 'x2', data: { ticker: 'AAPL', side: 'long', instrument: 'stock', horizon: 'scalp', qty: 5, entry: 231.1, stop: 230.4, status: 'open', riskCents: 350, openedAt: '2026-09-21T15:00:00Z', openedDay: '2026-09-21' } },
+  ];
+  const note = await api.tradeNote(env, { now: nowMs });
+  const play = K.validPlay({ ticker: 'amd', side: 'long', instrument: 'stock', entry: 167.3, stop: 163.8, targets: [174], holdMinutes: 1800, horizon: 'swing', holdDays: 3, profitLow: 50, profitHigh: 60, sizeDollars: 500, picture: 'Base above the fifty day.' });
+  const scalp = K.validPlay({ ticker: 'spy', side: 'long', instrument: 'stock', entry: 574, stop: 573.6, targets: [575], holdMinutes: 8, profitLow: 50, profitHigh: 60, sizeDollars: 500, picture: 'Opening drive.' });
+  const { w: w2, api: api2 } = world();
+  w2.docs.set('trade/settings', { data: { caseId: 'c1' } });
+  await api2.recordPlays(env, 'c1', [play, scalp], { slot: '07:02', now: at('2026-09-23T15:00:00Z') });
+  const rows = w2.patches.filter((p) => p.path.startsWith('trade/plays/items/') && p.data.status === 'open');
+  const swingRow = rows.find((r) => r.data.ticker === 'AMD');
+  const scalpRow = rows.find((r) => r.data.ticker === 'SPY');
+  // NEGATIVE CONTROL (run 2026-09-22): the swing expiry left on the day-play clock (the ternary dropped) made this read
+  //   FAIL  T50 the note and the plays know the three kinds: the note carries his rules in dollars, where the day stands and every open position with its kind, its risk and where it is going, day first; a play says which kind it is or is read from its hold; and a swing play expires at the close of its last day and never past the week's last close, while a scalp keeps the session clock
+  check('T50 the note and the plays know the three kinds: the note carries his rules in dollars, where the day stands and every open position with its kind, its risk and where it is going, day first; a play says which kind it is or is read from its hold; and a swing play expires at the close of its last day and never past the week\'s last close, while a scalp keeps the session clock',
+    /His rules today: aim 2%, which is \$47\.60/.test(note) && /Today: Realized \$0\.00, under the floor\./.test(note)
+    && /His open positions \(his own, not the plays\):/.test(note)
+    && /Scalp: AAPL long 5 shares at 231\.1, stop 230\.4 \(risk \$3\.50, 0\.15% of the account\)/.test(note)
+    && /Swing: NVDA long 10 shares at 648\.4, stop 646\.9 \(risk \$15\.00, 0\.63% of the account\), target 652/.test(note)
+    && note.indexOf('Scalp: AAPL') < note.indexOf('Swing: NVDA') && !DASH.test(note)
+    && play.horizon === 'swing' && play.holdDays === 3 && scalp.horizon === 'scalp' && scalp.holdDays === 0
+    && swingRow.data.expiresAt.toISOString() === new Date(K.mtInstant('2026-09-25', '14:00')).toISOString()
+    && scalpRow.data.expiresAt.toISOString() === new Date(at('2026-09-23T15:00:00Z') + 16 * 60_000).toISOString(),
+    JSON.stringify({ swing: swingRow?.data.expiresAt, scalp: scalpRow?.data.expiresAt }));
 }
 
 const fails = results.filter((r) => !r.pass).length;

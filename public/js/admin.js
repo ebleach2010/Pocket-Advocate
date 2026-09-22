@@ -314,7 +314,7 @@ async function load() {
       self: !!c.self,
       trade: !!c.trade,
       // The desk's line under its cover (2026-09-22): where he stands
-      // against 3% a day, from the last reading or the last balance typed.
+      // against his aim a day, from the last reading or the last balance typed.
       meta: c.trade ? (cover.tradeStanding || 'no reading yet') : '',
       dx: cover.text || '',
       dxIsMine: cover.by === 'eric',

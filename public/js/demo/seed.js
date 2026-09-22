@@ -597,7 +597,10 @@ export function seed({ set, file }) {
   // sections, two plays with their setups, the settings with a key on file,
   // fifteen trading days of balances, and two trading terms in the
   // dictionary. Every figure invented.
-  const dk = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+  // THE DESK'S DAY IS MOUNTAIN (2026-09-22): its today comes from
+  // America/Boise, so a seeded day key built in UTC lands on the wrong day
+  // for most of the evening and a trade closed "yesterday" counts as today.
+  const dk = (n) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' }).format(new Date(Date.now() - n * 86_400_000));
   set(`cases/${TRADE_ID}`, {
     self: true,
     trade: true,
@@ -663,7 +666,7 @@ export function seed({ set, file }) {
   set(`caseMeta/${TRADE_ID}`, {
     workingDx: { text: 'Sound entries, stops go missing on options', by: 'advisor', at: hours(2) },
     advisorAt: hours(2),
-    tradeStanding: { text: '$2,380.00 · 14 trading days · 1.75 pts under 3% a day', at: hours(2) },
+    tradeStanding: { text: '$2,380.00 · 14 trading days · 0.75 pts under 2% a day', at: hours(2) },
   });
   set('advisorKnowledge/vwap', { term: 'VWAP', category: 'Indicator', definition: 'The volume weighted average price of the day so far, the line intraday traders watch to see who is in control.', mechanism: '', treatment: '', outcome: '', addedAt: hours(2), learnedAt: null });
   set('advisorKnowledge/opening-range', { term: 'Opening range', category: 'Setup', definition: 'The high and the low of the first five to fifteen minutes; a break out of it with volume is a trigger, and the other side of it is the stop.', mechanism: '', treatment: '', outcome: '', addedAt: hours(2), learnedAt: null });
@@ -676,7 +679,7 @@ export function seed({ set, file }) {
   set('trade/state', { lastSlot: `${dk(0)}T10:00`, claimedAt: hours(2) });
   set('trade/plays/items/p-demo-1', {
     at: hours(2), slot: '10:02', caseId: TRADE_ID, ticker: 'NVDA', side: 'long', instrument: 'spread', structure: 'Oct 17 650/655 call debit spread',
-    entry: 2.1, stop: 1.3, targets: [3.4, 4.6], holdMinutes: 180,
+    entry: 2.1, stop: 1.3, targets: [3.4, 4.6], holdMinutes: 180, horizon: 'intraday', holdDays: 0,
     picture: 'Holding above the opening range at 650 on twice normal volume after the developer conference guidance.',
     bull: 'A push through 652 with volume opens 655.',
     bear: 'A break back below 648 on the stock ends it.',
@@ -689,7 +692,7 @@ export function seed({ set, file }) {
   });
   set('trade/plays/items/p-demo-2', {
     at: hours(2), slot: '10:02', caseId: TRADE_ID, ticker: 'TSLA', side: 'short', instrument: 'stock', structure: 'shares',
-    entry: 412, stop: 418, targets: [402, 396], holdMinutes: 60,
+    entry: 412, stop: 418, targets: [402, 396], holdMinutes: 60, horizon: 'scalp', holdDays: 0,
     picture: 'Rejected VWAP twice in the first half hour on falling volume after the delivery miss.',
     bull: 'A reclaim of 415 with volume flips the day. Cover there.',
     bear: 'A break of 410 on volume opens 405 and 402.',
@@ -699,6 +702,43 @@ export function seed({ set, file }) {
     catalyst: 'Delivery numbers below the street estimate, out at 06:00 ET.',
     profitLow: 45, profitHigh: 55, sizeDollars: 800, overnight: { ok: false, why: 'Short into an overnight headline is not a trade with an edge.' },
     status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 2 * 3600_000),
+  });
+  // A swing, allowed when it serves the benchmarks and out before the
+  // weekend (Eric, 2026-09-22).
+  set('trade/plays/items/p-demo-3', {
+    at: hours(2), slot: '10:02', caseId: TRADE_ID, ticker: 'AMD', side: 'long', instrument: 'stock', structure: 'shares',
+    entry: 167.3, stop: 163.8, targets: [174, 178], holdMinutes: 1800, horizon: 'swing', holdDays: 3,
+    picture: 'Base above the fifty day after the reclaim, volume drying up into it.',
+    bull: 'A push through 170 on volume opens 174 and 178.',
+    bear: 'Back under 165 and the base is broken.',
+    levels: ['163.8', '165', '170', '174'],
+    risk: '$3.50 a share. Held overnight, so a gap against it is the real risk; out before the weekend either way.',
+    watch: 'Whether 170 takes two tries or one.',
+    catalyst: 'Supply deal reported before the open.',
+    profitLow: 50, profitHigh: 60, sizeDollars: 500, overnight: { ok: true, why: 'A swing by design, flat before Friday closes.' },
+    status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 48 * 3600_000),
+  });
+  // HIS OWN TRADES (2026-09-22): what he is actually in, which is not the
+  // same thing as what the reading suggested. One intraday, one swing, and
+  // one he closed yesterday.
+  set('trade/positions/items/pos-demo-1', {
+    ticker: 'NVDA', side: 'long', instrument: 'stock', horizon: 'intraday', qty: 10,
+    entry: 648.4, stop: 646.9, target: 652, mark: null, credit: false, width: null, expiry: null,
+    structure: 'shares', note: 'Opening range break on volume.',
+    openedAt: hours(3), openedDay: dk(0), status: 'open', fromPlay: null, riskCents: 1500, updatedAt: hours(3),
+  });
+  set('trade/positions/items/pos-demo-2', {
+    ticker: 'SPY', side: 'long', instrument: 'call', horizon: 'swing', qty: 1,
+    entry: 4.2, stop: 2.8, target: 6.5, mark: 4.75, credit: false, width: null, expiry: dk(-25),
+    structure: 'Oct 17 575 call', note: 'Held into the close, out before Friday.',
+    openedAt: days(2), openedDay: dk(2), status: 'open', fromPlay: null, riskCents: 14000, updatedAt: days(2),
+  });
+  set('trade/positions/items/pos-demo-3', {
+    ticker: 'TSLA', side: 'short', instrument: 'stock', horizon: 'scalp', qty: 25,
+    entry: 412.1, stop: 414, target: 405, mark: null, credit: false, width: null, expiry: null,
+    structure: 'shares', note: '', openedAt: days(1), openedDay: dk(1),
+    status: 'closed', closedAt: days(1), closedDay: dk(1), exitPrice: 409.8, pnlCents: 5750,
+    closeNote: 'Covered at the second test.', fromPlay: null, riskCents: 4750, updatedAt: days(1),
   });
   // The last typed entry sits two days back, so a screenshot asked about
   // today lands on an empty day in every time zone the demo runs in.

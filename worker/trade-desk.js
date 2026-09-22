@@ -28,6 +28,8 @@ import { BUCKET, putFile, patchObjectMeta } from './storage.js';
 import { textPdf } from '../public/js/textpdf.js';
 import {
   tradeMetrics, TARGET_DAILY, PROJECTION_MIN_DAYS, DEFAULT_START_CENTS,
+  rulesOf, dayStatus, realizedToday, openRisk, tradeCalc, fmtMoney, fmtPct,
+  HORIZONS, HORIZON_WORDS, horizonOf, horizonFor, swingLastDay, isTradingDay,
 } from '../public/js/trade-math.js';
 
 // ---- constants ------------------------------------------------------------
@@ -53,6 +55,15 @@ export const TRADE_WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_s
 // none of them.
 export const TRADE_CATEGORIES = ['Setup', 'Indicator', 'Level', 'Order', 'Risk', 'Options', 'Market', 'Instrument'];
 export const DESK_NAME = 'Trade desk';
+// HIS POSITIONS AND THE QUOTES BEHIND THEM (2026-09-22). Finnhub's free plan
+// allows sixty calls a minute and the desk note already spends up to
+// twenty-two on a reading, so every quote in this file goes through one
+// cache and one rolling-minute budget. Both are isolate-local and best
+// effort: a cold isolate simply fetches, and over budget the route says so
+// rather than calling out.
+export const QUOTE_TTL_MS = 20_000;
+export const QUOTE_BUDGET = 50;
+export const QUOTE_MAX = 10;
 // The sentences the routes refuse with. Exported so the demo mirrors them
 // word for word and a check can hold the two to each other.
 export const SAY = {
@@ -67,6 +78,20 @@ export const SAY = {
   badKey: 'That key does not look like a Finnhub key.',
   badAccount: 'Account type is cash or margin.',
   badWatchlist: 'Watchlist: up to 20 tickers, letters and dots only.',
+  badTicker: 'Ticker: letters and dots only, up to six.',
+  badSide: 'Side is long or short.',
+  badInstrument: 'Instrument is stock, call, put or spread.',
+  badHorizon: 'Horizon is scalp, intraday or swing.',
+  badQty: 'Quantity: a whole number, 1 or more.',
+  badPrice: 'Entry, stop and target are prices above zero, four decimals at most.',
+  badWidth: 'Spread width: the distance between the strikes, above zero.',
+  noPosition: 'No such position.',
+  closedAlready: 'That position is already closed.',
+  badExit: 'Sold at needs the exit price, or the profit or loss in dollars.',
+  badRules: 'Rules: risk 0.1 to 5% a trade, day loss 0.5 to 20%, floor under aim under cap, cap up to 50%, target 0.5R to 5R.',
+  noQuoteKey: 'No market data key on file. Add it on Desk.',
+  quoteMany: 'Quotes: up to 10 tickers at a time.',
+  quoteBudget: 'Quotes are rate limited; try again in a minute.',
   noNext: 'The trade desk does not continue into a next case. Pause it, close it or delete it.',
   noPull: 'The trade desk cannot be pulled from.',
 };
@@ -76,6 +101,7 @@ export const SETTINGS_PATH = 'trade/settings';
 export const STATE_PATH = 'trade/state';
 export const PLAYS = 'trade/plays/items';
 export const BALANCES = 'trade/balances/items';
+export const POSITIONS = 'trade/positions/items';
 
 // ---- his instructions, word for word --------------------------------------
 // The first system block of every desk turn (Eric, 2026-09-22: "Instructions
@@ -322,6 +348,8 @@ YOU NEVER ASK HIM A QUESTION. Nothing you write reaches his log, and a question 
 
 The update text you are given below was written for a medical case and uses its words. Read them this way: the assessment is your reading of the desk; the differential is the Plays section below; the two cumulative sections it names are one section here, Rules to hold; the filed rows are empty on this desk and mean nothing; the client thread is his trade log.
 
+THE THREE KINDS OF TRADE, AND THE WEEKEND (Eric, 2026-09-22): "I want trades separated from scalps (1-10min) intraday (1-8hr) and swing (8hr-3 days). We don't hold over weekends." Day trading is the priority, and a swing opportunity is allowed when it serves his benchmarks, which are a floor of 1% a day, an aim of 2%, and a stop for the day at a 3% realized loss or a 10% realized gain. Every setup you write says which kind it is: a scalp lives one to ten minutes, an intraday trade one to eight hours and is flat by the close, a swing runs eight hours to three days and is flat before the weekend. Never write a swing that would be held over a Saturday; on the last trading day of a week, a swing is only a swing if it can be closed that day. A swing says its overnight risk plainly, in its own words, in the Risk line.
+
 Use exactly these headings, in this order, as markdown ## headings:
 
 ## Right now
@@ -334,7 +362,7 @@ Use exactly these headings, in this order, as markdown ## headings:
 ## Plays
 ## Corrections
 
-"Right now": the market and his account, under 150 words. If you have a previous reading, open with what changed since it. The desk note at the end of the material carries his balance, his standing against 3% a day, the quotes, the headlines and today's earnings; use web search for what a quote cannot tell you, and prefer a fresh source over a stale one.
+"Right now": the market and his account, under 150 words. If you have a previous reading, open with what changed since it. The desk note at the end of the material carries his balance, his standing against his daily aim, the quotes, the headlines and today's earnings; use web search for what a quote cannot tell you, and prefer a fresh source over a stale one.
 
 "Your trades": one block per trade logged since the previous reading, named by the id on his line (ERIC [id=...]). For each: what he did well, and what was wrong, against the levels, the volume, VWAP, his stop and his size. A sound reason with a bad result is still a good trade; a good result on a bad reason is still a bad trade, and say so. When nothing was logged since the previous reading, one line saying so.
 
@@ -350,7 +378,7 @@ Use exactly these headings, in this order, as markdown ## headings:
 
 "Plays": one fenced json block and nothing else, in this shape:
 { "plays": [ ... ], "portfolio": null }
-One play object per setup above, in the same order, with these fields: ticker, side ("long" or "short"), instrument ("stock", "call", "put" or "spread"), structure (the exact instrument, for example "Oct 17 150/155 call debit spread" or "shares"), entry, stop, targets (a list of prices), holdMinutes (an integer), profitLow and profitHigh (whole percents), sizeDollars (an integer), catalyst, overnightOk (true or false), overnightWhy, picture, bull, bear, levels (a list of short strings), risk, watch. picture, bull, bear, risk and watch repeat the six lines of the setup, in full. portfolio is null unless a screenshot among the NEW messages shows his broker's portfolio total; then it is { "totalCents": the total in cents as an integer, "asOf": the date of the message it came with, as YYYY-MM-DD }. Never take a total from memory or from an earlier screenshot.
+One play object per setup above, in the same order, with these fields: horizon ("scalp", "intraday" or "swing"), holdDays (a whole number 1 to 3, swing only, 0 otherwise), ticker, side ("long" or "short"), instrument ("stock", "call", "put" or "spread"), structure (the exact instrument, for example "Oct 17 150/155 call debit spread" or "shares"), entry, stop, targets (a list of prices), holdMinutes (an integer), profitLow and profitHigh (whole percents), sizeDollars (an integer), catalyst, overnightOk (true or false), overnightWhy, picture, bull, bear, levels (a list of short strings), risk, watch. picture, bull, bear, risk and watch repeat the six lines of the setup, in full. portfolio is null unless a screenshot among the NEW messages shows his broker's portfolio total; then it is { "totalCents": the total in cents as an integer, "asOf": the date of the message it came with, as YYYY-MM-DD }. Never take a total from memory or from an earlier screenshot.
 
 "Corrections": rare, and only when one of his own log lines misstates a price or a level. Each line exactly \`- <id> | what is wrong, one sentence | the full repaired line\`. Write "- none" otherwise.
 
@@ -365,7 +393,7 @@ export const TRADE_ASK_NOTE = `
 THIS IS THE TRADE DESK, NOT A MEDICAL CASE. The question instructions above were written for a client's case; on this desk read them this way. Answer his question about the market, a ticker, a setup or a position in plain English, under 250 words unless the question itself demands more. Prices come from the desk note in the material; use web search for the news and the calendar. Give the levels, the risk and what to watch next, and never an order. When you list Key terms, the Category is one of Setup, Indicator, Level, Order, Risk, Options, Market, Instrument. There is no client, no fee and no call to get ready for, so nothing about readiness applies. If the screenshot attached to this question shows his broker's portfolio total, end the answer's text with exactly one line in this form, with nothing after it but the document block if there is one: PORTFOLIO TOTAL: $1,234.56 (2026-09-22), the figure from the screenshot and today's date; never from memory and never from an earlier screenshot. Without such a screenshot, no such line. THE DOCUMENT HE ASKED FOR: when he asks for a document to keep, a PDF, a sheet, a playbook, a checklist or a write-up, or when the answer is a document by nature, put the whole document inside a block that opens with <document title="the title"> on its own line and closes with </document> on its own line, as the very last thing in the answer, after the PORTFOLIO TOTAL line if there is one. Inside it: plain paragraphs, a line starting with # for a heading, a line starting with - for a bullet, no tables, no other markup and no fence. One document per answer, and the answer itself stays short and says what the document holds; it becomes a PDF on his Uploads page. Without such a request, no block.`;
 
 // ---- small helpers ------------------------------------------------------------
-const rid = (p) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+export const rid = (p) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** A date that exists, as YYYY-MM-DD. */
 export const realDate = (k) => DATE_RE.test(String(k || '')) && new Date(`${k}T12:00:00Z`).toISOString().slice(0, 10) === k;
@@ -442,15 +470,38 @@ async function fetchFinnhub(key, path, params = {}) {
   }
 }
 
+// The cache and the budget, shared by the reading's snapshot and the Trades
+// page's route. A minute's calls are counted in a rolling window; `over`
+// tells a caller to say so instead of fetching.
+const quoteCache = new Map();
+let quoteCalls = [];
+export function quoteBudgetLeft(now = Date.now()) {
+  quoteCalls = quoteCalls.filter((t) => now - t < 60_000);
+  return Math.max(0, QUOTE_BUDGET - quoteCalls.length);
+}
+/** One quote, from the cache when it is fresh, else fetched and counted. `null` when nothing came back, `'over'` when the minute is spent. */
+export async function quoteCached(key, ticker, now = Date.now()) {
+  const hit = quoteCache.get(ticker);
+  if (hit && now - hit.at < QUOTE_TTL_MS) return hit.q;
+  if (quoteBudgetLeft(now) <= 0) return 'over';
+  quoteCalls.push(now);
+  const r2 = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : null);
+  const q = await fetchFinnhub(key, '/quote', { symbol: ticker });
+  const row = !q || !Number.isFinite(Number(q.c)) || Number(q.c) === 0
+    ? null
+    : { ticker, last: r2(q.c), chg: r2(q.d), chgPct: r2(q.dp), open: r2(q.o), high: r2(q.h), low: r2(q.l), prevClose: r2(q.pc), at: q.t ? new Date(Number(q.t) * 1000).toISOString() : null };
+  quoteCache.set(ticker, { at: now, q: row });
+  return row;
+}
+
 /** Quotes for the watchlist, the last twelve hours of general headlines, today's earnings. A refused endpoint is dropped and named. */
 export async function marketSnapshot(key, watchlist, now = Date.now()) {
   const { dateKey } = mtParts(now);
-  const r2 = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : null);
   const [quotes, news, cal] = await Promise.all([
     Promise.all(watchlist.map(async (ticker) => {
-      const q = await fetchFinnhub(key, '/quote', { symbol: ticker });
-      if (!q || !Number.isFinite(Number(q.c)) || Number(q.c) === 0) return { ticker, missing: true };
-      return { ticker, last: r2(q.c), chg: r2(q.d), chgPct: r2(q.dp), open: r2(q.o), high: r2(q.h), low: r2(q.l), prevClose: r2(q.pc), at: q.t ? new Date(Number(q.t) * 1000).toISOString() : null };
+      const q = await quoteCached(key, ticker, now);
+      if (!q || q === 'over') return { ticker, missing: true };
+      return q;
     })),
     fetchFinnhub(key, '/news', { category: 'general' }),
     fetchFinnhub(key, '/calendar/earnings', { from: dateKey, to: dateKey }),
@@ -484,6 +535,35 @@ function playsText(plays) {
   }).join('\n');
 }
 
+// ---- his positions -----------------------------------------------------------
+/** Every position row, newest first. Open ones first on the page; this is the raw list. */
+export async function readPositions(env, { max = 100 } = {}) {
+  const rows = await listDocs(env, POSITIONS, { pageSize: max, orderBy: 'openedAt desc' }).catch(() => []);
+  return rows.map((r) => ({ id: r.id, ...r.data }));
+}
+/** Open first, scalps then intraday then swing, newest first inside each kind. */
+export function sortPositions(rows) {
+  const rank = { scalp: 0, intraday: 1, swing: 2 };
+  return [...(rows || [])].sort((a, b) => {
+    const open = (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1);
+    if (open) return open;
+    const h = (rank[a.horizon] ?? 1) - (rank[b.horizon] ?? 1);
+    if (h) return h;
+    return new Date(b.openedAt || 0) - new Date(a.openedAt || 0);
+  });
+}
+/** One line per open position for the desk note: what it is, what it risks, where it is going, and where it stands. */
+export function positionLine(p, calc, todayKey) {
+  const kind = HORIZON_WORDS[p.horizon] || 'Intraday';
+  const what = p.instrument === 'stock' ? `${p.qty} share${p.qty === 1 ? '' : 's'}` : `${p.qty} ${p.structure || p.instrument}`;
+  const risk = calc.riskCents == null ? 'risk not capped' : `risk ${dollars(calc.riskCents)}${calc.riskPct == null ? '' : `, ${fmtPct(calc.riskPct)} of the account`}`;
+  const tgt = calc.target == null ? '' : `, target ${calc.target}${calc.rr == null ? '' : ` (${calc.rr}R)`}`;
+  const at = calc.last == null ? '' : `, last ${calc.last}${calc.unrealizedCents == null ? '' : `, ${calc.unrealizedCents >= 0 ? 'up' : 'down'} ${dollars(Math.abs(calc.unrealizedCents))}`}`;
+  const age = p.horizon === 'swing' && p.openedDay ? `, opened ${p.openedDay}` : '';
+  const warn = (calc.warnings || []).length ? `, watch: ${calc.warnings.join(', ')}` : '';
+  return `${kind}: ${p.ticker} ${p.side} ${what} at ${p.entry}${p.stop == null ? ', no stop' : `, stop ${p.stop}`} (${risk})${tgt}${at}${age}${warn}`;
+}
+
 // ---- the standing line, and the metrics behind it ---------------------------------
 async function readBalances(env) {
   const rows = await listDocs(env, BALANCES, { pageSize: 400, orderBy: 'date asc', all: true }).catch(() => []);
@@ -497,15 +577,16 @@ export async function deskMetrics(env, settings = null) {
     settings = doc === READ_FAILED ? {} : (doc?.data || {});
   }
   const rows = await readBalances(env);
-  return { settings, rows, metrics: tradeMetrics(rows, { startedAt: settings.startedAt || null, startCents: startOf(settings), target: TARGET_DAILY, minDays: PROJECTION_MIN_DAYS }) };
+  const rules = rulesOf(settings);
+  return { settings, rows, rules, metrics: tradeMetrics(rows, { startedAt: settings.startedAt || null, startCents: startOf(settings), target: rules.dayAimPct / 100, minDays: PROJECTION_MIN_DAYS }) };
 }
 
-/** One line for the folder's cover: "$2,380.00 · 14 trading days · 1.75 pts under 3% a day". Pure. */
+/** One line for the folder's cover: "$2,380.00 · 14 trading days · 0.75 pts under 2% a day", the aim from his rules. Pure. */
 export function standingLine(m) {
   if (!m || !m.days || !(m.entries || []).length) return `${dollars(m?.currentCents ?? m?.startCents ?? DEFAULT_START_CENTS)} · no entries yet`;
   const pts = Math.abs(Number(m.offTargetPoints) || 0).toFixed(2);
   const dir = m.offTargetCents < 0 ? 'under' : 'over';
-  return `${dollars(m.currentCents)} · ${m.days} trading day${m.days === 1 ? '' : 's'} · ${pts} pts ${dir} 3% a day`;
+  return `${dollars(m.currentCents)} · ${m.days} trading day${m.days === 1 ? '' : 's'} · ${pts} pts ${dir} ${fmtPct(m.target)} a day`;
 }
 
 /** The standing as the shelf stores it, and the mirror onto the case's cover. */
@@ -532,16 +613,27 @@ export async function tradeNote(env, { now = Date.now() } = {}) {
   const doc = await tryGet(env, SETTINGS_PATH);
   const settings = doc === READ_FAILED ? {} : (doc?.data || {});
   const key = resolveKey(env, settings);
-  const [{ metrics, rows }, plays, snap] = await Promise.all([
+  const [{ metrics, rows, rules }, plays, positions, snap] = await Promise.all([
     deskMetrics(env, settings),
     listDocs(env, PLAYS, { pageSize: 20, orderBy: 'at desc' }).catch(() => []),
+    readPositions(env, { max: 60 }).catch(() => []),
     key ? marketSnapshot(key, watchlistOf(settings), now).catch(() => null) : Promise.resolve(null),
   ]);
+  const { dateKey: todayKey } = mtParts(now);
+  const A = metrics.currentCents;
+  const day = dayStatus({ rules, accountCents: A, realizedTodayCents: realizedToday(positions, todayKey), openRiskCents: openRisk(positions) });
+  const open = sortPositions(positions.filter((x) => x.status === 'open'));
+  const openText = open.length
+    ? open.map((x) => positionLine(x, tradeCalc({ pos: x, rules, accountCents: A, todayKey, accountType: settings.accountType === 'margin' ? 'margin' : 'cash' }), todayKey)).join('\n')
+    : 'None open.';
   const acct = settings.accountType === 'margin' ? 'margin' : 'cash';
   const recent = rows.slice(-10).map((b) => `${b.date} ${dollars(b.cents)}${b.source === 'screenshot' ? ' (from a screenshot)' : ''}${b.note ? `, ${b.note}` : ''}`);
   const lines = [
     `Now: ${whenMT(now)}, Mountain time. Market hours ${MARKET_OPEN} to ${MARKET_CLOSE} on his clock.`,
-    `Account: ${dollars(metrics.currentCents)}, ${acct} account, started at ${dollars(metrics.startCents)}${metrics.startedAt ? ` on ${metrics.startedAt}` : ''}. Standing: ${standingLine(metrics)}. Target today: 3%, which is ${dollars(Math.round(metrics.currentCents * TARGET_DAILY))}.`,
+    `Account: ${dollars(metrics.currentCents)}, ${acct} account, started at ${dollars(metrics.startCents)}${metrics.startedAt ? ` on ${metrics.startedAt}` : ''}. Standing: ${standingLine(metrics)}.`,
+    `His rules today: aim ${fmtPct(rules.dayAimPct / 100)}, which is ${dollars(day.aimCents)}; floor ${fmtPct(rules.dayFloorPct / 100)}, ${dollars(day.floorCents)}; stop the day at a ${fmtPct(rules.dayLossPct / 100)} loss, ${dollars(Math.abs(day.lossLimitCents))}, or at a ${fmtPct(rules.dayCapPct / 100)} gain, ${dollars(day.capCents)}. He risks ${fmtPct(rules.riskPct / 100)} of the account on one trade, ${dollars(Math.round(A * rules.riskPct / 100))}, and writes targets at ${rules.targetR}R.`,
+    `Today: ${day.line}`,
+    `His open positions (his own, not the plays):\n${openText}`,
     key
       ? `Quotes (Finnhub, as of now):\n${quotesText(snap)}`
       : 'No market data key is on file, so no quotes, headlines or earnings are attached. Say so where it matters, and use web search for prices.',
@@ -567,7 +659,10 @@ export function validPlay(p) {
   const instrument = String(p.instrument || '').toLowerCase();
   const profitLow = int(p.profitLow, 0, 100);
   const profitHigh = int(p.profitHigh, 0, 100);
-  const holdMinutes = int(p.holdMinutes, 1, 1440);
+  const holdMinutes = int(p.holdMinutes, 1, 4320);
+  // The kind of trade (2026-09-22): what it says, or what its hold implies.
+  const horizon = horizonOf(String(p.horizon || '').toLowerCase()) || horizonFor(holdMinutes);
+  const holdDays = horizon === 'swing' ? Math.min(3, Math.max(1, Math.floor(Number(p.holdDays) || 1))) : 0;
   const sizeDollars = int(p.sizeDollars, 0, 10_000_000);
   const entry = num(p.entry);
   const stop = num(p.stop);
@@ -577,7 +672,7 @@ export function validPlay(p) {
   if ([profitLow, profitHigh, holdMinutes, sizeDollars, entry, stop].some((n) => Number.isNaN(n)) || profitLow > profitHigh || !targets.length) return null;
   if (!picture) return null;
   return {
-    ticker, side, instrument, structure: str(p.structure, 120), entry, stop, targets, holdMinutes,
+    ticker, side, instrument, structure: str(p.structure, 120), entry, stop, targets, holdMinutes, horizon, holdDays,
     why: str(p.why, 800), catalyst: str(p.catalyst, 300), risk: str(p.risk, 400),
     profitLow, profitHigh, sizeDollars,
     overnight: { ok: p.overnightOk === true, why: str(p.overnightWhy, 300) },
@@ -640,7 +735,12 @@ export async function recordPlays(env, caseId, plays, { slot = '', now = Date.no
   const ids = [];
   for (const p of plays) {
     const id = rid('p');
-    const expiresAt = new Date(Math.min(now + 2 * p.holdMinutes * 60_000, Math.max(close, now + 15 * 60_000)));
+    // A scalp or an intraday play dies with the session; a swing runs to the
+    // close of its last day, and never past the week's last close, because
+    // nothing is held over a weekend.
+    const expiresAt = p.horizon === 'swing'
+      ? new Date(mtInstant(swingLastDay(dateKey, p.holdDays || 3), MARKET_CLOSE))
+      : new Date(Math.min(now + 2 * p.holdMinutes * 60_000, Math.max(close, now + 15 * 60_000)));
     await patchDoc(env, `${PLAYS}/${id}`, { at, slot, caseId, ...p, status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt });
     ids.push(id);
   }

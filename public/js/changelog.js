@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '5.1';
+export const VERSION = '5.2';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '5.1';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE CALCULATOR AND HIS POSITIONS (2026-09-22): "a calculator to help me
+    // with take profits and stop losses ... Most useful when the information
+    // is calculated and displayed neatly by the trade." Admin only: two new
+    // pages on the desk and the arithmetic behind them.
+    version: '5.2',
+    quiet: true,
+    client: [],
+    admin: [
+      'The trade desk has a calculator. Trades is where you put what you are actually in: ticker, side, kind, quantity, entry, stop and target. Each one shows its own numbers as you type: the dollars at risk and what your rule allows, the size your rule would take, breakeven and the 1R, 2R and 3R prices, the distance to your stop and your target, and the live price when the market is open. Sold closes it, logs a line for you and puts the profit on the day strip.',
+      'The Stats chart measures you against your aim rather than a number written into the page, so it reads 2% a day while that is what Calc says and follows the moment you change it.',
+      'Calc holds your rules, in dollars for your account: risk 1% a trade, floor 1% a day, aim 2%, stop the day at a 3% loss or a 10% gain, targets at 2R. Change one and everything follows. Every open trade can have its stop, target, quantity or mark edited there. Trades are separated into scalps, intraday and swing, nothing is held over a weekend, and the reading sees all of it.',
+    ],
+  },
   {
     // THE DESK ASKS HIM NOTHING (2026-09-22): "Questions in the chat are
     // unnecessary. The chat is just for me to dump information that help

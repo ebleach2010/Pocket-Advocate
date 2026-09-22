@@ -75,7 +75,7 @@ const shelf = await until(() => {
   };
 });
 ok('the TRADE DESK shelf sits above the client shelves with the desk on it and no door', !!shelf && shelf.section && shelf.order && !shelf.door, JSON.stringify(shelf));
-ok('the card is named, badged TRADE DESK and carries its standing under its cover', !!shelf && shelf.name === 'Trade desk' && shelf.pill === 'TRADE DESK' && /pts under 3% a day/.test(shelf.meta || '') && /stops go missing/.test(shelf.dx || ''), `${shelf?.meta} | ${shelf?.dx}`);
+ok('the card is named, badged TRADE DESK and carries its standing under its cover', !!shelf && shelf.name === 'Trade desk' && shelf.pill === 'TRADE DESK' && /pts under 2% a day/.test(shelf.meta || '') && /stops go missing/.test(shelf.dx || ''), `${shelf?.meta} | ${shelf?.dx}`);
 const outline = await green('.folder.trade', 'outlineColor');
 // The desk is self AND trade, so the card carries both classes; the green is
 // declared after the purple and is what paints.
@@ -105,20 +105,20 @@ const furniture = await page.evaluate(() => ({
   all: document.querySelectorAll('a[data-page]').length,
   head: !!document.querySelector('[data-work-head]'), clock: !!document.querySelector('[data-workclock]'), pick: !!document.querySelector('[data-status-pick]'),
 }));
-ok('the Case row is Overview, Chat and Uploads with nothing medical swept in, twelve tabs in all, and the folder opened on Overview', furniture.caseRow === 'overview,chat,files' && furniture.all === 12 && furniture.on === 'overview', JSON.stringify(furniture));
+ok('the Case row is Overview, Chat and Uploads with nothing medical swept in, fourteen tabs in all, and the folder opened on Overview', furniture.caseRow === 'overview,chat,files' && furniture.all === 14 && furniture.on === 'overview', JSON.stringify(furniture));
 ok('no clock button in the masthead, no clock row and no Working on dropdown anywhere on the desk', !furniture.head && !furniture.clock && !furniture.pick, JSON.stringify(furniture));
 await page.evaluate(() => document.querySelector('[data-group="read"]')?.click());
 await page.waitForTimeout(400);
 const deskRow = await page.evaluate(() => [...document.querySelectorAll('a[data-page]')].filter((a) => !a.hidden).map((a) => a.dataset.page).join());
-ok('the Desk row is Read, Plays, Ask, Terms, Stats and Desk', deskRow === 'advisor,dx,advisor-chat,education,stats,desk', deskRow);
+ok('the Desk row is Read, Plays, Trades, Calc, Ask, Terms, Stats and Desk', deskRow === 'advisor,dx,trades,calc,advisor-chat,education,stats,desk', deskRow);
 await show('case', 'overview');
 const ov = await until(() => {
   const k = [...document.querySelectorAll('.fact-k')].map((x) => x.textContent.trim());
   const st = document.querySelector('[data-trade-standing]')?.textContent.trim();
   if (!st || /no reading yet/.test(st)) return null;
-  return { k, st, next: document.querySelector('[data-trade-next]')?.textContent.trim(), note: document.querySelector('[data-self-note]')?.textContent.trim(), pause: document.querySelector('[data-trade-pause]')?.textContent.trim(), close: !!document.querySelector('[data-self-close]'), del: !!document.querySelector('[data-delete-case]') };
+  return { k, st, next: document.querySelector('[data-trade-next]')?.textContent.trim(), note: document.querySelector('[data-self-note]')?.textContent.trim(), today: document.querySelector('[data-trade-today]')?.textContent.trim(), pause: document.querySelector('[data-trade-pause]')?.textContent.trim(), close: !!document.querySelector('[data-self-close]'), del: !!document.querySelector('[data-delete-case]') };
 });
-ok('the overview carries CASE, STANDING and NEXT READ, the desk\'s note, and Pause, close and Delete', !!ov && ov.k.join() === 'CASE,STANDING,NEXT READ' && /pts under 3% a day/.test(ov.st) && /MT$/.test(ov.next || '') && /trade log/.test(ov.note || '') && ov.pause === 'Pause the readings' && ov.close && ov.del, JSON.stringify(ov));
+ok('the overview carries CASE, STANDING, NEXT READ and a TODAY that already says where the day stands against his rules, the desk\'s note, and Pause, close and Delete', !!ov && ov.k.join() === 'CASE,STANDING,NEXT READ,TODAY' && /pts under 2% a day/.test(ov.st) && /^Realized \$0\.00, under the floor\. Aim is \$47\.60\./.test(ov.today || '') && /MT$/.test(ov.next || '') && /trade log/.test(ov.note || '') && ov.pause === 'Pause the readings' && ov.close && ov.del, JSON.stringify(ov));
 await page.click('[data-trade-pause]');
 const paused = await until(() => (document.querySelector('[data-trade-pause]')?.textContent.trim() === 'Resume the readings' ? 'resumeable' : null), 10000);
 const pausedNext = await until(() => (/^Paused$/.test(document.querySelector('[data-trade-next]')?.textContent.trim() || '') ? 'paused' : null), 10000);
@@ -237,7 +237,7 @@ const typedBig = await until(() => (document.querySelector('.trade-big')?.textCo
 const typedRow = await page.evaluate(() => { const t = document.querySelector('[data-acct-list]')?.textContent || ''; return /\$2,450\.00/.test(t) && /after close/.test(t) && !/📷 from a screenshot/.test(t.split('$2,450.00')[1]?.split('$')[0] || ''); });
 ok('a balance he types for the same day wins over the screenshot and moves the big number', typedBig === 'typed' && typedRow);
 const chart = await page.evaluate(() => { const s = document.querySelector('[data-stats] svg[role="img"]'); return s ? { lines: s.querySelectorAll('polyline').length, target: !!s.querySelector('polyline[stroke="var(--target)"]'), dots: s.querySelectorAll('circle').length, sentence: document.querySelector('[data-stats] p strong')?.textContent || '' } : null; });
-ok('one SVG with two polylines, the target in its token, a dot per entry, and the sentence against the 3% a day line', !!chart && chart.lines === 2 && chart.target && chart.dots >= 6 && /(below|above) the 3% a day line/.test(chart.sentence), JSON.stringify(chart));
+ok('one SVG with two polylines, the target in its token, a dot per entry, and the sentence against the 2% a day line', !!chart && chart.lines === 2 && chart.target && chart.dots >= 6 && /(below|above) the 2% a day line/.test(chart.sentence), JSON.stringify(chart));
 await shot('07-stats');
 
 console.log('\n--- H. Desk: the key tail, the start, a switch that waits for the answer ---');
@@ -277,6 +277,109 @@ ok('a medical case keeps its clock button, its clock row, its Working on dropdow
 await show('read', 'education');
 const medTerms = await until(() => { const t = document.body.textContent; return /Ferritin|Serology/.test(t) ? (/VWAP/.test(t) ? 'leak' : 'clean') : null; }, 10000);
 ok('a medical case\'s Terms page carries its own terms and not the desk\'s', medTerms === 'clean', medTerms || '');
+
+console.log('\n--- K. Trades: the day, his cards, a trade entered, priced, sized and sold ---');
+// THE CALCULATOR (Eric, 2026-09-22): "I just update the total in my portfolio nightly and input any
+// active trades. Once I sell, I can log it and leave a note if I want otherwise it disappears."
+// The account is the $2,450.00 he typed in G, so his 1% is $24.50 and every figure below comes off it.
+await page.goto(`${P}/admin-case.html?id=demo-case-trade&demo=admin`, { waitUntil: 'networkidle' });
+await settle(page, 2000);
+await show('case', 'chat');
+await page.waitForTimeout(500);
+await show('read', 'trades');
+const strip = await until(() => {
+  const el = document.querySelector('[data-day-strip]');
+  if (!el) return null;
+  return { realized: el.querySelector('[data-day-realized]')?.textContent || '', state: el.querySelector('[data-day-state]')?.textContent || '', foot: el.lastElementChild?.textContent || '' };
+}, 15000);
+ok('the day opens at nothing realized and under the floor, with his four lines in dollars off the account', !!strip && strip.realized === '$0.00' && /^Realized \$0\.00, under the floor\. Aim is \$49\.00\./.test(strip.state) && /Floor \$24\.50 · Aim \$49\.00 · Stop at -\$73\.50 or \$245\.00/.test(strip.foot), JSON.stringify(strip));
+const mine = await until(() => {
+  const c = [...document.querySelectorAll('[data-pos-list] [data-pos]')];
+  if (c.length < 2) return null;
+  const row = (card, k) => { const d = [...card.querySelectorAll('dt')].find((x) => x.textContent.trim() === k); return d?.nextElementSibling?.textContent.trim() || ''; };
+  return c.map((x) => ({ ticker: x.querySelector('.play-ticker')?.textContent.trim(), kind: x.querySelector('.pos-badge')?.textContent.trim(), risk: row(x, 'Risk'), ladder: row(x, 'Ladder') }));
+}, 15000);
+ok('his two open trades stand in kind order, the intraday NVDA over the swing SPY, each badged for its kind', !!mine && mine.length === 2 && mine[0].ticker === 'NVDA' && mine[0].kind === 'Intraday' && mine[1].ticker === 'SPY' && mine[1].kind === 'Swing', JSON.stringify(mine?.map((m) => `${m.ticker}/${m.kind}`)));
+ok('NVDA carries its risk against his rule and the R ladder around the entry', !!mine && mine[0].risk === '$15.00 (0.61%), your rule allows $24.50' && mine[0].ladder === 'stop 646.9 · breakeven 648.4 · 1R 649.9 · 2R 651.4 · 3R 652.9', JSON.stringify(mine && mine[0]));
+await shot('10-trades');
+
+await page.evaluate(() => { document.querySelector('[data-pos-new]').open = true; });
+await page.fill('[data-pos-form] [name="ticker"]', 'AAPL');
+await page.click('[data-quote-btn]');
+const priced = await until(() => { const t = document.querySelector('[data-quote-said]')?.textContent || ''; return /AAPL/.test(t) ? t : null; }, 15000);
+ok('Get the price fetches the live quote and prints the last with today\'s range', priced === 'AAPL 232.6, today 230.6 to 233.2.', priced || '');
+await page.fill('[data-pos-form] [name="qty"]', '40');
+await page.fill('[data-pos-form] [name="entry"]', '231.10');
+await page.fill('[data-pos-form] [name="stop"]', '230.40');
+await page.fill('[data-pos-form] [name="target"]', '233');
+const prev = await until(() => { const t = document.querySelector('[data-pos-preview]')?.textContent || ''; return /Risk \$28\.00/.test(t) ? t : null; }, 10000);
+// 40 shares, seventy cents to the stop: $28.00, over the $24.50 his rule allows, which is why it
+// says so and why the size it would have taken is 35.
+ok('the preview does the arithmetic as he types: the risk, the rule, the size it would take and the ladder', !!prev && /Risk \$28\.00 \(1\.14%\), your rule allows \$24\.50\./.test(prev) && /sizes this at 35 shares/.test(prev) && /Breakeven 231\.1 · 1R 231\.8 · 2R 232\.5 · 3R 233\.2/.test(prev) && /target 233 is 2\.71R/.test(prev) && /Risk is over your rule for one trade\./.test(prev), (prev || '').slice(0, 180));
+await page.click('[data-pos-form] button[type="submit"]');
+const aapl = await until(() => {
+  const card = [...document.querySelectorAll('[data-pos-list] [data-pos]')].find((x) => x.querySelector('.play-ticker')?.textContent.trim() === 'AAPL');
+  if (!card) return null;
+  const row = (k) => { const d = [...card.querySelectorAll('dt')].find((x) => x.textContent.trim() === k); return d?.nextElementSibling?.textContent.trim() || ''; };
+  const last = row('Last');
+  if (!last) return null;
+  return { id: card.dataset.pos, first: card === document.querySelector('[data-pos-list] [data-pos]'), risk: row('Risk'), ladder: row('Ladder'), last, today: row('Today'), count: document.querySelectorAll('[data-pos-list] [data-pos]').length };
+}, 20000);
+ok('the saved trade takes the top card with its risk, its ladder, the live price and what it is up', !!aapl && aapl.first && aapl.count === 3 && aapl.risk === '$28.00 (1.14%), your rule allows $24.50' && aapl.ladder === 'stop 230.4 · breakeven 231.1 · 1R 231.8 · 2R 232.5 · 3R 233.2' && aapl.last === '232.6 · up $60.00' && aapl.today === '230.6 to 233.2', JSON.stringify(aapl));
+await shot('11-trade-entered');
+
+await page.click(`[data-pos="${aapl.id}"] [data-act="sold"]`);
+await page.fill(`[data-pos="${aapl.id}"] [data-exit]`, '232.60');
+await page.fill(`[data-pos="${aapl.id}"] [data-close-note]`, 'Took the whole thing at the target.');
+await page.click(`[data-pos="${aapl.id}"] [data-act="close"]`);
+const sold = await until((id) => {
+  if (document.querySelector(`[data-pos-list] [data-pos="${id}"]`)) return null;
+  const cl = document.querySelector('[data-closed-list]')?.textContent || '';
+  if (!/AAPL/.test(cl)) return null;
+  const el = document.querySelector('[data-day-strip]');
+  return { closed: cl.trim(), realized: el?.querySelector('[data-day-realized]')?.textContent || '', state: el?.querySelector('[data-day-state]')?.textContent || '', good: el?.classList.contains('good') === true, open: document.querySelectorAll('[data-pos-list] [data-pos]').length };
+}, 20000, aapl.id);
+ok('Sold at 232.60 takes the card off the page, lands it under Closed today at +$60.00 and moves the day to the aim', !!sold && sold.open === 2 && /AAPL long \+\$60\.00 Took the whole thing at the target\./.test(sold.closed) && sold.realized === '+$60.00' && /^Realized \+\$60\.00, at the aim\./.test(sold.state) && sold.good, JSON.stringify(sold));
+await shot('12-sold');
+await show('case', 'chat');
+const logged2 = await until(() => { const m = [...document.querySelectorAll('.msg.me')].map((x) => x.textContent || ''); return m.some((t) => /AAPL long 40 shares at 231\.1, stop 230\.4\. Out at 232\.6, plus 60\.00\./.test(t)) ? 'logged' : null; }, 15000);
+ok('and the ticked box wrote the sale into his log in his own words', logged2 === 'logged');
+await show('case', 'overview');
+const todayFact = await until(() => { const t = document.querySelector('[data-trade-today]')?.textContent.trim() || ''; return /Realized/.test(t) ? t : null; }, 10000);
+ok('the overview\'s TODAY carries the same day without a reload', !!todayFact && /^Realized \+\$60\.00, at the aim\./.test(todayFact), todayFact || '');
+
+console.log('\n--- L. Calc: his six rules in dollars, and a stop changed on a trade ---');
+await show('read', 'calc');
+const rules = await until(() => {
+  const g = document.querySelector('[data-rules-grid]');
+  if (!g || !g.querySelector('input')) return null;
+  return {
+    vals: [...g.querySelectorAll('input')].map((i) => `${i.name}=${i.value}`).join(','),
+    risk: g.querySelector('[data-rule-dollars="riskPct"]')?.textContent || '',
+    aim: g.querySelector('[data-rule-dollars="dayAimPct"]')?.textContent || '',
+    cap: g.querySelector('[data-rule-dollars="dayCapPct"]')?.textContent || '',
+    targetR: g.querySelector('[data-rule-dollars="targetR"]')?.textContent || '',
+  };
+}, 15000);
+ok('the six rules read 1, 3, 1, 2, 10 and 2R, each with what it is worth on his account beside it', !!rules && rules.vals === 'riskPct=1,dayLossPct=3,dayFloorPct=1,dayAimPct=2,dayCapPct=10,targetR=2' && rules.risk === '$24.50' && rules.aim === '$49.00' && rules.cap === '$245.00' && rules.targetR === '', JSON.stringify(rules));
+const nvda = await until(() => {
+  const c = [...document.querySelectorAll('[data-calc-pos]')].find((x) => x.querySelector('.play-ticker')?.textContent.trim() === 'NVDA');
+  return c ? { id: c.dataset.calcPos, risk: c.querySelector('[data-calc-risk]')?.textContent || '', line: c.querySelector('[data-calc-line]')?.textContent || '', stop: c.querySelector('[data-edit="stop"]')?.value || '' } : null;
+}, 15000);
+ok('every open trade sits here with its editable stop, target and quantity, and one sentence of arithmetic', !!nvda && nvda.stop === '646.9' && nvda.risk === '$15.00' && /^Risk \$15\.00 \(0\.61%\), your rule allows \$24\.50, which sizes at 16\. Target 652 is 2\.4R\.$/.test(nvda.line), JSON.stringify(nvda));
+await page.fill(`[data-calc-pos="${nvda.id}"] [data-edit="stop"]`, '646.50');
+await page.click(`[data-calc-pos="${nvda.id}"] [data-act="save"]`);
+const saved = await until((id) => { const c = document.querySelector(`[data-calc-pos="${id}"]`); const s = c?.querySelector('[data-calc-said]')?.textContent || ''; return s === 'Saved.' ? { risk: c.querySelector('[data-calc-risk]')?.textContent || '', line: c.querySelector('[data-calc-line]')?.textContent || '' } : null; }, 15000, nvda.id);
+ok('a wider stop saved here repaints the risk and the sentence from the answer', !!saved && saved.risk === '$19.00' && /^Risk \$19\.00 \(0\.78%\), your rule allows \$24\.50, which sizes at 12\. Target 652 is 1\.89R\.$/.test(saved.line), JSON.stringify(saved));
+await shot('13-calc');
+await show('read', 'trades');
+const followed = await until(() => {
+  const card = [...document.querySelectorAll('[data-pos-list] [data-pos]')].find((x) => x.querySelector('.play-ticker')?.textContent.trim() === 'NVDA');
+  if (!card) return null;
+  const row = (k) => { const d = [...card.querySelectorAll('dt')].find((x) => x.textContent.trim() === k); return d?.nextElementSibling?.textContent.trim() || ''; };
+  return /646\.5/.test(row('Stop')) ? { stop: row('Stop'), risk: row('Risk'), ladder: row('Ladder') } : null;
+}, 15000);
+ok('and the Trades card follows it: the new stop, the new risk and a ladder measured from it', !!followed && /^646\.5 /.test(followed.stop) && followed.risk === '$19.00 (0.78%), your rule allows $24.50' && followed.ladder === 'stop 646.5 · breakeven 648.4 · 1R 650.3 · 2R 652.2 · 3R 654.1', JSON.stringify(followed));
 
 console.log('\n--- J. Delete, the door back on the shelf, a new desk from it ---');
 await page.goto(`${P}/admin-case.html?id=demo-case-trade&demo=admin`, { waitUntil: 'networkidle' });

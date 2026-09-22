@@ -2068,7 +2068,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-22-desk-asks-nothing';
+const BUILD_TAG = 'v2026-09-22-desk-calculator';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2076,7 +2076,7 @@ const BUILD_TAG = 'v2026-09-22-desk-asks-nothing';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '5.1';
+const VERSION = '5.2';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -8677,8 +8677,11 @@ async function handleTrade(request, env, url) {
   if (!admin) return json({ error: 'Not found' }, 404);
   const sub = url.pathname.slice('/api/admin/trade/'.length);
   const body = request.method === 'POST' ? await request.json().catch(() => ({})) : null;
+  // The query string rides too (2026-09-22): the quote route is a GET with
+  // the tickers he is actually in.
+  const query = Object.fromEntries(url.searchParams);
   try {
-    return json(await tradeRoute(env, { sub, method: request.method, body }));
+    return json(await tradeRoute(env, { sub, method: request.method, body, query }));
   } catch (err) {
     if (err instanceof TradeError) return json({ error: err.message, ...(err.extra || {}) }, err.status);
     throw err;

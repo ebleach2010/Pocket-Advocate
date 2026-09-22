@@ -1528,6 +1528,37 @@ main > p > a.small[href="/admin.html"] {
 .ask-attach.on { border-color: var(--trade); color: var(--trade); box-shadow: 0 0 0 1px var(--trade); }
 .ask-chip { margin: .3rem 0 0; font-size: .8rem; color: var(--dim); }
 .play-card.expired .play-head, .play-card.expired dl { opacity: .7; }
+/* HIS POSITIONS AND THE CALCULATOR (Eric, 2026-09-22): the card carries its
+   own arithmetic, so the rows are a definition list like a play's, with the
+   kind of trade as a badge and any warning as a short list under it. */
+.pos-badge {
+  display: inline-block; padding: .1rem .45rem; border-radius: 999px;
+  font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  border: 1px solid var(--trade); color: var(--trade);
+}
+.pos-badge.kind-swing { border-color: var(--gold); color: var(--gold); }
+.pos-badge.kind-scalp { border-color: var(--cyan); color: var(--cyan); }
+.pos-card.closed { opacity: .75; }
+.pos-warn { margin: .4rem 0 0; padding-left: 1.1rem; color: var(--gold); font-size: .82rem; }
+.pos-warn li { margin: .15rem 0; }
+.pos-preview { margin: .5rem 0 0; padding: .6rem .7rem; border: 1px dashed color-mix(in srgb, var(--trade) 45%, transparent); border-radius: 10px; }
+.pos-preview p { margin: .2rem 0; }
+.sold-sheet { margin: .5rem 0 0; padding: .6rem .7rem; border: 1px solid var(--line); border-radius: 10px; display: grid; gap: .4rem; }
+.sold-sheet label { display: grid; gap: .2rem; font-size: .84rem; }
+.row-check { display: flex !important; flex-direction: row; align-items: center; gap: .4rem; }
+.day-strip {
+  display: grid; gap: .25rem; margin: 0 0 .8rem; padding: .6rem .8rem;
+  border: 1px solid color-mix(in srgb, var(--trade) 45%, transparent); border-left: 3px solid var(--trade);
+  border-radius: 10px; background: color-mix(in srgb, var(--trade) 6%, transparent);
+}
+.day-strip.good { border-left-color: var(--green); }
+.day-strip.bad { border-left-color: var(--danger); }
+.day-k { font-size: .7rem; letter-spacing: .08em; color: var(--dim); }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: .5rem; }
+.form-grid label { display: grid; gap: .2rem; font-size: .84rem; min-width: 0; }
+.form-grid input, .form-grid select { min-width: 0; }
+.calc-card .form-grid { margin: .4rem 0; }
+.closed-head { margin: 1.1rem 0 .4rem; }
 /* THE DESK MAKES A PDF (2026-09-22): the file an answer filed, as a link
    under the answer at thumb size, in the desk's green. */
 .ask-doc { margin: .5rem 0 0; }

@@ -266,6 +266,71 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The calculator and his own positions (2026-09-22, v5.2)
+
+Eric: "I'd like to create a calculator to help me with take profits and
+stop losses ... With a 4k ish account and the ambition of at LEAST 1% of
+gains a day (optimally 2%, stop at 10% portfolio total even if I hit a big
+home run) ... The app doesn't have to track every trade and log it. I just
+update the total in my portfolio nightly and input any active trades. Once
+I sell, I can log it and leave a note if I want otherwise it disappears."
+Then: "I want trades separated from scalps (1-10min) intraday (1-8hr) and
+swing (8hr-3 days). We don't hold over weekends." The daily loss limit is
+3% realized, his own correction.
+
+`public/js/trade-math.js` is the one place the arithmetic lives, imported
+by the Worker, the demo mirror and the checks so no figure is computed
+twice: `defaultRules` and `rulesOf` (risk 1%, stop the day at a 3% loss or
+a 10% gain, floor 1%, aim 2%, target 2R, each clamped, the three day rules
+falling back together unless floor is under aim is under cap), `unitRisk`,
+`sizeFor`, `ladder`, `closePnl`, `tradeCalc`, `realizedToday`, `openRisk`
+and `dayStatus`, plus the three kinds (`HORIZONS`, `horizonFor`,
+`swingLastDay`, `lastTradingDayOfWeek`) and `isMarketOpen` on his Mountain
+clock. `TARGET_DAILY` is now his aim, so the standing line, the chart's
+target curve and the desk note all follow the rule.
+
+`worker/trade.js` gains `trade/positions/items/{id}` and the routes
+`positions`, `position`, `close`, `remove` and `quote`, each bad field
+refused with its own sentence; quotes are cached 20 seconds and capped at
+50 calls a rolling minute, because a reading already spends up to 22 of
+Finnhub's 60. `worker/trade-desk.js` puts his rules in dollars, where the
+day stands and every open position into the note, and the contract and the
+Plays JSON gain the three kinds and the weekend rule. Both new pages live
+in `admin-desk.js` behind the asset gate: Trades (the day strip, a New
+trade form that does the arithmetic as he types, his cards, Closed today,
+and a Sold sheet that puts a line in his log) and Calc (his six rules with
+the dollars beside each, and every open trade's stop, target, quantity and
+mark editable inline).
+
+trade.mjs T44 to T50, each with a control recorded: the rules and their
+clamps; `unitRisk` and `sizeFor` across stock, calls, debit and credit
+spreads and a naked short; what a card prints and every warning it can
+carry; `dayStatus` at each of its five states; the position routes end to
+end (refusals, the risk stored, the order of the list, a second Sold
+refused, the celebrate flag); the quote route's cache, its budget and its
+refusals; and the note, the kinds and a swing play that never expires past
+the week's last close. T1, T17, T19, T21, T25, T32, T34, T35, T36 and T37
+re-pinned with dated notes.
+
+drive-trade.mjs sections K and L drive it in the demo: the day strip opens
+at nothing realized and under the floor with his four lines in dollars, the
+two seeded trades stand in kind order badged Intraday and Swing, Get the
+price fetches a quote, 40 AAPL at 231.10 with a 230.40 stop previews
+$28.00 at risk against the $24.50 the rule allows and sizes at 35, the
+saved card carries the ladder and the live price, Sold at 232.60 takes the
+card off the page into Closed today at +$60.00, moves the day to the aim
+and writes the sale into his log, and a stop widened on Calc repaints the
+risk there and on the Trades card.
+
+Three defects the drive caught, all fixed here: the demo mirror's POST gate
+sat above `positions` and `quote`, so both GETs answered 404 and the Trades
+page loaded nothing; the seed built its day keys in UTC while the desk's
+day is Mountain, so a trade closed yesterday counted as realized today for
+most of the evening; and the Stats page still said "3% a day" in three
+places after the target became his aim, so the words now come from the
+rule. Trades and Calc also moved up the page array, which is what decides
+the tab order, so they sit beside Plays instead of after Terms.
+
 ### The desk asks him nothing (2026-09-22, v5.1)
 
 Eric: "Questions in the chat are unnecessary. The chat is just for me to
