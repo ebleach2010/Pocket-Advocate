@@ -4885,7 +4885,11 @@ async function finishAnalysis(env, kind, id, ctx, message) {
   const un = harvestUnanswered(tr.text, p.unanswered);
   // His own case keeps its Unanswered list from the chat itself: the
   // questions the read put there that he has not answered (2026-09-03).
-  if (ctx.self) {
+  // The desk asks nothing, so nothing stands unanswered on it, and any row a
+  // reading left before 2026-09-22 goes with this pass.
+  if (ctx.trade) {
+    un.unanswered = [];
+  } else if (ctx.self) {
     // A row he marked Got it stays marked: the chat cannot know he let a
     // question go, so the stored flag is carried over the fresh list.
     const was = Array.isArray(p.unanswered) ? p.unanswered : [];
@@ -4976,7 +4980,10 @@ async function finishAnalysis(env, kind, id, ctx, message) {
   // one bubble each, after the read itself is saved. He answers them there
   // with Reply (2026-09-03). Best effort: a question that fails to post is
   // still on the panel.
-  if (ctx.self && kind === 'case') {
+  // NOT ON THE DESK (Eric, 2026-09-22): "Questions in the chat are
+  // unnecessary. The chat is just for me to dump information." The trade log
+  // is his to write in, one way, so nothing the reading wants lands in it.
+  if (ctx.self && !ctx.trade && kind === 'case') {
     await askInChat(env, id, harvestQuestions(finalText), rows)
       .catch((err) => console.warn('own-case questions:', err.message || err));
   }

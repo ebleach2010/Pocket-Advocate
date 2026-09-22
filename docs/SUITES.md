@@ -266,6 +266,30 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The desk asks him nothing (2026-09-22, v5.1)
+
+Eric: "Questions in the chat are unnecessary. The chat is just for me to
+dump information that help guide the ... trading desk to my goals or bring
+up things I'm thinking of." The desk's contract loses its Questions for you
+and Not answered sections (nine headings now), says outright that it never
+asks him anything, and reads his log as direction: trades and their logic,
+where he wants the account going, whatever he is turning over. `askInChat`
+is gated off the desk at the one site that writes into a log, and the
+desk's unanswered list is emptied rather than carried, so a row an older
+reading left goes with the next pass. The Track row is off the folder, the
+panel's chat hint is off the desk, and the demo mirror asks on his own case
+only.
+
+trade.mjs T43 RUNS the two harvests lifted from the advisor: the question
+harvest still reads a section wherever one appears, so the gate is what
+protects the log, and the chat harvest still builds rows from question
+messages; then the gates, the emptied list, the seeded reading, the panel
+hint, the folder and the mirror are pinned. T8 (nine sections and the never
+ask line), T32 (three groups), T35 (the seed and the mirror), T36 (5.1) and
+T37 (twelve pages) re-pinned with dated notes. drive-trade reads three
+groups, twelve tabs, and a log with no question row, no Reply and his own
+line of direction in it.
+
 ### The desk makes a PDF (2026-09-22, v5.0)
 
 Eric: "The trading desk should be able to generate PDFs just like LLM in

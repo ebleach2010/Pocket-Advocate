@@ -240,21 +240,20 @@ async function load() {
 /**
  * THE DESK'S GROUPS (Eric, 2026-09-22): the case, the desk's reading with
  * its own pages (Plays where the differential was, Stats and Desk beside
- * the terms), his own notes, and what he has not answered. Six under the
- * desk on purpose: he asked for each by name.
+ * the terms), and his own notes. Six under the desk on purpose: he asked
+ * for each by name. No Track row since he said the desk asks him nothing.
  */
 const DESK_GROUPS = [
   { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files'] },
   { id: 'read', label: 'Desk', icon: '📈', pages: ['advisor', 'dx', 'advisor-chat', 'education', 'stats', 'desk'] },
   { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'saved', 'personal'] },
-  { id: 'track', label: 'Track', icon: '🗒', pages: ['unanswered'] },
 ];
 // ERIC, 2026-09-22, a screenshot of the desk on his phone: "Trade desk is a
 // clusterfuck of what I described and what is normally there for a medical
 // client." folder.js hands every page no group claims to the FIRST group, so
 // the desk's Case row carried Appeals, the work log, the milestones, the
 // agenda, the summary, the drafts, About you and My doc, and landed him on
-// the Appeal form. The desk gets only the pages its four groups name.
+// the Appeal form. The desk gets only the pages its own groups name.
 const DESK_PAGE_IDS = new Set(DESK_GROUPS.flatMap((g) => g.pages));
 
 function render(el) {
@@ -761,7 +760,7 @@ function render(el) {
     onStatus: (id) => { if (statusPick && statusPick.value !== id) statusPick.value = id; },
     container: folder.el('chat').querySelector('#chat'),
     // His own case: the box takes notes and answers, not messages (2026-09-03).
-    placeholder: data.self ? (data.trade ? 'Log a trade and why, or answer a question above…' : 'Add a note, or answer a question above…') : undefined,
+    placeholder: data.self ? (data.trade ? 'Log a trade and why, or what you want the desk aiming at…' : 'Add a note, or answer a question above…') : undefined,
     // Show what is already set, so the control reads as a state rather than
     // as a button that fires and forgets.
     onStatus: (id) => { if (statusPick && statusPick.value !== id) statusPick.value = id; },

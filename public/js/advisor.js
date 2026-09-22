@@ -645,7 +645,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
               ${md(pg.plain, terms)}
             </div>` : ''}`}</div>
         ${sendable(pg.title) ? '<p class="dim small pg-hint">Press and hold any line to send it to the client.</p>' : ''}
-        ${self && normTitle(pg.title) === normTitle('Questions for you') ? '<p class="dim small pg-hint">Asked in your chat, one bubble each. Answer there with Reply.</p>' : ''}
+        ${self && !trade && normTitle(pg.title) === normTitle('Questions for you') ? '<p class="dim small pg-hint">Asked in your chat, one bubble each. Answer there with Reply.</p>' : ''}
       </div>`;
     bodyEl.querySelectorAll('[data-pg]').forEach((b) =>
       b.addEventListener('click', () => {

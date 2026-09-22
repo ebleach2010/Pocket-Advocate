@@ -688,8 +688,10 @@ check('S34 the finish knows his own case from the flight, keeps the Unanswered l
   !!unFromChatFn && unOut.length === 1 && unOut[0].ask === 'Open one?' && unOut[0].answered === false
   && /effort: passEffort, auto, skipMedia, self,/.test(ADV)
   // Re-pinned 2026-09-03 (audit): a row he marked Got it is carried over the fresh list.
-  && /if \(ctx\.self\) \{\n[\s\S]{0,400}?un\.unanswered = \[\n\s+\.\.\.unansweredFromChat\(rows\)\.filter\(\(r\) => !done\.has\(flatText\(r\.ask\)\)\),/.test(finishSrc)
-  && /if \(ctx\.self && kind === 'case'\) \{\n\s+await askInChat\(env, id, harvestQuestions\(finalText\), rows\)/.test(finishSrc)
+  // Re-pinned 2026-09-22 (v5.1): the trade desk asks him nothing, so both sites test it out first and
+  // his own case keeps what it had. See trade.mjs T43.
+  && /\} else if \(ctx\.self\) \{\n[\s\S]{0,400}?un\.unanswered = \[\n\s+\.\.\.unansweredFromChat\(rows\)\.filter\(\(r\) => !done\.has\(flatText\(r\.ask\)\)\),/.test(finishSrc)
+  && /if \(ctx\.self && !ctx\.trade && kind === 'case'\) \{\n\s+await askInChat\(env, id, harvestQuestions\(finalText\), rows\)/.test(finishSrc)
   && finishSrc.indexOf('await askInChat(') > finishSrc.indexOf("analysis: finalText, status: 'idle'"),
   JSON.stringify(unOut));
 
@@ -777,7 +779,8 @@ check('S37 the chat paints a question with a Reply, his answer with the question
   && !/SENDABLE\.has\(normTitle\(pg\.title\)\)/.test(PANEL)
   && /'Questions for you': '❓',/.test(PANEL) && /'Watch for': '🚨',/.test(PANEL)
   && /path === '\/api\/chat\/reply'/.test(DEMO)
-  && /if \(c\.self && !asked\) \{[\s\S]*?role: 'question'/.test(DEMO));
+  // Re-pinned 2026-09-22 (v5.1): the mirror asks on his own case and never on the desk.
+  && /if \(c\.self && !c\.trade && !asked\) \{[\s\S]*?role: 'question'/.test(DEMO));
 
 const cssVersions = [...new Set(readdirSync(j(ROOT, 'public')).filter((n) => /^admin.*\.html$/.test(n))
   .map((n) => (f(`public/${n}`).match(/admin\.css\?v=([a-z0-9]+)/) || [])[1] || 'none'))];

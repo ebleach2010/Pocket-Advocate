@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '5.0';
+export const VERSION = '5.1';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '5.0';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE DESK ASKS HIM NOTHING (2026-09-22): "Questions in the chat are
+    // unnecessary. The chat is just for me to dump information that help
+    // guide the ... trading desk to my goals or bring up things I'm
+    // thinking of." Admin only: his log is his to write in.
+    version: '5.1',
+    quiet: true,
+    client: [],
+    admin: [
+      'The trade desk no longer asks you anything. Nothing it writes lands in the Trade log, so the log is yours to dump into: a trade and the logic, where you want the account going, whatever you are turning over that day. It reads all of it as direction. The Questions and Not answered sections are gone from the reading, and the Track row is off the desk.',
+    ],
+  },
   {
     // THE DESK MAKES A PDF (2026-09-22, Eric: the desk should generate PDFs
     // the way a chat helper hands you a file). Admin only: a document the

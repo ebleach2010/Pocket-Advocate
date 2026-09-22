@@ -96,7 +96,7 @@ const head = await page.evaluate(() => ({
 ok('the masthead says TRADE DESK in green with the desk\'s name', /\btrade\b/.test(head.cls) && !/\bself\b/.test(head.cls) && head.pill === 'TRADE DESK' && head.name === 'Trade desk', `${head.pill} / ${head.cls}`);
 const pillColor = await green('[data-status]');
 ok('and the pill is the green', !!pillColor && pillColor.got === hex2rgb(pillColor.want), pillColor ? `${pillColor.got} vs ${pillColor.want}` : '');
-ok('four groups, no Act', head.groups.join() === 'case,read,mine,track', head.groups.join(','));
+ok('three groups, no Act and no Track', head.groups.join() === 'case,read,mine', head.groups.join(','));
 // ERIC, 2026-09-22, the screenshot: every medical page swept into the Case row, the Appeal form
 // on top, the clock in the masthead. The desk gets its own furniture and nothing else.
 const furniture = await page.evaluate(() => ({
@@ -105,7 +105,7 @@ const furniture = await page.evaluate(() => ({
   all: document.querySelectorAll('a[data-page]').length,
   head: !!document.querySelector('[data-work-head]'), clock: !!document.querySelector('[data-workclock]'), pick: !!document.querySelector('[data-status-pick]'),
 }));
-ok('the Case row is Overview, Chat and Uploads with nothing medical swept in, thirteen tabs in all, and the folder opened on Overview', furniture.caseRow === 'overview,chat,files' && furniture.all === 13 && furniture.on === 'overview', JSON.stringify(furniture));
+ok('the Case row is Overview, Chat and Uploads with nothing medical swept in, twelve tabs in all, and the folder opened on Overview', furniture.caseRow === 'overview,chat,files' && furniture.all === 12 && furniture.on === 'overview', JSON.stringify(furniture));
 ok('no clock button in the masthead, no clock row and no Working on dropdown anywhere on the desk', !furniture.head && !furniture.clock && !furniture.pick, JSON.stringify(furniture));
 await page.evaluate(() => document.querySelector('[data-group="read"]')?.click());
 await page.waitForTimeout(400);
@@ -136,9 +136,13 @@ const chat = await page.evaluate(() => ({
   ph: document.querySelector('[data-form] [data-input]')?.getAttribute('placeholder') || '',
   q: document.querySelectorAll('.msg.q').length,
   reply: !!document.querySelector('.msg.q .reply-btn'),
+  aim: /Where I want this going: 3% a day on the account/.test(document.body.textContent),
   makers: /Duty of care draft|full message/.test(document.body.textContent),
 }));
-ok('the heading is Trade log, the box asks for a trade and why, the reading\'s question sits in the log with a Reply, and no message maker', chat.h3 === 'Trade log' && /Log a trade and why/.test(chat.ph) && chat.q >= 1 && chat.reply && !chat.makers, JSON.stringify(chat));
+// NOBODY WRITES IN HIS LOG BUT HIM (Eric, 2026-09-22): "Questions in the chat are unnecessary. The
+// chat is just for me to dump information." Not one question row, not one Reply, and his own line of
+// direction sits in it.
+ok('the heading is Trade log, the box asks for a trade and why, not one question row and no Reply, his line of direction is in the log, and no message maker', chat.h3 === 'Trade log' && /Log a trade and why, or what you want the desk aiming at/.test(chat.ph) && chat.q === 0 && !chat.reply && chat.aim && !chat.makers, JSON.stringify(chat));
 const line = 'AAPL long 40 shares at 231.10, stop 230.40, target 233. Opening range break on volume. Out at 232.60, plus 60.';
 await page.evaluate((t) => { const box = document.querySelector('[data-form] [data-input]'); box.value = t; box.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('[data-form]')?.requestSubmit(); }, line);
 const logged = await until((t) => { const m = [...document.querySelectorAll('.msg.me')].find((x) => (x.textContent || '').includes(t.slice(0, 30))); return m ? 'logged' : null; }, 12000, line);

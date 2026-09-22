@@ -233,10 +233,7 @@ Bear case: a break of 410 on volume opens 405 and 402.
 Levels: 405, 410, 412, 415.
 Risk: $6 a share on 25 shares is $150; 12 shares keeps it near $70.
 What I would watch next: whether 412 holds as resistance on the next test.
-Chance of profit: 45 to 55%.
-
-## Questions for you
-- Why no stop on the AMD calls at 4.20? What was the exit plan before you entered?`;
+Chance of profit: 45 to 55%.`;
 
 export function seed({ set, file }) {
   // Open times to book into. Without these the booking page says "No open
@@ -644,14 +641,12 @@ export function seed({ set, file }) {
   TRADE_LOG.forEach(([ago, text], n) => {
     set(`cases/${TRADE_ID}/chat/t${String(n + 1).padStart(3, '0')}`, { from: ADMIN, role: 'admin', text, ts: hours(ago) });
   });
-  set(`cases/${TRADE_ID}/chat/tq1`, {
-    from: 'reading', role: 'question', ts: hours(3), askedAt: hours(3), answeredAt: hours(2), answerId: 'tr1',
-    text: 'Why no stop on the AMD calls at 4.20? What was the exit plan before you entered?',
-  });
-  set(`cases/${TRADE_ID}/chat/tr1`, {
-    from: ADMIN, role: 'admin', ts: hours(2), replyTo: 'tq1',
-    quote: 'Why no stop on the AMD calls at 4.20? What was the exit plan before you entered?',
-    text: 'I was watching it live and figured I would sell on a break of 168. It ran past me while I was on the phone.',
+  // What the log is actually for (Eric, 2026-09-22): "The chat is just for me
+  // to dump information that help guide the ... trading desk to my goals or
+  // bring up things I'm thinking of." Nobody writes into it but him.
+  set(`cases/${TRADE_ID}/chat/t006`, {
+    from: ADMIN, role: 'admin', ts: hours(2),
+    text: 'Where I want this going: 3% a day on the account, no overnight risk, and I would rather take four clean setups a week than twenty ragged ones. Options only when the spread is tight.',
   });
   set(`cases/${TRADE_ID}/advisor/state`, {
     trade: true,

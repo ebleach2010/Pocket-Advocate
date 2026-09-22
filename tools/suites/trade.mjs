@@ -284,19 +284,25 @@ check('T5 an early close gets the two morning slots, a holiday none, an ordinary
 
 // ---- T8: the three texts -------------------------------------------------------------
 {
-  const HEADS = ['## Right now', '## Your trades', '## Where you are slipping', '## Rules to hold', '## Setups', '## Questions for you', '## Key terms', '## Working line', '## Plays', '## Not answered', '## Corrections'];
+  // Nine since 2026-09-22 (Eric: "Questions in the chat are unnecessary"): no question section
+  // and no list of what he never answered, because the desk asks him nothing.
+  const HEADS = ['## Right now', '## Your trades', '## Where you are slipping', '## Rules to hold', '## Setups', '## Key terms', '## Working line', '## Plays', '## Corrections'];
   const idx = HEADS.map((h) => K.TRADE_CONTRACT.indexOf(`${h}\n`));
   const ordered = idx.every((i, n) => i >= 0 && (n === 0 || i > idx[n - 1]));
   const words = ['MOST IMPORTANT RULE', 'Position size = how much money is placed in the trade.', 'VWAP reclaim and VWAP rejection', 'Do not present uncertain market movement as certain.', 'What I would watch next:'];
-  // NEGATIVE CONTROL (run 2026-09-22): the contract's closing sentence changed to "Every trade is his call." made this read
-  //   FAIL  T8 his instructions ride word for word (the opening, the close, the rule that matters most, 6774 characters), the contract names the eleven sections in order with the Plays shape and the six setup lines and closes on "Every trade is his decision", the ask note asks for the one PORTFOLIO TOTAL line, and none of the three carries a dash
-  check('T8 his instructions ride word for word (the opening, the close, the rule that matters most, 6774 characters), the contract names the eleven sections in order with the Plays shape and the six setup lines and closes on "Every trade is his decision", the ask note asks for the one PORTFOLIO TOTAL line, and none of the three carries a dash',
+  // NEGATIVE CONTROL (run 2026-09-22): the contract's `YOU NEVER ASK HIM A QUESTION.` line removed made this read
+  //   FAIL  T8 his instructions ride word for word (the opening, the close, the rule that matters most, 6774 characters), the contract names the nine sections in order and never a question one with the Plays shape and the six setup lines and closes on "Every trade is his decision", the ask note asks for the one PORTFOLIO TOTAL line, and none of the three carries a dash
+  check('T8 his instructions ride word for word (the opening, the close, the rule that matters most, 6774 characters), the contract names the nine sections in order and never a question one with the Plays shape and the six setup lines and closes on "Every trade is his decision", the ask note asks for the one PORTFOLIO TOTAL line, and none of the three carries a dash',
     K.TRADE_INSTRUCTIONS.length === 6774 && K.TRADE_INSTRUCTIONS.startsWith('You are a friendly stock day-trading advisor and teacher built into a trading app.')
     && K.TRADE_INSTRUCTIONS.endsWith('Talk like a knowledgeable trading mentor sitting beside the user looking at the same screen.')
     && words.every((x) => K.TRADE_INSTRUCTIONS.includes(x))
     && ordered && /Current picture, Bull case, Bear case, Levels, Risk, What I would watch next/.test(K.TRADE_CONTRACT)
     && /"plays": \[ \.\.\. \], "portfolio": null/.test(K.TRADE_CONTRACT) && /Every trade is his decision\.$/.test(K.TRADE_CONTRACT)
     && /the differential is the Plays section below/.test(K.TRADE_CONTRACT) && /one section here, Rules to hold/.test(K.TRADE_CONTRACT)
+    // ERIC, 2026-09-22: "Questions in the chat are unnecessary. The chat is just for me to dump information
+    // that help guide the ... trading desk to my goals or bring up things I'm thinking of."
+    && !/Questions for you|Not answered/.test(K.TRADE_CONTRACT) && /YOU NEVER ASK HIM A QUESTION\./.test(K.TRADE_CONTRACT)
+    && /it is his alone to write in/.test(K.TRADE_CONTRACT) && /Read all of it as direction\./.test(K.TRADE_CONTRACT)
     && /Never take a total from memory or from an earlier screenshot/.test(K.TRADE_CONTRACT)
     && /PORTFOLIO TOTAL: \$1,234\.56 \(2026-09-22\)/.test(K.TRADE_ASK_NOTE) && /never an order/.test(K.TRADE_ASK_NOTE)
     // The document rule (2026-09-22): the tagged block, last, one per answer, and none unasked.
@@ -815,9 +821,10 @@ check('T31 the shelf: the desk is off his own shelf and off the pull-from picker
   && !/\.trade-tabs|\.trade-badge/.test(CSS) && /\.ask-attach \{/.test(CSS) && /\.play-card\.expired/.test(CSS));
 
 // NEGATIVE CONTROL (run 2026-09-22, v4.8): the `.filter((p) => !data.trade || DESK_PAGE_IDS.has(p.id))` on the pages array replaced by a bare `],` made this read
-//   FAIL  T32 the folder page: a desk gets four groups with six pages under Desk and none that talk to a client, only the pages its groups name, no clock button, no clock row and no Working on dropdown, its own uploads sentence, the Dx page is Plays, Stats and Desk mount the desk's module and refetch on show, the masthead and the pill test the desk first and wear green, the chat is the Trade log with its own placeholder, the overview is the desk's with its note and Pause, close and Delete, the eight categories are in the order, and the panel gets the flag
-check('T32 the folder page: a desk gets four groups with six pages under Desk and none that talk to a client, only the pages its groups name, no clock button, no clock row and no Working on dropdown, its own uploads sentence, the Dx page is Plays, Stats and Desk mount the desk\'s module and refetch on show, the masthead and the pill test the desk first and wear green, the chat is the Trade log with its own placeholder, the overview is the desk\'s with its note and Pause, close and Delete, the eight categories are in the order, and the panel gets the flag',
-  /const DESK_GROUPS = \[\n\s+\{ id: 'case', label: 'Case', icon: '📁', pages: \['overview', 'chat', 'files'\] \},\n\s+\{ id: 'read', label: 'Desk', icon: '📈', pages: \['advisor', 'dx', 'advisor-chat', 'education', 'stats', 'desk'\] \},\n\s+\{ id: 'mine', label: 'Mine', icon: '🔒', pages: \['notes', 'saved', 'personal'\] \},\n\s+\{ id: 'track', label: 'Track', icon: '🗒', pages: \['unanswered'\] \},\n\];/.test(CASE)
+//   FAIL  T32 the folder page: a desk gets three groups with six pages under Desk and no Track row and none that talk to a client, only the pages its groups name, no clock button, no clock row and no Working on dropdown, its own uploads sentence, the Dx page is Plays, Stats and Desk mount the desk's module and refetch on show, the masthead and the pill test the desk first and wear green, the chat is the Trade log with its own placeholder, the overview is the desk's with its note and Pause, close and Delete, the eight categories are in the order, and the panel gets the flag
+check('T32 the folder page: a desk gets three groups with six pages under Desk and no Track row and none that talk to a client, only the pages its groups name, no clock button, no clock row and no Working on dropdown, its own uploads sentence, the Dx page is Plays, Stats and Desk mount the desk\'s module and refetch on show, the masthead and the pill test the desk first and wear green, the chat is the Trade log with its own placeholder, the overview is the desk\'s with its note and Pause, close and Delete, the eight categories are in the order, and the panel gets the flag',
+  /const DESK_GROUPS = \[\n\s+\{ id: 'case', label: 'Case', icon: '📁', pages: \['overview', 'chat', 'files'\] \},\n\s+\{ id: 'read', label: 'Desk', icon: '📈', pages: \['advisor', 'dx', 'advisor-chat', 'education', 'stats', 'desk'\] \},\n\s+\{ id: 'mine', label: 'Mine', icon: '🔒', pages: \['notes', 'saved', 'personal'\] \},\n\];/.test(CASE)
+  && !/'track'|'unanswered'/.test(grab(CASE, /const DESK_GROUPS = \[[\s\S]*?\n\];/))
   && /\.\.\.\(data\.trade \? \{ groups: DESK_GROUPS \} : \{\}\),/.test(CASE)
   // ERIC, 2026-09-22, the screenshot: folder.js sweeps every unclaimed page into the first group, so the desk filters
   // the array to the pages its groups name, and wears neither the clock nor the Working on line.
@@ -838,7 +845,7 @@ check('T32 the folder page: a desk gets four groups with six pages under Desk an
   && /<span class="status-pill\$\{c\.trade \? ' trade' : c\.self \? ' self' : ''\}" data-status>\$\{c\.trade \? 'TRADE DESK' : c\.self \? 'MY OWN CASE' : /.test(CASE)
   && /pill\.textContent = c\.trade \? 'TRADE DESK' : c\.self \? 'MY OWN CASE' : /.test(CASE)
   && /<h3>\$\{data\.trade \? 'Trade log' : data\.self \? 'Your notes' : 'Chat with the client'\}<\/h3>/.test(CASE)
-  && /placeholder: data\.self \? \(data\.trade \? 'Log a trade and why, or answer a question above…' : 'Add a note, or answer a question above…'\) : undefined,/.test(CASE)
+  && /placeholder: data\.self \? \(data\.trade \? 'Log a trade and why, or what you want the desk aiming at…' : 'Add a note, or answer a question above…'\) : undefined,/.test(CASE)
   && /if \(c\.trade\) \{ paintTradeOverview\(pane, c\); return; \}\n\s+if \(c\.self\) \{ paintSelfOverview\(pane, c\); return; \}/.test(CASE)
   && /function paintTradeOverview\(pane, c\) \{/.test(CASE)
   && /Nobody is on the other end\. The chat is your trade log, the uploads are your screenshots, and every reading is about your trading\. Three reads on a trading day at 7:00, 10:00 and noon Mountain, plus any Update you tap\. A screenshot posted to the log inside four minutes of a read is picked up by the next one; the 📷 on Ask reads it now\./.test(CASE)
@@ -918,7 +925,10 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
     && /\/\^trade\\\/\//.test(STORE)
     && /const TRADE_ID = 'demo-case-trade';/.test(SEED) && /set\(`cases\/\$\{TRADE_ID\}`, \{\n\s+self: true,\n\s+trade: true,/.test(SEED) && /clientName: 'Trade desk',/.test(SEED)
     && /## Your trades/.test(SEED) && /## Rules to hold/.test(SEED) && /## Setups/.test(SEED) && /analysis: TRADE_READING,/.test(SEED)
-    && /from: 'reading', role: 'question', ts: hours\(3\)/.test(SEED) && /replyTo: 'tq1'/.test(SEED)
+    // RE-PINNED 2026-09-22 (v5.1): the desk asks him nothing, so its log has no question row and no
+    // reply to one; a line of his own saying where he wants the account going stands where they did.
+    && !/role: 'question'/.test(seedDesk) && !/replyTo: 'tq1'|answerId: 'tr1'/.test(SEED)
+    && /Where I want this going: 3% a day on the account/.test(seedDesk)
     && /caseId: TRADE_ID, openedAt: days\(21\),/.test(SEED) && /picture: 'Holding above the opening range at 650/.test(SEED) && (seedDesk.match(/source: 'typed'/g) || []).length === 1
     && /set\('advisorKnowledge\/vwap', \{ term: 'VWAP', category: 'Indicator'/.test(SEED) && /tradeStanding: \{ text: '\$2,380\.00 · 14 trading days · 1\.75 pts under 3% a day'/.test(SEED)
     && !/trade\/feed|trade\/flights/.test(SEED) && !/trade\/feed|trade\/flights/.test(D)
@@ -930,7 +940,8 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
     && /answer \+= `\\n\\nLogged \$2,410\.00 as the balance for \$\{today\}\.`;/.test(D) && /so the screenshot's total was not logged over it\./.test(D)
     && /v\?\.self && !v\?\.trade\);/.test(D) && D.includes("if (c.trade) return fail(400, 'The trade desk cannot be pulled from.');") && D.includes(`if (old.trade) return fail(409, '${K.SAY.noNext}');`)
     && /if \(ts\?\.caseId === id\) store\.docs\.set\('trade\/settings', \{ \.\.\.ts, caseId: null \}\);/.test(D)
-    && /tradeStanding: v\.tradeStanding\?\.text \|\| ''/.test(D) && /const qs = c\.trade \? \[/.test(D)
+    // RE-PINNED 2026-09-22 (v5.1): the mirror no longer has a desk half of that list; it asks on his own case only.
+    && /tradeStanding: v\.tradeStanding\?\.text \|\| ''/.test(D) && /if \(c\.self && !c\.trade && !asked\) \{/.test(D) && !/const qs = c\.trade \? \[/.test(D)
     && !DASH.test(mirror) && !DASH.test(seedDesk),
     sentences.filter((s) => !mirror.includes(`'${s.replace(/'/g, "\\'")}'`)).join(' | '));
 }
@@ -944,12 +955,15 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
   const entry49 = (CL.match(/\{\n\s+\/\/ A BLANK BLOCK IS REFUSED[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v5.0): the desk makes a PDF; its own quiet entry.
   const entry50 = (CL.match(/\{\n\s+\/\/ THE DESK MAKES A PDF[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v5.1): the desk asks him nothing; its own quiet entry.
+  const entry51 = (CL.match(/\{\n\s+\/\/ THE DESK ASKS HIM NOTHING[\s\S]*?\n  \},/) || [''])[0];
   const cssDesk = CSS.slice(CSS.indexOf('/* THE TRADE DESK (Eric, 2026-09-22'), CSS.indexOf('/* The two doors on the shelf'));
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
-  // NEGATIVE CONTROL (run 2026-09-22, v5.0): '📄 link to a real PDF' reworded to '📄 link to a PDF' in the 5.0 entry made this read
-  //   FAIL  T36 both versions read 5.0 with the new tag, the 4.7, 4.8, 4.9 and 5.0 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 5.0 with the new tag, the 4.7, 4.8, 4.9 and 5.0 entries are quiet and admin-only in the desk\'s words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet\'s green or the demo\'s desk',
-    /export const VERSION = '5\.0';/.test(CL) && /const VERSION = '5\.0';/.test(W) && /const BUILD_TAG = 'v2026-09-22-desk-pdf';/.test(W)
+  // NEGATIVE CONTROL (run 2026-09-22, v5.1): 'no longer asks you anything' reworded to 'does not ask you anything' in the 5.1 entry made this read
+  //   FAIL  T36 both versions read 5.1 with the new tag, the 4.7 through 5.1 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
+  check('T36 both versions read 5.1 with the new tag, the 4.7 through 5.1 entries are quiet and admin-only in the desk\'s words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet\'s green or the demo\'s desk',
+    /export const VERSION = '5\.1';/.test(CL) && /const VERSION = '5\.1';/.test(W) && /const BUILD_TAG = 'v2026-09-22-desk-asks-nothing';/.test(W)
+    && /version: '5\.1',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry51) && /no longer asks you anything/.test(entry51) && /yours to dump into/.test(entry51) && !DASH.test(entry51)
     && /version: '4\.9',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry49) && /The trade desk reads again\./.test(entry49) && /non-whitespace text/.test(entry49) && !DASH.test(entry49)
     && /version: '5\.0',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry50) && /📄 link to a real PDF/.test(entry50) && /Uploads page under Reports/.test(entry50) && !DASH.test(entry50)
     && /version: '4\.8',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry48) && (entry48.match(/^\s+'[^\n]+',$/gm) || []).length >= 2
@@ -973,12 +987,12 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
   const desk = pages.filter((p) => keep({ self: true, trade: true }, DESK_PAGE_IDS, p)).map((p) => p.id);
   const medical = pages.filter((p) => keep({ fullAccess: true }, DESK_PAGE_IDS, p)).map((p) => p.id);
   const own = pages.filter((p) => keep({ self: true }, DESK_PAGE_IDS, p)).map((p) => p.id);
-  const gone = ['appeals', 'log', 'milestones', 'about', 'calldoc', 'agenda', 'summary', 'drafts'];
+  const gone = ['appeals', 'log', 'milestones', 'about', 'calldoc', 'agenda', 'summary', 'drafts', 'unanswered'];
   // NEGATIVE CONTROL (run 2026-09-22): `.concat(['log'])` on DESK_PAGE_IDS made this read
-  //   FAIL  T37 the desk's page filter RUNS: of the twenty-one pages the file declares, the desk keeps exactly the thirteen its four groups name, Overview first, and drops the appeal form, the work log, the milestones, About you, My doc, the agenda, the summary and the drafts; a medical case and his own case keep all twenty-one
-  check('T37 the desk\'s page filter RUNS: of the twenty-one pages the file declares, the desk keeps exactly the thirteen its four groups name, Overview first, and drops the appeal form, the work log, the milestones, About you, My doc, the agenda, the summary and the drafts; a medical case and his own case keep all twenty-one',
-    ids.length === 21 && DESK_GROUPS.length === 4 && DESK_PAGE_IDS.size === 13
-    && desk.length === 13 && desk.every((id) => DESK_PAGE_IDS.has(id)) && [...DESK_PAGE_IDS].every((id) => desk.includes(id))
+  //   FAIL  T37 the desk's page filter RUNS: of the twenty-one pages the file declares, the desk keeps exactly the twelve its three groups name, Overview first, and drops the appeal form, the work log, the milestones, About you, My doc, the agenda, the summary, the drafts and the unanswered list; a medical case and his own case keep all twenty-one
+  check('T37 the desk\'s page filter RUNS: of the twenty-one pages the file declares, the desk keeps exactly the twelve its three groups name, Overview first, and drops the appeal form, the work log, the milestones, About you, My doc, the agenda, the summary, the drafts and the unanswered list; a medical case and his own case keep all twenty-one',
+    ids.length === 21 && DESK_GROUPS.length === 3 && DESK_PAGE_IDS.size === 12
+    && desk.length === 12 && desk.every((id) => DESK_PAGE_IDS.has(id)) && [...DESK_PAGE_IDS].every((id) => desk.includes(id))
     && desk[0] === 'overview' && gone.every((id) => ids.includes(id) && !desk.includes(id))
     && medical.length === 21 && own.length === 21,
     JSON.stringify({ ids: ids.length, size: DESK_PAGE_IDS.size, desk }));
@@ -1089,6 +1103,37 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
     && /'\/js\/textpdf\.js',/.test(AUDIT)
     && /Make me a one page PDF of my rules to hold/.test(DRIVE) && /%PDF-1\.4/.test(DRIVE),
     JSON.stringify({ fin: fin.length, order: [fin.indexOf('harvestDocument(answer)'), fin.indexOf('harvestKeyTerms(env, hd.text'), fin.indexOf('fileDocument(env, id, hd.doc')] }));
+}
+
+// ---- T43: the desk asks him nothing (Eric, 2026-09-22: "Questions in the chat are unnecessary") -------
+{
+  const qFn = lift(ADV, 'function harvestQuestions(text) {');
+  const unFn = lift(ADV, 'function unansweredFromChat(rows) {');
+  const secFn = lift(ADV, 'function sectionMatch(text, name) {');
+  const flatLine = grab(ADV, /const flatText = [^\n]+/);
+  const api = new Function(`${secFn}\n${flatLine}\n${qFn}\n${unFn}\nreturn { harvestQuestions, unansweredFromChat };`)();
+  const reading = grab(SEED, /const TRADE_READING = `[\s\S]*?`;/);
+  const withSection = 'body\n\n## Questions for you\n- What size were you working with on SPY that morning?\n';
+  const rows = [
+    { id: 'q1', data: { role: 'question', text: 'Why no stop on the AMD calls?', ts: new Date('2026-09-20T15:00:00Z') } },
+    { id: 'q2', data: { role: 'question', text: 'Answered one', ts: new Date('2026-09-20T15:00:00Z'), answeredAt: new Date() } },
+    { id: 'm1', data: { role: 'admin', text: 'AAPL long 40 shares.' } },
+  ];
+  const finish = lift(ADV, 'async function finishAnalysis(env, kind, id, ctx, message) {');
+  // NEGATIVE CONTROL (run 2026-09-22): the `!ctx.trade` dropped from the askInChat gate made this read
+  //   FAIL  T43 the desk asks him nothing: the harvest still reads a question section wherever one appears, so the gate is what protects the log, and the gate is on the desk at the one site that writes into it; the desk's unanswered list is emptied rather than carried; the seeded desk reading carries no question section; the panel's chat hint is off the desk; the folder has no Track row and the demo mirror asks on his own case only
+  check('T43 the desk asks him nothing: the harvest still reads a question section wherever one appears, so the gate is what protects the log, and the gate is on the desk at the one site that writes into it; the desk\'s unanswered list is emptied rather than carried; the seeded desk reading carries no question section; the panel\'s chat hint is off the desk; the folder has no Track row and the demo mirror asks on his own case only',
+    api.harvestQuestions(withSection).length === 1 && api.harvestQuestions(reading).length === 0
+    && !/## Questions for you/.test(reading)
+    && api.unansweredFromChat(rows).length === 1 && api.unansweredFromChat(rows)[0].ask === 'Why no stop on the AMD calls?'
+    && /if \(ctx\.self && !ctx\.trade && kind === 'case'\) \{\n\s+await askInChat\(env, id, harvestQuestions\(finalText\), rows\)/.test(finish)
+    && /if \(ctx\.trade\) \{\n\s+un\.unanswered = \[\];\n\s+\} else if \(ctx\.self\) \{/.test(finish)
+    && finish.indexOf('const un = harvestUnanswered(tr.text, p.unanswered);') < finish.indexOf('if (ctx.trade) {\n    un.unanswered = [];')
+    && /\$\{self && !trade && normTitle\(pg\.title\) === normTitle\('Questions for you'\)/.test(PANEL)
+    && !/'track'/.test(grab(CASE, /const DESK_GROUPS = \[[\s\S]*?\n\];/))
+    && /if \(c\.self && !c\.trade && !asked\) \{/.test(D)
+    && /the desk asks him nothing|asks him nothing|no Track row/.test(CASE),
+    JSON.stringify({ found: api.harvestQuestions(withSection), inReading: api.harvestQuestions(reading).length, un: api.unansweredFromChat(rows).length }));
 }
 
 const fails = results.filter((r) => !r.pass).length;

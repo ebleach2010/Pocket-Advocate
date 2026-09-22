@@ -2008,11 +2008,10 @@ export function demoApi(role, store) {
           // each, once (2026-09-03). Mirrors askInChat in the Worker.
           const c = store.docs.get(`cases/${cid}`) || {};
           const asked = [...store.docs.keys()].some((k) => k.startsWith(`cases/${cid}/chat/`) && store.docs.get(k)?.role === 'question');
-          if (c.self && !asked) {
-            const qs = c.trade ? [
-              'What size were you working with on SPY, and what was the loss at the stop before you moved it?',
-              'Did you check the bid to ask spread on the AMD calls before the order went in?',
-            ] : [
+          // Never on the desk (Eric, 2026-09-22): the trade log is his to
+          // write in, so the reading puts nothing into it.
+          if (c.self && !c.trade && !asked) {
+            const qs = [
               'What time did the tremor start today, and is it the right hand only?',
               'How many hours did you sleep last night, and did you wake with a headache?',
             ];
