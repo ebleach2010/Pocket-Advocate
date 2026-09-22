@@ -541,6 +541,15 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   // The answer rows as they are painted right now, one string each, so a poll
   // that changed nothing repaints nothing. See renderQa.
   let qaDrawn = [];
+  // THE DESK MAKES A PDF (2026-09-22): the file an answer filed is a link
+  // under the answer, and the Uploads page is told once when a new one
+  // lands so it lists the file without a reload. The first paint primes the
+  // set without telling anyone: those files were already there.
+  const docsSeen = new Set();
+  let docsPrimed = false;
+  const docLink = (q) => (q.doc?.url
+    ? `<p class="ask-doc"><a href="${esc(q.doc.url)}" target="_blank" rel="noopener" download="${esc(q.doc.name || 'document.pdf')}">📄 ${esc(q.doc.name || 'document.pdf')}</a></p>`
+    : '');
   /**
    * A question is judged by its heartbeat, not its age (2026-09-07). The
    * answer rides the batch now, and every poll that finds it still running
@@ -569,6 +578,12 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     // Once the server row for the just-asked question exists, drop the local
     // pending copy.
     if (localQ && qa.some((q) => q.question === localQ)) localQ = null;
+    for (const q of qa) {
+      if (!q.doc?.path || docsSeen.has(q.doc.path)) continue;
+      docsSeen.add(q.doc.path);
+      if (docsPrimed) document.dispatchEvent(new CustomEvent('pa-saved-file'));
+    }
+    docsPrimed = true;
     // The route hands these back newest first now, so the three to show are the
     // first three, put back into the order a conversation reads in.
     const rows = qa.slice(0, 3).slice().reverse().map((q) => `
@@ -578,7 +593,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           ? '<span class="dim">No answer came back. Ask it again.</span>'
           : q.status === 'running'
           ? `<span class="dim small">thinking…${qaLong(q) ? ' A long answer takes a few minutes and lands on its own.' : ''}</span>`
-          : md(q.answer || '')}</div>
+          : md(q.answer || '')}${q.status === 'running' ? '' : docLink(q)}</div>
       </div>`);
     if (localQ) rows.push(`
       <div class="advisor-turn">

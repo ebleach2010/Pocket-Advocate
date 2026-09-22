@@ -22,6 +22,10 @@
 
 import { patchDoc, listDocs, tryGet, READ_FAILED } from './firestore.js';
 import { notifyUser } from './push.js';
+// The desk makes a PDF (2026-09-22): the file an answer may carry, written
+// by the shared writer and put where the Uploads page already looks.
+import { BUCKET, putFile, patchObjectMeta } from './storage.js';
+import { textPdf } from '../public/js/textpdf.js';
 import {
   tradeMetrics, TARGET_DAILY, PROJECTION_MIN_DAYS, DEFAULT_START_CENTS,
 } from '../public/js/trade-math.js';
@@ -362,7 +366,7 @@ You never make a trade for him and you never tell him to make one. A setup is wh
 // question instructions the medical cases use, so it is the last word.
 export const TRADE_ASK_NOTE = `
 
-THIS IS THE TRADE DESK, NOT A MEDICAL CASE. The question instructions above were written for a client's case; on this desk read them this way. Answer his question about the market, a ticker, a setup or a position in plain English, under 250 words unless the question itself demands more. Prices come from the desk note in the material; use web search for the news and the calendar. Give the levels, the risk and what to watch next, and never an order. When you list Key terms, the Category is one of Setup, Indicator, Level, Order, Risk, Options, Market, Instrument. There is no client, no fee and no call to get ready for, so nothing about readiness applies. If the screenshot attached to this question shows his broker's portfolio total, end the answer with exactly one line in this form and nothing after it: PORTFOLIO TOTAL: $1,234.56 (2026-09-22), the figure from the screenshot and today's date; never from memory and never from an earlier screenshot. Without such a screenshot, no such line.`;
+THIS IS THE TRADE DESK, NOT A MEDICAL CASE. The question instructions above were written for a client's case; on this desk read them this way. Answer his question about the market, a ticker, a setup or a position in plain English, under 250 words unless the question itself demands more. Prices come from the desk note in the material; use web search for the news and the calendar. Give the levels, the risk and what to watch next, and never an order. When you list Key terms, the Category is one of Setup, Indicator, Level, Order, Risk, Options, Market, Instrument. There is no client, no fee and no call to get ready for, so nothing about readiness applies. If the screenshot attached to this question shows his broker's portfolio total, end the answer's text with exactly one line in this form, with nothing after it but the document block if there is one: PORTFOLIO TOTAL: $1,234.56 (2026-09-22), the figure from the screenshot and today's date; never from memory and never from an earlier screenshot. Without such a screenshot, no such line. THE DOCUMENT HE ASKED FOR: when he asks for a document to keep, a PDF, a sheet, a playbook, a checklist or a write-up, or when the answer is a document by nature, put the whole document inside a block that opens with <document title="the title"> on its own line and closes with </document> on its own line, as the very last thing in the answer, after the PORTFOLIO TOTAL line if there is one. Inside it: plain paragraphs, a line starting with # for a heading, a line starting with - for a bullet, no tables, no other markup and no fence. One document per answer, and the answer itself stays short and says what the document holds; it becomes a PDF on his Uploads page. Without such a request, no block.`;
 
 // ---- small helpers ------------------------------------------------------------
 const rid = (p) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -720,4 +724,59 @@ export function portfolioLineOf(text) {
   const asOf = m[2];
   if (!Number.isInteger(cents) || cents < 0 || cents >= 1e9 || !realDate(asOf)) return { text: stripped, portfolio: null };
   return { text: stripped, portfolio: { totalCents: cents, asOf } };
+}
+
+// ---- a question's answer: the document it may carry ---------------------------------
+//
+// Eric, 2026-09-22: "The trading desk should be able to generate PDFs just
+// like LLM in a chat." The desk writes the document inside one tagged block
+// at the end of its answer; the block is cut out here, made into a PDF by
+// the shared writer, put in the case's report folder with the token the
+// browser SDK would have stamped, and the answer carries the link. Only the
+// descriptor rides the answer row, never the body, because a row is capped
+// at a megabyte.
+export const DOC_TITLE_MAX = 120;
+export const DOC_BODY_MAX = 30_000;
+export const DOC_DEFAULT_TITLE = 'Trade desk document';
+const DOC_BLOCK_RE = /(?:```[a-z]*\n)?[ \t]*<document(?:\s+title="([^"\n]*)")?\s*>[ \t]*\n?([\s\S]*?)\n?[ \t]*<\/document>[ \t]*(?:\n```)?/i;
+const DOC_OPEN_RE = /(?:```[a-z]*\n)?[ \t]*<document(?:\s+title="([^"\n]*)")?\s*>[ \t]*\n?/i;
+
+/** The one document block an answer may end with, cut out and parsed; no block leaves the text untouched, an unclosed one loses its tag and keeps its words. Pure. */
+export function harvestDocument(text) {
+  const t = String(text || '');
+  const m = t.match(DOC_BLOCK_RE);
+  if (m) {
+    const title = stripDashes(m[1] || '').replace(/\s+/g, ' ').trim().slice(0, DOC_TITLE_MAX) || DOC_DEFAULT_TITLE;
+    const body = stripDashes(m[2] || '').trim().slice(0, DOC_BODY_MAX);
+    const rest = t.replace(m[0], '').trim();
+    return { text: rest, doc: body ? { title, body } : null, truncated: false };
+  }
+  const o = t.match(DOC_OPEN_RE);
+  if (o) return { text: t.replace(o[0], '').trim(), doc: null, truncated: true };
+  return { text: t, doc: null, truncated: false };
+}
+
+/** A file name from a title: the same characters a browser upload keeps, at most sixty of them. */
+export function safeDocName(title) {
+  return String(title || '').replace(/[^\w.\- ]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || DOC_DEFAULT_TITLE;
+}
+
+/** The document as a PDF in the case's report folder, with its token, so the link and the Uploads row open it like any upload. Returns the descriptor. */
+export async function fileDocument(env, caseId, doc, { now = Date.now() } = {}) {
+  const dateKey = new Intl.DateTimeFormat('en-CA', { timeZone: TRADE_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now));
+  const bytes = textPdf(String(doc.body || '').split('\n'), {
+    title: doc.title,
+    footer: `${DESK_NAME} · ${dateKey} · Ideas, not orders. Every trade is your decision.`,
+  });
+  const put = await putFile(env, `cases/${caseId}/report/${now}-${safeDocName(doc.title)}.pdf`, bytes, 'application/pdf');
+  // Not swallowed: a file without its token is an unreadable link.
+  const token = crypto.randomUUID();
+  await patchObjectMeta(env, put.path, { firebaseStorageDownloadTokens: token, paName: `${safeDocName(doc.title)}.pdf` });
+  return {
+    name: put.name || `${safeDocName(doc.title)}.pdf`,
+    path: put.path,
+    size: put.size || bytes.byteLength,
+    at: new Date(now),
+    url: `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/${encodeURIComponent(put.path)}?alt=media&token=${token}`,
+  };
 }

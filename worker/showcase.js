@@ -21,6 +21,9 @@
 import { getDoc, patchDoc, queryDocs, batchCreate, batchDelete, listDocs } from './firestore.js';
 import { BUCKET, putFile, patchObjectMeta, listFiles, deleteFile } from './storage.js';
 import { markPending } from './advisor.js';
+// The PDF writer moved to a shared module (2026-09-22): the trade desk files
+// documents with it and the demo builds the same file in the browser.
+import { textPdf } from '../public/js/textpdf.js';
 
 export const JOE = {
   name: 'Joe Bloe',
@@ -298,68 +301,6 @@ export function docsFor(now) {
       ],
     },
   ];
-}
-
-/**
- * A text PDF, written by hand: Letter pages, Helvetica, a bold line for any
- * line starting "# ", wrapped at about 95 characters, as many pages as it
- * takes. No library: a Worker has no filesystem and the shape of a text PDF
- * is small enough to write out. Returns bytes.
- */
-export function textPdf(lines) {
-  const W = 612;
-  const H = 792;
-  const margin = 54;
-  const lead = 14;
-  const size = 10.5;
-  const perPage = Math.floor((H - 2 * margin) / lead);
-  const ascii = (s) => String(s)
-    .replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
-    .replace(/µ/g, 'u').replace(/[^\x20-\x7e]/g, '?');
-  const esc = (s) => s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-  const wrapped = [];
-  for (const raw of lines) {
-    const bold = String(raw).startsWith('# ');
-    const text = ascii(bold ? String(raw).slice(2) : raw);
-    if (!text.trim()) { wrapped.push({ t: '', bold: false }); continue; }
-    let line = '';
-    for (const w of text.split(' ')) {
-      if ((line ? `${line} ${w}` : w).length > 95 && line) { wrapped.push({ t: line, bold }); line = w; } else line = line ? `${line} ${w}` : w;
-    }
-    if (line) wrapped.push({ t: line, bold });
-  }
-  const pages = [];
-  for (let i = 0; i < wrapped.length; i += perPage) pages.push(wrapped.slice(i, i + perPage));
-  if (!pages.length) pages.push([{ t: '', bold: false }]);
-  const objs = [];
-  const add = (s) => { objs.push(s); return objs.length; };
-  const catalog = add('');
-  const pagesObj = add('');
-  const f1 = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
-  const f2 = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
-  const pageIds = [];
-  for (const pg of pages) {
-    let y = H - margin;
-    const parts = ['BT'];
-    for (const l of pg) {
-      parts.push(`${l.bold ? '/F2' : '/F1'} ${size} Tf 1 0 0 1 ${margin} ${y.toFixed(1)} Tm (${esc(l.t)}) Tj`);
-      y -= lead;
-    }
-    parts.push('ET');
-    const stream = parts.join('\n');
-    const content = add(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
-    pageIds.push(add(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> >> /Contents ${content} 0 R >>`));
-  }
-  objs[catalog - 1] = `<< /Type /Catalog /Pages ${pagesObj} 0 R >>`;
-  objs[pagesObj - 1] = `<< /Type /Pages /Kids [${pageIds.map((p) => `${p} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
-  let out = '%PDF-1.4\n%âãÏÓ\n';
-  const offsets = [];
-  objs.forEach((body, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${body}\nendobj\n`; });
-  const xref = out.length;
-  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
-  out += `trailer\n<< /Size ${objs.length + 1} /Root ${catalog} 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  // Every character above is one byte in Latin-1, so string offsets are byte offsets.
-  return Uint8Array.from(out, (c) => c.charCodeAt(0) & 0xff);
 }
 
 /** The milestones feed, oldest first: [days, hour, kind, label, colour, what]. */

@@ -266,6 +266,41 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The desk makes a PDF (2026-09-22, v5.0)
+
+Eric: "The trading desk should be able to generate PDFs just like LLM in
+a chat." The desk's ask note gains the rule: asked for a document to keep,
+it writes the whole document inside one tagged block at the very end of
+its answer. `public/js/textpdf.js` (new, served publicly, no library) is
+the hand-rolled writer moved out of the showcase and grown: a title line,
+bold headings, bullets with a hanging indent, Helvetica metrics for the
+wrap, WinAnsi for Latin-1 and the curly quotes, a dash a hyphen, a footer
+with the page count, and one invariant, every character one byte, so the
+offsets are right by construction. `worker/trade-desk.js` gains
+`harvestDocument` (the block cut out, fail-safe), `safeDocName` and
+`fileDocument` (the PDF put in the case's report folder with the token the
+browser SDK would have stamped and the display name, the descriptor back).
+`finishQuestion` cuts the block before the term harvest, files it after
+the portfolio line, appends "Filed as <name> on Uploads." and writes `doc`
+on the answer row; a file that could not be made keeps the words in the
+answer. The panel hangs a 📄 link under the answer and tells the Uploads
+page once when a new one lands. The demo builds a real file with the same
+writer on a document question and files it as a data URL.
+
+trade.mjs T39 (harvestDocument RUNS), T40 (the writer RUNS: offsets,
+stream lengths, the fonts, the bullet, the bytes, the footer, the served
+module clean), T41 (fileDocument RUNS against the world: the path, the
+bytes, the token and the name patched, the descriptor, a plain name from
+an odd title, a failed put), T42 (the finish, the panel, the stylesheet,
+the demo, the showcase, the audit and the drive pinned), each with a
+control recorded. Re-pins with dated notes: T8 (the document rule), T12
+(the import block), T35 (stat113 and the gate), T36 (5.0); showcase.mjs
+X2 to the shared module; askflight.mjs AF4 (`doc` in the write and the
+mask); charge.mjs CH7 (stat113). The audit's EXTRA list names the served
+module. drive-trade.mjs section F asks for a one page PDF, reads the link,
+fetches its bytes for the header and the trailer, and finds the file on
+Uploads without a reload.
+
 ### A blank block is refused (2026-09-22, v4.9)
 
 Eric, the desk's Read page on his phone: "Analysis failed: system: text

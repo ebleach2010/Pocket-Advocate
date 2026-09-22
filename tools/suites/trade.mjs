@@ -45,6 +45,8 @@ const NOSIDE = f('tools/drives/drive-nosideways.mjs');
 const CSS = f('public/css/admin.css');
 const DRIVE = f('tools/drives/drive-trade.mjs');
 const math = await import('../../public/js/trade-math.js');
+// The PDF writer (2026-09-22): the real one, imported, so a filed document in a world is real bytes.
+const pdf = await import('../../public/js/textpdf.js');
 
 const results = [];
 const check = (name, cond, detail = '') => {
@@ -72,22 +74,24 @@ const strip = (src) => src.replace(/^import [\s\S]*?from '[^']+';\n/gm, '').repl
 
 // ---- the two modules, evaluated with their imports replaced ---------------------
 const NAMES = ['patchDoc', 'deleteDoc', 'listDocs', 'tryGet', 'READ_FAILED', 'readFailedError', 'notifyUser',
-  'markPending', 'diagLog', 'isTradingDay', 'tradeMetrics', 'chartSeries', 'TARGET_DAILY', 'PROJECTION_MIN_DAYS', 'DEFAULT_START_CENTS', 'fetch', 'crypto'];
+  'markPending', 'diagLog', 'isTradingDay', 'tradeMetrics', 'chartSeries', 'TARGET_DAILY', 'PROJECTION_MIN_DAYS', 'DEFAULT_START_CENTS', 'fetch', 'crypto',
+  'putFile', 'patchObjectMeta', 'BUCKET', 'textPdf'];
 const EXPORTS = ['TRADE_MODEL', 'TRADE_EFFORT', 'TRADE_TZ', 'MARKET_OPEN', 'MARKET_CLOSE', 'STRONG_PROFIT_LOW', 'WATCHLIST_MAX', 'DEFAULT_WATCHLIST',
   'TRADE_WEB_SEARCH_TOOL', 'TRADE_CATEGORIES', 'DESK_NAME', 'SAY', 'SETTINGS_PATH', 'STATE_PATH', 'PLAYS', 'BALANCES',
   'TRADE_INSTRUCTIONS', 'TRADE_CONTRACT', 'TRADE_ASK_NOTE', 'realDate', 'dollars', 'stripDashes', 'sectionMatch', 'mtParts', 'mtInstant', 'mtLabel',
   'KEY_RE', 'keyTail', 'resolveKey', 'watchlistOf', 'startOf', 'marketSnapshot', 'deskMetrics', 'standingLine', 'tradeStanding', 'refreshStanding',
   'tradeNote', 'validPlay', 'validPortfolio', 'harvestPlays', 'recordPlays', 'recordPortfolio', 'scanVerdict', 'pushStrongPlay', 'fileDeskReading', 'portfolioLineOf',
   'SCAN_SLOTS', 'EARLY_CLOSE_SLOTS', 'SCAN_WINDOW_MIN', 'TradeError', 'slotsFor', 'slotKeyFor', 'nextSlotAfter', 'scanDue', 'maybeTradeScan',
-  'tradeOpen', 'tradeState', 'tradePanelBlock', 'tradeBalance', 'tradeSettings', 'tradePlay', 'tradeRoute'];
+  'tradeOpen', 'tradeState', 'tradePanelBlock', 'tradeBalance', 'tradeSettings', 'tradePlay', 'tradeRoute',
+  'harvestDocument', 'safeDocName', 'fileDocument', 'DOC_TITLE_MAX', 'DOC_BODY_MAX', 'DOC_DEFAULT_TITLE'];
 const READ_FAILED = Symbol('read failed');
 const BODY = `${strip(TD)}\n${strip(T)}`;
 
 /** A world: recorders for every write, fixtures for every read, a fake market. */
 function world(over = {}) {
   const w = {
-    docs: new Map(), patches: [], deletes: [], pushes: [], diag: [], pending: [], fetches: [],
-    claim: true, listed: {}, reads: 0, fetchStatus: 200, ...over,
+    docs: new Map(), patches: [], deletes: [], pushes: [], diag: [], pending: [], fetches: [], puts: [], metas: [],
+    claim: true, listed: {}, reads: 0, fetchStatus: 200, putFails: false, ...over,
   };
   const deps = {
     patchDoc: async (env, path, data, opts) => {
@@ -114,6 +118,15 @@ function world(over = {}) {
       return { ok: w.fetchStatus === 200, status: w.fetchStatus, json: async () => body };
     },
     crypto: { randomUUID: () => 'uuid-new-desk' },
+    // The storage half the filed document needs (2026-09-22): a recorder that hands back what putFile does.
+    putFile: async (env, path, bytes, contentType) => {
+      if (w.putFails) throw new Error('put failed');
+      w.puts.push({ path, bytes, contentType });
+      return { name: path.split('/').pop().replace(/^\d{10,}-/, ''), path, size: bytes.byteLength, contentType, at: new Date().toISOString() };
+    },
+    patchObjectMeta: async (env, path, custom) => { w.metas.push({ path, custom }); return { path, custom }; },
+    BUCKET: 'bucket.appspot.com',
+    textPdf: pdf.textPdf,
     ...(over.deps || {}),
   };
   const api = new Function('deps', `const { ${NAMES.join(', ')} } = deps;\n${BODY}\nreturn { ${EXPORTS.join(', ')} };`)(deps);
@@ -286,6 +299,9 @@ check('T5 an early close gets the two morning slots, a holiday none, an ordinary
     && /the differential is the Plays section below/.test(K.TRADE_CONTRACT) && /one section here, Rules to hold/.test(K.TRADE_CONTRACT)
     && /Never take a total from memory or from an earlier screenshot/.test(K.TRADE_CONTRACT)
     && /PORTFOLIO TOTAL: \$1,234\.56 \(2026-09-22\)/.test(K.TRADE_ASK_NOTE) && /never an order/.test(K.TRADE_ASK_NOTE)
+    // The document rule (2026-09-22): the tagged block, last, one per answer, and none unasked.
+    && /<document title="the title">/.test(K.TRADE_ASK_NOTE) && /<\/document>/.test(K.TRADE_ASK_NOTE) && /Without such a request, no block\./.test(K.TRADE_ASK_NOTE)
+    && /with nothing after it but the document block if there is one/.test(K.TRADE_ASK_NOTE)
     && !DASH.test(K.TRADE_INSTRUCTIONS) && !DASH.test(K.TRADE_CONTRACT) && !DASH.test(K.TRADE_ASK_NOTE),
     `instructions ${K.TRADE_INSTRUCTIONS.length} chars, heads ${idx.join(',')}`);
 }
@@ -414,7 +430,7 @@ check('T12 the reading on the desk: the brief is three-way from the policy, the 
   && /effort: passEffort, auto, skipMedia, self, trade, model: turn\.model,/.test(ADV)
   && /&& !\(turnPolicy\.getStore\(\)\?\.self && priorCasesNote\(state\?\.data\)\)\n(?:\s*\/\/[^\n]*\n)*\s+&& !turnPolicy\.getStore\(\)\?\.trade\) \{/.test(ADV)
   && /if \(auto && !skipMedia && prior && !media\.blocks\.length && !media\.carry\.length\n(?:\s*\/\/[^\n]*\n)*\s+&& !turnPolicy\.getStore\(\)\?\.trade\n/.test(ADV)
-  && /^import \{\n\s+TRADE_MODEL, TRADE_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,\n\s+tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,\n\} from '\.\/trade-desk\.js';/m.test(ADV)
+  && /^import \{\n\s+TRADE_MODEL, TRADE_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,\n\s+tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,\n\s+harvestDocument, fileDocument,\n\} from '\.\/trade-desk\.js';/m.test(ADV)
   && !/from '\.\/advisor\.js'/.test(TD));
 
 // ---- T13 to T16: the harvest and the records, run ----------------------------------
@@ -896,9 +912,9 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
   //   FAIL  T35 the portal page and its module are gone and no admin page links them; the six pages ask for the stylesheet at its new version; the audit proves the desk's module 404s to a stranger and no longer names the page; the sideways drive walks the desk's case; the asset gate covers admin-desk.js and not trade.js; the demo seeds the desk as a self and trade case with its log, its reading, its plays with their setups, typed balances, two trading terms and its cover, mirrors open with the open desk's id, the state, the desk's block, the trading half of the glossary, the Logged sentence, the refusals and the clearing on delete, keeps its desk off the client half, and refuses with the Worker's exact sentences
   check('T35 the portal page and its module are gone and no admin page links them; the six pages ask for the stylesheet at its new version; the audit proves the desk\'s module 404s to a stranger and no longer names the page; the sideways drive walks the desk\'s case; the asset gate covers admin-desk.js and not trade.js; the demo seeds the desk as a self and trade case with its log, its reading, its plays with their setups, typed balances, two trading terms and its cover, mirrors open with the open desk\'s id, the state, the desk\'s block, the trading half of the glossary, the Logged sentence, the refusals and the clearing on delete, keeps its desk off the client half, and refuses with the Worker\'s exact sentences',
     !has('public/admin-trade.html') && !has('public/js/admin-trade.js')
-    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat112/.test(f(`public/${p}.html`)))
+    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat113/.test(f(`public/${p}.html`)))
     && /'\/js\/admin-desk\.js',/.test(AUDIT) && !/admin-trade/.test(AUDIT) && /'\/admin-case\.html\?id=demo-case-trade&demo=admin'/.test(NOSIDE) && !/admin-trade/.test(NOSIDE)
-    && !!ADMIN_ASSET && ADMIN_ASSET.test('/js/admin-desk.js') && ADMIN_ASSET.test('/js/advisor.js') && !ADMIN_ASSET.test('/js/trade.js') && !ADMIN_ASSET.test('/js/trade-math.js')
+    && !!ADMIN_ASSET && ADMIN_ASSET.test('/js/admin-desk.js') && ADMIN_ASSET.test('/js/advisor.js') && !ADMIN_ASSET.test('/js/trade.js') && !ADMIN_ASSET.test('/js/trade-math.js') && !ADMIN_ASSET.test('/js/textpdf.js')
     && /\/\^trade\\\/\//.test(STORE)
     && /const TRADE_ID = 'demo-case-trade';/.test(SEED) && /set\(`cases\/\$\{TRADE_ID\}`, \{\n\s+self: true,\n\s+trade: true,/.test(SEED) && /clientName: 'Trade desk',/.test(SEED)
     && /## Your trades/.test(SEED) && /## Rules to hold/.test(SEED) && /## Setups/.test(SEED) && /analysis: TRADE_READING,/.test(SEED)
@@ -926,13 +942,16 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
   const entry48 = (CL.match(/\{\n\s+\/\/ THE DESK SHOWS ONLY ITS OWN FURNITURE[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v4.9): the blank-block push carries its own quiet entry.
   const entry49 = (CL.match(/\{\n\s+\/\/ A BLANK BLOCK IS REFUSED[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v5.0): the desk makes a PDF; its own quiet entry.
+  const entry50 = (CL.match(/\{\n\s+\/\/ THE DESK MAKES A PDF[\s\S]*?\n  \},/) || [''])[0];
   const cssDesk = CSS.slice(CSS.indexOf('/* THE TRADE DESK (Eric, 2026-09-22'), CSS.indexOf('/* The two doors on the shelf'));
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
-  // NEGATIVE CONTROL (run 2026-09-22, v4.9): 'The trade desk reads again.' reworded to 'The trade desk is reading again.' in the 4.9 entry made this read
-  //   FAIL  T36 both versions read 4.9 with the new tag, the 4.7, 4.8 and 4.9 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 4.9 with the new tag, the 4.7, 4.8 and 4.9 entries are quiet and admin-only in the desk\'s words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet\'s green or the demo\'s desk',
-    /export const VERSION = '4\.9';/.test(CL) && /const VERSION = '4\.9';/.test(W) && /const BUILD_TAG = 'v2026-09-22-desk-blank-block';/.test(W)
+  // NEGATIVE CONTROL (run 2026-09-22, v5.0): '📄 link to a real PDF' reworded to '📄 link to a PDF' in the 5.0 entry made this read
+  //   FAIL  T36 both versions read 5.0 with the new tag, the 4.7, 4.8, 4.9 and 5.0 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
+  check('T36 both versions read 5.0 with the new tag, the 4.7, 4.8, 4.9 and 5.0 entries are quiet and admin-only in the desk\'s words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet\'s green or the demo\'s desk',
+    /export const VERSION = '5\.0';/.test(CL) && /const VERSION = '5\.0';/.test(W) && /const BUILD_TAG = 'v2026-09-22-desk-pdf';/.test(W)
     && /version: '4\.9',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry49) && /The trade desk reads again\./.test(entry49) && /non-whitespace text/.test(entry49) && !DASH.test(entry49)
+    && /version: '5\.0',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry50) && /📄 link to a real PDF/.test(entry50) && /Uploads page under Reports/.test(entry50) && !DASH.test(entry50)
     && /version: '4\.8',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry48) && (entry48.match(/^\s+'[^\n]+',$/gm) || []).length >= 2
     && /only its own pages/.test(entry48) && /opens on Overview/.test(entry48) && /work clock/.test(entry48) && /Working on line/.test(entry48) && !DASH.test(entry48)
     && /version: '4\.7',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry) && (entry.match(/^\s+'[^\n]+',$/gm) || []).length >= 2
@@ -963,6 +982,113 @@ check('T33 the panel: it takes the desk\'s flag, heads itself Trade desk with Pa
     && desk[0] === 'overview' && gone.every((id) => ids.includes(id) && !desk.includes(id))
     && medical.length === 21 && own.length === 21,
     JSON.stringify({ ids: ids.length, size: DESK_PAGE_IDS.size, desk }));
+}
+
+// ---- T39 to T42: the desk makes a PDF (Eric, 2026-09-22: "generate PDFs just like LLM in a chat") --------
+{
+  const dash = String.fromCharCode(0x2014);
+  const body = 'Every entry has a stop.\n\n# Sizing\n- Size to the stop, never to the target.\n- No adds to a loser.';
+  const h = K.harvestDocument(`Here is the sheet.\n\n<document title="Rules to hold ${dash} v2">\n${body}\n</document>`);
+  const none = K.harvestDocument('Just an answer.\n\nPORTFOLIO TOTAL: $2,410.00 (2026-09-22)');
+  const untitled = K.harvestDocument('<document>\nA line.\n</document>');
+  const open = K.harvestDocument('Answer.\n\n<document title="Half">\nA line that never closes.');
+  const fenced = K.harvestDocument('Sheet.\n\n```\n<document title="Fenced">\nInside.\n</document>\n```');
+  const after = K.harvestDocument('Answer.\n\nPORTFOLIO TOTAL: $2,410.00 (2026-09-22)\n\n<document title="Plan">\nThe plan.\n</document>');
+  const pf = K.portfolioLineOf(after.text);
+  const long = K.harvestDocument(`<document title="Long">\n${'x'.repeat(40_000)}\n</document>`);
+  const empty = K.harvestDocument('<document title="Empty">\n\n</document>');
+  // NEGATIVE CONTROL (run 2026-09-22): the block left in the text (`const rest = t.trim();`) made this read
+  //   FAIL  T39 harvestDocument RUNS: the block is cut out whole and the answer keeps its words, the title loses its dash, the body keeps its headings and bullets, no block leaves the text untouched, no title gets the default, an unclosed block loses its tag and keeps its words, a fenced block is tolerated, a block after the PORTFOLIO line still lets the line parse, a 40k body is cut to 30k, and an empty block is no document
+  check('T39 harvestDocument RUNS: the block is cut out whole and the answer keeps its words, the title loses its dash, the body keeps its headings and bullets, no block leaves the text untouched, no title gets the default, an unclosed block loses its tag and keeps its words, a fenced block is tolerated, a block after the PORTFOLIO line still lets the line parse, a 40k body is cut to 30k, and an empty block is no document',
+    h.text === 'Here is the sheet.' && /^Rules to hold/.test(h.doc?.title || '') && !DASH.test(h.doc?.title || '') && h.doc?.body === body && !h.truncated
+    && none.doc === null && none.text === 'Just an answer.\n\nPORTFOLIO TOTAL: $2,410.00 (2026-09-22)' && !none.truncated
+    && untitled.doc?.title === K.DOC_DEFAULT_TITLE && untitled.doc?.body === 'A line.'
+    && open.doc === null && open.truncated === true && open.text === 'Answer.\n\nA line that never closes.'
+    && fenced.doc?.title === 'Fenced' && fenced.doc?.body === 'Inside.' && fenced.text === 'Sheet.'
+    && after.doc?.title === 'Plan' && pf.portfolio?.totalCents === 241000 && pf.text === 'Answer.'
+    && long.doc?.body.length === K.DOC_BODY_MAX && K.DOC_BODY_MAX === 30_000 && K.DOC_TITLE_MAX === 120
+    && empty.doc === null && empty.text === '',
+    JSON.stringify({ text: h.text, title: h.doc?.title, open: open.text, pf: pf.text }));
+}
+
+{
+  const e9 = String.fromCharCode(0xE9);
+  const rq = String.fromCharCode(0x2019);
+  const mid = String.fromCharCode(0xB7);
+  const em = String.fromCharCode(0x2014);
+  const bullet = String.fromCharCode(0x95);
+  const bytes = pdf.textPdf(['Intro line.', '', '# Sizing', `- Caf${e9} ${rq}quote${rq} ${mid} and ${em} dash and an emoji ${String.fromCodePoint(0x1F4C8)} gone`,
+    ...Array.from({ length: 90 }, (_, i) => `Line ${i} ` + 'word '.repeat(28))], { title: 'Rules to hold', footer: `Trade desk ${mid} 2026-09-22 ${mid} Ideas, not orders.` });
+  const s = Buffer.from(bytes).toString('latin1');
+  const xrefAt = Number((s.match(/startxref\n(\d+)\n/) || [])[1]);
+  const entries = [...s.slice(xrefAt).matchAll(/(\d{10}) 00000 n/g)].map((x) => Number(x[1]));
+  const offsetsOk = entries.length > 0 && entries.every((off, i) => s.slice(off).startsWith(`${i + 1} 0 obj`));
+  const count = Number((s.match(/\/Count (\d+)/) || [])[1]);
+  const lengthsOk = [...s.matchAll(/<< \/Length (\d+) >>\nstream\n/g)].every((m) => s.indexOf('\nendstream', m.index + m[0].length) - (m.index + m[0].length) === Number(m[1]));
+  const PDFSRC = f('public/js/textpdf.js');
+  const HARDW = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
+  // NEGATIVE CONTROL (run 2026-09-22): every xref offset written one byte off (`offsets.push(out.length + 1)`) made this read
+  //   FAIL  T40 the PDF writer RUNS: header to trailer with every object at the offset the table says and every stream as long as it claims, the title at 16 bold, a heading at 10.5 bold, a bullet glyph with the text indented, Latin-1 and the curly quote kept as WinAnsi bytes, the dash a hyphen and the emoji dropped, the footer and Page n of N on every page, and the served module carries no word from the blindness list and no dash
+  check('T40 the PDF writer RUNS: header to trailer with every object at the offset the table says and every stream as long as it claims, the title at 16 bold, a heading at 10.5 bold, a bullet glyph with the text indented, Latin-1 and the curly quote kept as WinAnsi bytes, the dash a hyphen and the emoji dropped, the footer and Page n of N on every page, and the served module carries no word from the blindness list and no dash',
+    s.startsWith('%PDF-1.4\n') && s.endsWith('%%EOF\n') && offsetsOk && lengthsOk && count >= 2 && (s.match(/\/Type \/Page\b/g) || []).length === count
+    && /\/F2 16 Tf [^\n]*\(Rules to hold\) Tj/.test(s) && /\/F2 10\.5 Tf [^\n]*\(Sizing\) Tj/.test(s)
+    && s.includes(`(${bullet}) Tj`) && /1 0 0 1 66 [\d.]+ Tm \(Caf/.test(s)
+    && s.includes(`Caf${e9} ${String.fromCharCode(0x92)}quote${String.fromCharCode(0x92)} ${mid} and - dash and an emoji gone`)
+    && !/[\x96\x97]/.test(s) && !s.includes('?')
+    && (s.match(/\(Page \d+ of \d+\) Tj/g) || []).length === count && s.includes(`(Page 1 of ${count}) Tj`) && (s.match(/Ideas, not orders\.\) Tj/g) || []).length === count
+    && HARDW.every((re) => !re.test(PDFSRC)) && !DASH.test(PDFSRC),
+    `offsets ${offsetsOk}, lengths ${lengthsOk}, count ${count}, objects ${entries.length}`);
+}
+
+{
+  const { w, api } = world();
+  const filed = await api.fileDocument({}, 'c1', { title: 'Rules to hold', body: 'Every entry has a stop.\n- Size to the stop.' }, { now: 1758500000000 });
+  await api.fileDocument({}, 'c1', { title: 'Q3 plan / what? (draft)', body: 'x' }, { now: 1758500000001 });
+  const put = w.puts[0];
+  const meta = w.metas[0];
+  const bad = world({ putFails: true });
+  let failed = null;
+  try { await bad.api.fileDocument({}, 'c1', { title: 'Nope', body: 'x' }); } catch (e) { failed = e; }
+  // NEGATIVE CONTROL (run 2026-09-22): the download token dropped from the metadata patch made this read
+  //   FAIL  T41 fileDocument RUNS: the PDF lands in the case's report folder under the stamp and the title, as application/pdf and real bytes, the token and the display name are patched onto it, the descriptor carries the leaf name, the path, the size, a date and the token URL, a title with slashes and question marks files under a plain name, and a failed put throws and patches nothing
+  check('T41 fileDocument RUNS: the PDF lands in the case\'s report folder under the stamp and the title, as application/pdf and real bytes, the token and the display name are patched onto it, the descriptor carries the leaf name, the path, the size, a date and the token URL, a title with slashes and question marks files under a plain name, and a failed put throws and patches nothing',
+    w.puts.length === 2 && put.path === 'cases/c1/report/1758500000000-Rules to hold.pdf' && put.contentType === 'application/pdf'
+    && Buffer.from(put.bytes.subarray(0, 8)).toString('latin1') === '%PDF-1.4'
+    && meta.path === put.path && meta.custom.firebaseStorageDownloadTokens === 'uuid-new-desk' && meta.custom.paName === 'Rules to hold.pdf'
+    && filed.name === 'Rules to hold.pdf' && filed.path === put.path && filed.size === put.bytes.byteLength && filed.at instanceof Date
+    && filed.url === `https://firebasestorage.googleapis.com/v0/b/bucket.appspot.com/o/${encodeURIComponent(put.path)}?alt=media&token=uuid-new-desk`
+    && w.puts[1].path === 'cases/c1/report/1758500000001-Q3 plan what draft.pdf' && K.safeDocName('') === K.DOC_DEFAULT_TITLE
+    && failed instanceof Error && bad.w.metas.length === 0 && bad.w.puts.length === 0,
+    JSON.stringify({ path: put?.path, meta: meta?.custom, url: filed?.url }));
+}
+
+{
+  const fin = lift(ADV, 'async function finishQuestion(env, kind, id, qaId, flight, message) {');
+  // NEGATIVE CONTROL (run 2026-09-22): `download=` dropped from the panel's link made this read
+  //   FAIL  T42 the desk files the document: the block is cut before the term harvest and after the answer is read, the file is made after the portfolio line inside the desk's branch, the answer says Filed as and the row carries doc in its mask, a failed file keeps the words in the answer and both outcomes are logged; the panel hangs the link under a landed answer, tells the Uploads page once when a new one arrives and the page listens; the link wears the green at thumb size; the demo builds a real file with the shared writer on a document question and files it; the showcase imports the writer and no longer keeps one; the audit reads the served module and the gate leaves it public; and the drive asks for one
+  check('T42 the desk files the document: the block is cut before the term harvest and after the answer is read, the file is made after the portfolio line inside the desk\'s branch, the answer says Filed as and the row carries doc in its mask, a failed file keeps the words in the answer and both outcomes are logged; the panel hangs the link under a landed answer, tells the Uploads page once when a new one arrives and the page listens; the link wears the green at thumb size; the demo builds a real file with the shared writer on a document question and files it; the showcase imports the writer and no longer keeps one; the audit reads the served module and the gate leaves it public; and the drive asks for one',
+    /const hd = trade \? harvestDocument\(answer\) : \{ text: answer, doc: null \};\n\s+let filed = null;/.test(fin)
+    && /let cleaned = await harvestKeyTerms\(env, hd\.text, \{/.test(fin)
+    && fin.indexOf('const answer = extractText(message);') < fin.indexOf('harvestDocument(answer)') && fin.indexOf('harvestDocument(answer)') < fin.indexOf('harvestKeyTerms(env, hd.text')
+    && fin.indexOf('const pf = portfolioLineOf(cleaned);') < fin.indexOf('fileDocument(env, id, hd.doc') && fin.indexOf('fileDocument(env, id, hd.doc') < fin.indexOf('if (override) {')
+    && /if \(hd\.doc\) \{\n\s+const d0 = Date\.now\(\);\n\s+try \{\n\s+filed = await fileDocument\(env, id, hd\.doc, \{ now: Date\.now\(\) \}\);\n\s+cleaned = `\$\{cleaned\}\\n\\nFiled as \$\{filed\.name\} on Uploads\.`;/.test(fin)
+    && /ev: 'ask-doc', ok: true, bytes: filed\.size/.test(fin) && /ev: 'ask-doc', ok: false/.test(fin)
+    && /cleaned = `\$\{cleaned\}\\n\\n# \$\{hd\.doc\.title\}\\n\\n\$\{hd\.doc\.body\}\\n\\nThe file could not be made, so the document is here instead\.`;/.test(fin)
+    && /answer: cleaned, status: 'done', override, batch: null, doc: filed,\n\s+\}, \{ mask: \['answer', 'status', 'override', 'batch', 'doc'\] \}\);/.test(fin)
+    && /harvestDocument, fileDocument,\n\} from '\.\/trade-desk\.js';/.test(ADV)
+    && /const docLink = \(q\) => \(q\.doc\?\.url\n\s+\? `<p class="ask-doc"><a href="\$\{esc\(q\.doc\.url\)\}" target="_blank" rel="noopener" download="\$\{esc\(q\.doc\.name \|\| 'document\.pdf'\)\}">📄 \$\{esc\(q\.doc\.name \|\| 'document\.pdf'\)\}<\/a><\/p>`/.test(PANEL)
+    && /\$\{q\.status === 'running' \? '' : docLink\(q\)\}<\/div>/.test(PANEL)
+    && /if \(docsPrimed\) document\.dispatchEvent\(new CustomEvent\('pa-saved-file'\)\);/.test(PANEL) && /docsPrimed = true;/.test(PANEL)
+    && /addEventListener\('pa-saved-file'/.test(CASE)
+    && /\.ask-doc a \{ display: inline-flex; align-items: center; gap: \.4rem; min-height: 44px;[^\n]*border: 1px solid var\(--trade\);/.test(CSS)
+    && /import \{ textPdf \} from '\.\.\/textpdf\.js';/.test(D) && /\/\\b\(pdf\|document\|sheet\|playbook\|checklist\|write\.\?up\|print\)\\b\/i\.test\(d\.question \|\| ''\)/.test(D)
+    && /const bytes = textPdf\(lines, \{ title: 'Rules to hold', footer:/.test(D) && /store\.files\.set\(path, \{ name: 'Rules to hold\.pdf', type: 'application\/pdf', size: bytes\.length, at, url, persisted: true \}\);/.test(D)
+    && /Filed as Rules to hold\.pdf on Uploads\./.test(D) && /\.\.\.\(doc \? \{ doc \} : \{\}\) \}\);/.test(D)
+    && /import \{ textPdf \} from '\.\.\/public\/js\/textpdf\.js';/.test(SHOW) && !/export function textPdf/.test(SHOW)
+    && /import \{ textPdf \} from '\.\.\/public\/js\/textpdf\.js';/.test(TD) && /import \{ BUCKET, putFile, patchObjectMeta \} from '\.\/storage\.js';/.test(TD)
+    && /'\/js\/textpdf\.js',/.test(AUDIT)
+    && /Make me a one page PDF of my rules to hold/.test(DRIVE) && /%PDF-1\.4/.test(DRIVE),
+    JSON.stringify({ fin: fin.length, order: [fin.indexOf('harvestDocument(answer)'), fin.indexOf('harvestKeyTerms(env, hd.text'), fin.indexOf('fileDocument(env, id, hd.doc')] }));
 }
 
 const fails = results.filter((r) => !r.pass).length;

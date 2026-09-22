@@ -110,6 +110,9 @@ const CLIENT_PAGES = [
 const EXTRA = [
   '/manifest.webmanifest', '/push-sw.js', '/firebase-messaging-sw.js',
   '/_headers', '/_redirects', '/css/site.css',
+  // 2026-09-22: the PDF writer, served to anyone and imported only by gated
+  // modules, so no crawl from a client page reaches it.
+  '/js/textpdf.js',
 ];
 
 // Must not be reachable without the admin cookie. Pages 404 exactly like a

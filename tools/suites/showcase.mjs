@@ -28,6 +28,9 @@ const ADMIN = f('public/js/admin.js');
 const DEMO = f('public/js/demo/api.js');
 const ACSS = f('public/css/admin.css');
 const mod = await import(pathToFileURL(j(ROOT, 'worker/showcase.js')).href);
+// Re-pinned 2026-09-22 (v5.0): the PDF writer moved to public/js/textpdf.js, shared with the
+// trade desk and the demo; the showcase imports it and no longer exports one of its own.
+const pdf = await import(pathToFileURL(j(ROOT, 'public/js/textpdf.js')).href);
 
 const results = [];
 const check = (name, cond, detail = '') => {
@@ -82,7 +85,7 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
 
 // ---- the PDF writer -------------------------------------------------------
 {
-  const bytes = mod.textPdf(['# Title', 'Body line one, with (parens) and a \\ backslash.', '', ...Array.from({ length: 120 }, (_, i) => `Line ${i} ` + 'word '.repeat(30))]);
+  const bytes = pdf.textPdf(['# Title', 'Body line one, with (parens) and a \\ backslash.', '', ...Array.from({ length: 120 }, (_, i) => `Line ${i} ` + 'word '.repeat(30))]);
   const s = Buffer.from(bytes).toString('latin1');
   const xrefAt = Number((s.match(/startxref\n(\d+)\n/) || [])[1]);
   const table = s.slice(xrefAt);
@@ -125,7 +128,7 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
       markPending: async (env, kind, id, opts) => { pend.push([kind, id, opts]); },
       BUCKET: 'bucket.appspot.com',
       crypto: { randomUUID: () => `u${++n}` },
-      JOE: mod.JOE, CHAT: mod.CHAT, docsFor: mod.docsFor, textPdf: mod.textPdf, MILESTONES: mod.MILESTONES, WORK_LOG: mod.WORK_LOG, AUTHORITY: mod.AUTHORITY, DAY: 86_400_000,
+      JOE: mod.JOE, CHAT: mod.CHAT, docsFor: mod.docsFor, textPdf: pdf.textPdf, MILESTONES: mod.MILESTONES, WORK_LOG: mod.WORK_LOG, AUTHORITY: mod.AUTHORITY, DAY: 86_400_000,
     });
     const out = await api({}, { adminUid: 'eric-uid' });
     return { out, writes, puts, metas, created, pend };

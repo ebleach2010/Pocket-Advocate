@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '4.9';
+export const VERSION = '5.0';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '4.9';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE DESK MAKES A PDF (2026-09-22, Eric: the desk should generate PDFs
+    // the way a chat helper hands you a file). Admin only: a document the
+    // desk writes becomes a real file on his Uploads page.
+    version: '5.0',
+    quiet: true,
+    client: [],
+    admin: [
+      'Ask the desk for a document to keep, a PDF, a sheet, a playbook, a checklist or a write-up, and the answer comes back with a 📄 link to a real PDF: a title, headings, bullets and page numbers, filed on the Uploads page under Reports. Tap the link to open it in the viewer and share it from there.',
+    ],
+  },
   {
     // A BLANK BLOCK IS REFUSED (2026-09-22, the desk's Read page on his
     // phone: "Analysis failed: system: text content blocks must contain

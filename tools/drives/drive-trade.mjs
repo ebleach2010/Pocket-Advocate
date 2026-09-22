@@ -201,6 +201,25 @@ ok('the question row carries the file by name', rowFile === 'row');
 const answered = await until(() => { const t = [...document.querySelectorAll('#advisor-chat .advisor-turn')].find((x) => /Here is my portfolio total/.test(x.textContent)); const a = t?.querySelector('.advisor-a')?.textContent || ''; return /Logged \$2,410\.00 as the balance for \d{4}-\d{2}-\d{2}\./.test(a) ? a : null; }, 30000);
 ok('the answer lands on its own and ends with the Logged sentence', !!answered, (answered || '').slice(-60));
 await shot('06-ask');
+// THE DESK MAKES A PDF (Eric, 2026-09-22: "generate PDFs just like LLM in a chat"): asked for a document,
+// the answer lands with a link to real PDF bytes, and the Uploads page lists the file without a reload.
+await page.fill('#advisor-chat [data-q]', 'Make me a one page PDF of my rules to hold');
+await page.click('#advisor-chat [data-ask] button');
+const docRow = await until(() => {
+  const t = [...document.querySelectorAll('#advisor-chat .advisor-turn')].find((x) => /one page PDF of my rules/.test(x.textContent));
+  const a = t?.querySelector('.ask-doc a');
+  return a ? { text: a.textContent.trim(), href: a.getAttribute('href') || '', answer: t.querySelector('.advisor-a')?.textContent || '' } : null;
+}, 30000);
+ok('the answer lands with a 📄 link named for the document and says it was filed on Uploads', !!docRow && docRow.text === '📄 Rules to hold.pdf' && /^data:application\/pdf;base64,/.test(docRow.href) && /Filed as Rules to hold\.pdf on Uploads\./.test(docRow.answer), JSON.stringify(docRow && { text: docRow.text, href: docRow.href.slice(0, 30) }));
+const magic = docRow ? await page.evaluate(async (href) => {
+  const b = new Uint8Array(await (await fetch(href)).arrayBuffer());
+  return { head: String.fromCharCode(...b.subarray(0, 8)), size: b.length, tail: String.fromCharCode(...b.subarray(b.length - 6)) };
+}, docRow.href) : null;
+ok('the link is real PDF bytes, %PDF-1.4 header to %%EOF trailer', !!magic && magic.head === '%PDF-1.4' && magic.tail === '%%EOF\n' && magic.size > 1000, JSON.stringify(magic));
+await show('case', 'files');
+const listed = await until(() => { const t = document.querySelector('[data-page-id="files"], #files')?.textContent || ''; return /Rules to hold\.pdf/.test(t) ? 'listed' : null; }, 15000);
+ok('the Uploads page lists the file without a reload', listed === 'listed');
+await shot('06b-doc');
 
 console.log('\n--- G. Stats: the screenshot\'s balance, a typed one over it, the chart and the line ---');
 await show('read', 'stats');

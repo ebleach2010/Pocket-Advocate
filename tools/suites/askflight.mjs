@@ -129,7 +129,8 @@ check('AF4 the finish reads the landed message as the live path did: the tool_us
   && /material: personMaterial\(rows, qa, \[question, answer\]\),\n\s+docNames: attachment\?\.name \? \[attachment\.name\] : \[\],/.test(finishQuestion)
   && /cleaned = await applyMastered\(env, cleaned\);\n\s+cleaned = await applyForgotten\(env, cleaned\);/.test(finishQuestion)
   && /if \(self\) \{[\s\S]*?sectionMatch\(cleaned, 'Stance'\)[\s\S]*?\} else \{\n\s+cleaned = await fileOverride\(env, cleaned\);/.test(finishQuestion)
-  && /answer: cleaned, status: 'done', override, batch: null,\n\s+\}, \{ mask: \['answer', 'status', 'override', 'batch'\] \}\);\n\s+await diagLog\(env, \{ ev: 'ask-end', ok: true, kind, ms: Date\.now\(\) - t0 \}\)[\s\S]*?await parkAct\(env, kind, id, acts\)[\s\S]*?await markPending\(env, kind, id\)/.test(finishQuestion)
+  // Re-pinned 2026-09-22 (v5.0): the row carries `doc`, the document the desk filed (null off the desk), in the mask.
+  && /answer: cleaned, status: 'done', override, batch: null, doc: filed,\n\s+\}, \{ mask: \['answer', 'status', 'override', 'batch', 'doc'\] \}\);\n\s+await diagLog\(env, \{ ev: 'ask-end', ok: true, kind, ms: Date\.now\(\) - t0 \}\)[\s\S]*?await parkAct\(env, kind, id, acts\)[\s\S]*?await markPending\(env, kind, id\)/.test(finishQuestion)
   && /answer: `Couldn't answer: \$\{friendly\(err\)\}`, status: 'error', batch: null,/.test(finishQuestion)
   && /if \(flight\.model && !row\.data\.resent\n\s+&& modelRefused\(\{ status: 400, message: String\(next\.why \|\| ''\) \}, \{ model: flight\.model \}\)\) \{/.test(pollAsk)
   && /await patchDoc\(env, path, \{ batch: null, resent: true \}, \{ mask: \['batch', 'resent'\] \}\)/.test(pollAsk)

@@ -41,6 +41,7 @@ import { listIntake, listShelf, mediaFetch } from './storage.js';
 import {
   TRADE_MODEL, TRADE_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,
   tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,
+  harvestDocument, fileDocument,
 } from './trade-desk.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
@@ -5327,6 +5328,13 @@ async function finishQuestion(env, kind, id, qaId, flight, message) {
     const acts = [];
     collectActs(message, acts);
     const answer = extractText(message);
+    // THE DESK MAKES A PDF (Eric, 2026-09-22: "generate PDFs just like LLM
+    // in a chat"). The document block is cut out first, before the term
+    // harvest reads the answer, because that harvest cuts from a Key terms
+    // heading to the next heading and would eat a document that followed
+    // one. Nothing of this on a medical case.
+    const hd = trade ? harvestDocument(answer) : { text: answer, doc: null };
+    let filed = null;
     const [rows, qa] = await Promise.all([
       recentMessages(env, kind, id),
       loadQa(env, kind, id, { skip: qaId }),
@@ -5334,7 +5342,7 @@ async function finishQuestion(env, kind, id, qaId, flight, message) {
     // Same learning protocol as assessments: new jargon lands in the
     // dictionary, fluent use in his question counts as mastery, and asking
     // what a mastered term means counts the other way.
-    let cleaned = await harvestKeyTerms(env, answer, {
+    let cleaned = await harvestKeyTerms(env, hd.text, {
       // His question and this answer both count (Eric, 2026-09-07: the
       // advisor's answers to him are a conversation); the reading's own
       // assessment does not.
@@ -5354,6 +5362,20 @@ async function finishQuestion(env, kind, id, qaId, flight, message) {
         if (rec?.ok) cleaned = `${cleaned}\n\nLogged ${deskDollars(rec.cents)} as the balance for ${rec.date}.`;
         else if (rec?.why === 'typed wins') cleaned = `${cleaned}\n\nYou typed a balance for ${rec.date}, so the screenshot's total was not logged over it.`;
       }
+      // The document, filed as a PDF where the Uploads page looks, and the
+      // answer says so. A file that could not be made keeps the words in the
+      // answer instead: nothing the desk wrote is lost.
+      if (hd.doc) {
+        const d0 = Date.now();
+        try {
+          filed = await fileDocument(env, id, hd.doc, { now: Date.now() });
+          cleaned = `${cleaned}\n\nFiled as ${filed.name} on Uploads.`;
+          await diagLog(env, { ev: 'ask-doc', ok: true, bytes: filed.size, ms: Date.now() - d0 }).catch(() => {});
+        } catch (err) {
+          cleaned = `${cleaned}\n\n# ${hd.doc.title}\n\n${hd.doc.body}\n\nThe file could not be made, so the document is here instead.`;
+          await diagLog(env, { ev: 'ask-doc', ok: false, ms: Date.now() - d0, err: String(err.message || err).slice(0, 140) }).catch(() => {});
+        }
+      }
     }
     if (override) {
       if (self) {
@@ -5366,8 +5388,9 @@ async function finishQuestion(env, kind, id, qaId, flight, message) {
       }
     }
     await patchDoc(env, path, {
-      answer: cleaned, status: 'done', override, batch: null,
-    }, { mask: ['answer', 'status', 'override', 'batch'] });
+      // `doc` always, null when none, so a resend never leaves a stale link.
+      answer: cleaned, status: 'done', override, batch: null, doc: filed,
+    }, { mask: ['answer', 'status', 'override', 'batch', 'doc'] });
     await diagLog(env, { ev: 'ask-end', ok: true, kind, ms: Date.now() - t0 }).catch(() => {});
     // The answer lands first, then the proposal beside it. A parked proposal
     // with no answer to explain it is a card with no sentence attached, and a

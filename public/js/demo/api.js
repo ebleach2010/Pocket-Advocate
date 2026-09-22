@@ -11,6 +11,8 @@
 import { DEMO_CASE_ID } from './seed.js';
 // The Trade portal's arithmetic (2026-09-21): the same module the Worker uses, so the demo's numbers are the real numbers.
 import { tradeMetrics, chartSeries } from '../trade-math.js';
+// The desk makes a PDF (2026-09-22): the same writer the Worker files with, so the demo's document is a real one.
+import { textPdf } from '../textpdf.js';
 // The same two vocabularies the pages read, so the demo cannot answer with a
 // reaction the UI has no name for.
 import { EMOJI_REACTIONS, STATUS_REACTIONS } from '../msg-actions.js';
@@ -1902,6 +1904,7 @@ export function demoApi(role, store) {
         if (!p.startsWith(qaPrefix) || d.status !== 'running') continue;
         if (Date.now() - new Date(d.at || 0).getTime() < 4000) continue;
         let answer = 'I would give the clinic until Thursday before chasing it, because the fax went Monday and their intake takes three working days to log anything. If nothing is on the portal by then, I would call the department directly rather than the main line, since that is who actually holds the referral. You have what you need for the call; the next move is theirs.';
+        let doc = null;
         if (isTrade) {
           answer = d.file
             ? 'Your positions are NVDA and SPY, both above their stops. NVDA is holding 650 on volume; the next level I would watch is 652, and a break of 648 ends it. SPY is drifting on light volume with 570 under it; nothing to do there until 573 or 570 breaks.'
@@ -1919,8 +1922,30 @@ export function demoApi(role, store) {
               answer += `\n\nYou typed a balance for ${today}, so the screenshot's total was not logged over it.`;
             }
           }
+          // THE DESK MAKES A PDF (2026-09-22): asked for a document, the demo
+          // builds a real one with the writer the Worker uses, files it where
+          // the Uploads page looks, and hangs the link under the answer. A data
+          // URL, so the file survives a reload; the first write to store.files
+          // from this mirror.
+          if (!d.file && /\b(pdf|document|sheet|playbook|checklist|write.?up|print)\b/i.test(d.question || '')) {
+            const lines = [
+              'Every entry has a stop before the order goes in.', '',
+              '# Sizing', '- Size to the stop, never to the target.', '- Options: the whole premium is the risk, so size as if it goes to zero.', '',
+              '# Adds and exits', '- No adds to a loser.', '- The 10:30 bar decides the morning: a setup that has not worked by then is closed.', '- A target hit is a sale, not a hold for more.', '',
+              '# Before the open', '- Check the spread on the options before the order.', '- Write the exit plan in the log before the entry.',
+            ];
+            const bytes = textPdf(lines, { title: 'Rules to hold', footer: `Trade desk · ${deskToday()} · Ideas, not orders. Every trade is your decision.` });
+            let bin = '';
+            for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+            const url = `data:application/pdf;base64,${btoa(bin)}`;
+            const path = `cases/${cid}/report/${Date.now()}-Rules to hold.pdf`;
+            const at = new Date().toISOString();
+            store.files.set(path, { name: 'Rules to hold.pdf', type: 'application/pdf', size: bytes.length, at, url, persisted: true });
+            doc = { name: 'Rules to hold.pdf', path, url, size: bytes.length, at };
+            answer = 'Your rules to hold, on one page: every entry has a stop before the order goes in, size to the stop and never to the target, no adds to a loser, and the 10:30 bar decides the morning.\n\nFiled as Rules to hold.pdf on Uploads.';
+          }
         }
-        store.docs.set(p, { ...d, status: 'done', batch: null, answer });
+        store.docs.set(p, { ...d, status: 'done', batch: null, answer, ...(doc ? { doc } : {}) });
         store.persist?.();
       }
       const qaRows = [...store.docs.entries()]

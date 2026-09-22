@@ -1528,6 +1528,11 @@ main > p > a.small[href="/admin.html"] {
 .ask-attach.on { border-color: var(--trade); color: var(--trade); box-shadow: 0 0 0 1px var(--trade); }
 .ask-chip { margin: .3rem 0 0; font-size: .8rem; color: var(--dim); }
 .play-card.expired .play-head, .play-card.expired dl { opacity: .7; }
+/* THE DESK MAKES A PDF (2026-09-22): the file an answer filed, as a link
+   under the answer at thumb size, in the desk's green. */
+.ask-doc { margin: .5rem 0 0; }
+.ask-doc a { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; padding: 0 .8rem; border: 1px solid var(--trade); border-radius: 10px; color: var(--trade); text-decoration: none; font-size: .84rem; }
+.ask-doc a:hover, .ask-doc a:focus-visible { background: color-mix(in srgb, var(--trade) 12%, transparent); }
 
 /* The two doors on the shelf (2026-09-03): his own case and a family case,
    each a button that unfolds a short form. The family flag on a card is the
