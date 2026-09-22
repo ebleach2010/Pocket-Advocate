@@ -5592,6 +5592,14 @@ export async function runTradeScan(env, caseId, { now = Date.now() } = {}) {
     const note = await tradeNote(env, { now });
     const turn = turnRequest({
       effort: TRADE_EFFORT,
+      // THE SCAN CAN SEE THE MARKET NOW (Eric, 2026-09-22: "Scanning is
+      // taking more than 5 minutes. Normal?"). The reading gets web search
+      // through the desk's policy; this turn is built outside any policy and
+      // never carried a tool, so every scan he has ever run could see only
+      // the ten quotes in the desk note. searches: 0 on every scan in the
+      // log. Eight minutes of thinking over ten prices, and no way to look
+      // past the watchlist however hard the contract asked.
+      tools: [TRADE_WEB_SEARCH_TOOL],
       // Three headings and at most four setups, so the ANSWER is small. The
       // budget is not the answer: at max effort with eight searches, the
       // thinking and the searching are spent from the same ceiling, and at

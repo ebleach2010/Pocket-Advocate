@@ -1297,10 +1297,14 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry68 = (CL.match(/\{\n\s+\/\/ THE CHANCE, BACK WHERE HE READS IT[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v6.9): the note is at most five bullets, on every path.
   const entry69 = (CL.match(/\{\n\s+\/\/ AT MOST FIVE BULLETS[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v6.10): the scan can see the market.
+  const entry610 = (CL.match(/\{\n\s+\/\/ THE SCAN CAN SEE THE MARKET[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
+  // NEGATIVE CONTROL (run 2026-09-22, v6.10): 'can look at the market now' reworded to 'can see the market now' in the 6.10 entry made this read
+  //   FAIL  T36 both versions read 6.10 with the new tag, the 4.7 through 6.9 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.9): 'without a new scan' reworded to 'without another scan' in the 6.9 entry made this read
-  //   FAIL  T36 both versions read 6.9 with the new tag, the 4.7 through 6.8 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
+  //   FAIL  T36 both versions read 6.10 with the new tag, the 4.7 through 6.9 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.8): 'back at the top right of every setup' reworded to 'back at the top of every setup' in the 6.8 entry made this read
   //   FAIL  T36 both versions read 6.9 with the new tag, the 4.7 through 6.8 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.7): 'A setup is one sentence now' reworded to 'A setup is a single sentence now' in the 6.7 entry made this read
@@ -1317,8 +1321,10 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   //   FAIL  T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v5.2): 'has a calculator' reworded to 'has a calculator now' in the 5.2 entry made this read
   //   FAIL  T36 both versions read 5.3 with the new tag, the 4.7 through 5.3 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 6.9 with the new tag, the 4.7 through 6.8 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '6\.9';/.test(CL) && /const VERSION = '6\.9';/.test(W) && /const BUILD_TAG = 'v2026-09-22-five-bullets';/.test(W)
+  check('T36 both versions read 6.10 with the new tag, the 4.7 through 6.9 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '6\.10';/.test(CL) && /const VERSION = '6\.10';/.test(W) && /const BUILD_TAG = 'v2026-09-22-scan-searches';/.test(W)
+    && /version: '6\.10',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry610)
+    && /can look at the market now/.test(entry610) && !DASH.test(entry610)
     && /version: '6\.9',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry69)
     && /at most five bullets/.test(entry69) && /without a new scan/.test(entry69) && !DASH.test(entry69)
     && /version: '6\.8',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry68)
@@ -2207,6 +2213,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
       readFailedError: (m) => new Error(m),
       // The note's cut is the shared one now (2026-09-22, v6.9).
       noteOnly: math.noteOnly,
+      // The scan carries the search tool itself (2026-09-22, v6.10).
+      TRADE_WEB_SEARCH_TOOL: K.TRADE_WEB_SEARCH_TOOL,
     };
     const names = Object.keys(deps).join(', ');
     const api = new Function('deps', `
@@ -2282,6 +2290,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     // NEGATIVE CONTROL (run 2026-09-22, v6.4): the ceiling put back to 16000 made this read
     //   FAIL  T51 the scan's flight RUNS: ...
     && first.w.submitted[0].turn.maxTokens === 32000
+    // RE-PINNED 2026-09-22 (v6.10): the scan's turn carries the web search tool, eight uses, the
+    // same tool the reading gets through the desk's policy. It never had one: searches: 0 on every
+    // scan in the log, so it could only see the ten quotes in the note.
+    // NEGATIVE CONTROL (run 2026-09-22, v6.10): `tools: [TRADE_WEB_SEARCH_TOOL],` removed from the
+    //   scan's turn made this read    FAIL  T51 the scan's flight RUNS: ...
+    && JSON.stringify(first.w.submitted[0].turn.tools) === JSON.stringify([K.TRADE_WEB_SEARCH_TOOL])
+    && K.TRADE_WEB_SEARCH_TOOL.max_uses === 8 && K.TRADE_WEB_SEARCH_TOOL.type === 'web_search_20260209'
     && first.w.submitted[0].customId.startsWith('scan-c1-')
     && first.w.patches.some((p) => p.path === K.STATE_PATH && p.data.scanStatus === 'running')
     && first.w.patches.some((p) => p.path === K.STATE_PATH && p.data.scanCtx?.batchId === 'batch-1')

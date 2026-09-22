@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.9';
+export const VERSION = '6.10';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '6.9';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE SCAN CAN SEE THE MARKET (Eric, 2026-09-22: "Scanning is taking more
+    // than 5 minutes. Normal?"). Every scan he had ever run carried no search
+    // tool: searches 0 in the log, ten quotes to think about. Admin only.
+    version: '6.10',
+    quiet: true,
+    client: [],
+    admin: [
+      'Scan can look at the market now. Until this it had no way to search, so every scan you ever ran could see only the ten prices on the desk note, which is why it kept filing the same big names and could not look past your watchlist however it was told to. It searches the way Update does, eight lookups a scan. It will not be faster for it.',
+    ],
+  },
   {
     // AT MOST FIVE BULLETS (Eric, 2026-09-22: "This needs to disappear or be
     // shortened to 5 bullet points"). The cut of 6.7 ran only when a scan
