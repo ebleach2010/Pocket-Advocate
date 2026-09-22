@@ -89,6 +89,8 @@ const EXPORTS = ['TRADE_MODEL', 'TRADE_EFFORT', 'TRADE_SCAN_EFFORT', 'TRADE_TZ',
   'KEY_RE', 'keyTail', 'resolveKey', 'watchlistOf', 'startOf', 'marketSnapshot', 'deskMetrics', 'standingLine', 'tradeStanding', 'refreshStanding',
   'tradeNote', 'validPlay', 'validPortfolio', 'harvestPlays', 'recordPlays', 'recordPortfolio', 'scanVerdict', 'pushStrongPlay', 'fileDeskReading', 'portfolioLineOf',
   'TradeError', 'SCAN_CONTRACT', 'TRADE_STATE_PATH',
+  // The fast look's strength and its own contract (2026-09-22, v6.13).
+  'TRADE_LOOK_EFFORT', 'LOOK_CONTRACT',
   'tradeOpen', 'tradeState', 'tradePanelBlock', 'tradeBalance', 'tradeSettings', 'tradePlay', 'tradeRoute', 'scanBlock',
   'harvestDocument', 'safeDocName', 'fileDocument', 'DOC_TITLE_MAX', 'DOC_BODY_MAX', 'DOC_DEFAULT_TITLE',
   'POSITIONS', 'QUOTE_TTL_MS', 'QUOTE_BUDGET', 'QUOTE_MAX', 'quoteCached', 'quoteBudgetLeft', 'rid',
@@ -483,7 +485,8 @@ check('T12 the reading on the desk: the brief is three-way from the policy, the 
   // RE-PINNED 2026-09-22 (nothing runs but his tap): the advisor takes the scan's contract, the
   // desk's state path and its sentences too, because the scan he taps lives there with the reading.
   // RE-PINNED 2026-09-22 (v6.12): the scan's own strength rides in the same import.
-  && /^import \{\n\s+TRADE_MODEL, TRADE_EFFORT, TRADE_SCAN_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,\n\s+SCAN_CONTRACT, TRADE_STATE_PATH, SAY as TRADE_SAY,\n\s+tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,\n\s+harvestDocument, fileDocument, stripDashes as deskStripDashes,\n\} from '\.\/trade-desk\.js';/m.test(ADV)
+  // RE-PINNED 2026-09-22 (v6.13): and the fast look's strength and contract beside them.
+  && /^import \{\n\s+TRADE_MODEL, TRADE_EFFORT, TRADE_SCAN_EFFORT, TRADE_LOOK_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,\n\s+SCAN_CONTRACT, LOOK_CONTRACT, TRADE_STATE_PATH, SAY as TRADE_SAY,\n\s+tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,\n\s+harvestDocument, fileDocument, stripDashes as deskStripDashes,\n\} from '\.\/trade-desk\.js';/m.test(ADV)
   && !/from '\.\/advisor\.js'/.test(TD));
 
 // ---- T13 to T16: the harvest and the records, run ----------------------------------
@@ -715,7 +718,7 @@ check('T23 a question on the desk: the desk note rides the user text, the ask no
     JSON.stringify({ fresh: fresh.out, open: open.threw?.message, closed: closed.out }));
 }
 {
-  const src = lift(W, 'async function handleTrade(request, env, url) {');
+  const src = lift(W, 'async function handleTrade(request, env, url, ctx) {');
   const run = async ({ admin, route }) => {
     const calls = [];
     const api = new Function('deps', `const { requireAdmin, json, tradeRoute, TradeError } = deps;\n${src}\nreturn handleTrade;`)({
@@ -725,8 +728,11 @@ check('T23 a question on the desk: the desk note rides the user text, the ask no
     const req = (method) => ({ method, json: async () => ({}) });
     const out = {};
     // Re-pinned 2026-09-22 (v5.2): the query string rides too, for the quote route.
-    for (const [m, p] of [['GET', 'state'], ['POST', 'open'], ['POST', 'nope'], ['GET', '']]) out[`${m} ${p}`] = await api(req(m), env, { pathname: `/api/admin/trade/${p}`, searchParams: new URLSearchParams('symbols=NVDA') });
-    return { out, calls };
+    // Re-pinned 2026-09-22 (v6.13): and `ctx`, which is what lets the fast look
+    // run its turn on his tap through waitUntil instead of holding the answer.
+    const ctx = { waitUntil: () => {} };
+    for (const [m, p] of [['GET', 'state'], ['POST', 'open'], ['POST', 'nope'], ['GET', '']]) out[`${m} ${p}`] = await api(req(m), env, { pathname: `/api/admin/trade/${p}`, searchParams: new URLSearchParams('symbols=NVDA') }, ctx);
+    return { out, calls, ctx };
   };
   const stranger = await run({ admin: null, route: () => ({ ok: true }) });
   const him = await run({ admin: { uid: 'eric' }, route: ({ sub }) => { if (sub === 'nope') throw new K.TradeError(404, 'Not found'); if (sub === 'open') throw new K.TradeError(409, K.SAY.deskOpen, { existing: 'old' }); return { ok: true, sub }; } });
@@ -745,7 +751,11 @@ check('T23 a question on the desk: the desk note rides the user text, the ask no
     && him.out['POST open'].status === 409 && him.out['POST open'].data.error === K.SAY.deskOpen && him.out['POST open'].data.existing === 'old'
     && him.out['POST nope'].status === 404 && rethrown
     && gone.join() === '404,404,404,404'
-    && /if \(url\.pathname\.startsWith\('\/api\/admin\/trade\/'\)\)\n\s+return await handleTrade\(request, env, url\);/.test(W)
+    // RE-PINNED 2026-09-22 (v6.13): `ctx` rides from the router into the dispatch, which
+    // is what lets the fast look run its turn on his tap through waitUntil.
+    && /if \(url\.pathname\.startsWith\('\/api\/admin\/trade\/'\)\)\n\s+return await handleTrade\(request, env, url, ctx\);/.test(W)
+    && him.calls.every((c) => c.ctx === him.ctx)
+    && /return json\(await tradeRoute\(env, \{ sub, method: request\.method, body, query, ctx \}\)\);/.test(W)
     && /return json\(\{ error: err\.message, \.\.\.\(err\.extra \|\| \{\}\) \}, err\.status\);/.test(W),
     JSON.stringify({ stranger: Object.values(stranger.out).map((r) => r.status), him: Object.values(him.out).map((r) => r.status), gone }));
 }
@@ -871,7 +881,9 @@ check('T30 the Worker imports the desk\'s routes, panel block, morning reading a
   && /const desk = await getDoc\(env, 'trade\/settings'\)\.catch\(\(\) => null\);\n\s+if \(desk\?\.data\.caseId === id\)\n\s+await patchDoc\(env, 'trade\/settings', \{ caseId: null \}, \{ mask: \['caseId'\] \}\)\.catch\(\(\) => \{\}\);\n\s+return \{ docs: deleted, files: files\.length \};/.test(SHOW)
   // RE-PINNED 2026-09-22 (v6.3): the desk's module also takes the scan poller, because the cron's
   // collector lives beside the morning reading and asks the desk rather than the queue.
-  && /^export function client\(env\) \{/m.test(ADV) && /^export async function markPending\(/m.test(ADV) && /import \{ markPending, diagLog, runTradeScan, pollScanFlight \} from '\.\/advisor\.js';/.test(T));
+  && /^export function client\(env\) \{/m.test(ADV) && /^export async function markPending\(/m.test(ADV) && /import \{ markPending, diagLog, runTradeScan, runTradeLook, pollScanFlight \} from '\.\/advisor\.js';/.test(T));
+// RE-PINNED 2026-09-22 (v6.13): the desk's module takes the fast look's runner in the same
+// line, because the look runs on his tap instead of joining the provider's queue.
 
 // ---- T31 to T34: the shelf, the page, the panel, the desk's module ----------------------
 // NEGATIVE CONTROL (run 2026-09-22): `if (c.trade) return 'TRADE DESK';` removed from badge() made this read
@@ -1222,7 +1234,12 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const gate = (W.match(/const ADMIN_ASSET =\n\s+(\/.*\/);/) || [])[1];
   const ADMIN_ASSET = gate ? new Function(`return ${gate};`)() : null;
   const mirror = D.slice(D.indexOf('the trade desk (2026-09-21; a case file since 2026-09-22)'), D.indexOf('the advisor, from a fixture'));
-  const sentences = Object.entries(K.SAY).filter(([k]) => !['notFound', 'noNext', 'noPull'].includes(k)).map(([, v]) => v);
+  // RE-PINNED 2026-09-22 (v6.13): lookLong and lookNoCtx join the three the demo cannot
+  // reach. A look in the demo lands on its own timer inside the page, so it is never
+  // stopped at its budget and there is no invocation to be missing a ctx from. Every
+  // other sentence the Worker can say, the demo says word for word.
+  const sentences = Object.entries(K.SAY)
+    .filter(([k]) => !['notFound', 'noNext', 'noPull', 'lookLong', 'lookNoCtx'].includes(k)).map(([, v]) => v);
   const pages = ['admin', 'admin-calendar', 'admin-chats', 'admin-availability', 'admin-dictionary', 'admin-case', 'admin-desk'];
   const seedDesk = SEED.slice(SEED.indexOf('the trade desk (2026-09-21; a case file since 2026-09-22)'));
   // NEGATIVE CONTROL (run 2026-09-22): '/js/admin-desk.js' removed from the audit's ADMIN_ASSETS made this read
@@ -1313,6 +1330,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry611 = (CL.match(/\{\n\s+\/\/ THE TICKER BACK AT THE HEAD[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v6.12): Scan at high, Update at max, by his choice.
   const entry612 = (CL.match(/\{\n\s+\/\/ SCAN AT HIGH, UPDATE AT MAX[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v6.13): a fast look beside the deep scan, and how long a run has been.
+  const entry613 = (CL.match(/\{\n\s+\/\/ A FAST LOOK BESIDE THE DEEP SCAN[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1339,8 +1358,12 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   //   FAIL  T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v5.2): 'has a calculator' reworded to 'has a calculator now' in the 5.2 entry made this read
   //   FAIL  T36 both versions read 5.3 with the new tag, the 4.7 through 5.3 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 6.12 with the new tag, the 4.7 through 6.11 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '6\.12';/.test(CL) && /const VERSION = '6\.12';/.test(W) && /const BUILD_TAG = 'v2026-09-22-scan-at-high';/.test(W)
+  // NEGATIVE CONTROL (run 2026-09-22, v6.13): 'comes back inside a couple of minutes' reworded to 'comes back within a couple of minutes' in the 6.13 entry made this read
+  //   FAIL  T36 both versions read 6.13 with the new tag, the 4.7 through 6.12 entries are quiet and admin-only in the desk's words, ...
+  check('T36 both versions read 6.13 with the new tag, the 4.7 through 6.12 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '6\.13';/.test(CL) && /const VERSION = '6\.13';/.test(W) && /const BUILD_TAG = 'v2026-09-22-fast-look';/.test(W)
+    && /version: '6\.13',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry613)
+    && /comes back inside a couple of minutes/.test(entry613) && /how long it has been/.test(entry613) && !DASH.test(entry613)
     && /version: '6\.12',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry612)
     && /one step below Update/.test(entry612) && !DASH.test(entry612)
     && /version: '6\.11',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry611)
@@ -2189,6 +2212,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
 {
   const scanFns = [
     lift(ADV, 'export async function runTradeScan(env, caseId, { now = Date.now() } = {}) {'),
+    // The fast look runs beside it (2026-09-22, v6.13), on the same state and the same finish.
+    lift(ADV, 'export async function runTradeLook(env, caseId, { now = Date.now() } = {}) {'),
     lift(ADV, 'export async function pollScanFlight(env, caseId, { minAgeMs = 15_000 } = {}) {'),
     lift(ADV, 'async function finishTradeScan(env, caseId, flight, message) {'),
     lift(ADV, 'async function deskState(env) {'),
@@ -2196,16 +2221,19 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   ].join('\n');
   const markerLine = grab(ADV, /const SCAN_MARKER = \(caseId\) => [^\n]+/);
   const abandonLine = grab(ADV, /const SCAN_ABANDON_MS = [^\n]+/);
+  const lookBudgetLine = grab(ADV, /const LOOK_BUDGET_MS = [^\n]+/);
+  const lookStaleLine = grab(ADV, /const LOOK_STALE_MS = [^\n]+/);
   const failsLine = grab(ADV, /const ASK_POLL_FAILS_MAX = [^\n]+/);
   const askAbandonLine = grab(ADV, /const ASK_ABANDON_MS = [^\n]+/);
 
   const scanWorld = (over = {}) => {
-    const w = { docs: new Map(), patches: [], deletes: [], diag: [], filed: [], cancels: [], submitted: [], notes: 0 };
+    const w = { docs: new Map(), patches: [], deletes: [], diag: [], filed: [], cancels: [], submitted: [], carried: [], notes: 0 };
     const deps = {
       tryGet: async (env2, path) => (w.docs.has(path) ? w.docs.get(path) : null),
       patchDoc: async (env2, path, data, opts = {}) => {
         w.patches.push({ path, data, opts });
-        if (opts.ifUpdateTime && over.lostRace) return false;
+        if ((opts.ifUpdateTime || opts.mustNotExist) && over.lostRace) return false;
+        if (opts.mustNotExist && w.docs.has(path)) return false;
         const cur = w.docs.get(path) || { data: {}, updateTime: 'U0' };
         w.docs.set(path, { data: { ...cur.data, ...data }, updateTime: `U${w.patches.length}` });
         return true;
@@ -2239,6 +2267,16 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
       TRADE_WEB_SEARCH_TOOL: K.TRADE_WEB_SEARCH_TOOL,
       // And runs one step below Update (2026-09-22, v6.12).
       TRADE_SCAN_EFFORT: K.TRADE_SCAN_EFFORT,
+      // The fast look's own strength and contract (2026-09-22, v6.13), and the two
+      // calls it makes on the wire, recorded rather than sent.
+      TRADE_LOOK_EFFORT: K.TRADE_LOOK_EFFORT,
+      LOOK_CONTRACT: K.LOOK_CONTRACT,
+      sendWithFallback: async (env2, turn, send) => send(turn),
+      carryTurn: async (env2, turn, opts) => {
+        w.carried.push({ turn, opts });
+        if (over.carryThrows) throw new Error('the look died');
+        return over.message || { stop_reason: 'end_turn', content: [{ type: 'text' }] };
+      },
     };
     const names = Object.keys(deps).join(', ');
     const api = new Function('deps', `
@@ -2246,10 +2284,12 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
       const READ_FAILED = Symbol('read failed');
       ${markerLine}
       ${abandonLine}
+      ${lookBudgetLine}
+      ${lookStaleLine}
       ${failsLine}
       ${askAbandonLine}
       ${scanFns.replace(/export async function/g, 'async function').replace(/export function askFlightNext/, 'function askFlightNext')}
-      return { runTradeScan, pollScanFlight };
+      return { runTradeScan, runTradeLook, pollScanFlight };
     `)(deps);
     return { w, api };
   };
@@ -2338,7 +2378,7 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && noteOf(landed.w)?.scanStatus === 'idle' && noteOf(landed.w)?.lastScanAt instanceof Date
     && /One to watch\./.test(noteOf(landed.w)?.scanNote.text) && !/```json/.test(noteOf(landed.w)?.scanNote.text)
     && landed.w.deletes.includes('advisorQueue/scan_case_c1')
-    && landed.w.diag.some((e) => e.ev === 'scan-end' && e.ok === true)
+    && landed.w.diag.some((e) => e.ev === 'scan-end' && e.ok === true && e.kind === 'deep')
     && lost === false && raced.w.filed.length === 0
     && dead === true && failed.w.patches.some((p) => p.data.scanStatus === 'error' && /the batch died/.test(p.data.scanError || ''))
     && failed.w.deletes.includes('advisorQueue/scan_case_c1')
@@ -2381,6 +2421,141 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && !spaces.w.patches.some((p) => p.data.scanNote !== undefined)
     && !!goodEnd && goodEnd.ok === true && goodEnd.chars > 0 && goodEnd.kinds === '' && goodEnd.searches === 0,
     JSON.stringify({ empty, blankEnd, filed: blank.w.filed.length }));
+
+// ---- T63: the fast look RUNS (Eric, 2026-09-22: "I'd been scanning for hours") ---------------
+//
+// His whole trading day went on a button whose wait he could not see the end of, because a deep
+// scan joins the provider's batch queue: 5.4 minutes one hour, 8.1 the next, 12.6, then one still
+// in the air at 80. No effort setting touches that, because the waiting is queue time. So the look
+// does not queue at all. It runs on his tap, streamed, inside the invocation, and it is stopped
+// hard at two and a half minutes, well inside the four minute wall where a streamed run is killed.
+//
+// The whole point of the design is that NOTHING ELSE CHANGES: it shares scanStatus, the note, the
+// cards and finishTradeScan, so the page, the collection machinery and the demo needed no new
+// shape. What this check proves is exactly that, plus the three ways a look can go wrong.
+{
+  const now0 = at('2026-09-22T17:00:00Z');
+  // A first tap: claimed, the turn built off the look's own contract, and the answer filed through
+  // the scan's own finish. The turn is handed back unstarted, so nothing is on the wire yet.
+  const fast = scanWorld({ text: '## Note\n\nQuiet, rotational.\n\n## Plays\n\n```json\n{ "plays": [], "portfolio": null }\n```' });
+  const look = await fast.api.runTradeLook(env, 'c1', { now: now0 });
+  const claimPatch = fast.w.patches.find((p2) => p2.path === K.STATE_PATH);
+  const beforeRun = fast.w.carried.length;
+  await look.run();
+  // A second tap a few seconds later buys nothing: one look and one scan are mutually exclusive.
+  const twice = scanWorld();
+  twice.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanAt: new Date(now0 - 10_000), scanCtx: { kind: 'look' } }, updateTime: 'U0' });
+  const second = await twice.api.runTradeLook(env, 'c1', { now: now0 });
+  const scanRefused = await twice.api.runTradeScan(env, 'c1', { now: now0 });
+  // And a tap on the look while a deep scan is in the air is refused the other way round.
+  const deepUp = scanWorld();
+  deepUp.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanAt: new Date(now0 - 60_000), scanCtx: { batchId: 'b9' } }, updateTime: 'U0' });
+  const lookRefused = await deepUp.api.runTradeLook(env, 'c1', { now: now0 });
+  // The loser of a race between two taps in the same second writes nothing and runs nothing.
+  const race = scanWorld({ lostRace: true });
+  race.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'idle' }, updateTime: 'U0' });
+  const lostLook = await race.api.runTradeLook(env, 'c1', { now: now0 });
+  // A turn that dies parks the reason where his last note is untouched.
+  const died = scanWorld({ carryThrows: true });
+  const dying = await died.api.runTradeLook(env, 'c1', { now: now0 });
+  await dying.run();
+  // An isolate that died leaves "running" with no batch and nothing on a clock. Past the stale
+  // window the next poll clears it and says where the deep one is; inside it, nothing is touched.
+  const ghost = scanWorld();
+  ghost.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanAt: new Date(now0), scanCtx: { kind: 'look', submittedAt: new Date(Date.now() - 5 * 60_000) } }, updateTime: 'U0' });
+  const cleared = await ghost.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
+  const live = scanWorld();
+  live.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanAt: new Date(now0), scanCtx: { kind: 'look', submittedAt: new Date() } }, updateTime: 'U0' });
+  const untouched = await live.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
+
+  // NEGATIVE CONTROL (run 2026-09-22, v6.13): `budgetMs: LOOK_BUDGET_MS` dropped from the look's
+  //   carryTurn call made this read    FAIL  T63 the fast look RUNS ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.13): the claim's `ifUpdateTime: doc.updateTime` dropped,
+  //   so two isolates both claim, made this read    FAIL  T63 the fast look RUNS ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.13): pollScanFlight's stale-look branch changed to
+  //   `if (false)` made this read      FAIL  T63 the fast look RUNS ...
+  check('T63 the fast look RUNS: a tap claims the desk conditionally and hands back an unstarted turn, so nothing is on the wire until the route runs it; the turn is built off his instructions and the LOOK contract alone, at the look\'s own strength, with no search tool and a small ceiling; it is carried STREAMED and stopped at its own budget with the sentence that sends him to Scan; the answer files through the scan\'s own finish; a second look, and a scan while a look is up, are refused both ways; the loser of a race writes nothing and runs nothing; a turn that dies parks the reason and leaves his note alone; and a look whose isolate died is cleared by the next poll once it is stale and left alone before that',
+    look.ok === true && look.status === 'running' && typeof look.run === 'function'
+    && beforeRun === 0 && fast.w.carried.length === 1
+    && claimPatch.data.scanStatus === 'running' && claimPatch.data.scanCtx.kind === 'look'
+    && (claimPatch.opts.ifUpdateTime !== undefined || claimPatch.opts.mustNotExist === true)
+    && fast.w.submitted.length === 0
+    && fast.w.carried[0].turn.system[0].text === `${K.TRADE_INSTRUCTIONS}\n\n${K.LOOK_CONTRACT}`
+    && /Eric tapped Look/.test(fast.w.carried[0].turn.messages[0].content[0].text)
+    && /<desk>/.test(fast.w.carried[0].turn.messages[0].content[0].text)
+    && fast.w.carried[0].turn.effort === K.TRADE_LOOK_EFFORT && K.TRADE_LOOK_EFFORT === 'low'
+    && fast.w.carried[0].turn.tools === undefined
+    && fast.w.carried[0].turn.maxTokens === 8000
+    // Streamed, not `noStream`: a call that produces no bytes is answered 524 by the provider's
+    // edge proxy at about a hundred seconds, which is inside this budget.
+    && fast.w.carried[0].opts.noStream !== true
+    && fast.w.carried[0].opts.budgetMs === 150_000
+    && fast.w.carried[0].opts.budgetWhy === K.SAY.lookLong
+    && fast.w.carried[0].opts.runStartedAt === now0
+    && fast.w.filed.length === 1 && fast.w.filed[0].id === 'c1'
+    && /Quiet, rotational\./.test(noteOf(fast.w)?.scanNote.text)
+    && fast.w.diag.some((e) => e.ev === 'look-start')
+    // Which button bought the answer, so the two waits can be measured apart in the log.
+    && fast.w.diag.some((e) => e.ev === 'scan-end' && e.ok === true && e.kind === 'look')
+    && second.ok === false && second.why === K.SAY.lookRunning && second.run === null && twice.w.carried.length === 0
+    && scanRefused.ok === false && scanRefused.why === K.SAY.lookRunning && twice.w.submitted.length === 0
+    && lookRefused.ok === false && lookRefused.why === K.SAY.scanRunning && deepUp.w.carried.length === 0
+    && lostLook.ok === false && lostLook.run === null && race.w.carried.length === 0
+    && died.w.carried.length === 1 && died.w.patches.some((p2) => p2.data.scanStatus === 'error' && /the look died/.test(p2.data.scanError || ''))
+    && !died.w.patches.some((p2) => p2.data.scanNote !== undefined)
+    && died.w.diag.some((e) => e.ev === 'look-end' && e.ok === false)
+    && cleared === true && ghost.w.patches.some((p2) => p2.data.scanStatus === 'error' && p2.data.scanError === K.SAY.lookLong)
+    && ghost.w.deletes.includes('advisorQueue/scan_case_c1')
+    && untouched === false && live.w.patches.length === 0 && live.w.deletes.length === 0,
+    JSON.stringify({ look: look.ok, carried: fast.w.carried.length, second: second.why, cleared, untouched }));
+}
+}
+
+// ---- T64: how long it has been, on the running row (Eric, 2026-09-22) -------------------------
+//
+// "I'd been scanning for hours. Pretty much the whole trading day." The row said Scanning and
+// nothing else, so five minutes and five hours looked identical on his phone and he sat through a
+// session before saying so. The line now counts, from the minute mark on.
+{
+  const DESKMOD = await import('../../public/js/admin-desk.js');
+  const APP = f('public/js/admin-deskapp.js');
+  const DESKHTML = f('public/admin-desk.html');
+  const t0 = Date.parse('2026-09-22T17:00:00Z');
+  const deep = (secs) => DESKMOD.scanRunLine({ kind: 'deep', startedAt: new Date(t0).toISOString() }, t0 + secs * 1000);
+  const quick = (secs) => DESKMOD.scanRunLine({ kind: 'look', startedAt: new Date(t0).toISOString() }, t0 + secs * 1000);
+  // NEGATIVE CONTROL (run 2026-09-22, v6.13): the elapsed branch removed so scanRunLine always
+  //   returned the head sentence made this read    FAIL  T64 the running row says how long ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.13): `on(['panel'], paintScan);` removed from the app
+  //   made this read                               FAIL  T64 the running row says how long ...
+  check('T64 the running row says how long it has been RUNS: under three quarters of a minute it says what to expect and never "0 minutes"; past that it counts, singular at one; the quick look and the deep scan say different things; a row with no stamp and an unparseable one both fall back rather than printing nothing; the Worker and the demo both send the stamp and which button is up; the page repaints it on every poll and disables both buttons while one is running; and the page carries a Look button beside Scan',
+    deep(0) === 'Scanning for new entries. <b>It lands on its own.</b>'
+    && deep(44) === 'Scanning for new entries. <b>It lands on its own.</b>'
+    && deep(45) === 'Scanning for new entries. <b>1 minute so far.</b>'
+    && deep(240) === 'Scanning for new entries. <b>4 minutes so far.</b>'
+    && deep(4 * 3600) === 'Scanning for new entries. <b>240 minutes so far.</b>'
+    && quick(0) === 'Taking a quick look. <b>Under a minute.</b>'
+    && quick(90) === 'Taking a quick look. <b>2 minutes so far.</b>'
+    && DESKMOD.scanRunLine({ kind: 'deep' }, t0) === 'Scanning for new entries. <b>It lands on its own.</b>'
+    && DESKMOD.scanRunLine({ kind: 'look', startedAt: 'not a date' }, t0) === 'Taking a quick look. <b>Under a minute.</b>'
+    && DESKMOD.scanRunLine(null, t0) === 'Scanning for new entries. <b>It lands on its own.</b>'
+    // The Worker and the demo send the same two fields, and only while one is up.
+    && /startedAt: st\.scanStatus === 'running' && st\.scanAt \? new Date\(st\.scanAt\)\.toISOString\(\) : null,/.test(T)
+    && /kind: st\.scanStatus === 'running' \? \(st\.scanCtx\?\.kind === 'look' \? 'look' : 'deep'\) : null,/.test(T)
+    && /startedAt: st\.scanStatus === 'running' && st\.scanAt \? new Date\(st\.scanAt\)\.toISOString\(\) : null,/.test(D)
+    && /kind: st\.scanStatus === 'running' \? \(st\.scanCtx\?\.kind === 'look' \? 'look' : 'deep'\) : null,/.test(D)
+    // The page: the builder paints the running line, both buttons go down together, and the row
+    // repaints on the poll rather than only when a play changes.
+    && /\$\('#scan-txt'\)\.innerHTML = running\n\s+\? scanRunLine\(sc\)/.test(APP)
+    && /\$\('#scan-go'\)\.disabled = running;\n\s+\$\('#look-go'\)\.disabled = running;/.test(APP)
+    && /on\(\['panel'\], paintScan\);/.test(APP)
+    && /\$\('#look-go'\)\.addEventListener\('click', \(\) => startScan\('look', 'look'\)\);/.test(APP)
+    && /\$\('#scan-go'\)\.addEventListener\('click', \(\) => startScan\('scan', 'deep'\)\);/.test(APP)
+    && /id="look-go"/.test(DESKHTML) && /id="scan-go"/.test(DESKHTML)
+    && DESKHTML.indexOf('id="look-go"') < DESKHTML.indexOf('id="scan-go"')
+    // The route, and the demo's mirror of it.
+    && /if \(sub === 'look'\) return tradeLook\(env, \{ now, ctx \}\);/.test(T)
+    && /if \(sub === 'scan' \|\| sub === 'look'\) \{/.test(D),
+    JSON.stringify({ d0: deep(0), d45: deep(45), q90: quick(90) }));
 }
 
 // THE COUNTER IS COUNTED LAST (2026-09-22, v6.4). It used to be declared in the middle of the

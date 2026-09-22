@@ -15,7 +15,7 @@
 // advisor.js, where every model turn lives.
 
 import { patchDoc, deleteDoc, listDocs, tryGet, READ_FAILED, readFailedError } from './firestore.js';
-import { markPending, diagLog, runTradeScan, pollScanFlight } from './advisor.js';
+import { markPending, diagLog, runTradeScan, runTradeLook, pollScanFlight } from './advisor.js';
 import {
   isTradingDay, tradeMetrics, chartSeries, PROJECTION_MIN_DAYS,
   rulesOf, RULE_RANGES, defaultRules, dayStatus, realizedToday, openRisk, tradeCalc, closePnl,
@@ -460,6 +460,17 @@ export function scanBlock(stateDoc) {
     status: st.scanStatus === 'running' ? 'running' : st.scanStatus === 'error' ? 'error' : 'idle',
     error: st.scanError || null,
     at: st.lastScanAt ? new Date(st.lastScanAt).toISOString() : null,
+    // HOW LONG IT HAS BEEN (Eric, 2026-09-22: "I'd been scanning for hours.
+    // Pretty much the whole trading day"). The spinner said Scanning and
+    // nothing else, so five minutes and five hours looked identical and he
+    // sat through a whole session before saying so. The page prints this as
+    // minutes on the running line, which makes a run that has gone wrong
+    // visible in the first one.
+    startedAt: st.scanStatus === 'running' && st.scanAt ? new Date(st.scanAt).toISOString() : null,
+    // Which button is up: 'look' is the fast one, 'deep' is the scan. The
+    // page says a different sentence for each; everything else about them,
+    // the note, the cards, the landing, is identical.
+    kind: st.scanStatus === 'running' ? (st.scanCtx?.kind === 'look' ? 'look' : 'deep') : null,
     // CUT ON THE READ (Eric, 2026-09-22: "This needs to disappear or be
     // shortened to 5 bullet points"). The write-time cut of 6.7 left every
     // note filed before it sitting on the desk in full, and the wall on his
@@ -525,8 +536,35 @@ async function tradeScan(env, { now = Date.now() } = {}) {
   if (!settings.caseId) throw new TradeError(404, SAY.noDesk);
   const out = await runTradeScan(env, settings.caseId, { now });
   if (!out.ok && out.why === SAY.scanRunning) throw new TradeError(409, SAY.scanRunning);
+  if (!out.ok && out.why === SAY.lookRunning) throw new TradeError(409, SAY.lookRunning);
   if (!out.ok) throw new TradeError(502, out.why || SAY.scanRunning);
   return { ok: true, status: 'running', caseId: settings.caseId };
+}
+
+/**
+ * THE FAST LOOK, ON HIS TAP (Eric, 2026-09-22, choosing "Both: a fast look
+ * and a deep scan"). The scan is worth its wait when he has one; this is for
+ * when he does not. It runs here and now instead of joining the provider's
+ * batch queue, which is the whole reason a scan can come back in five
+ * minutes one hour and eighty the next.
+ *
+ * `ctx` is what makes that work: runTradeLook hands back the turn unstarted,
+ * and waitUntil keeps this invocation alive for it while the button answers
+ * immediately. Without a ctx the turn would have to be awaited, which would
+ * hold his tap for the whole run, so a caller with no ctx gets the refusal
+ * rather than a run that silently blocks. Nothing else on the desk changes:
+ * it lands through the scan's own finish.
+ */
+async function tradeLook(env, { now = Date.now(), ctx } = {}) {
+  const settings = (await readSettings(env))?.data || {};
+  if (!settings.caseId) throw new TradeError(404, SAY.noDesk);
+  if (!ctx?.waitUntil) throw new TradeError(503, SAY.lookNoCtx);
+  const out = await runTradeLook(env, settings.caseId, { now });
+  if (!out.ok && out.why === SAY.lookRunning) throw new TradeError(409, SAY.lookRunning);
+  if (!out.ok && out.why === SAY.scanRunning) throw new TradeError(409, SAY.scanRunning);
+  if (!out.ok) throw new TradeError(502, out.why || SAY.lookRunning);
+  ctx.waitUntil(out.run());
+  return { ok: true, status: 'running', kind: 'look', caseId: settings.caseId };
 }
 
 /**
@@ -680,7 +718,7 @@ export async function tradePlay(env, body) {
 }
 
 /** The dispatch behind /api/admin/trade/<sub>. The caller has already proved the admin. */
-export async function tradeRoute(env, { sub, method, body, query = {}, now = Date.now() }) {
+export async function tradeRoute(env, { sub, method, body, query = {}, now = Date.now(), ctx }) {
   if (method === 'GET' && sub === 'state') return tradeState(env, { now });
   if (method === 'GET' && sub === 'positions') return tradePositions(env, { now });
   if (method === 'GET' && sub === 'quote') return tradeQuote(env, query, now);
@@ -693,6 +731,7 @@ export async function tradeRoute(env, { sub, method, body, query = {}, now = Dat
   if (sub === 'settings') return tradeSettings(env, body);
   if (sub === 'play') return tradePlay(env, body);
   if (sub === 'scan') return tradeScan(env, { now });
+  if (sub === 'look') return tradeLook(env, { now, ctx });
   if (sub === 'position') return tradePosition(env, body, now);
   if (sub === 'close') return tradeClose(env, body, now);
   if (sub === 'remove') return tradeRemove(env, body);

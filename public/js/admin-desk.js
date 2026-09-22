@@ -53,6 +53,31 @@ export function agoShort(v, now = Date.now()) {
   return new Intl.DateTimeFormat('en-US', { timeZone: MT, month: 'short', day: 'numeric' }).format(d);
 }
 
+/**
+ * WHAT THE RUNNING ROW SAYS, AND FOR HOW LONG (Eric, 2026-09-22: "I'd been
+ * scanning for hours. Pretty much the whole trading day").
+ *
+ * The row said Scanning and nothing else, so a run of five minutes and a run
+ * of five hours looked exactly alike, and he sat through a whole session
+ * before saying so. It now says how long it has been, from the minute mark
+ * on, so a run that has gone wrong is visible at once. Under three quarters
+ * of a minute it says what to expect instead, because "0 minutes so far" is
+ * noise.
+ *
+ * The two buttons say different things: the quick look is over in a minute
+ * or it is stopped, the deep scan lands on its own whenever the queue gets
+ * to it.
+ */
+export function scanRunLine(sc, now = Date.now()) {
+  const look = sc?.kind === 'look';
+  const head = look ? 'Taking a quick look.' : 'Scanning for new entries.';
+  const t0 = sc?.startedAt ? new Date(sc.startedAt).getTime() : 0;
+  const secs = Number.isFinite(t0) && t0 ? Math.max(0, Math.round((now - t0) / 1000)) : -1;
+  if (secs < 45) return `${head} <b>${look ? 'Under a minute.' : 'It lands on its own.'}</b>`;
+  const mins = Math.round(secs / 60);
+  return `${head} <b>${mins === 1 ? '1 minute' : `${mins} minutes`} so far.</b>`;
+}
+
 /** One call to the desk's routes, with his token. */
 export async function tradeCall(getToken, sub, body) {
   const token = await getToken();

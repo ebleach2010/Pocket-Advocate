@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.12';
+export const VERSION = '6.13';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '6.12';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // A FAST LOOK BESIDE THE DEEP SCAN (Eric, 2026-09-22: "I'd been scanning for
+    // hours. Pretty much the whole trading day", then choosing "Both: a fast
+    // look and a deep scan"). The deep one joins a queue with no promised
+    // wait; this one runs on the tap. Admin only.
+    version: '6.13',
+    quiet: true,
+    client: [],
+    admin: [
+      'A Look button now sits beside Scan on Plays. Look runs the moment you tap it and comes back inside a couple of minutes: the tape and at most two things worth taking, from your own numbers, with nothing searched. Scan is unchanged and still the deep one.',
+      'While either one is running, the row says how long it has been, so a run that has gone wrong shows up in the first minute instead of at the end of the day.',
+    ],
+  },
   {
     // SCAN AT HIGH, UPDATE AT MAX (Eric, 2026-09-22, asked and choosing it).
     // One carve-out from the top setting he asked for on 2026-09-09, for the

@@ -68,6 +68,9 @@ function deskScanBlock(store) {
     status: st.scanStatus === 'running' ? 'running' : st.scanStatus === 'error' ? 'error' : 'idle',
     error: st.scanError || null,
     at: st.lastScanAt ? new Date(st.lastScanAt).toISOString() : null,
+    // How long it has been up, and which button is up (2026-09-22, v6.13).
+    startedAt: st.scanStatus === 'running' && st.scanAt ? new Date(st.scanAt).toISOString() : null,
+    kind: st.scanStatus === 'running' ? (st.scanCtx?.kind === 'look' ? 'look' : 'deep') : null,
     // The same read-side cut the Worker makes (2026-09-22).
     note: note ? {
       text: noteOnly(note.text), bullets: noteBullets(note.text),
@@ -1819,6 +1822,7 @@ export function demoApi(role, store) {
         badExit: 'Sold at needs the exit price, or the profit or loss in dollars.',
         badRules: 'Rules: risk 0.1 to 5% a trade, day loss 0.5 to 20%, floor under aim under cap, cap up to 50%, target 0.5R to 5R.',
         scanRunning: 'A scan is already running. It lands on its own.',
+        lookRunning: 'A look is already running. Give it a few seconds.',
         noDesk: 'The trade desk is not open.',
         noQuoteKey: 'No market data key on file. Add it on Desk.',
         quoteMany: 'Quotes: up to 10 tickers at a time.',
@@ -2136,12 +2140,20 @@ export function demoApi(role, store) {
       // THE SCAN, ON HIS TAP (Eric, 2026-09-22): refused while one is in the
       // air, and otherwise it lands four seconds later with a note and the
       // setups it filed, which is the shape production has.
-      if (sub === 'scan') {
+      // AND THE FAST LOOK BESIDE IT (2026-09-22, v6.13). The two buttons
+      // share every path after the answer, so the demo shares them too: one
+      // lands quickly, the other takes its time, and both file through the
+      // same lines below.
+      if (sub === 'scan' || sub === 'look') {
+        const kind = sub === 'look' ? 'look' : 'deep';
         const st = store.docs.get('trade/state') || {};
-        if (st.scanStatus === 'running') return fail(409, SAY.scanRunning);
+        if (st.scanStatus === 'running')
+          return fail(409, st.scanCtx?.kind === 'look' ? SAY.lookRunning : SAY.scanRunning);
         const s0 = settings();
         if (!s0.caseId) return fail(404, SAY.noDesk);
-        store.docs.set('trade/state', { ...st, scanStatus: 'running', scanError: null, scanAt: new Date() });
+        store.docs.set('trade/state', {
+          ...st, scanStatus: 'running', scanError: null, scanAt: new Date(), scanCtx: { kind },
+        });
         store.persist?.();
         setTimeout(() => {
           const was = store.docs.get('trade/state') || {};
@@ -2169,17 +2181,19 @@ export function demoApi(role, store) {
             expiresAt: new Date(Date.now() + 3 * 3600_000),
           });
           store.docs.set('trade/state', {
-            ...was, scanStatus: 'idle', scanError: null, lastScanAt: new Date(),
+            ...was, scanStatus: 'idle', scanError: null, scanCtx: null, lastScanAt: new Date(),
             scanNote: {
               // The Note section alone (2026-09-22), the way the Worker files it now. The setups
               // that used to trail after it are on the cards and nowhere else.
-              text: 'Indexes are holding their opening ranges on better volume than yesterday, and the one thing worth taking is the continuation in QQQ. You have $24.50 to risk on a trade and the day is still under its floor, so one clean entry does the work.',
+              text: kind === 'look'
+                ? 'Indexes are holding their opening ranges. QQQ is the one continuation worth taking right now. Nothing was searched, so this is the tape and your own numbers only.'
+                : 'Indexes are holding their opening ranges on better volume than yesterday, and the one thing worth taking is the continuation in QQQ. You have $24.50 to risk on a trade and the day is still under its floor, so one clean entry does the work.',
               at: new Date(), plays: 1, missing: false,
             },
           });
           store.persist?.();
-        }, 4000);
-        return ok({ ok: true, status: 'running', caseId: s0.caseId });
+        }, kind === 'look' ? 1500 : 4000);
+        return ok({ ok: true, status: 'running', kind, caseId: s0.caseId });
       }
       if (sub === 'play') {
         const id = String(body.id || '');

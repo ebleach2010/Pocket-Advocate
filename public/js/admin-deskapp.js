@@ -31,7 +31,7 @@ import {
   HORIZONS, HORIZON_WORDS, sizeFor, sharesForDollars, dollarsForShares, fmtQty, playSizing, vehicleLabel, noteBullets,
 } from './trade-math.js';
 import {
-  money, shortMoney, dayShort, dayName, agoShort, tradeCall,
+  money, shortMoney, dayShort, dayName, agoShort, scanRunLine, tradeCall,
   playFaceHtml, positionFaceHtml, dayBarState, deskChartSvg,
   newsRowHtml, earningsChipHtml, statsOverviewHtml, statsBreakdownHtml, statsClosesHtml,
   isQuestion, mergeStream, streamRowHtml, logLineFor, esc,
@@ -179,13 +179,18 @@ function paintScan() {
   const row = $('#scan');
   const running = sc.status === 'running';
   row.setAttribute('aria-busy', running ? 'true' : 'false');
+  // BOTH BUTTONS GO DOWN TOGETHER (2026-09-22, v6.13). A look and a scan
+  // share the note, the cards and the landing, so only one of them may be up
+  // at a time; the Worker refuses the second anyway, and a button that cannot
+  // work should not look like it can.
   $('#scan-go').disabled = running;
+  $('#look-go').disabled = running;
   const n = S.plays.filter((p) => LIVE.has(p.status) && !expired(p)).length;
   $('#scan-txt').innerHTML = running
-    ? 'Scanning for new entries. <b>It lands on its own.</b>'
+    ? scanRunLine(sc)
     : sc.at
       ? `Last scan <b>${esc(agoShort(sc.at))}</b> · ${n} on the desk`
-      : 'No scan yet today. Tap Scan when you want one.';
+      : 'No scan yet today. Tap Look for a fast one, Scan for the deep one.';
   // Three different silences, and he should never have to guess which one it
   // was: a scan that failed, a scan that came back without its setups list,
   // and a desk with no price key on it.
@@ -272,18 +277,37 @@ async function markPlay(p, card, status, btn) {
 }
 on(['plays'], paintPlays);
 on(['plays'], paintScan);
+// AND ON THE POLL (2026-09-22, v6.13). The scan lives on the panel, not on
+// the plays, and the running row now counts the minutes, so it has to repaint
+// on every poll whether or not a play changed. It was riding the plays write
+// alone, which is fine for a line that never changes while one is up and
+// wrong for one that does.
+on(['panel'], paintScan);
 on(['plays'], paintNote);
 on(['quotes'], paintTicks);
 
-$('#scan-go').addEventListener('click', async () => {
+async function startScan(sub, kind) {
   say('#scan-said', '');
   try {
-    await call('scan', {});
-    set('panel', { ...(S.panel || {}), trade: { ...(S.panel?.trade || {}), scan: { ...scanNow(), status: 'running' } } });
+    await call(sub, {});
+    set('panel', {
+      ...(S.panel || {}),
+      trade: {
+        ...(S.panel?.trade || {}),
+        scan: { ...scanNow(), status: 'running', kind, startedAt: new Date().toISOString() },
+      },
+    });
     paintScan();
     kickPoll();
   } catch (err) { say('#scan-said', err.message); }
-});
+}
+$('#scan-go').addEventListener('click', () => startScan('scan', 'deep'));
+// THE FAST LOOK (Eric, 2026-09-22, choosing "Both: a fast look and a deep
+// scan"). The deep scan joins the provider's queue, which is why one came
+// back in five minutes and the next was still out at eighty. This one runs
+// on the tap and is stopped at two and a half minutes either way. Same
+// landing, same cards: only the wait is different.
+$('#look-go').addEventListener('click', () => startScan('look', 'look'));
 
 // ---- NEWS ---------------------------------------------------------------------
 const NEWS_MEMO_MS = 5 * 60_000;

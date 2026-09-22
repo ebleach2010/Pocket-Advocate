@@ -49,6 +49,17 @@ export const TRADE_EFFORT = 'max';
 // question, and every other case keep the top setting he asked for on
 // 2026-09-09.
 export const TRADE_SCAN_EFFORT = 'high';
+// THE FAST LOOK (Eric, 2026-09-22: "I'd been scanning for hours. Pretty much
+// the whole trading day"). A turn cannot live inside a Worker invocation on
+// this plan past about 100 seconds without a stream, or four minutes with
+// one, both measured live in 2026-08, which is why a scan rides the Batches
+// API and waits in the provider's queue: 5, 8, 13 and 80 minutes on the day
+// he said this. So the fast look is built to FIT: low effort, no search, a
+// short answer, run on his tap and streamed so bytes flow from the first
+// second and nothing between here and the provider can time it out. It sees
+// what the desk note carries, which is the quotes, the headlines, the
+// earnings, his rules, his positions and where his day stands.
+export const TRADE_LOOK_EFFORT = 'low';
 export const TRADE_TZ = 'America/Boise';
 export const MARKET_OPEN = '07:30';
 export const MARKET_CLOSE = '14:00';
@@ -122,6 +133,14 @@ export const SAY = {
   quoteMany: 'Quotes: up to 10 tickers at a time.',
   quoteBudget: 'Quotes are rate limited; try again in a minute.',
   scanRunning: 'A scan is already running. It lands on its own.',
+  // The fast look (2026-09-22): it runs on his tap and fits inside a minute or
+  // two, so a second tap while one is up is refused the same way.
+  lookRunning: 'A look is already running. Give it a few seconds.',
+  lookLong: 'The quick look ran past its time and was stopped. Tap Scan for the deep one.',
+  // A look has to run inside the invocation that starts it. No ctx to keep
+  // that invocation alive means no way to run it without holding his tap for
+  // the whole turn, so it is refused honestly instead.
+  lookNoCtx: 'A quick look cannot run from here. Tap Scan.',
   noDesk: 'The trade desk is not open.',
   noNext: 'The trade desk does not continue into a next case. Close it or delete it.',
   noPull: 'The trade desk cannot be pulled from.',
@@ -468,6 +487,31 @@ One play object per setup above, in the same order, with these fields: horizon (
 Plain words, and never an em dash or an en dash anywhere: use a comma, a colon, or the word to.
 
 You never make a trade for him and you never tell him to make one. A setup is what you would watch and how you would size it, not an order. Every trade is his decision.`;
+
+export const LOOK_CONTRACT = `This is Eric's trading desk and this is a FAST LOOK, not a scan and not a reading. He tapped Look because he wants an answer in under a minute. There is no client and no patient anywhere on this. You never ask him a question.
+
+You have no web search on this turn and you do not need one. Everything you are allowed to use is in the desk note at the end of the material: his balance, his rules in dollars, where his day stands, the positions he is already in, the setups still open, the quotes with today's range, the headlines and today's earnings. Do not guess at a price that is not in front of you, and do not write about a ticker whose price you cannot see.
+
+Be quick and be short. Do not deliberate, do not weigh every name, do not explain your reasoning. Name what is worth watching in the next hour and move on. If nothing in front of you is worth taking, say so in one bullet and file no setups: an empty look is a real answer and a filler setup costs him money.
+
+THE THREE KINDS OF TRADE, AND THE WEEKEND: a scalp lives one to ten minutes, an intraday trade one to eight hours and is flat by the close, a swing runs eight hours to three days and is flat before the weekend. Never write a swing that would be held over a Saturday. His benchmarks are a floor of 1% a day, an aim of 2%, and a stop for the day at a 3% realized loss or a 10% realized gain.
+
+A name at seven hundred dollars a share cannot be taken on his account at all: one share is more than his whole one trade allowance. Prefer what his money can actually buy, and say the allocation as a percent of his account.
+
+Use exactly these headings, in this order, as markdown ## headings:
+
+## Note
+## Plays
+
+"Note": at most three bullet points and nothing that is not a bullet. Each one starts with "- " on its own line and is under 15 words. What the tape is doing, and anything about his day that changes how he takes it.
+
+"Plays": one fenced json block and nothing else, in this shape:
+{ "plays": [ ... ], "portfolio": null }
+At most TWO play objects, best first, each with these fields and no others: horizon ("scalp", "intraday" or "swing"), holdDays (1 to 3 for a swing, 0 otherwise), ticker, side ("long" or "short"), instrument ("stock", "call", "put" or "spread"), structure, entry, stop, targets (a list of prices), holdMinutes (an integer), profitLow and profitHigh (whole percents), allocPct (the share of his account to put in, as a number of percent), sizeDollars (the same allocation in dollars at the balance in the note), strike, strike2, optionType and expiry (options only, null otherwise), catalyst, picture (one sentence, what it is doing right now), risk (one sentence). Nothing filed with an empty look: { "plays": [], "portfolio": null }.
+
+Plain words, and never an em dash or an en dash anywhere: use a comma, a colon, or the word to.
+
+You never make a trade for him and you never tell him to make one. Every trade is his decision.`;
 
 // Appended to the second system block of a question on the desk, after the
 // question instructions the medical cases use, so it is the last word.

@@ -1148,8 +1148,12 @@ export default {
       if (url.pathname === '/api/admin/voice')
         return await handleVoiceLoop(request, env, ctx);
       // The Trade portal (2026-09-21): one prefix, one gate, one dispatch.
+      // `ctx` rides too (2026-09-22, v6.13): the fast look runs its turn on
+      // his tap through ctx.waitUntil, so the button answers at once while
+      // the invocation stays alive for the run. handleVoiceLoop above is the
+      // same pattern.
       if (url.pathname.startsWith('/api/admin/trade/'))
-        return await handleTrade(request, env, url);
+        return await handleTrade(request, env, url, ctx);
       if (url.pathname === '/api/version' && request.method === 'GET') {
         // The reprice diag came off once the stored rate read 350000
         // (2026-08-29, marker "full 340000 -> 350000"). The HEARTBEAT
@@ -2117,7 +2121,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-22-scan-at-high';
+const BUILD_TAG = 'v2026-09-22-fast-look';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2125,7 +2129,7 @@ const BUILD_TAG = 'v2026-09-22-scan-at-high';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '6.12';
+const VERSION = '6.13';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -8730,7 +8734,7 @@ async function requireAdmin(request, env) {
  * the sentence (the open desk's id on a 409), and anything else is the
  * ordinary catch above this dispatch.
  */
-async function handleTrade(request, env, url) {
+async function handleTrade(request, env, url, ctx) {
   const admin = await requireAdmin(request, env);
   if (!admin) return json({ error: 'Not found' }, 404);
   const sub = url.pathname.slice('/api/admin/trade/'.length);
@@ -8739,7 +8743,7 @@ async function handleTrade(request, env, url) {
   // the tickers he is actually in.
   const query = Object.fromEntries(url.searchParams);
   try {
-    return json(await tradeRoute(env, { sub, method: request.method, body, query }));
+    return json(await tradeRoute(env, { sub, method: request.method, body, query, ctx }));
   } catch (err) {
     if (err instanceof TradeError) return json({ error: err.message, ...(err.extra || {}) }, err.status);
     throw err;

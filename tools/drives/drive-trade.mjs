@@ -142,6 +142,28 @@ ok('the note is at most five bullets and has no more button', !!plays && plays.b
 ok('the scan\'s note sits above them and the market line reads his clock', !!plays && /The indexes opened/.test(plays.note || '') && /^\d\d:\d\d · /.test(plays.mkt || ''), plays?.mkt);
 ok('the prices he is in are on the strip', !!plays && plays.ticks >= 1, `${plays?.ticks} tiles`);
 await shot('C-plays');
+
+// v6.13 (Eric: "I'd been scanning for hours. Pretty much the whole trading day", then choosing
+// "Both: a fast look and a deep scan"). The fast look goes first, because it is the one he taps
+// when he cannot wait: it says something different from the scan while it runs, it takes BOTH
+// buttons down, and it lands on the same board through the same cards.
+await page.evaluate(() => document.getElementById('look-go').click());
+const looking = await until(() => {
+  const busy = document.getElementById('scan').getAttribute('aria-busy') === 'true';
+  return busy ? { txt: document.getElementById('scan-txt').textContent.trim(), scan: document.getElementById('scan-go').disabled, look: document.getElementById('look-go').disabled } : null;
+}, 6000);
+ok('Look says it is looking, not scanning, and takes both buttons down',
+  !!looking && /^Taking a quick look\./.test(looking.txt || '') && looking.scan === true && looking.look === true,
+  JSON.stringify(looking));
+const looked = await until(() => {
+  const busy = document.getElementById('scan').getAttribute('aria-busy') === 'true';
+  const cards = [...document.querySelectorAll('#plays [data-play]')];
+  return !busy && cards.length === 1 ? { n: cards.length, bullets: document.querySelectorAll('#note-p li').length } : null;
+}, 15000);
+ok('and the look lands on the same board, with its note cut the same way',
+  !!looked && looked.n === 1 && looked.bullets >= 1 && looked.bullets <= 5, JSON.stringify(looked));
+await shot('C-look');
+
 await page.evaluate(() => document.getElementById('scan-go').click());
 const scanning = await until(() => document.getElementById('scan').getAttribute('aria-busy') === 'true', 6000);
 ok('Scan says it is scanning and disables itself', !!scanning && await page.evaluate(() => document.getElementById('scan-go').disabled));
