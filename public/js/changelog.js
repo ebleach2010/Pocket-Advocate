@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.7';
+export const VERSION = '6.8';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '6.7';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE CHANCE, BACK WHERE HE READS IT (Eric, 2026-09-22: "Why is the
+    // confidence interval gone"). 6.7 left it as the last words of the small
+    // line under the sentence. Admin only.
+    version: '6.8',
+    quiet: true,
+    client: [],
+    admin: [
+      'The chance of profit is back at the top right of every setup, lit in the colour of its kind, where it was. In 6.7 it had slipped to the end of the small line under the sentence, which is not where you read it.',
+    ],
+  },
   {
     // PLAIN ENGLISH, A BOARD THAT REFRESHES, A WIDER NET (Eric, 2026-09-22:
     // "Make the plays fucking plain English... Why do I have expired plays?

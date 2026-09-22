@@ -99,7 +99,12 @@ export function playFaceHtml(p, { rules, accountCents } = {}) {
   const sz = playSizing({ play: p, rules: R, accountCents });
   const line = playLine(p, { rules: R, accountCents });
   const loses = sz.riskCents == null ? '' : `You lose about ${money(sz.riskCents)} if the stop hits.`;
-  const chance = p.profitLow == null ? '' : `Chance of profit ${p.profitLow} to ${p.profitHigh}%.`;
+  // THE CHANCE, BACK WHERE HE READS IT (Eric, 2026-09-22: "Why is the
+  // confidence interval gone"). v6.7 took the odds block off the face with
+  // the rest of the furniture and left the chance as the last words of the
+  // small line under the sentence, which is a demotion of the one number he
+  // reads first. It sits top right again, in the kind colour, on every card.
+  const chance = p.profitLow == null ? '' : `<span class="odds"><div class="k">Chance</div><div class="v">${esc(p.profitLow)} to ${esc(p.profitHigh)}%</div></span>`;
   const over = sz.overRule ? `That is more than the ${money(sz.budgetCents)} you allow one trade.` : '';
   const near = p.entry == null ? '' : `Get in near ${priceWords(p.entry)}.`;
   const state = p.status === 'took' ? 'Taken' : p.status === 'closed' ? `Closed ${money(p.outcomeCents, true)}` : p.status === 'skipped' ? 'Skipped' : expired ? 'Expired' : '';
@@ -110,9 +115,9 @@ export function playFaceHtml(p, { rules, accountCents } = {}) {
   ].filter(([, v]) => v);
   const live = p.status === 'open' && !expired;
   return `<article class="outlined play${expired ? ' expired' : ''}" data-kind="${esc(p.horizon || 'intraday')}" data-play="${esc(p.id)}">
-    ${state ? `<div class="head"><span class="co">${esc(state)}</span></div>` : ''}
+    ${state || chance ? `<div class="head">${state ? `<span class="co">${esc(state)}</span>` : ''}${chance}</div>` : ''}
     <p class="plain">${esc(line)}</p>
-    <p class="under${sz.overRule ? ' over' : ''}">${esc([near, loses, over, chance].filter(Boolean).join(' '))}</p>
+    <p class="under${sz.overRule ? ' over' : ''}">${esc([near, loses, over].filter(Boolean).join(' '))}</p>
     <details><summary><span>Why, and what to watch</span><span class="chev">&#9662;</span></summary>
       <dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
     </details>

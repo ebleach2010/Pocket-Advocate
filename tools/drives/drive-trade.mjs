@@ -106,6 +106,7 @@ const plays = await until(() => {
     // THE PLAIN SENTENCE (Eric, 2026-09-22): the whole face is one line now, so the drive reads
     // the line rather than hunting for chips and cells that no longer exist.
     lines: cards.map((c) => c.querySelector('.plain')?.textContent.trim()),
+    odds: cards.map((c) => c.querySelector('.odds .v')?.textContent.trim()),
     unders: cards.map((c) => c.querySelector('.under')?.textContent.trim()),
     note: document.getElementById('note-p')?.textContent.trim().slice(0, 40),
     noteLen: (document.getElementById('note-p')?.textContent || '').length,
@@ -127,6 +128,10 @@ ok('and the contract names its strike and when it expires',
 ok('the line under it says what he loses in dollars and the chance, with no R and no share count',
   !!plays && plays.unders.every((u) => /You lose about \$[\d,.]+ if the stop hits\./.test(u) && !/\dR\b/.test(u) && !/ sh\b/.test(u)),
   plays?.unders[0]);
+// v6.8 (Eric: "Why is the confidence interval gone"): it is on the face of every card, top right.
+ok('the chance of profit is on the face of every card, first thing on the right',
+  !!plays && plays.odds.length === plays.n && plays.odds.every((o) => /^\d+ to \d+%$/.test(o || '')), JSON.stringify(plays?.odds));
+ok('and the small line no longer repeats it', !!plays && plays.unders.every((u) => !/Chance of profit/.test(u)), plays?.unders[0]);
 ok('nothing expired is on the board', !!plays && plays.stale === 0, `${plays?.stale} expired cards`);
 ok('the note is the note, not the whole reading', !!plays && plays.noteLen > 0 && plays.noteLen <= 1200, `${plays?.noteLen} chars`);
 ok('the scan\'s note sits above them and the market line reads his clock', !!plays && /The indexes opened/.test(plays.note || '') && /^\d\d:\d\d · /.test(plays.mkt || ''), plays?.mkt);
