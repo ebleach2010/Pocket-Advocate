@@ -181,7 +181,13 @@ function paintScan() {
     : sc.at
       ? `Last scan <b>${esc(agoShort(sc.at))}</b> · ${n} on the desk`
       : 'No scan yet today. Tap Scan when you want one.';
-  say('#scan-said', sc.status === 'error' ? sc.error || 'The last scan did not come back.' : hasKeyNow() ? '' : 'No market data key on file. Add it in Settings.');
+  // Three different silences, and he should never have to guess which one it
+  // was: a scan that failed, a scan that came back without its setups list,
+  // and a desk with no price key on it.
+  say('#scan-said', sc.status === 'error' ? sc.error || 'The last scan did not come back.'
+    : !hasKeyNow() ? 'No market data key on file. Add it in Settings.'
+      : (!running && sc.note?.missing) ? 'That scan came back without its setups list, so nothing was filed. Tap Scan again.'
+        : '');
 }
 function paintNote() {
   const note = scanNow().note;

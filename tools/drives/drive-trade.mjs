@@ -361,8 +361,14 @@ const set = await page.evaluate(() => ({
   version: document.querySelector('.settings .foot')?.textContent.trim(),
   danger: !!document.getElementById('desk-delete'),
 }));
-ok('the watchlist, the three switches, the files shelf and the version are all in the sheet',
-  set.chips === 10 && set.sw.join() === 'pushOn,celebrate,reduceFx' && /^Version 6\.0$/.test(set.version || '') && set.danger, JSON.stringify(set).slice(0, 140));
+// RE-PINNED 2026-09-22 (v6.2): the version line used to be pinned at 6.0 verbatim, so it went stale
+// the moment anything shipped and said nothing about whether the sheet agreed with the build. It is
+// read off the running Worker now, so the pin is that the sheet shows the version actually served.
+const served = await (await fetch(`${P}/api/version`)).json().catch(() => ({}));
+ok('the watchlist, the three switches, the files shelf and the version are all in the sheet, and the version is the one the build is serving',
+  set.chips === 10 && set.sw.join() === 'pushOn,celebrate,reduceFx' && set.danger
+  && !!served.version && set.version === `Version ${served.version}`,
+  `${JSON.stringify(set).slice(0, 140)} served ${served.version}`);
 await shot('L-settings');
 await page.evaluate(() => { const i = document.querySelector('[data-rule="riskPct"]'); i.value = '1'; i.dispatchEvent(new Event('change')); });
 await page.waitForTimeout(1200);

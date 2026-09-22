@@ -1233,12 +1233,18 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry60 = (CL.match(/\{\n\s+\/\/ THE DESK AS ONE APP[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v6.1): the scan's own window, added the same day.
   const entry61 = (CL.match(/\{\n\s+\/\/ THE SCAN, FROM OUTSIDE[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v6.2): the scan lands on its own again.
+  const entry62 = (CL.match(/\{\n\s+\/\/ THE SCAN THAT NEVER LANDED[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
+  // NEGATIVE CONTROL (run 2026-09-22, v6.2): 'lands on its own again' reworded to 'lands by itself again' in the 6.2 entry made this read
+  //   FAIL  T36 both versions read 6.2 with the new tag, the 4.7 through 6.1 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v5.2): 'has a calculator' reworded to 'has a calculator now' in the 5.2 entry made this read
   //   FAIL  T36 both versions read 5.3 with the new tag, the 4.7 through 5.3 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 6.1 with the new tag, the 4.7 through 6.0 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '6\.1';/.test(CL) && /const VERSION = '6\.1';/.test(W) && /const BUILD_TAG = 'v2026-09-22-desk-probe';/.test(W)
+  check('T36 both versions read 6.2 with the new tag, the 4.7 through 6.1 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '6\.2';/.test(CL) && /const VERSION = '6\.2';/.test(W) && /const BUILD_TAG = 'v2026-09-22-scan-lands';/.test(W)
+    && /version: '6\.2',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry62)
+    && /lands on its own again/.test(entry62) && /which silence it is/.test(entry62) && !DASH.test(entry62)
     && /version: '6\.1',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry61)
     && /looked at from outside/.test(entry61) && !DASH.test(entry61)
     // The window itself: read only, and it says what the flight is doing.
@@ -1413,6 +1419,48 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && !/DESK_GROUPS/.test(CASE)
     && /if \(c\.self && !c\.trade && !asked\) \{/.test(D),
     JSON.stringify({ found: api.harvestQuestions(withSection), inReading: api.harvestQuestions(reading).length, un: api.unansweredFromChat(rows).length }));
+}
+
+// ---- T56: a scan in flight is not a reading (Eric, 2026-09-22: "It's not producing a scan rn") ----
+{
+  const sweep = lift(ADV, 'export async function runQueuedAnalyses(env, deadlineAt = 0) {');
+  const now = lift(ADV, 'export async function pollFlightsNow(env) {');
+  const APP2 = f('public/js/admin-deskapp.js');
+  const iScan = sweep.indexOf('if (row.data.scan)');
+  const iAsk = sweep.indexOf('if (row.data.ask)');
+  const iClaim = sweep.indexOf('const state = await getDoc(env, statePath(kind, id));');
+  const iGiveUp = sweep.indexOf('tries > ANALYSIS_MAX_TRIES');
+  // WHAT THIS IS FOR (measured in production, 2026-09-22): a scan's marker
+  // carries kind and id like every other queue row. With no branch of its
+  // own it reached the analysis claim, which judged it a reading that would
+  // not start: four firings counted it, the fourth stamped the desk with
+  // "This read kept stopping partway" and deleted the marker, and deleting
+  // the marker orphaned the flight the marker existed to collect. The scan
+  // submitted at 13:27 was still in the air at 15:00 with an empty queue.
+  // NEGATIVE CONTROL (run 2026-09-22): the `if (row.data.scan)` branch removed from runQueuedAnalyses made this read
+  //   FAIL  T56 a scan in flight is never mistaken for a reading: the queue sweeper answers a scan marker with one look at its batch and stops there, above the claim that would have counted it as a read that would not start, stamped the desk with an error it never had and deleted the marker the flight needed; ordinary traffic collects the same marker the same way; and the marker is the one the scan writes
+  check('T56 a scan in flight is never mistaken for a reading: the queue sweeper answers a scan marker with one look at its batch and stops there, above the claim that would have counted it as a read that would not start, stamped the desk with an error it never had and deleted the marker the flight needed; ordinary traffic collects the same marker the same way; and the marker is the one the scan writes',
+    iScan > -1 && iAsk > -1 && iClaim > -1 && iGiveUp > -1
+    && /if \(row\.data\.scan\) \{\n\s+await pollScanFlight\(env, id\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}/.test(sweep)
+    // Above the claim, and above the give-up that deleted the marker.
+    && iAsk < iScan && iScan < iClaim && iScan < iGiveUp
+    // The other collector has said the same thing since the scan got a flight.
+    && /if \(row\.data\.scan\) \{\n\s+await pollScanFlight\(env, id, \{ minAgeMs: 45_000 \}\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}/.test(now)
+    // And both are looking for the row the scan actually writes.
+    && /const SCAN_MARKER = \(caseId\) => `advisorQueue\/scan_case_\$\{caseId\}`;/.test(ADV)
+    // A landed scan says which silence it was: nothing worth taking, or no
+    // setups list at all. The page has a sentence for the second.
+    && /scanNote: \{ text: pl\.text\.slice\(0, 6000\), at: new Date\(\), plays: filed\?\.plays \?\? 0, missing: !!pl\.missing \},/.test(ADV)
+    && /plays: Number\(note\.plays\) \|\| 0, missing: note\.missing === true,/.test(T)
+    && /plays: Number\(note\.plays\) \|\| 0, missing: note\.missing === true,/.test(D)
+    && /That scan came back without its setups list, so nothing was filed\. Tap Scan again\./.test(APP2)
+    && /patchDoc\(env, SCAN_MARKER\(caseId\), \{ kind: 'case', id: caseId, scan: true, at: new Date\(\) \}/.test(ADV)
+    // And a look at a live scan puts the marker back, so one poll from
+    // anywhere hands an orphaned flight back to the clock.
+    && /await patchDoc\(env, marker, \{ kind: 'case', id: caseId, scan: true, at: new Date\(\) \},\n\s+\{ mask: \['kind', 'id', 'scan', 'at'\] \}\)\.catch\(\(\) => \{\}\);/.test(ADV)
+    // The window that found it, which reads and writes nothing of his.
+    && /if \(url\.searchParams\.get\('do'\) === 'desk'\) \{/.test(W) && /submittedAgeS: age\(d\.scanCtx\.submittedAt\)/.test(W),
+    JSON.stringify({ ask: iAsk, scan: iScan, claim: iClaim, giveUp: iGiveUp }));
 }
 
 // ---- T44 to T49: the calculator (Eric, 2026-09-22: "a calculator to help me with take profits and stop losses") ----

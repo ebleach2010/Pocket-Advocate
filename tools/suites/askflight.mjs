@@ -108,8 +108,14 @@ check('AF2 the verdict on one poll: a landed batch finishes, a failed one fails 
 // ---- AF3: three pollers, one finish -------------------------------------------
 // NEGATIVE CONTROL (run 2026-09-07): the `if (won === false) return false;` guard before finishQuestion removed made this read
 //   FAIL  AF3 three pollers and one finish: ...
+// NEGATIVE CONTROL (run 2026-09-22, v6.2): the sweeper's `if (row.data.scan) {` renamed to
+// `if (row.data.scanning) {` made this read
+//   FAIL  AF3 three pollers and one finish: ...
 check('AF3 three pollers and one finish: the drain looks at an ask marker under the case policy and never claims it as a read, pollFlightsNow routes it the same way, the state route polls the running rows it just read and re-reads them when one was touched, the finish is claimed conditionally on the row not having moved, a stale claim goes free in five minutes, and the marker deletes itself once the row is done',
-  /if \(row\.data\.ask\) \{\n\s+await withCasePolicy\(env, kind, id, \(\) => pollAskFlight\(env, kind, id, String\(row\.data\.qaId \|\| ''\)\)\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n\s+\/\/ A draft marker/.test(ADV)
+  // RE-PINNED 2026-09-22 (v6.2): the sweeper's scan branch now sits between the ask's and the draft's,
+  // because a scan marker judged as a stalled reading was deleted and its flight orphaned. The draft
+  // comment is still what follows, with the scan branch in between.
+  /if \(row\.data\.ask\) \{\n\s+await withCasePolicy\(env, kind, id, \(\) => pollAskFlight\(env, kind, id, String\(row\.data\.qaId \|\| ''\)\)\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n(?:\s*\/\/[^\n]*\n)*\s+if \(row\.data\.scan\) \{\n\s+await pollScanFlight\(env, id\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n\s+\/\/ A draft marker/.test(ADV)
   // RE-PINNED 2026-09-22 (nothing on the desk runs but his tap): the desk's scan has a flight of its
   // own on the desk's own state, so a scan marker is routed between the ask's and the case's.
   && /if \(row\.data\.ask\) \{\n\s+await withCasePolicy\(env, kind, id, \(\) => pollAskFlight\(env, kind, id, String\(row\.data\.qaId \|\| ''\), \{ minAgeMs: 45_000 \}\)\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n(?:\s*\/\/[^\n]*\n)*\s+if \(row\.data\.scan\) \{\n\s+await pollScanFlight\(env, id, \{ minAgeMs: 45_000 \}\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n\s+await pollCaseFlight\(env, kind, id, \{ minAgeMs: 45_000 \}\)/.test(ADV)

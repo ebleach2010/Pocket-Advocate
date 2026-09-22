@@ -443,7 +443,10 @@ export function scanBlock(stateDoc) {
     status: st.scanStatus === 'running' ? 'running' : st.scanStatus === 'error' ? 'error' : 'idle',
     error: st.scanError || null,
     at: st.lastScanAt ? new Date(st.lastScanAt).toISOString() : null,
-    note: note ? { text: String(note.text || ''), at: note.at ? new Date(note.at).toISOString() : null, plays: Number(note.plays) || 0 } : null,
+    note: note ? {
+      text: String(note.text || ''), at: note.at ? new Date(note.at).toISOString() : null,
+      plays: Number(note.plays) || 0, missing: note.missing === true,
+    } : null,
   };
 }
 

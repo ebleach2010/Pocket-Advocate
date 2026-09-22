@@ -3769,6 +3769,24 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
         await withCasePolicy(env, kind, id, () => pollAskFlight(env, kind, id, String(row.data.qaId || ''))).catch(() => {});
         continue;
       }
+      // THE DESK'S SCAN IN FLIGHT (Eric, 2026-09-22: "It's not producing a
+      // scan rn"). A scan's marker carries kind and id like every other row,
+      // so without this branch it fell through to the analysis claim below
+      // and was judged as a READING that would not start: the firing counted
+      // it four times, stamped the desk with "This read kept stopping
+      // partway", which was never true, and then deleted the marker. Deleting
+      // the marker orphaned the very flight the marker existed to collect, so
+      // the scan sat in the air with nothing left to poll it and the button
+      // said Scanning for ever. Measured in production: submitted 13:27,
+      // still running at 15:00, last heartbeat 13:47, queue empty.
+      //
+      // One look at its batch, never the firing's model job, and never the
+      // claim below. pollScanFlight deletes the marker itself once the scan
+      // is done, failed or no longer running.
+      if (row.data.scan) {
+        await pollScanFlight(env, id).catch(() => {});
+        continue;
+      }
       // A draft marker: rescue a draft whose connection died mid-run. It
       // ignores paused (the draft was an explicit request, not automation)
       // and counts as this firing's one model job.
@@ -5631,6 +5649,14 @@ export async function pollScanFlight(env, caseId, { minAgeMs = 15_000 } = {}) {
   if (next.op === 'wait') {
     await patchDoc(env, TRADE_STATE_PATH, { scanProgressAt: new Date(), scanCtx: { ...flight, pollFails: next.pollFails } },
       { mask: ['scanProgressAt', 'scanCtx'] }).catch(() => {});
+    // AND PUT THE MARKER BACK (2026-09-22). A flight whose marker has gone is
+    // a flight nothing on a clock will ever look at again, which is how one
+    // sat in the air for an hour and a half. Whoever looks at a running scan
+    // re-asserts the row, so a single look from anywhere hands it back to the
+    // cron. Only while one is genuinely up, and only once the heartbeat gate
+    // above has let this poll through, so it costs no extra write a minute.
+    await patchDoc(env, marker, { kind: 'case', id: caseId, scan: true, at: new Date() },
+      { mask: ['kind', 'id', 'scan', 'at'] }).catch(() => {});
     return true;
   }
   if (next.op === 'finish') {
@@ -5673,7 +5699,11 @@ async function finishTradeScan(env, caseId, flight, message) {
     await patchDoc(env, TRADE_STATE_PATH, {
       scanStatus: 'idle', scanError: null, scanCtx: null,
       lastScanAt: new Date(),
-      scanNote: { text: pl.text.slice(0, 6000), at: new Date(), plays: filed?.plays ?? 0 },
+      // `missing` says the answer came back with no Plays block at all, which
+      // is not the same as a scan that filed nothing on purpose. The page
+      // says which it was, because "0 on the desk" reads as broken either way
+      // (Eric, 2026-09-22: "It's not producing a scan rn").
+      scanNote: { text: pl.text.slice(0, 6000), at: new Date(), plays: filed?.plays ?? 0, missing: !!pl.missing },
     }, { mask: ['scanStatus', 'scanError', 'scanCtx', 'lastScanAt', 'scanNote'] });
     await diagLog(env, {
       ev: 'scan-end', ok: true, plays: filed?.plays ?? 0, expired: filed?.expired ?? 0,

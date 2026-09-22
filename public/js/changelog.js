@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.1';
+export const VERSION = '6.2';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '6.1';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE SCAN THAT NEVER LANDED (Eric, 2026-09-22: "It's not producing a
+    // scan rn"). The sweeper on the clock had no branch for a scan, so it
+    // judged one still in the air as a stalled reading, gave up on it, and
+    // threw away the only row that could have collected it. Admin only.
+    version: '6.2',
+    quiet: true,
+    client: [],
+    admin: [
+      'A scan that takes a while lands on its own again. The clock that checks on running work did not know what a scan was, so it counted one still in the air as a stuck reading, gave up on it, and threw away the row that was meant to collect it. The scan then sat there with nothing left to look at it and the button said Scanning until you opened the desk. It is looked at properly now, and every look at a running scan puts its row back.',
+      'Plays says which silence it is: a scan that failed, a scan that came back without its setups list, or a desk with no market data key on it. None of those read as nothing worth taking any more.',
+    ],
+  },
   {
     // THE SCAN, FROM OUTSIDE (Eric, 2026-09-22: "It's not producing a scan
     // rn"). A scan lives on the desk's own state and nothing reported it, so

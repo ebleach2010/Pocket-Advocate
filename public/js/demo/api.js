@@ -68,7 +68,10 @@ function deskScanBlock(store) {
     status: st.scanStatus === 'running' ? 'running' : st.scanStatus === 'error' ? 'error' : 'idle',
     error: st.scanError || null,
     at: st.lastScanAt ? new Date(st.lastScanAt).toISOString() : null,
-    note: note ? { text: String(note.text || ''), at: note.at ? new Date(note.at).toISOString() : null, plays: Number(note.plays) || 0 } : null,
+    note: note ? {
+      text: String(note.text || ''), at: note.at ? new Date(note.at).toISOString() : null,
+      plays: Number(note.plays) || 0, missing: note.missing === true,
+    } : null,
   };
 }
 
@@ -2157,7 +2160,7 @@ export function demoApi(role, store) {
             ...was, scanStatus: 'idle', scanError: null, lastScanAt: new Date(),
             scanNote: {
               text: '## Note\n\nIndexes are holding their opening ranges on better volume than yesterday, and the one thing worth taking is the continuation in QQQ. You have $24.50 to risk on a trade and the day is still under its floor, so one clean entry does the work.\n\n### QQQ long\n\nCurrent picture: Broke the opening range and held it on the retest.',
-              at: new Date(), plays: 1,
+              at: new Date(), plays: 1, missing: false,
             },
           });
           store.persist?.();
