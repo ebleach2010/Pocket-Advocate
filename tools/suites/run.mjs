@@ -47,6 +47,32 @@ if (suites.length < FLOOR) {
   process.exit(1);
 }
 
+/**
+ * A SUITE DOES NOT GET TO MARK ITS OWN HOMEWORK (2026-09-22).
+ *
+ * The runner used to believe the exit code and nothing else. trade.mjs had
+ * declared its `fails` count in the MIDDLE of the file, so every check written
+ * below that line was printed and never counted: the suite printed a check
+ * reading FAIL on screen, then "57/57 passed", then exited 0, and the battery
+ * that guards every push to main called it green. It had been that way for as
+ * long as there were checks down there.
+ *
+ * So the runner reads the output too. A line that starts FAIL is a red suite
+ * whatever the exit code says, and a summary whose two numbers disagree is a
+ * red suite as well. Neither depends on the suite counting honestly.
+ */
+// NEGATIVE CONTROL (run 2026-09-22): the frozen counter put back in trade.mjs AND a check below it
+// broken. The suite printed "57/57 passed" and exited 0, exactly as before; this runner read
+//   FAIL  trade.mjs  EXITED 0 BUT a check printed FAIL: FAIL  T58 an empty answer is a failed scan...
+//   32/33 suites green
+//   RED. Nothing goes to main like this.
+function redInOutput(out) {
+  if (/^FAIL\b/m.test(out)) return 'a check printed FAIL';
+  const m = out.match(/^(\d+)\/(\d+) (?:checks )?passed$/m);
+  if (m && m[1] !== m[2]) return `summary says ${m[1]} of ${m[2]}`;
+  return '';
+}
+
 let failed = 0;
 const rows = [];
 for (const f of suites) {
@@ -57,6 +83,13 @@ for (const f of suites) {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000,
     });
     tail = out.trim().split('\n').pop() || '';
+    const red = redInOutput(out);
+    if (red) {
+      ok = false;
+      failed += 1;
+      const lines = out.split('\n').filter((l) => /^FAIL\b/.test(l)).slice(0, 4).join(' | ');
+      tail = `EXITED 0 BUT ${red}: ${lines || tail}`;
+    }
   } catch (err) {
     ok = false;
     failed += 1;

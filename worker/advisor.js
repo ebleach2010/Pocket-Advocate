@@ -5589,9 +5589,13 @@ export async function runTradeScan(env, caseId, { now = Date.now() } = {}) {
     const note = await tradeNote(env, { now });
     const turn = turnRequest({
       effort: TRADE_EFFORT,
-      // Three headings and at most four setups: a fraction of a reading's
-      // ceiling, which is the whole point of the button.
-      maxTokens: 16000,
+      // Three headings and at most four setups, so the ANSWER is small. The
+      // budget is not the answer: at max effort with eight searches, the
+      // thinking and the searching are spent from the same ceiling, and at
+      // 16000 one scan spent all of it before writing a word and came back
+      // with no text at all (2026-09-22, measured: stop_reason max_tokens,
+      // zero text blocks). Doubled, which is still half a reading's default.
+      maxTokens: 32000,
       system: [{ type: 'text', text: `${TRADE_INSTRUCTIONS}\n\n${SCAN_CONTRACT}` }],
       messages: [{
         role: 'user',
@@ -5689,7 +5693,38 @@ export async function pollScanFlight(env, caseId, { minAgeMs = 15_000 } = {}) {
 async function finishTradeScan(env, caseId, flight, message) {
   const t0 = flight?.submittedAt ? new Date(flight.submittedAt).getTime() : Date.now();
   try {
-    const text = deskStripDashes(extractText(message));
+    // Trimmed here rather than trusted to be trimmed upstream: the emptiness
+    // test below is the whole guard, and an answer of three newlines is not an
+    // answer (2026-09-22, v6.4).
+    const text = String(deskStripDashes(extractText(message)) || '').trim();
+    // WHAT CAME BACK, IN SHAPE (2026-09-22, v6.4). The scan that made Eric say
+    // "It's not producing a scan rn" was collected at last and landed with no
+    // text block in it at all: stop reason, block kinds and searches are the
+    // three things that say why, and none of them were written down.
+    const blocks = Array.isArray(message?.content) ? message.content : [];
+    const kinds = [...new Set(blocks.map((b) => String(b?.type || '?')))].join('+');
+    const searches = blocks.filter((b) => b?.type === 'server_tool_use').length;
+    // AN EMPTY ANSWER IS A FAILED SCAN, NOT A FINISHED ONE (2026-09-22, v6.4).
+    // It used to be filed as idle with an empty note, which did two wrong
+    // things at once: it read on the page as "the scan ran and found nothing",
+    // and it wrote that emptiness OVER his last good note, so the one thing
+    // still worth reading was destroyed by the scan that failed. Measured: the
+    // 13:27 flight came back with kinds server_tool_use+web_search_tool_result
+    // and not one text block, and his midnight note went with it.
+    //
+    // So: park it as an error he can act on, leave the note where it is, and
+    // file nothing. Everything about the shape goes in the log.
+    if (!text) {
+      await patchDoc(env, TRADE_STATE_PATH, {
+        scanStatus: 'error', scanCtx: null,
+        scanError: 'That scan came back empty, so nothing was filed and your last note is untouched. Tap Scan again.',
+      }, { mask: ['scanStatus', 'scanError', 'scanCtx'] });
+      await diagLog(env, {
+        ev: 'scan-end', ok: false, why: 'empty', stop: String(message?.stop_reason || '?'),
+        kinds, searches, chars: 0, ms: Date.now() - t0,
+      }).catch(() => {});
+      return;
+    }
     const pl = harvestPlays(text);
     const filed = await fileDeskReading(env, caseId, { ...pl, portfolio: null }, { now: Date.now() })
       .catch((err) => { console.warn('scan filing:', err.message || err); return null; });
@@ -5708,6 +5743,7 @@ async function finishTradeScan(env, caseId, flight, message) {
     await diagLog(env, {
       ev: 'scan-end', ok: true, plays: filed?.plays ?? 0, expired: filed?.expired ?? 0,
       dropped: pl.dropped, missing: pl.missing, pushed: !!filed?.pushed, ms: Date.now() - t0,
+      stop: String(message?.stop_reason || '?'), kinds, searches, chars: text.length,
     }).catch(() => {});
   } catch (err) {
     console.error('desk scan finish:', err.stack || err);

@@ -1246,16 +1246,22 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry62 = (CL.match(/\{\n\s+\/\/ THE SCAN THAT NEVER LANDED[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v6.3): a flight whose queue row has gone is collected too.
   const entry63 = (CL.match(/\{\n\s+\/\/ THE FLIGHT NOBODY WAS LOOKING AT[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v6.4): an empty scan is a failure and never eats the note he had.
+  const entry64 = (CL.match(/\{\n\s+\/\/ AN EMPTY SCAN IS A FAILED SCAN[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
+  // NEGATIVE CONTROL (run 2026-09-22, v6.4): 'treated as a failed scan' reworded to 'handled as a failed scan' in the 6.4 entry made this read
+  //   FAIL  T36 both versions read 6.4 with the new tag, the 4.7 through 6.3 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.3): 'can no longer be lost' reworded to 'can no longer go missing' in the 6.3 entry made this read
-  //   FAIL  T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
+  //   FAIL  T36 both versions read 6.4 with the new tag, the 4.7 through 6.3 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.2): 'lands on its own again' reworded to 'lands by itself again' in the 6.2 entry made this read
   //   FAIL  T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v5.2): 'has a calculator' reworded to 'has a calculator now' in the 5.2 entry made this read
   //   FAIL  T36 both versions read 5.3 with the new tag, the 4.7 through 5.3 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '6\.3';/.test(CL) && /const VERSION = '6\.3';/.test(W) && /const BUILD_TAG = 'v2026-09-22-scan-collected';/.test(W)
+  check('T36 both versions read 6.4 with the new tag, the 4.7 through 6.3 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '6\.4';/.test(CL) && /const VERSION = '6\.4';/.test(W) && /const BUILD_TAG = 'v2026-09-22-empty-is-failed';/.test(W)
+    && /version: '6\.4',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry64)
+    && /treated as a failed scan/.test(entry64) && /twice the room to answer/.test(entry64) && !DASH.test(entry64)
     && /version: '6\.3',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry63)
     && /can no longer be lost/.test(entry63) && /It still starts nothing/.test(entry63) && !DASH.test(entry63)
     && /version: '6\.2',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry62)
@@ -1759,7 +1765,6 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     JSON.stringify({ swing: swingRow?.data.expiresAt, scalp: scalpRow?.data.expiresAt }));
 }
 
-const fails = results.filter((r) => !r.pass).length;
 // ---- T51: the scan's own flight, run (Eric, 2026-09-22) ----------------------------
 //
 // The scan is a model turn he starts, so it rides the batch the way a question does: submitted,
@@ -1882,7 +1887,12 @@ const fails = results.filter((r) => !r.pass).length;
     && first.w.submitted[0].turn.system[0].text === `${K.TRADE_INSTRUCTIONS}\n\n${K.SCAN_CONTRACT}`
     && /Eric tapped Scan/.test(first.w.submitted[0].turn.messages[0].content[0].text)
     && /<desk>/.test(first.w.submitted[0].turn.messages[0].content[0].text)
-    && first.w.submitted[0].turn.maxTokens === 16000
+    // RE-PINNED 2026-09-22 (v6.4): doubled, because at max effort with eight searches the thinking
+    // and the searching are spent from the same ceiling, and at 16000 one scan spent all of it
+    // before writing a word and came back with no text block at all.
+    // NEGATIVE CONTROL (run 2026-09-22, v6.4): the ceiling put back to 16000 made this read
+    //   FAIL  T51 the scan's flight RUNS: ...
+    && first.w.submitted[0].turn.maxTokens === 32000
     && first.w.submitted[0].customId.startsWith('scan-c1-')
     && first.w.patches.some((p) => p.path === K.STATE_PATH && p.data.scanStatus === 'running')
     && first.w.patches.some((p) => p.path === K.STATE_PATH && p.data.scanCtx?.batchId === 'batch-1')
@@ -1903,7 +1913,48 @@ const fails = results.filter((r) => !r.pass).length;
     && nothing === false && idle.w.deletes.includes('advisorQueue/scan_case_c1')
     && abandoned === true && old2.w.cancels.includes('b1') && old2.w.patches.some((p) => p.data.scanStatus === 'error' && /two hours/.test(p.data.scanError || '')),
     JSON.stringify({ started, refused: refused.why, beat, done, lost, dead, nothing }));
+
+  // ---- T58: an empty answer is a failed scan, and it never eats the last good note ----------
+  // The 13:27 flight, once something finally looked at it, came back with server_tool_use and
+  // web_search_tool_result blocks and not one text block. It was filed as a finished scan with an
+  // empty note, which read on the page as "ran, found nothing" AND wrote that emptiness over the
+  // note from midnight, destroying the one thing still worth reading.
+  const blank = scanWorld({ poll: { state: 'done', message: { stop_reason: 'max_tokens', content: [{ type: 'server_tool_use' }, { type: 'web_search_tool_result' }] } }, text: '' });
+  blank.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanCtx: flying, scanProgressAt: new Date(), scanNote: { text: 'The midnight note.', plays: 3 } }, updateTime: 'U0' });
+  const empty = await blank.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
+  const blankEnd = blank.w.diag.find((e) => e.ev === 'scan-end');
+  const goodEnd = landed.w.diag.find((e) => e.ev === 'scan-end');
+  // Whitespace is empty too: an answer of three newlines is not an answer.
+  const spaces = scanWorld({ poll: { state: 'done', message: {} }, text: '   \n  \n' });
+  spaces.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanCtx: flying, scanProgressAt: new Date() }, updateTime: 'U0' });
+  await spaces.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
+
+  // NEGATIVE CONTROL (run 2026-09-22, v6.4): the `if (!text) {` guard in finishTradeScan changed to
+  //   `if (false) {` made this read
+  //   FAIL  T58 an empty answer is a failed scan: ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.4): the guard's `scanNote` left in its mask, so the empty
+  //   note was written over the good one, made this read
+  //   FAIL  T58 an empty answer is a failed scan: ...
+  // NEGATIVE CONTROL (run 2026-09-22, v6.4): the `.trim()` dropped from the answer, so three
+  //   newlines counted as an answer, made this read
+  //   FAIL  T58 an empty answer is a failed scan: ...
+  check('T58 an empty answer is a failed scan, not a finished one: nothing is filed, the note he already had is left exactly where it is rather than overwritten with nothing, the page gets a sentence saying the scan came back empty and to tap again, and the log keeps the three things that say why it was empty, which are the stop reason, the kinds of block that did come back and how many searches it ran; an answer of nothing but whitespace is judged the same way; and a real answer still carries its shape into the log',
+    empty === true && blank.w.filed.length === 0
+    && blank.w.patches.some((p) => p.data.scanStatus === 'error' && /came back empty/.test(p.data.scanError || '') && /Tap Scan again/.test(p.data.scanError || ''))
+    && !blank.w.patches.some((p) => p.data.scanNote !== undefined)
+    && !blank.w.patches.some((p) => (p.opts?.mask || []).includes('scanNote'))
+    && !!blankEnd && blankEnd.ok === false && blankEnd.why === 'empty' && blankEnd.chars === 0
+    && blankEnd.stop === 'max_tokens' && blankEnd.kinds === 'server_tool_use+web_search_tool_result' && blankEnd.searches === 1
+    && spaces.w.filed.length === 0 && spaces.w.patches.some((p) => /came back empty/.test(p.data.scanError || ''))
+    && !spaces.w.patches.some((p) => p.data.scanNote !== undefined)
+    && !!goodEnd && goodEnd.ok === true && goodEnd.chars > 0 && goodEnd.kinds === '' && goodEnd.searches === 0,
+    JSON.stringify({ empty, blankEnd, filed: blank.w.filed.length }));
 }
 
+// THE COUNTER IS COUNTED LAST (2026-09-22, v6.4). It used to be declared in the middle of the
+// file, just above T51, so every check written after that line was printed but never counted: the
+// suite said "57/57 passed" and exited 0 with a check reading FAIL on screen, and the battery that
+// guards every push believed it. Found by a check that failed and was waved through.
+const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);
 if (fails) process.exit(1);

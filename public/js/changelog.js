@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.3';
+export const VERSION = '6.4';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '6.3';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // AN EMPTY SCAN IS A FAILED SCAN (Eric, 2026-09-22, a screenshot of the
+    // desk still reading Scanning: "It's stuck"). The flight 6.3 finally
+    // collected came back with no text in it at all, was filed as a finished
+    // scan with an empty note, and that empty note was written over the good
+    // one from midnight. Admin only.
+    version: '6.4',
+    quiet: true,
+    client: [],
+    admin: [
+      'A scan that comes back with nothing written in it is now treated as a failed scan rather than a finished one. It used to be filed as though it had run and found nothing, and the empty note it wrote landed on top of the note you already had, so the one thing still worth reading was destroyed by the scan that failed. Now nothing is filed, your last note stays exactly where it is, and Plays says the scan came back empty and to tap again.',
+      'The scan also has twice the room to answer. It thinks and searches out of the same budget it writes from, and one scan spent all of it searching and had nothing left to write with, which is how it came back empty in the first place.',
+    ],
+  },
   {
     // THE FLIGHT NOBODY WAS LOOKING AT (Eric, 2026-09-22: "It's not producing
     // a scan rn"). 6.2 stopped a scan's queue row being thrown away. This is
