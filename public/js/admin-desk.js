@@ -115,7 +115,11 @@ export function playFaceHtml(p, { rules, accountCents } = {}) {
   ].filter(([, v]) => v);
   const live = p.status === 'open' && !expired;
   return `<article class="outlined play${expired ? ' expired' : ''}" data-kind="${esc(p.horizon || 'intraday')}" data-play="${esc(p.id)}">
-    ${state || chance ? `<div class="head">${state ? `<span class="co">${esc(state)}</span>` : ''}${chance}</div>` : ''}
+    ${/* THE TICKER LEADS (Eric, 2026-09-22: "Stock names have disappeared"). v6.7 took the big
+        ticker off with the rest of the furniture and left it mid sentence at body weight, so a
+        board of cards had nothing to scan by. Left of the head row on every card; the chance stays
+        right; the state word sits between when there is one. */''}
+    <div class="head"><span class="tk">${esc(p.ticker)}</span>${state ? `<span class="co">${esc(state)}</span>` : ''}${chance}</div>
     <p class="plain">${esc(line)}</p>
     <p class="under${sz.overRule ? ' over' : ''}">${esc([near, loses, over].filter(Boolean).join(' '))}</p>
     <details><summary><span>Why, and what to watch</span><span class="chev">&#9662;</span></summary>

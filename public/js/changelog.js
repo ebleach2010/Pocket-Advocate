@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.10';
+export const VERSION = '6.11';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '6.10';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE TICKER BACK AT THE HEAD (Eric, 2026-09-22: "Stock names have
+    // disappeared"). 6.7 left it mid sentence at body weight. Admin only.
+    version: '6.11',
+    quiet: true,
+    client: [],
+    admin: [
+      'The ticker is back at the head of every setup, big, at the left, with the chance at the right. It had been left inside the sentence at ordinary weight since 6.7, which gave you nothing to scan a board by.',
+    ],
+  },
   {
     // THE SCAN CAN SEE THE MARKET (Eric, 2026-09-22: "Scanning is taking more
     // than 5 minutes. Normal?"). Every scan he had ever run carried no search

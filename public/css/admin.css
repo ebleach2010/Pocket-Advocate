@@ -1872,7 +1872,7 @@ html[data-desk]:root .play .why { margin: 6px 0 0; font-size: 15px; color: var(-
 html[data-desk]:root .play .plain { margin: 0; font-size: 17px; line-height: 1.35; color: var(--ink); font-weight: 600; letter-spacing: .005em; }
 html[data-desk]:root .play .under { margin: 8px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--dim); }
 html[data-desk]:root .play .under.over { color: var(--red); }
-html[data-desk]:root .play .head { justify-content: flex-end; margin-bottom: 6px; }
+html[data-desk]:root .play .head { justify-content: space-between; margin-bottom: 6px; } /* the ticker left, the chance right (2026-09-22, v6.11) */
 html[data-desk]:root .play .inst { margin-top: 8px; font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 html[data-desk]:root .cells { display: grid; grid-template-columns: 1fr 1.4fr 1fr 1fr; column-gap: 10px; margin-top: 10px; }
 html[data-desk]:root .cells > div { min-width: 0; }

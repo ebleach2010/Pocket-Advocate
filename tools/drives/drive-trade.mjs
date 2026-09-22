@@ -107,6 +107,7 @@ const plays = await until(() => {
     // the line rather than hunting for chips and cells that no longer exist.
     lines: cards.map((c) => c.querySelector('.plain')?.textContent.trim()),
     odds: cards.map((c) => c.querySelector('.odds .v')?.textContent.trim()),
+    tks: cards.map((c) => c.querySelector('.tk')?.textContent.trim()),
     unders: cards.map((c) => c.querySelector('.under')?.textContent.trim()),
     note: document.getElementById('note-p')?.textContent.trim().slice(0, 40),
     bullets: document.querySelectorAll('#note-p li').length,
@@ -118,6 +119,8 @@ const plays = await until(() => {
 });
 ok('three plays, best chance first', !!plays && plays.n === 3
   && plays.lines.map((l) => (l.match(/\b[A-Z]{1,5}\b/) || [''])[0]).join() === 'NVDA,AMD,TSLA', plays?.lines.join(' | '));
+// v6.11 (Eric: "Stock names have disappeared"): the ticker leads the head row on every card.
+ok('every card leads with its ticker at the head, in the order the sentences name them', !!plays && plays.tks.join() === 'NVDA,AMD,TSLA', JSON.stringify(plays?.tks));
 // "3 hours, NVDA, $248, stop loss price, take profit price. If call, date strike expiration."
 ok('each card is one plain sentence: the hold, what to buy with how much, the stop loss and the take profit',
   !!plays && plays.lines.every((l) => /^\d+(\.\d+)? (minutes?|hours?|days?), (buy|short) \$[\d,]+ of /.test(l)

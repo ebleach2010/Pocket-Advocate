@@ -981,10 +981,15 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     // where he reads it. It is the only block back; the tags, cells and why line stay gone.
     // NEGATIVE CONTROL (run 2026-09-22, v6.8): the odds span dropped from the head row made this read
     //   FAIL  T34 the desk's view module RUNS: ...
-    && /<div class="head"><span class="odds"><div class="k">Chance<\/div><div class="v">56 to 64%<\/div><\/span><\/div>\n\s+<p class="plain">/.test(card)
+    // RE-PINNED 2026-09-22 (v6.11, Eric: "Stock names have disappeared"): the ticker leads the head
+    // row on every card, 20px bold at the left, with the chance at the right and the state word
+    // between when there is one. Nothing else comes back.
+    // NEGATIVE CONTROL (run 2026-09-22, v6.11): the tk span dropped from the head row made this read
+    //   FAIL  T34 the desk's view module RUNS: ...
+    && /<div class="head"><span class="tk">NVDA<\/span><span class="odds"><div class="k">Chance<\/div><div class="v">56 to 64%<\/div><\/span><\/div>\n\s+<p class="plain">/.test(card)
     && /<p class="under over">Get in near 2\.10\. You lose about \$80\.00 if the stop hits\. That is more than the \$23\.80 you allow one trade\.<\/p>/.test(card)
     && !/Chance of profit/.test(card)
-    && /<span class="co">Expired<\/span><span class="odds">/.test(ranOut)
+    && /<div class="head"><span class="tk">NVDA<\/span><span class="co">Expired<\/span><span class="odds">/.test(ranOut)
     && !/class="tags"/.test(card) && !/class="cells"/.test(card) && !/class="why"/.test(card)
     && /<p class="plain">3 hours, buy \$943 of NVDA, stop loss 226\.30, take profit 231\.50<\/p>/.test(stockCard)
     && /You lose about \$10\.71 if the stop hits\./.test(stockCard) && !/ sh</.test(stockCard)
@@ -1299,10 +1304,14 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry69 = (CL.match(/\{\n\s+\/\/ AT MOST FIVE BULLETS[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v6.10): the scan can see the market.
   const entry610 = (CL.match(/\{\n\s+\/\/ THE SCAN CAN SEE THE MARKET[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-22 (v6.11): the ticker back at the head of every card.
+  const entry611 = (CL.match(/\{\n\s+\/\/ THE TICKER BACK AT THE HEAD[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
+  // NEGATIVE CONTROL (run 2026-09-22, v6.11): 'back at the head of every setup' reworded to 'back at the top of every setup' in the 6.11 entry made this read
+  //   FAIL  T36 both versions read 6.11 with the new tag, the 4.7 through 6.10 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.10): 'can look at the market now' reworded to 'can see the market now' in the 6.10 entry made this read
-  //   FAIL  T36 both versions read 6.10 with the new tag, the 4.7 through 6.9 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
+  //   FAIL  T36 both versions read 6.11 with the new tag, the 4.7 through 6.10 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.9): 'without a new scan' reworded to 'without another scan' in the 6.9 entry made this read
   //   FAIL  T36 both versions read 6.10 with the new tag, the 4.7 through 6.9 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.8): 'back at the top right of every setup' reworded to 'back at the top of every setup' in the 6.8 entry made this read
@@ -1321,8 +1330,10 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   //   FAIL  T36 both versions read 6.3 with the new tag, the 4.7 through 6.2 entries are quiet and admin-only in the desk's words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v5.2): 'has a calculator' reworded to 'has a calculator now' in the 5.2 entry made this read
   //   FAIL  T36 both versions read 5.3 with the new tag, the 4.7 through 5.3 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
-  check('T36 both versions read 6.10 with the new tag, the 4.7 through 6.9 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '6\.10';/.test(CL) && /const VERSION = '6\.10';/.test(W) && /const BUILD_TAG = 'v2026-09-22-scan-searches';/.test(W)
+  check('T36 both versions read 6.11 with the new tag, the 4.7 through 6.10 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '6\.11';/.test(CL) && /const VERSION = '6\.11';/.test(W) && /const BUILD_TAG = 'v2026-09-22-ticker-back';/.test(W)
+    && /version: '6\.11',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry611)
+    && /back at the head of every setup/.test(entry611) && !DASH.test(entry611)
     && /version: '6\.10',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry610)
     && /can look at the market now/.test(entry610) && !DASH.test(entry610)
     && /version: '6\.9',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry69)
