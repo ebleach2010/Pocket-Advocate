@@ -26,6 +26,43 @@ const FILING_CATEGORIES = ['report', 'callsummary', 'visitfollowup',
 
 /** A little delay, so states that only exist while something is in flight
  *  (the button disabling, the progress bar, "Reading…") are visible. */
+// The trade desk (2026-09-22): the eight categories the Worker keeps to the
+// desk, its standing line in the Worker's words (trade-desk.js
+// standingLine), and the block the panel gets on the desk's poll. Nothing
+// here reads a market.
+const TRADE_CATS = ['Setup', 'Indicator', 'Level', 'Order', 'Risk', 'Options', 'Market', 'Instrument'];
+const deskMoney = (c) => `$${(Number(c || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const deskToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' }).format(new Date());
+const deskRows = (store, prefix) => [...store.docs.entries()].filter(([k]) => k.startsWith(prefix)).map(([k, v]) => ({ id: k.slice(prefix.length), ...v }));
+function deskStanding(store) {
+  const s = store.docs.get('trade/settings') || {};
+  const rows = deskRows(store, 'trade/balances/items/').map((b) => ({ date: b.date || b.id, cents: b.cents, note: b.note || '' }));
+  const m = tradeMetrics(rows, { startedAt: s.startedAt || null, startCents: Number.isInteger(s.startCents) && s.startCents > 0 ? s.startCents : 200000 });
+  const text = m.days && m.entries.length
+    ? `${deskMoney(m.currentCents)} · ${m.days} trading day${m.days === 1 ? '' : 's'} · ${Math.abs(m.offTargetPoints).toFixed(2)} pts ${m.offTargetCents < 0 ? 'under' : 'over'} 3% a day`
+    : `${deskMoney(m.currentCents)} · no entries yet`;
+  return { text, at: new Date() };
+}
+function deskRefreshStanding(store) {
+  const s = store.docs.get('trade/settings') || {};
+  if (!s.caseId) return null;
+  const st = deskStanding(store);
+  const meta = store.docs.get(`caseMeta/${s.caseId}`) || {};
+  store.docs.set(`caseMeta/${s.caseId}`, { ...meta, tradeStanding: st });
+  return st;
+}
+function deskPanelBlock(store) {
+  const s = store.docs.get('trade/settings') || {};
+  const today = deskToday();
+  const meta = s.caseId ? (store.docs.get(`caseMeta/${s.caseId}`) || {}) : {};
+  const plays = deskRows(store, 'trade/plays/items/').sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+  return {
+    plays, standing: meta.tradeStanding || null,
+    nextSlot: { key: `${today}T12:00`, dateKey: today, slot: '12:00', atMs: Date.now() + 3600_000 },
+    scansOn: s.scansOn !== false, pushOn: s.pushOn !== false, hasKey: !!s.finnhubKey, tradingDay: 'full', today,
+  };
+}
+
 const beat = (ms = 320) => new Promise((r) => setTimeout(r, ms));
 
 const ok = (body) => ({
@@ -59,12 +96,12 @@ Autoimmune encephalitis, relapse [55%].
 - Causes: an antibody against a nerve cell receptor [50%]; a virus reactivating [20%].
 - Treatments: a steroid course, then IVIG if it does not hold [45%]; rituximab [25%].`;
 
-const fail = (status, error) => ({
+const fail = (status, error, extra = null) => ({
   ok: false,
   status,
   headers: { get: () => 'application/json' },
-  json: async () => ({ error }),
-  text: async () => JSON.stringify({ error }),
+  json: async () => ({ error, ...(extra || {}) }),
+  text: async () => JSON.stringify({ error, ...(extra || {}) }),
 });
 
 const SUMMARY = `## Key points
@@ -556,7 +593,7 @@ export function demoApi(role, store) {
       // invented brief lands on the new case a few seconds later, the way
       // the Worker's drain would write a real one.
       const base = 'cases/demo-case-mine';
-      const own = [...store.docs.entries()].filter(([k, v]) => /^cases\/[^/]+$/.test(k) && v?.self);
+      const own = [...store.docs.entries()].filter(([k, v]) => /^cases\/[^/]+$/.test(k) && v?.self && !v?.trade);
       const now = new Date();
       const s = (v, n) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, n);
       let sources = [];
@@ -568,6 +605,7 @@ export function demoApi(role, store) {
         const oldKey = `cases/${body.caseId}`;
         const old = store.docs.get(oldKey);
         if (!old?.self) return fail(409, 'Only your own case continues into a next one.');
+        if (old.trade) return fail(409, 'The trade desk does not continue into a next case. Pause it, close it or delete it.');
         if (old.status === 'closed') return fail(409, 'That case is already closed.');
         const st = store.docs.get(`${oldKey}/advisor/state`) || {};
         const top = (st.differential || [])[0];
@@ -584,6 +622,7 @@ export function demoApi(role, store) {
         for (const pid of (Array.isArray(body.pullFrom) ? body.pullFrom : [])) {
           const c = store.docs.get(`cases/${pid}`);
           if (!c?.self) return fail(400, 'One of the cases to pull from is not one of your own.');
+          if (c.trade) return fail(400, 'The trade desk cannot be pulled from.');
           sources.push([`cases/${pid}`, c]);
         }
         const newest = sources[0]?.[1];
@@ -844,6 +883,10 @@ export function demoApi(role, store) {
       for (const k of [...store.docs.keys()]) {
         if (k === `cases/${id}` || k.startsWith(`cases/${id}/`) || k === `caseMeta/${id}`) { store.docs.delete(k); docs++; }
       }
+      // The trade desk (2026-09-22): a deleted desk leaves the settings
+      // pointing at nothing, so the shelf's door comes back.
+      const ts = store.docs.get('trade/settings');
+      if (ts?.caseId === id) store.docs.set('trade/settings', { ...ts, caseId: null });
       store.persist?.();
       return ok({ ok: true, docs, files: 0 });
     }
@@ -1669,19 +1712,15 @@ export function demoApi(role, store) {
       return ok({ url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&demo=1&chatopen=1` });
     }
 
-    // ---- the Trade portal (2026-09-21), from fixtures ---------------------
+    // ---- the trade desk (2026-09-21; a case file since 2026-09-22) ----------
     // The desk's routes, mirrored with the Worker's own refusal sentences
-    // (worker/trade.js SAY). A flight lands a few seconds after it opens:
-    // the state route is the demo's stand-in for the poll collecting the
-    // batch, and the answer and the play are fixtures. Nothing here talks
-    // to a market or a model of any kind.
+    // (worker/trade-desk.js SAY). The plays and the balances are fixtures
+    // the seed wrote; nothing here talks to a market or a model of any kind.
     if (path.startsWith('/api/admin/trade/')) {
       if (role !== 'admin') return fail(404, 'Not found');
       const sub = path.slice('/api/admin/trade/'.length);
       const SAY = {
-        askEmpty: 'Ask something, up to 2000 characters.',
-        noKey: 'Add your Finnhub key in Settings first.',
-        scanRunning: 'A scan is already running. It lands on its own.',
+        deskOpen: 'The trade desk is already open.',
         badDate: 'Pick a date like 2026-09-21, not in the future.',
         badCents: 'Enter the balance in dollars, 0 or more, under ten million.',
         badStart: 'Starting amount: whole dollars, 1 or more, under ten million.',
@@ -1694,12 +1733,9 @@ export function demoApi(role, store) {
       };
       const DEFAULT_WATCHLIST = ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AAPL', 'AMD', 'META', 'AMZN', 'MSFT', 'COIN'];
       const TICKER_RE = /^[A-Z][A-Z.]{0,5}$/;
-      const todayMT = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' }).format(new Date());
+      const todayMT = deskToday();
       const realDate = (k) => /^\d{4}-\d{2}-\d{2}$/.test(k) && new Date(`${k}T12:00:00Z`).toISOString().slice(0, 10) === k;
-      const rows = (prefix) => [...store.docs.entries()].filter(([k]) => k.startsWith(prefix)).map(([k, v]) => ({ id: k.slice(prefix.length), ...v }));
       const settings = () => store.docs.get('trade/settings') || {};
-      const state = () => store.docs.get('trade/state') || {};
-      const rid = (p) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
       const pub = (s) => ({
         accountType: s.accountType === 'margin' ? 'margin' : 'cash',
         watchlist: Array.isArray(s.watchlist) && s.watchlist.length ? s.watchlist : DEFAULT_WATCHLIST,
@@ -1709,76 +1745,61 @@ export function demoApi(role, store) {
       });
       const keyOf = (s) => String(s.finnhubKey || '');
       if (sub === 'state' && init.method !== 'POST') {
-        for (const fl of rows('trade/flights/items/')) {
-          if (Date.now() - new Date(fl.submittedAt || 0).getTime() < 4000) continue;
-          if (fl.kind === 'ask') {
-            const q = store.docs.get(`trade/feed/items/${fl.feedId}`);
-            if (q) store.docs.set(`trade/feed/items/${fl.feedId}`, { ...q, status: 'done', answeredAt: new Date(), answer: 'NVDA is holding above the opening range on twice its normal volume, so the long side is the side with the wind. The 650 to 655 call debit spread for this Friday costs about 2.10 and pays 5.00 at 655 by the close. Stop is a break back below 648 on the stock. Chance of profit 55 to 62%. Size: 2 contracts, 420 dollars at risk, which is under 2% of the account.' });
-          } else {
-            const pid = rid('p');
-            const fid = rid('f');
-            store.docs.set(`trade/plays/items/${pid}`, {
-              at: new Date(), slot: 'manual', feedId: fid, ticker: 'AMD', side: 'long', instrument: 'call', structure: 'Oct 17 170 call',
-              entry: 4.2, stop: 3.1, targets: [5.6, 6.4], holdMinutes: 90, why: 'AMD reclaimed VWAP at 09:48 on rising volume after the data center note. The 168 level held twice this morning. The call is the fast way to play a run at 172.',
-              catalyst: 'Analyst note on data center orders, published 08:30 ET.', risk: 'Chip names fade fast when the index turns. Exit on a break of 168.',
-              profitLow: 56, profitHigh: 64, sizeDollars: 420, overnight: { ok: false, why: 'No catalyst after the bell.' },
-              status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 3 * 3600_000),
-            });
-            store.docs.set(`trade/feed/items/${fid}`, {
-              at: new Date(), kind: 'scan', slot: 'manual', text: 'The index is flat and chips are leading. Volume is above average for the hour. One play stands out and one thing is worth knowing.',
-              notes: [{ text: 'Fed minutes at 12:00 MT. Expect a volatility spike in the ten minutes after.' }], playIds: [pid], quiet: false, searched: { queries: 3, results: 12 }, landedMs: 240000,
-            });
-            store.docs.set('trade/state', { ...state(), lastScanAt: new Date(), lastScanResult: 'plays', lastError: null });
-          }
-          store.docs.delete(`trade/flights/items/${fl.id}`);
-        }
-        store.persist?.();
         const s = settings();
-        const st = state();
         const p = pub(s);
-        const balances = rows('trade/balances/items/').map((b) => ({ date: b.date || b.id, cents: b.cents, note: b.note || '' }));
+        const balances = deskRows(store, 'trade/balances/items/').map((b) => ({ date: b.date || b.id, cents: b.cents, note: b.note || '', source: b.source || 'typed' }));
         const metrics = tradeMetrics(balances, { startedAt: p.startedAt, startCents: p.startCents });
-        const byAt = (a, b) => new Date(b.at || 0) - new Date(a.at || 0);
-        const feed = rows('trade/feed/items/').sort(byAt).slice(0, 30);
-        const seenAt = st.seenAt ? new Date(st.seenAt).getTime() : 0;
+        const sources = new Map(balances.map((b) => [b.date, b.source]));
+        const block = deskPanelBlock(store);
         return ok({
-          settings: p, hasKey: !!keyOf(s), keyTail: keyOf(s).slice(-4),
-          state: { lastSlot: st.lastSlot || null, lastScanAt: st.lastScanAt || null, lastScanResult: st.lastScanResult || null, lastError: st.lastError || null, seenAt: st.seenAt || null, searchOff: st.searchOff === true },
-          flights: rows('trade/flights/items/').map((fl) => ({ id: fl.id, kind: fl.kind, submittedAt: fl.submittedAt, feedId: fl.feedId || null })),
-          feed, plays: rows('trade/plays/items/').sort(byAt).slice(0, 50),
-          balances: metrics.entries, metrics, chart: chartSeries(metrics),
-          unseen: feed.filter((r) => r.kind !== 'question' && new Date(r.at || 0).getTime() > seenAt).length,
-          nextSlot: { key: `${todayMT}T13:30`, dateKey: todayMT, slot: '13:30', atMs: Date.now() + 3600_000 },
-          tradingDay: 'full', today: todayMT, now: new Date().toISOString(),
+          caseId: s.caseId || null, settings: p, hasKey: !!keyOf(s), keyTail: keyOf(s).slice(-4),
+          plays: block.plays.slice(0, 50),
+          balances: metrics.entries.map((e) => ({ ...e, source: sources.get(e.date) || 'typed' })),
+          metrics, chart: chartSeries(metrics),
+          nextSlot: block.nextSlot, tradingDay: 'full', today: todayMT, scansOn: p.scansOn, now: new Date().toISOString(),
         });
       }
       if (init.method !== 'POST') return fail(404, 'Not found');
-      if (sub === 'ask') {
-        const question = String(body.question || '').trim();
-        if (!question || question.length > 2000) return fail(400, SAY.askEmpty);
-        const fid = rid('f');
-        store.docs.set(`trade/feed/items/${fid}`, { at: new Date(), kind: 'question', text: question, status: 'running', answer: '', answeredAt: null });
-        store.docs.set(`trade/flights/items/${rid('t')}`, { kind: 'ask', feedId: fid, batchId: 'demo-batch', submittedAt: new Date() });
+      if (sub === 'open') {
+        // One open desk at a time, as the Worker: a second call is refused
+        // with the open one's id, and the shelf walks into it.
+        await beat(300);
+        const s = settings();
+        const cur = s.caseId ? store.docs.get(`cases/${s.caseId}`) : null;
+        if (cur && cur.status !== 'closed') return fail(409, SAY.deskOpen, { existing: s.caseId });
+        const desks = [...store.docs.keys()].filter((k) => /^cases\/demo-case-trade(-\d+)?$/.test(k)).length;
+        const id = desks ? `demo-case-trade-${desks + 1}` : 'demo-case-trade';
+        const now = new Date();
+        store.docs.set(`cases/${id}`, {
+          self: true, trade: true, clientUid: null, clientEmail: null, clientName: 'Trade desk', clientDob: null,
+          clientTz: 'America/Boise', clientPhone: null, clientAddress: null, status: 'confirmed', createdAt: now,
+          bookingEmailSentAt: now, appointment: null,
+          publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] },
+          addOnFollowUp: false, forms: {}, files: [], reportDueAt: null, caseRateCents: 0, addonRateCents: 0,
+          fullAccess: true, fullAccessAt: now, fullAccessRateCents: 0, fullAccessMonths: 0, fullAccessByHand: true,
+          stripe: null, work: { seconds: 0, startedAt: null }, hold: null, priorCases: [], carriedDx: [],
+        });
+        store.docs.set(`cases/${id}/advisor/state`, { trade: true, status: 'idle', priorCases: [], carriedDx: [], handovers: [], handoverStatus: null });
+        store.docs.set('trade/settings', { ...s, caseId: id, openedAt: now, startedAt: s.startedAt || todayMT });
         store.persist?.();
-        return ok({ ok: true, feedId: fid });
-      }
-      if (sub === 'scan') {
-        if (!keyOf(settings())) return fail(409, SAY.noKey);
-        if (rows('trade/flights/items/').some((fl) => fl.kind === 'scan')) return fail(409, SAY.scanRunning);
-        const id = rid('t');
-        store.docs.set(`trade/flights/items/${id}`, { kind: 'scan', batchId: 'demo-batch', submittedAt: new Date(), manual: true });
-        store.persist?.();
-        return ok({ ok: true, flightId: id });
+        store.fire?.(`cases/${id}`);
+        return ok({ ok: true, id, created: true });
       }
       if (sub === 'balance') {
         const date = String(body.date || '').trim();
         if (!realDate(date) || date > todayMT) return fail(400, SAY.badDate);
-        if (body.remove === true) { store.docs.delete(`trade/balances/items/${date}`); store.persist?.(); return ok({ ok: true, removed: date }); }
+        if (body.remove === true) {
+          store.docs.delete(`trade/balances/items/${date}`);
+          deskRefreshStanding(store);
+          store.persist?.();
+          return ok({ ok: true, removed: date });
+        }
         const cents = Number(body.cents);
         if (!Number.isInteger(cents) || cents < 0 || cents >= 1e9) return fail(400, SAY.badCents);
-        store.docs.set(`trade/balances/items/${date}`, { date, at: new Date(), cents, note: String(body.note || '').trim().slice(0, 140) });
+        store.docs.set(`trade/balances/items/${date}`, { date, at: new Date(), cents, note: String(body.note || '').trim().slice(0, 140), source: 'typed' });
+        const standing = deskRefreshStanding(store);
         store.persist?.();
-        return ok({ ok: true, date, cents });
+        return ok({ ok: true, date, cents, standing });
       }
       if (sub === 'settings') {
         const s = settings();
@@ -1812,6 +1833,7 @@ export function demoApi(role, store) {
         if (!s.startedAt && !patch.startedAt) patch.startedAt = todayMT;
         const next = { ...s, ...patch, setByHand: true, updatedAt: new Date() };
         store.docs.set('trade/settings', next);
+        if (patch.startCents !== undefined || patch.startedAt !== undefined) deskRefreshStanding(store);
         store.persist?.();
         return ok({ ok: true, settings: pub(next), hasKey: !!keyOf(next), keyTail: keyOf(next).slice(-4) });
       }
@@ -1833,11 +1855,6 @@ export function demoApi(role, store) {
         store.persist?.();
         return ok({ ok: true, play: { id, ...play, ...patch } });
       }
-      if (sub === 'seen') {
-        store.docs.set('trade/state', { ...state(), seenAt: new Date() });
-        store.persist?.();
-        return ok({ ok: true, unseen: 0 });
-      }
       return fail(404, 'Not found');
     }
 
@@ -1849,6 +1866,9 @@ export function demoApi(role, store) {
       // page.
       const cid = q.get('id') || body.id || DEMO_CASE_ID;
       let state = store.docs.get(`cases/${cid}/advisor/state`) || {};
+      // The trade desk (2026-09-22): its own block, the trading half of the
+      // dictionary, and a desk answer to a desk question.
+      const isTrade = !!(state.trade || store.docs.get(`cases/${cid}`)?.trade);
       // A handover queued a few seconds ago lands now (2026-09-05): the
       // demo's stand-in for the Worker's drain writing the brief.
       if (state.handoverStatus === 'running' && Array.isArray(state.handoverPending)
@@ -1881,10 +1901,26 @@ export function demoApi(role, store) {
       for (const [p, d] of [...store.docs.entries()]) {
         if (!p.startsWith(qaPrefix) || d.status !== 'running') continue;
         if (Date.now() - new Date(d.at || 0).getTime() < 4000) continue;
-        store.docs.set(p, {
-          ...d, status: 'done', batch: null,
-          answer: 'I would give the clinic until Thursday before chasing it, because the fax went Monday and their intake takes three working days to log anything. If nothing is on the portal by then, I would call the department directly rather than the main line, since that is who actually holds the referral. You have what you need for the call; the next move is theirs.',
-        });
+        let answer = 'I would give the clinic until Thursday before chasing it, because the fax went Monday and their intake takes three working days to log anything. If nothing is on the portal by then, I would call the department directly rather than the main line, since that is who actually holds the referral. You have what you need for the call; the next move is theirs.';
+        if (isTrade) {
+          answer = d.file
+            ? 'Your positions are NVDA and SPY, both above their stops. NVDA is holding 650 on volume; the next level I would watch is 652, and a break of 648 ends it. SPY is drifting on light volume with 570 under it; nothing to do there until 573 or 570 breaks.'
+            : 'NVDA is holding above the opening range on twice its normal volume, so the long side is the side with the wind. The 650 to 655 call debit spread for this Friday costs about 2.10 and pays 5.00 at 655 by the close. The trade is invalidated on a break back below 648 on the stock. Chance of profit 55 to 62%. At 2 contracts the risk is $420, about 2% of the account.';
+          // A portfolio total on the screenshot becomes that day's balance
+          // unless he typed one, as the Worker's finishQuestion does it.
+          if (d.file) {
+            const today = deskToday();
+            const cur = store.docs.get(`trade/balances/items/${today}`);
+            if (!cur || cur.source === 'screenshot') {
+              store.docs.set(`trade/balances/items/${today}`, { date: today, at: new Date(), cents: 241000, note: 'from a screenshot', source: 'screenshot' });
+              deskRefreshStanding(store);
+              answer += `\n\nLogged $2,410.00 as the balance for ${today}.`;
+            } else {
+              answer += `\n\nYou typed a balance for ${today}, so the screenshot's total was not logged over it.`;
+            }
+          }
+        }
+        store.docs.set(p, { ...d, status: 'done', batch: null, answer });
         store.persist?.();
       }
       const qaRows = [...store.docs.entries()]
@@ -1898,9 +1934,12 @@ export function demoApi(role, store) {
       return ok({
         state: panelState,
         qa: qaRows,
+        // The desk sees the trading half of the dictionary and every other
+        // case the medical half (2026-09-22), as the Worker filters it.
         glossary: [...store.docs.entries()]
-          .filter(([p]) => p.startsWith('advisorKnowledge/'))
+          .filter(([p, d]) => p.startsWith('advisorKnowledge/') && TRADE_CATS.includes(d.category || 'General') === isTrade)
           .map(([p, d]) => ({ id: p.split('/').pop(), ...d, learned: !!d.learnedAt })),
+        trade: isTrade ? deskPanelBlock(store) : null,
         keyConfigured: true,
         notes: notes.html || '',
         notesUpdatedAt: notes.updatedAt || null,
@@ -1945,7 +1984,10 @@ export function demoApi(role, store) {
           const c = store.docs.get(`cases/${cid}`) || {};
           const asked = [...store.docs.keys()].some((k) => k.startsWith(`cases/${cid}/chat/`) && store.docs.get(k)?.role === 'question');
           if (c.self && !asked) {
-            const qs = [
+            const qs = c.trade ? [
+              'What size were you working with on SPY, and what was the loss at the stop before you moved it?',
+              'Did you check the bid to ask spread on the AMD calls before the order went in?',
+            ] : [
               'What time did the tremor start today, and is it the right hand only?',
               'How many hours did you sleep last night, and did you wake with a headache?',
             ];
@@ -2212,7 +2254,14 @@ export function demoApi(role, store) {
       return ok({ ok: true });
     }
     if (path === '/api/advisor/covers') {
-      return ok({ covers: { [DEMO_CASE_ID]: { text: 'Two years unexplained, bloods never actually seen', by: 'advisor', at: new Date() } } });
+      const covers = { [DEMO_CASE_ID]: { text: 'Two years unexplained, bloods never actually seen', by: 'advisor', at: new Date() } };
+      // The trade desk's cover and its standing line (2026-09-22), from the
+      // mirror the Worker keeps on caseMeta.
+      for (const [k, v] of store.docs.entries()) {
+        if (!k.startsWith('caseMeta/')) continue;
+        covers[k.slice('caseMeta/'.length)] = { text: v.workingDx?.text || '', by: v.workingDx?.by || 'advisor', at: { advisor: v.advisorAt || null }, tradeStanding: v.tradeStanding?.text || '' };
+      }
+      return ok({ covers });
     }
     // The dictionary page reads the same terms the reading paints (2026-09-06):
     // an empty list here meant a tapped term could never land anywhere in

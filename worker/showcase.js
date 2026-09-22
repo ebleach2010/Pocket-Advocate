@@ -548,5 +548,10 @@ export async function wipeCase(env, id, { adminUid } = {}) {
     if (prof?.data.selfCaseId === id)
       await patchDoc(env, `users/${adminUid}`, { selfCaseId: null }, { mask: ['selfCaseId'] }).catch(() => {});
   }
+  // The trade desk (2026-09-22): a deleted desk leaves the settings pointing
+  // at nothing, so the shelf's door comes back.
+  const desk = await getDoc(env, 'trade/settings').catch(() => null);
+  if (desk?.data.caseId === id)
+    await patchDoc(env, 'trade/settings', { caseId: null }, { mask: ['caseId'] }).catch(() => {});
   return { docs: deleted, files: files.length };
 }

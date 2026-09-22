@@ -54,6 +54,11 @@ export function actDispatch(act) {
   return act.tier === 'desk' ? 'run' : 'card';
 }
 
+// The trade desk (2026-09-22): the play cards the Plays page paints, and the
+// storage the 📷 on Ask uploads to.
+import { playCardHtml, wirePlayCards, dayShort as deskDay } from './admin-desk.js';
+import { storage, ref, uploadBytesResumable, getDownloadURL } from './firebase.js';
+
 const SECTION_ICON_RAW = {
   'Right now': '⚡',
   'Plain English': '💬',
@@ -67,6 +72,11 @@ const SECTION_ICON_RAW = {
   // His own case's two sections of its own (2026-09-03).
   'Questions for you': '❓',
   'Watch for': '🚨',
+  // The trade desk's sections (2026-09-22).
+  'Your trades': '🧾',
+  'Where you are slipping': '⚠️',
+  'Rules to hold': '📌',
+  'Setups': '📈',
   'Key terms': '📚',
   // Older assessments used these headings; keep the icons so a case that has
   // not been re-read since still paints correctly.
@@ -119,20 +129,22 @@ function termPalette(text) {
  */
 export let sendToClient = null;
 
-export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null, diffContainer = null, qaContainer = null, goTo = null, self = false }) {
+export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null, diffContainer = null, qaContainer = null, goTo = null, self = false, trade = false }) {
   // His own case has no client to send a line to (2026-09-03): the held
   // press and its hint stay off every page there.
   const sendable = (title) => !self && SENDABLE.has(normTitle(title));
   container.innerHTML = `
     <div class="advisor">
       <div class="advisor-head">
-        <h3>👨‍⚕️ Advisor</h3>
+        <h3>${trade ? '📈 Trade desk' : '👨‍⚕️ Advisor'}</h3>
         <div class="advisor-controls">
           <span class="advisor-status" data-status></span>
-          <button class="btn quiet tiny" data-refresh title="Re-read the conversation now">Update</button>
+          ${trade ? '<button class="btn quiet tiny" data-desk-pause title="Pause or resume the three readings a day">Pause</button>' : ''}
+          <button class="btn quiet tiny" data-refresh title="${trade ? 'Read the desk now' : 'Re-read the conversation now'}">Update</button>
         </div>
       </div>
       <p class="dim small advisor-sub" data-updated>Reading the case…</p>
+      ${trade ? '<p class="dim small desk-sub" data-desk-sub></p>' : ''}
       <div class="advisor-files" data-fchips></div>
       <div class="advisor-body" data-analysis></div>
       <div class="advisor-read" data-read hidden></div>
@@ -142,9 +154,11 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       <div class="advisor-foot">
         <button class="btn" data-prep>✍️ Prepare a response</button>
         <form class="advisor-ask" data-ask>
-          <textarea data-q rows="1" maxlength="2000" placeholder="Ask your advisor…"></textarea>
+          <textarea data-q rows="1" maxlength="2000" placeholder="${trade ? 'Ask the desk…' : 'Ask your advisor…'}"></textarea>
+          ${trade ? '<label class="ask-attach" data-ask-attach title="Attach a screenshot of your positions or your portfolio total">📷<input type="file" hidden data-ask-file accept="image/png,image/jpeg,application/pdf"></label>' : ''}
           <button class="btn quiet" type="submit">Ask</button>
         </form>
+        ${trade ? '<p class="ask-chip" data-ask-chip hidden></p>' : ''}
       </div>
       <p class="error" data-err hidden></p>
     </div>`;
@@ -174,6 +188,60 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   // the route refuses a draft there anyway.
   if (self) prepBtn.remove();
   const qBox = el('[data-q]');
+
+  // THE DESK'S PAUSE (Eric, 2026-09-22: "Just like with medical cases I can
+  // pause it or manually update"). The three readings a day are a setting
+  // on the desk; the button posts it and paints from the answer, never
+  // from its own tap. The line under the updated line says what is next.
+  const deskPauseBtn = el('[data-desk-pause]');
+  const deskSub = el('[data-desk-sub]');
+  let deskScansOn = true;
+  let lastTrade = null;
+  const paintPause = (on) => {
+    deskScansOn = on !== false;
+    if (deskPauseBtn) { deskPauseBtn.textContent = deskScansOn ? 'Pause' : 'Resume'; deskPauseBtn.disabled = false; }
+  };
+  function paintDeskSub(t) {
+    if (!deskSub || !t) return;
+    lastTrade = t;
+    paintPause(t.scansOn);
+    const next = t.nextSlot;
+    const line = t.scansOn === false
+      ? 'Paused. Nothing reads the desk but your tap on Update.'
+      : !next
+        ? 'Market closed today. Update reads it now.'
+        : `Next read ${next.dateKey === t.today ? '' : `${deskDay(next.dateKey)} `}${String(next.slot).replace(/^0/, '')} MT${t.tradingDay === false ? ', market closed today' : ''}. Update reads it now.`;
+    deskSub.textContent = line + (t.hasKey === false ? ' No market data key yet: add it on Desk.' : '');
+  }
+  deskPauseBtn?.addEventListener('click', async () => {
+    deskPauseBtn.disabled = true;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/trade/settings', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ scansOn: !deskScansOn }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      paintDeskSub({ ...(lastTrade || {}), scansOn: out.settings?.scansOn !== false });
+      // The overview's button follows at once, not on the next poll.
+      document.dispatchEvent(new CustomEvent('pa-desk-settings', { detail: out }));
+      setTimeout(refresh, 300);
+    } catch (err) {
+      showErr(err.message);
+      deskPauseBtn.disabled = false;
+    }
+  });
+  // The desk's settings moved on another page (the Desk page's switches,
+  // the overview's button): the line and the button here follow at once.
+  if (trade) {
+    document.addEventListener('pa-desk-settings', (e) => {
+      const out = e.detail || {};
+      if (!out.settings) return;
+      paintDeskSub({ ...(lastTrade || {}), scansOn: out.settings.scansOn !== false, pushOn: out.settings.pushOn !== false, hasKey: out.hasKey !== false });
+    });
+  }
 
   // Errors used to paint only on the Read page. The buttons that cause most
   // of them now live on the Chat page (the foot moves there below), so every
@@ -468,6 +536,8 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   }
 
   let lastQa = [];
+  // The file a pending question carries, shown by name beside it (2026-09-22).
+  let localQFile = null;
   // The answer rows as they are painted right now, one string each, so a poll
   // that changed nothing repaints nothing. See renderQa.
   let qaDrawn = [];
@@ -503,7 +573,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     // first three, put back into the order a conversation reads in.
     const rows = qa.slice(0, 3).slice().reverse().map((q) => `
       <div class="advisor-turn">
-        <p class="advisor-q">${esc(q.question)}</p>
+        <p class="advisor-q">${esc(q.question)}${q.file ? ` <span class="dim small">📎 ${esc(q.file)}</span>` : ''}</p>
         <div class="advisor-a">${q.status === 'running' && qaStalled(q)
           ? '<span class="dim">No answer came back. Ask it again.</span>'
           : q.status === 'running'
@@ -512,7 +582,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       </div>`);
     if (localQ) rows.push(`
       <div class="advisor-turn">
-        <p class="advisor-q">${esc(localQ)}</p>
+        <p class="advisor-q">${esc(localQ)}${localQFile ? ` <span class="dim small">📎 ${esc(localQFile)}</span>` : ''}</p>
         <div class="advisor-a"><span class="dim small">thinking…</span></div>
       </div>`);
     // ROW BY ROW, AND ONLY WHERE IT CHANGED (Eric, 2026-09-09: "when I go to
@@ -684,6 +754,26 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   let diffKey = null;
   function renderDiff(d) {
     if (!diffContainer) return;
+    // THE DESK'S PLAYS PAGE (Eric, 2026-09-22), where a medical case has
+    // its differential: one card per play the reading filed, the open and
+    // taken ones first, then what is done. Never the two medical lists.
+    if (trade) {
+      const t = d.trade || {};
+      const plays = Array.isArray(t.plays) ? t.plays : [];
+      const key = JSON.stringify([d.workingLine, d.dxOverride, plays]);
+      if (key === diffKey) return;
+      diffKey = key;
+      const line = (d.dxOverride && d.dxOverride.text) || d.workingLine || '';
+      const live = plays.filter((p) => p.status === 'open' || p.status === 'took');
+      const done = plays.filter((p) => ['closed', 'skipped', 'expired'].includes(p.status)).slice(0, 10);
+      diffContainer.innerHTML = `
+        ${line ? `<div class="diff-head"><h3 class="diff-line">${esc(line)}${d.dxOverride ? ' <span class="dim small">(your call)</span>' : ''}</h3></div>` : ''}
+        ${live.length ? live.map(playCardHtml).join('') : '<p class="dim small">No open plays. A reading that finds a setup puts it here.</p>'}
+        ${done.length ? `<h4 class="diff-sub">Recent</h4>${done.map(playCardHtml).join('')}` : ''}
+        <p class="diff-disclaimer">Ideas, not orders. Every trade is your decision.</p>`;
+      wirePlayCards(diffContainer, { getToken: () => user.getIdToken(), onSaved: () => { diffKey = null; setTimeout(refresh, 300); } });
+      return;
+    }
     const key = JSON.stringify([d.workingLine, d.dxOverride, d.differential, (d.diffHistory || []).length,
       d.causes, (d.causesHistory || []).length, d.treatments, (d.treatmentsHistory || []).length]);
     if (key === diffKey) return;
@@ -866,6 +956,9 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           handoverError: out.state?.handoverError || '',
           workingLine: out.workingLine || '',
           dxOverride: out.dxOverride || null,
+          // The trade desk's block (2026-09-22): its plays, its standing,
+          // the next read and the two switches.
+          trade: out.trade || null,
           // The Education and About-you folder pages ride this same poll, so
           // the panel stays the single place that talks to the state route.
           glossary: out.glossary || [],
@@ -917,6 +1010,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           callDocSkipped: out.state?.callDocSkipped || [],
         };
         renderDiff(detail);
+        if (trade && out.trade) paintDeskSub(out.trade);
         renderRead(out.mediaReport, out.queuedFiles, d.running, out.state?.mediaPlan || []);
         // A change the advisor has asked for, parked server-side and waiting.
         // Read straight off out.state rather than through the detail whitelist
@@ -1087,6 +1181,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     askBtn.disabled = true;
     askBtn.textContent = 'Asking…';
     localQ = question;
+    localQFile = attachment?.name || null;
     renderQa(lastQa);
     const out = await post({
       action: 'ask', question,
@@ -1102,6 +1197,32 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     }
     return !!out;
   }
+  // THE SCREENSHOT ON ASK (Eric, 2026-09-22: "send him screenshots of my
+  // positions and portfolio total"). The file goes up to Storage under the
+  // case, the way a chat file does, and rides the ask as its attachment;
+  // the question row shows it by name, and a portfolio total on it becomes
+  // that day's balance (the Worker's finishQuestion).
+  let askFile = null;
+  const askFileIn = el('[data-ask-file]');
+  const askChip = el('[data-ask-chip]');
+  const attachLabel = el('[data-ask-attach]');
+  askFileIn?.addEventListener('change', () => {
+    const f = askFileIn.files[0];
+    askFileIn.value = '';
+    if (!f) return;
+    if (!/^image\/(png|jpeg)$|^application\/pdf$/.test(f.type)) { showErr(`${f.name}: a PNG, a JPEG or a PDF.`); return; }
+    if (f.size > 12 * 1024 * 1024) { showErr(`${f.name} is over 12 MB.`); return; }
+    askFile = f;
+    attachLabel?.classList.add('on');
+    if (askChip) { askChip.textContent = `📎 ${f.name}`; askChip.hidden = false; }
+  });
+  async function uploadAskFile(f) {
+    const storageRef = ref(storage, `cases/${id}/ask-files/${Date.now()}-${f.name.replace(/[^\w.-]+/g, '_').slice(0, 80)}`);
+    const task = uploadBytesResumable(storageRef, f);
+    await new Promise((resolve, reject) => { task.on('state_changed', null, reject, resolve); });
+    const url = await getDownloadURL(storageRef);
+    return { name: f.name, url, path: storageRef.fullPath, size: f.size, contentType: f.type || 'application/octet-stream' };
+  }
   async function doAsk() {
     if (asking) return;
     const question = qBox.value.trim();
@@ -1110,9 +1231,16 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       qBox.focus();
       return;
     }
+    let attachment = null;
+    if (askFile) {
+      try { attachment = await uploadAskFile(askFile); } catch (err) { showErr(`Upload failed: ${err.message}`); return; }
+      askFile = null;
+      attachLabel?.classList.remove('on');
+      if (askChip) askChip.hidden = true;
+    }
     qBox.value = '';
     qBox.style.height = 'auto';
-    const ok = await submitAsk(question);
+    const ok = await submitAsk(question, attachment);
     if (!ok) qBox.value = question; // give the question back
   }
   askBtn.type = 'button';
@@ -1128,8 +1256,10 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     qaContainer.innerHTML = `
       <div class="panel advisor-panel">
         <div class="advisor">
-          <h3>💬 Ask your advisor</h3>
-          <p class="dim small">Questions and answers about this case, between you and the advisor only. The client never sees any of it.</p>
+          <h3>${trade ? '📈 Ask the desk' : '💬 Ask your advisor'}</h3>
+          <p class="dim small">${trade
+    ? 'A ticker, a setup, a position. Attach a screenshot with the 📷; a portfolio total on it becomes that day\'s balance on Stats.'
+    : 'Questions and answers about this case, between you and the advisor only. The client never sees any of it.'}</p>
         </div>
       </div>`;
     const home = qaContainer.querySelector('.advisor');

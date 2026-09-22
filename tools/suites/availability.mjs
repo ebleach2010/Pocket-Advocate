@@ -1056,7 +1056,9 @@ for (const page of ['public/js/subscription.js', 'public/js/admin-chats.js',
   check('G: every admin- module in public/js is in the audit\'s own list',
     ['admin-hours.js', 'admin-presence.js', 'admin-ledger.js', 'admin.js',
       'admin-case.js', 'admin-chats.js', 'admin-calendar.js',
-      'admin-availability.js', 'admin-dictionary.js', 'admin-settings.js', 'admin-trade.js']
+      // Re-pinned 2026-09-22 (v4.7): the trade page's module gave way to the
+      // desk's pages inside the case folder.
+      'admin-availability.js', 'admin-dictionary.js', 'admin-settings.js', 'admin-desk.js']
       .every((x) => AUDIT.includes(`/js/${x}`)),
     ['admin-hours.js', 'admin-presence.js', 'admin-ledger.js']
       .filter((x) => !AUDIT.includes(`/js/${x}`)).join(', ') || 'listed');
@@ -1116,8 +1118,10 @@ check('H: wireFolderClocks still hands its toggle back to a future caller',
 // 2026-09-03: his own case wears a second modifier, the purple `self`, so
 // the pin now reads the two together. The green glow is still the running
 // clock's alone: `working` is set from nothing but `clock?.running`.
+// 2026-09-22: and a third, the trade desk's green `trade`, which is a
+// teal outline from its own token and not the clock's green either.
 check('H: the glow is the running clock and nothing else',
-  /class="folder\$\{clock\?\.running \? ' working' : ''\}\$\{self \? ' self' : ''\}"/.test(DRAWER));
+  /class="folder\$\{clock\?\.running \? ' working' : ''\}\$\{self \? ' self' : ''\}\$\{trade \? ' trade' : ''\}"/.test(DRAWER));
 // Two paths CHANGE a running clock at runtime - the toggle and the beacon's
 // "this was stopped" event - and both must repaint the folder. The third path,
 // the first paint, is the class in folderCardHtml checked just above.

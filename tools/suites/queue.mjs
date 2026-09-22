@@ -545,6 +545,10 @@ check('Q32 a read that landed books nothing, and its own leftovers run at the ne
 // behind it runs a tap as a tap.
 // NEGATIVE CONTROL (run 2026-09-13): `post({ action: 'analyze', auto: true })` put back after the Update tap's poll made this read
 //   FAIL  Q35 the panel volunteers nothing and has nothing to pause; the Update button and the route behind it are the one way a read starts
+// 2026-09-22 (v4.7): the trade desk's panel carries a Pause for the desk's
+// three readings a day, under its own name (data-desk-pause, deskPauseBtn);
+// this pin still holds that the medical panel volunteers nothing and has
+// nothing of its own to pause.
 check('Q35 the panel volunteers nothing and has nothing to pause; the Update button and the route behind it are the one way a read starts',
   !/auto: true/.test(P) && !/data-pause|pauseBtn|analysis paused/.test(P)
   && /data-refresh/.test(P) && /post\(\{ action: 'analyze'/.test(P)

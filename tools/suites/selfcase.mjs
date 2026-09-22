@@ -376,7 +376,9 @@ const DEMO = f('public/js/demo/api.js');
 // NEGATIVE CONTROL (run 2026-09-03): the dashboard's `mine` shelf filter dropped made this read
 //   FAIL  S18 the shelf: his case on its own purple shelf, out of the three and out of the revenue line, or the purple button that opens one
 check('S18 the shelf: his case on its own purple shelf, out of the three and out of the revenue line, or the purple button that opens one',
-  /const mine = cases\.filter\(\(c\) => c\.self && c\.status !== 'closed'\);/.test(ADMIN)
+  // Re-pinned 2026-09-22 (v4.7): the trade desk is self too and sits on its
+  // own green shelf, so his own shelf keeps only the medical cases.
+  /const mine = cases\.filter\(\(c\) => c\.self && !c\.trade && c\.status !== 'closed'\);/.test(ADMIN)
   && /const shelved = cases\.filter\(\(c\) => !c\.self\);/.test(ADMIN)
   && /const billed = shelved\.filter\(\(c\) => !c\.family\);/.test(ADMIN)
   && /const former = shelved\.filter/.test(ADMIN) && /const current = shelved\.filter/.test(ADMIN)
@@ -394,15 +396,17 @@ check('S18 the shelf: his case on its own purple shelf, out of the three and out
 // NEGATIVE CONTROL (run 2026-09-03): the masthead pill's self branch removed made this read
 //   FAIL  S19 the page: a purple masthead, an overview built for him, no message makers, records into the intake folders, no check-in nag
 check('S19 the page: a purple masthead, an overview built for him, no message makers, records into the intake folders, no check-in nag',
-  /head\.className = `case-head\$\{c\.self \? ' self' : ''\}`;/.test(CASE)
-  && /data-status>\$\{c\.self \? 'MY OWN CASE' : /.test(CASE)
-  && /pill\.textContent = c\.self \? 'MY OWN CASE' : /.test(CASE)
+  // Re-pinned 2026-09-22 (v4.7): the trade desk is tested first on all three
+  // and wears green; his own case still wears the purple.
+  /head\.className = `case-head\$\{c\.trade \? ' trade' : c\.self \? ' self' : ''\}`;/.test(CASE)
+  && /data-status>\$\{c\.trade \? 'TRADE DESK' : c\.self \? 'MY OWN CASE' : /.test(CASE)
+  && /pill\.textContent = c\.trade \? 'TRADE DESK' : c\.self \? 'MY OWN CASE' : /.test(CASE)
   && /if \(c\.self\) \{ paintSelfOverview\(pane, c\); return; \}/.test(CASE)
   && /data-self-note>Nobody is on the other end\./.test(CASE)
   && /composerButton: data\.self \? \[\] : \[\{/.test(CASE)
   && /const own = typeof data === 'object' && data !== null && !!data\.self;\n\s+const folder = own && kind !== 'recording' \? 'uploads' : kind;/.test(CASE)
   && /if \(own\) \{\n\s+\/\/ Nobody to tell[\s\S]{0,400}fetch\('\/api\/uploaded'/.test(CASE)
-  && /<h3>\$\{data\.self \? 'Your notes' : 'Chat with the client'\}<\/h3>/.test(CASE)
+  && /<h3>\$\{data\.trade \? 'Trade log' : data\.self \? 'Your notes' : 'Chat with the client'\}<\/h3>/.test(CASE)
   && /const noMoney = !!\(live\.self \|\| live\.family\);\n\s+if \(rateEl && noMoney\) rateEl\.hidden = true;/.test(CASE)
   && /if \(typeof data === 'object' && data && data\.self\) \{ row\.hidden = true; return; \}/.test(CASE)
   && /if \(!c\?\.fullAccess \|\| c\.self \|\| c\.status === 'closed'\) return null;/.test(CASE)
@@ -576,7 +580,8 @@ const between = (src, from, to) => {
   return b < 0 ? '' : src.slice(a, b);
 };
 const selfVoiceSrc = between(ADV, 'const SELF_VOICE = `', 'const voice = ()');
-const voiceFn = grab(ADV, /const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/);
+// Re-pinned 2026-09-22 (v4.7): three-way, the trade desk's instructions first.
+const voiceFn = grab(ADV, /const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.trade \? TRADE_INSTRUCTIONS : turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/);
 const selfAssessSrc = between(ADV, 'const SELF_ASSESSMENT = `', '/** Raw API errors are unreadable');
 // eslint-disable-next-line no-new-func
 const selfVoice = selfVoiceSrc ? new Function(`${selfVoiceSrc}; return SELF_VOICE;`)() : '';
@@ -590,7 +595,9 @@ check('S29 his own case reads on its own brief and its own assessment, whole, pi
   // brief too.
   && (ADV.match(/\$\{voice\(\)\}/g) || []).length === 6
   && (ADV.match(/\$\{VOICE\}/g) || []).length === 1
-  && /system: \[\{ type: 'text', text: self \? `\$\{SELF_VOICE\}\\n\\n\$\{SELF_ASSESSMENT\}` : `\$\{VOICE\}/.test(ADV)
+  // Re-pinned 2026-09-22 (v4.7): the desk's brief and contract come first in
+  // the same ternary, so his own case's pair still stands whole behind it.
+  && /system: \[\{ type: 'text', text: trade \? `\$\{TRADE_INSTRUCTIONS\}\\n\\n\$\{TRADE_CONTRACT\}` : self \? `\$\{SELF_VOICE\}\\n\\n\$\{SELF_ASSESSMENT\}` : `\$\{VOICE\}/.test(ADV)
   && /const self = !!turnPolicy\.getStore\(\)\?\.self;/.test(ADV)
   && /style\.voice && !self \? `/.test(ADV),
   `voice() x${(ADV.match(/\$\{voice\(\)\}/g) || []).length}, VOICE x${(ADV.match(/\$\{VOICE\}/g) || []).length}`);
@@ -764,7 +771,8 @@ check('S37 the chat paints a question with a Reply, his answer with the question
   && /data-reply-strip hidden/.test(CHAT) && /placeholder = 'Write a message…' \}\) \{/.test(CHAT)
   && /self: !!data\.self,/.test(CASE) && /placeholder: data\.self \? /.test(CASE)
   && /unansweredSelf = !!data\.self;/.test(CASE) && /\$\{unansweredSelf \? '' : `<button class="btn quiet" data-again=/.test(CASE)
-  && /goTo = null, self = false \}\) \{/.test(PANEL)
+  // Re-pinned 2026-09-22 (v4.7): the panel takes the desk's flag beside his.
+  && /goTo = null, self = false, trade = false \}\) \{/.test(PANEL)
   && /const sendable = \(title\) => !self && SENDABLE\.has\(normTitle\(title\)\);/.test(PANEL)
   && !/SENDABLE\.has\(normTitle\(pg\.title\)\)/.test(PANEL)
   && /'Questions for you': '❓',/.test(PANEL) && /'Watch for': '🚨',/.test(PANEL)
@@ -923,7 +931,8 @@ check('S48 a refused id on a finished batch falls back and runs again instead of
   // The GUARD, not merely the call: a branch mutated to `if (false && ...)`
   // still contains every line below it.
   && /if \(flight\.model && modelRefused\(\{ status: 400, message: String\(out\.why \|\| ''\) \}, \{ model: flight\.model \}\)\) \{/.test(pollSrc)
-  && /effort: passEffort, auto, skipMedia, self, model: turn\.model,/.test(runAnaSrc)
+  // Re-pinned 2026-09-22 (v4.7): the flight carries the desk's flag beside his.
+  && /effort: passEffort, auto, skipMedia, self, trade, model: turn\.model,/.test(runAnaSrc)
   && /ev: 'self-model-fallback', at: 'result'/.test(pollSrc)
   && /modelRefusedAt: new Date\(\), modelRefusedId: flight\.model,/.test(pollSrc)
   // Re-pinned 2026-09-13 (v4.5): markPending takes no options; every call is
@@ -1314,7 +1323,9 @@ check('S56 his own read carries two more machine-read lists under the differenti
     && /differential on THIS case is about what is going on NOW/.test(full)
     && !/still being written/.test(full) && /still being written/.test(pending)
     && (ADV.match(/\$\{self \? priorCasesNote\(state\?\.data\) : ''\}/g) || []).length === 2
-    && /&& !\(turnPolicy\.getStore\(\)\?\.self && priorCasesNote\(state\?\.data\)\)\) \{/.test(ADV)
+    // Re-pinned 2026-09-22 (v4.7): the trade desk reads an empty log too, so
+    // its own exemption follows the briefs' on the same bail.
+    && /&& !\(turnPolicy\.getStore\(\)\?\.self && priorCasesNote\(state\?\.data\)\)\n(?:\s*\/\/[^\n]*\n)*\s+&& !turnPolicy\.getStore\(\)\?\.trade\) \{/.test(ADV)
     && !/[—–]/.test(noteSrc));
 }
 

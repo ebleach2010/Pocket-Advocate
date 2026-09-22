@@ -128,7 +128,8 @@ check('K4 the keyed diag carries the draft state per case (status, age, error), 
   const code = ADV
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:'"`])\/\/[^\n]*/gm, '$1')
-    .replace(/const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/, '');
+    // Re-pinned 2026-09-22 (v4.7): the line is three-way now, the desk first.
+    .replace(/const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.trade \? TRADE_INSTRUCTIONS : turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/, '');
   const heads = [...code.matchAll(/^(?:export )?(?:async )?function \w+\(/gm)].map((m) => m.index);
   const shadowed = [];
   for (let i = 0; i < heads.length; i++) {
@@ -142,7 +143,7 @@ check('K4 the keyed diag carries the draft state per case (status, age, error), 
     /const hisVoice = myVoice\(rows\);/.test(ADV)
     && /const elsewhere = \(!turnPolicy\.getStore\(\)\?\.self && hisVoice\.length < 2500\)/.test(ADV)
     && /<his_voice>\\n\$\{hisVoice \|\| '\(nothing in this thread yet/.test(ADV)
-    && /const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/.test(ADV)
+    && /const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.trade \? TRADE_INSTRUCTIONS : turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/.test(ADV)
     && heads.length > 50 && shadowed.length === 0,
     shadowed.length ? `shadowed in: ${shadowed.join(', ')}` : `${heads.length} functions scanned`);
 }
@@ -207,7 +208,9 @@ check('K4 the keyed diag carries the draft state per case (status, age, error), 
     && !/Key terms/.test(out) && /## Working line/.test(out)
     && legacyNames.length === 4 && legacyNames.includes('advisorKnowledge/sarcoidosis') && legacyNames.includes('advisorKnowledge/paresthesia') && !/Key terms/.test(legacy)
     && tm.length === 8 && tm.every(Boolean)
-    && /material: personMaterial\(rows, qaRows\),\n\s+docNames: \[\.\.\.\(m\.included \|\| \[\]\), \.\.\.alreadyRead\],/.test(ADV)
+    // Re-pinned 2026-09-22 (v4.7): the desk is a teacher, so its reading
+    // hands the harvester no material; every other case still does.
+    && /material: ctx\.trade \? null : personMaterial\(rows, qaRows\),\n\s+docNames: \[\.\.\.\(m\.included \|\| \[\]\), \.\.\.alreadyRead\],/.test(ADV)
     && /material: personMaterial\(rows, qa, \[question, answer\]\),\n\s+docNames: attachment\?\.name \? \[attachment\.name\] : \[\],/.test(ADV)
     && /loadQa\(env, kind, id, \{ full: true \}\)\.catch\(\(\) => \[\]\),\n\s+\]\);\n\s+const p = state\?\.data \|\| \{\};/.test(ADV),
     JSON.stringify({ names, legacyNames, tm }));

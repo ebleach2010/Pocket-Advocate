@@ -16,6 +16,8 @@ import { mountAdvisor, sendToClient } from './advisor.js';
 import { mountNotes } from './notes.js';
 import { mountSaved } from './saved.js';
 import { mountPersonal } from './admin-personal.js';
+// The trade desk's two pages of its own (2026-09-22): Stats and Desk.
+import { mountTradeStats, mountTradeDesk } from './admin-desk.js';
 import { markSeen, isUnseen, PAGE_BADGES } from './seen.js';
 import { openDutyDraft } from './duty.js';
 import { openPrepSheet } from './prep.js';
@@ -235,6 +237,19 @@ async function load() {
   }
 }
 
+/**
+ * THE DESK'S GROUPS (Eric, 2026-09-22): the case, the desk's reading with
+ * its own pages (Plays where the differential was, Stats and Desk beside
+ * the terms), his own notes, and what he has not answered. Six under the
+ * desk on purpose: he asked for each by name.
+ */
+const DESK_GROUPS = [
+  { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files'] },
+  { id: 'read', label: 'Desk', icon: '📈', pages: ['advisor', 'dx', 'advisor-chat', 'education', 'stats', 'desk'] },
+  { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'saved', 'personal'] },
+  { id: 'track', label: 'Track', icon: '🗒', pages: ['unanswered'] },
+];
+
 function render(el) {
   const c = data;
 
@@ -289,6 +304,11 @@ function render(el) {
       // and the milestones feed, and only Appeals stays Full-Service.
       { id: 'act', label: 'Act', icon: '⚖️', pages: [...(data.fullAccess ? ['appeals'] : []), 'log', 'milestones'] },
     ],
+    // THE TRADE DESK (Eric, 2026-09-22) takes its own four groups instead: a
+    // later key wins in an object literal, so the five above stay the
+    // literal five suites pin, and the desk never renders a tab that talks
+    // to a client or a clinic.
+    ...(data.trade ? { groups: DESK_GROUPS } : {}),
     // Landing on a page IS having seen it. The badge clears here rather than
     // on some later save, so it never outlives the thing it was pointing at.
     onShow: (id) => { markSeen(caseId, id); folder?.mark(id, false); },
@@ -317,7 +337,7 @@ function render(el) {
                    state belongs where the state is, not inside a menu you
                    have to know about. -->
               <div class="chat-head">
-                <h3>${data.self ? 'Your notes' : 'Chat with the client'}</h3>
+                <h3>${data.trade ? 'Trade log' : data.self ? 'Your notes' : 'Chat with the client'}</h3>
                 <label class="status-pick">
                   <span class="dim small">Working on</span>
                   <select data-status-pick aria-label="What you are working on">
@@ -365,7 +385,9 @@ function render(el) {
       {
         // "Dx", because four tabs share this row now and "Differential" ate
         // half of it. Same page, same 🧬; Eric writes Dx everywhere anyway.
-        id: 'dx', title: 'Dx', icon: '🧬',
+        // On the trade desk (2026-09-22) this page is Plays: the panel
+        // paints the play cards here instead of the differential.
+        id: 'dx', title: data.trade ? 'Plays' : 'Dx', icon: data.trade ? '📈' : '🧬',
         // The advisor owns this page and repaints it on every state poll.
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
@@ -529,6 +551,22 @@ function render(el) {
         // Painted from the advisor's state poll, same as the differential.
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
+      // THE DESK'S OWN TWO (Eric, 2026-09-22). Stats: his balance, the
+      // entries and the chart against the 3% a day line. Desk: the key, the
+      // account, the start, the watchlist and the switches. Both refetch on
+      // every show.
+      ...(data.trade ? [
+        {
+          id: 'stats', title: 'Stats', icon: '📊',
+          render: (pane) => mountTradeStats(pane, { getToken: () => user.getIdToken() }),
+          onShow: (pane) => pane._reload?.(),
+        },
+        {
+          id: 'desk', title: 'Desk', icon: '⚙️',
+          render: (pane) => mountTradeDesk(pane, { getToken: () => user.getIdToken() }),
+          onShow: (pane) => pane._reload?.(),
+        },
+      ] : []),
       {
         // His bookmarks on this thread, each with a note. Private by path: a
         // client cannot read them, and nothing is written back to the message,
@@ -625,7 +663,8 @@ function render(el) {
   // one element. So it moves BELOW the strip, where the folder's own dock
   // puts it first in view, on arrival and after every single tab tap.
   const head = document.createElement('div');
-  head.className = `case-head${c.self ? ' self' : ''}`;
+  // The trade desk (2026-09-22) is green; his own case is purple.
+  head.className = `case-head${c.trade ? ' trade' : c.self ? ' self' : ''}`;
   // THE MASTHEAD ANSWERS THE FIVE QUESTIONS (visual director pass,
   // 2026-08-29): who, what state, what is waiting, what happens next, when.
   // Everything below is read off the case document this page already holds;
@@ -669,7 +708,7 @@ function render(el) {
   head.innerHTML = `
     <div class="case-who">
       <span class="case-name" data-client>${esc(c.clientName || c.clientEmail || c.clientUid)}</span>
-      <span class="status-pill${c.self ? ' self' : ''}" data-status>${c.self ? 'MY OWN CASE' : (c.status || '?').replace('_', ' ').toUpperCase()}</span>
+      <span class="status-pill${c.trade ? ' trade' : c.self ? ' self' : ''}" data-status>${c.trade ? 'TRADE DESK' : c.self ? 'MY OWN CASE' : (c.status || '?').replace('_', ' ').toUpperCase()}</span>
     </div>
     ${loopRow}
     ${nextLine}
@@ -709,7 +748,7 @@ function render(el) {
     onStatus: (id) => { if (statusPick && statusPick.value !== id) statusPick.value = id; },
     container: folder.el('chat').querySelector('#chat'),
     // His own case: the box takes notes and answers, not messages (2026-09-03).
-    placeholder: data.self ? 'Add a note, or answer a question above…' : undefined,
+    placeholder: data.self ? (data.trade ? 'Log a trade and why, or answer a question above…' : 'Add a note, or answer a question above…') : undefined,
     // Show what is already set, so the control reads as a state rather than
     // as a button that fires and forgets.
     onStatus: (id) => { if (statusPick && statusPick.value !== id) statusPick.value = id; },
@@ -842,6 +881,8 @@ function render(el) {
     onSend: (text) => chat.send(text),
     // His own case: nothing on the panel sends to a client (2026-09-03).
     self: !!data.self,
+    // The trade desk (2026-09-22): Pause, the 📷 on Ask, the Plays page.
+    trade: !!data.trade,
     // Drafts live on their own page, not buried inside the panel.
     draftContainer: folder.el('drafts').querySelector('#draft-panel'),
     // The differential renders onto its own page too.
@@ -928,7 +969,10 @@ async function paintCaseReview(pane) {
  * actually is. Diseases carry mechanism, treatment and outlook, because a
  * definition alone does not help him argue with a specialist.
  */
-const CATEGORY_ORDER = ['Condition', 'Symptom', 'Test or lab', 'Medication', 'Procedure', 'Anatomy', 'Concept', 'General'];
+const CATEGORY_ORDER = ['Condition', 'Symptom', 'Test or lab', 'Medication', 'Procedure', 'Anatomy', 'Concept', 'General',
+  // The trade desk's eight (2026-09-22). The Worker hands a desk only these
+  // and every other case none of them; the order is for the desk's page.
+  'Setup', 'Indicator', 'Level', 'Order', 'Risk', 'Options', 'Market', 'Instrument'];
 
 let eduKey = null;
 /**
@@ -1950,7 +1994,7 @@ function refreshHeader() {
   const name = document.querySelector('[data-client]');
   const pill = document.querySelector('[data-status]');
   if (name) name.textContent = c.clientName || c.clientEmail || c.clientUid;
-  if (pill) pill.textContent = c.self ? 'MY OWN CASE' : (c.status || '?').replace('_', ' ').toUpperCase();
+  if (pill) pill.textContent = c.trade ? 'TRADE DESK' : c.self ? 'MY OWN CASE' : (c.status || '?').replace('_', ' ').toUpperCase();
 }
 
 // The working line under the client's name, kept current by the advisor's
@@ -1964,6 +2008,16 @@ let panelState = {};
  *  should not have to scroll 1,600 lines to find out whether that is safe. */
 let callDocRepaint = null;
 
+// The desk's settings moved on another page (the Desk page's switches, the
+// panel's Pause): the overview's standing line and its button follow at
+// once (2026-09-22).
+document.addEventListener('pa-desk-settings', (e) => {
+  const out = e.detail || {};
+  if (!panelState.trade || !out.settings) return;
+  panelState = { ...panelState, trade: { ...panelState.trade, scansOn: out.settings.scansOn !== false, pushOn: out.settings.pushOn !== false, hasKey: out.hasKey !== false } };
+  tradeOverviewRepaint?.();
+});
+
 document.addEventListener('pa-panel-state', (e) => {
   const d = e.detail || {};
   if (d.id && d.id !== caseId) return;
@@ -1971,6 +2025,8 @@ document.addEventListener('pa-panel-state', (e) => {
   // His own case's overview: the briefs it inherited, and the confirmed
   // diagnosis box, both come off this poll (2026-09-05).
   selfOverviewRepaint?.();
+  // The desk's overview: its standing and its next read (2026-09-22).
+  tradeOverviewRepaint?.();
   if (folder?.el('appeals')) folder.el('appeals')._reload?.();
   // The call-notes workbench reads from the same broadcast. It moved to the
   // My doc page, beside the other two sheets he holds on a call.
@@ -2135,6 +2191,93 @@ function paintHandovers(pane) {
         <div class="handover-brief">${briefHtml(h.brief)}</div>
       </details>`).join('')}
     ${!list.length && st !== 'running' && st !== 'error' ? '<p class="dim small">Nothing carried over yet.</p>' : ''}`;
+}
+
+/**
+ * THE DESK'S OVERVIEW (Eric, 2026-09-22). No person to describe: the case,
+ * where he stands against 3% a day, the next read, and three buttons:
+ * Pause or Resume the readings, close, delete. The standing and the next
+ * read ride the panel's poll; the buttons post and paint from the answer.
+ */
+let tradeOverviewRepaint = null;
+function paintTradeOverview(pane, c) {
+  const t = panelState.trade || {};
+  const nextOf = (x) => (x.scansOn === false ? 'Paused'
+    : x.nextSlot ? `${x.nextSlot.dateKey === x.today ? 'today' : fmtDay(`${x.nextSlot.dateKey}T12:00:00Z`)} ${String(x.nextSlot.slot).replace(/^0/, '')} MT`
+      : 'market closed today');
+  pane.innerHTML = `
+    <div class="facts trade-facts">
+      <span class="fact-k">CASE</span>
+      <span class="fact-v"><span class="status-pill trade">TRADE DESK</span></span>
+      <span class="fact-k">STANDING</span>
+      <span class="fact-v" data-trade-standing>${esc(t.standing?.text || 'no reading yet')}</span>
+      <span class="fact-k">NEXT READ</span>
+      <span class="fact-v" data-trade-next>${esc(nextOf(t))}</span>
+    </div>
+    <p class="self-note trade-note" data-self-note>Nobody is on the other end. The chat is your trade log, the uploads are your screenshots, and every reading is about your trading. Three reads on a trading day at 7:00, 10:00 and noon Mountain, plus any Update you tap. A screenshot posted to the log inside four minutes of a read is picked up by the next one; the 📷 on Ask reads it now.</p>
+    ${c.status === 'closed' ? `<p class="dim small">This desk is closed.</p>
+    <p class="row" style="justify-content:flex-start;"><button type="button" class="btn quiet danger" data-delete-case>Delete this case</button></p>` : `
+    <p class="row" style="gap:.4rem; align-items:center; justify-content:flex-start;">
+      <button type="button" class="btn trade-open" data-trade-pause>${t.scansOn === false ? 'Resume the readings' : 'Pause the readings'}</button>
+      <button type="button" class="btn quiet" data-self-close>Just close it</button>
+      <button type="button" class="btn quiet danger" data-delete-case>Delete this case</button>
+    </p>`}
+    <p class="saved-note" data-self-said role="status" hidden></p>`;
+  tradeOverviewRepaint = () => {
+    const x = panelState.trade || {};
+    const st = pane.querySelector('[data-trade-standing]');
+    const nx = pane.querySelector('[data-trade-next]');
+    const pb = pane.querySelector('[data-trade-pause]');
+    if (st) st.textContent = x.standing?.text || 'no reading yet';
+    if (nx) nx.textContent = nextOf(x);
+    if (pb && !pb.disabled) pb.textContent = x.scansOn === false ? 'Resume the readings' : 'Pause the readings';
+  };
+  pane.querySelector('[data-trade-pause]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const on = (panelState.trade || {}).scansOn !== false;
+    btn.disabled = true;
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/admin/trade/settings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ scansOn: !on }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      panelState = { ...panelState, trade: { ...(panelState.trade || {}), scansOn: out.settings?.scansOn !== false } };
+      btn.disabled = false;
+      tradeOverviewRepaint?.();
+      // The panel's Pause and its next-read line follow at once, not on
+      // the next poll.
+      document.dispatchEvent(new CustomEvent('pa-desk-settings', { detail: out }));
+    } catch (err) {
+      const s = pane.querySelector('[data-self-said]');
+      if (s) { s.textContent = err.message; s.hidden = false; }
+      btn.disabled = false;
+    }
+  });
+  pane.querySelector('[data-self-close]')?.addEventListener('click', async (e) => {
+    if (!confirm('Close the trade desk? It stays readable, the readings stop, and nothing is sent to anyone.')) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/admin/close-case', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ caseId, reason: 'the trade desk' }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      load();
+    } catch (err) {
+      const s = pane.querySelector('[data-self-said]');
+      if (s) { s.textContent = err.message; s.hidden = false; }
+      btn.disabled = false;
+    }
+  });
+  pane.querySelector('[data-delete-case]')?.addEventListener('click', (e) => deleteCase(e.currentTarget));
 }
 
 function paintSelfOverview(pane, c) {
@@ -2365,6 +2508,7 @@ function wireChargeCard(card, c) {
 
 function paintOverview(pane) {
   const c = data;
+  if (c.trade) { paintTradeOverview(pane, c); return; }
   if (c.self) { paintSelfOverview(pane, c); return; }
   const start = c.appointment && toDate(c.appointment.start);
   const mtFmt = new Intl.DateTimeFormat('en-US', {

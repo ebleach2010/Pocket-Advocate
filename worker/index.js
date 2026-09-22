@@ -16,6 +16,7 @@
 //   POST   /api/admin/case-update  join link / milestones / close / contact: phone and home address (admin)
 //   POST   /api/admin/self-case    a new case of his own, with his details, pulling from the personal cases he ticks (admin)
 //   POST   /api/admin/self-case/next  close his own case with its top diagnosis confirmed and open the next one from it (admin)
+//   GET/POST /api/admin/trade/*     the trade desk (2026-09-22): open, state, balance, settings, play (admin)
 //   POST   /api/admin/showcase-case  build the showcase case, Joe Bloe, invented end to end, or find the one that exists (admin)
 //   POST   /api/admin/delete-case    delete a case with nobody real behind it, his own or the showcase, whole (admin)
 //   POST   /api/admin/case-charge    approve a held case at the amount he sets (zero included) or decline it and release the hold (admin)
@@ -53,8 +54,10 @@ import {
   pollCaseFlight, pollFlightsNow, pollAskFlight,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
-// The Trade portal (2026-09-21): his desk, in its own module.
-import { tradeRoute, TradeError, maybeTradeScan, pollTradeFlights } from './trade.js';
+// The trade desk (2026-09-21; a case file since 2026-09-22): its slots and
+// its routes, and the leaf both stand on.
+import { tradeRoute, TradeError, maybeTradeScan, tradePanelBlock } from './trade.js';
+import { TRADE_CATEGORIES, SAY as TRADE_SAY } from './trade-desk.js';
 
 /**
  * The advisor's model turns, out of harm's way. A Workflow step has no wall
@@ -815,8 +818,6 @@ export default {
       // acts on a stale heartbeat, and a read goes uncollected long before
       // the scheduler looks five minutes dead.
       ctx.waitUntil(pollFlightsNow(env).catch(() => {}));
-      // And the desk's flights (2026-09-21), for the same reason.
-      ctx.waitUntil(pollTradeFlights(env, { minAgeMs: 45_000 }).catch(() => {}));
     }
     try {
       // Maintenance: refuse the two routes that spend money, before either
@@ -1348,10 +1349,10 @@ export default {
     // a quarter hour of the old behaviour after the deploy is a quarter hour
     // in which somebody can buy a case he has said he cannot take.
     ctx.waitUntil(closeBookingsAug2026(env));
-    // The Trade portal (2026-09-21): a scan at its slot, and the flights
-    // polled home. Both finish in seconds and never touch the awaited drain.
+    // The trade desk (2026-09-21; a case file since 2026-09-22): at one of
+    // its three slots this books a reading on the desk's case, which the
+    // awaited drain below runs like any other. A few reads, never a turn.
     ctx.waitUntil(maybeTradeScan(env, fired).catch(() => {}));
-    ctx.waitUntil(pollTradeFlights(env, { minAgeMs: 45_000 }).catch(() => {}));
     // THE KILL, found by the flight recorder (2026-08-24). Cloudflare's
     // fifteen minute guarantee attaches to the promise scheduled() RETURNS:
     // "The runtime waits for the promise returned by the scheduled() handler
@@ -2067,7 +2068,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-21-trade-portal';
+const BUILD_TAG = 'v2026-09-22-trade-desk-case';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2075,7 +2076,7 @@ const BUILD_TAG = 'v2026-09-21-trade-portal';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '4.6';
+const VERSION = '4.7';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -6468,11 +6469,19 @@ async function handleAdvisorState(request, env, url) {
   // it is stripped for the same reason: the panel reads callDocStatus and
   // callDocSources, never the request that produced them.
   const { readFiles, pendingMedia, callNotesReq, callDocReq, ...panelState } = state?.data || {};
+  // The trade desk (2026-09-22): its glossary is the trading half only, and
+  // the panel gets the desk's own block; every other case sees the medical
+  // half and no block. Read off the state, which the desk stamps when it
+  // opens, so this costs no extra read on a case that is not the desk.
+  const trade = !!state?.data.trade;
+  const terms = knowledge.filter((r) => TRADE_CATEGORIES.includes(String(r.data.category || '')) === trade);
+  const tradeBlock = trade ? await tradePanelBlock(env).catch(() => null) : null;
   return json({
     state: panelState,
+    trade: tradeBlock,
     // The file reference a resend needs stays here; the panel never uses it.
     qa: qa.map(({ data: { fileRef, ...rest } }) => { void fileRef; return rest; }),
-    glossary: knowledge.map((r) => ({
+    glossary: terms.map((r) => ({
       id: r.id, term: r.data.term, definition: r.data.definition,
       category: r.data.category || 'General', learned: !!r.data.learnedAt,
       // Conditions and syndromes carry the three things Eric asked to see
@@ -7708,6 +7717,8 @@ async function handleAdvisorCovers(request, env) {
     covers[r.id] = {
       text: dx?.text || '',
       by: dx?.by || 'advisor',
+      // The trade desk's line under its cover (2026-09-22).
+      tradeStanding: r.data.tradeStanding?.text || '',
       // What changed, and when. The shelf compares these against what Eric has
       // already looked at to decide which emoji a folder carries.
       at: {
@@ -8654,10 +8665,12 @@ async function requireAdmin(request, env) {
 }
 
 /**
- * The Trade portal's routes (2026-09-21), all under one prefix and one gate:
- * a stranger, a client and an unknown sub-path get the same 404. The work
- * lives in worker/trade.js; a TradeError there is a status he sees, and
- * anything else is the ordinary catch above this dispatch.
+ * The trade desk's routes (2026-09-21; a case file since 2026-09-22), all
+ * under one prefix and one gate: a stranger, a client and an unknown
+ * sub-path get the same 404. The work lives in worker/trade.js; a
+ * TradeError there is a status he sees, carrying what it has to say beside
+ * the sentence (the open desk's id on a 409), and anything else is the
+ * ordinary catch above this dispatch.
  */
 async function handleTrade(request, env, url) {
   const admin = await requireAdmin(request, env);
@@ -8667,7 +8680,7 @@ async function handleTrade(request, env, url) {
   try {
     return json(await tradeRoute(env, { sub, method: request.method, body }));
   } catch (err) {
-    if (err instanceof TradeError) return json({ error: err.message }, err.status);
+    if (err instanceof TradeError) return json({ error: err.message, ...(err.extra || {}) }, err.status);
     throw err;
   }
 }
@@ -9512,6 +9525,8 @@ async function pullFromOf(env, body) {
   for (const id of ids) {
     const c = await getDoc(env, `cases/${id}`).catch(() => null);
     if (!c?.data.self) return { error: 'One of the cases to pull from is not one of your own.', cases: [] };
+    // The trade desk is his own and is not a medical case (2026-09-22).
+    if (c.data.trade) return { error: TRADE_SAY.noPull, cases: [] };
     cases.push(c);
   }
   cases.sort((a, b) => new Date(b.data.createdAt || 0) - new Date(a.data.createdAt || 0));
@@ -9618,6 +9633,7 @@ async function handleSelfCaseNext(request, env) {
   if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
   const doc = await getDoc(env, `cases/${caseId}`);
   if (!doc?.data.self) return json({ error: 'Only your own case continues into a next one.' }, 409);
+  if (doc.data.trade) return json({ error: TRADE_SAY.noNext }, 409);
   if (doc.data.status === 'closed') return json({ error: 'That case is already closed.' }, 409);
   const state = await getDoc(env, `cases/${caseId}/advisor/state`).catch(() => null);
   const top = (Array.isArray(state?.data.differential) ? state.data.differential : [])[0] || null;

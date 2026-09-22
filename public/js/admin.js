@@ -89,7 +89,9 @@ async function load() {
   // HIS OWN CASE (Eric, 2026-09-03) sits on its own purple shelf above the
   // three, and is in none of them: it is not a client, so it is not current,
   // not booked, not former, and not a case in the revenue line.
-  const mine = cases.filter((c) => c.self && c.status !== 'closed');
+  // THE TRADE DESK (2026-09-22) is self too, and sits on its own green
+  // shelf below this one; it is never one of his medical cases.
+  const mine = cases.filter((c) => c.self && !c.trade && c.status !== 'closed');
   const shelved = cases.filter((c) => !c.self);
   // The money lines count only what was paid for: not his own case, and not
   // a family member's free one, which sits on the ordinary shelves but is
@@ -310,6 +312,10 @@ async function load() {
       },
       name: c.clientName || c.clientEmail || c.clientUid,
       self: !!c.self,
+      trade: !!c.trade,
+      // The desk's line under its cover (2026-09-22): where he stands
+      // against 3% a day, from the last reading or the last balance typed.
+      meta: c.trade ? (cover.tradeStanding || 'no reading yet') : '',
       dx: cover.text || '',
       dxIsMine: cover.by === 'eric',
       badge: badge(c),
@@ -400,7 +406,7 @@ async function load() {
         <p class="row"><button type="button" class="btn self-open" data-open-go="${p}">${withEmail ? 'Open their case, free' : 'Open my case'}</button>
           <span class="dim small" data-open-said="${p}"></span></p>
       </div>`;
-  const ownAll = cases.filter((c) => c.self).sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
+  const ownAll = cases.filter((c) => c.self && !c.trade).sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
   const ownClosed = ownAll.filter((c) => c.status === 'closed');
   const pullPicker = ownAll.length ? `
         <fieldset class="pull-from">
@@ -417,7 +423,23 @@ async function load() {
         <button type="button" class="btn self-open" data-open-door="family">Open a family case</button>
         ${cases.some((c) => c.showcase) ? '' : '<button type="button" class="btn quiet" data-showcase-door>Build the showcase case (Joe Bloe)</button>'}</div>
       ${person('self', false, pullPicker)}${person('family', true)}`;
-  listEl.innerHTML = attBlock + todayBlock + selfBlock +
+  // THE TRADE DESK (Eric, 2026-09-22: "Make it a case file highlighted
+  // green"): its own green shelf right under his own case, the open desk
+  // first with its standing on the line, closed desks below, and when no
+  // desk is open a green door that opens one with a tap. No form: the desk
+  // has no person to describe.
+  const desks = cases.filter((c) => c.trade).sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
+  const deskOpen = desks.filter((c) => c.status !== 'closed');
+  const deskClosed = desks.filter((c) => c.status === 'closed');
+  const tradeBlock = (desks.length
+    ? section('TRADE DESK', 'var(--trade)', [
+      ...deskOpen.map((c) => rowFor(c, 'three reads on a trading day, 7:00, 10:00 and noon')),
+      ...deskClosed.map((c) => rowFor(c, `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`)),
+    ])
+    : '')
+    + (deskOpen.length ? '' : `<div class="open-doors"><button type="button" class="btn trade-open" data-open-trade>📈 Open my trade desk</button>
+        <span class="dim small" data-open-trade-said></span></div>`);
+  listEl.innerHTML = attBlock + todayBlock + selfBlock + tradeBlock +
     section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
       `${chargeTag(c)}${c.showcase ? '<strong style="color:var(--orange)">SHOWCASE, nobody behind it</strong> · ' : ''}${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
        ${followUpFlag(c)}`))) +
@@ -493,6 +515,30 @@ async function load() {
       }
     });
   }
+
+  // The desk's door (2026-09-22): one tap opens it and walks in. A desk
+  // already open (the route's 409 carries its id) is walked into instead.
+  listEl.querySelector('[data-open-trade]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const said = listEl.querySelector('[data-open-trade-said]');
+    btn.disabled = true;
+    if (said) said.textContent = 'Opening…';
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/trade/open', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: '{}',
+      });
+      const out = await res.json().catch(() => ({}));
+      const id = res.ok ? out.id : (res.status === 409 && out.existing ? out.existing : null);
+      if (!id) throw new Error(out.error || `Failed (${res.status})`);
+      location.href = `/admin-case.html?id=${encodeURIComponent(id)}`;
+    } catch (err) {
+      if (said) said.textContent = err.message;
+      btn.disabled = false;
+    }
+  });
 
   // THE SHOWCASE (Eric, 2026-09-06: "Create a completely fake case for me to
   // show off on YouTube"). One tap builds Joe Bloe, invented end to end, and
@@ -601,6 +647,7 @@ async function load() {
 }
 
 function badge(c) {
+  if (c.trade) return 'TRADE DESK';
   if (c.self) return 'MY OWN CASE';
   if (c.status === 'awaiting_report' && c.reportDueAt) {
     const days = Math.ceil((toDate(c.reportDueAt) - Date.now()) / 86_400_000);

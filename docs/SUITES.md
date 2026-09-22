@@ -266,6 +266,74 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The trade desk as a case file (2026-09-22, v4.7)
+
+Eric, on seeing the Trade portal behind the phone's menu: "Where." Then:
+"Make it a case file highlighted green. run it automatically at 7am, 10am,
+noon on trading days. Just like with medical cases I can pause it or
+manually update. I can also ask the advisor questions and send him
+screenshots of my positions and portfolio total, which get added the
+portfolio metrics ... There's also a chat where I can essentially track
+each trade and the logic. The advisor scans this and presents any
+validation and correction of my technique in the page where you read shit
+... Terms are a thing here as well." Plus a full instruction set for the
+advisor, which lands word for word.
+
+The desk is a case on the shelf now, `self: true, trade: true`, riding his
+own case's rails (every client-facing guard already applies) and swapping
+what is its own at the seams in `worker/advisor.js`: the policy
+(`withCasePolicy` pins the desk's model at high with web search),
+`turnRequest` (no self block, no thinking key, the desk's tools replace the
+caller's), `voice()` three-way, `loadKnowledge` (a desk turn sees only the
+eight trading categories, every other turn none of them), both bails in
+`runAnalysis` skipped, the system three-way (his instructions plus the
+contract in `worker/trade-desk.js`), the desk note appended to the user
+text, and the finish: the harvester gets no material, `harvestPlays` cuts
+the `## Plays` fenced JSON out with the differential's fail-safe, an update
+pass splices Rules to hold, and `fileDeskReading` writes the play rows
+(expiring the last reading's open ones), a portfolio total read off a
+screenshot (a typed row wins), the push for a strong play (link to the
+case) and the standing line onto `caseMeta.tradeStanding`. A question on
+the desk gets the ask note and the desk note, may end with one
+`PORTFOLIO TOTAL` line that becomes a balance with the Logged sentence, and
+books no reading after. `worker/trade.js` keeps the calendar (07:00, 10:00
+and 12:00 Mountain; 07:00 and 10:00 on an early close), the conditional
+slot claim, and `maybeTradeScan`, which now books a reading on the desk's
+case the way his tap does (`markPending`), plus the routes `open | state |
+balance | settings | play`. The shelf has a green TRADE DESK section under
+MY OWN CASE with a one-tap door; the folder page has the groups Case, Desk
+(Read, Plays, Ask, Terms, Stats, Desk), Mine and Track; the panel has
+Pause beside Update, a next-read line, a 📷 on Ask uploading to
+`cases/{id}/ask-files/`, and paints play cards onto the Plays page.
+`public/js/admin-desk.js` (gated by its name) holds the cards, the chart
+and the two mounts. The v4.6 page and its module are gone.
+
+trade.mjs T1 to T36, each with a control recorded: both modules evaluated
+with their imports replaced, the calendar across DST and its window, the
+three slots and the early close, `scanDue` reasons, `maybeTradeScan` RUN
+(zero reads outside a window, the case read inside, a lost claim books
+nothing, a won claim books once, a closed, missing, paused or non-desk case
+books nothing), the three texts (his instructions 6774 characters word for
+word, the contract's eleven sections in order, the ask note's one line, no
+dashes), `withCasePolicy`, `turnRequest` and `loadKnowledge` lifted and
+RUN under a desk policy and under his own, the reading's seams pinned,
+`harvestPlays`, `validPlay`, `recordPlays`, `recordPortfolio`,
+`standingLine`, `scanVerdict`, `pushStrongPlay`, `fileDeskReading`,
+`portfolioLineOf` and `tradeNote` RUN, the finish and the question pinned,
+`tradeOpen` RUN (the field list, 409 with `existing`, a closed desk allows
+a new one), `handleTrade` RUN (404 to a stranger, `extra` on the body, the
+old sub-paths 404), the state and the panel block (the key never rides),
+settings, balance and play RUN with their sentences, the Worker's hooks
+and refusals, the shelf and card, the folder page, the panel,
+`admin-desk.js` RUN, the lists and files and the demo, the versions and
+the words. Re-pins with dated notes: selfcase.mjs S18, S19, S29, S37, S48,
+S62; dictionary.mjs K5, K6; availability.mjs G and H; charge.mjs CH7;
+showcase.mjs X6; askflight.mjs AF1; queue.mjs Q35 (a note only: the
+desk's Pause is its own name); drive-selfcase.mjs's door step, which had
+been asserting the shelf from before 2026-09-05. drive-trade.mjs drives the shelf, the
+case, the log, the Read page, the Plays page, Ask with a screenshot, Stats,
+Desk, Terms on both kinds of case, Delete and the door, at 390px.
+
 ### The Trade portal (2026-09-21, v4.6)
 
 Eric: "An entirely different page, separate for anything else. The financial

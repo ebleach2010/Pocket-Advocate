@@ -1,0 +1,723 @@
+// The trade desk, as a case file (Eric, 2026-09-22): "Make it a case file
+// highlighted green. run it automatically at 7am, 10am, noon on trading
+// days. Just like with medical cases I can pause it or manually update. I
+// can also ask the advisor questions and send him screenshots of my
+// positions and portfolio total, which get added the portfolio metrics ...
+// There's also a chat where I can essentially track each trade and the
+// logic. The advisor scans this and presents any validation and correction
+// of my technique in the page where you read shit ... Terms are a thing
+// here as well."
+//
+// This module is the leaf the rest stands on: the desk's constants, his
+// instructions word for word, the shape the reading has to come back in,
+// the wall clock, the market half (Finnhub), and everything the reading
+// files once it lands: the plays, a portfolio total read off a screenshot,
+// the push for a strong play, and the standing line the shelf prints. It
+// imports nothing from the advisor, so the advisor can import it.
+//
+// What the desk keeps stays under trade/, which the rules' closing deny
+// keeps from every client. The case itself is a case document with
+// self: true (every client-facing guard already applies) and trade: true
+// (what is its own).
+
+import { patchDoc, listDocs, tryGet, READ_FAILED } from './firestore.js';
+import { notifyUser } from './push.js';
+import {
+  tradeMetrics, TARGET_DAILY, PROJECTION_MIN_DAYS, DEFAULT_START_CENTS,
+} from '../public/js/trade-math.js';
+
+// ---- constants ------------------------------------------------------------
+// "He uses fable." Thinking is always on for this model, so a desk turn
+// carries no thinking key at all (see turnRequest in advisor.js). Every
+// desk turn, the reading and a question alike, runs one step below the
+// top: a setup is time-sensitive, and the reading runs three times a day.
+export const TRADE_MODEL = 'claude-fable-5-1';
+export const TRADE_EFFORT = 'high';
+export const TRADE_TZ = 'America/Boise';
+export const MARKET_OPEN = '07:30';
+export const MARKET_CLOSE = '14:00';
+// A strong play, the one that reaches his phone: the low end of its chance
+// of profit at or above this, with a named catalyst. The Worker decides
+// this from the fields, never the prompt's mood.
+export const STRONG_PROFIT_LOW = 55;
+export const WATCHLIST_MAX = 20;
+export const DEFAULT_WATCHLIST = ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AAPL', 'AMD', 'META', 'AMZN', 'MSFT', 'COIN'];
+export const TRADE_SEARCH_MAX_USES = 8;
+export const TRADE_WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search', max_uses: TRADE_SEARCH_MAX_USES };
+// The dictionary's trading half (2026-09-22: "Terms are a thing here as
+// well"). A desk turn sees only these categories; every other turn sees
+// none of them.
+export const TRADE_CATEGORIES = ['Setup', 'Indicator', 'Level', 'Order', 'Risk', 'Options', 'Market', 'Instrument'];
+export const DESK_NAME = 'Trade desk';
+// The sentences the routes refuse with. Exported so the demo mirrors them
+// word for word and a check can hold the two to each other.
+export const SAY = {
+  notFound: 'Not found',
+  deskOpen: 'The trade desk is already open.',
+  badDate: 'Pick a date like 2026-09-21, not in the future.',
+  badCents: 'Enter the balance in dollars, 0 or more, under ten million.',
+  badStart: 'Starting amount: whole dollars, 1 or more, under ten million.',
+  noPlay: 'No such play.',
+  badStatus: 'Status must be took, skipped, or closed.',
+  badOutcome: 'Closed at needs a dollar figure, plus or minus.',
+  badKey: 'That key does not look like a Finnhub key.',
+  badAccount: 'Account type is cash or margin.',
+  badWatchlist: 'Watchlist: up to 20 tickers, letters and dots only.',
+  noNext: 'The trade desk does not continue into a next case. Pause it, close it or delete it.',
+  noPull: 'The trade desk cannot be pulled from.',
+};
+// ---- end constants --------------------------------------------------------
+
+export const SETTINGS_PATH = 'trade/settings';
+export const STATE_PATH = 'trade/state';
+export const PLAYS = 'trade/plays/items';
+export const BALANCES = 'trade/balances/items';
+
+// ---- his instructions, word for word --------------------------------------
+// The first system block of every desk turn (Eric, 2026-09-22: "Instructions
+// for the advisor:"). Unchanged from what he sent; the app's own contract
+// for the shape of the reading is the second block, below.
+export const TRADE_INSTRUCTIONS = `You are a friendly stock day-trading advisor and teacher built into a trading app.
+
+Your job is to help the user understand what is happening in the market, evaluate possible trades, and gradually become a more competent and independent trader.
+
+PERSONALITY AND COMMUNICATION
+
+Speak in common, natural English.
+
+Be pleasant, patient, calm, and approachable.
+
+Do not try to sound clever, witty, dramatic, poetic, or sophisticated.
+
+Do not use unnecessary metaphors or catchy phrases.
+
+Do not talk down to the user.
+
+Assume the user is a late beginner to early intermediate trader. They already understand basic ideas such as buying and selling stocks, calls and puts, percentages, gains and losses, and basic chart reading, but they are still learning how traders combine information into an actual trading decision.
+
+Explain unfamiliar concepts clearly when they come up.
+
+Use trading terminology when it is useful, but immediately explain less familiar terms in plain English.
+
+Be concise when the question is simple. Go deeper when the user is trying to understand a setup or make a decision.
+
+TRADING APPROACH
+
+Help the user think in terms of:
+
+• Price action
+• Volume
+• Relative volume
+• VWAP
+• Support and resistance
+• Premarket highs and lows
+• Previous-day highs and lows
+• Moving averages
+• MACD
+• RSI when relevant
+• Trend direction
+• Momentum
+• Breakouts and failed breakouts
+• VWAP reclaim and VWAP rejection
+• Consolidation
+• Liquidity
+• Bid/ask spread
+• Volatility
+• News and catalysts
+• Market and sector strength
+• Risk/reward
+• Position sizing
+• Stop placement
+• Trade invalidation
+
+Do not treat any single indicator as a buy or sell signal.
+
+Instead, explain how several pieces of evidence fit together.
+
+For example:
+
+"AMD is above VWAP, volume is increasing, and it just broke the morning high. Those three things support the bullish setup. The weak point is that the breakout is happening directly under resistance at $___."
+
+When looking at a chart, separate what is actually happening from what might happen next.
+
+Use language such as:
+
+"The stock is currently..."
+"This suggests..."
+"The next level I would watch is..."
+"The bullish setup would weaken if..."
+"The trade would be invalidated if..."
+
+Do not present uncertain market movement as certain.
+
+TRADE ANALYSIS
+
+When the user asks whether a stock looks like a potential day trade, analyze it in roughly this order:
+
+1. Catalyst
+Is there news, earnings, guidance, an analyst event, regulatory news, sector news, unusual volume, or another reason traders are paying attention to the stock?
+
+2. Premarket and opening behavior
+Look at the premarket high and low, opening range, gaps, and major levels.
+
+3. Trend
+Determine whether the stock is trending up, trending down, or chopping sideways.
+
+4. VWAP
+Explain whether price is above, below, reclaiming, rejecting, or repeatedly testing VWAP.
+
+5. Volume
+Compare current volume with normal volume and explain whether buyers or sellers appear to be participating strongly.
+
+6. Important price levels
+Identify nearby support, resistance, previous highs/lows, and psychologically important round numbers.
+
+7. Momentum
+Use indicators such as MACD or RSI as supporting evidence, not as standalone signals.
+
+8. Risk/reward
+Identify a reasonable potential entry area, invalidation level, and possible target levels.
+
+9. Overall setup
+Summarize what would need to happen for the trade to become more attractive or less attractive.
+
+If information is missing, say what information would be useful rather than pretending to know it.
+
+RISK
+
+Treat preservation of trading capital as important.
+
+Never encourage the user to put their entire account into a single trade.
+
+When discussing a possible trade, focus on the amount being risked rather than simply the amount being invested.
+
+Clearly distinguish:
+
+Position size = how much money is placed in the trade.
+
+Risk = how much money would actually be lost if the stop or invalidation level is reached.
+
+Example:
+
+"If you buy 100 shares at $50 with a stop at $49.70, your position is worth $5,000, but your planned risk is $30."
+
+Explain risk/reward in simple terms.
+
+Example:
+
+"If you are risking $0.40 per share to potentially make $0.80, that is approximately a 2:1 reward-to-risk setup."
+
+DAY-TRADING EDUCATION
+
+The user is actively learning.
+
+When appropriate, briefly explain WHY traders care about something.
+
+For example:
+
+Instead of:
+
+"Price rejected VWAP."
+
+Say:
+
+"Price tested VWAP and was pushed back down. Traders call that a VWAP rejection. It matters because VWAP is commonly watched by intraday traders, so repeated failure there can show that buyers have not taken control yet."
+
+Teach concepts in context rather than giving textbook definitions unless the user specifically asks for one.
+
+If the user misunderstands something, correct them directly but politely.
+
+Do not agree with an incorrect trading interpretation just to be agreeable.
+
+OPTIONS
+
+The user may also trade options.
+
+When discussing options, account for:
+
+• Delta
+• Theta
+• Implied volatility
+• Bid/ask spread
+• Expiration
+• Strike price
+• Liquidity
+• Open interest
+• Volume
+• Breakeven
+• Maximum gain/loss when applicable
+
+Always distinguish movement in the underlying stock from movement in the option contract.
+
+Explain how IV, delta, theta, and spreads can cause the option price to behave differently from the stock.
+
+For intraday options trades, pay particular attention to liquidity and bid/ask spreads.
+
+MARKET CONTEXT
+
+A stock does not trade in isolation.
+
+When useful, consider:
+
+• SPY
+• QQQ
+• The stock's sector
+• Major market news
+• Economic releases
+• Federal Reserve events
+• Earnings
+• Large index movements
+
+If a semiconductor stock is falling while the entire semiconductor sector is selling off, point that out.
+
+If the stock is showing unusual strength despite a weak market, point that out too.
+
+HOW TO PRESENT A POSSIBLE SETUP
+
+When analyzing a potential trade, use a simple structure like:
+
+Current picture:
+Explain what the stock is doing now.
+
+Bull case:
+Explain what would strengthen the long setup.
+
+Bear case:
+Explain what would weaken or invalidate it.
+
+Levels:
+List the most important prices to watch.
+
+Risk:
+Explain where the trade idea stops making sense.
+
+What I would watch next:
+Explain the next event or price behavior that would provide useful confirmation.
+
+Do not force this structure when the user is simply asking a quick question.
+
+MOST IMPORTANT RULE
+
+Your goal is not to make trading decisions for the user.
+
+Your goal is to help the user understand the evidence well enough that they can make increasingly informed trading decisions themselves.
+
+Be helpful, practical, patient, and clear.
+
+Talk like a knowledgeable trading mentor sitting beside the user looking at the same screen.`;
+
+// ---- the shape the reading comes back in ------------------------------------
+// Appended after his instructions on a reading. The medical update text the
+// reading is handed is shared with every other case, so this block says how
+// to read its words on this desk, then names the sections and what goes in
+// each. The last few are machine-read and stripped before he sees the text,
+// the same way the medical ones are.
+export const TRADE_CONTRACT = `This case is Eric's trading desk. It is not a medical case and there is no client and no patient anywhere on it. The chat is his trade log: each line is a trade he made or is watching and the logic behind it, typed by him, with the id on the line. A file is a screenshot of his positions or of his portfolio total. The instructions above own the voice; this block owns the shape of what you write.
+
+The update text you are given below was written for a medical case and uses its words. Read them this way: the assessment is your reading of the desk; the differential is the Plays section below; the two cumulative sections it names are one section here, Rules to hold; the filed rows are empty on this desk and mean nothing; the client thread is his trade log.
+
+Use exactly these headings, in this order, as markdown ## headings:
+
+## Right now
+## Your trades
+## Where you are slipping
+## Rules to hold
+## Setups
+## Questions for you
+## Key terms
+## Working line
+## Plays
+## Not answered
+## Corrections
+
+"Right now": the market and his account, under 150 words. If you have a previous reading, open with what changed since it. The desk note at the end of the material carries his balance, his standing against 3% a day, the quotes, the headlines and today's earnings; use web search for what a quote cannot tell you, and prefer a fresh source over a stale one.
+
+"Your trades": one block per trade logged since the previous reading, named by the id on his line (ERIC [id=...]). For each: what he did well, and what was wrong, against the levels, the volume, VWAP, his stop and his size. A sound reason with a bad result is still a good trade; a good result on a bad reason is still a bad trade, and say so. When nothing was logged since the previous reading, one line saying so.
+
+"Where you are slipping": at most 5 bullets, patterns across his trades, each naming the trades by id. Only patterns his log supports. When the log is too thin to show one, one line saying what would show it.
+
+"Rules to hold": cumulative. Re-emit every rule from your previous reading, revise one only when his trades show it wrong, add one when a pattern has earned it, and never drop one. Each rule is one line, plain, with the trade or the pattern that earned it in parentheses at the end.
+
+"Setups": at most 4, each under a ### heading of the ticker and the side, for example ### NVDA long. Under it exactly these six labelled lines, in this order: Current picture, Bull case, Bear case, Levels, Risk, What I would watch next. Then one line: Chance of profit: NN to NN%. Only a setup you would watch yourself right now, from the quotes, the headlines and the search; never one to fill the space. Sized for his account, with the risk at the stop said in dollars.
+
+"Questions for you": at most 4, one per line. The app puts each to him in his chat and he answers there. Never ask again what stands unanswered in the log, and never what he has already answered. Write "- none" when you have nothing to ask.
+
+"Key terms": up to 5 trading terms used in this reading that he has not yet learned, one per line as \`- Term [Category]: plain definition\`, the Category one of Setup, Indicator, Level, Order, Risk, Options, Market, Instrument. Write "- none" when there are none.
+
+"Working line": exactly one line, 60 characters or fewer, plain words: where his trading stands right now, as a label for the front of the folder. No hedging, no trailing punctuation. If the log cannot support one yet, write exactly: Still forming.
+
+"Plays": one fenced json block and nothing else, in this shape:
+{ "plays": [ ... ], "portfolio": null }
+One play object per setup above, in the same order, with these fields: ticker, side ("long" or "short"), instrument ("stock", "call", "put" or "spread"), structure (the exact instrument, for example "Oct 17 150/155 call debit spread" or "shares"), entry, stop, targets (a list of prices), holdMinutes (an integer), profitLow and profitHigh (whole percents), sizeDollars (an integer), catalyst, overnightOk (true or false), overnightWhy, picture, bull, bear, levels (a list of short strings), risk, watch. picture, bull, bear, risk and watch repeat the six lines of the setup, in full. portfolio is null unless a screenshot among the NEW messages shows his broker's portfolio total; then it is { "totalCents": the total in cents as an integer, "asOf": the date of the message it came with, as YYYY-MM-DD }. Never take a total from memory or from an earlier screenshot.
+
+"Not answered": write "- none". The app keeps this list from his chat.
+
+"Corrections": rare, and only when one of his own log lines misstates a price or a level. Each line exactly \`- <id> | what is wrong, one sentence | the full repaired line\`. Write "- none" otherwise.
+
+Everything outside Rules to hold and Setups stays under 700 words. Plain words, and never an em dash or an en dash anywhere: use a comma, a colon, or the word to.
+
+You never make a trade for him and you never tell him to make one. A setup is what you would watch and how you would size it, not an order. Every trade is his decision.`;
+
+// Appended to the second system block of a question on the desk, after the
+// question instructions the medical cases use, so it is the last word.
+export const TRADE_ASK_NOTE = `
+
+THIS IS THE TRADE DESK, NOT A MEDICAL CASE. The question instructions above were written for a client's case; on this desk read them this way. Answer his question about the market, a ticker, a setup or a position in plain English, under 250 words unless the question itself demands more. Prices come from the desk note in the material; use web search for the news and the calendar. Give the levels, the risk and what to watch next, and never an order. When you list Key terms, the Category is one of Setup, Indicator, Level, Order, Risk, Options, Market, Instrument. There is no client, no fee and no call to get ready for, so nothing about readiness applies. If the screenshot attached to this question shows his broker's portfolio total, end the answer with exactly one line in this form and nothing after it: PORTFOLIO TOTAL: $1,234.56 (2026-09-22), the figure from the screenshot and today's date; never from memory and never from an earlier screenshot. Without such a screenshot, no such line.`;
+
+// ---- small helpers ------------------------------------------------------------
+const rid = (p) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** A date that exists, as YYYY-MM-DD. */
+export const realDate = (k) => DATE_RE.test(String(k || '')) && new Date(`${k}T12:00:00Z`).toISOString().slice(0, 10) === k;
+export const dollars = (cents) => `$${(Number(cents || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** The advisor's own dash rule, copied rather than imported: this module
+ *  sits under the advisor, and a leaf cannot import its root. */
+export function stripDashes(t) {
+  return String(t == null ? '' : t)
+    .replace(/(\d)\s*[\u2014\u2013]\s*(\d)/g, '$1-$2')
+    .replace(/^[\u2014\u2013]\s*/gm, '')
+    .replace(/(\S) [\u2014\u2013] ([^\u2014\u2013\n]{2,60}?) [\u2014\u2013] (\S)/g, '$1, $2, $3')
+    .replace(/\s*[\u2014\u2013]+\s*/g, '. ');
+}
+
+/** `## Heading` up to the next heading or the end. The advisor's own matcher, copied for the same reason. */
+export function sectionMatch(text, name) {
+  return String(text).match(new RegExp(
+    `^\\s*\\**#{2,3}\\s*\\**\\s*${name}\\s*\\**\\s*\\n([\\s\\S]*?)(?=^\\s*\\**#{2,3}\\s|$(?![\\s\\S]))`, 'im'));
+}
+
+// ---- the wall clock, on his time ---------------------------------------------
+const MT_FMT = new Intl.DateTimeFormat('en-US', {
+  timeZone: TRADE_TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', weekday: 'short',
+});
+
+/** The wall clock in Mountain time: date key, hour, minute, minute of the day. */
+export function mtParts(now = Date.now()) {
+  const p = {};
+  for (const { type, value } of MT_FMT.formatToParts(new Date(now))) p[type] = value;
+  const hh = Number(p.hour) % 24;
+  const mm = Number(p.minute);
+  return { dateKey: `${p.year}-${p.month}-${p.day}`, hh, mm, minuteOfDay: hh * 60 + mm, weekday: p.weekday };
+}
+
+/** The instant a Mountain wall time falls on, to the minute. */
+export function mtInstant(dateKey, hhmm) {
+  const [y, mo, d] = dateKey.split('-').map(Number);
+  const guess = Date.UTC(y, mo - 1, d, Number(hhmm.slice(0, 2)), Number(hhmm.slice(3, 5)));
+  const p = mtParts(guess);
+  const wall = Date.UTC(Number(p.dateKey.slice(0, 4)), Number(p.dateKey.slice(5, 7)) - 1, Number(p.dateKey.slice(8, 10)), p.hh, p.mm);
+  return guess + (guess - wall);
+}
+
+/** "07:02", the reading's own wall time, which is the label a play carries. */
+export const mtLabel = (now = Date.now()) => {
+  const { hh, mm } = mtParts(now);
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+};
+
+const whenMT = (ms) => new Intl.DateTimeFormat('en-US', {
+  timeZone: TRADE_TZ, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+}).format(new Date(ms));
+
+// ---- Finnhub -------------------------------------------------------------------
+export const KEY_RE = /^[A-Za-z0-9_-]{16,64}$/;
+export const keyTail = (key) => (key ? String(key).slice(-4) : '');
+/** A real secret on the Worker wins; the key he pasted is the everyday case. */
+export const resolveKey = (env, settings) => String(env?.FINNHUB_KEY || settings?.finnhubKey || '');
+export const watchlistOf = (settings) => (Array.isArray(settings?.watchlist) && settings.watchlist.length ? settings.watchlist : DEFAULT_WATCHLIST).slice(0, WATCHLIST_MAX);
+export const startOf = (settings) => (Number.isInteger(settings?.startCents) && settings.startCents > 0 ? settings.startCents : DEFAULT_START_CENTS);
+
+async function fetchFinnhub(key, path, params = {}) {
+  const qs = new URLSearchParams({ ...params, token: key });
+  try {
+    const res = await fetch(`https://finnhub.io/api/v1${path}?${qs}`, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return null;
+    const out = await res.json().catch(() => null);
+    if (!out || (typeof out === 'object' && !Array.isArray(out) && out.error)) return null;
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/** Quotes for the watchlist, the last twelve hours of general headlines, today's earnings. A refused endpoint is dropped and named. */
+export async function marketSnapshot(key, watchlist, now = Date.now()) {
+  const { dateKey } = mtParts(now);
+  const r2 = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : null);
+  const [quotes, news, cal] = await Promise.all([
+    Promise.all(watchlist.map(async (ticker) => {
+      const q = await fetchFinnhub(key, '/quote', { symbol: ticker });
+      if (!q || !Number.isFinite(Number(q.c)) || Number(q.c) === 0) return { ticker, missing: true };
+      return { ticker, last: r2(q.c), chg: r2(q.d), chgPct: r2(q.dp), open: r2(q.o), high: r2(q.h), low: r2(q.l), prevClose: r2(q.pc), at: q.t ? new Date(Number(q.t) * 1000).toISOString() : null };
+    })),
+    fetchFinnhub(key, '/news', { category: 'general' }),
+    fetchFinnhub(key, '/calendar/earnings', { from: dateKey, to: dateKey }),
+  ]);
+  const cutoff = now - 12 * 3600_000;
+  return {
+    at: new Date(now).toISOString(),
+    quotes: quotes.filter((q) => !q.missing),
+    missing: quotes.filter((q) => q.missing).map((q) => q.ticker),
+    news: (Array.isArray(news) ? news : [])
+      .filter((n) => n && n.headline && (!n.datetime || Number(n.datetime) * 1000 >= cutoff))
+      .slice(0, 20).map((n) => ({ headline: stripDashes(String(n.headline)).slice(0, 200), source: String(n.source || '').slice(0, 60), at: n.datetime ? new Date(Number(n.datetime) * 1000).toISOString() : null })),
+    earnings: (Array.isArray(cal?.earningsCalendar) ? cal.earningsCalendar : [])
+      .filter((e) => e && e.symbol).slice(0, 40).map((e) => ({ symbol: String(e.symbol), hour: String(e.hour || '') })),
+    newsOk: Array.isArray(news), earningsOk: !!cal,
+  };
+}
+
+function quotesText(snap) {
+  const lines = (snap?.quotes || []).map((q) => `${q.ticker} ${q.last} (${q.chgPct >= 0 ? '+' : ''}${q.chgPct}% today, open ${q.open}, high ${q.high}, low ${q.low}, prev close ${q.prevClose})`);
+  const missing = (snap?.missing || []).length ? `\nNo quote came back for: ${snap.missing.join(', ')}.` : '';
+  return (lines.length ? lines.join('\n') : 'No quotes were available.') + missing;
+}
+
+function playsText(plays) {
+  if (!plays.length) return 'None yet.';
+  return plays.map((r) => {
+    const d = r.data || r;
+    const out = d.status === 'closed' && Number.isFinite(Number(d.outcomeCents)) ? `, closed ${dollars(d.outcomeCents)}` : '';
+    return `${d.ticker} ${d.side} ${d.structure || d.instrument} (${d.slot || 'read'}): ${d.status}${out}; chance ${d.profitLow} to ${d.profitHigh}%`;
+  }).join('\n');
+}
+
+// ---- the standing line, and the metrics behind it ---------------------------------
+async function readBalances(env) {
+  const rows = await listDocs(env, BALANCES, { pageSize: 400, orderBy: 'date asc', all: true }).catch(() => []);
+  return rows.map((b) => ({ date: b.data?.date || b.id, cents: b.data?.cents, note: b.data?.note || '', source: b.data?.source || 'typed' }));
+}
+
+/** His metrics from what is stored: the settings decide the start, the balances the rest. */
+export async function deskMetrics(env, settings = null) {
+  if (!settings) {
+    const doc = await tryGet(env, SETTINGS_PATH);
+    settings = doc === READ_FAILED ? {} : (doc?.data || {});
+  }
+  const rows = await readBalances(env);
+  return { settings, rows, metrics: tradeMetrics(rows, { startedAt: settings.startedAt || null, startCents: startOf(settings), target: TARGET_DAILY, minDays: PROJECTION_MIN_DAYS }) };
+}
+
+/** One line for the folder's cover: "$2,380.00 · 14 trading days · 1.75 pts under 3% a day". Pure. */
+export function standingLine(m) {
+  if (!m || !m.days || !(m.entries || []).length) return `${dollars(m?.currentCents ?? m?.startCents ?? DEFAULT_START_CENTS)} · no entries yet`;
+  const pts = Math.abs(Number(m.offTargetPoints) || 0).toFixed(2);
+  const dir = m.offTargetCents < 0 ? 'under' : 'over';
+  return `${dollars(m.currentCents)} · ${m.days} trading day${m.days === 1 ? '' : 's'} · ${pts} pts ${dir} 3% a day`;
+}
+
+/** The standing as the shelf stores it, and the mirror onto the case's cover. */
+export async function tradeStanding(env, { settings = null, now = Date.now() } = {}) {
+  const { metrics } = await deskMetrics(env, settings);
+  return { text: standingLine(metrics), at: new Date(now), currentCents: metrics.currentCents, days: metrics.days };
+}
+
+/** Refresh caseMeta.tradeStanding for the open desk, best effort. */
+export async function refreshStanding(env, { settings = null, now = Date.now() } = {}) {
+  if (!settings) {
+    const doc = await tryGet(env, SETTINGS_PATH);
+    settings = doc === READ_FAILED ? {} : (doc?.data || {});
+  }
+  if (!settings.caseId) return null;
+  const standing = await tradeStanding(env, { settings, now });
+  await patchDoc(env, `caseMeta/${settings.caseId}`, { tradeStanding: standing }, { mask: ['tradeStanding'] }).catch(() => {});
+  return standing;
+}
+
+// ---- the desk note: what every desk turn is told about the market and the account -----
+/** One text block for the user turn. The key never appears; without one the note says so and fetches nothing. */
+export async function tradeNote(env, { now = Date.now() } = {}) {
+  const doc = await tryGet(env, SETTINGS_PATH);
+  const settings = doc === READ_FAILED ? {} : (doc?.data || {});
+  const key = resolveKey(env, settings);
+  const [{ metrics, rows }, plays, snap] = await Promise.all([
+    deskMetrics(env, settings),
+    listDocs(env, PLAYS, { pageSize: 20, orderBy: 'at desc' }).catch(() => []),
+    key ? marketSnapshot(key, watchlistOf(settings), now).catch(() => null) : Promise.resolve(null),
+  ]);
+  const acct = settings.accountType === 'margin' ? 'margin' : 'cash';
+  const recent = rows.slice(-10).map((b) => `${b.date} ${dollars(b.cents)}${b.source === 'screenshot' ? ' (from a screenshot)' : ''}${b.note ? `, ${b.note}` : ''}`);
+  const lines = [
+    `Now: ${whenMT(now)}, Mountain time. Market hours ${MARKET_OPEN} to ${MARKET_CLOSE} on his clock.`,
+    `Account: ${dollars(metrics.currentCents)}, ${acct} account, started at ${dollars(metrics.startCents)}${metrics.startedAt ? ` on ${metrics.startedAt}` : ''}. Standing: ${standingLine(metrics)}. Target today: 3%, which is ${dollars(Math.round(metrics.currentCents * TARGET_DAILY))}.`,
+    key
+      ? `Quotes (Finnhub, as of now):\n${quotesText(snap)}`
+      : 'No market data key is on file, so no quotes, headlines or earnings are attached. Say so where it matters, and use web search for prices.',
+    key ? `Headlines (last twelve hours):\n${(snap?.news || []).length ? snap.news.map((n) => `- ${n.headline} (${n.source})`).join('\n') : 'None fetched.'}` : '',
+    key ? `Earnings today: ${(snap?.earnings || []).length ? snap.earnings.map((e) => `${e.symbol} ${e.hour}`).join(', ') : 'none listed.'}` : '',
+    `His plays on the desk, newest first:\n${playsText(plays)}`,
+    `His last balance entries:\n${recent.length ? recent.join('\n') : 'None yet.'}`,
+  ];
+  return `\n\n<desk>\n${lines.filter(Boolean).join('\n\n')}\n</desk>`;
+}
+
+// ---- the reading's Plays section, read strictly ----------------------------------
+const TICKER_RE = /^[A-Z][A-Z.]{0,5}$/;
+const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : NaN);
+const int = (v, lo, hi) => { const n = Number(v); return Number.isInteger(n) && n >= lo && n <= hi ? n : NaN; };
+const str = (v, n) => stripDashes(String(v == null ? '' : v)).trim().slice(0, n);
+
+/** One play, validated field by field, or null. The six setup fields ride with it; a play without its picture is not a play. */
+export function validPlay(p) {
+  if (!p || typeof p !== 'object') return null;
+  const ticker = String(p.ticker || '').toUpperCase().trim();
+  const side = String(p.side || '').toLowerCase();
+  const instrument = String(p.instrument || '').toLowerCase();
+  const profitLow = int(p.profitLow, 0, 100);
+  const profitHigh = int(p.profitHigh, 0, 100);
+  const holdMinutes = int(p.holdMinutes, 1, 1440);
+  const sizeDollars = int(p.sizeDollars, 0, 10_000_000);
+  const entry = num(p.entry);
+  const stop = num(p.stop);
+  const targets = Array.isArray(p.targets) ? p.targets.map(num).filter((n) => Number.isFinite(n)).slice(0, 4) : [];
+  const picture = str(p.picture, 600);
+  if (!TICKER_RE.test(ticker) || !['long', 'short'].includes(side) || !['stock', 'call', 'put', 'spread'].includes(instrument)) return null;
+  if ([profitLow, profitHigh, holdMinutes, sizeDollars, entry, stop].some((n) => Number.isNaN(n)) || profitLow > profitHigh || !targets.length) return null;
+  if (!picture) return null;
+  return {
+    ticker, side, instrument, structure: str(p.structure, 120), entry, stop, targets, holdMinutes,
+    why: str(p.why, 800), catalyst: str(p.catalyst, 300), risk: str(p.risk, 400),
+    profitLow, profitHigh, sizeDollars,
+    overnight: { ok: p.overnightOk === true, why: str(p.overnightWhy, 300) },
+    picture, bull: str(p.bull, 600), bear: str(p.bear, 600),
+    levels: (Array.isArray(p.levels) ? p.levels : []).map((x) => str(x, 80)).filter(Boolean).slice(0, 8),
+    watch: str(p.watch, 600),
+  };
+}
+
+/** A portfolio total the reading saw on a screenshot, or null. */
+export function validPortfolio(p) {
+  if (!p || typeof p !== 'object') return null;
+  const totalCents = int(p.totalCents, 0, 1e9 - 1);
+  const asOf = String(p.asOf || '').trim();
+  if (Number.isNaN(totalCents) || !realDate(asOf)) return null;
+  return { totalCents, asOf };
+}
+
+/**
+ * The `## Plays` section out of a reading: the fence stripped, the object
+ * read, every play validated, the bad ones counted, and the section cut out
+ * of the text he reads. The differential's fail-safe: a reading with no
+ * Plays heading is returned untouched with missing set, and nothing is
+ * filed from it; a heading whose body will not parse is cut out (raw JSON
+ * is not something he reads) and counts as missing too.
+ */
+export function harvestPlays(text) {
+  const m = sectionMatch(text, 'Plays');
+  if (!m) return { text: String(text || ''), plays: null, portfolio: null, missing: true, dropped: 0 };
+  const stripped = String(text).replace(m[0], '').trim();
+  const body = m[1].replace(/```(?:json)?/gi, '').trim();
+  const a = body.indexOf('{');
+  const b = body.lastIndexOf('}');
+  let obj = null;
+  try { obj = a >= 0 && b > a ? JSON.parse(body.slice(a, b + 1)) : null; } catch { obj = null; }
+  if (!obj || typeof obj !== 'object') return { text: stripped, plays: null, portfolio: null, missing: true, dropped: 0 };
+  const raw = Array.isArray(obj.plays) ? obj.plays : [];
+  const plays = raw.map(validPlay).filter(Boolean).slice(0, 6);
+  return { text: stripped, plays, portfolio: validPortfolio(obj.portfolio), missing: false, dropped: raw.length - plays.length };
+}
+
+// ---- what a landed reading files ------------------------------------------------------
+/**
+ * The plays a reading filed, as rows on the desk. Every row still open from
+ * an earlier reading expires first: the market moved, and a setup nobody
+ * took is stale by the next read. Rows he took, closed or skipped keep
+ * their word.
+ */
+export async function recordPlays(env, caseId, plays, { slot = '', now = Date.now() } = {}) {
+  const at = new Date(now);
+  const open = await listDocs(env, PLAYS, { pageSize: 30, orderBy: 'at desc' }).catch(() => []);
+  let expired = 0;
+  for (const r of open) {
+    if (r.data?.status !== 'open') continue;
+    await patchDoc(env, `${PLAYS}/${r.id}`, { status: 'expired', expiredAt: at }, { mask: ['status', 'expiredAt'] }).catch(() => {});
+    expired++;
+  }
+  const { dateKey } = mtParts(now);
+  const close = mtInstant(dateKey, MARKET_CLOSE);
+  const ids = [];
+  for (const p of plays) {
+    const id = rid('p');
+    const expiresAt = new Date(Math.min(now + 2 * p.holdMinutes * 60_000, Math.max(close, now + 15 * 60_000)));
+    await patchDoc(env, `${PLAYS}/${id}`, { at, slot, caseId, ...p, status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt });
+    ids.push(id);
+  }
+  return { ids, expired };
+}
+
+/**
+ * A portfolio total read off a screenshot becomes that day's balance entry,
+ * unless he typed one: a typed row (any row not stamped screenshot) wins,
+ * a screenshot overwrites an earlier screenshot, and a day nobody could
+ * read is left alone rather than written over blind.
+ */
+export async function recordPortfolio(env, portfolio, { source = 'screenshot', now = Date.now(), refresh = true } = {}) {
+  const p = validPortfolio(portfolio);
+  if (!p) return { ok: false, why: 'bad total' };
+  const { dateKey: today } = mtParts(now);
+  if (p.asOf > today) return { ok: false, why: 'bad date' };
+  const cur = await tryGet(env, `${BALANCES}/${p.asOf}`);
+  if (cur === READ_FAILED) return { ok: false, why: 'unreadable' };
+  if (cur && cur.data?.source !== 'screenshot') return { ok: false, why: 'typed wins', date: p.asOf };
+  await patchDoc(env, `${BALANCES}/${p.asOf}`, { date: p.asOf, at: new Date(now), cents: p.totalCents, note: 'from a screenshot', source });
+  if (refresh) await refreshStanding(env, { now }).catch(() => {});
+  return { ok: true, date: p.asOf, cents: p.totalCents };
+}
+
+/** What the filed plays mean for his phone: a strong play pushes, unless he turned pushes off. Pure. */
+export function scanVerdict(plays, settings) {
+  const list = Array.isArray(plays) ? plays : [];
+  const strong = list.filter((p) => Number(p.profitLow) >= STRONG_PROFIT_LOW && String(p.catalyst || '').trim());
+  const push = settings?.pushOn !== false && strong.length > 0;
+  const p = strong[0];
+  const body = p
+    ? stripDashes(`${p.ticker} ${p.side}: ${p.structure || p.instrument}, ${p.profitLow} to ${p.profitHigh}% chance.${strong.length > 1 ? ` ${strong.length - 1} more on the desk.` : ''}`)
+    : '';
+  return { strong: strong.length, push, body };
+}
+
+/** The push, to his phone, opening the desk's case. */
+export async function pushStrongPlay(env, caseId, verdict) {
+  if (!verdict?.push || !env?.ADMIN_UID) return false;
+  await notifyUser(env, env.ADMIN_UID, { title: 'Pocket Advocate', body: verdict.body, link: `/admin-case.html?id=${caseId}` });
+  return true;
+}
+
+/**
+ * Everything a landed reading files on the desk, in one call from the
+ * advisor's finish: the plays (and the expiry of the last reading's), a
+ * portfolio total off a screenshot, the push for a strong play, and the
+ * standing line for the cover. Returns what it did, for the recorder.
+ */
+export async function fileDeskReading(env, caseId, harvested, { now = Date.now() } = {}) {
+  const doc = await tryGet(env, SETTINGS_PATH);
+  const settings = doc === READ_FAILED ? {} : (doc?.data || {});
+  const out = { plays: 0, expired: 0, dropped: harvested?.dropped || 0, missing: !!harvested?.missing, portfolio: null, pushed: false, standing: null };
+  if (harvested && !harvested.missing && Array.isArray(harvested.plays)) {
+    const r = await recordPlays(env, caseId, harvested.plays, { slot: mtLabel(now), now });
+    out.plays = r.ids.length;
+    out.expired = r.expired;
+    const v = scanVerdict(harvested.plays, settings);
+    if (v.push) out.pushed = await pushStrongPlay(env, caseId, v).catch(() => false);
+  }
+  if (harvested?.portfolio) out.portfolio = await recordPortfolio(env, harvested.portfolio, { now, refresh: false });
+  out.standing = await tradeStanding(env, { settings, now }).catch(() => null);
+  return out;
+}
+
+// ---- a question's answer: the portfolio line at its foot ------------------------------
+const PORTFOLIO_LINE_RE = /\n?[ \t]*PORTFOLIO TOTAL:[ \t]*\$?[ \t]*([\d,]+(?:\.\d{1,2})?)[ \t]*\((\d{4}-\d{2}-\d{2})\)[ \t]*\.?[ \t]*$/i;
+
+/** The one trailing line a desk answer may end with, parsed and cut off; anything else is left alone. Pure. */
+export function portfolioLineOf(text) {
+  const t = String(text || '');
+  const m = t.match(PORTFOLIO_LINE_RE);
+  if (!m) return { text: t, portfolio: null };
+  const stripped = t.replace(m[0], '').trim();
+  const cents = Math.round(Number(m[1].replace(/,/g, '')) * 100);
+  const asOf = m[2];
+  if (!Number.isInteger(cents) || cents < 0 || cents >= 1e9 || !realDate(asOf)) return { text: stripped, portfolio: null };
+  return { text: stripped, portfolio: { totalCents: cents, asOf } };
+}

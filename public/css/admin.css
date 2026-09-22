@@ -1496,6 +1496,39 @@ main > p > a.small[href="/admin.html"] {
 .self-facts { border-left: 3px solid var(--self); }
 .self-note { margin: 0 0 .8rem; padding: .7rem .9rem; border: 1px solid color-mix(in srgb, var(--self) 40%, transparent); border-radius: 10px; color: var(--dim); }
 
+/* THE TRADE DESK (Eric, 2026-09-22: "Make it a case file highlighted
+   green"). Its own token in every scheme, leaning teal so it never reads as
+   the running work clock's green: the folder on the shelf, the masthead
+   pill and the name, and the door that opens the desk. Declared after the
+   purple so it wins on a card that is both (the desk is self AND trade). */
+:root { --trade: #1F8A6D; }
+:root[data-scheme="calm"] { --trade: #6FD9B4; }
+:root[data-scheme="paper"] { --trade: #23705A; }
+:root[data-scheme="contrast"] { --trade: #7CFFCF; }
+.folder.trade {
+  outline: 2px solid var(--trade);
+  outline-offset: 2px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .25) inset, 0 6px 16px rgba(0, 0, 0, .45),
+              0 0 0 1px var(--trade), 0 0 14px color-mix(in srgb, var(--trade) 55%, transparent);
+}
+.folder.trade:hover,
+.folder.trade:focus-visible {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .25) inset, 0 10px 22px rgba(0, 0, 0, .5),
+              0 0 0 1px var(--trade), 0 0 18px color-mix(in srgb, var(--trade) 65%, transparent);
+}
+.folder.trade .status-pill { border-color: var(--trade); color: var(--trade); }
+.status-pill.trade { border-color: var(--trade); color: var(--trade); box-shadow: none; }
+.case-head.trade .case-name { color: var(--trade); }
+.btn.trade-open { border-color: var(--trade); color: var(--trade); background: color-mix(in srgb, var(--trade) 10%, transparent); }
+.btn.trade-open:hover, .btn.trade-open:focus-visible { background: color-mix(in srgb, var(--trade) 18%, transparent); }
+.trade-facts { border-left: 3px solid var(--trade); }
+.trade-note { border-color: color-mix(in srgb, var(--trade) 40%, transparent); }
+.desk-sub { margin: -.2rem 0 .6rem; }
+.ask-attach { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0 .5rem; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.ask-attach.on { border-color: var(--trade); color: var(--trade); box-shadow: 0 0 0 1px var(--trade); }
+.ask-chip { margin: .3rem 0 0; font-size: .8rem; color: var(--dim); }
+.play-card.expired .play-head, .play-card.expired dl { opacity: .7; }
+
 /* The two doors on the shelf (2026-09-03): his own case and a family case,
    each a button that unfolds a short form. The family flag on a card is the
    same purple, at word size, beside the status. */
@@ -1549,16 +1582,13 @@ main > p > a.small[href="/admin.html"] {
 .charge-edit { font-size: 1.4rem; font-weight: 800; color: var(--orange); }
 .charge-edit input { width: 7.5rem; font: inherit; font-size: 1.4rem; font-weight: 800; color: var(--orange); }
 
-/* Trade portal (2026-09-21). The one named colour is the target line, which
+/* The trade desk's pages (2026-09-21, the Trade portal; a case file since
+   2026-09-22). The one named colour is the target line, which
  * Eric asked for in yellow; a token so each scheme keeps it readable. */
 :root { --target: #B58A00; }
 :root[data-scheme="calm"] { --target: #FFD54A; }
 :root[data-scheme="paper"] { --target: #A67C00; }
 :root[data-scheme="contrast"] { --target: #FFE04D; }
-.trade-tabs { display: flex; gap: .4rem; flex-wrap: wrap; margin: .6rem 0 1rem; }
-.trade-tabs button { min-height: 44px; padding: .45rem .8rem; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--dim); font: inherit; cursor: pointer; }
-.trade-tabs button[aria-selected="true"] { color: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-c); }
-.trade-badge { display: inline-block; min-width: 1.3rem; padding: 0 .35rem; margin-left: .3rem; border-radius: 999px; background: var(--cyan); color: var(--panel); font-size: .75rem; text-align: center; }
 .trade-feed .panel { margin-bottom: .7rem; }
 .trade-when { color: var(--dim); font-size: .78rem; }
 .trade-notes { margin: .5rem 0 0; padding-left: 1.1rem; }

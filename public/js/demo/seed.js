@@ -190,6 +190,54 @@ Pocket Advocate
 Enclosures: appointment of authorised representative; neurology consultation
 note; physical therapy discharge summary; medication record.`;
 
+// The trade desk's reading, as the panel stores it once the machine-read
+// sections are stripped (2026-09-22). Invented end to end, in the desk's
+// own sections, about the four trades in the seeded log.
+const TRADE_ID = 'demo-case-trade';
+const TRADE_READING = `## Right now
+The index is up 0.4% on light volume and chips lead. Your account is $2,380.00 after 14 trading days, 1.75 points a day under the 3% line. Since the last reading you logged four trades and one screenshot. Two were sound, one had no stop, one moved a stop the wrong way.
+
+## Your trades
+NVDA long (t001): a gap and go with the opening range held and volume at twice normal. Stop 1.50 under, target 3.60 above, better than 2 to 1. You took profit at 651.60 before the target, which is fine on a day the index was light. Good trade.
+
+TSLA short (t002): the second [[VWAP]] rejection is a real trigger. Stop above the rejection high, target at the morning low. Covered early at 409.80 with the trend still on. Good trade.
+
+AMD calls (t003): no stop, and the exit plan was watching it. The reclaim was a fair reason and 2 contracts was a fair size. The trade went wrong when the plan was attention and nothing else. A bad trade with a fair reason.
+
+SPY long (t004): the stop moved from 570 to 569 after price dipped. A stop moves only in the direction of the trade. The loss grew from $24 to $44 for no new reason. Bad trade.
+
+## Where you are slipping
+- Options trades go on without a stop (t003). Shares get one every time.
+- A stop moved against you once the trade was under water (t004).
+- Both good trades were closed before target on nothing but nerves (t001, t002). Fine while the day is light; watch that it does not become the habit.
+
+## Rules to hold
+- Every options entry gets a stop on the underlying before the order goes in (t003).
+- A stop moves toward the target or not at all (t004).
+- Size so the loss at the stop is 1 to 2% of the account (t001 and t002 held this).
+
+## Setups
+### NVDA long
+Current picture: holding above the [[opening range]] at 650 on twice normal volume after the developer conference guidance.
+Bull case: a push through 652 with volume opens 655.
+Bear case: a break back below 648 ends it.
+Levels: 648, 650, 652, 655.
+Risk: $1.50 a share on 100 shares is $150, about 6% of the account; 40 shares keeps it at $60.
+What I would watch next: the 10:30 volume bar against the 10:00 one.
+Chance of profit: 55 to 65%.
+
+### TSLA short
+Current picture: rejected VWAP twice in the first half hour on falling volume after the delivery miss.
+Bull case: a reclaim of 415 with volume flips the day; cover there.
+Bear case: a break of 410 on volume opens 405 and 402.
+Levels: 405, 410, 412, 415.
+Risk: $6 a share on 25 shares is $150; 12 shares keeps it near $70.
+What I would watch next: whether 412 holds as resistance on the next test.
+Chance of profit: 45 to 55%.
+
+## Questions for you
+- Why no stop on the AMD calls at 4.20? What was the exit plan before you entered?`;
+
 export function seed({ set, file }) {
   // Open times to book into. Without these the booking page says "No open
   // times right now" and the sign-up walk - the thing the demo exists to let
@@ -545,50 +593,125 @@ export function seed({ set, file }) {
     at: days(1).toISOString(), url: '',
     meta: { paCategory: 'formsent', paStarred: '1' },
   });
-  // ---- the Trade portal (2026-09-21) ----------------------------------
-  // His desk, seeded so every tab has something to show: a key on file, a
-  // scan two hours ago with two plays and a note, a note yesterday, an
-  // answered question, and fifteen trading days of balances so the
-  // projections render. Every figure invented.
+  // ---- the trade desk (2026-09-21; a case file since 2026-09-22) ----------
+  // His desk on the shelf, seeded so every page has something to show: the
+  // green case, a trade log of four trades and a screenshot note, one
+  // question the reading asked and his answer, a reading in the desk's
+  // sections, two plays with their setups, the settings with a key on file,
+  // fifteen trading days of balances, and two trading terms in the
+  // dictionary. Every figure invented.
   const dk = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+  set(`cases/${TRADE_ID}`, {
+    self: true,
+    trade: true,
+    clientUid: null,
+    clientEmail: null,
+    clientName: 'Trade desk',
+    clientDob: null,
+    clientTz: 'America/Boise',
+    clientPhone: null,
+    clientAddress: null,
+    status: 'confirmed',
+    createdAt: days(21),
+    bookingEmailSentAt: days(21),
+    appointment: null,
+    publicElection: { choice: 'private', history: [{ choice: 'private', at: days(21) }] },
+    addOnFollowUp: false,
+    forms: {},
+    files: [],
+    reportDueAt: null,
+    caseRateCents: 0,
+    addonRateCents: 0,
+    fullAccess: true,
+    fullAccessAt: days(21),
+    fullAccessRateCents: 0,
+    fullAccessMonths: 0,
+    fullAccessByHand: true,
+    stripe: null,
+    work: { seconds: 0, startedAt: null },
+    hold: null,
+    priorCases: [],
+    carriedDx: [],
+    lastMessage: { text: 'I was watching it live and figured I would sell on a break of 168.', from: ADMIN, role: 'admin', ts: hours(2), emailed: true },
+  });
+  const TRADE_LOG = [
+    [30, 'NVDA long 100 shares at 648.40, stop 646.90, target 652. Gap and go, held the opening range, volume 2x. Out at 651.60, plus 320.'],
+    [29, 'TSLA short 50 at 412.10 after the second VWAP rejection, stop 414, target 405. Covered at 409.80, plus 115.'],
+    [27, 'AMD long 2 Oct 17 170 calls at 4.20 on the reclaim. No stop, I was watching it. Sold at 3.60, minus 120.'],
+    [26, 'SPY long 20 shares at 571.20, stop 570, target 573. Moved the stop to 569 when it dipped. Stopped at 569, minus 44.'],
+    [5, 'Screenshot of my positions at 10:05 is in Uploads: NVDA and SPY open, both green.'],
+  ];
+  TRADE_LOG.forEach(([ago, text], n) => {
+    set(`cases/${TRADE_ID}/chat/t${String(n + 1).padStart(3, '0')}`, { from: ADMIN, role: 'admin', text, ts: hours(ago) });
+  });
+  set(`cases/${TRADE_ID}/chat/tq1`, {
+    from: 'reading', role: 'question', ts: hours(3), askedAt: hours(3), answeredAt: hours(2), answerId: 'tr1',
+    text: 'Why no stop on the AMD calls at 4.20? What was the exit plan before you entered?',
+  });
+  set(`cases/${TRADE_ID}/chat/tr1`, {
+    from: ADMIN, role: 'admin', ts: hours(2), replyTo: 'tq1',
+    quote: 'Why no stop on the AMD calls at 4.20? What was the exit plan before you entered?',
+    text: 'I was watching it live and figured I would sell on a break of 168. It ran past me while I was on the phone.',
+  });
+  set(`cases/${TRADE_ID}/advisor/state`, {
+    trade: true,
+    status: 'idle',
+    updatedAt: hours(2),
+    analysis: TRADE_READING,
+    workingDx: 'Sound entries, stops go missing on options',
+    differential: [],
+    unanswered: [],
+    corrections: [],
+    priorCases: [], carriedDx: [], handovers: [], handoverStatus: null,
+    mediaReport: { read: ['positions-1005.png'], known: [], queued: [], unreadable: [], at: hours(2) },
+  });
+  set(`caseMeta/${TRADE_ID}`, {
+    workingDx: { text: 'Sound entries, stops go missing on options', by: 'advisor', at: hours(2) },
+    advisorAt: hours(2),
+    tradeStanding: { text: '$2,380.00 · 14 trading days · 1.75 pts under 3% a day', at: hours(2) },
+  });
+  set('advisorKnowledge/vwap', { term: 'VWAP', category: 'Indicator', definition: 'The volume weighted average price of the day so far, the line intraday traders watch to see who is in control.', mechanism: '', treatment: '', outcome: '', addedAt: hours(2), learnedAt: null });
+  set('advisorKnowledge/opening-range', { term: 'Opening range', category: 'Setup', definition: 'The high and the low of the first five to fifteen minutes; a break out of it with volume is a trigger, and the other side of it is the stop.', mechanism: '', treatment: '', outcome: '', addedAt: hours(2), learnedAt: null });
   set('trade/settings', {
+    caseId: TRADE_ID, openedAt: days(21),
     finnhubKey: 'demo-finnhub-key-1234', accountType: 'cash',
     watchlist: ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AAPL', 'AMD', 'META', 'AMZN', 'MSFT', 'COIN'],
     scansOn: true, pushOn: true, startedAt: dk(21), startCents: 200000, setByHand: true,
   });
-  set('trade/state', { lastSlot: `${dk(0)}T09:30`, lastScanAt: hours(2), lastScanResult: 'plays', lastError: null, seenAt: days(1), searchOff: false });
+  set('trade/state', { lastSlot: `${dk(0)}T10:00`, claimedAt: hours(2) });
   set('trade/plays/items/p-demo-1', {
-    at: hours(2), slot: '09:30', feedId: 'f-demo-scan', ticker: 'NVDA', side: 'long', instrument: 'spread', structure: 'Oct 17 650/655 call debit spread',
+    at: hours(2), slot: '10:02', caseId: TRADE_ID, ticker: 'NVDA', side: 'long', instrument: 'spread', structure: 'Oct 17 650/655 call debit spread',
     entry: 2.1, stop: 1.3, targets: [3.4, 4.6], holdMinutes: 180,
-    why: 'NVDA gapped up 2% on volume and held the opening range through 09:15. The spread caps the cost while implied volatility is high after the conference.',
+    picture: 'Holding above the opening range at 650 on twice normal volume after the developer conference guidance.',
+    bull: 'A push through 652 with volume opens 655.',
+    bear: 'A break back below 648 on the stock ends it.',
+    levels: ['648', '650', '652', '655'],
+    risk: 'The spread costs 2.10 and can go to zero; 2 contracts is $420, about 2% of the account at the stop of 1.30.',
+    watch: 'The 10:30 volume bar against the 10:00 one.',
     catalyst: 'Data center guidance raised at the developer conference, 07:00 ET.',
-    risk: 'A break back below 648 on the stock ends the trade. The spread loses its premium fast after 13:00.',
     profitLow: 55, profitHigh: 65, sizeDollars: 420, overnight: { ok: false, why: 'The move is intraday. Nothing after the bell.' },
     status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 4 * 3600_000),
   });
   set('trade/plays/items/p-demo-2', {
-    at: hours(2), slot: '09:30', feedId: 'f-demo-scan', ticker: 'TSLA', side: 'short', instrument: 'stock', structure: 'shares',
+    at: hours(2), slot: '10:02', caseId: TRADE_ID, ticker: 'TSLA', side: 'short', instrument: 'stock', structure: 'shares',
     entry: 412, stop: 418, targets: [402, 396], holdMinutes: 60,
-    why: 'TSLA rejected VWAP twice in the first half hour on falling volume. The short is the side with the trend on the day.',
+    picture: 'Rejected VWAP twice in the first half hour on falling volume after the delivery miss.',
+    bull: 'A reclaim of 415 with volume flips the day. Cover there.',
+    bear: 'A break of 410 on volume opens 405 and 402.',
+    levels: ['402', '405', '410', '412', '415'],
+    risk: '$6 a share on 25 shares is $150; 12 shares keeps it near $70.',
+    watch: 'Whether 412 holds as resistance on the next test.',
     catalyst: 'Delivery numbers below the street estimate, out at 06:00 ET.',
-    risk: 'A reclaim of 415 with volume flips the day. Cover there.',
     profitLow: 45, profitHigh: 55, sizeDollars: 800, overnight: { ok: false, why: 'Short into an overnight headline is not a trade with an edge.' },
     status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 2 * 3600_000),
   });
-  set('trade/feed/items/f-demo-scan', {
-    at: hours(2), kind: 'scan', slot: '09:30', text: 'The index is up 0.4% on light volume. Chips lead, autos lag. Two plays stand out and one thing is worth knowing.',
-    notes: [{ text: 'The Fed minutes land at 12:00 MT. Expect a volatility spike in the ten minutes after.' }],
-    playIds: ['p-demo-1', 'p-demo-2'], quiet: false, searched: { queries: 4, results: 15 }, landedMs: 300000,
-  });
-  set('trade/feed/items/f-demo-note', { at: days(1), kind: 'note', text: 'CPI comes out Thursday 06:30 MT. Size down before the print.' });
-  set('trade/feed/items/f-demo-q', {
-    at: days(2), kind: 'question', text: 'Is a 0DTE SPY call ever worth it with my account size?', status: 'done', answeredAt: days(2),
-    answer: 'Rarely. A same day contract loses value every minute it does not move, and a $2,000 account cannot absorb a fast zero. If you take one, size it at 1% of the account, enter on a confirmed break with volume, and exit within fifteen minutes either way. A one to two day expiry with the same strike gives the trade room to be right.',
-  });
-  for (const [n, cents] of [[20, 200000], [17, 205000], [14, 212000], [9, 208000], [5, 220000], [0, 238000]])
-    set(`trade/balances/items/${dk(n)}`, { date: dk(n), at: days(n), cents, note: n === 0 ? 'after close' : '' });
+  // The last typed entry sits two days back, so a screenshot asked about
+  // today lands on an empty day in every time zone the demo runs in.
+  for (const [n, cents] of [[20, 200000], [17, 205000], [14, 212000], [9, 208000], [5, 220000], [2, 238000]])
+    set(`trade/balances/items/${dk(n)}`, { date: dk(n), at: days(n), cents, note: n === 2 ? 'after close' : '', source: 'typed' });
 
 }
 
 export const DEMO_CASE_ID = CASE_ID;
 export const DEMO_FULL_CASE_ID = FULL_ID;
+export const DEMO_TRADE_CASE_ID = TRADE_ID;

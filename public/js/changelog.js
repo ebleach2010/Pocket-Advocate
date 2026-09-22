@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '4.6';
+export const VERSION = '4.7';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '4.6';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE TRADE DESK AS A CASE FILE (2026-09-22): "Make it a case file
+    // highlighted green. run it automatically at 7am, 10am, noon on trading
+    // days." Admin only: the desk moves off its own page and onto the shelf.
+    version: '4.7',
+    quiet: true,
+    client: [],
+    admin: [
+      'The trade desk is a case file now: green on the Clients page under your own case, opened with one tap on Open my trade desk. It reads itself three times on a trading day (7:00, 10:00 and noon Mountain) and whenever you tap Update, and Pause on the Read page stops the three. The Trade portal page and its tab are gone.',
+      'The chat is the Trade log, one line per trade and why. The Read page checks and corrects your technique from the log, keeps a running list of rules to hold, and files the setups it finds onto the Plays page as cards. Ask takes a screenshot with the 📷, and a portfolio total on it becomes that day\'s balance on Stats. Trading terms land on the Terms page in their own categories. Stats and Desk hold the chart, the entries, the key, the start and the switches.',
+    ],
+  },
   {
     // THE TRADE PORTAL (2026-09-21): "An entirely different page, separate
     // for anything else ... Essentially a mini app within the app just for

@@ -68,7 +68,8 @@ check('AF1 a question is built and submitted to the batch, never carried streame
   && /const turn = turnRequest\(\{\n\s+effort: QUESTION_EFFORT,\n\s+maxTokens: QUESTION_TOKENS,\n\s+tools: actionTools\(\),/.test(runQuestion)
   && !/await ask\(env,/.test(runQuestion) && !/onBeat/.test(runQuestion)
   && /const batchId = await submitTurnBatch\(env, turn, customId\);/.test(runQuestion)
-  && /batch: \{ batchId, customId, submittedAt: new Date\(\), model: turn\.model, self, override, pollFails: 0 \},/.test(runQuestion)
+  // Re-pinned 2026-09-22 (v4.7): the row carries the desk's flag beside his.
+  && /batch: \{ batchId, customId, submittedAt: new Date\(\), model: turn\.model, self, trade, override, pollFails: 0 \},/.test(runQuestion)
   && /\.\.\.\(attachment \? \{ fileRef: attachment \} : \{\}\),/.test(runQuestion)
   && /await patchDoc\(env, askQueuePath\(kind, id, qaId\), \{ kind, id, qaId, ask: true, at: new Date\(\) \},/.test(runQuestion)
   && /ev: 'ask-submit', kind, self, ms: Date\.now\(\) - t0/.test(runQuestion)

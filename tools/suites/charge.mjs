@@ -386,7 +386,9 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     && (ADMIN.match(/\$\{chargeTag\(c\)\}/g) || []).length === 2 && /APPROVE OR DECLINE · \$\{what\}/.test(ADMIN)
     && /stripeTook\(c\)/.test(ADMIN)
     && /^\.charge-amt \{[\s\S]*?min-height: 44px;/m.test(ACSS)
-    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin-trade', 'admin'].every((p) => /admin\.css\?v=stat111/.test(f(`public/${p}.html`)))
+    // Re-pinned 2026-09-22 (v4.7): the trade page is gone and the sheet
+    // moved to stat112 for the green.
+    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin'].every((p) => /admin\.css\?v=stat112/.test(f(`public/${p}.html`)))
     && paidCents(held) === 0 && paidCents(cap) === 90000 + 32500 && paidCents(comp) === 0 && paidCents(tier) === 90000 + 440000 && paidCents(old) === 120000,
     JSON.stringify({ heldLine, bookLine, paid: [paidCents(held), paidCents(cap), paidCents(comp), paidCents(tier), paidCents(old)] }));
 }

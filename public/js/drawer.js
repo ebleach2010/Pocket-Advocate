@@ -56,6 +56,9 @@ export function folderCardHtml({
   clock = null,
   // His own case (2026-09-03): the one purple folder on the shelf.
   self = false,
+  // The trade desk (2026-09-22): the one green folder on the shelf. A desk
+  // is self too; the green is declared after the purple and wins.
+  trade = false,
 } = {}) {
   const read = String(dx || '').trim();
   // An override has to carry his mark, or a line he wrote reads as the
@@ -69,7 +72,7 @@ export function folderCardHtml({
   // from the row above the chat or from the switch itself all light the
   // folder, and none of them can light it alone.
   return `
-    <a class="folder${clock?.running ? ' working' : ''}${self ? ' self' : ''}" href="${esc(href)}" data-id="${esc(id)}">
+    <a class="folder${clock?.running ? ' working' : ''}${self ? ' self' : ''}${trade ? ' trade' : ''}" href="${esc(href)}" data-id="${esc(id)}">
       <span class="folder-tab"><span class="folder-name">${esc(name)}</span></span>
       <span class="folder-body">
         <span class="folder-dx${dxCls}" data-dx="${esc(id)}" data-dx-text="${esc(read)}"

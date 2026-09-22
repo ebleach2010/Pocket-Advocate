@@ -240,7 +240,10 @@ ok('the folder wears the purple outline', !!cardColor && cardColor.outline === h
 if (SHOTS) await page.screenshot({ path: `${SHOTS}/05-shelf-after.png` });
 
 console.log('\n--- F. a family case ---');
-ok('the own-case door is gone and the family door stays', await page.evaluate(() => !document.querySelector('[data-open-door="self"]') && !!document.querySelector('[data-open-door="family"]')));
+// Re-pinned 2026-09-22: the own-case door has stayed since 2026-09-05 (more
+// than one case for himself, in sequence), reading as a plus once he has
+// one; this step had been asserting the older shelf.
+ok('the own-case door reads as a plus once he has a case, and the family door stays', await page.evaluate(() => (document.querySelector('[data-open-door="self"]')?.textContent || '').trim() === '+ Open another case for myself' && !!document.querySelector('[data-open-door="family"]')));
 await page.click('[data-open-door="family"]');
 await page.waitForTimeout(300);
 await page.fill('[data-of="family:firstName"]', 'Ann');

@@ -35,6 +35,13 @@ import { getDoc, patchDoc, listDocs, deleteDoc, tryGet, READ_FAILED, readFailedE
 // worker/advisor-acts.js for why that is structural rather than a promise.
 import { validateAction, actionTools, money } from './advisor-acts.js';
 import { listIntake, listShelf, mediaFetch } from './storage.js';
+// The trade desk (2026-09-22): a case file read on his own case's rails,
+// with its own model, effort, tools and instructions, and what the reading
+// files once it lands. A leaf, so this import is not a cycle.
+import {
+  TRADE_MODEL, TRADE_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,
+  tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,
+} from './trade-desk.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 const MODEL = 'claude-opus-5';
@@ -127,6 +134,17 @@ export async function withCasePolicy(env, kind, id, fn) {
         const st = await getDoc(env, statePath(kind, id)).catch(() => null);
         if (st?.data.modelRefusedId === SELF_MODEL) policy.model = MODEL;
       }
+    }
+    // THE TRADE DESK (2026-09-22) rides his own case's rails and swaps the
+    // model, the effort, the tools and the whole instruction set. Tested
+    // after the self branch so it overrides it: the desk is self AND trade.
+    // One line, so the effort it carries is a policy field and not one of
+    // the literals selfcase.mjs S64 counts. A refused pinned id drops to
+    // the default the same way his own case's does.
+    if (c?.data.trade) {
+      policy = { self: true, trade: true, model: TRADE_MODEL, effort: TRADE_EFFORT, tools: [TRADE_WEB_SEARCH_TOOL], kind, id };
+      const st = await getDoc(env, statePath(kind, id)).catch(() => null);
+      if (st?.data.modelRefusedId === TRADE_MODEL) policy.model = MODEL;
     }
   }
   return turnPolicy.run(policy, fn);
@@ -309,10 +327,11 @@ time any medical term or abbreviation appears, follow it with a plain-words
 gloss in parentheses, e.g. "paresthesia (pins and needles)". Never repeat a
 gloss.`;
 
-/** The standing brief for the turn being built: his own brief on his own
- *  case, the advisor brief everywhere else. Read from the policy, so the
- *  caller cannot pick wrong. */
-const voice = () => (turnPolicy.getStore()?.self ? SELF_VOICE : VOICE);
+/** The standing brief for the turn being built: the desk's instructions on
+ *  the trade desk (2026-09-22), his own brief on his own case, the advisor
+ *  brief everywhere else. Read from the policy, so the caller cannot pick
+ *  wrong. */
+const voice = () => (turnPolicy.getStore()?.trade ? TRADE_INSTRUCTIONS : turnPolicy.getStore()?.self ? SELF_VOICE : VOICE);
 
 /**
  * The assessment on his own case. Same machine-read tail as the client one
@@ -638,15 +657,21 @@ function turnRequest({ system, messages, effort, maxTokens = 64000, tools }) {
   const sys = system == null ? [todayBlock()]
     : Array.isArray(system) ? [...system, todayBlock()]
       : [{ type: 'text', text: system }, todayBlock()];
-  if (policy?.self) sys.push(selfBlock());
+  // The trade desk (2026-09-22) is self without the block: its own
+  // instructions say who it is talking to.
+  if (policy?.self && !policy.trade) sys.push(selfBlock());
   return {
     model: policy?.model || MODEL,
     max_tokens: maxTokens,
-    thinking: { type: 'adaptive' },
+    // The desk's model thinks on its own, so no thinking key rides a desk
+    // turn (v4.6 sent none).
+    ...(policy?.trade ? {} : { thinking: { type: 'adaptive' } }),
     output_config: { effort: policy?.effort || effort },
     system: withCacheBp(sys),
     messages,
-    ...(tools && tools.length ? { tools } : {}),
+    // Under the desk's policy its tools replace the caller's: web search,
+    // and never the action tools.
+    ...(policy?.trade ? { tools: policy.tools } : (tools && tools.length ? { tools } : {})),
   };
 }
 
@@ -1468,7 +1493,11 @@ async function loadKnowledge(env) {
   // owns. The learned list stays complete; pending is capped to the newest
   // 40 so the prompt does not grow without bound (the older pending terms
   // stay on the Education page, just not in every prompt).
-  const rows = await listDocs(env, 'advisorKnowledge', { pageSize: 200, all: true }).catch(() => []);
+  const all = await listDocs(env, 'advisorKnowledge', { pageSize: 200, all: true }).catch(() => []);
+  // The dictionary has a trading half (2026-09-22): a desk turn sees only
+  // the trading categories, and every other turn sees none of them.
+  const trade = !!turnPolicy.getStore()?.trade;
+  const rows = all.filter((r) => TRADE_CATEGORIES.includes(String(r.data.category || '')) === trade);
   return {
     learned: rows.filter((r) => r.data.learnedAt).map((r) => r.data.term),
     pending: rows.filter((r) => !r.data.learnedAt)
@@ -4351,7 +4380,9 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     // that starts from an earlier one runs off the briefs before he has
     // typed a line.
     if (!chat && !media.blocks.length && !media.carry.length
-      && !(turnPolicy.getStore()?.self && priorCasesNote(state?.data))) {
+      && !(turnPolicy.getStore()?.self && priorCasesNote(state?.data))
+      // The desk reads an empty log too (2026-09-22): the market moved.
+      && !turnPolicy.getStore()?.trade) {
       await setState(env, kind, id, {
         status: 'idle', startedAt: null, progressAt: null, stage: null,
         pendingAt: null, updatedAt: new Date(),
@@ -4371,6 +4402,9 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     }, 0);
     const qaSig = qa.map((x) => `${x.q.length}:${x.a.length}${x.override ? '*' : ''}`).join(',');
     if (auto && !skipMedia && prior && !media.blocks.length && !media.carry.length
+      // Never on the desk (2026-09-22): a slot reads the market whether or
+      // not he wrote a line since the last one.
+      && !turnPolicy.getStore()?.trade
       && state?.data.analyzedThroughTs
       && newestTs <= new Date(state.data.analyzedThroughTs).getTime()
       && qaSig === (state.data.qaSig || '')) {
@@ -4482,7 +4516,11 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
     // His own case: the read is about him, and the words around the material
     // say so (2026-09-03). The finish reads the same flag off the flight.
     const self = !!turnPolicy.getStore()?.self;
-    const subj = self ? 'Eric' : 'this client';
+    // The trade desk (2026-09-22): his own case's rails, its own brief, and
+    // the market beside the log.
+    const trade = !!turnPolicy.getStore()?.trade;
+    const tradeNoteText = trade ? await tradeNote(env, { now: runT0 }) : '';
+    const subj = trade ? 'Eric\'s trading desk' : self ? 'Eric' : 'this client';
     const logNow = self ? 'Eric\'s whole log' : 'the full conversation';
     const logSoFar = self ? 'Eric\'s log' : 'the conversation';
 
@@ -4495,7 +4533,7 @@ export async function runAnalysis(env, kind, id, mediaList = null, { skipMedia =
       // His own case reads on its own instructions, whole (Eric, 2026-09-03:
       // "an entirely different set of instructions"), not on the client
       // ones with a block appended.
-      system: [{ type: 'text', text: self ? `${SELF_VOICE}\n\n${SELF_ASSESSMENT}` : `${VOICE}
+      system: [{ type: 'text', text: trade ? `${TRADE_INSTRUCTIONS}\n\n${TRADE_CONTRACT}` : self ? `${SELF_VOICE}\n\n${SELF_ASSESSMENT}` : `${VOICE}
 
 Write Eric's working assessment of this client. He reads it on a phone beside
 a live chat, one section at a time, flipping between them.
@@ -4690,7 +4728,7 @@ the thread has actually contradicted it.`, cache: true },
       // one: the standing instructions above are identical from call to
       // call, and gluing the glossary and the profile onto them meant the
       // advisor learning anything busted the cache built to protect them.
-      { type: 'text', text: `${knowledgeNote(knowledge)}${self ? priorCasesNote(state?.data) : ''}${self ? '' : stanceNote(style)}${style.voice && !self ? `
+      { type: 'text', text: trade ? (knowledgeNote(knowledge) || ' ') : `${knowledgeNote(knowledge)}${self ? priorCasesNote(state?.data) : ''}${self ? '' : stanceNote(style)}${style.voice && !self ? `
 
 Two of your sections leave this page as messages FROM ERIC: "Worth asking" and "What's missing". He presses one line and it goes to the client as it stands. Write those two in his voice, from this profile of how he writes:
 ${style.voice}` : ''}${registerNote(style)}` || ' ' }],
@@ -4712,7 +4750,8 @@ ${style.voice}` : ''}${registerNote(style)}` || ' ' }],
               + bookkeepingNote(state, { delta: passType === 'delta' })
               + economicsNote(econ)
               + workLogNote(worklog)
-              + mediaNote(media),
+              + mediaNote(media)
+              + tradeNoteText,
           },
           ...media.blocks,
         ],
@@ -4730,7 +4769,7 @@ ${style.voice}` : ''}${registerNote(style)}` || ' ' }],
       batchCtx: {
         batchId, customId, submittedAt: new Date(),
         passType, catchup, newerLeft, freshMsgs: fresh.length,
-        effort: passEffort, auto, skipMedia, self, model: turn.model,
+        effort: passEffort, auto, skipMedia, self, trade, model: turn.model,
         newestTs: newestTs ? new Date(newestTs) : null,
         chunkThroughTs: (() => {
           if (!(passType === 'delta' && catchup && fresh.length)) return null;
@@ -4820,7 +4859,9 @@ async function finishAnalysis(env, kind, id, ctx, message) {
   // Each machine-read section is pulled out and stripped in turn, so none of
   // it reaches the assessment Eric actually reads.
   const cover = harvestWorkingLine(await harvestKeyTerms(env, analysis, {
-    material: personMaterial(rows, qaRows),
+    // The desk is a teacher (2026-09-22): the terms it uses count, so no
+    // material there, which is the old open behaviour.
+    material: ctx.trade ? null : personMaterial(rows, qaRows),
     docNames: [...(m.included || []), ...alreadyRead],
   }));
   const dx = harvestDifferential(cover.text, p.differential);
@@ -4844,6 +4885,10 @@ async function finishAnalysis(env, kind, id, ctx, message) {
     ];
   }
   const corr = harvestCorrections(un.text, rows, p.corrections);
+  // The desk's Plays section (2026-09-22): read strictly and cut out here,
+  // filed below once the text is saved. Every other case has no such
+  // section and keeps its text whole.
+  const pl = ctx.trade ? harvestPlays(corr.text) : { text: corr.text, plays: null, portfolio: null, missing: true, dropped: 0 };
   // Stamps for the shelf badges. A differential that came back identical is
   // not news, so its stamp holds rather than moving; a badge that lights on
   // every pass is a badge he stops reading. fileAt moves when this pass
@@ -4861,8 +4906,8 @@ async function finishAnalysis(env, kind, id, ctx, message) {
   // Fold "unchanged" stubs back in BEFORE judging length: a legitimate delta
   // that stubbed both cumulative sections is short by design.
   const finalText = passType === 'delta'
-    ? spliceUnchanged(corr.text, prior, ['What we know so far', 'Ruled out'])
-    : corr.text;
+    ? spliceUnchanged(pl.text, prior, ctx.trade ? ['Rules to hold'] : ['What we know so far', 'Ruled out'])
+    : pl.text;
   // A delta reply that came back at half the prior's size lost sections, and
   // saving it would destroy them permanently (the assessment is its own
   // memory). Discard it and force the retry to be a full read. pollFlight's
@@ -4924,6 +4969,18 @@ async function finishAnalysis(env, kind, id, ctx, message) {
     await askInChat(env, id, harvestQuestions(finalText), rows)
       .catch((err) => console.warn('own-case questions:', err.message || err));
   }
+  // THE DESK (2026-09-22): the plays the reading filed, a portfolio total it
+  // read off a screenshot, the push for a strong play, and the standing
+  // line for the cover. Best effort, after the text is saved.
+  let desk = null;
+  if (ctx.trade && kind === 'case') {
+    desk = await fileDeskReading(env, id, pl, { now: submittedMs || now.getTime() })
+      .catch((err) => { console.warn('desk filing:', err.message || err); return null; });
+    await diagLog(env, {
+      ev: 'trade-read', plays: desk?.plays ?? 0, expired: desk?.expired ?? 0, dropped: pl.dropped, missing: pl.missing,
+      portfolio: desk?.portfolio?.ok === true, pushed: !!desk?.pushed,
+    });
+  }
   // Mirror the cover so the dashboard shelf paints every folder from one
   // read. It lands on caseMeta, which is Worker-only by rule, NOT on the
   // client-readable case doc: a working diagnosis is Eric's private
@@ -4941,7 +4998,10 @@ async function finishAnalysis(env, kind, id, ctx, message) {
       diffAt,
       fileAt,
       draftAt: p.draftStatus === 'ready' ? (p.draftAt || now) : null,
-    }, { mask: ['workingDx', 'advisorAt', 'diffAt', 'fileAt', 'draftAt'] })
+      // The desk's standing rides the same mirror (2026-09-22), for the
+      // green folder's line under the working line.
+      ...(desk?.standing ? { tradeStanding: desk.standing } : {}),
+    }, { mask: ['workingDx', 'advisorAt', 'diffAt', 'fileAt', 'draftAt', ...(desk?.standing ? ['tradeStanding'] : [])] })
       .catch((err) => console.warn('caseMeta mirror:', err.message || err));
   }
   await deleteDoc(env, queuePath(kind, id)).catch(() => {});
@@ -5095,6 +5155,9 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
   // His own case (2026-09-03): the standing positions mined from his client
   // work stay off it, and an override typed here settles this case only.
   const self = !!turnPolicy.getStore()?.self;
+  // The trade desk (2026-09-22): the desk note beside the log, the desk's
+  // own note at the end of the instructions, and no reading booked after.
+  const trade = !!turnPolicy.getStore()?.trade;
   // The flight recorder (2026-09-07): an ask that starts and never submits
   // died building the turn; one that submits and never ends is a flight
   // nobody collected; one that ends in error says why.
@@ -5114,6 +5177,7 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
       loadWorkLog(env, kind, id),
     ]);
     const chat = transcript(rows);
+    const tradeNoteText = trade ? await tradeNote(env, { now: t0 }) : '';
     let fileBlocks = [];
     let fileNote = '';
     if (attachment) {
@@ -5189,7 +5253,7 @@ ${SELF_NOTE}` },
       // Learned material on its own block, after the cached one, so the
       // glossary growing or the profile updating never busts the cache on
       // the standing instructions above.
-      { type: 'text', text: `${knowledgeNote(knowledge)}${self ? priorCasesNote(state?.data) : ''}${self ? '' : stanceNote(style)}${registerNote(style)}${override ? OVERRIDE_NOTE : ''}${AUTHORITY_NOTE}` || ' ' }],
+      { type: 'text', text: `${knowledgeNote(knowledge)}${self ? priorCasesNote(state?.data) : ''}${self ? '' : stanceNote(style)}${registerNote(style)}${override ? OVERRIDE_NOTE : ''}${trade ? TRADE_ASK_NOTE : AUTHORITY_NOTE}` || ' ' }],
       messages: [{
         role: 'user',
         content: [
@@ -5201,7 +5265,7 @@ ${SELF_NOTE}` },
               state?.data.draft ? `\n<your_current_draft>\nA reply you drafted for Eric to send, not yet sent. He may be asking about it.\n${state.data.draft}\n</your_current_draft>\n` : ''
             }${qaBlock(qa)}${
               qa.length ? '\nThis is one continuing conversation. His question below may lean on it; do not repeat what you already told him there.\n' : ''
-            }${economicsNote(econ)}${workLogNote(worklog)}${fileNote}\nEric asks: ${question}`,
+            }${economicsNote(econ)}${workLogNote(worklog)}${tradeNoteText}${fileNote}\nEric asks: ${question}`,
           },
           ...fileBlocks,
         ],
@@ -5214,7 +5278,7 @@ ${SELF_NOTE}` },
     // for the one resend a refused model is allowed.
     await patchDoc(env, path, {
       progressAt: new Date(),
-      batch: { batchId, customId, submittedAt: new Date(), model: turn.model, self, override, pollFails: 0 },
+      batch: { batchId, customId, submittedAt: new Date(), model: turn.model, self, trade, override, pollFails: 0 },
       ...(attachment ? { fileRef: attachment } : {}),
     }, { mask: ['progressAt', 'batch', ...(attachment ? ['fileRef'] : [])] });
     // The marker is the poll's to-do entry. Masked, so a resend never resets
@@ -5239,6 +5303,10 @@ ${SELF_NOTE}` },
 async function finishQuestion(env, kind, id, qaId, flight, message) {
   const path = `${statePath(kind, id)}/qa/${qaId}`;
   const self = !!turnPolicy.getStore()?.self;
+  // The desk (2026-09-22), from the policy or from the flight itself: the
+  // panel's poll runs this under the policy, the cron's drain does too,
+  // and the row remembers either way.
+  const trade = !!(turnPolicy.getStore()?.trade || flight?.trade);
   const t0 = flight?.submittedAt ? new Date(flight.submittedAt).getTime() : Date.now();
   try {
     const row = await getDoc(env, path);
@@ -5265,6 +5333,18 @@ async function finishQuestion(env, kind, id, qaId, flight, message) {
     });
     cleaned = await applyMastered(env, cleaned);
     cleaned = await applyForgotten(env, cleaned);
+    // THE DESK (2026-09-22): a portfolio total the answer read off his
+    // screenshot becomes that day's balance, unless he typed one; the
+    // answer says so where it happened.
+    if (trade) {
+      const pf = portfolioLineOf(cleaned);
+      cleaned = pf.text;
+      if (pf.portfolio) {
+        const rec = await recordPortfolio(env, pf.portfolio, {}).catch(() => null);
+        if (rec?.ok) cleaned = `${cleaned}\n\nLogged ${deskDollars(rec.cents)} as the balance for ${rec.date}.`;
+        else if (rec?.why === 'typed wins') cleaned = `${cleaned}\n\nYou typed a balance for ${rec.date}, so the screenshot's total was not logged over it.`;
+      }
+    }
     if (override) {
       if (self) {
         // Settled for THIS case only: the qa row keeps override:true and
@@ -5289,7 +5369,9 @@ async function finishQuestion(env, kind, id, qaId, flight, message) {
     // discussion, so flag the assessment stale. markPending's own floor keeps
     // a burst of questions from buying a max-effort analysis per question; the
     // cron picks the flag up, and the next pass folds the discussion in.
-    await markPending(env, kind, id).catch(() => {});
+    // Not on the desk (2026-09-22): its three slots and his tap are the
+    // readings, and an answer is not a reason to buy one.
+    if (!trade) await markPending(env, kind, id).catch(() => {});
   } catch (err) {
     console.error('advisor question:', err.stack || err);
     await patchDoc(env, path, {
