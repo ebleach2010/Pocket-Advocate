@@ -290,7 +290,8 @@ async function load() {
     const m = Math.floor((live % 3600) / 60);
     return folderCardHtml({
       id: c.id,
-      href: `/admin-case.html?id=${c.id}`,
+      // The desk left the folder (2026-09-22): its card opens its own app.
+      href: c.trade ? `/admin-desk.html?id=${c.id}` : `/admin-case.html?id=${c.id}`,
       // A closed case gets no clock at all: there is no more work to bill to
       // it, and a stray tap on the FORMER CLIENTS shelf used to start one.
       clock: c.status === 'closed' ? null : {
@@ -433,7 +434,7 @@ async function load() {
   const deskClosed = desks.filter((c) => c.status === 'closed');
   const tradeBlock = (desks.length
     ? section('TRADE DESK', 'var(--trade)', [
-      ...deskOpen.map((c) => rowFor(c, 'three reads on a trading day, 7:00, 10:00 and noon')),
+      ...deskOpen.map((c) => rowFor(c, 'one reading at 7:00 Mountain; everything else waits for your tap')),
       ...deskClosed.map((c) => rowFor(c, `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`)),
     ])
     : '')
@@ -533,7 +534,7 @@ async function load() {
       const out = await res.json().catch(() => ({}));
       const id = res.ok ? out.id : (res.status === 409 && out.existing ? out.existing : null);
       if (!id) throw new Error(out.error || `Failed (${res.status})`);
-      location.href = `/admin-case.html?id=${encodeURIComponent(id)}`;
+      location.href = `/admin-desk.html?id=${encodeURIComponent(id)}`;
     } catch (err) {
       if (said) said.textContent = err.message;
       btn.disabled = false;

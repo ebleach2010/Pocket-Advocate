@@ -1,17 +1,20 @@
-// The trade desk's own pages inside the case folder (Eric, 2026-09-22:
-// "Make it a case file highlighted green"). Three things live here: the play
-// cards the panel paints onto the Plays page (where a medical case has its
-// Dx page), the Stats page (his balance, the entries, the chart against the
-// his aim a day line), and the Desk page (the key, the account type, the start,
-// the watchlist, the two switches).
+// Every view the trade desk draws, as pure functions (Eric, 2026-09-22: "make
+// each play card easy to scan in 1 to 2 seconds ... the hierarchy of ticker,
+// direction, trade type, risk, target range, stop, hold time, and rationale
+// should be obvious").
 //
-// The name is load-bearing: admin-desk.js matches the Worker's asset gate,
-// so this file is a 404 to anyone but him. The pages talk to one route,
-// /api/admin/trade/state, on show; the cards come from the panel's poll.
+// Nothing here fetches, stores or listens. A row of data goes in and markup
+// comes out, which is why the suite can run the whole look in node and hold a
+// card to its shape without a browser. The app that mounts these lives in
+// admin-deskapp.js; the arithmetic they print lives in trade-math.js and is
+// the same code the Worker computes with, so a figure on the page and a figure
+// in a reading can never disagree.
+//
+// The name is load-bearing: admin-desk.js matches the Worker's asset gate, so
+// this file is a 404 to anyone but him.
 
 import {
-  tradeCalc, dayStatus, realizedToday, openRisk, rulesOf, defaultRules, RULE_RANGES,
-  HORIZONS, HORIZON_WORDS, WARNING_TEXT, ladder, sizeFor, unitRisk, fmtPct,
+  tradeCalc, rulesOf, HORIZON_WORDS, WARNING_TEXT, fmtPct, sizeFor,
 } from './trade-math.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -20,12 +23,35 @@ export const money = (cents, signed = false) => {
   const s = `$${(Math.abs(n) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   return n < 0 ? `-${s}` : signed && n > 0 ? `+${s}` : s;
 };
-const pct = (x, d = 2) => `${(Number(x) * 100).toFixed(d)}%`;
+/** The same figure without its cents, for a place the width matters: the tab's badge. */
+export const shortMoney = (cents) => money(cents, true).replace(/\.\d\d$/, '');
 const MT = 'America/Boise';
 export const dayShort = (v) => {
   if (!v) return '';
   return new Intl.DateTimeFormat('en-US', { timeZone: MT, month: 'short', day: 'numeric' }).format(new Date(`${v}T12:00:00Z`));
 };
+/** A weekday for a day key, on his clock: the Closes list reads Mon, Tue, Wed. */
+export const dayName = (v) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v || ''))) return '';
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short' }).format(new Date(`${v}T12:00:00Z`));
+};
+/** The time of day a stream row carries, on his clock. */
+export const timeShort = (v) => {
+  if (!v) return '';
+  const d = v && typeof v.toDate === 'function' ? v.toDate() : new Date(v);
+  return Number.isFinite(d.getTime()) ? new Intl.DateTimeFormat('en-US', { timeZone: MT, hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).format(d) : '';
+};
+/** How long ago, in the words a person uses: "just now", "2h ago", "Sep 20". */
+export function agoShort(v, now = Date.now()) {
+  if (!v) return '';
+  const d = v && typeof v.toDate === 'function' ? v.toDate() : new Date(v);
+  const ms = now - d.getTime();
+  if (!Number.isFinite(ms)) return '';
+  if (ms < 90_000) return 'just now';
+  if (ms < 3600_000) return `${Math.round(ms / 60_000)}m ago`;
+  if (ms < 20 * 3600_000) return `${Math.round(ms / 3600_000)}h ago`;
+  return new Intl.DateTimeFormat('en-US', { timeZone: MT, month: 'short', day: 'numeric' }).format(d);
+}
 
 /** One call to the desk's routes, with his token. */
 export async function tradeCall(getToken, sub, body) {
@@ -40,726 +66,311 @@ export async function tradeCall(getToken, sub, body) {
   return out;
 }
 
-// ---- the play cards ------------------------------------------------------------
-/** One card per play, the six setup lines on it. Pure: a play in, markup out. */
-export function playCardHtml(p) {
+// ---- the small parts every card shares -------------------------------------
+const SIDE = (side) => (side === 'short'
+  ? '<span class="chip neon c-red">Short</span>'
+  : '<span class="chip neon c-green">Long</span>');
+const KIND = (kind) => `<span class="chip neon kind fl">${esc(HORIZON_WORDS[kind] || 'Intraday')}</span>`;
+const cell = (label, value, cls = '', sub = '') =>
+  `<div><div class="k">${esc(label)}</div><div class="v ${cls}">${value}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>`;
+/** A hold in minutes, in the words a card has room for. */
+export function holdWords(p) {
+  if (p.horizon === 'swing') { const d = Number(p.holdDays) || 3; return `${d} day${d === 1 ? '' : 's'}`; }
+  const m = Number(p.holdMinutes) || 0;
+  return m >= 60 ? `${Math.round((m / 60) * 10) / 10}h` : `${m}m`;
+}
+
+/**
+ * A play, as he reads it in a second: the ticker and which way, the odds, one
+ * line on why, then entry, target, stop and what it risks in his dollars. The
+ * six setup lines are behind a tap, because a card he has to read twice is a
+ * card he does not read.
+ */
+export function playFaceHtml(p, { rules, accountCents } = {}) {
+  const R = rulesOf({ rules });
   const past = p.expiresAt && new Date(p.expiresAt).getTime() < Date.now() && p.status === 'open';
   const expired = p.status === 'expired' || past;
-  const chance = `${p.profitLow} to ${p.profitHigh}% chance of profit`;
-  const kind = HORIZON_WORDS[p.horizon] || 'Intraday';
+  const targets = (p.targets || []).map((t) => esc(t));
+  const size = sizeFor({ accountCents, rules: R, pos: { instrument: p.instrument, entry: p.entry, stop: p.stop, side: p.side, credit: !!p.credit, width: p.width } });
+  const calc = tradeCalc({ pos: { ...p, qty: size.qty || 0 }, rules: R, accountCents });
+  const per = p.instrument === 'stock' ? 'a share' : 'a contract';
+  const unit = calc.unitRisk == null ? 'not capped' : money(Math.round(calc.unitRisk * 100));
+  const inst = `hold ${holdWords(p)} · ${money(Number(p.sizeDollars) * 100)} · ${p.structure || p.instrument}`;
+  const state = p.status === 'took' ? 'Taken' : p.status === 'closed' ? `Closed ${money(p.outcomeCents, true)}` : p.status === 'skipped' ? 'Skipped' : expired ? 'Expired' : '';
   const rows = [
-    ['Kind', p.horizon === 'swing' ? `${kind}, ${p.holdDays || 3} day${(p.holdDays || 3) === 1 ? '' : 's'}, out before the weekend` : kind],
-    ['Structure', p.structure || p.instrument],
-    ['Entry', p.entry], ['Stop', p.stop], ['Targets', (p.targets || []).join(', ')],
-    ['Hold', p.holdMinutes >= 60 ? `${Math.round(p.holdMinutes / 60 * 10) / 10} h` : `${p.holdMinutes} min`],
-    ['Size', money(Number(p.sizeDollars) * 100)],
-    ...(p.picture ? [['Current picture', p.picture]] : []),
-    ...(p.bull ? [['Bull case', p.bull]] : []),
-    ...(p.bear ? [['Bear case', p.bear]] : []),
-    ...((p.levels || []).length ? [['Levels', p.levels.join(', ')]] : []),
-    ['Risk', p.risk],
-    ...(p.watch ? [['What to watch next', p.watch]] : []),
-    ...(p.why ? [['Why', p.why]] : []),
-    ['Catalyst', p.catalyst],
+    ['Catalyst', p.catalyst], ['Bull', p.bull], ['Bear', p.bear],
+    ['Levels', (p.levels || []).join(' · ')], ['Risk', p.risk], ['Watch', p.watch],
     ['Overnight', p.overnight?.ok ? `Yes. ${p.overnight.why || ''}` : `No. ${p.overnight?.why || ''}`],
-  ];
-  const state = p.status === 'took' ? 'Taken' : p.status === 'closed' ? `Closed ${money(p.outcomeCents, true)}` : p.status === 'skipped' ? 'Skipped' : expired ? 'Expired' : 'Open';
-  const canTake = p.status === 'open' || p.status === 'expired';
-  return `<div class="panel play-card${expired ? ' expired' : ''}" data-play="${esc(p.id)}">
-    <div class="play-head"><span><span class="play-ticker">${esc(p.ticker)}</span> <span class="play-side">${esc(p.side)}</span> <span class="pos-badge kind-${esc(p.horizon || 'intraday')}">${esc(kind)}</span></span><span class="trade-when">${esc(p.slot ? `read at ${p.slot}` : '')}${p.slot ? ' · ' : ''}${esc(state)}</span></div>
-    <div class="play-chance">${esc(chance)}</div>
-    <dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
-    ${canTake ? `<div class="play-actions"><button type="button" class="btn tiny" data-act="took">Took it</button><button type="button" class="btn quiet tiny" data-act="skipped">Skip</button></div>` : ''}
-    ${p.status === 'took' && !p.positionId ? `<div class="play-actions"><label class="dim small">Open it as a position, quantity <input type="number" step="1" min="1" inputmode="numeric" data-open-qty></label><button type="button" class="btn tiny" data-act="open">Add to Trades</button></div>` : ''}
-    ${p.status === 'took' ? `<div class="play-actions"><label class="dim small">Closed at, dollars, plus or minus <input type="number" step="0.01" inputmode="decimal" data-outcome></label><button type="button" class="btn tiny" data-act="closed">Close</button></div>` : ''}
-    <p class="trade-said" data-play-said></p>
-  </div>`;
+  ].filter(([, v]) => v);
+  const live = p.status === 'open' || expired;
+  return `<article class="outlined play${expired ? ' expired' : ''}" data-kind="${esc(p.horizon || 'intraday')}" data-play="${esc(p.id)}">
+    <div class="head"><span class="tk">${esc(p.ticker)}</span><span class="co">${esc(state)}</span><span class="odds"><div class="k">Odds</div><div class="v">${esc(p.profitLow)} to ${esc(p.profitHigh)}%</div></span></div>
+    <div class="tags">${SIDE(p.side)}${KIND(p.horizon)}<div class="inst">${esc(inst)}</div></div>
+    <p class="why">${esc(p.picture || p.why || p.catalyst || '')}</p>
+    <div class="cells">
+      ${cell('Entry', esc(p.entry))}
+      ${cell('Target', `${targets[0] || ''}${targets.length > 1 ? `<span class="later"> · ${targets.slice(1).join(' · ')}</span>` : ''}`, 'tgt')}
+      ${cell('Stop', p.stop == null ? 'none' : esc(p.stop), 'stop')}
+      ${cell('Risk', esc(unit), '', per)}
+    </div>
+    <details><summary><span>Why, and what to watch</span><span class="chev">&#9662;</span></summary>
+      <dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+    </details>
+    <div class="acts">
+      ${live ? '<button type="button" class="btn primary fl" data-act="take" style="min-width:120px">Take it</button><button type="button" class="btn tiny quiet end" data-act="skip">Skip</button>' : ''}
+      ${p.status === 'took' ? '<button type="button" class="btn tiny" data-act="closed">Closed at</button>' : ''}
+    </div>
+    <p class="said" data-play-said></p>
+  </article>`;
 }
 
-// The fields the open action needs, off the card the panel painted. The
-// panel holds the play objects, but a card can be replaced by its own
-// repaint, so the values are read from the rows rather than kept in a
-// closure that a repaint would drop.
-function playOf(card) {
-  const val = (k) => {
-    const dts = [...card.querySelectorAll('dt')];
-    const dt = dts.find((d) => d.textContent.trim() === k);
-    return dt ? dt.nextElementSibling?.textContent.trim() || '' : '';
+/**
+ * A position he is in: what it is doing right now in dollars and in R, then
+ * the four prices that decide it, then the ladder. The calculator's warnings
+ * sit under them, because a missing stop is the thing he wants shouted.
+ */
+export function positionFaceHtml(p, calc, { quote = null } = {}) {
+  const up = (calc.unrealizedCents ?? 0) >= 0;
+  const closed = p.status === 'closed';
+  const qtyText = p.instrument === 'stock' ? `${p.qty} sh` : `${p.qty} × ${p.structure || p.instrument}`;
+  const lad = calc.ladder;
+  const rungs = lad ? lad.levels.map((l) => l.price) : [];
+  const pnl = closed ? p.pnlCents : calc.unrealizedCents;
+  const rMul = calc.riskCents && pnl != null ? `${Math.round((pnl / calc.riskCents) * 10) / 10}R` : '';
+  return `<article class="outlined pos${closed ? ' closed' : ''}" data-kind="${esc(p.horizon || 'intraday')}" data-pos="${esc(p.id)}">
+    <div class="head"><span class="tk">${esc(p.ticker)}</span>${SIDE(p.side)}${KIND(p.horizon)}<span class="meta">${esc(qtyText)}</span></div>
+    <div class="pnlrow"><div><span class="u ${up ? 'up' : 'dn'}">${pnl == null ? 'no mark' : money(pnl, true)}</span><span class="r">${esc(rMul)}</span></div></div>
+    <div class="cells">
+      ${cell('Entry', esc(p.entry))}
+      ${cell('Stop', p.stop == null ? 'none' : esc(p.stop), 'stop')}
+      ${cell('Risk', calc.riskCents == null ? 'not capped' : money(calc.riskCents))}
+      ${cell('Last', calc.last == null ? (quote ? 'no quote' : 'none') : esc(calc.last))}
+    </div>
+    ${rungs.length ? `<div class="tg"><span class="k">Targets</span>${rungs[0]}<span class="later"> · ${rungs.slice(1).join(' · ')}</span></div>` : ''}
+    ${(calc.warnings || []).length ? `<div class="warn"><b>&#x26A0;&#xFE0E;</b> ${esc((calc.warnings || []).map((w) => WARNING_TEXT[w] || w).join(' '))}</div>` : ''}
+    ${closed ? `<div class="tg"><span class="k">Sold</span>${esc(p.exitPrice ?? '')} ${esc(p.closeNote || '')}</div>` : `<div class="acts">
+      <button type="button" class="btn good" data-act="close">Close Position</button>
+      <button type="button" class="btn tiny quiet end" data-act="edit">Edit &#9662;</button>
+    </div>
+    <div class="editgrid" hidden>
+      <label class="k">Stop<input type="number" step="0.0001" inputmode="decimal" class="num" data-f="stop" value="${p.stop ?? ''}"></label>
+      <label class="k">Target<input type="number" step="0.0001" inputmode="decimal" class="num" data-f="target" value="${p.target ?? ''}"></label>
+      <label class="k">Quantity<input type="number" step="1" min="1" inputmode="numeric" class="num" data-f="qty" value="${esc(p.qty)}"></label>
+      ${p.instrument === 'stock' ? '' : `<label class="k">Mark<input type="number" step="0.0001" inputmode="decimal" class="num" data-f="mark" value="${p.mark ?? ''}"></label>`}
+      <div class="acts"><button type="button" class="btn primary" data-act="save">Save</button><button type="button" class="btn quiet" data-act="cancel">Cancel</button><button type="button" class="btn tiny quiet end" data-act="remove">Remove</button></div>
+    </div>`}
+    <p class="said" data-pos-said></p>
+  </article>`;
+}
+
+/** The colour, the glow and the word the day bar wears, per state. Pure, so a check can walk all seven. */
+export function dayBarState(ds, gold = false) {
+  const neg = (ds?.realizedTodayCents || 0) < 0;
+  const map = {
+    'stop-loss': ['var(--red)', '12px', 'Stop for the day. The loss limit is hit.', 'var(--red)'],
+    'below-floor': [neg ? 'rgba(255,77,109,.55)' : 'var(--dim)', '0px', 'Under the floor', neg ? 'var(--red)' : 'var(--dim)'],
+    'on-floor': ['var(--blue)', '10px', 'On the floor', 'var(--blue)'],
+    'on-aim': gold ? ['var(--gold)', '16px', 'Past the aim by a point', 'var(--gold)'] : ['var(--green)', '12px', 'At the aim', 'var(--green)'],
+    'stop-cap': ['var(--gold)', '16px', 'Stop for the day. The cap is hit.', 'var(--gold)'],
   };
-  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
-  return {
-    ticker: card.querySelector('.play-ticker')?.textContent.trim() || '',
-    side: card.querySelector('.play-side')?.textContent.trim() || 'long',
-    instrument: /spread/i.test(val('Structure')) ? 'spread' : /call/i.test(val('Structure')) ? 'call' : /put/i.test(val('Structure')) ? 'put' : 'stock',
-    horizon: (card.querySelector('.pos-badge')?.textContent.trim() || 'Intraday').toLowerCase(),
-    entry: num(val('Entry')), stop: num(val('Stop')),
-    targets: val('Targets').split(',').map((x) => num(x.trim())).filter((x) => x != null),
-    structure: val('Structure'),
-  };
+  const [fill, glow, word, ink] = map[ds?.state] || map['below-floor'];
+  return { fill, glow, word, ink };
 }
 
-/** Took it, Skip, Close and Add to Trades on every card under `root`. A saved card repaints itself from the server's answer. */
-export function wirePlayCards(root, { getToken, onSaved = null, onOpened = null } = {}) {
-  for (const b of root.querySelectorAll('[data-act]')) {
-    b.addEventListener('click', async () => {
-      const card = b.closest('[data-play]');
-      const said = card.querySelector('[data-play-said]');
-      // A play he took becomes a position of his own, with its own
-      // arithmetic on the Trades page (2026-09-22).
-      if (b.dataset.act === 'open') {
-        const qty = Number(card.querySelector('[data-open-qty]')?.value);
-        if (!Number.isInteger(qty) || qty < 1) { said.textContent = 'Quantity: a whole number, 1 or more.'; said.classList.add('trade-err'); return; }
-        const p = playOf(card);
-        for (const x of card.querySelectorAll('button')) x.disabled = true;
-        said.classList.remove('trade-err');
-        said.textContent = 'Adding…';
-        try {
-          await tradeCall(getToken, 'position', {
-            fromPlay: card.dataset.play, ticker: p.ticker, side: p.side, instrument: p.instrument,
-            horizon: p.horizon || 'intraday', qty, entry: p.entry, stop: p.stop,
-            target: (p.targets || [])[0] ?? null, structure: p.structure || '',
-          });
-          said.textContent = 'Added to Trades.';
-          onOpened?.();
-        } catch (err) {
-          said.textContent = err.message; said.classList.add('trade-err');
-          for (const x of card.querySelectorAll('button')) x.disabled = false;
-        }
-        return;
-      }
-      const body = { id: card.dataset.play, status: b.dataset.act };
-      if (b.dataset.act === 'closed') {
-        const v = Number(card.querySelector('[data-outcome]')?.value);
-        if (!Number.isFinite(v)) { said.textContent = 'Enter the dollars, plus or minus.'; said.classList.add('trade-err'); return; }
-        body.outcomeCents = Math.round(v * 100);
-      }
-      for (const x of card.querySelectorAll('button')) x.disabled = true;
-      said.classList.remove('trade-err');
-      said.textContent = 'Saving…';
-      try {
-        const out = await tradeCall(getToken, 'play', body);
-        const wrap = document.createElement('div');
-        wrap.innerHTML = playCardHtml({ ...out.play, id: card.dataset.play });
-        const next = wrap.firstElementChild;
-        card.replaceWith(next);
-        wirePlayCards(next, { getToken, onSaved, onOpened });
-        onSaved?.(out.play);
-      } catch (err) {
-        said.textContent = err.message; said.classList.add('trade-err');
-        for (const x of card.querySelectorAll('button')) x.disabled = false;
-      }
-    });
-  }
-}
-
-// ---- the chart -------------------------------------------------------------------
-/** The chart, as one SVG string. Pure: a chart series in, markup out, colours by token. */
-export function svgChart(chart, { w = 340, h = 200, aim = '2%' } = {}) {
+// ---- the chart ---------------------------------------------------------------
+/**
+ * His balance against the line he is aiming at, as one SVG. Every colour is a
+ * token, never a literal, so the page's scheme owns the look and the effects
+ * module can light the line without touching the geometry.
+ */
+export function deskChartSvg(chart, { w = 340, h = 190, aim = '2%' } = {}) {
   if (!chart || !chart.points || !chart.points.length) return '';
-  const L = 46; const R = 8; const T = 10; const B = 26;
+  const L = 50; const R = 10; const T = 12; const B = 24;
   const xMax = Math.max(1, chart.xMax);
   const yTop = Math.max(chart.yMax, 1);
   const yBot = Math.max(0, Math.min(chart.yMin, yTop - 1));
   const sx = (x) => L + (x / xMax) * (w - L - R);
   const sy = (y) => T + (1 - (y - yBot) / (yTop - yBot)) * (h - T - B);
   const path = (pts) => pts.map((p) => `${sx(p.x).toFixed(1)},${sy(p.y).toFixed(1)}`).join(' ');
-  const ticks = [yBot, (yBot + yTop) / 2, yTop];
-  const tick = (y) => `<text x="${L - 4}" y="${(sy(y) + 4).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--dim)">$${Math.round(y / 100).toLocaleString('en-US')}</text><line x1="${L}" x2="${w - R}" y1="${sy(y).toFixed(1)}" y2="${sy(y).toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`;
+  // Four round figures rather than the raw ends, so the axis reads as money.
+  const step = Math.max(1, Math.ceil((yTop - yBot) / 3 / 10000) * 10000);
+  const ticks = [0, 1, 2, 3].map((i) => yBot + i * step).filter((y) => y <= yTop + step);
+  const tick = (y) => `<text x="${L - 5}" y="${(sy(y) + 4).toFixed(1)}" text-anchor="end" font-size="13" fill="var(--dim)">$${Math.round(y / 100).toLocaleString('en-US')}</text><line x1="${L}" x2="${w - R}" y1="${sy(y).toFixed(1)}" y2="${sy(y).toFixed(1)}" stroke="var(--line)"/>`;
   const xs = [0, Math.round(xMax / 2), xMax];
-  // The two end labels hug their edges, or the last one is clipped at the
-  // right of the box.
-  const xl = (x) => `<text x="${sx(x).toFixed(1)}" y="${h - 8}" text-anchor="${x === 0 ? 'start' : x === xMax ? 'end' : 'middle'}" font-size="10" fill="var(--dim)">day ${x}</text>`;
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="Your balance by trading day against the ${aim} a day line">
+  const xl = (x) => `<text x="${sx(x).toFixed(1)}" y="${h - 6}" text-anchor="${x === 0 ? 'start' : x === xMax ? 'end' : 'middle'}" font-size="13" fill="var(--dim)">day ${x}</text>`;
+  const last = chart.points[chart.points.length - 1];
+  const pts = path(chart.points);
+  return `<svg id="chart-svg" viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="Your balance by trading day against the ${esc(aim)} a day line">
+    <defs>
+      <filter id="wave" x="-5%" y="-15%" width="110%" height="130%"><feTurbulence id="turb" type="fractalNoise" baseFrequency="0.02 0.4" numOctaves="1" seed="7" result="n"><animate attributeName="baseFrequency" values="0.018 0.38;0.024 0.44;0.018 0.38" dur="6s" repeatCount="indefinite"/></feTurbulence><feDisplacementMap id="disp" in="SourceGraphic" in2="n" scale="0" xChannelSelector="R" yChannelSelector="G"><animate id="disp-anim" attributeName="scale" values="0;0;0" dur="2.4s" repeatCount="indefinite"/></feDisplacementMap></filter>
+      <filter id="blur3" x="-10%" y="-30%" width="120%" height="160%"><feGaussianBlur stdDeviation="3"/></filter>
+      <filter id="blur6" x="-10%" y="-30%" width="120%" height="160%"><feGaussianBlur stdDeviation="6"/></filter>
+      <filter id="blur10" x="-10%" y="-30%" width="120%" height="160%"><feGaussianBlur stdDeviation="10"/></filter>
+    </defs>
     ${ticks.map(tick).join('')}${xs.map(xl).join('')}
-    <polyline points="${path(chart.target)}" fill="none" stroke="var(--target)" stroke-width="2" stroke-dasharray="5 4"/>
-    <polyline points="${path(chart.points)}" fill="none" stroke="var(--cyan)" stroke-width="2.5" stroke-linejoin="round"/>
-    ${chart.points.map((p) => `<circle cx="${sx(p.x).toFixed(1)}" cy="${sy(p.y).toFixed(1)}" r="3" fill="var(--cyan)"/>`).join('')}
+    <polyline points="${path(chart.target)}" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-dasharray="5 4" opacity=".8"/>
+    <g class="copies"><use href="#line" filter="url(#blur3)"/><use href="#line" filter="url(#blur6)"/><use href="#line" filter="url(#blur10)"/></g>
+    <polyline id="line" points="${pts}"/>
+    <polyline class="runner" points="${pts}"/><polyline class="runner2" points="${pts}"/>
+    <polyline class="ignite" id="ignite" points="${pts}"/>
+    <circle id="last-halo" cx="${sx(last.x).toFixed(1)}" cy="${sy(last.y).toFixed(1)}" r="9" fill="none" stroke="var(--green)" opacity=".35"><animate attributeName="r" values="7;13;7" dur="2.4s" repeatCount="indefinite"/><animate attributeName="opacity" values=".45;.08;.45" dur="2.4s" repeatCount="indefinite"/></circle>
+    <circle id="last-dot" cx="${sx(last.x).toFixed(1)}" cy="${sy(last.y).toFixed(1)}" r="4" fill="var(--green)"/>
   </svg>`;
 }
 
-// ---- Stats: the balance, the entries, the chart ----------------------------------------
-/** The Stats page. `pane._reload` refetches; the page shows it every time it opens. */
-export function mountTradeStats(pane, { getToken }) {
-  pane.innerHTML = `
-    <div data-stats-top><p class="dim">Loading…</p></div>
-    <form class="panel trade-form" data-acct-form>
-      <label>Date <input type="date" name="date" required></label>
-      <label>Balance, in dollars <input type="number" name="dollars" step="0.01" min="0" inputmode="decimal" required></label>
-      <label>Note (optional) <input type="text" name="note" maxlength="140"></label>
-      <div class="row"><button type="submit" class="btn">Save balance</button><span class="trade-said" data-acct-said></span></div>
-    </form>
-    <ul class="trade-list" data-acct-list></ul>
-    <div data-stats></div>`;
-  const form = pane.querySelector('[data-acct-form]');
-  const said = pane.querySelector('[data-acct-said]');
-  let S = null;
-  function paint() {
-    const m = S.metrics;
-    const top = pane.querySelector('[data-stats-top]');
-    if (!form.date.value) form.date.value = S.today;
-    const dir = m.gainCents >= 0 ? 'up' : 'down';
-    const proj = m.projections
-      ? `<div class="panel"><h3>Projected year</h3>
-          <p>At your average daily profit so far: <strong>${esc(money(m.projections.linearYearCents, true))}</strong> a year.</p>
-          <p>If that average held and compounded: <strong>${esc(money(m.projections.compoundYearCents, true))}</strong> a year.</p>
-          <p class="dim small">Both are ${m.days} trading days of data stretched over ${252} trading days. They move with every entry.</p></div>`
-      : `<p class="dim small">Projections start after ${m.minDays} trading days of entries (${m.days} so far).</p>`;
-    top.innerHTML = `
-      <div class="trade-big">${esc(money(m.currentCents))}</div>
-      <p>Started at ${esc(money(m.startCents))}${m.startedAt ? ` on ${esc(dayShort(m.startedAt))}` : ''}. ${m.days} trading day${m.days === 1 ? '' : 's'}, ${dir} ${esc(money(Math.abs(m.gainCents)))} (${esc(pct(m.totalReturn, 1))}).</p>
-      <p>Average ${esc(pct(m.avgDaily))} a day against a target of ${esc(pct(m.target, 0))}.</p>
-      ${proj}`;
-    const list = pane.querySelector('[data-acct-list]');
-    const rows = [...(S.balances || [])].reverse();
-    list.innerHTML = rows.length ? rows.map((b) => `<li><span>${esc(dayShort(b.date))} <strong>${esc(money(b.cents))}</strong>${b.source === 'screenshot' ? ' <span class="dim small">📷 from a screenshot</span>' : ''}${b.note && b.source !== 'screenshot' ? ` <span class="dim small">${esc(b.note)}</span>` : ''}</span><button type="button" class="btn quiet tiny" data-del="${esc(b.date)}">Delete</button></li>`).join('')
-      : '<li class="dim">No entries yet. Type today\'s balance above, or ask with a screenshot of your portfolio total.</li>';
-    for (const b of list.querySelectorAll('[data-del]')) {
-      b.addEventListener('click', async () => {
-        b.disabled = true;
-        try { await tradeCall(getToken, 'balance', { date: b.dataset.del, remove: true }); await load(); } catch (err) { b.disabled = false; said.textContent = err.message; }
-      });
-    }
-    const stats = pane.querySelector('[data-stats]');
-    // HIS AIM, NOT A NUMBER IN THE PAGE (2026-09-22): the target line is the
-    // aim on the Calc page, so the chart says whatever that rule says.
-    const aim = pct(m.target, 0);
-    const line = m.days === 0
-      ? 'No entries yet. Add today\'s balance above and the chart starts.'
-      : `You are ${money(Math.abs(m.offTargetCents))} (${Math.abs(m.offTargetPoints).toFixed(2)} points a day) ${m.offTargetCents < 0 ? 'below' : 'above'} the ${aim} a day line.`;
-    stats.innerHTML = `
-      <p><strong>${esc(line)}</strong></p>
-      <div class="panel trade-chart">${svgChart(S.chart, { aim })}
-        <div class="trade-legend"><span><i style="background:var(--cyan)"></i>Your balance</span><span><i style="background:var(--target)"></i>${esc(aim)} a day from ${esc(money(m.startCents))}</span></div>
-      </div>
-      <p class="dim small">Where the line should be today: ${esc(money(m.targetCents))} after ${m.days} trading day${m.days === 1 ? '' : 's'}. Your average: ${esc(pct(m.avgDaily))} a day.</p>`;
-  }
-  async function load() {
-    try {
-      S = await tradeCall(getToken, 'state');
-      paint();
-    } catch (err) {
-      pane.querySelector('[data-stats-top]').innerHTML = `<p class="error">Could not load: ${esc(err.message)}</p>`;
-    }
-  }
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const date = form.date.value;
-    const dollars = Number(form.dollars.value);
-    if (!Number.isFinite(dollars)) { said.textContent = 'Enter the balance in dollars.'; said.classList.add('trade-err'); return; }
-    said.classList.remove('trade-err');
-    said.textContent = 'Saving…';
-    form.querySelector('button').disabled = true;
-    try {
-      await tradeCall(getToken, 'balance', { date, cents: Math.round(dollars * 100), note: form.note.value });
-      form.dollars.value = ''; form.note.value = '';
-      said.textContent = 'Saved.';
-      await load();
-    } catch (err) {
-      said.textContent = err.message; said.classList.add('trade-err');
-    } finally {
-      form.querySelector('button').disabled = false;
-    }
-  });
-  pane._reload = load;
-  load();
+// ---- News --------------------------------------------------------------------
+/** One headline: what it says, who wrote it, how long ago, and which of his tickers it names. */
+export function newsRowHtml(n, { onDesk = [], now = Date.now() } = {}) {
+  const lit = (n.related || []).some((t) => onDesk.includes(t));
+  const ms = n.at ? now - new Date(n.at).getTime() : NaN;
+  const ago = Number.isFinite(ms) ? (ms < 3600_000 ? `${Math.max(1, Math.round(ms / 60_000))}m` : `${Math.round(ms / 3600_000)}h`) : '';
+  const chips = (n.related || []).map((t) => (onDesk.includes(t)
+    ? `<button type="button" class="chip neon c-blue" data-tk="${esc(t)}">${esc(t)}</button>`
+    : `<span class="chip">${esc(t)}</span>`)).join('');
+  const title = n.url ? `<a class="t" href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.headline)}</a>` : `<div class="t">${esc(n.headline)}</div>`;
+  return `<li class="${n.summary ? 'has' : ''}"><span class="b${lit ? ' lit' : ''}"></span><div>${title}<div class="s"><span>${esc(n.source)}${ago ? ` · ${ago}` : ''}</span>${chips}</div>${n.summary ? `<div class="sum">${esc(n.summary)}</div>` : ''}</div>${n.summary ? '<span class="chev">&#9662;</span>' : '<span></span>'}</li>`;
+}
+/** One earnings chip: who reports and when in the day, with beat or miss when the number is already out. */
+export function earningsChipHtml(e, { onDesk = [] } = {}) {
+  const when = e.hour === 'bmo' ? 'pre' : e.hour === 'amc' ? 'post' : e.hour || '';
+  const beat = e.epsActual != null && e.epsEstimate != null ? (e.epsActual >= e.epsEstimate ? ' beat' : ' miss') : '';
+  const body = `${esc(e.symbol)} <span style="opacity:.65;font-weight:500;text-transform:none">${esc(when)}${beat}</span>`;
+  return onDesk.includes(e.symbol)
+    ? `<button type="button" class="chip tap neon c-blue" data-tk="${esc(e.symbol)}">${body}</button>`
+    : `<span class="chip tap">${body}</span>`;
 }
 
-// ---- Desk: the key, the account, the start, the watchlist, the switches ------------------
-// Render disabled, ask the server, paint what it said, and only then let him
-// touch a control. A failed save puts the control back where the server
-// left it and says why. The same discipline as the settings overlay.
-export function mountTradeDesk(pane, { getToken }) {
-  pane.innerHTML = `
-    <div class="panel trade-form" data-settings>
-      <h3>Market data</h3>
-      <p class="dim small" data-key-said>Reading…</p>
-      <div class="row" data-key-row hidden>
-        <input type="password" data-key placeholder="Finnhub API key" autocomplete="off" disabled>
-        <button type="button" class="btn tiny" data-key-save disabled>Save key</button>
-        <button type="button" class="btn quiet tiny" data-key-replace hidden>Replace</button>
-      </div>
-      <h3>Account</h3>
-      <div class="seg" data-acct-type>
-        <button type="button" data-acct="cash" disabled>Cash</button>
-        <button type="button" data-acct="margin" disabled>Margin</button>
-      </div>
-      <label>Starting amount, in dollars <input type="number" data-start-dollars step="1" min="1" inputmode="numeric" disabled></label>
-      <label>Started on <input type="date" data-started disabled></label>
-      <div class="row"><button type="button" class="btn tiny" data-start-save disabled>Save start</button></div>
-      <h3>Watchlist</h3>
-      <label>Tickers, comma separated, up to 20 <input type="text" data-watch disabled></label>
-      <div class="row"><button type="button" class="btn tiny" data-watch-save disabled>Save watchlist</button></div>
-      <h3>Switches</h3>
-      <div class="toggle-row"><span><strong>Pushes</strong><br><span class="dim small">A push to your phone when a scan or a reading finds a strong play.</span></span><button type="button" class="switch" data-sw="pushOn" aria-pressed="false" aria-label="Pushes" disabled></button></div>
-      <p class="trade-said" data-set-said></p>
-    </div>
-    <p class="trade-foot">Ideas, not orders. Every trade is your decision.</p>`;
-  const box = pane.querySelector('[data-settings]');
-  const said = box.querySelector('[data-set-said]');
-  let confirmed = null;
-  let today = '';
-  function paintSettings(payload) {
-    confirmed = { settings: { ...payload.settings }, hasKey: payload.hasKey, keyTail: payload.keyTail };
-    const s = payload.settings;
-    const keySaid = box.querySelector('[data-key-said]');
-    const keyIn = box.querySelector('[data-key]');
-    keySaid.textContent = payload.hasKey ? `Key on file, ends in ${payload.keyTail}.` : 'No key yet. Sign up at finnhub.io (free), then paste the key here.';
-    box.querySelector('[data-key-row]').hidden = false;
-    keyIn.hidden = payload.hasKey; keyIn.disabled = false; keyIn.value = '';
-    box.querySelector('[data-key-save]').hidden = payload.hasKey; box.querySelector('[data-key-save]').disabled = false;
-    box.querySelector('[data-key-replace]').hidden = !payload.hasKey;
-    for (const b of box.querySelectorAll('[data-acct]')) { b.classList.toggle('on', b.dataset.acct === s.accountType); b.disabled = false; }
-    box.querySelector('[data-start-dollars]').value = String(Math.round(s.startCents / 100));
-    box.querySelector('[data-start-dollars]').disabled = false;
-    box.querySelector('[data-started]').value = s.startedAt || today || '';
-    box.querySelector('[data-started]').disabled = false;
-    box.querySelector('[data-start-save]').disabled = false;
-    box.querySelector('[data-watch]').value = (s.watchlist || []).join(', ');
-    box.querySelector('[data-watch]').disabled = false;
-    box.querySelector('[data-watch-save]').disabled = false;
-    for (const sw of box.querySelectorAll('[data-sw]')) {
-      const on = s[sw.dataset.sw] !== false;
-      sw.classList.toggle('on', on); sw.setAttribute('aria-pressed', String(on)); sw.disabled = false;
-    }
-  }
-  const save = async (body, controls) => {
-    for (const c of controls) c.disabled = true;
-    said.classList.remove('trade-err');
-    said.textContent = 'Saving…';
-    try {
-      const out = await tradeCall(getToken, 'settings', body);
-      paintSettings(out);
-      said.textContent = 'Saved.';
-      // The panel's Pause and next-read line, and the overview's button,
-      // follow at once rather than on the next poll.
-      document.dispatchEvent(new CustomEvent('pa-desk-settings', { detail: out }));
-    } catch (err) {
-      if (confirmed) paintSettings(confirmed);
-      said.textContent = `Not changed: ${err.message}`;
-      said.classList.add('trade-err');
-    }
+// ---- Stats -------------------------------------------------------------------
+const pctText = (x, d = 0) => `${(Number(x) * 100).toFixed(d)}%`;
+const tone = (n) => (n > 0 ? 'up' : n < 0 ? 'dn' : '');
+/** The first Stats page: the one figure that matters, then the pairs that explain it. */
+export function statsOverviewHtml(s) {
+  return `<div class="tiles">
+    <div class="tile hero"><div><div class="k">Win rate</div><div class="v fl">${s.winRate === null ? 'n/a' : pctText(s.winRate)}</div></div><div class="side"><div>${s.wins} W / ${s.losses} L${s.flats ? ` / ${s.flats} flat` : ''}</div><div class="dim small" style="margin-top:4px">${s.count} closed trade${s.count === 1 ? '' : 's'}</div><div class="net ${tone(s.netCents)}" style="margin-top:2px">net ${money(s.netCents, true)}</div></div></div>
+    <div class="tile"><div class="k">Profit factor</div><div class="v g">${s.profitFactor === null ? (s.noLosses ? 'no losses' : 'n/a') : s.profitFactor.toFixed(2)}</div><div class="sub">gross win over gross loss</div></div>
+    <div class="tile"><div class="k">Expectancy</div><div class="v ${tone(s.expectancyCents)}">${money(s.expectancyCents, true)}</div><div class="sub">a trade</div></div>
+    <div class="tile wide pair"><div><div class="k">Average win</div><div class="v up">${s.avgWinCents === null ? 'n/a' : money(s.avgWinCents, true)}</div></div><div><div class="k">Average loss</div><div class="v dn">${s.avgLossCents === null ? 'n/a' : money(s.avgLossCents, true)}</div></div></div>
+    <div class="tile wide pair"><div><div class="k">Best</div><div class="v up">${s.best ? money(s.best.pnlCents, true) : 'n/a'}</div><div class="sub">${s.best ? `${esc(s.best.ticker || '')}` : ''}</div></div><div><div class="k">Worst</div><div class="v dn">${s.worst ? money(s.worst.pnlCents, true) : 'n/a'}</div><div class="sub">${s.worst ? `${esc(s.worst.ticker || '')}` : ''}</div></div></div>
+  </div>
+  <h2>Streak</h2>
+  <div class="panel between"><div class="streak">${'<i></i>'.repeat(Math.min(12, s.streak.n))}<span class="num" style="margin-left:8px">${s.streak.n} ${s.streak.kind === 'win' ? 'win' : s.streak.kind === 'loss' ? 'loss' : 'flat'}${s.streak.n === 1 || s.streak.kind === 'none' ? '' : 'es'.slice(s.streak.kind === 'win' ? 1 : 0)}</span></div><span class="dim small num">longest ${s.longestWin}W · ${s.longestLoss}L</span></div>
+  ${s.r ? `<h2>R</h2><div class="panel daily"><span class="l">Average</span><span class="n ${tone(s.r.avgR)}">${s.r.avgR}R</span><span class="q">over ${s.r.count} trades</span><span class="l">Best and worst</span><span class="n">${s.r.bestR}R</span><span class="q">and ${s.r.worstR}R</span></div>` : ''}`;
+}
+/** The second: how he trades by kind and by weekday, and whether the pace clears the aim. */
+export function statsBreakdownHtml(s, m, rules) {
+  const days = s.byWeekday;
+  const maxAbs = Math.max(...days.map((d) => Math.abs(d.netCents)), 1);
+  const aim = pctText(rules.dayAimPct / 100, 0);
+  const proj = m.projections;
+  return `<h2>By kind</h2>
+  <div class="panel kinds">${['scalp', 'intraday', 'swing'].map((k) => {
+    const d = s.byHorizon[k]; const c = k === 'scalp' ? 'var(--blue)' : k === 'intraday' ? 'var(--green)' : 'var(--gold)';
+    return `<div style="--kc:${c}"><div class="k">${esc(k)}</div><div class="p num ${tone(d.netCents)}">${money(d.netCents, true)}</div><div class="wl">${d.wins}W ${d.losses}L</div></div>`;
+  }).join('')}</div>
+  <h2>By day</h2>
+  <div class="panel wk">${days.map((d) => {
+    const up = d.netCents >= 0;
+    const px = Math.max(3, Math.round((Math.abs(d.netCents) / maxAbs) * (up ? 30 : 18)));
+    return `<div><div class="trk"><i class="${up ? '' : 'dn'}" style="height:${px}px;${up ? 'bottom:18px' : 'top:31px'}"></i></div><span class="d">${esc(d.label)}</span><span class="n ${tone(d.netCents)}">${shortMoney(d.netCents)}</span></div>`;
+  }).join('')}</div>
+  <h2>Pace</h2>
+  <div class="panel daily">
+    <span class="l">Average a day</span><span class="n ${tone(m.avgDaily)}">${pctText(m.avgDaily, 2)}</span><span class="q">vs aim ${esc(aim)}</span>
+    <span class="l">Total return</span><span class="n ${tone(m.totalReturn)}">${pctText(m.totalReturn, 1)}</span><span class="q">${m.days} day${m.days === 1 ? '' : 's'}</span>
+    ${proj ? `<span class="l">A year at this pace</span><span class="n ${tone(proj.linearYearCents)}">${money(proj.linearYearCents, true)}</span><span class="q">linear</span>
+    <span class="l"></span><span class="n ${tone(proj.compoundYearCents)}">${money(proj.compoundYearCents, true)}</span><span class="q">compounded</span>`
+    : `<span class="l">A year at this pace</span><span class="n">after ${m.minDays}</span><span class="q">trading days</span>`}
+  </div>
+  <h2>Balance against the ${esc(aim)} line</h2>`;
+}
+/** The third: every close, newest first, with the bars above them oldest first so the shape of the fortnight reads left to right. */
+export function statsClosesHtml(s) {
+  const bars = [...s.last].reverse();
+  const maxAbs = Math.max(...bars.map((r) => Math.abs(r.pnlCents)), 1);
+  return `<h2>Last ${s.last.length} close${s.last.length === 1 ? '' : 's'}</h2>
+  <div class="panel"><div class="bars">${bars.map((r) => `<button type="button" class="col" data-close="${esc(r.id)}" aria-label="${esc(r.ticker || '')} ${money(r.pnlCents, true)}"><i class="${r.pnlCents < 0 ? 'dn' : r.pnlCents === 0 ? 'flat' : ''}" style="height:${Math.max(3, Math.round((Math.abs(r.pnlCents) / maxAbs) * 56))}px"></i></button>`).join('')}</div><p class="dim tiny-t" style="margin:8px 0 0">Oldest on the left. Tap a bar or a row for the trade.</p></div>
+  <div class="panel closes" style="margin-top:12px">${s.last.map((r) => `<button type="button" class="r" data-close="${esc(r.id)}"><div><div class="who"><b>${esc(r.ticker || '')}</b><span class="chip neon kind" data-kind="${esc(r.horizon)}">${esc(r.horizon)}</span></div><div class="d">${esc(dayName(r.closedDay))} ${esc(dayShort(r.closedDay))}${r.r == null ? '' : ` · ${r.r}R`}</div></div><span class="v ${tone(r.pnlCents)}">${money(r.pnlCents, true)}</span><span class="chev">&rsaquo;</span></button>`).join('')}</div>`;
+}
+
+// ---- the Desk's stream -------------------------------------------------------
+/**
+ * A message ending in a question mark is a question. A closing quote, bracket
+ * or paren after it still counts, and so does trailing space; anything else is
+ * a line for the log and nothing answers it (Eric, 2026-09-22: "If it does not
+ * end in a question, treat it as information/context").
+ */
+export function isQuestion(text) {
+  return /\?['"”’)\]\s]*$/.test(String(text || '').trim()) && String(text || '').trim() !== '';
+}
+
+/**
+ * The log and the questions as one conversation, oldest first. The two come
+ * from different places (Firestore for the log, the desk's own rows for the
+ * questions) and the only thing that orders them is the clock.
+ */
+export function mergeStream(logRows = [], qaRows = [], pending = []) {
+  const at = (v) => {
+    if (!v) return NaN;
+    const d = typeof v.toDate === 'function' ? v.toDate() : new Date(v);
+    const ms = d.getTime();
+    return Number.isFinite(ms) ? ms : NaN;
   };
-  box.querySelector('[data-key-save]').addEventListener('click', () => {
-    const keyIn = box.querySelector('[data-key]');
-    save({ finnhubKey: keyIn.value.trim() }, [keyIn, box.querySelector('[data-key-save]')]);
-  });
-  box.querySelector('[data-key-replace]').addEventListener('click', () => {
-    box.querySelector('[data-key]').hidden = false;
-    box.querySelector('[data-key-save]').hidden = false;
-    box.querySelector('[data-key-replace]').hidden = true;
-    box.querySelector('[data-key]').focus();
-  });
-  for (const b of box.querySelectorAll('[data-acct]')) b.addEventListener('click', () => save({ accountType: b.dataset.acct }, [...box.querySelectorAll('[data-acct]')]));
-  box.querySelector('[data-start-save]').addEventListener('click', () => {
-    const d = Number(box.querySelector('[data-start-dollars]').value);
-    save({ startCents: Math.round(d * 100), startedAt: box.querySelector('[data-started]').value }, [box.querySelector('[data-start-save]')]);
-  });
-  box.querySelector('[data-watch-save]').addEventListener('click', () => save({ watchlist: box.querySelector('[data-watch]').value }, [box.querySelector('[data-watch-save]')]));
-  for (const sw of box.querySelectorAll('[data-sw]')) sw.addEventListener('click', () => save({ [sw.dataset.sw]: sw.getAttribute('aria-pressed') !== 'true' }, [sw]));
-  async function load() {
-    try {
-      const S = await tradeCall(getToken, 'state');
-      today = S.today || '';
-      paintSettings(S);
-    } catch (err) {
-      box.querySelector('[data-key-said]').textContent = `Could not load: ${err.message}`;
-    }
+  const out = [];
+  for (const m of logRows) {
+    out.push({ kind: 'log', id: m.id, at: at(m.ts), text: String(m.text || ''), attachment: m.attachment || null });
   }
-  pane._reload = load;
-  load();
+  const seen = new Set();
+  for (const q of qaRows) {
+    if (seen.has(q.id)) continue;
+    seen.add(q.id);
+    out.push({
+      kind: 'question', id: q.id, at: at(q.at), text: String(q.question || ''),
+      answer: q.answer || '', status: q.status || 'done', doc: q.doc || null,
+      file: q.file || null, error: q.error || '',
+    });
+  }
+  for (const p of pending) {
+    if (qaRows.some((q) => String(q.question || '').trim() === String(p.text || '').trim())) continue;
+    out.push({ kind: 'question', id: p.id, at: at(p.at), text: p.text, answer: '', status: 'running', local: true });
+  }
+  // A row whose stamp has not landed yet sits at the end, which is where it
+  // was typed; everything else goes by the clock.
+  return out.sort((a, b) => {
+    const an = Number.isFinite(a.at); const bn = Number.isFinite(b.at);
+    if (an && bn) return a.at - b.at;
+    if (an) return -1;
+    if (bn) return 1;
+    return 0;
+  });
 }
 
-// ---- his positions: the cards, the day strip, and the two pages ----------------
-//
-// Eric, 2026-09-22: "a calculator for bands stop losses take profits and
-// whatever else my noob ass doesn't know about. Most useful when the
-// information is calculated and displayed neatly by the trade." So every
-// open position carries its own arithmetic on its face: what it risks
-// against his rule, the ladder of R levels around the entry, where the last
-// price sits, and anything worth a warning. The arithmetic itself lives in
-// trade-math.js, shared with the Worker, so the page never invents a figure.
-
-const KIND_ORDER = ['scalp', 'intraday', 'swing'];
-
-/** Where the day stands against his rules, as one strip. Pure. */
-export function dayStripHtml(ds) {
-  if (!ds) return '';
-  const tone = ds.state === 'stop-loss' ? ' bad' : ds.state === 'stop-cap' || ds.state === 'on-aim' ? ' good' : '';
-  return `<div class="day-strip${tone}" data-day-strip>
-    <span><span class="day-k">TODAY</span> <strong data-day-realized>${esc(money(ds.realizedTodayCents, true))}</strong></span>
-    <span data-day-state>${esc(ds.line)}</span>
-    <span class="dim small">Floor ${esc(money(ds.floorCents))} · Aim ${esc(money(ds.aimCents))} · Stop at ${esc(money(ds.lossLimitCents))} or ${esc(money(ds.capCents))} · <span data-day-left>${esc(money(ds.remainingRiskCents))}</span> left to risk</span>
-  </div>`;
-}
-
-/** One position, with every figure the calculator gives. Pure: a row and the numbers around it in, markup out. */
-export function positionCardHtml(p, { rules, accountCents, todayKey, accountType, quote = null } = {}) {
-  const c = tradeCalc({ pos: p, rules, accountCents, todayKey, accountType, quote });
-  const kind = HORIZON_WORDS[p.horizon] || 'Intraday';
-  const closed = p.status === 'closed';
-  const qtyText = p.instrument === 'stock' ? `${p.qty} share${p.qty === 1 ? '' : 's'}` : `${p.qty} contract${p.qty === 1 ? '' : 's'}`;
-  const lad = c.ladder;
-  const rows = [
-    ['Entry', `${p.entry}${p.structure ? ` · ${p.structure}` : ''}`],
-    ['Stop', p.stop == null ? 'none set' : `${p.stop}${c.distances.stopFromEntry ? ` (${fmtPct(c.distances.stopFromEntry.pct)} from entry)` : ''}`],
-    ['Target', c.target == null ? 'none set' : `${c.target}${c.rr == null ? '' : ` (${c.rr}R)`}${c.rewardCents == null ? '' : `, ${money(c.rewardCents)} if it pays`}`],
-    ['Size', `${qtyText}, ${money(c.positionCents)}${c.positionPct == null ? '' : ` (${fmtPct(c.positionPct)} of the account)`}`],
-    ['Risk', c.riskCents == null ? 'not capped' : `${money(c.riskCents)}${c.riskPct == null ? '' : ` (${fmtPct(c.riskPct)})`}, your rule allows ${money(c.budgetCents)}`],
-    ...(lad ? [['Ladder', `stop ${p.stop} · breakeven ${lad.breakeven} · ${lad.levels.map((l) => `${l.r}R ${l.price}`).join(' · ')}`]] : []),
-    ...(c.last != null ? [['Last', `${c.last}${c.unrealizedCents == null ? '' : ` · ${c.unrealizedCents >= 0 ? 'up' : 'down'} ${money(Math.abs(c.unrealizedCents))}`}`]] : []),
-    ...(c.distances.stopFromLast || c.distances.targetFromLast ? [['From here', [
-      c.distances.stopFromLast ? `stop ${fmtPct(Math.abs(c.distances.stopFromLast.pct))} away` : '',
-      c.distances.targetFromLast ? `target ${fmtPct(Math.abs(c.distances.targetFromLast.pct))} away` : '',
-    ].filter(Boolean).join(', ')]] : []),
-    ...(c.todaysRange ? [['Today', `${c.todaysRange.low} to ${c.todaysRange.high}`]] : []),
-    ...(p.note ? [['Note', p.note]] : []),
-    ...(closed ? [['Sold', `${p.exitPrice ?? ''} · ${money(p.pnlCents, true)}${p.closeNote ? ` · ${p.closeNote}` : ''}`]] : []),
-  ];
-  return `<div class="panel pos-card${closed ? ' closed' : ''}" data-pos="${esc(p.id)}" data-horizon="${esc(p.horizon || 'intraday')}">
-    <div class="play-head">
-      <span><span class="play-ticker">${esc(p.ticker)}</span> <span class="play-side">${esc(p.side)}</span> <span class="pos-badge kind-${esc(p.horizon || 'intraday')}">${esc(kind)}</span></span>
-      <span class="trade-when">${closed ? esc(money(p.pnlCents, true)) : esc(qtyText)}</span>
-    </div>
-    <dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
-    ${(c.warnings || []).length ? `<ul class="pos-warn">${c.warnings.map((w) => `<li>${esc(WARNING_TEXT[w] || w)}</li>`).join('')}</ul>` : ''}
-    ${closed ? '' : `<div class="play-actions">
-      <button type="button" class="btn tiny" data-act="sold">Sold</button>
-      <button type="button" class="btn quiet tiny" data-act="remove">Remove</button>
-    </div>
-    <div class="sold-sheet" data-sold-sheet hidden>
-      <label>Sold at, price <input type="number" step="0.0001" inputmode="decimal" data-exit></label>
-      <label>or the profit and loss, in dollars <input type="number" step="0.01" inputmode="decimal" data-pl></label>
-      <label>Note (optional) <input type="text" maxlength="300" data-close-note></label>
-      <label class="row-check"><input type="checkbox" data-log checked> Put a line in the log</label>
-      <div class="row"><button type="button" class="btn tiny" data-act="close">Log it</button><button type="button" class="btn quiet tiny" data-act="cancel">Cancel</button></div>
-    </div>`}
-    <p class="trade-said" data-pos-said></p>
-  </div>`;
+/** One entry in the stream: his in blue with his name on it, the desk's in green with its own. */
+export function streamRowHtml(row, { md = (t) => esc(t), stalled = false } = {}) {
+  const t = Number.isFinite(row.at) ? timeShort(new Date(row.at)) : '';
+  const file = (f, icon) => (f ? `<button type="button" class="att" data-file="${esc(f.url || '')}">${icon} ${esc(f.name || 'file')}</button>` : '');
+  const CAM = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+  const DOC = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/></svg>';
+  if (row.kind === 'log') {
+    return `<article class="msg you"><header><span class="who fl">You</span><span class="t">${esc(t)}</span></header><div class="b">${esc(row.text)}</div>${file(row.attachment, CAM)}</article>`;
+  }
+  const ask = `<article class="msg you"><header><span class="who fl">You</span><span class="t">${esc(t)}</span><span class="tag">Ask</span></header><div class="b">${esc(row.text)}</div>${file(row.file, CAM)}</article>`;
+  if (row.status === 'running') {
+    const body = stalled
+      ? '<div class="b">No answer came back. Ask it again.</div>'
+      : '<div class="b"><i></i><i></i><i></i></div>';
+    return `${ask}<article class="msg desk think"><header><span class="who">Desk</span><span class="t"></span></header>${body}</article>`;
+  }
+  if (row.status === 'error') {
+    return `${ask}<article class="msg desk"><header><span class="who">Desk</span><span class="t">${esc(t)}</span></header><div class="b">${esc(row.error || 'That one did not come back.')}</div></article>`;
+  }
+  return `${ask}<article class="msg desk latest"><header><span class="who fl">Desk</span><span class="t">${esc(t)}</span></header><div class="b">${md(row.answer)}</div>${file(row.doc, DOC)}</article>`;
 }
 
 /** A line for his log when he sells, in the words the reading grades from. */
-function logLineFor(p, pnlCents, exitPrice) {
+export function logLineFor(p, pnlCents, exitPrice) {
   const what = p.instrument === 'stock' ? `${p.qty} shares` : `${p.qty} ${p.structure || p.instrument}`;
   const out = exitPrice != null && exitPrice !== '' ? ` Out at ${exitPrice},` : '';
   return `${p.ticker} ${p.side} ${what} at ${p.entry}${p.stop == null ? '' : `, stop ${p.stop}`}.${out} ${pnlCents >= 0 ? 'plus' : 'minus'} ${Math.abs(pnlCents / 100).toFixed(2)}.`;
 }
 
-/** The Trades page: the day, a form that does the arithmetic as he types, his open positions, and what he closed today. */
-export function mountTrades(pane, { getToken, onLog = null, onCelebrate = null }) {
-  pane.innerHTML = `
-    <div data-day-wrap></div>
-    <details class="panel trade-form" data-pos-new>
-      <summary><strong>New trade</strong></summary>
-      <form data-pos-form>
-        <div class="form-grid">
-          <label>Ticker <input name="ticker" maxlength="6" autocapitalize="characters" required></label>
-          <label>Side <select name="side"><option value="long">Long</option><option value="short">Short</option></select></label>
-          <label>Kind <select name="horizon">${KIND_ORDER.map((h) => `<option value="${h}"${h === 'intraday' ? ' selected' : ''}>${HORIZON_WORDS[h]}</option>`).join('')}</select></label>
-          <label>Instrument <select name="instrument"><option value="stock">Stock</option><option value="call">Call</option><option value="put">Put</option><option value="spread">Spread</option></select></label>
-          <label>Quantity <input name="qty" type="number" step="1" min="1" inputmode="numeric" required></label>
-          <label>Entry <input name="entry" type="number" step="0.0001" inputmode="decimal" required></label>
-          <label>Stop <input name="stop" type="number" step="0.0001" inputmode="decimal"></label>
-          <label>Target <input name="target" type="number" step="0.0001" inputmode="decimal"></label>
-          <label data-opt hidden>Structure <input name="structure" maxlength="120" placeholder="Oct 17 650 call"></label>
-          <label data-opt hidden>Mark, the last premium <input name="mark" type="number" step="0.0001" inputmode="decimal"></label>
-          <label data-spread hidden>Spread width <input name="width" type="number" step="0.01" inputmode="decimal"></label>
-          <label data-spread hidden class="row-check"><input type="checkbox" name="credit"> Credit spread</label>
-          <label data-opt hidden>Expiry <input name="expiry" type="date"></label>
-          <label>Note <input name="note" maxlength="300"></label>
-        </div>
-        <div class="row"><button type="button" class="btn quiet tiny" data-quote-btn>Get the price</button><span class="dim small" data-quote-said></span></div>
-        <div class="pos-preview" data-pos-preview></div>
-        <div class="row"><button type="submit" class="btn">Save the trade</button><span class="trade-said" data-pos-said></span></div>
-      </form>
-    </details>
-    <div data-pos-list><p class="dim">Loading…</p></div>
-    <h3 class="closed-head">Closed today</h3>
-    <ul class="trade-list" data-closed-list></ul>
-    <p class="trade-foot">Ideas, not orders. Every trade is your decision.</p>`;
-  const form = pane.querySelector('[data-pos-form]');
-  const said = pane.querySelector('[data-pos-said]');
-  const quotes = new Map();
-  let S = null;
-  let timer = 0;
-
-  const readForm = () => {
-    const f = new FormData(form);
-    const n = (k) => { const v = String(f.get(k) || '').trim(); return v === '' ? null : Number(v); };
-    return {
-      ticker: String(f.get('ticker') || '').toUpperCase().trim(), side: f.get('side'), instrument: f.get('instrument'),
-      horizon: f.get('horizon'), qty: n('qty'), entry: n('entry'), stop: n('stop'), target: n('target'),
-      mark: n('mark'), width: n('width'), credit: f.get('credit') === 'on',
-      structure: String(f.get('structure') || '').trim(), expiry: String(f.get('expiry') || '') || null,
-      note: String(f.get('note') || '').trim(),
-    };
-  };
-  const preview = () => {
-    if (!S) return;
-    const pos = readForm();
-    const box = pane.querySelector('[data-pos-preview]');
-    if (!pos.entry) { box.innerHTML = '<p class="dim small">Type an entry and a stop and the numbers appear here.</p>'; return; }
-    const q = quotes.get(pos.ticker) || null;
-    const c = tradeCalc({ pos: { ...pos, qty: pos.qty || 0 }, rules: S.rules, accountCents: S.accountCents, todayKey: S.today, accountType: S.accountType, quote: q });
-    const lad = c.ladder;
-    box.innerHTML = `
-      <p><strong>${c.riskCents == null ? 'Risk is not capped on this one.' : `Risk ${esc(money(c.riskCents))}${c.riskPct == null ? '' : ` (${esc(fmtPct(c.riskPct))})`}, your rule allows ${esc(money(c.budgetCents))}.`}</strong></p>
-      ${c.suggestedQty != null ? `<p class="dim small">Your rule sizes this at <strong>${c.suggestedQty}</strong>${pos.instrument === 'stock' ? ' shares' : ' contracts'}.</p>` : ''}
-      ${lad ? `<p class="dim small">Breakeven ${lad.breakeven} · ${lad.levels.map((l) => `${l.r}R ${l.price}`).join(' · ')}${c.rr == null ? '' : ` · target ${c.target} is ${c.rr}R`}</p>` : ''}
-      ${(c.warnings || []).length ? `<ul class="pos-warn">${c.warnings.map((w) => `<li>${esc(WARNING_TEXT[w] || w)}</li>`).join('')}</ul>` : ''}`;
-  };
-  form.addEventListener('input', preview);
-  form.addEventListener('change', () => {
-    const opt = form.instrument.value !== 'stock';
-    for (const el of pane.querySelectorAll('[data-opt]')) el.hidden = !opt;
-    for (const el of pane.querySelectorAll('[data-spread]')) el.hidden = form.instrument.value !== 'spread';
-    preview();
-  });
-  pane.querySelector('[data-quote-btn]').addEventListener('click', async () => {
-    const t = String(form.ticker.value || '').toUpperCase().trim();
-    const out = pane.querySelector('[data-quote-said]');
-    if (!t) { out.textContent = 'Type a ticker first.'; return; }
-    out.textContent = 'Asking…';
-    try {
-      const r = await tradeCall(getToken, `quote?symbols=${encodeURIComponent(t)}`);
-      const q = (r.quotes || [])[0];
-      if (!q) { out.textContent = `No quote came back for ${t}.`; return; }
-      quotes.set(t, q);
-      out.textContent = `${q.ticker} ${q.last}, today ${q.low} to ${q.high}.`;
-      if (!form.entry.value) form.entry.value = String(q.last);
-      preview();
-    } catch (err) { out.textContent = err.message; }
-  });
-
-  function paint() {
-    pane.querySelector('[data-day-wrap]').innerHTML = dayStripHtml(S.dayStatus);
-    const open = (S.positions || []).filter((p) => p.status === 'open');
-    const closedToday = (S.positions || []).filter((p) => p.status === 'closed' && p.closedDay === S.today);
-    const list = pane.querySelector('[data-pos-list]');
-    list.innerHTML = open.length
-      ? open.map((p) => positionCardHtml(p, { rules: S.rules, accountCents: S.accountCents, todayKey: S.today, accountType: S.accountType, quote: quotes.get(p.ticker) || null })).join('')
-      : '<p class="dim">Nothing open. Add a trade above when you are in one.</p>';
-    wirePositionCards(list);
-    const cl = pane.querySelector('[data-closed-list]');
-    cl.innerHTML = closedToday.length
-      ? closedToday.map((p) => `<li data-closed="${esc(p.id)}"><span>${esc(p.ticker)} ${esc(p.side)} <strong>${esc(money(p.pnlCents, true))}</strong>${p.closeNote ? ` <span class="dim small">${esc(p.closeNote)}</span>` : ''}</span></li>`).join('')
-      : '<li class="dim">Nothing closed today.</li>';
-  }
-
-  function wirePositionCards(root) {
-    for (const b of root.querySelectorAll('[data-act]')) {
-      b.addEventListener('click', async () => {
-        const card = b.closest('[data-pos]');
-        const id = card.dataset.pos;
-        const say = card.querySelector('[data-pos-said]');
-        const sheet = card.querySelector('[data-sold-sheet]');
-        if (b.dataset.act === 'sold') { sheet.hidden = false; card.querySelector('[data-exit]')?.focus(); return; }
-        if (b.dataset.act === 'cancel') { sheet.hidden = true; return; }
-        if (b.dataset.act === 'remove') {
-          if (!confirm('Remove this trade? Nothing is logged.')) return;
-          b.disabled = true;
-          try { await tradeCall(getToken, 'remove', { id }); await load(); } catch (err) { say.textContent = err.message; b.disabled = false; }
-          return;
-        }
-        if (b.dataset.act !== 'close') return;
-        const exit = card.querySelector('[data-exit]').value;
-        const pl = card.querySelector('[data-pl]').value;
-        if (exit === '' && pl === '') { say.textContent = 'Sold at needs the exit price, or the profit or loss in dollars.'; say.classList.add('trade-err'); return; }
-        const body = { id, note: card.querySelector('[data-close-note]').value };
-        if (exit !== '') body.exitPrice = Number(exit); else body.pnlCents = Math.round(Number(pl) * 100);
-        const wantsLog = card.querySelector('[data-log]').checked;
-        for (const x of card.querySelectorAll('button')) x.disabled = true;
-        say.classList.remove('trade-err');
-        say.textContent = 'Saving…';
-        try {
-          const out = await tradeCall(getToken, 'close', body);
-          if (wantsLog && onLog) onLog(logLineFor(out.position, out.pnlCents, exit === '' ? null : Number(exit)));
-          onCelebrate?.({ pnlCents: out.pnlCents, celebrate: out.celebrate === true });
-          document.dispatchEvent(new CustomEvent('pa-desk-day', { detail: { dayStatus: out.dayStatus, rules: S?.rules } }));
-          await load();
-        } catch (err) {
-          say.textContent = err.message; say.classList.add('trade-err');
-          for (const x of card.querySelectorAll('button')) x.disabled = false;
-        }
-      });
-    }
-  }
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const pos = readForm();
-    said.classList.remove('trade-err');
-    said.textContent = 'Saving…';
-    form.querySelector('button[type="submit"]').disabled = true;
-    try {
-      await tradeCall(getToken, 'position', pos);
-      form.reset();
-      pane.querySelector('[data-pos-preview]').innerHTML = '';
-      pane.querySelector('[data-pos-new]').open = false;
-      said.textContent = 'Saved.';
-      await load();
-    } catch (err) {
-      said.textContent = err.message; said.classList.add('trade-err');
-    } finally {
-      form.querySelector('button[type="submit"]').disabled = false;
-    }
-  });
-
-  // The quotes behind the cards: only the tickers he is actually in, only
-  // while this page is on screen and the market is open, and never more
-  // than the route's ten at a time. Finnhub's minute is small and the
-  // reading spends most of it.
-  async function refreshQuotes() {
-    if (!S || !S.hasKey || !S.marketOpen || pane.hidden || document.visibilityState !== 'visible') return;
-    const tickers = [...new Set((S.positions || []).filter((p) => p.status === 'open' && p.instrument === 'stock').map((p) => p.ticker))].slice(0, 10);
-    if (!tickers.length) return;
-    try {
-      const r = await tradeCall(getToken, `quote?symbols=${encodeURIComponent(tickers.join(','))}`);
-      for (const q of r.quotes || []) quotes.set(q.ticker, q);
-      paint();
-    } catch { /* a quote that did not come back changes nothing on the page */ }
-  }
-
-  async function load() {
-    try {
-      S = await tradeCall(getToken, 'positions');
-      paint();
-      preview();
-      document.dispatchEvent(new CustomEvent('pa-desk-day', { detail: { dayStatus: S.dayStatus, rules: S.rules } }));
-      await refreshQuotes();
-    } catch (err) {
-      pane.querySelector('[data-pos-list]').innerHTML = `<p class="error">Could not load: ${esc(err.message)}</p>`;
-    }
-  }
-  clearInterval(timer);
-  timer = setInterval(refreshQuotes, 60_000);
-  pane._reload = load;
-  load();
-}
-
-/** The Trade calculations page: his rules in dollars, and the editable variables of every open trade. */
-export function mountCalc(pane, { getToken }) {
-  pane.innerHTML = `
-    <div data-day-wrap></div>
-    <form class="panel trade-form" data-rules-form>
-      <h3>Your rules</h3>
-      <p class="dim small">Every trade on the Trades page is measured against these. Change one and the numbers follow.</p>
-      <div class="form-grid" data-rules-grid></div>
-      <div class="row"><button type="submit" class="btn">Save the rules</button><span class="trade-said" data-rules-said></span></div>
-    </form>
-    <h3 class="closed-head">Open trades</h3>
-    <div data-calc-list><p class="dim">Loading…</p></div>`;
-  const RULE_FIELDS = [
-    ['riskPct', 'Risk a trade', 'of the account on one trade'],
-    ['dayLossPct', 'Stop the day, loss', 'realized loss and you stop'],
-    ['dayFloorPct', 'Floor', 'the least you want in a day'],
-    ['dayAimPct', 'Aim', 'the day you are after'],
-    ['dayCapPct', 'Stop the day, gain', 'banked and you stop, even on a home run'],
-    ['targetR', 'Target', 'R, how far the target sits against the stop'],
-  ];
-  const form = pane.querySelector('[data-rules-form]');
-  const said = pane.querySelector('[data-rules-said]');
-  let S = null;
-
-  function paintRules() {
-    const grid = pane.querySelector('[data-rules-grid]');
-    grid.innerHTML = RULE_FIELDS.map(([k, label, tail]) => {
-      const [lo, hi] = RULE_RANGES[k];
-      const v = S.rules[k];
-      const dollarsOf = k === 'targetR' ? '' : money(Math.round(S.accountCents * v / 100));
-      return `<label>${esc(label)}
-        <input name="${k}" type="number" step="0.1" min="${lo}" max="${hi}" inputmode="decimal" value="${v}">
-        <span class="dim small"><span data-rule-dollars="${k}">${esc(dollarsOf)}</span> ${esc(tail)}</span>
-      </label>`;
-    }).join('');
-    for (const input of grid.querySelectorAll('input')) {
-      input.addEventListener('input', () => {
-        const k = input.name;
-        const out = grid.querySelector(`[data-rule-dollars="${k}"]`);
-        if (!out || k === 'targetR') return;
-        const v = Number(input.value);
-        out.textContent = Number.isFinite(v) ? money(Math.round(S.accountCents * v / 100)) : '';
-      });
-    }
-  }
-
-  function paint() {
-    pane.querySelector('[data-day-wrap]').innerHTML = dayStripHtml(S.dayStatus);
-    paintRules();
-    const open = (S.positions || []).filter((p) => p.status === 'open');
-    const list = pane.querySelector('[data-calc-list]');
-    list.innerHTML = open.length ? open.map((p) => {
-      const c = tradeCalc({ pos: p, rules: S.rules, accountCents: S.accountCents, todayKey: S.today, accountType: S.accountType });
-      return `<div class="panel calc-card" data-calc-pos="${esc(p.id)}">
-        <div class="play-head"><span><span class="play-ticker">${esc(p.ticker)}</span> <span class="play-side">${esc(p.side)}</span> <span class="pos-badge kind-${esc(p.horizon || 'intraday')}">${esc(HORIZON_WORDS[p.horizon] || 'Intraday')}</span></span><span class="trade-when" data-calc-risk>${esc(c.riskCents == null ? 'not capped' : money(c.riskCents))}</span></div>
-        <div class="form-grid">
-          <label>Stop <input type="number" step="0.0001" inputmode="decimal" data-edit="stop" value="${p.stop ?? ''}"></label>
-          <label>Target <input type="number" step="0.0001" inputmode="decimal" data-edit="target" value="${p.target ?? ''}"></label>
-          <label>Quantity <input type="number" step="1" min="1" inputmode="numeric" data-edit="qty" value="${esc(p.qty)}"></label>
-          ${p.instrument === 'stock' ? '' : `<label>Mark <input type="number" step="0.0001" inputmode="decimal" data-edit="mark" value="${p.mark ?? ''}"></label>`}
-        </div>
-        <p class="dim small" data-calc-line>${esc(calcLine(p, c))}</p>
-        <div class="row"><button type="button" class="btn tiny" data-act="save">Save</button><span class="trade-said" data-calc-said></span></div>
-      </div>`;
-    }).join('') : '<p class="dim">Nothing open. What you put on the Trades page shows up here to adjust.</p>';
-    for (const b of list.querySelectorAll('[data-act="save"]')) {
-      b.addEventListener('click', async () => {
-        const card = b.closest('[data-calc-pos]');
-        const say = card.querySelector('[data-calc-said]');
-        const body = { id: card.dataset.calcPos };
-        for (const input of card.querySelectorAll('[data-edit]')) {
-          const v = input.value.trim();
-          body[input.dataset.edit] = v === '' ? null : Number(v);
-        }
-        b.disabled = true;
-        say.classList.remove('trade-err');
-        say.textContent = 'Saving…';
-        try {
-          const out = await tradeCall(getToken, 'position', body);
-          card.querySelector('[data-calc-line]').textContent = calcLine(out.position, out.calc);
-          card.querySelector('[data-calc-risk]').textContent = out.calc.riskCents == null ? 'not capped' : money(out.calc.riskCents);
-          say.textContent = 'Saved.';
-          document.dispatchEvent(new CustomEvent('pa-desk-day', { detail: { dayStatus: out.dayStatus, rules: S?.rules } }));
-        } catch (err) {
-          say.textContent = err.message; say.classList.add('trade-err');
-        } finally { b.disabled = false; }
-      });
-    }
-  }
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const rules = {};
-    for (const [k] of RULE_FIELDS) rules[k] = Number(new FormData(form).get(k));
-    said.classList.remove('trade-err');
-    said.textContent = 'Saving…';
-    try {
-      const out = await tradeCall(getToken, 'settings', { rules });
-      said.textContent = 'Saved.';
-      document.dispatchEvent(new CustomEvent('pa-desk-settings', { detail: out }));
-      await load();
-    } catch (err) {
-      said.textContent = err.message; said.classList.add('trade-err');
-    }
-  });
-
-  async function load() {
-    try {
-      S = await tradeCall(getToken, 'positions');
-      paint();
-      document.dispatchEvent(new CustomEvent('pa-desk-day', { detail: { dayStatus: S.dayStatus, rules: S.rules } }));
-    } catch (err) {
-      pane.querySelector('[data-calc-list]').innerHTML = `<p class="error">Could not load: ${esc(err.message)}</p>`;
-    }
-  }
-  pane._reload = load;
-  load();
-}
-
-/** One sentence under a trade on the Calc page. Pure. */
-export function calcLine(p, c) {
-  const risk = c.riskCents == null ? 'Risk is not capped' : `Risk ${money(c.riskCents)}${c.riskPct == null ? '' : ` (${fmtPct(c.riskPct)})`}`;
-  const rule = c.budgetCents ? `, your rule allows ${money(c.budgetCents)}` : '';
-  const size = c.suggestedQty == null ? '' : `, which sizes at ${c.suggestedQty}`;
-  const tgt = c.target == null ? '' : `. Target ${c.target}${c.rr == null ? '' : ` is ${c.rr}R`}`;
-  return `${risk}${rule}${size}${tgt}.`;
-}
+export { esc, fmtPct };

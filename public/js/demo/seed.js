@@ -748,6 +748,36 @@ export function seed({ set, file }) {
     status: 'closed', closedAt: days(1), closedDay: dk(1), exitPrice: 409.8, pnlCents: 5750,
     closeNote: 'Covered at the second test.', fromPlay: null, riskCents: 4750, updatedAt: days(1),
   });
+  // THE CLOSES STATS IS COMPUTED FROM (2026-09-22, the desk as one app).
+  // With the one above, fourteen trades over the last twelve days: five
+  // scalps, six intraday and three swings, nine won, four lost, one
+  // scratched, and one taken without a stop so the R figures have a row to
+  // skip. None of them closed today, so the day opens at zero and the close
+  // the drive makes is what moves it.
+  const CLOSES = [
+    ['c1', 'NVDA', 'long', 'stock', 'intraday', 10, 648.4, 646.9, 651.6, 12000, 12, 1500, 'Gap and go, out before the target.'],
+    ['c2', 'SPY', 'long', 'stock', 'intraday', 10, 571.2, 570, 574.45, 6500, 12, 1200, ''],
+    ['c3', 'AMD', 'long', 'stock', 'intraday', 100, 168.2, null, 167, -12000, 11, null, 'No stop. Watching it was the plan.'],
+    ['c4', 'SPY', 'long', 'stock', 'intraday', 20, 571.2, 569, 569, -4400, 10, 4400, 'Moved the stop the wrong way.'],
+    ['c5', 'META', 'long', 'stock', 'scalp', 30, 598.1, 596.5, 599.15, 3150, 9, 4800, ''],
+    ['c6', 'AAPL', 'long', 'stock', 'swing', 40, 228, 225.5, 232.4, 17600, 7, 10000, 'Out Thursday, flat into the weekend.'],
+    ['c7', 'NVDA', 'long', 'stock', 'intraday', 10, 645, 643.5, 651.2, 6200, 7, 1500, ''],
+    ['c8', 'TSLA', 'short', 'stock', 'scalp', 25, 415, 417, 417, -5000, 6, 5000, 'Stopped.'],
+    ['c9', 'AMZN', 'long', 'stock', 'scalp', 30, 224.5, 223.6, 225.6, 3300, 6, 2700, ''],
+    ['c10', 'COIN', 'long', 'stock', 'scalp', 20, 212, 210.5, 212, 0, 5, 3000, 'Scratched.'],
+    ['c11', 'MSFT', 'long', 'stock', 'swing', 10, 512, 507, 507.65, -4350, 5, 5000, ''],
+    ['c12', 'QQQ', 'long', 'stock', 'intraday', 20, 496.1, 494.8, 498.15, 4100, 4, 2600, ''],
+    ['c13', 'AMD', 'long', 'stock', 'swing', 60, 160.2, 157.5, 166.95, 40500, 3, 16200, 'Three days, out before Friday.'],
+  ];
+  for (const [id, ticker, side, instrument, horizon, qty, entry, stop, exitPrice, pnlCents, n, riskCents, closeNote] of CLOSES) {
+    set(`trade/positions/items/pos-demo-${id}`, {
+      ticker, side, instrument, horizon, qty, entry, stop, target: null, mark: null,
+      credit: false, width: null, expiry: null, structure: 'shares', note: '',
+      openedAt: days(n), openedDay: dk(n), status: 'closed',
+      closedAt: days(n), closedDay: dk(n), exitPrice, pnlCents, closeNote,
+      fromPlay: null, riskCents, updatedAt: days(n),
+    });
+  }
   // The last typed entry sits two days back, so a screenshot asked about
   // today lands on an empty day in every time zone the demo runs in.
   for (const [n, cents] of [[20, 200000], [17, 205000], [14, 212000], [9, 208000], [5, 220000], [2, 238000]])

@@ -12,7 +12,7 @@ import { DEMO_CASE_ID } from './seed.js';
 // The Trade portal's arithmetic (2026-09-21): the same module the Worker uses, so the demo's numbers are the real numbers.
 import {
   tradeMetrics, chartSeries, rulesOf, defaultRules, RULE_RANGES, dayStatus, realizedToday, openRisk,
-  tradeCalc, closePnl, horizonOf, INSTRUMENTS, isMarketOpen,
+  tradeCalc, closePnl, horizonOf, INSTRUMENTS, isMarketOpen, liveBalance, tradeStats,
 } from '../trade-math.js';
 // The desk makes a PDF (2026-09-22): the same writer the Worker files with, so the demo's document is a real one.
 import { textPdf } from '../textpdf.js';
@@ -95,12 +95,34 @@ const DEMO_QUOTES = {
   AMD: { ticker: 'AMD', last: 168.4, chg: 1.1, chgPct: 0.66, open: 167.2, high: 169.1, low: 166.8, prevClose: 167.3 },
 };
 const deskPositions = (store) => deskRows(store, 'trade/positions/items/');
-const deskAccountCents = (store) => {
+const deskAccount = (store) => {
   const s = store.docs.get('trade/settings') || {};
   const rows = deskRows(store, 'trade/balances/items/').sort((a, b) => String(b.date || b.id).localeCompare(String(a.date || a.id)));
   const c = rows[0]?.cents;
-  return Number.isFinite(Number(c)) ? Math.round(Number(c)) : (Number.isInteger(s.startCents) && s.startCents > 0 ? s.startCents : 200000);
+  return {
+    cents: Number.isFinite(Number(c)) ? Math.round(Number(c)) : (Number.isInteger(s.startCents) && s.startCents > 0 ? s.startCents : 200000),
+    day: rows[0]?.date || rows[0]?.id || null,
+  };
 };
+const deskAccountCents = (store) => deskAccount(store).cents;
+// THE NEWS PAGE'S FIXTURES (2026-09-22, the desk as one app). Eight headlines
+// and three earnings chips, invented, in the shape the Worker's news route
+// returns so the page cannot tell the difference.
+const DEMO_NEWS = [
+  { headline: 'Fed minutes show a split on the pace of cuts into year end', source: 'Reuters', mins: 41, related: ['SPY', 'QQQ'], summary: 'Several officials wanted to hold; the market is pricing one cut by December.' },
+  { headline: 'Nvidia raises data center guidance at its developer conference', source: 'Bloomberg', mins: 130, related: ['NVDA'], summary: 'The guidance came at 07:00 Eastern and the stock gapped up at the open.' },
+  { headline: 'Tesla third quarter deliveries land below the street estimate', source: 'CNBC', mins: 200, related: ['TSLA'], summary: 'Deliveries were 4% under consensus; the shares opened down and rejected the day average twice.' },
+  { headline: 'AMD supply agreement reported ahead of the open', source: 'WSJ', mins: 260, related: ['AMD'], summary: 'A multi year supply deal reported before the bell; the base above the fifty day is holding.' },
+  { headline: 'Oil slips for a third day as inventories build', source: 'Reuters', mins: 320, related: [], summary: '' },
+  { headline: 'Ten year yield steady near 4.1% ahead of the auction', source: 'Bloomberg', mins: 410, related: [], summary: '' },
+  { headline: 'Micron reports after the close, memory pricing in focus', source: 'MarketWatch', mins: 480, related: ['MU'], summary: '' },
+  { headline: 'Retail sales revised higher for August', source: 'AP', mins: 900, related: [], summary: '' },
+];
+const DEMO_EARNINGS = [
+  { symbol: 'MU', hour: 'bmo', epsEstimate: 1.12, epsActual: 1.26, revenueEstimate: 7700000000, revenueActual: 7900000000, quarter: 4, year: 2026 },
+  { symbol: 'AMD', hour: 'bmo', epsEstimate: 0.92, epsActual: null, revenueEstimate: 6900000000, revenueActual: null, quarter: 3, year: 2026 },
+  { symbol: 'NKE', hour: 'amc', epsEstimate: 0.7, epsActual: null, revenueEstimate: 12100000000, revenueActual: null, quarter: 1, year: 2027 },
+];
 const deskSort = (rows) => {
   const rank = { scalp: 0, intraday: 1, swing: 2 };
   return [...rows].sort((a, b) => {
@@ -1809,6 +1831,7 @@ export function demoApi(role, store) {
         startCents: Number.isInteger(s.startCents) && s.startCents > 0 ? s.startCents : 200000,
         rules: rulesOf(s),
         celebrate: s.celebrate !== false,
+        reduceFx: s.reduceFx === true,
       });
       const keyOf = (s) => String(s.finnhubKey || '');
       if (sub === 'state' && init.method !== 'POST') {
@@ -1839,11 +1862,15 @@ export function demoApi(role, store) {
         const closedToday = rows.filter((p) => p.status === 'closed' && p.closedDay === todayMT);
         const recent = rows.filter((p) => p.status === 'closed' && p.closedDay !== todayMT).slice(0, 10);
         const withCalc = (p) => ({ ...p, calc: tradeCalc({ pos: p, rules, accountCents, todayKey: todayMT, accountType }) });
+        const account = deskAccount(store);
+        const realized = realizedToday(rows, todayMT);
         return ok({
           positions: [...deskSort(open), ...closedToday, ...recent].map(withCalc),
           openCount: open.length, rules, accountCents, accountType,
+          liveCents: liveBalance({ accountCents, lastBalanceDay: account.day, todayKey: todayMT, realizedTodayCents: realized }),
+          lastBalanceDay: account.day,
           today: todayMT, tradingDay: 'full', marketOpen: true, hasKey: !!keyOf(s),
-          dayStatus: dayStatus({ rules, accountCents, realizedTodayCents: realizedToday(rows, todayMT), openRiskCents: openRisk(rows) }),
+          dayStatus: dayStatus({ rules, accountCents, realizedTodayCents: realized, openRiskCents: openRisk(rows) }),
           now: new Date().toISOString(),
         });
       }
@@ -1854,6 +1881,51 @@ export function demoApi(role, store) {
         if (!list.length || list.length > 10) return fail(400, SAY.quoteMany);
         if (!list.every((t) => TICKER_RE.test(t))) return fail(400, SAY.badTicker);
         return ok({ quotes: list.map((t) => DEMO_QUOTES[t]).filter(Boolean), missing: list.filter((t) => !DEMO_QUOTES[t]), at: new Date().toISOString() });
+      }
+      // THE DESK AS ONE APP (2026-09-22): News, Stats and the Desk stream each
+      // read one route of their own, and the demo answers all three.
+      if (sub === 'news' && init.method !== 'POST') {
+        const s = settings();
+        const now = Date.now();
+        const base = {
+          hasKey: !!keyOf(s), asOf: new Date().toISOString(), today: todayMT, tradingDay: 'full',
+          marketOpen: true, closeAt: '14:00',
+          watchlist: Array.isArray(s.watchlist) && s.watchlist.length ? s.watchlist : DEFAULT_WATCHLIST,
+        };
+        if (!keyOf(s)) return ok({ ...base, headlines: [], earnings: [], onDesk: [], throttled: false });
+        const plays = deskRows(store, 'trade/plays/items/').filter((p) => ['open', 'took'].includes(p.status)).map((p) => p.ticker);
+        const held = deskPositions(store).filter((p) => p.status === 'open').map((p) => p.ticker);
+        return ok({
+          ...base,
+          headlines: DEMO_NEWS.map((n) => ({
+            headline: n.headline, source: n.source, url: 'https://example.invalid/story',
+            at: new Date(now - n.mins * 60_000).toISOString(), summary: n.summary, related: n.related,
+          })),
+          earnings: DEMO_EARNINGS,
+          onDesk: [...new Set([...plays, ...held])].filter(Boolean),
+          throttled: false,
+        });
+      }
+      if (sub === 'history' && init.method !== 'POST') {
+        const s = settings();
+        const rows = deskPositions(store).filter((p) => p.status === 'closed' && Number.isFinite(Number(p.pnlCents)));
+        const balances = deskRows(store, 'trade/balances/items/').map((b) => ({ date: b.date || b.id, cents: b.cents, note: b.note || '' }));
+        const rules = rulesOf(s);
+        const p = pub(s);
+        return ok({
+          closed: rows, count: rows.length, capped: false,
+          stats: tradeStats(rows, { today: todayMT }),
+          metrics: tradeMetrics(balances, { startedAt: p.startedAt, startCents: p.startCents, target: rules.dayAimPct / 100 }),
+          rules, accountCents: deskAccountCents(store), today: todayMT,
+        });
+      }
+      if (sub === 'qa' && init.method !== 'POST') {
+        const s = settings();
+        if (!s.caseId) return fail(404, SAY.noDesk);
+        const n = Math.max(1, Math.min(40, Math.floor(Number(q.get('n')) || 40)));
+        const rows = deskRows(store, `cases/${s.caseId}/advisor/state/qa/`)
+          .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0)).slice(0, n);
+        return ok({ qa: rows.map(({ fileRef, ...rest }) => { void fileRef; return rest; }) });
       }
       if (init.method !== 'POST') return fail(404, 'Not found');
       if (sub === 'open') {
@@ -1917,6 +1989,7 @@ export function demoApi(role, store) {
         }
         if (body.pushOn !== undefined) patch.pushOn = body.pushOn === true;
         if (body.celebrate !== undefined) patch.celebrate = body.celebrate === true;
+        if (body.reduceFx !== undefined) patch.reduceFx = body.reduceFx === true;
         if (body.rules !== undefined) {
           const r = body.rules;
           if (!r || typeof r !== 'object') return fail(400, SAY.badRules);
@@ -2029,10 +2102,13 @@ export function demoApi(role, store) {
         store.persist?.();
         const all = deskPositions(store);
         const rules = rulesOf(s);
-        const accountCents = deskAccountCents(store);
+        const account = deskAccount(store);
+        const accountCents = account.cents;
+        const realized = realizedToday(all, todayMT);
         return ok({
           ok: true, position: { id, ...pos, ...patch }, pnlCents,
-          dayStatus: dayStatus({ rules, accountCents, realizedTodayCents: realizedToday(all, todayMT), openRiskCents: openRisk(all) }),
+          dayStatus: dayStatus({ rules, accountCents, realizedTodayCents: realized, openRiskCents: openRisk(all) }),
+          liveCents: liveBalance({ accountCents, lastBalanceDay: account.day, todayKey: todayMT, realizedTodayCents: realized }),
           celebrate: pnlCents > 0 && s.celebrate !== false,
         });
       }

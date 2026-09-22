@@ -67,6 +67,12 @@ export const DESK_NAME = 'Trade desk';
 export const QUOTE_TTL_MS = 20_000;
 export const QUOTE_BUDGET = 50;
 export const QUOTE_MAX = 10;
+// The News page's two feeds, held per isolate: headlines move by the minute,
+// a day's earnings calendar does not move at all.
+export const NEWS_TTL_MS = 5 * 60_000;
+export const EARNINGS_TTL_MS = 30 * 60_000;
+export const NEWS_HOURS = 24;
+export const NEWS_MAX = 40;
 // The sentences the routes refuse with. Exported so the demo mirrors them
 // word for word and a check can hold the two to each other.
 export const SAY = {
@@ -516,6 +522,8 @@ async function fetchFinnhub(key, path, params = {}) {
 // tells a caller to say so instead of fetching.
 const quoteCache = new Map();
 let quoteCalls = [];
+// The tickers a headline names are checked against the same shape a play's is.
+const TICKER_RE = /^[A-Z][A-Z.]{0,5}$/;
 export function quoteBudgetLeft(now = Date.now()) {
   quoteCalls = quoteCalls.filter((t) => now - t < 60_000);
   return Math.max(0, QUOTE_BUDGET - quoteCalls.length);
@@ -535,6 +543,68 @@ export async function quoteCached(key, ticker, now = Date.now()) {
   return row;
 }
 
+// THE HEADLINES AND THE EARNINGS, CACHED AND COUNTED (2026-09-22, the desk
+// as one app). Both used to be fetched fresh on every reading and counted
+// against nothing, which is two of Finnhub's fifty calls a minute spent
+// without the budget knowing. They go through the same rolling window as a
+// quote now, and the News page reads the cache rather than the wire.
+const newsCache = { at: 0, rows: null };
+const earnCache = { at: 0, day: '', rows: null };
+/** The general feed, at most once every five minutes per isolate. `null` when nothing came back. */
+export async function newsCached(key, now = Date.now()) {
+  if (newsCache.rows && now - newsCache.at < NEWS_TTL_MS) return newsCache.rows;
+  // A nearly spent minute keeps what it has rather than taking a quote's place.
+  if (quoteBudgetLeft(now) <= 2) return newsCache.rows;
+  quoteCalls.push(now);
+  const raw = await fetchFinnhub(key, '/news', { category: 'general' });
+  if (!Array.isArray(raw)) return newsCache.rows;
+  newsCache.at = now; newsCache.rows = raw;
+  return raw;
+}
+/** Today's earnings calendar, at most once every half hour per isolate and per day. */
+export async function earningsCached(key, dateKey, now = Date.now()) {
+  if (earnCache.rows && earnCache.day === dateKey && now - earnCache.at < EARNINGS_TTL_MS) return earnCache.rows;
+  if (quoteBudgetLeft(now) <= 2) return earnCache.day === dateKey ? earnCache.rows : null;
+  quoteCalls.push(now);
+  const cal = await fetchFinnhub(key, '/calendar/earnings', { from: dateKey, to: dateKey });
+  if (!cal) return earnCache.day === dateKey ? earnCache.rows : null;
+  const rows = Array.isArray(cal.earningsCalendar) ? cal.earningsCalendar : [];
+  earnCache.at = now; earnCache.day = dateKey; earnCache.rows = rows;
+  return rows;
+}
+const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+/**
+ * The feed's rows as the desk keeps them: the headline, who wrote it, when,
+ * the link, a short summary and the tickers it names. Pure, so the reading's
+ * note and the News page read the same wire the same way.
+ */
+export function newsRows(raw, now = Date.now(), { hours = 12, max = 20 } = {}) {
+  const cutoff = now - hours * 3600_000;
+  return (Array.isArray(raw) ? raw : [])
+    .filter((n) => n && n.headline && (!n.datetime || Number(n.datetime) * 1000 >= cutoff))
+    .slice(0, max)
+    .map((n) => ({
+      headline: stripDashes(String(n.headline)).slice(0, 200),
+      source: String(n.source || '').slice(0, 60),
+      at: n.datetime ? new Date(Number(n.datetime) * 1000).toISOString() : null,
+      url: /^https:\/\//.test(String(n.url || '')) ? String(n.url).slice(0, 2048) : '',
+      summary: stripDashes(String(n.summary || '')).trim().slice(0, 280),
+      related: String(n.related || '').split(',').map((t) => t.trim().toUpperCase()).filter((t) => TICKER_RE.test(t)).slice(0, 6),
+    }));
+}
+/** The calendar's rows: who reports, when in the day, and the estimates beside the actuals. Pure. */
+export function earningsRows(raw, { max = 40 } = {}) {
+  return (Array.isArray(raw) ? raw : [])
+    .filter((e) => e && e.symbol).slice(0, max)
+    .map((e) => ({
+      symbol: String(e.symbol).toUpperCase().slice(0, 6),
+      hour: String(e.hour || '').slice(0, 4),
+      epsEstimate: num(e.epsEstimate), epsActual: num(e.epsActual),
+      revenueEstimate: num(e.revenueEstimate), revenueActual: num(e.revenueActual),
+      quarter: num(e.quarter), year: num(e.year),
+    }));
+}
+
 /** Quotes for the watchlist, the last twelve hours of general headlines, today's earnings. A refused endpoint is dropped and named. */
 export async function marketSnapshot(key, watchlist, now = Date.now()) {
   const { dateKey } = mtParts(now);
@@ -544,20 +614,16 @@ export async function marketSnapshot(key, watchlist, now = Date.now()) {
       if (!q || q === 'over') return { ticker, missing: true };
       return q;
     })),
-    fetchFinnhub(key, '/news', { category: 'general' }),
-    fetchFinnhub(key, '/calendar/earnings', { from: dateKey, to: dateKey }),
+    newsCached(key, now),
+    earningsCached(key, dateKey, now),
   ]);
-  const cutoff = now - 12 * 3600_000;
   return {
     at: new Date(now).toISOString(),
     quotes: quotes.filter((q) => !q.missing),
     missing: quotes.filter((q) => q.missing).map((q) => q.ticker),
-    news: (Array.isArray(news) ? news : [])
-      .filter((n) => n && n.headline && (!n.datetime || Number(n.datetime) * 1000 >= cutoff))
-      .slice(0, 20).map((n) => ({ headline: stripDashes(String(n.headline)).slice(0, 200), source: String(n.source || '').slice(0, 60), at: n.datetime ? new Date(Number(n.datetime) * 1000).toISOString() : null })),
-    earnings: (Array.isArray(cal?.earningsCalendar) ? cal.earningsCalendar : [])
-      .filter((e) => e && e.symbol).slice(0, 40).map((e) => ({ symbol: String(e.symbol), hour: String(e.hour || '') })),
-    newsOk: Array.isArray(news), earningsOk: !!cal,
+    news: newsRows(news, now, { hours: 12, max: 20 }),
+    earnings: earningsRows(cal, { max: 40 }),
+    newsOk: Array.isArray(news), earningsOk: Array.isArray(cal),
   };
 }
 
@@ -687,8 +753,7 @@ export async function tradeNote(env, { now = Date.now() } = {}) {
 }
 
 // ---- the reading's Plays section, read strictly ----------------------------------
-const TICKER_RE = /^[A-Z][A-Z.]{0,5}$/;
-const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : NaN);
+const numOrNaN = (v) => (Number.isFinite(Number(v)) ? Number(v) : NaN);
 const int = (v, lo, hi) => { const n = Number(v); return Number.isInteger(n) && n >= lo && n <= hi ? n : NaN; };
 const str = (v, n) => stripDashes(String(v == null ? '' : v)).trim().slice(0, n);
 
@@ -705,8 +770,8 @@ export function validPlay(p) {
   const horizon = horizonOf(String(p.horizon || '').toLowerCase()) || horizonFor(holdMinutes);
   const holdDays = horizon === 'swing' ? Math.min(3, Math.max(1, Math.floor(Number(p.holdDays) || 1))) : 0;
   const sizeDollars = int(p.sizeDollars, 0, 10_000_000);
-  const entry = num(p.entry);
-  const stop = num(p.stop);
+  const entry = numOrNaN(p.entry);
+  const stop = numOrNaN(p.stop);
   const targets = Array.isArray(p.targets) ? p.targets.map(num).filter((n) => Number.isFinite(n)).slice(0, 4) : [];
   const picture = str(p.picture, 600);
   if (!TICKER_RE.test(ticker) || !['long', 'short'].includes(side) || !['stock', 'call', 'put', 'spread'].includes(instrument)) return null;
@@ -822,7 +887,7 @@ export function scanVerdict(plays, settings) {
 /** The push, to his phone, opening the desk's case. */
 export async function pushStrongPlay(env, caseId, verdict) {
   if (!verdict?.push || !env?.ADMIN_UID) return false;
-  await notifyUser(env, env.ADMIN_UID, { title: 'Pocket Advocate', body: verdict.body, link: `/admin-case.html?id=${caseId}` });
+  await notifyUser(env, env.ADMIN_UID, { title: 'Pocket Advocate', body: verdict.body, link: `/admin-desk.html?id=${caseId}` });
   return true;
 }
 

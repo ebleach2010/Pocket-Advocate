@@ -122,6 +122,8 @@ const EXTRA = [
 const ADMIN_PAGES = [
   '/admin', '/admin.html', '/admin-case', '/admin-chats', '/admin-calendar',
   '/admin-availability', '/admin-dictionary',
+  // The trade desk's own page (2026-09-22, v6.0). It left the case folder.
+  '/admin-desk',
 ];
 const ADMIN_ASSETS = [
   '/js/admin.js', '/js/admin-case.js', '/js/admin-chats.js', '/js/admin-calendar.js',
@@ -134,8 +136,9 @@ const ADMIN_ASSETS = [
   '/js/admin-hours.js', '/js/admin-presence.js', '/js/admin-ledger.js',
   '/js/admin-fit.js',
   '/js/admin-personal.js',
-  // 2026-09-22: the trade desk's pages inside the case folder.
-  '/js/admin-desk.js',
+  // 2026-09-22 (v6.0): the trade desk as its own app. The view module, the
+  // app that mounts it and the effects that light it.
+  '/js/admin-desk.js', '/js/admin-deskapp.js', '/js/admin-deskfx.js',
   '/js/advisor.js', '/js/notes.js', '/js/duty.js', '/js/prep.js',
   '/js/drawer.js', '/js/seen.js', '/js/panel-bridge.js', '/css/admin.css',
   // The demo's fixtures are advisor output, so they are gated the same way. A

@@ -16,8 +16,6 @@ import { mountAdvisor, sendToClient } from './advisor.js';
 import { mountNotes } from './notes.js';
 import { mountSaved } from './saved.js';
 import { mountPersonal } from './admin-personal.js';
-// The trade desk's two pages of its own (2026-09-22): Stats and Desk.
-import { mountTradeStats, mountTradeDesk, mountTrades, mountCalc } from './admin-desk.js';
 import { markSeen, isUnseen, PAGE_BADGES } from './seen.js';
 import { openDutyDraft } from './duty.js';
 import { openPrepSheet } from './prep.js';
@@ -217,6 +215,13 @@ async function load() {
     folder = null;
     return;
   }
+  // THE DESK LEFT THE FOLDER (2026-09-22). It is its own page now, so a desk
+  // opened at this address walks straight into it. replace, not assign, so
+  // Back still returns to the shelf rather than bouncing through here again.
+  if (data.trade) {
+    location.replace(`/admin-desk.html?id=${encodeURIComponent(caseId)}`);
+    return;
+  }
   // Re-loads for the same case (after a milestone, an upload, a scheduling
   // run) refresh the header, Overview, and Files in place. The chat and the
   // advisor mount once and are never touched again.
@@ -237,24 +242,6 @@ async function load() {
   }
 }
 
-/**
- * THE DESK'S GROUPS (Eric, 2026-09-22): the case, the desk's reading with
- * its own pages (Plays where the differential was, Stats and Desk beside
- * the terms), and his own notes. Six under the desk on purpose: he asked
- * for each by name. No Track row since he said the desk asks him nothing.
- */
-const DESK_GROUPS = [
-  { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files'] },
-  { id: 'read', label: 'Desk', icon: '📈', pages: ['advisor', 'dx', 'trades', 'calc', 'advisor-chat', 'education', 'stats', 'desk'] },
-  { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'saved', 'personal'] },
-];
-// ERIC, 2026-09-22, a screenshot of the desk on his phone: "Trade desk is a
-// clusterfuck of what I described and what is normally there for a medical
-// client." folder.js hands every page no group claims to the FIRST group, so
-// the desk's Case row carried Appeals, the work log, the milestones, the
-// agenda, the summary, the drafts, About you and My doc, and landed him on
-// the Appeal form. The desk gets only the pages its own groups name.
-const DESK_PAGE_IDS = new Set(DESK_GROUPS.flatMap((g) => g.pages));
 
 function render(el) {
   const c = data;
@@ -310,11 +297,6 @@ function render(el) {
       // and the milestones feed, and only Appeals stays Full-Service.
       { id: 'act', label: 'Act', icon: '⚖️', pages: [...(data.fullAccess ? ['appeals'] : []), 'log', 'milestones'] },
     ],
-    // THE TRADE DESK (Eric, 2026-09-22) takes its own four groups instead: a
-    // later key wins in an object literal, so the five above stay the
-    // literal five suites pin, and the desk never renders a tab that talks
-    // to a client or a clinic.
-    ...(data.trade ? { groups: DESK_GROUPS } : {}),
     // Landing on a page IS having seen it. The badge clears here rather than
     // on some later save, so it never outlives the thing it was pointing at.
     onShow: (id) => { markSeen(caseId, id); folder?.mark(id, false); },
@@ -343,20 +325,14 @@ function render(el) {
                    state belongs where the state is, not inside a menu you
                    have to know about. -->
               <div class="chat-head">
-                <h3>${data.trade ? 'Trade log' : data.self ? 'Your notes' : 'Chat with the client'}</h3>
-                ${data.trade ? '' : `
+                <h3>${data.self ? 'Your notes' : 'Chat with the client'}</h3>
                 <label class="status-pick">
                   <span class="dim small">Working on</span>
                   <select data-status-pick aria-label="What you are working on">
                     <option value="">Nothing right now</option>
                   </select>
-                </label>`}
+                </label>
               </div>
-              <!-- THE DESK HAS NO CLOCK AND NOTHING TO BE WORKING ON (Eric,
-                   2026-09-22): the hours are billed to a client, and there is
-                   no client on the desk. startWorkClock returns when the row
-                   is absent; the status wiring is null-safe. -->
-              ${data.trade ? '' : `
               <div class="row" data-workclock style="gap:.5rem; align-items:center; margin:.1rem 0 .5rem;">
                 <button class="btn quiet" data-work-toggle style="flex:none;">▶ Start working</button>
                 <!-- The total is a BUTTON and it did not look like one: 30px
@@ -368,7 +344,7 @@ function render(el) {
                 <button class="btn quiet work-total-btn" data-work-total
                   style="flex:none;" title="Add or subtract time on this case"></button>
                 <span class="work-rate" data-work-rate hidden></span>
-              </div>`}
+              </div>
               <p class="dim small" data-client-gate style="margin:.1rem 0 .4rem;" hidden></p>
               <div id="chat"></div>
             </div>`;
@@ -397,33 +373,10 @@ function render(el) {
       {
         // "Dx", because four tabs share this row now and "Differential" ate
         // half of it. Same page, same 🧬; Eric writes Dx everywhere anyway.
-        // On the trade desk (2026-09-22) this page is Plays: the panel
-        // paints the play cards here instead of the differential.
-        id: 'dx', title: data.trade ? 'Plays' : 'Dx', icon: data.trade ? '📈' : '🧬',
+        id: 'dx', title: 'Dx', icon: '🧬',
         // The advisor owns this page and repaints it on every state poll.
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
-      // HIS OWN TRADES AND THE CALCULATOR (Eric, 2026-09-22): "input any
-      // active trades ... Most useful when the information is calculated and
-      // displayed neatly by the trade", and "another tab is trade
-      // calculations and any editable variables can be changed there for any
-      // active trade." They sit here, straight after the reading's plays,
-      // because the strip renders in this array's order.
-      ...(data.trade ? [
-        {
-          id: 'trades', title: 'Trades', icon: '💹',
-          render: (pane) => mountTrades(pane, {
-            getToken: () => user.getIdToken(),
-            onLog: (text) => chatSend?.(text),
-          }),
-          onShow: (pane) => pane._reload?.(),
-        },
-        {
-          id: 'calc', title: 'Calc', icon: '🧮',
-          render: (pane) => mountCalc(pane, { getToken: () => user.getIdToken() }),
-          onShow: (pane) => pane._reload?.(),
-        },
-      ] : []),
       {
         // Talking to the advisor, out of the bottom of Read and onto its own
         // page. mountAdvisor moves its Q&A here when given the container.
@@ -584,22 +537,6 @@ function render(el) {
         // Painted from the advisor's state poll, same as the differential.
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
-      // THE DESK'S OWN TWO (Eric, 2026-09-22). Stats: his balance, the
-      // entries and the chart against his aim a day. Desk: the key, the
-      // account, the start, the watchlist and the switches. Both refetch on
-      // every show.
-      ...(data.trade ? [
-        {
-          id: 'stats', title: 'Stats', icon: '📊',
-          render: (pane) => mountTradeStats(pane, { getToken: () => user.getIdToken() }),
-          onShow: (pane) => pane._reload?.(),
-        },
-        {
-          id: 'desk', title: 'Desk', icon: '⚙️',
-          render: (pane) => mountTradeDesk(pane, { getToken: () => user.getIdToken() }),
-          onShow: (pane) => pane._reload?.(),
-        },
-      ] : []),
       {
         // His bookmarks on this thread, each with a note. Private by path: a
         // client cannot read them, and nothing is written back to the message,
@@ -679,7 +616,7 @@ function render(el) {
         id: 'unanswered', title: 'Unanswered', icon: '⚠️',
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
-    ].filter((p) => !data.trade || DESK_PAGE_IDS.has(p.id)),
+    ],
   });
 
   // ---- who this is, and whether the clock is running -----------------------
@@ -696,8 +633,7 @@ function render(el) {
   // one element. So it moves BELOW the strip, where the folder's own dock
   // puts it first in view, on arrival and after every single tab tap.
   const head = document.createElement('div');
-  // The trade desk (2026-09-22) is green; his own case is purple.
-  head.className = `case-head${c.trade ? ' trade' : c.self ? ' self' : ''}`;
+  head.className = `case-head${c.self ? ' self' : ''}`;
   // THE MASTHEAD ANSWERS THE FIVE QUESTIONS (visual director pass,
   // 2026-08-29): who, what state, what is waiting, what happens next, when.
   // Everything below is read off the case document this page already holds;
@@ -741,11 +677,11 @@ function render(el) {
   head.innerHTML = `
     <div class="case-who">
       <span class="case-name" data-client>${esc(c.clientName || c.clientEmail || c.clientUid)}</span>
-      <span class="status-pill${c.trade ? ' trade' : c.self ? ' self' : ''}" data-status>${c.trade ? 'TRADE DESK' : c.self ? 'MY OWN CASE' : (c.status || '?').replace('_', ' ').toUpperCase()}</span>
+      <span class="status-pill${c.self ? ' self' : ''}" data-status>${c.self ? 'MY OWN CASE' : (c.status || '?').replace('_', ' ').toUpperCase()}</span>
     </div>
     ${loopRow}
     ${nextLine}
-    ${c.status === 'closed' || c.trade ? '' : `
+    ${c.status === 'closed' ? '' : `
     <button type="button" class="btn quiet work-head" data-work-head
       aria-label="Clock in or out of this case">⏱</button>`}
     <p class="dim small working-line" data-working hidden></p>
@@ -781,7 +717,7 @@ function render(el) {
     onStatus: (id) => { if (statusPick && statusPick.value !== id) statusPick.value = id; },
     container: folder.el('chat').querySelector('#chat'),
     // His own case: the box takes notes and answers, not messages (2026-09-03).
-    placeholder: data.self ? (data.trade ? 'Log a trade and why, or what you want the desk aiming at…' : 'Add a note, or answer a question above…') : undefined,
+    placeholder: data.self ? 'Add a note, or answer a question above…' : undefined,
     // Show what is already set, so the control reads as a state rather than
     // as a button that fires and forgets.
     onStatus: (id) => { if (statusPick && statusPick.value !== id) statusPick.value = id; },
@@ -914,8 +850,6 @@ function render(el) {
     onSend: (text) => chat.send(text),
     // His own case: nothing on the panel sends to a client (2026-09-03).
     self: !!data.self,
-    // The trade desk (2026-09-22): Pause, the 📷 on Ask, the Plays page.
-    trade: !!data.trade,
     // Drafts live on their own page, not buried inside the panel. The desk
     // has no Drafts page (2026-09-22), and the panel takes null for that.
     draftContainer: folder.el('drafts')?.querySelector('#draft-panel') || null,
@@ -2028,7 +1962,7 @@ function refreshHeader() {
   const name = document.querySelector('[data-client]');
   const pill = document.querySelector('[data-status]');
   if (name) name.textContent = c.clientName || c.clientEmail || c.clientUid;
-  if (pill) pill.textContent = c.trade ? 'TRADE DESK' : c.self ? 'MY OWN CASE' : (c.status || '?').replace('_', ' ').toUpperCase();
+  if (pill) pill.textContent = c.self ? 'MY OWN CASE' : (c.status || '?').replace('_', ' ').toUpperCase();
 }
 
 // The working line under the client's name, kept current by the advisor's
@@ -2042,15 +1976,6 @@ let panelState = {};
  *  should not have to scroll 1,600 lines to find out whether that is safe. */
 let callDocRepaint = null;
 
-// The desk's settings moved on another page (the Desk page's switches, the
-// panel's Pause): the overview's standing line and its button follow at
-// once (2026-09-22).
-document.addEventListener('pa-desk-settings', (e) => {
-  const out = e.detail || {};
-  if (!panelState.trade || !out.settings) return;
-  panelState = { ...panelState, trade: { ...panelState.trade, pushOn: out.settings.pushOn !== false, hasKey: out.hasKey !== false } };
-  tradeOverviewRepaint?.();
-});
 
 document.addEventListener('pa-panel-state', (e) => {
   const d = e.detail || {};
@@ -2059,8 +1984,6 @@ document.addEventListener('pa-panel-state', (e) => {
   // His own case's overview: the briefs it inherited, and the confirmed
   // diagnosis box, both come off this poll (2026-09-05).
   selfOverviewRepaint?.();
-  // The desk's overview: its standing and its next read (2026-09-22).
-  tradeOverviewRepaint?.();
   if (folder?.el('appeals')) folder.el('appeals')._reload?.();
   // The call-notes workbench reads from the same broadcast. It moved to the
   // My doc page, beside the other two sheets he holds on a call.
@@ -2234,115 +2157,6 @@ function paintHandovers(pane) {
     ${!list.length && st !== 'running' && st !== 'error' ? '<p class="dim small">Nothing carried over yet.</p>' : ''}`;
 }
 
-/**
- * THE DESK'S OVERVIEW (Eric, 2026-09-22). No person to describe: the case,
- * where he stands against his aim a day, the next read, and three buttons:
- * Pause or Resume the readings, close, delete. The standing and the next
- * read ride the panel's poll; the buttons post and paint from the answer.
- */
-let tradeOverviewRepaint = null;
-// Where today stands against his rules. The Trades and Calc pages fetch it
-// with their own load and say so here, so the overview costs no extra poll.
-let deskDayLine = '';
-document.addEventListener('pa-desk-day', (e) => {
-  const ds = e.detail?.dayStatus;
-  if (!ds) return;
-  deskDayLine = ds.line;
-  tradeOverviewRepaint?.();
-});
-function paintTradeOverview(pane, c) {
-  const t = panelState.trade || {};
-  // NOTHING RUNS BUT HIS TAP (Eric, 2026-09-22), so there is no next read to
-  // announce: the fact says when the last scan ran and what it filed.
-  const scanOf = (x) => {
-    const sc = x.scan || {};
-    if (sc.status === 'running') return 'scanning now';
-    if (!sc.at) return 'no scan yet';
-    const n = sc.note?.plays || 0;
-    return `${fmtWhen(sc.at)}, ${n ? `${n} setup${n === 1 ? '' : 's'}` : 'nothing filed'}`;
-  };
-  pane.innerHTML = `
-    <div class="facts trade-facts">
-      <span class="fact-k">CASE</span>
-      <span class="fact-v"><span class="status-pill trade">TRADE DESK</span></span>
-      <span class="fact-k">STANDING</span>
-      <span class="fact-v" data-trade-standing>${esc(t.standing?.text || 'no reading yet')}</span>
-      <span class="fact-k">LAST SCAN</span>
-      <span class="fact-v" data-trade-next>${esc(scanOf(t))}</span>
-      <span class="fact-k">TODAY</span>
-      <span class="fact-v" data-trade-today>${esc(deskDayLine || 'no trades logged today')}</span>
-    </div>
-    <p class="self-note trade-note" data-self-note>Nobody is on the other end. The chat is your trade log, the uploads are your screenshots, and every reading is about your trading. Nothing runs on a clock: Scan looks for new entries, Update reads the whole desk, and both wait for your tap. A screenshot posted to the log is read by the next Update; the 📷 on Ask reads it now.</p>
-    ${c.status === 'closed' ? `<p class="dim small">This desk is closed.</p>
-    <p class="row" style="justify-content:flex-start;"><button type="button" class="btn quiet danger" data-delete-case>Delete this case</button></p>` : `
-    <p class="row" style="gap:.4rem; align-items:center; justify-content:flex-start;">
-      <button type="button" class="btn trade-open" data-trade-scan${(t.scan || {}).status === 'running' ? ' disabled' : ''}>${(t.scan || {}).status === 'running' ? 'Scanning…' : 'Scan for new entries'}</button>
-      <button type="button" class="btn quiet" data-self-close>Just close it</button>
-      <button type="button" class="btn quiet danger" data-delete-case>Delete this case</button>
-    </p>`}
-    <p class="saved-note" data-self-said role="status" hidden></p>`;
-  tradeOverviewRepaint = () => {
-    const x = panelState.trade || {};
-    const td = pane.querySelector('[data-trade-today]');
-    if (td) td.textContent = deskDayLine || 'no trades logged today';
-    const st = pane.querySelector('[data-trade-standing]');
-    const nx = pane.querySelector('[data-trade-next]');
-    const sb = pane.querySelector('[data-trade-scan]');
-    if (st) st.textContent = x.standing?.text || 'no reading yet';
-    if (nx) nx.textContent = scanOf(x);
-    if (sb) {
-      const running = (x.scan || {}).status === 'running';
-      sb.disabled = running;
-      sb.textContent = running ? 'Scanning…' : 'Scan for new entries';
-    }
-  };
-  // The same tap as the one on the Read page and the Plays page: one run,
-  // started from wherever he happens to be standing.
-  pane.querySelector('[data-trade-scan]')?.addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    btn.textContent = 'Scanning…';
-    try {
-      const idToken = await user.getIdToken();
-      const res = await fetch('/api/admin/trade/scan', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: '{}',
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
-      panelState = { ...panelState, trade: { ...(panelState.trade || {}), scan: { ...((panelState.trade || {}).scan || {}), status: 'running', error: null } } };
-      tradeOverviewRepaint?.();
-      document.dispatchEvent(new CustomEvent('pa-desk-scan', { detail: { status: 'running' } }));
-    } catch (err) {
-      const s = pane.querySelector('[data-self-said]');
-      if (s) { s.textContent = err.message; s.hidden = false; }
-      btn.disabled = false;
-      btn.textContent = 'Scan for new entries';
-    }
-  });
-  pane.querySelector('[data-self-close]')?.addEventListener('click', async (e) => {
-    if (!confirm('Close the trade desk? It stays readable, the readings stop, and nothing is sent to anyone.')) return;
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    try {
-      const idToken = await user.getIdToken();
-      const res = await fetch('/api/admin/close-case', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ caseId, reason: 'the trade desk' }),
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
-      load();
-    } catch (err) {
-      const s = pane.querySelector('[data-self-said]');
-      if (s) { s.textContent = err.message; s.hidden = false; }
-      btn.disabled = false;
-    }
-  });
-  pane.querySelector('[data-delete-case]')?.addEventListener('click', (e) => deleteCase(e.currentTarget));
-}
 
 function paintSelfOverview(pane, c) {
   const bits = contactBits(c.clientPhone || '', c.clientAddress || '');
@@ -2572,7 +2386,6 @@ function wireChargeCard(card, c) {
 
 function paintOverview(pane) {
   const c = data;
-  if (c.trade) { paintTradeOverview(pane, c); return; }
   if (c.self) { paintSelfOverview(pane, c); return; }
   const start = c.appointment && toDate(c.appointment.start);
   const mtFmt = new Intl.DateTimeFormat('en-US', {
@@ -3367,9 +3180,7 @@ function paintFiles(pane) {
     // client. One sentence says where the file goes.
     const wrap = cat.closest('label');
     if (wrap) wrap.hidden = true;
-    note.textContent = data.trade
-      ? 'Your screenshots: positions, portfolio totals, charts. They go straight into the next reading, and nobody is told.'
-      : 'Your own records: labs, letters, notes, anything. They go straight into the reading, and nobody is told.';
+    note.textContent = 'Your own records: labs, letters, notes, anything. They go straight into the reading, and nobody is told.';
   }
   pane.querySelector('#up-report').addEventListener('change', (e) => {
     const c = categoryOf(cat.value) || UPLOAD_CATEGORIES[0];

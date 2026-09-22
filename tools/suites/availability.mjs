@@ -1056,9 +1056,10 @@ for (const page of ['public/js/subscription.js', 'public/js/admin-chats.js',
   check('G: every admin- module in public/js is in the audit\'s own list',
     ['admin-hours.js', 'admin-presence.js', 'admin-ledger.js', 'admin.js',
       'admin-case.js', 'admin-chats.js', 'admin-calendar.js',
-      // Re-pinned 2026-09-22 (v4.7): the trade page's module gave way to the
-      // desk's pages inside the case folder.
-      'admin-availability.js', 'admin-dictionary.js', 'admin-settings.js', 'admin-desk.js']
+      // Re-pinned 2026-09-22 (v6.0): the desk's pages inside the folder gave
+      // way to its own page, its own app and its own effects module.
+      'admin-availability.js', 'admin-dictionary.js', 'admin-settings.js',
+      'admin-desk.js', 'admin-deskapp.js', 'admin-deskfx.js']
       .every((x) => AUDIT.includes(`/js/${x}`)),
     ['admin-hours.js', 'admin-presence.js', 'admin-ledger.js']
       .filter((x) => !AUDIT.includes(`/js/${x}`)).join(', ') || 'listed');

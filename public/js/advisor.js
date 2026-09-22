@@ -54,10 +54,6 @@ export function actDispatch(act) {
   return act.tier === 'desk' ? 'run' : 'card';
 }
 
-// The trade desk (2026-09-22): the play cards the Plays page paints, and the
-// storage the 📷 on Ask uploads to.
-import { playCardHtml, wirePlayCards } from './admin-desk.js';
-import { storage, ref, uploadBytesResumable, getDownloadURL } from './firebase.js';
 
 const SECTION_ICON_RAW = {
   'Right now': '⚡',
@@ -72,7 +68,8 @@ const SECTION_ICON_RAW = {
   // His own case's two sections of its own (2026-09-03).
   'Questions for you': '❓',
   'Watch for': '🚨',
-  // The trade desk's sections (2026-09-22).
+  // The trade desk's sections (2026-09-22). Its own page draws the reading
+  // now; these stay because a desk's reading is still one of these documents.
   'Your trades': '🧾',
   'Where you are slipping': '⚠️',
   'Rules to hold': '📌',
@@ -129,22 +126,20 @@ function termPalette(text) {
  */
 export let sendToClient = null;
 
-export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null, diffContainer = null, qaContainer = null, goTo = null, self = false, trade = false }) {
+export function mountAdvisor({ container, kind, id, user, onSend, draftContainer = null, diffContainer = null, qaContainer = null, goTo = null, self = false }) {
   // His own case has no client to send a line to (2026-09-03): the held
   // press and its hint stay off every page there.
   const sendable = (title) => !self && SENDABLE.has(normTitle(title));
   container.innerHTML = `
     <div class="advisor">
       <div class="advisor-head">
-        <h3>${trade ? '📈 Trade desk' : '👨‍⚕️ Advisor'}</h3>
+        <h3>👨‍⚕️ Advisor</h3>
         <div class="advisor-controls">
           <span class="advisor-status" data-status></span>
-          ${trade ? '<button class="btn quiet tiny" data-desk-scan title="Look for new entries now, and nothing else">Scan</button>' : ''}
-          <button class="btn quiet tiny" data-refresh title="${trade ? 'Read the whole desk now' : 'Re-read the conversation now'}">Update</button>
+          <button class="btn quiet tiny" data-refresh title="Re-read the conversation now">Update</button>
         </div>
       </div>
       <p class="dim small advisor-sub" data-updated>Reading the case…</p>
-      ${trade ? '<p class="dim small desk-sub" data-desk-sub></p>' : ''}
       <div class="advisor-files" data-fchips></div>
       <div class="advisor-body" data-analysis></div>
       <div class="advisor-read" data-read hidden></div>
@@ -154,11 +149,9 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       <div class="advisor-foot">
         <button class="btn" data-prep>✍️ Prepare a response</button>
         <form class="advisor-ask" data-ask>
-          <textarea data-q rows="1" maxlength="2000" placeholder="${trade ? 'Ask the desk…' : 'Ask your advisor…'}"></textarea>
-          ${trade ? '<label class="ask-attach" data-ask-attach title="Attach a screenshot of your positions or your portfolio total">📷<input type="file" hidden data-ask-file accept="image/png,image/jpeg,application/pdf"></label>' : ''}
+          <textarea data-q rows="1" maxlength="2000" placeholder="Ask your advisor…"></textarea>
           <button class="btn quiet" type="submit">Ask</button>
         </form>
-        ${trade ? '<p class="ask-chip" data-ask-chip hidden></p>' : ''}
       </div>
       <p class="error" data-err hidden></p>
     </div>`;
@@ -189,63 +182,6 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   if (self) prepBtn.remove();
   const qBox = el('[data-q]');
 
-  // THE DESK'S TWO RUNS, BOTH ON HIS TAP (Eric, 2026-09-22: "I manually
-  // update either scan individually. No automatic."). Scan looks for new
-  // entries and files setups; Update is the whole reading. Neither one
-  // happens on a clock, so the line under the head says what each button
-  // buys and when it last ran, and there is nothing left to pause.
-  const deskScanBtn = el('[data-desk-scan]');
-  const deskSub = el('[data-desk-sub]');
-  let lastTrade = null;
-  function paintDeskSub(t) {
-    if (!deskSub || !t) return;
-    lastTrade = t;
-    const scan = t.scan || {};
-    if (deskScanBtn) {
-      deskScanBtn.disabled = scan.status === 'running';
-      deskScanBtn.textContent = scan.status === 'running' ? 'Scanning…' : 'Scan';
-    }
-    const last = scan.status === 'running'
-      ? 'Scanning for new entries now.'
-      : scan.at
-        ? `Last scan ${timeAgo(new Date(scan.at))}, ${scan.note?.plays ? `${scan.note.plays} setup${scan.note.plays === 1 ? '' : 's'} filed` : 'nothing filed'}.`
-        : 'No scan yet.';
-    const line = `Nothing runs but your tap. Scan looks for new entries; Update reads the whole desk. ${last}`;
-    deskSub.textContent = line
-      + (scan.status === 'error' && scan.error ? ` ${scan.error}` : '')
-      + (t.hasKey === false ? ' No market data key yet: add it on Desk.' : '');
-  }
-  deskScanBtn?.addEventListener('click', async () => {
-    deskScanBtn.disabled = true;
-    deskScanBtn.textContent = 'Scanning…';
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch('/api/admin/trade/scan', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: '{}',
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
-      paintDeskSub({ ...(lastTrade || {}), scan: { ...(lastTrade?.scan || {}), status: 'running', error: null } });
-      // The Plays page and the overview follow this tap at once, not on
-      // whichever poll happens to land next.
-      document.dispatchEvent(new CustomEvent('pa-desk-scan', { detail: { status: 'running' } }));
-      setTimeout(refresh, 300);
-    } catch (err) {
-      showErr(err.message);
-      paintDeskSub({ ...(lastTrade || {}), scan: { ...(lastTrade?.scan || {}), status: 'idle' } });
-    }
-  });
-  // The desk's settings moved on another page (the Desk page's switches):
-  // the line here follows at once.
-  if (trade) {
-    document.addEventListener('pa-desk-settings', (e) => {
-      const out = e.detail || {};
-      if (!out.settings) return;
-      paintDeskSub({ ...(lastTrade || {}), pushOn: out.settings.pushOn !== false, hasKey: out.hasKey !== false });
-    });
-  }
 
   // Errors used to paint only on the Read page. The buttons that cause most
   // of them now live on the Chat page (the foot moves there below), so every
@@ -649,7 +585,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
               ${md(pg.plain, terms)}
             </div>` : ''}`}</div>
         ${sendable(pg.title) ? '<p class="dim small pg-hint">Press and hold any line to send it to the client.</p>' : ''}
-        ${self && !trade && normTitle(pg.title) === normTitle('Questions for you') ? '<p class="dim small pg-hint">Asked in your chat, one bubble each. Answer there with Reply.</p>' : ''}
+        ${self && normTitle(pg.title) === normTitle('Questions for you') ? '<p class="dim small pg-hint">Asked in your chat, one bubble each. Answer there with Reply.</p>' : ''}
       </div>`;
     bodyEl.querySelectorAll('[data-pg]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -773,39 +709,6 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   let diffKey = null;
   function renderDiff(d) {
     if (!diffContainer) return;
-    // THE DESK'S PLAYS PAGE (Eric, 2026-09-22), where a medical case has
-    // its differential: one card per play the reading filed, the open and
-    // taken ones first, then what is done. Never the two medical lists.
-    if (trade) {
-      const t = d.trade || {};
-      const plays = Array.isArray(t.plays) ? t.plays : [];
-      const scan = t.scan || {};
-      const key = JSON.stringify([d.workingLine, d.dxOverride, plays, scan.status, scan.at, scan.error]);
-      if (key === diffKey) return;
-      diffKey = key;
-      const line = (d.dxOverride && d.dxOverride.text) || d.workingLine || '';
-      const live = plays.filter((p) => p.status === 'open' || p.status === 'took');
-      const done = plays.filter((p) => ['closed', 'skipped', 'expired'].includes(p.status)).slice(0, 10);
-      // THE SCAN'S OWN NOTE (Eric, 2026-09-22), above the cards it filed:
-      // what the tape is doing and why these setups, in its own few lines.
-      // The button that buys another one sits with it, because this is the
-      // page he is on when he wants new entries.
-      diffContainer.innerHTML = `
-        ${line ? `<div class="diff-head"><h3 class="diff-line">${esc(line)}${d.dxOverride ? ' <span class="dim small">(your call)</span>' : ''}</h3></div>` : ''}
-        <div class="scan-bar">
-          <button type="button" class="btn tiny" data-scan-now${scan.status === 'running' ? ' disabled' : ''}>${scan.status === 'running' ? 'Scanning…' : 'Scan for new entries'}</button>
-          <span class="dim small" data-scan-said>${esc(scan.status === 'running' ? 'Looking at the tape now. It lands on its own.'
-            : scan.status === 'error' && scan.error ? scan.error
-              : scan.at ? `Last scan ${whenShort(new Date(scan.at))}.` : 'No scan yet.')}</span>
-        </div>
-        ${scan.note && scan.note.text ? `<div class="panel scan-note">${md(scan.note.text)}</div>` : ''}
-        ${live.length ? live.map(playCardHtml).join('') : '<p class="dim small">No open plays. Tap Scan for new entries, or Update for the whole reading.</p>'}
-        ${done.length ? `<h4 class="diff-sub">Recent</h4>${done.map(playCardHtml).join('')}` : ''}
-        <p class="diff-disclaimer">Ideas, not orders. Every trade is your decision.</p>`;
-      wirePlayCards(diffContainer, { getToken: () => user.getIdToken(), onSaved: () => { diffKey = null; setTimeout(refresh, 300); } });
-      diffContainer.querySelector('[data-scan-now]')?.addEventListener('click', () => deskScanBtn?.click());
-      return;
-    }
     const key = JSON.stringify([d.workingLine, d.dxOverride, d.differential, (d.diffHistory || []).length,
       d.causes, (d.causesHistory || []).length, d.treatments, (d.treatmentsHistory || []).length]);
     if (key === diffKey) return;
@@ -963,11 +866,6 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         busy = d.running || d.draftAlive
           || out.state?.callDocStatus === 'running'
           || out.state?.callNotesStatus === 'running'
-          // A SCAN HE TAPPED IS A LONG TURN LIKE ANY OTHER (2026-09-22). Left
-          // off this list, the desk polled at the idle cadence while it ran,
-          // and a scan that had already landed sat on screen as "Scanning…"
-          // for up to half a minute. The drive caught it.
-          || out.trade?.scan?.status === 'running'
           || (out.qa || []).some((q) => q.status === 'running');
         // The folder pages (differential, notes, the header line) and the
         // chat's correction marks all feed off this one poll. This panel only
@@ -993,9 +891,6 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           handoverError: out.state?.handoverError || '',
           workingLine: out.workingLine || '',
           dxOverride: out.dxOverride || null,
-          // The trade desk's block (2026-09-22): its plays, its standing,
-          // the next read and the two switches.
-          trade: out.trade || null,
           // The Education and About-you folder pages ride this same poll, so
           // the panel stays the single place that talks to the state route.
           glossary: out.glossary || [],
@@ -1047,7 +942,6 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
           callDocSkipped: out.state?.callDocSkipped || [],
         };
         renderDiff(detail);
-        if (trade && out.trade) paintDeskSub(out.trade);
         renderRead(out.mediaReport, out.queuedFiles, d.running, out.state?.mediaPlan || []);
         // A change the advisor has asked for, parked server-side and waiting.
         // Read straight off out.state rather than through the detail whitelist
@@ -1234,32 +1128,6 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     }
     return !!out;
   }
-  // THE SCREENSHOT ON ASK (Eric, 2026-09-22: "send him screenshots of my
-  // positions and portfolio total"). The file goes up to Storage under the
-  // case, the way a chat file does, and rides the ask as its attachment;
-  // the question row shows it by name, and a portfolio total on it becomes
-  // that day's balance (the Worker's finishQuestion).
-  let askFile = null;
-  const askFileIn = el('[data-ask-file]');
-  const askChip = el('[data-ask-chip]');
-  const attachLabel = el('[data-ask-attach]');
-  askFileIn?.addEventListener('change', () => {
-    const f = askFileIn.files[0];
-    askFileIn.value = '';
-    if (!f) return;
-    if (!/^image\/(png|jpeg)$|^application\/pdf$/.test(f.type)) { showErr(`${f.name}: a PNG, a JPEG or a PDF.`); return; }
-    if (f.size > 12 * 1024 * 1024) { showErr(`${f.name} is over 12 MB.`); return; }
-    askFile = f;
-    attachLabel?.classList.add('on');
-    if (askChip) { askChip.textContent = `📎 ${f.name}`; askChip.hidden = false; }
-  });
-  async function uploadAskFile(f) {
-    const storageRef = ref(storage, `cases/${id}/ask-files/${Date.now()}-${f.name.replace(/[^\w.-]+/g, '_').slice(0, 80)}`);
-    const task = uploadBytesResumable(storageRef, f);
-    await new Promise((resolve, reject) => { task.on('state_changed', null, reject, resolve); });
-    const url = await getDownloadURL(storageRef);
-    return { name: f.name, url, path: storageRef.fullPath, size: f.size, contentType: f.type || 'application/octet-stream' };
-  }
   async function doAsk() {
     if (asking) return;
     const question = qBox.value.trim();
@@ -1268,16 +1136,9 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       qBox.focus();
       return;
     }
-    let attachment = null;
-    if (askFile) {
-      try { attachment = await uploadAskFile(askFile); } catch (err) { showErr(`Upload failed: ${err.message}`); return; }
-      askFile = null;
-      attachLabel?.classList.remove('on');
-      if (askChip) askChip.hidden = true;
-    }
     qBox.value = '';
     qBox.style.height = 'auto';
-    const ok = await submitAsk(question, attachment);
+    const ok = await submitAsk(question);
     if (!ok) qBox.value = question; // give the question back
   }
   askBtn.type = 'button';
@@ -1293,10 +1154,8 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     qaContainer.innerHTML = `
       <div class="panel advisor-panel">
         <div class="advisor">
-          <h3>${trade ? '📈 Ask the desk' : '💬 Ask your advisor'}</h3>
-          <p class="dim small">${trade
-    ? 'A ticker, a setup, a position. Attach a screenshot with the 📷; a portfolio total on it becomes that day\'s balance on Stats.'
-    : 'Questions and answers about this case, between you and the advisor only. The client never sees any of it.'}</p>
+          <h3>💬 Ask your advisor</h3>
+          <p class="dim small">Questions and answers about this case, between you and the advisor only. The client never sees any of it.</p>
         </div>
       </div>`;
     const home = qaContainer.querySelector('.advisor');
@@ -1723,7 +1582,7 @@ function glossaryHtml(glossary) {
  * edges, the same thing in plain words - and the colour pairing only works if
  * both are on the screen at once. So it rides under the section before it.
  */
-function splitPages(text) {
+export function splitPages(text) {
   const parts = String(text).split(/^##\s+/m).filter((p) => p.trim());
   if (parts.length < 2) return [{ title: 'Notes', body: String(text) }];
   const pages = [];
@@ -1749,7 +1608,7 @@ function splitPages(text) {
  * fragments with a paragraph gap between them. That is the page he reads to
  * think with.
  */
-function md(text, terms = null) {
+export function md(text, terms = null) {
   const lines = String(text).trim().split('\n');
   let html = '';
   let inList = false;

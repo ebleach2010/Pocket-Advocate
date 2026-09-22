@@ -22,10 +22,12 @@
 // was established, and how CHECK-IN DUE was confirmed at 5.9:1 after the fix
 // while this script still called it 2.79.
 import { chromium } from 'playwright';
-const P = 'http://127.0.0.1:8901';
+const P = `http://127.0.0.1:${process.env.PA_PORT || '8901'}`;
 const PAGES = ['/', '/services', '/faq', '/contact', '/about', '/reviews',
   '/book?demo=1', '/case.html?id=demo-case&demo=1',
-  '/admin-case.html?id=demo-case&demo=admin', '/admin.html?demo=admin'];
+  '/admin-case.html?id=demo-case&demo=admin', '/admin.html?demo=admin',
+  // The trade desk, which is its own page and its own palette (2026-09-22).
+  '/admin-desk.html?id=demo-case-trade&demo=admin'];
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const ctx = await b.newContext({ viewport: { width: 390, height: 844 } });
 await ctx.addCookies([{ name: 'pa_demo', value: '1', domain: '127.0.0.1', path: '/' }]);

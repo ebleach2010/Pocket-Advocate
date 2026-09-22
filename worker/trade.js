@@ -19,12 +19,13 @@ import { markPending, diagLog, runTradeScan } from './advisor.js';
 import {
   isTradingDay, tradeMetrics, chartSeries, PROJECTION_MIN_DAYS,
   rulesOf, RULE_RANGES, defaultRules, dayStatus, realizedToday, openRisk, tradeCalc, closePnl,
-  horizonOf, isMarketOpen, INSTRUMENTS,
+  horizonOf, isMarketOpen, INSTRUMENTS, tradeStats, liveBalance,
 } from '../public/js/trade-math.js';
 import {
   TRADE_TZ, DESK_NAME, SAY, SETTINGS_PATH, STATE_PATH, PLAYS, BALANCES, POSITIONS, DEFAULT_WATCHLIST, WATCHLIST_MAX, KEY_RE,
   QUOTE_MAX, mtParts, mtInstant, keyTail, resolveKey, watchlistOf, startOf, realDate, stripDashes, refreshStanding,
   readPositions, sortPositions, quoteCached, quoteBudgetLeft, rid,
+  newsCached, earningsCached, newsRows, earningsRows, NEWS_HOURS, NEWS_MAX, MARKET_CLOSE,
 } from './trade-desk.js';
 
 // ---- constants ------------------------------------------------------------
@@ -57,6 +58,7 @@ function publicSettings(settings) {
     startCents: startOf(settings),
     rules: rulesOf(settings),
     celebrate: settings?.celebrate !== false,
+    reduceFx: settings?.reduceFx === true,
   };
 }
 
@@ -121,17 +123,26 @@ function validPosition(body, existing = null, now = Date.now()) {
   };
 }
 
-/** The account as the rules measure it: his last balance entry, or the start. One read. */
+/**
+ * The account as the rules measure it: his last balance entry, or the start.
+ * One read. The day it was typed on rides with it, because the big number on
+ * the Positions page adds today's closes to it only until tonight's entry
+ * lands (2026-09-22).
+ */
 async function accountCentsOf(env, settings) {
   const rows = await listDocs(env, BALANCES, { pageSize: 1, orderBy: 'date desc' }).catch(() => []);
   const last = rows[0]?.data;
-  return Number.isFinite(Number(last?.cents)) ? Math.round(Number(last.cents)) : startOf(settings);
+  const cents = Number.isFinite(Number(last?.cents)) ? Math.round(Number(last.cents)) : startOf(settings);
+  return { cents, day: last?.date || null };
 }
+/** The same read, where only the figure is wanted. */
+const accountOnly = async (env, settings) => (await accountCentsOf(env, settings)).cents;
 
 /** What the Trades and Calc pages paint: his positions with their arithmetic, his rules, and where the day stands. */
 export async function tradePositions(env, { now = Date.now() } = {}) {
   const settings = (await readSettings(env))?.data || {};
-  const [rows, accountCents] = await Promise.all([readPositions(env), accountCentsOf(env, settings)]);
+  const [rows, account] = await Promise.all([readPositions(env), accountCentsOf(env, settings)]);
+  const accountCents = account.cents;
   const rules = rulesOf(settings);
   const { dateKey, minuteOfDay } = mtParts(now);
   const accountType = settings.accountType === 'margin' ? 'margin' : 'cash';
@@ -139,10 +150,15 @@ export async function tradePositions(env, { now = Date.now() } = {}) {
   const closedToday = rows.filter((p) => p.status === 'closed' && p.closedDay === dateKey);
   const recent = rows.filter((p) => p.status === 'closed' && p.closedDay !== dateKey).slice(0, 10);
   const withCalc = (p) => ({ ...p, calc: tradeCalc({ pos: p, rules, accountCents, todayKey: dateKey, accountType }) });
+  const realized = realizedToday(rows, dateKey);
   return {
     positions: [...sortPositions(open), ...closedToday, ...recent].map(withCalc),
     openCount: open.length,
     rules, accountCents, accountType,
+    // The number on the page: the last typed balance plus what he has banked
+    // today, until tonight's balance is typed and carries it itself.
+    liveCents: liveBalance({ accountCents, lastBalanceDay: account.day, todayKey: dateKey, realizedTodayCents: realized }),
+    lastBalanceDay: account.day,
     today: dateKey, tradingDay: isTradingDay(dateKey), marketOpen: isMarketOpen({ dateKey, minuteOfDay }),
     hasKey: !!resolveKey(env, settings),
     dayStatus: dayStatus({ rules, accountCents, realizedTodayCents: realizedToday(rows, dateKey), openRiskCents: openRisk(rows) }),
@@ -164,7 +180,7 @@ export async function tradePosition(env, body, now = Date.now()) {
     existing = doc.data;
   }
   const pos = validPosition(body, existing, now);
-  const [accountCents] = await Promise.all([accountCentsOf(env, settings)]);
+  const accountCents = await accountOnly(env, settings);
   const rules = rulesOf(settings);
   const { dateKey } = mtParts(now);
   const calc = tradeCalc({ pos, rules, accountCents, todayKey: dateKey, accountType: settings.accountType === 'margin' ? 'margin' : 'cash' });
@@ -209,11 +225,14 @@ export async function tradeClose(env, body, now = Date.now()) {
     closeNote: stripDashes(String(body?.note || '')).trim().slice(0, 300),
   };
   await patchDoc(env, `${POSITIONS}/${id}`, patch, { mask: Object.keys(patch) });
-  const [all, accountCents] = await Promise.all([readPositions(env), accountCentsOf(env, settings)]);
+  const [all, account] = await Promise.all([readPositions(env), accountCentsOf(env, settings)]);
+  const accountCents = account.cents;
   const rules = rulesOf(settings);
+  const realized = realizedToday(all, dateKey);
   return {
     ok: true, position: { id, ...pos, ...patch }, pnlCents,
-    dayStatus: dayStatus({ rules, accountCents, realizedTodayCents: realizedToday(all, dateKey), openRiskCents: openRisk(all) }),
+    dayStatus: dayStatus({ rules, accountCents, realizedTodayCents: realized, openRiskCents: openRisk(all) }),
+    liveCents: liveBalance({ accountCents, lastBalanceDay: account.day, todayKey: dateKey, realizedTodayCents: realized }),
     celebrate: pnlCents > 0 && settings.celebrate !== false,
   };
 }
@@ -242,6 +261,88 @@ export async function tradeQuote(env, query, now = Date.now()) {
     missing: list.filter((t, i) => !rows[i] || rows[i] === 'over'),
     at: new Date(now).toISOString(),
   };
+}
+
+// ---- what the News page reads (2026-09-22, the desk as one app) --------------
+/**
+ * The day's headlines and the earnings on the calendar, off the same cached
+ * feeds the reading uses, so the page costs nothing the readings were not
+ * already going to spend. Without a key it answers with empty lists and says
+ * so, rather than failing: the page has a sentence for that.
+ */
+export async function tradeNews(env, { now = Date.now() } = {}) {
+  const settings = (await readSettings(env))?.data || {};
+  const key = resolveKey(env, settings);
+  const { dateKey, minuteOfDay } = mtParts(now);
+  const day = isTradingDay(dateKey);
+  const base = {
+    hasKey: !!key, asOf: new Date(now).toISOString(), today: dateKey, tradingDay: day,
+    marketOpen: isMarketOpen({ dateKey, minuteOfDay }),
+    closeAt: day === 'early' ? '11:00' : day ? MARKET_CLOSE : null,
+    watchlist: watchlistOf(settings),
+  };
+  if (!key) return { ...base, headlines: [], earnings: [], onDesk: [], throttled: false };
+  const budgetBefore = quoteBudgetLeft(now);
+  const [raw, cal, plays, positions] = await Promise.all([
+    newsCached(key, now).catch(() => null),
+    earningsCached(key, dateKey, now).catch(() => null),
+    listDocs(env, PLAYS, { pageSize: 30, orderBy: 'at desc' }).catch(() => []),
+    readPositions(env).catch(() => []),
+  ]);
+  // The tickers he is actually in or actually watching from a live play: the
+  // page lights those rows and sorts them first.
+  const onDesk = [...new Set([
+    ...plays.map((r) => r.data).filter((d) => d && ['open', 'took'].includes(d.status)).map((d) => String(d.ticker || '')),
+    ...positions.filter((p) => p.status === 'open').map((p) => String(p.ticker || '')),
+  ])].filter(Boolean);
+  return {
+    ...base,
+    headlines: newsRows(raw, now, { hours: NEWS_HOURS, max: NEWS_MAX }),
+    earnings: earningsRows(cal, { max: 40 }),
+    onDesk,
+    throttled: budgetBefore <= 2 || (!raw && !cal),
+  };
+}
+
+/**
+ * Every close he has ever logged, newest first, with the statistics computed
+ * from them by the shared arithmetic. The positions route slices the recent
+ * closes to ten, which is right for the Positions page and useless for Stats.
+ */
+export const HISTORY_MAX = 500;
+export async function tradeHistory(env, { now = Date.now() } = {}) {
+  const settings = (await readSettings(env))?.data || {};
+  const [rows, account] = await Promise.all([
+    listDocs(env, POSITIONS, { pageSize: HISTORY_MAX, orderBy: 'closedAt desc' }).catch(() => []),
+    accountCentsOf(env, settings),
+  ]);
+  const closed = rows.map((r) => ({ id: r.id, ...r.data })).filter((p) => p.status === 'closed' && Number.isFinite(Number(p.pnlCents)));
+  const { dateKey } = mtParts(now);
+  const balances = await listDocs(env, BALANCES, { pageSize: 400, orderBy: 'date asc', all: true }).catch(() => []);
+  const rules = rulesOf(settings);
+  const metrics = tradeMetrics(balances.map((b) => ({ date: b.data?.date || b.id, cents: b.data?.cents, note: b.data?.note || '' })), {
+    startedAt: settings.startedAt || null, startCents: startOf(settings), target: rules.dayAimPct / 100, minDays: PROJECTION_MIN_DAYS,
+  });
+  return {
+    closed, count: closed.length, capped: rows.length >= HISTORY_MAX,
+    stats: tradeStats(closed, { today: dateKey }),
+    metrics, rules, accountCents: account.cents, today: dateKey,
+  };
+}
+
+/**
+ * The questions and answers the Desk page's stream needs. The panel's poll
+ * carries the newest five, which is a page of chat and not a day of it, so
+ * the stream asks for its own list.
+ */
+export const QA_LIST_MAX = 40;
+export async function tradeQa(env, query = {}) {
+  const settings = (await readSettings(env))?.data || {};
+  if (!settings.caseId) throw new TradeError(404, SAY.noDesk);
+  const n = Math.max(1, Math.min(QA_LIST_MAX, Math.floor(Number(query.n) || QA_LIST_MAX)));
+  const rows = await listDocs(env, `cases/${settings.caseId}/advisor/state/qa`, { pageSize: n, orderBy: 'at desc' }).catch(() => []);
+  // The file reference a resend needs never rides to the page, as on the panel's route.
+  return { qa: rows.map(({ id, data: { fileRef, ...rest } }) => { void fileRef; return { id, ...rest }; }) };
 }
 
 // ---- the routes ------------------------------------------------------------
@@ -402,6 +503,38 @@ async function tradeScan(env, { now = Date.now() } = {}) {
   return { ok: true, status: 'running', caseId: settings.caseId };
 }
 
+/**
+ * THE ONE THING ON A CLOCK (Eric, 2026-09-22, approving the rebuild: "full
+ * sweep update is run every trading day at 7am mst. Other than that it's
+ * manual."). Half an hour before the open, on a trading day, the desk reads
+ * itself once: the whole log, his trades, his rules. Nothing else fires by
+ * itself; Scan and Update are still his buttons.
+ *
+ * Booked the way his own tap books one, through the queue, so the drain owns
+ * the turn and a failure retries there. The day is stamped under a
+ * precondition, so two isolates in the same minute cannot both buy a reading.
+ */
+export const MORNING_MIN = 7 * 60;
+export const MORNING_WINDOW_MIN = 30;
+export async function maybeMorningRead(env, { now = Date.now() } = {}) {
+  const settings = (await readSettings(env))?.data || {};
+  if (!settings.caseId) return { ran: false, why: 'no desk' };
+  const { dateKey, minuteOfDay } = mtParts(now);
+  if (!isTradingDay(dateKey)) return { ran: false, why: 'not a trading day' };
+  if (minuteOfDay < MORNING_MIN || minuteOfDay >= MORNING_MIN + MORNING_WINDOW_MIN) return { ran: false, why: 'not the hour' };
+  const doc = await tryGet(env, STATE_PATH);
+  if (doc === READ_FAILED) return { ran: false, why: 'state unreadable' };
+  if (doc?.data?.morningDay === dateKey) return { ran: false, why: 'already read' };
+  const claimed = doc
+    ? await patchDoc(env, STATE_PATH, { morningDay: dateKey, morningAt: new Date(now) }, { mask: ['morningDay', 'morningAt'], ifUpdateTime: doc.updateTime })
+    // No state document at all is the desk's first morning: create-only, so
+    // two isolates in the same minute cannot both create it and both book.
+    : await patchDoc(env, STATE_PATH, { morningDay: dateKey, morningAt: new Date(now) }, { mask: ['morningDay', 'morningAt'], mustNotExist: true });
+  if (claimed === false) return { ran: false, why: 'another isolate booked it' };
+  await markPending(env, 'case', settings.caseId);
+  return { ran: true, caseId: settings.caseId, day: dateKey };
+}
+
 /** The settings, by his hand. The case id is the desk's own and never taken from a body. */
 export async function tradeSettings(env, body) {
   const patch = {};
@@ -424,6 +557,7 @@ export async function tradeSettings(env, body) {
   }
   if (body?.pushOn !== undefined) patch.pushOn = body.pushOn === true;
   if (body?.celebrate !== undefined) patch.celebrate = body.celebrate === true;
+  if (body?.reduceFx !== undefined) patch.reduceFx = body.reduceFx === true;
   // His rules, the ones the whole calculator reads (2026-09-22). Each one
   // inside its range, and the floor under the aim under the cap, or the
   // sentence says what the ranges are and nothing is written.
@@ -492,6 +626,9 @@ export async function tradeRoute(env, { sub, method, body, query = {}, now = Dat
   if (method === 'GET' && sub === 'state') return tradeState(env, { now });
   if (method === 'GET' && sub === 'positions') return tradePositions(env, { now });
   if (method === 'GET' && sub === 'quote') return tradeQuote(env, query, now);
+  if (method === 'GET' && sub === 'news') return tradeNews(env, { now });
+  if (method === 'GET' && sub === 'history') return tradeHistory(env, { now });
+  if (method === 'GET' && sub === 'qa') return tradeQa(env, query);
   if (method !== 'POST') throw new TradeError(404, SAY.notFound);
   if (sub === 'open') return tradeOpen(env, { now: new Date(now) });
   if (sub === 'balance') return tradeBalance(env, body, now);

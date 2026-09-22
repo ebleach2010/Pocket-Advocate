@@ -396,17 +396,17 @@ check('S18 the shelf: his case on its own purple shelf, out of the three and out
 // NEGATIVE CONTROL (run 2026-09-03): the masthead pill's self branch removed made this read
 //   FAIL  S19 the page: a purple masthead, an overview built for him, no message makers, records into the intake folders, no check-in nag
 check('S19 the page: a purple masthead, an overview built for him, no message makers, records into the intake folders, no check-in nag',
-  // Re-pinned 2026-09-22 (v4.7): the trade desk is tested first on all three
-  // and wears green; his own case still wears the purple.
-  /head\.className = `case-head\$\{c\.trade \? ' trade' : c\.self \? ' self' : ''\}`;/.test(CASE)
-  && /data-status>\$\{c\.trade \? 'TRADE DESK' : c\.self \? 'MY OWN CASE' : /.test(CASE)
-  && /pill\.textContent = c\.trade \? 'TRADE DESK' : c\.self \? 'MY OWN CASE' : /.test(CASE)
+  // Re-pinned 2026-09-22 (v6.0): the desk left the folder for its own page,
+  // so the masthead is back to two states and his own case wears the purple.
+  /head\.className = `case-head\$\{c\.self \? ' self' : ''\}`;/.test(CASE)
+  && /data-status>\$\{c\.self \? 'MY OWN CASE' : /.test(CASE)
+  && /pill\.textContent = c\.self \? 'MY OWN CASE' : /.test(CASE)
   && /if \(c\.self\) \{ paintSelfOverview\(pane, c\); return; \}/.test(CASE)
   && /data-self-note>Nobody is on the other end\./.test(CASE)
   && /composerButton: data\.self \? \[\] : \[\{/.test(CASE)
   && /const own = typeof data === 'object' && data !== null && !!data\.self;\n\s+const folder = own && kind !== 'recording' \? 'uploads' : kind;/.test(CASE)
   && /if \(own\) \{\n\s+\/\/ Nobody to tell[\s\S]{0,400}fetch\('\/api\/uploaded'/.test(CASE)
-  && /<h3>\$\{data\.trade \? 'Trade log' : data\.self \? 'Your notes' : 'Chat with the client'\}<\/h3>/.test(CASE)
+  && /<h3>\$\{data\.self \? 'Your notes' : 'Chat with the client'\}<\/h3>/.test(CASE)
   && /const noMoney = !!\(live\.self \|\| live\.family\);\n\s+if \(rateEl && noMoney\) rateEl\.hidden = true;/.test(CASE)
   && /if \(typeof data === 'object' && data && data\.self\) \{ row\.hidden = true; return; \}/.test(CASE)
   && /if \(!c\?\.fullAccess \|\| c\.self \|\| c\.status === 'closed'\) return null;/.test(CASE)
@@ -773,8 +773,9 @@ check('S37 the chat paints a question with a Reply, his answer with the question
   && /data-reply-strip hidden/.test(CHAT) && /placeholder = 'Write a message…' \}\) \{/.test(CHAT)
   && /self: !!data\.self,/.test(CASE) && /placeholder: data\.self \? /.test(CASE)
   && /unansweredSelf = !!data\.self;/.test(CASE) && /\$\{unansweredSelf \? '' : `<button class="btn quiet" data-again=/.test(CASE)
-  // Re-pinned 2026-09-22 (v4.7): the panel takes the desk's flag beside his.
-  && /goTo = null, self = false, trade = false \}\) \{/.test(PANEL)
+  // Re-pinned 2026-09-22 (v6.0): the desk has its own app, so the panel is
+  // back to one flag and carries no desk branch at all.
+  && /goTo = null, self = false \}\) \{/.test(PANEL)
   && /const sendable = \(title\) => !self && SENDABLE\.has\(normTitle\(title\)\);/.test(PANEL)
   && !/SENDABLE\.has\(normTitle\(pg\.title\)\)/.test(PANEL)
   && /'Questions for you': '❓',/.test(PANEL) && /'Watch for': '🚨',/.test(PANEL)

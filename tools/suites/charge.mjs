@@ -366,8 +366,8 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
   const card = (ADMC.match(/function chargeCard\(c\) \{[\s\S]*?\n\}/) || [''])[0];
   const wire = lift(ADMC, 'function wireChargeCard(card, c) {');
   // NEGATIVE CONTROL (run 2026-09-07): paidCents's `c.charge.state === 'captured' ? Math.max(0, Number(c.charge.capturedCents) || 0) : 0` changed to `=== 'held' ?` made this read
-  //   FAIL  CH7 the pages: the client's pill reads AWAITING APPROVAL while the hold waits, the card under it says the Worker's exact words, a declined case says nothing was charged under the reason, the booking page says the card is held before the button and the return page after, his card carries the tappable amount and posts the decision with it to the route, the shelf tags a case waiting on him, the amount is 44px tall, the six admin pages load the bumped stylesheet, and what a case paid is what was captured: nothing held, nothing comped, the month on top on the tier, the old receipt on an old case
-  check('CH7 the pages: the client\'s pill reads AWAITING APPROVAL while the hold waits, the card under it says the Worker\'s exact words, a declined case says nothing was charged under the reason, the booking page says the card is held before the button and the return page after, his card carries the tappable amount and posts the decision with it to the route, the shelf tags a case waiting on him, the amount is 44px tall, the six admin pages load the bumped stylesheet, and what a case paid is what was captured: nothing held, nothing comped, the month on top on the tier, the old receipt on an old case',
+  //   FAIL  CH7 the pages: the client's pill reads AWAITING APPROVAL while the hold waits, the card under it says the Worker's exact words, a declined case says nothing was charged under the reason, the booking page says the card is held before the button and the return page after, his card carries the tappable amount and posts the decision with it to the route, the shelf tags a case waiting on him, the amount is 44px tall, the seven admin pages load the bumped stylesheet, and what a case paid is what was captured: nothing held, nothing comped, the month on top on the tier, the old receipt on an old case
+  check('CH7 the pages: the client\'s pill reads AWAITING APPROVAL while the hold waits, the card under it says the Worker\'s exact words, a declined case says nothing was charged under the reason, the booking page says the card is held before the button and the return page after, his card carries the tappable amount and posts the decision with it to the route, the shelf tags a case waiting on him, the amount is 44px tall, the seven admin pages load the bumped stylesheet, and what a case paid is what was captured: nothing held, nothing comped, the month on top on the tier, the old receipt on an old case',
     /return CHARGE_WAITING\.includes\(c\?\.charge\?\.state\) \? 'AWAITING APPROVAL' : '';/.test(CASE)
     && (CASE.match(/chargeLabel\(c\) \|\| STATUS_LABEL\[c\.status\] \|\| c\.status/g) || []).length === 2
     && /\$\{closedNotice\(c\)\}\n\s+\$\{chargeNotice\(c\)\}/.test(CASE)
@@ -388,8 +388,9 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     && /^\.charge-amt \{[\s\S]*?min-height: 44px;/m.test(ACSS)
     // Re-pinned 2026-09-22 (v4.7): the trade page is gone and the sheet
     // moved to stat112 for the green, to stat114 (2026-09-22) for the
-    // desk's PDF link, and to stat115 (2026-09-22) for the scan bar.
-    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin'].every((p) => /admin\.css\?v=stat115/.test(f(`public/${p}.html`)))
+    // desk's PDF link, to stat115 (2026-09-22) for the scan bar, and to
+    // stat116 (2026-09-22, v6.0) for the desk's own page and its neon.
+    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-desk'].every((p) => /admin\.css\?v=stat116/.test(f(`public/${p}.html`)))
     && paidCents(held) === 0 && paidCents(cap) === 90000 + 32500 && paidCents(comp) === 0 && paidCents(tier) === 90000 + 440000 && paidCents(old) === 120000,
     JSON.stringify({ heldLine, bookLine, paid: [paidCents(held), paidCents(cap), paidCents(comp), paidCents(tier), paidCents(old)] }));
 }

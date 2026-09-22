@@ -51,12 +51,12 @@ import { notifyUser } from './push.js';
 import { validateAction } from './advisor-acts.js';
 import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
-  pollCaseFlight, pollFlightsNow, pollAskFlight,
+  pollCaseFlight, pollFlightsNow, pollAskFlight, pollScanFlight,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
 // The trade desk (2026-09-21; a case file since 2026-09-22): its slots and
 // its routes, and the leaf both stand on.
-import { tradeRoute, TradeError, tradePanelBlock } from './trade.js';
+import { tradeRoute, TradeError, tradePanelBlock, maybeMorningRead } from './trade.js';
 import { TRADE_CATEGORIES, SAY as TRADE_SAY } from './trade-desk.js';
 
 /**
@@ -1336,6 +1336,11 @@ export default {
       ctx.waitUntil(clearOpenSlots(env));
     }
 
+    // THE DESK'S ONE CLOCK (Eric, 2026-09-22): a full reading at 07:00 on his
+    // time, on a trading day, once. Un-gated so a firing inside the window is
+    // never missed; the day stamp inside makes every firing after the first a
+    // single document read.
+    ctx.waitUntil(maybeMorningRead(env).catch(() => {}));
     // Un-gated on purpose: the wedged case should recover on the FIRST
     // firing after this deploys, not up to a quarter hour later. One marker
     // read per firing once finished; remove with the diag scaffolding.
@@ -2071,7 +2076,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-22-desk-his-tap';
+const BUILD_TAG = 'v2026-09-22-desk-one-app';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2079,7 +2084,7 @@ const BUILD_TAG = 'v2026-09-22-desk-his-tap';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '5.3';
+const VERSION = '6.0';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -6478,7 +6483,16 @@ async function handleAdvisorState(request, env, url) {
   // opens, so this costs no extra read on a case that is not the desk.
   const trade = !!state?.data.trade;
   const terms = knowledge.filter((r) => TRADE_CATEGORIES.includes(String(r.data.category || '')) === trade);
-  const tradeBlock = trade ? await tradePanelBlock(env).catch(() => null) : null;
+  let tradeBlock = trade ? await tradePanelBlock(env).catch(() => null) : null;
+  // A SCAN IN FLIGHT COMES HOME ON THIS POLL TOO (2026-09-22, the desk as one
+  // app). The app polls this route every couple of seconds while a scan is in
+  // the air, so it is the first to know the batch has landed; without this the
+  // page waited for the cron. Throttled inside to one provider GET a quarter
+  // minute, exactly as the question above, and the block is re-read so the
+  // poll that found the plays is the poll that paints them.
+  if (tradeBlock?.scan?.status === 'running' && await pollScanFlight(env, id).catch(() => false)) {
+    tradeBlock = await tradePanelBlock(env).catch(() => tradeBlock);
+  }
   return json({
     state: panelState,
     trade: tradeBlock,

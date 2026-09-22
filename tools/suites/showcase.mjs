@@ -273,9 +273,9 @@ check('X6 Delete sits beside pause and close on a case with nobody behind it and
   && /<button type="button" class="btn quiet danger" data-delete-case>Delete it<\/button>/.test(CASE)
   && /async function deleteCase\(btn\) \{\n\s+if \(!confirm\('Delete this case, whole\?/.test(CASE)
   && /fetch\('\/api\/admin\/delete-case', \{/.test(CASE) && /location\.href = '\/admin\.html';/.test(CASE)
-  // Re-pinned 2026-09-22 (v4.7): three, the trade desk's overview wires
-  // the same Delete the same way.
-  && (CASE.match(/\[data-delete-case\]'\)\?\.addEventListener\('click', \(e\) => deleteCase\(e\.currentTarget\)\);/g) || []).length === 3
+  // Re-pinned 2026-09-22 (v6.0): back to two. The desk left the folder, and
+  // deleting it is a row in its own Settings sheet now.
+  && (CASE.match(/\[data-delete-case\]'\)\?\.addEventListener\('click', \(e\) => deleteCase\(e\.currentTarget\)\);/g) || []).length === 2
   && /data-showcase-door>Build the showcase case \(Joe Bloe\)<\/button>/.test(ADMIN)
   && /cases\.some\(\(c\) => c\.showcase\) \? '' :/.test(ADMIN)
   && /fetch\('\/api\/admin\/showcase-case', \{/.test(ADMIN)

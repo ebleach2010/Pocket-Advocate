@@ -329,6 +329,121 @@ export function openRisk(positions) {
   return (positions || []).filter((p) => p && p.status === 'open').reduce((s, p) => s + Math.max(0, Number(p.riskCents) || 0), 0);
 }
 
+/**
+ * THE BIG NUMBER (2026-09-22, the desk as one app): his last typed balance
+ * plus what he has banked today, until tonight's balance is typed, after
+ * which the typed figure alone. Without the second half a close made after
+ * the nightly entry would count twice: once in the entry, once on top of it.
+ */
+export function liveBalance({ accountCents, lastBalanceDay = null, todayKey = null, realizedTodayCents = 0 }) {
+  const A = Math.round(Number(accountCents) || 0);
+  if (lastBalanceDay && todayKey && String(lastBalanceDay) === String(todayKey)) return A;
+  return A + Math.round(Number(realizedTodayCents) || 0);
+}
+
+// ---- his statistics (2026-09-22, the desk as one app) ------------------------
+//
+// Eric: "Trading performance, win rate, returns, losses, averages, streaks,
+// and other useful metrics." Every figure here comes from the closed
+// positions and nothing else: a play he marked closed without taking a
+// position is a note, not a trade. Pure, so the Worker's history route, the
+// demo and the checks agree to the cent.
+const closeTime = (r) => {
+  const v = r?.closedAt;
+  const ms = v && typeof v.toDate === 'function' ? v.toDate().getTime() : v ? new Date(v).getTime() : NaN;
+  return Number.isFinite(ms) ? ms : 0;
+};
+const r2s = (x) => Math.round(x * 100) / 100;
+const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const kindOf = (r) => (HORIZONS.includes(String(r?.horizon)) ? String(r.horizon) : 'intraday');
+const emptyBucket = () => ({ count: 0, wins: 0, losses: 0, netCents: 0, winRate: null });
+const rate = (w, l) => (w + l ? Math.round((w / (w + l)) * 10000) / 10000 : null);
+
+/**
+ * What the Stats page shows, off the closed rows: the count and the split,
+ * the win rate with flats out of the denominator, the gross figures and the
+ * expectancy, the profit factor, the averages, the best and the worst, the
+ * streak he is on and the longest each way, the same by kind and by weekday
+ * and by day, the last N closes, the R figures where a risk was stored, and
+ * today's line when a day is given.
+ */
+export function tradeStats(closed, { today = null, lastN = 20 } = {}) {
+  const rows = (Array.isArray(closed) ? closed : [])
+    .filter((r) => r && Number.isFinite(Number(r.pnlCents)) && (r.status === undefined || r.status === 'closed'))
+    .map((r) => ({ ...r, pnlCents: Math.round(Number(r.pnlCents)), _t: closeTime(r) }))
+    .sort((a, b) => a._t - b._t || String(a.closedDay || '').localeCompare(String(b.closedDay || '')) || String(a.id || '').localeCompare(String(b.id || '')));
+  const wins = rows.filter((r) => r.pnlCents > 0);
+  const losses = rows.filter((r) => r.pnlCents < 0);
+  const flats = rows.filter((r) => r.pnlCents === 0);
+  const grossWinCents = wins.reduce((s, r) => s + r.pnlCents, 0);
+  const grossLossCents = -losses.reduce((s, r) => s + r.pnlCents, 0);
+  const netCents = grossWinCents - grossLossCents;
+  const pick = (r) => (r ? { id: r.id ?? null, ticker: r.ticker ?? null, pnlCents: r.pnlCents, closedDay: r.closedDay ?? null } : null);
+  const best = rows.reduce((b, r) => (b === null || r.pnlCents > b.pnlCents ? r : b), null);
+  const worst = rows.reduce((b, r) => (b === null || r.pnlCents < b.pnlCents ? r : b), null);
+  // The streak he is on, walking back from the newest; a flat ends one.
+  let streak = { kind: 'none', n: 0 };
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const k = rows[i].pnlCents > 0 ? 'win' : rows[i].pnlCents < 0 ? 'loss' : 'none';
+    if (i === rows.length - 1) { if (k === 'none') break; streak = { kind: k, n: 1 }; continue; }
+    if (k !== streak.kind) break;
+    streak.n += 1;
+  }
+  let longestWin = 0; let longestLoss = 0; let cw = 0; let cl = 0;
+  for (const r of rows) {
+    if (r.pnlCents > 0) { cw += 1; cl = 0; } else if (r.pnlCents < 0) { cl += 1; cw = 0; } else { cw = 0; cl = 0; }
+    longestWin = Math.max(longestWin, cw); longestLoss = Math.max(longestLoss, cl);
+  }
+  const byHorizon = { scalp: emptyBucket(), intraday: emptyBucket(), swing: emptyBucket() };
+  for (const r of rows) {
+    const b = byHorizon[kindOf(r)];
+    b.count += 1; b.netCents += r.pnlCents;
+    if (r.pnlCents > 0) b.wins += 1; else if (r.pnlCents < 0) b.losses += 1;
+  }
+  for (const k of HORIZONS) byHorizon[k].winRate = rate(byHorizon[k].wins, byHorizon[k].losses);
+  const byWeekday = [1, 2, 3, 4, 5].map((dow) => ({ dow, label: WEEKDAY[dow], count: 0, wins: 0, losses: 0, netCents: 0 }));
+  const dayMap = new Map();
+  for (const r of rows) {
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(String(r.closedDay || '')) ? String(r.closedDay) : null;
+    if (!day) continue;
+    const dow = new Date(`${day}T12:00:00Z`).getUTCDay();
+    const w = byWeekday.find((x) => x.dow === dow);
+    if (w) { w.count += 1; w.netCents += r.pnlCents; if (r.pnlCents > 0) w.wins += 1; else if (r.pnlCents < 0) w.losses += 1; }
+    const d = dayMap.get(day) || { day, count: 0, netCents: 0 };
+    d.count += 1; d.netCents += r.pnlCents; dayMap.set(day, d);
+  }
+  const byDay = [...dayMap.values()].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0)).slice(0, 60);
+  const rRows = rows.filter((r) => Number(r.riskCents) > 0).map((r) => ({ ...r, r: r2s(r.pnlCents / Number(r.riskCents)) }));
+  const rBlock = rRows.length ? {
+    count: rRows.length,
+    sumR: r2s(rRows.reduce((s, r) => s + r.r, 0)),
+    avgR: r2s(rRows.reduce((s, r) => s + r.r, 0) / rRows.length),
+    bestR: Math.max(...rRows.map((r) => r.r)),
+    worstR: Math.min(...rRows.map((r) => r.r)),
+  } : null;
+  const n = Math.max(0, Math.min(200, Math.floor(Number(lastN) || 0)));
+  const last = rows.slice(-n).reverse().map((r) => ({
+    id: r.id ?? null, ticker: r.ticker ?? null, pnlCents: r.pnlCents, closedAt: r._t ? new Date(r._t).toISOString() : null,
+    closedDay: r.closedDay ?? null, horizon: kindOf(r), r: Number(r.riskCents) > 0 ? r2s(r.pnlCents / Number(r.riskCents)) : null,
+  }));
+  const todayRows = today ? rows.filter((r) => String(r.closedDay || '') === String(today)) : [];
+  return {
+    count: rows.length, wins: wins.length, losses: losses.length, flats: flats.length,
+    winRate: rate(wins.length, losses.length),
+    grossWinCents, grossLossCents, netCents,
+    expectancyCents: rows.length ? Math.round(netCents / rows.length) : 0,
+    profitFactor: grossLossCents > 0 ? r2s(grossWinCents / grossLossCents) : null,
+    noLosses: grossLossCents === 0 && grossWinCents > 0,
+    avgWinCents: wins.length ? Math.round(grossWinCents / wins.length) : null,
+    avgLossCents: losses.length ? -Math.round(grossLossCents / losses.length) : null,
+    bestCents: best ? best.pnlCents : null, worstCents: worst ? worst.pnlCents : null,
+    best: pick(best), worst: pick(worst),
+    streak, longestWin, longestLoss,
+    byHorizon, byWeekday, byDay, last, r: rBlock,
+    today: today ? { count: todayRows.length, netCents: todayRows.reduce((s, r) => s + r.pnlCents, 0) } : null,
+  };
+}
+
 const DAY_WORDS = {
   'stop-loss': 'stop for the day, the loss limit is hit',
   'stop-cap': 'stop for the day, the cap is hit',

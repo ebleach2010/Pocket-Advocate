@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en" data-scheme="calm" data-desk>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/logo-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pocket Advocate">
+<meta name="theme-color" content="#060A13">
+<title>Trade desk</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="/css/site.css?v=sp15">
+<link rel="stylesheet" href="/css/admin.css?v=stat116">
+<script type="module" src="/js/nav-menu.js"></script>
+</head>
+<body>
+<canvas id="ambient"></canvas>
+<div class="depth-floor"></div>
+
+<header class="top">
+  <a class="back" href="/admin.html">&larr; Cases</a>
+  <h1 class="crumb">Trade desk</h1>
+  <button class="cog" id="cog" aria-label="Settings"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+</header>
+
+<main class="app" id="app" hidden>
+  <section class="page" data-page="plays" id="pg-plays">
+    <header class="title"><div><h1 class="pt fl">PLAYS</h1><p class="ps" id="plays-sub">Best first</p></div><span class="slot"><span class="mkt" id="mkt"><span class="dot"></span><span id="mkt-word">Market</span></span></span></header>
+    <div class="seg views"><button class="on" data-go="plays">Trade ideas</button><button data-go="positions">My positions <span class="n" id="seg-npos"></span></button></div>
+    <div class="ticks" id="ticks"></div>
+    <div class="panel scanrow" id="scan"><span class="spin"></span><span class="txt" id="scan-txt">Reading the desk&hellip;</span><button class="btn tiny primary fl" id="scan-go"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg> Scan</button></div>
+    <p class="said" id="scan-said"></p>
+    <article class="panel say clamp" id="note" hidden><div class="who"><b>Desk</b><span id="note-when"></span></div><div id="note-p"></div><button class="more" id="note-more">more</button></article>
+    <div class="stack" id="plays"></div>
+    <details class="recent panel" id="recent" hidden><summary><span class="k">Recent</span><span class="dim small" id="recent-sub"></span></summary><ul id="recent-list"></ul></details>
+  </section>
+
+  <section class="page" data-page="positions" id="pg-positions" hidden>
+    <header class="title"><div><h1 class="pt fl">POSITIONS</h1><p class="ps" id="pos-sub">&nbsp;</p></div></header>
+    <div class="seg views"><button data-go="plays">Trade ideas</button><button class="on" data-go="positions">My positions <span class="n" id="seg-npos2"></span></button></div>
+    <div class="panel day" id="daypanel">
+      <div class="cols">
+        <div><div class="k">Made today</div><div class="made num" id="day-real">$0.00</div><div class="sub" id="day-sub">&nbsp;</div></div>
+        <div class="bal"><div class="k">Balance</div><div class="v num" id="big">&nbsp;</div><div class="sub" id="bal-typed">&nbsp;</div></div>
+      </div>
+      <div class="daylabels above"><span class="mid" id="lbl-zero">$0</span><span id="lbl-floor">floor <span class="word"></span></span></div>
+      <div class="daybar" id="daybar"><span class="zero"></span><span class="fill"></span><span class="dtick" id="tick-floor"></span><span class="dtick" id="tick-aim"></span></div>
+      <div class="daylabels"><span style="left:0" id="lbl-limit"></span><span class="mid" id="lbl-aim">aim <span class="word"></span></span><span style="right:0" id="lbl-cap"></span></div>
+    </div>
+    <div class="between" style="margin-top:20px"><h2 style="margin:0">Open</h2><button class="btn tiny" id="new-pos">+ New position</button></div>
+    <div class="stack" id="positions" style="margin-top:8px"></div>
+    <div class="between" style="margin-top:20px"><h2 style="margin:0">Closed today</h2><button class="btn tiny quiet" id="all-closes">All closes &rsaquo;</button></div>
+    <div class="panel closed" id="closed" style="margin-top:8px"></div>
+    <h2>Balance</h2>
+    <div class="panel between" style="align-items:center"><span class="small" id="bal-last">&nbsp;</span><button class="btn tiny quiet" id="log-bal">Log balance</button></div>
+    <p class="foot">Ideas, not orders. Every trade is your decision.</p>
+  </section>
+
+  <section class="page" data-page="news" id="pg-news" hidden>
+    <header class="title"><div><h1 class="pt fl">NEWS</h1><p class="ps" id="news-sub">&nbsp;</p></div></header>
+    <h2>Earnings today</h2>
+    <div class="chips" id="news-earn"></div>
+    <div class="between" style="margin-top:20px;align-items:center"><div><h2 style="margin:0">Headlines</h2><span class="dim num tiny-t" id="news-when">&nbsp;</span></div><button class="btn tiny quiet" id="news-refresh">Refresh</button></div>
+    <div class="panel" style="padding:0 14px;margin-top:8px"><ul class="hl" id="news-list"></ul></div>
+  </section>
+
+  <section class="page" data-page="stats" id="pg-stats" hidden>
+    <header class="title"><div><h1 class="pt fl">STATS</h1><p class="ps" id="stats-sub">&nbsp;</p></div></header>
+    <div class="subnav" id="st-nav"><button class="arr" id="st-prev" aria-label="Previous">&lsaquo;</button><div class="seg views"><button data-sp="0" class="on">Overview</button><button data-sp="1">Breakdown</button><button data-sp="2">Closes</button></div><button class="arr" id="st-next" aria-label="Next">&rsaquo;</button></div>
+    <div class="dots" id="st-dots"><i class="on"></i><i></i><i></i></div>
+    <div id="st-body"></div>
+  </section>
+
+  <section class="page" data-page="desk" id="pg-desk" hidden>
+    <header class="title"><div><h1 class="pt fl">DESK</h1><p class="ps">Your log, and the desk's answers</p></div></header>
+    <details class="drawer panel" id="drawer">
+      <summary><div class="rd"><b id="rd-when">Reading</b><span id="rd-list">&nbsp;</span></div><button class="btn tiny quiet" id="update"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg> Update</button></summary>
+      <div class="reading" id="reading"></div>
+    </details>
+    <p class="said" id="desk-said"></p>
+    <div class="stream" id="stream"></div>
+  </section>
+</main>
+
+<div class="composer" id="composer" hidden>
+  <div class="hint">End with ? to ask. Anything else goes in the log.</div>
+  <div class="in">
+    <button class="cam" id="cam" aria-label="Attach a screenshot"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+    <input type="file" id="cam-file" accept="image/*,.pdf" hidden>
+    <textarea id="say" rows="1" placeholder="Log, or ask?"></textarea>
+    <button class="mode" id="mode" aria-pressed="false">Log</button>
+    <button class="btn primary send" id="send">Send</button>
+  </div>
+</div>
+
+<nav class="bar" id="bar" hidden>
+  <span class="ind" id="ind"></span>
+  <button data-page="plays" class="on"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg><span class="lbl">Plays</span></button>
+  <button data-page="positions"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg><span class="lbl">Positions</span><span class="badge" id="bar-badge" hidden></span></button>
+  <button data-page="news"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h13v14H4z"/><path d="M17 8h3v9a2 2 0 0 1-2 2H6"/><path d="M7 9h7M7 12h7M7 15h5"/></svg><span class="lbl">News</span></button>
+  <button data-page="stats"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10M12 20V4M19 20v-7"/></svg><span class="lbl">Stats</span></button>
+  <button data-page="desk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg><span class="lbl">Desk</span></button>
+</nav>
+
+<canvas id="fx"></canvas>
+<div id="dimmer"></div>
+<div id="flash"></div>
+<div id="overlay"></div>
+<div id="toasts"></div>
+<div id="boot" class="boot">Opening the desk&hellip;</div>
+
+<script type="module" src="/js/admin-deskapp.js"></script>
+<script type="module" src="/js/admin-presence.js"></script>
+<script type="module" src="/js/version-note.js"></script>
+</body>
+</html>

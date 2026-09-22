@@ -369,6 +369,46 @@ refusals; and the note, the kinds and a swing play that never expires past
 the week's last close. T1, T17, T19, T21, T25, T32, T34, T35, T36 and T37
 re-pinned with dated notes.
 
+### The desk rebuilt as one app (2026-09-22, v6.0)
+
+Eric: "The current Trading Desk is too fragmented. Remove the excessive tabs
+and consolidate the app into a smaller number of clear, useful sections." The
+desk left the case folder for its own gated page, `public/admin-desk.html`,
+with five tabs on a bottom bar (Plays, Positions, News, Stats, Desk) and the
+settings behind a cog. Three modules behind the gate: `admin-desk.js`, which
+is now pure view functions and nothing else; `admin-deskapp.js`, the app that
+boots, routes, polls and acts; and `admin-deskfx.js`, the canvas, the close
+choreography and the target line. Three new read routes answer the new pages
+(`news`, `history`, `qa`), the positions and close routes carry the big
+number as `liveCents`, and the cron books one reading a trading day at 7:00
+Mountain and nothing else.
+
+trade.mjs T32, T33, T34, T52, T53, T54 and T55, each with a control recorded:
+the folder hands a desk off with one `location.replace` and keeps none of its
+furniture; the panel carries no desk at all and exports the two the new page
+reads a reading with; the view module's chart, play card, position card and
+day bar in all seven states; the News and Stats markup; the question mark
+rule, the merge of the log and the questions, and the line a close writes;
+the effects as pure functions (the plan, the count, the seeded burst, the
+arc, the shake, the siren, the coins, the target line); and the three routes
+with the morning reading, which books once inside its window, never twice,
+never on a day the market is shut and never against another isolate. T18,
+T19, T30, T31, T35, T36 and T43 re-pinned with dated notes; T37 retired, the
+page filter it ran no longer exists.
+
+drive-trade.mjs is rewritten, sections A to N: the shelf card opens the new
+page on Plays; five tabs, a cog, no tab strip and the desk's own dark ground
+whatever the app's scheme is; the plays best first with a scan that lands on
+the page's own poll; Take it pre-filled and the play marked taken; the news
+with its earnings chips and the on-desk headlines first; the day bar against
+his four lines; Stats against the fourteen seeded closes to the exact win
+rate, streak and kind; a close at a profit that flies its coins into the day
+figure and writes its line in the log; a close at a loss with its sweeps; the
+number-only plan under Reduce effects; the Desk stream where a question mark
+decides; Settings where a rule moves its dollars and the key shows four
+digits; the old address handing off; and delete, the door and a new desk.
+The bar and Positions are measured again at 320px.
+
 drive-trade.mjs sections K and L drive it in the demo: the day strip opens
 at nothing realized and under the floor with his four lines in dollars, the
 two seeded trades stand in kind order badged Intraday and Swing, Get the

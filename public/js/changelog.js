@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '5.3';
+export const VERSION = '6.0';
 
 /**
  * Newest first.
@@ -51,6 +51,23 @@ export const VERSION = '5.3';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE DESK AS ONE APP (Eric, 2026-09-22): "The current Trading Desk is
+    // too fragmented. Remove the excessive tabs and consolidate the app into
+    // a smaller number of clear, useful sections." Admin only: the desk is
+    // his alone and no client page moved.
+    version: '6.0',
+    quiet: true,
+    client: [],
+    admin: [
+      'The trade desk is its own app now, at its own address. Five tabs along the bottom: Plays, Positions, News, Stats and Desk, with the settings behind the cog at the top. The green card on your shelf opens it, and the old address walks you straight in.',
+      'Plays and Positions sit beside each other, with a Trade ideas and My positions switch on both. Positions opens on what you have made today against the aim, with the balance beside it and the day bar under both.',
+      'News is new: the headlines of the last day with the ones naming a ticker you are in at the top, and the earnings on the calendar. Stats is three pages you can swipe between: the win rate and the averages, then the breakdown by kind and by day with the balance chart, then every close you have logged.',
+      'Desk is one stream and one box. A line ending in a question mark is a question and the desk answers it; anything else goes in the log, and nothing answers it. The chip beside Send says which it will be and a tap flips it.',
+      'Closing a position now plays: green flash and gold coins into the day figure on a win, red flash and lights on a loss. Celebrations and Reduce effects are both in Settings, and reduced motion is obeyed.',
+      'One reading books itself at 7:00 Mountain on a trading day. Everything else still waits for your tap.',
+    ],
+  },
   {
     // NOTHING RUNS BUT HIS TAP (Eric, 2026-09-22): "I manually update either
     // scan individually. No automatic." Admin only: the desk is his alone.
