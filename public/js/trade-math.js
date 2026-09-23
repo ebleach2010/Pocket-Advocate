@@ -529,6 +529,76 @@ export function recSizing({ rec, accountCents, rules }) {
   return out;
 }
 
+/**
+ * HIS SIZE (Eric, 2026-09-23: "I should be able to manually tap on the amount traded and update it,
+ * the amount I'm willing to risk, then it adjusts the stop loss and take profit", and "Including after
+ * the trade was accepted"). He sets the dollars going in and the dollars he is willing to lose; the
+ * stop goes where exactly that much is lost, and every target keeps the multiple of the risk the desk
+ * gave it, so a wider stop carries the targets out with it. Priced from the same worst fill in the zone
+ * the card sizes from, and the stop is rounded toward the entry so the loss at it is never more than he
+ * said. A size that cannot be done answers { ok: false, why } with a sentence he can act on.
+ */
+export function planFor({ rec, amountCents, riskCents, accountCents = 0, rules = null }) {
+  const inst = ['stock', 'call', 'put'].includes(rec?.instrument) ? rec.instrument : 'stock';
+  const up = inst !== 'stock' || rec?.side !== 'short';
+  const lo = fin(rec?.entryLow); const hi = fin(rec?.entryHigh);
+  const entry = lo != null && hi != null ? (up ? Math.max(lo, hi) : Math.min(lo, hi)) : fin(rec?.entry) ?? lo ?? hi;
+  const amount = Math.round(Number(amountCents));
+  const risk = Math.round(Number(riskCents));
+  const no = (why) => ({ ok: false, why });
+  if (!(entry > 0)) return no('This trade has no entry price to size from.');
+  if (!(amount > 0) || amount > 1e9) return no('The amount in dollars, for example 500.');
+  if (!(risk > 0)) return no('The risk in dollars, for example 60.');
+  const M = inst === 'stock' ? 1 : OPTION_MULT;
+  const unitCents = entry * M * 100;
+  const whole = inst !== 'stock';
+  // Rounded down, so what goes in is never a cent more than he said.
+  const qty = whole ? Math.floor(amount / unitCents + 1e-9) : Math.floor((amount / unitCents) * 10000 + 1e-6) / 10000;
+  if (!(qty > 0)) return no(whole ? `One contract costs ${fmtMoney(Math.round(unitCents))}, more than ${fmtMoney(amount)}.` : 'That amount is too small to buy any.');
+  const costCents = Math.round(qty * unitCents);
+  // A buy cannot lose more than it cost, and a stop at nothing is no stop.
+  if (up && risk >= costCents) return no(`The risk has to be less than the ${fmtMoney(costCents)} going in.`);
+  // Cents above a dollar, a hundredth of a cent below it, like the prices the desk writes.
+  const tick = (p) => (p >= 1 ? 100 : 10000);
+  const dist = risk / (qty * M * 100);
+  const raw = up ? entry - dist : entry + dist;
+  const t = tick(raw);
+  const stop = up ? Math.ceil(raw * t - 1e-6) / t : Math.floor(raw * t + 1e-6) / t;
+  if (up ? stop >= entry : stop <= entry) return no('That risk is too small for this size: the stop would sit on the entry.');
+  if (!(stop > 0)) return no('The stop would fall below zero at that risk.');
+  // The desk's targets as multiples of the desk's risk, carried to his.
+  const deskStop = fin(rec?.stop);
+  const deskDist = deskStop == null ? null : up ? entry - deskStop : deskStop - entry;
+  const deskTargets = (Array.isArray(rec?.targets) ? rec.targets : []).map(fin).filter((x) => x != null);
+  const newDist = up ? entry - stop : stop - entry;
+  let targets = deskTargets;
+  if (deskDist > 0 && deskTargets.length) {
+    targets = deskTargets.map((x) => {
+      const k = (up ? x - entry : entry - x) / deskDist;
+      const p = up ? entry + k * newDist : entry - k * newDist;
+      return Math.round(p * tick(p)) / tick(p);
+    }).filter((p) => p > 0 && (up ? p > entry : p < entry));
+    if (!targets.length) return no('The targets would fall below zero at that risk.');
+  }
+  const sign = up ? 1 : -1;
+  const gain = (x) => Math.round(Math.max(0, sign * (x - entry)) * M * 100 * qty);
+  const actualRisk = Math.round(newDist * M * 100 * qty);
+  const out = {
+    ok: true, instrument: inst, entry, qty, shares: whole ? null : qty, contracts: whole ? qty : null,
+    amountCents: amount, askedRiskCents: risk, costCents, riskCents: actualRisk, stop, targets,
+    rewardCents: targets[0] != null ? gain(targets[0]) : null, reward2Cents: targets[1] != null ? gain(targets[1]) : null,
+    rr: null, budgetCents: null, overRule: false,
+  };
+  if (out.rewardCents != null && actualRisk > 0) out.rr = r2(out.rewardCents / actualRisk);
+  const A = Math.max(0, Math.round(Number(accountCents) || 0));
+  if (A) {
+    const R = rulesOf({ rules: { riskPct: 3, ...(rules || {}) } });
+    out.budgetCents = Math.round((A * R.riskPct) / 100);
+    out.overRule = actualRisk > out.budgetCents;
+  }
+  return out;
+}
+
 /** The price ladder around the entry: the stop's distance as R, breakeven, then 1R, 2R and 3R the right way round. */
 export function ladder({ side, entry, stop }) {
   const e = fin(entry); const s = fin(stop);

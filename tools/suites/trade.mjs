@@ -119,7 +119,7 @@ function world(over = {}) {
       return over.runOut || { ok: true, already: false, run: { id: 'run-1', status: 'queued', trigger, queuedAt: new Date(now), done: 0 } };
     },
     runAlive: DR.runAlive, riskPctOf: DR.riskPctOf, RESEARCH_PATH: DR.RESEARCH_PATH, LENSES: DR.LENSES,
-    isTradingDay: math.isTradingDay, tradeMetrics: math.tradeMetrics, chartSeries: math.chartSeries,
+    isTradingDay: math.isTradingDay, tradeMetrics: math.tradeMetrics, chartSeries: math.chartSeries, planFor: math.planFor,
     TARGET_DAILY: math.TARGET_DAILY, PROJECTION_MIN_DAYS: math.PROJECTION_MIN_DAYS, DEFAULT_START_CENTS: math.DEFAULT_START_CENTS,
     MARKET_OPEN_MIN: math.MARKET_OPEN_MIN,
     fetch: async (url) => {
@@ -1113,10 +1113,12 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // app, and that the app asks nothing and posts to no question or log route.
   // NEGATIVE CONTROL (run 2026-09-23): `<textarea id="say"></textarea>` added back to the page made this read
   //   FAIL  T53 the stream is gone: ...
-  check('T53 the stream is gone: the page has no composer, no text box, no stream and no reading, the app writes no log line, asks no question, reads no Firestore and imports none of the old pieces, and its only writes are run, take, result, balance, settings and open',
+  // RE-PINNED 2026-09-23 (v7.3, Eric: "I should be able to manually tap on the amount traded and update it"):
+  // adjust joins the writes; it carries two numbers and nothing he types in words.
+  check('T53 the stream is gone: the page has no composer, no text box, no stream and no reading, the app writes no log line, asks no question, reads no Firestore and imports none of the old pieces, and its only writes are run, take, result, adjust, balance, settings and open',
     !/<textarea|id="composer"|id="stream"|id="drawer"|id="say"|data-page="desk"|data-page="plays"|data-page="positions"|data-page="stats"/.test(PAGE)
     && !/firebase\.js|onSnapshot|addDoc|advisor\/ask|advisor\/state|isQuestion|mergeStream|md\(|splitPages|confirm\(/.test(APP)
-    && (APP.match(/call\('(\w+)', \{/g) || []).map((x) => x.slice(6, -4)).every((sub) => ['run', 'take', 'result', 'balance', 'settings'].includes(sub))
+    && (APP.match(/call\('(\w+)', \{/g) || []).map((x) => x.slice(6, -4)).every((sub) => ['run', 'take', 'result', 'adjust', 'balance', 'settings'].includes(sub))
     && /fetch\('\/api\/admin\/trade\/open'/.test(APP),
     JSON.stringify((APP.match(/call\('(\w+)', \{/g) || [])));
 }
@@ -1276,7 +1278,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   //   FAIL  T35 the portal page and its module are gone ...
   check('T35 the portal page and its module are gone and no admin page links them; the seven pages ask for the stylesheet at its new version; the audit proves the desk\'s page and three modules 404 to a stranger; the sideways drive walks the desk; the asset gate covers the desk\'s files and not the shared arithmetic; the demo mirrors the board, a run that walks its stages, YES, PROFIT and LOSS, History, News, the research behind its switch, the balance and the settings, refuses with the Worker\'s exact sentences, seeds the new board with his 3% rule, keeps its desk off the client half, and carries no log, reading, positions, stats or scan',
     !has('public/admin-trade.html') && !has('public/js/admin-trade.js')
-    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat117/.test(f(`public/${p}.html`)))
+    // RE-PINNED 2026-09-23 (v7.3): stat118, for the size cells he can tap.
+    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat118/.test(f(`public/${p}.html`)))
     && ['/js/admin-desk.js', '/js/admin-deskapp.js', '/js/admin-deskfx.js'].every((x) => AUDIT.includes(`'${x}'`))
     && /'\/admin-desk',/.test(AUDIT) && !/admin-trade/.test(AUDIT)
     && /'\/admin-desk\.html\?id=demo-case-trade&demo=admin'/.test(NOSIDE) && !/admin-trade/.test(NOSIDE)
@@ -1361,6 +1364,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry71 = (CL.match(/\{\n\s+\/\/ WHICH WALL A RUN HITS[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-23 (v7.2): fifty calls, its own quiet entry.
   const entry72 = (CL.match(/\{\n\s+\/\/ FIFTY CALLS \(Eric, 2026-09-23[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-23 (v7.3): his own size, its own quiet entry.
+  const entry73 = (CL.match(/\{\n\s+\/\/ YOUR SIZE \(Eric, 2026-09-23[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1399,8 +1404,14 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-23 (v7.2): both versions read 7.2 with the fifty-calls tag; the 7.1 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-23, v7.2): 'stopped partway without being able to say so' reworded to 'stopped partway silently' in the 7.2 entry made this read
   //   FAIL  T36 both versions read 7.2 ...
-  check('T36 both versions read 7.2 with the new tag, the 4.7 through 7.2 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.2';/.test(CL) && /const VERSION = '7\.2';/.test(W) && /const BUILD_TAG = 'v2026-09-23-fifty-calls';/.test(W)
+  // RE-PINNED 2026-09-23 (v7.3): both versions read 7.3 with the your-size tag; the 7.2 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-23, v7.3): 'before or after you take it' reworded to 'before or after taking it' in the 7.3 entry made this read
+  //   FAIL  T36 both versions read 7.3 ...
+  check('T36 both versions read 7.3 with the new tag, the 4.7 through 7.3 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.3';/.test(CL) && /const VERSION = '7\.3';/.test(W) && /const BUILD_TAG = 'v2026-09-23-your-size';/.test(W)
+    && /version: '7\.3',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry73)
+    && /Tap Amount or Risk on any trade, before or after you take it/.test(entry73) && /History keeps both/.test(entry73) && !DASH.test(entry73)
+    && !HARD.some((re) => re.test(entry73))
     && /version: '7\.2',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry72)
     && /stopped partway without being able to say so/.test(entry72) && /you get a push saying so and why/.test(entry72) && !DASH.test(entry72)
     && !HARD.some((re) => re.test(entry72))
@@ -1452,7 +1463,7 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && (entry60.match(/^\s+'[^\n]+',$/gm) || []).length >= 5
     // The page itself: always dark, its own stylesheet token, the three modules it mounts.
     && /<html lang="en" data-scheme="calm" data-desk>/.test(PAGE)
-    && /admin\.css\?v=stat117/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
+    && /admin\.css\?v=stat118/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
     && /js\/admin-deskapp\.js/.test(PAGE) && /js\/admin-presence\.js/.test(PAGE) && /js\/version-note\.js/.test(PAGE)
     && (PAGE.match(/<section class="page"/g) || []).length === 3
     && (PAGE.match(/<button data-page="/g) || []).length === 3 && /data-page="trades"[\s\S]*data-page="news"[\s\S]*data-page="history"/.test(PAGE)
@@ -2056,6 +2067,119 @@ check('T63 the fast look is gone: no Look button, no Scan button, no look route,
     && /const closeAll = \(\) => \{ sheetClose\?\.\(\); ov\.innerHTML = '';/.test(APP)
     && /balanceTyped: !!balanceNow\(\)\.typed && balanceNow\(\)\.cents > 0,/.test(APP),
     JSON.stringify({ revs: (APP.match(/S\.rev \+= 1;/g) || []).length, run: startRun.length }));
+}
+
+// ---- T68 to T70: his own size (2026-09-23, v7.3) --------------------------------------------------
+// Eric: "I should be able to manually tap on the amount traded and update it, the amount I'm willing to
+// risk, then it adjusts the stop loss and take profit", and "Including after the trade was accepted".
+{
+  const NV = { instrument: 'stock', side: 'long', entryLow: 247.5, entryHigh: 248, stop: 245.8, targets: [251, 253.5] };
+  const a = math.planFor({ rec: NV, amountCents: 100000, riskCents: 6000, accountCents: 245000 });
+  // The multiple of the risk each target was, before and after.
+  const mult = (e, st, t) => (t - e) / (e - st);
+  const sh = math.planFor({ rec: { instrument: 'stock', side: 'short', entryLow: 100, entryHigh: 101, stop: 103, targets: [96] }, amountCents: 50000, riskCents: 2000 });
+  const call = math.planFor({ rec: { instrument: 'call', side: 'long', entryLow: 3.1, entryHigh: 3.2, stop: 1.6, targets: [5] }, amountCents: 100000, riskCents: 30000 });
+  const over = math.planFor({ rec: NV, amountCents: 100000, riskCents: 9000, accountCents: 245000 });
+  const noStop = math.planFor({ rec: { ...NV, stop: null }, amountCents: 100000, riskCents: 6000 });
+  // Across many sizes the loss at the stop is never more than he said and what goes in never more than he said.
+  let honest = true;
+  for (const amt of [5000, 12345, 98000, 250000]) for (const rk of [100, 869, 2500, 4000]) {
+    const p = math.planFor({ rec: NV, amountCents: amt, riskCents: rk });
+    if (p.ok && (p.riskCents > rk || p.costCents > amt || p.stop >= p.entry)) honest = false;
+  }
+  const whyOf = (o) => math.planFor({ rec: NV, amountCents: 100000, riskCents: 6000, ...o }).why || '';
+  // NEGATIVE CONTROL (run 2026-09-23): planFor's long stop rounded down (`Math.floor(raw * t + 1e-6) / t` on both sides) made this read
+  //   FAIL  T68 his size RUNS ...
+  // NEGATIVE CONTROL (run 2026-09-23): planFor's targets left as the desk's (`targets = deskTargets.map(...)` replaced by `targets = deskTargets`) made this read
+  //   FAIL  T68 his size RUNS ...
+  // NEGATIVE CONTROL (run 2026-09-23): fractional shares rounded to the nearest instead of down (`r4(amount / unitCents)`) made this read
+  //   FAIL  T68 his size RUNS ...
+  check('T68 his size RUNS: a thousand dollars risking sixty buys from the top of the zone, puts the stop where sixty is lost and carries each target out at the multiple of the risk the desk gave it; a short\'s stop goes above and its target below; an option buys whole contracts under the amount; the loss at the stop is never more than he said and what goes in never more; a risk over his rule is flagged, not refused; with no stop from the desk the targets stay; and what cannot be done is refused in a sentence he can act on',
+    a.ok && a.entry === 248 && a.shares === 4.0322 && a.costCents <= 100000 && a.riskCents === 6000 && a.stop === 233.12
+    && Math.abs(mult(248, 233.12, a.targets[0]) - mult(248, 245.8, 251)) < 0.01 && Math.abs(mult(248, 233.12, a.targets[1]) - mult(248, 245.8, 253.5)) < 0.01
+    && a.targets[0] === 268.29 && a.rr === 1.36 && a.overRule === false && a.budgetCents === 7350
+    && sh.ok && sh.entry === 100 && sh.stop === 104 && sh.targets[0] === 94.67 && sh.riskCents === 2000
+    && call.ok && call.contracts === 3 && call.costCents === 96000 && call.stop === 2.2 && call.targets[0] === 4.33
+    && honest && over.ok && over.overRule === true
+    && noStop.ok && noStop.targets.join() === '251,253.5'
+    && /less than the \$999\.99 going in/.test(whyOf({ riskCents: 100000 }))
+    && /stop would sit on the entry/.test(whyOf({ riskCents: 1 }))
+    && /One contract costs \$320\.00, more than \$200\.00/.test(math.planFor({ rec: { instrument: 'call', side: 'long', entryLow: 3.2, entryHigh: 3.2, stop: 1.6, targets: [5] }, amountCents: 20000, riskCents: 3000 }).why)
+    && /amount in dollars/.test(whyOf({ amountCents: 0 })) && /risk in dollars/.test(whyOf({ riskCents: 'x' }))
+    && /targets would fall below zero/.test(math.planFor({ rec: { instrument: 'stock', side: 'short', entryLow: 10, entryHigh: 10, stop: 12, targets: [4] }, amountCents: 1000, riskCents: 800 }).why)
+    && !DASH.test(Object.values({ a: whyOf({ riskCents: 100000 }), b: whyOf({ riskCents: 1 }) }).join(' ')),
+    JSON.stringify({ a, sh, call, honest }));
+}
+{
+  const now = at('2026-09-23T16:00:00Z');
+  const REC = { ticker: 'NVDA', side: 'long', horizon: 'intraday', instrument: 'stock', entryLow: 247.5, entryHigh: 248, stop: 245.8, targets: [251, 253.5], status: 'open' };
+  const adjust = async (rec, body, over = {}) => {
+    const { w, api } = world(over);
+    w.docs.set('trade/plays/items/r1', { data: rec, updateTime: 'P1' });
+    let out = null; let err = null;
+    try { out = await api.tradeRoute(env, { sub: 'adjust', method: 'POST', body: { id: 'r1', ...body }, now }); } catch (e) { err = e; }
+    return { w, out, err, patch: w.patches.find((x) => x.path === 'trade/plays/items/r1') };
+  };
+  const open = await adjust(REC, { amountCents: 100000, riskCents: 6000 });
+  const taken = await adjust({ ...REC, status: 'took', tookAt: new Date(now - 60_000) }, { amountCents: 50000, riskCents: 2500 });
+  const closed = await adjust({ ...REC, status: 'closed', result: 'profit' }, { amountCents: 100000, riskCents: 6000 });
+  const bad = await adjust(REC, { amountCents: 100000, riskCents: 100000 });
+  const reset = await adjust({ ...REC, mine: { amountCents: 100000, riskCents: 6000, stop: 233.12, targets: [268.29] } }, { reset: true });
+  const lost = await adjust(REC, { amountCents: 100000, riskCents: 6000 }, { claim: false });
+  // NEGATIVE CONTROL (run 2026-09-23): tradeAdjust's status guard (`if (d.status !== 'open' && d.status !== 'took')`) removed made this read
+  //   FAIL  T69 the size route RUNS ...
+  // NEGATIVE CONTROL (run 2026-09-23): tradeAdjust's `ifUpdateTime: doc.updateTime` dropped made this read
+  //   FAIL  T69 the size route RUNS ...
+  check('T69 the size route RUNS: on an open trade and on one he took it saves his two numbers with the stop and targets they give, under the trade\'s own time, and touches nothing of the desk\'s; a closed trade is a 409 that says so; a size that cannot be done is a 400 with the sentence and nothing written; reset goes back to the desk\'s plan; and a write that lost the race is a 409 that says tap again',
+    open.out?.ok && open.patch?.opts.mask.join() === 'mine' && open.patch.opts.ifUpdateTime === 'P1' && Object.keys(open.patch.data).join() === 'mine'
+    && open.patch.data.mine.amountCents === 100000 && open.patch.data.mine.riskCents === 6000 && open.patch.data.mine.stop === 233.12 && open.patch.data.mine.targets[0] === 268.29
+    && open.out.rec.mine.stop === 233.12 && open.out.rec.stop === 245.8 && open.out.rec.targets.join() === '251,253.5'
+    && taken.out?.ok && taken.out.rec.status === 'took' && taken.out.rec.mine.amountCents === 50000
+    && closed.err?.status === 409 && closed.err.message === K.SAY.notAdjustable && !closed.patch
+    && bad.err?.status === 400 && /less than the/.test(bad.err.message) && !bad.patch
+    && reset.out?.ok && reset.patch.data.mine === null && reset.out.rec.mine === null
+    && lost.err?.status === 409 && lost.err.message === K.SAY.busy,
+    JSON.stringify({ open: open.out?.rec?.mine, closed: closed.err?.message, bad: bad.err?.message, lost: lost.err?.message }));
+}
+{
+  const mod = await import('../../public/js/admin-desk.js');
+  const REC = { id: 'r1', ticker: 'NVDA', side: 'long', horizon: 'intraday', instrument: 'stock', entryLow: 247.5, entryHigh: 248, stop: 245.8, targets: [251, 253.5], allocPct: 40, status: 'open' };
+  const mine = { amountCents: 100000, riskCents: 6000, stop: 233.12, targets: [268.29, 285.2] };
+  const rules = { riskPct: 3 };
+  const plain = mod.recCardHtml(REC, { accountCents: 245000, rules });
+  const his = mod.recCardHtml({ ...REC, mine }, { accountCents: 245000, rules });
+  const hisTaken = mod.recCardHtml({ ...REC, status: 'took', mine }, { accountCents: 245000, rules });
+  const hisOver = mod.recCardHtml({ ...REC, mine: { ...mine, riskCents: 9000 } }, { accountCents: 245000, rules });
+  const noBal = mod.recCardHtml({ ...REC, mine }, { accountCents: 0, rules, balanceTyped: false });
+  const cellV = (h, k) => ((h.match(new RegExp(`<div class="k">${k}</div><div class="v">([^<]*)</div>`)) || [])[1] || '');
+  const tapV = (h, e) => ((h.match(new RegExp(`data-edit="${e}"[^>]*><span class="k">[^<]*<span class="pen" aria-hidden="true"></span></span><span class="v">([^<]*)</span>`)) || [])[1] || '');
+  const hist = mod.historyRowHtml({ ...REC, status: 'closed', result: 'profit', closedAt: '2026-09-23T19:00:00Z', mine: { ...mine, costCents: 99999 } });
+  const histPlain = mod.historyRowHtml({ ...REC, status: 'closed', result: 'loss', closedAt: '2026-09-23T19:00:00Z' });
+  const APP = f('public/js/admin-deskapp.js');
+  // NEGATIVE CONTROL (run 2026-09-23): the card's `const stopNow = mine ? mine.stop : r.stop;` put back to `const stopNow = r.stop;` made this read
+  //   FAIL  T70 his size on the card and in History ...
+  // NEGATIVE CONTROL (run 2026-09-23): historyRowHtml's `his` line emptied (`const his = '';`) made this read
+  //   FAIL  T70 his size on the card and in History ...
+  // NEGATIVE CONTROL (run 2026-09-23): the board's `[data-edit]` listener removed from paintBoard made this read
+  //   FAIL  T70 his size on the card and in History ...
+  check('T70 his size on the card and in History: Amount and Risk are buttons on every card, open or taken; with his size the card shows his amount, his stop, his targets and his risk, says it is his and what the desk had, and flags a risk over his rule; with no balance typed his size still sizes the card; History shows what he traded beside the desk\'s plan; and the page opens the sheet from either cell, previews with the same function the Worker saves with, and sends only the two numbers or a reset',
+    /data-edit="amount"/.test(plain) && /data-edit="risk"/.test(plain) && /data-edit="amount"/.test(hisTaken) && /data-edit="risk"/.test(hisTaken)
+    && tapV(his, 'amount') === '$1,000 · 4.0322 shares' && tapV(his, 'risk') === '$60.00'
+    && cellV(his, 'Stop') === '$233.12' && cellV(his, 'Targets') === '$268.29 then $285.20' && cellV(plain, 'Stop') === '$245.80'
+    && /<p class="mine-note"><b>Your size\.<\/b> The desk had the stop at \$245\.80, targets \$251\.00 then \$253\.50\.<\/p>/.test(his)
+    && !/mine-note/.test(plain) && /over your \$73\.50 rule/.test(hisOver) && !/over your/.test(his)
+    && tapV(noBal, 'amount') === '$1,000 · 4.0322 shares' && cellV(noBal, 'Stop') === '$233.12'
+    && /<span class="k">Desk<\/span> Entry \$247\.50 to \$248\.00, stop \$245\.80, targets \$251\.00 then \$253\.50\./.test(hist)
+    && /<p class="mine"><span class="k">You<\/span> put in \$999\.99, risked \$60\.00, stop \$233\.12, targets \$268\.29 then \$285\.20\.<\/p>/.test(hist)
+    && !/class="mine"/.test(histPlain) && !/<span class="k">Desk<\/span>/.test(histPlain)
+    && /for \(const b of \$\$\('#pg-trades \[data-edit\]'\)\) b\.addEventListener\('click', \(\) => openSize\(b\)\);/.test(APP)
+    && /planFor\(\{ rec: r, amountCents: a, riskCents: k, accountCents: acct, rules: ctx\.rules \}\)/.test(APP)
+    && /call\('adjust', \{ id: r\.id, \.\.\.body \}\)/.test(APP) && /send\(\{ amountCents: dollarsIn\(amtIn\.value\), riskCents: dollarsIn\(riskIn\.value\) \}/.test(APP)
+    && /send\(\{ reset: true \}/.test(APP)
+    && /if \(sub === 'adjust'\) \{[\s\S]*?planFor\(\{ rec: d, amountCents: body\.amountCents, riskCents: body\.riskCents \}\)/.test(D)
+    && /html\[data-desk\]:root \.rec \.cell\.tap \{[^}]*min-height: 44px;/.test(CSS)
+    && ![his, hist, hisOver].some((h) => DASH.test(h)),
+    JSON.stringify({ amt: tapV(his, 'amount'), risk: tapV(his, 'risk'), stop: cellV(his, 'Stop'), hist: hist.replace(/\s+/g, ' ').slice(0, 500) }));
 }
 
 // ---- T67: the board in one read (2026-09-23, v7.2) ----------------------------------------------

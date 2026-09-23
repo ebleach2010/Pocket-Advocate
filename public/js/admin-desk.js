@@ -10,7 +10,7 @@
 // The name is load-bearing: admin-desk.js matches the Worker's asset gate, so
 // this file is a 404 to anyone but him.
 
-import { recSizing, HORIZON_WORDS } from './trade-math.js';
+import { recSizing, planFor, HORIZON_WORDS } from './trade-math.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const money = (cents, signed = false) => {
@@ -123,12 +123,19 @@ const qtyText = (sz) => {
  * electric yellow, with PROFIT and LOSS in place of the one button.
  */
 export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quotes = null } = {}) {
-  const sz = recSizing({ rec: r, accountCents, rules });
+  // HIS SIZE (2026-09-23): when he set the amount and the risk himself, the card is sized from his
+  // numbers, and the stop and targets are the ones they give; the desk's own are named under the grid.
+  const his = r.mine ? planFor({ rec: r, amountCents: r.mine.amountCents, riskCents: r.mine.riskCents, accountCents: balanceTyped ? accountCents : 0, rules }) : null;
+  const mine = his?.ok ? his : null;
+  const sz = mine || recSizing({ rec: r, accountCents, rules });
+  const sized = !!mine || balanceTyped;
+  const stopNow = mine ? mine.stop : r.stop;
+  const targetsNow = mine ? mine.targets : (r.targets || []);
   const active = r.status === 'took';
   const kind = HORIZON_WORDS[r.horizon] || 'Intraday';
   const entry = r.entryLow != null && r.entryHigh != null && Number(r.entryLow) !== Number(r.entryHigh)
     ? `${price(r.entryLow)} to ${price(r.entryHigh)}` : price(r.entryLow ?? r.entry ?? r.entryHigh);
-  const targets = (r.targets || []).map(price).filter(Boolean).join(' then ');
+  const targets = targetsNow.map(price).filter(Boolean).join(' then ');
   // The price right now: a live quote when the page has one, else what the desk
   // saw when it filed the trade. On a contract it is the stock's price, so the
   // cell says Stock rather than Now beside premiums.
@@ -136,12 +143,16 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
   const now = Number.isFinite(live) && live > 0 ? price(live) : r.priceNow != null ? price(r.priceNow) : r.lastPrice != null ? price(r.lastPrice) : '';
   const chance = r.profitLow != null && r.profitHigh != null ? `${esc(r.profitLow)} to ${esc(r.profitHigh)}%` : '';
   const agree = Number(r.agreement) >= 2 ? `${Number(r.agreement)} of 5 agree` : '';
-  const amount = !balanceTyped || sz.qty == null ? 'Set your balance in Settings'
+  const amount = !sized || sz.qty == null ? 'Set your balance in Settings'
     : sz.qty === 0 ? (sz.overRule ? `One contract risks ${money(sz.unitRiskCents)}, over your ${money(sz.budgetCents)} rule`
       : sz.contracts === 0 && sz.unitCostCents > sz.allocCents ? `One contract costs ${wholeMoney(sz.unitCostCents)}, more than the ${wholeMoney(sz.allocCents)} set aside`
         : 'Too small to size')
       : `${wholeMoney(sz.costCents)} · ${qtyText(sz)}`;
   const cell = (k, v, cls = '') => (v ? `<div class="cell${cls ? ` ${cls}` : ''}"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>` : '');
+  // Amount and Risk are his to change, open or taken: a tap opens the size sheet.
+  const tap = (k, v, cls, edit) => `<button type="button" class="cell tap${cls ? ` ${cls}` : ''}" data-edit="${edit}" aria-label="Change the ${edit}"><span class="k">${esc(k)}<span class="pen" aria-hidden="true"></span></span><span class="v">${v || 'Set it'}</span></button>`;
+  const deskPlan = mine ? `The desk had the stop at ${price(r.stop)}${(r.targets || []).length ? `, targets ${(r.targets || []).map(price).join(' then ')}` : ''}.` : '';
+  const ruleNote = mine?.overRule ? ` That is over your ${money(mine.budgetCents)} rule.` : '';
   return `<article class="outlined rec${active ? ' active' : ''}" data-kind="${esc(r.horizon || 'intraday')}" data-rec="${esc(r.id)}">
     <div class="head">
       <span class="tk">${esc(r.ticker)}</span>
@@ -153,14 +164,15 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
     <div class="grid">
       ${cell(r.instrument === 'stock' ? 'Now' : 'Stock', esc(now))}
       ${cell('Entry', esc(entry), 'wide')}
-      ${cell('Amount', esc(amount), 'wide')}
+      ${tap('Amount', esc(amount), 'wide', 'amount')}
       ${cell('Hold', esc(holdText(r)))}
-      ${cell('Stop', esc(price(r.stop)), 'red')}
+      ${cell('Stop', esc(price(stopNow)), 'red')}
       ${cell('Targets', esc(targets), 'wide green')}
-      ${cell('Risk', balanceTyped && sz.riskCents != null ? esc(money(sz.riskCents)) : '', 'red')}
-      ${cell('Reward', balanceTyped && sz.rewardCents != null ? esc(money(sz.rewardCents)) : '', 'green')}
-      ${cell('R:R', balanceTyped && sz.rr != null ? esc(`1 : ${sz.rr}`) : '')}
+      ${tap('Risk', sized && sz.riskCents != null ? esc(money(sz.riskCents)) : '', 'red', 'risk')}
+      ${cell('Reward', sized && sz.rewardCents != null ? esc(money(sz.rewardCents)) : '', 'green')}
+      ${cell('R:R', sized && sz.rr != null ? esc(`1 : ${sz.rr}`) : '')}
     </div>
+    ${mine ? `<p class="mine-note"><b>Your size.</b> ${esc(deskPlan)}${esc(ruleNote)}</p>` : ''}
     ${vehicleText(r) ? `<p class="vehicle">${esc(vehicleText(r))}</p>` : ''}
     ${r.setup ? `<p class="setup">${esc(r.setup)}</p>` : ''}
     <dl class="why">
@@ -199,6 +211,14 @@ export function historyRowHtml(r) {
     r.stop != null && `stop ${price(r.stop)}`,
     (r.targets || []).length && `targets ${(r.targets || []).map(price).join(' then ')}`,
   ].filter(Boolean).join(', ');
+  // What he actually traded, when he set his own size (2026-09-23): the desk's plan above stays as it was.
+  const m = r.mine;
+  const his = m ? [
+    `put in ${money(m.costCents ?? m.amountCents)}`,
+    `risked ${money(m.riskCents)}`,
+    m.stop != null && `stop ${price(m.stop)}`,
+    (m.targets || []).length && `targets ${m.targets.map(price).join(' then ')}`,
+  ].filter(Boolean).join(', ') : '';
   return `<li class="hist" data-kind="${esc(r.horizon)}" data-hist="${esc(r.id)}">
     <details><summary>
       <span class="when">${esc(dayShort(r.closedAt))}</span>
@@ -206,7 +226,8 @@ export function historyRowHtml(r) {
       ${tag}
     </summary>
     <div class="more">
-      ${plan ? `<p>${esc(plan)}.</p>` : ''}
+      ${plan ? `<p>${m ? '<span class="k">Desk</span> ' : ''}${esc(plan)}.</p>` : ''}
+      ${his ? `<p class="mine"><span class="k">You</span> ${esc(his)}.</p>` : ''}
       ${r.setup ? `<p>${esc(r.setup)}</p>` : ''}
       ${r.catalyst ? `<p><span class="k">Catalyst</span> ${esc(r.catalyst)}</p>` : ''}
       ${r.invalidation ? `<p><span class="k">Out if</span> ${esc(r.invalidation)}</p>` : ''}

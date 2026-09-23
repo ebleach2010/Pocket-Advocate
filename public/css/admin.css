@@ -2227,6 +2227,32 @@ html[data-desk]:root .rec .cell.wide { grid-column: span 2; }
 html[data-desk]:root .rec .cell .v { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 15px; color: var(--ink); margin-top: 3px; overflow-wrap: anywhere; }
 html[data-desk]:root .rec .cell.red .v { color: #FF8FA3; }
 html[data-desk]:root .rec .cell.green .v { color: #8CFFC6; }
+/* HIS SIZE (Eric, 2026-09-23): Amount and Risk are buttons that look like the
+   cells beside them, with a blue underline and a small pencil so they read as
+   his to change, on an open card and on a taken one alike. */
+html[data-desk]:root .rec .cell.tap { display: block; width: 100%; min-height: 44px; margin: 0; border: 0; border-radius: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; -webkit-appearance: none; appearance: none; box-shadow: inset 0 -2px 0 rgba(var(--blue-rgb),.55); }
+html[data-desk]:root .rec .cell.tap .k { display: flex; align-items: center; gap: 6px; }
+html[data-desk]:root .rec .cell.tap .v { display: block; }
+html[data-desk]:root .rec .cell.tap .pen { flex: none; width: 11px; height: 11px; background: var(--blue); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 21l3.8-1 11.7-11.7-2.8-2.8L4 17.2 3 21zm14.2-17.9l2.8 2.8 1.4-1.4a1 1 0 000-1.4l-1.4-1.4a1 1 0 00-1.4 0z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 21l3.8-1 11.7-11.7-2.8-2.8L4 17.2 3 21zm14.2-17.9l2.8 2.8 1.4-1.4a1 1 0 000-1.4l-1.4-1.4a1 1 0 00-1.4 0z'/%3E%3C/svg%3E") center / contain no-repeat; }
+html[data-desk]:root .rec .cell.tap:active { background: rgba(var(--blue-rgb),.16); }
+html[data-desk]:root .rec .cell.tap:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+html[data-desk]:root .rec.active .cell.tap { box-shadow: inset 0 -2px 0 rgba(var(--volt-rgb),.7); }
+html[data-desk]:root .rec.active .cell.tap .pen { background: var(--volt); }
+html[data-desk]:root .rec .mine-note { margin: 0; font-size: 13px; line-height: 1.4; color: var(--ink-2); }
+html[data-desk]:root .rec .mine-note b { color: var(--blue-core); font-weight: 600; }
+html[data-desk]:root .sheet .box { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); height: 48px; }
+html[data-desk]:root .sheet .box > span { font-family: var(--mono); font-size: 16px; color: var(--dim); }
+html[data-desk]:root .sheet .box input { flex: 1; min-width: 0; border: 0; background: none; height: 46px; padding: 0 12px 0 6px; }
+html[data-desk]:root .sheet .box input:focus-visible { box-shadow: none; }
+html[data-desk]:root .sheet .box:focus-within { border-color: rgba(var(--blue-rgb),.7); box-shadow: 0 0 0 1px rgba(var(--blue-rgb),.35), 0 0 12px rgba(var(--blue-rgb),.3); }
+html[data-desk]:root .sheet .sizeprev { display: grid; gap: 6px; padding: 10px 12px; margin: 2px 0 12px; }
+html[data-desk]:root .sheet .sizeprev .row { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+html[data-desk]:root .sheet .sizeprev .v { font-family: var(--mono); font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
+html[data-desk]:root .sheet .sizeprev .v.red { color: #FF8FA3; }
+html[data-desk]:root .sheet .sizeprev .v.green { color: #8CFFC6; }
+html[data-desk]:root .sheet .sizeprev .warn { margin: 2px 0 0; font-size: 13px; color: var(--gold); }
+html[data-desk]:root .sheet .sizeprev .why { margin: 0; font-size: 13px; color: var(--ink-2); }
+html[data-desk]:root .hist .more .mine { color: var(--ink); }
 html[data-desk]:root .rec .vehicle { margin: 0; font-size: 13px; color: var(--ink-2); }
 html[data-desk]:root .rec .setup { margin: 0; font-size: 15px; line-height: 1.45; color: var(--ink); }
 html[data-desk]:root .rec .why { margin: 0; display: grid; grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 6px; }

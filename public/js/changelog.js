@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.2';
+export const VERSION = '7.3';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.2';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // YOUR SIZE (Eric, 2026-09-23: "I should be able to manually tap on the
+    // amount traded and update it, the amount I'm willing to risk, then it
+    // adjusts the stop loss and take profit", "Including after the trade was
+    // accepted"). Admin only.
+    version: '7.3',
+    quiet: true,
+    client: [],
+    admin: [
+      'Tap Amount or Risk on any trade, before or after you take it, and set your own size: the dollars going in and the dollars you would lose at the stop. The stop and targets move to match, and the targets keep the reward the desk gave for the risk.',
+      'Your numbers show on the card with what the desk had underneath, and History keeps both. Back to the desk\'s plan is one tap in the same place.',
+    ],
+  },
   {
     // FIFTY CALLS (Eric, 2026-09-23: "I didn't get a 7am mst run/push for 420
     // like I asked"). Measured: one run may make fifty outside calls, and the

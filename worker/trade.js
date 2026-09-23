@@ -17,7 +17,7 @@
 
 import { patchDoc, listDocs, tryGet, batchGetDocs, READ_FAILED, readFailedError, deleteDoc } from './firestore.js';
 import { requestRun, runAlive, riskPctOf, RESEARCH_PATH, LENSES } from './desk-run.js';
-import { isTradingDay, isMarketOpen, MARKET_OPEN_MIN } from '../public/js/trade-math.js';
+import { isTradingDay, isMarketOpen, MARKET_OPEN_MIN, planFor } from '../public/js/trade-math.js';
 import {
   TRADE_TZ, DESK_NAME, SAY, SETTINGS_PATH, STATE_PATH, PLAYS, BALANCES, POSITIONS, DEFAULT_WATCHLIST, WATCHLIST_MAX, KEY_RE,
   QUOTE_MAX, mtParts, keyTail, resolveKey, watchlistOf, startOf, realDate,
@@ -88,8 +88,15 @@ export function recRow(id, d) {
     status: String(d?.status || 'open'), result,
     at: iso(d?.at), tookAt: iso(d?.tookAt), closedAt: iso(d?.closedAt), expiresAt: iso(d?.expiresAt),
     runId: d?.runId || null,
+    // His own size, when he set one: what he typed, and the stop and targets it gave.
+    mine: mineOf(d?.mine),
   };
 }
+const mineOf = (m) => (m && Number(m.amountCents) > 0 && Number(m.riskCents) > 0 ? {
+  amountCents: Number(m.amountCents), riskCents: Number(m.riskCents),
+  stop: m.stop ?? null, targets: Array.isArray(m.targets) ? m.targets : [],
+  qty: m.qty ?? null, costCents: m.costCents ?? null, at: m.at ? new Date(m.at).toISOString() : null,
+} : null);
 
 /** Where the run is, in the words the RUN TRADING DESK line needs. */
 export function runBlock(run, now = Date.now()) {
@@ -237,6 +244,30 @@ export async function tradeResult(env, body, now = Date.now()) {
   if (won === false) throw new TradeError(409, SAY.busy);
   await editActive(env, (ids) => ids.filter((x) => x !== id));
   return { ok: true, rec: recRow(id, { ...d, ...patch }) };
+}
+
+/**
+ * HIS SIZE (Eric, 2026-09-23: "I should be able to manually tap on the amount
+ * traded and update it, the amount I'm willing to risk, then it adjusts the
+ * stop loss and take profit", "Including after the trade was accepted"). The
+ * stop and targets come from planFor, the same function the card previews
+ * with, so what he saw is what is saved. The desk's own stop and targets stay
+ * on the trade untouched: History shows both. `reset` goes back to the desk's.
+ */
+export async function tradeAdjust(env, body, now = Date.now()) {
+  const id = String(body?.id || '');
+  const doc = await readRec(env, id);
+  const d = doc.data || {};
+  if (d.status !== 'open' && d.status !== 'took') throw new TradeError(409, SAY.notAdjustable);
+  let mine = null;
+  if (body?.reset !== true) {
+    const p = planFor({ rec: d, amountCents: body?.amountCents, riskCents: body?.riskCents });
+    if (!p.ok) throw new TradeError(400, p.why);
+    mine = { amountCents: p.amountCents, riskCents: p.askedRiskCents, stop: p.stop, targets: p.targets, qty: p.qty, costCents: p.costCents, at: new Date(now) };
+  }
+  const won = await patchDoc(env, `${PLAYS}/${id}`, { mine }, { mask: ['mine'], ifUpdateTime: doc.updateTime }).catch(() => false);
+  if (won === false) throw new TradeError(409, SAY.busy);
+  return { ok: true, rec: recRow(id, { ...d, mine }) };
 }
 
 // ---- history ----------------------------------------------------------------------
@@ -495,6 +526,7 @@ export async function tradeRoute(env, { sub, method, body, query = {}, now = Dat
   if (sub === 'run') return tradeRun(env, { now });
   if (sub === 'take') return tradeTake(env, body, now);
   if (sub === 'result') return tradeResult(env, body, now);
+  if (sub === 'adjust') return tradeAdjust(env, body, now);
   if (sub === 'balance') return tradeBalance(env, body, now);
   if (sub === 'settings') return tradeSettings(env, body);
   if (sub === 'open') return tradeOpen(env, { now: new Date(now) });

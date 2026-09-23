@@ -452,6 +452,17 @@ says so (D25), and that a 7:00 run the cron gives up still pushes (D26).
 trade.mjs T67 holds that the board is one read, and T30 that a firing with
 desk work leaves its per-minute chores to the next minute.
 
+**Your size (2026-09-23, v7.3).** Amount and Risk on every card, open or
+taken, are buttons: he sets the dollars going in and the dollars lost at the
+stop, and `planFor` in trade-math.js places the stop there (rounded toward
+the entry so the loss is never more than he said) and carries each target at
+the multiple of the risk the desk gave it. The page previews with it and the
+Worker saves with it (`POST trade/adjust`, under the trade's own time, the
+desk's stop and targets untouched). trade.mjs T68 runs the math, T69 the
+route, T70 the card and History; drive-trade.mjs section M taps, types,
+saves, takes the trade, changes its risk, goes back to the desk's plan and
+finds both in History.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

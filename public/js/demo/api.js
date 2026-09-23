@@ -11,7 +11,7 @@
 import { DEMO_CASE_ID } from './seed.js';
 // The Trade portal's arithmetic (2026-09-21): the same module the Worker uses, so the demo's numbers are the real numbers.
 // PR 420 (2026-09-23) took the positions, the calculator, the stats and the scan off the desk, so two are left.
-import { tradeMetrics, rulesOf } from '../trade-math.js';
+import { tradeMetrics, rulesOf, planFor } from '../trade-math.js';
 // The desk makes a PDF (2026-09-22): the same writer the Worker files with, so the demo's document is a real one.
 import { textPdf } from '../textpdf.js';
 // The same two vocabularies the pages read, so the demo cannot answer with a
@@ -1768,6 +1768,7 @@ export function demoApi(role, store) {
         notOpen: 'That trade is no longer open to take.',
         notTaken: 'Tap YES on this trade before marking how it ended.',
         badResult: 'Mark it PROFIT or LOSS.',
+        notAdjustable: 'That trade is closed, so its size can no longer change.',
         badRisk: 'Risk per trade: 0.1 to 5 percent of the balance.',
       };
       const DEFAULT_WATCHLIST = ['SPY', 'QQQ', 'IWM', 'NVDA', 'AMD', 'SOFI', 'PLTR', 'F', 'INTC', 'BAC'];
@@ -1803,6 +1804,10 @@ export function demoApi(role, store) {
         result: d.result === 'profit' || d.result === 'loss' ? d.result
           : d.status === 'closed' && Number(d.outcomeCents) ? (Number(d.outcomeCents) > 0 ? 'profit' : 'loss') : null,
         at: iso(d.at), tookAt: iso(d.tookAt), closedAt: iso(d.closedAt), expiresAt: iso(d.expiresAt), runId: d.runId || null,
+        mine: d.mine && Number(d.mine.amountCents) > 0 && Number(d.mine.riskCents) > 0 ? {
+          amountCents: Number(d.mine.amountCents), riskCents: Number(d.mine.riskCents), stop: d.mine.stop ?? null,
+          targets: Array.isArray(d.mine.targets) ? d.mine.targets : [], qty: d.mine.qty ?? null, costCents: d.mine.costCents ?? null, at: iso(d.mine.at),
+        } : null,
       });
       const BUSY_RUN = ['queued', 'researching', 'decide', 'deciding'];
       const runBlock = (run) => (run ? {
@@ -1999,6 +2004,23 @@ export function demoApi(role, store) {
         const next = { ...d, status: 'closed', result, closedAt: new Date() };
         store.docs.set(`trade/plays/items/${id}`, next);
         editActive((ids) => ids.filter((x) => x !== id));
+        store.persist?.();
+        return ok({ ok: true, rec: recRow(id, next) });
+      }
+      // His own size (2026-09-23): the Worker's tradeAdjust, on the same planFor.
+      if (sub === 'adjust') {
+        const id = String(body.id || '');
+        const d = readRec(id);
+        if (!d) return fail(404, SAY.noRec);
+        if (d.status !== 'open' && d.status !== 'took') return fail(409, SAY.notAdjustable);
+        let mine = null;
+        if (body.reset !== true) {
+          const p = planFor({ rec: d, amountCents: body.amountCents, riskCents: body.riskCents });
+          if (!p.ok) return fail(400, p.why);
+          mine = { amountCents: p.amountCents, riskCents: p.askedRiskCents, stop: p.stop, targets: p.targets, qty: p.qty, costCents: p.costCents, at: new Date() };
+        }
+        const next = { ...d, mine };
+        store.docs.set(`trade/plays/items/${id}`, next);
         store.persist?.();
         return ok({ ok: true, rec: recRow(id, next) });
       }

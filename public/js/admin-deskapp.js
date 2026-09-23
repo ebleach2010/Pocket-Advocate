@@ -13,6 +13,7 @@
 //   RUN TRADING DESK   one tap, no confirmation, a fresh run by the desk
 //   YES, I TOOK IT     the card goes electric yellow and grows two buttons
 //   PROFIT / LOSS      the trade leaves for History with its setup and times
+//   Amount or Risk     his own size on any card, open or taken; stop and targets follow
 //   Settings           his balance, the risk per trade, and a few switches
 // There is no chat and no question box: the desk never asks him anything.
 //
@@ -25,10 +26,11 @@
 import { requireAdmin } from './auth.js';
 import { VERSION } from './changelog.js';
 import {
-  esc, money, clock, dayShort, agoShort, tradeCall, runLine,
+  esc, money, price, clock, dayShort, agoShort, tradeCall, runLine,
   recCardHtml, boardHtml, historyRowHtml, deskNewsHtml, newsRowHtml, earningsChipHtml,
 } from './admin-desk.js';
 import { createFx, seedFlicker } from './admin-deskfx.js';
+import { recSizing, planFor } from './trade-math.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -169,6 +171,7 @@ function paintBoard() {
   badge.textContent = String(active.length);
   badge.classList.add('volt');
   for (const b of $$('#pg-trades [data-act]')) b.addEventListener('click', () => act(b));
+  for (const b of $$('#pg-trades [data-edit]')) b.addEventListener('click', () => openSize(b));
 }
 function paintTrades() { paintMarket(); paintRun(); paintBoard(); }
 
@@ -238,6 +241,85 @@ async function act(btn) {
     // A trade that timed out or was already marked elsewhere: the server knows best.
     if (/not on the desk|no longer open|before marking/.test(err.message)) loadState().then(paintTrades).catch(() => {});
   }
+}
+
+// ---- his size ---------------------------------------------------------------------------
+// Eric, 2026-09-23: "I should be able to manually tap on the amount traded and update it, the
+// amount I'm willing to risk, then it adjusts the stop loss and take profit", and "Including after
+// the trade was accepted". The sheet opens on the card's own numbers; as he types, the stop and
+// targets they give are shown from planFor, the function the Worker saves with. Save sends the two
+// numbers, and the card repaints from what the server kept.
+const dollarsIn = (v) => { const raw = String(v ?? '').replace(/[$,\s]/g, ''); const n = Number(raw); return raw && Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null; };
+const plainDollars = (cents) => (cents > 0 ? (cents / 100).toFixed(2).replace(/\.00$/, '') : '');
+function openSize(btn) {
+  const card = btn.closest('[data-rec]');
+  const r = recOf(card?.dataset.rec);
+  if (!r) return;
+  const ctx = cardCtx();
+  const acct = ctx.balanceTyped ? ctx.accountCents : 0;
+  const base = r.mine ? { costCents: r.mine.amountCents, riskCents: r.mine.riskCents } : recSizing({ rec: r, accountCents: ctx.accountCents, rules: ctx.rules });
+  const amt0 = r.mine ? r.mine.amountCents : (ctx.balanceTyped ? base.costCents : null);
+  const risk0 = r.mine ? r.mine.riskCents : (ctx.balanceTyped ? base.riskCents : null);
+  const live = Number(S.quotes?.[r.ticker]?.last);
+  const { sheet, close } = openSheet(`<h3>${esc(r.ticker)} · your size</h3>
+    <div class="sum">What goes in, and what you would lose at the stop. The stop and targets move to match, and the targets keep the desk's reward for the risk.</div>
+    <label>Amount in the trade<span class="box"><span style="padding-left:10px">$</span><input class="num" inputmode="decimal" id="sz-amt" value="${esc(plainDollars(amt0))}" placeholder="500"></span></label>
+    <label>Risk, lost at the stop<span class="box"><span style="padding-left:10px">$</span><input class="num" inputmode="decimal" id="sz-risk" value="${esc(plainDollars(risk0))}" placeholder="60"></span></label>
+    <div class="panel sizeprev" id="sz-prev" aria-live="polite"></div>
+    <button type="button" class="btn tall wide primary" id="sz-go">Save my size</button>
+    <p class="said" id="sz-said" style="margin:8px 0 0"></p>
+    ${r.mine ? '<button type="button" class="btn quiet wide" id="sz-reset" style="margin-top:8px">Back to the desk\'s plan</button>' : ''}
+    <button type="button" class="btn quiet wide" data-x style="margin-top:8px">Cancel</button>`);
+  const amtIn = sheet.querySelector('#sz-amt');
+  const riskIn = sheet.querySelector('#sz-risk');
+  const go = sheet.querySelector('#sz-go');
+  const prev = sheet.querySelector('#sz-prev');
+  const preview = () => {
+    const a = dollarsIn(amtIn.value); const k = dollarsIn(riskIn.value);
+    const p = a && k ? planFor({ rec: r, amountCents: a, riskCents: k, accountCents: acct, rules: ctx.rules }) : { ok: false, why: 'Type the amount and the risk in dollars.' };
+    go.disabled = !p.ok;
+    if (!p.ok) { prev.innerHTML = `<p class="why">${esc(p.why)}</p>`; return p; }
+    const qty = p.contracts != null ? `${p.contracts} contract${p.contracts === 1 ? '' : 's'}` : `${p.shares} share${p.shares === 1 ? '' : 's'}`;
+    const up = r.instrument !== 'stock' || r.side !== 'short';
+    const hit = Number.isFinite(live) && live > 0 && (up ? live <= p.stop : live >= p.stop);
+    prev.innerHTML = `<div class="row"><span class="k">Stop</span><span class="v red num">${esc(price(p.stop))}</span></div>
+      <div class="row"><span class="k">Targets</span><span class="v green num">${esc(p.targets.map(price).join(' then '))}</span></div>
+      <div class="row"><span class="k">Buys</span><span class="v num">${esc(qty)} at ${esc(price(p.entry))}, ${esc(money(p.costCents))}</span></div>
+      <div class="row"><span class="k">Risk</span><span class="v num">${esc(money(p.riskCents))}${p.rewardCents != null ? ` for ${esc(money(p.rewardCents))}, 1 : ${esc(p.rr)}` : ''}</span></div>
+      ${p.overRule ? `<p class="warn">Over your ${esc(money(p.budgetCents))} rule for one trade.</p>` : ''}
+      ${hit ? `<p class="warn">At ${esc(price(live))} now, that stop is already hit.</p>` : ''}`;
+    return p;
+  };
+  amtIn.addEventListener('input', preview);
+  riskIn.addEventListener('input', preview);
+  preview();
+  const send = async (body, done) => {
+    go.disabled = true;
+    say(sheet.querySelector('#sz-said'), 'Saving…');
+    S.rev += 1;
+    try {
+      const out = await call('adjust', { id: r.id, ...body });
+      const rec = out.rec;
+      S.state = {
+        ...S.state,
+        recs: (S.state.recs || []).map((x) => (x.id === rec.id ? rec : x)),
+        active: (S.state.active || []).map((x) => (x.id === rec.id ? rec : x)),
+      };
+      paintBoard();
+      close();
+      toast(done(rec));
+    } catch (err) {
+      say(sheet.querySelector('#sz-said'), err.message);
+      go.disabled = false;
+    }
+  };
+  go.addEventListener('click', () => {
+    const p = preview();
+    if (!p.ok) return;
+    send({ amountCents: dollarsIn(amtIn.value), riskCents: dollarsIn(riskIn.value) }, (rec) => `Saved. ${rec.ticker} stop ${price(rec.mine?.stop)}.`);
+  });
+  sheet.querySelector('#sz-reset')?.addEventListener('click', () => send({ reset: true }, (rec) => `${rec.ticker} is back on the desk's plan.`));
+  (btn.dataset.edit === 'risk' ? riskIn : amtIn).focus();
 }
 
 // ---- live prices on the cards ---------------------------------------------------------
