@@ -37,12 +37,24 @@
 //
 // SURVIVING A KILL. A long invocation can still be ended (a runtime update
 // gives in-flight work a 30 second grace). So every researcher's report is
-// written the moment it lands, the run beats a heartbeat every 45 seconds,
-// and a run whose heartbeat has gone quiet is claimed by the next firing and
-// resumed: reports already in are reused, only the missing ones re-run, and
-// the desk decides as soon as enough are in.
+// written the moment it lands, and a run whose claim is older than any one
+// firing can take (STALE_MS) is claimed by the next firing and resumed:
+// reports already in are reused, only the missing ones re-run, and the desk
+// decides as soon as enough are in.
+//
+// FIFTY OUTSIDE CALLS (measured in production, 2026-09-23). One invocation
+// may make fifty requests to anything outside the Worker (the database, the
+// provider, the quote feed, a push), then every further one throws. The first
+// day's runs spent them all partway through research, after which not even
+// the error could be saved, so the 7:00 run died three times without a word.
+// So a run is two firings, each well inside the fifty: the research in one,
+// the desk's decision in the next, which starts with its own fifty. Nothing
+// beats a heartbeat (a claim's age is the liveness), the database is read and
+// written in batches, the market data is fetched once and stored with the
+// research, and a researcher that fails is not retried inside the firing.
+// desk.mjs counts every call on the worst path of each firing (D24).
 
-import { tryGet, patchDoc, READ_FAILED } from './firestore.js';
+import { tryGet, patchDoc, batchGetDocs, batchWrite, READ_FAILED } from './firestore.js';
 import { client, diagLog } from './advisor.js';
 import { notifyUser } from './push.js';
 import {
@@ -69,32 +81,38 @@ export const DESK_MAX_TOKENS = 32_000;
 // inside this same awaited cron drain, one 184 seconds in, and the cause was
 // never settled (the flight recorder saw the deaths, not the reason). So no
 // turn here is allowed to run long: a researcher is cut at a little over
-// three minutes and the desk likewise, and when research alone has used most
-// of that, the desk's decision is handed to the next minute's firing instead
-// of stretching one invocation. Reports already in are never lost either way.
+// three minutes and the desk likewise, and the desk's decision always goes to
+// the next minute's firing (FIFTY OUTSIDE CALLS, above). Reports already in
+// are never lost either way.
 export const RESEARCH_BUDGET_MS = 200_000;
 export const DESK_BUDGET_MS = 200_000;
-export const HANDOFF_AFTER_MS = 150_000;
 // Thinking summaries stream as they are written, so bytes keep flowing on a
 // long think instead of a silent connection carrying nothing but pings.
 export const THINKING = { type: 'adaptive', display: 'summarized' };
 // His rule (Eric, 2026-09-23: "3% risk rule."): a stopped-out trade costs at
 // most three percent of the balance. Settings can change it.
 export const DEFAULT_RISK_PCT = 3;
-export const HEARTBEAT_MS = 45_000;
-export const STALE_BEAT_MS = 3 * 60_000;
+// A firing's work is capped well under this (research at RESEARCH_BUDGET_MS,
+// the desk at DESK_BUDGET_MS, a few writes either side), so a claim older
+// than it belongs to an invocation that died.
+export const STALE_MS = 6 * 60_000;
+// The ceiling one invocation has, and the most devices a desk push tries.
+export const CALL_CAP = 50;
+export const PUSH_MAX = 3;
 export const RUN_GIVE_UP_MS = 45 * 60_000;
 export const MAX_ATTEMPTS = 3;
 export const MIN_REPORTS = 2;
 export const MAX_TRADES = 6;
 export const MAX_PER_HORIZON = 2;
 export const MAX_NEWS = 6;
-export const MAX_CONTINUES = 2;
+export const MAX_CONTINUES = 1;
 export const RESEARCH_PATH = 'trade/research';
 export const WEB_SEARCH = { type: 'web_search_20260209', name: 'web_search', max_uses: RESEARCH_SEARCHES };
-// The index and the eleven sector funds ride every run beside his watchlist,
-// so the macro researcher and the desk see the same tape the others do.
-export const MARKET_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA', 'XLK', 'XLF', 'XLE', 'XLV', 'XLY', 'XLP', 'XLI', 'XLU', 'XLB', 'XLRE', 'XLC'];
+// The four index funds ride every run, so every researcher and the desk see
+// the same tape. Four, not his watchlist and the sector funds as well: each
+// quote is one of the fifty calls. The researchers search for the rest, and
+// his watchlist goes to them by name.
+export const MARKET_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA'];
 const TICKER_RE = /^[A-Z][A-Z.]{0,5}$/;
 
 // ---- the five beats ------------------------------------------------------------
@@ -339,8 +357,8 @@ export class RefusedError extends Error {
  * back exactly as it came. `signal` covers the whole body; the SDK's own
  * timeout only covers the wait for headers.
  */
-export async function liveTurn(env, body, { signal, maxContinues = MAX_CONTINUES, call = null } = {}) {
-  const send = call || ((b) => client(env).messages.create({ ...b, stream: true }, { signal, maxRetries: 2 }).asResponse());
+export async function liveTurn(env, body, { signal, maxContinues = MAX_CONTINUES, maxRetries = 0, call = null } = {}) {
+  const send = call || ((b) => client(env).messages.create({ ...b, stream: true }, { signal, maxRetries }).asResponse());
   let messages = body.messages;
   let container = null;
   const parts = [];
@@ -520,13 +538,31 @@ async function readState(env) {
 const ms = (v) => (v ? new Date(v).getTime() : 0);
 const LIVE = new Set(['queued', 'researching', 'decide', 'deciding']);
 
-/** Whether a run is genuinely in flight: queued, or working with a heartbeat that is not stale. */
+/** Whether a run is genuinely in flight: queued, or working under a claim younger than any firing can take. */
 export function runAlive(run, now = Date.now()) {
   if (!run || !LIVE.has(run.status)) return false;
   if (run.status === 'queued' || run.status === 'decide') return now - ms(run.queuedAt || run.startedAt) < RUN_GIVE_UP_MS;
-  // A fresh heartbeat means an invocation is working on it now, however long
-  // the run has been going; only a quiet one can be taken over or given up.
-  return now - ms(run.heartbeatAt || run.claimedAt) < STALE_BEAT_MS;
+  // A firing's work is capped under STALE_MS, so a younger claim is being
+  // worked on now; only an older one can be taken over or given up.
+  return now - ms(run.claimedAt || run.heartbeatAt) < STALE_MS;
+}
+
+/** Whether the cron has something to do for the desk: a run to claim, to resume or to give up. */
+export function deskClaimable(run, now = Date.now()) {
+  if (!run || !LIVE.has(run.status)) return false;
+  return run.status === 'queued' || run.status === 'decide' || !runAlive(run, now);
+}
+
+/**
+ * The firing's first look (2026-09-23): one read, before anything else runs,
+ * so a firing that hosts the desk can leave its per-minute chores to the next
+ * one and give the run its fifty calls. Answers the state document when there
+ * is desk work, else null.
+ */
+export async function peekDesk(env, { now = Date.now() } = {}) {
+  const doc = await tryGet(env, STATE_PATH);
+  if (!doc || doc === READ_FAILED) return null;
+  return deskClaimable(doc.data?.run, now) ? doc : null;
 }
 
 /**
@@ -553,43 +589,44 @@ export async function requestRun(env, { trigger = 'manual', now = Date.now() } =
 }
 
 /**
- * The cron's one call. Claims a queued run, or resumes one whose heartbeat
- * went quiet, and runs it to the end inside this invocation. Returns true
- * when it did the work, so the firing leaves the case drain for the next one.
+ * The cron's one call. Claims a queued run, or resumes one whose claim went
+ * stale, and runs that one firing's share of it (the research, or the desk's
+ * decision) inside this invocation. Returns true when it did desk work, so
+ * the firing leaves the case drain to the next minute: what remains of its
+ * fifty calls is not enough to promise a case read. `doc` is the state the
+ * firing's first look already read, so it is not read twice.
  */
-export async function maybeRunDesk(env, { deadlineAt, now = Date.now(), deps = {} } = {}) {
-  let doc;
-  try { doc = await readState(env); } catch { return false; }
+export async function maybeRunDesk(env, { deadlineAt, now = Date.now(), doc: seen = null, deps = {} } = {}) {
+  let doc = seen;
+  if (!doc) { try { doc = await readState(env); } catch { return false; } }
   const run = doc?.data?.run;
   if (!run || !LIVE.has(run.status)) return false;
   // Queued, and research handed to the desk, are claimed at once; a working
-  // run only once its heartbeat has gone quiet.
+  // run only once its claim has gone stale.
   const ready = run.status === 'queued' || run.status === 'decide';
   if (!ready && runAlive(run, now)) return false;
   const age = now - ms(run.startedAt || run.queuedAt);
   // Attempts count invocations that died on it. A run handed to the desk
   // after its research is not a death, so it is never given up for that.
   if (age >= RUN_GIVE_UP_MS || (!ready && (Number(run.attempt) || 0) >= MAX_ATTEMPTS)) {
-    await patchDoc(env, STATE_PATH, { run: { ...run, status: 'error', error: SAY.runStalled, finishedAt: new Date(now) } }, { mask: ['run'], ifUpdateTime: doc.updateTime }).catch(() => {});
-    await diagLog(env, { ev: 'desk-run-end', ok: false, err: 'gave up', attempt: run.attempt || 0 }).catch(() => {});
-    return false;
+    const gave = await patchDoc(env, STATE_PATH, { run: { ...run, status: 'error', error: SAY.runStalled, finishedAt: new Date(now) } }, { mask: ['run'], ifUpdateTime: doc.updateTime }).catch(() => false);
+    await diagLog(env, { ev: 'desk-run-end', ok: false, err: 'gave up', trigger: run.trigger || 'manual', attempt: run.attempt || 0 }).catch(() => {});
+    if (gave !== false) await pushFailure(env, run, SAY.runStalled, { notifyUser: deps.notifyUser });
+    return true;
   }
+  const toDesk = run.status === 'decide' || run.status === 'deciding';
   const claimed = {
     ...run,
-    phase: run.status === 'decide' || run.status === 'deciding' ? 'desk' : 'research',
-    status: run.status === 'decide' || run.status === 'deciding' ? 'deciding' : 'researching',
+    phase: toDesk ? 'desk' : 'research',
+    status: toDesk ? 'deciding' : 'researching',
     startedAt: run.startedAt || new Date(now),
     claimedAt: new Date(now), heartbeatAt: new Date(now),
     attempt: run.status === 'decide' ? Math.max(1, Number(run.attempt) || 0) : (Number(run.attempt) || 0) + 1, error: null,
   };
   const won = await patchDoc(env, STATE_PATH, { run: claimed }, { mask: ['run'], ifUpdateTime: doc.updateTime }).catch(() => false);
   if (won === false) return false;
-  const t0 = Date.now();
   await executeRun(env, claimed, { deadlineAt, deps });
-  // True only when the run really held this firing. One that failed in
-  // seconds (a refused request, no credit) leaves the minute's case drain to
-  // run as usual, so tapping again and again can never starve the cases.
-  return Date.now() - t0 >= (deps.heldMs ?? 60_000);
+  return true;
 }
 
 // ---- one run, start to finish ------------------------------------------------------------
@@ -604,6 +641,19 @@ const friendly = (err) => {
   return String(err?.message || err || 'failed').slice(0, 140);
 };
 
+/**
+ * An error no retry can fix (2026-09-23, the day the account ran dry): the
+ * account is out of credit, or the key is refused. Every researcher fails
+ * the same way in a third of a second, and trying again only hides why.
+ */
+export function fatalOf(err) {
+  const s = Number(err?.status);
+  if (s === 400 && /credit balance/i.test(String(err?.message || ''))) return 'credit';
+  if (s === 401 || s === 403) return 'key';
+  return null;
+}
+const fatalSay = (f) => (f === 'credit' ? SAY.noCredit : f === 'key' ? SAY.keyRefused : null);
+
 /** His risk per trade, in percent of the balance: his setting, else three. */
 export function riskPctOf(settings) {
   const v = Number(settings?.riskPct);
@@ -615,27 +665,42 @@ async function readSettings(env) {
   return doc === READ_FAILED ? {} : (doc?.data || {});
 }
 
-/** Everything a run does after its claim. Exported for the checks, which hand it fakes through `deps`. */
+/**
+ * The 7:00 run always reaches his phone (Eric, 2026-09-23: "I didn't get a
+ * 7am mst run/push for 420 like I asked"): a run that could not finish says
+ * so, and why, instead of saying nothing. His own runs he is watching.
+ */
+async function pushFailure(env, run, why, { notifyUser: push = null } = {}, settings = null) {
+  if (run?.trigger !== 'morning' || !env.ADMIN_UID) return false;
+  const s = settings || await readSettings(env);
+  if (s.pushOn === false) return false;
+  await (push || notifyUser)(env, env.ADMIN_UID, { title: 'PR 420', body: `The 7:00 run did not finish. ${why}`, link: '/admin-desk.html', max: PUSH_MAX }).catch(() => {});
+  return true;
+}
+
+/**
+ * One firing's share of a run, after its claim: the research when the run is
+ * in its research phase, the desk's decision when it has been handed over.
+ * Exported for the checks, which hand it fakes through `deps`.
+ */
 export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_000, deps = {} } = {}) {
   const t0 = Date.now();
   const turn = deps.liveTurn || liveTurn;
   const snapshot = deps.marketSnapshot || marketSnapshot;
   const quote = deps.quoteCached || quoteCached;
   const push = deps.notifyUser || notifyUser;
+  const getMany = deps.batchGetDocs || batchGetDocs;
+  const writeMany = deps.batchWrite || batchWrite;
   const settings = await readSettings(env);
-  const doc0 = await tryGet(env, STATE_PATH).catch(() => null);
   const accountType = settings.accountType === 'margin' ? 'margin' : 'cash';
   const key = resolveKey(env, settings);
   const session = sessionLine(t0);
   const { dateKey: todayKey } = mtParts(t0);
-  let alive = true;
-  let beatTimer = null;
-  let wake = null;
   // OWNERSHIP (2026-09-23). Another invocation may have given this run up or
   // he may have queued a new one while this one worked. Every write below
   // first checks the slot still holds this run and this attempt; once it does
   // not, this invocation stops writing altogether, so an old attempt can never
-  // overwrite a newer run or keep a dead one looking alive.
+  // overwrite a newer run.
   let lost = false;
   const mine = async () => {
     const d = await tryGet(env, STATE_PATH).catch(() => null);
@@ -645,21 +710,23 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     lost = true;
     return false;
   };
-  const beat = (async () => {
-    while (alive) {
-      await new Promise((r) => { wake = r; beatTimer = setTimeout(r, deps.heartbeatMs || HEARTBEAT_MS); });
-      if (!alive || lost) break;
-      if (await mine() === false) break;
-      await patchDoc(env, STATE_PATH, { run: { heartbeatAt: new Date() } }, { mask: ['run.heartbeatAt'] }).catch(() => {});
-    }
-  })();
-  const setRun = async (fields) => {
-    if (lost || await mine() === false) return false;
+  // `own` is a read already made that proved ownership, so it is not made twice.
+  const setRun = async (fields, own = null) => {
+    if (lost) return false;
+    if (!own && await mine() === false) return false;
     return patchDoc(env, STATE_PATH, { run: fields }, { mask: Object.keys(fields).map((k) => `run.${k}`) }).catch(() => false);
   };
   const superseded = async (stage) => {
     await diagLog(env, { ev: 'desk-run-end', ok: false, err: `superseded at ${stage}`, attempt: run.attempt || 0, ms: Date.now() - t0 }).catch(() => {});
     return { ok: false, why: 'superseded' };
+  };
+  // Every way a run can end badly ends here: the sentence he reads, the
+  // flight recorder, and for the 7:00 run the push.
+  const fail = async (why, err, extra = {}, own = null) => {
+    const wrote = await setRun({ status: 'error', error: why, finishedAt: new Date() }, own);
+    await diagLog(env, { ev: 'desk-run-end', ok: false, trigger: run.trigger || 'manual', err: String(err || '').slice(0, 140), ...extra, ms: Date.now() - t0 }).catch(() => {});
+    if (wrote !== false && !lost) await pushFailure(env, run, why, { notifyUser: push }, settings);
+    return { ok: false, why };
   };
   try {
     // The research doc belongs to one run. A resumed run keeps what landed; a fresh one starts clean.
@@ -667,85 +734,92 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     // A read that failed is not "no research": wiping the document would throw
     // away reports already paid for. The run goes back to be claimed again.
     if (rdoc === READ_FAILED) {
-      await setRun({ status: run.phase === 'desk' ? 'decide' : 'queued', heartbeatAt: new Date() });
+      await setRun({ status: run.phase === 'desk' ? 'decide' : 'queued' });
       await diagLog(env, { ev: 'desk-run-retry', err: 'research unreadable', attempt: run.attempt || 0 }).catch(() => {});
       return { ok: false, retry: true };
     }
-    const prior = rdoc && rdoc.data?.runId === run.id ? rdoc.data : null;
-    if (!prior) {
-      await patchDoc(env, RESEARCH_PATH, { runId: run.id, at: new Date(), r1: null, r2: null, r3: null, r4: null, r5: null }).catch(() => {});
-    }
+    let prior = rdoc && rdoc.data?.runId === run.id ? rdoc.data : null;
     const reports = {};
     for (const L of LENSES) if (prior?.[`r${L.n}`]?.status === 'ok') reports[L.n] = prior[`r${L.n}`];
 
-    const tickers = [...new Set([...MARKET_TICKERS, ...watchlistOf(settings)])].slice(0, 30);
-    const snap = key ? await snapshot(key, tickers, t0).catch(() => null) : null;
-    const market = snapshotText(snap, { hasKey: !!key });
-    const system = researchSystem(accountType);
-
-    // The five, in parallel, each written the moment it lands.
-    const left = run.phase === 'desk' ? [] : LENSES.filter((L) => !reports[L.n]);
-    // A resumed run that already holds enough reports does not buy the missing ones twice.
-    const skipResearch = (Number(run.attempt) || 1) > 1 && Object.keys(reports).length >= MIN_REPORTS;
-    const budget = Math.min(RESEARCH_BUDGET_MS, deadlineAt - Date.now() - DESK_BUDGET_MS - 20_000);
-    const agents = [];
-    let unsaved = false;
-    if (left.length && !skipResearch && budget >= 60_000) {
-      await setRun({ status: 'researching', done: Object.keys(reports).length });
-      await Promise.all(left.map(async (L) => {
-        const ac = new AbortController();
-        const timer = setTimeout(() => ac.abort(), budget);
-        const a0 = Date.now();
-        let row;
-        try {
-          const out = await turn(env, {
-            model: DESK_MODEL,
-            max_tokens: RESEARCH_MAX_TOKENS,
-            system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
-            messages: [{ role: 'user', content: [{ type: 'text', text: `Your beat: ${L.name}. ${L.beat}\n\n${session.text}\n\n${market}` }] }],
-            tools: [WEB_SEARCH],
-            thinking: THINKING,
-            output_config: { effort: RESEARCH_EFFORT },
-          }, { signal: ac.signal });
-          const text = stripDashes(out.text).slice(0, 12_000);
-          row = text
-            ? { status: 'ok', text, ms: Date.now() - a0, stop: out.message?.stop_reason || '', usage: out.usage, turns: out.turns, at: new Date() }
-            : { status: 'failed', err: 'came back empty', ms: Date.now() - a0, stop: out.message?.stop_reason || '', usage: out.usage, at: new Date() };
-        } catch (err) {
-          row = { status: err?.refused ? 'refused' : 'failed', err: friendly(err), ms: Date.now() - a0, at: new Date() };
-        } finally {
-          clearTimeout(timer);
+    if (run.phase !== 'desk') {
+      // THE RESEARCH FIRING. The market is fetched once per run and kept with
+      // the research, so the desk reads the same tape without paying again.
+      if (typeof prior?.market !== 'string') {
+        const snap = key ? await snapshot(key, MARKET_TICKERS, t0).catch(() => null) : null;
+        let market = snapshotText(snap, { hasKey: !!key });
+        const watch = watchlistOf(settings).filter((t) => !MARKET_TICKERS.includes(t)).slice(0, 25);
+        if (watch.length) market += `\n\nHis watchlist, not priced here: ${watch.join(', ')}.`;
+        const wrote = prior
+          ? await patchDoc(env, RESEARCH_PATH, { market }, { mask: ['market'] }).catch(() => false)
+          : await patchDoc(env, RESEARCH_PATH, { runId: run.id, at: new Date(), market, r1: null, r2: null, r3: null, r4: null, r5: null }).catch(() => false);
+        // A fresh run whose document could not be reset would file its
+        // reports beside another run's: it goes back to be claimed again.
+        if (wrote === false && !prior) {
+          await setRun({ status: 'queued' });
+          await diagLog(env, { ev: 'desk-run-retry', err: 'research not reset', attempt: run.attempt || 0 }).catch(() => {});
+          return { ok: false, retry: true };
         }
-        agents.push({ n: L.n, ok: row.status === 'ok', ms: row.ms, s: row.usage?.searches ?? null, st: row.stop || row.err || '' });
-        if (row.status === 'ok') reports[L.n] = row;
-        const saved = await patchDoc(env, RESEARCH_PATH, { [`r${L.n}`]: row }, { mask: [`r${L.n}`] }).catch(() => false);
-        if (saved === false && row.status === 'ok') unsaved = true;
-        await setRun({ done: Object.keys(reports).length, heartbeatAt: new Date() });
-      }));
-    }
-
-    if (lost) return superseded('research');
-    const got = LENSES.filter((L) => reports[L.n]);
-    if (got.length < MIN_REPORTS) {
-      const why = SAY.runThin;
-      await setRun({ status: 'error', error: why, finishedAt: new Date() });
-      await diagLog(env, { ev: 'desk-run-end', ok: false, err: `reports ${got.length}`, agents, ms: Date.now() - t0 }).catch(() => {});
-      return { ok: false, why };
-    }
-
-    // A long research phase hands the decision to the next minute's firing,
-    // which claims it at once, so no invocation carries both long halves.
-    // Never when a report could not be saved (the next firing would not see
-    // it), and never on the last attempt allowed.
-    if (run.phase !== 'desk' && !unsaved && (Number(run.attempt) || 1) < MAX_ATTEMPTS
-      && Date.now() - t0 > (deps.handoffAfterMs ?? HANDOFF_AFTER_MS)) {
-      await setRun({ status: 'decide', heartbeatAt: new Date() });
+        prior = { ...(prior || { runId: run.id }), market };
+      }
+      const system = researchSystem(accountType);
+      // A resumed run that already holds enough reports does not buy the missing ones twice.
+      const left = LENSES.filter((L) => !reports[L.n]);
+      const skipResearch = (Number(run.attempt) || 1) > 1 && Object.keys(reports).length >= MIN_REPORTS;
+      const budget = Math.min(RESEARCH_BUDGET_MS, deadlineAt - Date.now() - 20_000);
+      const agents = [];
+      if (left.length && !skipResearch && budget >= 60_000) {
+        // The five, in parallel, each written the moment it lands. No
+        // retries inside the firing: two of five back is enough to decide.
+        await Promise.all(left.map(async (L) => {
+          const ac = new AbortController();
+          const timer = setTimeout(() => ac.abort(), budget);
+          const a0 = Date.now();
+          let row;
+          try {
+            const out = await turn(env, {
+              model: DESK_MODEL,
+              max_tokens: RESEARCH_MAX_TOKENS,
+              system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+              messages: [{ role: 'user', content: [{ type: 'text', text: `Your beat: ${L.name}. ${L.beat}\n\n${session.text}\n\n${prior.market}` }] }],
+              tools: [WEB_SEARCH],
+              thinking: THINKING,
+              output_config: { effort: RESEARCH_EFFORT },
+            }, { signal: ac.signal, maxContinues: MAX_CONTINUES, maxRetries: 0 });
+            const text = stripDashes(out.text).slice(0, 12_000);
+            row = text
+              ? { status: 'ok', text, ms: Date.now() - a0, stop: out.message?.stop_reason || '', usage: out.usage, turns: out.turns, at: new Date() }
+              : { status: 'failed', err: 'came back empty', ms: Date.now() - a0, stop: out.message?.stop_reason || '', usage: out.usage, at: new Date() };
+          } catch (err) {
+            row = { status: err?.refused ? 'refused' : 'failed', err: friendly(err), fatal: fatalOf(err), ms: Date.now() - a0, at: new Date() };
+          } finally {
+            clearTimeout(timer);
+          }
+          const saved = await patchDoc(env, RESEARCH_PATH, { [`r${L.n}`]: row }, { mask: [`r${L.n}`] }).catch(() => false);
+          // Only a saved report counts: the desk reads them from the document in the next firing.
+          if (row.status === 'ok' && saved !== false) reports[L.n] = row;
+          agents.push({ n: L.n, ok: !!reports[L.n], ms: row.ms, s: row.usage?.searches ?? null, st: row.stop || row.err || '', fa: row.fatal || null });
+        }));
+      }
+      const got = LENSES.filter((L) => reports[L.n]);
+      const own = await mine();
+      if (own === false) return superseded('research');
+      if (got.length < MIN_REPORTS) {
+        // Every researcher refused for the same reason no retry can fix: say that reason.
+        const f = agents.length && agents.every((x) => x.fa && x.fa === agents[0].fa) ? agents[0].fa : null;
+        return fail(fatalSay(f) || SAY.runThin, f ? `no credit or key: ${f}` : `reports ${got.length}`, { agents }, own);
+      }
+      // Research is in. The desk decides in the next firing, which starts
+      // with its own fifty calls; the page says so meanwhile.
+      await setRun({ status: 'decide', done: got.length }, own);
       await diagLog(env, { ev: 'desk-run-handoff', reports: got.length, agents, ms: Date.now() - t0 }).catch(() => {});
       return { ok: true, handedOff: true, reports: got.length };
     }
 
-    // The desk.
-    await setRun({ status: 'deciding', heartbeatAt: new Date() });
+    // THE DESK FIRING.
+    const got = LENSES.filter((L) => reports[L.n]);
+    if (got.length < MIN_REPORTS) return fail(SAY.runThin, `desk saw ${got.length}`);
+    const market = typeof prior?.market === 'string' ? prior.market : 'No market data was saved with this run.';
     const deskBudget = Math.max(60_000, Math.min(DESK_BUDGET_MS, deadlineAt - Date.now() - 10_000));
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), deskBudget);
@@ -765,18 +839,16 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     try {
       let out;
       try {
-        out = await turn(env, deskBody(true), { signal: ac.signal, maxContinues: 0 });
+        out = await turn(env, deskBody(true), { signal: ac.signal, maxContinues: 0, maxRetries: 1 });
       } catch (err) {
         // An account that cannot use structured output answers 400; the same call without it still works.
         if (Number(err?.status) !== 400 || !/output_config|format|schema/i.test(String(err?.message || ''))) throw err;
-        out = await turn(env, deskBody(false), { signal: ac.signal, maxContinues: 0 });
+        out = await turn(env, deskBody(false), { signal: ac.signal, maxContinues: 0, maxRetries: 1 });
       }
       decided = { json: parseDesk(out.text), stop: out.message?.stop_reason || '', usage: out.usage, ms: Date.now() - d0 };
     } catch (err) {
-      const why = `The desk could not decide: ${friendly(err)}. Tap RUN TRADING DESK to try again.`;
-      await setRun({ status: 'error', error: why, finishedAt: new Date() });
-      await diagLog(env, { ev: 'desk-run-end', ok: false, err: `desk ${friendly(err)}`.slice(0, 140), agents, ms: Date.now() - t0 }).catch(() => {});
-      return { ok: false, why };
+      const why = fatalSay(fatalOf(err)) || `The desk could not decide: ${friendly(err)}. Tap RUN TRADING DESK to try again.`;
+      return fail(why, `desk ${friendly(err)}`);
     } finally {
       clearTimeout(timer);
     }
@@ -784,10 +856,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     // list or some other shape, would read as "nothing worth taking" and clear
     // his board, so it is refused the same way unreadable text is.
     if (!decided.json || typeof decided.json !== 'object' || Array.isArray(decided.json) || !Array.isArray(decided.json.trades)) {
-      const why = 'The desk answered in a shape the app could not read, so nothing changed. Tap RUN TRADING DESK to try again.';
-      await setRun({ status: 'error', error: why, finishedAt: new Date() });
-      await diagLog(env, { ev: 'desk-run-end', ok: false, err: 'unreadable', stop: decided.stop, agents, ms: Date.now() - t0 }).catch(() => {});
-      return { ok: false, why };
+      return fail('The desk answered in a shape the app could not read, so nothing changed. Tap RUN TRADING DESK to try again.', 'unreadable', { stop: decided.stop });
     }
     const checked = checkDesk(decided.json, { accountType, session, todayKey });
 
@@ -806,85 +875,86 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     // is never retired here: only PROFIT or LOSS moves it.
     const own = await mine();
     if (own === false) return superseded('filing');
-    const filed = await fileRecs(env, run, checked.trades, { caseId: settings.caseId || '' });
+    const previous = Array.isArray(own?.data?.desk?.ids) ? own.data.desk.ids : [];
+    const filed = await fileRecs(env, run, checked.trades, { caseId: settings.caseId || '', writeMany });
     const finishedAt = new Date();
     const finalPatch = {
-      run: { ...run, status: 'idle', finishedAt, heartbeatAt: finishedAt, done: got.length, error: null, count: checked.trades.length, ms: finishedAt.getTime() - ms(run.startedAt || t0) },
-      desk: { runId: run.id, at: finishedAt, trigger: run.trigger || 'manual', read: checked.read, none: checked.none, news: checked.news, count: checked.trades.length, reports: got.length, ids: filed.ids },
+      run: { ...run, status: 'idle', finishedAt, heartbeatAt: finishedAt, done: got.length, error: null, count: filed.ids.length, ms: finishedAt.getTime() - ms(run.startedAt || t0) },
+      desk: { runId: run.id, at: finishedAt, trigger: run.trigger || 'manual', read: checked.read, none: checked.none, news: checked.news, count: filed.ids.length, reports: got.length, ids: filed.ids },
     };
     let wrote = false;
-    for (let i = 0; i < 3 && !wrote; i++) {
+    for (let i = 0; i < 2 && !wrote; i++) {
       const d = i === 0 && own ? own : await mine();
       if (d === false) return superseded('final write');
       wrote = await patchDoc(env, STATE_PATH, finalPatch, d ? { mask: ['run', 'desk'], ifUpdateTime: d.updateTime } : { mask: ['run', 'desk'] }) !== false;
     }
     if (!wrote) throw new Error('the board could not be saved');
-    const expired = await retireRecs(env, doc0?.data?.desk?.ids || [], filed.ids);
+    const expired = await retireRecs(env, previous, filed.ids, { getMany, writeMany }).catch(() => 0);
 
     // The push: always for the 7:00 run, and for his own run when there is something to take.
     let pushed = false;
-    if (env.ADMIN_UID && settings.pushOn !== false && (run.trigger === 'morning' || checked.trades.length)) {
+    const n = filed.ids.length;
+    if (env.ADMIN_UID && settings.pushOn !== false && (run.trigger === 'morning' || n)) {
       const names = checked.trades.slice(0, 3).map((r) => `${r.ticker} ${r.side}`).join(', ');
-      const body = checked.trades.length
-        ? `${run.trigger === 'morning' ? '7:00 desk: ' : ''}${checked.trades.length} trade${checked.trades.length === 1 ? '' : 's'} ready. ${names}${checked.trades.length > 3 ? ' and more' : ''}.`
+      const body = n
+        ? `${run.trigger === 'morning' ? '7:00 desk: ' : ''}${n} trade${n === 1 ? '' : 's'} ready. ${names}${n > 3 ? ' and more' : ''}.`
         : `${run.trigger === 'morning' ? '7:00 desk: ' : ''}nothing worth taking yet.`;
-      await push(env, env.ADMIN_UID, { title: 'PR 420', body, link: '/admin-desk.html' }).catch(() => {});
+      await push(env, env.ADMIN_UID, { title: 'PR 420', body, link: '/admin-desk.html', max: PUSH_MAX }).catch(() => {});
       pushed = true;
     }
     await diagLog(env, {
       ev: 'desk-run-end', ok: true, trigger: run.trigger || 'manual', attempt: run.attempt || 1, reports: got.length,
-      trades: checked.trades.length, dropped: checked.dropped, expired, news: checked.news.length, pushed,
-      agents, desk: { ms: decided.ms, st: decided.stop, in: decided.usage?.input_tokens, out: decided.usage?.output_tokens },
+      trades: n, dropped: checked.dropped, expired, news: checked.news.length, pushed,
+      desk: { ms: decided.ms, st: decided.stop, in: decided.usage?.input_tokens, out: decided.usage?.output_tokens },
       ms: Date.now() - t0,
     }).catch(() => {});
-    return { ok: true, trades: checked.trades.length, reports: got.length };
+    return { ok: true, trades: n, reports: got.length };
   } catch (err) {
     console.error('desk run:', err?.stack || err);
-    const why = `The desk run failed: ${friendly(err)}. Tap RUN TRADING DESK to try again.`;
-    await setRun({ status: 'error', error: why, finishedAt: new Date() });
-    await diagLog(env, { ev: 'desk-run-end', ok: false, err: friendly(err).slice(0, 140), ms: Date.now() - t0 }).catch(() => {});
-    return { ok: false, why };
-  } finally {
-    alive = false;
-    clearTimeout(beatTimer);
-    if (wake) wake();
-    await beat;
+    return fail(`The desk run failed: ${friendly(err)}. Tap RUN TRADING DESK to try again.`, friendly(err));
   }
 }
 
-/** Writes the new ideas, each with the time it stops being worth taking. */
-async function fileRecs(env, run, trades, { caseId = '' } = {}) {
+/** Writes the new ideas in one request, each with the time it stops being worth taking. Answers the ids that landed. */
+async function fileRecs(env, run, trades, { caseId = '', writeMany = batchWrite } = {}) {
+  if (!trades.length) return { ids: [] };
   const now = new Date();
-  const ids = [];
-  for (const t of trades) {
+  const rows = trades.map((t) => {
     const id = rid('rec_');
-    await patchDoc(env, `${PLAYS}/${id}`, {
-      ...t, id, caseId, runId: run.id, at: now, slot: mtLabel(now.getTime()), status: 'open',
-      expiresAt: recExpiry(t.horizon, { holdDays: t.holdDays || 2, now: now.getTime(), contractExpiry: t.instrument === 'stock' ? null : t.expiry }),
-      tookAt: null, closedAt: null, result: null,
-    });
-    ids.push(id);
-  }
-  return { ids };
+    return {
+      id,
+      path: `${PLAYS}/${id}`,
+      mustNotExist: true,
+      data: {
+        ...t, id, caseId, runId: run.id, at: now, slot: mtLabel(now.getTime()), status: 'open',
+        expiresAt: recExpiry(t.horizon, { holdDays: t.holdDays || 2, now: now.getTime(), contractExpiry: t.instrument === 'stock' ? null : t.expiry }),
+        tookAt: null, closedAt: null, result: null,
+      },
+    };
+  });
+  const ok = await writeMany(env, rows.map(({ path, data, mustNotExist }) => ({ path, data, mustNotExist })));
+  return { ids: rows.filter((r, i) => ok[i]).map((r) => r.id) };
 }
 
 /**
- * Retires the last run's ideas he did not take, once the new board is saved.
- * Best effort: an idea that stays open here is off the board anyway, because
- * the board is found by the new run's ids. The ids ride trade/state, so this
- * reads six documents rather than listing a collection that grows every day.
+ * Retires the last run's ideas he did not take, once the new board is saved:
+ * one read of them all and one write, each under its own document's time so a
+ * YES that lands in between wins. Best effort: an idea that stays open here is
+ * off the board anyway, because the board is found by the new run's ids.
  */
-async function retireRecs(env, previous, keep = []) {
-  let expired = 0;
+async function retireRecs(env, previous, keep = [], { getMany = batchGetDocs, writeMany = batchWrite } = {}) {
+  const ids = (Array.isArray(previous) ? previous : []).filter((id) => !keep.includes(id)).slice(0, 20);
+  if (!ids.length) return 0;
+  const docs = await getMany(env, ids.map((id) => `${PLAYS}/${id}`));
   const now = new Date();
-  for (const id of (Array.isArray(previous) ? previous : []).slice(0, 20)) {
-    if (keep.includes(id)) continue;
-    const d = await tryGet(env, `${PLAYS}/${id}`).catch(() => null);
-    if (!d || d === READ_FAILED || d.data?.status !== 'open') continue;
-    const won = await patchDoc(env, `${PLAYS}/${id}`, { status: 'expired', expiredAt: now }, { mask: ['status', 'expiredAt'], ifUpdateTime: d.updateTime }).catch(() => false);
-    if (won !== false) expired++;
-  }
-  return expired;
+  const writes = [];
+  ids.forEach((id, i) => {
+    const d = docs[i];
+    if (d && d.data?.status === 'open') writes.push({ path: `${PLAYS}/${id}`, data: { status: 'expired', expiredAt: now }, mask: ['status', 'expiredAt'], ifUpdateTime: d.updateTime });
+  });
+  if (!writes.length) return 0;
+  const ok = await writeMany(env, writes);
+  return ok.filter(Boolean).length;
 }
 
 /**

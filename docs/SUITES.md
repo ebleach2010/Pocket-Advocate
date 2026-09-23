@@ -439,6 +439,19 @@ run that walks its stages and lands, YES, PROFIT and LOSS with their moments
 landing in History, News, Settings re-sizing every card, the research behind
 its switch, reduced motion, the old address and every page at 320px.
 
+**Fifty calls (2026-09-23, v7.2).** The first 7:00 run died three times
+without a word. A probe on the diagnostics route (`do=limits`) measured why:
+one invocation may make fifty outside calls, and the run was spending them
+partway through research, after which not even its error could be saved. The
+run is two firings now, research then the desk's decision, with no heartbeat
+loop, batch reads and writes, four index quotes and no retries inside a
+firing. desk.mjs counts every call on the worst path of each firing (D24,
+with its fake database charging each read, write, batch, push and turn at
+its worst), holds that a run the account cannot pay for ends at once and
+says so (D25), and that a 7:00 run the cron gives up still pushes (D26).
+trade.mjs T67 holds that the board is one read, and T30 that a firing with
+desk work leaves its per-minute chores to the next minute.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

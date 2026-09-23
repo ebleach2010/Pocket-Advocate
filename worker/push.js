@@ -5,15 +5,19 @@
 import { getDoc, patchDoc } from './firestore.js';
 import { sendWebPush } from './webpush.js';
 
-/** Push to every registered device of one user. Never throws — best-effort. */
-export async function notifyUser(env, uid, { title, body, link }) {
+/**
+ * Push to every registered device of one user. Never throws: best effort.
+ * `max` (2026-09-23) caps how many devices are tried, newest first, for a
+ * caller that has to fit inside the fifty outside calls an invocation gets.
+ */
+export async function notifyUser(env, uid, { title, body, link, max = 10 }) {
   try {
     const profile = await getDoc(env, `users/${uid}`);
     const subs = Array.isArray(profile?.data.pushSubs) ? profile.data.pushSubs : [];
     if (!subs.length) return;
     const message = { title, body, link };
     const stale = [];
-    for (const sub of subs.slice(0, 10)) {
+    for (const sub of (max < 10 ? subs.slice(-max) : subs.slice(0, 10))) {
       try {
         const status = await sendWebPush(env, sub, message);
         if (status === 404 || status === 410) stale.push(sub.endpoint);

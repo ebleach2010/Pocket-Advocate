@@ -863,10 +863,15 @@ ck('clock: all switches share one painter set, so no two can disagree',
     && /export async function getDoc\(env, path\) \{\n  const res = await readFetch\(env, `\$\{baseUrl\(env\)\}\/\$\{path\}`\);/.test(FS)
     && /const res = await readFetch\(env, `\$\{baseUrl\(env\)\}\/\$\{collectionPath\}\?\$\{params\}`\);/.test(FS)
     && /const res = await readFetch\(env, `\$\{baseUrl\(env\)\}:runQuery`, \{/.test(FS)
-    && (FS.match(/await readFetch\(/g) || []).length === 3
+    // RE-PINNED 2026-09-23 (v7.2, fifty calls): batchGetDocs is a fourth read and goes through readFetch;
+    // batchWrite is a third batch write and does not.
+    // NEGATIVE CONTROL (run 2026-09-23, v7.2): batchGetDocs' `await readFetch(env, `${baseUrl(env)}:batchGet`` changed to authedFetch made this read
+    //   FAIL  a read refused with 429 is retried ...
+    && /const res = await readFetch\(env, `\$\{baseUrl\(env\)\}:batchGet`, \{/.test(FS)
+    && (FS.match(/await readFetch\(/g) || []).length === 4
     && /export async function patchDoc\(env, path, data, options = \{\}\) \{[\s\S]*?await authedFetch\(/.test(FS)
     && /const res = await authedFetch\(env, `\$\{baseUrl\(env\)\}\/\$\{path\}`, \{ method: 'DELETE' \}\);/.test(FS)
-    && (FS.match(/await authedFetch\(env, `\$\{baseUrl\(env\)\}:batchWrite`, \{/g) || []).length === 2,
+    && (FS.match(/await authedFetch\(env, `\$\{baseUrl\(env\)\}:batchWrite`, \{/g) || []).length === 3,
     JSON.stringify({ res: res && res.status, firstCalls, still: still && still.status, stillCalls }));
 }
 

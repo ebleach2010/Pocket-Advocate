@@ -120,6 +120,9 @@ export const SAY = {
   runAlready: 'The desk is already running. It lands on its own.',
   runStalled: 'The desk run stopped partway and did not recover. Tap RUN TRADING DESK to start a fresh one.',
   runThin: 'Fewer than two of the five researchers came back, so the desk made no calls. Tap RUN TRADING DESK to try again.',
+  // A run no retry can fix (2026-09-23): said plainly, with where to fix it.
+  noCredit: 'Out of API credit, so the desk could not run. Add credit at console.anthropic.com under Billing, then tap RUN TRADING DESK.',
+  keyRefused: 'The API key was refused, so the desk could not run. The key on the Worker needs replacing, then tap RUN TRADING DESK.',
   noRec: 'That trade is not on the desk any more.',
   notOpen: 'That trade is no longer open to take.',
   notTaken: 'Tap YES on this trade before marking how it ended.',

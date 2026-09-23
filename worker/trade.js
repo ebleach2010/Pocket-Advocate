@@ -15,7 +15,7 @@
 // Nothing here feeds his history back to the desk: History is read for his
 // eyes on the History page and nowhere else.
 
-import { patchDoc, listDocs, tryGet, READ_FAILED, readFailedError, deleteDoc } from './firestore.js';
+import { patchDoc, listDocs, tryGet, batchGetDocs, READ_FAILED, readFailedError, deleteDoc } from './firestore.js';
 import { requestRun, runAlive, riskPctOf, RESEARCH_PATH, LENSES } from './desk-run.js';
 import { isTradingDay, isMarketOpen, MARKET_OPEN_MIN } from '../public/js/trade-math.js';
 import {
@@ -131,11 +131,18 @@ export async function tradeState(env, { now = Date.now() } = {}) {
   }
   const deskIds = Array.isArray(st.desk?.ids) ? st.desk.ids : [];
   const ids = [...new Set([...activeIds, ...deskIds])].filter((id) => ID_RE.test(String(id))).slice(0, ACTIVE_MAX + 20);
-  const [docs, balance] = await Promise.all([
-    Promise.all(ids.map((id) => tryGet(env, `${PLAYS}/${id}`).catch(() => null))),
+  // One read for every card (2026-09-23): a request gets fifty outside
+  // calls, and thirty taken trades read one by one would spend most of them.
+  // While the researchers work, their document says how many are back.
+  const researching = st.run?.status === 'researching';
+  const [docs, balance, rdoc] = await Promise.all([
+    batchGetDocs(env, ids.map((id) => `${PLAYS}/${id}`)).catch(() => ids.map(() => null)),
     balanceOf(env, settings),
+    researching ? tryGet(env, RESEARCH_PATH).catch(() => null) : null,
   ]);
-  const rows = docs.map((d, i) => (d && d !== READ_FAILED ? recRow(ids[i], d.data) : null)).filter(Boolean);
+  const rows = docs.map((d, i) => (d ? recRow(ids[i], d.data) : null)).filter(Boolean);
+  const back = rdoc && rdoc !== READ_FAILED && rdoc.data?.runId === st.run?.id
+    ? LENSES.filter((L) => rdoc.data?.[`r${L.n}`]?.status === 'ok').length : null;
   const live = (r) => r.status === 'open' && (!r.expiresAt || new Date(r.expiresAt).getTime() > now);
   const recs = rows.filter((r) => deskIds.includes(r.id) && live(r));
   const timedOut = rows.filter((r) => deskIds.includes(r.id) && r.status === 'open' && !live(r)).length;
@@ -146,7 +153,7 @@ export async function tradeState(env, { now = Date.now() } = {}) {
     open: !!settings.caseId, caseId: settings.caseId || null,
     settings: publicSettings(settings, env),
     balance,
-    run: runBlock(st.run, now),
+    run: back == null ? runBlock(st.run, now) : { ...runBlock(st.run, now), done: back },
     desk: st.desk ? {
       at: st.desk.at ? new Date(st.desk.at).toISOString() : null, trigger: st.desk.trigger || 'manual',
       read: st.desk.read || '', none: st.desk.none || '', count: Number(st.desk.count) || 0, reports: Number(st.desk.reports) || 0,

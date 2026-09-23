@@ -58,7 +58,7 @@ import {
 // 2026-09-23): its routes, the six-agent run the cron hosts and its one
 // morning clock, and the leaf they all stand on.
 import { tradeRoute, TradeError, tradePanelBlock } from './trade.js';
-import { maybeRunDesk, maybeMorningRun } from './desk-run.js';
+import { maybeRunDesk, maybeMorningRun, peekDesk } from './desk-run.js';
 import { TRADE_CATEGORIES, SAY as TRADE_SAY } from './trade-desk.js';
 
 /**
@@ -1371,6 +1371,14 @@ export default {
     // the ordinary retry path a couple of minutes before the platform wall.
     const deadlineAt = fired + 12.5 * 60_000;
     const minute = new Date(event.scheduledTime || fired).getUTCMinutes();
+    // THE DESK'S FIFTY CALLS (PR 420, 2026-09-23). An invocation may make
+    // fifty outside calls, measured in production, and every chore below
+    // spends some of them. So the firing looks first (one read, and the
+    // database token fetched once before anything runs beside it): when the
+    // desk has work, the per-minute chores wait for the next minute and the
+    // run gets the firing. Never on a quarter hour, which carries the
+    // medical sweeps.
+    const deskDoc = minute % 15 === 0 ? null : await peekDesk(env).catch(() => null);
     // Flight-recorder heartbeat: proof, readable from outside, that the cron
     // trigger itself is firing. One tiny masked write per minute.
     ctx.waitUntil(patchDoc(env, 'diag/cron', { lastFiredAt: new Date(), minute, watchdog: false },
@@ -1408,19 +1416,23 @@ export default {
     // inside makes every firing after the first a single document read. It
     // only queues the run; the awaited call below runs it.
     ctx.waitUntil(maybeMorningRun(env).catch(() => {}));
-    // Un-gated on purpose: the wedged case should recover on the FIRST
-    // firing after this deploys, not up to a quarter hour later. One marker
-    // read per firing once finished; remove with the diag scaffolding.
-    ctx.waitUntil(unparkAdvisor(env));
-    // Also un-gated, and for a plainer reason: the first rung of the clock
-    // ladder is five minutes, so a quarter-hour gate could not deliver it.
-    // One document read on any firing where he is in the app or nothing is
-    // running, which is nearly all of them.
-    ctx.waitUntil(runWorkClockNudges(env));
-    // Un-gated too, and only until it finishes: this one shuts the books, and
-    // a quarter hour of the old behaviour after the deploy is a quarter hour
-    // in which somebody can buy a case he has said he cannot take.
-    ctx.waitUntil(closeBookingsAug2026(env));
+    // The three per-minute chores below skip a firing the desk is using
+    // (THE DESK'S FIFTY CALLS, above); each simply runs a minute later.
+    if (!deskDoc) {
+      // Un-gated on purpose: the wedged case should recover on the FIRST
+      // firing after this deploys, not up to a quarter hour later. One marker
+      // read per firing once finished; remove with the diag scaffolding.
+      ctx.waitUntil(unparkAdvisor(env));
+      // Also un-gated, and for a plainer reason: the first rung of the clock
+      // ladder is five minutes, so a quarter-hour gate could not deliver it.
+      // One document read on any firing where he is in the app or nothing is
+      // running, which is nearly all of them.
+      ctx.waitUntil(runWorkClockNudges(env));
+      // Un-gated too, and only until it finishes: this one shuts the books, and
+      // a quarter hour of the old behaviour after the deploy is a quarter hour
+      // in which somebody can buy a case he has said he cannot take.
+      ctx.waitUntil(closeBookingsAug2026(env));
+    }
     // THE DESK BOOKS NOTHING HERE ANY MORE (Eric, 2026-09-22: "I manually
     // update either scan individually. No automatic."). This used to claim
     // one of three slots a trading day and book a reading on the desk's
@@ -1455,8 +1467,11 @@ export default {
     // Never on a quarter hour (review, 2026-09-23): those firings carry the
     // medical sweeps, and five research streams would hold five of the six
     // connections an invocation may open. A queued run waits one minute.
-    const ranDesk = minute % 15 === 0 ? false
-      : await maybeRunDesk(env, { deadlineAt }).catch((err) => { console.error('desk run:', err?.stack || err); return false; });
+    // A firing that did desk work leaves the case drain to the next minute
+    // whatever it cost: what is left of its fifty calls is not enough to
+    // promise a case read (2026-09-23).
+    const ranDesk = !deskDoc ? false
+      : await maybeRunDesk(env, { deadlineAt, doc: deskDoc }).catch((err) => { console.error('desk run:', err?.stack || err); return false; });
     const ranAnalysis = ranDesk ? true : await runQueuedAnalyses(env, deadlineAt);
     if (minute % 5 === 0) {
       // The sweep reads every open case and subscription and each one's
@@ -2154,7 +2169,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-23-limits';
+const BUILD_TAG = 'v2026-09-23-fifty-calls';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2162,7 +2177,7 @@ const BUILD_TAG = 'v2026-09-23-limits';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.1';
+const VERSION = '7.2';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

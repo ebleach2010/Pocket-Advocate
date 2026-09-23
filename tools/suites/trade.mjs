@@ -106,6 +106,8 @@ function world(over = {}) {
     deleteDoc: async (env, path) => { w.deletes.push(path); return true; },
     listDocs: async (env, coll) => w.listed[coll] || [],
     tryGet: async (env, path) => { w.reads += 1; const v = w.docs.get(path); return v === undefined ? null : v; },
+    // One read for many (2026-09-23): counted as one call, as the Worker's is. A READ_FAILED doc reads as missing.
+    batchGetDocs: async (env, paths) => { w.reads += 1; w.batchGets = (w.batchGets || 0) + 1; return paths.map((p) => { const v = w.docs.get(p); return v === undefined || v === READ_FAILED ? null : v; }); },
     READ_FAILED,
     readFailedError: (m) => new Error(m),
     notifyUser: async (env, uid, n) => { w.pushes.push({ uid, ...n }); },
@@ -931,13 +933,24 @@ check('T23 a question on the desk: the desk note rides the user text, the ask no
 // NEGATIVE CONTROL (run 2026-09-23): `const ranDesk = await maybeRunDesk(` changed to `const ranDesk = false && await maybeRunDesk(` made this read
 //   FAIL  T30 the Worker imports ...
 check('T30 the Worker imports the desk\'s routes and panel block, the run and its morning clock, and the categories; queues the 7:00 run at every firing and runs a queued one awaited before the case drain; no longer collects a scan or books a reading; hands the panel the desk\'s block and the trading half of the glossary on a desk; prints the standing on the covers; refuses to pull from the desk or continue it; and a deleted desk clears the settings\' pointer',
-  /import \{ tradeRoute, TradeError, tradePanelBlock \} from '\.\/trade\.js';\nimport \{ maybeRunDesk, maybeMorningRun \} from '\.\/desk-run\.js';\nimport \{ TRADE_CATEGORIES, SAY as TRADE_SAY \} from '\.\/trade-desk\.js';/.test(W)
+  /import \{ tradeRoute, TradeError, tradePanelBlock \} from '\.\/trade\.js';\nimport \{ maybeRunDesk, maybeMorningRun, peekDesk \} from '\.\/desk-run\.js';\nimport \{ TRADE_CATEGORIES, SAY as TRADE_SAY \} from '\.\/trade-desk\.js';/.test(W)
   && !/maybeTradeScan|maybeMorningRead|maybeCollectScan|pollScanFlight/.test(W)
   && /ctx\.waitUntil\(maybeMorningRun\(env\)\.catch\(\(\) => \{\}\)\);/.test(W)
   // RE-PINNED 2026-09-23 (review): never on a quarter hour, whose firing carries the medical sweeps.
   // NEGATIVE CONTROL (run 2026-09-23): `minute % 15 === 0 ? false` changed to `minute % 15 === 99 ? false` made this read
   //   FAIL  T30 the Worker imports ...
-  && /const ranDesk = minute % 15 === 0 \? false\n\s+: await maybeRunDesk\(env, \{ deadlineAt \}\)\.catch\(/.test(W)
+  // RE-PINNED 2026-09-23 (v7.2, fifty calls): the firing looks first, one read before anything runs
+  // beside it, and never on a quarter hour. When the desk has work the three per-minute chores wait for
+  // the next minute, and the run is handed the document the look read.
+  // NEGATIVE CONTROL (run 2026-09-23, v7.2): `if (!deskDoc) {` around the chores changed to `if (true) {` made this read
+  //   FAIL  T30 the Worker imports ...
+  // NEGATIVE CONTROL (run 2026-09-23, v7.2): `minute % 15 === 0 ? null : await peekDesk(env)` changed to `await peekDesk(env)` made this read
+  //   FAIL  T30 the Worker imports ...
+  && /const deskDoc = minute % 15 === 0 \? null : await peekDesk\(env\)\.catch\(\(\) => null\);/.test(W)
+  && W.indexOf('await peekDesk(env)') < W.indexOf("ctx.waitUntil(patchDoc(env, 'diag/cron'")
+  && /if \(!deskDoc\) \{\n(?:\s*\/\/[^\n]*\n)*\s+ctx\.waitUntil\(unparkAdvisor\(env\)\);\n(?:\s*\/\/[^\n]*\n)*\s+ctx\.waitUntil\(runWorkClockNudges\(env\)\);\n(?:\s*\/\/[^\n]*\n)*\s+ctx\.waitUntil\(closeBookingsAug2026\(env\)\);\n\s+\}/.test(W)
+  && (W.match(/ctx\.waitUntil\(unparkAdvisor\(env\)\)/g) || []).length === 1
+  && /const ranDesk = !deskDoc \? false\n\s+: await maybeRunDesk\(env, \{ deadlineAt, doc: deskDoc \}\)\.catch\(/.test(W)
   && /const ranAnalysis = ranDesk \? true : await runQueuedAnalyses\(env, deadlineAt\);/.test(W)
   && W.indexOf(': await maybeRunDesk(') < W.indexOf('const ranAnalysis = ranDesk')
   && /pollCaseFlight, pollFlightsNow, pollAskFlight,\n/.test(W)
@@ -1346,6 +1359,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry70 = (CL.match(/\{\n\s+\/\/ PR 420 \(Eric, 2026-09-23[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-23 (v7.1): the measuring hatch, its own quiet entry.
   const entry71 = (CL.match(/\{\n\s+\/\/ WHICH WALL A RUN HITS[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-23 (v7.2): fifty calls, its own quiet entry.
+  const entry72 = (CL.match(/\{\n\s+\/\/ FIFTY CALLS \(Eric, 2026-09-23[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1381,8 +1396,14 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-23 (v7.1): both versions read 7.1 with the limits tag; the 7.0 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-23, v7.1): 'stop partway without saying so' reworded to 'stop partway silently' in the 7.1 entry made this read
   //   FAIL  T36 both versions read 7.1 ...
-  check('T36 both versions read 7.1 with the new tag, the 4.7 through 7.1 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.1';/.test(CL) && /const VERSION = '7\.1';/.test(W) && /const BUILD_TAG = 'v2026-09-23-limits';/.test(W)
+  // RE-PINNED 2026-09-23 (v7.2): both versions read 7.2 with the fifty-calls tag; the 7.1 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-23, v7.2): 'stopped partway without being able to say so' reworded to 'stopped partway silently' in the 7.2 entry made this read
+  //   FAIL  T36 both versions read 7.2 ...
+  check('T36 both versions read 7.2 with the new tag, the 4.7 through 7.2 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.2';/.test(CL) && /const VERSION = '7\.2';/.test(W) && /const BUILD_TAG = 'v2026-09-23-fifty-calls';/.test(W)
+    && /version: '7\.2',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry72)
+    && /stopped partway without being able to say so/.test(entry72) && /you get a push saying so and why/.test(entry72) && !DASH.test(entry72)
+    && !HARD.some((re) => re.test(entry72))
     && /version: '7\.1',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry71)
     && /stop partway without saying so/.test(entry71) && !DASH.test(entry71)
     && /version: '7\.0',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry70)
@@ -2035,6 +2056,37 @@ check('T63 the fast look is gone: no Look button, no Scan button, no look route,
     && /const closeAll = \(\) => \{ sheetClose\?\.\(\); ov\.innerHTML = '';/.test(APP)
     && /balanceTyped: !!balanceNow\(\)\.typed && balanceNow\(\)\.cents > 0,/.test(APP),
     JSON.stringify({ revs: (APP.match(/S\.rev \+= 1;/g) || []).length, run: startRun.length }));
+}
+
+// ---- T67: the board in one read (2026-09-23, v7.2) ----------------------------------------------
+// A request gets fifty outside calls, measured in production. The board used to read every card on
+// its own, thirty taken trades and the last run's six, which was most of them. One batch read now,
+// and while the researchers work their own document says how many are back, for this run only.
+// NEGATIVE CONTROL (run 2026-09-23): tradeState's batch read put back to one tryGet per id made this read
+//   FAIL  T67 the board is one read ...
+// NEGATIVE CONTROL (run 2026-09-23): the count's `rdoc.data?.runId === st.run?.id` test dropped made this read
+//   FAIL  T67 the board is one read ...
+{
+  const now = at('2026-09-23T16:00:00Z');
+  const board = (run, research) => {
+    const { w, api } = world();
+    const taken = Array.from({ length: 30 }, (_, i) => `t${i}`);
+    w.docs.set('trade/settings', { data: { caseId: 'c1' }, updateTime: 'S1' });
+    w.docs.set('trade/state', { data: { desk: { at: new Date(now - 60_000), ids: ['a', 'b', 'c', 'd', 'e', 'f'], count: 6 }, activeIds: taken, run }, updateTime: 'T1' });
+    const rec = (o) => ({ data: { ticker: 'NVDA', side: 'long', horizon: 'intraday', instrument: 'stock', entryLow: 1, entryHigh: 2, stop: 0.5, targets: [3], ...o }, updateTime: 'P' });
+    for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) w.docs.set(`trade/plays/items/${id}`, rec({ status: 'open', expiresAt: new Date(now + 3600_000) }));
+    taken.forEach((id, i) => w.docs.set(`trade/plays/items/${id}`, rec({ status: 'took', tookAt: new Date(now - i * 1000) })));
+    if (research) w.docs.set(DR.RESEARCH_PATH, { data: research, updateTime: 'R1' });
+    return api.tradeState(env, { now }).then((st) => ({ st, w }));
+  };
+  const idle = await board({ status: 'idle' });
+  const working = await board({ id: 'run9', status: 'researching', claimedAt: new Date(now - 60_000), done: 0 }, { runId: 'run9', r1: { status: 'ok' }, r2: { status: 'failed' }, r3: { status: 'ok' } });
+  const other = await board({ id: 'run9', status: 'researching', claimedAt: new Date(now - 60_000), done: 0 }, { runId: 'run8', r1: { status: 'ok' }, r2: { status: 'ok' } });
+  check('T67 the board is one read: thirty taken trades and six ideas cost one batch read beside the settings and the state, every one of them painted; while the researchers work the count back comes from their own document for this run, never another run\'s',
+    idle.w.batchGets === 1 && idle.w.reads <= 3 && idle.st.active.length === 30 && idle.st.recs.length === 6
+    && working.st.run.done === 2 && working.st.run.status === 'researching' && working.w.batchGets === 1
+    && other.st.run.done === 0,
+    JSON.stringify({ reads: idle.w.reads, batches: idle.w.batchGets, active: idle.st.active.length, done: working.st.run.done, other: other.st.run.done }));
 }
 
 // THE COUNTER IS COUNTED LAST (2026-09-22, v6.4). It used to be declared in the middle of the

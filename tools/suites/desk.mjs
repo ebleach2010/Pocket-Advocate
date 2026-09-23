@@ -48,26 +48,40 @@ function world({ state = null, settings = { caseId: 'c1', accountType: 'cash' },
   if (research) put(DR.RESEARCH_PATH, research);
   for (const [id, p] of Object.entries(plays)) put(`${TD.PLAYS}/${id}`, p);
   for (const [id, b] of Object.entries(balances)) put(`${TD.BALANCES}/${id}`, b);
-  const w = { docs, patches: [], diag: [], pushes: [], bodies: [] };
+  // `calls` counts every request that would leave the Worker (2026-09-23): one invocation gets fifty,
+  // measured in production. A read or write is one, a batch is one, the flight recorder is two (it reads
+  // its ring, then writes it), a push is its profile read, one send per device (three devices here) and
+  // a cleanup write, and a turn is counted at its worst: every retry and every continuation it may make.
+  const w = { docs, patches: [], diag: [], pushes: [], bodies: [], calls: 0, batches: [] };
+  const write = (path, data, opts = {}) => {
+    const cur = docs.get(path);
+    if (opts.mustNotExist && cur) return false;
+    if (opts.ifUpdateTime && (!cur || cur.updateTime !== opts.ifUpdateTime)) return false;
+    let next;
+    if (opts.mask) {
+      next = cur ? clone(cur.data) : {};
+      for (const m of opts.mask) setPath(next, m, clone(getPath(data, m)));
+    } else next = clone(data);
+    put(path, next);
+    return true;
+  };
   const deps = {
     READ_FAILED: Symbol('read failed'),
-    tryGet: async (env, path) => (docs.has(path) ? clone(docs.get(path)) : null),
+    tryGet: async (env, path) => { w.calls += 1; return docs.has(path) ? clone(docs.get(path)) : null; },
     patchDoc: async (env, path, data, opts = {}) => {
+      w.calls += 1;
       w.patches.push({ path, data: clone(data), opts: clone(opts) });
-      const cur = docs.get(path);
-      if (opts.mustNotExist && cur) return false;
-      if (opts.ifUpdateTime && (!cur || cur.updateTime !== opts.ifUpdateTime)) return false;
-      let next;
-      if (opts.mask) {
-        next = cur ? clone(cur.data) : {};
-        for (const m of opts.mask) setPath(next, m, clone(getPath(data, m)));
-      } else next = clone(data);
-      put(path, next);
-      return true;
+      return write(path, data, opts);
+    },
+    batchGetDocs: async (env, paths) => { w.calls += 1; w.batches.push({ get: paths.slice() }); return paths.map((p) => (docs.has(p) ? clone(docs.get(p)) : null)); },
+    batchWrite: async (env, writes) => {
+      w.calls += 1;
+      w.batches.push({ write: writes.map((x) => x.path) });
+      return writes.map((x) => { w.patches.push({ path: x.path, data: clone(x.data), opts: { mask: x.mask, ifUpdateTime: x.ifUpdateTime, mustNotExist: x.mustNotExist, batch: true } }); return write(x.path, x.data, x); });
     },
     client: () => { throw new Error('no network in the suite'); },
-    diagLog: async (env, row) => { w.diag.push(row); },
-    notifyUser: async (env, uid, msg) => { w.pushes.push({ uid, ...msg }); },
+    diagLog: async (env, row) => { w.calls += 2; w.diag.push(row); },
+    notifyUser: async (env, uid, msg) => { w.calls += 1 + Math.min(3, msg.max ?? 10) + 1; w.pushes.push({ uid, ...msg }); },
   };
   return { w, deps, docs, put };
 }
@@ -76,6 +90,8 @@ function world({ state = null, settings = { caseId: 'c1', accountType: 'cash' },
 function load(deps) {
   const body = SRC.replace(/^import [\s\S]*?from '[^']+';\n/gm, '').replace(/^export /gm, '');
   const names = {
+    batchGetDocs: async () => { throw new Error('batchGetDocs not faked'); },
+    batchWrite: async () => { throw new Error('batchWrite not faked'); },
     ...deps,
     SETTINGS_PATH: TD.SETTINGS_PATH, STATE_PATH: TD.STATE_PATH, PLAYS: TD.PLAYS, SAY: TD.SAY, stripDashes: TD.stripDashes,
     mtParts: TD.mtParts, mtInstant: TD.mtInstant, mtLabel: TD.mtLabel, watchlistOf: TD.watchlistOf, resolveKey: TD.resolveKey,
@@ -84,7 +100,7 @@ function load(deps) {
     EARLY_CLOSE_MIN: TM.EARLY_CLOSE_MIN, MARKET_CLOSE_MIN: TM.MARKET_CLOSE_MIN, MARKET_OPEN_MIN: TM.MARKET_OPEN_MIN,
   };
   const keys = Object.keys(names);
-  return new Function(...keys, `${body}\nreturn { accumulateSse, liveTurn, requestRun, maybeRunDesk, executeRun, maybeMorningRun, runAlive, RefusedError };`)(...keys.map((k) => names[k]));
+  return new Function(...keys, `${body}\nreturn { accumulateSse, liveTurn, requestRun, maybeRunDesk, executeRun, maybeMorningRun, runAlive, RefusedError, peekDesk, deskClaimable, fatalOf };`)(...keys.map((k) => names[k]));
 }
 
 // A research turn and a desk turn, scripted per test.
@@ -102,8 +118,9 @@ const DESK_OUT = (over = {}) => ({
   ...over,
 });
 function turns({ research = () => ({ text: REPORT(0) }), desk = () => ({ text: JSON.stringify(DESK_OUT()) }) } = {}, w) {
-  return async (env, body, opts) => {
+  return async (env, body, opts = {}) => {
     w.bodies.push(clone(body));
+    w.calls += (1 + (opts.maxRetries ?? 0)) * (1 + (opts.maxContinues ?? DR.MAX_CONTINUES));
     const isResearch = Array.isArray(body.tools) && body.tools.length;
     const n = isResearch ? Number((body.messages[0].content[0].text.match(/^Your beat: ([^.]+)\./) || [])[1] && DR.LENSES.find((L) => body.messages[0].content[0].text.startsWith(`Your beat: ${L.name}.`))?.n) : 0;
     const out = isResearch ? await research(n, body, opts) : await desk(body, opts);
@@ -314,34 +331,54 @@ const SSE = [
 {
   at(WED_10);
   const busy = world({ state: { run: { id: 'r1', status: 'researching', startedAt: new Date(WED_10 - 60_000), heartbeatAt: new Date(WED_10 - 20_000), attempt: 1 } } });
-  const skipped = await load(busy.deps).maybeRunDesk(env, { deadlineAt: WED_10 + 12 * 60_000, now: WED_10, deps: { liveTurn: turns({}, busy.w), heartbeatMs: 1e9 } });
+  const skipped = await load(busy.deps).maybeRunDesk(env, { deadlineAt: WED_10 + 12 * 60_000, now: WED_10, deps: { liveTurn: turns({}, busy.w) } });
   const tired = world({ state: { run: { id: 'r1', status: 'researching', startedAt: new Date(WED_10 - 30 * 60_000), heartbeatAt: new Date(WED_10 - 10 * 60_000), attempt: 3 } } });
-  const gave = await load(tired.deps).maybeRunDesk(env, { deadlineAt: WED_10 + 12 * 60_000, now: WED_10, deps: { liveTurn: turns({}, tired.w), heartbeatMs: 1e9 } });
+  const gave = await load(tired.deps).maybeRunDesk(env, { deadlineAt: WED_10 + 12 * 60_000, now: WED_10, deps: { liveTurn: turns({}, tired.w) } });
   const handed = world({ state: { run: { id: 'r2', status: 'decide', queuedAt: new Date(WED_10 - 5 * 60_000), startedAt: new Date(WED_10 - 4 * 60_000), heartbeatAt: new Date(WED_10 - 30_000), attempt: 1 } },
     research: { runId: 'r2', r1: { status: 'ok', text: REPORT(1) }, r2: { status: 'ok', text: REPORT(2) }, r3: { status: 'ok', text: REPORT(3) }, r4: null, r5: null } });
-  const tookIt = await load(handed.deps).maybeRunDesk(env, { deadlineAt: WED_10 + 12 * 60_000, now: WED_10, deps: { liveTurn: turns({}, handed.w), heartbeatMs: 1e9, heldMs: 0 } });
-  // A run that failed in seconds did not hold the firing, so the case drain still runs that minute.
+  const tookIt = await load(handed.deps).maybeRunDesk(env, { deadlineAt: WED_10 + 12 * 60_000, now: WED_10, deps: { liveTurn: turns({}, handed.w) } });
+  // RE-PINNED 2026-09-23 (v7.2, fifty calls): a run that failed in seconds still took the firing. What is
+  // left of its fifty calls is not enough to promise a case read, so the drain waits one minute.
   const quick = world({ state: { run: { id: 'r3', status: 'queued', queuedAt: new Date(WED_10 - 30_000), attempt: 0 } } });
-  const quickHeld = await load(quick.deps).maybeRunDesk(env, { deadlineAt: WED_10 + 12 * 60_000, now: WED_10, deps: { liveTurn: turns({ research: () => Object.assign(new Error('bad model'), { status: 400 }) }, quick.w), heartbeatMs: 1e9 } });
+  const quickHeld = await load(quick.deps).maybeRunDesk(env, { deadlineAt: WED_10 + 12 * 60_000, now: WED_10, deps: { liveTurn: turns({ research: () => Object.assign(new Error('bad model'), { status: 400 }) }, quick.w) } });
   const claimPatch = handed.w.patches.find((p) => p.path === TD.STATE_PATH && p.opts.ifUpdateTime);
   restore();
   // NEGATIVE CONTROL (run 2026-09-23): the ready guard (`const ready = run.status === 'queued' || run.status === 'decide';`)
   //   changed to `const ready = run.status === 'queued';` made this read    FAIL  D10 the cron claims a run under a precondition ...
   check('D10 the cron claims a run under a precondition and never twice: a working run with a live heartbeat is left alone, one past its attempts or forty-five minutes is closed with a sentence he can act on, and a run whose research was handed to the desk is claimed at once, straight into the desk\'s phase, without buying the research again',
     skipped === false && busy.w.bodies.length === 0
-    && gave === false && runOf(tired.docs).status === 'error' && runOf(tired.docs).error === TD.SAY.runStalled
+    // RE-PINNED 2026-09-23 (v7.2): giving a run up is desk work, so it answers true and the drain waits a minute.
+    && gave === true && runOf(tired.docs).status === 'error' && runOf(tired.docs).error === TD.SAY.runStalled
     // RE-PINNED 2026-09-23 (review): a claim of research handed to the desk is not a new attempt, so it keeps
     // attempt 1; and a run that failed in seconds answers false so the minute's case drain still runs.
     // NEGATIVE CONTROL (run 2026-09-23): maybeRunDesk's `return Date.now() - t0 >= (deps.heldMs ?? 60_000);` put back to `return true;` made this read
     //   FAIL  D10 the cron claims a run under a precondition ...
     && tookIt === true && claimPatch.data.run.phase === 'desk' && claimPatch.data.run.attempt === 1
-    && quickHeld === false && runOf(quick.docs).status === 'error'
+    // NEGATIVE CONTROL (run 2026-09-23, v7.2): maybeRunDesk's final `return true;` changed to `return false;` made this read
+    //   FAIL  D10 the cron claims a run under a precondition ...
+    && quickHeld === true && runOf(quick.docs).status === 'error'
     && handed.w.bodies.length === 1 && !handed.w.bodies[0].tools && runOf(handed.docs).status === 'idle',
     JSON.stringify({ skipped, gave, tookIt, bodies: handed.w.bodies.length }));
 }
 
 // ---- D11 to D17: one run, start to finish ----------------------------------------------
 const RUN = { id: 'run_x', status: 'researching', trigger: 'manual', startedAt: new Date(WED_10), claimedAt: new Date(WED_10), heartbeatAt: new Date(WED_10), attempt: 1, phase: 'research' };
+// RE-PINNED 2026-09-23 (v7.2, fifty calls): a run is two firings now, the research in one and the desk's
+// decision in the next, each with its own fifty calls. This plays both the way the cron does: the
+// research firing, then, when it handed over, the claim maybeRunDesk makes and the desk firing. The
+// calls each firing made are kept apart for D24.
+async function firings(M, W, run, deps, { researchOnly = false } = {}) {
+  const c0 = W.w.calls;
+  const first = await M.executeRun(env, run, { deadlineAt: WED_10 + 12.5 * 60_000, deps });
+  const researchCalls = W.w.calls - c0;
+  if (!first.handedOff || researchOnly) return { out: first, first, researchCalls, deskCalls: 0 };
+  const cur = W.docs.get(TD.STATE_PATH).data;
+  const run2 = { ...cur.run, phase: 'desk', status: 'deciding', claimedAt: new Date(WED_10 + 60_000), attempt: Math.max(1, Number(cur.run.attempt) || 0) };
+  W.put(TD.STATE_PATH, { ...cur, run: run2 });
+  const c1 = W.w.calls;
+  const out = await M.executeRun(env, run2, { deadlineAt: WED_10 + 60_000 + 12.5 * 60_000, deps });
+  return { out, first, researchCalls, deskCalls: W.w.calls - c1 };
+}
 async function oneRun(opts = {}) {
   at(WED_10);
   const W = world({
@@ -350,7 +387,9 @@ async function oneRun(opts = {}) {
     state: { run: { ...RUN, ...(opts.run || {}) }, desk: { runId: 'prev', ids: ['old_open', 'old_took'] }, ...(opts.state || {}) },
     settings: { caseId: 'c1', accountType: 'cash', finnhubKey: '', ...(opts.settings || {}) },
     plays: {
-      old_open: { ticker: 'AMD', status: 'open', runId: 'prev' },
+      // RE-PINNED 2026-09-23 (v7.2): the last run's idea was AMD, which is also on the default watchlist,
+      // and the watchlist now reaches the researchers by name (it is his setting, not his history).
+      old_open: { ticker: 'MRVL', status: 'open', runId: 'prev' },
       old_took: { ticker: 'SMCI', status: 'took', runId: 'prev' },
       hist_1: { ticker: 'ZZHIST', status: 'closed', result: 'loss', setup: 'HISTORYMARKER lost money here', outcomeCents: -4400 },
       ...(opts.plays || {}),
@@ -359,12 +398,9 @@ async function oneRun(opts = {}) {
     research: opts.research || null,
   });
   const M = load(W.deps);
-  const out = await M.executeRun(env, { ...RUN, ...(opts.run || {}) }, {
-    deadlineAt: WED_10 + 12.5 * 60_000,
-    deps: { liveTurn: turns(opts.turns || {}, W.w), heartbeatMs: 1e9, handoffAfterMs: opts.handoffAfterMs ?? 1e9, ...(opts.deps || {}) },
-  });
+  const f = await firings(M, W, { ...RUN, ...(opts.run || {}) }, { liveTurn: turns(opts.turns || {}, W.w), ...(opts.deps || {}) }, { researchOnly: opts.researchOnly });
   restore();
-  return { out, ...W };
+  return { ...f, ...W };
 }
 {
   const r = await oneRun();
@@ -374,9 +410,13 @@ async function oneRun(opts = {}) {
   const st = r.docs.get(TD.STATE_PATH).data;
   const reportsDoc = r.docs.get(DR.RESEARCH_PATH).data;
   const end = r.w.diag.find((e) => e.ev === 'desk-run-end');
+  // RE-PINNED 2026-09-23 (v7.2): the researchers' row rides the handoff, which ends the research firing.
+  const handoff = r.w.diag.find((e) => e.ev === 'desk-run-handoff');
   // NEGATIVE CONTROL (run 2026-09-23): `output_config: structured ? { effort: DESK_EFFORT, format: ... }` changed to
   //   `{ effort: RESEARCH_EFFORT, format: ... }` made this read    FAIL  D11 one run, start to finish ...
   // NEGATIVE CONTROL (run 2026-09-23): the retirement loop in fileRecs emptied (`for (const id of [])`) made this read
+  //   FAIL  D11 one run, start to finish ...
+  // RE-RUN 2026-09-23 (v7.2, retiring is one read and one write now): retireRecs' ids emptied (`const ids = [];`) made this read
   //   FAIL  D11 one run, start to finish ...
   check('D11 one run, start to finish: five researchers on Fable 5.1 at medium with five web searches and streamed thinking summaries, each on its own beat and each report written as it lands; then one desk turn on Fable 5.1 at high with the structured schema and no tools; the checked trades filed as the new board with the run, an expiry and no taken time; the last run\'s untaken idea retired and the taken one left alone; the run closed with the count and the desk\'s read, news and ids; a push titled PR 420; and the recorder\'s end row',
     r.out.ok === true && research.length === 5 && desk.length === 1
@@ -388,7 +428,7 @@ async function oneRun(opts = {}) {
     && r.docs.get(`${TD.PLAYS}/old_open`).data.status === 'expired' && r.docs.get(`${TD.PLAYS}/old_took`).data.status === 'took'
     && st.run.status === 'idle' && st.run.count === 2 && st.desk.runId === 'run_x' && st.desk.news.length === 1 && st.desk.ids.length === 2 && st.desk.read === 'Indexes firm, tech leading.'
     && r.w.pushes.length === 1 && r.w.pushes[0].title === 'PR 420' && /2 trades ready\. NVDA long, XLE long\./.test(r.w.pushes[0].body)
-    && end?.ok === true && end.reports === 5 && end.trades === 2 && end.agents.length === 5,
+    && end?.ok === true && end.reports === 5 && end.trades === 2 && handoff?.agents.length === 5,
     JSON.stringify({ out: r.out, recs: recs.length, run: st.run?.status, pushes: r.w.pushes }));
 }
 {
@@ -397,9 +437,11 @@ async function oneRun(opts = {}) {
   // NEGATIVE CONTROL (run 2026-09-23): a closed trade read into the research message
   //   (`...${market}\n\n${JSON.stringify((await tryGet(env, `${PLAYS}/hist_1`))?.data || '')}`) made this read
   //   FAIL  D12 NO HISTORY REACHES ANY AGENT ...
+  // RE-RUN 2026-09-23 (v7.2, the market rides the research doc): the same read appended after `${prior.market}` made this read
+  //   FAIL  D12 NO HISTORY REACHES ANY AGENT ...
   check('D12 NO HISTORY REACHES ANY AGENT (Eric: "The Trading Desk should NOT review my trade history when deciding future trades."): not one of the six requests carries a closed trade, its result, its setup, his balance, or even his last trade\'s ticker',
-    r.w.bodies.length === 6 && !/ZZHIST|HISTORYMARKER|9876\.54|987654|4400|SMCI|\bAMD\b/.test(everything),
-    (everything.match(/ZZHIST|HISTORYMARKER|9876\.54|987654|4400|SMCI|\bAMD\b/) || [''])[0]);
+    r.w.bodies.length === 6 && !/ZZHIST|HISTORYMARKER|9876\.54|987654|4400|SMCI|\bMRVL\b/.test(everything),
+    (everything.match(/ZZHIST|HISTORYMARKER|9876\.54|987654|4400|SMCI|\bMRVL\b/) || [''])[0]);
 }
 {
   const refuse = await oneRun({ turns: { research: (n) => (n <= 2 ? { text: REPORT(n) } : Object.assign(new Error('refused (cyber)'), { refused: true })) } });
@@ -417,14 +459,22 @@ async function oneRun(opts = {}) {
     JSON.stringify({ refuse: refuse.out, thin: thin.out }));
 }
 {
-  const r = await oneRun({ handoffAfterMs: -1 });
+  const r = await oneRun({ researchOnly: true });
+  const both = await oneRun({ settings: { finnhubKey: 'KEY123456789' }, deps: { marketSnapshot: async (k, tickers) => ({ at: 'T', quotes: tickers.map((t) => ({ ticker: t, last: 500, chgPct: 0.5, open: 499, high: 501, low: 498, prevClose: 497 })), news: [], earnings: [], missing: [] }) } });
+  const deskMsg = both.w.bodies.find((b) => !b.tools)?.messages[0].content[0].text || '';
   // NEGATIVE CONTROL (run 2026-09-23): the handoff's `return { ok: true, handedOff: true, ... }` removed made this read
   //   FAIL  D14 a long research phase hands the decision to the next firing ...
-  check('D14 a long research phase hands the decision to the next firing instead of stretching one invocation: the run is left at decide with every report stored, no desk turn is bought, nothing is filed and nothing is pushed',
+  // RE-PINNED 2026-09-23 (v7.2, fifty calls): every run hands over now, not only a long one, so the desk's
+  // decision always starts with its own fifty calls; and the market the researchers saw is kept with their
+  // reports, so the desk reads the same tape without fetching it again.
+  // NEGATIVE CONTROL (run 2026-09-23, v7.2): the desk firing's market put back to `const market = 'No market data was saved with this run.';` made this read
+  //   FAIL  D14 every research firing hands the decision to the next firing ...
+  check('D14 every research firing hands the decision to the next firing: the run is left at decide with every report stored, no desk turn is bought, nothing is filed and nothing is pushed; the market the researchers saw is stored with them and is what the desk reads, fetched once',
     r.out.handedOff === true && runOf(r.docs).status === 'decide' && r.w.bodies.filter((b) => !b.tools).length === 0
     && ['r1', 'r2', 'r3', 'r4', 'r5'].every((k) => r.docs.get(DR.RESEARCH_PATH).data[k]?.status === 'ok')
-    && r.w.pushes.length === 0 && r.w.diag.some((e) => e.ev === 'desk-run-handoff'),
-    JSON.stringify(r.out));
+    && r.w.pushes.length === 0 && r.w.diag.some((e) => e.ev === 'desk-run-handoff')
+    && both.out.ok === true && /SPY 500/.test(both.docs.get(DR.RESEARCH_PATH).data.market) && /SPY 500 \(\+0\.5% on the day/.test(deskMsg),
+    JSON.stringify({ r: r.out, both: both.out }));
 }
 {
   const research = { runId: 'run_x', r1: { status: 'ok', text: REPORT(1) }, r2: { status: 'ok', text: REPORT(2) }, r3: { status: 'failed', err: 'ran past its time' }, r4: null, r5: null };
@@ -432,6 +482,8 @@ async function oneRun(opts = {}) {
   const resumedShort = await oneRun({ research: { runId: 'run_x', r1: { status: 'ok', text: REPORT(1) }, r2: null, r3: null, r4: null, r5: null }, run: { attempt: 2 } });
   const otherRun = await oneRun({ research: { runId: 'someone_else', r1: { status: 'ok', text: 'STALE REPORT' }, r2: null, r3: null, r4: null, r5: null } });
   // NEGATIVE CONTROL (run 2026-09-23): the `prior` runId comparison (`rdoc.data?.runId === run.id`) dropped made this read
+  //   FAIL  D15 a run killed partway resumes from what landed ...
+  // RE-RUN 2026-09-23 (v7.2, `prior` is a let now): `let prior = rdoc ? rdoc.data : null;` made this read
   //   FAIL  D15 a run killed partway resumes from what landed ...
   check('D15 a run killed partway resumes from what landed: a resumed run that already holds two reports goes straight to the desk without buying the rest again, one that holds fewer re-runs only the missing beats, and reports from a different run are never reused',
     resumedEnough.w.bodies.filter((b) => b.tools).length === 0 && resumedEnough.w.bodies.filter((b) => !b.tools).length === 1 && resumedEnough.out.ok
@@ -532,11 +584,11 @@ async function oneRun(opts = {}) {
   const A = world({ state: { run: RUN }, research: { runId: 'run_x', r1: { status: 'ok', text: REPORT(1) }, r2: { status: 'ok', text: REPORT(2) } } });
   const realGet = A.deps.tryGet;
   A.deps.tryGet = async (e, path) => (path === DR.RESEARCH_PATH ? A.deps.READ_FAILED : realGet(e, path));
-  const outA = await load(A.deps).executeRun(env, RUN, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({}, A.w), heartbeatMs: 1e9 } });
+  const outA = await load(A.deps).executeRun(env, RUN, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({}, A.w) } });
   // A run he replaced mid-flight: the old attempt stops writing and files nothing.
   const B = world({ state: { run: RUN, desk: { runId: 'prev', ids: ['old_open'] } }, plays: { old_open: { ticker: 'AMD', status: 'open' } } });
   const sup = turns({ research: (n) => { if (n === 1) B.put(TD.STATE_PATH, { run: { id: 'run_new', status: 'queued', queuedAt: new Date(WED_10), attempt: 0 }, desk: { runId: 'prev', ids: ['old_open'] } }); return { text: REPORT(n) }; } }, B.w);
-  const outB = await load(B.deps).executeRun(env, RUN, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: sup, heartbeatMs: 1e9 } });
+  const outB = await load(B.deps).executeRun(env, RUN, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: sup } });
   restore();
   // An answer in the wrong shape never clears his board.
   const C = await oneRun({ turns: { desk: () => ({ text: '[{"ticker":"NVDA","side":"long"}]' }) } });
@@ -569,7 +621,7 @@ async function oneRun(opts = {}) {
     if (path === TD.STATE_PATH && (opts.mask || []).includes('desk')) throw new Error('write failed');
     return realPatch(e, path, data, opts);
   };
-  const outF = await load(F.deps).executeRun(env, RUN, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({}, F.w), heartbeatMs: 1e9 } });
+  const outF = (await firings(load(F.deps), F, RUN, { liveTurn: turns({}, F.w) })).out;
   restore();
   const lateScalp = DR.recExpiry('scalp', { now: Date.UTC(2026, 8, 23, 19, 50) });
   const earlyScalp = DR.recExpiry('scalp', { now: Date.UTC(2026, 8, 23, 16, 0) });
@@ -577,6 +629,8 @@ async function oneRun(opts = {}) {
   const longCall = DR.recExpiry('swing', { holdDays: 3, now: Date.UTC(2026, 8, 21, 16, 0), contractExpiry: '2026-10-16' });
   // NEGATIVE CONTROL (run 2026-09-23): `await retireRecs(env, doc0?.data?.desk?.ids || [], []);` inserted before fileRecs made this read
   //   FAIL  D22 the board can never be left empty ...
+  // RE-RUN 2026-09-23 (v7.2, the previous ids come from the ownership read): `await retireRecs(env, previous, [], { getMany, writeMany });`
+  //   inserted before fileRecs made this read    FAIL  D22 the board can never be left empty ...
   // NEGATIVE CONTROL (run 2026-09-23): recExpiry's contract cap (`if (realDate(contractExpiry)) at = ...`) removed made this read
   //   FAIL  D22 the board can never be left empty ...
   check('D22 the board can never be left empty and an idea never outlives its market: when the new board cannot be saved, the last run\'s idea is still open and the state still points at it; a scalp filed near the close expires at the close and one filed mid morning thirty minutes on; and an option expires with its contract when that comes first',
@@ -597,19 +651,138 @@ async function oneRun(opts = {}) {
   const stamp = fresh.w.patches.find((p) => p.path === TD.STATE_PATH);
   const busy = mk({ state: { run: { id: 'mine', status: 'researching', startedAt: new Date(Date.UTC(2026, 8, 23, 13, 0)), heartbeatAt: new Date(Date.UTC(2026, 8, 23, 13, 4, 30)), attempt: 1 } } });
   const busyOut = await load(busy.deps).maybeMorningRun(env, { now: Date.UTC(2026, 8, 23, 13, 5) });
-  const lastTry = await oneRun({ handoffAfterMs: -1, run: { attempt: 3 } });
+  // RE-PINNED 2026-09-23 (v7.2): every research firing hands over, the last attempt too, and the desk's
+  // claim of research handed over is never given up for attempts: the handoff is not a death.
+  const lastTry = await oneRun({ researchOnly: true, run: { attempt: 3 } });
+  const lastDesk = world({ state: { run: { id: 'r9', status: 'decide', queuedAt: new Date(WED_10 - 5 * 60_000), startedAt: new Date(WED_10 - 4 * 60_000), attempt: 3 } },
+    research: { runId: 'r9', r1: { status: 'ok', text: REPORT(1) }, r2: { status: 'ok', text: REPORT(2) } } });
+  at(WED_10);
+  const lastDeskOut = await load(lastDesk.deps).maybeRunDesk(env, { deadlineAt: WED_10 + 12 * 60_000, now: WED_10, deps: { liveTurn: turns({}, lastDesk.w) } });
+  restore();
   // NEGATIVE CONTROL (run 2026-09-23): maybeMorningRun's `if (runAlive(doc?.data?.run, now)) return { ran: false, why: 'a run is going' };` removed made this read
   //   FAIL  D23 the 7:00 run reads nothing before seven ...
   // NEGATIVE CONTROL (run 2026-09-23): the handoff's `&& (Number(run.attempt) || 1) < MAX_ATTEMPTS` removed made this read
   //   FAIL  D23 the 7:00 run reads nothing before seven ...
-  check('D23 the 7:00 run reads nothing before seven, stamps the day and queues the run in one write so the stamp can never stand without its run, waits rather than spending the day on a run of his still going, and a run on its last attempt decides in the same firing rather than handing off',
+  // NEGATIVE CONTROL (run 2026-09-23, v7.2): the give-up's `(!ready && ...)` changed to `(... >= MAX_ATTEMPTS)` without the ready guard made this read
+  //   FAIL  D23 the 7:00 run reads nothing before seven ...
+  check('D23 the 7:00 run reads nothing before seven, stamps the day and queues the run in one write so the stamp can never stand without its run, waits rather than spending the day on a run of his still going, and a run on its last attempt still hands its research over and has its decision made, never given up for it',
     beforeOut.why === 'not the hour' && readsBefore === 0
     && freshOut.ran === true && stamp && stamp.opts.mask.join() === 'morningDay,morningAt,run' && stamp.data.run.trigger === 'morning'
     && runOf(fresh.docs).status === 'queued' && fresh.docs.get(TD.STATE_PATH).data.morningDay === '2026-09-23'
     && fresh.w.patches.filter((p) => p.path === TD.STATE_PATH).length === 1
     && busyOut.ran === false && busyOut.why === 'a run is going' && !busy.docs.get(TD.STATE_PATH).data.morningDay
-    && lastTry.out.ok === true && !lastTry.out.handedOff && lastTry.w.bodies.filter((b) => !b.tools).length === 1,
+    && lastTry.out.ok === true && lastTry.out.handedOff === true && runOf(lastTry.docs).status === 'decide'
+    && lastDeskOut === true && runOf(lastDesk.docs).status === 'idle' && lastDesk.w.bodies.filter((b) => !b.tools).length === 1,
     JSON.stringify({ before: beforeOut, fresh: freshOut, busy: busyOut, last: lastTry.out }));
+}
+
+// ---- D24 to D26: the fifty calls, and a run that cannot run (2026-09-23) -----------------------
+// Measured in production the day after PR 420 shipped: one invocation gets fifty outside calls, then
+// every further one throws. The 7:00 run spent them partway through research, could not even save its
+// error, and died three times without a word, on a day the account was also out of credit.
+const SIX = [
+  TRADE({ ticker: 'NVDA', horizon: 'scalp', holdMinutes: 8 }), TRADE({ ticker: 'AMD', horizon: 'scalp', holdMinutes: 8 }),
+  TRADE({ ticker: 'TSLA' }), TRADE({ ticker: 'META' }),
+  TRADE({ ticker: 'XLE', horizon: 'swing', holdMinutes: null, holdDays: 2 }), TRADE({ ticker: 'XLF', horizon: 'swing', holdMinutes: null, holdDays: 2 }),
+];
+const snapCounted = (W) => async (k, tickers) => { W.w.calls += tickers.length + 2; return { at: 'T', quotes: tickers.map((t) => ({ ticker: t, last: 500, chgPct: 0.1, open: 1, high: 1, low: 1, prevClose: 1 })), news: [], earnings: [], missing: [] }; };
+const quoteCounted = (W) => async (k, t) => { W.w.calls += 1; return { ticker: t, last: 248.2 }; };
+// What a desk firing spends before the run's own first call: the firing's look, the claim, the cron's
+// heartbeat, the 7:00 check's two reads inside its half hour, and one database token. Six more are kept
+// spare for a read the database refuses once and is retried.
+const OUTSIDE = 6;
+const SPARE = 6;
+{
+  const creditErr = () => Object.assign(new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the API."}}'), { status: 400 });
+  // The research firing at its worst: a fresh run, a market key, all five back, every retry and continuation counted.
+  at(WED_10);
+  const R = world({ state: { run: { ...RUN, trigger: 'morning' }, desk: { runId: 'prev', ids: [] } }, settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789' } });
+  const rOut = await load(R.deps).executeRun(env, { ...RUN, trigger: 'morning' }, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({}, R.w), marketSnapshot: snapCounted(R) } });
+  // The research firing that fails: every researcher refused, the error saved, the 7:00 push sent.
+  const X = world({ state: { run: { ...RUN, trigger: 'morning' } }, settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789' } });
+  const xOut = await load(X.deps).executeRun(env, { ...RUN, trigger: 'morning' }, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({ research: creditErr }, X.w), marketSnapshot: snapCounted(X) } });
+  // The desk firing at its worst: six stock trades each priced, six ideas from the last run to retire, the 7:00 push.
+  const prevIds = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
+  const deskRun = { ...RUN, trigger: 'morning', phase: 'desk', status: 'deciding' };
+  const D = world({
+    state: { run: deskRun, desk: { runId: 'prev', ids: prevIds } },
+    settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789' },
+    research: { runId: 'run_x', market: 'SPY 500', r1: { status: 'ok', text: REPORT(1) }, r2: { status: 'ok', text: REPORT(2) }, r3: { status: 'ok', text: REPORT(3) }, r4: { status: 'ok', text: REPORT(4) }, r5: { status: 'ok', text: REPORT(5) } },
+    plays: Object.fromEntries(prevIds.map((id) => [id, { ticker: 'OLD', status: 'open', runId: 'prev' }])),
+  });
+  const dOut = await load(D.deps).executeRun(env, deskRun, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({ desk: () => ({ text: JSON.stringify(DESK_OUT({ trades: SIX })) }) }, D.w), quoteCached: quoteCounted(D) } });
+  restore();
+  const room = DR.CALL_CAP - OUTSIDE - SPARE;
+  const recs = [...D.docs.keys()].filter((k) => k.startsWith(`${TD.PLAYS}/rec_`));
+  // NEGATIVE CONTROL (run 2026-09-23): MARKET_TICKERS put back to the index and the eleven sector funds made this read
+  //   FAIL  D24 every firing fits inside the fifty calls ...
+  // NEGATIVE CONTROL (run 2026-09-23): fileRecs put back to one patchDoc per idea made this read
+  //   FAIL  D24 every firing fits inside the fifty calls ...
+  // NEGATIVE CONTROL (run 2026-09-23): the researchers' `maxRetries: 0` changed to `maxRetries: 2` made this read
+  //   FAIL  D24 every firing fits inside the fifty calls ...
+  // NEGATIVE CONTROL (run 2026-09-23): the research firing deciding in place (the handoff's `return { ok: true, handedOff: true, ... }` removed) made this read
+  //   FAIL  D24 every firing fits inside the fifty calls ...
+  check(`D24 every firing fits inside the fifty calls an invocation gets, counted at its worst with ${OUTSIDE} spent before the run and ${SPARE} kept spare: the research firing with a market key and all five back, the research firing whose five are all refused and whose 7:00 push goes out, and the desk firing that prices six trades, files them in one write, retires six old ideas in one read and one write, and pushes`,
+    rOut.handedOff === true && R.w.calls <= room
+    && xOut.ok === false && X.w.pushes.length === 1 && X.w.calls <= room
+    && dOut.ok === true && recs.length === 6 && D.w.calls <= room
+    && D.w.batches.filter((b) => b.write).length === 2 && D.w.batches.filter((b) => b.get).length === 1
+    && prevIds.every((id) => D.docs.get(`${TD.PLAYS}/${id}`).data.status === 'expired'),
+    JSON.stringify({ room, research: R.w.calls, failed: X.w.calls, desk: D.w.calls, recs: recs.length, d: dOut }));
+}
+{
+  const creditErr = () => Object.assign(new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the API."}}'), { status: 400 });
+  const morning = { run: { trigger: 'morning' }, state: { run: { ...RUN, trigger: 'morning' } } };
+  const dry = await oneRun({ ...morning, turns: { research: creditErr } });
+  const dryManual = await oneRun({ turns: { research: creditErr } });
+  const mixed = await oneRun({ ...morning, turns: { research: (n) => (n <= 3 ? creditErr() : Object.assign(new Error('Overloaded'), { status: 529 })) } });
+  const key = await oneRun({ turns: { research: () => Object.assign(new Error('invalid x-api-key'), { status: 401 }) } });
+  const deskDry = await oneRun({ ...morning, turns: { desk: creditErr } });
+  const endOf = (r) => r.w.diag.filter((e) => e.ev === 'desk-run-end').pop();
+  // NEGATIVE CONTROL (run 2026-09-23): fatalOf's credit test changed to `/credit card/i` made this read
+  //   FAIL  D25 a run that cannot run says why ...
+  // NEGATIVE CONTROL (run 2026-09-23): the research failure's `agents.every((x) => x.fa && x.fa === agents[0].fa)` loosened to `agents.some((x) => x.fa)` made this read
+  //   FAIL  D25 a run that cannot run says why ...
+  check('D25 a run that cannot run says why, at once: when every researcher is refused because the account is out of credit, the run ends on its first attempt with the sentence that says so and where to add it, buys no desk turn and files nothing, the 7:00 run pushes that sentence and his own run does not; a key refused says that instead; a mix of reasons is only "fewer than two came back"; and the desk refused for credit says the same sentence',
+    dry.out.ok === false && dry.out.why === TD.SAY.noCredit && runOf(dry.docs).status === 'error' && runOf(dry.docs).error === TD.SAY.noCredit
+    && runOf(dry.docs).attempt === 1 && dry.w.bodies.filter((b) => !b.tools).length === 0 && ![...dry.docs.keys()].some((k) => k.startsWith(`${TD.PLAYS}/rec_`))
+    && dry.w.pushes.length === 1 && dry.w.pushes[0].body === `The 7:00 run did not finish. ${TD.SAY.noCredit}` && dry.w.pushes[0].max === DR.PUSH_MAX
+    && /credit/.test(endOf(dry)?.err || '')
+    && dryManual.out.why === TD.SAY.noCredit && dryManual.w.pushes.length === 0
+    && key.out.why === TD.SAY.keyRefused
+    && mixed.out.why === TD.SAY.runThin && mixed.w.pushes.length === 1 && mixed.w.pushes[0].body === `The 7:00 run did not finish. ${TD.SAY.runThin}`
+    && deskDry.out.why === TD.SAY.noCredit && runOf(deskDry.docs).error === TD.SAY.noCredit && deskDry.w.pushes.length === 1
+    && /console\.anthropic\.com/.test(TD.SAY.noCredit) && !DASH.test(TD.SAY.noCredit + TD.SAY.keyRefused)
+    && DR.fatalOf(creditErr()) === 'credit' && DR.fatalOf(Object.assign(new Error('messages: bad'), { status: 400 })) === null
+    && DR.fatalOf({ status: 401 }) === 'key' && DR.fatalOf({ status: 529 }) === null && DR.fatalOf(null) === null,
+    JSON.stringify({ dry: dry.out, manual: dryManual.w.pushes.length, key: key.out, mixed: mixed.out, desk: deskDry.out }));
+}
+{
+  at(WED_10);
+  const tired = (trigger, settings) => world({ state: { run: { id: 'r7', status: 'researching', trigger, startedAt: new Date(WED_10 - 30 * 60_000), claimedAt: new Date(WED_10 - 10 * 60_000), attempt: 3 } }, ...(settings ? { settings } : {}) });
+  const am = tired('morning');
+  const amOut = await load(am.deps).maybeRunDesk(env, { deadlineAt: WED_10 + 12 * 60_000, now: WED_10, deps: { liveTurn: turns({}, am.w) } });
+  const mine = tired('manual');
+  await load(mine.deps).maybeRunDesk(env, { deadlineAt: WED_10 + 12 * 60_000, now: WED_10, deps: { liveTurn: turns({}, mine.w) } });
+  const quiet = tired('morning', { caseId: 'c1', pushOn: false });
+  await load(quiet.deps).maybeRunDesk(env, { deadlineAt: WED_10 + 12 * 60_000, now: WED_10, deps: { liveTurn: turns({}, quiet.w) } });
+  const peek = async (run) => { const P = world({ state: run ? { run } : null }); return load(P.deps).peekDesk(env, { now: WED_10 }); };
+  const pQueued = await peek({ id: 'a', status: 'queued', queuedAt: new Date(WED_10 - 30_000) });
+  const pFresh = await peek({ id: 'a', status: 'researching', claimedAt: new Date(WED_10 - 5 * 60_000) });
+  const pStale = await peek({ id: 'a', status: 'researching', claimedAt: new Date(WED_10 - 7 * 60_000) });
+  const pIdle = await peek({ id: 'a', status: 'idle' });
+  const pNone = await peek(null);
+  restore();
+  // NEGATIVE CONTROL (run 2026-09-23): the give-up's `if (gave !== false) await pushFailure(...)` removed made this read
+  //   FAIL  D26 the 7:00 run always reaches his phone ...
+  // NEGATIVE CONTROL (run 2026-09-23): runAlive's `< STALE_MS` changed to `< RUN_GIVE_UP_MS` made this read
+  //   FAIL  D26 the 7:00 run always reaches his phone ...
+  check('D26 the 7:00 run always reaches his phone (Eric: "I didn\'t get a 7am mst run/push for 420 like I asked"): a morning run the cron has to give up pushes that it did not finish and why, his own run given up does not push, and his push switch off is obeyed; and the firing\'s first look answers the state only when there is desk work: a queued run or one whose claim is older than any firing takes, never a run claimed five minutes ago, an idle desk or no desk',
+    amOut === true && runOf(am.docs).status === 'error' && am.w.pushes.length === 1 && am.w.pushes[0].body === `The 7:00 run did not finish. ${TD.SAY.runStalled}`
+    && mine.w.pushes.length === 0 && runOf(mine.docs).status === 'error' && quiet.w.pushes.length === 0
+    && pQueued?.data?.run?.id === 'a' && pFresh === null && pStale?.data?.run?.id === 'a' && pIdle === null && pNone === null
+    && DR.STALE_MS === 6 * 60_000 && DR.RESEARCH_BUDGET_MS < DR.STALE_MS - 60_000 && DR.DESK_BUDGET_MS < DR.STALE_MS - 60_000,
+    JSON.stringify({ am: am.w.pushes, mine: mine.w.pushes.length, quiet: quiet.w.pushes.length, pFresh: !!pFresh }));
 }
 
 // THE COUNTER IS COUNTED LAST (the rule from trade.mjs, 2026-09-22): every check above is counted.

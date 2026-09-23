@@ -127,6 +127,55 @@ export async function batchDelete(env, paths) {
 }
 
 /**
+ * Read up to 100 documents in ONE request (`:batchGet`), for the reason the
+ * two above exist (PR 420, 2026-09-23): an invocation gets fifty outside calls
+ * in all, measured in production, and a loop of single reads spends them.
+ * Answers one entry per path, in order: { data, updateTime }, or null when
+ * the document does not exist. A refused request throws; retried on 429 like
+ * every read.
+ */
+export async function batchGetDocs(env, paths) {
+  if (!paths.length) return [];
+  const docBase = `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+  const res = await readFetch(env, `${baseUrl(env)}:batchGet`, {
+    method: 'POST',
+    body: JSON.stringify({ documents: paths.map((p) => `${docBase}/${p}`) }),
+  });
+  if (!res.ok) throw new Error(`firestore batchGet: ${res.status} ${await res.text()}`);
+  const rows = await res.json();
+  const byName = new Map();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (r.found) byName.set(r.found.name, { data: fromFields(r.found.fields || {}), updateTime: r.found.updateTime });
+  }
+  return paths.map((p) => byName.get(`${docBase}/${p}`) || null);
+}
+
+/**
+ * Up to 500 writes in ONE request (`:batchWrite`), each applied on its own
+ * (not all or nothing), each with the same options patchDoc takes: `mask`,
+ * `ifUpdateTime`, `mustNotExist`. Answers one boolean per write: true when it
+ * landed, false when its precondition failed or it was refused.
+ */
+export async function batchWrite(env, writes) {
+  if (!writes.length) return [];
+  const docBase = `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+  const res = await authedFetch(env, `${baseUrl(env)}:batchWrite`, {
+    method: 'POST',
+    body: JSON.stringify({
+      writes: writes.map((w) => ({
+        update: { name: `${docBase}/${w.path}`, fields: toFields(w.data) },
+        ...(w.mask ? { updateMask: { fieldPaths: w.mask } } : {}),
+        ...(w.ifUpdateTime ? { currentDocument: { updateTime: w.ifUpdateTime } } : w.mustNotExist ? { currentDocument: { exists: false } } : {}),
+      })),
+    }),
+  });
+  if (!res.ok) throw new Error(`firestore batchWrite: ${res.status} ${await res.text()}`);
+  const out = await res.json();
+  const status = Array.isArray(out.status) ? out.status : [];
+  return writes.map((_, i) => !status[i]?.code);
+}
+
+/**
  * List a subcollection by path (e.g. `cases/abc/chat`). `queryDocs` can only
  * reach top-level collections — a `runQuery` against a subcollection has to be
  * posted to the parent document — so plain listing is both simpler and enough

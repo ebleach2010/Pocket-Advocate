@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.1';
+export const VERSION = '7.2';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.1';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // FIFTY CALLS (Eric, 2026-09-23: "I didn't get a 7am mst run/push for 420
+    // like I asked"). Measured: one run may make fifty outside calls, and the
+    // 7:00 run spent them partway through, then could not even save why.
+    // Admin only.
+    version: '7.2',
+    quiet: true,
+    client: [],
+    admin: [
+      'Why the 7:00 run never reached you: each run is allowed fifty outside calls, PR 420 was using more, and it stopped partway without being able to say so. Every run now fits well inside that, and the final call on the trades comes one minute after the research.',
+      'If the 7:00 run cannot finish, you get a push saying so and why. Running out of credit now says exactly that the moment it happens, instead of trying three times in silence.',
+    ],
+  },
   {
     // WHICH WALL A RUN HITS (2026-09-23). The 7:00 run and his own tap both
     // stopped partway with nothing said. A measuring hatch on the diagnostics
