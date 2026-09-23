@@ -1030,6 +1030,30 @@ export default {
             morning: { day: d.morningDay || null, ageS: age(d.morningAt) },
           });
         }
+        // WHICH WALL A RUN HITS (2026-09-23). Every desk run today stopped
+        // writing partway with no error and no log line, which is what a
+        // spent subrequest allowance or a CPU kill looks like from outside.
+        // This measures both instead of guessing: `sub` reads one tiny
+        // diag document up to that many times in a row and says which read
+        // first failed and why; `work` does that many rounds of parsing a
+        // 100 KB string and answers only if the invocation survived it.
+        // Touches diag/cron by reading it and nothing else.
+        if (url.searchParams.get('do') === 'limits') {
+          const sub = Math.min(200, Math.max(0, Number(url.searchParams.get('sub')) || 0));
+          const work = Math.min(20000, Math.max(0, Number(url.searchParams.get('work')) || 0));
+          const out = { sub, work, firstFail: null, failMsg: null, reads: 0 };
+          for (let i = 1; i <= sub; i++) {
+            try { await getDoc(env, 'diag/cron'); out.reads = i; } catch (err) { out.firstFail = i; out.failMsg = String(err?.message || err).slice(0, 200); break; }
+          }
+          if (work) {
+            const blob = JSON.stringify({ rows: Array.from({ length: 2000 }, (_, i) => ({ i, t: 'x'.repeat(30), n: i * 1.5 })) });
+            let sum = 0;
+            for (let i = 0; i < work; i++) sum += JSON.parse(blob).rows.length;
+            out.parsed = sum;
+            out.blobBytes = blob.length;
+          }
+          return json(out);
+        }
         if (url.searchParams.get('do') === 'firestore-probe') {
           const out = {};
           for (const [name, run] of [
@@ -2130,7 +2154,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-23-pr420';
+const BUILD_TAG = 'v2026-09-23-limits';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2138,7 +2162,7 @@ const BUILD_TAG = 'v2026-09-23-pr420';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.0';
+const VERSION = '7.1';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

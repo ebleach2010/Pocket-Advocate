@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.0';
+export const VERSION = '7.1';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.0';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // WHICH WALL A RUN HITS (2026-09-23). The 7:00 run and his own tap both
+    // stopped partway with nothing said. A measuring hatch on the diagnostics
+    // route, so the fix is built on what the platform does. Admin only.
+    version: '7.1',
+    quiet: true,
+    client: [],
+    admin: [
+      'Nothing you can see yet: a behind the scenes check that measures why a PR 420 run can stop partway without saying so.',
+    ],
+  },
   {
     // PR 420 (Eric, 2026-09-23: "Simplify the trading app substantially. The
     // app should now have only two primary purposes: 1. Suggested Trades

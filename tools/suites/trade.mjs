@@ -1344,6 +1344,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry613 = (CL.match(/\{\n\s+\/\/ A FAST LOOK BESIDE THE DEEP SCAN[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-23 (PR 420): the desk rebuilt and renamed.
   const entry70 = (CL.match(/\{\n\s+\/\/ PR 420 \(Eric, 2026-09-23[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-23 (v7.1): the measuring hatch, its own quiet entry.
+  const entry71 = (CL.match(/\{\n\s+\/\/ WHICH WALL A RUN HITS[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1376,8 +1378,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // pages behind three tabs named PR 420.
   // NEGATIVE CONTROL (run 2026-09-23): 'lights up electric yellow' reworded to 'turns electric yellow' in the 7.0 entry made this read
   //   FAIL  T36 both versions read 7.0 ...
-  check('T36 both versions read 7.0 with the new tag, the 4.7 through 7.0 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.0';/.test(CL) && /const VERSION = '7\.0';/.test(W) && /const BUILD_TAG = 'v2026-09-23-pr420';/.test(W)
+  // RE-PINNED 2026-09-23 (v7.1): both versions read 7.1 with the limits tag; the 7.0 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-23, v7.1): 'stop partway without saying so' reworded to 'stop partway silently' in the 7.1 entry made this read
+  //   FAIL  T36 both versions read 7.1 ...
+  check('T36 both versions read 7.1 with the new tag, the 4.7 through 7.1 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.1';/.test(CL) && /const VERSION = '7\.1';/.test(W) && /const BUILD_TAG = 'v2026-09-23-limits';/.test(W)
+    && /version: '7\.1',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry71)
+    && /stop partway without saying so/.test(entry71) && !DASH.test(entry71)
     && /version: '7\.0',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry70)
     && /The trade desk is PR 420 now/.test(entry70) && /RUN TRADING DESK/.test(entry70) && /3% risk per trade/.test(entry70)
     && /lights up electric yellow with PROFIT and LOSS/.test(entry70) && /never looks at your history/.test(entry70) && !DASH.test(entry70)
