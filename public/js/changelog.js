@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.3';
+export const VERSION = '7.4';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.3';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS BAR (Eric, 2026-09-23: "It should suggest anything over a 50%
+    // profit for a scalp, intraday, swing, for stocks and options. So three
+    // possible trades if they're there"). Admin only.
+    version: '7.4',
+    quiet: true,
+    client: [],
+    admin: [
+      'PR 420 now shows every trade with better than a 50% chance of reaching its first target, stocks and options, and looks for the best scalp, intraday and swing each run. Anything at 50% or under is left off.',
+      'Scalps only come up while the market is open or in the hour before it opens, so a run after the close has none.',
+    ],
+  },
   {
     // YOUR SIZE (Eric, 2026-09-23: "I should be able to manually tap on the
     // amount traded and update it, the amount I'm willing to risk, then it

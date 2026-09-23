@@ -785,6 +785,43 @@ const SPARE = 6;
     JSON.stringify({ am: am.w.pushes, mine: mine.w.pushes.length, quiet: quiet.w.pushes.length, pFresh: !!pFresh }));
 }
 
+// ---- D27: his bar (2026-09-23, v7.4) ------------------------------------------------------------
+// Eric: "It should suggest anything over a 50% profit for a scalp, intraday, swing, for stocks and
+// options. So three possible trades if they're there." The first real run filed one trade: the desk had
+// been told none beats a weak one. Now every trade over his bar reaches him, and nothing under it.
+{
+  const s = { open: true, minsToOpen: 0 };
+  const at51 = DR.validRec(TRADE({ chanceLow: 51, chanceHigh: 58 }), { session: s });
+  const at50 = DR.validRec(TRADE({ chanceLow: 50, chanceHigh: 60 }), { session: s });
+  const low = DR.validRec(TRADE({ chanceLow: 44, chanceHigh: 52 }), { session: s });
+  const none = DR.validRec(TRADE({ chanceLow: null, chanceHigh: null }), { session: s });
+  const three = DESK_OUT({ trades: [
+    TRADE({ ticker: 'AMD', horizon: 'scalp', holdMinutes: 8, chanceLow: 55, chanceHigh: 62 }),
+    TRADE({ ticker: 'META', chanceLow: 49, chanceHigh: 58 }),
+    TRADE({ ticker: 'SOFI', instrument: 'call', strike: 17, expiry: '2026-10-16', entryLow: 0.8, entryHigh: 0.85, stop: 0.5, targets: [1.3], chanceLow: 53, chanceHigh: 60 }),
+    TRADE({ ticker: 'XLE', horizon: 'swing', holdMinutes: null, holdDays: 2, entryLow: 90, entryHigh: 90.5, stop: 88, targets: [94], chanceLow: 57, chanceHigh: 63 }),
+  ] });
+  const r = await oneRun({ turns: { desk: () => ({ text: JSON.stringify(three) }) } });
+  const filed = [...r.docs.entries()].filter(([k]) => k.startsWith(`${TD.PLAYS}/rec_`)).map(([, v]) => v.data);
+  const ds = DR.deskSystem('cash', 3);
+  const rs = DR.researchSystem('cash');
+  // NEGATIVE CONTROL (run 2026-09-23): validRec's `if (!chanceOk || cLo <= CHANCE_FLOOR) return null;` removed made this read
+  //   FAIL  D27 his bar ...
+  // NEGATIVE CONTROL (run 2026-09-23): the desk's bar line put back to "Only include trades you would take yourself today. No trades is the right answer when nothing is worth it; he would rather see none than a weak one." made this read
+  //   FAIL  D27 his bar ...
+  check('D27 his bar (Eric: "anything over a 50% profit for a scalp, intraday, swing, for stocks and options"): a trade whose chance starts above 50% reaches him, stock or option, and one at 50, under it or with no chance given never does; a run that returns a scalp, two intraday trades and a swing files every one over the bar and drops the one under; the desk is told to give him the best of each kind that clears it and never to lift a number to clear it; the researchers are told to bring every candidate over it; and "none beats a weak one" is gone',
+    at51?.profitLow === 51 && at50 === null && low === null && none === null && DR.CHANCE_FLOOR === 50
+    && r.out.ok === true && filed.map((x) => x.ticker).sort().join() === 'AMD,SOFI,XLE' && filed.every((x) => x.profitLow > 50)
+    && filed.find((x) => x.ticker === 'SOFI')?.instrument === 'call'
+    && r.w.diag.find((e) => e.ev === 'desk-run-end')?.dropped === 1
+    && /every trade whose honest chance of reaching the first target before the stop is above 50%, which means chanceLow of at least 51/.test(ds)
+    && /best trade in each of the three kinds, scalp, intraday and swing, stock or option, whenever one clears that bar/.test(ds)
+    && /never raise a number to clear it/.test(ds)
+    && /Bring every candidate you honestly rate above 50%/.test(rs) && /stocks and options alike/.test(rs)
+    && !/none than a weak one|Quality over count/.test(ds + rs) && !DASH.test(ds + rs),
+    JSON.stringify({ at51: at51?.profitLow, at50, filed: filed.map((x) => `${x.ticker}:${x.profitLow}`) }));
+}
+
 // THE COUNTER IS COUNTED LAST (the rule from trade.mjs, 2026-09-22): every check above is counted.
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);

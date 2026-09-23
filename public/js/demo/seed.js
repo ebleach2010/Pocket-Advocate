@@ -633,7 +633,7 @@ export function seed({ set, file }) {
   REC('r-demo-4', {
     slot: 4, horizon: 'scalp', ticker: 'TSLA', side: 'long', instrument: 'put', strike: 405, expiry: dk(-3),
     entryLow: 3.1, entryHigh: 3.3, stop: 2.6, targets: [4.2, 5], holdMinutes: 20, allocPct: 15,
-    profitLow: 47, profitHigh: 56, agreement: 2, lastPrice: 409.8,
+    profitLow: 52, profitHigh: 59, agreement: 2, lastPrice: 409.8,
     setup: 'Rejected VWAP twice in the first half hour on rising volume after the delivery miss.',
     catalyst: 'Deliveries 4% under the street estimate.', invalidation: 'A reclaim of VWAP at 412.',
     status: 'open', expiresAt: later(2),

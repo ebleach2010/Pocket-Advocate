@@ -2059,7 +2059,7 @@ export function demoApi(role, store) {
               setup: 'Broke the opening range and held it on the retest, with volume rising into the break.', catalyst: 'Semis leading after the guidance raise.', invalidation: 'A close back under 496 on volume.' },
             { horizon: 'swing', ticker: 'MU', side: 'long', instrument: 'stock', entryLow: 118.2, entryHigh: 119, stop: 113.9, targets: [126, 131], holdDays: 3, allocPct: 22, profitLow: 51, profitHigh: 60, agreement: 3, lastPrice: 118.7, priceNow: 118.7,
               setup: 'Beat on memory pricing before the open and is basing above the gap.', catalyst: 'Earnings beat and a raised outlook this morning.', invalidation: 'Filling the gap below 114.' },
-            { horizon: 'scalp', ticker: 'AMD', side: 'long', instrument: 'call', strike: 170, expiry: expiry(2), entryLow: 2.05, entryHigh: 2.2, stop: 1.6, targets: [2.9, 3.4], holdMinutes: 15, allocPct: 12, profitLow: 48, profitHigh: 57, agreement: 3, lastPrice: 168.4,
+            { horizon: 'scalp', ticker: 'AMD', side: 'long', instrument: 'call', strike: 170, expiry: expiry(2), entryLow: 2.05, entryHigh: 2.2, stop: 1.6, targets: [2.9, 3.4], holdMinutes: 15, allocPct: 12, profitLow: 52, profitHigh: 59, agreement: 3, lastPrice: 168.4,
               setup: 'Pressing the day high at 169 with the supply news behind it.', catalyst: 'Supply agreement reported before the open.', invalidation: 'Losing 167.8, the morning low of the push.' },
           ];
           const ids = [];

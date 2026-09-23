@@ -1366,6 +1366,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry72 = (CL.match(/\{\n\s+\/\/ FIFTY CALLS \(Eric, 2026-09-23[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-23 (v7.3): his own size, its own quiet entry.
   const entry73 = (CL.match(/\{\n\s+\/\/ YOUR SIZE \(Eric, 2026-09-23[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-23 (v7.4): his bar, its own quiet entry.
+  const entry74 = (CL.match(/\{\n\s+\/\/ HIS BAR \(Eric, 2026-09-23[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1407,8 +1409,14 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-23 (v7.3): both versions read 7.3 with the your-size tag; the 7.2 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-23, v7.3): 'before or after you take it' reworded to 'before or after taking it' in the 7.3 entry made this read
   //   FAIL  T36 both versions read 7.3 ...
-  check('T36 both versions read 7.3 with the new tag, the 4.7 through 7.3 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.3';/.test(CL) && /const VERSION = '7\.3';/.test(W) && /const BUILD_TAG = 'v2026-09-23-your-size';/.test(W)
+  // RE-PINNED 2026-09-23 (v7.4): both versions read 7.4 with the his-bar tag; the 7.3 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-23, v7.4): 'better than a 50% chance' reworded to 'more than a 50% chance' in the 7.4 entry made this read
+  //   FAIL  T36 both versions read 7.4 ...
+  check('T36 both versions read 7.4 with the new tag, the 4.7 through 7.4 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.4';/.test(CL) && /const VERSION = '7\.4';/.test(W) && /const BUILD_TAG = 'v2026-09-23-his-bar';/.test(W)
+    && /version: '7\.4',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry74)
+    && /better than a 50% chance/.test(entry74) && /best scalp, intraday and swing/.test(entry74) && !DASH.test(entry74)
+    && !HARD.some((re) => re.test(entry74))
     && /version: '7\.3',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry73)
     && /Tap Amount or Risk on any trade, before or after you take it/.test(entry73) && /History keeps both/.test(entry73) && !DASH.test(entry73)
     && !HARD.some((re) => re.test(entry73))

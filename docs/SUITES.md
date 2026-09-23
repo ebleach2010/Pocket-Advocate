@@ -463,6 +463,12 @@ route, T70 the card and History; drive-trade.mjs section M taps, types,
 saves, takes the trade, changes its risk, goes back to the desk's plan and
 finds both in History.
 
+**His bar (2026-09-23, v7.4).** The first real run filed one trade, because
+the desk had been told none beats a weak one. `CHANCE_FLOOR` (50) in
+desk-run.js is his rule: `validRec` drops any trade whose chance starts at
+50% or under, and both prompts ask for every trade over it, the desk for the
+best of each kind. desk.mjs D27 holds all three.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

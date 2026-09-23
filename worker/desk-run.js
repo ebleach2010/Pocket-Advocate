@@ -105,6 +105,11 @@ export const MIN_REPORTS = 2;
 export const MAX_TRADES = 6;
 export const MAX_PER_HORIZON = 2;
 export const MAX_NEWS = 6;
+// HIS BAR (Eric, 2026-09-23: "It should suggest anything over a 50% profit for a scalp, intraday,
+// swing, for stocks and options. So three possible trades if they're there"). A trade reaches him
+// when the low end of the desk's honest chance of its first target before its stop is above this,
+// and never when it is not. The desk is told to find the best of each kind that clears it.
+export const CHANCE_FLOOR = 50;
 export const MAX_CONTINUES = 1;
 export const RESEARCH_PATH = 'trade/research';
 export const WEB_SEARCH = { type: 'web_search_20260209', name: 'web_search', max_uses: RESEARCH_SEARCHES };
@@ -148,7 +153,7 @@ export function researchSystem(accountType) {
   return `You are a researcher on PR 420, a small proprietary trading desk that serves one trader, Eric. He trades his own account from his phone and has no time to read research: he opens the app, sees a handful of trades, takes one or ignores it. Five researchers look at the market independently and a sixth, the desk, reads all five reports and makes the final calls. You are one of the five. You will not see the other reports and nobody reads yours except the desk, so write for a colleague who will check your work against four others: facts with their source and time, candidates the desk can act on, and a clear line between what you verified and what you think.
 
 What the desk needs from you:
-- The strongest opportunities your beat turns up right now, across scalps (held 1 to 10 minutes), intraday trades (held 1 to 8 hours and flat by the close) and swing trades (held up to 3 trading days and never over a weekend). Quality over count: two well-evidenced candidates beat six thin ones, and none is a valid answer.
+- The strongest opportunities your beat turns up right now, across scalps (held 1 to 10 minutes), intraday trades (held 1 to 8 hours and flat by the close) and swing trades (held up to 3 trading days and never over a weekend). Bring every candidate you honestly rate above ${CHANCE_FLOOR}% to reach its first target before its stop, the low end of your range, in every horizon your beat covers and in stocks and options alike: he sees every trade that clears that bar. None is still the right answer for a horizon where nothing clears it.
 - For every candidate: the ticker, long or short, scalp, intraday or swing, the last price with its time and where it came from, an entry zone, a stop, one or two targets, the expected hold, the setup in one sentence, the catalyst, what would invalidate it, and your honest chance, as a range such as 55 to 62, that it reaches the first target before the stop.
 - The names you looked at and rejected, one line each, with the reason. The desk uses these to settle disagreements.
 - Anything outside your beat that would materially change a trade, such as a halt, an offering, or a macro release in the next hour.
@@ -184,7 +189,7 @@ How to weigh the reports:
 - When researchers disagree on direction, only take the trade if one side has decisive evidence.
 - A rejection by one researcher counts against a candidate from another. Read the Rejected lines.
 - The macro and sector read sets the bias. Be slower to trade against it.
-- Only include trades you would take yourself today. No trades is the right answer when nothing is worth it; he would rather see none than a weak one.
+- His bar: he wants every trade whose honest chance of reaching the first target before the stop is above ${CHANCE_FLOOR}%, which means chanceLow of at least ${CHANCE_FLOOR + 1}. Give him the best trade in each of the three kinds, scalp, intraday and swing, stock or option, whenever one clears that bar, and a second in a kind only when it clears it too. Leave a kind empty only when nothing in it clears the bar, and never raise a number to clear it: the app drops anything at ${CHANCE_FLOOR}% or below.
 
 Limits:
 - At most ${MAX_TRADES} trades and at most ${MAX_PER_HORIZON} of each kind.
@@ -460,6 +465,8 @@ export function validRec(t, { accountType = 'cash', session = null, todayKey = n
   let cLo = Math.round(fin(t.chanceLow) ?? 0); let cHi = Math.round(fin(t.chanceHigh) ?? 0);
   if (cLo > cHi) [cLo, cHi] = [cHi, cLo];
   const chanceOk = cLo >= 1 && cHi <= 99;
+  // His bar: nothing at or below it reaches him, and a trade with no chance given cannot clear it.
+  if (!chanceOk || cLo <= CHANCE_FLOOR) return null;
   const hm = fin(t.holdMinutes); const hd = fin(t.holdDays);
   const setup = clip(t.setup, 220);
   if (!setup) return null;
