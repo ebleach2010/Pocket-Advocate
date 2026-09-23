@@ -190,50 +190,9 @@ Pocket Advocate
 Enclosures: appointment of authorised representative; neurology consultation
 note; physical therapy discharge summary; medication record.`;
 
-// The trade desk's reading, as the panel stores it once the machine-read
-// sections are stripped (2026-09-22). Invented end to end, in the desk's
-// own sections, about the four trades in the seeded log.
+// PR 420's case (2026-09-23): the desk has no reading, no log and no chat any
+// more, only its trades, its news and his history.
 const TRADE_ID = 'demo-case-trade';
-const TRADE_READING = `## Right now
-The index is up 0.4% on light volume and chips lead. Your account is $2,380.00 after 14 trading days, 1.75 points a day under the 3% line. Since the last reading you logged four trades and one screenshot. Two were sound, one had no stop, one moved a stop the wrong way.
-
-## Your trades
-NVDA long (t001): a gap and go with the opening range held and volume at twice normal. Stop 1.50 under, target 3.60 above, better than 2 to 1. You took profit at 651.60 before the target, which is fine on a day the index was light. Good trade.
-
-TSLA short (t002): the second [[VWAP]] rejection is a real trigger. Stop above the rejection high, target at the morning low. Covered early at 409.80 with the trend still on. Good trade.
-
-AMD calls (t003): no stop, and the exit plan was watching it. The reclaim was a fair reason and 2 contracts was a fair size. The trade went wrong when the plan was attention and nothing else. A bad trade with a fair reason.
-
-SPY long (t004): the stop moved from 570 to 569 after price dipped. A stop moves only in the direction of the trade. The loss grew from $24 to $44 for no new reason. Bad trade.
-
-## Where you are slipping
-- Options trades go on without a stop (t003). Shares get one every time.
-- A stop moved against you once the trade was under water (t004).
-- Both good trades were closed before target on nothing but nerves (t001, t002). Fine while the day is light; watch that it does not become the habit.
-
-## Rules to hold
-- Every options entry gets a stop on the underlying before the order goes in (t003).
-- A stop moves toward the target or not at all (t004).
-- Size so the loss at the stop is 1 to 2% of the account (t001 and t002 held this).
-
-## Setups
-### NVDA long
-Current picture: holding above the [[opening range]] at 650 on twice normal volume after the developer conference guidance.
-Bull case: a push through 652 with volume opens 655.
-Bear case: a break back below 648 ends it.
-Levels: 648, 650, 652, 655.
-Risk: $1.50 a share on 100 shares is $150, about 6% of the account; 40 shares keeps it at $60.
-What I would watch next: the 10:30 volume bar against the 10:00 one.
-Chance of profit: 55 to 65%.
-
-### TSLA short
-Current picture: rejected VWAP twice in the first half hour on falling volume after the delivery miss.
-Bull case: a reclaim of 415 with volume flips the day; cover there.
-Bear case: a break of 410 on volume opens 405 and 402.
-Levels: 405, 410, 412, 415.
-Risk: $6 a share on 25 shares is $150; 12 shares keeps it near $70.
-What I would watch next: whether 412 holds as resistance on the next test.
-Chance of profit: 45 to 55%.`;
 
 export function seed({ set, file }) {
   // Open times to book into. Without these the booking page says "No open
@@ -590,23 +549,23 @@ export function seed({ set, file }) {
     at: days(1).toISOString(), url: '',
     meta: { paCategory: 'formsent', paStarred: '1' },
   });
-  // ---- the trade desk (2026-09-21; a case file since 2026-09-22) ----------
+  // ---- PR 420, the trading desk (2026-09-23) ----------------------------------
   // His desk on the shelf, seeded so every page has something to show: the
-  // green case, a trade log of four trades and a screenshot note, one
-  // question the reading asked and his answer, a reading in the desk's
-  // sections, two plays with their setups, the settings with a key on file,
-  // fifteen trading days of balances, and two trading terms in the
-  // dictionary. Every figure invented.
+  // last run's four trades (a scalp on a contract, two intraday, one swing),
+  // one he took forty minutes ago and is still in, the desk's own read and its
+  // news, a history of closes with PROFIT and LOSS on them, a typed balance,
+  // and the 3% rule. Every figure invented.
   // THE DESK'S DAY IS MOUNTAIN (2026-09-22): its today comes from
   // America/Boise, so a seeded day key built in UTC lands on the wrong day
-  // for most of the evening and a trade closed "yesterday" counts as today.
+  // for most of the evening.
   const dk = (n) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' }).format(new Date(Date.now() - n * 86_400_000));
+  const later = (h) => new Date(Date.now() + h * 3_600_000);
   set(`cases/${TRADE_ID}`, {
     self: true,
     trade: true,
     clientUid: null,
     clientEmail: null,
-    clientName: 'Trade desk',
+    clientName: 'PR 420',
     clientDob: null,
     clientTz: 'America/Boise',
     clientPhone: null,
@@ -632,160 +591,110 @@ export function seed({ set, file }) {
     hold: null,
     priorCases: [],
     carriedDx: [],
-    lastMessage: { text: 'I was watching it live and figured I would sell on a break of 168.', from: ADMIN, role: 'admin', ts: hours(2), emailed: true },
   });
-  const TRADE_LOG = [
-    [30, 'NVDA long 100 shares at 648.40, stop 646.90, target 652. Gap and go, held the opening range, volume 2x. Out at 651.60, plus 320.'],
-    [29, 'TSLA short 50 at 412.10 after the second VWAP rejection, stop 414, target 405. Covered at 409.80, plus 115.'],
-    [27, 'AMD long 2 Oct 17 170 calls at 4.20 on the reclaim. No stop, I was watching it. Sold at 3.60, minus 120.'],
-    [26, 'SPY long 20 shares at 571.20, stop 570, target 573. Moved the stop to 569 when it dipped. Stopped at 569, minus 44.'],
-    [5, 'Screenshot of my positions at 10:05 is in Uploads: NVDA and SPY open, both green.'],
-  ];
-  TRADE_LOG.forEach(([ago, text], n) => {
-    set(`cases/${TRADE_ID}/chat/t${String(n + 1).padStart(3, '0')}`, { from: ADMIN, role: 'admin', text, ts: hours(ago) });
-  });
-  // What the log is actually for (Eric, 2026-09-22): "The chat is just for me
-  // to dump information that help guide the ... trading desk to my goals or
-  // bring up things I'm thinking of." Nobody writes into it but him.
-  set(`cases/${TRADE_ID}/chat/t006`, {
-    from: ADMIN, role: 'admin', ts: hours(2),
-    text: 'Where I want this going: 3% a day on the account, no overnight risk, and I would rather take four clean setups a week than twenty ragged ones. Options only when the spread is tight.',
-  });
-  set(`cases/${TRADE_ID}/advisor/state`, {
-    trade: true,
-    status: 'idle',
-    updatedAt: hours(2),
-    analysis: TRADE_READING,
-    workingDx: 'Sound entries, stops go missing on options',
-    differential: [],
-    unanswered: [],
-    corrections: [],
-    priorCases: [], carriedDx: [], handovers: [], handoverStatus: null,
-    mediaReport: { read: ['positions-1005.png'], known: [], queued: [], unreadable: [], at: hours(2) },
-  });
-  set(`caseMeta/${TRADE_ID}`, {
-    workingDx: { text: 'Sound entries, stops go missing on options', by: 'advisor', at: hours(2) },
-    advisorAt: hours(2),
-    tradeStanding: { text: '$2,380.00 · 14 trading days · 0.75 pts under 2% a day', at: hours(2) },
-  });
+  set(`cases/${TRADE_ID}/advisor/state`, { trade: true, status: 'idle', priorCases: [], carriedDx: [], handovers: [], handoverStatus: null });
   set('advisorKnowledge/vwap', { term: 'VWAP', category: 'Indicator', definition: 'The volume weighted average price of the day so far, the line intraday traders watch to see who is in control.', mechanism: '', treatment: '', outcome: '', addedAt: hours(2), learnedAt: null });
   set('advisorKnowledge/opening-range', { term: 'Opening range', category: 'Setup', definition: 'The high and the low of the first five to fifteen minutes; a break out of it with volume is a trigger, and the other side of it is the stop.', mechanism: '', treatment: '', outcome: '', addedAt: hours(2), learnedAt: null });
   set('trade/settings', {
     caseId: TRADE_ID, openedAt: days(21),
     finnhubKey: 'demo-finnhub-key-1234', accountType: 'cash',
-    watchlist: ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AAPL', 'AMD', 'META', 'AMZN', 'MSFT', 'COIN'],
-    pushOn: true, startedAt: dk(21), startCents: 200000, setByHand: true,
+    watchlist: ['SPY', 'QQQ', 'IWM', 'NVDA', 'AMD', 'SOFI', 'PLTR', 'F', 'INTC', 'BAC'],
+    pushOn: true, startedAt: dk(21), startCents: 200000, riskPct: 3, debugResearch: false,
   });
-  // NOTHING RUNS BUT HIS TAP (2026-09-22): no slot was ever claimed here
-  // again, and what the state carries now is the last scan he asked for.
-  set('trade/state', {
-    scanStatus: 'idle', scanError: null, lastScanAt: hours(2),
-    scanNote: {
-      at: hours(2), plays: 2,
-      text: '## Note\n\nThe indexes opened into yesterday\'s range and have stayed inside it, so there is nothing clean on the big names yet. The two below are what I would watch, and both die with the session.',
-    },
+  const RUN = 'run-demo-seed';
+  const REC = (id, t) => set(`trade/plays/items/${id}`, {
+    runId: RUN, caseId: TRADE_ID, at: hours(2), priceAt: hours(2), tookAt: null, closedAt: null, result: null,
+    entry: Math.round(((t.entryLow + t.entryHigh) / 2) * 10000) / 10000, ...t,
   });
-  set('trade/plays/items/p-demo-1', {
-    at: hours(2), slot: '10:02', caseId: TRADE_ID, ticker: 'NVDA', side: 'long', instrument: 'spread', structure: 'Oct 17 650/655 call debit spread',
-    entry: 2.1, stop: 1.3, targets: [3.4, 4.6], holdMinutes: 180, horizon: 'intraday', holdDays: 0,
-    picture: 'Holding above the opening range at 650 on twice normal volume after the developer conference guidance.',
-    bull: 'A push through 652 with volume opens 655.',
-    bear: 'A break back below 648 on the stock ends it.',
-    levels: ['648', '650', '652', '655'],
-    risk: 'The spread costs 2.10 and can go to zero; 2 contracts is $420, about 2% of the account at the stop of 1.30.',
-    watch: 'The 10:30 volume bar against the 10:00 one.',
-    catalyst: 'Data center guidance raised at the developer conference, 07:00 ET.',
-    profitLow: 55, profitHigh: 65, sizeDollars: 420, allocPct: 17.6,
-    // The vehicle in fields (2026-09-22), so the card can say it the way a broker would.
-    strike: 650, strike2: 655, optionType: 'call', credit: false, expiry: '2026-10-17',
-    overnight: { ok: false, why: 'The move is intraday. Nothing after the bell.' },
-    status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 4 * 3600_000),
+  REC('r-demo-1', {
+    slot: 1, horizon: 'intraday', ticker: 'NVDA', side: 'long', instrument: 'stock',
+    entryLow: 650.2, entryHigh: 651, stop: 646.9, targets: [655.5, 659], holdMinutes: 180, allocPct: 20,
+    profitLow: 56, profitHigh: 64, agreement: 4, lastPrice: 650.8, priceNow: 650.8,
+    setup: 'Held the opening range on twice its normal volume after the guidance raise, and the first pullback was bought at VWAP.',
+    catalyst: 'Data center guidance raised at the developer conference.', invalidation: 'A close back under 648 on volume.',
+    status: 'open', expiresAt: later(4),
   });
-  set('trade/plays/items/p-demo-2', {
-    at: hours(2), slot: '10:02', caseId: TRADE_ID, ticker: 'TSLA', side: 'short', instrument: 'stock', structure: 'shares',
-    entry: 412, stop: 418, targets: [402, 396], holdMinutes: 60, horizon: 'scalp', holdDays: 0,
-    picture: 'Rejected VWAP twice in the first half hour on falling volume after the delivery miss.',
-    bull: 'A reclaim of 415 with volume flips the day. Cover there.',
-    bear: 'A break of 410 on volume opens 405 and 402.',
-    levels: ['402', '405', '410', '412', '415'],
-    risk: '$6 a share on 25 shares is $150; 12 shares keeps it near $70.',
-    watch: 'Whether 412 holds as resistance on the next test.',
-    catalyst: 'Delivery numbers below the street estimate, out at 06:00 ET.',
-    profitLow: 45, profitHigh: 55, sizeDollars: 800, allocPct: 33.6, overnight: { ok: false, why: 'Short into an overnight headline is not a trade with an edge.' },
-    status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 2 * 3600_000),
+  REC('r-demo-2', {
+    slot: 2, horizon: 'intraday', ticker: 'SOFI', side: 'long', instrument: 'stock',
+    entryLow: 15.5, entryHigh: 15.65, stop: 15.2, targets: [16.1, 16.4], holdMinutes: 240, allocPct: 25,
+    profitLow: 52, profitHigh: 60, agreement: 3, lastPrice: 15.58, priceNow: 15.58,
+    setup: 'Relative volume at three times normal on the upgrade, holding above yesterday\'s high.',
+    catalyst: 'Analyst upgrade to buy with a $19 target before the open.', invalidation: 'Losing yesterday\'s high at 15.30.',
+    status: 'open', expiresAt: later(4),
   });
-  // A swing, allowed when it serves the benchmarks and out before the
-  // weekend (Eric, 2026-09-22).
-  set('trade/plays/items/p-demo-3', {
-    at: hours(2), slot: '10:02', caseId: TRADE_ID, ticker: 'AMD', side: 'long', instrument: 'stock', structure: 'shares',
-    entry: 167.3, stop: 163.8, targets: [174, 178], holdMinutes: 1800, horizon: 'swing', holdDays: 3,
-    picture: 'Base above the fifty day after the reclaim, volume drying up into it.',
-    bull: 'A push through 170 on volume opens 174 and 178.',
-    bear: 'Back under 165 and the base is broken.',
-    levels: ['163.8', '165', '170', '174'],
-    risk: '$3.50 a share. Held overnight, so a gap against it is the real risk; out before the weekend either way.',
-    watch: 'Whether 170 takes two tries or one.',
-    catalyst: 'Supply deal reported before the open.',
-    profitLow: 50, profitHigh: 60, sizeDollars: 500, allocPct: 21, overnight: { ok: true, why: 'A swing by design, flat before Friday closes.' },
-    status: 'open', outcomeCents: null, tookAt: null, closedAt: null, expiresAt: new Date(Date.now() + 48 * 3600_000),
+  REC('r-demo-3', {
+    slot: 3, horizon: 'swing', ticker: 'AMD', side: 'long', instrument: 'stock',
+    entryLow: 167, entryHigh: 168, stop: 163.8, targets: [174, 178], holdDays: 3, allocPct: 25,
+    profitLow: 52, profitHigh: 60, agreement: 3, lastPrice: 167.6, priceNow: 167.6,
+    setup: 'Base above the fifty day after the reclaim, volume drying up into it; out before the weekend either way.',
+    catalyst: 'Supply agreement reported before the open.', invalidation: 'Back under 165 and the base is broken.',
+    status: 'open', expiresAt: later(48),
   });
-  // HIS OWN TRADES (2026-09-22): what he is actually in, which is not the
-  // same thing as what the reading suggested. One intraday, one swing, and
-  // one he closed yesterday.
-  set('trade/positions/items/pos-demo-1', {
-    ticker: 'NVDA', side: 'long', instrument: 'stock', horizon: 'intraday', qty: 10,
-    entry: 648.4, stop: 646.9, target: 652, mark: null, credit: false, width: null, expiry: null,
-    structure: 'shares', note: 'Opening range break on volume.',
-    openedAt: hours(3), openedDay: dk(0), status: 'open', fromPlay: null, riskCents: 1500, updatedAt: hours(3),
+  REC('r-demo-4', {
+    slot: 4, horizon: 'scalp', ticker: 'TSLA', side: 'long', instrument: 'put', strike: 405, expiry: dk(-3),
+    entryLow: 3.1, entryHigh: 3.3, stop: 2.6, targets: [4.2, 5], holdMinutes: 20, allocPct: 15,
+    profitLow: 47, profitHigh: 56, agreement: 2, lastPrice: 409.8,
+    setup: 'Rejected VWAP twice in the first half hour on rising volume after the delivery miss.',
+    catalyst: 'Deliveries 4% under the street estimate.', invalidation: 'A reclaim of VWAP at 412.',
+    status: 'open', expiresAt: later(2),
   });
-  set('trade/positions/items/pos-demo-2', {
-    ticker: 'SPY', side: 'long', instrument: 'call', horizon: 'swing', qty: 1,
-    entry: 4.2, stop: 2.8, target: 6.5, mark: 4.75, credit: false, width: null, expiry: dk(-25),
-    structure: 'Oct 17 575 call', note: 'Held into the close, out before Friday.',
-    openedAt: days(2), openedDay: dk(2), status: 'open', fromPlay: null, riskCents: 14000, updatedAt: days(2),
+  // The one he took, forty minutes ago, lit yellow with PROFIT and LOSS on it.
+  REC('r-demo-5', {
+    runId: 'run-demo-earlier', slot: 1, horizon: 'intraday', ticker: 'PLTR', side: 'long', instrument: 'stock',
+    entryLow: 40.9, entryHigh: 41.1, stop: 40.3, targets: [42.2, 43], holdMinutes: 180, allocPct: 30,
+    profitLow: 55, profitHigh: 62, agreement: 4, lastPrice: 41, priceNow: 41, at: hours(5), priceAt: hours(5),
+    setup: 'Reclaimed VWAP on the contract headline and held it through the first pullback.',
+    catalyst: 'Army contract extension announced at 06:30.', invalidation: 'Back under VWAP at 40.60.',
+    status: 'took', tookAt: hours(0.66), expiresAt: later(3),
   });
-  set('trade/positions/items/pos-demo-3', {
-    ticker: 'TSLA', side: 'short', instrument: 'stock', horizon: 'scalp', qty: 25,
-    entry: 412.1, stop: 414, target: 405, mark: null, credit: false, width: null, expiry: null,
-    structure: 'shares', note: '', openedAt: days(1), openedDay: dk(1),
-    status: 'closed', closedAt: days(1), closedDay: dk(1), exitPrice: 409.8, pnlCents: 5750,
-    closeNote: 'Covered at the second test.', fromPlay: null, riskCents: 4750, updatedAt: days(1),
-  });
-  // THE CLOSES STATS IS COMPUTED FROM (2026-09-22, the desk as one app).
-  // With the one above, fourteen trades over the last twelve days: five
-  // scalps, six intraday and three swings, nine won, four lost, one
-  // scratched, and one taken without a stop so the R figures have a row to
-  // skip. None of them closed today, so the day opens at zero and the close
-  // the drive makes is what moves it.
-  const CLOSES = [
-    ['c1', 'NVDA', 'long', 'stock', 'intraday', 10, 648.4, 646.9, 651.6, 12000, 12, 1500, 'Gap and go, out before the target.'],
-    ['c2', 'SPY', 'long', 'stock', 'intraday', 10, 571.2, 570, 574.45, 6500, 12, 1200, ''],
-    ['c3', 'AMD', 'long', 'stock', 'intraday', 100, 168.2, null, 167, -12000, 11, null, 'No stop. Watching it was the plan.'],
-    ['c4', 'SPY', 'long', 'stock', 'intraday', 20, 571.2, 569, 569, -4400, 10, 4400, 'Moved the stop the wrong way.'],
-    ['c5', 'META', 'long', 'stock', 'scalp', 30, 598.1, 596.5, 599.15, 3150, 9, 4800, ''],
-    ['c6', 'AAPL', 'long', 'stock', 'swing', 40, 228, 225.5, 232.4, 17600, 7, 10000, 'Out Thursday, flat into the weekend.'],
-    ['c7', 'NVDA', 'long', 'stock', 'intraday', 10, 645, 643.5, 651.2, 6200, 7, 1500, ''],
-    ['c8', 'TSLA', 'short', 'stock', 'scalp', 25, 415, 417, 417, -5000, 6, 5000, 'Stopped.'],
-    ['c9', 'AMZN', 'long', 'stock', 'scalp', 30, 224.5, 223.6, 225.6, 3300, 6, 2700, ''],
-    ['c10', 'COIN', 'long', 'stock', 'scalp', 20, 212, 210.5, 212, 0, 5, 3000, 'Scratched.'],
-    ['c11', 'MSFT', 'long', 'stock', 'swing', 10, 512, 507, 507.65, -4350, 5, 5000, ''],
-    ['c12', 'QQQ', 'long', 'stock', 'intraday', 20, 496.1, 494.8, 498.15, 4100, 4, 2600, ''],
-    ['c13', 'AMD', 'long', 'stock', 'swing', 60, 160.2, 157.5, 166.95, 40500, 3, 16200, 'Three days, out before Friday.'],
+  // His history: trades the desk suggested that he took and marked, newest first.
+  const HIST = [
+    ['h1', 1, 'intraday', 'NVDA', 'profit', 645, 646, 643.5, [651.2], 'Opening range break on volume; out at the first target.'],
+    ['h2', 1, 'scalp', 'SPY', 'loss', 571.1, 571.3, 570.4, [572.5], 'VWAP reclaim that failed inside ten minutes.'],
+    ['h3', 2, 'swing', 'AAPL', 'profit', 227.6, 228.2, 225.5, [232.4], 'Base breakout, held two days, flat before the weekend.'],
+    ['h4', 3, 'intraday', 'QQQ', 'profit', 495.8, 496.3, 494.8, [498.1], 'Trend day continuation from the open.'],
+    ['h5', 4, 'intraday', 'AMD', 'loss', 168, 168.4, 166.9, [170.5], 'Gap fill that kept filling.'],
+    ['h6', 6, 'scalp', 'META', 'profit', 597.9, 598.3, 596.5, [599.2], 'High of day break on the tape.'],
   ];
-  for (const [id, ticker, side, instrument, horizon, qty, entry, stop, exitPrice, pnlCents, n, riskCents, closeNote] of CLOSES) {
-    set(`trade/positions/items/pos-demo-${id}`, {
-      ticker, side, instrument, horizon, qty, entry, stop, target: null, mark: null,
-      credit: false, width: null, expiry: null, structure: 'shares', note: '',
-      openedAt: days(n), openedDay: dk(n), status: 'closed',
-      closedAt: days(n), closedDay: dk(n), exitPrice, pnlCents, closeNote,
-      fromPlay: null, riskCents, updatedAt: days(n),
+  for (const [id, n, horizon, ticker, result, lo, hi, stop, targets, setup] of HIST) {
+    set(`trade/plays/items/${id}`, {
+      runId: `run-demo-h${n}`, caseId: TRADE_ID, slot: 1, horizon, ticker, side: 'long', instrument: 'stock',
+      entryLow: lo, entryHigh: hi, entry: Math.round(((lo + hi) / 2) * 100) / 100, stop, targets, setup,
+      holdMinutes: horizon === 'swing' ? null : 120, holdDays: horizon === 'swing' ? 2 : null, allocPct: 20,
+      profitLow: 54, profitHigh: 62, agreement: 3, catalyst: '', invalidation: '',
+      at: days(n), tookAt: days(n), closedAt: new Date(days(n).getTime() + 2 * 3_600_000), status: 'closed', result,
     });
   }
-  // The last typed entry sits two days back, so a screenshot asked about
-  // today lands on an empty day in every time zone the demo runs in.
-  for (const [n, cents] of [[20, 200000], [17, 205000], [14, 212000], [9, 208000], [5, 220000], [2, 238000]])
-    set(`trade/balances/items/${dk(n)}`, { date: dk(n), at: days(n), cents, note: n === 2 ? 'after close' : '', source: 'typed' });
-
+  // One position he logged by hand before PR 420: his records keep it.
+  set('trade/positions/items/pos-demo-old', {
+    ticker: 'TSLA', side: 'short', instrument: 'stock', horizon: 'scalp', qty: 25,
+    entry: 412.1, stop: 414, target: 405, structure: 'shares', note: 'Covered at the second test.',
+    openedAt: days(8), openedDay: dk(8), status: 'closed', closedAt: days(8), closedDay: dk(8), exitPrice: 409.8, pnlCents: 5750,
+  });
+  set('trade/state', {
+    run: { id: RUN, status: 'idle', trigger: 'morning', queuedAt: hours(2.1), startedAt: hours(2.1), finishedAt: hours(2), done: 5, count: 4 },
+    desk: {
+      runId: RUN, at: hours(2), trigger: 'morning', count: 4, reports: 5,
+      ids: ['r-demo-1', 'r-demo-2', 'r-demo-3', 'r-demo-4'], none: '',
+      read: 'Chips lead and the index is holding its opening range on better volume than yesterday. Take strength that holds a retest; nothing extended.',
+      news: [
+        { headline: 'Nvidia raises data center guidance at its developer conference', why: 'The reason chips lead today, and the catalyst behind the NVDA trade.', tickers: ['NVDA', 'AMD'] },
+        { headline: 'Tesla third quarter deliveries land below the street estimate', why: 'Sellers own TSLA until VWAP is reclaimed.', tickers: ['TSLA'] },
+        { headline: 'Fed minutes show a split on the pace of cuts', why: 'Rates stay the swing factor for the afternoon.', tickers: ['SPY', 'QQQ'] },
+      ],
+    },
+    activeIds: ['r-demo-5'],
+  });
+  set('trade/research', {
+    runId: RUN, at: hours(2),
+    r1: { status: 'ok', ms: 118000, text: 'Tape: chips lead, NVDA holding the opening range on 2x volume; SOFI RVOL 3x above yesterday\'s high.' },
+    r2: { status: 'ok', ms: 131000, text: 'Catalysts: NVDA guidance raise; SOFI upgrade to buy; TSLA deliveries miss; AMD supply deal.' },
+    r3: { status: 'ok', ms: 97000, text: 'Macro: yields flat into the auction; semis strongest sector, energy weakest.' },
+    r4: { status: 'ok', ms: 142000, text: 'Swing: AMD base above the fifty day, volume drying up; out before Friday.' },
+    r5: { status: 'ok', ms: 125000, text: 'Options: heavy TSLA put buying at 405 this week; AMD calls active at 170.' },
+  });
+  for (const [n, cents] of [[20, 200000], [14, 212000], [9, 208000], [5, 220000], [2, 238000]])
+    set(`trade/balances/items/${dk(n)}`, { date: dk(n), at: days(n), cents, note: '', source: 'typed' });
 }
 
 export const DEMO_CASE_ID = CASE_ID;

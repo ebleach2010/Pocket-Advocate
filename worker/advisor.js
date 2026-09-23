@@ -39,14 +39,10 @@ import { listIntake, listShelf, mediaFetch } from './storage.js';
 // with its own model, effort, tools and instructions, and what the reading
 // files once it lands. A leaf, so this import is not a cycle.
 import {
-  TRADE_MODEL, TRADE_EFFORT, TRADE_SCAN_EFFORT, TRADE_LOOK_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,
-  SCAN_CONTRACT, LOOK_CONTRACT, TRADE_STATE_PATH, SAY as TRADE_SAY,
+  TRADE_MODEL, TRADE_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,
   tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,
-  harvestDocument, fileDocument, stripDashes as deskStripDashes,
+  harvestDocument, fileDocument,
 } from './trade-desk.js';
-// The note's cut lives with the shared arithmetic (2026-09-22), so the read
-// side and the demo cut the same way this write does.
-import { noteOnly } from '../public/js/trade-math.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 const MODEL = 'claude-opus-5';
@@ -3631,10 +3627,10 @@ export async function pollFlightsNow(env) {
       await withCasePolicy(env, kind, id, () => pollAskFlight(env, kind, id, String(row.data.qaId || ''), { minAgeMs: 45_000 })).catch(() => {});
       continue;
     }
-    // THE DESK'S SCAN (2026-09-22) has its own flight on the desk's own
-    // state, so it is collected here rather than on the case's.
+    // A scan marker from before PR 420 (2026-09-23): there is no scan any
+    // more to collect, so the row is simply removed.
     if (row.data.scan) {
-      await pollScanFlight(env, id, { minAgeMs: 45_000 }).catch(() => {});
+      await deleteDoc(env, `advisorQueue/${row.id}`).catch(() => {});
       continue;
     }
     await pollCaseFlight(env, kind, id, { minAgeMs: 45_000 }).catch(() => {});
@@ -3786,11 +3782,11 @@ export async function runQueuedAnalyses(env, deadlineAt = 0) {
       // said Scanning for ever. Measured in production: submitted 13:27,
       // still running at 15:00, last heartbeat 13:47, queue empty.
       //
-      // One look at its batch, never the firing's model job, and never the
-      // claim below. pollScanFlight deletes the marker itself once the scan
-      // is done, failed or no longer running.
+      // PR 420 (2026-09-23): the scan is gone, so a leftover marker is
+      // removed here and never reaches the claim below, which would still
+      // misjudge it as a reading that will not start.
       if (row.data.scan) {
-        await pollScanFlight(env, id).catch(() => {});
+        await deleteDoc(env, `advisorQueue/${row.id}`).catch(() => {});
         continue;
       }
       // A draft marker: rescue a draft whose connection died mid-run. It
@@ -5548,367 +5544,12 @@ export async function pollAskFlight(env, kind, id, qaId, { minAgeMs = 15_000 } =
 }
 
 
-// ---- the desk's scan (Eric, 2026-09-22) ----------------------------------
-//
-// "when it runs it's just looking at new entries. Not doing an update like
-// the advisor. That's a separate thing altogether. That runs only when I
-// press update." And then, when the schedule was still in it: "I manually
-// update either scan individually. No automatic."
-//
-// So the desk has two runs and he starts both. The reading is runAnalysis,
-// the nine sections, his log read back through and his rules revised. The
-// scan is this: the tape, his positions, the setups already open, and
-// nothing else. It files what it would watch right now and writes a few
-// lines saying why.
-//
-// It rides the ask flight's machinery rather than the reading's, because
-// that is the pattern for a turn with its own row: submit to the batch,
-// park the handle, let the cron's poll bring it home. The handle lives on
-// the desk's own state document, never on the case's, so a scan in flight
-// and a reading in flight never see each other's fields.
-const SCAN_MARKER = (caseId) => `advisorQueue/scan_case_${caseId}`;
-// A scan is a short turn; it lands in minutes or it is not landing.
-const SCAN_ABANDON_MS = 2 * 3_600_000;
-
-// THE FAST LOOK (Eric, 2026-09-22: "I'd been scanning for hours. Pretty much
-// the whole trading day", then choosing "Both: a fast look and a deep scan").
-//
-// A deep scan rides the Batches API because a long turn cannot live inside a
-// Worker invocation on this plan: see THE BACKGROUND ESCAPE above. The queue
-// is why his taps came back in 5 minutes one hour and 80 the next, and no
-// effort setting can fix that, because the waiting is queue time.
-//
-// So the look does not ride the queue at all. It runs on his tap, streamed
-// (bytes flowing keeps the provider's edge proxy from answering 524 at about
-// a hundred seconds), and it is stopped hard at two and a half minutes, well
-// inside the four minute wall where the platform kills a streamed run. What
-// makes that safe is that the look is SMALL by contract: no search, at most
-// two setups, at most three short note lines, at a low effort. It answers or
-// it is stopped; there is nothing in between for him to sit through.
-const LOOK_BUDGET_MS = 150_000;
-// A look whose isolate died leaves the desk reading "running" with nothing on
-// a clock to collect it, because there is no batch. Past four minutes there
-// is no live look, whatever the state says, so the next poll clears it.
-const LOOK_STALE_MS = 4 * 60_000;
-
-/** The desk's state, or an empty object. A refused read throws, as everywhere else. */
-async function deskState(env) {
-  const doc = await tryGet(env, TRADE_STATE_PATH);
-  if (doc === READ_FAILED) throw readFailedError('The desk state could not be read.');
-  return doc;
-}
-
-/**
- * Start a scan. Refuses a second one while the first is in flight: he taps
- * a button, and two taps must not buy two turns. Returns what the page
- * should paint.
- */
-export async function runTradeScan(env, caseId, { now = Date.now() } = {}) {
-  const doc = await deskState(env);
-  const st = doc?.data || {};
-  const since = st.scanAt ? now - new Date(st.scanAt).getTime() : Infinity;
-  // A look and a scan share scanStatus, scanNote and the whole landing path,
-  // so only one of them may be up at a time. A look is over in two and a half
-  // minutes either way, so this refusal is seconds long, never a locked
-  // button (2026-09-22, v6.13).
-  if (st.scanStatus === 'running' && st.scanCtx?.kind === 'look' && since < LOOK_STALE_MS)
-    return { ok: false, why: TRADE_SAY.lookRunning, status: 'running' };
-  const flying = st.scanStatus === 'running' && st.scanCtx?.batchId && since < SCAN_ABANDON_MS;
-  if (flying) return { ok: false, why: TRADE_SAY.scanRunning, status: 'running' };
-  await patchDoc(env, TRADE_STATE_PATH, {
-    scanStatus: 'running', scanError: null, scanAt: new Date(now), scanCtx: null, scanProgressAt: new Date(now),
-  }, { mask: ['scanStatus', 'scanError', 'scanAt', 'scanCtx', 'scanProgressAt'] });
-  try {
-    const note = await tradeNote(env, { now });
-    const turn = turnRequest({
-      // One step below Update, by his choice (2026-09-22, v6.12): see the constant.
-      effort: TRADE_SCAN_EFFORT,
-      // THE SCAN CAN SEE THE MARKET NOW (Eric, 2026-09-22: "Scanning is
-      // taking more than 5 minutes. Normal?"). The reading gets web search
-      // through the desk's policy; this turn is built outside any policy and
-      // never carried a tool, so every scan he has ever run could see only
-      // the ten quotes in the desk note. searches: 0 on every scan in the
-      // log. Eight minutes of thinking over ten prices, and no way to look
-      // past the watchlist however hard the contract asked.
-      tools: [TRADE_WEB_SEARCH_TOOL],
-      // Three headings and at most four setups, so the ANSWER is small. The
-      // budget is not the answer: at max effort with eight searches, the
-      // thinking and the searching are spent from the same ceiling, and at
-      // 16000 one scan spent all of it before writing a word and came back
-      // with no text at all (2026-09-22, measured: stop_reason max_tokens,
-      // zero text blocks). Doubled, which is still half a reading's default.
-      maxTokens: 32000,
-      system: [{ type: 'text', text: `${TRADE_INSTRUCTIONS}\n\n${SCAN_CONTRACT}` }],
-      messages: [{
-        role: 'user',
-        content: [{
-          type: 'text',
-          text: `Eric tapped Scan. Look at the tape and file what is worth watching right now, in the three headings, and nothing else.${note}`,
-        }],
-      }],
-    });
-    const customId = batchCustomId('scan', String(caseId), now);
-    const batchId = await submitTurnBatch(env, turn, customId);
-    await patchDoc(env, TRADE_STATE_PATH, {
-      scanCtx: { kind: 'deep', batchId, customId, submittedAt: new Date(now), model: turn.model, pollFails: 0 },
-      scanProgressAt: new Date(),
-    }, { mask: ['scanCtx', 'scanProgressAt'] });
-    await patchDoc(env, SCAN_MARKER(caseId), { kind: 'case', id: caseId, scan: true, at: new Date() },
-      { mask: ['kind', 'id', 'scan', 'at'] }).catch(() => {});
-    await diagLog(env, { ev: 'scan-submit', caseId, ms: Date.now() - now }).catch(() => {});
-    return { ok: true, status: 'running' };
-  } catch (err) {
-    console.error('desk scan:', err.stack || err);
-    await patchDoc(env, TRADE_STATE_PATH, {
-      scanStatus: 'error', scanError: `Couldn't scan: ${friendly(err)}`, scanCtx: null,
-    }, { mask: ['scanStatus', 'scanError', 'scanCtx'] }).catch(() => {});
-    await diagLog(env, { ev: 'scan-end', ok: false, err: String(err.message || err).slice(0, 140) }).catch(() => {});
-    return { ok: false, why: friendly(err), status: 'error' };
-  }
-}
-
-/**
- * THE FAST LOOK. His tap starts the turn here and now, and the route hands
- * this to ctx.waitUntil so the button answers at once while the turn carries
- * on in the background of the same invocation.
- *
- * Everything after the answer is the scan's: the same scanStatus the page
- * already polls, the same finishTradeScan, so the note, the plays, their
- * expiry and the push all behave identically whichever button bought them.
- * The page needed no new state and the cards needed no new shape.
- *
- * It is streamed on purpose. A non-streamed call produces no response bytes
- * while the model thinks, and the provider's edge proxy answers 524 at about
- * a hundred seconds; a stream is bytes from the first token, so the proxy
- * stays out of it. The cost of streaming is CPU inside the invocation, which
- * is what kills a long run near four minutes, and that is what LOOK_BUDGET_MS
- * is for: stopped at two and a half minutes, with a sentence that sends him
- * to Scan rather than leaving him looking at a spinner.
- */
-export async function runTradeLook(env, caseId, { now = Date.now() } = {}) {
-  const doc = await deskState(env);
-  const st = doc?.data || {};
-  const since = st.scanAt ? now - new Date(st.scanAt).getTime() : Infinity;
-  if (st.scanStatus === 'running' && st.scanCtx?.kind === 'look' && since < LOOK_STALE_MS)
-    return { ok: false, why: TRADE_SAY.lookRunning, status: 'running', run: null };
-  if (st.scanStatus === 'running' && st.scanCtx?.batchId && since < SCAN_ABANDON_MS)
-    return { ok: false, why: TRADE_SAY.scanRunning, status: 'running', run: null };
-  // Claimed before the turn starts, and claimed CONDITIONALLY: two taps a
-  // second apart are two invocations that both read the same idle state, and
-  // only one of them may buy a turn. The loser reads the claim and stops.
-  const mask = ['scanStatus', 'scanError', 'scanAt', 'scanCtx', 'scanProgressAt'];
-  const won = await patchDoc(env, TRADE_STATE_PATH, {
-    scanStatus: 'running', scanError: null, scanAt: new Date(now), scanProgressAt: new Date(now),
-    scanCtx: { kind: 'look', submittedAt: new Date(now) },
-  }, doc
-    ? { mask, ifUpdateTime: doc.updateTime }
-    // No state document at all is the desk's first look, and `ifUpdateTime:
-    // undefined` would be no precondition at all, which is exactly the race
-    // this claim exists to close. Create-only instead, the way the morning
-    // reading books itself.
-    : { mask, mustNotExist: true }).catch(() => false);
-  if (won === false) return { ok: false, why: TRADE_SAY.lookRunning, status: 'running', run: null };
-  // The turn itself is handed back unstarted, so the ROUTE decides where it
-  // runs: ctx.waitUntil keeps the invocation alive for it without the tap
-  // waiting on it. Nothing here touches the wire until the caller awaits it.
-  const run = async () => {
-    const flight = { kind: 'look', submittedAt: new Date(now) };
-    try {
-      const note = await tradeNote(env, { now });
-      const turn = turnRequest({
-        // A step below the scan again: the look's whole job is speed, and it
-        // is reading numbers it has already been handed, not reasoning its
-        // way around the market (2026-09-22, v6.13).
-        effort: TRADE_LOOK_EFFORT,
-        // NO SEARCH. A search costs tens of seconds the look does not have,
-        // and the contract tells it to say so rather than guess at news.
-        // Looking past the watchlist is the deep scan's job.
-        maxTokens: 8000,
-        system: [{ type: 'text', text: `${TRADE_INSTRUCTIONS}\n\n${LOOK_CONTRACT}` }],
-        messages: [{
-          role: 'user',
-          content: [{
-            type: 'text',
-            text: `Eric tapped Look. He wants an answer in under a minute: what the tape is doing and at most two things worth taking right now, from the numbers below.${note}`,
-          }],
-        }],
-      });
-      const message = await sendWithFallback(env, turn, (t) => carryTurn(env, t, {
-        runStartedAt: now, budgetMs: LOOK_BUDGET_MS, budgetWhy: TRADE_SAY.lookLong,
-      }));
-      await finishTradeScan(env, caseId, flight, message);
-    } catch (err) {
-      console.error('desk look:', err.stack || err);
-      await patchDoc(env, TRADE_STATE_PATH, {
-        scanStatus: 'error', scanError: `Couldn't look: ${friendly(err)}`, scanCtx: null,
-      }, { mask: ['scanStatus', 'scanError', 'scanCtx'] }).catch(() => {});
-      await diagLog(env, { ev: 'look-end', ok: false, err: String(err.message || err).slice(0, 140) }).catch(() => {});
-    }
-  };
-  await diagLog(env, { ev: 'look-start', caseId }).catch(() => {});
-  return { ok: true, status: 'running', run };
-}
-
-/**
- * One look at a scan in flight, on the same terms as a question's: the
- * heartbeat throttles it, one poller wins the finish, an unreachable
- * provider is counted rather than believed, and a landed batch files its
- * plays through the same call the reading's finish uses.
- */
-export async function pollScanFlight(env, caseId, { minAgeMs = 15_000 } = {}) {
-  const marker = SCAN_MARKER(caseId);
-  let doc;
-  try { doc = await deskState(env); } catch { return false; }
-  const st = doc?.data || {};
-  const flight = st.scanCtx;
-  // A LOOK LEAVES NOTHING TO COLLECT (2026-09-22, v6.13). It runs inside one
-  // invocation and files its own answer, so while it is genuinely up there is
-  // nothing here to do and this must not touch it. But if that invocation
-  // died, the desk is left reading "running" with no batch and no clock on
-  // it, which is exactly the stuck spinner v6.3 was about. Past the stale
-  // window there is no live look, so whoever looks next clears it and tells
-  // him where the deep one is.
-  if (st.scanStatus === 'running' && flight?.kind === 'look') {
-    const started = flight.submittedAt ? new Date(flight.submittedAt).getTime()
-      : (st.scanAt ? new Date(st.scanAt).getTime() : 0);
-    if (started && Date.now() - started > LOOK_STALE_MS) {
-      await patchDoc(env, TRADE_STATE_PATH, {
-        scanStatus: 'error', scanError: TRADE_SAY.lookLong, scanCtx: null,
-      }, { mask: ['scanStatus', 'scanError', 'scanCtx'] }).catch(() => {});
-      await diagLog(env, { ev: 'look-end', ok: false, err: 'stale' }).catch(() => {});
-      await deleteDoc(env, marker).catch(() => {});
-      return true;
-    }
-    return false;
-  }
-  if (st.scanStatus !== 'running' || !flight?.batchId) {
-    await deleteDoc(env, marker).catch(() => {});
-    return false;
-  }
-  const beat = st.scanProgressAt ? new Date(st.scanProgressAt).getTime() : 0;
-  if (beat && Date.now() - beat < minAgeMs) return false;
-  let poll;
-  try {
-    poll = await pollTurnBatch(env, flight.batchId, flight.customId);
-  } catch {
-    poll = { state: 'unreachable' };
-  }
-  const next = askFlightNext(flight, poll, Date.now());
-  if (next.op === 'wait') {
-    await patchDoc(env, TRADE_STATE_PATH, { scanProgressAt: new Date(), scanCtx: { ...flight, pollFails: next.pollFails } },
-      { mask: ['scanProgressAt', 'scanCtx'] }).catch(() => {});
-    // AND PUT THE MARKER BACK (2026-09-22). A flight whose marker has gone is
-    // a flight nothing on a clock will ever look at again, which is how one
-    // sat in the air for an hour and a half. Whoever looks at a running scan
-    // re-asserts the row, so a single look from anywhere hands it back to the
-    // cron. Only while one is genuinely up, and only once the heartbeat gate
-    // above has let this poll through, so it costs no extra write a minute.
-    await patchDoc(env, marker, { kind: 'case', id: caseId, scan: true, at: new Date() },
-      { mask: ['kind', 'id', 'scan', 'at'] }).catch(() => {});
-    return true;
-  }
-  if (next.op === 'finish') {
-    const fin = flight.finishingAt ? new Date(flight.finishingAt).getTime() : 0;
-    if (fin && Date.now() - fin < 5 * 60_000) return false;
-    const won = await patchDoc(env, TRADE_STATE_PATH, { scanCtx: { ...flight, finishingAt: new Date() } },
-      { mask: ['scanCtx'], ifUpdateTime: doc.updateTime }).catch(() => false);
-    if (won === false) return false;
-    await finishTradeScan(env, caseId, flight, poll.message);
-    await deleteDoc(env, marker).catch(() => {});
-    return true;
-  }
-  if (next.cancel) {
-    try { await client(env).messages.batches.cancel(flight.batchId); } catch { /* gone, or unreachable */ }
-  }
-  await patchDoc(env, TRADE_STATE_PATH, {
-    scanStatus: 'error', scanError: `Couldn't scan: ${friendly(new Error(next.why || 'The scan failed.'))}`, scanCtx: null,
-  }, { mask: ['scanStatus', 'scanError', 'scanCtx'] }).catch(() => {});
-  await diagLog(env, { ev: 'scan-end', ok: false, err: String(next.why || 'batch failed').slice(0, 140) }).catch(() => {});
-  await deleteDoc(env, marker).catch(() => {});
-  return true;
-}
-
-/**
- * The landed scan: the note he reads, and the setups filed through the same
- * call a reading files through, so the plays, their expiry, the push for a
- * strong one and the cover's standing all behave identically whichever
- * button bought them.
- */
-async function finishTradeScan(env, caseId, flight, message) {
-  const t0 = flight?.submittedAt ? new Date(flight.submittedAt).getTime() : Date.now();
-  // WHICH BUTTON BOUGHT IT (2026-09-22, v6.13). A look and a deep scan land
-  // through this same call, and the whole point of the look is that its wall
-  // time is different. Stamping the kind is what lets one be measured against
-  // the other in the log rather than guessed at.
-  const kind = flight?.kind === 'look' ? 'look' : 'deep';
-  try {
-    // Trimmed here rather than trusted to be trimmed upstream: the emptiness
-    // test below is the whole guard, and an answer of three newlines is not an
-    // answer (2026-09-22, v6.4).
-    const text = String(deskStripDashes(extractText(message)) || '').trim();
-    // WHAT CAME BACK, IN SHAPE (2026-09-22, v6.4). The scan that made Eric say
-    // "It's not producing a scan rn" was collected at last and landed with no
-    // text block in it at all: stop reason, block kinds and searches are the
-    // three things that say why, and none of them were written down.
-    const blocks = Array.isArray(message?.content) ? message.content : [];
-    const kinds = [...new Set(blocks.map((b) => String(b?.type || '?')))].join('+');
-    const searches = blocks.filter((b) => b?.type === 'server_tool_use').length;
-    // AN EMPTY ANSWER IS A FAILED SCAN, NOT A FINISHED ONE (2026-09-22, v6.4).
-    // It used to be filed as idle with an empty note, which did two wrong
-    // things at once: it read on the page as "the scan ran and found nothing",
-    // and it wrote that emptiness OVER his last good note, so the one thing
-    // still worth reading was destroyed by the scan that failed. Measured: the
-    // 13:27 flight came back with kinds server_tool_use+web_search_tool_result
-    // and not one text block, and his midnight note went with it.
-    //
-    // So: park it as an error he can act on, leave the note where it is, and
-    // file nothing. Everything about the shape goes in the log.
-    if (!text) {
-      await patchDoc(env, TRADE_STATE_PATH, {
-        scanStatus: 'error', scanCtx: null,
-        scanError: 'That scan came back empty, so nothing was filed and your last note is untouched. Tap Scan again.',
-      }, { mask: ['scanStatus', 'scanError', 'scanCtx'] });
-      await diagLog(env, {
-        ev: 'scan-end', ok: false, why: 'empty', kind, stop: String(message?.stop_reason || '?'),
-        kinds, searches, chars: 0, ms: Date.now() - t0,
-      }).catch(() => {});
-      return;
-    }
-    const pl = harvestPlays(text);
-    const filed = await fileDeskReading(env, caseId, { ...pl, portfolio: null }, { now: Date.now() })
-      .catch((err) => { console.warn('scan filing:', err.message || err); return null; });
-    // The note is what is left once the Plays block is cut out: the Note
-    // heading and the setups under it, which is exactly what the Plays page
-    // shows above the cards.
-    await patchDoc(env, TRADE_STATE_PATH, {
-      scanStatus: 'idle', scanError: null, scanCtx: null,
-      lastScanAt: new Date(),
-      // `missing` says the answer came back with no Plays block at all, which
-      // is not the same as a scan that filed nothing on purpose. The page
-      // says which it was, because "0 on the desk" reads as broken either way
-      // (Eric, 2026-09-22: "It's not producing a scan rn").
-      // THE NOTE IS THE NOTE (Eric, 2026-09-22: "the long blurb here is dumb.
-      // Get rid of it."). It used to keep everything the answer said except
-      // the Plays json, which meant the whole Setups section, headings and
-      // all, ran into one wall of text on the Plays page: he was reading
-      // "Chance of profit: 45 to 55% ### META long Current picture:" mid
-      // paragraph. Every word of that is already on the cards. What is left is
-      // the Note heading's own section, which is under 120 words by contract.
-      scanNote: { text: noteOnly(pl.text).slice(0, 1200), at: new Date(), plays: filed?.plays ?? 0, missing: !!pl.missing },
-    }, { mask: ['scanStatus', 'scanError', 'scanCtx', 'lastScanAt', 'scanNote'] });
-    await diagLog(env, {
-      ev: 'scan-end', ok: true, kind, plays: filed?.plays ?? 0, expired: filed?.expired ?? 0,
-      dropped: pl.dropped, missing: pl.missing, pushed: !!filed?.pushed, ms: Date.now() - t0,
-      stop: String(message?.stop_reason || '?'), kinds, searches, chars: text.length,
-    }).catch(() => {});
-  } catch (err) {
-    console.error('desk scan finish:', err.stack || err);
-    await patchDoc(env, TRADE_STATE_PATH, {
-      scanStatus: 'error', scanError: `Couldn't scan: ${friendly(err)}`, scanCtx: null,
-    }, { mask: ['scanStatus', 'scanError', 'scanCtx'] }).catch(() => {});
-    await diagLog(env, { ev: 'scan-end', ok: false, err: String(err.message || err).slice(0, 140) }).catch(() => {});
-  }
-}
+// ---- the desk's scan and look: gone (PR 420, 2026-09-23) -------------------
+// The Scan and the fast Look lived here. PR 420 replaced both with the
+// six-agent desk in worker/desk-run.js, which runs live inside the cron and
+// never touches the Batches API. A scan marker already in the queue from
+// before the deploy is deleted by the sweeper below and the poll above; its
+// batch, if any, finishes on the provider's side and nothing collects it.
 
 /**
  * Draft a reply for Eric to send as himself. The point is that it sounds like

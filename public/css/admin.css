@@ -2180,3 +2180,101 @@ html[data-desk]:root .kinds { gap: 6px; }
 html[data-desk]:root .kinds .p { font-size: 14px; }
 html[data-desk]:root .tq .lh { display: none; }
 }
+/* =============================================================================
+ * PR 420 (Eric, 2026-09-23): "The app should now have only two primary
+ * purposes: 1. Suggested Trades 2. Market News." Three pages behind three
+ * tabs and a cog. A trade he took goes ELECTRIC NEON YELLOW with PROFIT and
+ * LOSS on it, which is the one new hue: volt means yours and live, nothing
+ * else wears it.
+ * ============================================================================= */
+html[data-desk]:root { --volt: #F4FF1F; --volt-rgb: 244,255,31; --volt-core: #FCFFD6; }
+html[data-desk]:root .bar.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+html[data-desk]:root .boot { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; color: var(--dim); font-family: var(--display); font-weight: 600; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; }
+html[data-desk]:root .bar .badge.volt { color: #141600; background: var(--volt); border-color: var(--volt-core); box-shadow: 0 0 8px rgba(var(--volt-rgb),.7); }
+/* the run box: one button and one line under it */
+html[data-desk]:root .runbox { display: grid; gap: 10px; padding: 12px; margin-bottom: 14px; position: relative; overflow: hidden; }
+html[data-desk]:root .runbox .run { width: 100%; min-height: 58px; font-size: 16px; letter-spacing: .1em; }
+html[data-desk]:root .runbox .line { font-size: 13px; color: var(--dim); line-height: 1.4; }
+html[data-desk]:root .runbox .line b { color: var(--ink); font-weight: 500; }
+html[data-desk]:root .runbox .agents { display: inline-flex; gap: 5px; margin-right: 8px; vertical-align: -1px; }
+html[data-desk]:root .runbox .agents i { width: 9px; height: 9px; border-radius: 50%; background: var(--raised); border: 1px solid rgba(var(--blue-rgb),.4); }
+html[data-desk]:root .runbox .agents i.on { background: var(--blue); border-color: var(--blue-core); box-shadow: 0 0 4px #fff, 0 0 8px rgba(var(--blue-rgb),.9); }
+html[data-desk]:root .runbox[aria-busy="true"] { animation: dk-breathe 1.2s ease-in-out infinite; }
+html[data-desk]:root .runbox[aria-busy="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--blue) 50%, transparent) 0 0 / 96px 2px no-repeat; animation: dk-sweep 1.4s linear infinite; }
+html[data-desk]:root .runbox.landed { animation: dk-landed .5s ease-out; }
+html[data-desk]:root .runbox .said:empty { display: none; }
+html[data-desk]:root .deskread { margin: 0 0 14px; padding: 10px 14px; font-size: 14px; color: var(--ink-2); line-height: 1.45; }
+html[data-desk]:root .deskread .k { display: block; margin-bottom: 3px; color: var(--green); }
+/* the three kinds, each under its own heading */
+html[data-desk]:root .kindgroup { margin-top: 18px; }
+html[data-desk]:root .kindgroup:first-child { margin-top: 0; }
+html[data-desk]:root .kindhead { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--kind); text-shadow: 0 0 1px rgba(255,255,255,.3), 0 0 6px rgba(var(--kind-rgb),.6); }
+html[data-desk]:root .kindhead .n { font-family: var(--mono); font-size: 11px; color: var(--dim); text-shadow: none; }
+html[data-desk]:root .activehead { color: var(--volt); text-shadow: 0 0 1px #fff, 0 0 6px rgba(var(--volt-rgb),.8), 0 0 16px rgba(var(--volt-rgb),.35); }
+/* one trade */
+html[data-desk]:root .rec { padding: 14px; display: grid; gap: 10px; }
+html[data-desk]:root .rec .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+html[data-desk]:root .rec .tk { font-family: var(--display); font-weight: 700; font-size: 22px; line-height: 1.1; letter-spacing: .02em; color: var(--ink); }
+html[data-desk]:root .rec .side, html[data-desk]:root .rec .kind { font-family: var(--display); font-weight: 600; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 4px 8px; border-radius: 6px; border: 1px solid; line-height: 1; }
+html[data-desk]:root .rec .side.long { color: var(--green); border-color: rgba(var(--green-rgb),.55); background: rgba(var(--green-rgb),.08); }
+html[data-desk]:root .rec .side.short { color: var(--red); border-color: rgba(var(--red-rgb),.55); background: rgba(var(--red-rgb),.08); }
+html[data-desk]:root .rec .kind { color: var(--kind); border-color: rgba(var(--kind-rgb),.5); background: rgba(var(--kind-rgb),.07); }
+html[data-desk]:root .rec .odds { margin-left: auto; text-align: right; display: grid; gap: 2px; }
+html[data-desk]:root .rec .odds .v { font-family: var(--mono); font-size: 14px; color: var(--kind); text-shadow: 0 0 1px rgba(255,255,255,.3), 0 0 6px rgba(var(--kind-rgb),.7); }
+html[data-desk]:root .rec .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: row dense; gap: 1px; border-radius: 10px; overflow: hidden; background: var(--line); border: 1px solid var(--line); }
+html[data-desk]:root .rec .cell { background: rgba(6,10,19,.72); padding: 8px 10px; min-width: 0; }
+html[data-desk]:root .rec .cell.wide { grid-column: span 2; }
+html[data-desk]:root .rec .cell .v { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 15px; color: var(--ink); margin-top: 3px; overflow-wrap: anywhere; }
+html[data-desk]:root .rec .cell.red .v { color: #FF8FA3; }
+html[data-desk]:root .rec .cell.green .v { color: #8CFFC6; }
+html[data-desk]:root .rec .vehicle { margin: 0; font-size: 13px; color: var(--ink-2); }
+html[data-desk]:root .rec .setup { margin: 0; font-size: 15px; line-height: 1.45; color: var(--ink); }
+html[data-desk]:root .rec .why { margin: 0; display: grid; grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 6px; }
+html[data-desk]:root .rec .why dt { font-family: var(--display); font-weight: 600; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); padding-top: 2px; }
+html[data-desk]:root .rec .why dd { margin: 0; font-size: 14px; line-height: 1.4; color: var(--ink-2); min-width: 0; }
+html[data-desk]:root .rec .why:empty { display: none; }
+html[data-desk]:root .rec .acts { display: flex; gap: 10px; }
+html[data-desk]:root .rec .acts .btn.big { flex: 1; min-height: 56px; font-size: 16px; letter-spacing: .08em; }
+html[data-desk]:root .rec .said:empty { display: none; }
+html[data-desk]:root .btn.profit { --c: var(--green); --c-rgb: var(--green-rgb); --c-core: var(--green-core); color: #04140B; background-color: #45F09E; background-image: linear-gradient(180deg, #6BFFB8, #2FE08A); border: 1px solid var(--green-core); text-shadow: none; font-weight: 700; box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 0 10px rgba(var(--green-rgb),.6), 0 0 26px rgba(var(--green-rgb),.3); }
+html[data-desk]:root .btn.loss { --c: var(--red); --c-rgb: var(--red-rgb); --c-core: var(--red-core); color: #1A0308; background-color: #F85D79; background-image: linear-gradient(180deg, #FF8098, #F03A5C); border: 1px solid var(--red-core); text-shadow: none; font-weight: 700; box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 0 10px rgba(var(--red-rgb),.6), 0 0 26px rgba(var(--red-rgb),.3); }
+/* a trade he took: ELECTRIC NEON YELLOW */
+html[data-desk]:root .rec.active { --c-rgb: var(--volt-rgb); background: linear-gradient(180deg, rgba(var(--volt-rgb),.16), rgba(var(--volt-rgb),.05)), linear-gradient(180deg, #16180A, #0D1006); border: 2px solid var(--volt); box-shadow: inset 0 0 0 1px rgba(var(--volt-rgb),.35), inset 0 0 26px rgba(var(--volt-rgb),.14), 0 0 2px #fff, 0 0 12px rgba(var(--volt-rgb),.85), 0 0 30px rgba(var(--volt-rgb),.45), 0 0 60px rgba(var(--volt-rgb),.18); animation: dk-volt 2.4s ease-in-out infinite; }
+@keyframes dk-volt { 0%, 100% { box-shadow: inset 0 0 0 1px rgba(var(--volt-rgb),.35), inset 0 0 26px rgba(var(--volt-rgb),.14), 0 0 2px #fff, 0 0 12px rgba(var(--volt-rgb),.85), 0 0 30px rgba(var(--volt-rgb),.45), 0 0 60px rgba(var(--volt-rgb),.18); } 50% { box-shadow: inset 0 0 0 1px rgba(var(--volt-rgb),.45), inset 0 0 30px rgba(var(--volt-rgb),.2), 0 0 3px #fff, 0 0 16px rgba(var(--volt-rgb),1), 0 0 40px rgba(var(--volt-rgb),.6), 0 0 80px rgba(var(--volt-rgb),.25); } }
+html[data-desk]:root .rec.active .tk { color: var(--volt-core); text-shadow: 0 0 1px #fff, 0 0 2px var(--volt-core), 0 0 8px rgba(var(--volt-rgb),.95), 0 0 20px rgba(var(--volt-rgb),.5); }
+html[data-desk]:root .rec.active .cell { background: rgba(10,12,4,.78); }
+html[data-desk]:root .rec.active .grid { background: rgba(var(--volt-rgb),.28); border-color: rgba(var(--volt-rgb),.4); }
+html[data-desk]:root .live-tag { justify-self: start; font-family: var(--display); font-weight: 700; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #141600; background: var(--volt); padding: 5px 10px; border-radius: 6px; box-shadow: 0 0 10px rgba(var(--volt-rgb),.8), 0 0 24px rgba(var(--volt-rgb),.35); }
+html[data-desk]:root .rec.leaving { transition: opacity .3s ease-in, transform .3s ease-in; opacity: 0; transform: translateY(-8px) scale(.98); }
+/* history */
+html[data-desk]:root .histlist { list-style: none; margin: 0; padding: 0 14px; }
+html[data-desk]:root .hist { border-top: 1px solid var(--line); }
+html[data-desk]:root .hist:first-child { border-top: 0; }
+html[data-desk]:root .hist summary { list-style: none; display: grid; grid-template-columns: 52px 1fr auto; gap: 10px; align-items: center; min-height: 52px; cursor: pointer; }
+html[data-desk]:root .hist summary::-webkit-details-marker { display: none; }
+html[data-desk]:root .hist .when { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+html[data-desk]:root .hist .what { font-size: 14px; color: var(--ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-desk]:root .hist .what b { color: var(--ink); font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: .02em; }
+html[data-desk]:root .hist .res { font-family: var(--display); font-weight: 700; font-size: 11px; letter-spacing: .08em; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); color: var(--dim); }
+html[data-desk]:root .hist .res.profit { color: var(--green); border-color: rgba(var(--green-rgb),.6); background: rgba(var(--green-rgb),.1); text-shadow: 0 0 6px rgba(var(--green-rgb),.6); }
+html[data-desk]:root .hist .res.loss { color: var(--red); border-color: rgba(var(--red-rgb),.6); background: rgba(var(--red-rgb),.1); text-shadow: 0 0 6px rgba(var(--red-rgb),.55); }
+html[data-desk]:root .hist .more { padding: 0 0 12px 62px; font-size: 14px; color: var(--ink-2); display: grid; gap: 6px; }
+html[data-desk]:root .hist .more p { margin: 0; }
+html[data-desk]:root .hist .more .times { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+/* news the desk itself flagged */
+html[data-desk]:root .dnlist { list-style: none; margin: 0; padding: 0 14px; }
+html[data-desk]:root .dnews { padding: 12px 0; border-top: 1px solid var(--line); }
+html[data-desk]:root .dnews:first-child { border-top: 0; }
+html[data-desk]:root .dnews .t { font-size: 15px; line-height: 1.35; color: var(--ink); }
+html[data-desk]:root .dnews .why { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+html[data-desk]:root .dnews .s { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+html[data-desk]:root.reduce .rec.active, html[data-desk]:root.reduce .runbox[aria-busy="true"] { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+html[data-desk]:root .rec.active, html[data-desk]:root .runbox[aria-busy="true"] { animation: none !important; }
+}
+@media (max-width: 359px) {
+html[data-desk]:root .rec .cell { padding: 7px 8px; }
+html[data-desk]:root .rec .cell .v { font-size: 13px; }
+html[data-desk]:root .rec .tk { font-size: 20px; }
+html[data-desk]:root .hist .more { padding-left: 0; }
+}

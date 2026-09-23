@@ -42,24 +42,7 @@ import {
 // this when the scan was still on a clock.
 export const TRADE_MODEL = 'claude-opus-5';
 export const TRADE_EFFORT = 'max';
-// ONE CARVE-OUT, BY HIS CHOICE (Eric, 2026-09-22, asked "Which strength should
-// Scan run at?" and choosing "Scan at high, Update stays max"). Scan's job is
-// right now; today's took eight minutes thinking over ten prices and it
-// searches as well since 6.10. One step down for that button alone. Update, a
-// question, and every other case keep the top setting he asked for on
-// 2026-09-09.
-export const TRADE_SCAN_EFFORT = 'high';
-// THE FAST LOOK (Eric, 2026-09-22: "I'd been scanning for hours. Pretty much
-// the whole trading day"). A turn cannot live inside a Worker invocation on
-// this plan past about 100 seconds without a stream, or four minutes with
-// one, both measured live in 2026-08, which is why a scan rides the Batches
-// API and waits in the provider's queue: 5, 8, 13 and 80 minutes on the day
-// he said this. So the fast look is built to FIT: low effort, no search, a
-// short answer, run on his tap and streamed so bytes flow from the first
-// second and nothing between here and the provider can time it out. It sees
-// what the desk note carries, which is the quotes, the headlines, the
-// earnings, his rules, his positions and where his day stands.
-export const TRADE_LOOK_EFFORT = 'low';
+// The Scan's and the fast Look's own strengths went with them (PR 420, 2026-09-23).
 export const TRADE_TZ = 'America/Boise';
 export const MARKET_OPEN = '07:30';
 export const MARKET_CLOSE = '14:00';
@@ -84,7 +67,8 @@ export const TRADE_WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_s
 // well"). A desk turn sees only these categories; every other turn sees
 // none of them.
 export const TRADE_CATEGORIES = ['Setup', 'Indicator', 'Level', 'Order', 'Risk', 'Options', 'Market', 'Instrument'];
-export const DESK_NAME = 'Trade desk';
+// PR 420 (Eric, 2026-09-23): the desk's new name, on every desk opened from now on.
+export const DESK_NAME = 'PR 420';
 // HIS POSITIONS AND THE QUOTES BEHIND THEM (2026-09-22). Finnhub's free plan
 // allows sixty calls a minute and the desk note already spends up to
 // twenty-two on a reading, so every quote in this file goes through one
@@ -129,18 +113,19 @@ export const SAY = {
   closedAlready: 'That position is already closed.',
   badExit: 'Sold at needs the exit price, or the profit or loss in dollars.',
   badRules: 'Rules: risk 0.1 to 5% a trade, day loss 0.5 to 20%, floor under aim under cap, cap up to 50%, target 0.5R to 5R.',
-  noQuoteKey: 'No market data key on file. Add it on Desk.',
+  noQuoteKey: 'No market data key on file. Add it in Settings.',
   quoteMany: 'Quotes: up to 10 tickers at a time.',
   quoteBudget: 'Quotes are rate limited; try again in a minute.',
-  scanRunning: 'A scan is already running. It lands on its own.',
-  // The fast look (2026-09-22): it runs on his tap and fits inside a minute or
-  // two, so a second tap while one is up is refused the same way.
-  lookRunning: 'A look is already running. Give it a few seconds.',
-  lookLong: 'The quick look ran past its time and was stopped. Tap Scan for the deep one.',
-  // A look has to run inside the invocation that starts it. No ctx to keep
-  // that invocation alive means no way to run it without holding his tap for
-  // the whole turn, so it is refused honestly instead.
-  lookNoCtx: 'A quick look cannot run from here. Tap Scan.',
+  // PR 420 (2026-09-23): the six-agent desk and the two buttons on a taken trade.
+  runAlready: 'The desk is already running. It lands on its own.',
+  runStalled: 'The desk run stopped partway and did not recover. Tap RUN TRADING DESK to start a fresh one.',
+  runThin: 'Fewer than two of the five researchers came back, so the desk made no calls. Tap RUN TRADING DESK to try again.',
+  noRec: 'That trade is not on the desk any more.',
+  notOpen: 'That trade is no longer open to take.',
+  notTaken: 'Tap YES on this trade before marking how it ended.',
+  badResult: 'Mark it PROFIT or LOSS.',
+  badRisk: 'Risk per trade: 0.1 to 5 percent of the balance.',
+  busy: 'The desk was busy for a moment. Tap again.',
   noDesk: 'The trade desk is not open.',
   noNext: 'The trade desk does not continue into a next case. Close it or delete it.',
   noPull: 'The trade desk cannot be pulled from.',
@@ -149,9 +134,6 @@ export const SAY = {
 
 export const SETTINGS_PATH = 'trade/settings';
 export const STATE_PATH = 'trade/state';
-// The same path, under the name the advisor imports it by: the desk's state
-// is where a scan he started parks its flight (2026-09-22).
-export const TRADE_STATE_PATH = STATE_PATH;
 export const PLAYS = 'trade/plays/items';
 export const BALANCES = 'trade/balances/items';
 export const POSITIONS = 'trade/positions/items';
@@ -447,71 +429,9 @@ Everything outside Rules to hold and Setups stays under 700 words. Plain words, 
 
 You never make a trade for him and you never tell him to make one. A setup is what you would watch and how you would size it, not an order. Every trade is his decision.`;
 
-// THE SCAN (Eric, 2026-09-22: "when it runs it's just looking at new
-// entries. Not doing an update like the advisor. That's a separate thing
-// altogether. That runs only when I press update."). A short turn of its
-// own: no log to read back through, no previous reading to revise, no
-// rules, no grading of his trades. It looks at the tape and files what it
-// would watch right now, and says in a few lines why. The Setups and Plays
-// blocks are word for word the reading's, so one harvest reads both.
-export const SCAN_CONTRACT = `This is Eric's trading desk, and this is a scan, not a reading. He tapped Scan because he wants to know what is worth watching right now, nothing else. There is no client and no patient anywhere on this. You never ask him a question.
-
-Do not grade his trades, do not revise his rules, do not summarise his log and do not write any heading that is not listed below. If the material shows nothing worth taking, say so in the note and file no setups: an empty scan is a real answer and a filler setup costs him money.
-
-THE THREE KINDS OF TRADE, AND THE WEEKEND (Eric, 2026-09-22): "I want trades separated from scalps (1-10min) intraday (1-8hr) and swing (8hr-3 days). We don't hold over weekends." Day trading is the priority, and a swing is allowed when it serves his benchmarks, which are a floor of 1% a day, an aim of 2%, and a stop for the day at a 3% realized loss or a 10% realized gain. Every setup says which kind it is: a scalp lives one to ten minutes, an intraday trade one to eight hours and is flat by the close, a swing runs eight hours to three days and is flat before the weekend. Never write a swing that would be held over a Saturday; on the last trading day of a week, a swing is only a swing if it can be closed that day. A swing says its overnight risk plainly, in its own words, in the Risk line.
-
-The desk note at the end of the material carries his balance, his rules in dollars, where his day stands, the positions he is already in, the setups still open from the last scan, the quotes, the headlines and today's earnings. Take the prices from it; use web search for what a quote cannot tell you, and prefer a fresh source over a stale one. Do not file a setup on a ticker he is already in unless it is a different trade, and say in its Current picture how it sits against the position he holds. A setup the last scan already filed is refiled only if it still stands; otherwise leave it out and take the new one.
-
-WHERE TO LOOK (Eric, 2026-09-22: "it shouldnt just look at mega cap companies. Jesus."). The watchlist in the desk note is a starting point, not the universe. Use web search for what is actually moving right now: the day's gainers and losers, unusual volume, gaps, news movers, sector moves, and anything the calendar put in play. Mid caps and small caps are in scope and often the better setup. Do not file four mega caps because they are the names in front of you.
-
-His account is small and his risk rule is one percent of it, so a name at seven hundred dollars a share can rarely be taken at all: at his balance one share is more than the whole trade allows, and the setup is useless to him however good it looks. Prefer names whose price leaves room for a real position inside his rule, and say in the Risk line what the trade actually costs him. If the only thing worth watching is out of his reach, say that in the note rather than filing it.
-
-Use exactly these headings, in this order, as markdown ## headings:
-
-## Note
-## Setups
-## Plays
-
-"Note": at most five bullet points and nothing that is not a bullet. Each one starts with "- " on its own line and is under 15 words. What the tape is doing right now, why these setups and not others, and anything about his day that should change how he takes them, for example how little he has left to risk today. When you file nothing, the bullets say what you would need to see. No paragraphs under this heading, ever: he reads this on a phone in a second.
-
-"Setups": at most 4, each under a ### heading of the ticker and the side, for example ### NVDA long. Under it exactly these six labelled lines, in this order: Current picture, Bull case, Bear case, Levels, Risk, What I would watch next. Then one line: Chance of profit: NN to NN%. Only a setup you would watch yourself right now. Sized for his account, with the risk at the stop said in dollars. Write nothing under this heading when there is nothing to take.
-
-WHAT TO PUT IN, AND IN WHAT (Eric, 2026-09-22: "It also needs to suggest % allocation and make it clear if it's suggesting call, put, spread at what price/expiration or total value in stocks, not shares"). Every setup says two different numbers and never confuses them. The RISK is what he loses at the stop. The ALLOCATION is what he puts in, said as a percent of his account, and it is usually the larger by far: a 1% risk on a stock with a tight stop can be most of the account in capital, which is a thing he needs told. Say the allocation as a percent and in dollars at the balance in the desk note, and never let it breach a position he could not get out of.
-
-Say the vehicle exactly. A stock setup says the TOTAL DOLLARS to put in, never a number of shares, because he buys fractional shares and the dollar figure is what he types. An option setup says which it is, the strike, and the expiration date: "the 650 call expiring 17 October at 2.10", not "calls". A spread says both strikes, whether it is calls or puts, whether it is a debit or a credit, and the expiration. If you would not name the strike and the date, the setup is not ready and does not get filed.
-
-"Plays": one fenced json block and nothing else, in this shape:
-{ "plays": [ ... ], "portfolio": null }
-One play object per setup above, in the same order, with these fields: horizon ("scalp", "intraday" or "swing"), holdDays (a whole number 1 to 3, swing only, 0 otherwise), ticker, side ("long" or "short"), instrument ("stock", "call", "put" or "spread"), structure (the exact instrument, for example "Oct 17 150/155 call debit spread" or "shares"), entry, stop, targets (a list of prices), holdMinutes (an integer), profitLow and profitHigh (whole percents), allocPct (the share of his account to put into this trade, as a number of percent, for example 12.5), sizeDollars (an integer, the same allocation in dollars at his current balance), strike (the strike, options only), strike2 (the second strike, spreads only), optionType ("call" or "put", spreads only), credit (true for a credit spread, false for a debit), expiry (the expiration as YYYY-MM-DD, options only), catalyst, overnightOk (true or false), overnightWhy, picture, bull, bear, levels (a list of short strings), risk, watch. picture, bull, bear, risk and watch repeat the six lines of the setup, in full. portfolio is always null on a scan. An empty scan is { "plays": [], "portfolio": null }.
-
-Plain words, and never an em dash or an en dash anywhere: use a comma, a colon, or the word to.
-
-You never make a trade for him and you never tell him to make one. A setup is what you would watch and how you would size it, not an order. Every trade is his decision.`;
-
-export const LOOK_CONTRACT = `This is Eric's trading desk and this is a FAST LOOK, not a scan and not a reading. He tapped Look because he wants an answer in under a minute. There is no client and no patient anywhere on this. You never ask him a question.
-
-You have no web search on this turn and you do not need one. Everything you are allowed to use is in the desk note at the end of the material: his balance, his rules in dollars, where his day stands, the positions he is already in, the setups still open, the quotes with today's range, the headlines and today's earnings. Do not guess at a price that is not in front of you, and do not write about a ticker whose price you cannot see.
-
-Be quick and be short. Do not deliberate, do not weigh every name, do not explain your reasoning. Name what is worth watching in the next hour and move on. If nothing in front of you is worth taking, say so in one bullet and file no setups: an empty look is a real answer and a filler setup costs him money.
-
-THE THREE KINDS OF TRADE, AND THE WEEKEND: a scalp lives one to ten minutes, an intraday trade one to eight hours and is flat by the close, a swing runs eight hours to three days and is flat before the weekend. Never write a swing that would be held over a Saturday. His benchmarks are a floor of 1% a day, an aim of 2%, and a stop for the day at a 3% realized loss or a 10% realized gain.
-
-A name at seven hundred dollars a share cannot be taken on his account at all: one share is more than his whole one trade allowance. Prefer what his money can actually buy, and say the allocation as a percent of his account.
-
-Use exactly these headings, in this order, as markdown ## headings:
-
-## Note
-## Plays
-
-"Note": at most three bullet points and nothing that is not a bullet. Each one starts with "- " on its own line and is under 15 words. What the tape is doing, and anything about his day that changes how he takes it.
-
-"Plays": one fenced json block and nothing else, in this shape:
-{ "plays": [ ... ], "portfolio": null }
-At most TWO play objects, best first, each with these fields and no others: horizon ("scalp", "intraday" or "swing"), holdDays (1 to 3 for a swing, 0 otherwise), ticker, side ("long" or "short"), instrument ("stock", "call", "put" or "spread"), structure, entry, stop, targets (a list of prices), holdMinutes (an integer), profitLow and profitHigh (whole percents), allocPct (the share of his account to put in, as a number of percent), sizeDollars (the same allocation in dollars at the balance in the note), strike, strike2, optionType and expiry (options only, null otherwise), catalyst, picture (one sentence, what it is doing right now), risk (one sentence). Nothing filed with an empty look: { "plays": [], "portfolio": null }.
-
-Plain words, and never an em dash or an en dash anywhere: use a comma, a colon, or the word to.
-
-You never make a trade for him and you never tell him to make one. Every trade is his decision.`;
+// THE SCAN AND THE FAST LOOK are gone (PR 420, 2026-09-23). The six-agent desk in
+// worker/desk-run.js is the only thing that suggests a trade now, and it
+// writes its own prompts.
 
 // Appended to the second system block of a question on the desk, after the
 // question instructions the medical cases use, so it is the last word.

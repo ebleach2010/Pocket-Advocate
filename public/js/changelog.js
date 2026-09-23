@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '6.13';
+export const VERSION = '7.0';
 
 /**
  * Newest first.
@@ -51,6 +51,23 @@ export const VERSION = '6.13';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // PR 420 (Eric, 2026-09-23: "Simplify the trading app substantially. The
+    // app should now have only two primary purposes: 1. Suggested Trades
+    // 2. Market News."). The desk rebuilt around those two jobs and renamed.
+    // Admin only.
+    version: '7.0',
+    quiet: true,
+    client: [],
+    admin: [
+      'The trade desk is PR 420 now, and it does two things: suggested trades and market news. Positions, the calculator, Stats, the chat, questions, the reading, Scan and Look are gone.',
+      'One button, RUN TRADING DESK, starts a fresh run with no confirmation. Five researchers each look at the market on their own beat and the desk makes the calls; you see only the trades. It also runs itself at 7:00 Mountain on trading days and sends you a push.',
+      'Every trade shows the ticker, long or short, scalp, intraday or swing, the price now, the entry, the dollars and shares or contracts, the stop, the targets, the risk and reward in dollars, the R:R, how long to hold, the setup, the catalyst and what kills it.',
+      'Sizing uses the balance you type in Settings and a 3% risk per trade, which you can change there.',
+      'Tap YES when you take one and it lights up electric yellow with PROFIT and LOSS on it. Either one moves it to History with its setup, the result and the times. The desk never looks at your history when it picks trades.',
+      'News keeps only what could move a trade: the desk\'s own picks, headlines on the tickers in front of you, and the market wide ones.',
+    ],
+  },
   {
     // A FAST LOOK BESIDE THE DEEP SCAN (Eric, 2026-09-22: "I'd been scanning for
     // hours. Pretty much the whole trading day", then choosing "Both: a fast

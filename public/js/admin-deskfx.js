@@ -1,18 +1,18 @@
-// The trade desk's effects (Eric, 2026-09-22: "Do not sacrifice usability for
+// The desk's effects (Eric, 2026-09-22: "Do not sacrifice usability for
 // effects. Animations should reinforce important events rather than constantly
 // distract the user.").
 //
 // Two jobs. The quiet one is the neon being alive: a field of slow motes behind
 // everything and a few particles rising off whatever is lit. The loud one is a
-// position closing, which is the only moment in the app worth an animation:
+// trade he took ending, which since PR 420 (2026-09-23) is PROFIT or LOSS on
+// its card, and is the only moment in the app worth an animation:
 //
-//   a profit  a soft green flash, a short camera shake, gold coins that leave
-//             the card and fly into MADE TODAY, the figure counting up with
-//             each one that lands, the balance following a beat later, and the
-//             cards lifting on deeper shadows while the floor drops away.
-//   a loss    a red flash, a sharper shake, two red light bars sweeping the top
-//             and bottom edges like a siren, a red vignette, and the figure
-//             counting down. The same shape, a worse feeling.
+//   PROFIT    a soft green flash, a short camera shake, and gold coins that
+//             leave the button and fly into the History tab, where the trade
+//             now lives.
+//   LOSS      a red flash, a sharper shake, two red light bars sweeping the top
+//             and bottom edges like a siren, and a red vignette. The same
+//             shape, a worse feeling.
 //
 // Everything above the line is pure: the plan, the geometry, the timing, the
 // seeded randomness. A check can run all of it with no browser. Everything
@@ -162,12 +162,11 @@ export function seedFlicker(root) {
 }
 
 /**
- * The canvas, the loop and the three named effects. Everything it touches is
+ * The canvas, the loop and the one loud effect. Everything it touches is
  * passed in, so nothing here reaches for a global: `opts.state()` hands back
- * the two switches, `opts.money` formats a figure, `opts.onDay` repaints the
- * day bar at the right moment in the timeline.
+ * the two switches, and `opts.emitters` names what is lit.
  */
-export function createFx({ money, state, onDay, emitters = [] } = {}) {
+export function createFx({ state, emitters = [] } = {}) {
   const $ = (s) => document.querySelector(s);
   const canvas = $('#fx'); const ctx = canvas.getContext('2d');
   const amb = $('#ambient'); const actx = amb.getContext('2d');
@@ -190,9 +189,9 @@ export function createFx({ money, state, onDay, emitters = [] } = {}) {
   const plan = (kind) => fxPlan(kind, { celebrate: opts().celebrate !== false, reduced: reduced() });
 
   // ---- one loop for every particle on the page ----
-  const coins = []; const rings = []; const sparks = []; const motes = []; const emit = [];
+  const coins = []; const rings = []; const sparks = []; const motes = [];
   let siren = null; let raf = 0; let frameN = 0;
-  const alive = () => coins.length || rings.length || sparks.length || siren || motes.length || emit.length;
+  const alive = () => coins.length || rings.length || sparks.length || siren || motes.length;
   function kick() { if (!raf && !document.hidden) raf = requestAnimationFrame(tick); }
   function tick(now) {
     raf = 0; frameN += 1;
@@ -200,7 +199,7 @@ export function createFx({ money, state, onDay, emitters = [] } = {}) {
     const light = !coins.length && !rings.length && !sparks.length && !siren;
     if (light && frameN % 2) { if (alive() || moteEmitters.length) raf = requestAnimationFrame(tick); return; }
     ctx.clearRect(0, 0, W, H);
-    drawSiren(now); drawCoins(now); drawRings(now); drawSparks(now); drawMotes(now); drawEmit(now);
+    drawSiren(now); drawCoins(now); drawRings(now); drawSparks(now); drawMotes(now);
     if (alive() || moteEmitters.length) raf = requestAnimationFrame(tick);
     else ctx.clearRect(0, 0, W, H);
   }
@@ -260,11 +259,7 @@ export function createFx({ money, state, onDay, emitters = [] } = {}) {
       ctx.fill(); ctx.restore();
     }
   }
-  function burstAt(x, y, n, color, d0, d1, life) {
-    const now = performance.now();
-    for (let i = 0; i < n; i++) sparks.push({ x, y, a: Math.random() * 6.283, d: d0 + Math.random() * (d1 - d0), r: 1.5 + Math.random(), t0: now, life, color });
-    kick();
-  }
+
 
   // ---- the siren ----
   function drawSiren(now) {
@@ -332,30 +327,6 @@ export function createFx({ money, state, onDay, emitters = [] } = {}) {
     }
   }
 
-  // ---- the gold rising off the chart's last point ----
-  let emitOn = false; let emitLast = 0;
-  function drawEmit(now) {
-    const dot = $('#last-dot');
-    if (!dot) { emit.length = 0; return; }
-    const rect = dot.getBoundingClientRect();
-    const topH = $('.top')?.offsetHeight || 0; const barTop = H - ($('#bar')?.offsetHeight || 0);
-    const onScreen = rect.top > topH && rect.bottom < barTop;
-    if (emitOn && fxOn() && onScreen && now - emitLast > 400) {
-      emitLast = now;
-      for (let i = 0; i < 3; i++) {
-        emit.push({ dx: -20 + Math.random() * 40, dy: Math.random() * 6, t0: now + Math.random() * 200, life: 1400 + Math.random() * 800, rise: 30 + Math.random() * 40, r: 1.2 + Math.random() * 1.6, ph: Math.random() * 6 });
-      }
-    }
-    const cx = rect.left + rect.width / 2; const cy = rect.top + rect.height / 2;
-    for (let i = emit.length - 1; i >= 0; i--) {
-      const p = emit[i]; const t = (now - p.t0) / p.life;
-      if (t >= 1) { emit.splice(i, 1); continue; }
-      if (t < 0) continue;
-      ctx.save(); ctx.globalAlpha = (1 - t) * 0.9; ctx.fillStyle = '#FFD166'; ctx.shadowColor = '#FFD166'; ctx.shadowBlur = 8;
-      ctx.beginPath(); ctx.arc(cx + p.dx + Math.sin(t * 6 + p.ph) * 4, cy + p.dy - t * p.rise, p.r, 0, 6.283); ctx.fill(); ctx.restore();
-    }
-  }
-
   // ---- the frame itself: shake, depth, flash ----
   function shake(kind) {
     const root = document.documentElement; const t0 = performance.now();
@@ -382,164 +353,51 @@ export function createFx({ money, state, onDay, emitters = [] } = {}) {
     f.addEventListener('animationend', () => f.classList.remove('go'), { once: true });
   }
 
-  // ---- numbers ----
-  function tween(el, from, to, ms, fmt) {
-    if (!el) return Promise.resolve();
-    if (el.__count) cancelAnimationFrame(el.__count);
-    if (!ms) { el.textContent = fmt(to); return Promise.resolve(); }
-    const t0 = performance.now();
-    return new Promise((res) => {
-      const step = (now) => {
-        const t = Math.min(1, (now - t0) / ms);
-        el.textContent = fmt(Math.round(from + (to - from) * easeOutCubic(t)));
-        if (t < 1) el.__count = requestAnimationFrame(step);
-        else { el.__count = 0; res(); }
-      };
-      el.__count = requestAnimationFrame(step);
-    });
-  }
-  const fmtReal = (v) => money(v, v > 0);
-  const short = (v) => money(v, true).replace(/\.\d\d$/, '');
-  /** Where the coins are going: the day's figure when it is on screen, the tab's badge when it is not. */
-  function target() {
-    const el = $('#day-real'); const r = el.getBoundingClientRect();
-    const topH = $('.top').offsetHeight; const barTop = H - $('#bar').offsetHeight;
-    if (r.top > topH && r.bottom < barTop && !$('#pg-positions').hidden) return { el, x: r.right - 12, y: r.top + r.height / 2, bar: false };
-    const bd = $('#bar-badge');
-    const b = (bd.hidden ? $('#bar [data-page="positions"]') : bd).getBoundingClientRect();
-    return { el, x: b.left + b.width / 2, y: bd.hidden ? b.top + 14 : b.top + b.height / 2, bar: true };
-  }
-  function popBadge() { const b = $('#bar-badge'); b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop'); }
-
   /**
-   * A profit. Returns how long the card must stay put: the last coin has to
-   * leave before the card it came from collapses, or the tail of the flight
-   * pours out of whatever slid up into the gap.
+   * PR 420 (Eric, 2026-09-23): PROFIT or LOSS on a trade he took. The two
+   * moments a close always had, with nothing left to count: a profit sends
+   * gold coins from the button he pressed to the History tab, where the trade
+   * now lives, behind a green flash and a short shake; a loss gets the red
+   * flash, the sharper shake, the siren along both edges and the red vignette.
+   * Returns how long the card should stay put before it leaves, so the last
+   * coin is off it first.
    */
-  function profit({ from, before, after, pnl, aimCents }) {
-    const made = $('#day-real'); const big = $('#big');
-    const p = plan('profit');
-    window.__paFxLast = { kind: 'profit', plan: p };
-    if (p.off) { onDay?.(); return 0; }
-    const tg = target();
-    flash('profit', tg.x, tg.y, p.flashMs, p.flashPeak);
-    if (p.numberOnly) {
-      onDay?.({ words: false });
-      made.textContent = fmtReal(after.real); big.textContent = money(after.bal);
-      made.classList.add('pulse-good'); big.classList.add('pulse-good');
-      setTimeout(() => { made.classList.remove('pulse-good'); big.classList.remove('pulse-good'); onDay?.({ numbers: false }); }, 600);
-      return 0;
+  function result(kind, { from } = {}) {
+    const p = plan(kind);
+    window.__paFxLast = { kind, plan: p };
+    if (p.off) return 0;
+    const tab = $('#bar [data-page="history"]');
+    const r = tab ? tab.getBoundingClientRect() : null;
+    const to = r && r.width ? { x: r.left + r.width / 2, y: r.top + 16 } : { x: W / 2, y: H - 40 };
+    const at = from || { x: W / 2, y: H / 2 };
+    flash(kind, kind === 'profit' ? to.x : at.x, kind === 'profit' ? to.y : at.y, p.flashMs, p.flashPeak);
+    if (p.numberOnly) return 0;
+    if (p.shake) shake(kind);
+    if (p.depth) depth(kind, kind === 'profit' ? 700 : 900);
+    if (kind !== 'profit') {
+      if (p.siren) { siren = { t0: performance.now() }; kick(); }
+      const dm = $('#dimmer');
+      if (dm) {
+        dm.classList.remove('go'); void dm.offsetWidth; dm.classList.add('go');
+        dm.addEventListener('animationend', () => dm.classList.remove('go'), { once: true });
+      }
+      return 320;
     }
-    if (p.shake) shake('profit');
-    if (p.depth) depth('profit', 700);
-    const n = coinCount(pnl, aimCents);
-    const flight = particleBurst({ from, to: { x: tg.x, y: tg.y }, n, seed: Date.now() & 0xffff });
+    const n = 14;
+    const flight = particleBurst({ from: at, to, n, seed: Date.now() & 0xffff });
     const T0 = performance.now();
-    let landed = 0; let first = true;
     for (const c of flight) {
       coins.push({
         ...c, t0: T0 + c.delay,
         land: () => {
-          landed += 1;
-          rings.push({ x: tg.x, y: tg.y, t0: performance.now() });
-          for (let k = 0; k < 3; k++) sparks.push({ x: tg.x, y: tg.y, a: Math.random() * 6.283, d: 40 + Math.random() * 20, r: 1.5, t0: performance.now(), life: 260, color: '#FFE28A' });
-          if (!made.classList.contains('bump')) { made.classList.add('bump'); setTimeout(() => made.classList.remove('bump'), 90); }
-          if (first) {
-            first = false;
-            onDay?.({ words: false, badge: !tg.bar });
-            made.classList.add('pulse-good'); big.classList.add('pulse-good');
-            tween(big, before.bal, after.bal, p.countMs, money);
-            if (tg.bar) { const bd = $('#bar-badge'); bd.hidden = false; bd.classList.remove('dn'); }
-          }
-          const cur = Number(made.dataset.v || before.real);
-          const nxt = landed === n ? after.real : before.real + Math.round((pnl * landed) / n);
-          made.dataset.v = String(nxt);
-          tween(made, cur, nxt, 120, fmtReal);
-          if (tg.bar) { tween($('#bar-badge'), cur, nxt, 120, short); $('#bar-badge').classList.toggle('dn', nxt < 0); }
-          if (landed === n) {
-            popBadge(); onDay?.({ numbers: false });
-            setTimeout(() => { made.classList.remove('pulse-good'); big.classList.remove('pulse-good'); delete made.dataset.v; }, 360);
-          }
+          rings.push({ x: to.x, y: to.y, t0: performance.now() });
+          for (let k = 0; k < 3; k++) sparks.push({ x: to.x, y: to.y, a: Math.random() * 6.283, d: 40 + Math.random() * 20, r: 1.5, t0: performance.now(), life: 260, color: '#FFE28A' });
         },
       });
     }
     kick();
     return n * 36 + 120;
   }
-
-  /** A loss. The same shape, a worse feeling, and no coins to wait for. */
-  function loss({ from, before, after }) {
-    const made = $('#day-real'); const big = $('#big');
-    const p = plan('loss');
-    window.__paFxLast = { kind: 'loss', plan: p };
-    if (p.off) { onDay?.(); return 0; }
-    flash('loss', from.x, from.y, p.flashMs, p.flashPeak);
-    if (p.numberOnly) {
-      onDay?.({ words: false });
-      made.textContent = fmtReal(after.real); big.textContent = money(after.bal);
-      made.classList.add('pulse-bad'); big.classList.add('pulse-bad');
-      setTimeout(() => { made.classList.remove('pulse-bad'); big.classList.remove('pulse-bad'); onDay?.({ numbers: false }); }, 600);
-      return 0;
-    }
-    if (p.shake) shake('loss');
-    if (p.depth) depth('loss', 900);
-    if (p.siren) { siren = { t0: performance.now() }; kick(); }
-    const dm = $('#dimmer');
-    dm.classList.remove('go'); void dm.offsetWidth; dm.classList.add('go');
-    dm.addEventListener('animationend', () => dm.classList.remove('go'), { once: true });
-    setTimeout(() => {
-      onDay?.({ words: false });
-      made.classList.add('pulse-bad'); big.classList.add('pulse-bad');
-      tween(made, before.real, after.real, 440, fmtReal);
-      tween(big, before.bal, after.bal, 440, money);
-    }, 260);
-    setTimeout(() => { popBadge(); onDay?.({ numbers: false }); }, 700);
-    setTimeout(() => { made.classList.remove('pulse-bad'); big.classList.remove('pulse-bad'); }, 1100);
-    return 260;
-  }
-
-  // ---- the chart's line ----
-  let lineState = 'none';
-  function targetLine(next, { fresh = false } = {}) {
-    const svg = $('#chart-svg');
-    let stt = opts().celebrate === false ? 'none' : next;
-    if (!svg) { lineState = stt; emitOn = false; return; }
-    const entering = fresh ? stt !== 'none' : stt !== lineState && stt !== 'none';
-    lineState = stt;
-    svg.classList.toggle('aim', stt === 'aim');
-    svg.classList.toggle('gold', stt === 'gold');
-    const a = $('#disp-anim');
-    if (a) {
-      const n = a.cloneNode();
-      n.setAttribute('values', stt === 'gold' ? '1.5;3;1.5' : stt === 'aim' ? '1;2;1' : '0;0;0');
-      n.setAttribute('dur', stt === 'gold' ? '1.8s' : '2.4s');
-      a.replaceWith(n);
-    }
-    const col = stt === 'gold' ? '#FFD166' : '#39FF9E';
-    $('#last-dot')?.setAttribute('fill', col);
-    if ($('#last-dot')) $('#last-dot').style.filter = `drop-shadow(0 0 6px ${col})`;
-    $('#last-halo')?.setAttribute('stroke', col);
-    $('#chart')?.parentElement?.classList.toggle('gold', stt === 'gold');
-    emitOn = stt === 'gold';
-    if (emitOn) kick();
-    if (entering && fxOn()) {
-      const ig = $('#ignite');
-      if (ig) {
-        const L = ig.getTotalLength();
-        ig.style.stroke = stt === 'gold' ? '#FFF3C4' : '#FFFFFF';
-        ig.style.strokeDasharray = `${L} ${L}`;
-        ig.animate([{ strokeDashoffset: L, opacity: 0.9 }, { strokeDashoffset: 0, opacity: 0.9, offset: 0.7 }, { strokeDashoffset: 0, opacity: 0 }], { duration: 1000, easing: 'ease-out' });
-      }
-      const dot = $('#last-dot');
-      if (dot) {
-        const t0 = performance.now();
-        const pop = (now) => { const t = Math.min(1, (now - t0) / 400); dot.setAttribute('r', String(t < 0.5 ? 4 + 6 * t : 7 - 4 * (t - 0.5))); if (t < 1) requestAnimationFrame(pop); };
-        requestAnimationFrame(pop);
-      }
-      if (stt === 'gold' && dotRect()) { const r = dotRect(); burstAt(r.x, r.y, 12, '#FFD166', 30, 70, 500); }
-    }
-  }
-  function dotRect() { const d = $('#last-dot'); if (!d) return null; const r = d.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
 
   // ---- the field behind everything ----
   const dots = [];
@@ -575,5 +433,5 @@ export function createFx({ money, state, onDay, emitters = [] } = {}) {
   }
   media.addEventListener?.('change', applyReduce);
 
-  return { profit, loss, targetLine, applyReduce, plan, kick: ambientKick, start() { applyReduce(); ambientKick(); kick(); } };
+  return { result, applyReduce, plan, kick: ambientKick, start() { applyReduce(); ambientKick(); kick(); } };
 }

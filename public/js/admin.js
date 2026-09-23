@@ -311,12 +311,14 @@ async function load() {
         // first beat answers; the pa-day-log listener fills it in seconds.
         todayBanked: Number(window.__paDayLog?.[c.id]),
       },
-      name: c.clientName || c.clientEmail || c.clientUid,
+      // PR 420 (Eric, 2026-09-23: "the trading desk we are now callling PR 420"):
+      // the desk carries its new name whatever its document was opened as.
+      name: c.trade ? 'PR 420' : (c.clientName || c.clientEmail || c.clientUid),
       self: !!c.self,
       trade: !!c.trade,
-      // The desk's line under its cover (2026-09-22): where he stands
-      // against his aim a day, from the last reading or the last balance typed.
-      meta: c.trade ? (cover.tradeStanding || 'no reading yet') : '',
+      // The desk's line under its cover. PR 420 (2026-09-23) has no reading and
+      // no standing, so the line says what the desk is for.
+      meta: c.trade ? 'Suggested trades and market news' : '',
       dx: cover.text || '',
       dxIsMine: cover.by === 'eric',
       badge: badge(c),
@@ -433,12 +435,12 @@ async function load() {
   const deskOpen = desks.filter((c) => c.status !== 'closed');
   const deskClosed = desks.filter((c) => c.status === 'closed');
   const tradeBlock = (desks.length
-    ? section('TRADE DESK', 'var(--trade)', [
-      ...deskOpen.map((c) => rowFor(c, 'one reading at 7:00 Mountain; everything else waits for your tap')),
+    ? section('PR 420', 'var(--trade)', [
+      ...deskOpen.map((c) => rowFor(c, 'runs itself at 7:00 Mountain on trading days; RUN TRADING DESK any time')),
       ...deskClosed.map((c) => rowFor(c, `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`)),
     ])
     : '')
-    + (deskOpen.length ? '' : `<div class="open-doors"><button type="button" class="btn trade-open" data-open-trade>📈 Open my trade desk</button>
+    + (deskOpen.length ? '' : `<div class="open-doors"><button type="button" class="btn trade-open" data-open-trade>📈 Open PR 420</button>
         <span class="dim small" data-open-trade-said></span></div>`);
   listEl.innerHTML = attBlock + todayBlock + selfBlock + tradeBlock +
     section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
@@ -648,7 +650,7 @@ async function load() {
 }
 
 function badge(c) {
-  if (c.trade) return 'TRADE DESK';
+  if (c.trade) return 'PR 420';
   if (c.self) return 'MY OWN CASE';
   if (c.status === 'awaiting_report' && c.reportDueAt) {
     const days = Math.ceil((toDate(c.reportDueAt) - Date.now()) / 86_400_000);

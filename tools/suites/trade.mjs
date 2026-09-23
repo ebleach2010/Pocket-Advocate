@@ -73,41 +73,28 @@ const DASH = /[—–]/;
 const strip = (src) => src.replace(/^import [\s\S]*?from '[^']+';\n/gm, '').replace(/^export /gm, '');
 
 // ---- the two modules, evaluated with their imports replaced ---------------------
-const NAMES = ['patchDoc', 'deleteDoc', 'listDocs', 'tryGet', 'READ_FAILED', 'readFailedError', 'notifyUser',
-  'markPending', 'diagLog', 'runTradeScan', 'pollScanFlight', 'isTradingDay', 'tradeMetrics', 'chartSeries', 'TARGET_DAILY', 'PROJECTION_MIN_DAYS', 'DEFAULT_START_CENTS', 'fetch', 'crypto',
-  'putFile', 'patchObjectMeta', 'BUCKET', 'textPdf',
-  // The calculator's arithmetic (2026-09-22), the same module the pages read.
-  'rulesOf', 'RULE_RANGES', 'defaultRules', 'dayStatus', 'realizedToday', 'openRisk', 'tradeCalc', 'closePnl',
-  'fmtMoney', 'fmtPct', 'HORIZONS', 'HORIZON_WORDS', 'horizonOf', 'horizonFor', 'swingLastDay', 'isMarketOpen', 'INSTRUMENTS',
-  // The desk as one app (2026-09-22): his statistics and the big number.
-  'tradeStats', 'liveBalance',
-  // The note's cut, on the read side (2026-09-22, v6.9).
-  'noteOnly', 'noteBullets'];
-const EXPORTS = ['TRADE_MODEL', 'TRADE_EFFORT', 'TRADE_SCAN_EFFORT', 'TRADE_TZ', 'MARKET_OPEN', 'MARKET_CLOSE', 'STRONG_PROFIT_LOW', 'WATCHLIST_MAX', 'DEFAULT_WATCHLIST',
-  'TRADE_WEB_SEARCH_TOOL', 'TRADE_CATEGORIES', 'DESK_NAME', 'SAY', 'SETTINGS_PATH', 'STATE_PATH', 'PLAYS', 'BALANCES',
-  'TRADE_INSTRUCTIONS', 'TRADE_CONTRACT', 'TRADE_ASK_NOTE', 'realDate', 'dollars', 'stripDashes', 'sectionMatch', 'mtParts', 'mtInstant', 'mtLabel',
-  'KEY_RE', 'keyTail', 'resolveKey', 'watchlistOf', 'startOf', 'marketSnapshot', 'deskMetrics', 'standingLine', 'tradeStanding', 'refreshStanding',
-  'tradeNote', 'validPlay', 'validPortfolio', 'harvestPlays', 'recordPlays', 'recordPortfolio', 'scanVerdict', 'pushStrongPlay', 'fileDeskReading', 'portfolioLineOf',
-  'TradeError', 'SCAN_CONTRACT', 'TRADE_STATE_PATH',
-  // The fast look's strength and its own contract (2026-09-22, v6.13).
-  'TRADE_LOOK_EFFORT', 'LOOK_CONTRACT',
-  'tradeOpen', 'tradeState', 'tradePanelBlock', 'tradeBalance', 'tradeSettings', 'tradePlay', 'tradeRoute', 'scanBlock',
-  'harvestDocument', 'safeDocName', 'fileDocument', 'DOC_TITLE_MAX', 'DOC_BODY_MAX', 'DOC_DEFAULT_TITLE',
-  'POSITIONS', 'QUOTE_TTL_MS', 'QUOTE_BUDGET', 'QUOTE_MAX', 'quoteCached', 'quoteBudgetLeft', 'rid',
-  'readPositions', 'sortPositions', 'positionLine',
-  'tradePositions', 'tradePosition', 'tradeClose', 'tradeRemove', 'tradeQuote',
-  // The desk as one app (2026-09-22): the News, Stats and stream routes, the
-  // cached feeds behind the first, and the one reading the cron books.
-  'tradeNews', 'tradeHistory', 'tradeQa', 'HISTORY_MAX', 'QA_LIST_MAX',
-  'maybeMorningRead', 'MORNING_MIN', 'MORNING_WINDOW_MIN', 'maybeCollectScan',
-  'newsRows', 'earningsRows', 'newsCached', 'earningsCached', 'NEWS_HOURS', 'NEWS_MAX', 'NEWS_TTL_MS', 'EARNINGS_TTL_MS'];
+// RE-PINNED 2026-09-23 (PR 420): the two modules used to be one concatenated body, which only
+// worked while no top-level name appeared in both. PR 420's trade.js keeps its own TICKER_RE,
+// so each module is evaluated on its own now, trade.js handed what trade-desk.js exports the way
+// an import would. The export names are read off the source, so a list here can never drift
+// from the modules; the engine's four names come from desk-run.js itself, with requestRun a
+// recorder so a route that queues a run can be held to what it asked for.
+const DR = await import('../../worker/desk-run.js');
+const importNames = (src) => [...src.matchAll(/^import \{([\s\S]*?)\} from '[^']+';$/gm)]
+  .flatMap((m) => m[1].split(',').map((x) => x.trim()).filter(Boolean).map((x) => x.split(/\s+as\s+/).pop()));
+const exportNames = (src) => [...src.matchAll(/^export (?:async )?(?:function|const|class|let) (\w+)/gm)].map((m) => m[1]);
+const TD_IMPORTS = importNames(TD);
+const T_IMPORTS = importNames(T);
+const EXPORTS = exportNames(TD);
+const T_EXPORTS = exportNames(T);
 const READ_FAILED = Symbol('read failed');
-const BODY = `${strip(TD)}\n${strip(T)}`;
+const BODY_TD = strip(TD);
+const BODY_T = strip(T);
 
 /** A world: recorders for every write, fixtures for every read, a fake market. */
 function world(over = {}) {
   const w = {
-    docs: new Map(), patches: [], deletes: [], pushes: [], diag: [], pending: [], scans: [], polls: [], fetches: [], puts: [], metas: [],
+    docs: new Map(), patches: [], deletes: [], pushes: [], diag: [], pending: [], runs: [], fetches: [], puts: [], metas: [],
     claim: true, listed: {}, reads: 0, fetchStatus: 200, putFails: false, ...over,
   };
   const deps = {
@@ -123,11 +110,16 @@ function world(over = {}) {
     readFailedError: (m) => new Error(m),
     notifyUser: async (env, uid, n) => { w.pushes.push({ uid, ...n }); },
     markPending: async (env, kind, id) => { w.pending.push({ kind, id }); },
-    runTradeScan: async (env, caseId, opts) => { w.scans.push({ caseId, opts }); return over.scanOut || { ok: true, status: 'running' }; },
-    pollScanFlight: async (env, caseId, opts) => { w.polls.push({ caseId, opts }); return over.pollOut !== undefined ? over.pollOut : true; },
     diagLog: async (env, e) => { w.diag.push(e); },
+    // PR 420's engine: the route queues through requestRun and nothing else.
+    requestRun: async (env, { trigger, now }) => {
+      w.runs.push({ trigger, now });
+      return over.runOut || { ok: true, already: false, run: { id: 'run-1', status: 'queued', trigger, queuedAt: new Date(now), done: 0 } };
+    },
+    runAlive: DR.runAlive, riskPctOf: DR.riskPctOf, RESEARCH_PATH: DR.RESEARCH_PATH, LENSES: DR.LENSES,
     isTradingDay: math.isTradingDay, tradeMetrics: math.tradeMetrics, chartSeries: math.chartSeries,
     TARGET_DAILY: math.TARGET_DAILY, PROJECTION_MIN_DAYS: math.PROJECTION_MIN_DAYS, DEFAULT_START_CENTS: math.DEFAULT_START_CENTS,
+    MARKET_OPEN_MIN: math.MARKET_OPEN_MIN,
     fetch: async (url) => {
       w.fetches.push(String(url));
       const u = String(url);
@@ -151,12 +143,12 @@ function world(over = {}) {
     tradeCalc: math.tradeCalc, closePnl: math.closePnl, fmtMoney: math.fmtMoney, fmtPct: math.fmtPct,
     HORIZONS: math.HORIZONS, HORIZON_WORDS: math.HORIZON_WORDS, horizonOf: math.horizonOf, horizonFor: math.horizonFor,
     swingLastDay: math.swingLastDay, isMarketOpen: math.isMarketOpen, INSTRUMENTS: math.INSTRUMENTS,
-    tradeStats: math.tradeStats, liveBalance: math.liveBalance,
-    noteOnly: math.noteOnly, noteBullets: math.noteBullets,
     ...(over.deps || {}),
   };
-  const api = new Function('deps', `const { ${NAMES.join(', ')} } = deps;\n${BODY}\nreturn { ${EXPORTS.join(', ')} };`)(deps);
-  return { w, api };
+  const td = new Function('deps', `const { ${[...TD_IMPORTS, 'fetch', 'crypto'].join(', ')} } = deps;\n${BODY_TD}\nreturn { ${EXPORTS.join(', ')} };`)(deps);
+  const tDeps = { ...deps, ...td, ...(over.deps || {}) };
+  const t = new Function('deps', `const { ${[...T_IMPORTS, 'fetch', 'crypto'].join(', ')} } = deps;\n${BODY_T}\nreturn { ${T_EXPORTS.join(', ')} };`)(tDeps);
+  return { w, api: { ...td, ...t } };
 }
 const { api: K } = world();
 const env = { ADMIN_UID: 'eric', ANTHROPIC_API_KEY: 'k' };
@@ -219,13 +211,19 @@ ${JSON.stringify({ plays: [PLAY, { ...PLAY, ticker: 'TSLA', side: 'short', instr
 // and every other case keep max. The constant this check used to forbid is now the one it requires.
 // NEGATIVE CONTROL (run 2026-09-22, v6.12): `TRADE_SCAN_EFFORT = 'high'` changed to 'max' made this read
 //   FAIL  T1 the desk runs on the same model and effort as every other case for every turn ...
-check('T1 the desk runs on the same model and effort as every other case for every turn, 55 as the strong line, eight trading categories, one web search tool of eight uses, and 2000 as the default start',
-  K.TRADE_MODEL === 'claude-opus-5' && K.TRADE_EFFORT === 'max' && K.TRADE_SCAN_EFFORT === 'high' && K.TRADE_TZ === 'America/Boise'
-  && K.STRONG_PROFIT_LOW === 55 && K.DESK_NAME === 'Trade desk' && K.TRADE_CATEGORIES.join() === 'Setup,Indicator,Level,Order,Risk,Options,Market,Instrument'
+// RE-PINNED 2026-09-23 (PR 420): the Scan's and the Look's strengths went with the two buttons, and the
+// desk is called PR 420. The reading's constants stay because the reading's code in the advisor is still
+// there, unreachable from any page; the six-agent desk's own model and efforts are pinned in desk.mjs.
+// NEGATIVE CONTROL (run 2026-09-23): DESK_NAME put back to 'Trade desk' made this read
+//   FAIL  T1 the desk's constants: ...
+check('T1 the desk\'s constants: the reading keeps its model and effort, 55 as the strong line, eight trading categories, one web search tool of eight uses, 2000 as the default start, the name PR 420, and no Scan or Look strength left',
+  K.TRADE_MODEL === 'claude-opus-5' && K.TRADE_EFFORT === 'max' && K.TRADE_TZ === 'America/Boise'
+  && K.STRONG_PROFIT_LOW === 55 && K.DESK_NAME === 'PR 420' && K.TRADE_CATEGORIES.join() === 'Setup,Indicator,Level,Order,Risk,Options,Market,Instrument'
   && K.TRADE_WEB_SEARCH_TOOL.type === 'web_search_20260209' && K.TRADE_WEB_SEARCH_TOOL.max_uses === 8
   // RE-PINNED 2026-09-22 (v5.2): his aim is a rule (2% by default), and the module's constant reads it.
   && math.TARGET_DAILY === 0.02 && math.defaultRules().dayAimPct === 2 && math.PROJECTION_MIN_DAYS === 14 && math.TRADING_DAYS_PER_YEAR === 252 && math.DEFAULT_START_CENTS === 200000
-  && /^export const TRADE_EFFORT = 'max';$/m.test(TD) && /^export const TRADE_SCAN_EFFORT = 'high';$/m.test(TD) && !/TRADE_ASK_EFFORT|TRADE_FALLBACK_MODEL/.test(TD + T));
+  && /^export const TRADE_EFFORT = 'max';$/m.test(TD) && K.TRADE_SCAN_EFFORT === undefined && K.TRADE_LOOK_EFFORT === undefined
+  && !/TRADE_SCAN_EFFORT|TRADE_LOOK_EFFORT|TRADE_ASK_EFFORT|TRADE_FALLBACK_MODEL/.test(TD + T + ADV));
 
 // T2 USED TO PIN THE SLOT CLOCK (07:00 Mountain is 13:00Z in July, 14:00Z in January). Eric,
 // 2026-09-22: "I manually update either scan individually. No automatic." There is no clock to pin,
@@ -240,26 +238,39 @@ check('T2 the clock is gone: not one of the slot names is left in the module, th
   // The market calendar itself stays: the desk still says whether the market is open today.
   && /tradingDay: isTradingDay\(dateKey\)/.test(T));
 
-// NEGATIVE CONTROL (run 2026-09-22): the 409 mapping dropped from tradeScan, so a refused second tap answered 502, made this read
-//   FAIL  T3 the scan route RUNS: no desk is a 404, a first tap starts one and says so, a second while it is in the air is refused with the sentence that says it lands on its own, and the route never touches the reading's queue
+// RE-PINNED 2026-09-23 (PR 420): the scan route is gone. RUN TRADING DESK is the one button, and its
+// route does one thing: it asks the engine to queue a run and answers at once. It never starts a turn
+// and never touches the reading's queue; a run already going is answered, never refused and never doubled.
+// NEGATIVE CONTROL (run 2026-09-23): tradeRun's `already: !!out.already` answered as `already: false` made this read
+//   FAIL  T3 RUN TRADING DESK RUNS: ...
+// PINNED 2026-09-23 (review): a tap that lost the queue write while no run was going came back as
+// `already: false` with the old run, so the page painted a finished run as if it had just queued.
+// NEGATIVE CONTROL (run 2026-09-23): tradeRun without its `out.ok === false` 409 made this read
+//   FAIL  T3 RUN TRADING DESK RUNS: ...
 {
-  const runScan = async (over = {}) => {
+  const runRun = async (over = {}, sub = 'run') => {
     const { w, api } = world(over);
     if (over.settings !== null) w.docs.set('trade/settings', { data: over.settings || { caseId: 'c1' }, updateTime: 'S1' });
     let err = null;
     let out = null;
-    try { out = await api.tradeRoute(env, { sub: 'scan', method: 'POST', body: {}, now: at('2026-09-21T16:05:00Z') }); } catch (e) { err = e; }
+    try { out = await api.tradeRoute(env, { sub, method: 'POST', body: {}, now: at('2026-09-21T16:05:00Z') }); } catch (e) { err = e; }
     return { w, out, err };
   };
-  const ok1 = await runScan();
-  const noDesk = await runScan({ settings: {} });
-  const busy = await runScan({ scanOut: { ok: false, why: K.SAY.scanRunning, status: 'running' } });
-  check('T3 the scan route RUNS: no desk is a 404, a first tap starts one and says so, a second while it is in the air is refused with the sentence that says it lands on its own, and the route never touches the reading\'s queue',
-    ok1.out?.ok === true && ok1.out.status === 'running' && ok1.out.caseId === 'c1'
-    && ok1.w.scans.length === 1 && ok1.w.scans[0].caseId === 'c1' && ok1.w.pending.length === 0
-    && noDesk.err?.status === 404 && noDesk.err.message === K.SAY.noDesk && noDesk.w.scans.length === 0
-    && busy.err?.status === 409 && busy.err.message === 'A scan is already running. It lands on its own.',
-    JSON.stringify({ ok: ok1.out, noDesk: noDesk.err?.message, busy: busy.err?.message }));
+  const ok1 = await runRun();
+  const noDesk = await runRun({ settings: {} });
+  const busy = await runRun({ runOut: { ok: true, already: true, run: { id: 'run-0', status: 'researching', startedAt: new Date(), done: 2 } } });
+  // A tap that lost the write to another writer with no run going is told to tap again, never told it queued.
+  const lost = await runRun({ runOut: { ok: false, busy: true, run: { id: 'run-0', status: 'done' } } });
+  const scan = await runRun({}, 'scan');
+  const look = await runRun({}, 'look');
+  check('T3 RUN TRADING DESK RUNS: no desk is a 404, a tap queues one manual run and answers with where it is, a tap while one is going is answered with that run and never refused, a tap that lost the write is a 409 that says tap again, the old Scan and Look are plain 404s, and the route never touches the reading\'s queue',
+    ok1.out?.ok === true && ok1.out.already === false && ok1.out.run.status === 'queued' && ok1.out.run.of === 5
+    && ok1.w.runs.length === 1 && ok1.w.runs[0].trigger === 'manual' && ok1.w.pending.length === 0
+    && noDesk.err?.status === 404 && noDesk.err.message === K.SAY.noDesk && noDesk.w.runs.length === 0
+    && busy.err === null && busy.out.already === true && busy.out.run.status === 'researching' && busy.out.run.done === 2
+    && lost.err?.status === 409 && lost.err.message === K.SAY.busy && lost.out === null
+    && scan.err?.status === 404 && look.err?.status === 404 && scan.w.runs.length === 0,
+    JSON.stringify({ ok: ok1.out, noDesk: noDesk.err?.message, busy: busy.out }));
 }
 
 // NEGATIVE CONTROL (run 2026-09-22): '2026-09-07' removed from NYSE_HOLIDAYS made this read
@@ -269,58 +280,76 @@ check('T4 a weekend and a holiday are not trading days, a Monday is, and the day
   && math.isTradingDay('2026-09-07') === false && math.isTradingDay('2026-09-21') === 'full'
   && math.isTradingDay('2026-11-27') === 'early' && math.isTradingDay('2027-07-05') === false && math.isTradingDay('nope') === false);
 
-// T5 USED TO PIN WHICH SLOTS AN EARLY-CLOSE DAY GOT. In its place: what the scan's own contract is
-// for, which is the half of the desk the reading is not. Eric, 2026-09-22: "when it runs it's just
-// looking at new entries. Not doing an update like the advisor."
-// NEGATIVE CONTROL (run 2026-09-22): '## Rules to hold' added to SCAN_CONTRACT's list of headings made this read
-//   FAIL  T5 the scan's contract asks for three headings and nothing else: a note, at most four setups, the same Plays json the reading writes, no rules, no grading and no question
-check('T5 the scan\'s contract asks for three headings and nothing else: a note, at most four setups, the same Plays json the reading writes, no rules, no grading and no question',
-  /## Note\n## Setups\n## Plays/.test(K.SCAN_CONTRACT)
-  && !/## Right now|## Your trades|## Where you are slipping|## Rules to hold|## Key terms|## Working line|## Corrections/.test(K.SCAN_CONTRACT)
-  && /this is a scan, not a reading/.test(K.SCAN_CONTRACT)
-  && /do not revise his rules/.test(K.SCAN_CONTRACT) && /You never ask him a question/.test(K.SCAN_CONTRACT)
-  && /an empty scan is a real answer and a filler setup costs him money/.test(K.SCAN_CONTRACT)
-  && /"Setups": at most 4/.test(K.SCAN_CONTRACT)
-  && /portfolio is always null on a scan/.test(K.SCAN_CONTRACT)
-  // The three kinds and the weekend ride the scan too, word for word off the reading's contract.
-  && /a scalp lives one to ten minutes/.test(K.SCAN_CONTRACT) && /Never write a swing that would be held over a Saturday/.test(K.SCAN_CONTRACT)
-  && /never an em dash or an en dash/.test(K.SCAN_CONTRACT) && !DASH.test(K.SCAN_CONTRACT));
+// T5 USED TO PIN WHICH SLOTS AN EARLY-CLOSE DAY GOT, and then the scan's own contract.
+// RE-PINNED 2026-09-23 (PR 420): both of the scan's contracts are gone. The only thing that suggests a
+// trade now is the six-agent desk, which writes its own prompts in desk-run.js (pinned in desk.mjs), so
+// what stands here is that no contract for a Scan or a Look is left anywhere to be sent.
+// NEGATIVE CONTROL (run 2026-09-23): `export const SCAN_CONTRACT = '';` added back to trade-desk.js made this read
+//   FAIL  T5 the Scan's and the Look's contracts are gone ...
+check('T5 the Scan\'s and the Look\'s contracts are gone from the Worker and the advisor, and the desk\'s own two prompts say no question ever goes to him',
+  K.SCAN_CONTRACT === undefined && K.LOOK_CONTRACT === undefined
+  && !/SCAN_CONTRACT|LOOK_CONTRACT/.test(TD + T + ADV + W)
+  && /will not read research, ask follow-up questions or approve anything/.test(DR.deskSystem('cash', 3))
+  && /You never ask a question and never address Eric\./.test(DR.researchSystem('cash')));
 
-// T6 USED TO PIN WHETHER A READING WAS OWED AT A SLOT. In its place: what the pages read to know
-// whether a scan is in the air, which is the only state a button needs.
-// NEGATIVE CONTROL (run 2026-09-22): scanBlock's `st.scanStatus === 'running' ? 'running'` branch dropped made this read
-//   FAIL  T6 scanBlock reads the desk's state for the button: running, error with its sentence, or idle with the last note, its stamp and what it filed, and a refused read is idle rather than a lie
-check('T6 scanBlock reads the desk\'s state for the button: running, error with its sentence, or idle with the last note, its stamp and what it filed, and a refused read is idle rather than a lie',
-  K.scanBlock({ data: { scanStatus: 'running' } }).status === 'running'
-  && K.scanBlock({ data: { scanStatus: 'error', scanError: 'Could not scan.' } }).status === 'error'
-  && K.scanBlock({ data: { scanStatus: 'error', scanError: 'Could not scan.' } }).error === 'Could not scan.'
-  && K.scanBlock(null).status === 'idle' && K.scanBlock(null).note === null && K.scanBlock(null).at === null
-  && K.scanBlock(READ_FAILED).status === 'idle'
-  && (() => {
-    const b = K.scanBlock({ data: { scanStatus: 'idle', lastScanAt: new Date('2026-09-21T16:05:00Z'), scanNote: { text: '## Note\n\nQuiet.', at: new Date('2026-09-21T16:05:00Z'), plays: 2 } } });
-    // RE-PINNED 2026-09-22 (v6.9): the read cuts the note to the Note section and hands the page
-    // its bullets, so the heading is gone from the text and the one line is the one bullet.
-    return b.status === 'idle' && b.at === '2026-09-21T16:05:00.000Z' && b.note.plays === 2 && b.note.text === 'Quiet.'
-      && Array.isArray(b.note.bullets) && b.note.bullets.join('|') === 'Quiet.';
-  })());
-
-// T7 USED TO RUN THE CRON'S MINUTE. There is no minute. In its place: both reads carry the scan
-// block, so the Read page, the Plays page and the overview all paint the same button from one poll.
-// NEGATIVE CONTROL (run 2026-09-22): `scan: scanBlock(stateDoc)` dropped from tradeState made this read
-//   FAIL  T7 the state and the panel block both carry the scan, and the state reads it from the desk's own document
+// T6 USED TO PIN WHETHER A READING WAS OWED AT A SLOT, and then what scanBlock read for the button.
+// RE-PINNED 2026-09-23 (PR 420): scanBlock is gone. runBlock is what the RUN TRADING DESK line reads:
+// which stage the run is in, how many of the five researchers are back, and the sentence when it failed.
+// NEGATIVE CONTROL (run 2026-09-23): runBlock's `run.status === 'error' ? (run.error || SAY.runStalled) : null` answered null made this read
+//   FAIL  T6 runBlock RUNS: ...
 {
+  const now = at('2026-09-23T16:00:00Z');
+  const q = K.runBlock({ status: 'queued', queuedAt: new Date(now - 20_000), trigger: 'manual' }, now);
+  const r = K.runBlock({ status: 'researching', startedAt: new Date(now - 90_000), heartbeatAt: new Date(now - 10_000), done: 3 }, now);
+  const e = K.runBlock({ status: 'error', error: 'Fewer than two came back.' }, now);
+  const e2 = K.runBlock({ status: 'error' }, now);
+  const odd = K.runBlock({ status: 'scanning' }, now);
+  check('T6 runBlock RUNS: no run is idle and not alive, queued and researching are alive with the count back of five, an error carries its sentence or the stalled one, and a status it does not know reads idle',
+    K.runBlock(null, now).status === 'idle' && K.runBlock(null, now).alive === false
+    && q.status === 'queued' && q.alive === true && q.of === 5 && q.queuedAt === new Date(now - 20_000).toISOString()
+    && r.status === 'researching' && r.done === 3 && r.of === 5 && r.alive === true
+    && e.error === 'Fewer than two came back.' && e2.error === K.SAY.runStalled && K.runBlock({ status: 'idle' }, now).error === null
+    && odd.status === 'idle',
+    JSON.stringify({ q, r, e, e2, odd }));
+}
+
+// T7 USED TO RUN THE CRON'S MINUTE, and then pinned that both reads carried the scan.
+// RE-PINNED 2026-09-23 (PR 420): the board. The state answers with the last run's trades that are
+// still worth taking, the ones he took in their own list, how many timed out, his balance as he last
+// typed it, and the panel's block is nothing but the fact that this case is the desk.
+// NEGATIVE CONTROL (run 2026-09-23): tradeState's `recs` filter lost `&& live(r)` made this read
+//   FAIL  T7 the board RUNS: ...
+{
+  const now = at('2026-09-23T16:00:00Z');
   const { w, api } = world();
-  w.docs.set('trade/settings', { data: { caseId: 'c1', accountType: 'margin', startCents: 200000, startedAt: '2026-09-01' }, updateTime: 'S1' });
-  w.docs.set('trade/state', { data: { scanStatus: 'idle', lastScanAt: new Date('2026-09-21T16:05:00Z'), scanNote: { text: 'Quiet tape.', at: new Date('2026-09-21T16:05:00Z'), plays: 1 } }, updateTime: 'T1' });
-  w.docs.set('caseMeta/c1', { data: { tradeStanding: { text: 'up' } } });
-  const st = await api.tradeState(env, { now: at('2026-09-21T16:05:00Z') });
-  const panel = await api.tradePanelBlock(env, { now: at('2026-09-21T16:05:00Z') });
-  check('T7 the state and the panel block both carry the scan, and the state reads it from the desk\'s own document',
-    st.scan?.status === 'idle' && st.scan.note?.plays === 1 && st.scan.at === '2026-09-21T16:05:00.000Z'
-    && st.nextSlot === undefined && st.settings.scansOn === undefined
-    && panel.scan?.status === 'idle' && panel.scan.note?.text === 'Quiet tape.'
-    && panel.nextSlot === undefined && panel.scansOn === undefined,
-    JSON.stringify({ state: st.scan, panel: panel.scan }));
+  w.docs.set('trade/settings', { data: { caseId: 'c1', accountType: 'cash', riskPct: 3 }, updateTime: 'S1' });
+  w.docs.set('trade/state', { data: { desk: { at: new Date(now - 3600_000), ids: ['a', 'b', 'c'], count: 3, read: 'Firm.', none: '' }, activeIds: ['t'], run: { status: 'idle' } }, updateTime: 'T1' });
+  const rec = (o) => ({ data: { ticker: 'NVDA', side: 'long', horizon: 'intraday', instrument: 'stock', entryLow: 1, entryHigh: 2, stop: 0.5, targets: [3], ...o }, updateTime: 'P' });
+  w.docs.set('trade/plays/items/a', rec({ status: 'open', expiresAt: new Date(now + 3600_000) }));
+  w.docs.set('trade/plays/items/b', rec({ status: 'open', expiresAt: new Date(now - 60_000) }));
+  w.docs.set('trade/plays/items/c', rec({ status: 'expired' }));
+  w.docs.set('trade/plays/items/t', rec({ status: 'took', tookAt: new Date(now - 600_000), ticker: 'PLTR' }));
+  w.listed['trade/balances/items'] = [{ id: '2026-09-22', data: { date: '2026-09-22', cents: 238000 } }];
+  const st = await api.tradeState(env, { now });
+  const panel = await api.tradePanelBlock(env);
+  // A first read after PR 420: the plays he had already taken join the board once, and are written down.
+  const fresh = world();
+  fresh.w.docs.set('trade/settings', { data: { caseId: 'c1' }, updateTime: 'S1' });
+  // RE-PINNED 2026-09-23 (review): a play taken on the old page and logged as a position was closed there, and a
+  // spread cannot be sized by the new card, so neither joins the board.
+  // NEGATIVE CONTROL (run 2026-09-23): the seed's `!r.data?.positionId &&` removed made this read
+  //   FAIL  T7 the board RUNS: ...
+  fresh.w.listed['trade/plays/items'] = [{ id: 'old1', data: { status: 'took' } }, { id: 'old2', data: { status: 'closed' } },
+    { id: 'old3', data: { status: 'took', positionId: 'pos1' } }, { id: 'old4', data: { status: 'took', instrument: 'spread' } }];
+  await fresh.api.tradeState(env, { now });
+  const seeded = fresh.w.patches.find((x) => x.path === 'trade/state' && x.data.activeIds);
+  check('T7 the board RUNS: only the last run\'s trades still in their time are offered, the taken one sits in its own list, one timed out is counted, the balance is the one he typed, the settings say 3%, and the panel\'s block only says this is the desk; a first read seeds his taken plays once',
+    st.recs.map((r) => r.id).join() === 'a' && st.active.map((r) => r.id).join() === 't' && st.timedOut === 1
+    && st.balance.cents === 238000 && st.balance.typed === true && st.settings.riskPct === 3 && st.open === true
+    && st.desk.read === 'Firm.' && st.run.status === 'idle' && st.market.today === '2026-09-23'
+    && panel.caseId === 'c1' && panel.pr420 === true && Object.keys(panel).length === 2
+    && seeded?.data.activeIds.join() === 'old1' && seeded.opts.mustNotExist === true,
+    JSON.stringify({ recs: st.recs.map((r) => r.id), active: st.active.map((r) => r.id), timedOut: st.timedOut, panel, seeded: seeded?.data }));
 }
 
 // ---- T8: the three texts -------------------------------------------------------------
@@ -486,7 +515,11 @@ check('T12 the reading on the desk: the brief is three-way from the policy, the 
   // desk's state path and its sentences too, because the scan he taps lives there with the reading.
   // RE-PINNED 2026-09-22 (v6.12): the scan's own strength rides in the same import.
   // RE-PINNED 2026-09-22 (v6.13): and the fast look's strength and contract beside them.
-  && /^import \{\n\s+TRADE_MODEL, TRADE_EFFORT, TRADE_SCAN_EFFORT, TRADE_LOOK_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,\n\s+SCAN_CONTRACT, LOOK_CONTRACT, TRADE_STATE_PATH, SAY as TRADE_SAY,\n\s+tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,\n\s+harvestDocument, fileDocument, stripDashes as deskStripDashes,\n\} from '\.\/trade-desk\.js';/m.test(ADV)
+  // RE-PINNED 2026-09-23 (PR 420): the Scan and the Look are gone, so the import is back to what the
+  // reading and a question need, and nothing of the desk's state or its sentences.
+  // NEGATIVE CONTROL (run 2026-09-23): the import's `tradeNote, harvestPlays,` swapped to `harvestPlays, tradeNote,` made this read
+  //   FAIL  T12 the reading on the desk: ...
+  && /^import \{\n\s+TRADE_MODEL, TRADE_EFFORT, TRADE_WEB_SEARCH_TOOL, TRADE_INSTRUCTIONS, TRADE_CONTRACT, TRADE_ASK_NOTE, TRADE_CATEGORIES,\n\s+tradeNote, harvestPlays, fileDeskReading, portfolioLineOf, recordPortfolio, dollars as deskDollars,\n\s+harvestDocument, fileDocument,\n\} from '\.\/trade-desk\.js';/m.test(ADV)
   && !/from '\.\/advisor\.js'/.test(TD));
 
 // ---- T13 to T16: the harvest and the records, run ----------------------------------
@@ -707,7 +740,10 @@ check('T23 a question on the desk: the desk note rides the user text, the ask no
   //   FAIL  T24 opening the desk writes one case document that is self and trade with no client, no money and the desk's name, marks its state as the desk's, points the settings at it and stamps a start date when there is none; a desk already open is refused with its id beside the sentence; a closed desk allows a new one
   check('T24 opening the desk writes one case document that is self and trade with no client, no money and the desk\'s name, marks its state as the desk\'s, points the settings at it and stamps a start date when there is none; a desk already open is refused with its id beside the sentence; a closed desk allows a new one',
     fresh.out.ok === true && fresh.out.id === 'uuid-new-desk' && fresh.out.created === true
-    && !!c && c.data.self === true && c.data.trade === true && c.data.clientUid === null && c.data.clientEmail === null && c.data.clientName === 'Trade desk'
+    // RE-PINNED 2026-09-23 (PR 420): a desk opened from now on carries its new name.
+    // NEGATIVE CONTROL (run 2026-09-23): DESK_NAME put back to 'Trade desk' made this read
+    //   FAIL  T24 opening the desk writes one case document ...
+    && !!c && c.data.self === true && c.data.trade === true && c.data.clientUid === null && c.data.clientEmail === null && c.data.clientName === 'PR 420'
     && c.data.status === 'confirmed' && c.data.fullAccess === true && c.data.fullAccessByHand === true && c.data.caseRateCents === 0 && c.data.stripe === null
     && c.data.priorCases.length === 0 && c.data.carriedDx.length === 0 && c.data.clientTz === 'America/Boise' && c.opts.mustNotExist === true
     && fresh.w.patches.some((p) => p.path === 'cases/uuid-new-desk/advisor/state' && p.data.trade === true && p.opts.mask.includes('trade'))
@@ -761,27 +797,25 @@ check('T23 a question on the desk: the desk note rides the user text, the ask no
 }
 {
   const { w, api } = world();
-  w.docs.set('trade/settings', { data: { caseId: 'c1', finnhubKey: 'abcd1234wxyz', accountType: 'margin', startCents: 250000, startedAt: '2026-08-31', watchlist: ['SPY'], scansOn: false } });
-  w.docs.set('caseMeta/c1', { data: { tradeStanding: { text: 'STANDING', at: '2026-09-21T00:00:00Z' } } });
-  w.listed['trade/plays/items'] = [{ id: 'p1', data: { ticker: 'NVDA', status: 'open' } }];
-  w.listed['trade/balances/items'] = FIX.map((b) => ({ id: b.date, data: { ...b, source: b.date === '2026-09-21' ? 'screenshot' : 'typed' } }));
+  w.docs.set('trade/settings', { data: { caseId: 'c1', finnhubKey: 'abcd1234wxyz', accountType: 'margin', startCents: 250000, startedAt: '2026-08-31', watchlist: ['SPY'], riskPct: 2.5, debugResearch: true, scansOn: false } });
+  w.docs.set('trade/state', { data: { activeIds: [], desk: { ids: [] } }, updateTime: 'T1' });
   const payload = await api.tradeState(env, { now: at('2026-09-21T15:35:00Z') });
-  const block = await api.tradePanelBlock(env, { now: at('2026-09-21T15:35:00Z') });
-  const raw = JSON.stringify(payload) + JSON.stringify(block);
-  // NEGATIVE CONTROL (run 2026-09-22): `settings: pub` replaced by `settings: { ...settings, ...pub }` in tradeState made this read
-  //   FAIL  T26 the state carries the desk's case, whether a key is on file and its last four characters and never the key, the settings, the plays, the entries each with its source, the metrics from his own start, the chart, the scan and the day, and no feed, flights or unseen; the panel's block carries the plays, the standing off the cover, the scan and the push switch
-  // RE-PINNED 2026-09-22 (nothing runs but his tap): the next read and the Pause are gone from both
-  // reads, and the scan block stands where they were.
-  check('T26 the state carries the desk\'s case, whether a key is on file and its last four characters and never the key, the settings, the plays, the entries each with its source, the metrics from his own start, the chart, the scan and the day, and no feed, flights or unseen; the panel\'s block carries the plays, the standing off the cover, the scan and the push switch',
-    !/abcd1234wxyz/.test(raw) && !/abcd1234/.test(raw) && payload.hasKey === true && payload.keyTail === 'wxyz' && payload.caseId === 'c1'
-    && payload.settings.accountType === 'margin' && payload.settings.startCents === 250000 && payload.settings.watchlist.join() === 'SPY'
-    && payload.settings.scansOn === undefined && payload.scansOn === undefined && payload.nextSlot === undefined
-    && payload.metrics.startCents === 250000 && payload.metrics.days === 14 && payload.chart.target.length === 15 && payload.balances.length === 5
-    && payload.balances[4].source === 'screenshot' && payload.balances[0].source === 'typed' && payload.plays[0].id === 'p1'
-    && payload.scan.status === 'idle' && payload.tradingDay === 'full' && payload.today === '2026-09-21'
-    && !('feed' in payload) && !('flights' in payload) && !('unseen' in payload)
-    && block.plays.length === 1 && block.standing.text === 'STANDING' && block.scan.status === 'idle' && block.nextSlot === undefined && block.scansOn === undefined && block.pushOn === true && block.hasKey === true && block.today === '2026-09-21',
-    JSON.stringify({ hasKey: payload.hasKey, tail: payload.keyTail, scan: payload.scan, block: Object.keys(block) }));
+  const noBal = payload.balance;
+  const raw = JSON.stringify(payload);
+  // RE-PINNED 2026-09-23 (PR 420): the state is the board now. It still carries whether a key is on
+  // file and its last four characters and never the key; the plays, the entries, the metrics, the
+  // chart, the scan and the standing are all gone from it, because the page has no chart and no
+  // reading and the desk never reviews his history.
+  // NEGATIVE CONTROL (run 2026-09-23): publicSettings returning `{ ...settings, ... }` made this read
+  //   FAIL  T26 the state carries ...
+  check('T26 the state carries the desk\'s case, whether a key is on file and its last four characters and never the key, his account type, his risk per trade, the push and debug switches and the list it prices, the starting amount as the balance until he types one, the day, and none of the plays, the entries, the metrics, the chart, the scan or the standing',
+    !/abcd1234wxyz/.test(raw) && !/abcd1234/.test(raw) && payload.settings.hasKey === true && payload.settings.keyTail === 'wxyz' && payload.caseId === 'c1'
+    && payload.settings.accountType === 'margin' && payload.settings.riskPct === 2.5 && payload.settings.debugResearch === true && payload.settings.pushOn === true
+    && payload.settings.watchlist.join() === 'SPY' && Object.keys(payload.settings).sort().join() === 'accountType,debugResearch,hasKey,keyTail,pushOn,riskPct,watchlist'
+    && noBal.cents === 250000 && noBal.typed === false && noBal.date === null
+    && payload.market.today === '2026-09-21' && payload.market.tradingDay === 'full' && payload.market.open === true
+    && ['plays', 'balances', 'metrics', 'chart', 'scan', 'standing', 'feed', 'flights', 'unseen', 'nextSlot'].every((k) => !(k in payload)),
+    JSON.stringify({ settings: payload.settings, balance: noBal, keys: Object.keys(payload) }));
 }
 {
   const run = async (fn, settings = {}) => {
@@ -796,111 +830,149 @@ check('T23 a question on the desk: the desk note rides the user text, the ask no
   // Letters only, so the 21st is refused for being the 21st and not for a digit.
   const many = await run((api) => api.tradeSettings(env, { watchlist: Array.from({ length: 21 }, (_, i) => `T${String.fromCharCode(65 + i)}`) }));
   const acct = await run((api) => api.tradeSettings(env, { accountType: 'x' }));
-  const low = await run((api) => api.tradeSettings(env, { startCents: 50 }));
-  const start = await run((api) => api.tradeSettings(env, { startCents: 300000, startedAt: '2026-09-01' }), { caseId: 'c1', finnhubKey: 'abcdefghijklmnop1234', startedAt: '2026-08-31' });
-  const hijack = await run((api) => api.tradeSettings(env, { pushOn: false, caseId: 'hijack' }), { caseId: 'c1', startedAt: '2026-08-31' });
+  const lowRisk = await run((api) => api.tradeSettings(env, { riskPct: 0.05 }));
+  const highRisk = await run((api) => api.tradeSettings(env, { riskPct: 6 }));
+  const wordRisk = await run((api) => api.tradeSettings(env, { riskPct: 'three' }));
+  const risk = await run((api) => api.tradeSettings(env, { riskPct: 2.456 }), { caseId: 'c1', finnhubKey: 'abcdefghijklmnop1234' });
+  const hijack = await run((api) => api.tradeSettings(env, { pushOn: false, caseId: 'hijack', startCents: 5 }), { caseId: 'c1' });
+  const dbg = await run((api) => api.tradeSettings(env, { debugResearch: true }), { caseId: 'c1' });
   const patchOf = (w) => w.patches.find((p) => p.path === 'trade/settings');
-  // NEGATIVE CONTROL (run 2026-09-22): the watchlist cap raised to 21 made this read
-  //   FAIL  T27 settings refuse a bad key, a 21st ticker, a third account type and a start under a dollar, each with its sentence; a list is uppercased and deduped; a moved start refreshes the cover's standing; the settings take no Pause; the case id is never taken from a body; the reply never carries the key
-  // RE-PINNED 2026-09-22 (nothing runs but his tap): scansOn was the Pause on a clock that is gone,
-  // so the hijack attempt rides the push switch instead and the settings refuse the field entirely.
-  check('T27 settings refuse a bad key, a 21st ticker, a third account type and a start under a dollar, each with its sentence; a list is uppercased and deduped; a moved start refreshes the cover\'s standing; the settings take no Pause; the case id is never taken from a body; the reply never carries the key',
+  // RE-PINNED 2026-09-23 (PR 420): the starting amount and its date left Settings with the chart they
+  // served, and nothing refreshes a standing any more. The risk per trade is his one rule now (Eric:
+  // "3% risk rule."), refused outside 0.1 to 5 percent with its own sentence.
+  // NEGATIVE CONTROL (run 2026-09-23): tradeSettings' `v > 5` bound raised to `v > 50` made this read
+  //   FAIL  T27 settings refuse ...
+  check('T27 settings refuse a bad key, a 21st ticker, a third account type and a risk per trade under 0.1 or over 5 percent or not a number, each with its sentence; a risk is kept to two places; a list is uppercased and deduped; the debug switch saves; the case id and a starting amount are never taken from a body; the reply never carries the key',
     badKey.threw?.message === K.SAY.badKey && badKey.threw.status === 400 && badKey.w.patches.length === 0
-    && list.out.settings.watchlist.join() === 'NVDA,TSLA' && patchOf(list.w).data.watchlist.join() === 'NVDA,TSLA' && patchOf(list.w).data.setByHand === true
-    && many.threw?.message === K.SAY.badWatchlist && acct.threw?.message === K.SAY.badAccount && low.threw?.message === K.SAY.badStart
-    && patchOf(start.w).data.startCents === 300000 && patchOf(start.w).data.startedAt === '2026-09-01' && start.out.settings.startCents === 300000
-    && start.w.patches.some((p) => p.path === 'caseMeta/c1' && p.data.tradeStanding)
-    && start.out.hasKey === true && start.out.keyTail === '1234' && !/abcdefghijklmnop1234/.test(JSON.stringify(start.out))
+    && list.out.settings.watchlist.join() === 'NVDA,TSLA' && patchOf(list.w).data.watchlist.join() === 'NVDA,TSLA'
+    && many.threw?.message === K.SAY.badWatchlist && acct.threw?.message === K.SAY.badAccount
+    && [lowRisk, highRisk, wordRisk].every((r) => r.threw?.message === K.SAY.badRisk && r.threw.status === 400 && r.w.patches.length === 0)
+    && K.SAY.badRisk === 'Risk per trade: 0.1 to 5 percent of the balance.'
+    && patchOf(risk.w).data.riskPct === 2.46 && risk.out.settings.riskPct === 2.46
+    && risk.out.settings.hasKey === true && risk.out.settings.keyTail === '1234' && !/abcdefghijklmnop1234/.test(JSON.stringify(risk.out))
     && patchOf(hijack.w).data.pushOn === false && hijack.out.settings.pushOn === false
-    && !('caseId' in patchOf(hijack.w).data) && !patchOf(hijack.w).opts.mask.includes('caseId')
-    && !('scansOn' in patchOf(hijack.w).data) && hijack.out.settings.scansOn === undefined
-    && !hijack.w.patches.some((p) => p.path === 'caseMeta/c1'),
-    JSON.stringify({ list: list.out?.settings.watchlist, start: start.out?.settings.startCents, hijack: patchOf(hijack.w)?.data }));
+    && !('caseId' in patchOf(hijack.w).data) && !patchOf(hijack.w).opts.mask.includes('caseId') && !('startCents' in patchOf(hijack.w).data)
+    && patchOf(dbg.w).data.debugResearch === true && dbg.out.settings.debugResearch === true
+    && !hijack.w.patches.some((p) => p.path.startsWith('caseMeta/')),
+    JSON.stringify({ list: list.out?.settings.watchlist, risk: risk.out?.settings.riskPct, hijack: patchOf(hijack.w)?.data }));
 
   const NOW = at('2026-09-21T20:00:00Z');
-  const up = await run((api) => api.tradeBalance(env, { date: '2026-09-21', cents: 238000, note: 'after close — done' }, NOW), { caseId: 'c1' });
+  const up = await run((api) => api.tradeBalance(env, { date: '2026-09-21', cents: 238000 }, NOW), { caseId: 'c1' });
+  const today = await run((api) => api.tradeBalance(env, { cents: 241000 }, NOW), { caseId: 'c1' });
   const rm = await run((api) => api.tradeBalance(env, { date: '2026-09-21', remove: true }, NOW), { caseId: 'c1' });
   const future = await run((api) => api.tradeBalance(env, { date: '2026-09-22', cents: 1 }, NOW));
   const neg = await run((api) => api.tradeBalance(env, { date: '2026-09-21', cents: -1 }, NOW));
   const junk = await run((api) => api.tradeBalance(env, { date: '2026-02-30', cents: 1 }, NOW));
-  // NEGATIVE CONTROL (run 2026-09-22): `source: 'typed'` dropped from the typed balance's row made this read
-  //   FAIL  T28 a balance he types is upserted at its date path stamped typed with a dash-free note and the cover's standing refreshed, removed by date with the standing refreshed again, and refused for tomorrow, a negative figure or a date that does not exist, each with its sentence
-  check('T28 a balance he types is upserted at its date path stamped typed with a dash-free note and the cover\'s standing refreshed, removed by date with the standing refreshed again, and refused for tomorrow, a negative figure or a date that does not exist, each with its sentence',
-    up.out.ok === true && up.w.patches[0].path === 'trade/balances/items/2026-09-21' && up.w.patches[0].data.cents === 238000 && up.w.patches[0].data.source === 'typed' && !DASH.test(up.w.patches[0].data.note)
-    && up.w.patches.some((p) => p.path === 'caseMeta/c1' && p.data.tradeStanding?.text) && up.out.standing?.text
-    && rm.out.removed === '2026-09-21' && rm.w.deletes[0] === 'trade/balances/items/2026-09-21' && rm.w.patches.some((p) => p.path === 'caseMeta/c1')
-    && future.threw?.message === K.SAY.badDate && neg.threw?.message === K.SAY.badCents && junk.threw?.message === K.SAY.badDate,
-    JSON.stringify({ up: up.out, rm: rm.out, future: future.threw?.message }));
+  // RE-PINNED 2026-09-23 (PR 420): no standing to refresh, and a balance typed without a date is today's
+  // on his clock, which is how the Settings sheet sends it.
+  // NEGATIVE CONTROL (run 2026-09-23): tradeBalance's `date === undefined || body?.date === ''` default removed made this read
+  //   FAIL  T28 a balance he types ...
+  check('T28 a balance he types is upserted at its date path stamped typed, a balance with no date is today\'s on his clock, the answer is the balance the cards size from, a date removes, and tomorrow, a negative figure or a date that does not exist are each refused with their sentence; nothing touches a cover',
+    up.out.ok === true && up.w.patches[0].path === 'trade/balances/items/2026-09-21' && up.w.patches[0].data.cents === 238000 && up.w.patches[0].data.source === 'typed'
+    && up.out.balance.cents === 238000 && up.out.balance.typed === true && up.out.balance.date === '2026-09-21'
+    && today.w.patches[0]?.path === 'trade/balances/items/2026-09-21' && today.out?.balance.cents === 241000
+    && rm.out.removed === '2026-09-21' && rm.w.deletes[0] === 'trade/balances/items/2026-09-21'
+    && future.threw?.message === K.SAY.badDate && neg.threw?.message === K.SAY.badCents && junk.threw?.message === K.SAY.badDate
+    && ![up, today, rm].some((r) => r.w.patches.some((p) => p.path.startsWith('caseMeta/'))),
+    JSON.stringify({ up: up.out, today: today.out, rm: rm.out, future: future.threw?.message }));
 
-  const withPlay = async (fn, status = 'open') => run((api, w) => { w.docs.set('trade/plays/items/p1', { data: { ticker: 'NVDA', status, tookAt: null } }); return fn(api); });
-  const took = await withPlay((api) => api.tradePlay(env, { id: 'p1', status: 'took' }));
-  const late = await withPlay((api) => api.tradePlay(env, { id: 'p1', status: 'took' }), 'expired');
-  const closed = await withPlay((api) => api.tradePlay(env, { id: 'p1', status: 'closed', outcomeCents: 4500 }));
-  const noOut = await withPlay((api) => api.tradePlay(env, { id: 'p1', status: 'closed' }));
-  const skip = await withPlay((api) => api.tradePlay(env, { id: 'p1', status: 'skipped' }));
-  const gone = await run((api) => api.tradePlay(env, { id: 'p9', status: 'took' }));
-  const badStatus = await withPlay((api) => api.tradePlay(env, { id: 'p1', status: 'sold' }));
-  // NEGATIVE CONTROL (run 2026-09-22): `closed` accepted without outcomeCents made this read
-  //   FAIL  T29 a play taken stamps when, an expired play still takes it, closed needs the dollars and stamps both, skipped is skipped, an unknown play is 404 and a fourth status is refused, each with its sentence
-  check('T29 a play taken stamps when, an expired play still takes it, closed needs the dollars and stamps both, skipped is skipped, an unknown play is 404 and a fourth status is refused, each with its sentence',
-    took.out.play.status === 'took' && took.w.patches[0].data.tookAt instanceof Date && took.w.patches[0].opts.mask.join() === 'status,tookAt'
-    && late.out.play.status === 'took'
-    && closed.out.play.outcomeCents === 4500 && closed.w.patches[0].data.closedAt instanceof Date && closed.w.patches[0].data.tookAt instanceof Date
-    && noOut.threw?.message === K.SAY.badOutcome && skip.out.play.status === 'skipped'
-    && gone.threw?.message === K.SAY.noPlay && gone.threw.status === 404 && badStatus.threw?.message === K.SAY.badStatus,
-    JSON.stringify({ took: took.out?.play.status, late: late.out?.play.status, closed: closed.out?.play.outcomeCents }));
+  const withRec = async (fn, status = 'open', over = {}) => {
+    const { w, api } = world(over);
+    w.docs.set('trade/settings', { data: { caseId: 'c1' } });
+    w.docs.set('trade/state', { data: { activeIds: over.activeIds || ['other'] }, updateTime: 'ST1' });
+    w.docs.set('trade/plays/items/p1', { data: { ticker: 'NVDA', side: 'long', horizon: 'intraday', status, tookAt: status === 'took' ? new Date('2026-09-21T15:00:00Z') : null, result: over.result || null }, updateTime: 'P1' });
+    let out = null; let threw = null;
+    try { out = await fn(api); } catch (e) { threw = e; }
+    return { w, out, threw };
+  };
+  const NOW2 = at('2026-09-21T16:00:00Z');
+  const took = await withRec((api) => api.tradeRoute(env, { sub: 'take', method: 'POST', body: { id: 'p1' }, now: NOW2 }));
+  const again = await withRec((api) => api.tradeTake(env, { id: 'p1' }, NOW2), 'took', { activeIds: ['p1', 'other'] });
+  // RE-PINNED 2026-09-23 (review): a first YES whose list write failed left the trade taken and on no list;
+  // the second YES now finishes that job instead of answering ok and changing nothing.
+  // NEGATIVE CONTROL (run 2026-09-23): tradeTake's `if (!(st?.data?.activeIds || []).includes(id)) await editActive(env, addActive);` removed made this read
+  //   FAIL  T29 YES and PROFIT or LOSS RUN: ...
+  const repaired = await withRec((api) => api.tradeTake(env, { id: 'p1' }, NOW2), 'took');
+  const late = await withRec((api) => api.tradeTake(env, { id: 'p1' }, NOW2), 'expired');
+  const nobody = await withRec((api) => api.tradeTake(env, { id: 'p9' }, NOW2));
+  const lost = await withRec((api) => api.tradeTake(env, { id: 'p1' }, NOW2), 'open', { claim: false });
+  const won = await withRec((api) => api.tradeRoute(env, { sub: 'result', method: 'POST', body: { id: 'p1', result: 'profit' }, now: NOW2 }), 'took');
+  const lossR = await withRec((api) => api.tradeResult(env, { id: 'p1', result: 'loss' }, NOW2), 'took');
+  const early = await withRec((api) => api.tradeResult(env, { id: 'p1', result: 'loss' }, NOW2), 'open');
+  const odd = await withRec((api) => api.tradeResult(env, { id: 'p1', result: 'even' }, NOW2), 'took');
+  const twice = await withRec((api) => api.tradeResult(env, { id: 'p1', result: 'profit' }, NOW2), 'closed', { result: 'profit' });
+  const playPatch = (w) => w.patches.find((p) => p.path === 'trade/plays/items/p1');
+  const activeOf = (w) => w.patches.filter((p) => p.path === 'trade/state').pop()?.data.activeIds;
+  // RE-PINNED 2026-09-23 (PR 420): took, skipped and closed at a dollar figure are gone. He answers a
+  // trade twice at most: YES when he takes it, then PROFIT or LOSS, and each is written under a
+  // precondition so a run finishing in the same second cannot lose it.
+  // NEGATIVE CONTROL (run 2026-09-23): tradeResult's `if (d.status !== 'took')` guard removed made this read
+  //   FAIL  T29 YES and PROFIT or LOSS RUN: ...
+  check('T29 YES and PROFIT or LOSS RUN: YES takes an open trade under a precondition, stamps when and puts it first among his active ones; a second YES changes nothing; a trade no longer open, an unknown one and a lost race are refused with their sentences; PROFIT or LOSS closes a taken one with the result and the time and takes it off the active list; before YES, or a third answer, is refused; the same answer twice changes nothing',
+    took.out?.rec.status === 'took' && playPatch(took.w).data.tookAt instanceof Date && playPatch(took.w).opts.mask.join() === 'status,tookAt'
+    && playPatch(took.w).opts.ifUpdateTime === 'P1' && activeOf(took.w).join() === 'p1,other'
+    && again.out?.rec.status === 'took' && again.w.patches.length === 0
+    && repaired.out?.rec.status === 'took' && activeOf(repaired.w)?.join() === 'p1,other' && !repaired.w.patches.some((p) => p.path === 'trade/plays/items/p1')
+    && late.threw?.status === 409 && late.threw.message === K.SAY.notOpen && nobody.threw?.status === 404 && nobody.threw.message === K.SAY.noRec
+    && lost.threw?.status === 409 && lost.threw.message === K.SAY.busy
+    && won.out?.rec.status === 'closed' && won.out.rec.result === 'profit' && playPatch(won.w).data.closedAt instanceof Date
+    && playPatch(won.w).opts.mask.join() === 'status,result,closedAt' && activeOf(won.w).join() === 'other'
+    && lossR.out?.rec.result === 'loss' && early.threw?.message === K.SAY.notTaken && early.threw.status === 409
+    && odd.threw?.message === K.SAY.badResult && odd.threw.status === 400 && twice.out?.rec.result === 'profit' && twice.w.patches.length === 0,
+    JSON.stringify({ took: took.out?.rec.status, active: activeOf(took.w), won: won.out?.rec, early: early.threw?.message }));
 }
 
 // ---- T30: the Worker's hooks and refusals ------------------------------------------------
-// NEGATIVE CONTROL (run 2026-09-22): the `maybeTradeScan(env, fired)` line removed from scheduled() made this read
-//   FAIL  T30 the Worker imports the desk's routes, panel block and categories, books nothing on the desk at the cron's minute, no longer polls any desk flight, hands the panel the desk's block and the trading half of the glossary on a desk, prints the standing on the covers, refuses to pull from the desk or continue it, and a deleted desk clears the settings' pointer
-// NEGATIVE CONTROL (run 2026-09-22): `ctx.waitUntil(maybeTradeScan(env, fired).catch(() => {}));` put back into scheduled() made this read
-//   FAIL  T30 the Worker imports the desk's routes, panel block and categories, books nothing on the desk at the cron's minute, no longer polls any desk flight, ...
-// RE-PINNED 2026-09-22 (v6.0, the desk as one app): the cron books ONE thing on the desk, the
-// morning reading Eric asked for at 7:00 Mountain, and the state route collects a scan his tap put
-// in the air so the page does not wait for the cron.
-check('T30 the Worker imports the desk\'s routes, panel block, morning reading and categories, books the 7:00 reading at the cron\'s firing, polls a scan in flight on the state route and re-reads the block, hands the panel the desk\'s block and the trading half of the glossary on a desk, prints the standing on the covers, refuses to pull from the desk or continue it, and a deleted desk clears the settings\' pointer',
-  // RE-PINNED 2026-09-22 (v6.3): the cron also collects a scan already in the air, asking the desk
-  // rather than the queue, because a flight whose queue row had gone was invisible to every clock.
-  // NEGATIVE CONTROL (run 2026-09-22, v6.3): the collector's waitUntil replaced with a resolved
-  // promise made this read
-  //   FAIL  T30 the Worker imports the desk's routes, panel block, morning reading and categories, ...
-  /import \{ tradeRoute, TradeError, tradePanelBlock, maybeMorningRead, maybeCollectScan \} from '\.\/trade\.js';\nimport \{ TRADE_CATEGORIES, SAY as TRADE_SAY \} from '\.\/trade-desk\.js';/.test(W)
-  && !/maybeTradeScan/.test(W)
-  && /ctx\.waitUntil\(maybeMorningRead\(env\)\.catch\(\(\) => \{\}\)\);/.test(W)
-  && /ctx\.waitUntil\(maybeCollectScan\(env\)\.catch\(\(\) => \{\}\)\);/.test(W)
-  && /pollCaseFlight, pollFlightsNow, pollAskFlight, pollScanFlight,/.test(W)
-  && /if \(tradeBlock\?\.scan\?\.status === 'running' && await pollScanFlight\(env, id\)\.catch\(\(\) => false\)\) \{\n\s+tradeBlock = await tradePanelBlock\(env\)\.catch\(\(\) => tradeBlock\);\n\s+\}/.test(W)
+// RE-PINNED 2026-09-23 (PR 420): the cron's desk work is two calls now. maybeMorningRun queues the
+// 7:00 run through waitUntil, and maybeRunDesk runs a queued one AWAITED in the firing, which is
+// what gives it the firing's fifteen minutes; when it ran, the case drain waits for the next minute.
+// The scan collector, the morning reading and the state route's scan poll are gone; the panel's
+// block only says the case is the desk.
+// NEGATIVE CONTROL (run 2026-09-23): `const ranDesk = await maybeRunDesk(` changed to `const ranDesk = false && await maybeRunDesk(` made this read
+//   FAIL  T30 the Worker imports ...
+check('T30 the Worker imports the desk\'s routes and panel block, the run and its morning clock, and the categories; queues the 7:00 run at every firing and runs a queued one awaited before the case drain; no longer collects a scan or books a reading; hands the panel the desk\'s block and the trading half of the glossary on a desk; prints the standing on the covers; refuses to pull from the desk or continue it; and a deleted desk clears the settings\' pointer',
+  /import \{ tradeRoute, TradeError, tradePanelBlock \} from '\.\/trade\.js';\nimport \{ maybeRunDesk, maybeMorningRun \} from '\.\/desk-run\.js';\nimport \{ TRADE_CATEGORIES, SAY as TRADE_SAY \} from '\.\/trade-desk\.js';/.test(W)
+  && !/maybeTradeScan|maybeMorningRead|maybeCollectScan|pollScanFlight/.test(W)
+  && /ctx\.waitUntil\(maybeMorningRun\(env\)\.catch\(\(\) => \{\}\)\);/.test(W)
+  // RE-PINNED 2026-09-23 (review): never on a quarter hour, whose firing carries the medical sweeps.
+  // NEGATIVE CONTROL (run 2026-09-23): `minute % 15 === 0 ? false` changed to `minute % 15 === 99 ? false` made this read
+  //   FAIL  T30 the Worker imports ...
+  && /const ranDesk = minute % 15 === 0 \? false\n\s+: await maybeRunDesk\(env, \{ deadlineAt \}\)\.catch\(/.test(W)
+  && /const ranAnalysis = ranDesk \? true : await runQueuedAnalyses\(env, deadlineAt\);/.test(W)
+  && W.indexOf(': await maybeRunDesk(') < W.indexOf('const ranAnalysis = ranDesk')
+  && /pollCaseFlight, pollFlightsNow, pollAskFlight,\n/.test(W)
   && !/pollTradeFlights/.test(W) && !/pollTradeFlights|submitTradeBatch|tradeAsk|tradeSeen|tradeScanNow|trade\/feed|trade\/flights/.test(T)
-  && /const trade = !!state\?\.data\.trade;\n\s+const terms = knowledge\.filter\(\(r\) => TRADE_CATEGORIES\.includes\(String\(r\.data\.category \|\| ''\)\) === trade\);\n\s+let tradeBlock = trade \? await tradePanelBlock\(env\)\.catch\(\(\) => null\) : null;/.test(W)
+  && /const trade = !!state\?\.data\.trade;\n\s+const terms = knowledge\.filter\(\(r\) => TRADE_CATEGORIES\.includes\(String\(r\.data\.category \|\| ''\)\) === trade\);\n(?:\s*\/\/[^\n]*\n)*\s+const tradeBlock = trade \? await tradePanelBlock\(env\)\.catch\(\(\) => null\) : null;/.test(W)
   && /state: panelState,\n\s+trade: tradeBlock,/.test(W) && /glossary: terms\.map\(\(r\) => \(\{/.test(W)
   && /by: dx\?\.by \|\| 'advisor',\n(?:\s*\/\/[^\n]*\n)*\s+tradeStanding: r\.data\.tradeStanding\?\.text \|\| '',/.test(W)
   && /if \(c\.data\.trade\) return \{ error: TRADE_SAY\.noPull, cases: \[\] \};/.test(W)
   && /if \(doc\.data\.trade\) return json\(\{ error: TRADE_SAY\.noNext \}, 409\);/.test(W)
   && /^\/\/   GET\/POST \/api\/admin\/trade\/\* /m.test(W)
   && /const desk = await getDoc\(env, 'trade\/settings'\)\.catch\(\(\) => null\);\n\s+if \(desk\?\.data\.caseId === id\)\n\s+await patchDoc\(env, 'trade\/settings', \{ caseId: null \}, \{ mask: \['caseId'\] \}\)\.catch\(\(\) => \{\}\);\n\s+return \{ docs: deleted, files: files\.length \};/.test(SHOW)
-  // RE-PINNED 2026-09-22 (v6.3): the desk's module also takes the scan poller, because the cron's
-  // collector lives beside the morning reading and asks the desk rather than the queue.
-  && /^export function client\(env\) \{/m.test(ADV) && /^export async function markPending\(/m.test(ADV) && /import \{ markPending, diagLog, runTradeScan, runTradeLook, pollScanFlight \} from '\.\/advisor\.js';/.test(T));
-// RE-PINNED 2026-09-22 (v6.13): the desk's module takes the fast look's runner in the same
-// line, because the look runs on his tap instead of joining the provider's queue.
+  // The desk's routes take nothing from the advisor any more: the run is desk-run.js's.
+  && !/from '\.\/advisor\.js'/.test(T) && /from '\.\/desk-run\.js';/.test(T));
 
 // ---- T31 to T34: the shelf, the page, the panel, the desk's module ----------------------
 // NEGATIVE CONTROL (run 2026-09-22): `if (c.trade) return 'TRADE DESK';` removed from badge() made this read
-//   FAIL  T31 the shelf: the desk is off his own shelf and off the pull-from picker, on its own green shelf with its standing on the line, badged TRADE DESK before his own case, a green door posts to open and walks into a desk already open, the card wears the green class after the purple, and the four schemes each name the green
-check('T31 the shelf: the desk is off his own shelf and off the pull-from picker, on its own green shelf with its standing on the line, badged TRADE DESK before his own case, a green door posts to open and walks into a desk already open, the card wears the green class after the purple, and the four schemes each name the green',
+//   FAIL  T31 the shelf: ...
+// RE-PINNED 2026-09-23 (PR 420): the desk is called PR 420 on the shelf, its card and its badge, the line
+// under it says what it is for instead of a standing no reading writes any more, and the row says when it runs.
+// NEGATIVE CONTROL (run 2026-09-23): the card's `name: c.trade ? 'PR 420' :` dropped made this read
+//   FAIL  T31 the shelf: ...
+check('T31 the shelf: the desk is off his own shelf and off the pull-from picker, on its own green shelf named PR 420 with what it is for on the line, badged PR 420 before his own case, a green door posts to open and walks into a desk already open, the card wears the green class after the purple, and the four schemes each name the green',
   /const mine = cases\.filter\(\(c\) => c\.self && !c\.trade && c\.status !== 'closed'\);/.test(ADMIN)
   && /const ownAll = cases\.filter\(\(c\) => c\.self && !c\.trade\)/.test(ADMIN)
-  && /const desks = cases\.filter\(\(c\) => c\.trade\)/.test(ADMIN) && /section\('TRADE DESK', 'var\(--trade\)', \[/.test(ADMIN)
-  && /one reading at 7:00 Mountain; everything else waits for your tap/.test(ADMIN)
+  && /const desks = cases\.filter\(\(c\) => c\.trade\)/.test(ADMIN) && /section\('PR 420', 'var\(--trade\)', \[/.test(ADMIN)
+  && /runs itself at 7:00 Mountain on trading days; RUN TRADING DESK any time/.test(ADMIN)
+  && /name: c\.trade \? 'PR 420' : \(c\.clientName \|\| c\.clientEmail \|\| c\.clientUid\),/.test(ADMIN)
   // RE-PINNED 2026-09-22 (v6.0): the desk's card, and the door, open its own page.
   && /href: c\.trade \? `\/admin-desk\.html\?id=\$\{c\.id\}` : `\/admin-case\.html\?id=\$\{c\.id\}`,/.test(ADMIN)
   && /location\.href = `\/admin-desk\.html\?id=\$\{encodeURIComponent\(id\)\}`;/.test(ADMIN)
-  && /data-open-trade>📈 Open my trade desk<\/button>/.test(ADMIN) && /\(deskOpen\.length \? '' : `<div class="open-doors">/.test(ADMIN)
+  && /data-open-trade>📈 Open PR 420<\/button>/.test(ADMIN) && /\(deskOpen\.length \? '' : `<div class="open-doors">/.test(ADMIN)
   && /fetch\('\/api\/admin\/trade\/open', \{/.test(ADMIN) && /const id = res\.ok \? out\.id : \(res\.status === 409 && out\.existing \? out\.existing : null\);/.test(ADMIN)
   && /listEl\.innerHTML = attBlock \+ todayBlock \+ selfBlock \+ tradeBlock \+/.test(ADMIN)
-  && /function badge\(c\) \{\n\s+if \(c\.trade\) return 'TRADE DESK';\n\s+if \(c\.self\) return 'MY OWN CASE';/.test(ADMIN)
-  && /trade: !!c\.trade,\n(?:\s*\/\/[^\n]*\n)*\s+meta: c\.trade \? \(cover\.tradeStanding \|\| 'no reading yet'\) : '',/.test(ADMIN)
+  && /function badge\(c\) \{\n\s+if \(c\.trade\) return 'PR 420';\n\s+if \(c\.self\) return 'MY OWN CASE';/.test(ADMIN)
+  && /trade: !!c\.trade,\n(?:\s*\/\/[^\n]*\n)*\s+meta: c\.trade \? 'Suggested trades and market news' : '',/.test(ADMIN)
   && /self = false,\n(?:\s*\/\/[^\n]*\n)*\s+trade = false,\n\} = \{\}\) \{/.test(DRAWER)
   && /\$\{self \? ' self' : ''\}\$\{trade \? ' trade' : ''\}/.test(DRAWER)
   && /:root \{ --trade: #1F8A6D; \}/.test(CSS) && /data-scheme="calm"\] \{ --trade: #6FD9B4; \}/.test(CSS) && /data-scheme="paper"\] \{ --trade: #23705A; \}/.test(CSS) && /data-scheme="contrast"\] \{ --trade: #7CFFCF; \}/.test(CSS)
@@ -950,154 +1022,90 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // the reading, but it is the same document out of the same run.
   && /'Your trades': '🧾',\n\s+'Where you are slipping': '⚠️',\n\s+'Rules to hold': '📌',\n\s+'Setups': '📈',/.test(PANEL));
 
+// ---- T34, T52, T53: the desk's view module (PR 420) -------------------------------------------
+// RE-PINNED 2026-09-23 (PR 420, Eric: "The purpose is to let me understand the trade at a glance."):
+// the play card, the position card, the day bar and the chart are gone with the pages that drew
+// them. One card is left, and it carries every field he listed, in the order he reads a trade.
 {
-  const m = math.tradeMetrics(FIX, { startedAt: '2026-08-31' });
-  const c = math.chartSeries(m);
   const mod = await import('../../public/js/admin-desk.js');
-  const svg = mod.deskChartSvg(c);
-  const svgAim = mod.deskChartSvg(c, { aim: '2.5%' });
-  const play = { id: 'p1', ...K.validPlay(PLAY), status: 'open' };
-  const rules = math.defaultRules();
-  const card = mod.playFaceHtml(play, { rules, accountCents: 238000 });
-  // A stock setup is a dollar figure to him and never a share count (2026-09-22).
-  const stockPlay = { id: 'p9', ...K.validPlay({ ...PLAY, instrument: 'stock', structure: 'shares', strike: null, strike2: null, optionType: null, expiry: null, allocPct: 21, entry: 228.9, stop: 226.3, targets: [231.5] }), status: 'open' };
-  const stockCard = mod.playFaceHtml(stockPlay, { rules, accountCents: 449000 });
-  // An allocation that risks more than his one trade rule says so on its face.
-  const overCard = mod.playFaceHtml({ ...stockPlay, allocPct: 90 }, { rules, accountCents: 449000 });
-  const expired = mod.playFaceHtml({ ...play, id: 'p2', status: 'expired' }, { rules, accountCents: 238000 });
-  // The one from his screenshot (2026-09-22): still marked open, but its hour has gone. That is
-  // the card that sat at the top of his board saying Expired with Take it still on it.
-  const ranOut = mod.playFaceHtml({ ...play, id: 'p5', status: 'open', expiresAt: new Date(Date.now() - 3600_000) }, { rules, accountCents: 238000 });
-  const took = mod.playFaceHtml({ ...play, id: 'p3', status: 'took' }, { rules, accountCents: 238000 });
-  const closedPlay = mod.playFaceHtml({ ...play, id: 'p4', status: 'closed', outcomeCents: 4500 }, { rules, accountCents: 238000 });
-  const pos = { id: 't1', ticker: 'NVDA', side: 'long', instrument: 'stock', horizon: 'intraday', qty: 10, entry: 648.4, stop: 646.9, target: 652, mark: null, status: 'open' };
-  const quote = { ticker: 'NVDA', last: 651.2, high: 653.8, low: 646.1, chgPct: 0.43 };
-  const posCalc = math.tradeCalc({ pos, rules, accountCents: 238000, quote });
-  const posCard = mod.positionFaceHtml(pos, posCalc, { quote });
-  const soldCard = mod.positionFaceHtml({ ...pos, status: 'closed', pnlCents: 2800, exitPrice: 651.2, closeNote: 'Out at the second target.' }, posCalc, {});
-  // The seven readings of the day bar, in one pass.
-  const bar = (state, real, gold = false) => mod.dayBarState({ state, realizedTodayCents: real }, gold);
-  const bars = {
-    stopLoss: bar('stop-loss', -12000), underNeg: bar('below-floor', -500), underPos: bar('below-floor', 500),
-    floor: bar('on-floor', 4000), aim: bar('on-aim', 8000), gold: bar('on-aim', 12000, true), cap: bar('stop-cap', 40000),
+  const rules = { riskPct: 3 };
+  const REC = {
+    id: 'r1', ticker: 'NVDA', side: 'long', horizon: 'intraday', instrument: 'stock', entryLow: 247.5, entryHigh: 248, entry: 247.75,
+    stop: 245.8, targets: [251, 253.5], holdMinutes: 180, allocPct: 40, profitLow: 56, profitHigh: 64, priceNow: 248.1, lastPrice: 248.1,
+    setup: 'Reclaimed VWAP on twice normal volume.', catalyst: 'Guide raised.', invalidation: 'Loses 246.', agreement: 3, status: 'open',
   };
-  // NEGATIVE CONTROL (run 2026-09-22): `var(--gold)` replaced by `#FFD166` on the target polyline made this read
-  //   FAIL  T34 the desk's view module RUNS: the chart is one SVG of five polylines with every colour a token and no hex, and says the aim in words; a play card leads with the ticker, the side, the kind and the odds, carries entry, target, stop and the risk in his dollars, hides the seven setup rows behind a tap, and offers Take it and Skip until it is taken, then Closed at; an expired card says so; a closed one reads its dollars; a position card carries its figures, its ladder and its edit grid, and a sold one says what it sold at; and the day bar answers with a colour, a glow and a word in all seven states
-  check('T34 the desk\'s view module RUNS: the chart is one SVG of five polylines with every colour a token and no hex, and says the aim in words; a play card leads with the ticker, the side, the kind and the odds, carries entry, target, stop and the risk in his dollars, hides the seven setup rows behind a tap, and offers Take it and Skip until it is taken, then Closed at; an expired card says so; a closed one reads its dollars; a position card carries its figures, its ladder and its edit grid, and a sold one says what it sold at; and the day bar answers with a colour, a glow and a word in all seven states',
-    /^<svg id="chart-svg" viewBox="0 0 340 190"/.test(svg.trim())
-    && (svg.match(/<polyline /g) || []).length === 5 && /stroke="var\(--gold\)"/.test(svg) && /fill="var\(--green\)"/.test(svg)
-    && !/#[0-9a-fA-F]{3,6}\b/.test(svg) && mod.deskChartSvg(null) === '' && mod.deskChartSvg({ points: [] }) === ''
-    && /against the 2% a day line/.test(svg) && /against the 2\.5% a day line/.test(svgAim)
-    // RE-PINNED 2026-09-22 (v6.7, Eric: "Make the plays fucking plain English. For example. 3
-    // hours, NVDA, $248, stop loss price, take profit price. If call, date strike expiration.").
-    // The face is his sentence and one line under it. The odds block, the two chips, the why line
-    // and all five cells are gone, because every one of them was a thing he had to translate.
-    && /<p class="plain">3 hours, buy \$419 of the NVDA 650\/655 call debit spread expiring 17 Oct, stop loss 1\.30, take profit 3\.40<\/p>/.test(card)
-    // RE-PINNED 2026-09-22 (v6.8, Eric: "Why is the confidence interval gone"): the chance is back
-    // top right in the kind colour on every card, and OUT of the small line, so it is said once and
-    // where he reads it. It is the only block back; the tags, cells and why line stay gone.
-    // NEGATIVE CONTROL (run 2026-09-22, v6.8): the odds span dropped from the head row made this read
-    //   FAIL  T34 the desk's view module RUNS: ...
-    // RE-PINNED 2026-09-22 (v6.11, Eric: "Stock names have disappeared"): the ticker leads the head
-    // row on every card, 20px bold at the left, with the chance at the right and the state word
-    // between when there is one. Nothing else comes back.
-    // NEGATIVE CONTROL (run 2026-09-22, v6.11): the tk span dropped from the head row made this read
-    //   FAIL  T34 the desk's view module RUNS: ...
-    && /<div class="head"><span class="tk">NVDA<\/span><span class="odds"><div class="k">Chance<\/div><div class="v">56 to 64%<\/div><\/span><\/div>\n\s+<p class="plain">/.test(card)
-    && /<p class="under over">Get in near 2\.10\. You lose about \$80\.00 if the stop hits\. That is more than the \$23\.80 you allow one trade\.<\/p>/.test(card)
-    && !/Chance of profit/.test(card)
-    && /<div class="head"><span class="tk">NVDA<\/span><span class="co">Expired<\/span><span class="odds">/.test(ranOut)
-    && !/class="tags"/.test(card) && !/class="cells"/.test(card) && !/class="why"/.test(card)
-    && /<p class="plain">3 hours, buy \$943 of NVDA, stop loss 226\.30, take profit 231\.50<\/p>/.test(stockCard)
-    && /You lose about \$10\.71 if the stop hits\./.test(stockCard) && !/ sh</.test(stockCard)
-    && /<p class="under over">/.test(overCard)
-    && ['Why', 'Catalyst', 'Bull', 'Bear', 'Levels', 'Risk', 'Watch', 'Overnight'].every((k) => card.includes(`<dt>${k}</dt>`))
-    && /648 · 650 · 652 · 655/.test(card) && /data-act="take"[^>]*>Take it</.test(card) && /data-act="skip">Skip</.test(card) && !/data-act="closed"/.test(card)
-    // RE-PINNED 2026-09-22 (v6.7): an expired setup has no Take it on it, because it is not a
-    // setup any more. It says Expired and waits in Recent.
-    // NEGATIVE CONTROL (run 2026-09-22, v6.7): the card's `&& !expired` dropped from `live`, so a
-    //   setup whose hour had gone still offered Take it, made this read
-    //   FAIL  T34 the desk's view module RUNS: ...
-    && /class="outlined play expired"/.test(expired) && />Expired</.test(expired) && !/data-act="take"/.test(expired)
-    && /class="outlined play expired"/.test(ranOut) && />Expired</.test(ranOut)
-    && !/data-act="take"/.test(ranOut) && !/data-act="skip"/.test(ranOut)
-    && />Taken</.test(took) && /data-act="closed">Closed at</.test(took)
-    && /Closed \+\$45\.00/.test(closedPlay) && !/data-act=/.test(closedPlay)
-    && /data-pos="t1"/.test(posCard) && /<span class="u up">\+\$28\.00<\/span>/.test(posCard) && /<span class="r">1\.9R<\/span>/.test(posCard)
-    && /<div class="v stop">646\.9<\/div>/.test(posCard) && /class="editgrid" hidden/.test(posCard) && /data-act="close">Close Position</.test(posCard)
-    && /class="outlined pos closed"/.test(soldCard) && /Out at the second target\./.test(soldCard) && !/data-act="close"/.test(soldCard)
-    && bars.stopLoss.fill === 'var(--red)' && /loss limit is hit/.test(bars.stopLoss.word)
-    && bars.underNeg.ink === 'var(--red)' && bars.underPos.ink === 'var(--dim)' && bars.underPos.glow === '0px'
-    && bars.floor.fill === 'var(--blue)' && bars.floor.word === 'On the floor'
-    && bars.aim.fill === 'var(--green)' && bars.aim.word === 'At the aim'
-    && bars.gold.fill === 'var(--gold)' && /Past the aim by a point/.test(bars.gold.word)
-    && bars.cap.fill === 'var(--gold)' && /cap is hit/.test(bars.cap.word)
-    && Object.values(bars).every((b) => b.fill && b.word && !DASH.test(b.word))
+  const text = (h) => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const card = mod.recCardHtml(REC, { accountCents: 245000, rules });
+  const live = mod.recCardHtml(REC, { accountCents: 245000, rules, quotes: { NVDA: { last: 249.3 } } });
+  const took = mod.recCardHtml({ ...REC, status: 'took', tookAt: '2026-09-23T16:02:00Z' }, { accountCents: 245000, rules });
+  const call = { ...REC, id: 'r2', ticker: 'AMD', horizon: 'scalp', instrument: 'call', strike: 170, expiry: '2026-10-16', entryLow: 2.05, entryHigh: 2.2, stop: 1.6, targets: [2.9], allocPct: 12, holdMinutes: 15, lastPrice: 168.4, priceNow: null };
+  const callCard = mod.recCardHtml(call, { accountCents: 245000, rules });
+  const dear = mod.recCardHtml({ ...call, allocPct: 5 }, { accountCents: 245000, rules });
+  const risky = mod.recCardHtml({ ...call, stop: 0.2, allocPct: 30 }, { accountCents: 245000, rules });
+  const noBal = mod.recCardHtml(REC, { accountCents: 0, rules, balanceTyped: false });
+  const swing = mod.recCardHtml({ ...REC, id: 'r3', horizon: 'swing', holdMinutes: null, holdDays: 3 }, { accountCents: 245000, rules });
+  const board = mod.boardHtml([{ ...REC, id: 'b1', horizon: 'swing' }, { ...REC, id: 'b2' }, { ...REC, id: 'b3', horizon: 'scalp' }, { ...REC, id: 'b4' }], { accountCents: 245000, rules });
+  const t = text(card);
+  // NEGATIVE CONTROL (run 2026-09-23): the Out if row dropped from recCardHtml's why list made this read
+  //   FAIL  T34 the desk's view module RUNS: ...
+  check('T34 the desk\'s view module RUNS: a trade reads ticker, Long or Short, its kind and its chance, then the price now, the entry zone, the dollars and shares his 3% rule and the desk\'s allocation allow, how long to hold, the stop, both targets, the risk and reward in dollars and the R:R, then the setup, the catalyst, what kills it and how many researchers agree, with YES under it; a live quote replaces the desk\'s price; a taken one is lit active with the time and PROFIT and LOSS in place of YES; a contract says Stock for the price, names the strike and the date and counts whole contracts; a contract his allocation cannot buy or his rule cannot carry says so in dollars; no balance says to set it; a swing holds in days; and the board groups scalp, intraday and swing in that order with a count, leaving out an empty kind',
+    // RE-PINNED 2026-09-23 (review): sized from the worst fill in the zone, $248.00 for this buy.
+    /^NVDA Long Intraday Chance 56 to 64% Now \$248\.10 Entry \$247\.50 to \$248\.00 Amount \$980 · 3\.9516 shares Hold 3 hours Stop \$245\.80 Targets \$251\.00 then \$253\.50 Risk \$8\.69 Reward \$11\.85 R:R 1 : 1\.36 Reclaimed VWAP on twice normal volume\. Catalyst Guide raised\. Out if Loses 246\. Desk 3 of 5 agree YES, I TOOK IT$/.test(t)
+    && /class="outlined rec" data-kind="intraday" data-rec="r1"/.test(card) && /data-act="take"/.test(card) && !/data-act="profit"/.test(card)
+    && /Now \$249\.30/.test(text(live))
+    && /class="outlined rec active"/.test(took) && /Active since 10:02 AM/.test(text(took))
+    && /data-act="profit">PROFIT</.test(took) && /data-act="loss">LOSS</.test(took) && !/data-act="take"/.test(took)
+    && /Stock \$168\.40/.test(text(callCard)) && /\$170\.00 call expiring 16 Oct\. Prices below are the premium per share\./.test(callCard)
+    && /Amount \$220 · 1 contract/.test(text(callCard))
+    && /One contract costs \$220, more than the \$123 set aside/.test(text(dear))
+    && /One contract risks \$200\.00, over your \$73\.50 rule/.test(text(risky))
+    && /Amount Set your balance in Settings/.test(text(noBal)) && !/Risk \$/.test(text(noBal))
+    && /Hold 3 days/.test(text(swing))
+    && board.indexOf('data-kind="scalp"') < board.indexOf('data-kind="intraday"') && board.indexOf('data-kind="intraday"') < board.indexOf('data-kind="swing"')
+    && /<h2 class="kindhead">Intraday<span class="n">2<\/span><\/h2>/.test(board) && (board.match(/class="kindgroup"/g) || []).length === 3
+    && !/data-kind="swing"/.test(mod.boardHtml([REC], { accountCents: 245000, rules }))
+    && ['playFaceHtml', 'positionFaceHtml', 'dayBarState', 'deskChartSvg', 'statsOverviewHtml', 'isQuestion', 'mergeStream', 'streamRowHtml', 'logLineFor', 'scanRunLine'].every((k) => !(k in mod))
     && !DASH.test(DESK),
-    card.slice(0, 160));
+    t.slice(0, 400));
 
-  const news = mod.newsRowHtml({ headline: 'Chips lead the open', source: 'Demo', at: new Date(Date.now() - 41 * 60_000).toISOString(), url: 'https://example.invalid/x', summary: 'The tape held its ranges.', related: ['NVDA', 'MU'] }, { onDesk: ['NVDA'] });
-  const plain = mod.newsRowHtml({ headline: 'Oil slips', source: 'Demo', at: new Date(Date.now() - 4 * 3600_000).toISOString(), related: [] }, { onDesk: [] });
-  const beat = mod.earningsChipHtml({ symbol: 'MU', hour: 'bmo', epsEstimate: 1.12, epsActual: 1.26 }, { onDesk: ['MU'] });
-  const miss = mod.earningsChipHtml({ symbol: 'NKE', hour: 'amc', epsEstimate: 0.7, epsActual: 0.4 }, { onDesk: [] });
-  const stats = math.tradeStats([
-    { id: 'a', pnlCents: 12000, horizon: 'intraday', riskCents: 1500, closedDay: '2026-09-14', closedAt: '2026-09-14T20:00:00Z' },
-    { id: 'b', pnlCents: -4400, horizon: 'scalp', riskCents: 4400, closedDay: '2026-09-15', closedAt: '2026-09-15T20:00:00Z' },
-    { id: 'c', pnlCents: 0, horizon: 'swing', riskCents: 3000, closedDay: '2026-09-16', closedAt: '2026-09-16T20:00:00Z' },
-    { id: 'd', pnlCents: 6200, horizon: 'intraday', riskCents: 1500, closedDay: '2026-09-17', closedAt: '2026-09-17T20:00:00Z' },
-  ], { today: '2026-09-22' });
-  const over = mod.statsOverviewHtml(stats);
-  const brk = mod.statsBreakdownHtml(stats, m, rules);
-  const closes = mod.statsClosesHtml(stats);
-  // NEGATIVE CONTROL (run 2026-09-22): the lit dot's class dropped from newsRowHtml made this read
-  //   FAIL  T52 the News and Stats markup RUNS: a headline on the desk lights its dot and gives its ticker a button, one that is not stays quiet; an earnings chip says pre or post and beat or miss; the overview leads with the win rate and the streak; the breakdown prints all three kinds, the five weekdays and the pace; and the closes page draws one bar and one row for each close, oldest bar on the left
-  check('T52 the News and Stats markup RUNS: a headline on the desk lights its dot and gives its ticker a button, one that is not stays quiet; an earnings chip says pre or post and beat or miss; the overview leads with the win rate and the streak; the breakdown prints all three kinds, the five weekdays and the pace; and the closes page draws one bar and one row for each close, oldest bar on the left',
-    /<span class="b lit"><\/span>/.test(news) && /data-tk="NVDA"/.test(news) && /<span class="chip">MU<\/span>/.test(news)
-    && /Demo · 41m/.test(news) && /class="sum">The tape held its ranges\./.test(news) && /<li class="has">/.test(news)
-    && /<li class="">/.test(plain) && !/lit/.test(plain) && /Demo · 4h/.test(plain)
-    && /MU/.test(beat) && /pre beat/.test(beat) && /data-tk="MU"/.test(beat)
-    && /post miss/.test(miss) && !/data-tk/.test(miss)
-    && /<div class="k">Win rate<\/div>/.test(over) && /67%/.test(over) && /2 W \/ 1 L \/ 1 flat/.test(over)
-    && /net \+\$138\.00/.test(over) && /longest 1W · 1L/.test(over) && /<h2>R<\/h2>/.test(over)
-    && ['scalp', 'intraday', 'swing'].every((k) => brk.includes(`<div class="k">${k}</div>`))
-    && (brk.match(/<div class="trk">/g) || []).length === 5 && /<h2>Pace<\/h2>/.test(brk) && /vs aim 2%/.test(brk)
-    && /Balance against the 2% line/.test(brk)
-    && /<h2>Last 4 closes<\/h2>/.test(closes) && (closes.match(/data-close="/g) || []).length === 8
-    && closes.indexOf('data-close="a"') < closes.indexOf('data-close="d"')
-    && !DASH.test(over) && !DASH.test(brk) && !DASH.test(closes),
-    over.slice(0, 120));
+  const hist = mod.historyRowHtml({ id: 'h1', ticker: 'QQQ', side: 'long', horizon: 'intraday', entryLow: 495.8, entryHigh: 496.3, stop: 494.8, targets: [498.1], setup: 'Trend day.', catalyst: 'Chips.', invalidation: 'Under 495.', result: 'profit', tookAt: '2026-09-22T15:00:00Z', closedAt: '2026-09-22T17:00:00Z' });
+  const histLoss = mod.historyRowHtml({ id: 'h2', ticker: 'SPY', side: 'short', horizon: 'scalp', result: 'loss', closedAt: '2026-09-22T17:00:00Z' });
+  const histNone = mod.historyRowHtml({ id: 'h3', ticker: 'TSLA', side: 'long', horizon: 'scalp', result: null, closedAt: '2026-09-22T17:00:00Z' });
+  const news = mod.newsRowHtml({ headline: 'Chips lead the open', source: 'Demo', at: new Date(Date.now() - 41 * 60_000).toISOString(), url: 'https://example.invalid/x', summary: 'The tape held its ranges.', onDesk: ['NVDA'] });
+  const quiet = mod.newsRowHtml({ headline: 'Oil slips', source: 'Demo', at: new Date(Date.now() - 4 * 3600_000).toISOString(), onDesk: [] });
+  const flagged = mod.deskNewsHtml({ headline: 'Micron beats', why: 'Chips move on it.', tickers: ['MU', 'NVDA'] });
+  const bmo = mod.earningsChipHtml({ symbol: 'MU', hour: 'bmo', onDesk: true });
+  const amc = mod.earningsChipHtml({ symbol: 'NKE', hour: 'amc', onDesk: false });
+  // RE-PINNED 2026-09-23 (PR 420): Stats is gone (Eric: "NO performance graphs"). News and History are the
+  // two lists left, and each row says what it is at a glance.
+  // NEGATIVE CONTROL (run 2026-09-23): historyRowHtml's LOSS tag answered as PROFIT made this read
+  //   FAIL  T52 the News and History markup RUNS: ...
+  check('T52 the News and History markup RUNS: a closed trade reads its day, the ticker, the side and the kind with PROFIT, LOSS or Closed, and folds out the plan it was taken on with the setup, the catalyst, what killed it and both times; a headline on the board lights its dot and chips its ticker, one that is not stays quiet, and its summary folds out with the link; the desk\'s own item carries why it matters and its tickers; an earnings chip says before the open or after the close and lights when it is on the board',
+    /<span class="res profit">PROFIT<\/span>/.test(hist) && /<b>QQQ<\/b> Long · Intraday/.test(hist)
+    && /Entry \$495\.80 to \$496\.30, stop \$494\.80, targets \$498\.10\./.test(hist) && /Trend day\./.test(hist) && /Out if<\/span> Under 495\./.test(hist)
+    && /Taken Sep 22 9:00 AM\. Closed Sep 22 11:00 AM\./.test(text(hist))
+    && /<span class="res loss">LOSS<\/span>/.test(histLoss) && /Short · Scalp/.test(histLoss) && /<span class="res none">Closed<\/span>/.test(histNone)
+    && /<span class="b lit"><\/span>/.test(news) && /chip neon c-blue">NVDA</.test(news) && /class="sum">The tape held its ranges\. <a href="https:\/\/example\.invalid\/x"/.test(news)
+    && /Demo · 41m ago/.test(news) && /<li class="has">/.test(news)
+    && /<span class="b"><\/span>/.test(quiet) && !/lit/.test(quiet) && /<li class="">/.test(quiet)
+    && /<li class="dnews"><div class="t">Micron beats<\/div><div class="why">Chips move on it\.<\/div>/.test(flagged) && (flagged.match(/class="chip"/g) || []).length === 2
+    && /MU <span class="dim">before open<\/span>/.test(bmo) && /chip neon c-blue/.test(bmo) && /after close/.test(amc) && !/neon/.test(amc)
+    && ![hist, histLoss, news, flagged, bmo].some((h) => DASH.test(h)),
+    text(hist).slice(0, 200));
 
-  const qs = ['Is 652 real?', 'Is it real?  ', 'Really? ', '"Is it?"', 'Is it?)', 'Is it?]', 'Is it? ', 'Worth it?'];
-  const nots = ['NVDA long 10 at 648.4', 'Why not. I took it', '', '   ', 'A question mark? no, wait.', '?'];
-  const merged = mod.mergeStream(
-    [{ id: 'm1', ts: '2026-09-22T15:10:00Z', text: 'NVDA long 10 at 648.4.' }, { id: 'm2', ts: '2026-09-22T15:40:00Z', text: 'Out at 651.' }],
-    [{ id: 'q1', at: '2026-09-22T15:31:00Z', question: 'Is 652 a real level?', answer: '652 is the prior high.', status: 'done', doc: { name: 'NVDA 652.pdf', url: 'https://x.invalid/a.pdf' } }],
-    [{ id: 'local-1', at: Date.parse('2026-09-22T15:50:00Z'), text: 'What is the risk here?' }],
-  );
-  const dupe = mod.mergeStream([], [{ id: 'q1', at: '2026-09-22T15:31:00Z', question: 'Same one?', status: 'done', answer: 'Yes.' }], [{ id: 'local-2', at: Date.now(), text: 'Same one?' }]);
-  const logRow = mod.streamRowHtml(merged[0]);
-  const answered = mod.streamRowHtml(merged[1], { md: (t) => `<p>${t}</p>` });
-  const thinking = mod.streamRowHtml(merged[3]);
-  const stalled = mod.streamRowHtml(merged[3], { stalled: true });
-  const line = mod.logLineFor({ ticker: 'NVDA', side: 'long', instrument: 'stock', qty: 10, entry: 648.4, stop: 646.9 }, 2800, 651.2);
-  const lossLine = mod.logLineFor({ ticker: 'TSLA', side: 'short', instrument: 'stock', qty: 25, entry: 412.1, stop: null }, -4500, '');
-  // NEGATIVE CONTROL (run 2026-09-22): mergeStream's `qaRows.some(...)` guard replaced by `if (false)` made this read
-  //   FAIL  T53 the stream RUNS: a line ending in a question mark is a question whatever closes after it, a line that does not is a log line, an empty box is neither; the log, the questions and a question still in the air merge by the clock with the unstamped one at the end and no double when the server has it; his lines are blue and named, the desk's green, a waiting one shows the dots and a stalled one says to ask again; and a close writes the log line the reading grades from
-  check('T53 the stream RUNS: a line ending in a question mark is a question whatever closes after it, a line that does not is a log line, an empty box is neither; the log, the questions and a question still in the air merge by the clock with the unstamped one at the end and no double when the server has it; his lines are blue and named, the desk\'s green, a waiting one shows the dots and a stalled one says to ask again; and a close writes the log line the reading grades from',
-    qs.every((t) => mod.isQuestion(t)) && nots.slice(0, 5).every((t) => !mod.isQuestion(t)) && mod.isQuestion('?') === true
-    && merged.length === 4 && merged.map((r) => r.kind).join() === 'log,question,log,question'
-    && merged[0].id === 'm1' && merged[1].id === 'q1' && merged[2].id === 'm2'
-    && merged[3].id === 'local-1' && merged[3].status === 'running' && merged[3].local === true
-    && dupe.length === 1 && dupe[0].id === 'q1'
-    && /class="msg you"/.test(logRow) && /<span class="who fl">You<\/span>/.test(logRow) && !/class="tag"/.test(logRow)
-    && /<span class="tag">Ask<\/span>/.test(answered) && /class="msg desk latest"/.test(answered) && /<p>652 is the prior high\.<\/p>/.test(answered)
-    && /data-file="https:\/\/x\.invalid\/a\.pdf"/.test(answered)
-    && /class="msg desk think"/.test(thinking) && /<i><\/i><i><\/i><i><\/i>/.test(thinking)
-    && /No answer came back\. Ask it again\./.test(stalled)
-    && line === 'NVDA long 10 shares at 648.4, stop 646.9. Out at 651.2, plus 28.00.'
-    && lossLine === 'TSLA short 25 shares at 412.1. minus 45.00.'
-    && !DASH.test(line) && !DASH.test(lossLine),
-    JSON.stringify({ merged: merged.map((r) => r.id), line }));
+  const PAGE = f('public/admin-desk.html');
+  const APP = f('public/js/admin-deskapp.js');
+  // RE-PINNED 2026-09-23 (PR 420, Eric: "NO CHAT"): the stream, the composer, the question mark rule and
+  // the reading drawer are gone. What stands here is that none of them came back, on the page or in the
+  // app, and that the app asks nothing and posts to no question or log route.
+  // NEGATIVE CONTROL (run 2026-09-23): `<textarea id="say"></textarea>` added back to the page made this read
+  //   FAIL  T53 the stream is gone: ...
+  check('T53 the stream is gone: the page has no composer, no text box, no stream and no reading, the app writes no log line, asks no question, reads no Firestore and imports none of the old pieces, and its only writes are run, take, result, balance, settings and open',
+    !/<textarea|id="composer"|id="stream"|id="drawer"|id="say"|data-page="desk"|data-page="plays"|data-page="positions"|data-page="stats"/.test(PAGE)
+    && !/firebase\.js|onSnapshot|addDoc|advisor\/ask|advisor\/state|isQuestion|mergeStream|md\(|splitPages|confirm\(/.test(APP)
+    && (APP.match(/call\('(\w+)', \{/g) || []).map((x) => x.slice(6, -4)).every((sub) => ['run', 'take', 'result', 'balance', 'settings'].includes(sub))
+    && /fetch\('\/api\/admin\/trade\/open'/.test(APP),
+    JSON.stringify((APP.match(/call\('(\w+)', \{/g) || [])));
 }
 
 // ---- T54: the effects, as pure functions (2026-09-22, the desk as one app) ------------------
@@ -1118,8 +1126,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const shake = [0, 50, 200, 400].map((t) => fx.shakeAt('profit', t));
   const sweep = [0, 320, 640, 1000].map((t) => fx.sirenSweeps(t, { width: 390 }));
   // NEGATIVE CONTROL (run 2026-09-22): `aim + point` loosened to `aim` in targetState's gold arm made this read
-  //   FAIL  T54 the effects RUN: the plan is three answers and no fourth, a count lands exactly on the figure and is one frame when there is no time to spend, a burst is seeded so the same close flies twice the same way and a different seed does not, a coin's arc leaves, rises and lands, the shake dies out inside a third of a second, the siren sweeps three passes and stops, the coins are eight at the least and eighteen at the most, and the line goes green at the aim and gold a whole point past it
-  check('T54 the effects RUN: the plan is three answers and no fourth, a count lands exactly on the figure and is one frame when there is no time to spend, a burst is seeded so the same close flies twice the same way and a different seed does not, a coin\'s arc leaves, rises and lands, the shake dies out inside a third of a second, the siren sweeps three passes and stops, the coins are eight at the least and eighteen at the most, and the line goes green at the aim and gold a whole point past it',
+  //   FAIL  T54 the effects RUN: ...
+  // RE-PINNED 2026-09-23 (PR 420): the close effects became PROFIT and LOSS on a taken trade. The pure
+  // half is unchanged; the browser half has one loud method, result(), whose coins fly to the History
+  // tab, and nothing left that reached for the old balance figures or the chart.
+  // NEGATIVE CONTROL (run 2026-09-23): the app's `fx.result(kind, {` call changed to `fx.plan(kind, {` made this read
+  //   FAIL  T54 the effects RUN: ...
+  check('T54 the effects RUN: the plan is three answers and no fourth, a count lands exactly on the figure and is one frame when there is no time to spend, a burst is seeded so the same close flies twice the same way and a different seed does not, a coin\'s arc leaves, rises and lands, the shake dies out inside a third of a second, the siren sweeps three passes and stops, the coins are eight at the least and eighteen at the most, and the line goes green at the aim and gold a whole point past it; PROFIT and LOSS play through one result() whose coins fly to History, and nothing reaches for the old figures or the chart',
     off.off === true && off.numberOnly === true && off.flashMs === 0
     && reduced.off === false && reduced.numberOnly === true && reduced.coins === false && reduced.siren === false && reduced.countMs === 0
     && full.numberOnly === false && full.coins === true && full.siren === false && full.shake === true && full.depth === true
@@ -1142,90 +1155,88 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && fx.targetState({ realizedTodayCents: 7140, aimCents: 4760, accountCents: 238000 }) === 'gold'
     && fx.targetState({}) === 'none'
     && typeof fx.createFx === 'function' && typeof fx.seedFlicker === 'function'
+    && /function result\(kind, \{ from \} = \{\}\) \{/.test(FXSRC) && /\$\('#bar \[data-page="history"\]'\)/.test(FXSRC)
+    && /return \{ result, applyReduce, plan, kick: ambientKick, start\(\) \{/.test(FXSRC)
+    && !/#day-real|#big|#chart-svg|#last-dot|bar-badge|function profit\(|function loss\(|function targetLine\(/.test(FXSRC)
+    && /const hold = fx\.result\(kind, \{ from: \{ x: r\.left \+ r\.width \/ 2, y: r\.top \+ r\.height \/ 2 \} \}\);/.test(APP)
     && !DASH.test(FXSRC) && !DASH.test(APP),
     JSON.stringify({ frames: frames.length, burst: burst.length, sweep: sweep.map((x) => (x ? x.pass : null)) }));
 }
 
-// ---- T55: the three read routes and the morning reading RUN --------------------------------
+// ---- T55: the read routes RUN (PR 420) --------------------------------------------------------
 {
   const nowMs = at('2026-09-22T16:00:00Z');
-  const settings = { caseId: 'c1', startedAt: '2026-08-31', startCents: 200000, accountType: 'cash', finnhubKey: 'abcdefghijklmnop1234' };
-  const closedRows = [
-    { id: 'z1', data: { ticker: 'NVDA', side: 'long', instrument: 'stock', horizon: 'intraday', qty: 10, entry: 648.4, status: 'closed', closedDay: '2026-09-18', closedAt: '2026-09-18T20:00:00Z', pnlCents: 12000, riskCents: 1500 } },
-    { id: 'z2', data: { ticker: 'TSLA', side: 'short', instrument: 'stock', horizon: 'scalp', qty: 25, entry: 412.1, status: 'closed', closedDay: '2026-09-19', closedAt: '2026-09-19T20:00:00Z', pnlCents: -4400, riskCents: 4400 } },
-    { id: 'z3', data: { ticker: 'AMD', side: 'long', instrument: 'stock', horizon: 'swing', qty: 60, entry: 160.2, status: 'open' } },
+  const settings = { caseId: 'c1', accountType: 'cash', finnhubKey: 'abcdefghijklmnop1234' };
+  const sec = Math.floor(nowMs / 1000);
+  const FEED = [
+    { headline: 'Nvidia raises guidance', source: 'A', datetime: sec - 600, related: 'NVDA', summary: 'Up.' },
+    { headline: 'Fed minutes show a split on cuts', source: 'B', datetime: sec - 1200, related: '' },
+    { headline: 'Celebrity chef opens a restaurant', source: 'C', datetime: sec - 300, related: '' },
+    { headline: 'Old story on NVDA', source: 'D', datetime: sec - 30 * 3600, related: 'NVDA' },
   ];
+  const CAL = { earningsCalendar: [{ symbol: 'NVDA', hour: 'amc' }, { symbol: 'BIG', hour: 'bmo', revenueEstimate: 9e9 }, { symbol: 'TINY', hour: 'bmo', revenueEstimate: 1e8 }] };
+  const feedFetch = (w) => async (url) => {
+    w.fetches.push(String(url));
+    const body = /\/news\?/.test(url) ? FEED : /\/calendar\/earnings/.test(url) ? CAL : {};
+    return { ok: true, status: 200, json: async () => body };
+  };
   const mk = (over = {}) => {
-    const { w, api } = world();
+    const box = { fetches: [] };
+    const { w, api } = world({ deps: { fetch: feedFetch(box) } });
+    w.fetches = box.fetches;
     w.docs.set('trade/settings', { data: { ...settings, ...(over.settings || {}) } });
-    w.listed['trade/balances/items'] = [{ id: '2026-09-21', data: { date: '2026-09-21', cents: 238000 } }];
-    w.listed['trade/positions/items'] = over.positions || closedRows;
-    w.listed['trade/plays/items'] = over.plays || [{ id: 'p1', data: { ticker: 'NVDA', status: 'open' } }];
-    w.listed['cases/c1/advisor/state/qa'] = over.qa || [
-      { id: 'q1', data: { question: 'Is 652 real?', answer: 'It is the prior high.', status: 'done', at: '2026-09-22T15:31:00Z', fileRef: { path: 'secret' } } },
+    w.docs.set('trade/state', { data: { activeIds: ['t1'], desk: { ids: ['a1'], at: new Date(nowMs - 3600_000), news: [{ headline: 'Desk item', why: 'Moves chips.', tickers: ['NVDA'] }] } }, updateTime: 'T1' });
+    w.docs.set('trade/plays/items/a1', { data: { ticker: 'NVDA', status: 'open' } });
+    w.docs.set('trade/plays/items/t1', { data: { ticker: 'AMD', status: 'took' } });
+    w.listed['trade/plays/items'] = over.plays || [
+      { id: 'h2', data: { ticker: 'SPY', side: 'long', horizon: 'scalp', status: 'closed', result: 'loss', closedAt: new Date('2026-09-21T18:00:00Z') } },
+      // RE-PINNED 2026-09-23 (review): one trade, logged as a position on the old page and later marked closed
+      // as a play too, is History's once, by its position.
+      // NEGATIVE CONTROL (run 2026-09-23): tradeHistory's `&& !(r.data?.positionId && logged.has(r.data.positionId))` removed made this read
+      //   FAIL  T55 the read routes RUN: ...
+      { id: 'dup', data: { ticker: 'TSLA', side: 'short', horizon: 'scalp', status: 'closed', outcomeCents: 5750, positionId: 'z1', closedAt: new Date('2026-09-15T16:00:00Z') } },
+      { id: 'o1', data: { ticker: 'NVDA', status: 'open' } },
+      { id: 'h1', data: { ticker: 'QQQ', side: 'long', horizon: 'intraday', status: 'closed', result: 'profit', closedAt: new Date('2026-09-22T15:00:00Z') } },
+    ];
+    w.listed['trade/positions/items'] = over.positions || [
+      { id: 'z1', data: { ticker: 'TSLA', side: 'short', horizon: 'scalp', status: 'closed', pnlCents: 5750, entry: 412.1, target: 405, note: 'Covered.', openedAt: new Date('2026-09-15T15:00:00Z'), closedAt: new Date('2026-09-15T16:00:00Z') } },
+      { id: 'z2', data: { ticker: 'AMD', status: 'open' } },
     ];
     return { w, api };
   };
-  const newsWorld = mk();
-  const news = await newsWorld.api.tradeNews(env, { now: nowMs });
-  const cached = await newsWorld.api.tradeNews(env, { now: nowMs + 1000 });
+  const nw = mk();
+  const news = await nw.api.tradeNews(env, { now: nowMs });
+  const again = await nw.api.tradeNews(env, { now: nowMs + 1000 });
   const noKey = await mk({ settings: { finnhubKey: '' } }).api.tradeNews(env, { now: nowMs });
-  const history = await mk().api.tradeHistory(env, { now: nowMs });
-  const qa = await mk().api.tradeQa(env, {});
-  const capped = await mk().api.tradeQa(env, { n: 200 });
-  let noDesk = '';
-  try { await mk({ settings: { caseId: null } }).api.tradeQa(env, {}); } catch (e) { noDesk = e.message; }
-  const live = mk();
-  const positions = await live.api.tradePositions(env, { now: nowMs });
-  const typedToday = mk();
-  typedToday.w.listed['trade/balances/items'] = [{ id: '2026-09-22', data: { date: '2026-09-22', cents: 238000 } }];
-  const typedRows = [...closedRows, { id: 'z4', data: { ticker: 'SPY', side: 'long', instrument: 'stock', horizon: 'scalp', qty: 10, entry: 571.2, status: 'closed', closedDay: '2026-09-22', closedAt: '2026-09-22T19:00:00Z', pnlCents: 5000, riskCents: 1200 } }];
-  typedToday.w.listed['trade/positions/items'] = typedRows;
-  const afterTyped = await typedToday.api.tradePositions(env, { now: nowMs });
-  const beforeTyped = mk({ positions: typedRows });
-  const untyped = await beforeTyped.api.tradePositions(env, { now: nowMs });
-  // The one reading the cron books: inside the window, once, and never on a day the market is shut.
-  const morn = (over = {}) => {
-    const { w, api } = world();
-    w.docs.set('trade/settings', { data: settings });
-    if (over.state) w.docs.set('trade/state', { data: over.state, updateTime: 'u1' });
-    if (over.claim === false) w.claim = false;
-    return { w, api };
-  };
-  const early = morn({ state: { scanStatus: 'idle' } });
-  const ranEarly = await early.api.maybeMorningRead(env, { now: at('2026-09-22T13:10:00Z') });
-  const first = morn();
-  const ranFirst = await first.api.maybeMorningRead(env, { now: at('2026-09-22T13:10:00Z') });
-  const late = await morn().api.maybeMorningRead(env, { now: at('2026-09-22T14:40:00Z') });
-  const weekend = await morn().api.maybeMorningRead(env, { now: at('2026-09-20T13:10:00Z') });
-  const twice = await morn({ state: { morningDay: '2026-09-22' } }).api.maybeMorningRead(env, { now: at('2026-09-22T13:10:00Z') });
-  const raced = await morn({ claim: false, state: { scanStatus: 'idle' } }).api.maybeMorningRead(env, { now: at('2026-09-22T13:10:00Z') });
-  // NEGATIVE CONTROL (run 2026-09-22): `liveCents` on the positions route changed to the bare accountCents made this read
-  //   FAIL  T55 the three read routes and the morning reading RUN: News answers off the cached feeds and counts them in the quote budget, lights the tickers he is in and answers without a key rather than failing; Stats reads every close newest first with the statistics computed by the shared arithmetic; the stream's list strips the file reference and caps at forty and refuses with no desk; the big number is the last typed balance plus today's closes until tonight's entry carries them itself; and the 7:00 reading books once inside its window, never twice, never on a day the market is shut, and never against another isolate that got there first
-  check('T55 the three read routes and the morning reading RUN: News answers off the cached feeds and counts them in the quote budget, lights the tickers he is in and answers without a key rather than failing; Stats reads every close newest first with the statistics computed by the shared arithmetic; the stream\'s list strips the file reference and caps at forty and refuses with no desk; the big number is the last typed balance plus today\'s closes until tonight\'s entry carries them itself; and the 7:00 reading books once inside its window, never twice, never on a day the market is shut, and never against another isolate that got there first',
-    news.hasKey === true && news.headlines.length === 1 && news.headlines[0].headline === 'Chips lead the open'
-    && news.earnings.length === 1 && news.earnings[0].symbol === 'ORCL' && news.earnings[0].hour === 'amc'
-    && news.onDesk.includes('NVDA') && news.onDesk.includes('AMD') && !news.onDesk.includes('TSLA')
-    && news.closeAt === K.MARKET_CLOSE && news.today === '2026-09-22' && news.throttled === false
-    && newsWorld.w.fetches.filter((u) => /\/news\?/.test(u)).length === 1
-    && cached.headlines.length === 1 && newsWorld.w.fetches.filter((u) => /\/news\?/.test(u)).length === 1
-    && noKey.hasKey === false && noKey.headlines.length === 0 && noKey.earnings.length === 0
-    && history.count === 2 && history.capped === false && K.HISTORY_MAX === 500
-    && history.closed.every((r) => r.status === 'closed') && history.stats.count === 2
-    && history.stats.wins === 1 && history.stats.losses === 1 && history.stats.netCents === 7600
-    && history.rules.dayAimPct === 2 && history.accountCents === 238000 && history.today === '2026-09-22'
-    && qa.qa.length === 1 && qa.qa[0].question === 'Is 652 real?' && qa.qa[0].fileRef === undefined
-    && capped.qa.length === 1 && K.QA_LIST_MAX === 40 && noDesk === K.SAY.noDesk
-    && positions.liveCents === 238000 && positions.lastBalanceDay === '2026-09-21'
-    && untyped.liveCents === 243000 && untyped.lastBalanceDay === '2026-09-21'
-    && afterTyped.liveCents === 238000 && afterTyped.lastBalanceDay === '2026-09-22'
-    && ranEarly.ran === true && early.w.pending.some((r) => r.kind === 'case' && r.id === 'c1')
-    && early.w.patches.some((p) => p.path === 'trade/state' && p.data.morningDay === '2026-09-22' && p.opts?.ifUpdateTime === 'u1')
-    && ranFirst.ran === true && first.w.patches.some((p) => p.path === 'trade/state' && p.opts?.mustNotExist === true)
-    && K.MORNING_MIN === 420 && K.MORNING_WINDOW_MIN === 30
-    && late.ran === false && weekend.ran === false && twice.ran === false && raced.ran === false
-    && [late.why, weekend.why, twice.why, raced.why].join() === 'not the hour,not a trading day,already read,another isolate booked it',
-    JSON.stringify({ news: news.headlines.length, hist: history.count, live: [positions.liveCents, untyped.liveCents, afterTyped.liveCents], morn: [ranEarly.ran, late.why, weekend.why, twice.why, raced.why] }));
+  const history = await mk().api.tradeHistory(env);
+  const off = mk();
+  let offErr = null;
+  try { await off.api.tradeRoute(env, { sub: 'research', method: 'GET', now: nowMs }); } catch (e) { offErr = e; }
+  const on = mk({ settings: { debugResearch: true } });
+  on.w.docs.set('trade/research', { data: { runId: 'run-1', at: new Date(nowMs - 60_000), r1: { status: 'ok', text: 'Tape firm.', ms: 90000 }, r3: { status: 'failed', err: 'timeout' } } });
+  const research = await on.api.tradeRoute(env, { sub: 'research', method: 'GET', now: nowMs });
+  // RE-PINNED 2026-09-23 (PR 420, Eric: "Only include news that is likely to affect trading decisions.
+  // Prioritize relevance over volume."): News keeps what names a ticker on the board or moves the whole
+  // tape and drops the rest; the desk's own flagged items lead; History is his closed trades, the desk's
+  // and the ones he logged by hand before, and nothing else; the stream's list, Stats, the positions and
+  // the morning reading left with their pages (the 7:00 run is desk-run.js's, pinned in desk.mjs D18).
+  // NEGATIVE CONTROL (run 2026-09-23): relevantNews' `.filter((n) => n.score > 0)` removed made this read
+  //   FAIL  T55 the read routes RUN: ...
+  check('T55 the read routes RUN: News leads with the desk\'s own items, keeps a headline that names a ticker on the board or moves the whole tape and drops a celebrity story and a day old one, keeps earnings for the board and for a company big enough to move the index, answers off the cached feed the second time, and without a key still shows the desk\'s items; History is every closed trade newest first with PROFIT or LOSS, the old logged positions read the same way, and nothing open; the research is a 404 until the debug switch is on and then the five reports; and the stream, Stats, positions and the morning reading are gone',
+    news.desk.length === 1 && news.desk[0].headline === 'Desk item' && news.tickers.join() === 'AMD,NVDA'
+    && news.headlines.map((h) => h.headline).join('|') === 'Nvidia raises guidance|Fed minutes show a split on cuts'
+    && news.headlines[0].onDesk.join() === 'NVDA' && news.headlines[1].onDesk.length === 0
+    && news.earnings.map((e) => e.symbol).join() === 'NVDA,BIG' && news.earnings[0].onDesk === true && news.earnings[1].onDesk === false
+    && again.headlines.length === 2 && nw.w.fetches.filter((u) => /\/news\?/.test(u)).length === 1
+    && noKey.hasKey === false && noKey.headlines.length === 0 && noKey.desk.length === 1
+    && history.rows.map((r) => r.id).join() === 'h1,h2,z1' && history.count === 3 && K.HISTORY_MAX === 200
+    && history.rows[0].result === 'profit' && history.rows[1].result === 'loss' && history.rows[2].result === 'profit' && history.rows[2].source === 'logged'
+    && history.rows[2].side === 'short' && history.rows[2].setup === 'Covered.' && history.rows.every((r) => r.status === 'closed')
+    && offErr?.status === 404
+    && research.runId === 'run-1' && research.reports.length === 5 && research.reports[0].text === 'Tape firm.' && research.reports[2].status === 'failed'
+    && research.reports[1].status === 'missing'
+    && ['tradeQa', 'tradePositions', 'tradeStats', 'maybeMorningRead', 'maybeCollectScan', 'QA_LIST_MAX'].every((k) => K[k] === undefined),
+    JSON.stringify({ desk: news.desk.length, headlines: news.headlines.map((h) => h.headline), earnings: news.earnings.map((e) => e.symbol), history: history.rows.map((r) => [r.id, r.result]) }));
 }
 
 
@@ -1233,57 +1244,56 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
 {
   const gate = (W.match(/const ADMIN_ASSET =\n\s+(\/.*\/);/) || [])[1];
   const ADMIN_ASSET = gate ? new Function(`return ${gate};`)() : null;
-  const mirror = D.slice(D.indexOf('the trade desk (2026-09-21; a case file since 2026-09-22)'), D.indexOf('the advisor, from a fixture'));
-  // RE-PINNED 2026-09-22 (v6.13): lookLong and lookNoCtx join the three the demo cannot
-  // reach. A look in the demo lands on its own timer inside the page, so it is never
-  // stopped at its budget and there is no invocation to be missing a ctx from. Every
-  // other sentence the Worker can say, the demo says word for word.
+  const mirror = D.slice(D.indexOf('PR 420, the trading desk (2026-09-23)'), D.indexOf('the advisor, from a fixture'));
+  // RE-PINNED 2026-09-23 (PR 420): every sentence the new routes can answer with, the demo answers with
+  // word for word. The ones it cannot reach are the engine's own (a run that died, fewer than two
+  // researchers back), a lost write race, and the two refusals the folder makes, not the desk.
   const sentences = Object.entries(K.SAY)
-    .filter(([k]) => !['notFound', 'noNext', 'noPull', 'lookLong', 'lookNoCtx'].includes(k)).map(([, v]) => v);
+    .filter(([k]) => ['notFound', 'deskOpen', 'badDate', 'badCents', 'badKey', 'badAccount', 'badWatchlist', 'badTicker', 'noDesk', 'noQuoteKey', 'quoteMany', 'runStalled', 'noRec', 'notOpen', 'notTaken', 'badResult', 'badRisk'].includes(k))
+    .map(([, v]) => v);
   const pages = ['admin', 'admin-calendar', 'admin-chats', 'admin-availability', 'admin-dictionary', 'admin-case', 'admin-desk'];
-  const seedDesk = SEED.slice(SEED.indexOf('the trade desk (2026-09-21; a case file since 2026-09-22)'));
+  const seedDesk = SEED.slice(SEED.indexOf('PR 420, the trading desk (2026-09-23)'));
   // NEGATIVE CONTROL (run 2026-09-22): '/js/admin-desk.js' removed from the audit's ADMIN_ASSETS made this read
-  //   FAIL  T35 the portal page and its module are gone and no admin page links them; the six pages ask for the stylesheet at its new version; the audit proves the desk's module 404s to a stranger and no longer names the page; the sideways drive walks the desk's case; the asset gate covers admin-desk.js and not trade.js; the demo seeds the desk as a self and trade case with its log, its reading, its plays with their setups, typed balances, two trading terms and its cover, mirrors open with the open desk's id, the state, the desk's block, the trading half of the glossary, the Logged sentence, the refusals and the clearing on delete, keeps its desk off the client half, and refuses with the Worker's exact sentences
-  check('T35 the portal page and its module are gone and no admin page links them; the six pages ask for the stylesheet at its new version; the audit proves the desk\'s module 404s to a stranger and no longer names the page; the sideways drive walks the desk\'s case; the asset gate covers admin-desk.js and not trade.js; the demo seeds the desk as a self and trade case with its log, its reading, its plays with their setups, typed balances, two trading terms and its cover, mirrors open with the open desk\'s id, the state, the desk\'s block, the trading half of the glossary, the Logged sentence, the refusals and the clearing on delete, keeps its desk off the client half, and refuses with the Worker\'s exact sentences',
+  //   FAIL  T35 the portal page and its module are gone ...
+  // RE-PINNED 2026-09-23 (PR 420): the demo mirrors the new routes and walks a run through its stages on
+  // a timer, and the seed is the new board: the last run's trades, one he took, a history marked PROFIT
+  // and LOSS, the research behind the debug switch, and his 3% rule. The log, the reading, the positions,
+  // the stats and the scan are gone from both.
+  // NEGATIVE CONTROL (run 2026-09-23): the demo's `badRisk` sentence reworded to 'Risk per trade: 0.1 to 5 percent.' made this read
+  //   FAIL  T35 the portal page and its module are gone ...
+  check('T35 the portal page and its module are gone and no admin page links them; the seven pages ask for the stylesheet at its new version; the audit proves the desk\'s page and three modules 404 to a stranger; the sideways drive walks the desk; the asset gate covers the desk\'s files and not the shared arithmetic; the demo mirrors the board, a run that walks its stages, YES, PROFIT and LOSS, History, News, the research behind its switch, the balance and the settings, refuses with the Worker\'s exact sentences, seeds the new board with his 3% rule, keeps its desk off the client half, and carries no log, reading, positions, stats or scan',
     !has('public/admin-trade.html') && !has('public/js/admin-trade.js')
-    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat116/.test(f(`public/${p}.html`)))
-    // RE-PINNED 2026-09-22 (v6.0): the desk's page, its app and its effects are all gated by name,
-    // and all three are named in the audit's own lists so the 404 is proved rather than assumed.
+    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat117/.test(f(`public/${p}.html`)))
     && ['/js/admin-desk.js', '/js/admin-deskapp.js', '/js/admin-deskfx.js'].every((x) => AUDIT.includes(`'${x}'`))
     && /'\/admin-desk',/.test(AUDIT) && !/admin-trade/.test(AUDIT)
     && /'\/admin-desk\.html\?id=demo-case-trade&demo=admin'/.test(NOSIDE) && !/admin-trade/.test(NOSIDE)
     && !!ADMIN_ASSET && ADMIN_ASSET.test('/js/admin-desk.js') && ADMIN_ASSET.test('/js/admin-deskapp.js') && ADMIN_ASSET.test('/js/admin-deskfx.js')
     && ADMIN_ASSET.test('/admin-desk.html') && ADMIN_ASSET.test('/admin-desk')
     && ADMIN_ASSET.test('/js/advisor.js') && !ADMIN_ASSET.test('/js/trade.js') && !ADMIN_ASSET.test('/js/trade-math.js') && !ADMIN_ASSET.test('/js/textpdf.js')
-    // The three routes the new pages read, mirrored, and the big number after a close.
-    && /if \(sub === 'news' && init\.method !== 'POST'\)/.test(mirror) && /if \(sub === 'history' && init\.method !== 'POST'\)/.test(mirror) && /if \(sub === 'qa' && init\.method !== 'POST'\)/.test(mirror)
-    && /liveCents: liveBalance\(\{ accountCents, lastBalanceDay: account\.day, todayKey: todayMT, realizedTodayCents: realized \}\),/.test(mirror)
-    && /reduceFx: s\.reduceFx === true,/.test(D) && /stats: tradeStats\(rows, \{ today: todayMT \}\),/.test(mirror)
+    && ['state', 'history', 'news', 'quote', 'research'].every((sub) => mirror.includes(`if (sub === '${sub}' && init.method !== 'POST')`))
+    && ['open', 'balance', 'settings', 'take', 'result', 'run'].every((sub) => mirror.includes(`if (sub === '${sub}') {`))
+    && /status: 'researching', startedAt: new Date\(\), done: 0/.test(mirror) && /put\(\{ status: 'deciding' \}\)/.test(mirror)
+    && /if \(BUSY_RUN\.includes\(st0\.run\?\.status\)\) return ok\(\{ ok: true, already: true/.test(mirror)
+    && /if \(settings\(\)\.debugResearch !== true\) return fail\(404, SAY\.notFound\);/.test(mirror)
+    && /if \(d\.status !== 'took'\) return fail\(409, SAY\.notTaken\);/.test(mirror) && /if \(d\.status !== 'open'\) return fail\(409, SAY\.notOpen\);/.test(mirror)
     && /const DEMO_NEWS = \[/.test(D) && /const DEMO_EARNINGS = \[/.test(D)
-    // Fourteen closes over the last twelve days, none today, so Stats has a fortnight to read and
-    // the day the drive opens on starts at zero.
-    && /const CLOSES = \[/.test(seedDesk) && (seedDesk.match(/^\s+\['c\d+',/gm) || []).length === 13
-    && !/\['c\d+', '[A-Z]+', '\w+', '\w+', '\w+', \d+, [\d.]+, [\d.null]+, [\d.]+, -?\d+, 0,/.test(seedDesk)
     && /\/\^trade\\\/\//.test(STORE)
-    && /const TRADE_ID = 'demo-case-trade';/.test(SEED) && /set\(`cases\/\$\{TRADE_ID\}`, \{\n\s+self: true,\n\s+trade: true,/.test(SEED) && /clientName: 'Trade desk',/.test(SEED)
-    && /## Your trades/.test(SEED) && /## Rules to hold/.test(SEED) && /## Setups/.test(SEED) && /analysis: TRADE_READING,/.test(SEED)
-    // RE-PINNED 2026-09-22 (v5.1): the desk asks him nothing, so its log has no question row and no
-    // reply to one; a line of his own saying where he wants the account going stands where they did.
-    && !/role: 'question'/.test(seedDesk) && !/replyTo: 'tq1'|answerId: 'tr1'/.test(SEED)
-    && /Where I want this going: 3% a day on the account/.test(seedDesk)
-    && /caseId: TRADE_ID, openedAt: days\(21\),/.test(SEED) && /picture: 'Holding above the opening range at 650/.test(SEED) && (seedDesk.match(/source: 'typed'/g) || []).length === 1
-    && /set\('advisorKnowledge\/vwap', \{ term: 'VWAP', category: 'Indicator'/.test(SEED) && /tradeStanding: \{ text: '\$2,380\.00 · 14 trading days · 0\.75 pts under 2% a day'/.test(SEED)
+    && /const TRADE_ID = 'demo-case-trade';/.test(SEED) && /set\(`cases\/\$\{TRADE_ID\}`, \{\n\s+self: true,\n\s+trade: true,/.test(SEED) && /clientName: 'PR 420',/.test(seedDesk)
+    && /riskPct: 3, debugResearch: false,/.test(seedDesk) && /ids: \['r-demo-1', 'r-demo-2', 'r-demo-3', 'r-demo-4'\]/.test(seedDesk) && /activeIds: \['r-demo-5'\],/.test(seedDesk)
+    && /status: 'took', tookAt: hours\(0\.66\)/.test(seedDesk) && (seedDesk.match(/^\s+\['h\d', \d, '\w+', '[A-Z]+', '(profit|loss)',/gm) || []).length === 6
+    && /set\('trade\/research', \{/.test(seedDesk) && (seedDesk.match(/source: 'typed'/g) || []).length === 1
+    && !/TRADE_READING|chat\/t0|tradeStanding|const CLOSES|scanNote|scanStatus/.test(SEED)
+    && !/deskScanBlock|deskPositions|tradeStats|liveBalance|noteBullets|scanStatus|sub === 'scan'|sub === 'look'|sub === 'qa'|sub === 'positions'/.test(D)
+    && /set\('advisorKnowledge\/vwap', \{ term: 'VWAP', category: 'Indicator'/.test(SEED)
     && !/trade\/feed|trade\/flights/.test(SEED) && !/trade\/feed|trade\/flights/.test(D)
-    && /if \(role !== 'admin'\) return fail\(404, 'Not found'\);/.test(mirror) && sentences.every((s) => mirror.includes(`'${s.replace(/'/g, "\\'")}'`))
+    && /if \(role !== 'admin'\) return fail\(404, 'Not found'\);/.test(mirror) && sentences.length === 17 && sentences.every((s) => mirror.includes(`'${s.replace(/'/g, "\\'")}'`))
     && /return fail\(409, SAY\.deskOpen, \{ existing: s\.caseId \}\);/.test(mirror) && /const fail = \(status, error, extra = null\) => \(\{/.test(D)
-    && /source: 'typed' \}\);\n\s+const standing = deskRefreshStanding\(store\);/.test(mirror)
     && /const TRADE_CATS = \['Setup', 'Indicator', 'Level', 'Order', 'Risk', 'Options', 'Market', 'Instrument'\];/.test(D)
     && /TRADE_CATS\.includes\(d\.category \|\| 'General'\) === isTrade\)/.test(D) && /trade: isTrade \? deskPanelBlock\(store\) : null,/.test(D)
-    && /answer \+= `\\n\\nLogged \$2,410\.00 as the balance for \$\{today\}\.`;/.test(D) && /so the screenshot's total was not logged over it\./.test(D)
+    && /return \{ caseId: s\.caseId \|\| null, pr420: true \};/.test(D)
     && /v\?\.self && !v\?\.trade\);/.test(D) && D.includes("if (c.trade) return fail(400, 'The trade desk cannot be pulled from.');") && D.includes(`if (old.trade) return fail(409, '${K.SAY.noNext}');`)
     && /if \(ts\?\.caseId === id\) store\.docs\.set\('trade\/settings', \{ \.\.\.ts, caseId: null \}\);/.test(D)
-    // RE-PINNED 2026-09-22 (v5.1): the mirror no longer has a desk half of that list; it asks on his own case only.
-    && /tradeStanding: v\.tradeStanding\?\.text \|\| ''/.test(D) && /if \(c\.self && !c\.trade && !asked\) \{/.test(D) && !/const qs = c\.trade \? \[/.test(D)
+    && /if \(c\.self && !c\.trade && !asked\) \{/.test(D) && !/const qs = c\.trade \? \[/.test(D)
     && !DASH.test(mirror) && !DASH.test(seedDesk),
     sentences.filter((s) => !mirror.includes(`'${s.replace(/'/g, "\\'")}'`)).join(' | '));
 }
@@ -1332,6 +1342,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry612 = (CL.match(/\{\n\s+\/\/ SCAN AT HIGH, UPDATE AT MAX[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-22 (v6.13): a fast look beside the deep scan, and how long a run has been.
   const entry613 = (CL.match(/\{\n\s+\/\/ A FAST LOOK BESIDE THE DEEP SCAN[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-23 (PR 420): the desk rebuilt and renamed.
+  const entry70 = (CL.match(/\{\n\s+\/\/ PR 420 \(Eric, 2026-09-23[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1360,8 +1372,16 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   //   FAIL  T36 both versions read 5.3 with the new tag, the 4.7 through 5.3 entries are quiet and admin-only in the desk's words, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entry, the drive, the stylesheet's green or the demo's desk
   // NEGATIVE CONTROL (run 2026-09-22, v6.13): 'comes back inside a couple of minutes' reworded to 'comes back within a couple of minutes' in the 6.13 entry made this read
   //   FAIL  T36 both versions read 6.13 with the new tag, the 4.7 through 6.12 entries are quiet and admin-only in the desk's words, ...
-  check('T36 both versions read 6.13 with the new tag, the 4.7 through 6.12 entries are quiet and admin-only in the desk\'s words, the new page is stamped dark and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '6\.13';/.test(CL) && /const VERSION = '6\.13';/.test(W) && /const BUILD_TAG = 'v2026-09-22-fast-look';/.test(W)
+  // RE-PINNED 2026-09-23 (PR 420): both versions read 7.0 with the PR 420 tag, and the page is three
+  // pages behind three tabs named PR 420.
+  // NEGATIVE CONTROL (run 2026-09-23): 'lights up electric yellow' reworded to 'turns electric yellow' in the 7.0 entry made this read
+  //   FAIL  T36 both versions read 7.0 ...
+  check('T36 both versions read 7.0 with the new tag, the 4.7 through 7.0 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.0';/.test(CL) && /const VERSION = '7\.0';/.test(W) && /const BUILD_TAG = 'v2026-09-23-pr420';/.test(W)
+    && /version: '7\.0',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry70)
+    && /The trade desk is PR 420 now/.test(entry70) && /RUN TRADING DESK/.test(entry70) && /3% risk per trade/.test(entry70)
+    && /lights up electric yellow with PROFIT and LOSS/.test(entry70) && /never looks at your history/.test(entry70) && !DASH.test(entry70)
+    && (entry70.match(/^\s+'[^\n]+',$/gm) || []).length === 6
     && /version: '6\.13',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry613)
     && /comes back inside a couple of minutes/.test(entry613) && /how long it has been/.test(entry613) && !DASH.test(entry613)
     && /version: '6\.12',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry612)
@@ -1393,18 +1413,21 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && /version: '6\.1',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry61)
     && /looked at from outside/.test(entry61) && !DASH.test(entry61)
     // The window itself: read only, and it says what the flight is doing.
+    // RE-PINNED 2026-09-23 (PR 420): no flight any more. It says where the run is, how each of the five
+    // researchers did, and what the desk filed, which is what the first real runs have to be read by.
     && /if \(url\.searchParams\.get\('do'\) === 'desk'\) \{/.test(W)
-    && /submittedAgeS: age\(d\.scanCtx\.submittedAt\)/.test(W) && /head: String\(d\.scanNote\.text \|\| ''\)\.slice\(0, 600\)/.test(W)
+    && /queuedAgeS: age\(run\.queuedAt\), startedAgeS: age\(run\.startedAt\), beatAgeS: age\(run\.heartbeatAt\), finishedAgeS: age\(run\.finishedAt\),/.test(W)
+    && /agents: \[1, 2, 3, 4, 5\]\.map\(\(n\) => \{/.test(W) && /morning: \{ day: d\.morningDay \|\| null, ageS: age\(d\.morningAt\) \},/.test(W)
     && /version: '6\.0',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry60)
     && /its own app now/.test(entry60) && /Plays, Positions, News, Stats and Desk/.test(entry60)
     && /question mark is a question/.test(entry60) && /7:00 Mountain/.test(entry60) && !DASH.test(entry60)
     && (entry60.match(/^\s+'[^\n]+',$/gm) || []).length >= 5
     // The page itself: always dark, its own stylesheet token, the three modules it mounts.
     && /<html lang="en" data-scheme="calm" data-desk>/.test(PAGE)
-    && /admin\.css\?v=stat116/.test(PAGE) && /nav-menu\.js/.test(PAGE)
+    && /admin\.css\?v=stat117/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
     && /js\/admin-deskapp\.js/.test(PAGE) && /js\/admin-presence\.js/.test(PAGE) && /js\/version-note\.js/.test(PAGE)
-    && (PAGE.match(/<section class="page"/g) || []).length === 5
-    && (PAGE.match(/<button data-page="/g) || []).length === 5
+    && (PAGE.match(/<section class="page"/g) || []).length === 3
+    && (PAGE.match(/<button data-page="/g) || []).length === 3 && /data-page="trades"[\s\S]*data-page="news"[\s\S]*data-page="history"/.test(PAGE)
     && !DASH.test(PAGE) && !DASH.test(cssApp)
     // RE-PINNED 2026-09-22 (nothing runs but his tap): the 5.3 entry says the clock is gone and what
     // each of the two buttons buys.
@@ -1509,7 +1532,7 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const fin = lift(ADV, 'async function finishQuestion(env, kind, id, qaId, flight, message) {');
   // NEGATIVE CONTROL (run 2026-09-22): `download=` dropped from the panel's link made this read
   //   FAIL  T42 the desk files the document: the block is cut before the term harvest and after the answer is read, the file is made after the portfolio line inside the desk's branch, the answer says Filed as and the row carries doc in its mask, a failed file keeps the words in the answer and both outcomes are logged; the panel hangs the link under a landed answer, tells the Uploads page once when a new one arrives and the page listens; the link wears the green at thumb size; the demo builds a real file with the shared writer on a document question and files it; the showcase imports the writer and no longer keeps one; the audit reads the served module and the gate leaves it public; and the drive asks for one
-  check('T42 the desk files the document: the block is cut before the term harvest and after the answer is read, the file is made after the portfolio line inside the desk\'s branch, the answer says Filed as and the row carries doc in its mask, a failed file keeps the words in the answer and both outcomes are logged; the panel hangs the link under a landed answer, tells the Uploads page once when a new one arrives and the page listens; the link wears the green at thumb size; the demo builds a real file with the shared writer on a document question and files it; the showcase imports the writer and no longer keeps one; the audit reads the served module and the gate leaves it public; and the drive asks for one',
+  check('T42 the desk files the document: the block is cut before the term harvest and after the answer is read, the file is made after the portfolio line inside the desk\'s branch, the answer says Filed as and the row carries doc in its mask, a failed file keeps the words in the answer and both outcomes are logged; the panel hangs the link under a landed answer, tells the Uploads page once when a new one arrives and the page listens; the link wears the green at thumb size; the demo builds a real file with the shared writer on a document question and files it; the showcase imports the writer and no longer keeps one; and the audit reads the served module and the gate leaves it public',
     /const hd = trade \? harvestDocument\(answer\) : \{ text: answer, doc: null \};\n\s+let filed = null;/.test(fin)
     && /let cleaned = await harvestKeyTerms\(env, hd\.text, \{/.test(fin)
     && fin.indexOf('const answer = extractText(message);') < fin.indexOf('harvestDocument(answer)') && fin.indexOf('harvestDocument(answer)') < fin.indexOf('harvestKeyTerms(env, hd.text')
@@ -1518,7 +1541,10 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && /ev: 'ask-doc', ok: true, bytes: filed\.size/.test(fin) && /ev: 'ask-doc', ok: false/.test(fin)
     && /cleaned = `\$\{cleaned\}\\n\\n# \$\{hd\.doc\.title\}\\n\\n\$\{hd\.doc\.body\}\\n\\nThe file could not be made, so the document is here instead\.`;/.test(fin)
     && /answer: cleaned, status: 'done', override, batch: null, doc: filed,\n\s+\}, \{ mask: \['answer', 'status', 'override', 'batch', 'doc'\] \}\);/.test(fin)
-    && /harvestDocument, fileDocument, stripDashes as deskStripDashes,\n\} from '\.\/trade-desk\.js';/.test(ADV)
+    // RE-PINNED 2026-09-23 (PR 420): the import lost the alias the scan's finish used; the two it needs stay.
+    // NEGATIVE CONTROL (run 2026-09-23): the import's `harvestDocument, fileDocument,` swapped to `fileDocument, harvestDocument,` made this read
+    //   FAIL  T42 the desk files the document: ...
+    && /harvestDocument, fileDocument,\n\} from '\.\/trade-desk\.js';/.test(ADV)
     && /const docLink = \(q\) => \(q\.doc\?\.url\n\s+\? `<p class="ask-doc"><a href="\$\{esc\(q\.doc\.url\)\}" target="_blank" rel="noopener" download="\$\{esc\(q\.doc\.name \|\| 'document\.pdf'\)\}">📄 \$\{esc\(q\.doc\.name \|\| 'document\.pdf'\)\}<\/a><\/p>`/.test(PANEL)
     && /\$\{q\.status === 'running' \? '' : docLink\(q\)\}<\/div>/.test(PANEL)
     && /if \(docsPrimed\) document\.dispatchEvent\(new CustomEvent\('pa-saved-file'\)\);/.test(PANEL) && /docsPrimed = true;/.test(PANEL)
@@ -1530,7 +1556,9 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && /import \{ textPdf \} from '\.\.\/public\/js\/textpdf\.js';/.test(SHOW) && !/export function textPdf/.test(SHOW)
     && /import \{ textPdf \} from '\.\.\/public\/js\/textpdf\.js';/.test(TD) && /import \{ BUCKET, putFile, patchObjectMeta \} from '\.\/storage\.js';/.test(TD)
     && /'\/js\/textpdf\.js',/.test(AUDIT)
-    && /Make me a one page PDF of my rules to hold/.test(DRIVE) && /%PDF-1\.4/.test(DRIVE),
+    // RE-PINNED 2026-09-23 (PR 420): the desk's page asks nothing, so the drive can no longer ask it for a
+    // document; the writer, the filing and the demo's real bytes above are what stand for it now.
+    && !/Make me a one page PDF/.test(DRIVE),
     JSON.stringify({ fin: fin.length, order: [fin.indexOf('harvestDocument(answer)'), fin.indexOf('harvestKeyTerms(env, hd.text'), fin.indexOf('fileDocument(env, id, hd.doc')] }));
 }
 
@@ -1562,374 +1590,122 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     // condition and the folder has no desk clause left to carry.
     && /\$\{self && normTitle\(pg\.title\) === normTitle\('Questions for you'\)/.test(PANEL)
     && !/DESK_GROUPS/.test(CASE)
-    && /if \(c\.self && !c\.trade && !asked\) \{/.test(D),
+    && /if \(c\.self && !c\.trade && !asked\) \{/.test(D)
+    // RE-PINNED 2026-09-23 (PR 420): the demo's desk has no reading and no log at all now, so the seeded
+    // reading this check read is gone rather than merely free of a question section.
+    // NEGATIVE CONTROL (run 2026-09-23): `const TRADE_READING = '';` added back to the seed made this read
+    //   FAIL  T43 the desk asks him nothing: ...
+    && !/TRADE_READING/.test(SEED) && reading === '',
     JSON.stringify({ found: api.harvestQuestions(withSection), inReading: api.harvestQuestions(reading).length, un: api.unansweredFromChat(rows).length }));
 }
 
-// ---- T57: the cron collects a scan already in the air (v6.3) --------------------------------
-// The other half of T56. T56 keeps a scan's queue row from being thrown away; this is what happens
-// to a flight whose row has ALREADY gone, which is the state his desk was actually in: submitted
-// 13:27, still up at 15:24, queue empty, nothing on any clock able to see it.
-{
-  const set = { caseId: 'c1', startedAt: '2026-08-31', startCents: 200000 };
-  const flying = { batchId: 'b1', customId: 'scan-c1-x', submittedAt: '2026-09-22T19:27:00Z', pollFails: 0 };
-  const mk2 = (over = {}) => {
-    const { w, api } = world(over.world || {});
-    w.docs.set('trade/settings', { data: { ...set, ...(over.settings || {}) } });
-    if (over.state !== undefined) w.docs.set('trade/state', over.state);
-    return { w, api };
-  };
-  const up = mk2({ state: { data: { scanStatus: 'running', scanCtx: flying } } });
-  const collected = await up.api.maybeCollectScan(env);
-  const quiet = mk2({ state: { data: { scanStatus: 'idle', scanCtx: null } } });
-  const nothing = await quiet.api.maybeCollectScan(env);
-  const none = mk2({});
-  const noState = await none.api.maybeCollectScan(env);
-  const noDesk2 = mk2({ state: { data: { scanStatus: 'running', scanCtx: flying } }, settings: { caseId: null } });
-  const deskless = await noDesk2.api.maybeCollectScan(env);
-  const unreadable = mk2({ state: READ_FAILED });
-  const blind = await unreadable.api.maybeCollectScan(env);
-  // A poll that says it did nothing (the heartbeat was still warm) is not a collection, but the
-  // look still happened: what is counted is the look, not its answer.
-  const warm = mk2({ state: { data: { scanStatus: 'running', scanCtx: flying } }, world: { pollOut: false } });
-  const warmed = await warm.api.maybeCollectScan(env);
-  // A flight parked with no batch id is not a flight.
-  const halfway = mk2({ state: { data: { scanStatus: 'running', scanCtx: { pollFails: 0 } } } });
-  const skipped = await halfway.api.maybeCollectScan(env);
-  const seven = [up, quiet, none, noDesk2, unreadable, warm, halfway];
+// ---- T57 USED TO RUN THE CRON'S SCAN COLLECTOR (v6.3) ------------------------------------------
+// RE-PINNED 2026-09-23 (PR 420): there is no scan left to collect. The cron's desk work is the 7:00
+// run it queues and the queued run it hosts (T30, and desk.mjs for both), so what stands here is that
+// nothing of the scan's collection is left on the desk's routes or the Worker.
+// NEGATIVE CONTROL (run 2026-09-23): `export async function maybeCollectScan() { return null; }` added back to trade.js made this read
+//   FAIL  T57 the scan collector is gone ...
+check('T57 the scan collector is gone: the desk\'s routes export no collector, no morning reading and no scan block, nothing in the Worker or the advisor names one, and the firing\'s only desk calls are the run it queues at 7:00 and the queued run it hosts',
+  K.maybeCollectScan === undefined && K.maybeMorningRead === undefined && K.scanBlock === undefined
+  && !/maybeCollectScan|maybeMorningRead|scanBlock|pollScanFlight|runTradeScan|runTradeLook|finishTradeScan/.test(T + W + ADV)
+  && (W.match(/maybeRunDesk\(|maybeMorningRun\(/g) || []).length === 2);
 
-  // NEGATIVE CONTROL (run 2026-09-22, v6.3): `{ minAgeMs: 45_000 }` on the collector's poll changed
-  // to `{ minAgeMs: 0 }` made this read
-  //   FAIL  T57 the cron collects a scan already in the air RUNS: ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.3): the collector's `|| !st.scanCtx?.batchId` dropped, so a
-  // half parked flight would have been polled, made this read
-  //   FAIL  T57 the cron collects a scan already in the air RUNS: ...
-  check('T57 the cron collects a scan already in the air RUNS: it asks the desk rather than the queue, so a flight whose queue row has gone is still looked at; the look costs one document when nothing is flying and reads the desk\'s id only when something is; it waits the same forty five seconds ordinary traffic waits; a half parked flight, a shut desk and a state it cannot read are each answered rather than polled; and not one of the seven cases starts a scan or books a reading',
-    collected.ran === true && collected.caseId === 'c1'
-    && up.w.polls.length === 1 && up.w.polls[0].caseId === 'c1' && up.w.polls[0].opts?.minAgeMs === 45_000
-    && nothing.ran === false && nothing.why === 'nothing in the air' && quiet.w.polls.length === 0 && quiet.w.reads === 1
-    && noState.ran === false && noState.why === 'nothing in the air' && none.w.polls.length === 0
-    && deskless.ran === false && deskless.why === 'no desk' && noDesk2.w.polls.length === 0
-    && blind.ran === false && blind.why === 'state unreadable' && unreadable.w.polls.length === 0 && unreadable.w.reads === 1
-    && warmed.ran === false && warm.w.polls.length === 1
-    && skipped.ran === false && skipped.why === 'nothing in the air' && halfway.w.polls.length === 0
-    && seven.every((x) => x.w.scans.length === 0 && x.w.pending.length === 0),
-    JSON.stringify({ collected, nothing, deskless, blind, warmed, polls: up.w.polls.length, reads: quiet.w.reads }));
+// ---- T59 to T62 (PR 420) ------------------------------------------------------------------
+// RE-PINNED 2026-09-23 (PR 420): the position sheet and its dollars-or-shares chip, the play card's one
+// sentence and the five-bullet note all left with the pages that drew them. What each stood for is on
+// the one card now: the dollars and the count together (T59), sized by his 3% rule against the desk's
+// allocation (T60), in words that fit a phone at a glance (T61), with the desk's one line in place of
+// the note (T62).
+{
+  const mod = await import('../../public/js/admin-desk.js');
+  const text = (h) => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const base = { id: 'q', ticker: 'F', side: 'long', horizon: 'intraday', instrument: 'stock', entryLow: 50, entryHigh: 50, stop: 49, targets: [52], allocPct: 50, status: 'open' };
+  const whole = text(mod.recCardHtml(base, { accountCents: 100000, rules: { riskPct: 3 } }));
+  const frac = text(mod.recCardHtml({ ...base, entryLow: 247.5, entryHigh: 248, stop: 245.8, allocPct: 40 }, { accountCents: 245000, rules: { riskPct: 3 } }));
+  const two = text(mod.recCardHtml({ ...base, instrument: 'call', strike: 50, expiry: '2026-10-16', entryLow: 1, entryHigh: 1, stop: 0.9, targets: [1.5], allocPct: 25 }, { accountCents: 100000, rules: { riskPct: 3 } }));
+  const PAGE = f('public/admin-desk.html'); const APP = f('public/js/admin-deskapp.js');
+  // NEGATIVE CONTROL (run 2026-09-23): qtyText's `Math.round(sz.shares * 10000) / 10000` changed to `Math.round(sz.shares)` made this read
+  //   FAIL  T59 the card says what to put in ...
+  check('T59 the card says what to put in both ways at once: the dollars beside the share count, a fraction to four places, a whole count bare, and contracts whole and plural; and the page has no position sheet, no quantity field and no chip',
+    /Amount \$500 · 10 shares/.test(whole) && /Amount \$980 · 3\.9516 shares/.test(frac) && /Amount \$200 · 2 contracts/.test(two)
+    && !/data-unit|qtyf|id="np-|openPositionSheet|sharesForDollars/.test(PAGE + APP),
+    JSON.stringify({ whole: whole.slice(0, 120), two: two.slice(0, 120) }));
+
+  const S = (rec, a = 245000, riskPct = 3) => math.recSizing({ rec: { side: 'long', instrument: 'stock', ...rec }, accountCents: a, rules: { riskPct } });
+  const stock = S({ entryLow: 247.5, entryHigh: 248, stop: 245.8, targets: [251, 253.5], allocPct: 40 });
+  const capped = S({ entryLow: 247.5, entryHigh: 248, stop: 200, targets: [300], allocPct: 50 });
+  const onePct = S({ entryLow: 247.5, entryHigh: 248, stop: 200, targets: [300], allocPct: 50 }, 245000, 1);
+  const call = S({ instrument: 'call', entryLow: 2.05, entryHigh: 2.2, stop: 1.6, targets: [2.9], allocPct: 12 });
+  const over = S({ instrument: 'call', entryLow: 2.05, entryHigh: 2.2, stop: 0.2, targets: [2.9], allocPct: 30 });
+  const short = S({ side: 'short', entryLow: 100, entryHigh: 100, stop: 102, targets: [96, 94], allocPct: 10 }, 1000000);
+  const noEntry = S({ stop: 1, targets: [2] });
+  const noMoney = S({ entryLow: 10, entryHigh: 10, stop: 9, targets: [12], allocPct: 10 }, 0);
+  // NEGATIVE CONTROL (run 2026-09-23): recSizing's `out.overRule = whole && ...` answered `out.overRule = false` made this read
+  //   FAIL  T60 recSizing RUNS ...
+  // RE-PINNED 2026-09-23 (review): sized from the worst fill in the zone, the top for a buy and the bottom for a
+  // short, so a fill anywhere in the zone stays inside his rule; and 3% when no rule is handed in.
+  check('T60 recSizing RUNS with his 3% rule: the entry is the worst fill in the zone; the allocation and the rule each allow a size and the smaller wins, marked capped when the rule does; a share is sized to four places and a contract whole; the risk and both rewards are in dollars with the R:R; 1% instead of 3% sizes a third as much; a contract the rule cannot carry is flagged over the rule; a short earns as the price falls; no entry or no balance sizes nothing; and the desk\'s default rule is 3% unless he set one between 0.1 and 5',
+    stock.entry === 248 && stock.budgetCents === 7350 && stock.qty === 3.9516 && stock.shares === 3.9516 && stock.capped === false
+    && stock.costCents === 98000 && stock.riskCents === 869 && stock.rewardCents === 1185 && stock.reward2Cents === 2173 && stock.rr === 1.36
+    && capped.capped === true && capped.qty === 1.5313 && Math.abs(capped.riskCents - 7350) <= 1
+    && Math.abs(onePct.qty * 3 - capped.qty) < 0.001 && onePct.budgetCents === 2450
+    && call.contracts === 1 && call.costCents === 22000 && call.riskCents === 6000 && call.rewardCents === 7000 && call.rr === 1.17
+    && over.qty === 0 && over.contracts === 0 && over.overRule === true && over.unitRiskCents === 20000
+    && math.recSizing({ rec: { side: 'short', instrument: 'stock', entryLow: 99, entryHigh: 100, stop: 102, targets: [96], allocPct: 10 }, accountCents: 1000000, rules: { riskPct: 3 } }).entry === 99
+    && math.recSizing({ rec: { side: 'long', instrument: 'stock', entryLow: 10, entryHigh: 10, stop: 5, targets: [20], allocPct: 50 }, accountCents: 100000 }).budgetCents === 3000
+    && short.rewardCents > 0 && short.reward2Cents > short.rewardCents && short.riskCents > 0
+    && noEntry.qty === null && noMoney.qty === null
+    && DR.riskPctOf({}) === 3 && DR.riskPctOf({ riskPct: 2.5 }) === 2.5 && DR.riskPctOf({ riskPct: 9 }) === 3 && DR.riskPctOf({ riskPct: 0.05 }) === 3
+    && DR.DEFAULT_RISK_PCT === 3,
+    JSON.stringify({ stock, capped: [capped.qty, capped.riskCents], call: [call.contracts, call.riskCents], over: over.overRule }));
+
+  const long = 'word '.repeat(80).trim();
+  const T0 = { ticker: 'NVDA', side: 'long', horizon: 'intraday', instrument: 'stock', entryLow: 10, entryHigh: 10.2, stop: 9.5, targets: [11], setup: long, catalyst: long, invalidation: long, chanceLow: 55, chanceHigh: 60 };
+  const clipped = DR.validRec(T0, { accountType: 'cash' });
+  const noSetup = DR.validRec({ ...T0, setup: '' }, { accountType: 'cash' });
+  const deskPrompt = DR.deskSystem('cash', 3);
+  // NEGATIVE CONTROL (run 2026-09-23): validRec's `clip(t.setup, 220)` loosened to `clip(t.setup, 2200)` made this read
+  //   FAIL  T61 what he reads fits a phone card ...
+  check('T61 what he reads fits a phone card at a glance: the desk is told one sentence under 25 words for the setup, 15 for the catalyst and 20 for what kills it, in plain English with no dash; whatever comes back is cut to 220, 140 and 180 characters before it is filed; and a trade with no setup at all is not filed',
+    /setup is one sentence under 25 words, catalyst under 15 words, invalidation under 20 words/.test(deskPrompt)
+    && /Plain English with no jargon he would have to decode, and never an em dash or an en dash/.test(deskPrompt)
+    && clipped.setup.length <= 220 && clipped.catalyst.length <= 140 && clipped.invalidation.length <= 180
+    && clipped.setup.length > 150 && noSetup === null,
+    JSON.stringify({ setup: clipped?.setup.length, catalyst: clipped?.catalyst.length, invalidation: clipped?.invalidation.length }));
+
+  const st = await (async () => {
+    const { w, api } = world();
+    w.docs.set('trade/settings', { data: { caseId: 'c1' } });
+    w.docs.set('trade/state', { data: { desk: { at: new Date(), ids: [], read: 'x'.repeat(10), none: 'Nothing clean.' }, scanNote: { text: '## Note\n\nOld wall.' } }, updateTime: 'T1' });
+    return api.tradeState(env, { now: Date.now() });
+  })();
+  // NEGATIVE CONTROL (run 2026-09-23): `<div class="panel say" id="note"></div>` added back to the page made this read
+  //   FAIL  T62 the note is gone ...
+  check('T62 the note is gone from the desk: the state carries no note even when an old one is stored, the page has no note panel and the demo stores none; the desk\'s one line on the tape and its one line on why there are no trades stand in its place, clipped to 240 characters',
+    !('scan' in st) && !('note' in st) && st.desk.read === 'x'.repeat(10) && st.desk.none === 'Nothing clean.'
+    && !/id="note"|note-p|noteBullets/.test(PAGE + APP + D)
+    && /read: clip\(out\?\.read, 240\), none: clip\(out\?\.none, 240\)/.test(f('worker/desk-run.js'))
+    && /\$\('#deskread-t'\)\.textContent = read;/.test(APP),
+    JSON.stringify({ desk: st.desk }));
 }
 
-// ---- T59: the dollars or shares chip (Eric, 2026-09-22) -------------------------------------
-// "It should have an option for fractional shares. So essentially it changes dollars to shares."
-// One field, one chip, and the number that leaves the page is always a share or contract count.
+// ---- T56: a scan marker is never mistaken for a reading (Eric, 2026-09-22: "It's not producing a scan rn") ----
+// RE-PINNED 2026-09-23 (PR 420): no scan writes a marker any more, but one left in the queue from before
+// PR 420 must still never reach the claim that would count it as a reading that will not start. Both
+// sweepers now delete it at the same place the old branch stood, above the claim and the case poll.
+// NEGATIVE CONTROL (run 2026-09-23): the drain's scan branch's deleteDoc replaced with `void 0;` made this read
+//   FAIL  T56 a leftover scan marker ...
 {
-  const APP3 = f('public/js/admin-deskapp.js');
-  const VIEW = f('public/js/admin-desk.js');
-  const CSS3 = f('public/css/admin.css');
-  const D3 = f('public/js/demo/api.js');
-  const DRIVE3 = f('tools/drives/drive-trade.mjs');
-  // NEGATIVE CONTROL (run 2026-09-22, v6.5): `qty: qtyTyped()` in the sheet's read() put back to
-  //   `qty: Number(f('#np-qty').value)`, so dollars would have been saved as a share count, made this read
-  //   FAIL  T59 the quantity field says what its number means: ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.5): the `if (!stock) unit = 'shares';` line dropped from
-  //   paintUnit, so a contract could be sized in dollars, made this read
-  //   FAIL  T59 the quantity field says what its number means: ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.5): one `fmtQty(p.qty)` on the card's face put back to a
-  //   raw `p.qty`, so a fraction would have printed to fifteen places, made this read
-  //   FAIL  T59 the quantity field says what its number means: ...
-  check('T59 the quantity field says what its number means: a chip beside it flips between shares and dollars, what leaves the page is always a share or contract count whichever way it is showing, a contract is never offered the chip because it cannot be bought in pieces, the choice is remembered for next time and a private window is not a reason to fail, the line says how many shares the money buys, every place a quantity is printed prints it through the shared formatter rather than raw, the demo refuses exactly as the Worker does, and the drive flips it both ways',
-    /<button type="button" class="unit" id="np-unit" data-unit="shares">shares<\/button>/.test(APP3)
-    && /const qtyTyped = \(\) => \{/.test(APP3)
-    && /if \(unit !== 'dollars' \|\| !isShares\(\)\) return typed;\n\s+return sharesForDollars\(typed, entryNow\(\)\) \?\? 0;/.test(APP3)
-    && /qty: qtyTyped\(\), entry:/.test(APP3)
-    && !/qty: Number\(f\('#np-qty'\)\.value\)/.test(APP3)
-    && /if \(!stock\) unit = 'shares';/.test(APP3) && /unitEl\.hidden = !stock;/.test(APP3)
-    && /const UNIT_KEY = 'pa-desk-qty-unit';/.test(APP3)
-    && /try \{ localStorage\.setItem\(UNIT_KEY, unit\); \} catch \{[^\n]*\}/.test(APP3)
-    && /buys \$\{fmtQty\(v\.qty\)\} shares/.test(APP3)
-    && /f\('#np-inst'\)\.addEventListener\('change', \(\) => \{ paintUnit\(\); calc\(\); \}\);/.test(APP3)
-    // Nothing prints a raw quantity any more, on either module.
-    && !/\$\{p\.qty\} sh/.test(APP3) && !/\$\{p\.qty\} sh/.test(VIEW) && !/\$\{p\.qty\} shares/.test(VIEW)
-    && (VIEW.match(/fmtQty\(p\.qty\)/g) || []).length >= 4
-    && /step="\$\{p\.instrument === 'stock' \? '0\.0001' : '1'\}"/.test(VIEW)
-    && /sharesForDollars, dollarsForShares, fmtQty,/.test(APP3)
-    // The chip has a look of its own, and it disappears rather than sitting there dead.
-    && /html\[data-desk\]:root \.sheet \.unit \{/.test(CSS3)
-    && /html\[data-desk\]:root \.sheet \.unit\[data-unit="dollars"\] \{/.test(CSS3)
-    && /html\[data-desk\]:root \.sheet \.unit\[hidden\] \{ display: none; \}/.test(CSS3)
-    && !DASH.test(CSS3.slice(CSS3.indexOf('DOLLARS OR SHARES'), CSS3.indexOf('DOLLARS OR SHARES') + 1200))
-    // The demo refuses with the same two sentences, by the same rule.
-    && /const whole = instrument !== 'stock';/.test(D3)
-    && /return fail\(400, whole \? SAY\.badQty : SAY\.badShares\);/.test(D3)
-    && K.SAY.badQty === 'Contracts: a whole number, 1 or more.'
-    && K.SAY.badShares === 'Shares: any amount above zero, fractions welcome, to four places.'
-    && !DASH.test(K.SAY.badQty) && !DASH.test(K.SAY.badShares)
-    // And the drive actually taps it.
-    && /one tap turns the share count into what it costs/.test(DRIVE3)
-    && /a dollar amount under one share still buys a fraction of one/.test(DRIVE3)
-    && /a contract is never sized in dollars/.test(DRIVE3)
-    && !DASH.test(APP3),
-    `${APP3.length} app chars`);
-}
-
-// ---- T60: what a play is telling him to do (Eric, 2026-09-22) -------------------------------
-// "It also needs to suggest % allocation and make it clear if it's suggesting call, put, spread at
-// what price/expiration or total value in stocks, not shares."
-{
-  const APP4 = f('public/js/admin-deskapp.js');
-  const SEED4 = f('public/js/demo/seed.js');
-  const D4 = f('public/js/demo/api.js');
-  const DRIVE4 = f('tools/drives/drive-trade.mjs');
-  const R4 = math.defaultRules();
-  const A4 = 449000;
-  // His own figures: 1% of $4,490 is $44.90 of RISK, which at $2.60 a share is 17.2692 shares, or
-  // $3,952 of CAPITAL. The two numbers are a factor of 88 apart and only one of them used to show.
-  const stock = math.playSizing({ play: { instrument: 'stock', side: 'long', entry: 228.9, stop: 226.3, allocPct: 21 }, rules: R4, accountCents: A4 });
-  const big = math.playSizing({ play: { instrument: 'stock', side: 'long', entry: 228.9, stop: 226.3, allocPct: 90 }, rules: R4, accountCents: A4 });
-  const call = math.playSizing({ play: { instrument: 'call', side: 'long', entry: 2.10, stop: 1.30, strike: 650, expiry: '2026-10-17', allocPct: 18 }, rules: R4, accountCents: A4 });
-  // No allocPct at all: the dollars an older play asked for, read as a percent of the account.
-  const old = math.playSizing({ play: { instrument: 'stock', side: 'long', entry: 228.9, stop: 226.3, sizeDollars: 449 }, rules: R4, accountCents: A4 });
-  const bare = math.playSizing({ play: { instrument: 'stock', side: 'long', entry: 228.9, stop: 226.3 }, rules: R4, accountCents: A4 });
-
-  // NEGATIVE CONTROL (run 2026-09-22, v6.6): takeQty's `Math.min(qty, ruleQty)` changed to `qty`,
-  //   so a suggestion could break Rules to hold, made this read
-  //   FAIL  T60 a play says what to put in and in what: ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.6): vehicleLabel's expiry dropped from the built string,
-  //   so a contract never said when it expires, made this read
-  //   FAIL  T60 a play says what to put in and in what: ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.6): the sheet's `f('#np-opt').hidden = stock;` line
-  //   removed, so shares asked for a strike, made this read
-  //   FAIL  T60 a play says what to put in and in what: ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.6): validPlay's allocPct forced to null, so a scan could
-  //   file a setup that never says what to put into it, made this read
-  //   FAIL  T60 a play says what to put in and in what: ...
-  check('T60 a play says what to put in and in what RUNS: the allocation is a share of the account and not the same number as the risk, a stock turns it into dollars and a fraction of a share while a contract turns it into a whole count, Take it opens on the LESSER of the suggestion and what his one trade rule allows so a suggestion can never break Rules to hold, an older play with only its dollars still reads, and a play with neither says nothing rather than guessing; the vehicle names the strike, which way round a spread runs and the date it expires, and falls back to whatever the play called itself; the sheet asks for a strike and an expiration the moment he picks a contract and never for shares, labels the entry as the premium, writes What it is for him until he types over it, and carries the play\'s own contract in; both contracts tell the scan to give the percent, the strikes, the legs and the date; and the demo seeds and keeps all of it',
-    // The two numbers, and that they are different numbers.
-    stock.allocPct === 21 && stock.allocCents === 94290 && stock.shares === 4.1193 && stock.contracts === null
-    && stock.riskCents === 1071 && stock.budgetCents === 4490 && stock.overRule === false
-    && stock.vehicle === 'shares' && stock.takeQty === 4.1193
-    // 90% of the account risks $2,101 against a $44.90 rule, and Take it opens on the rule.
-    && big.overRule === true && big.takeQty === 17.2692 && big.takeQty === big.ruleQty
-    && call.contracts === 3 && call.shares === null && call.costCents === 63000
-    && call.vehicle === '650 call, 17 Oct' && call.perUnitCents === 21000
-    && old.allocCents === 44900 && old.allocPct === 10 && bare.allocCents === null && bare.allocPct === null
-    && math.vehicleLabel({ instrument: 'spread', strike: 650, strike2: 655, optionType: 'call', expiry: '2026-10-17' }) === '650/655 call debit spread, 17 Oct'
-    && math.vehicleLabel({ instrument: 'spread', strike: 650, strike2: 655, optionType: 'put', credit: true, expiry: '2026-10-17' }) === '650/655 put credit spread, 17 Oct'
-    && math.vehicleLabel({ instrument: 'put', strike: 220, expiry: '2026-10-17' }) === '220 put, 17 Oct'
-    && math.vehicleLabel({ instrument: 'call', structure: 'Oct 17 650 call' }) === 'Oct 17 650 call'
-    && math.vehicleLabel({ instrument: 'stock' }) === 'shares'
-    && math.expiryWords('2026-10-17') === '17 Oct' && math.expiryWords('') === '' && math.expiryWords('nope') === ''
-    // The validator keeps every one of the new fields, rounds the percent to a tenth, and throws
-    // away a percent or a date that is not one.
-    && K.validPlay({ ...PLAY, allocPct: 17.64, strike: 650, strike2: 655, optionType: 'CALL', expiry: '2026-10-17', credit: true }).allocPct === 17.6
-    && K.validPlay({ ...PLAY, strike: 650, strike2: 655, optionType: 'CALL', expiry: '2026-10-17', credit: true }).strike === 650
-    && K.validPlay({ ...PLAY, strike: 650, strike2: 655, optionType: 'CALL', expiry: '2026-10-17', credit: true }).strike2 === 655
-    && K.validPlay({ ...PLAY, strike: 650, strike2: 655, optionType: 'CALL', expiry: '2026-10-17', credit: true }).optionType === 'call'
-    && K.validPlay({ ...PLAY, strike: 650, strike2: 655, optionType: 'CALL', expiry: '2026-10-17', credit: true }).expiry === '2026-10-17'
-    && K.validPlay({ ...PLAY, strike: 650, strike2: 655, optionType: 'CALL', expiry: '2026-10-17', credit: true }).credit === true
-    && K.validPlay({ ...PLAY, allocPct: 0 }).allocPct === null && K.validPlay({ ...PLAY, allocPct: 150 }).allocPct === null
-    && K.validPlay({ ...PLAY, expiry: '2026-02-31' }).expiry === null && K.validPlay({ ...PLAY, strike: -5 }).strike === null
-    && K.validPlay({ ...PLAY, optionType: 'straddle' }).optionType === null
-    // The sheet: the fields appear with the instrument and never before it.
-    && /<div class="grid2 optonly" id="np-opt" hidden>/.test(APP4)
-    && /<label>Strike<input id="np-strike"/.test(APP4)
-    && /<label class="sp2only">Second strike<input id="np-strike2"/.test(APP4)
-    && /<label>Expiration<input id="np-expiry" type="date"/.test(APP4)
-    && /f\('#np-opt'\)\.hidden = stock;/.test(APP4)
-    && /for \(const el of sheet\.querySelectorAll\('\.sp2only'\)\) el\.hidden = inst !== 'spread';/.test(APP4)
-    && /f\('#np-entry-k'\)\.textContent = stock \? 'Entry' : inst === 'spread' \? 'Debit or credit' : 'Premium';/.test(APP4)
-    && /if \(!st\.dataset\.touched\) st\.value = vehicleLabel\(\{ \.\.\.read\(\), instrument: inst \}\);/.test(APP4)
-    && /e\.currentTarget\.dataset\.touched = '1';/.test(APP4)
-    && /strike: play\.strike \?\? '', strike2: play\.strike2 \?\? '',/.test(APP4)
-    && /const sz = playSizing\(\{ play, rules: rulesNow\(\), accountCents: accountNow\(\) \}\);/.test(APP4)
-    && /f\('#np-qty'\)\.value = sz\.takeQty/.test(APP4)
-    // Both contracts ask for it, and neither carries a dash.
-    && /allocPct \(the share of his account to put into this trade/.test(K.SCAN_CONTRACT)
-    && /allocPct \(the share of his account to put into this trade/.test(K.TRADE_CONTRACT)
-    && [K.SCAN_CONTRACT, K.TRADE_CONTRACT].every((c) => /strike \(the strike, options only\)/.test(c)
-      && /expiry \(the expiration as YYYY-MM-DD, options only\)/.test(c)
-      && /never a number of shares/.test(c) && /the strike and the date/.test(c) && !DASH.test(c))
-    // The demo seeds a real contract and keeps the fields it is sent.
-    && /strike: 650, strike2: 655, optionType: 'call', credit: false, expiry: '2026-10-17',/.test(SEED4)
-    && /allocPct: 17\.6,/.test(SEED4) && /allocPct: 33\.6,/.test(SEED4) && /allocPct: 21,/.test(SEED4)
-    && /optionType: \['call', 'put'\]\.includes\(String\(body\.optionType \|\| ''\)\) \? String\(body\.optionType\) : null,/.test(D4)
-    && /strike, strike2, optionType,/.test(T)
-    && /the strike and the expiration/.test(DRIVE4)
-    && !DASH.test(APP4) && !DASH.test(SEED4.slice(SEED4.indexOf('p-demo-1'), SEED4.indexOf('p-demo-2'))),
-    JSON.stringify({ stock, call, old: old.allocPct, bare: bare.allocCents }));
-}
-
-// ---- T61: plain English, a board that refreshes, and a wider net (Eric, 2026-09-22) ---------
-// "Make the plays fucking plain English... Why do I have expired plays? Those should just refresh.
-// And it shouldnt just look at mega cap companies. Jesus. Also the long blurb here is dumb."
-{
-  const APP5 = f('public/js/admin-deskapp.js');
-  const CSS5 = f('public/css/admin.css');
-  const DRIVE5 = f('tools/drives/drive-trade.mjs');
-  const D5 = f('public/js/demo/api.js');
-  const R5 = math.defaultRules();
-  const A5 = 449000;
-  const P = (over) => math.playLine({ ticker: 'NVDA', side: 'long', instrument: 'stock', entry: 228.9, stop: 226.3, targets: [231.5], holdMinutes: 180, allocPct: 5.5, ...over }, { rules: R5, accountCents: A5 });
-  // RE-PINNED 2026-09-22 (v6.9): noteOnly moved to the shared arithmetic so the read side cuts too.
-  const noteOnly = math.noteOnly;
-  const wall = '## Note\n\nThe tape is holding its ranges.\n\nOne more line of the note.\n\n## Setups\n\n### AMD long\nCurrent picture: eight hundred words of it.\nChance of profit: 45 to 55%\n\n### META long\nCurrent picture: more.';
-
-  // NEGATIVE CONTROL (run 2026-09-22, v6.7): playLine's hold dropped from the front of the line,
-  //   so the sentence no longer opened with how long he is in it, made this read
-  //   FAIL  T61 a setup reads as one plain sentence: ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.7): 'expired' put back into the page's LIVE set, so a
-  //   setup that had run out of time sat on the board with Take it on it, made this read
-  //   FAIL  T61 a setup reads as one plain sentence: ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.7): noteOnly's sectionMatch arm removed, so the whole
-  //   Setups section came back into the note, made this read
-  //   FAIL  T61 a setup reads as one plain sentence: ...
-  check('T61 a setup reads as one plain sentence in his own order and nothing else RUNS: how long he is in it, buy or short with how much money, the contract with its strike and the date it expires when there is one, then the stop loss and the take profit, with no R, no share count and no abbreviation to expand; the board carries only what still stands, so a setup past its hour drops to Recent instead of sitting at the top with Take it on it; the note kept on the desk is the Note section alone rather than the whole reading; and the watchlist is a starting point the scan is told to look past, with a default his account can actually take',
-    // His example: "3 hours, NVDA, $248, stop loss price, take profit price."
-    P() === '3 hours, buy $247 of NVDA, stop loss 226.30, take profit 231.50'
-    && P({ side: 'short' }) === '3 hours, short $247 of NVDA, stop loss 226.30, take profit 231.50'
-    // "If call, date strike expiration."
-    && P({ instrument: 'call', entry: 2.1, stop: 1.3, targets: [3.4], strike: 650, expiry: '2026-10-17' })
-      === '3 hours, buy $247 of NVDA 650 call expiring 17 Oct, stop loss 1.30, take profit 3.40'
-    && P({ instrument: 'spread', entry: 2.1, stop: 1.3, targets: [3.4], strike: 650, strike2: 655, optionType: 'call', expiry: '2026-10-17' })
-      === '3 hours, buy $247 of the NVDA 650/655 call debit spread expiring 17 Oct, stop loss 1.30, take profit 3.40'
-    // A hold he would say out loud, and a price he would read out loud.
-    && math.holdPlain({ holdMinutes: 10 }) === '10 minutes' && math.holdPlain({ holdMinutes: 60 }) === '1 hour'
-    && math.holdPlain({ holdMinutes: 180 }) === '3 hours' && math.holdPlain({ horizon: 'swing', holdDays: 1 }) === '1 day'
-    && math.holdPlain({ horizon: 'swing', holdDays: 3 }) === '3 days'
-    && math.priceWords(226.3) === '226.30' && math.priceWords(402) === '402' && math.priceWords(null) === ''
-    // Nothing missing is invented: no stop, no stop clause; no money, no money.
-    && P({ stop: null }) === '3 hours, buy $247 of NVDA, take profit 231.50'
-    && P({ allocPct: null, sizeDollars: null }) === '3 hours, buy NVDA, stop loss 226.30, take profit 231.50'
-    && P({ targets: [] }) === '3 hours, buy $247 of NVDA, stop loss 226.30'
-    // The board carries only what still stands.
-    && /const LIVE = new Set\(\['open'\]\);/.test(APP5)
-    && /LIVE\.has\(p\.status\) && !expired\(p\)/.test(APP5)
-    && /Nothing still standing\. The last setups have run out of time\./.test(APP5)
-    // The note is the Note.
-    && noteOnly(wall) === 'The tape is holding its ranges.\n\nOne more line of the note.'
-    && noteOnly('Just a sentence, no headings.') === 'Just a sentence, no headings.'
-    && !/Setups/.test(noteOnly(wall)) && !/###/.test(noteOnly(wall))
-    && !/### QQQ long/.test(D5)
-    // A wider net, and a default list his account can take.
-    && K.DEFAULT_WATCHLIST.includes('IWM') && K.DEFAULT_WATCHLIST.length === 10
-    && !['META', 'MSFT', 'AMZN', 'AAPL'].some((t) => K.DEFAULT_WATCHLIST.includes(t))
-    && [K.SCAN_CONTRACT, K.TRADE_CONTRACT].every((c) => /a starting point, not the universe/.test(c)
-      && /Mid caps and small caps are in scope/.test(c)
-      && /Do not file four mega caps because they are the names in front of you/.test(c)
-      && /leaves room for a real position inside his rule/.test(c) && !DASH.test(c))
-    // The look, and the drive that walks it.
-    && /html\[data-desk\]:root \.play \.plain \{/.test(CSS5) && /html\[data-desk\]:root \.play \.under \{/.test(CSS5)
-    && /each card is one plain sentence/.test(DRIVE5) && /nothing expired is on the board/.test(DRIVE5)
-    && /the scan refreshes the board rather than piling up on it/.test(DRIVE5)
-    // RE-PINNED 2026-09-22 (v6.9): the drive counts bullets now rather than characters.
-    && /the note is at most five bullets and has no more button/.test(DRIVE5),
-    JSON.stringify({ stock: P(), call: P({ instrument: 'call', entry: 2.1, stop: 1.3, targets: [3.4], strike: 650, expiry: '2026-10-17' }), note: noteOnly(wall) }));
-}
-
-// ---- T62: the note is at most five bullets, on every path (Eric, 2026-09-22) -----------------
-// "This needs to disappear or be shortened to 5 bullet points." His screenshot was a note filed
-// before v6.7's write-time cut, so the whole reading was still stored, and the clamp that was
-// supposed to hide it was written for a p while the note was a div. Now the cut runs on the read.
-{
-  const APP6 = f('public/js/admin-deskapp.js');
-  const HTML6 = f('public/admin-desk.html');
-  const CSS6 = f('public/css/admin.css');
-  const D6 = f('public/js/demo/api.js');
-  const DRIVE6 = f('tools/drives/drive-trade.mjs');
-  const wall = '## Note\n\nTwo hours in, the tape is rotational, not trending: QQQ +0.41% while SPY is flat on its session low. MSFT has the cleanest trend, but a cash account cannot short shares. NVDA is dropped: it lags AMD in the same sector. The 10:00 to 12:00 slow window is next, so favor pullbacks over breakout chases. The three below are closely correlated longs, and $4,490 cash funds about one round trip. One more sentence that should be the sixth and fall off.\n\n## Setups\n\n### AMD long\nCurrent picture: AMD is 619.98, up 0.72%, after opening at 609.02.\nChance of profit: 45 to 55%';
-  const fromWall = math.noteBullets(wall);
-  const asBullets = math.noteBullets('## Note\n\n- one\n- two\n- three\n- four\n- five\n- six\n\n## Setups\n\n### X long\nCurrent picture: y.');
-  const longOne = math.noteBullets(`## Note\n\n- ${'word '.repeat(60).trim()}`);
-  const decimals = math.noteBullets('AMD is 619.98, up 0.72%, after opening at 609.02 and it held. Then it ran.');
-  const headless = math.noteBullets('Two hours in. Then more.\n\n## Setups\n### X');
-  const empty = [math.noteBullets(''), math.noteBullets('## Note\n\n'), math.noteBullets(null)];
-  // The read side: scanBlock hands the page bullets cut from whatever is stored.
-  const stored = { data: { scanStatus: 'idle', lastScanAt: new Date('2026-09-22T15:50:00Z'), scanNote: { text: wall, at: new Date('2026-09-22T15:50:00Z'), plays: 3 } } };
-  const block6 = K.scanBlock(stored);
-
-  // NEGATIVE CONTROL (run 2026-09-22, v6.9): NOTE_BULLETS_MAX raised from 5 to 50 made this read
-  //   FAIL  T62 the note is at most five bullets ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.9): noteBullets given the whole text rather than
-  //   noteOnly(text), so the Setups section came back as bullets, made this read
-  //   FAIL  T62 the note is at most five bullets ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.9): the page's `<li>` map put back to textContent of the
-  //   text made this read
-  //   FAIL  T62 the note is at most five bullets ...
-  check('T62 the note is at most five bullets on every path RUNS: the wall from his screenshot, stored in full, gives five sentences from the Note section and none from the setups; a note written as bullets gives those bullets and drops the sixth; a bullet past 160 characters is cut at a word; a decimal or a clock time never splits a sentence; a note with no heading still stops at the first one; nothing gives nothing; the Worker and the demo both cut on the READ so the wall already on his desk comes down without a new scan; the page renders a list and has no clamp and no more button; the scan contract asks for five bullets under 15 words and the reading contract never had a Note heading to ask with; and the drive counts them',
-    fromWall.length === 5
-    && fromWall[0] === 'Two hours in, the tape is rotational, not trending: QQQ +0.41% while SPY is flat on its session low.'
-    && fromWall[1] === 'MSFT has the cleanest trend, but a cash account cannot short shares.'
-    && fromWall[3] === 'The 10:00 to 12:00 slow window is next, so favor pullbacks over breakout chases.'
-    && fromWall[4] === 'The three below are closely correlated longs, and $4,490 cash funds about one round trip.'
-    && fromWall.every((b) => !/Setups|###|Current picture|sixth/.test(b))
-    && asBullets.join('|') === 'one|two|three|four|five'
-    && longOne.length === 1 && longOne[0].length <= 160 && longOne[0].length > 120 && !/ $/.test(longOne[0])
-    && decimals.length === 2 && decimals[0] === 'AMD is 619.98, up 0.72%, after opening at 609.02 and it held.' && decimals[1] === 'Then it ran.'
-    && headless.join('|') === 'Two hours in.|Then more.'
-    && empty.every((e) => Array.isArray(e) && e.length === 0)
-    && math.NOTE_BULLETS_MAX === 5 && math.NOTE_BULLET_CHARS === 160
-    && math.noteOnly(wall).startsWith('Two hours in') && !/Setups/.test(math.noteOnly(wall))
-    && Array.isArray(block6.note.bullets) && block6.note.bullets.length === 5 && !/Setups/.test(block6.note.text)
-    && /text: noteOnly\(note\.text\), bullets: noteBullets\(note\.text\),/.test(T)
-    && /text: noteOnly\(note\.text\), bullets: noteBullets\(note\.text\),/.test(D6)
-    && /liveBalance, tradeStats, noteOnly, noteBullets,\n\} from '\.\.\/trade-math\.js';/.test(D6)
-    && /<ul id="note-p" class="bul"><\/ul>/.test(HTML6) && !/id="note-more"/.test(HTML6) && !/class="panel say clamp"/.test(HTML6)
-    && /const bullets = Array\.isArray\(note\?\.bullets\) \? note\.bullets : noteBullets\(note\?\.text \|\| ''\);/.test(APP6)
-    && /\$\('#note-p'\)\.innerHTML = bullets\.map\(\(b\) => `<li>\$\{esc\(b\)\}<\/li>`\)\.join\(''\);/.test(APP6)
-    && !/#note-more/.test(APP6) && !/classList\.toggle\('clamp'\)/.test(APP6)
-    && /html\[data-desk\]:root \.say \.bul \{ margin: 0; padding-left: 18px;/.test(CSS6)
-    && /html\[data-desk\]:root \.say \{ position: relative; margin-bottom: 12px; padding: 12px 14px 10px 14px;/.test(CSS6)
-    && /"Note": at most five bullet points and nothing that is not a bullet\./.test(K.SCAN_CONTRACT)
-    && /is under 15 words/.test(K.SCAN_CONTRACT) && /No paragraphs under this heading, ever/.test(K.SCAN_CONTRACT)
-    && !/"Note": under 120 words/.test(K.SCAN_CONTRACT) && !/"Note":/.test(K.TRADE_CONTRACT) && !DASH.test(K.SCAN_CONTRACT)
-    && /the note is at most five bullets and has no more button/.test(DRIVE6)
-    && !DASH.test(APP6) && !DASH.test(f('public/js/trade-math.js')),
-    JSON.stringify({ fromWall, asBullets, longOne: longOne[0]?.length, decimals, headless, block: block6.note.bullets?.length }));
-}
-
-// ---- T56: a scan in flight is not a reading (Eric, 2026-09-22: "It's not producing a scan rn") ----
-{
-  const sweep = lift(ADV, 'export async function runQueuedAnalyses(env, deadlineAt = 0) {');
-  const now = lift(ADV, 'export async function pollFlightsNow(env) {');
-  const APP2 = f('public/js/admin-deskapp.js');
-  const iScan = sweep.indexOf('if (row.data.scan)');
-  const iAsk = sweep.indexOf('if (row.data.ask)');
-  const iClaim = sweep.indexOf('const state = await getDoc(env, statePath(kind, id));');
-  const iGiveUp = sweep.indexOf('tries > ANALYSIS_MAX_TRIES');
-  // WHAT THIS IS FOR (measured in production, 2026-09-22): a scan's marker
-  // carries kind and id like every other queue row. With no branch of its
-  // own it reached the analysis claim, which judged it a reading that would
-  // not start: four firings counted it, the fourth stamped the desk with
-  // "This read kept stopping partway" and deleted the marker, and deleting
-  // the marker orphaned the flight the marker existed to collect. The scan
-  // submitted at 13:27 was still in the air at 15:00 with an empty queue.
-  // NEGATIVE CONTROL (run 2026-09-22): the `if (row.data.scan)` branch removed from runQueuedAnalyses made this read
-  //   FAIL  T56 a scan in flight is never mistaken for a reading: the queue sweeper answers a scan marker with one look at its batch and stops there, above the claim that would have counted it as a read that would not start, stamped the desk with an error it never had and deleted the marker the flight needed; ordinary traffic collects the same marker the same way; and the marker is the one the scan writes
-  check('T56 a scan in flight is never mistaken for a reading: the queue sweeper answers a scan marker with one look at its batch and stops there, above the claim that would have counted it as a read that would not start, stamped the desk with an error it never had and deleted the marker the flight needed; ordinary traffic collects the same marker the same way; and the marker is the one the scan writes',
-    iScan > -1 && iAsk > -1 && iClaim > -1 && iGiveUp > -1
-    && /if \(row\.data\.scan\) \{\n\s+await pollScanFlight\(env, id\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}/.test(sweep)
-    // Above the claim, and above the give-up that deleted the marker.
-    && iAsk < iScan && iScan < iClaim && iScan < iGiveUp
-    // The other collector has said the same thing since the scan got a flight.
-    && /if \(row\.data\.scan\) \{\n\s+await pollScanFlight\(env, id, \{ minAgeMs: 45_000 \}\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}/.test(now)
-    // And both are looking for the row the scan actually writes.
-    && /const SCAN_MARKER = \(caseId\) => `advisorQueue\/scan_case_\$\{caseId\}`;/.test(ADV)
-    // A landed scan says which silence it was: nothing worth taking, or no
-    // setups list at all. The page has a sentence for the second.
-    // RE-PINNED 2026-09-22 (v6.7): the note kept everything but the Plays json, which meant the
-    // whole Setups section ran into one wall of text on his Plays page. It is the Note section
-    // alone now, and a fifth of the length.
-    && /scanNote: \{ text: noteOnly\(pl\.text\)\.slice\(0, 1200\), at: new Date\(\), plays: filed\?\.plays \?\? 0, missing: !!pl\.missing \},/.test(ADV)
-    // RE-PINNED 2026-09-22 (v6.9): the cut is imported from the shared arithmetic, not local.
-    && /import \{ noteOnly \} from '\.\.\/public\/js\/trade-math\.js';/.test(ADV) && !/function noteOnly\(/.test(ADV)
-    && /plays: Number\(note\.plays\) \|\| 0, missing: note\.missing === true,/.test(T)
-    && /plays: Number\(note\.plays\) \|\| 0, missing: note\.missing === true,/.test(D)
-    && /That scan came back without its setups list, so nothing was filed\. Tap Scan again\./.test(APP2)
-    && /patchDoc\(env, SCAN_MARKER\(caseId\), \{ kind: 'case', id: caseId, scan: true, at: new Date\(\) \}/.test(ADV)
-    // And a look at a live scan puts the marker back, so one poll from
-    // anywhere hands an orphaned flight back to the clock.
-    && /await patchDoc\(env, marker, \{ kind: 'case', id: caseId, scan: true, at: new Date\(\) \},\n\s+\{ mask: \['kind', 'id', 'scan', 'at'\] \}\)\.catch\(\(\) => \{\}\);/.test(ADV)
-    // The window that found it, which reads and writes nothing of his.
-    && /if \(url\.searchParams\.get\('do'\) === 'desk'\) \{/.test(W) && /submittedAgeS: age\(d\.scanCtx\.submittedAt\)/.test(W),
-    JSON.stringify({ ask: iAsk, scan: iScan, claim: iClaim, giveUp: iGiveUp }));
+  const drain = lift(ADV, 'export async function runQueuedAnalyses(env, deadlineAt = 0) {');
+  const now2 = lift(ADV, 'export async function pollFlightsNow(env) {');
+  const del = 'await deleteDoc(env, `advisorQueue/${row.id}`).catch(() => {});';
+  check('T56 a leftover scan marker is never mistaken for a reading: both sweepers delete it before anything else can judge it, the drain above the draft rescue and the claim, the poller above the case poll, and neither reaches for a scan flight',
+    drain.length > 500 && now2.length > 100
+    && /if \(row\.data\.scan\) \{\n\s+await deleteDoc\(env, `advisorQueue\/\$\{row\.id\}`\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}/.test(drain)
+    && drain.indexOf('if (row.data.scan) {') < drain.indexOf('if (row.data.draft)')
+    && /if \(row\.data\.scan\) \{\n\s+await deleteDoc\(env, `advisorQueue\/\$\{row\.id\}`\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n\s+await pollCaseFlight\(env, kind, id, \{ minAgeMs: 45_000 \}\)/.test(now2)
+    && drain.includes(del) && now2.includes(del) && !/pollScanFlight|SCAN_MARKER/.test(drain + now2 + ADV),
+    JSON.stringify({ drain: drain.length, now2: now2.length }));
 }
 
 // ---- T44 to T49: the calculator (Eric, 2026-09-22: "a calculator to help me with take profits and stop losses") ----
@@ -2066,72 +1842,21 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
 }
 
 {
-  const nowMs = at('2026-09-22T16:00:00Z');
-  const settings = { caseId: 'c1', startedAt: '2026-08-31', startCents: 200000, accountType: 'cash', finnhubKey: 'abcdefghijklmnop1234' };
-  const mk = (over = {}) => {
-    const { w, api } = world();
-    w.docs.set('trade/settings', { data: settings });
-    w.listed['trade/balances/items'] = [{ id: '2026-09-22', data: { date: '2026-09-22', cents: 400000 } }];
-    w.listed['trade/positions/items'] = over.positions || [];
-    for (const r of (over.positions || [])) w.docs.set(`trade/positions/items/${r.id}`, { data: r.data });
-    return { w, api };
-  };
-  const open1 = { id: 'x1', data: { ticker: 'NVDA', side: 'long', instrument: 'stock', horizon: 'swing', qty: 10, entry: 648.4, stop: 646.9, status: 'open', riskCents: 1500, openedAt: '2026-09-20T15:00:00Z', openedDay: '2026-09-20' } };
-  const open2 = { id: 'x2', data: { ticker: 'AAPL', side: 'long', instrument: 'stock', horizon: 'scalp', qty: 5, entry: 231.1, stop: 230.4, status: 'open', riskCents: 350, openedAt: '2026-09-22T15:00:00Z', openedDay: '2026-09-22' } };
-  const closed = { id: 'x3', data: { ticker: 'TSLA', side: 'short', instrument: 'stock', horizon: 'scalp', qty: 25, entry: 412.1, status: 'closed', closedDay: '2026-09-22', pnlCents: 5750, openedAt: '2026-09-22T14:00:00Z' } };
-  const listed = await mk({ positions: [open1, open2, closed] }).api.tradePositions({ ...env }, { now: nowMs });
-  const made = mk();
-  const created = await made.api.tradePosition(env, { ticker: 'aapl', side: 'long', instrument: 'stock', horizon: 'intraday', qty: 34, entry: 231.1, stop: 230.4, target: 233 }, nowMs);
-  const fracWorld = mk();
-  const frac = await fracWorld.api.tradePosition(env, { ticker: 'nvda', side: 'long', instrument: 'stock', horizon: 'intraday', qty: 17.2692, entry: 228.9, stop: 226.3 }, nowMs);
-  const refusals = [];
-  for (const [body, want] of [
-    [{ ticker: '1BAD', side: 'long', instrument: 'stock', qty: 1, entry: 1 }, K.SAY.badTicker],
-    [{ ticker: 'AAPL', side: 'sideways', instrument: 'stock', qty: 1, entry: 1 }, K.SAY.badSide],
-    [{ ticker: 'AAPL', side: 'long', instrument: 'future', qty: 1, entry: 1 }, K.SAY.badInstrument],
-    [{ ticker: 'AAPL', side: 'long', instrument: 'stock', horizon: 'day', qty: 1, entry: 1 }, K.SAY.badHorizon],
-    // RE-PINNED 2026-09-22 (v6.5, fractional shares): a stock and a contract are refused in two
-    // different sentences, because half a share is a position and half a contract is not a thing.
-    // NEGATIVE CONTROL (run 2026-09-22, v6.5): the validator's `whole ? SAY.badQty : SAY.badShares`
-    //   flattened back to one sentence made this read    FAIL  T48 the position routes RUN ...
-    [{ ticker: 'AAPL', side: 'long', instrument: 'stock', qty: 0, entry: 1 }, K.SAY.badShares],
-    [{ ticker: 'AAPL', side: 'long', instrument: 'stock', qty: 1.00005, entry: 1 }, K.SAY.badShares],
-    [{ ticker: 'AAPL', side: 'long', instrument: 'stock', qty: -2, entry: 1 }, K.SAY.badShares],
-    [{ ticker: 'AAPL', side: 'long', instrument: 'call', qty: 1.5, entry: 1 }, K.SAY.badQty],
-    [{ ticker: 'AAPL', side: 'long', instrument: 'call', qty: 0, entry: 1 }, K.SAY.badQty],
-    [{ ticker: 'AAPL', side: 'long', instrument: 'stock', qty: 1, entry: 0 }, K.SAY.badPrice],
-    [{ ticker: 'AAPL', side: 'long', instrument: 'spread', credit: true, qty: 1, entry: 1.2 }, K.SAY.badWidth],
-  ]) {
-    try { await mk().api.tradePosition(env, body, nowMs); refusals.push('served'); } catch (e) { refusals.push(e.message === want ? 'said it' : e.message); }
+  // RE-PINNED 2026-09-23 (PR 420): his hand-logged positions, the calculator's edits and the closes left
+  // with the Positions page. What he logged before stays readable in History (T55); the routes that wrote
+  // them answer 404 like any other path the desk does not have.
+  // NEGATIVE CONTROL (run 2026-09-23): `if (sub === 'close') return { ok: true };` added to tradeRoute's POST branch made this read
+  //   FAIL  T48 the position routes are gone ...
+  const { api } = world();
+  const gone = [];
+  for (const [method, sub] of [['GET', 'positions'], ['POST', 'position'], ['POST', 'close'], ['POST', 'remove'], ['POST', 'play'], ['GET', 'qa'], ['POST', 'look']]) {
+    try { await api.tradeRoute(env, { sub, method, body: { id: 'x1' } }); gone.push('served'); } catch (e) { gone.push(e.status); }
   }
-  const world4 = mk({ positions: [open2] });
-  const sold = await world4.api.tradeClose(env, { id: 'x2', exitPrice: 232.6, note: 'Out at the target.' }, nowMs);
-  let twice = '';
-  world4.w.docs.set('trade/positions/items/x2', { data: { ...open2.data, status: 'closed' } });
-  try { await world4.api.tradeClose(env, { id: 'x2', exitPrice: 233 }, nowMs); } catch (e) { twice = e.message; }
-  const world5 = mk({ positions: [open2] });
-  const typed = await world5.api.tradeClose(env, { id: 'x2', pnlCents: -1200 }, nowMs);
-  const world6 = mk({ positions: [open2] });
-  world6.w.docs.set('trade/settings', { data: { ...settings, celebrate: false } });
-  const quiet = await world6.api.tradeClose(env, { id: 'x2', exitPrice: 232.6 }, nowMs);
-  const gone = mk({ positions: [open2] });
-  const removed = await gone.api.tradeRemove(env, { id: 'x2' });
-  // NEGATIVE CONTROL (run 2026-09-22): `celebrate` answered on a loss too (`pnlCents !== 0`) made this read
-  //   FAIL  T48 the position routes RUN: every bad field is refused with its own sentence and a share and a contract get different ones, a new trade stores the risk the rule measures and a fractional share count is kept as typed, the list puts the open ones first by kind with today's closes after them, the day rides every answer, Sold reads the exit price or the dollars he types, stamps the day it closed and celebrates only a profit and only when the switch is on, a second Sold is refused, and Remove takes the row away
-  check('T48 the position routes RUN: every bad field is refused with its own sentence and a share and a contract get different ones, a new trade stores the risk the rule measures and a fractional share count is kept as typed, the list puts the open ones first by kind with today\'s closes after them, the day rides every answer, Sold reads the exit price or the dollars he types, stamps the day it closed and celebrates only a profit and only when the switch is on, a second Sold is refused, and Remove takes the row away',
-    refusals.every((r) => r === 'said it')
-    && listed.positions.map((p) => p.id).join() === 'x2,x1,x3' && listed.openCount === 2
-    && listed.accountCents === 400000 && listed.rules.dayAimPct === 2 && listed.dayStatus.realizedTodayCents === 5750
-    && listed.positions[0].calc.riskCents === 350 && listed.today === '2026-09-22' && listed.accountType === 'cash'
-    && created.position.ticker === 'AAPL' && created.position.riskCents === 2380 && created.calc.suggestedQty === 57.1429
-    // And a fractional share count is stored as typed, with the risk it really carries.
-    && frac.position.qty === 17.2692 && frac.position.riskCents === 4490
-    && made.w.patches.some((p) => p.path.startsWith('trade/positions/items/') && p.data.riskCents === 2380 && p.data.status === 'open')
-    && sold.pnlCents === 750 && sold.celebrate === true && sold.position.closedDay === '2026-09-22' && sold.dayStatus.state === 'below-floor'
-    && world4.w.patches.some((p) => p.data.status === 'closed' && p.data.closeNote === 'Out at the target.')
-    && twice === K.SAY.closedAlready && typed.pnlCents === -1200 && typed.celebrate === false && quiet.celebrate === false
-    && removed.removed === 'x2' && gone.w.deletes.includes('trade/positions/items/x2'),
-    JSON.stringify({ refusals, order: listed.positions.map((p) => p.id), sold: sold.pnlCents, twice }));
+  check('T48 the position routes are gone: the list, a new position, a close, a remove, a play status, the questions list and the fast look all answer 404, and the routes module has none of them',
+    gone.every((s) => s === 404)
+    && ['tradePositions', 'tradePosition', 'tradeClose', 'tradeRemove', 'tradePlay', 'tradeQa', 'tradeLook'].every((k) => K[k] === undefined)
+    && !/async function trade(Positions|Position|Close|Remove|Play|Qa|Look)\b/.test(T),
+    gone.join());
 }
 
 {
@@ -2203,359 +1928,106 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     JSON.stringify({ swing: swingRow?.data.expiresAt, scalp: scalpRow?.data.expiresAt }));
 }
 
-// ---- T51: the scan's own flight, run (Eric, 2026-09-22) ----------------------------
-//
-// The scan is a model turn he starts, so it rides the batch the way a question does: submitted,
-// parked on the desk's own state, collected by whichever poller gets there first. Lifted out of
-// advisor.js and run against recorders, because the shape of a flight is where the paid-for work
-// goes missing.
-{
-  const scanFns = [
-    lift(ADV, 'export async function runTradeScan(env, caseId, { now = Date.now() } = {}) {'),
-    // The fast look runs beside it (2026-09-22, v6.13), on the same state and the same finish.
-    lift(ADV, 'export async function runTradeLook(env, caseId, { now = Date.now() } = {}) {'),
-    lift(ADV, 'export async function pollScanFlight(env, caseId, { minAgeMs = 15_000 } = {}) {'),
-    lift(ADV, 'async function finishTradeScan(env, caseId, flight, message) {'),
-    lift(ADV, 'async function deskState(env) {'),
-    lift(ADV, 'export function askFlightNext(flight, poll, now = Date.now()) {'),
-  ].join('\n');
-  const markerLine = grab(ADV, /const SCAN_MARKER = \(caseId\) => [^\n]+/);
-  const abandonLine = grab(ADV, /const SCAN_ABANDON_MS = [^\n]+/);
-  const lookBudgetLine = grab(ADV, /const LOOK_BUDGET_MS = [^\n]+/);
-  const lookStaleLine = grab(ADV, /const LOOK_STALE_MS = [^\n]+/);
-  const failsLine = grab(ADV, /const ASK_POLL_FAILS_MAX = [^\n]+/);
-  const askAbandonLine = grab(ADV, /const ASK_ABANDON_MS = [^\n]+/);
+// ---- T51, T58, T63: the scan's flight, the empty scan and the fast look (2026-09-22) ---------
+// RE-PINNED 2026-09-23 (PR 420): all three were the Scan and the Look, and both are gone. The six-agent
+// run is what suggests a trade now, and its flight, its failures and its resume are held in desk.mjs
+// (D11 to D17). What stands here is that none of the old machinery survived to be reached by accident.
+// NEGATIVE CONTROL (run 2026-09-23): `const SCAN_MARKER = (id) => id;` added back to advisor.js made this read
+//   FAIL  T51 the scan's flight is gone ...
+check('T51 the scan\'s flight is gone: the advisor has no scan runner, no poller, no finish, no marker, no desk state and none of the scan\'s sentences, and nothing imports them',
+  !/runTradeScan|pollScanFlight|finishTradeScan|SCAN_MARKER|SCAN_ABANDON_MS|deskState\(|TRADE_SAY|scanRunning/.test(ADV)
+  && !/runTradeScan|pollScanFlight|finishTradeScan/.test(W + T));
+// NEGATIVE CONTROL (run 2026-09-23): `scanEmpty: 'x',` added back to trade-desk.js' SAY made this read
+//   FAIL  T58 the empty scan's handling is gone ...
+check('T58 the empty scan\'s handling is gone with the scan: no sentence for it in the desk\'s SAY, and the six-agent run answers a thin run with its own sentence instead',
+  !/scanEmpty|scanRunning|lookRunning|lookLong|lookNoCtx/.test(TD)
+  && K.SAY.runThin === 'Fewer than two of the five researchers came back, so the desk made no calls. Tap RUN TRADING DESK to try again.'
+  && /SAY\.runThin/.test(f('worker/desk-run.js')));
+// NEGATIVE CONTROL (run 2026-09-23): `id="look-go"` added back to the page made this read
+//   FAIL  T63 the fast look is gone ...
+check('T63 the fast look is gone: no Look button, no Scan button, no look route, no look contract, no look strength and no look runner, on the page, in the app, the routes, the demo or the advisor',
+  !/look-go|scan-go/.test(f('public/admin-desk.html') + f('public/js/admin-deskapp.js'))
+  && !/tradeLook|runTradeLook|LOOK_CONTRACT|TRADE_LOOK_EFFORT|LOOK_BUDGET/.test(T + TD + ADV + W)
+  && !/sub === 'look'/.test(D));
 
-  const scanWorld = (over = {}) => {
-    const w = { docs: new Map(), patches: [], deletes: [], diag: [], filed: [], cancels: [], submitted: [], carried: [], notes: 0 };
-    const deps = {
-      tryGet: async (env2, path) => (w.docs.has(path) ? w.docs.get(path) : null),
-      patchDoc: async (env2, path, data, opts = {}) => {
-        w.patches.push({ path, data, opts });
-        if ((opts.ifUpdateTime || opts.mustNotExist) && over.lostRace) return false;
-        if (opts.mustNotExist && w.docs.has(path)) return false;
-        const cur = w.docs.get(path) || { data: {}, updateTime: 'U0' };
-        w.docs.set(path, { data: { ...cur.data, ...data }, updateTime: `U${w.patches.length}` });
-        return true;
-      },
-      deleteDoc: async (env2, path) => { w.deletes.push(path); },
-      diagLog: async (env2, row) => { w.diag.push(row); },
-      tradeNote: async () => { w.notes++; return '\n\n<desk>\nNOTE\n</desk>'; },
-      turnRequest: (t) => ({ ...t, model: 'MODEL-ID' }),
-      submitTurnBatch: async (env2, turn, customId) => {
-        w.submitted.push({ turn, customId });
-        if (over.submitThrows) throw new Error('nope');
-        return 'batch-1';
-      },
-      batchCustomId: (prefix, id, stamp) => `${prefix}-${id}-${Number(stamp).toString(36)}`,
-      pollTurnBatch: async () => (over.poll || { state: 'running' }),
-      harvestPlays: K.harvestPlays,
-      fileDeskReading: async (env2, id, harvested) => { w.filed.push({ id, harvested }); return { plays: (harvested.plays || []).length, expired: 1, pushed: false }; },
-      extractText: () => over.text ?? '## Note\n\nQuiet.\n\n## Plays\n\n```json\n{ "plays": [], "portfolio": null }\n```',
-      deskStripDashes: K.stripDashes,
-      friendly: (e) => String(e.message || e),
-      client: () => ({ messages: { batches: { cancel: async (id) => { w.cancels.push(id); } } } }),
-      TRADE_STATE_PATH: K.STATE_PATH,
-      TRADE_EFFORT: K.TRADE_EFFORT,
-      TRADE_INSTRUCTIONS: K.TRADE_INSTRUCTIONS,
-      SCAN_CONTRACT: K.SCAN_CONTRACT,
-      TRADE_SAY: K.SAY,
-      readFailedError: (m) => new Error(m),
-      // The note's cut is the shared one now (2026-09-22, v6.9).
-      noteOnly: math.noteOnly,
-      // The scan carries the search tool itself (2026-09-22, v6.10).
-      TRADE_WEB_SEARCH_TOOL: K.TRADE_WEB_SEARCH_TOOL,
-      // And runs one step below Update (2026-09-22, v6.12).
-      TRADE_SCAN_EFFORT: K.TRADE_SCAN_EFFORT,
-      // The fast look's own strength and contract (2026-09-22, v6.13), and the two
-      // calls it makes on the wire, recorded rather than sent.
-      TRADE_LOOK_EFFORT: K.TRADE_LOOK_EFFORT,
-      LOOK_CONTRACT: K.LOOK_CONTRACT,
-      sendWithFallback: async (env2, turn, send) => send(turn),
-      carryTurn: async (env2, turn, opts) => {
-        w.carried.push({ turn, opts });
-        if (over.carryThrows) throw new Error('the look died');
-        return over.message || { stop_reason: 'end_turn', content: [{ type: 'text' }] };
-      },
-    };
-    const names = Object.keys(deps).join(', ');
-    const api = new Function('deps', `
-      const { ${names} } = deps;
-      const READ_FAILED = Symbol('read failed');
-      ${markerLine}
-      ${abandonLine}
-      ${lookBudgetLine}
-      ${lookStaleLine}
-      ${failsLine}
-      ${askAbandonLine}
-      ${scanFns.replace(/export async function/g, 'async function').replace(/export function askFlightNext/, 'function askFlightNext')}
-      return { runTradeScan, runTradeLook, pollScanFlight };
-    `)(deps);
-    return { w, api };
-  };
-
-  // A first tap: the note is read, the turn is built off his instructions and the scan's contract,
-  // the flight is parked with its marker, and nothing of the reading's is touched.
-  const first = scanWorld();
-  const started = await first.api.runTradeScan(env, 'c1', { now: at('2026-09-21T16:05:00Z') });
-  // A second tap while it is in the air buys nothing.
-  const busy = scanWorld();
-  busy.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanAt: new Date(at('2026-09-21T16:00:00Z')), scanCtx: { batchId: 'b' } }, updateTime: 'U0' });
-  const refused = await busy.api.runTradeScan(env, 'c1', { now: at('2026-09-21T16:05:00Z') });
-  // A tap on a flight two hours stale starts a fresh one rather than waiting for ever.
-  const stale = scanWorld();
-  stale.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanAt: new Date(at('2026-09-21T13:00:00Z')), scanCtx: { batchId: 'b' } }, updateTime: 'U0' });
-  const restarted = await stale.api.runTradeScan(env, 'c1', { now: at('2026-09-21T16:05:00Z') });
-  // A submit that throws parks the error rather than leaving him on Scanning for ever.
-  const broke = scanWorld({ submitThrows: true });
-  const brokeOut = await broke.api.runTradeScan(env, 'c1', { now: at('2026-09-21T16:05:00Z') });
-
-  // Just submitted, against the real clock: askFlightNext abandons a flight older than two hours,
-  // and a fixture stamped in the past would read as abandoned rather than as a heartbeat.
-  const flying = { batchId: 'b1', customId: 'scan-c1-x', submittedAt: new Date(), pollFails: 0 };
-  const running = scanWorld({ poll: { state: 'running' } });
-  running.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanCtx: flying, scanProgressAt: new Date() }, updateTime: 'U0' });
-  const beat = await running.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
-  // A flight still running after two hours is cancelled and parked, not watched for ever.
-  const old2 = scanWorld({ poll: { state: 'running' } });
-  old2.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanCtx: { ...flying, submittedAt: new Date(Date.now() - 3 * 3600_000) }, scanProgressAt: new Date(Date.now() - 3 * 3600_000) }, updateTime: 'U0' });
-  const abandoned = await old2.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
-
-  const landed = scanWorld({ poll: { state: 'done', message: {} }, text: '## Note\n\nOne to watch.\n\n## Plays\n\n```json\n{ "plays": [], "portfolio": null }\n```' });
-  landed.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanCtx: flying, scanProgressAt: new Date() }, updateTime: 'U0' });
-  const done = await landed.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
-  const noteOf = (w) => w.patches.find((p) => p.data.scanNote)?.data;
-
-  // Two pollers, one finish: the second loses the conditional claim and writes nothing.
-  const raced = scanWorld({ poll: { state: 'done', message: {} }, lostRace: true });
-  raced.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanCtx: flying, scanProgressAt: new Date() }, updateTime: 'U0' });
-  const lost = await raced.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
-
-  const failed = scanWorld({ poll: { state: 'failed', why: 'the batch died' } });
-  failed.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanCtx: flying, scanProgressAt: new Date() }, updateTime: 'U0' });
-  const dead = await failed.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
-
-  // Nothing in the air: the marker has nothing left to do and deletes itself.
-  const idle = scanWorld();
-  idle.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'idle' }, updateTime: 'U0' });
-  const nothing = await idle.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
-
-  // NEGATIVE CONTROL (run 2026-09-22): `scanStatus: 'running'` dropped from runTradeScan's first patch made this read
-  //   FAIL  T51 the scan's flight RUNS: a tap reads the note, builds the turn off his instructions and the scan's contract alone, parks the flight on the desk's own state with its own marker, and books no reading; a second tap while it is in the air is refused and a two hour old flight is restarted; a submit that throws parks the error; a poll heartbeats, and a landed one files the plays through the reading's own call, keeps the note and stamps the scan; the loser of a race writes nothing; a failed batch parks its reason and clears the marker, and a flight still up after two hours is cancelled
-  check('T51 the scan\'s flight RUNS: a tap reads the note, builds the turn off his instructions and the scan\'s contract alone, parks the flight on the desk\'s own state with its own marker, and books no reading; a second tap while it is in the air is refused and a two hour old flight is restarted; a submit that throws parks the error; a poll heartbeats, and a landed one files the plays through the reading\'s own call, keeps the note and stamps the scan; the loser of a race writes nothing; a failed batch parks its reason and clears the marker, and a flight still up after two hours is cancelled',
-    started.ok === true && started.status === 'running' && first.w.notes === 1
-    && first.w.submitted.length === 1
-    && first.w.submitted[0].turn.system[0].text === `${K.TRADE_INSTRUCTIONS}\n\n${K.SCAN_CONTRACT}`
-    && /Eric tapped Scan/.test(first.w.submitted[0].turn.messages[0].content[0].text)
-    && /<desk>/.test(first.w.submitted[0].turn.messages[0].content[0].text)
-    // RE-PINNED 2026-09-22 (v6.4): doubled, because at max effort with eight searches the thinking
-    // and the searching are spent from the same ceiling, and at 16000 one scan spent all of it
-    // before writing a word and came back with no text block at all.
-    // NEGATIVE CONTROL (run 2026-09-22, v6.4): the ceiling put back to 16000 made this read
-    //   FAIL  T51 the scan's flight RUNS: ...
-    && first.w.submitted[0].turn.maxTokens === 32000
-    // RE-PINNED 2026-09-22 (v6.10): the scan's turn carries the web search tool, eight uses, the
-    // same tool the reading gets through the desk's policy. It never had one: searches: 0 on every
-    // scan in the log, so it could only see the ten quotes in the note.
-    // NEGATIVE CONTROL (run 2026-09-22, v6.10): `tools: [TRADE_WEB_SEARCH_TOOL],` removed from the
-    //   scan's turn made this read    FAIL  T51 the scan's flight RUNS: ...
-    && JSON.stringify(first.w.submitted[0].turn.tools) === JSON.stringify([K.TRADE_WEB_SEARCH_TOOL])
-    && K.TRADE_WEB_SEARCH_TOOL.max_uses === 8 && K.TRADE_WEB_SEARCH_TOOL.type === 'web_search_20260209'
-    // RE-PINNED 2026-09-22 (v6.12): the scan's turn asks for high, not max, by his choice.
-    // NEGATIVE CONTROL (run 2026-09-22, v6.12): the scan's `effort: TRADE_SCAN_EFFORT` put back to
-    //   `TRADE_EFFORT` made this read    FAIL  T51 the scan's flight RUNS: ...
-    && first.w.submitted[0].turn.effort === 'high'
-    && first.w.submitted[0].customId.startsWith('scan-c1-')
-    && first.w.patches.some((p) => p.path === K.STATE_PATH && p.data.scanStatus === 'running')
-    && first.w.patches.some((p) => p.path === K.STATE_PATH && p.data.scanCtx?.batchId === 'batch-1')
-    && first.w.patches.some((p) => p.path === 'advisorQueue/scan_case_c1' && p.data.scan === true)
-    && !first.w.patches.some((p) => /advisor\/state/.test(p.path))
-    && refused.ok === false && refused.why === K.SAY.scanRunning && busy.w.submitted.length === 0
-    && restarted.ok === true && stale.w.submitted.length === 1
-    && brokeOut.ok === false && broke.w.patches.some((p) => p.data.scanStatus === 'error' && /nope/.test(p.data.scanError || ''))
-    && beat === true && running.w.patches.some((p) => p.data.scanProgressAt && p.data.scanCtx) && running.w.filed.length === 0
-    && done === true && landed.w.filed.length === 1 && landed.w.filed[0].id === 'c1' && landed.w.filed[0].harvested.portfolio === null
-    && noteOf(landed.w)?.scanStatus === 'idle' && noteOf(landed.w)?.lastScanAt instanceof Date
-    && /One to watch\./.test(noteOf(landed.w)?.scanNote.text) && !/```json/.test(noteOf(landed.w)?.scanNote.text)
-    && landed.w.deletes.includes('advisorQueue/scan_case_c1')
-    && landed.w.diag.some((e) => e.ev === 'scan-end' && e.ok === true && e.kind === 'deep')
-    && lost === false && raced.w.filed.length === 0
-    && dead === true && failed.w.patches.some((p) => p.data.scanStatus === 'error' && /the batch died/.test(p.data.scanError || ''))
-    && failed.w.deletes.includes('advisorQueue/scan_case_c1')
-    && nothing === false && idle.w.deletes.includes('advisorQueue/scan_case_c1')
-    && abandoned === true && old2.w.cancels.includes('b1') && old2.w.patches.some((p) => p.data.scanStatus === 'error' && /two hours/.test(p.data.scanError || '')),
-    JSON.stringify({ started, refused: refused.why, beat, done, lost, dead, nothing }));
-
-  // ---- T58: an empty answer is a failed scan, and it never eats the last good note ----------
-  // The 13:27 flight, once something finally looked at it, came back with server_tool_use and
-  // web_search_tool_result blocks and not one text block. It was filed as a finished scan with an
-  // empty note, which read on the page as "ran, found nothing" AND wrote that emptiness over the
-  // note from midnight, destroying the one thing still worth reading.
-  const blank = scanWorld({ poll: { state: 'done', message: { stop_reason: 'max_tokens', content: [{ type: 'server_tool_use' }, { type: 'web_search_tool_result' }] } }, text: '' });
-  blank.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanCtx: flying, scanProgressAt: new Date(), scanNote: { text: 'The midnight note.', plays: 3 } }, updateTime: 'U0' });
-  const empty = await blank.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
-  const blankEnd = blank.w.diag.find((e) => e.ev === 'scan-end');
-  const goodEnd = landed.w.diag.find((e) => e.ev === 'scan-end');
-  // Whitespace is empty too: an answer of three newlines is not an answer.
-  const spaces = scanWorld({ poll: { state: 'done', message: {} }, text: '   \n  \n' });
-  spaces.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanCtx: flying, scanProgressAt: new Date() }, updateTime: 'U0' });
-  await spaces.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
-
-  // NEGATIVE CONTROL (run 2026-09-22, v6.4): the `if (!text) {` guard in finishTradeScan changed to
-  //   `if (false) {` made this read
-  //   FAIL  T58 an empty answer is a failed scan: ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.4): the guard's `scanNote` left in its mask, so the empty
-  //   note was written over the good one, made this read
-  //   FAIL  T58 an empty answer is a failed scan: ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.4): the `.trim()` dropped from the answer, so three
-  //   newlines counted as an answer, made this read
-  //   FAIL  T58 an empty answer is a failed scan: ...
-  check('T58 an empty answer is a failed scan, not a finished one: nothing is filed, the note he already had is left exactly where it is rather than overwritten with nothing, the page gets a sentence saying the scan came back empty and to tap again, and the log keeps the three things that say why it was empty, which are the stop reason, the kinds of block that did come back and how many searches it ran; an answer of nothing but whitespace is judged the same way; and a real answer still carries its shape into the log',
-    empty === true && blank.w.filed.length === 0
-    && blank.w.patches.some((p) => p.data.scanStatus === 'error' && /came back empty/.test(p.data.scanError || '') && /Tap Scan again/.test(p.data.scanError || ''))
-    && !blank.w.patches.some((p) => p.data.scanNote !== undefined)
-    && !blank.w.patches.some((p) => (p.opts?.mask || []).includes('scanNote'))
-    && !!blankEnd && blankEnd.ok === false && blankEnd.why === 'empty' && blankEnd.chars === 0
-    && blankEnd.stop === 'max_tokens' && blankEnd.kinds === 'server_tool_use+web_search_tool_result' && blankEnd.searches === 1
-    && spaces.w.filed.length === 0 && spaces.w.patches.some((p) => /came back empty/.test(p.data.scanError || ''))
-    && !spaces.w.patches.some((p) => p.data.scanNote !== undefined)
-    && !!goodEnd && goodEnd.ok === true && goodEnd.chars > 0 && goodEnd.kinds === '' && goodEnd.searches === 0,
-    JSON.stringify({ empty, blankEnd, filed: blank.w.filed.length }));
-
-// ---- T63: the fast look RUNS (Eric, 2026-09-22: "I'd been scanning for hours") ---------------
-//
-// His whole trading day went on a button whose wait he could not see the end of, because a deep
-// scan joins the provider's batch queue: 5.4 minutes one hour, 8.1 the next, 12.6, then one still
-// in the air at 80. No effort setting touches that, because the waiting is queue time. So the look
-// does not queue at all. It runs on his tap, streamed, inside the invocation, and it is stopped
-// hard at two and a half minutes, well inside the four minute wall where a streamed run is killed.
-//
-// The whole point of the design is that NOTHING ELSE CHANGES: it shares scanStatus, the note, the
-// cards and finishTradeScan, so the page, the collection machinery and the demo needed no new
-// shape. What this check proves is exactly that, plus the three ways a look can go wrong.
-{
-  const now0 = at('2026-09-22T17:00:00Z');
-  // A first tap: claimed, the turn built off the look's own contract, and the answer filed through
-  // the scan's own finish. The turn is handed back unstarted, so nothing is on the wire yet.
-  const fast = scanWorld({ text: '## Note\n\nQuiet, rotational.\n\n## Plays\n\n```json\n{ "plays": [], "portfolio": null }\n```' });
-  const look = await fast.api.runTradeLook(env, 'c1', { now: now0 });
-  const claimPatch = fast.w.patches.find((p2) => p2.path === K.STATE_PATH);
-  const beforeRun = fast.w.carried.length;
-  await look.run();
-  // A second tap a few seconds later buys nothing: one look and one scan are mutually exclusive.
-  const twice = scanWorld();
-  twice.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanAt: new Date(now0 - 10_000), scanCtx: { kind: 'look' } }, updateTime: 'U0' });
-  const second = await twice.api.runTradeLook(env, 'c1', { now: now0 });
-  const scanRefused = await twice.api.runTradeScan(env, 'c1', { now: now0 });
-  // And a tap on the look while a deep scan is in the air is refused the other way round.
-  const deepUp = scanWorld();
-  deepUp.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanAt: new Date(now0 - 60_000), scanCtx: { batchId: 'b9' } }, updateTime: 'U0' });
-  const lookRefused = await deepUp.api.runTradeLook(env, 'c1', { now: now0 });
-  // The loser of a race between two taps in the same second writes nothing and runs nothing.
-  const race = scanWorld({ lostRace: true });
-  race.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'idle' }, updateTime: 'U0' });
-  const lostLook = await race.api.runTradeLook(env, 'c1', { now: now0 });
-  // A turn that dies parks the reason where his last note is untouched.
-  const died = scanWorld({ carryThrows: true });
-  const dying = await died.api.runTradeLook(env, 'c1', { now: now0 });
-  await dying.run();
-  // An isolate that died leaves "running" with no batch and nothing on a clock. Past the stale
-  // window the next poll clears it and says where the deep one is; inside it, nothing is touched.
-  const ghost = scanWorld();
-  ghost.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanAt: new Date(now0), scanCtx: { kind: 'look', submittedAt: new Date(Date.now() - 5 * 60_000) } }, updateTime: 'U0' });
-  const cleared = await ghost.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
-  const live = scanWorld();
-  live.w.docs.set(K.STATE_PATH, { data: { scanStatus: 'running', scanAt: new Date(now0), scanCtx: { kind: 'look', submittedAt: new Date() } }, updateTime: 'U0' });
-  const untouched = await live.api.pollScanFlight(env, 'c1', { minAgeMs: 0 });
-
-  // NEGATIVE CONTROL (run 2026-09-22, v6.13): `budgetMs: LOOK_BUDGET_MS` dropped from the look's
-  //   carryTurn call made this read    FAIL  T63 the fast look RUNS ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.13): the claim's `ifUpdateTime: doc.updateTime` dropped,
-  //   so two isolates both claim, made this read    FAIL  T63 the fast look RUNS ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.13): pollScanFlight's stale-look branch changed to
-  //   `if (false)` made this read      FAIL  T63 the fast look RUNS ...
-  check('T63 the fast look RUNS: a tap claims the desk conditionally and hands back an unstarted turn, so nothing is on the wire until the route runs it; the turn is built off his instructions and the LOOK contract alone, at the look\'s own strength, with no search tool and a small ceiling; it is carried STREAMED and stopped at its own budget with the sentence that sends him to Scan; the answer files through the scan\'s own finish; a second look, and a scan while a look is up, are refused both ways; the loser of a race writes nothing and runs nothing; a turn that dies parks the reason and leaves his note alone; and a look whose isolate died is cleared by the next poll once it is stale and left alone before that',
-    look.ok === true && look.status === 'running' && typeof look.run === 'function'
-    && beforeRun === 0 && fast.w.carried.length === 1
-    && claimPatch.data.scanStatus === 'running' && claimPatch.data.scanCtx.kind === 'look'
-    && (claimPatch.opts.ifUpdateTime !== undefined || claimPatch.opts.mustNotExist === true)
-    && fast.w.submitted.length === 0
-    && fast.w.carried[0].turn.system[0].text === `${K.TRADE_INSTRUCTIONS}\n\n${K.LOOK_CONTRACT}`
-    && /Eric tapped Look/.test(fast.w.carried[0].turn.messages[0].content[0].text)
-    && /<desk>/.test(fast.w.carried[0].turn.messages[0].content[0].text)
-    && fast.w.carried[0].turn.effort === K.TRADE_LOOK_EFFORT && K.TRADE_LOOK_EFFORT === 'low'
-    && fast.w.carried[0].turn.tools === undefined
-    && fast.w.carried[0].turn.maxTokens === 8000
-    // Streamed, not `noStream`: a call that produces no bytes is answered 524 by the provider's
-    // edge proxy at about a hundred seconds, which is inside this budget.
-    && fast.w.carried[0].opts.noStream !== true
-    && fast.w.carried[0].opts.budgetMs === 150_000
-    && fast.w.carried[0].opts.budgetWhy === K.SAY.lookLong
-    && fast.w.carried[0].opts.runStartedAt === now0
-    && fast.w.filed.length === 1 && fast.w.filed[0].id === 'c1'
-    && /Quiet, rotational\./.test(noteOf(fast.w)?.scanNote.text)
-    && fast.w.diag.some((e) => e.ev === 'look-start')
-    // Which button bought the answer, so the two waits can be measured apart in the log.
-    && fast.w.diag.some((e) => e.ev === 'scan-end' && e.ok === true && e.kind === 'look')
-    && second.ok === false && second.why === K.SAY.lookRunning && second.run === null && twice.w.carried.length === 0
-    && scanRefused.ok === false && scanRefused.why === K.SAY.lookRunning && twice.w.submitted.length === 0
-    && lookRefused.ok === false && lookRefused.why === K.SAY.scanRunning && deepUp.w.carried.length === 0
-    && lostLook.ok === false && lostLook.run === null && race.w.carried.length === 0
-    && died.w.carried.length === 1 && died.w.patches.some((p2) => p2.data.scanStatus === 'error' && /the look died/.test(p2.data.scanError || ''))
-    && !died.w.patches.some((p2) => p2.data.scanNote !== undefined)
-    && died.w.diag.some((e) => e.ev === 'look-end' && e.ok === false)
-    && cleared === true && ghost.w.patches.some((p2) => p2.data.scanStatus === 'error' && p2.data.scanError === K.SAY.lookLong)
-    && ghost.w.deletes.includes('advisorQueue/scan_case_c1')
-    && untouched === false && live.w.patches.length === 0 && live.w.deletes.length === 0,
-    JSON.stringify({ look: look.ok, carried: fast.w.carried.length, second: second.why, cleared, untouched }));
-}
-}
-
-// ---- T64: how long it has been, on the running row (Eric, 2026-09-22) -------------------------
-//
-// "I'd been scanning for hours. Pretty much the whole trading day." The row said Scanning and
-// nothing else, so five minutes and five hours looked identical on his phone and he sat through a
-// session before saying so. The line now counts, from the minute mark on.
+// ---- T64: how long it has been, on the RUN TRADING DESK line (Eric, 2026-09-22) ---------------
+// RE-PINNED 2026-09-23 (PR 420): the running row belongs to the one button now. runLine says which
+// stage the run is in, how many of the five are back, and for how long, and never "0 minutes".
+// NEGATIVE CONTROL (run 2026-09-23): runLine's `m < 1 ? ''` changed to `m < 0 ? ''` made this read
+//   FAIL  T64 the RUN TRADING DESK line says ...
 {
   const DESKMOD = await import('../../public/js/admin-desk.js');
   const APP = f('public/js/admin-deskapp.js');
-  const DESKHTML = f('public/admin-desk.html');
-  const t0 = Date.parse('2026-09-22T17:00:00Z');
-  const deep = (secs) => DESKMOD.scanRunLine({ kind: 'deep', startedAt: new Date(t0).toISOString() }, t0 + secs * 1000);
-  const quick = (secs) => DESKMOD.scanRunLine({ kind: 'look', startedAt: new Date(t0).toISOString() }, t0 + secs * 1000);
-  // NEGATIVE CONTROL (run 2026-09-22, v6.13): the elapsed branch removed so scanRunLine always
-  //   returned the head sentence made this read    FAIL  T64 the running row says how long ...
-  // NEGATIVE CONTROL (run 2026-09-22, v6.13): `on(['panel'], paintScan);` removed from the app
-  //   made this read                               FAIL  T64 the running row says how long ...
-  check('T64 the running row says how long it has been RUNS: under three quarters of a minute it says what to expect and never "0 minutes"; past that it counts, singular at one; the quick look and the deep scan say different things; a row with no stamp and an unparseable one both fall back rather than printing nothing; the Worker and the demo both send the stamp and which button is up; the page repaints it on every poll and disables both buttons while one is running; and the page carries a Look button beside Scan',
-    deep(0) === 'Scanning for new entries. <b>It lands on its own.</b>'
-    && deep(44) === 'Scanning for new entries. <b>It lands on its own.</b>'
-    && deep(45) === 'Scanning for new entries. <b>1 minute so far.</b>'
-    && deep(240) === 'Scanning for new entries. <b>4 minutes so far.</b>'
-    && deep(4 * 3600) === 'Scanning for new entries. <b>240 minutes so far.</b>'
-    && quick(0) === 'Taking a quick look. <b>Under a minute.</b>'
-    && quick(90) === 'Taking a quick look. <b>2 minutes so far.</b>'
-    && DESKMOD.scanRunLine({ kind: 'deep' }, t0) === 'Scanning for new entries. <b>It lands on its own.</b>'
-    && DESKMOD.scanRunLine({ kind: 'look', startedAt: 'not a date' }, t0) === 'Taking a quick look. <b>Under a minute.</b>'
-    && DESKMOD.scanRunLine(null, t0) === 'Scanning for new entries. <b>It lands on its own.</b>'
-    // The Worker and the demo send the same two fields, and only while one is up.
-    && /startedAt: st\.scanStatus === 'running' && st\.scanAt \? new Date\(st\.scanAt\)\.toISOString\(\) : null,/.test(T)
-    && /kind: st\.scanStatus === 'running' \? \(st\.scanCtx\?\.kind === 'look' \? 'look' : 'deep'\) : null,/.test(T)
-    && /startedAt: st\.scanStatus === 'running' && st\.scanAt \? new Date\(st\.scanAt\)\.toISOString\(\) : null,/.test(D)
-    && /kind: st\.scanStatus === 'running' \? \(st\.scanCtx\?\.kind === 'look' \? 'look' : 'deep'\) : null,/.test(D)
-    // The page: the builder paints the running line, both buttons go down together, and the row
-    // repaints on the poll rather than only when a play changes.
-    && /\$\('#scan-txt'\)\.innerHTML = running\n\s+\? scanRunLine\(sc\)/.test(APP)
-    && /\$\('#scan-go'\)\.disabled = running;\n\s+\$\('#look-go'\)\.disabled = running;/.test(APP)
-    && /on\(\['panel'\], paintScan\);/.test(APP)
-    && /\$\('#look-go'\)\.addEventListener\('click', \(\) => startScan\('look', 'look'\)\);/.test(APP)
-    && /\$\('#scan-go'\)\.addEventListener\('click', \(\) => startScan\('scan', 'deep'\)\);/.test(APP)
-    && /id="look-go"/.test(DESKHTML) && /id="scan-go"/.test(DESKHTML)
-    && DESKHTML.indexOf('id="look-go"') < DESKHTML.indexOf('id="scan-go"')
-    // The route, and the demo's mirror of it.
-    && /if \(sub === 'look'\) return tradeLook\(env, \{ now, ctx \}\);/.test(T)
-    && /if \(sub === 'scan' \|\| sub === 'look'\) \{/.test(D),
-    JSON.stringify({ d0: deep(0), d45: deep(45), q90: quick(90) }));
+  const now = Date.parse('2026-09-23T16:00:00Z');
+  const ago = (s) => new Date(now - s * 1000).toISOString();
+  const q = DESKMOD.runLine({ status: 'queued', queuedAt: ago(20) }, null, now);
+  const r = DESKMOD.runLine({ status: 'researching', startedAt: ago(61), done: 2, of: 5 }, null, now);
+  const r3 = DESKMOD.runLine({ status: 'researching', startedAt: ago(200), done: 4, of: 5 }, null, now);
+  const dec = DESKMOD.runLine({ status: 'decide', startedAt: ago(180) }, null, now);
+  const deciding = DESKMOD.runLine({ status: 'deciding', startedAt: ago(250) }, null, now);
+  const none = DESKMOD.runLine({ status: 'idle' }, null, now);
+  const last = DESKMOD.runLine({ status: 'idle' }, { at: ago(7200), count: 3 }, now);
+  const one = DESKMOD.runLine({ status: 'idle' }, { at: ago(30), count: 1 }, now);
+  const bad = DESKMOD.runLine({ status: 'researching', startedAt: 'not a date', done: 1 }, null, now);
+  check('T64 the RUN TRADING DESK line says where the run is: queued says it is picked up within a minute and never counts zero; researching says how many of five are back and for how many minutes, singular at one; handed to the desk and deciding each say so; idle with no run says to tap; idle after a run says when, how long ago and how many trades, singular at one; an unreadable stamp still says the stage; the button is down while any stage runs; and the page repaints the line on the poll and draws the five dots',
+    q.busy === true && q.html === 'Starting. <b>The desk picks it up within a minute.</b>'
+    && r.busy === true && r.html === 'Five researchers at work. <b>2 of 5 back.</b> 1 minute so far.'
+    && r3.html === 'Five researchers at work. <b>4 of 5 back.</b> 3 minutes so far.'
+    && dec.busy === true && /The desk decides in the next minute\./.test(dec.html) && deciding.busy === true && /The desk is deciding\./.test(deciding.html)
+    && none.busy === false && none.html === 'No run yet. <b>Tap RUN TRADING DESK.</b>'
+    && last.busy === false && /^Last run <b>[0-9:]+ [AP]M<\/b>, 2h ago · 3 trades$/.test(last.html)
+    && /^Last run <b>[0-9:]+ [AP]M<\/b> · 1 trade$/.test(one.html)
+    && bad.html === 'Five researchers at work. <b>1 of 5 back.</b>'
+    && /\$\('#run'\)\.disabled = line\.busy;/.test(APP) && /const line = runLine\(run, st\.desk\);/.test(APP)
+    && /run\.status === 'researching'\n\s+\? `<span class="agents" aria-hidden="true">/.test(APP)
+    // RE-PINNED 2026-09-23 (review): the scheduler keeps a sooner poll rather than pushing it back.
+    && /const wait = ms \?\? \(runBusy\(\) \? 5000 : 60_000\);/.test(APP)
+    && !DASH.test(q.html + r.html + dec.html + last.html),
+    JSON.stringify({ q: q.html, r: r.html, last: last.html, one: one.html }));
+}
+
+// ---- T65: the page's shape and its Settings (PR 420, 2026-09-23) ---------------------------------
+// Eric: "TRADES (default) ... NEWS ... HISTORY ... SETTINGS/BALANCE (minimal)", "Balance manually
+// updated, used for sizing", "3% risk rule." The page opens on Trades, the cog opens a sheet with his
+// balance first and the risk per trade beside it, and nothing on the sheet reaches back for the key.
+// NEGATIVE CONTROL (run 2026-09-23): the sheet's `value="${esc(pub.riskPct ?? 3)}"` changed to `value="${esc(pub.riskPct ?? 1)}"` made this read
+//   FAIL  T65 the page opens on Trades ...
+{
+  const PAGE = f('public/admin-desk.html');
+  const APP = f('public/js/admin-deskapp.js');
+  check('T65 the page opens on Trades with RUN TRADING DESK at the top, the active trades above the board and the rule under it; the cog opens Settings with his balance first, typed and saved as today\'s, then the risk per trade at 3% unless he set one, the account type, the key by its last four only, the list it prices, pushes and the debug switch that alone opens the research; and a stored page that no longer exists falls back to Trades',
+    /const PAGES = \['trades', 'news', 'history'\];/.test(APP) && /const page = PAGES\.includes\(name\) \? name : 'trades';/.test(APP)
+    && PAGE.indexOf('id="runbox"') < PAGE.indexOf('id="active-wrap"') && PAGE.indexOf('id="active-wrap"') < PAGE.indexOf('id="board"')
+    && /RUN TRADING DESK<\/button>/.test(PAGE) && /<p class="foot">Ideas, not orders\. Every trade is your decision\.<\/p>/.test(PAGE)
+    && APP.indexOf('<h2>Balance</h2>') > 0 && APP.indexOf('<h2>Balance</h2>') < APP.indexOf('<h2>Risk</h2>')
+    && /await call\('balance', \{ cents: Math\.round\(v \* 100\) \}\);/.test(APP)
+    && /value="\$\{esc\(pub\.riskPct \?\? 3\)\}"/.test(APP) && /const out = await save\(\{ riskPct: v \}, '#risk-said'\);/.test(APP)
+    && /pub\.hasKey \? `on file · ends \$\{esc\(pub\.keyTail \|\| ''\)\}` : 'none on file'/.test(APP) && !/finnhubKey: pub|pub\.finnhubKey/.test(APP)
+    && /\$\{sw\('pushOn', pub\.pushOn !== false\)\}/.test(APP) && /\$\{sw\('debugResearch', pub\.debugResearch === true\)\}/.test(APP)
+    && /id="research-go"\$\{pub\.debugResearch === true \? '' : ' hidden'\}/.test(APP)
+    && /rules: \{ riskPct: settingsNow\(\)\.riskPct \?\? 3 \},/.test(APP)
+    && !DASH.test(PAGE + APP));
+}
+
+// ---- T66: what the review found on the page (2026-09-23) ------------------------------------------
+// A reviewer read the app end to end. Six things it found are held here, each in the one line that fixes it.
+// NEGATIVE CONTROL (run 2026-09-23): pollOnce's `if (rev !== S.rev) return;` removed made this read
+//   FAIL  T66 the page never paints over his tap ...
+// NEGATIVE CONTROL (run 2026-09-23): the balance guard's `!raw ||` removed made this read
+//   FAIL  T66 the page never paints over his tap ...
+{
+  const APP = f('public/js/admin-deskapp.js');
+  const startRun = lift(APP, 'async function startRun() {');
+  check('T66 the page never paints over his tap and never loses a word: a poll that set out before a tap is thrown away when it lands; every tap bumps the revision; a sooner poll is never pushed back; a failed RUN shows its reason after the line repaints rather than before; an empty or zero balance is refused before anything is sent; the door keeps its button through a failure; closing Settings closes an open sheet and its listeners; and a card sizes only from a balance he typed',
+    /const rev = S\.rev;\n\s+try \{\n\s+const out = await call\('state'\);\n(?:\s*\/\/[^\n]*\n)*\s+if \(rev !== S\.rev\) return;\n\s+S\.state = out;/.test(APP)
+    && (APP.match(/S\.rev \+= 1;/g) || []).length >= 4
+    && /if \(pollTimer && pollAt <= Date\.now\(\) \+ wait\) return;/.test(APP)
+    && startRun.indexOf('paintRun();\n    say(\'#run-said\', err.message);') > 0
+    && /if \(!raw \|\| !Number\.isFinite\(v\) \|\| v <= 0\) \{ say\('#bal-said'/.test(APP)
+    && /const btn = e\.currentTarget;\n\s+btn\.disabled = true;/.test(APP) && /say\('#door-said', err\.message\); btn\.disabled = false;/.test(APP)
+    && /const closeAll = \(\) => \{ sheetClose\?\.\(\); ov\.innerHTML = '';/.test(APP)
+    && /balanceTyped: !!balanceNow\(\)\.typed && balanceNow\(\)\.cents > 0,/.test(APP),
+    JSON.stringify({ revs: (APP.match(/S\.rev \+= 1;/g) || []).length, run: startRun.length }));
 }
 
 // THE COUNTER IS COUNTED LAST (2026-09-22, v6.4). It used to be declared in the middle of the

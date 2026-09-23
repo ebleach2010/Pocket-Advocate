@@ -460,6 +460,75 @@ export function playSizing({ play, rules, accountCents }) {
   };
 }
 
+/**
+ * HOW MUCH, IN THE UNITS HE ACTS IN (PR 420, 2026-09-23). A trade idea
+ * arrives with an entry zone, a stop, one or two targets and a suggested share
+ * of the account. This turns it into what the card says: dollars in, shares
+ * or contracts, what the stop costs, what the first target pays, and the
+ * ratio between them.
+ *
+ * The suggested share is capped by his risk per trade (three percent unless
+ * he changes it): the size is the lesser of what the idea asks for and what
+ * keeps a stopped-out trade inside that rule. Shares can be fractional;
+ * contracts are whole, so one contract that already risks more than the rule
+ * sizes to zero and says so. Sized on every read from the balance he last
+ * typed, so a new balance re-sizes every card at once.
+ */
+export function recSizing({ rec, accountCents, rules }) {
+  const A = Math.max(0, Math.round(Number(accountCents) || 0));
+  // His rule is 3% a trade (Eric, 2026-09-23: "3% risk rule."), so that is what a card sizes to when
+  // no rule is handed in, not the calculator's old 1%.
+  const R = rulesOf({ rules: { riskPct: 3, ...(rules || {}) } });
+  const inst = ['stock', 'call', 'put'].includes(rec?.instrument) ? rec.instrument : 'stock';
+  const lo = fin(rec?.entryLow); const hi = fin(rec?.entryHigh);
+  // THE WORST FILL (2026-09-23): the rule has to hold wherever in the zone he is filled, so a buy is
+  // sized from the top of the zone and a short from the bottom. Sized from the middle, a fill at the
+  // edge of a wide zone could lose more at the stop than his rule allows.
+  const up = inst !== 'stock' || rec?.side !== 'short';
+  const entry = lo != null && hi != null ? (up ? Math.max(lo, hi) : Math.min(lo, hi)) : fin(rec?.entry) ?? lo ?? hi;
+  const stop = fin(rec?.stop);
+  const targets = (Array.isArray(rec?.targets) ? rec.targets : []).map(fin).filter((t) => t != null);
+  const pos = { instrument: inst, side: rec?.side === 'short' ? 'short' : 'long', entry, stop };
+  const M = multOf(pos);
+  const out = {
+    instrument: inst, entry, qty: null, shares: null, contracts: null, costCents: null,
+    riskCents: null, rewardCents: null, reward2Cents: null, rr: null,
+    budgetCents: Math.round((A * R.riskPct) / 100), capped: false, overRule: false, unitRiskCents: null,
+    allocCents: null, unitCostCents: null,
+  };
+  if (entry == null || entry <= 0 || !A) return out;
+  const u = unitRisk(pos);
+  out.unitRiskCents = u == null ? null : Math.round(u * 100);
+  const perUnitCents = Math.round(entry * M * 100);
+  const pct = Math.min(50, Math.max(0, fin(rec?.allocPct) ?? 0));
+  const allocCents = Math.min(A, Math.round((A * pct) / 100));
+  out.allocCents = allocCents;
+  out.unitCostCents = perUnitCents;
+  const whole = inst !== 'stock';
+  const byAlloc = perUnitCents > 0 ? allocCents / perUnitCents : 0;
+  const byRule = out.unitRiskCents && out.unitRiskCents > 0 ? out.budgetCents / out.unitRiskCents : Infinity;
+  let qty = Math.min(byAlloc, byRule);
+  out.capped = byRule < byAlloc;
+  qty = whole ? Math.floor(qty) : r4(qty);
+  if (!(qty > 0)) {
+    out.overRule = whole && out.unitRiskCents != null && out.unitRiskCents > out.budgetCents;
+    out.qty = 0;
+    if (whole) out.contracts = 0; else out.shares = 0;
+    out.costCents = 0;
+    return out;
+  }
+  out.qty = qty;
+  if (whole) out.contracts = qty; else out.shares = qty;
+  out.costCents = Math.round(qty * perUnitCents);
+  out.riskCents = out.unitRiskCents == null ? null : Math.round(qty * out.unitRiskCents);
+  const sign = pos.side === 'short' && inst === 'stock' ? -1 : 1;
+  const gain = (t) => Math.round(Math.max(0, sign * (t - entry)) * M * 100 * qty);
+  if (targets[0] != null) out.rewardCents = gain(targets[0]);
+  if (targets[1] != null) out.reward2Cents = gain(targets[1]);
+  if (out.riskCents && out.rewardCents != null) out.rr = r2(out.rewardCents / out.riskCents);
+  return out;
+}
+
 /** The price ladder around the entry: the stop's distance as R, breakeven, then 1R, 2R and 3R the right way round. */
 export function ladder({ side, entry, stop }) {
   const e = fin(entry); const s = fin(stop);

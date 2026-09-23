@@ -51,12 +51,14 @@ import { notifyUser } from './push.js';
 import { validateAction } from './advisor-acts.js';
 import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
-  pollCaseFlight, pollFlightsNow, pollAskFlight, pollScanFlight,
+  pollCaseFlight, pollFlightsNow, pollAskFlight,
   runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
 } from './advisor.js';
-// The trade desk (2026-09-21; a case file since 2026-09-22): its slots and
-// its routes, and the leaf both stand on.
-import { tradeRoute, TradeError, tradePanelBlock, maybeMorningRead, maybeCollectScan } from './trade.js';
+// The trade desk (2026-09-21; a case file since 2026-09-22; PR 420 since
+// 2026-09-23): its routes, the six-agent run the cron hosts and its one
+// morning clock, and the leaf they all stand on.
+import { tradeRoute, TradeError, tradePanelBlock } from './trade.js';
+import { maybeRunDesk, maybeMorningRun } from './desk-run.js';
 import { TRADE_CATEGORIES, SAY as TRADE_SAY } from './trade-desk.js';
 
 /**
@@ -993,41 +995,39 @@ export default {
         // the three questions in order, uncaught, and says what each one
         // answered: can the service account get a token, can it read one
         // document, can it write one. Touches diag/probe and nothing of his.
-        // THE DESK'S SCAN, FROM OUTSIDE (Eric, 2026-09-22: "It's not producing
-        // a scan rn"). A scan lives on trade/state and nothing else reports
-        // it, so a stuck one was invisible from anywhere but his phone. This
-        // reads the two desk documents and says what the scan is doing, how
-        // old the flight is, what the last one filed and what the last note
-        // said. Read only: it writes nothing and taps nothing.
+        // THE DESK'S RUN, FROM OUTSIDE (PR 420, 2026-09-23). A run lives on
+        // trade/state and the research doc beside it, and nothing else reports
+        // it, so a stuck one would be invisible from anywhere but his phone.
+        // This says where the run is, how old its heartbeat is, how each of
+        // the five researchers did and what the desk filed. Read only: it
+        // writes nothing and taps nothing, and no report text rides it.
         if (url.searchParams.get('do') === 'desk') {
           const age = (v) => (v ? Math.round((Date.now() - new Date(v).getTime()) / 1000) : null);
           const st = await getDoc(env, 'trade/state').catch(() => null);
           const cfg = await getDoc(env, 'trade/settings').catch(() => null);
           const d = st?.data || {};
           const caseId = cfg?.data?.caseId || null;
-          const adv = caseId ? await getDoc(env, `cases/${caseId}/advisor/state`).catch(() => null) : null;
-          const rows = await listDocs(env, 'advisorQueue', { pageSize: 10 }).catch(() => []);
+          const research = await getDoc(env, 'trade/research').catch(() => null);
+          const run = d.run || null;
+          const rd = research?.data || {};
           return json({
             caseId,
-            scan: {
-              status: d.scanStatus || 'idle',
-              error: d.scanError || null,
-              lastScanAgeS: age(d.lastScanAt),
-              flight: d.scanCtx ? {
-                batchId: String(d.scanCtx.batchId || '').slice(0, 24),
-                submittedAgeS: age(d.scanCtx.submittedAt),
-                pollFails: d.scanCtx.pollFails || 0,
-                finishingAgeS: age(d.scanCtx.finishingAt),
-              } : null,
-              beatAgeS: age(d.scanProgressAt),
-              note: d.scanNote ? { plays: d.scanNote.plays ?? null, ageS: age(d.scanNote.at), head: String(d.scanNote.text || '').slice(0, 600) } : null,
-            },
-            morning: { day: d.morningDay || null, ageS: age(d.morningAt) },
-            reading: adv?.data ? {
-              status: adv.data.status || null, error: adv.data.error || null,
-              updatedAgeS: age(adv.data.updatedAt), batchAgeS: age(adv.data.batch?.submittedAt),
+            run: run ? {
+              id: run.id || null, status: run.status || null, trigger: run.trigger || null, phase: run.phase || null,
+              attempt: run.attempt || 0, done: run.done || 0, count: run.count ?? null, error: run.error || null,
+              queuedAgeS: age(run.queuedAt), startedAgeS: age(run.startedAt), beatAgeS: age(run.heartbeatAt), finishedAgeS: age(run.finishedAt),
+              ms: run.ms ?? null,
             } : null,
-            queue: rows.map((r) => ({ id: r.id, kind: r.data?.kind || null, scan: !!r.data?.scan, ask: !!r.data?.ask, tries: r.data?.tries || 0, ageS: age(r.data?.at) })),
+            research: rd.runId ? {
+              runId: rd.runId,
+              agents: [1, 2, 3, 4, 5].map((n) => {
+                const r = rd[`r${n}`];
+                return r ? { n, status: r.status || null, ms: r.ms ?? null, stop: r.stop || null, err: r.err || null, searches: r.usage?.searches ?? null, chars: r.text ? r.text.length : 0 } : { n, status: 'missing' };
+              }),
+            } : null,
+            desk: d.desk ? { runId: d.desk.runId || null, ageS: age(d.desk.at), count: d.desk.count ?? null, reports: d.desk.reports ?? null, news: (d.desk.news || []).length, ids: (d.desk.ids || []).length } : null,
+            active: Array.isArray(d.activeIds) ? d.activeIds.length : null,
+            morning: { day: d.morningDay || null, ageS: age(d.morningAt) },
           });
         }
         if (url.searchParams.get('do') === 'firestore-probe') {
@@ -1377,15 +1377,13 @@ export default {
       ctx.waitUntil(clearOpenSlots(env));
     }
 
-    // THE DESK'S ONE CLOCK (Eric, 2026-09-22): a full reading at 07:00 on his
-    // time, on a trading day, once. Un-gated so a firing inside the window is
-    // never missed; the day stamp inside makes every firing after the first a
-    // single document read.
-    ctx.waitUntil(maybeMorningRead(env).catch(() => {}));
-    // AND COLLECT A SCAN HE STARTED (2026-09-22, v6.3). Asks the desk rather
-    // than the queue, so a flight whose queue row has gone is still looked at.
-    // One read of one document a minute; nothing here starts anything.
-    ctx.waitUntil(maybeCollectScan(env).catch(() => {}));
+    // THE DESK'S ONE CLOCK (PR 420, Eric 2026-09-23: "The Trading Desk
+    // automatically performs its full market scan once per trading day at
+    // 7:00 AM Mountain Time. That remains the ONLY automatic scheduled run.").
+    // Un-gated so a firing inside the window is never missed; the day stamp
+    // inside makes every firing after the first a single document read. It
+    // only queues the run; the awaited call below runs it.
+    ctx.waitUntil(maybeMorningRun(env).catch(() => {}));
     // Un-gated on purpose: the wedged case should recover on the FIRST
     // firing after this deploys, not up to a quarter hour later. One marker
     // read per firing once finished; remove with the diag scaffolding.
@@ -1424,7 +1422,18 @@ export default {
     // it; the voice study waits for one of those firings with an empty
     // queue. The quick jobs above stay on waitUntil: they finish in
     // seconds, well inside the post-event grace.
-    const ranAnalysis = await runQueuedAnalyses(env, deadlineAt);
+    // PR 420 (2026-09-23): the six-agent desk run is the firing's one model
+    // job whenever one is queued, handed to the desk, or needs resuming. It
+    // runs HERE, awaited, because this invocation has fifteen minutes of wall
+    // time and a tap's background work is cancelled thirty seconds after the
+    // response. A firing that ran the desk leaves the case drain to the next
+    // minute, which is one minute away and runs in its own invocation.
+    // Never on a quarter hour (review, 2026-09-23): those firings carry the
+    // medical sweeps, and five research streams would hold five of the six
+    // connections an invocation may open. A queued run waits one minute.
+    const ranDesk = minute % 15 === 0 ? false
+      : await maybeRunDesk(env, { deadlineAt }).catch((err) => { console.error('desk run:', err?.stack || err); return false; });
+    const ranAnalysis = ranDesk ? true : await runQueuedAnalyses(env, deadlineAt);
     if (minute % 5 === 0) {
       // The sweep reads every open case and subscription and each one's
       // advisor state, so it is the most expensive thing on this clock. It
@@ -2121,7 +2130,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-22-fast-look';
+const BUILD_TAG = 'v2026-09-23-pr420';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2129,7 +2138,7 @@ const BUILD_TAG = 'v2026-09-22-fast-look';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '6.13';
+const VERSION = '7.0';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -6528,16 +6537,10 @@ async function handleAdvisorState(request, env, url) {
   // opens, so this costs no extra read on a case that is not the desk.
   const trade = !!state?.data.trade;
   const terms = knowledge.filter((r) => TRADE_CATEGORIES.includes(String(r.data.category || '')) === trade);
-  let tradeBlock = trade ? await tradePanelBlock(env).catch(() => null) : null;
-  // A SCAN IN FLIGHT COMES HOME ON THIS POLL TOO (2026-09-22, the desk as one
-  // app). The app polls this route every couple of seconds while a scan is in
-  // the air, so it is the first to know the batch has landed; without this the
-  // page waited for the cron. Throttled inside to one provider GET a quarter
-  // minute, exactly as the question above, and the block is re-read so the
-  // poll that found the plays is the poll that paints them.
-  if (tradeBlock?.scan?.status === 'running' && await pollScanFlight(env, id).catch(() => false)) {
-    tradeBlock = await tradePanelBlock(env).catch(() => tradeBlock);
-  }
+  // PR 420 (2026-09-23): the desk has no scan and no reading any more, so
+  // there is nothing in flight to bring home here; the block only says this
+  // case is the desk, and the folder hands it to the desk's own page.
+  const tradeBlock = trade ? await tradePanelBlock(env).catch(() => null) : null;
   return json({
     state: panelState,
     trade: tradeBlock,

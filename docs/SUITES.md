@@ -419,6 +419,26 @@ card off the page into Closed today at +$60.00, moves the day to the aim
 and writes the sale into his log, and a stop widened on Calc repaints the
 risk there and on the Trades card.
 
+**PR 420 (2026-09-23).** The desk was rebuilt around two jobs, suggested
+trades and market news, and renamed. `tools/suites/desk.mjs` (D1 to D20, each
+with a control recorded) runs the engine in `worker/desk-run.js` against a
+fake database and scripted turns: the streamed transport, a pause and a
+refusal, the trade validator and the desk's own limits, expiry by kind, a
+queued run claimed once, the whole run with no history in any prompt, a thin
+run, the handoff to the next firing, a resume from the saved reports, the
+structured answer's fallback, the 7:00 run and the 3% sizing. trade.mjs keeps
+its numbers: T3, T6, T7 and T26 to T29 run the new routes (RUN TRADING DESK,
+the run line's block, the board, the state, Settings with the risk per trade,
+the balance, YES and PROFIT or LOSS); T34, T52 and T59 to T62 run the card,
+History, News and the sizing; T53, T57, T48, T51, T58 and T63 hold that the
+chat, the scan collector, the positions, the scan's flight and the fast Look
+are gone; T65 holds the page's shape and its Settings sheet. drive-trade.mjs
+is rewritten again, sections A to L: the shelf card, the three tabs with no
+chat anywhere, the board with every field and the taken trade lit yellow, a
+run that walks its stages and lands, YES, PROFIT and LOSS with their moments
+landing in History, News, Settings re-sizing every card, the research behind
+its switch, reduced motion, the old address and every page at 320px.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

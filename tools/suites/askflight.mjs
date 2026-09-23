@@ -115,10 +115,15 @@ check('AF3 three pollers and one finish: the drain looks at an ask marker under 
   // RE-PINNED 2026-09-22 (v6.2): the sweeper's scan branch now sits between the ask's and the draft's,
   // because a scan marker judged as a stalled reading was deleted and its flight orphaned. The draft
   // comment is still what follows, with the scan branch in between.
-  /if \(row\.data\.ask\) \{\n\s+await withCasePolicy\(env, kind, id, \(\) => pollAskFlight\(env, kind, id, String\(row\.data\.qaId \|\| ''\)\)\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n(?:\s*\/\/[^\n]*\n)*\s+if \(row\.data\.scan\) \{\n\s+await pollScanFlight\(env, id\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n\s+\/\/ A draft marker/.test(ADV)
+  /if \(row\.data\.ask\) \{\n\s+await withCasePolicy\(env, kind, id, \(\) => pollAskFlight\(env, kind, id, String\(row\.data\.qaId \|\| ''\)\)\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n(?:\s*\/\/[^\n]*\n)*\s+if \(row\.data\.scan\) \{\n\s+await deleteDoc\(env, `advisorQueue\/\$\{row\.id\}`\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n\s+\/\/ A draft marker/.test(ADV)
   // RE-PINNED 2026-09-22 (nothing on the desk runs but his tap): the desk's scan has a flight of its
   // own on the desk's own state, so a scan marker is routed between the ask's and the case's.
-  && /if \(row\.data\.ask\) \{\n\s+await withCasePolicy\(env, kind, id, \(\) => pollAskFlight\(env, kind, id, String\(row\.data\.qaId \|\| ''\), \{ minAgeMs: 45_000 \}\)\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n(?:\s*\/\/[^\n]*\n)*\s+if \(row\.data\.scan\) \{\n\s+await pollScanFlight\(env, id, \{ minAgeMs: 45_000 \}\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n\s+await pollCaseFlight\(env, kind, id, \{ minAgeMs: 45_000 \}\)/.test(ADV)
+  // RE-PINNED 2026-09-23 (PR 420): the scan is gone, so both branches now delete a leftover scan
+  // marker instead of polling it; they still sit where they did, above the claim and the case poll,
+  // so an old marker can never be judged a reading that will not start.
+  // NEGATIVE CONTROL (run 2026-09-23): the pollFlightsNow branch's deleteDoc replaced with `void 0;` made this read
+  //   FAIL  AF3 three pollers and one finish: ...
+  && /if \(row\.data\.ask\) \{\n\s+await withCasePolicy\(env, kind, id, \(\) => pollAskFlight\(env, kind, id, String\(row\.data\.qaId \|\| ''\), \{ minAgeMs: 45_000 \}\)\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n(?:\s*\/\/[^\n]*\n)*\s+if \(row\.data\.scan\) \{\n\s+await deleteDoc\(env, `advisorQueue\/\$\{row\.id\}`\)\.catch\(\(\) => \{\}\);\n\s+continue;\n\s+\}\n\s+await pollCaseFlight\(env, kind, id, \{ minAgeMs: 45_000 \}\)/.test(ADV)
   && /const inFlight = qa\.filter\(\(r\) => r\.data\.status === 'running' && r\.data\.batch\?\.batchId\)\.slice\(0, 3\);/.test(W)
   && /await withCasePolicy\(env, kind, id, async \(\) => \{\n\s+for \(const r of inFlight\) touched = \(await pollAskFlight\(env, kind, id, r\.id\)\.catch\(\(\) => false\)\) \|\| touched;\n\s+\}\);\n\s+if \(touched\) qa = await qaPage\(\);/.test(W)
   && /if \(beat && Date\.now\(\) - beat < minAgeMs\) return false;/.test(pollAsk)

@@ -389,8 +389,12 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     // Re-pinned 2026-09-22 (v4.7): the trade page is gone and the sheet
     // moved to stat112 for the green, to stat114 (2026-09-22) for the
     // desk's PDF link, to stat115 (2026-09-22) for the scan bar, and to
-    // stat116 (2026-09-22, v6.0) for the desk's own page and its neon.
-    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-desk'].every((p) => /admin\.css\?v=stat116/.test(f(`public/${p}.html`)))
+    // stat116 (2026-09-22, v6.0) for the desk's own page and its neon,
+    // and to stat117 (2026-09-23, PR 420) for the electric yellow of a
+    // trade he took and the new card.
+    // NEGATIVE CONTROL (run 2026-09-23): admin-chats.html put back to stat116 made this read
+    //   FAIL  CH7 the pages: ...
+    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-desk'].every((p) => /admin\.css\?v=stat117/.test(f(`public/${p}.html`)))
     && paidCents(held) === 0 && paidCents(cap) === 90000 + 32500 && paidCents(comp) === 0 && paidCents(tier) === 90000 + 440000 && paidCents(old) === 120000,
     JSON.stringify({ heldLine, bookLine, paid: [paidCents(held), paidCents(cap), paidCents(comp), paidCents(tier), paidCents(old)] }));
 }
