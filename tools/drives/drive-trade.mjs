@@ -96,7 +96,8 @@ const active = await cards('#active .rec');
 ok('the board groups scalp, intraday and swing in that order', (await page.evaluate(() => [...document.querySelectorAll('#board .kindgroup')].map((g) => g.dataset.kind).join())) === 'scalp,intraday,swing');
 ok('the last run\'s four trades are on the board', board.map((c) => c.tk).join() === 'TSLA,NVDA,SOFI,AMD', board.map((c) => c.tk).join());
 const nv = board.find((c) => c.tk === 'NVDA');
-ok('a trade reads every field he asked for', !!nv && ['Now', 'Entry', 'Amount', 'Hold', 'Stop', 'Targets', 'Risk', 'Reward', 'R:R'].every((k) => nv.cells[k]) && ['Catalyst', 'Out if', 'Desk'].every((k) => nv.why.includes(k)), JSON.stringify(nv?.cells));
+// RE-PINNED 2026-09-24 (v7.10): how many agree moved from the Desk row to just under the chance (section P reads it there).
+ok('a trade reads every field he asked for', !!nv && ['Now', 'Entry', 'Amount', 'Hold', 'Stop', 'Targets', 'Risk', 'Reward', 'R:R'].every((k) => nv.cells[k]) && ['Catalyst', 'Out if'].every((k) => nv.why.includes(k)) && await page.evaluate(() => /^\d of 5 agree$/.test(document.querySelector('#board .rec .odds .agree')?.textContent.trim() || '')), JSON.stringify(nv?.cells));
 ok('the amount is dollars and shares sized from his balance', !!nv && /^\$\d[\d,]* · [\d.]+ shares$/.test(nv.cells.Amount), nv?.cells.Amount);
 const put = board.find((c) => c.tk === 'TSLA');
 ok('a contract says Stock for the price and counts whole contracts', !!put && !!put.cells.Stock && /1 contract/.test(put.cells.Amount), JSON.stringify(put?.cells));
@@ -295,7 +296,8 @@ await runAgain();
 const addCard = await page.evaluate(() => { const c = [...document.querySelectorAll('#board .rec')].find((x) => x.querySelector('.tk')?.textContent.trim() === 'QQQ'); return c ? { chip: c.querySelector('.addtag')?.textContent.trim() || '', note: c.querySelector('.deal-note.add')?.textContent.trim() || '' } : null; });
 // RE-PINNED 2026-09-24 (v7.7): the add says how many agreed when he took it and how many agree now.
 ok('with QQQ taken, the next run offers QQQ only as an add to it, and says how many agreed then and now', !!addCard && addCard.chip === 'Add' && /^You already hold QQQ\. 4 of 5 agreed when you took it; 4 of 5 agree now\. Taking this adds to your position\.$/.test(addCard.note), JSON.stringify(addCard));
-ok('every card on the board shows how many of the desk agree', await page.evaluate(() => [...document.querySelectorAll('#board .rec')].every((c) => /^\d of 5 agree$/.test([...c.querySelectorAll('.why dt')].find((d) => d.textContent.trim() === 'Desk')?.nextElementSibling?.textContent.trim() || ''))));
+// RE-PINNED 2026-09-24 (v7.10): read under the chance, where the count now sits.
+ok('every card on the board shows how many of the desk agree', await page.evaluate(() => [...document.querySelectorAll('#board .rec')].every((c) => /^\d of 5 agree$/.test(c.querySelector('.odds .agree')?.textContent.trim() || ''))));
 ok('and the AMD scalp he passed on is still off', !(await boardTks()).includes('AMD'), await boardTks());
 await shot('N-add');
 
@@ -361,6 +363,34 @@ await until(() => ![...document.querySelectorAll('#active .rec')].some((c) => c.
 await go('history');
 const qRow = await until(() => { const h = [...document.querySelectorAll('#hist .hist[data-hist]')].find((x) => x.querySelector('.what b')?.textContent === 'QQQ'); if (!h) return null; h.querySelector('summary').click(); return h.querySelector('.more').textContent.replace(/\s+/g, ' '); }, 5000);
 ok('History says his average beside what he put in', /You put in \$[\d,.]+, average \$497\.\d\d, risked \$/.test(qRow || ''), qRow || '');
+await go('trades');
+
+console.log('\n--- P. the re-check: a run updates how many agree on what he took, and drops one none of the five back ---');
+// Eric, 2026-09-24: "If a new run disagrees with a strategy still on the table (0/5 agents agree), then it
+// is removed. If some agents still agree, update with the new number of agreeing agents. The number of
+// agents that agree should be placed just under probability in the same font."
+await page.evaluate(() => localStorage.removeItem('pa-demo-store'));
+await page.goto(DESK, { waitUntil: 'networkidle' });
+await page.waitForTimeout(1500);
+const heads = await page.evaluate(() => [...document.querySelectorAll('.rec')].map((c) => {
+  const vs = [...c.querySelectorAll('.odds .v')];
+  const a = c.querySelector('.odds .agree');
+  const fa = a && getComputedStyle(a); const fc = vs[0] && getComputedStyle(vs[0]);
+  return { tk: c.querySelector('.tk').textContent.trim(), order: vs.map((x) => (x.classList.contains('agree') ? 'agree' : 'chance')).join(), agree: a?.textContent.trim() || '', same: !!fa && !!fc && fa.fontFamily === fc.fontFamily && fa.fontSize === fc.fontSize && fa.color === fc.color, desk: [...c.querySelectorAll('.why dt')].some((d) => d.textContent.trim() === 'Desk') };
+}));
+ok('every card shows how many agree just under the chance, in the chance\'s own type, and no Desk row', heads.length >= 5 && heads.every((h) => h.order === 'chance,agree' && /^\d of 5 agree$/.test(h.agree) && h.same && !h.desk), JSON.stringify(heads));
+ok('PLTR, the trade he holds, reads 4 of 5 before the run', heads.find((h) => h.tk === 'PLTR')?.agree === '4 of 5 agree', JSON.stringify(heads.find((h) => h.tk === 'PLTR')));
+await page.evaluate(() => [...document.querySelectorAll('#board .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'SOFI')?.querySelector('[data-act="take"]')?.click());
+await until(() => [...document.querySelectorAll('#active .rec')].some((c) => c.querySelector('.tk').textContent.trim() === 'SOFI'), 4000);
+await page.click('#run');
+const rechecked = await until(() => !document.getElementById('run').disabled && [...document.querySelectorAll('#toasts .toast')].map((t) => t.textContent).find((t) => /The desk is in/.test(t)), 20000);
+ok('the run lands and says SOFI was dropped because none of the five back it', /Dropped SOFI: none of the five back it now\.$/.test(rechecked || ''), rechecked || '');
+const activeNow = await page.evaluate(() => [...document.querySelectorAll('#active .rec')].map((c) => [c.querySelector('.tk').textContent.trim(), c.querySelector('.odds .agree')?.textContent.trim()]));
+ok('SOFI has left the Active list, and PLTR now reads the 3 of 5 the run gave it', !activeNow.some((x) => x[0] === 'SOFI') && activeNow.some((x) => x[0] === 'PLTR' && x[1] === '3 of 5 agree'), JSON.stringify(activeNow));
+await go('history');
+const sofi = await until(() => { const h = [...document.querySelectorAll('#hist .hist[data-hist]')].find((x) => x.querySelector('.what b')?.textContent === 'SOFI'); if (!h) return null; h.querySelector('summary').click(); return { tag: h.querySelector('.res')?.textContent.trim(), more: h.querySelector('.more').textContent.replace(/\s+/g, ' ') }; }, 5000);
+ok('History has SOFI marked Dropped, with the run and the reason', sofi?.tag === 'Dropped' && /Dropped by the \d{1,2}:\d{2} (AM|PM) run: none of the five backed it any more\./.test(sofi?.more || ''), JSON.stringify(sofi));
+await shot('P-history');
 await go('trades');
 
 console.log('\n--- J. reduced motion keeps the moment still ---');

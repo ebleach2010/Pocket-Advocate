@@ -123,6 +123,58 @@ export const MARKET_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA'];
  * HIMs. But from production to development to distribution and sellers."). Named, not priced: a name
  * costs none of the fifty calls. Every researcher and the desk read it in the market note.
  */
+// THE RE-CHECK (Eric, 2026-09-24: "If a new run disagrees with a strategy still on the table (0/5
+// agents agree), then it is removed. If some agents still agree, update with the new number of
+// agreeing agents."). Every run shows the five researchers the desk's own calls he took, as the desk
+// filed them: the ticker, the kind, the entry, stop and targets, the setup. Never his size, his fill,
+// a result, his balance or anything closed. Each researcher says backs or does not back, and the count
+// is taken from their words, not asked of the desk.
+export const LIVE_MAX = 12;
+const HWORD = { scalp: 'scalp', intraday: 'intraday', swing: 'swing' };
+export function liveNote(rows) {
+  if (!Array.isArray(rows) || !rows.length) return '';
+  const lines = rows.map(({ ref, rec: r }) => {
+    const vehicle = r.instrument === 'call' || r.instrument === 'put'
+      ? `the ${r.strike ?? ''} ${r.instrument} expiring ${r.expiry || 'soon'}, prices are the premium`.replace(/\s+/g, ' ')
+      : 'the stock';
+    const lo = fin(r.entryLow); const hi = fin(r.entryHigh);
+    const entry = lo != null && hi != null && lo !== hi ? `${lo} to ${hi}` : `${lo ?? fin(r.entry) ?? hi ?? 'unknown'}`;
+    const targets = (Array.isArray(r.targets) ? r.targets : []).map(fin).filter((x) => x != null).join(' then ') || 'none';
+    const filed = r.at ? ` Filed ${mtParts(new Date(r.at).getTime()).dateKey}.` : '';
+    return `${ref}: ${r.ticker} ${r.side === 'short' ? 'short' : 'long'} ${HWORD[r.horizon] || 'intraday'}, ${vehicle}. Entry ${entry}, stop ${fin(r.stop) ?? 'none'}, targets ${targets}.${filed}${r.setup ? ` Setup: ${r.setup}` : ''}${r.invalidation ? ` Out if: ${r.invalidation}` : ''}`;
+  });
+  return `Earlier calls from this desk that are still live. Re-check each one on what you see now and give your verdict under Earlier calls. This is apart from the candidates you bring.\n${lines.join('\n')}`;
+}
+/** One report's verdicts on the earlier calls: { E1: true, E2: false }. A ref with no plain verdict is left out. */
+export function earlierVerdicts(text) {
+  const out = {};
+  const after = String(text || '').split(/^#{2,3}\s*Earlier calls:?\s*$/im)[1];
+  if (after == null) return out;
+  for (const line of after.split(/^#{2,3}\s/m)[0].split('\n')) {
+    const x = line.match(/^\s*(?:[-*]\s*)?[*_]*\s*(E\d{1,2})\b[*_]*\s*[:.)-]?\s*[*_]*\s*(.*)$/i);
+    if (!x) continue;
+    const ref = x[1].toUpperCase();
+    if (ref in out) continue;
+    const v = x[2].toLowerCase();
+    if (/^(does not|doesn't|do not|don't|no longer|not|no)\b/.test(v)) out[ref] = false;
+    else if (/^(still backs?|backs?|yes)\b/.test(v)) out[ref] = true;
+  }
+  return out;
+}
+/**
+ * The count for each earlier call across the reports that came back. Some back it: the new count.
+ * All five said plainly that they do not: it goes. Anything else, a researcher missing or silent on
+ * it, leaves it as it was, so a thin run never throws out a trade he holds.
+ */
+export function tallyEarlier(live, texts) {
+  const verdicts = (texts || []).map(earlierVerdicts);
+  return (Array.isArray(live) ? live : []).map(({ ref, id }) => {
+    const backs = verdicts.filter((v) => v[ref] === true).length;
+    const against = verdicts.filter((v) => v[ref] === false).length;
+    return { ref, id, backs, against, action: backs > 0 ? 'update' : against >= LENSES.length ? 'drop' : 'keep' };
+  });
+}
+
 export function chainNote(chain = GLP1_CHAIN) {
   const groups = chain.map((g) => `${g.role}: ${g.tickers.join(', ')}.`).join(' ');
   return `The GLP-1 chain, which he wants searched on every run, from the makers to the sellers. ${groups} Look at it on every run beside everything else on your beat. News in one link often moves the others: a trial readout moves the other developers, and a price cut, a supply problem or a new seller deal moves the makers, the suppliers and the sellers. A search or two across the chain is usually enough to see what is moving in it. It is a place to look, not a quota: a trade from it clears the same bar as any other.`;
@@ -184,7 +236,9 @@ One block per candidate, one field per line as Field: value.
 ## Rejected
 One line each.
 ## Watch
-Anything outside your beat that changes a trade, or Nothing.`;
+Anything outside your beat that changes a trade, or Nothing.
+## Earlier calls
+One line for each earlier call the message lists, as E1: backs, or E1: does not back, then a few words why. You back an earlier call when, on what you see now, it is still worth holding to its targets with its stop where it is. Write None when the message lists none.`;
 }
 
 export function deskSystem(accountType, riskPct = DEFAULT_RISK_PCT) {
@@ -769,9 +823,16 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
         const watch = watchlistOf(settings).filter((t) => !MARKET_TICKERS.includes(t)).slice(0, 25);
         if (watch.length) market += `\n\nHis watchlist, not priced here: ${watch.join(', ')}.`;
         market += `\n\n${chainNote()}`;
+        // The calls he took, for the re-check: one read of the board's list and one of the trades.
+        const st0 = await tryGet(env, STATE_PATH).catch(() => null);
+        const liveIds = (Array.isArray(st0?.data?.activeIds) ? st0.data.activeIds : []).slice(0, LIVE_MAX);
+        const liveDocs = liveIds.length ? await getMany(env, liveIds.map((id) => `${PLAYS}/${id}`)).catch(() => []) : [];
+        const liveRows = liveIds.map((id, i) => ({ id, rec: liveDocs[i]?.data })).filter((x) => x.rec?.status === 'took').map((x, i) => ({ ...x, ref: `E${i + 1}` }));
+        const live = liveRows.map(({ ref, id }) => ({ ref, id }));
+        if (liveRows.length) market += `\n\n${liveNote(liveRows)}`;
         const wrote = prior
-          ? await patchDoc(env, RESEARCH_PATH, { market }, { mask: ['market'] }).catch(() => false)
-          : await patchDoc(env, RESEARCH_PATH, { runId: run.id, at: new Date(), market, r1: null, r2: null, r3: null, r4: null, r5: null }).catch(() => false);
+          ? await patchDoc(env, RESEARCH_PATH, { market, live }, { mask: ['market', 'live'] }).catch(() => false)
+          : await patchDoc(env, RESEARCH_PATH, { runId: run.id, at: new Date(), market, live, r1: null, r2: null, r3: null, r4: null, r5: null }).catch(() => false);
         // A fresh run whose document could not be reset would file its
         // reports beside another run's: it goes back to be claimed again.
         if (wrote === false && !prior) {
@@ -779,7 +840,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
           await diagLog(env, { ev: 'desk-run-retry', err: 'research not reset', attempt: run.attempt || 0 }).catch(() => {});
           return { ok: false, retry: true };
         }
-        prior = { ...(prior || { runId: run.id }), market };
+        prior = { ...(prior || { runId: run.id }), market, live };
       }
       const system = researchSystem(accountType);
       // A resumed run that already holds enough reports does not buy the missing ones twice.
@@ -908,16 +969,41 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     // is never retired here: only PROFIT or LOSS moves it.
     const previous = Array.isArray(own?.data?.desk?.ids) ? own.data.desk.ids : [];
     const filed = await fileRecs(env, run, checked.trades, { caseId: settings.caseId || '', writeMany });
+
+    // THE RE-CHECK: each call he took that the researchers were shown, counted from their verdicts,
+    // written under its own time so a PROFIT, a LOSS or a resize that lands in between wins.
+    const tally = tallyEarlier(Array.isArray(prior?.live) ? prior.live : [], got.map((L) => reports[L.n].text));
+    const heldById = new Map(heldIds.map((id, i) => [id, heldDocs[i]]));
+    const recheckAt = new Date();
+    const rechecks = [];
+    for (const t of tally) {
+      const doc = heldById.get(t.id);
+      const d = doc?.data;
+      if (!d || d.status !== 'took' || t.action === 'keep') continue;
+      const tookAgreement = d.tookAgreement ?? d.agreement ?? null;
+      if (t.action === 'update' && Number(d.agreement) !== t.backs) {
+        rechecks.push({ id: t.id, kind: 'update', d, write: { path: `${PLAYS}/${t.id}`, data: { agreement: t.backs, agreedAt: recheckAt, agreedRunId: run.id, tookAgreement }, mask: ['agreement', 'agreedAt', 'agreedRunId', 'tookAgreement'], ifUpdateTime: doc.updateTime } });
+      } else if (t.action === 'drop') {
+        rechecks.push({ id: t.id, kind: 'drop', d, write: { path: `${PLAYS}/${t.id}`, data: { status: 'closed', closedAt: recheckAt, result: null, agreement: 0, tookAgreement, dropped: { at: recheckAt, runId: run.id } }, mask: ['status', 'closedAt', 'result', 'agreement', 'tookAgreement', 'dropped'], ifUpdateTime: doc.updateTime } });
+      }
+    }
+    const recheckOk = rechecks.length ? await writeMany(env, rechecks.map((x) => x.write)).catch(() => rechecks.map(() => false)) : [];
+    const dropped = rechecks.filter((x, i) => recheckOk[i] && x.kind === 'drop').map((x) => ({ id: x.id, ticker: x.d.ticker, horizon: x.d.horizon }));
+    const updated = rechecks.filter((x, i) => recheckOk[i] && x.kind === 'update').length;
+    const droppedIds = new Set(dropped.map((x) => x.id));
     const finishedAt = new Date();
     const finalPatch = {
       run: { ...run, status: 'idle', finishedAt, heartbeatAt: finishedAt, done: got.length, error: null, count: filed.ids.length, ms: finishedAt.getTime() - ms(run.startedAt || t0) },
-      desk: { runId: run.id, at: finishedAt, trigger: run.trigger || 'manual', read: checked.read, none: checked.none, news: checked.news, count: filed.ids.length, reports: got.length, ids: filed.ids },
+      desk: { runId: run.id, at: finishedAt, trigger: run.trigger || 'manual', read: checked.read, none: checked.none, news: checked.news, count: filed.ids.length, reports: got.length, ids: filed.ids, dropped: dropped.map(({ ticker, horizon }) => ({ ticker, horizon })) },
     };
     let wrote = false;
     for (let i = 0; i < 2 && !wrote; i++) {
       const d = i === 0 && own ? own : await mine();
       if (d === false) return superseded('final write');
-      wrote = await patchDoc(env, STATE_PATH, finalPatch, d ? { mask: ['run', 'desk'], ifUpdateTime: d.updateTime } : { mask: ['run', 'desk'] }) !== false;
+      // A dropped trade leaves his list in the same write, from the list as it stands now.
+      const patch = d && droppedIds.size ? { ...finalPatch, activeIds: (Array.isArray(d.data?.activeIds) ? d.data.activeIds : []).filter((id) => !droppedIds.has(id)) } : finalPatch;
+      const mask = patch.activeIds ? ['run', 'desk', 'activeIds'] : ['run', 'desk'];
+      wrote = await patchDoc(env, STATE_PATH, patch, d ? { mask, ifUpdateTime: d.updateTime } : { mask }) !== false;
     }
     if (!wrote) throw new Error('the board could not be saved');
     const expired = await retireRecs(env, previous, filed.ids, { getMany, writeMany }).catch(() => 0);
@@ -925,17 +1011,21 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     // The push: always for the 7:00 run, and for his own run when there is something to take.
     let pushed = false;
     const n = filed.ids.length;
-    if (env.ADMIN_UID && settings.pushOn !== false && (run.trigger === 'morning' || n)) {
+    if (env.ADMIN_UID && settings.pushOn !== false && (run.trigger === 'morning' || n || dropped.length)) {
       const names = checked.trades.slice(0, 3).map((r) => `${r.ticker} ${r.side}`).join(', ');
-      const body = n
-        ? `${run.trigger === 'morning' ? '7:00 desk: ' : ''}${n} trade${n === 1 ? '' : 's'} ready. ${names}${n > 3 ? ' and more' : ''}.`
-        : `${run.trigger === 'morning' ? '7:00 desk: ' : ''}nothing worth taking yet.`;
+      const parts = [];
+      if (n) parts.push(`${n} trade${n === 1 ? '' : 's'} ready. ${names}${n > 3 ? ' and more' : ''}.`);
+      else if (run.trigger === 'morning' || !dropped.length) parts.push('nothing worth taking yet.');
+      // A trade he holds that the desk no longer backs: he may still hold it at his broker.
+      if (dropped.length) parts.push(`Dropped, none of the five back ${dropped.length === 1 ? 'it' : 'them'} now: ${dropped.map((x) => `${x.ticker} ${HWORD[x.horizon] || 'intraday'}`).join(', ')}.`);
+      const body = `${run.trigger === 'morning' ? '7:00 desk: ' : ''}${parts.join(' ')}`;
       await push(env, env.ADMIN_UID, { title: 'PR 420', body, link: '/admin-desk.html', max: PUSH_MAX }).catch(() => {});
       pushed = true;
     }
     await diagLog(env, {
       ev: 'desk-run-end', ok: true, trigger: run.trigger || 'manual', attempt: run.attempt || 1, reports: got.length,
       trades: n, dropped: checked.dropped, screened: screened.dropped, expired, news: checked.news.length, pushed,
+      recheck: { live: tally.length, updated, dropped: dropped.length, keep: tally.filter((t) => t.action === 'keep').length },
       desk: { ms: decided.ms, st: decided.stop, in: decided.usage?.input_tokens, out: decided.usage?.output_tokens },
       ms: Date.now() - t0,
     }).catch(() => {});

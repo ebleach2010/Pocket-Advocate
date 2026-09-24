@@ -695,21 +695,28 @@ const OUTSIDE = 6;
 const SPARE = 6;
 {
   const creditErr = () => Object.assign(new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the API."}}'), { status: 400 });
+  // RE-PINNED 2026-09-24 (v7.10): the worst case now holds twelve taken trades, the most a run re-checks:
+  // the research firing reads his list and the trades (two calls), and the desk firing writes the re-check
+  // (one batch) beside the read of what he holds it already made.
+  const HELD = Object.fromEntries(Array.from({ length: DR.LIVE_MAX }, (_, i) => [`h${i}`, { ticker: `H${String.fromCharCode(65 + i)}`, side: 'long', instrument: 'stock', horizon: 'swing', status: 'took', agreement: 3, entryLow: 10, entryHigh: 11, stop: 9, targets: [13] }]));
+  const heldIds = Object.keys(HELD);
   // The research firing at its worst: a fresh run, a market key, all five back, every retry and continuation counted.
   at(WED_10);
-  const R = world({ state: { run: { ...RUN, trigger: 'morning' }, desk: { runId: 'prev', ids: [] } }, settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789' } });
+  const R = world({ state: { run: { ...RUN, trigger: 'morning' }, desk: { runId: 'prev', ids: [] }, activeIds: heldIds }, settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789' }, plays: HELD });
   const rOut = await load(R.deps).executeRun(env, { ...RUN, trigger: 'morning' }, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({}, R.w), marketSnapshot: snapCounted(R) } });
   // The research firing that fails: every researcher refused, the error saved, the 7:00 push sent.
-  const X = world({ state: { run: { ...RUN, trigger: 'morning' } }, settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789' } });
+  const X = world({ state: { run: { ...RUN, trigger: 'morning' }, activeIds: heldIds }, settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789' }, plays: HELD });
   const xOut = await load(X.deps).executeRun(env, { ...RUN, trigger: 'morning' }, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({ research: creditErr }, X.w), marketSnapshot: snapCounted(X) } });
   // The desk firing at its worst: six stock trades each priced, six ideas from the last run to retire, the 7:00 push.
   const prevIds = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
   const deskRun = { ...RUN, trigger: 'morning', phase: 'desk', status: 'deciding' };
+  // Every held trade re-checked and every one changed: half now backed by one, half dropped by all five.
+  const verdicts = `\n## Earlier calls\n${heldIds.map((id, i) => `E${i + 1}: ${i % 2 ? 'does not back' : 'backs'}`).join('\n')}`;
   const D = world({
-    state: { run: deskRun, desk: { runId: 'prev', ids: prevIds } },
+    state: { run: deskRun, desk: { runId: 'prev', ids: prevIds }, activeIds: heldIds },
     settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789' },
-    research: { runId: 'run_x', market: 'SPY 500', r1: { status: 'ok', text: REPORT(1) }, r2: { status: 'ok', text: REPORT(2) }, r3: { status: 'ok', text: REPORT(3) }, r4: { status: 'ok', text: REPORT(4) }, r5: { status: 'ok', text: REPORT(5) } },
-    plays: Object.fromEntries(prevIds.map((id) => [id, { ticker: 'OLD', status: 'open', runId: 'prev' }])),
+    research: { runId: 'run_x', market: 'SPY 500', live: heldIds.map((id, i) => ({ ref: `E${i + 1}`, id })), r1: { status: 'ok', text: REPORT(1) + verdicts }, r2: { status: 'ok', text: REPORT(2) + verdicts }, r3: { status: 'ok', text: REPORT(3) + verdicts }, r4: { status: 'ok', text: REPORT(4) + verdicts }, r5: { status: 'ok', text: REPORT(5) + verdicts } },
+    plays: { ...HELD, ...Object.fromEntries(prevIds.map((id) => [id, { ticker: 'OLD', status: 'open', runId: 'prev' }])) },
   });
   const dOut = await load(D.deps).executeRun(env, deskRun, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({ desk: () => ({ text: JSON.stringify(DESK_OUT({ trades: SIX })) }) }, D.w), quoteCached: quoteCounted(D) } });
   restore();
@@ -723,11 +730,14 @@ const SPARE = 6;
   //   FAIL  D24 every firing fits inside the fifty calls ...
   // NEGATIVE CONTROL (run 2026-09-23): the research firing deciding in place (the handoff's `return { ok: true, handedOff: true, ... }` removed) made this read
   //   FAIL  D24 every firing fits inside the fifty calls ...
-  check(`D24 every firing fits inside the fifty calls an invocation gets, counted at its worst with ${OUTSIDE} spent before the run and ${SPARE} kept spare: the research firing with a market key and all five back, the research firing whose five are all refused and whose 7:00 push goes out, and the desk firing that prices six trades, files them in one write, retires six old ideas in one read and one write, and pushes`,
-    rOut.handedOff === true && R.w.calls <= room
+  // NEGATIVE CONTROL (run 2026-09-24, v7.10): the re-check written one batch per trade (`for (const x of rechecks) ... writeMany(env, [x.write])`) made this read
+  //   FAIL  D24 every firing fits inside the fifty calls ...
+  check(`D24 every firing fits inside the fifty calls an invocation gets, counted at its worst with ${OUTSIDE} spent before the run and ${SPARE} kept spare: the research firing with a market key, twelve trades he holds to show and all five back, the research firing whose five are all refused and whose 7:00 push goes out, and the desk firing that prices six trades, files them in one write, re-checks twelve he holds in one read and one write, retires six old ideas in one read and one write, and pushes`,
+    rOut.handedOff === true && R.w.calls <= room && R.w.batches.filter((b) => b.get).length === 1
     && xOut.ok === false && X.w.pushes.length === 1 && X.w.calls <= room
     && dOut.ok === true && recs.length === 6 && D.w.calls <= room
-    && D.w.batches.filter((b) => b.write).length === 2 && D.w.batches.filter((b) => b.get).length === 1
+    && D.w.batches.filter((b) => b.write).length === 3 && D.w.batches.filter((b) => b.get).length === 2
+    && heldIds.every((id, i) => D.docs.get(`${TD.PLAYS}/${id}`).data.status === (i % 2 ? 'closed' : 'took'))
     && prevIds.every((id) => D.docs.get(`${TD.PLAYS}/${id}`).data.status === 'expired'),
     JSON.stringify({ room, research: R.w.calls, failed: X.w.calls, desk: D.w.calls, recs: recs.length, d: dOut }));
 }
@@ -850,12 +860,16 @@ const SPARE = 6;
   //   FAIL  D28 what reaches him is screened after the desk decides ...
   // NEGATIVE CONTROL (run 2026-09-24): the held read emptied (`const held = [];` in place of the batch read's keys) made this read
   //   FAIL  D28 what reaches him is screened after the desk decides ...
-  check('D28 what reaches him is screened after the desk decides: the same position as the HELDX long he holds files as an add, a put leaning against it in the same kind is dropped, a HELDX swing files as new; the AMD scalp he passed on at 2 stays off while an AMD swing files as new, and a later run where 3 agree files the scalp as back; the recorder counts what was held back; and not one request to any agent carries what he holds or what he passed on',
+  // RE-PINNED 2026-09-24 (v7.10, Eric: "If a new run disagrees with a strategy still on the table (0/5 agents
+  // agree), then it is removed"): the researchers are shown the trade he holds, as the desk's own earlier
+  // call to re-check (D30), and nowhere else; what he passed on still never reaches one.
+  const outside = asked.replace(/E1: HELDX long intraday, the stock\./g, '');
+  check('D28 what reaches him is screened after the desk decides: the same position as the HELDX long he holds files as an add, a put leaning against it in the same kind is dropped, a HELDX swing files as new; the AMD scalp he passed on at 2 stays off while an AMD swing files as new, and a later run where 3 agree files the scalp as back; the recorder counts what was held back; the trade he holds reaches an agent only as the earlier call to re-check, and what he passed on never does',
     a.out.ok === true && filedA === 'AMD/swing/stock HELDX/intraday/stock+add HELDX/swing/stock'
     && b.out.ok === true && filedB === 'AMD/scalp/stock+back2>3'
     && endA?.screened?.against === 1 && endA.screened.declined === 1 && endA.screened.twice === 0
-    && !/HELDX|declined|passed on|AMD:up/.test(asked),
-    JSON.stringify({ filedA, filedB, screened: endA?.screened, leak: (asked.match(/HELDX|declined|passed on|AMD:up/) || [''])[0] }));
+    && /E1: HELDX long intraday, the stock\./.test(asked) && !/HELDX|declined|passed on|AMD:up/.test(outside),
+    JSON.stringify({ filedA, filedB, screened: endA?.screened, leak: (outside.match(/HELDX|declined|passed on|AMD:up/) || [''])[0] }));
 }
 
 // ---- D29: the GLP-1 chain (2026-09-24, v7.9) ----------------------------------------------------
@@ -883,6 +897,62 @@ const SPARE = 6;
     && /Sellers: HIMS, LFMD, WW, GDRX, CVS, COST\./.test(note) && /a trade from it clears the same bar as any other\.$/.test(note)
     && !/HIMS|VKTX|LLY/.test(DR.MARKET_TICKERS.join()) && !DASH.test(note),
     JSON.stringify({ research: research.filter((t) => t.includes(note)).length, desk: desk.includes(note), roles: TM.GLP1_CHAIN.map((g) => g.role) }));
+}
+
+// ---- D30: the re-check (2026-09-24, v7.10) --------------------------------------------------------
+// Eric: "If a new run disagrees with a strategy still on the table (0/5 agents agree), then it is
+// removed. If some agents still agree, update with the new number of agreeing agents." He holds BA
+// (taken at 3 of 5, with his own size), F and XOM; a fourth id on his list is not a taken trade.
+{
+  const state = { activeIds: ['h1', 'h2', 'h3', 'h4'] };
+  const plays = {
+    h1: { ticker: 'BA', side: 'long', instrument: 'stock', horizon: 'swing', status: 'took', agreement: 3, entryLow: 200.5, entryHigh: 203, stop: 197.4, targets: [206, 209], setup: 'Base above 200.', invalidation: 'Close under 197.', at: new Date(WED_10 - 86_400_000), mine: { qty: 7, riskCents: 4321, amountCents: 142100 } },
+    h2: { ticker: 'F', side: 'long', instrument: 'stock', horizon: 'intraday', status: 'took', agreement: 2, entryLow: 11, entryHigh: 11.2, stop: 10.8, targets: [11.8] },
+    h3: { ticker: 'XOM', side: 'long', instrument: 'call', strike: 120, expiry: '2026-10-16', horizon: 'swing', status: 'took', agreement: 4, entryLow: 2.1, entryHigh: 2.3, stop: 1.5, targets: [3.4] },
+    h4: { ticker: 'OLDX', side: 'long', instrument: 'stock', horizon: 'intraday', status: 'expired' },
+  };
+  // Researchers 1 and 2 back BA; all five plainly do not back F; four do not back XOM and one is silent on it.
+  const verdict = (n) => `\n## Earlier calls\nE1: ${n <= 2 ? 'backs, still basing above 200' : 'does not back, momentum faded'}\nE2: does not back, lost the level\n${n === 5 ? '' : 'E3: does not back, the premium bled\n'}`;
+  const r = await oneRun({ state, plays, turns: { research: (n) => ({ text: REPORT(n) + verdict(n) }) } });
+  // A thin run: researcher 5 does not report, so four plain noes on F are not five.
+  const thin = await oneRun({ state, plays, turns: { research: (n) => (n === 5 ? Object.assign(new Error('Overloaded'), { status: 529 }) : { text: REPORT(n) + verdict(n) }) } });
+  const research = r.w.bodies.filter((b) => b.tools).map((b) => b.messages[0].content[0].text);
+  const asked = JSON.stringify(r.w.bodies);
+  const doc = (W, id) => W.docs.get(`${TD.PLAYS}/${id}`).data;
+  const st = r.docs.get(TD.STATE_PATH).data;
+  const end = r.w.diag.find((e) => e.ev === 'desk-run-end');
+  const writes = r.w.patches.filter((p) => /\/h[123]$/.test(p.path));
+  // NEGATIVE CONTROL (run 2026-09-24): tallyEarlier's drop rule loosened to `against >= 1` made this read
+  //   FAIL  D30 every run re-checks the trades he took ...
+  // NEGATIVE CONTROL (run 2026-09-24): the re-check's writes left unsent (`const recheckOk = [];`) made this read
+  //   FAIL  D30 every run re-checks the trades he took ...
+  // NEGATIVE CONTROL (run 2026-09-24): the research firing's `market += ... liveNote(liveRows)` line removed made this read
+  //   FAIL  D30 every run re-checks the trades he took ...
+  check('D30 every run re-checks the trades he took: the five researchers are shown each one as the desk filed it and nothing of his size, and asked for a verdict under their own heading; BA, backed by two, reads 2 of 5 and keeps the 3 it was taken at; F, which all five plainly do not back, leaves his list for History marked dropped by this run, and the push says so; XOM, with one researcher silent, is left as it was; each write goes under the trade\'s own time; and a run with a researcher missing drops nothing',
+    r.out.ok === true && research.length === 5
+    && research.every((t) => /E1: BA long swing, the stock\. Entry 200\.5 to 203, stop 197\.4, targets 206 then 209\. Filed 2026-09-2\d\. Setup: Base above 200\. Out if: Close under 197\./.test(t)
+      && /E2: F long intraday, the stock\./.test(t) && /E3: XOM long swing, the 120 call expiring 2026-10-16, prices are the premium\./.test(t) && !/OLDX|E4:/.test(t))
+    && !/4321|142100|"qty"/.test(asked) && /## Earlier calls\nOne line for each earlier call/.test(r.w.bodies[0].system[0].text)
+    && r.docs.get(DR.RESEARCH_PATH).data.live.map((x) => `${x.ref}=${x.id}`).join() === 'E1=h1,E2=h2,E3=h3'
+    && doc(r, 'h1').status === 'took' && doc(r, 'h1').agreement === 2 && doc(r, 'h1').tookAgreement === 3 && doc(r, 'h1').agreedRunId === 'run_x'
+    && doc(r, 'h2').status === 'closed' && doc(r, 'h2').result === null && doc(r, 'h2').dropped?.runId === 'run_x' && doc(r, 'h2').agreement === 0 && doc(r, 'h2').tookAgreement === 2
+    && doc(r, 'h3').status === 'took' && doc(r, 'h3').agreement === 4 && doc(r, 'h3').tookAgreement === undefined
+    && writes.length === 2 && writes.every((p) => p.opts.batch && /^U\d+$/.test(p.opts.ifUpdateTime))
+    && st.activeIds.join() === 'h1,h3,h4' && st.desk.dropped.map((x) => `${x.ticker}/${x.horizon}`).join() === 'F/intraday'
+    && /Dropped, none of the five back it now: F intraday\./.test(r.w.pushes[0]?.body || '')
+    && end?.recheck?.live === 3 && end.recheck.updated === 1 && end.recheck.dropped === 1 && end.recheck.keep === 1
+    && thin.out.ok === true && doc(thin, 'h2').status === 'took' && doc(thin, 'h2').agreement === 2 && doc(thin, 'h1').agreement === 2
+    && thin.docs.get(TD.STATE_PATH).data.activeIds.join() === 'h1,h2,h3,h4',
+    JSON.stringify({ h1: doc(r, 'h1'), h2: doc(r, 'h2')?.status, h3: doc(r, 'h3')?.agreement, ids: st.activeIds, push: r.w.pushes[0]?.body, recheck: end?.recheck, thin: doc(thin, 'h2')?.status }));
+}
+{
+  // The verdicts are read from the researcher's own words under its heading, however it writes the line.
+  const v = DR.earlierVerdicts('## Read\nE9: backs\n## Earlier calls\nE1: backs, basing.\n- **E2:** does not back, lost it\nE3 - Backs\nE4: unsure\nE5: No longer, gapped down\n## Other\nE6: backs');
+  // NEGATIVE CONTROL (run 2026-09-24): earlierVerdicts reading the whole report instead of its section (`const after = String(text || '');`) made this read
+  //   FAIL  D31 a verdict is read ...
+  check('D31 a verdict is read only under the Earlier calls heading, however the line is written: backs, a bold does not back, a hyphen, and no longer are read; unsure is no verdict; a line under another heading does not count',
+    JSON.stringify(v) === JSON.stringify({ E1: true, E2: false, E3: true, E5: false }),
+    JSON.stringify(v));
 }
 
 // THE COUNTER IS COUNTED LAST (the rule from trade.mjs, 2026-09-22): every check above is counted.

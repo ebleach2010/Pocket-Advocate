@@ -1064,7 +1064,9 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   check('T34 the desk\'s view module RUNS: a trade reads ticker, Long or Short, its kind and its chance, then the price now, the entry zone, the dollars and shares his 3% rule and the desk\'s allocation allow, how long to hold, the stop, both targets, the risk and reward in dollars and the R:R, then the setup, the catalyst, what kills it and how many researchers agree, with YES under it; a live quote replaces the desk\'s price; a taken one is lit active with the time and PROFIT and LOSS in place of YES; a contract says Stock for the price, names the strike and the date and counts whole contracts; a contract his allocation cannot buy or his rule cannot carry says so in dollars; no balance says to set it; a swing holds in days; and the board groups scalp, intraday and swing in that order with a count, leaving out an empty kind',
     // RE-PINNED 2026-09-23 (review): sized from the worst fill in the zone, $248.00 for this buy.
     // RE-PINNED 2026-09-24 (v7.6, Eric: "I should be able to accept/deny"): NO sits beside YES on a new suggestion.
-    /^NVDA Long Intraday Chance 56 to 64% Now \$248\.10 Entry \$247\.50 to \$248\.00 Amount \$980 · 3\.9516 shares Hold 3 hours Stop \$245\.80 Targets \$251\.00 then \$253\.50 Risk \$8\.69 Reward \$11\.85 R:R 1 : 1\.36 Reclaimed VWAP on twice normal volume\. Catalyst Guide raised\. Out if Loses 246\. Desk 3 of 5 agree YES, I TOOK IT NO$/.test(t)
+    // RE-PINNED 2026-09-24 (v7.10, Eric: "The number of agents that agree should be placed just under probability
+    // in the same font"): 3 of 5 agree sits under the chance, and the Desk row under the setup is gone.
+    /^NVDA Long Intraday Chance 56 to 64% 3 of 5 agree Now \$248\.10 Entry \$247\.50 to \$248\.00 Amount \$980 · 3\.9516 shares Hold 3 hours Stop \$245\.80 Targets \$251\.00 then \$253\.50 Risk \$8\.69 Reward \$11\.85 R:R 1 : 1\.36 Reclaimed VWAP on twice normal volume\. Catalyst Guide raised\. Out if Loses 246\. YES, I TOOK IT NO$/.test(t)
     && /class="outlined rec" data-kind="intraday" data-rec="r1"/.test(card) && /data-act="take"/.test(card) && /data-act="decline"/.test(card) && !/data-act="profit"/.test(card)
     && /Now \$249\.30/.test(text(live))
     && /class="outlined rec active"/.test(took) && /Active since 10:02 AM/.test(text(took))
@@ -1389,6 +1391,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry78 = (CL.match(/\{\n\s+\/\/ ADD OR TRIM \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-24 (v7.9): the GLP-1 chain, its own quiet entry.
   const entry79 = (CL.match(/\{\n\s+\/\/ THE GLP-1 CHAIN \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-24 (v7.10): the re-check, its own quiet entry.
+  const entry710 = (CL.match(/\{\n\s+\/\/ THE RE-CHECK \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1448,8 +1452,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-24 (v7.9): both versions read 7.9 with the glp1-chain tag; the 7.8 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-24, v7.9): 'the companies that make the pens and vials' reworded to 'the pen and vial makers' in the 7.9 entry made this read
   //   FAIL  T36 both versions read 7.9 ...
-  check('T36 both versions read 7.9 with the new tag, the 4.7 through 7.9 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.9';/.test(CL) && /const VERSION = '7\.9';/.test(W) && /const BUILD_TAG = 'v2026-09-24-glp1-chain';/.test(W)
+  // RE-PINNED 2026-09-24 (v7.10): both versions read 7.10 with the recheck tag; the 7.9 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.10): 'still back each one' reworded to 'still like each one' in the 7.10 entry made this read
+  //   FAIL  T36 both versions read 7.10 ...
+  check('T36 both versions read 7.10 with the new tag, the 4.7 through 7.10 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.10';/.test(CL) && /const VERSION = '7\.10';/.test(W) && /const BUILD_TAG = 'v2026-09-24-recheck';/.test(W)
+    && /version: '7\.10',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry710)
+    && /still back each one/.test(entry710) && /marked Dropped/.test(entry710) && !DASH.test(entry710) && !HARD.some((re) => re.test(entry710))
     && /version: '7\.9',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry79)
     && /the companies that make the pens and vials/.test(entry79) && /HIMS among them/.test(entry79) && !DASH.test(entry79) && !HARD.some((re) => re.test(entry79))
     && /version: '7\.8',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry78)
@@ -2374,7 +2383,8 @@ check('T63 the fast look is gone: no Look button, no Scan button, no look route,
   const REC = { id: 'r1', ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'stock', entryLow: 200.5, entryHigh: 203, stop: 197.4, targets: [206, 209], allocPct: 10, status: 'open', agreement: 1 };
   const ctx = { accountCents: 245000, rules: { riskPct: 3 } };
   const txt = (h) => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-  const row = (a) => (txt(mod.recCardHtml({ ...REC, agreement: a }, ctx)).match(/Desk (\d) of 5 agree/) || [])[1];
+  // RE-PINNED 2026-09-24 (v7.10): the count is read under the chance, in the chance's own type (T80).
+  const row = (a) => ((mod.recCardHtml({ ...REC, agreement: a }, ctx)).match(/<span class="odds">(?:<span class="k">Chance<\/span><span class="v">[^<]*<\/span>)?<span class="v agree">(\d) of 5 agree<\/span><\/span>/) || [])[1];
   const held = { ...REC, id: 'h1', status: 'took', agreement: 3 };
   const holding = new Map([[math.positionKey(held), held]]);
   const add = txt(mod.recCardHtml({ ...REC, adds: true }, { ...ctx, holding }));
@@ -2386,7 +2396,7 @@ check('T63 the fast look is gone: no Look button, no Scan button, no look route,
   //   FAIL  T75 how many agree, on every card ...
   // NEGATIVE CONTROL (run 2026-09-24): the add's held comparison removed (`const heldRec = null;`) made this read
   //   FAIL  T75 how many agree, on every card ...
-  check('T75 how many agree, on every card: the Desk row reads 0, 1 and 5 of 5 as well as the rest; an add says how many agreed when he took the trade he holds and how many agree now, or only now when the first is not on record or not in hand; a taken card has no add note; and the page hands the card his taken trades by position',
+  check('T75 how many agree, on every card: the count under the chance reads 0, 1 and 5 of 5 as well as the rest; an add says how many agreed when he took the trade he holds and how many agree now, or only now when the first is not on record or not in hand; a taken card has no add note; and the page hands the card his taken trades by position',
     row(0) === '0' && row(1) === '1' && row(3) === '3' && row(5) === '5'
     && /You already hold BA\. 3 of 5 agreed when you took it; 1 of 5 agree now\. Taking this adds to your position\./.test(add)
     && /You already hold BA\. 1 of 5 agree now\. Taking this adds to your position\./.test(addAlone)
@@ -2529,6 +2539,48 @@ const BA_HELD = { ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'sto
     && !/Always priced|prices these on every run|Tickers the desk prices/.test(APP) && /Named to the desk on every run\./.test(APP)
     && math.GLP1_CHAIN.find((g) => g.role === 'Sellers')?.tickers.includes('HIMS'),
     '');
+}
+
+// ---- T80: the re-check on the card, the board and History (2026-09-24, v7.10) ---------------------
+// Eric, from a taken card's Chance: "If a new run disagrees with a strategy still on the table (0/5
+// agents agree), then it is removed. If some agents still agree, update with the new number of agreeing
+// agents. The number of agents that agree should be placed just under probability in the same font."
+{
+  const mod = await import('../../public/js/admin-desk.js');
+  const ctx = { accountCents: 245000, rules: { riskPct: 3 } };
+  const REC = { id: 'r1', ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'stock', entryLow: 200.5, entryHigh: 203, stop: 197.4, targets: [206, 209], allocPct: 10, profitLow: 51, profitHigh: 56, agreement: 3 };
+  const took = mod.recCardHtml({ ...REC, status: 'took', agreement: 2, tookAgreement: 3 }, ctx);
+  const held = { ...REC, id: 'h1', status: 'took', agreement: 1, tookAgreement: 3 };
+  const add = mod.recCardHtml({ ...REC, id: 'r2', status: 'open', adds: true, agreement: 2 }, { ...ctx, holding: new Map([[math.positionKey(held), held]]) });
+  const txt = (h) => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  const hist = txt(mod.historyRowHtml({ ...REC, status: 'closed', result: null, closedAt: '2026-09-24T16:02:00Z', dropped: { at: '2026-09-24T16:02:00Z', runId: 'run9' }, agreement: 0, tookAgreement: 3 }));
+  const histPlain = txt(mod.historyRowHtml({ ...REC, status: 'closed', result: null, closedAt: '2026-09-24T16:02:00Z' }));
+  const row = K.recRow('h1', { ...REC, status: 'closed', tookAgreement: 3, agreement: 0, agreedAt: new Date('2026-09-24T16:02:00Z'), dropped: { at: new Date('2026-09-24T16:02:00Z'), runId: 'run9' } });
+  const now = at('2026-09-24T16:05:00Z');
+  const { w, api } = world();
+  w.docs.set('trade/settings', { data: { caseId: 'c1' }, updateTime: 'S1' });
+  w.docs.set('trade/state', { data: { desk: { at: new Date(now - 60_000), ids: [], count: 0, dropped: [{ ticker: 'F', horizon: 'intraday' }, { ticker: 'XOM', horizon: 'weekly' }] }, activeIds: [] }, updateTime: 'T1' });
+  const board = await api.tradeState(env, { now });
+  const APP = f('public/js/admin-deskapp.js');
+  const CSS = f('public/css/admin.css');
+  // NEGATIVE CONTROL (run 2026-09-24): the count taken back out of the card's odds (`${agree ? ... : ''}` emptied there) made this read
+  //   FAIL  T80 the re-check on the card ...
+  // NEGATIVE CONTROL (run 2026-09-24): History's Dropped tag put back to Closed made this read
+  //   FAIL  T80 the re-check on the card ...
+  check('T80 the re-check on the card, the board and History: the count sits just under the chance in the chance\'s own type and the Desk row is gone; a taken trade shows the count the last run gave it; an add still says how many agreed when he took the one he holds, not the re-checked count; History marks a dropped trade Dropped and says which run and why, and a plain closed one stays Closed; the row carries the count at the take and the drop; the board carries what the run dropped; and the page says so when the run lands and refreshes History',
+    /<span class="odds"><span class="k">Chance<\/span><span class="v">51 to 56%<\/span><span class="v agree">2 of 5 agree<\/span><\/span>/.test(took)
+    && !/<dt>Desk<\/dt>/.test(took + add) && !/\.agree\b/.test(CSS) && /html\[data-desk\]:root \.rec \.odds \.v \{ font-family: var\(--mono\); font-size: 14px;/.test(CSS)
+    && /You already hold BA\. 3 of 5 agreed when you took it; 2 of 5 agree now\./.test(txt(add))
+    && / Swing Dropped Entry /.test(hist) && /Dropped by the 10:02 AM run: none of the five backed it any more\./.test(hist) && /\bClosed\b/.test(histPlain) && !/Dropped/.test(histPlain)
+    && row.tookAgreement === 3 && row.agreement === 0 && row.dropped?.runId === 'run9' && row.agreedAt === '2026-09-24T16:02:00.000Z'
+    && K.recRow('x', { ...REC }).tookAgreement === null && K.recRow('x', { ...REC }).dropped === null
+    && board.desk.dropped.map((x) => `${x.ticker}/${x.horizon}`).join() === 'F/intraday,XOM/intraday'
+    && /const gone = S\.state\.desk\?\.dropped \|\| \[\];\n\s+if \(gone\.length\) \{ S\.history = null; S\.histAt = 0; \}/.test(APP)
+    && /Dropped \$\{gone\.map\(\(x\) => x\.ticker\)\.join\(', '\)\}: none of the five back \$\{gone\.length === 1 \? 'it' : 'them'\} now\./.test(APP)
+    && /const DEMO_BACKING = \{ PLTR: 3, SOFI: 0 \};/.test(D) && /status: 'closed', closedAt: new Date\(now\), result: null, agreement: 0, tookAgreement, dropped: \{ at: new Date\(now\), runId \}/.test(D)
+    && /tookAgreement: Number\.isFinite\(Number\(d\.tookAgreement\)\)/.test(D) && /dropped: Array\.isArray\(st\.desk\.dropped\)/.test(D)
+    && ![took, add, hist].some((h) => DASH.test(h)),
+    JSON.stringify({ odds: (took.match(/<span class="odds">.*?<\/span><\/span>/) || [''])[0], hist: hist.slice(0, 200), dropped: board.desk?.dropped }));
 }
 
 // ---- T67: the board in one read (2026-09-23, v7.2) ----------------------------------------------

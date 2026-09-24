@@ -717,7 +717,13 @@ async function pollOnce() {
       if (S.state.run?.status !== 'error') { BAR.doneUntil = Date.now() + 1400; paintBar(); setTimeout(paintBar, 1500); }
       const fresh = (S.state.recs || []).filter((r) => !before.has(r.id)).length;
       if (S.state.run?.status === 'error') toast('The run did not finish. The line under the button says why.');
-      else toast(fresh ? `The desk is in: ${fresh} trade${fresh === 1 ? '' : 's'}.` : 'The desk is in. Nothing worth taking right now.');
+      else {
+        // A trade he held that none of the five back any more has left for History (2026-09-24).
+        const gone = S.state.desk?.dropped || [];
+        if (gone.length) { S.history = null; S.histAt = 0; }
+        const dropLine = gone.length ? ` Dropped ${gone.map((x) => x.ticker).join(', ')}: none of the five back ${gone.length === 1 ? 'it' : 'them'} now.` : '';
+        toast(`${fresh ? `The desk is in: ${fresh} trade${fresh === 1 ? '' : 's'}.` : 'The desk is in. Nothing worth taking right now.'}${dropLine}`);
+      }
       S.news = null;
       quotesAt = 0;
       loadQuotes();

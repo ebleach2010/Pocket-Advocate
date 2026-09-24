@@ -93,6 +93,11 @@ export function recRow(id, d) {
     // An add to a position he holds, and a position back after he passed on it (2026-09-24).
     adds: d?.adds === true,
     reoffered: d?.reoffered && Number.isFinite(Number(d.reoffered.was)) ? { was: Number(d.reoffered.was), now: Number(d.reoffered.now) || 0 } : null,
+    // The re-check (2026-09-24): how many backed it when he took it, once a run has changed the count, and
+    // the run that dropped it when none of the five did.
+    tookAgreement: Number.isFinite(Number(d?.tookAgreement)) && d?.tookAgreement !== null ? Number(d.tookAgreement) : null,
+    agreedAt: iso(d?.agreedAt),
+    dropped: d?.dropped ? { at: iso(d.dropped.at), runId: d.dropped.runId || null } : null,
   };
 }
 const mineOf = (m) => (m && Number(m.amountCents) > 0 && Number(m.riskCents) > 0 ? {
@@ -172,6 +177,7 @@ export async function tradeState(env, { now = Date.now() } = {}) {
     desk: st.desk ? {
       at: st.desk.at ? new Date(st.desk.at).toISOString() : null, trigger: st.desk.trigger || 'manual',
       read: st.desk.read || '', none: st.desk.none || '', count: Number(st.desk.count) || 0, reports: Number(st.desk.reports) || 0,
+      dropped: Array.isArray(st.desk.dropped) ? st.desk.dropped.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday' })) : [],
     } : null,
     recs, active, timedOut,
     market: {

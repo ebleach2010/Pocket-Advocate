@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.9';
+export const VERSION = '7.10';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.9';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE RE-CHECK (Eric, 2026-09-24: "If a new run disagrees with a strategy
+    // still on the table (0/5 agents agree), then it is removed."). Admin only.
+    version: '7.10',
+    quiet: true,
+    client: [],
+    admin: [
+      'Every run now re-checks the trades you took. The count updates to how many of the five still back each one.',
+      'When all five say they no longer back one, it leaves your Active list for History, marked Dropped, and the push says so.',
+      'How many agree now sits right under the chance on every card.',
+    ],
+  },
   {
     // THE GLP-1 CHAIN (Eric, 2026-09-24: "I want GLp-1 pipeline stocks added
     // to the search. Including HIMs."). Admin only.

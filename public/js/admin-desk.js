@@ -185,7 +185,9 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
   const agree = agreeN == null ? '' : `${agreeN} of 5 agree`;
   // On an add, the same count when he took the trade he holds, from the page's own list of his trades.
   const heldRec = r.adds && holding ? holding.get(positionKey(r)) : null;
-  const heldN = heldRec && heldRec.agreement !== '' && heldRec.agreement != null && Number.isFinite(Number(heldRec.agreement)) ? Math.round(Number(heldRec.agreement)) : null;
+  // When he took it, which a later run's re-check does not overwrite (2026-09-24).
+  const heldWas = heldRec ? heldRec.tookAgreement ?? heldRec.agreement : null;
+  const heldN = heldWas !== '' && heldWas != null && Number.isFinite(Number(heldWas)) ? Math.round(Number(heldWas)) : null;
   const addWhy = agreeN == null ? '' : heldN != null ? ` ${heldN} of 5 agreed when you took it; ${agreeN} of 5 agree now.` : ` ${agreeN} of 5 agree now.`;
   const amount = !sized || sz.qty == null ? 'Set your balance in Settings'
     : sz.qty === 0 ? (sz.overRule ? `One contract risks ${money(sz.unitRiskCents)}, over your ${money(sz.budgetCents)} rule`
@@ -207,7 +209,7 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
       <span class="side ${r.side === 'short' ? 'short' : 'long'}">${r.side === 'short' ? 'Short' : 'Long'}</span>
       <span class="kind">${esc(kind)}</span>
       ${r.adds && !active ? '<span class="addtag">Add</span>' : ''}
-      ${chance ? `<span class="odds"><span class="k">Chance</span><span class="v">${chance}</span></span>` : ''}
+      ${chance || agree ? `<span class="odds">${chance ? `<span class="k">Chance</span><span class="v">${chance}</span>` : ''}${agree ? `<span class="v agree">${esc(agree)}</span>` : ''}</span>` : ''}
     </div>
     ${active ? `<div class="live-tag">Active${r.tookAt ? ` since ${esc(clock(r.tookAt))}` : ''}</div>` : ''}
     <div class="grid">
@@ -229,7 +231,6 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
     <dl class="why">
       ${r.catalyst ? `<dt>Catalyst</dt><dd>${esc(r.catalyst)}</dd>` : ''}
       ${r.invalidation ? `<dt>Out if</dt><dd>${esc(r.invalidation)}</dd>` : ''}
-      ${agree ? `<dt>Desk</dt><dd>${esc(agree)}</dd>` : ''}
     </dl>
     <div class="acts">
       ${active
@@ -256,7 +257,7 @@ export function historyRowHtml(r) {
   const entry = r.entryLow != null && r.entryHigh != null && Number(r.entryLow) !== Number(r.entryHigh)
     ? `${price(r.entryLow)} to ${price(r.entryHigh)}` : price(r.entryLow ?? r.entry);
   const tag = r.result === 'profit' ? '<span class="res profit">PROFIT</span>'
-    : r.result === 'loss' ? '<span class="res loss">LOSS</span>' : '<span class="res none">Closed</span>';
+    : r.result === 'loss' ? '<span class="res loss">LOSS</span>' : r.dropped ? '<span class="res none">Dropped</span>' : '<span class="res none">Closed</span>';
   const plan = [
     entry && `Entry ${entry}`,
     r.stop != null && `stop ${price(r.stop)}`,
@@ -280,6 +281,7 @@ export function historyRowHtml(r) {
     <div class="more">
       ${plan ? `<p>${m ? '<span class="k">Desk</span> ' : ''}${esc(plan)}.</p>` : ''}
       ${his ? `<p class="mine"><span class="k">You</span> ${esc(his)}.</p>` : ''}
+      ${r.dropped ? `<p class="mine">Dropped by the ${esc(clock(r.dropped.at || r.closedAt))} run: none of the five backed it any more.</p>` : ''}
       ${r.setup ? `<p>${esc(r.setup)}</p>` : ''}
       ${r.catalyst ? `<p><span class="k">Catalyst</span> ${esc(r.catalyst)}</p>` : ''}
       ${r.invalidation ? `<p><span class="k">Out if</span> ${esc(r.invalidation)}</p>` : ''}

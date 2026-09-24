@@ -509,6 +509,18 @@ in desk-run.js), so it costs none of the fifty calls, and Settings draws the
 same list. desk.mjs D29 and trade.mjs T79 hold it; drive-trade.mjs I reads it
 in Settings.
 
+**The re-check (2026-09-24, v7.10).** Every run shows the five researchers the
+trades he took as the desk filed them (ticker, kind, entry, stop, targets,
+setup; never his size, fills, results or balance), and each gives a verdict
+under its own "Earlier calls" heading. The Worker counts the verdicts itself
+(`earlierVerdicts`, `tallyEarlier`): some backing updates the count and keeps
+the count at the take; all five plainly against moves it to History marked
+Dropped and the push says so; a researcher missing or silent leaves it as it
+was. The count sits under the chance on every card. desk.mjs D30, D31 and a
+wider D24 hold it, D28 is re-pinned (the held trade reaches an agent only as
+the call to re-check), trade.mjs T80, T34 and T75; drive-trade.mjs P drops
+SOFI in the demo.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's
