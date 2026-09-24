@@ -949,11 +949,17 @@ ck('clock: all switches share one painter set, so no two can disagree',
   const probe = (W.match(/if \(url\.searchParams\.get\('do'\) === 'bars-probe'\) \{[\s\S]*?\n        \}\n/) || [''])[0];
   // NEGATIVE CONTROL (run 2026-09-24): the probe's `out.error.split(key).join('[key]')` removed made this read
   //   FAIL  the bars probe never hands back the key ...
-  ck('the bars probe never hands back the key: behind the diagnostics key, one call for SPY 15-minute bars, the answer is whether a key exists and where from, the status, the count and a short error with the key cut out',
-    /\/stock\/candle\?symbol=SPY&resolution=15&from=\$\{from\}&to=\$\{to\}&token=\$\{encodeURIComponent\(key\)\}/.test(probe)
-    && /if \(out\.error\) out\.error = out\.error\.split\(key\)\.join\('\[key\]'\);/.test(probe)
-    && /const out = \{ key: true, source: env\.FINNHUB_KEY \? 'env' : 'settings' \};/.test(probe)
-    && !/key: key|\{ key \}|token: key|out\.key = key/.test(probe)
+  // RE-PINNED 2026-09-24 (v7.15): Finnhub answered 403 and its paid plan was far too dear, so the charts
+  // come from Alpaca's free plan and the probe asks Alpaca now: one call for SPY and QQQ through the same
+  // fetchBars the runs use, and the answer is whether a pair exists and where from, the status, the bar
+  // counts and SPY's chart. Neither half of the pair is ever in it.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.15): `id: creds.id,` added to the probe's answer made this read
+  //   FAIL  the bars probe never hands back the key ...
+  ck('the bars probe never hands back the key: behind the diagnostics key, one call for SPY and QQQ 15-minute bars through the runs\' own fetchBars, the answer is whether a key pair exists and where from, the status, the bar counts and SPY\'s chart, and neither half of the pair',
+    /const creds = resolveBars\(env, s\?\.data\);\n\s+if \(!creds\) return json\(\{ key: false \}\);/.test(probe)
+    && /const got = await fetchBars\(creds, \['SPY', 'QQQ'\], Date\.now\(\)\);/.test(probe)
+    && /source: env\.ALPACA_KEY_ID && env\.ALPACA_SECRET \? 'env' : 'settings'/.test(probe)
+    && !/creds\.(?:id|secret)|creds\b(?!\)|,)|alpacaKeyId|alpacaSecret|secret:/.test(probe.replace(/const creds = resolveBars\(env, s\?\.data\);|if \(!creds\)|fetchBars\(creds,/g, ''))
     && W.indexOf("'bars-probe'") > W.indexOf("url.pathname === '/api/diag'") && W.indexOf("'bars-probe'") > W.indexOf("do') === 'limits'"),
     probe.slice(0, 200));
 }

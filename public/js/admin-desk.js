@@ -276,6 +276,7 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
     ${vehicleText(r) ? `<p class="vehicle">${esc(vehicleText(r))}</p>` : ''}
     ${r.setup ? `<p class="setup">${esc(r.setup)}</p>` : ''}
     <dl class="why">
+      ${r.chart?.line ? `<dt>15m chart</dt><dd class="chart15">${esc(r.chart.line)}${r.chart.at ? ` <span class="at">(${esc(clock(r.chart.at))})</span>` : ''}</dd>` : ''}
       ${r.catalyst ? `<dt>Catalyst</dt><dd>${esc(r.catalyst)}</dd>` : ''}
       ${r.invalidation ? `<dt>Out if</dt><dd>${esc(r.invalidation)}</dd>` : ''}
       ${stance.map((s) => `<dt>${esc(s.label)}</dt><dd class="stance">${s.n} · ${esc(s.names.join(', ') || 'none')}</dd>`).join('')}

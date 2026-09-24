@@ -546,6 +546,12 @@ const riskSub = (pct) => {
   const b = balanceNow().cents;
   return b > 0 ? `${pct}% of ${money(b)} is <span class="num">${money(Math.round((b * pct) / 100))}</span> a trade` : 'of the balance, on every trade';
 };
+/** The 15-minute charts' line in Settings: whether Alpaca's key is on file, and what Alpaca said when it was saved. */
+function barsSub(pub) {
+  if (!pub?.hasBarsKey) return 'Alpaca key: none on file';
+  const st = pub.barsCheck?.status;
+  return `Alpaca key on file · ends ${pub.barsKeyTail || ''}${st === 'ok' ? ' · working' : st === 'refused' ? ' · Alpaca turned it down' : st === 'failed' ? ' · not checked yet' : ''}`;
+}
 function balanceSub() {
   const b = balanceNow();
   if (!(b.cents > 0)) return 'none yet';
@@ -567,6 +573,7 @@ function openSettings() {
     </div><p class="said" id="risk-said"></p></div>
     <div><h2>Market data</h2><div class="grp">
       <div class="r"><span>Price key<span class="sub num" id="key-sub">${pub.hasKey ? `on file · ends ${esc(pub.keyTail || '')}` : 'none on file'}</span></span><button type="button" class="btn tiny quiet" style="margin-left:auto" id="key-go">${pub.hasKey ? 'Replace' : 'Add'}</button></div>
+      <div class="r"><span>15-minute charts<span class="sub num" id="bars-sub">${esc(barsSub(pub))}</span></span><button type="button" class="btn tiny quiet" style="margin-left:auto" id="bars-go">${pub.hasBarsKey ? 'Replace' : 'Add'}</button></div>
       <div class="r" style="display:block"><span>Always looked at<span class="sub">Named to the desk on every run. It still looks well past them.</span></span><div class="watch" id="watch-chips">${(pub.watchlist || []).map((t) => `<span class="chip tap">${esc(t)}</span>`).join('')}</div><button type="button" class="btn tiny quiet" id="watch-go" style="margin-top:10px">Edit the list</button></div>
     </div><p class="said" id="key-said"></p></div>
     <div><h2>GLP-1 chain</h2><div class="grp">
@@ -638,6 +645,30 @@ function openSettings() {
         ov.querySelector('#key-sub').textContent = out.settings.hasKey ? `on file · ends ${out.settings.keyTail}` : 'none on file';
         close();
       } catch (err) { say(sheet.querySelector('#kk-said'), err.message); }
+    });
+  });
+  // THE 15-MINUTE CHARTS' KEY (v7.15): Alpaca's free plan, both halves at once, tested as it is saved.
+  ov.querySelector('#bars-go').addEventListener('click', () => {
+    const { sheet, close } = openSheet(`<h3>15-minute charts</h3><div class="sum">From Alpaca's free plan. In your Alpaca dashboard, open API Keys and generate one, then paste both halves here. They are stored on the Worker and never come back to this page.</div>
+      <label>Key ID<input id="ak" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+      <label>Secret<input id="as" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+      <button type="button" class="btn tall wide primary" id="ak-go">Save and test</button>
+      <p class="said" id="ak-said" style="margin:8px 0 0"></p>
+      <button type="button" class="btn quiet wide" data-x style="margin-top:8px">Cancel</button>`);
+    sheet.querySelector('#ak-go').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      say(sheet.querySelector('#ak-said'), 'Checking with Alpaca…');
+      try {
+        const out = await call('settings', { alpacaKeyId: sheet.querySelector('#ak').value.trim(), alpacaSecret: sheet.querySelector('#as').value.trim() });
+        S.state = { ...S.state, settings: out.settings };
+        ov.querySelector('#bars-sub').textContent = barsSub(out.settings);
+        ov.querySelector('#bars-go').textContent = out.settings.hasBarsKey ? 'Replace' : 'Add';
+        const st = out.settings.barsCheck?.status;
+        if (st === 'refused') { say(sheet.querySelector('#ak-said'), 'Saved, but Alpaca turned it down. Check you copied both halves of the same key.'); return; }
+        close();
+        say('#key-said', st === 'ok' ? 'Alpaca works. The next run has 15-minute charts.' : st === 'failed' ? 'Saved. Alpaca did not answer just now; the next run tries again.' : 'Removed. Runs go without 15-minute charts.');
+      } catch (err) { say(sheet.querySelector('#ak-said'), err.message); } finally { btn.disabled = false; }
     });
   });
   ov.querySelector('#watch-go').addEventListener('click', () => {

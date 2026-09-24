@@ -398,7 +398,8 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     // stat121 (2026-09-24, v7.8) for ADD/TRIM between PROFIT and LOSS, and to
     // stat122 (2026-09-24, v7.12) for HOLD and SELL on a taken trade, and to
     // stat123 (2026-09-24, v7.13) for the agents' votes, and to
-    // stat124 (2026-09-24, v7.14) for the vote folded under a tap.
+    // stat124 (2026-09-24, v7.14) for the vote folded under a tap, and to
+    // stat125 (2026-09-24, v7.15) for the 15-minute chart row on a card.
     // NEGATIVE CONTROL (run 2026-09-23): admin-chats.html put back to stat116 made this read
     //   FAIL  CH7 the pages: ...
     // NEGATIVE CONTROL (run 2026-09-23, v7.3): admin-desk.html put back to stat117 made this read
@@ -415,7 +416,9 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     //   FAIL  CH7 the pages: ...
     // NEGATIVE CONTROL (run 2026-09-24, v7.14): admin-desk.html put back to stat123 made this read
     //   FAIL  CH7 the pages: ...
-    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-desk'].every((p) => /admin\.css\?v=stat124/.test(f(`public/${p}.html`)))
+    // NEGATIVE CONTROL (run 2026-09-24, v7.15): admin-desk.html put back to stat124 made this read
+    //   FAIL  CH7 the pages: ...
+    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-desk'].every((p) => /admin\.css\?v=stat125/.test(f(`public/${p}.html`)))
     && paidCents(held) === 0 && paidCents(cap) === 90000 + 32500 && paidCents(comp) === 0 && paidCents(tier) === 90000 + 440000 && paidCents(old) === 120000,
     JSON.stringify({ heldLine, bookLine, paid: [paidCents(held), paidCents(cap), paidCents(comp), paidCents(tier), paidCents(old)] }));
 }

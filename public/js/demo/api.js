@@ -1757,6 +1757,7 @@ export function demoApi(role, store) {
         badDate: 'Pick a date like 2026-09-21, not in the future.',
         badCents: 'Enter the balance in dollars, 0 or more, under ten million.',
         badKey: 'That key does not look like a Finnhub key.',
+        badBarsKey: 'Paste both halves from Alpaca: the Key ID and the Secret.',
         badAccount: 'Account type is cash or margin.',
         badWatchlist: 'Watchlist: up to 20 tickers, letters and dots only.',
         badTicker: 'Ticker: letters and dots only, up to six.',
@@ -1790,6 +1791,9 @@ export function demoApi(role, store) {
         debugResearch: s.debugResearch === true,
         watchlist: Array.isArray(s.watchlist) && s.watchlist.length ? s.watchlist : DEFAULT_WATCHLIST,
         hasKey: !!keyOf(s), keyTail: keyOf(s).slice(-4),
+        // The 15-minute charts' key pair (v7.15): on file or not, the Key ID's last four, what the check said.
+        hasBarsKey: !!(s.alpacaKeyId && s.alpacaSecret), barsKeyTail: s.alpacaKeyId && s.alpacaSecret ? String(s.alpacaKeyId).slice(-4) : '',
+        barsCheck: s.barsCheck && ['ok', 'nokey', 'refused', 'failed'].includes(s.barsCheck.status) ? { status: s.barsCheck.status, at: iso(s.barsCheck.at) } : null,
       });
       const iso = (v) => (v ? new Date(v).toISOString() : null);
       const recRow = (id, d) => ({
@@ -1821,6 +1825,7 @@ export function demoApi(role, store) {
         verdict: d.verdict && ['hold', 'add', 'trim', 'sell'].includes(d.verdict.call) ? { call: d.verdict.call, why: String(d.verdict.why || ''), at: iso(d.verdict.at), runId: d.verdict.runId || null, votes: d.verdict?.votes && typeof d.verdict.votes === 'object' ? Object.fromEntries([1, 2, 3, 4, 5].map((n) => [n, ['hold', 'add', 'trim', 'sell'].includes(d.verdict.votes[n]) ? d.verdict.votes[n] : null])) : null } : null,
         // Who was for and against a new trade, by researcher number (v7.13).
         backers: Array.isArray(d.backers) ? d.backers.map(Number).filter((x) => x >= 1 && x <= 5) : [], doubters: Array.isArray(d.doubters) ? d.doubters.map(Number).filter((x) => x >= 1 && x <= 5) : [],
+        chart: d.chart && typeof d.chart.line === 'string' && d.chart.line ? { line: d.chart.line.slice(0, 120), at: iso(d.chart.at) } : null,
       });
       const BUSY_RUN = ['queued', 'researching', 'decide', 'deciding'];
       const runBlock = (run) => (run ? {
@@ -1859,6 +1864,7 @@ export function demoApi(role, store) {
           desk: st.desk ? {
             at: iso(st.desk.at), trigger: st.desk.trigger || 'manual', read: st.desk.read || '', none: st.desk.none || '',
             count: Number(st.desk.count) || 0, reports: Number(st.desk.reports) || 0,
+            charts: ['ok', 'nokey', 'refused', 'failed'].includes(st.desk.charts) ? st.desk.charts : null,
             verdicts: Array.isArray(st.desk.verdicts) ? st.desk.verdicts.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday', side: x?.side === 'short' ? 'short' : 'long', instrument: ['stock', 'call', 'put'].includes(x?.instrument) ? x.instrument : 'stock', call: ['hold', 'add', 'trim', 'sell'].includes(x?.call) ? x.call : 'hold', why: String(x?.why || ''), agree: Number.isInteger(x?.agree) ? x.agree : null })) : [],
           } : null,
           recs: rows.filter((r) => deskIds.includes(r.id) && live(r)),
@@ -1973,6 +1979,15 @@ export function demoApi(role, store) {
           const key = String(body.finnhubKey || '').trim();
           if (key && !/^[A-Za-z0-9_-]{16,64}$/.test(key)) return fail(400, SAY.badKey);
           patch.finnhubKey = key;
+        }
+        // Alpaca's pair (v7.15). Nothing reaches Alpaca from the demo: a Key ID starting BAD stands in for
+        // one Alpaca turns down, so the sheet's refusal can be seen.
+        if (body.alpacaKeyId !== undefined || body.alpacaSecret !== undefined) {
+          const id = String(body.alpacaKeyId || '').trim();
+          const secret = String(body.alpacaSecret || '').trim();
+          if ((id || secret) && !(/^[A-Za-z0-9]{16,40}$/.test(id) && /^[A-Za-z0-9/+=_-]{20,100}$/.test(secret))) return fail(400, SAY.badBarsKey);
+          patch.alpacaKeyId = id; patch.alpacaSecret = secret;
+          patch.barsCheck = { status: !id ? 'nokey' : /^BAD/i.test(id) ? 'refused' : 'ok', at: new Date() };
         }
         if (body.accountType !== undefined) {
           if (!['cash', 'margin'].includes(body.accountType)) return fail(400, SAY.badAccount);
@@ -2109,8 +2124,10 @@ export function demoApi(role, store) {
           const expiry = (days) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' }).format(new Date(now + days * 86_400_000));
           const FRESH = [
             { horizon: 'intraday', ticker: 'QQQ', side: 'long', instrument: 'stock', entryLow: 497.6, entryHigh: 498.2, stop: 495.9, targets: [501.5, 504], holdMinutes: 180, allocPct: 30, profitLow: 55, profitHigh: 63, agreement: 4, backers: [1, 2, 3, 5], doubters: [4], lastPrice: 498.1, priceNow: 498.1,
+              chart: { line: 'Above VWAP · EMAs stacked up · MACD above signal', at: new Date(now - 4 * 60_000) },
               setup: 'Broke the opening range and held it on the retest, with volume rising into the break.', catalyst: 'Semis leading after the guidance raise.', invalidation: 'A close back under 496 on volume.' },
             { horizon: 'swing', ticker: 'MU', side: 'long', instrument: 'stock', entryLow: 118.2, entryHigh: 119, stop: 113.9, targets: [126, 131], holdDays: 3, allocPct: 22, profitLow: 51, profitHigh: 60, agreement: 3, backers: [2, 3, 4], doubters: [], lastPrice: 118.7, priceNow: 118.7,
+              chart: { line: 'Above VWAP · EMAs stacked up · MACD just crossed up', at: new Date(now - 4 * 60_000) },
               setup: 'Beat on memory pricing before the open and is basing above the gap.', catalyst: 'Earnings beat and a raised outlook this morning.', invalidation: 'Filling the gap below 114.' },
             { horizon: 'scalp', ticker: 'AMD', side: 'long', instrument: 'call', strike: 170, expiry: expiry(2), entryLow: 2.05, entryHigh: 2.2, stop: 1.6, targets: [2.9, 3.4], holdMinutes: 15, allocPct: 12, profitLow: 52, profitHigh: 59, agreement: 3, backers: [1, 2, 5], doubters: [4], lastPrice: 168.4,
               setup: 'Pressing the day high at 169 with the supply news behind it.', catalyst: 'Supply agreement reported before the open.', invalidation: 'Losing 167.8, the morning low of the push.' },
@@ -2132,7 +2149,9 @@ export function demoApi(role, store) {
             const call = backs >= 3 ? 'hold' : 'sell';
             const agree = Object.values(votes).filter((x) => x === call).length;
             const why = backs === 0 ? 'None of the five back it any more.' : call === 'hold' ? 'Still holding its level with volume behind it.' : 'Lost the level it was built on.';
-            store.docs.set(`trade/plays/items/${hid}`, { ...d, agreement: agree, agreedAt: new Date(now), agreedRunId: runId, tookAgreement: d.tookAgreement ?? d.agreement ?? null, verdict: { call, why, at: new Date(now), runId, votes } });
+            // Its 15-minute chart as of this run (v7.15): the demo's stands in for the bars.
+            const chart = { line: call === 'sell' ? 'Below VWAP · EMAs stacked down · MACD just crossed down' : 'Above VWAP · EMAs stacked up · MACD above signal', at: new Date(now - 4 * 60_000) };
+            store.docs.set(`trade/plays/items/${hid}`, { ...d, agreement: agree, agreedAt: new Date(now), agreedRunId: runId, tookAgreement: d.tookAgreement ?? d.agreement ?? null, verdict: { call, why, at: new Date(now), runId, votes }, chart });
             verdicts.push({ ticker: d.ticker, horizon: d.horizon, side: d.side, instrument: d.instrument, call, why, agree });
           }
           verdicts.sort((a, b) => ({ sell: 0, trim: 1, add: 2, hold: 3 })[a.call] - ({ sell: 0, trim: 1, add: 2, hold: 3 })[b.call]);
@@ -2157,7 +2176,7 @@ export function demoApi(role, store) {
             ...tstate(),
             run: { ...st.run, status: 'idle', finishedAt: new Date(now), count: ids.length, error: null, done: 5 },
             desk: {
-              runId, at: new Date(now), trigger: 'manual', count: ids.length, reports: 5, ids, none: '', verdicts,
+              runId, at: new Date(now), trigger: 'manual', count: ids.length, reports: 5, ids, none: '', verdicts, charts: 'ok',
               read: 'Semis are leading and the index is holding its opening range on better volume than yesterday. Buy strength that holds a retest; skip anything extended.',
               news: [
                 { headline: 'Micron beats on memory pricing and raises its outlook', why: 'Fuel for the whole chip group today, and the reason MU is on the board.', tickers: ['MU', 'NVDA'] },

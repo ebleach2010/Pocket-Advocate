@@ -63,4 +63,6 @@
   //                              advisor panel shows an error and nothing else breaks)
   //   FINNHUB_KEY                optional (the Trade portal): a real secret here wins over
   //                              the key he pastes into the portal's Settings
+  //   ALPACA_KEY_ID              optional, with ALPACA_SECRET (the desk's 15-minute charts,
+  //   ALPACA_SECRET              Alpaca's free plan): a pair here wins over the pair he pastes
 }

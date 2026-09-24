@@ -21,6 +21,7 @@ import { isTradingDay, isMarketOpen, MARKET_OPEN_MIN, planFor, positionKey, scal
 import {
   TRADE_TZ, DESK_NAME, SAY, SETTINGS_PATH, STATE_PATH, PLAYS, BALANCES, POSITIONS, DEFAULT_WATCHLIST, WATCHLIST_MAX, KEY_RE,
   QUOTE_MAX, mtParts, keyTail, resolveKey, watchlistOf, startOf, realDate,
+  ALPACA_ID_RE, ALPACA_SECRET_RE, resolveBars, fetchBars,
   quoteCached, quoteBudgetLeft, newsCached, earningsCached, newsRows, earningsRows, MARKET_CLOSE,
 } from './trade-desk.js';
 
@@ -56,6 +57,18 @@ export function publicSettings(settings, env = {}) {
     debugResearch: settings?.debugResearch === true,
     watchlist: watchlistOf(settings),
     hasKey: !!key, keyTail: keyTail(key),
+    // The 15-minute charts' key pair (v7.15): whether one is on file, the last four of its Key ID, and
+    // what Alpaca said when it was saved. The Secret never rides, not even its tail.
+    ...barsPublic(env, settings),
+  };
+}
+const BARS_STATUS = ['ok', 'nokey', 'refused', 'failed'];
+function barsPublic(env, settings) {
+  const creds = resolveBars(env, settings);
+  const c = settings?.barsCheck;
+  return {
+    hasBarsKey: !!creds, barsKeyTail: creds ? keyTail(creds.id) : '',
+    barsCheck: c && BARS_STATUS.includes(c.status) ? { status: c.status, at: c.at ? new Date(c.at).toISOString() : null } : null,
   };
 }
 
@@ -102,6 +115,8 @@ export function recRow(id, d) {
     verdict: d?.verdict && ['hold', 'add', 'trim', 'sell'].includes(d.verdict.call) ? { call: d.verdict.call, why: String(d.verdict.why || ''), at: iso(d.verdict.at), runId: d.verdict.runId || null, votes: d?.verdict?.votes && typeof d.verdict.votes === 'object' ? Object.fromEntries([1, 2, 3, 4, 5].map((n) => [n, ['hold', 'add', 'trim', 'sell'].includes(d.verdict.votes[n]) ? d.verdict.votes[n] : null])) : null } : null,
     // Who was for and against a new trade, by researcher number (v7.13).
     backers: Array.isArray(d?.backers) ? d.backers.map(Number).filter((x) => x >= 1 && x <= 5) : [], doubters: Array.isArray(d?.doubters) ? d.doubters.map(Number).filter((x) => x >= 1 && x <= 5) : [],
+    // The 15-minute chart at its last run, in a line (v7.15).
+    chart: d?.chart && typeof d.chart.line === 'string' && d.chart.line ? { line: d.chart.line.slice(0, 120), at: iso(d.chart.at) } : null,
   };
 }
 const mineOf = (m) => (m && Number(m.amountCents) > 0 && Number(m.riskCents) > 0 ? {
@@ -181,6 +196,8 @@ export async function tradeState(env, { now = Date.now() } = {}) {
     desk: st.desk ? {
       at: st.desk.at ? new Date(st.desk.at).toISOString() : null, trigger: st.desk.trigger || 'manual',
       read: st.desk.read || '', none: st.desk.none || '', count: Number(st.desk.count) || 0, reports: Number(st.desk.reports) || 0,
+      // Whether the last run had its 15-minute charts (v7.15).
+      charts: BARS_STATUS.includes(st.desk.charts) ? st.desk.charts : null,
       verdicts: Array.isArray(st.desk.verdicts) ? st.desk.verdicts.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday', side: x?.side === 'short' ? 'short' : 'long', instrument: ['stock', 'call', 'put'].includes(x?.instrument) ? x.instrument : 'stock', call: ['hold', 'add', 'trim', 'sell'].includes(x?.call) ? x.call : 'hold', why: String(x?.why || ''), agree: Number.isInteger(x?.agree) ? x.agree : null })) : [],
     } : null,
     recs, active, timedOut,
@@ -558,13 +575,24 @@ export async function tradeBalance(env, body, now = Date.now()) {
 }
 
 /** The few settings the desk has. The case id is the desk's own and never taken from a body. */
-export async function tradeSettings(env, body) {
+export async function tradeSettings(env, body, now = Date.now()) {
   const cur = (await readSettings(env))?.data || {};
   const patch = {};
   if (body?.finnhubKey !== undefined) {
     const key = String(body.finnhubKey || '').trim();
     if (key && !KEY_RE.test(key)) throw new TradeError(400, SAY.badKey);
     patch.finnhubKey = key;
+  }
+  // Alpaca's pair, both halves together or neither (v7.15). Saving one asks Alpaca for SPY's bars
+  // straight away, so Settings can say at once whether the charts will work.
+  if (body?.alpacaKeyId !== undefined || body?.alpacaSecret !== undefined) {
+    const id = String(body.alpacaKeyId || '').trim();
+    const secret = String(body.alpacaSecret || '').trim();
+    if ((id || secret) && !(ALPACA_ID_RE.test(id) && ALPACA_SECRET_RE.test(secret))) throw new TradeError(400, SAY.badBarsKey);
+    patch.alpacaKeyId = id;
+    patch.alpacaSecret = secret;
+    const got = id ? await fetchBars({ id, secret }, ['SPY'], now) : { status: 'nokey' };
+    patch.barsCheck = { status: got.status, at: new Date(now) };
   }
   if (body?.accountType !== undefined) {
     if (!['cash', 'margin'].includes(body.accountType)) throw new TradeError(400, SAY.badAccount);

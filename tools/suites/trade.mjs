@@ -122,10 +122,12 @@ function world(over = {}) {
     isTradingDay: math.isTradingDay, tradeMetrics: math.tradeMetrics, chartSeries: math.chartSeries, planFor: math.planFor, positionKey: math.positionKey, scalePosition: math.scalePosition,
     TARGET_DAILY: math.TARGET_DAILY, PROJECTION_MIN_DAYS: math.PROJECTION_MIN_DAYS, DEFAULT_START_CENTS: math.DEFAULT_START_CENTS,
     MARKET_OPEN_MIN: math.MARKET_OPEN_MIN,
-    fetch: async (url) => {
+    fetch: async (url, init) => {
       w.fetches.push(String(url));
+      (w.fetchInits ||= []).push(init || null);
       const u = String(url);
-      const body = /\/quote\?/.test(u) ? { c: 100.5, d: 1, dp: 1.01, h: 101, l: 99, o: 99.5, pc: 99.5, t: 1758470000 }
+      const body = /data\.alpaca\.markets\/v2\/stocks\/bars/.test(u) ? { bars: { SPY: [] }, next_page_token: null }
+        : /\/quote\?/.test(u) ? { c: 100.5, d: 1, dp: 1.01, h: 101, l: 99, o: 99.5, pc: 99.5, t: 1758470000 }
         : /\/news\?/.test(u) ? [{ headline: 'Chips lead the open', source: 'Demo', datetime: Math.floor(Date.now() / 1000) - 600 }]
           : /\/calendar\/earnings/.test(u) ? { earningsCalendar: [{ symbol: 'ORCL', hour: 'amc' }] } : {};
       return { ok: w.fetchStatus === 200, status: w.fetchStatus, json: async () => body };
@@ -813,7 +815,9 @@ check('T23 a question on the desk: the desk note rides the user text, the ask no
   check('T26 the state carries the desk\'s case, whether a key is on file and its last four characters and never the key, his account type, his risk per trade, the push and debug switches and the list it prices, the starting amount as the balance until he types one, the day, and none of the plays, the entries, the metrics, the chart, the scan or the standing',
     !/abcd1234wxyz/.test(raw) && !/abcd1234/.test(raw) && payload.settings.hasKey === true && payload.settings.keyTail === 'wxyz' && payload.caseId === 'c1'
     && payload.settings.accountType === 'margin' && payload.settings.riskPct === 2.5 && payload.settings.debugResearch === true && payload.settings.pushOn === true
-    && payload.settings.watchlist.join() === 'SPY' && Object.keys(payload.settings).sort().join() === 'accountType,debugResearch,hasKey,keyTail,pushOn,riskPct,watchlist'
+    // RE-PINNED 2026-09-24 (v7.15): three more, for the 15-minute charts' pair: whether one is on file,
+    // the last four of its Key ID, and what Alpaca said when it was saved (T83 holds them).
+    && payload.settings.watchlist.join() === 'SPY' && Object.keys(payload.settings).sort().join() === 'accountType,barsCheck,barsKeyTail,debugResearch,hasBarsKey,hasKey,keyTail,pushOn,riskPct,watchlist'
     && noBal.cents === 250000 && noBal.typed === false && noBal.date === null
     && payload.market.today === '2026-09-21' && payload.market.tradingDay === 'full' && payload.market.open === true
     && ['plays', 'balances', 'metrics', 'chart', 'scan', 'standing', 'feed', 'flights', 'unseen', 'nextSlot'].every((k) => !(k in payload)),
@@ -932,8 +936,10 @@ check('T23 a question on the desk: the desk note rides the user text, the ask no
 // block only says the case is the desk.
 // NEGATIVE CONTROL (run 2026-09-23): `const ranDesk = await maybeRunDesk(` changed to `const ranDesk = false && await maybeRunDesk(` made this read
 //   FAIL  T30 the Worker imports ...
+// RE-PINNED 2026-09-24 (v7.15): the Worker also imports the 15-minute charts' fetch and reading for
+// the diagnostics' bars probe, which asks Alpaca now.
 check('T30 the Worker imports the desk\'s routes and panel block, the run and its morning clock, and the categories; queues the 7:00 run at every firing and runs a queued one awaited before the case drain; no longer collects a scan or books a reading; hands the panel the desk\'s block and the trading half of the glossary on a desk; prints the standing on the covers; refuses to pull from the desk or continue it; and a deleted desk clears the settings\' pointer',
-  /import \{ tradeRoute, TradeError, tradePanelBlock \} from '\.\/trade\.js';\nimport \{ maybeRunDesk, maybeMorningRun, peekDesk \} from '\.\/desk-run\.js';\nimport \{ TRADE_CATEGORIES, SAY as TRADE_SAY \} from '\.\/trade-desk\.js';/.test(W)
+  /import \{ tradeRoute, TradeError, tradePanelBlock \} from '\.\/trade\.js';\nimport \{ maybeRunDesk, maybeMorningRun, peekDesk \} from '\.\/desk-run\.js';\nimport \{ TRADE_CATEGORIES, SAY as TRADE_SAY, resolveBars, fetchBars, chartsOf, chartText \} from '\.\/trade-desk\.js';/.test(W)
   && !/maybeTradeScan|maybeMorningRead|maybeCollectScan|pollScanFlight/.test(W)
   && /ctx\.waitUntil\(maybeMorningRun\(env\)\.catch\(\(\) => \{\}\)\);/.test(W)
   // RE-PINNED 2026-09-23 (review): never on a quarter hour, whose firing carries the medical sweeps.
@@ -1288,8 +1294,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   check('T35 the portal page and its module are gone and no admin page links them; the seven pages ask for the stylesheet at its new version; the audit proves the desk\'s page and three modules 404 to a stranger; the sideways drive walks the desk; the asset gate covers the desk\'s files and not the shared arithmetic; the demo mirrors the board, a run that walks its stages, YES, PROFIT and LOSS, History, News, the research behind its switch, the balance and the settings, refuses with the Worker\'s exact sentences, seeds the new board with his 3% rule, keeps its desk off the client half, and carries no log, reading, positions, stats or scan',
     !has('public/admin-trade.html') && !has('public/js/admin-trade.js')
     // RE-PINNED 2026-09-23 (v7.3): stat118, for the size cells he can tap; stat119 (2026-09-24, v7.5) for the run's bar;
-    // stat120 (2026-09-24, v7.6) for NO, the Add chip and the back-again note; stat121 (2026-09-24, v7.8) for ADD/TRIM; stat122 (2026-09-24, v7.12) for HOLD and SELL; stat123 (2026-09-24, v7.13) for the votes; stat124 (2026-09-24, v7.14) for the vote folded under a tap.
-    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat124/.test(f(`public/${p}.html`)))
+    // stat120 (2026-09-24, v7.6) for NO, the Add chip and the back-again note; stat121 (2026-09-24, v7.8) for ADD/TRIM; stat122 (2026-09-24, v7.12) for HOLD and SELL; stat123 (2026-09-24, v7.13) for the votes; stat124 (2026-09-24, v7.14) for the vote folded under a tap; stat125 (2026-09-24, v7.15) for the 15-minute chart row.
+    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat125/.test(f(`public/${p}.html`)))
     && ['/js/admin-desk.js', '/js/admin-deskapp.js', '/js/admin-deskfx.js'].every((x) => AUDIT.includes(`'${x}'`))
     && /'\/admin-desk',/.test(AUDIT) && !/admin-trade/.test(AUDIT)
     && /'\/admin-desk\.html\?id=demo-case-trade&demo=admin'/.test(NOSIDE) && !/admin-trade/.test(NOSIDE)
@@ -1401,6 +1407,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry713 = (CL.match(/\{\n\s+\/\/ NAMED VOTES \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-24 (v7.14): the judge decides, its own quiet entry.
   const entry714 = (CL.match(/\{\n\s+\/\/ THE JUDGE DECIDES \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-24 (v7.15): the 15-minute charts, their own quiet entry.
+  const entry715 = (CL.match(/\{\n\s+\/\/ 15-MINUTE CHARTS \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1475,8 +1483,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-24 (v7.14): both versions read 7.14 with the judge-final tag; the 7.13 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-24, v7.14): 'even when all five vote the other way' reworded to 'even when the five disagree' in the 7.14 entry made this read
   //   FAIL  T36 both versions read 7.14 ...
-  check('T36 both versions read 7.14 with the new tag, the 4.7 through 7.14 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.14';/.test(CL) && /const VERSION = '7\.14';/.test(W) && /const BUILD_TAG = 'v2026-09-24-judge-final';/.test(W)
+  // RE-PINNED 2026-09-24 (v7.15): both versions read 7.15 with the charts-15m tag; the 7.14 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.15): 'worked out from real bars' reworded to 'worked out from the bars' in the 7.15 entry made this read
+  //   FAIL  T36 both versions read 7.15 ...
+  check('T36 both versions read 7.15 with the new tag, the 4.7 through 7.15 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.15';/.test(CL) && /const VERSION = '7\.15';/.test(W) && /const BUILD_TAG = 'v2026-09-24-charts-15m';/.test(W)
+    && /version: '7\.15',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry715)
+    && /worked out from real bars/.test(entry715) && /Alpaca\\'s free plan/.test(entry715) && !DASH.test(entry715) && !HARD.some((re) => re.test(entry715))
     && /version: '7\.14',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry714)
     && /even when all five vote the other way/.test(entry714) && !DASH.test(entry714) && !HARD.some((re) => re.test(entry714))
     && /version: '7\.13',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry713)
@@ -1554,7 +1567,7 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && (entry60.match(/^\s+'[^\n]+',$/gm) || []).length >= 5
     // The page itself: always dark, its own stylesheet token, the three modules it mounts.
     && /<html lang="en" data-scheme="calm" data-desk>/.test(PAGE)
-    && /admin\.css\?v=stat124/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
+    && /admin\.css\?v=stat125/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
     && /js\/admin-deskapp\.js/.test(PAGE) && /js\/admin-presence\.js/.test(PAGE) && /js\/version-note\.js/.test(PAGE)
     && (PAGE.match(/<section class="page"/g) || []).length === 3
     && (PAGE.match(/<button data-page="/g) || []).length === 3 && /data-page="trades"[\s\S]*data-page="news"[\s\S]*data-page="history"/.test(PAGE)
@@ -2688,6 +2701,68 @@ const BA_HELD = { ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'sto
     && /const rest = \['trim', 'add', 'hold'\]\.map/.test(APP)
     && ![card, open].some((h) => DASH.test(h)),
     JSON.stringify({ lines, over, open: txt(open).slice(-160) }));
+}
+
+// ---- T83: the 15-minute charts on the page (2026-09-24, v7.15) ----------------------------------------------
+// Eric: "do we have an agent analyzing intraday 15min vwap, macd 3 EMA lines etc?" The bars come from
+// Alpaca's free plan: two halves of a key pasted in Settings, tested with Alpaca the moment they are saved,
+// kept on the Worker and never sent back; and each card carries its chart in a line.
+{
+  const PAIR = { alpacaKeyId: 'PKTEST1234567890ABCD', alpacaSecret: 'abcdEFGHijklMNOPqrstUVWXyz0123456789abcd' };
+  const run = async (body, settings = { caseId: 'c1' }, status = 200) => {
+    const { w, api } = world({ fetchStatus: status });
+    w.docs.set('trade/settings', { data: settings });
+    let out = null; let threw = null;
+    try { out = await api.tradeSettings(env, body, at('2026-09-24T16:00:00Z')); } catch (e) { threw = e; }
+    return { w, out, threw, patch: w.patches.find((x) => x.path === 'trade/settings') };
+  };
+  const good = await run(PAIR);
+  const refused = await run(PAIR, { caseId: 'c1' }, 403);
+  const half = await run({ alpacaKeyId: PAIR.alpacaKeyId });
+  const junk = await run({ alpacaKeyId: 'short', alpacaSecret: PAIR.alpacaSecret });
+  const cleared = await run({ alpacaKeyId: '', alpacaSecret: '' }, { caseId: 'c1', ...PAIR });
+  const envWins = K.publicSettings({ ...PAIR }, { ALPACA_KEY_ID: 'AKENVKEY1234567890ZZ', ALPACA_SECRET: 'envsecretenvsecretenvsecret' });
+  const raw = JSON.stringify([good.out, refused.out, cleared.out, envWins]);
+  const row = K.recRow('r1', { ticker: 'NVDA', status: 'open', chart: { line: 'Above VWAP · EMAs stacked up · MACD above signal', at: new Date('2026-09-24T15:45:00Z') } });
+  const bare = K.recRow('r2', { ticker: 'NVDA', status: 'open', chart: { line: '' } });
+  const mod = await import('../../public/js/admin-desk.js');
+  const ctx = { accountCents: 245000, rules: { riskPct: 3 } };
+  const REC = { id: 'r1', ticker: 'NVDA', side: 'long', horizon: 'intraday', instrument: 'stock', entryLow: 248, entryHigh: 249, stop: 246, targets: [252], allocPct: 20, profitLow: 55, profitHigh: 62, catalyst: 'Guide raised.', status: 'open' };
+  const card = mod.recCardHtml({ ...REC, chart: { line: 'Above VWAP · EMAs <b>stacked</b> up', at: '2026-09-24T15:45:00Z' } }, ctx);
+  const plain = mod.recCardHtml(REC, ctx);
+  const APP = f('public/js/admin-deskapp.js');
+  const { w: bw, api: bapi } = world();
+  bw.docs.set('trade/settings', { data: { caseId: 'c1' } });
+  bw.docs.set('trade/state', { data: { activeIds: [], desk: { ids: [], charts: 'refused' } }, updateTime: 'T1' });
+  const board = await bapi.tradeState(env, { now: at('2026-09-24T16:00:00Z') });
+  // NEGATIVE CONTROL (run 2026-09-24): the 15m chart row dropped from recCardHtml's why list made this read
+  //   FAIL  T83 the 15-minute charts on the page ...
+  check('T83 the 15-minute charts on the page: saving Alpaca\'s two halves asks Alpaca for SPY\'s bars once, with the pair in its headers, and keeps what it said; a 403 is kept as turned down; one half, or a Key ID that is not one, is refused with its sentence and saves nothing; both empty clears the pair without asking; the page learns only that a pair is on file, the last four of its Key ID and the check, never the Secret, and a pair on the Worker wins; the row carries the chart line and its time, and none for an empty line; the card shows it first under 15m chart, escaped, and no row without one; the board carries the last run\'s status; Settings has the row and a sheet that saves and tests both halves with no capitals forced; and the demo mirrors the sentence, the page\'s fields, the row and the check',
+    good.w.fetches.length === 1 && /^https:\/\/data\.alpaca\.markets\/v2\/stocks\/bars\?symbols=SPY&timeframe=15Min/.test(good.w.fetches[0])
+    && good.w.fetchInits[0].headers['APCA-API-KEY-ID'] === PAIR.alpacaKeyId && good.w.fetchInits[0].headers['APCA-API-SECRET-KEY'] === PAIR.alpacaSecret
+    && good.patch.data.alpacaKeyId === PAIR.alpacaKeyId && good.patch.data.alpacaSecret === PAIR.alpacaSecret && good.patch.data.barsCheck.status === 'ok'
+    && good.patch.opts.mask.includes('alpacaSecret') && good.patch.opts.mask.includes('barsCheck')
+    && good.out.settings.hasBarsKey === true && good.out.settings.barsKeyTail === 'ABCD' && good.out.settings.barsCheck.status === 'ok'
+    && refused.out.settings.barsCheck.status === 'refused'
+    && [half, junk].every((r) => r.threw?.message === K.SAY.badBarsKey && r.threw.status === 400 && !r.patch && r.w.fetches.length === 0)
+    && K.SAY.badBarsKey === 'Paste both halves from Alpaca: the Key ID and the Secret.'
+    && cleared.w.fetches.length === 0 && cleared.patch.data.alpacaKeyId === '' && cleared.patch.data.alpacaSecret === '' && cleared.out.settings.hasBarsKey === false && cleared.out.settings.barsCheck.status === 'nokey'
+    && !raw.includes(PAIR.alpacaSecret) && !raw.includes('envsecret') && !raw.includes(PAIR.alpacaKeyId)
+    && envWins.hasBarsKey === true && envWins.barsKeyTail === '90ZZ'
+    && row.chart.line === 'Above VWAP · EMAs stacked up · MACD above signal' && row.chart.at === '2026-09-24T15:45:00.000Z' && bare.chart === null
+    && /<dl class="why">\s*<dt>15m chart<\/dt><dd class="chart15">Above VWAP · EMAs &lt;b&gt;stacked&lt;\/b&gt; up <span class="at">\(9:45 AM\)<\/span><\/dd>\s*<dt>Catalyst<\/dt>/.test(card)
+    && !/15m chart/.test(plain) && board.desk.charts === 'refused'
+    && /<span>15-minute charts<span class="sub num" id="bars-sub">\$\{esc\(barsSub\(pub\)\)\}<\/span><\/span>/.test(APP)
+    && /<label>Key ID<input id="ak" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><\/label>/.test(APP) && /<label>Secret<input id="as" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"><\/label>/.test(APP)
+    && /call\('settings', \{ alpacaKeyId: sheet\.querySelector\('#ak'\)\.value\.trim\(\), alpacaSecret: sheet\.querySelector\('#as'\)\.value\.trim\(\) \}\)/.test(APP)
+    && !/alpacaSecret: pub|pub\.alpacaSecret|settings\.alpacaSecret/.test(APP)
+    && /html\[data-desk\]:root \.rec \.why dd\.chart15 \{ color: var\(--ink\); \}/.test(CSS)
+    && D.includes("badBarsKey: 'Paste both halves from Alpaca: the Key ID and the Secret.',")
+    && /hasBarsKey: !!\(s\.alpacaKeyId && s\.alpacaSecret\), barsKeyTail:/.test(D) && /chart: d\.chart && typeof d\.chart\.line === 'string' && d\.chart\.line \? \{ line: d\.chart\.line\.slice\(0, 120\), at: iso\(d\.chart\.at\) \} : null,/.test(D)
+    && /patch\.barsCheck = \{ status: !id \? 'nokey' : \/\^BAD\/i\.test\(id\) \? 'refused' : 'ok', at: new Date\(\) \};/.test(D)
+    && (SEED.match(/chart: \{ line: '/g) || []).length === 3
+    && ![card].some((h) => DASH.test(h)) && !DASH.test(APP.slice(APP.indexOf('THE 15-MINUTE CHARTS'), APP.indexOf('THE 15-MINUTE CHARTS') + 2500)),
+    JSON.stringify({ fetches: good.w.fetches.length, check: good.out?.settings.barsCheck, refused: refused.out?.settings.barsCheck, half: half.threw?.message, row: row.chart, board: board.desk?.charts, card: card.slice(card.indexOf('<dl'), card.indexOf('<dl') + 220) }));
 }
 
 // ---- T67: the board in one read (2026-09-23, v7.2) ----------------------------------------------

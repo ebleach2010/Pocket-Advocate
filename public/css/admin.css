@@ -2313,6 +2313,9 @@ html[data-desk]:root .rec .verdict .votes li.add .c { color: var(--blue-core); }
 html[data-desk]:root .rec .verdict .votes li.trim .c { color: var(--gold); }
 html[data-desk]:root .rec .verdict .votes li.sell .c { color: #FF8FA3; }
 html[data-desk]:root .rec .why dd.stance { font-size: 13px; }
+/* The 15-minute chart in a line (v7.15), with the time of its last bar. */
+html[data-desk]:root .rec .why dd.chart15 { color: var(--ink); }
+html[data-desk]:root .rec .why dd.chart15 .at { font-size: 12px; color: var(--dim); white-space: nowrap; }
 /* The vote, folded under a tap (v7.14). */
 html[data-desk]:root .rec .verdict .votes-fold > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; list-style: none; }
 html[data-desk]:root .rec .verdict .votes-fold > summary::-webkit-details-marker { display: none; }

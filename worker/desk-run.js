@@ -60,6 +60,7 @@ import { notifyUser } from './push.js';
 import {
   SETTINGS_PATH, STATE_PATH, PLAYS, SAY, stripDashes, mtParts, mtInstant, mtLabel, watchlistOf, resolveKey,
   marketSnapshot, quoteCached, rid, realDate,
+  resolveBars, fetchBars, chartsOf, chartsBlock, chartLine, BARS_MAX_SYMBOLS,
 } from './trade-desk.js';
 import { isTradingDay, isMarketOpen, swingLastDay, nextDateKey, EARLY_CLOSE_MIN, MARKET_CLOSE_MIN, MARKET_OPEN_MIN, positionKey, screenTrades, GLP1_CHAIN } from '../public/js/trade-math.js';
 
@@ -205,12 +206,28 @@ export function chainNote(chain = GLP1_CHAIN) {
   return `The GLP-1 chain, which he wants searched on every run, from the makers to the sellers. ${groups} Look at it on every run beside everything else on your beat. News in one link often moves the others: a trial readout moves the other developers, and a price cut, a supply problem or a new seller deal moves the makers, the suppliers and the sellers. A search or two across the chain is usually enough to see what is moving in it. It is a place to look, not a quota: a trade from it clears the same bar as any other.`;
 }
 const TICKER_RE = /^[A-Z][A-Z.]{0,5}$/;
+/**
+ * The tickers the researchers brought as candidates, read off each report's Candidates section
+ * ("Ticker: NVDA"), in order and once each, so the desk gets their 15-minute charts (v7.15). Pure.
+ */
+export function candidateTickers(texts) {
+  const out = [];
+  for (const text of texts || []) {
+    const part = String(text || '').split(/^#{2,3}\s*Candidates:?\s*$/m)[1];
+    if (part == null) continue;
+    const body = part.split(/^#{2,3}\s/m)[0];
+    for (const m of body.matchAll(/^\s*(?:[-*]\s*)?[*_]*[Tt]icker[*_]*\s*:[*_]*\s*[*_]*\$?([A-Z][A-Z.]{0,5})\b/gm)) {
+      if (TICKER_RE.test(m[1]) && !out.includes(m[1])) out.push(m[1]);
+    }
+  }
+  return out;
+}
 
 // ---- the five beats ------------------------------------------------------------
 export const LENSES = [
   {
     n: 1, key: 'tape', name: 'Momentum and the tape',
-    beat: 'Price action right now: premarket and intraday movers, relative volume, VWAP holds and losses, EMA structure (9, 20, 50), opening range breaks, and breakouts and breakdowns with real volume behind them. Your natural horizon is scalps and intraday trades.',
+    beat: 'Price action right now: premarket and intraday movers, relative volume, VWAP holds and losses, EMA structure (9, 20, 50), opening range breaks, and breakouts and breakdowns with real volume behind them. Your natural horizon is scalps and intraday trades. When the message carries 15-minute charts, read VWAP, the 9, 20 and 50 EMAs and the MACD from them rather than searching: they are worked out from the bars, and your searches are better spent on what is moving.',
   },
   {
     n: 2, key: 'catalysts', name: 'Catalysts',
@@ -277,6 +294,7 @@ How to weigh the reports:
 - When researchers disagree on direction, only take the trade if one side has decisive evidence.
 - A rejection by one researcher counts against a candidate from another. Read the Rejected lines.
 - The macro and sector read sets the bias. Be slower to trade against it.
+- The 15-minute charts, when the message has them, are worked out from real bars. For a scalp or an intraday trade, set the entry and the stop against VWAP and the 9, 20 and 50 EMAs, and be slow to go long below VWAP with the EMAs stacked down, or short above VWAP with them stacked up, unless the catalyst is decisive. Use them on the earlier calls too.
 - His bar: he wants every trade whose honest chance of reaching the first target before the stop is above ${CHANCE_FLOOR}%, which means chanceLow of at least ${CHANCE_FLOOR + 1}. Give him the best trade in each of the three kinds, scalp, intraday and swing, stock or option, whenever one clears that bar, and a second in a kind only when it clears it too. Leave a kind empty only when nothing in it clears the bar, and never raise a number to clear it: the app drops anything at ${CHANCE_FLOOR}% or below.
 
 Limits:
@@ -823,12 +841,14 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
   const turn = deps.liveTurn || liveTurn;
   const snapshot = deps.marketSnapshot || marketSnapshot;
   const quote = deps.quoteCached || quoteCached;
+  const bars = deps.fetchBars || fetchBars;
   const push = deps.notifyUser || notifyUser;
   const getMany = deps.batchGetDocs || batchGetDocs;
   const writeMany = deps.batchWrite || batchWrite;
   const settings = await readSettings(env);
   const accountType = settings.accountType === 'margin' ? 'margin' : 'cash';
   const key = resolveKey(env, settings);
+  const barsKey = resolveBars(env, settings);
   const session = sessionLine(t0);
   const { dateKey: todayKey } = mtParts(t0);
   // OWNERSHIP (2026-09-23). Another invocation may have given this run up or
@@ -891,11 +911,18 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
         const liveIds = (Array.isArray(st0?.data?.activeIds) ? st0.data.activeIds : []).slice(0, LIVE_MAX);
         const liveDocs = liveIds.length ? await getMany(env, liveIds.map((id) => `${PLAYS}/${id}`)).catch(() => []) : [];
         const liveRows = liveIds.map((id, i) => ({ id, rec: liveDocs[i]?.data })).filter((x) => x.rec?.status === 'took').map((x, i) => ({ ...x, ref: `E${i + 1}` }));
-        const live = liveRows.map(({ ref, id }) => ({ ref, id }));
+        const live = liveRows.map(({ ref, id, rec }) => ({ ref, id, ticker: String(rec.ticker || '') }));
         if (liveRows.length) market += `\n\n${liveNote(liveRows)}`;
+        // THE 15-MINUTE CHARTS (v7.15): the index funds, the trades he took and his watchlist, all in
+        // one request, worked out here and handed to all five and the desk as numbers.
+        const chartSyms = [...MARKET_TICKERS, ...liveRows.map((x) => x.rec.ticker), ...watch];
+        const bars15 = barsKey ? await bars(barsKey, chartSyms, t0).catch(() => ({ status: 'failed', bars: {} })) : { status: 'nokey', bars: {} };
+        const block = chartsBlock(bars15, chartSyms, t0);
+        if (block) market += `\n\n${block}`;
+        const charts = bars15.status;
         const wrote = prior
-          ? await patchDoc(env, RESEARCH_PATH, { market, live }, { mask: ['market', 'live'] }).catch(() => false)
-          : await patchDoc(env, RESEARCH_PATH, { runId: run.id, at: new Date(), market, live, r1: null, r2: null, r3: null, r4: null, r5: null }).catch(() => false);
+          ? await patchDoc(env, RESEARCH_PATH, { market, live, charts }, { mask: ['market', 'live', 'charts'] }).catch(() => false)
+          : await patchDoc(env, RESEARCH_PATH, { runId: run.id, at: new Date(), market, live, charts, r1: null, r2: null, r3: null, r4: null, r5: null }).catch(() => false);
         // A fresh run whose document could not be reset would file its
         // reports beside another run's: it goes back to be claimed again.
         if (wrote === false && !prior) {
@@ -903,7 +930,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
           await diagLog(env, { ev: 'desk-run-retry', err: 'research not reset', attempt: run.attempt || 0 }).catch(() => {});
           return { ok: false, retry: true };
         }
-        prior = { ...(prior || { runId: run.id }), market, live };
+        prior = { ...(prior || { runId: run.id }), market, live, charts };
       }
       const system = researchSystem(accountType);
       // A resumed run that already holds enough reports does not buy the missing ones twice.
@@ -955,7 +982,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
       // Research is in. The desk decides in the next firing, which starts
       // with its own fifty calls; the page says so meanwhile.
       await setRun({ status: 'decide', done: got.length, decideAt: new Date() }, own);
-      await diagLog(env, { ev: 'desk-run-handoff', reports: got.length, agents, ms: Date.now() - t0 }).catch(() => {});
+      await diagLog(env, { ev: 'desk-run-handoff', reports: got.length, agents, charts: prior?.charts || null, ms: Date.now() - t0 }).catch(() => {});
       return { ok: true, handedOff: true, reports: got.length };
     }
 
@@ -970,7 +997,21 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     let decided;
     const reportText = got.map((L) => `### Researcher ${L.n}: ${L.name}\n${reports[L.n].text}`).join('\n\n');
     const missing = LENSES.filter((L) => !reports[L.n]).map((L) => L.name);
-    const deskUser = `${session.text}\n\n${missing.length ? `These beats did not report this run: ${missing.join(', ')}.\n\n` : ''}The market data every researcher saw:\n${market}\n\nThe five reports:\n\n${reportText}`;
+    // Fresh 15-minute charts for the trades he holds and every candidate the five named (v7.15), in
+    // one request, so the desk sets entries and stops against VWAP and the EMAs as they stand now.
+    const heldTickers = (Array.isArray(prior?.live) ? prior.live : []).map((x) => String(x?.ticker || '')).filter(Boolean);
+    const deskSyms = [...new Set([...heldTickers, ...candidateTickers(got.map((L) => reports[L.n].text))])].slice(0, BARS_MAX_SYMBOLS);
+    const c0 = Date.now();
+    const fresh = !barsKey ? { status: 'nokey', bars: {} }
+      : deskSyms.length ? await bars(barsKey, deskSyms, c0).catch(() => ({ status: 'failed', bars: {} })) : { status: 'ok', bars: {} };
+    const charts = fresh.status === 'ok' ? chartsOf(fresh, c0) : {};
+    const deskCharts = deskSyms.length ? chartsBlock(fresh, deskSyms, c0, { title: 'Fresh 15-minute charts for the trades he holds and the candidates the researchers named' }) : '';
+    const chartOn = (ticker) => {
+      const x = charts[String(ticker || '').toUpperCase()];
+      const line = chartLine(x);
+      return line ? { line, at: new Date(x.barAt) } : null;
+    };
+    const deskUser = `${session.text}\n\n${missing.length ? `These beats did not report this run: ${missing.join(', ')}.\n\n` : ''}The market data every researcher saw:\n${market}${deskCharts ? `\n\n${deskCharts}` : ''}\n\nThe five reports:\n\n${reportText}`;
     const deskBody = (structured) => ({
       model: DESK_MODEL,
       max_tokens: DESK_MAX_TOKENS,
@@ -1017,6 +1058,9 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     const screened = screenTrades(checked.trades, { held, declined: own?.data?.declined || {} });
     checked.trades = screened.keep;
 
+    // Each trade's 15-minute chart in a line, for the card.
+    for (const r of checked.trades) { const c = chartOn(r.ticker); if (c) r.chart = c; }
+
     // Current prices, from the quote feed rather than from the research.
     if (key) {
       await Promise.all(checked.trades.map(async (r) => {
@@ -1052,6 +1096,8 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
       const data = { tookAgreement: d.tookAgreement ?? d.agreement ?? null };
       if (recount) Object.assign(data, { agreement: count, agreedAt: recheckAt, agreedRunId: run.id });
       data.verdict = { call: verdict.call, why: verdict.why, at: recheckAt, runId: run.id, votes: t.votes };
+      const c = chartOn(d.ticker);
+      if (c) data.chart = c;
       rechecks.push({ id: t.id, d, recount, verdict, write: { path: `${PLAYS}/${t.id}`, data, mask: Object.keys(data), ifUpdateTime: doc.updateTime } });
     }
     const recheckOk = rechecks.length ? await writeMany(env, rechecks.map((x) => x.write)).catch(() => rechecks.map(() => false)) : [];
@@ -1063,7 +1109,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     const finishedAt = new Date();
     const finalPatch = {
       run: { ...run, status: 'idle', finishedAt, heartbeatAt: finishedAt, done: got.length, error: null, count: filed.ids.length, ms: finishedAt.getTime() - ms(run.startedAt || t0) },
-      desk: { runId: run.id, at: finishedAt, trigger: run.trigger || 'manual', read: checked.read, none: checked.none, news: checked.news, count: filed.ids.length, reports: got.length, ids: filed.ids, verdicts: verdicts.slice(0, 12) },
+      desk: { runId: run.id, at: finishedAt, trigger: run.trigger || 'manual', read: checked.read, none: checked.none, news: checked.news, count: filed.ids.length, reports: got.length, ids: filed.ids, verdicts: verdicts.slice(0, 12), charts: fresh.status },
     };
     let wrote = false;
     for (let i = 0; i < 2 && !wrote; i++) {
@@ -1096,6 +1142,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     await diagLog(env, {
       ev: 'desk-run-end', ok: true, trigger: run.trigger || 'manual', attempt: run.attempt || 1, reports: got.length,
       trades: n, dropped: checked.dropped, screened: screened.dropped, expired, news: checked.news.length, pushed,
+      charts: { st: fresh.status, asked: deskSyms.length, got: Object.keys(charts).length, cut: !!fresh.cut },
       recheck: { live: tally.length, updated, ...Object.fromEntries(CALLS.map((c) => [c, verdicts.filter((v) => v.call === c).length])), none: tally.length - rechecks.length },
       desk: { ms: decided.ms, st: decided.stop, in: decided.usage?.input_tokens, out: decided.usage?.output_tokens },
       ms: Date.now() - t0,

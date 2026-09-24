@@ -99,6 +99,8 @@ function load(deps) {
     isTradingDay: TM.isTradingDay, isMarketOpen: TM.isMarketOpen, swingLastDay: TM.swingLastDay, nextDateKey: TM.nextDateKey,
     EARLY_CLOSE_MIN: TM.EARLY_CLOSE_MIN, MARKET_CLOSE_MIN: TM.MARKET_CLOSE_MIN, MARKET_OPEN_MIN: TM.MARKET_OPEN_MIN,
     positionKey: TM.positionKey, screenTrades: TM.screenTrades, GLP1_CHAIN: TM.GLP1_CHAIN,
+    // The 15-minute charts (v7.15). A check that gives the settings Alpaca's pair also fakes fetchBars.
+    resolveBars: TD.resolveBars, fetchBars: TD.fetchBars, chartsOf: TD.chartsOf, chartsBlock: TD.chartsBlock, chartLine: TD.chartLine, BARS_MAX_SYMBOLS: TD.BARS_MAX_SYMBOLS,
   };
   const keys = Object.keys(names);
   return new Function(...keys, `${body}\nreturn { accumulateSse, liveTurn, requestRun, maybeRunDesk, executeRun, maybeMorningRun, runAlive, RefusedError, peekDesk, deskClaimable, fatalOf, chainNote };`)(...keys.map((k) => names[k]));
@@ -136,6 +138,30 @@ const at = (ms) => { Date.now = () => ms; };
 const restore = () => { Date.now = realNow; };
 const env = { ADMIN_UID: 'eric' };
 const runOf = (docs) => docs.get(TD.STATE_PATH)?.data?.run;
+// 15-minute bars for one ticker (v7.15): the two trading sessions before `now` and today's up to it, a
+// steady climb with a dip every hour, so the EMAs stack up and the price sits above VWAP.
+const BARS = (now, base = 100) => {
+  const days = [];
+  for (let ms = now; days.length < 3; ms -= 86_400_000) { const p = TD.mtParts(ms); if (!['Sat', 'Sun'].includes(p.weekday) && !days.includes(p.dateKey)) days.unshift(p.dateKey); }
+  const out = [];
+  let px = base;
+  for (const day of days) {
+    for (let i = 0; i < 26; i++) {
+      const ms = TD.mtInstant(day, '07:30') + i * 900_000;
+      if (ms > now - 900_000) break;
+      px += i % 4 === 0 ? -0.2 : 0.15;
+      out.push({ t: new Date(ms).toISOString(), o: px - 0.05, h: px + 0.1, l: px - 0.1, c: px, v: 1000, vw: px });
+    }
+  }
+  return out;
+};
+// Alpaca's pair as it sits in his settings, and a fetch that counts itself as one outside call.
+const PAIR = { alpacaKeyId: 'PKTEST1234567890ABCD', alpacaSecret: 'abcdEFGHijklMNOPqrstUVWXyz0123456789abcd' };
+const barsCounted = (W, status = 'ok') => async (creds, syms, now) => {
+  W.w.calls += 1;
+  (W.w.barsAsked ||= []).push([...syms]);
+  return status === 'ok' ? { status, bars: Object.fromEntries(syms.map((t, i) => [t, BARS(now, 50 + i)])) } : { status, bars: {} };
+};
 
 // ---- D1 to D3: the transport -------------------------------------------------------
 const ev = (o) => `event: ${o.type}\ndata: ${JSON.stringify(o)}\n\n`;
@@ -702,11 +728,14 @@ const SPARE = 6;
   const heldIds = Object.keys(HELD);
   // The research firing at its worst: a fresh run, a market key, all five back, every retry and continuation counted.
   at(WED_10);
-  const R = world({ state: { run: { ...RUN, trigger: 'morning' }, desk: { runId: 'prev', ids: [] }, activeIds: heldIds }, settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789' }, plays: HELD });
-  const rOut = await load(R.deps).executeRun(env, { ...RUN, trigger: 'morning' }, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({}, R.w), marketSnapshot: snapCounted(R) } });
+  // RE-PINNED 2026-09-24 (v7.15): with Alpaca's pair on file, each firing asks for its 15-minute charts
+  // in one request: the research firing for the index funds, the twelve he holds and his watchlist, the
+  // desk firing for the twelve and every candidate. Each is one more call, and both still fit.
+  const R = world({ state: { run: { ...RUN, trigger: 'morning' }, desk: { runId: 'prev', ids: [] }, activeIds: heldIds }, settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789', ...PAIR }, plays: HELD });
+  const rOut = await load(R.deps).executeRun(env, { ...RUN, trigger: 'morning' }, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({}, R.w), marketSnapshot: snapCounted(R), fetchBars: barsCounted(R) } });
   // The research firing that fails: every researcher refused, the error saved, the 7:00 push sent.
-  const X = world({ state: { run: { ...RUN, trigger: 'morning' }, activeIds: heldIds }, settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789' }, plays: HELD });
-  const xOut = await load(X.deps).executeRun(env, { ...RUN, trigger: 'morning' }, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({ research: creditErr }, X.w), marketSnapshot: snapCounted(X) } });
+  const X = world({ state: { run: { ...RUN, trigger: 'morning' }, activeIds: heldIds }, settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789', ...PAIR }, plays: HELD });
+  const xOut = await load(X.deps).executeRun(env, { ...RUN, trigger: 'morning' }, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({ research: creditErr }, X.w), marketSnapshot: snapCounted(X), fetchBars: barsCounted(X) } });
   // The desk firing at its worst: six stock trades each priced, six ideas from the last run to retire, the 7:00 push.
   const prevIds = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
   const deskRun = { ...RUN, trigger: 'morning', phase: 'desk', status: 'deciding' };
@@ -714,11 +743,11 @@ const SPARE = 6;
   const verdicts = `\n## Earlier calls\n${heldIds.map((id, i) => `E${i + 1}: ${i % 2 ? 'does not back' : 'backs'}`).join('\n')}`;
   const D = world({
     state: { run: deskRun, desk: { runId: 'prev', ids: prevIds }, activeIds: heldIds },
-    settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789' },
-    research: { runId: 'run_x', market: 'SPY 500', live: heldIds.map((id, i) => ({ ref: `E${i + 1}`, id })), r1: { status: 'ok', text: REPORT(1) + verdicts }, r2: { status: 'ok', text: REPORT(2) + verdicts }, r3: { status: 'ok', text: REPORT(3) + verdicts }, r4: { status: 'ok', text: REPORT(4) + verdicts }, r5: { status: 'ok', text: REPORT(5) + verdicts } },
+    settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789', ...PAIR },
+    research: { runId: 'run_x', market: 'SPY 500', live: heldIds.map((id, i) => ({ ref: `E${i + 1}`, id, ticker: HELD[id].ticker })), r1: { status: 'ok', text: REPORT(1) + verdicts }, r2: { status: 'ok', text: REPORT(2) + verdicts }, r3: { status: 'ok', text: REPORT(3) + verdicts }, r4: { status: 'ok', text: REPORT(4) + verdicts }, r5: { status: 'ok', text: REPORT(5) + verdicts } },
     plays: { ...HELD, ...Object.fromEntries(prevIds.map((id) => [id, { ticker: 'OLD', status: 'open', runId: 'prev' }])) },
   });
-  const dOut = await load(D.deps).executeRun(env, deskRun, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({ desk: () => ({ text: JSON.stringify(DESK_OUT({ trades: SIX })) }) }, D.w), quoteCached: quoteCounted(D) } });
+  const dOut = await load(D.deps).executeRun(env, deskRun, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({ desk: () => ({ text: JSON.stringify(DESK_OUT({ trades: SIX })) }) }, D.w), quoteCached: quoteCounted(D), fetchBars: barsCounted(D) } });
   restore();
   const room = DR.CALL_CAP - OUTSIDE - SPARE;
   const recs = [...D.docs.keys()].filter((k) => k.startsWith(`${TD.PLAYS}/rec_`));
@@ -732,6 +761,8 @@ const SPARE = 6;
   //   FAIL  D24 every firing fits inside the fifty calls ...
   // NEGATIVE CONTROL (run 2026-09-24, v7.10): the re-check written one batch per trade (`for (const x of rechecks) ... writeMany(env, [x.write])`) made this read
   //   FAIL  D24 every firing fits inside the fifty calls ...
+  // NEGATIVE CONTROL (run 2026-09-24, v7.15): the research firing's charts asked one ticker at a time (`Promise.all(chartSyms.map((t) => bars(barsKey, [t], t0)))`) made this read
+  //   FAIL  D24 every firing fits inside the fifty calls ...
   check(`D24 every firing fits inside the fifty calls an invocation gets, counted at its worst with ${OUTSIDE} spent before the run and ${SPARE} kept spare: the research firing with a market key, twelve trades he holds to show and all five back, the research firing whose five are all refused and whose 7:00 push goes out, and the desk firing that prices six trades, files them in one write, re-checks twelve he holds in one read and one write, retires six old ideas in one read and one write, and pushes`,
     rOut.handedOff === true && R.w.calls <= room && R.w.batches.filter((b) => b.get).length === 1
     && xOut.ok === false && X.w.pushes.length === 1 && X.w.calls <= room
@@ -739,8 +770,11 @@ const SPARE = 6;
     && D.w.batches.filter((b) => b.write).length === 3 && D.w.batches.filter((b) => b.get).length === 2
     // RE-PINNED 2026-09-24 (v7.12): nothing leaves his list; the ones all five are against are SELL.
     && heldIds.every((id, i) => D.docs.get(`${TD.PLAYS}/${id}`).data.status === 'took' && D.docs.get(`${TD.PLAYS}/${id}`).data.verdict?.call === (i % 2 ? 'sell' : 'hold'))
-    && prevIds.every((id) => D.docs.get(`${TD.PLAYS}/${id}`).data.status === 'expired'),
-    JSON.stringify({ room, research: R.w.calls, failed: X.w.calls, desk: D.w.calls, recs: recs.length, d: dOut }));
+    && prevIds.every((id) => D.docs.get(`${TD.PLAYS}/${id}`).data.status === 'expired')
+    // v7.15: one chart request a firing, whatever the number of tickers, and every held trade charted.
+    && R.w.barsAsked?.length === 1 && R.w.barsAsked[0].length >= 4 + heldIds.length && D.w.barsAsked?.length === 1 && D.w.barsAsked[0].length === heldIds.length + 1
+    && heldIds.every((id) => /VWAP/.test(D.docs.get(`${TD.PLAYS}/${id}`).data.chart?.line || '')),
+    JSON.stringify({ room, research: R.w.calls, failed: X.w.calls, desk: D.w.calls, recs: recs.length, asked: [R.w.barsAsked?.map((a) => a.length), D.w.barsAsked?.map((a) => a.length)], d: dOut }));
 }
 {
   const creditErr = () => Object.assign(new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the API."}}'), { status: 400 });
@@ -1024,6 +1058,128 @@ const SPARE = 6;
     && JSON.stringify(s2) === '{"agreement":2,"backers":[],"doubters":[]}'
     && rec && rec.agreement === 3 && rec.backers.join() === '1,2,4' && rec.doubters.join() === '5',
     JSON.stringify({ s1, s2, rec: rec && { agreement: rec.agreement, backers: rec.backers, doubters: rec.doubters } }));
+}
+
+{
+  // ---- D34: the 15-minute chart's arithmetic (2026-09-24, v7.15) -------------------------------------
+  // Eric: "do we have an agent analyzing intraday 15min vwap, macd 3 EMA lines etc?" He chose the 9, 20
+  // and 50 EMAs. The numbers are worked out from the bars and checked here against a second, plainer
+  // working of the same formulas, and VWAP against a sum done by hand.
+  const refEma = (xs, n) => { let e = null; for (let i = 0; i < xs.length; i++) { if (i === n - 1) e = xs.slice(0, n).reduce((a, b) => a + b, 0) / n; else if (i >= n) e = xs[i] * (2 / (n + 1)) + e * (1 - 2 / (n + 1)); } return e; };
+  const refSeries = (xs, n) => xs.map((_, i) => (i >= n - 1 ? refEma(xs.slice(0, i + 1), n) : null));
+  const round = (x, d) => Math.round(x * 10 ** d) / 10 ** d;
+  const bars = BARS(WED_10, 100);
+  // A premarket print far off the tape is left out: charts here are regular session only.
+  const pre = { t: new Date(TD.mtInstant('2026-09-23', '06:00')).toISOString(), o: 900, h: 900, l: 900, c: 900, v: 99999, vw: 900 };
+  const x = TD.chartRead([pre, ...bars], { now: WED_10 });
+  const closes = bars.map((b) => b.c);
+  const f = refSeries(closes, 12); const sl = refSeries(closes, 26);
+  const macd = closes.map((_, i) => (f[i] != null && sl[i] != null ? f[i] - sl[i] : null)).filter((m) => m != null);
+  const sig = refEma(macd, 9);
+  const today = bars.filter((b) => TD.mtParts(Date.parse(b.t)).dateKey === '2026-09-23');
+  const vw = today.reduce((a, b) => a + b.vw * b.v, 0) / today.reduce((a, b) => a + b.v, 0);
+  // VWAP by hand: 10 on one share and 20 on three is 17.5; the bar with no vw uses its typical price.
+  const d = (hhmm, o) => ({ t: new Date(TD.mtInstant('2026-09-23', hhmm)).toISOString(), ...o });
+  const hand = TD.chartRead([d('07:30', { o: 10, h: 10, l: 10, c: 10, v: 1, vw: 10 }), d('07:45', { o: 20, h: 20, l: 20, c: 20, v: 3, vw: 20 }), d('08:00', { o: 30, h: 33, l: 27, c: 30, v: 2 })], { now: WED_10 });
+  // A long slide then a jump on the last bar: the MACD crosses its signal up on that bar.
+  const slide = Array.from({ length: 60 }, (_, i) => d(TD.mtLabel(TD.mtInstant('2026-09-22', '07:30') + i * 900_000), {}));
+  const slideBars = slide.map((b, i) => ({ t: new Date(TD.mtInstant('2026-09-21', '07:30') + (i % 26) * 900_000 + Math.floor(i / 26) * 86_400_000).toISOString(), o: 100 - i * 0.3, h: 100 - i * 0.3, l: 100 - i * 0.3, c: i === 59 ? 100 : 100 - i * 0.3, v: 100 }));
+  const up = TD.chartRead(slideBars, { now: WED_10 });
+  // Before Thursday's open the chart is Wednesday's, and says so.
+  const thu7 = TD.mtInstant('2026-09-24', '07:00');
+  const early = TD.chartRead(bars, { now: thu7 });
+  const text = TD.chartText('NVDA', x);
+  // NEGATIVE CONTROL (run 2026-09-24): emaSeries seeded with its first value (`let e = xs[from];`) rather than the average of the first n made this read
+  //   FAIL  D34 the 15-minute chart's arithmetic ...
+  check('D34 the 15-minute chart\'s arithmetic: regular-session bars only; the 9, 20 and 50 EMAs, the MACD, its signal and histogram match a second working of the same formulas; the session VWAP is today\'s volume-weighted price, by hand 17.5 for 10 on one share and 20 on three, with the typical price where a bar has none; a slide then a jump crosses up on the last bar; the stack reads up on a climb; before the open the chart is the last session\'s and says so; and the agents\' line and the card\'s line carry the numbers and the plain words',
+    x && x.bars === bars.length && x.today === true && x.day === '2026-09-23'
+    && x.ema9 === round(refEma(closes, 9), 2) && x.ema20 === round(refEma(closes, 20), 2) && x.ema50 === round(refEma(closes, 50), 2)
+    && x.macd === round(macd[macd.length - 1], 3) && x.signal === round(sig, 3) && x.hist === round(macd[macd.length - 1] - sig, 3)
+    && x.vwap === round(vw, 2) && x.vsVwap === 'above' && x.stack === 'up' && x.high < 900 && x.last === round(closes[closes.length - 1], 2)
+    && hand.vwap === round((10 * 1 + 20 * 3 + 30 * 2) / 6, 2) && TD.chartRead([d('07:30', { c: 10, v: 1, vw: 10 }), d('07:45', { c: 20, v: 3, vw: 20 })], { now: WED_10 }).vwap === 17.5
+    && up && up.cross?.dir === 'up' && up.cross.ago === 0
+    && early && early.today === false && early.day === '2026-09-23' && /^Last session: /.test(TD.chartLine(early))
+    && TD.chartLine(x).startsWith('Above VWAP · EMAs stacked up · MACD') && !/Last session/.test(TD.chartLine(x))
+    && /^NVDA \(last bar \d\d:\d\d Mountain today\): last [\d.]+\. Session VWAP [\d.]+, price above it\. EMA 9 \/ 20 \/ 50: [\d.]+ \/ [\d.]+ \/ [\d.]+, stacked up, 9 over 20 over 50\. MACD 12\/26\/9: /.test(text)
+    && TD.chartRead([], { now: WED_10 }) === null && TD.chartRead([pre], { now: WED_10 }) === null && TD.chartLine(null) === ''
+    && !DASH.test(text) && !DASH.test(TD.chartLine(x)),
+    JSON.stringify({ x, hand: hand?.vwap, up: up?.cross, early: early && { today: early.today, day: early.day } }));
+}
+{
+  // ---- D35: one request for every ticker's bars, and the key pair never leaves it (v7.15) ------------
+  const real = globalThis.fetch;
+  const seen = [];
+  const reply = (status, body) => async (url, init) => { seen.push({ url: String(url), headers: init?.headers || {} }); return { ok: status === 200, status, json: async () => body }; };
+  const creds = { id: 'PKTEST1234567890ABCD', secret: 'abcdEFGHijklMNOPqrstUVWXyz0123456789abcd' };
+  let ok; let refused; let refused401; let failed; let thrown; let none; let many;
+  try {
+    globalThis.fetch = reply(200, { bars: { SPY: BARS(WED_10) }, next_page_token: null });
+    ok = await TD.fetchBars(creds, ['spy', 'SPY', 'not a ticker', 'BRK.', 'QQQ', 'BRK.B'], WED_10);
+    const nFetch = seen.length;
+    none = await TD.fetchBars(null, ['SPY'], WED_10);
+    none.fetched = seen.length !== nFetch;
+    globalThis.fetch = reply(403, { message: 'forbidden' }); refused = await TD.fetchBars(creds, ['SPY'], WED_10);
+    globalThis.fetch = reply(401, { message: 'unauthorized' }); refused401 = await TD.fetchBars(creds, ['SPY'], WED_10);
+    globalThis.fetch = reply(500, {}); failed = await TD.fetchBars(creds, ['SPY'], WED_10);
+    globalThis.fetch = async () => { throw new Error('socket hang up'); }; thrown = await TD.fetchBars(creds, ['SPY'], WED_10);
+    globalThis.fetch = reply(200, { bars: {} });
+    await TD.fetchBars(creds, Array.from({ length: 60 }, (_, i) => `T${String.fromCharCode(65 + (i % 26))}${String.fromCharCode(65 + Math.floor(i / 26))}`), WED_10);
+    many = new URL(seen[seen.length - 1].url).searchParams.get('symbols').split(',').length;
+  } finally { globalThis.fetch = real; }
+  const u = new URL(seen[0].url);
+  const cands = DR.candidateTickers([
+    '## Read\nTicker: ZZZ is not a candidate here.\n## Candidates\nTicker: NVDA\nSide: long\n**Ticker:** AMD\n- Ticker: $TSLA\nticker: NVDA\n## Rejected\nTicker: MSFT',
+    '## Candidates\nTicker: AMD\nTicker: PLTR\n## Watch\nNothing.',
+    'No headings at all. Ticker: BAD',
+  ]);
+  // NEGATIVE CONTROL (run 2026-09-24): fetchBars' refusal test narrowed to `res.status === 401` made this read
+  //   FAIL  D35 one request for every ticker's bars ...
+  check('D35 one request for every ticker\'s bars: Alpaca\'s bars endpoint, every ticker uppercased and once in the one call and a malformed one left out, the 15-minute timeframe from the IEX feed, raw prices, oldest first and a few days back, the pair in Alpaca\'s two headers and never in the address; a 401 or a 403 is refused, anything else failed, and no pair asks nothing; at most forty tickers; and the candidates are read off each report\'s Candidates section, in order and once each',
+    ok.status === 'ok' && Array.isArray(ok.bars.SPY) && ok.cut === false
+    && u.origin + u.pathname === 'https://data.alpaca.markets/v2/stocks/bars' && u.searchParams.get('symbols') === 'SPY,QQQ,BRK.B'
+    && u.searchParams.get('timeframe') === '15Min' && u.searchParams.get('feed') === 'iex' && u.searchParams.get('adjustment') === 'raw' && u.searchParams.get('sort') === 'asc'
+    && u.searchParams.get('limit') === '10000' && Date.parse(u.searchParams.get('start')) === WED_10 - TD.BARS_DAYS * 86_400_000
+    && seen[0].headers['APCA-API-KEY-ID'] === creds.id && seen[0].headers['APCA-API-SECRET-KEY'] === creds.secret
+    && !seen.some((x) => x.url.includes(creds.secret) || x.url.includes(creds.id))
+    && refused.status === 'refused' && refused401.status === 'refused' && failed.status === 'failed' && thrown.status === 'failed'
+    && none.status === 'nokey' && none.fetched === false && many === TD.BARS_MAX_SYMBOLS
+    && cands.join() === 'NVDA,AMD,TSLA,PLTR'
+    && JSON.stringify(TD.resolveBars({}, PAIR)) === JSON.stringify({ id: PAIR.alpacaKeyId, secret: PAIR.alpacaSecret }) && TD.resolveBars({}, { alpacaKeyId: 'X' }) === null
+    && TD.resolveBars({ ALPACA_KEY_ID: 'envid', ALPACA_SECRET: 'envsecret' }, PAIR).id === 'envid',
+    JSON.stringify({ ok: ok.status, url: seen[0]?.url.slice(0, 160), refused: refused.status, failed: failed.status, many, cands }));
+}
+{
+  // ---- D36: the charts in a run (v7.15) ---------------------------------------------------------------
+  // All five and the desk read the same block in the research firing; the desk gets a fresh one for what
+  // he holds and every candidate; each filed trade carries its chart in a line for the card; a refused key
+  // says so to the agents and files no chart; and with no pair, nothing is asked and nothing is said.
+  // oneRun builds its world inside, so the fake counts its requests on a box of its own.
+  const hooked = async (status, settings) => {
+    const box = { w: { calls: 0 } };
+    const r = await oneRun({ settings: { finnhubKey: 'KEY123456789', ...(settings ?? PAIR) }, deps: { fetchBars: barsCounted(box, status), marketSnapshot: async (k, tickers) => ({ at: 'T', quotes: tickers.map((t) => ({ ticker: t, last: 500, chgPct: 0.5, open: 499, high: 501, low: 498, prevClose: 497 })), news: [], earnings: [], missing: [] }) } });
+    const research = r.w.bodies.filter((b) => b.tools).map((b) => b.messages[0].content[0].text);
+    const desk = r.w.bodies.filter((b) => !b.tools).map((b) => b.messages[0].content[0].text)[0] || '';
+    const recs = [...r.docs.entries()].filter(([pth]) => pth.startsWith(`${TD.PLAYS}/rec_`)).map(([, v]) => v.data);
+    return { asked: box.w.barsAsked || [], research, desk, recs, st: r.docs.get(TD.STATE_PATH).data, rdoc: r.docs.get(DR.RESEARCH_PATH).data };
+  };
+  const on = await hooked('ok');
+  const off = await hooked('refused');
+  const nokey = await hooked('ok', {});
+  const block = /15-minute charts, worked out from 15-minute bars \(regular session only; VWAP from IEX volume, so a close estimate\)\. Use these numbers rather than searching for them:\nSPY \(last bar/;
+  // NEGATIVE CONTROL (run 2026-09-24): the desk firing's `for (const r of checked.trades) { const c = chartOn(r.ticker); if (c) r.chart = c; }` removed made this read
+  //   FAIL  D36 the charts in a run ...
+  check('D36 the charts in a run: with Alpaca\'s pair the research firing asks once for the index funds and his watchlist, all five read the same block with SPY\'s numbers, and the research document keeps the status; the desk asks once more for the candidates the five named and reads their fresh charts; each filed trade carries its chart in a line with its time; the board keeps the status; a refused key tells every agent there are none and not to guess, and files no chart; with no pair nothing is asked, nothing is said and the board says so; and Addy Boofer and the desk are told to read the numbers',
+    on.asked.length === 2 && ['SPY', 'QQQ', 'IWM', 'DIA', 'NVDA', 'AMD'].every((t) => on.asked[0].includes(t)) && on.asked[1].join() === 'NVDA'
+    && on.research.length === 5 && on.research.every((t) => block.test(t)) && on.rdoc.charts === 'ok'
+    && /Fresh 15-minute charts for the trades he holds and the candidates the researchers named, worked out from 15-minute bars[^\n]*\nNVDA \(last bar/.test(on.desk)
+    && on.recs.length > 0 && on.recs.every((r) => r.ticker !== 'NVDA' || (/^Above VWAP · EMAs stacked up/.test(r.chart?.line || '') && r.chart.at instanceof Date))
+    && on.recs.some((r) => r.chart) && on.st.desk.charts === 'ok'
+    && off.asked.length === 2 && off.research.every((t) => /15-minute charts: none this run, the chart feed turned the key down\. Do not guess VWAP, EMA or MACD levels/.test(t))
+    && off.recs.every((r) => !r.chart) && off.st.desk.charts === 'refused'
+    && nokey.asked.length === 0 && nokey.research.every((t) => !/15-minute charts(?:, worked out|: none)/.test(t)) && !/15-minute charts/.test(nokey.desk) && nokey.st.desk.charts === 'nokey' && nokey.recs.every((r) => !r.chart)
+    && /When the message carries 15-minute charts, read VWAP, the 9, 20 and 50 EMAs and the MACD from them rather than searching/.test(DR.LENSES[0].beat)
+    && /The 15-minute charts, when the message has them, are worked out from real bars\. For a scalp or an intraday trade, set the entry and the stop against VWAP and the 9, 20 and 50 EMAs/.test(DR.deskSystem('cash')),
+    JSON.stringify({ asked: on.asked.map((a) => a.length), off: off.st.desk.charts, nokey: nokey.asked.length, recs: on.recs.map((r) => [r.ticker, r.chart?.line]) }));
 }
 
 // THE COUNTER IS COUNTED LAST (the rule from trade.mjs, 2026-09-22): every check above is counted.

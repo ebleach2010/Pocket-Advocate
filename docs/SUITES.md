@@ -552,6 +552,23 @@ carries the desk's backers and doubters (`stanceOf`), the count being the
 backers, and shows For, Against and No view (`stanceLines`). desk.mjs D30 to
 D33; trade.mjs T81 and T82; drive-trade.mjs P (names, votes, For and Against).
 
+**15-minute charts (2026-09-24, v7.15).** Eric: "do we have an agent
+analyzing intraday 15min vwap, macd 3 EMA lines etc?" Finnhub's free plan
+has no candles (the probe answered 403) and its paid plan was far too dear,
+so the bars come from Alpaca's free plan: IEX's own trades, real time, and
+every ticker in ONE request (`fetchBars`), which is what the fifty calls a
+firing gets can afford. `chartRead` works out the session VWAP, the 9, 20
+and 50 EMAs and the MACD (12, 26, 9) from regular-session bars; the research
+firing hands all five and the desk one block for the index funds, what he
+holds and his watchlist; the desk firing asks once more for every candidate
+the five named (`candidateTickers`); and each filed or re-checked trade
+carries its chart in a line for the card. The pair is pasted in Settings,
+tested with Alpaca as it is saved, and never sent back. desk.mjs D34 (the
+arithmetic, against a second working), D35 (the one request), D36 (the run)
+and D24 (re-pinned: one more call a firing); trade.mjs T83 and T26
+(re-pinned); defects.mjs, the bars probe (re-aimed at Alpaca);
+drive-trade.mjs Q.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

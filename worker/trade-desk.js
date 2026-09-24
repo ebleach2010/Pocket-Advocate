@@ -30,6 +30,7 @@ import {
   tradeMetrics, TARGET_DAILY, PROJECTION_MIN_DAYS, DEFAULT_START_CENTS,
   rulesOf, dayStatus, realizedToday, openRisk, tradeCalc, fmtMoney, fmtPct,
   HORIZONS, HORIZON_WORDS, horizonOf, horizonFor, swingLastDay, isTradingDay,
+  MARKET_OPEN_MIN, MARKET_CLOSE_MIN,
 } from '../public/js/trade-math.js';
 
 // ---- constants ------------------------------------------------------------
@@ -96,6 +97,7 @@ export const SAY = {
   badStatus: 'Status must be took, skipped, or closed.',
   badOutcome: 'Closed at needs a dollar figure, plus or minus.',
   badKey: 'That key does not look like a Finnhub key.',
+  badBarsKey: 'Paste both halves from Alpaca: the Key ID and the Secret.',
   badAccount: 'Account type is cash or margin.',
   badWatchlist: 'Watchlist: up to 20 tickers, letters and dots only.',
   badTicker: 'Ticker: letters and dots only, up to six.',
@@ -632,6 +634,160 @@ export async function marketSnapshot(key, watchlist, now = Date.now()) {
     earnings: earningsRows(cal, { max: 40 }),
     newsOk: Array.isArray(news), earningsOk: Array.isArray(cal),
   };
+}
+
+// ---- 15-minute charts (Alpaca) ------------------------------------------------------
+// Eric, 2026-09-24: "do we have an agent analyzing intraday 15min vwap, macd 3 EMA lines etc?" He
+// chose the 9, 20 and 50 EMAs. Finnhub's 15-minute candles are not on its free plan (the production
+// probe answered 403) and its paid plan was far too dear, so the bars come from Alpaca's free plan:
+// real time from one exchange (IEX), 200 requests a minute, and every ticker in ONE request, which
+// is what the fifty outside calls a firing gets can afford. The prices on the chart are IEX's own
+// trades, which track the whole market closely; the volume is IEX's share of it, so the session VWAP
+// is a close estimate rather than the consolidated figure. The indicators are worked out here, not
+// asked of anyone: the agents are handed numbers.
+export const ALPACA_BARS = 'https://data.alpaca.markets/v2/stocks/bars';
+export const BARS_FEED = 'iex';
+// Enough calendar days back for the 50 EMA and the MACD's signal on regular-session bars after a long
+// weekend, and few enough that forty tickers fit one page of Alpaca's ten thousand bars.
+export const BARS_DAYS = 6;
+export const BARS_MAX_SYMBOLS = 40;
+const BARS_SYMBOL_RE = /^[A-Z]{1,5}(?:\.[A-Z]{1,2})?$/;
+export const ALPACA_ID_RE = /^[A-Za-z0-9]{16,40}$/;
+export const ALPACA_SECRET_RE = /^[A-Za-z0-9/+=_-]{20,100}$/;
+/** Alpaca's key pair: a pair set on the Worker wins, else the pair he pasted. `null` when there is none. */
+export function resolveBars(env, settings) {
+  if (env?.ALPACA_KEY_ID && env?.ALPACA_SECRET) return { id: String(env.ALPACA_KEY_ID), secret: String(env.ALPACA_SECRET) };
+  if (settings?.alpacaKeyId && settings?.alpacaSecret) return { id: String(settings.alpacaKeyId), secret: String(settings.alpacaSecret) };
+  return null;
+}
+/**
+ * Every ticker's 15-minute bars for the last few days in one request. `status` is ok, nokey, refused
+ * (Alpaca turned the key down) or failed (anything else), and `bars` maps each ticker to its bars.
+ */
+export async function fetchBars(creds, symbols, now = Date.now()) {
+  if (!creds) return { status: 'nokey', bars: {} };
+  // Only a well-formed symbol is sent (a class share such as BRK.B included): one malformed name could
+  // make Alpaca turn down the whole request, and with it every chart in the run.
+  const list = [...new Set((symbols || []).map((s) => String(s || '').toUpperCase().trim()).filter((t) => BARS_SYMBOL_RE.test(t)))].slice(0, BARS_MAX_SYMBOLS);
+  if (!list.length) return { status: 'ok', bars: {} };
+  const qs = new URLSearchParams({
+    symbols: list.join(','), timeframe: '15Min', start: new Date(now - BARS_DAYS * 86_400_000).toISOString(),
+    limit: '10000', feed: BARS_FEED, adjustment: 'raw', sort: 'asc',
+  });
+  try {
+    const res = await fetch(`${ALPACA_BARS}?${qs}`, {
+      headers: { 'APCA-API-KEY-ID': creds.id, 'APCA-API-SECRET-KEY': creds.secret, accept: 'application/json' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.status === 401 || res.status === 403) return { status: 'refused', code: res.status, bars: {} };
+    if (!res.ok) return { status: 'failed', code: res.status, bars: {} };
+    const out = await res.json().catch(() => null);
+    if (!out || typeof out !== 'object' || !('bars' in out)) return { status: 'failed', bars: {} };
+    return { status: 'ok', bars: out.bars && typeof out.bars === 'object' ? out.bars : {}, cut: !!out.next_page_token };
+  } catch {
+    return { status: 'failed', bars: {} };
+  }
+}
+/** An EMA over a series, seeded with the simple average of its first n values; null until then. */
+function emaSeries(xs, n) {
+  const out = new Array(xs.length).fill(null);
+  const from = xs.findIndex((x) => x != null);
+  if (from < 0 || xs.length - from < n) return out;
+  const k = 2 / (n + 1);
+  let e = xs.slice(from, from + n).reduce((a, b) => a + b, 0) / n;
+  out[from + n - 1] = e;
+  for (let i = from + n; i < xs.length; i++) { e = xs[i] * k + e * (1 - k); out[i] = e; }
+  return out;
+}
+const rp = (x) => (x == null || !Number.isFinite(x) ? null : Math.abs(x) >= 1 ? Math.round(x * 100) / 100 : Math.round(x * 10000) / 10000);
+const rm = (x) => (x == null || !Number.isFinite(x) ? null : Math.round(x * 1000) / 1000);
+/**
+ * One ticker's 15-minute chart, read from its bars: regular-session bars only (7:30 to 14:00 Mountain,
+ * as a chart with extended hours off shows them), the session VWAP of the latest session, the 9, 20 and
+ * 50 EMAs of the closes and how they stack, and the MACD (12, 26, 9) with any cross in the last three
+ * bars. Pure. `null` when there are no regular-session bars.
+ */
+export function chartRead(bars, { now = Date.now() } = {}) {
+  const rows = (Array.isArray(bars) ? bars : []).map((b) => {
+    const ms = Date.parse(b?.t);
+    const c = Number(b?.c);
+    if (!Number.isFinite(ms) || !(c > 0)) return null;
+    const p = mtParts(ms);
+    const n = (v) => (Number(v) > 0 ? Number(v) : c);
+    return { ms, day: p.dateKey, min: p.minuteOfDay, o: n(b.o), h: n(b.h), l: n(b.l), c, v: Math.max(0, Number(b.v) || 0), vw: Number(b.vw) > 0 ? Number(b.vw) : null };
+  }).filter((b) => b && b.min >= MARKET_OPEN_MIN && b.min < MARKET_CLOSE_MIN).sort((a, b) => a.ms - b.ms);
+  if (!rows.length) return null;
+  const last = rows[rows.length - 1];
+  const session = rows.filter((b) => b.day === last.day);
+  const before = rows.filter((b) => b.day < last.day);
+  const vol = session.reduce((a, b) => a + b.v, 0);
+  const vwap = vol > 0 ? session.reduce((a, b) => a + (b.vw ?? (b.h + b.l + b.c) / 3) * b.v, 0) / vol : null;
+  const closes = rows.map((b) => b.c);
+  const at = (s) => s[s.length - 1];
+  const e9 = at(emaSeries(closes, 9)); const e20 = at(emaSeries(closes, 20)); const e50 = at(emaSeries(closes, 50));
+  const fast = emaSeries(closes, 12); const slow = emaSeries(closes, 26);
+  const macdS = closes.map((_, i) => (fast[i] != null && slow[i] != null ? fast[i] - slow[i] : null));
+  const sig = emaSeries(macdS, 9);
+  const hist = macdS.map((m, i) => (m != null && sig[i] != null ? m - sig[i] : null));
+  let cross = null;
+  for (let i = hist.length - 1; i >= Math.max(1, hist.length - 3) && !cross; i--) {
+    const a = hist[i - 1]; const b = hist[i];
+    if (a == null || b == null) break;
+    if (a <= 0 && b > 0) cross = { dir: 'up', ago: hist.length - 1 - i };
+    else if (a >= 0 && b < 0) cross = { dir: 'down', ago: hist.length - 1 - i };
+  }
+  const stack = e9 == null || e20 == null || e50 == null ? null : e9 > e20 && e20 > e50 ? 'up' : e9 < e20 && e20 < e50 ? 'down' : 'mixed';
+  return {
+    day: last.day, today: last.day === mtParts(now).dateKey, barAt: new Date(last.ms).toISOString(), bars: rows.length, sessionBars: session.length,
+    last: rp(last.c), vwap: rp(vwap), vsVwap: vwap == null ? null : last.c > vwap ? 'above' : last.c < vwap ? 'below' : 'at',
+    ema9: rp(e9), ema20: rp(e20), ema50: rp(e50), stack,
+    macd: rm(at(macdS)), signal: rm(at(sig)), hist: rm(at(hist)), cross,
+    open: rp(session[0].o), high: rp(Math.max(...session.map((b) => b.h))), low: rp(Math.min(...session.map((b) => b.l))),
+    prevClose: before.length ? rp(before[before.length - 1].c) : null,
+  };
+}
+const STACK_WORDS = { up: 'stacked up, 9 over 20 over 50', down: 'stacked down, 9 under 20 under 50', mixed: 'mixed, not stacked' };
+/** One chart as the agents read it: every number, in a sentence each. Pure. */
+export function chartText(ticker, x) {
+  if (!x) return `${ticker}: no regular-session bars came back.`;
+  const { hh, mm, weekday } = mtParts(Date.parse(x.barAt));
+  const when = `last bar ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} Mountain${x.today ? ' today' : `, ${weekday}'s session`}`;
+  const ema = x.ema50 == null ? `EMA 9 ${x.ema9 ?? 'n/a'}, EMA 20 ${x.ema20 ?? 'n/a'}, not enough bars yet for the 50`
+    : `EMA 9 / 20 / 50: ${x.ema9} / ${x.ema20} / ${x.ema50}, ${STACK_WORDS[x.stack]}`;
+  const cross = x.cross ? `, crossed ${x.cross.dir} ${x.cross.ago === 0 ? 'on the last bar' : `${x.cross.ago} bar${x.cross.ago === 1 ? '' : 's'} ago`}` : '';
+  const macd = x.macd == null || x.signal == null ? 'MACD: not enough bars yet'
+    : `MACD 12/26/9: ${x.macd} against signal ${x.signal}, histogram ${x.hist > 0 ? '+' : ''}${x.hist}${cross}`;
+  const vwap = x.vwap == null ? 'Session VWAP: no volume' : `Session VWAP ${x.vwap}, price ${x.vsVwap} it`;
+  return `${ticker} (${when}): last ${x.last}. ${vwap}. ${ema}. ${macd}. Session open ${x.open}, high ${x.high}, low ${x.low}${x.prevClose != null ? `, previous close ${x.prevClose}` : ''}.`;
+}
+/** The card's row (Eric reads it at a glance): where price sits against VWAP, the EMAs and the MACD. Pure. */
+export function chartLine(x) {
+  if (!x) return '';
+  const parts = [
+    x.vsVwap === 'above' ? 'Above VWAP' : x.vsVwap === 'below' ? 'Below VWAP' : x.vsVwap === 'at' ? 'At VWAP' : '',
+    x.stack === 'up' ? 'EMAs stacked up' : x.stack === 'down' ? 'EMAs stacked down' : x.stack === 'mixed' ? 'EMAs mixed' : '',
+    x.cross ? `MACD just crossed ${x.cross.dir}` : x.hist > 0 ? 'MACD above signal' : x.hist < 0 ? 'MACD below signal' : '',
+  ].filter(Boolean);
+  if (!parts.length) return '';
+  return `${x.today ? '' : 'Last session: '}${parts.join(' · ')}`;
+}
+/** Each ticker's chart from one fetch's bars, keyed by ticker; tickers with no regular-session bars are left out. */
+export function chartsOf(fetched, now = Date.now()) {
+  const out = {};
+  for (const [t, bars] of Object.entries(fetched?.bars || {})) {
+    const x = chartRead(bars, { now });
+    if (x) out[String(t).toUpperCase()] = x;
+  }
+  return out;
+}
+/** The block the agents read: the charts in the order asked, or one plain line saying why there are none. */
+export function chartsBlock(fetched, symbols, now = Date.now(), { title = '15-minute charts' } = {}) {
+  if (!fetched || fetched.status === 'nokey') return '';
+  if (fetched.status !== 'ok') return `${title}: none this run, the chart feed ${fetched.status === 'refused' ? 'turned the key down' : 'did not answer'}. Do not guess VWAP, EMA or MACD levels; search for them or leave them out.`;
+  const charts = chartsOf(fetched, now);
+  const lines = [...new Set(symbols.map((s) => String(s).toUpperCase()))].filter((t) => charts[t]).map((t) => chartText(t, charts[t]));
+  if (!lines.length) return `${title}: none came back this run.`;
+  return `${title}, worked out from 15-minute bars (regular session only; VWAP from IEX volume, so a close estimate). Use these numbers rather than searching for them:\n${lines.join('\n')}`;
 }
 
 function quotesText(snap) {

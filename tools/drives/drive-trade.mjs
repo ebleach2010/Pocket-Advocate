@@ -5,7 +5,7 @@
 // Eric, 2026-09-23: "Simplify the trading app substantially. The app should
 // now have only two primary purposes: 1. Suggested Trades 2. Market News."
 //
-// Twelve sections, A to L (M, N and O came after: his size, accept or pass, and ADD/TRIM): the shelf card opens the desk; the shell is three
+// Twelve sections, A to L (M, N and O came after: his size, accept or pass, and ADD/TRIM; P the re-check; Q the 15-minute charts): the shelf card opens the desk; the shell is three
 // tabs and a cog with no chat anywhere; the board reads every field of a trade
 // grouped by kind with the taken one lit yellow; RUN TRADING DESK walks its
 // stages and lands fresh trades; YES lights a card and gives it PROFIT and
@@ -421,6 +421,48 @@ const sofi = await until(() => { const h = [...document.querySelectorAll('#hist 
 ok('SOFI leaves only when he marks it, and lands in History as he marked it', sofi?.tag === 'LOSS', JSON.stringify(sofi));
 await shot('P-history');
 await go('trades');
+
+console.log('\n--- Q. the 15-minute chart on every card, and Alpaca\'s key in Settings ---');
+// Eric, 2026-09-24: "do we have an agent analyzing intraday 15min vwap, macd 3 EMA lines etc?" Each card
+// carries its chart in a line; the key pair is pasted in Settings and tested as it is saved.
+const chartRows = await page.evaluate(() => [...document.querySelectorAll('.rec')].map((c) => {
+  const dt = [...c.querySelectorAll('.why dt')];
+  const i = dt.findIndex((d) => d.textContent.trim() === '15m chart');
+  return { tk: c.querySelector('.tk').textContent.trim(), active: c.classList.contains('active'), first: i === 0, line: i >= 0 ? dt[i].nextElementSibling.textContent.trim() : '' };
+}));
+const freshChart = chartRows.find((r) => ['QQQ', 'MU'].includes(r.tk) && !r.active);
+const heldChart = chartRows.find((r) => r.tk === 'PLTR' && r.active);
+ok('a fresh trade from the run shows its 15m chart first under the setup, with the time of its last bar', !!freshChart && freshChart.first && /^Above VWAP · EMAs stacked up · MACD (?:above signal|just crossed up) \(\d{1,2}:\d{2} [AP]M\)$/.test(freshChart.line), JSON.stringify(chartRows));
+ok('the trade he holds shows the chart its re-check brought', !!heldChart && heldChart.first && /^Above VWAP · EMAs stacked up/.test(heldChart.line), JSON.stringify(heldChart));
+await page.evaluate((tk) => [...document.querySelectorAll('.rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === tk)?.scrollIntoView({ block: 'center' }), freshChart?.tk || 'MU');
+await page.waitForTimeout(300);
+await shot('Q-chart');
+await page.evaluate(() => document.getElementById('cog').click());
+await page.waitForTimeout(500);
+const subOf = () => page.evaluate(() => document.getElementById('bars-sub')?.textContent.trim() || '');
+ok('Settings has 15-minute charts under Market data, with no key on file yet', (await subOf()) === 'Alpaca key: none on file', await subOf());
+const openSheetQ = async () => { await page.evaluate(() => document.getElementById('bars-go').click()); await page.waitForTimeout(400); };
+await openSheetQ();
+const inputs = await page.evaluate(() => ['ak', 'as'].map((id) => { const el = document.getElementById(id); return el ? `${el.getAttribute('autocapitalize')}/${el.getAttribute('autocorrect')}/${el.getAttribute('spellcheck')}` : null; }));
+ok('the sheet asks for the Key ID and the Secret, with no capitals or corrections forced on either', inputs.every((x) => x === 'off/off/false'), JSON.stringify(inputs));
+await page.fill('#ak', 'PKTEST1234567890ABCD');
+await page.click('#ak-go');
+const halfSaid = await until(() => { const t = document.getElementById('ak-said')?.textContent || ''; return /Alpaca/.test(t) ? t : null; }, 4000);
+ok('one half alone is refused with its sentence', halfSaid === 'Paste both halves from Alpaca: the Key ID and the Secret.', halfSaid || '');
+await page.fill('#ak', 'BADKEY1234567890ABCD');
+await page.fill('#as', 'abcdEFGHijklMNOPqrstUVWXyz0123456789abcd');
+await page.click('#ak-go');
+const badSaid = await until(() => { const t = document.getElementById('ak-said')?.textContent || ''; return /turned it down/.test(t) ? t : null; }, 4000);
+ok('a key Alpaca turns down keeps the sheet open and says so, and the row says so too', /^Saved, but Alpaca turned it down\./.test(badSaid || '') && !!(await page.$('#ak')) && /Alpaca turned it down$/.test(await subOf()), JSON.stringify({ badSaid, sub: await subOf() }));
+await page.fill('#ak', 'PKTEST1234567890ABCD');
+await page.click('#ak-go');
+const goodSaid = await until(() => { const t = document.getElementById('key-said')?.textContent || ''; return /Alpaca works/.test(t) && !document.getElementById('ak') ? t : null; }, 4000);
+ok('a working key closes the sheet, says the next run has charts, and the row reads on file and working', goodSaid === 'Alpaca works. The next run has 15-minute charts.' && (await subOf()) === 'Alpaca key on file · ends ABCD · working' && (await page.evaluate(() => document.getElementById('bars-go').textContent.trim())) === 'Replace', JSON.stringify({ goodSaid, sub: await subOf() }));
+const leak = await page.evaluate(() => document.documentElement.outerHTML.includes('abcdEFGHijklMNOPqrstUVWXyz0123456789abcd') || JSON.stringify(window.__paDeskState || {}).includes('abcdEFGH'));
+ok('the Secret is nowhere on the page once saved', !leak);
+await shot('Q-settings');
+await page.evaluate(() => document.querySelector('.settings [data-x]')?.click());
+await page.waitForTimeout(300);
 
 console.log('\n--- J. reduced motion keeps the moment still ---');
 const still = await ctx.newPage();

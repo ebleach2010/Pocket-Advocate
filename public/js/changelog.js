@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.14';
+export const VERSION = '7.15';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.14';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // 15-MINUTE CHARTS (Eric, 2026-09-24: "do we have an agent analyzing
+    // intraday 15min vwap, macd 3 EMA lines etc?"). Admin only.
+    version: '7.15',
+    quiet: true,
+    client: [],
+    admin: [
+      'Every run now reads 15-minute charts: VWAP, the 9, 20 and 50 EMAs and the MACD, worked out from real bars.',
+      'Each card shows its chart in a line, under 15m chart.',
+      'The charts come from Alpaca\'s free plan. Add its Key ID and Secret in Settings, under 15-minute charts.',
+    ],
+  },
   {
     // THE JUDGE DECIDES (Eric, 2026-09-24: "if all the agents report to the
     // 6th agent shouldn't he have the final call?"). Admin only.

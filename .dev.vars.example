@@ -6,3 +6,6 @@ RESEND_API_KEY=re_xxx
 FIREBASE_SERVICE_ACCOUNT={"type":"service_account","project_id":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n","client_email":"...","token_uri":"https://oauth2.googleapis.com/token"}
 # Optional: the Trade portal's market data key. Without it, the key pasted in the portal is used.
 # FINNHUB_KEY=xxx
+# Optional: the desk's 15-minute charts (Alpaca's free plan). Without them, the pair pasted in Settings is used.
+# ALPACA_KEY_ID=xxx
+# ALPACA_SECRET=xxx
