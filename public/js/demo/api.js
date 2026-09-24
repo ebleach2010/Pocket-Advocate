@@ -187,6 +187,8 @@ export function demoApi(role, store) {
     if (path === '/api/auth/device-signin') return ok({ token: 'demo' });
     if (path === '/api/admin/login' || path === '/api/admin/pin') return ok({ token: 'demo', deviceToken: 'demo' });
     if (path === '/api/admin/session') return ok({ ok: true });
+    // The Clients page's stall report (2026-09-24, v7.16): kept on the page for the drive, sent nowhere.
+    if (path === '/api/admin/stall') { (window.__paDemoStalls ||= []).push(body); return ok({ ok: true }); }
 
     // ---- money, without any -----------------------------------------------
     // By the numbers: the shapes the approved mock used (2026-09-02). The

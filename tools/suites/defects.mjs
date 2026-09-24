@@ -935,10 +935,86 @@ ck('clock: all switches share one painter set, so no two can disagree',
     && (APP.match(/\n\s+painted\(\);\n/g) || []).length === 3 && /\+ rateBlock \+ voiceBlock \+ summary \+ `<\/div>`;\n  painted\(\);/.test(APP)
     && /sessionStorage\.removeItem\('pa-list-retry'\)/.test(APP)
     && profile === orTooSlow.TOO_SLOW
-    && /const snapshot = await orTooSlow\(getDoc\(doc\(db, 'users', user\.uid\)\)\);\n\s+if \(snapshot === TOO_SLOW\) return null;/.test(AUTH)
-    && /const snapshot = await orTooSlow\(getDoc\(ref\)\);\n\s+if \(snapshot === TOO_SLOW\) return;/.test(AUTH)
+    // RE-PINNED 2026-09-24 (v7.16): the profile and admin checks share one read, which gives up after ten.
+    && /profileReads\.set\(user\.uid, orTooSlow\(getDoc\(doc\(db, 'users', user\.uid\)\)\)\);/.test(AUTH)
+    && /const snapshot = await readProfile\(user\);\n\s+if \(snapshot === TOO_SLOW\) return null;/.test(AUTH)
+    && /const snapshot = await readProfile\(user\);\n\s+if \(snapshot === TOO_SLOW\) return;/.test(AUTH)
     && !/[\u2013\u2014]/.test(net),
     JSON.stringify({ first, second: { reloads: second.reloads, stuck: second.stuck }, code: code.stuck, noStore, slow: String(slow), profile: String(profile) }));
+}
+
+// ---- the Clients page waits out Google's sign-in check (2026-09-24, v7.16) --------------------------
+// Eric, 2:03 AM, the Clients page on "This is taking too long. Stuck on: checking your sign-in." The
+// sign-in library checks the saved session with Google before it names who is signed in, giving each of
+// two requests thirty seconds after a phone wakes; the net reloaded at twelve, which only started that
+// wait again. The net is RUN here on a virtual clock: while auth.js says sign-in is with Google it says so
+// and waits, up to eighty seconds; the rest of the shelf gets twelve once Google answers; and each slow
+// sign-in, reload and stall is reported to the Worker behind the admin cookie.
+{
+  const HTML = f('public/admin.html');
+  const AUTH = f('public/js/auth.js');
+  const W = f('worker/index.js');
+  const net = (HTML.match(/<script>\n\/\/ NEVER STUCK ON LOADING[\s\S]*?<\/script>/) || [''])[0].replace(/^<script>|<\/script>$/g, '');
+  // `plan(t)` is what the page is doing t milliseconds in: { stage, signin }.
+  const sim = (plan, { flag = null } = {}) => {
+    const log = { reloadAt: null, stuckAt: null, stuck: '', noteShown: null, noteHidden: null, told: [], html: '' };
+    const timers = [];
+    let now = 0;
+    const win = {};
+    const apply = () => Object.assign(win, plan(now));
+    const note = { set hidden(v) { if (v === false && log.noteShown == null) log.noteShown = now; if (v === true && log.noteShown != null && log.noteHidden == null) log.noteHidden = now; } };
+    const stuckB = { set textContent(v) { log.stuck = v; log.stuckAt = now; } };
+    const el = { set innerHTML(v) { log.html = v; }, querySelector: () => stuckB };
+    const btn = { addEventListener: () => {} };
+    const store = { getItem: () => flag, setItem: () => {} };
+    const doc = { visibilityState: 'visible', getElementById: (id) => (id === 'list' ? el : id === 'list-retry' ? btn : id === 'signin-note' ? note : null) };
+    const fakeFetch = (url, init) => { log.told.push({ url, kind: JSON.parse(init.body).kind, at: now, body: JSON.parse(init.body), opts: { method: init.method, keepalive: init.keepalive, credentials: init.credentials } }); return Promise.resolve({ ok: true }); };
+    apply();
+    new Function('window', 'sessionStorage', 'location', 'document', 'setTimeout', 'fetch', 'navigator', net)(
+      win, store, { reload: () => { log.reloadAt = now; } }, doc, (fn, ms) => { timers.push({ fn, at: now + ms }); }, fakeFetch, { onLine: true },
+    );
+    while (timers.length && log.reloadAt == null && log.stuckAt == null && now < 200_000) {
+      timers.sort((a, b) => a.at - b.at);
+      const t = timers.shift();
+      now = t.at;
+      apply();
+      t.fn();
+    }
+    return log;
+  };
+  const kinds = (l) => l.told.map((x) => x.kind).join();
+  // Google takes 35 seconds, the cases 3 more, then the shelf paints: no reload, no stall, the note came and went.
+  const slowWake = sim((t) => (t < 35_000 ? { __paStage: 'signin', __paSignin: 'google' } : t < 38_000 ? { __paStage: 'cases', __paSignin: 'ok' } : { __paStage: 'done', __paSignin: 'ok' }));
+  // Google never answers: eighty seconds, then the one reload; after it, the stall names Google.
+  const never1 = sim(() => ({ __paStage: 'signin', __paSignin: 'google' }));
+  const never2 = sim(() => ({ __paStage: 'signin', __paSignin: 'google' }), { flag: '1' });
+  // Google answers at 30 seconds and the cases never do: twelve more, then the stall names the cases.
+  const casesStall = sim((t) => (t < 30_000 ? { __paStage: 'signin', __paSignin: 'google' } : { __paStage: 'cases', __paSignin: 'ok' }), { flag: '1' });
+  // A stall on the profile read is not Google's: it reloads at twelve as before.
+  const profile = sim(() => ({ __paStage: 'signin', __paSignin: 'profile' }));
+  const profileStuck = sim(() => ({ __paStage: 'signin', __paSignin: 'profile' }), { flag: '1' });
+  const stall = (W.match(/async function handleStall\(request, env\) \{[\s\S]*?\n\}\n/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-09-24): the net's Google branch dropped (`window.__paSignin === 'google'` made `window.__paSignin === 'never'`) made this read
+  //   FAIL  the Clients page waits out Google's sign-in check ...
+  ck('the Clients page waits out Google\'s sign-in check: a 35 second wake paints with no reload and no stall, the note shown at 12 and gone once Google answers, and one slow sign-in told; Google never answering reloads once at 80, and after it the stall names Google; the rest of the shelf gets 12 once Google answers; a profile stall still reloads at 12 and names the profile; auth.js marks Google, the profile and done; the profile and admin checks share one read; the session cookie is not waited on; and the report goes to a route that answers only the admin cookie, words and numbers only',
+    slowWake.reloadAt == null && slowWake.stuckAt == null && slowWake.noteShown === 12_000 && slowWake.noteHidden != null && slowWake.noteHidden >= 35_000 && kinds(slowWake) === 'slow-google'
+    && slowWake.told[0].url === '/api/admin/stall' && slowWake.told[0].opts.keepalive === true && slowWake.told[0].opts.credentials === 'same-origin'
+    && slowWake.told[0].body.page === 'clients' && slowWake.told[0].body.signin === 'google' && slowWake.told[0].body.ms === 12_000 && slowWake.told[0].body.online === true
+    && never1.reloadAt === 80_000 && never1.stuckAt == null && kinds(never1) === 'slow-google,reload'
+    && never2.reloadAt == null && never2.stuckAt === 80_000 && never2.stuck === 'checking your sign-in with Google' && kinds(never2) === 'slow-google,stuck'
+    && /close the app fully and open it again/.test(never2.html)
+    && casesStall.stuckAt != null && casesStall.stuckAt >= 42_000 && casesStall.stuckAt <= 44_000 && casesStall.stuck === 'reading your cases'
+    && profile.reloadAt === 12_000 && profileStuck.stuck === 'reading your sign-in profile' && profileStuck.stuckAt === 12_000
+    && /<p class="dim" id="signin-note" hidden>Still checking your sign-in with Google\. Right after the phone wakes this can take up to a minute\. No need to tap anything\.<\/p>\n\s+<div id="list">/.test(HTML)
+    && /export function currentUser\(\) \{\n\s+signinStep\('google'\);\n\s+return new Promise\(\(resolve\) => \{\n\s+const stop = onAuthStateChanged\(auth, \(user\) => \{\n\s+stop\(\);\n\s+signinStep\('profile'\);/.test(AUTH)
+    && /signinStep\('ok'\);\n\s+return user;/.test(AUTH)
+    && (AUTH.match(/getDoc\(doc\(db, 'users', user\.uid\)\)/g) || []).length === 1
+    && /\n\s+ensureAdminSession\(user\);\n\s+\/\/ Weekly re-login/.test(AUTH) && !/await ensureAdminSession/.test(AUTH)
+    && /if \(url\.pathname === '\/api\/admin\/stall' && request\.method === 'POST'\)\n\s+return await handleStall\(request, env\);/.test(W)
+    && /const uid = await adminCookieUid\(request, env\)\.catch\(\(\) => null\);\n\s+if \(!uid\) return json\(\{ error: 'Not found' \}, 404\);/.test(stall)
+    && /ev: 'page-stall'/.test(stall) && !/b\.(?!page|kind|stage|signin|ms|online|visible|reloaded)\w+/.test(stall)
+    && !/[\u2013\u2014]/.test(net),
+    JSON.stringify({ slowWake: { ...slowWake, told: kinds(slowWake) }, never1: [never1.reloadAt, kinds(never1)], never2: [never2.stuckAt, never2.stuck, kinds(never2)], cases: [casesStall.stuckAt, casesStall.stuck], profile: [profile.reloadAt, profileStuck.stuck] }));
 }
 
 // ---- the bars probe never hands back the key (2026-09-24, v7.14) ------------------------------------

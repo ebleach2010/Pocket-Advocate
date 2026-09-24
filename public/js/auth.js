@@ -55,14 +55,32 @@ const orTooSlow = (p, ms = 10_000) => new Promise((resolve, reject) => {
   p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
 });
 
+// WHERE SIGN-IN IS (Eric, 2026-09-24, 2:03 AM, the Clients page on "Stuck on: checking your sign-in").
+// Before it says who is signed in, the sign-in library checks the saved session with Google, and after
+// a phone wakes that can take up to a minute. A page's safety net reads this to tell that wait, which
+// ends on its own, from a real stall: 'google' while the library checks, 'profile' while the profile is
+// read, 'ok' after.
+const signinStep = (step) => { try { window.__paSignin = step; } catch { /* no window */ } };
+
 /** Resolves with the signed-in user, or null. */
 export function currentUser() {
+  signinStep('google');
   return new Promise((resolve) => {
     const stop = onAuthStateChanged(auth, (user) => {
       stop();
+      signinStep('profile');
       resolve(user);
     });
   });
+}
+
+// ONE READ OF THE PROFILE A PAGE (2026-09-24). The nav, the profile check and the admin check each read
+// users/{uid}, three reads of one document, and on a slow wake each could take its full ten seconds in
+// turn. They share one read now.
+const profileReads = new Map();
+function readProfile(user) {
+  if (!profileReads.has(user.uid)) profileReads.set(user.uid, orTooSlow(getDoc(doc(db, 'users', user.uid))));
+  return profileReads.get(user.uid);
 }
 
 /** Redirects to sign-in (remembering where to come back to) if signed out. */
@@ -78,12 +96,11 @@ export async function requireUser() {
 
 /** First sign-in creates users/{uid} with role 'client' (rules enforce it). */
 async function ensureProfile(user) {
-  const ref = doc(db, 'users', user.uid);
   try {
-    const snapshot = await orTooSlow(getDoc(ref));
+    const snapshot = await readProfile(user);
     if (snapshot === TOO_SLOW) return;
     if (!snapshot.exists()) {
-      await setDoc(ref, { email: user.email, name: '', role: 'client' });
+      await setDoc(doc(db, 'users', user.uid), { email: user.email, name: '', role: 'client' });
     }
   } catch (err) {
     console.warn('profile check failed', err);
@@ -123,7 +140,7 @@ async function ensureAdminSession(user) {
 export async function isAdmin(user) {
   try {
     // Too slow is unknown, the same as refused: his phone stays his (2026-09-24).
-    const snapshot = await orTooSlow(getDoc(doc(db, 'users', user.uid)));
+    const snapshot = await readProfile(user);
     if (snapshot === TOO_SLOW) return null;
     return snapshot.exists() && snapshot.data().role === 'admin';
   } catch {
@@ -153,7 +170,9 @@ export async function requireAdmin() {
     location.href = '/';
     return null;
   }
-  await ensureAdminSession(user);
+  // Not waited on (2026-09-24): the cookie only matters to the next page he opens, and this page is
+  // already his. Asked for, it lands in the background.
+  ensureAdminSession(user);
   // Weekly re-login, Eric's own rule: an admin session older than 7 days is
   // signed out everywhere on this device, trusted-device token included, so
   // getting back in takes the PIN again. Once a week, on a number pad — the
@@ -175,6 +194,7 @@ export async function requireAdmin() {
   // Mark this device as the admin's so the landing page can redirect to the
   // dashboard instantly, without waiting for Firebase to wake up.
   localStorage.setItem('pa-admin-device', '1');
+  signinStep('ok');
   return user;
 }
 

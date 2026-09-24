@@ -6,8 +6,11 @@
 // "It's stuck loading in the client case menu on launch." The net in
 // admin.html is driven for real here: a normal load never trips it; a page
 // whose code never arrives reloads once, then says which step stopped with
-// Try again; and Try again brings the shelf once the code can load. About
-// forty seconds, most of it the net's own twelve-second waits.
+// Try again; and Try again brings the shelf once the code can load. At 2:03 AM
+// the same page said "Stuck on: checking your sign-in" (v7.16): section C holds
+// sign-in with Google, the way a phone just woken does, and the page must say
+// so and wait rather than reload. About seventy seconds, most of it the net's
+// own waits.
 import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
@@ -84,6 +87,45 @@ console.log('\n--- B. the page\'s code never arrives: one reload, then the step 
   ok('Try again, with the code able to arrive, paints the shelf and clears the flag', back.stage === 'done' && !/Loading…|taking too long/.test(back.list) && back.flag === null, JSON.stringify(back));
   ok('no page errors', !errs.length, errs.join(' | '));
   await ctx.close();
+}
+
+console.log('\n--- C. sign-in held with Google, as on a phone just woken: a note and a wait, never a reload ---');
+{
+  const { ctx, page, errs, loads } = await open(320);
+  // auth.js says where sign-in is; here it is held at Google until the drive lets it go.
+  await page.addInitScript(() => {
+    let stage = 'code';
+    window.__holdGoogle = true;
+    Object.defineProperty(window, '__paStage', { configurable: true, get() { return window.__holdGoogle ? 'signin' : stage; }, set(v) { stage = v; } });
+    Object.defineProperty(window, '__paSignin', { configurable: true, get() { return window.__holdGoogle ? 'google' : 'ok'; }, set() { /* held */ } });
+  });
+  await page.goto(PAGE, { waitUntil: 'networkidle' });
+  const noteNow = () => page.evaluate(() => { const n = document.getElementById('signin-note'); return n ? { shown: !n.hidden, text: n.textContent.trim(), wide: document.documentElement.scrollWidth > window.innerWidth + 1 } : null; });
+  ok('before twelve seconds there is no note', (await noteNow())?.shown === false);
+  await page.waitForTimeout(13_000);
+  const at13 = await noteNow();
+  const told = await page.evaluate(() => (window.__paDemoStalls || []).map((x) => `${x.kind}:${x.signin}:${x.page}`));
+  ok('at twelve seconds the page says it is still checking with Google, and fits a 320px screen', !!at13 && at13.shown && /^Still checking your sign-in with Google\. Right after the phone wakes this can take up to a minute\. No need to tap anything\.$/.test(at13.text) && !at13.wide, JSON.stringify(at13));
+  ok('the slow sign-in is reported once, as Google\'s', JSON.stringify(told) === JSON.stringify(['slow-google:google:clients']), JSON.stringify(told));
+  if (SHOTS) {
+    const cdp = await ctx.newCDPSession(page);
+    const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(`${SHOTS}/nohang-google-320.png`, Buffer.from(data, 'base64'));
+  }
+  await page.waitForTimeout(14_000);
+  const at27 = await read(page);
+  ok('at twenty-seven seconds it has still not reloaded or called it stuck', (await loads()) === 1 && !at27.retry && (await noteNow())?.shown === true, JSON.stringify({ loads: await loads(), at27 }));
+  await page.evaluate(() => { window.__holdGoogle = false; });
+  await page.waitForTimeout(3_000);
+  const after = await read(page);
+  ok('once Google answers, the note goes and the shelf stands, with no reload', (await noteNow())?.shown === false && after.stage === 'done' && !after.retry && (await loads()) === 1, JSON.stringify({ after, loads: await loads() }));
+  ok('no page errors', !errs.length, errs.join(' | '));
+  await ctx.close();
+}
+// The report's route, on the real Worker: without the admin cookie it is a path that is not there.
+{
+  const res = await fetch(`${P}/api/admin/stall`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"page":"clients"}' });
+  ok('the stall report answers 404 to anyone without the admin cookie', res.status === 404, String(res.status));
 }
 
 await b.close();

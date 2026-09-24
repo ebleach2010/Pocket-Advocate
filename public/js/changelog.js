@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.15';
+export const VERSION = '7.16';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.15';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // SIGN-IN WAITS ON GOOGLE (Eric, 2026-09-24, 2:03 AM: the Clients page on
+    // "Stuck on: checking your sign-in"). Admin only.
+    version: '7.16',
+    quiet: true,
+    client: [],
+    admin: [
+      'Right after your phone wakes, the Clients page no longer gives up while your sign-in is still being checked with Google. It says so and carries on by itself, for up to a minute.',
+      'Your sign-in now reads your profile once instead of three times, so the page opens faster.',
+    ],
+  },
   {
     // 15-MINUTE CHARTS (Eric, 2026-09-24: "do we have an agent analyzing
     // intraday 15min vwap, macd 3 EMA lines etc?"). Admin only.

@@ -56,6 +56,7 @@
   <!-- Personal Uploads (Eric, 2026-09-03): his documents, across every case,
        for his eyes only. Folded by default; the shelf below is the work. -->
   <div id="personal"></div>
+  <p class="dim" id="signin-note" hidden>Still checking your sign-in with Google. Right after the phone wakes this can take up to a minute. No need to tap anything.</p>
   <div id="list"><p class="dim">Loading…</p></div>
 </main>
 <script>
@@ -65,27 +66,71 @@
 // background can leave any one of them waiting forever. This script waits on
 // none of them. Twelve seconds with the shelf still unpainted reloads the page
 // once; a second stall says which step it stopped on, with Try again.
+//
+// SIGN-IN WAITS ON GOOGLE (Eric, 2026-09-24, 2:03 AM: the same page on "Stuck on:
+// checking your sign-in"). Before it names who is signed in, the sign-in library
+// checks the saved session with Google, and gives each of its two requests thirty
+// seconds when the phone has just woken. A reload at twelve seconds only started
+// that wait again, so it could never finish. While auth.js says sign-in is with
+// Google, the net says so and keeps waiting, up to eighty seconds, and the rest
+// of the shelf gets its own twelve once Google answers. Either way the Worker is
+// told, so the flight recorder shows where the time went.
 window.__paStage = window.__paStage || 'code';
 (function () {
   var WORDS = {
     code: "loading the app's code", signin: 'checking your sign-in', cases: 'reading your cases',
     covers: 'reading the case covers', extras: 'reading the rate and the voice study',
+    'signin-google': 'checking your sign-in with Google', 'signin-profile': 'reading your sign-in profile',
   };
-  setTimeout(function () {
-    if (window.__paStage === 'done') return;
-    var tried = true;
-    try { tried = sessionStorage.getItem('pa-list-retry') === '1'; } catch (e) { /* no storage: no reload loop either */ }
+  var CAP = 80000;
+  var waited = 0; var deadline = 12000; var noted = false; var withGoogle = false; var told = {};
+  var tried = true;
+  try { tried = sessionStorage.getItem('pa-list-retry') === '1'; } catch (e) { /* no storage: no reload loop either */ }
+  function tell(kind) {
+    if (told[kind] || typeof fetch !== 'function') return;
+    told[kind] = true;
+    try {
+      fetch('/api/admin/stall', {
+        method: 'POST', keepalive: true, credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          page: 'clients', kind: kind, stage: window.__paStage || 'code', signin: window.__paSignin || '', ms: waited, reloaded: tried,
+          online: typeof navigator === 'undefined' || navigator.onLine !== false, visible: document.visibilityState || '',
+        }),
+      }).catch(function () { /* the report is never the thing that breaks */ });
+    } catch (e) { /* likewise */ }
+  }
+  function note(on) {
+    var n = document.getElementById('signin-note');
+    if (n) n.hidden = !on;
+  }
+  function tick(ms) {
+    waited += ms;
+    if (window.__paStage === 'done') { note(false); return; }
+    if (window.__paStage === 'signin' && window.__paSignin === 'google' && waited < CAP) {
+      if (!noted) { noted = true; note(true); tell('slow-google'); }
+      withGoogle = true;
+      setTimeout(function () { tick(2000); }, 2000);
+      return;
+    }
+    // Google has answered: the rest of the shelf gets its own twelve seconds from here.
+    if (withGoogle) { withGoogle = false; deadline = waited + 12000; }
+    note(false);
+    if (waited < deadline && waited < CAP) { setTimeout(function () { tick(1000); }, 1000); return; }
     if (!tried) {
       try { sessionStorage.setItem('pa-list-retry', '1'); } catch (e) { /* the reload still happens once */ }
+      tell('reload');
       location.reload();
       return;
     }
     var el = document.getElementById('list');
     if (!el) return;
-    el.innerHTML = '<p class="error" id="list-stuck">This is taking too long. Stuck on: <b></b>.</p><button type="button" class="btn" id="list-retry">Try again</button>';
-    el.querySelector('#list-stuck b').textContent = WORDS[window.__paStage] || 'loading';
+    var key = window.__paStage === 'signin' && WORDS['signin-' + window.__paSignin] ? 'signin-' + window.__paSignin : window.__paStage;
+    el.innerHTML = '<p class="error" id="list-stuck">This is taking too long. Stuck on: <b></b>.</p><p class="dim">If Try again does not help, close the app fully and open it again.</p><button type="button" class="btn" id="list-retry">Try again</button>';
+    el.querySelector('#list-stuck b').textContent = WORDS[key] || 'loading';
     document.getElementById('list-retry').addEventListener('click', function () { location.reload(); });
-  }, 12000);
+    tell('stuck');
+  }
+  setTimeout(function () { tick(12000); }, 12000);
 })();
 </script>
 <script type="module" src="/js/admin.js"></script>

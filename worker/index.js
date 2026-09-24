@@ -52,7 +52,7 @@ import { validateAction } from './advisor-acts.js';
 import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
   pollCaseFlight, pollFlightsNow, pollAskFlight,
-  runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel,
+  runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel, diagLog,
 } from './advisor.js';
 // The trade desk (2026-09-21; a case file since 2026-09-22; PR 420 since
 // 2026-09-23): its routes, the six-agent run the cron hosts and its one
@@ -1238,6 +1238,8 @@ export default {
         return await handleUploaded(request, env);
       if (url.pathname === '/api/admin/session')
         return await handleAdminSession(request, env);
+      if (url.pathname === '/api/admin/stall' && request.method === 'POST')
+        return await handleStall(request, env);
       if (url.pathname.startsWith('/api/')) {
         // The same token check every real route does, and then the same 404.
         //
@@ -2187,7 +2189,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-24-charts-15m';
+const BUILD_TAG = 'v2026-09-24-signin-wait';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2195,7 +2197,7 @@ const BUILD_TAG = 'v2026-09-24-charts-15m';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.15';
+const VERSION = '7.16';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -8684,6 +8686,27 @@ async function handleVerifyCode(request, env) {
  * moment it recognises an admin, so the next navigation to an admin page
  * already has what the gate wants.
  */
+/**
+ * WHERE A PAGE STALLED (Eric, 2026-09-24, 2:03 AM, the Clients page on "Stuck on: checking your
+ * sign-in"). The page's own net reports a slow sign-in or a stall here, with the step it was on and how
+ * long it had waited, so the flight recorder shows where the time went instead of a guess. It is sent
+ * while sign-in itself may be what is stuck, so it cannot carry a token: the admin cookie that let the
+ * page load at all is the proof. Anyone else gets the same 404 as a path that is not there. Numbers and
+ * short words only; nothing about a case.
+ */
+async function handleStall(request, env) {
+  const uid = await adminCookieUid(request, env).catch(() => null);
+  if (!uid) return json({ error: 'Not found' }, 404);
+  const b = await request.json().catch(() => ({}));
+  const word = (v, n = 24) => String(v ?? '').replace(/[^\w .:-]/g, '').slice(0, n);
+  const ms = (v) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(600_000, Math.round(Number(v)))) : null);
+  await diagLog(env, {
+    ev: 'page-stall', page: word(b.page, 16), kind: word(b.kind, 16), stage: word(b.stage, 16), signin: word(b.signin, 16),
+    ms: ms(b.ms), online: b.online === true, visible: word(b.visible, 10), reloaded: b.reloaded === true,
+  });
+  return json({ ok: true });
+}
+
 async function handleAdminSession(request, env) {
   if (request.method === 'DELETE') {
     return new Response(JSON.stringify({ ok: true }), {

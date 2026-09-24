@@ -1409,6 +1409,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry714 = (CL.match(/\{\n\s+\/\/ THE JUDGE DECIDES \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-24 (v7.15): the 15-minute charts, their own quiet entry.
   const entry715 = (CL.match(/\{\n\s+\/\/ 15-MINUTE CHARTS \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-24 (v7.16): sign-in waits on Google, its own quiet entry.
+  const entry716 = (CL.match(/\{\n\s+\/\/ SIGN-IN WAITS ON GOOGLE \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1486,8 +1488,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-24 (v7.15): both versions read 7.15 with the charts-15m tag; the 7.14 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-24, v7.15): 'worked out from real bars' reworded to 'worked out from the bars' in the 7.15 entry made this read
   //   FAIL  T36 both versions read 7.15 ...
-  check('T36 both versions read 7.15 with the new tag, the 4.7 through 7.15 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.15';/.test(CL) && /const VERSION = '7\.15';/.test(W) && /const BUILD_TAG = 'v2026-09-24-charts-15m';/.test(W)
+  // RE-PINNED 2026-09-24 (v7.16): both versions read 7.16 with the signin-wait tag; the 7.15 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.16): 'carries on by itself' reworded to 'keeps going' in the 7.16 entry made this read
+  //   FAIL  T36 both versions read 7.16 ...
+  check('T36 both versions read 7.16 with the new tag, the 4.7 through 7.16 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.16';/.test(CL) && /const VERSION = '7\.16';/.test(W) && /const BUILD_TAG = 'v2026-09-24-signin-wait';/.test(W)
+    && /version: '7\.16',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry716)
+    && /carries on by itself/.test(entry716) && !DASH.test(entry716) && !HARD.some((re) => re.test(entry716))
     && /version: '7\.15',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry715)
     && /worked out from real bars/.test(entry715) && /Alpaca\\'s free plan/.test(entry715) && !DASH.test(entry715) && !HARD.some((re) => re.test(entry715))
     && /version: '7\.14',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry714)

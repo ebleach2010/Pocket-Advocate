@@ -569,6 +569,20 @@ and D24 (re-pinned: one more call a firing); trade.mjs T83 and T26
 (re-pinned); defects.mjs, the bars probe (re-aimed at Alpaca);
 drive-trade.mjs Q.
 
+**Sign-in waits on Google (2026-09-24, v7.16).** Eric, 2:03 AM, the Clients
+page on "Stuck on: checking your sign-in". The sign-in library checks the
+saved session with Google before it names who is signed in, and gives each
+of its two requests thirty seconds after a phone wakes; the net reloaded at
+twelve, which only started that wait again. auth.js now says where sign-in
+is (`window.__paSignin`: google, profile, ok); while it is with Google the
+net shows a note and waits up to eighty seconds, and the rest of the shelf
+gets its own twelve once Google answers. The nav, profile and admin checks
+share one profile read, and the session cookie is not waited on. Each slow
+sign-in, reload and stall is reported to `/api/admin/stall`, which answers
+only the admin cookie and writes words and numbers to the flight recorder.
+defects.mjs, the Google wait (run on a virtual clock) and the no-hang check
+(re-pinned); drive-nohang.mjs C.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's
