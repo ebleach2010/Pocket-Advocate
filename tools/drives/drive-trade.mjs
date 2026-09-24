@@ -186,7 +186,10 @@ const sheet = await page.evaluate(() => ({
   key: document.getElementById('key-sub')?.textContent.trim(),
   research: document.getElementById('research-go')?.hidden,
 }));
-ok('the sheet leads with the balance, then risk, market data and alerts', sheet.heads.join() === 'Balance,Risk,Market data,Alerts', sheet.heads.join());
+// RE-PINNED 2026-09-24 (v7.9, Eric: "I want GLp-1 pipeline stocks added to the search"): the GLP-1 chain sits before alerts.
+ok('the sheet leads with the balance, then risk, market data, the GLP-1 chain and alerts', sheet.heads.join() === 'Balance,Risk,Market data,GLP-1 chain,Alerts', sheet.heads.join());
+const chain = await page.evaluate(() => { const r = document.getElementById('chain'); const subs = [...r.querySelectorAll('.sub')].slice(1); return subs.map((x) => [x.textContent.trim(), [...x.nextElementSibling.querySelectorAll('.chip')].map((c) => c.textContent.trim()).join(' ')]); });
+ok('the GLP-1 chain runs from the makers to the sellers, HIMS among the sellers', chain.map((g) => g[0]).join('|') === 'Makers, selling now|In development|Production and supply|Distribution|Sellers' && /^HIMS /.test(chain[4]?.[1] || '') && chain.every((g) => g[1].length > 0), JSON.stringify(chain));
 ok('the risk per trade is 3%', sheet.risk === '3', sheet.risk);
 ok('the key shows by its last four only', /^on file · ends 1234$/.test(sheet.key), sheet.key);
 ok('the research button is hidden until the debug switch is on', sheet.research === true);

@@ -1387,6 +1387,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry77 = (CL.match(/\{\n\s+\/\/ HOW MANY AGREE \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-24 (v7.8): add or trim, its own quiet entry.
   const entry78 = (CL.match(/\{\n\s+\/\/ ADD OR TRIM \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-24 (v7.9): the GLP-1 chain, its own quiet entry.
+  const entry79 = (CL.match(/\{\n\s+\/\/ THE GLP-1 CHAIN \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1443,8 +1445,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-24 (v7.8): both versions read 7.8 with the add-trim tag; the 7.7 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-24, v7.8): 'keeps what you would lose at it the same' reworded to 'keeps your risk the same' in the 7.8 entry made this read
   //   FAIL  T36 both versions read 7.8 ...
-  check('T36 both versions read 7.8 with the new tag, the 4.7 through 7.8 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.8';/.test(CL) && /const VERSION = '7\.8';/.test(W) && /const BUILD_TAG = 'v2026-09-24-add-trim';/.test(W)
+  // RE-PINNED 2026-09-24 (v7.9): both versions read 7.9 with the glp1-chain tag; the 7.8 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.9): 'the companies that make the pens and vials' reworded to 'the pen and vial makers' in the 7.9 entry made this read
+  //   FAIL  T36 both versions read 7.9 ...
+  check('T36 both versions read 7.9 with the new tag, the 4.7 through 7.9 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.9';/.test(CL) && /const VERSION = '7\.9';/.test(W) && /const BUILD_TAG = 'v2026-09-24-glp1-chain';/.test(W)
+    && /version: '7\.9',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry79)
+    && /the companies that make the pens and vials/.test(entry79) && /HIMS among them/.test(entry79) && !DASH.test(entry79) && !HARD.some((re) => re.test(entry79))
     && /version: '7\.8',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry78)
     && /keeps what you would lose at it the same/.test(entry78) && /ADD\/TRIM between PROFIT and LOSS/.test(entry78) && !DASH.test(entry78) && !HARD.some((re) => re.test(entry78))
     && /version: '7\.7',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry77)
@@ -2504,6 +2511,24 @@ const BA_HELD = { ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'sto
     && /if \(legs\.length && body\.reset === true\) return fail\(409, SAY\.scaledNoReset\);/.test(D)
     && ![card, both, hist].some((h) => DASH.test(h)),
     JSON.stringify({ note: (txt(card).match(/Your size\..*?\.\s.*?\./) || [''])[0], hist: (hist.match(/You put in[^.]*\./) || [''])[0] }));
+}
+
+// ---- T79: the GLP-1 chain in Settings (2026-09-24, v7.9) ---------------------------------------
+// Eric: "I want GLp-1 pipeline stocks added to the search. Including HIMs." The run names it (desk.mjs
+// D29); Settings shows it, from the one list, so what he reads is what the desk is told. The watchlist
+// row said "Always priced" since before v7.2, when the run stopped pricing it: it says what it does now.
+{
+  const APP = f('public/js/admin-deskapp.js');
+  // NEGATIVE CONTROL (run 2026-09-24): the GLP-1 chain block taken out of openSettings made this read
+  //   FAIL  T79 the GLP-1 chain in Settings ...
+  check('T79 the GLP-1 chain in Settings: its own section, drawn from the same list the run names, every role with its tickers, and it says a trade from it clears the same bar; the watchlist says it is named to the desk, no longer that it is priced',
+    /import \{[^}]*\bGLP1_CHAIN\b[^}]*\} from '\.\/trade-math\.js';/.test(APP)
+    && /<div><h2>GLP-1 chain<\/h2><div class="grp">/.test(APP)
+    && /\$\{GLP1_CHAIN\.map\(\(g\) => `<span class="sub" style="margin-top:12px">\$\{esc\(g\.role\)\}<\/span><div class="watch">\$\{g\.tickers\.map\(\(t\) => `<span class="chip">\$\{esc\(t\)\}<\/span>`\)\.join\(''\)\}<\/div>`\)\.join\(''\)\}/.test(APP)
+    && /From the makers to the sellers\. A trade from it clears the same 50% bar as any other\./.test(APP)
+    && !/Always priced|prices these on every run|Tickers the desk prices/.test(APP) && /Named to the desk on every run\./.test(APP)
+    && math.GLP1_CHAIN.find((g) => g.role === 'Sellers')?.tickers.includes('HIMS'),
+    '');
 }
 
 // ---- T67: the board in one read (2026-09-23, v7.2) ----------------------------------------------

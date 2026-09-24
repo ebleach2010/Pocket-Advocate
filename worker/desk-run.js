@@ -61,7 +61,7 @@ import {
   SETTINGS_PATH, STATE_PATH, PLAYS, SAY, stripDashes, mtParts, mtInstant, mtLabel, watchlistOf, resolveKey,
   marketSnapshot, quoteCached, rid, realDate,
 } from './trade-desk.js';
-import { isTradingDay, isMarketOpen, swingLastDay, nextDateKey, EARLY_CLOSE_MIN, MARKET_CLOSE_MIN, MARKET_OPEN_MIN, positionKey, screenTrades } from '../public/js/trade-math.js';
+import { isTradingDay, isMarketOpen, swingLastDay, nextDateKey, EARLY_CLOSE_MIN, MARKET_CLOSE_MIN, MARKET_OPEN_MIN, positionKey, screenTrades, GLP1_CHAIN } from '../public/js/trade-math.js';
 
 // ---- the settings of a run ---------------------------------------------------
 // "Use Fable unless I explicitly tell you otherwise." Every one of the six
@@ -118,6 +118,15 @@ export const WEB_SEARCH = { type: 'web_search_20260209', name: 'web_search', max
 // quote is one of the fifty calls. The researchers search for the rest, and
 // his watchlist goes to them by name.
 export const MARKET_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA'];
+/**
+ * THE GLP-1 CHAIN (Eric, 2026-09-24: "I want GLp-1 pipeline stocks added to the search. Including
+ * HIMs. But from production to development to distribution and sellers."). Named, not priced: a name
+ * costs none of the fifty calls. Every researcher and the desk read it in the market note.
+ */
+export function chainNote(chain = GLP1_CHAIN) {
+  const groups = chain.map((g) => `${g.role}: ${g.tickers.join(', ')}.`).join(' ');
+  return `The GLP-1 chain, which he wants searched on every run, from the makers to the sellers. ${groups} Look at it on every run beside everything else on your beat. News in one link often moves the others: a trial readout moves the other developers, and a price cut, a supply problem or a new seller deal moves the makers, the suppliers and the sellers. A search or two across the chain is usually enough to see what is moving in it. It is a place to look, not a quota: a trade from it clears the same bar as any other.`;
+}
 const TICKER_RE = /^[A-Z][A-Z.]{0,5}$/;
 
 // ---- the five beats ------------------------------------------------------------
@@ -759,6 +768,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
         let market = snapshotText(snap, { hasKey: !!key });
         const watch = watchlistOf(settings).filter((t) => !MARKET_TICKERS.includes(t)).slice(0, 25);
         if (watch.length) market += `\n\nHis watchlist, not priced here: ${watch.join(', ')}.`;
+        market += `\n\n${chainNote()}`;
         const wrote = prior
           ? await patchDoc(env, RESEARCH_PATH, { market }, { mask: ['market'] }).catch(() => false)
           : await patchDoc(env, RESEARCH_PATH, { runId: run.id, at: new Date(), market, r1: null, r2: null, r3: null, r4: null, r5: null }).catch(() => false);

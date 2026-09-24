@@ -501,6 +501,14 @@ is refused and a resize keeps his average. trade.mjs T76 to T78 hold it, T53
 now reads every write the page makes, and drive-trade.mjs O adds and trims on
 the demo.
 
+**The GLP-1 chain (2026-09-24, v7.9).** `GLP1_CHAIN` in trade-math.js is one
+list, grouped from the makers through development, production and supply and
+distribution to the sellers, HIMS among them, US-listed names only. The run
+names it in the market note every researcher and the desk read (`chainNote`
+in desk-run.js), so it costs none of the fifty calls, and Settings draws the
+same list. desk.mjs D29 and trade.mjs T79 hold it; drive-trade.mjs I reads it
+in Settings.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

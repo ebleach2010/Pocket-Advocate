@@ -98,10 +98,10 @@ function load(deps) {
     marketSnapshot: TD.marketSnapshot, quoteCached: TD.quoteCached, rid: TD.rid, realDate: TD.realDate,
     isTradingDay: TM.isTradingDay, isMarketOpen: TM.isMarketOpen, swingLastDay: TM.swingLastDay, nextDateKey: TM.nextDateKey,
     EARLY_CLOSE_MIN: TM.EARLY_CLOSE_MIN, MARKET_CLOSE_MIN: TM.MARKET_CLOSE_MIN, MARKET_OPEN_MIN: TM.MARKET_OPEN_MIN,
-    positionKey: TM.positionKey, screenTrades: TM.screenTrades,
+    positionKey: TM.positionKey, screenTrades: TM.screenTrades, GLP1_CHAIN: TM.GLP1_CHAIN,
   };
   const keys = Object.keys(names);
-  return new Function(...keys, `${body}\nreturn { accumulateSse, liveTurn, requestRun, maybeRunDesk, executeRun, maybeMorningRun, runAlive, RefusedError, peekDesk, deskClaimable, fatalOf };`)(...keys.map((k) => names[k]));
+  return new Function(...keys, `${body}\nreturn { accumulateSse, liveTurn, requestRun, maybeRunDesk, executeRun, maybeMorningRun, runAlive, RefusedError, peekDesk, deskClaimable, fatalOf, chainNote };`)(...keys.map((k) => names[k]));
 }
 
 // A research turn and a desk turn, scripted per test.
@@ -856,6 +856,33 @@ const SPARE = 6;
     && endA?.screened?.against === 1 && endA.screened.declined === 1 && endA.screened.twice === 0
     && !/HELDX|declined|passed on|AMD:up/.test(asked),
     JSON.stringify({ filedA, filedB, screened: endA?.screened, leak: (asked.match(/HELDX|declined|passed on|AMD:up/) || [''])[0] }));
+}
+
+// ---- D29: the GLP-1 chain (2026-09-24, v7.9) ----------------------------------------------------
+// Eric: "I want GLp-1 pipeline stocks added to the search. Including HIMs. But from production to
+// development to distribution and sellers."
+{
+  const r = await oneRun();
+  const research = r.w.bodies.filter((b) => b.tools).map((b) => b.messages[0].content[0].text);
+  const desk = r.w.bodies.find((b) => !b.tools)?.messages[0].content[0].text || '';
+  const note = DR.chainNote();
+  const all = TM.GLP1_CHAIN.flatMap((g) => g.tickers);
+  const group = (role) => TM.GLP1_CHAIN.find((g) => g.role === role)?.tickers || [];
+  // NEGATIVE CONTROL (run 2026-09-24): the run's `market += ... chainNote()` line removed made this read
+  //   FAIL  D29 the GLP-1 chain rides every run ...
+  // NEGATIVE CONTROL (run 2026-09-24): HIMS taken out of the Sellers made this read
+  //   FAIL  D29 the GLP-1 chain rides every run ...
+  check('D29 the GLP-1 chain rides every run: all five researchers and the desk read it in the market note, from the makers through development, production and supply and distribution to the sellers, HIMS among the sellers; every name is a ticker the desk accepts and none is named twice; the names that were bought, dropped their program or went private are not in it; it is named, not priced, and it says a trade from it clears the same bar as any other',
+    research.length === 5 && research.every((t) => t.includes(note)) && desk.includes(note)
+    && TM.GLP1_CHAIN.map((g) => g.role).join('|') === 'Makers, selling now|In development|Production and supply|Distribution|Sellers'
+    && group('Sellers').includes('HIMS') && group('Makers, selling now').join() === 'LLY,NVO'
+    && ['VKTX', 'GPCR', 'KLRA'].every((t) => group('In development').includes(t)) && ['WST', 'STVN'].every((t) => group('Production and supply').includes(t))
+    && group('Distribution').join() === 'MCK,COR,CAH'
+    && all.length === new Set(all).size && all.every((t) => /^[A-Z][A-Z.]{0,5}$/.test(t))
+    && !['MTSR', 'TERN', 'CTLT', 'ZEAL', 'RHHBY'].some((t) => all.includes(t))
+    && /Sellers: HIMS, LFMD, WW, GDRX, CVS, COST\./.test(note) && /a trade from it clears the same bar as any other\.$/.test(note)
+    && !/HIMS|VKTX|LLY/.test(DR.MARKET_TICKERS.join()) && !DASH.test(note),
+    JSON.stringify({ research: research.filter((t) => t.includes(note)).length, desk: desk.includes(note), roles: TM.GLP1_CHAIN.map((g) => g.role) }));
 }
 
 // THE COUNTER IS COUNTED LAST (the rule from trade.mjs, 2026-09-22): every check above is counted.

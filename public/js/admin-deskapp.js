@@ -33,7 +33,7 @@ import {
   recCardHtml, boardHtml, historyRowHtml, deskNewsHtml, newsRowHtml, earningsChipHtml,
 } from './admin-desk.js';
 import { createFx, seedFlicker } from './admin-deskfx.js';
-import { recSizing, planFor, positionKey, heldOf, scalePosition } from './trade-math.js';
+import { recSizing, planFor, positionKey, heldOf, scalePosition, GLP1_CHAIN } from './trade-math.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -564,8 +564,11 @@ function openSettings() {
     </div><p class="said" id="risk-said"></p></div>
     <div><h2>Market data</h2><div class="grp">
       <div class="r"><span>Price key<span class="sub num" id="key-sub">${pub.hasKey ? `on file · ends ${esc(pub.keyTail || '')}` : 'none on file'}</span></span><button type="button" class="btn tiny quiet" style="margin-left:auto" id="key-go">${pub.hasKey ? 'Replace' : 'Add'}</button></div>
-      <div class="r" style="display:block"><span>Always priced<span class="sub">The desk prices these on every run, beside the index and the sector funds.</span></span><div class="watch" id="watch-chips">${(pub.watchlist || []).map((t) => `<span class="chip tap">${esc(t)}</span>`).join('')}</div><button type="button" class="btn tiny quiet" id="watch-go" style="margin-top:10px">Edit the list</button></div>
+      <div class="r" style="display:block"><span>Always looked at<span class="sub">Named to the desk on every run. It still looks well past them.</span></span><div class="watch" id="watch-chips">${(pub.watchlist || []).map((t) => `<span class="chip tap">${esc(t)}</span>`).join('')}</div><button type="button" class="btn tiny quiet" id="watch-go" style="margin-top:10px">Edit the list</button></div>
     </div><p class="said" id="key-said"></p></div>
+    <div><h2>GLP-1 chain</h2><div class="grp">
+      <div class="r" style="display:block" id="chain"><span>Searched on every run<span class="sub">From the makers to the sellers. A trade from it clears the same 50% bar as any other.</span></span>${GLP1_CHAIN.map((g) => `<span class="sub" style="margin-top:12px">${esc(g.role)}</span><div class="watch">${g.tickers.map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>`).join('')}</div>
+    </div></div>
     <div><h2>Alerts</h2><div class="grp">
       <div class="r"><span>Pushes<span class="sub">The 7:00 run, and any run that finds a strong trade.</span></span>${sw('pushOn', pub.pushOn !== false)}</div>
       <div class="r"><span>Show the research<span class="sub">For debugging only: the five researchers' reports from the last run.</span></span>${sw('debugResearch', pub.debugResearch === true)}</div>
@@ -635,7 +638,7 @@ function openSettings() {
     });
   });
   ov.querySelector('#watch-go').addEventListener('click', () => {
-    const { sheet, close } = openSheet(`<h3>Always priced</h3><div class="sum">Tickers the desk prices on every run. It still looks well past them.</div>
+    const { sheet, close } = openSheet(`<h3>Always looked at</h3><div class="sum">Tickers named to the desk on every run. It still looks well past them.</div>
       <label>Tickers, separated by spaces<textarea id="wl" rows="3">${esc((settingsNow().watchlist || []).join(' '))}</textarea></label>
       <button type="button" class="btn tall wide primary" id="wl-go">Save the list</button>
       <p class="said" id="wl-said" style="margin:8px 0 0"></p>

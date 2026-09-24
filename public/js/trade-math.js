@@ -682,6 +682,21 @@ export function scalePosition({ rec, kind, amountCents = null, contracts = null,
   return { ...plan, kind, changeQty: q, price: px, heldBefore: held, keepStop: held.stop, keepStopRiskCents };
 }
 
+/**
+ * THE GLP-1 CHAIN (Eric, 2026-09-24: "I want GLp-1 pipeline stocks added to the search. Including
+ * HIMs. But from production to development to distribution and sellers."). Named on every run and
+ * shown in Settings. Only names that trade on a US exchange, checked 2026-09-24: Zealand, Roche,
+ * Lonza, Bachem and Novo Holdings trade abroad or not at all; Metsera went to Pfizer; Terns dropped
+ * its program; Catalent was taken private.
+ */
+export const GLP1_CHAIN = [
+  { role: 'Makers, selling now', tickers: ['LLY', 'NVO'] },
+  { role: 'In development', tickers: ['VKTX', 'GPCR', 'KLRA', 'AMGN', 'PFE', 'AZN', 'MBX', 'SEPN', 'ALT'] },
+  { role: 'Production and supply', tickers: ['WST', 'STVN', 'TMO', 'BDX', 'RDY', 'TEVA'] },
+  { role: 'Distribution', tickers: ['MCK', 'COR', 'CAH'] },
+  { role: 'Sellers', tickers: ['HIMS', 'LFMD', 'WW', 'GDRX', 'CVS', 'COST'] },
+];
+
 /** Which way a trade leans: a put or a short sale is down, a call or a stock bought is up. */
 export const directionOf = (r) => (r?.instrument === 'put' || (r?.instrument !== 'call' && r?.side === 'short') ? 'down' : 'up');
 /**

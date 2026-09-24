@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.8';
+export const VERSION = '7.9';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.8';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE GLP-1 CHAIN (Eric, 2026-09-24: "I want GLp-1 pipeline stocks added
+    // to the search. Including HIMs."). Admin only.
+    version: '7.9',
+    quiet: true,
+    client: [],
+    admin: [
+      'Every run now looks at the GLP-1 chain: the makers, the drugs in development, the companies that make the pens and vials, the wholesalers and the sellers, HIMS among them.',
+      'Settings lists every name in it. A trade from it still has to clear the same 50% bar.',
+    ],
+  },
   {
     // ADD OR TRIM (Eric, 2026-09-24: "Button between profit and loss that says
     // add/trim ... It gives me a new suggested stop loss."). Admin only.
