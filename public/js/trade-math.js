@@ -697,6 +697,19 @@ export const GLP1_CHAIN = [
   { role: 'Sellers', tickers: ['HIMS', 'LFMD', 'WW', 'GDRX', 'CVS', 'COST'] },
 ];
 
+/**
+ * THE DESK'S NAMES (Eric, 2026-09-24: "The agents each need names, humorous, related to their role",
+ * and he named them himself, word for word). Keyed by researcher number; for display only.
+ */
+export const AGENTS = {
+  1: { name: 'Addy Boofer', job: 'Momentum' },
+  2: { name: 'Clark Kent', job: 'Catalysts' },
+  3: { name: 'God', job: 'Big picture' },
+  4: { name: 'Swinger', job: 'Swing charts' },
+  5: { name: '0 DTE n00b', job: 'Options and risk' },
+};
+export const DESK_AGENT = { name: 'Judge, jury, executioner', job: 'The final call' };
+
 /** Which way a trade leans: a put or a short sale is down, a call or a stock bought is up. */
 export const directionOf = (r) => (r?.instrument === 'put' || (r?.instrument !== 'call' && r?.side === 'short') ? 'down' : 'up');
 /**

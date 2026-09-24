@@ -2298,6 +2298,21 @@ html[data-desk]:root .rec .verdict.hold .call { color: #8CFFC6; }
 html[data-desk]:root .rec .verdict.sell { border-color: var(--red); background: rgba(var(--red-rgb),.18); box-shadow: 0 0 14px rgba(var(--red-rgb),.45); }
 html[data-desk]:root .rec .verdict.sell .call { color: #FF8FA3; }
 html[data-desk]:root .rec .verdict.none .why { font-size: 13px; color: var(--ink-2); }
+/* ADD and TRIM (v7.13), and the vote: one line per decision, every agent named once. */
+html[data-desk]:root .rec .verdict.add { border-color: var(--blue); background: rgba(var(--blue-rgb),.12); }
+html[data-desk]:root .rec .verdict.add .call { color: var(--blue-core); }
+html[data-desk]:root .rec .verdict.trim { border-color: var(--gold); background: rgba(var(--gold-rgb),.12); }
+html[data-desk]:root .rec .verdict.trim .call { color: var(--gold); }
+html[data-desk]:root .rec .verdict .votes { list-style: none; margin: 4px 0 2px; padding: 0; display: grid; gap: 4px; }
+html[data-desk]:root .rec .verdict .votes li { display: grid; grid-template-columns: 64px 18px minmax(0, 1fr); gap: 6px; align-items: baseline; font-size: 13px; line-height: 1.35; }
+html[data-desk]:root .rec .verdict .votes .c { font-family: var(--display); font-weight: 700; font-size: 11px; letter-spacing: .06em; color: var(--dim); }
+html[data-desk]:root .rec .verdict .votes .n { font-family: var(--mono); color: var(--ink); }
+html[data-desk]:root .rec .verdict .votes .who { color: var(--ink-2); overflow-wrap: anywhere; }
+html[data-desk]:root .rec .verdict .votes li.hold .c { color: #8CFFC6; }
+html[data-desk]:root .rec .verdict .votes li.add .c { color: var(--blue-core); }
+html[data-desk]:root .rec .verdict .votes li.trim .c { color: var(--gold); }
+html[data-desk]:root .rec .verdict .votes li.sell .c { color: #FF8FA3; }
+html[data-desk]:root .rec .why dd.stance { font-size: 13px; }
 html[data-desk]:root .rec.active.sell { border-color: var(--red); box-shadow: inset 0 0 0 1px rgba(var(--red-rgb),.35), 0 0 12px rgba(var(--red-rgb),.7), 0 0 30px rgba(var(--red-rgb),.35); animation: none; }
 /* Brought into view when a run says SELL: below the fixed top bar, with the ACTIVE heading showing. */
 html[data-desk]:root #active-wrap, html[data-desk]:root .rec { scroll-margin-top: calc(var(--demo-bar-h, 0px) + var(--top-h) + env(safe-area-inset-top, 0px) + 12px); }

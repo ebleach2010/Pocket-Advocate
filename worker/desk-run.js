@@ -147,7 +147,12 @@ export function liveNote(rows) {
   });
   return `Earlier calls from this desk that are still live. Re-check each one on what you see now and give your verdict under Earlier calls. This is apart from the candidates you bring.\n${lines.join('\n')}`;
 }
-/** One report's verdicts on the earlier calls: { E1: true, E2: false }. A ref with no plain verdict is left out. */
+/**
+ * One report's verdicts on the earlier calls (v7.13: "When I'm told to hold, add, trim, or sell"):
+ * { E1: 'hold', E2: 'sell' }. The 7.10 words still read: backs is a hold, does not back is a sell.
+ * A ref with no plain verdict is left out.
+ */
+export const CALLS = ['hold', 'add', 'trim', 'sell'];
 export function earlierVerdicts(text) {
   const out = {};
   const after = String(text || '').split(/^#{2,3}\s*Earlier calls:?\s*$/im)[1];
@@ -157,40 +162,43 @@ export function earlierVerdicts(text) {
     if (!x) continue;
     const ref = x[1].toUpperCase();
     if (ref in out) continue;
-    const v = x[2].toLowerCase();
-    if (/^(does not|doesn't|do not|don't|no longer|not|no)\b/.test(v)) out[ref] = false;
-    else if (/^(still backs?|backs?|yes)\b/.test(v)) out[ref] = true;
+    const v = x[2].toLowerCase().replace(/^[*_]+/, '');
+    if (/^(does not|doesn't|do not|don't|no longer|not|no|sell|exit|close|cover)\b/.test(v)) out[ref] = 'sell';
+    else if (/^(trim|reduce|scale (?:back|down))\b/.test(v)) out[ref] = 'trim';
+    else if (/^(add|buy more|increase)\b/.test(v)) out[ref] = 'add';
+    else if (/^(hold|keep|still backs?|backs?|yes)\b/.test(v)) out[ref] = 'hold';
   }
   return out;
 }
 /**
- * The count for each earlier call across the reports that came back. Some back it: the new count.
- * All five said plainly that they do not: the count goes to none (v7.12: the card stays, marked SELL,
- * until he marks it). Anything else, a researcher missing or silent on it, leaves the count as it was.
+ * Each earlier call's votes (v7.13): every researcher's own word by number, null for one that did not
+ * report or said nothing plain on it, and the count for each of the four. `reports` is [{ n, text }].
  */
-export function tallyEarlier(live, texts) {
-  const verdicts = (texts || []).map(earlierVerdicts);
+export function tallyEarlier(live, reports) {
+  const read = (reports || []).map((r, i) => (typeof r === 'string' ? { n: i + 1, v: earlierVerdicts(r) } : { n: r.n, v: earlierVerdicts(r.text) }));
   return (Array.isArray(live) ? live : []).map(({ ref, id }) => {
-    const backs = verdicts.filter((v) => v[ref] === true).length;
-    const against = verdicts.filter((v) => v[ref] === false).length;
-    return { ref, id, backs, against, action: backs > 0 ? 'update' : against >= LENSES.length ? 'against' : 'keep' };
+    const votes = Object.fromEntries(LENSES.map((L) => [L.n, read.find((x) => x.n === L.n)?.v[ref] || null]));
+    const counts = Object.fromEntries(CALLS.map((c) => [c, Object.values(votes).filter((x) => x === c).length]));
+    return { ref, id, votes, counts };
   });
 }
 /**
- * HOLD OR SELL (Eric, 2026-09-24: "If I took a trade and scan, it should scan that same trade and tell
- * me if I should hold or if things have changed and I need to sell, front and center."). The desk
- * makes the call, as it makes every call, from the five verdicts and the market. All five plainly
- * against is a sell whatever it said. With no call from the desk, the verdicts decide when they lean
- * one way, and a tie or silence gives no new call, leaving the last one standing.
+ * HOLD, ADD, TRIM OR SELL (Eric, 2026-09-24: "tell me if I should hold or if things have changed and I
+ * need to sell, front and center", and "When I'm told to hold, add, trim, or sell, I need to know what
+ * agents and how many agree"). The desk makes the call from the five votes and the market. All five
+ * saying sell is a sell whatever it said. With no call from the desk the most-voted of the four wins,
+ * and a tie or silence gives no new call, leaving the last one standing.
  */
-export function holdOrSell(t, desk = null) {
-  const none = 'None of the five back it any more.';
-  if (t.against >= LENSES.length) return { call: 'sell', why: desk?.call === 'sell' && desk.why ? desk.why : none };
-  if (desk && (desk.call === 'hold' || desk.call === 'sell')) return { call: desk.call, why: desk.why || (desk.call === 'hold' ? `${t.backs} of 5 still back it.` : `${t.against} of 5 no longer back it.`) };
-  if (t.backs > t.against) return { call: 'hold', why: `${t.backs} of 5 still back it.` };
-  if (t.against > t.backs) return { call: 'sell', why: `${t.against} of 5 no longer back it.` };
-  return null;
+export function callFor(t, desk = null) {
+  const says = (c) => `${t.counts[c]} of 5 say ${c}.`;
+  if (t.counts.sell >= LENSES.length) return { call: 'sell', why: desk?.call === 'sell' && desk.why ? desk.why : 'None of the five back it any more.' };
+  if (desk && CALLS.includes(desk.call)) return { call: desk.call, why: desk.why || says(desk.call) };
+  const ranked = CALLS.map((c) => [c, t.counts[c]]).sort((a, b) => b[1] - a[1]);
+  if (!ranked[0][1] || ranked[0][1] === ranked[1][1]) return null;
+  return { call: ranked[0][0], why: says(ranked[0][0]) };
 }
+/** What he has to act on first: a sell, then a trim, then an add, then a hold. */
+export const URGENCY = { sell: 0, trim: 1, add: 2, hold: 3 };
 
 export function chainNote(chain = GLP1_CHAIN) {
   const groups = chain.map((g) => `${g.role}: ${g.tickers.join(', ')}.`).join(' ');
@@ -255,7 +263,7 @@ One line each.
 ## Watch
 Anything outside your beat that changes a trade, or Nothing.
 ## Earlier calls
-One line for each earlier call the message lists, as E1: backs, or E1: does not back, then a few words why. You back an earlier call when, on what you see now, it is still worth holding to its targets with its stop where it is. Write None when the message lists none.`;
+One line for each earlier call the message lists, as E1: hold, E1: add, E1: trim or E1: sell, then a few words why. Hold: still worth holding as it is, to its targets with its stop where it is. Add: stronger now and worth more size. Trim: still right but worth less size, because the risk grew or the first target is close. Sell: what it was built on has broken, or the stop now looks likelier than the target. Write None when the message lists none.`;
 }
 
 export function deskSystem(accountType, riskPct = DEFAULT_RISK_PCT) {
@@ -281,11 +289,11 @@ Limits:
 
 Sizing: allocPct is the share of his account you would put in this trade, from 1 to 50. The app turns it into dollars and shares from his balance and caps it so a stopped-out trade costs no more than ${riskPct}% of the account, so you do not do that arithmetic. Set stops where the trade is actually wrong, not where the size looks good.
 
-What he reads has to fit on a phone card at a glance. setup is one sentence under 25 words, catalyst under 15 words, invalidation under 20 words. Plain English with no jargon he would have to decode, and never an em dash or an en dash. chanceLow and chanceHigh are your honest range, in percent, that the first target is reached before the stop. agreement is how many of the five researchers independently supported the trade.
+What he reads has to fit on a phone card at a glance. setup is one sentence under 25 words, catalyst under 15 words, invalidation under 20 words. Plain English with no jargon he would have to decode, and never an em dash or an en dash. chanceLow and chanceHigh are your honest range, in percent, that the first target is reached before the stop. backers are the researchers, by number 1 to 5, who independently brought or supported the trade, and doubters are the ones who rejected it or argued against it; a researcher is in one list or neither, never both. agreement is how many backers there are.
 
 read is one sentence on what the tape is doing. none is one sentence on why there are no trades, or an empty string when there are some.
 
-holdings: the market data may list earlier calls from this desk that are still live, as E1, E2 and so on, and each researcher gave a verdict on them under Earlier calls. For each one give its ref, call hold or sell, and why: one plain sentence under 20 words he can act on. Sell when what the trade was built on has broken, its catalyst has turned, or the evidence now says the stop comes before the target; hold otherwise. Weigh the researchers' verdicts the way you weigh their candidates. An empty list when the market data lists none.
+holdings: the market data may list earlier calls from this desk that are still live, as E1, E2 and so on, and each researcher gave a verdict on them under Earlier calls. For each one give its ref, call hold, add, trim or sell, and why: one plain sentence under 20 words he can act on. Sell when what the trade was built on has broken, its catalyst has turned, or the evidence now says the stop comes before the target. Trim when it is still right but worth less size. Add when it is stronger now and worth more size. Hold otherwise. Weigh the researchers' verdicts the way you weigh their candidates. An empty list when the market data lists none.
 
 news is up to ${MAX_NEWS} items that matter for trading today, each with the tickers it touches and one sentence on why it matters. Not general financial news: only what could change a trade.`;
 }
@@ -307,7 +315,7 @@ export const DESK_SCHEMA = {
         additionalProperties: false,
         required: ['ticker', 'side', 'horizon', 'instrument', 'lastPrice', 'entryLow', 'entryHigh', 'stop', 'targets',
           'holdMinutes', 'holdDays', 'allocPct', 'chanceLow', 'chanceHigh', 'setup', 'catalyst', 'invalidation',
-          'strike', 'expiry', 'agreement'],
+          'strike', 'expiry', 'agreement', 'backers', 'doubters'],
         properties: {
           ticker: { type: 'string' },
           side: { type: 'string', enum: ['long', 'short'] },
@@ -329,6 +337,8 @@ export const DESK_SCHEMA = {
           strike: NULL_NUM,
           expiry: NULL_STR,
           agreement: { type: 'integer' },
+          backers: { type: 'array', items: { type: 'integer' } },
+          doubters: { type: 'array', items: { type: 'integer' } },
         },
       },
     },
@@ -340,7 +350,7 @@ export const DESK_SCHEMA = {
         required: ['ref', 'call', 'why'],
         properties: {
           ref: { type: 'string' },
-          call: { type: 'string', enum: ['hold', 'sell'] },
+          call: { type: 'string', enum: ['hold', 'add', 'trim', 'sell'] },
           why: { type: 'string' },
         },
       },
@@ -574,8 +584,22 @@ export function validRec(t, { accountType = 'cash', session = null, todayKey = n
     allocPct: Math.min(50, Math.max(1, Math.round(fin(t.allocPct) ?? 10))),
     profitLow: chanceOk ? cLo : null, profitHigh: chanceOk ? cHi : null,
     setup, catalyst: clip(t.catalyst, 140), invalidation: clip(t.invalidation, 180),
-    strike, expiry, agreement: Math.min(5, Math.max(0, Math.round(fin(t.agreement) ?? 0))),
+    strike, expiry, ...stanceOf(t),
   };
+}
+/**
+ * Who is for and who is against a new trade (v7.13: "They are listed for and against"), by researcher
+ * number. A number outside 1 to 5, or one in both lists, is dropped from both; the count is the backers
+ * when the desk named them, else the number it gave.
+ */
+export function stanceOf(t) {
+  const nums = (a) => [...new Set((Array.isArray(a) ? a : []).map(Number).filter((x) => Number.isInteger(x) && x >= 1 && x <= LENSES.length))];
+  const b0 = nums(t?.backers); const d0 = nums(t?.doubters);
+  const both = b0.filter((x) => d0.includes(x));
+  const backers = b0.filter((x) => !both.includes(x)).sort((a, b) => a - b);
+  const doubters = d0.filter((x) => !both.includes(x)).sort((a, b) => a - b);
+  const agreement = backers.length ? backers.length : Math.min(5, Math.max(0, Math.round(fin(t?.agreement) ?? 0)));
+  return { agreement, backers, doubters };
 }
 
 /** The desk's whole answer, checked: at most six trades, two of a kind, no repeats; at most six news items. Pure. */
@@ -603,7 +627,7 @@ export function checkDesk(out, ctx = {}) {
   const holdings = {};
   for (const h of Array.isArray(out?.holdings) ? out.holdings : []) {
     const ref = String(h?.ref || '').trim().toUpperCase();
-    if (!/^E\d{1,2}$/.test(ref) || ref in holdings || (h?.call !== 'hold' && h?.call !== 'sell')) continue;
+    if (!/^E\d{1,2}$/.test(ref) || ref in holdings || !CALLS.includes(h?.call)) continue;
     holdings[ref] = { call: h.call, why: clip(h?.why, 200) };
   }
   return { trades, news, read: clip(out?.read, 240), none: clip(out?.none, 240), dropped, holdings };
@@ -1011,7 +1035,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
 
     // THE RE-CHECK: each call he took that the researchers were shown, counted from their verdicts,
     // written under its own time so a PROFIT, a LOSS or a resize that lands in between wins.
-    const tally = tallyEarlier(Array.isArray(prior?.live) ? prior.live : [], got.map((L) => reports[L.n].text));
+    const tally = tallyEarlier(Array.isArray(prior?.live) ? prior.live : [], got.map((L) => ({ n: L.n, text: reports[L.n].text })));
     const heldById = new Map(heldIds.map((id, i) => [id, heldDocs[i]]));
     const recheckAt = new Date();
     const rechecks = [];
@@ -1019,21 +1043,23 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
       const doc = heldById.get(t.id);
       const d = doc?.data;
       if (!d || d.status !== 'took') continue;
-      const verdict = holdOrSell(t, checked.holdings[t.ref]);
-      const count = t.action === 'update' ? t.backs : t.action === 'against' ? 0 : null;
-      const recount = count != null && Number(d.agreement) !== count;
-      if (!verdict && !recount) continue;
+      // No call (a tie, or nobody said), no change: the last call and count stand.
+      const verdict = callFor(t, checked.holdings[t.ref]);
+      if (!verdict) continue;
+      // How many agree is now how many voted the call he is shown (v7.13).
+      const count = t.counts[verdict.call];
+      const recount = Number(d.agreement) !== count;
       const data = { tookAgreement: d.tookAgreement ?? d.agreement ?? null };
       if (recount) Object.assign(data, { agreement: count, agreedAt: recheckAt, agreedRunId: run.id });
-      if (verdict) data.verdict = { call: verdict.call, why: verdict.why, at: recheckAt, runId: run.id };
+      data.verdict = { call: verdict.call, why: verdict.why, at: recheckAt, runId: run.id, votes: t.votes };
       rechecks.push({ id: t.id, d, recount, verdict, write: { path: `${PLAYS}/${t.id}`, data, mask: Object.keys(data), ifUpdateTime: doc.updateTime } });
     }
     const recheckOk = rechecks.length ? await writeMany(env, rechecks.map((x) => x.write)).catch(() => rechecks.map(() => false)) : [];
     const landed = rechecks.filter((x, i) => recheckOk[i]);
     const updated = landed.filter((x) => x.recount).length;
-    // Sells first: they are what he has to act on.
-    const verdicts = landed.filter((x) => x.verdict).map((x) => ({ ticker: x.d.ticker, horizon: x.d.horizon, side: x.d.side === 'short' ? 'short' : 'long', instrument: x.d.instrument || 'stock', call: x.verdict.call, why: x.verdict.why }))
-      .sort((a, b) => (b.call === 'sell') - (a.call === 'sell'));
+    // Sells first, then trims, adds and holds: what he has to act on leads.
+    const verdicts = landed.map((x) => ({ ticker: x.d.ticker, horizon: x.d.horizon, side: x.d.side === 'short' ? 'short' : 'long', instrument: x.d.instrument || 'stock', call: x.verdict.call, why: x.verdict.why, agree: x.write.data.verdict.votes ? Object.values(x.write.data.verdict.votes).filter((v) => v === x.verdict.call).length : null }))
+      .sort((a, b) => URGENCY[a.call] - URGENCY[b.call]);
     const finishedAt = new Date();
     const finalPatch = {
       run: { ...run, status: 'idle', finishedAt, heartbeatAt: finishedAt, done: got.length, error: null, count: filed.ids.length, ms: finishedAt.getTime() - ms(run.startedAt || t0) },
@@ -1055,9 +1081,12 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
       const names = checked.trades.slice(0, 3).map((r) => `${r.ticker} ${r.side}`).join(', ');
       const parts = [];
       // His trades first, sells before holds (v7.12): what he has to act on leads the push.
-      for (const v of verdicts.filter((x) => x.call === 'sell').slice(0, 3)) parts.push(`${exitWord(v)} ${v.ticker} now: ${v.why.replace(/[.\s]+$/, '')}.`);
-      const holds = verdicts.filter((x) => x.call === 'hold');
-      if (holds.length) parts.push(`Hold ${holds.map((v) => v.ticker).join(', ')}.`);
+      const of = (v) => (v.agree != null ? ` (${v.agree} of 5)` : '');
+      for (const v of verdicts.filter((x) => x.call === 'sell').slice(0, 3)) parts.push(`${exitWord(v)} ${v.ticker} now${of(v)}: ${v.why.replace(/[.\s]+$/, '')}.`);
+      for (const c of ['trim', 'add', 'hold']) {
+        const these = verdicts.filter((x) => x.call === c);
+        if (these.length) parts.push(`${c[0].toUpperCase()}${c.slice(1)} ${these.map((v) => `${v.ticker}${of(v)}`).join(', ')}.`);
+      }
       if (n) parts.push(`${n} trade${n === 1 ? '' : 's'} ready. ${names}${n > 3 ? ' and more' : ''}.`);
       else if (run.trigger === 'morning' || !verdicts.length) parts.push(`${parts.length ? 'Nothing' : 'nothing'} worth taking yet.`);
       const body = `${run.trigger === 'morning' ? '7:00 desk: ' : ''}${parts.join(' ')}`;
@@ -1067,7 +1096,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     await diagLog(env, {
       ev: 'desk-run-end', ok: true, trigger: run.trigger || 'manual', attempt: run.attempt || 1, reports: got.length,
       trades: n, dropped: checked.dropped, screened: screened.dropped, expired, news: checked.news.length, pushed,
-      recheck: { live: tally.length, updated, sells: verdicts.filter((v) => v.call === 'sell').length, holds: verdicts.filter((v) => v.call === 'hold').length, keep: tally.filter((t) => t.action === 'keep').length },
+      recheck: { live: tally.length, updated, ...Object.fromEntries(CALLS.map((c) => [c, verdicts.filter((v) => v.call === c).length])), none: tally.length - rechecks.length },
       desk: { ms: decided.ms, st: decided.stop, in: decided.usage?.input_tokens, out: decided.usage?.output_tokens },
       ms: Date.now() - t0,
     }).catch(() => {});

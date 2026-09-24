@@ -33,7 +33,7 @@ import {
   recCardHtml, boardHtml, historyRowHtml, deskNewsHtml, newsRowHtml, earningsChipHtml,
 } from './admin-desk.js';
 import { createFx, seedFlicker } from './admin-deskfx.js';
-import { recSizing, planFor, positionKey, heldOf, scalePosition, GLP1_CHAIN } from './trade-math.js';
+import { recSizing, planFor, positionKey, heldOf, scalePosition, GLP1_CHAIN, AGENTS } from './trade-math.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -177,8 +177,10 @@ function paintRun() {
 function paintBoard() {
   const st = S.state || {};
   const ctx = cardCtx();
-  // A trade the last run says to sell leads the list (v7.12), in the order he took them otherwise.
-  const active = [...(st.active || [])].sort((a, b) => (b.verdict?.call === 'sell') - (a.verdict?.call === 'sell'));
+  // What the last run says to act on leads the list: sell, trim, add (v7.13). A hold and a trade not yet
+  // checked stay in the order he took them, so the one he just took still lands on top.
+  const URGENT = { sell: 0, trim: 1, add: 2, hold: 3 };
+  const active = [...(st.active || [])].sort((a, b) => (URGENT[a.verdict?.call] ?? 3) - (URGENT[b.verdict?.call] ?? 3));
   const recs = st.recs || [];
   $('#active-wrap').hidden = !active.length;
   $('#active-n').textContent = active.length > 1 ? String(active.length) : '';
@@ -670,7 +672,7 @@ async function openResearch() {
   try {
     const out = await call('research');
     sheet.querySelector('#rs-sum').textContent = out.at ? `From the run ${agoShort(out.at)}. The desk read these; you do not need to.` : 'No run has filed research yet.';
-    sheet.querySelector('#rs-list').innerHTML = (out.reports || []).map((r) => `<div class="panel"><div class="k">${esc(r.beat)} · ${esc(r.status)}${r.ms ? ` · ${Math.round(r.ms / 1000)}s` : ''}</div><div style="white-space:pre-wrap;font-size:13px;margin-top:6px;color:var(--ink-2)">${esc(r.text || r.err || 'Nothing came back.')}</div></div>`).join('');
+    sheet.querySelector('#rs-list').innerHTML = (out.reports || []).map((r) => `<div class="panel"><div class="k">${esc(AGENTS[r.n]?.name ? `${AGENTS[r.n].name}, ${r.beat}` : r.beat)} · ${esc(r.status)}${r.ms ? ` · ${Math.round(r.ms / 1000)}s` : ''}</div><div style="white-space:pre-wrap;font-size:13px;margin-top:6px;color:var(--ink-2)">${esc(r.text || r.err || 'Nothing came back.')}</div></div>`).join('');
   } catch (err) { sheet.querySelector('#rs-sum').textContent = err.message; }
 }
 $('#cog').addEventListener('click', openSettings);
@@ -719,11 +721,12 @@ async function pollOnce() {
       const fresh = (S.state.recs || []).filter((r) => !before.has(r.id)).length;
       if (S.state.run?.status === 'error') toast('The run did not finish. The line under the button says why.');
       else {
-        // What the run says about the trades he took, sells first (v7.12).
+        // What the run says about the trades he took, sells first, with how many agree (v7.13).
         const vs = S.state.desk?.verdicts || [];
-        const sells = vs.filter((x) => x.call === 'sell').map((x) => `${x.instrument === 'stock' && x.side === 'short' ? 'Cover' : 'Sell'} ${x.ticker} now.`);
-        const holds = vs.filter((x) => x.call === 'hold').map((x) => x.ticker);
-        const yours = `${sells.length ? ` ${sells.join(' ')}` : ''}${holds.length ? ` Hold ${holds.join(', ')}.` : ''}`;
+        const of = (x) => (x.agree != null ? ` (${x.agree} of 5)` : '');
+        const sells = vs.filter((x) => x.call === 'sell').map((x) => `${x.instrument === 'stock' && x.side === 'short' ? 'Cover' : 'Sell'} ${x.ticker} now${of(x)}.`);
+        const rest = ['trim', 'add', 'hold'].map((c) => { const t = vs.filter((x) => x.call === c); return t.length ? ` ${c[0].toUpperCase()}${c.slice(1)} ${t.map((x) => `${x.ticker}${of(x)}`).join(', ')}.` : ''; }).join('');
+        const yours = `${sells.length ? ` ${sells.join(' ')}` : ''}${rest}`;
         toast(`${fresh ? `The desk is in: ${fresh} trade${fresh === 1 ? '' : 's'}.` : 'The desk is in. Nothing worth taking right now.'}${yours}`);
         if (sells.length) $('#active-wrap')?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
       }

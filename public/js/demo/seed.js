@@ -609,7 +609,7 @@ export function seed({ set, file }) {
   REC('r-demo-1', {
     slot: 1, horizon: 'intraday', ticker: 'NVDA', side: 'long', instrument: 'stock',
     entryLow: 650.2, entryHigh: 651, stop: 646.9, targets: [655.5, 659], holdMinutes: 180, allocPct: 20,
-    profitLow: 56, profitHigh: 64, agreement: 4, lastPrice: 650.8, priceNow: 650.8,
+    profitLow: 56, profitHigh: 64, agreement: 4, backers: [1, 2, 3, 4], doubters: [5], lastPrice: 650.8, priceNow: 650.8,
     setup: 'Held the opening range on twice its normal volume after the guidance raise, and the first pullback was bought at VWAP.',
     catalyst: 'Data center guidance raised at the developer conference.', invalidation: 'A close back under 648 on volume.',
     status: 'open', expiresAt: later(4),
@@ -617,7 +617,7 @@ export function seed({ set, file }) {
   REC('r-demo-2', {
     slot: 2, horizon: 'intraday', ticker: 'SOFI', side: 'long', instrument: 'stock',
     entryLow: 15.5, entryHigh: 15.65, stop: 15.2, targets: [16.1, 16.4], holdMinutes: 240, allocPct: 25,
-    profitLow: 52, profitHigh: 60, agreement: 3, lastPrice: 15.58, priceNow: 15.58,
+    profitLow: 52, profitHigh: 60, agreement: 3, backers: [1, 2, 4], doubters: [3], lastPrice: 15.58, priceNow: 15.58,
     setup: 'Relative volume at three times normal on the upgrade, holding above yesterday\'s high.',
     catalyst: 'Analyst upgrade to buy with a $19 target before the open.', invalidation: 'Losing yesterday\'s high at 15.30.',
     status: 'open', expiresAt: later(4),
@@ -625,7 +625,7 @@ export function seed({ set, file }) {
   REC('r-demo-3', {
     slot: 3, horizon: 'swing', ticker: 'AMD', side: 'long', instrument: 'stock',
     entryLow: 167, entryHigh: 168, stop: 163.8, targets: [174, 178], holdDays: 3, allocPct: 25,
-    profitLow: 52, profitHigh: 60, agreement: 3, lastPrice: 167.6, priceNow: 167.6,
+    profitLow: 52, profitHigh: 60, agreement: 3, backers: [2, 3, 4], doubters: [1], lastPrice: 167.6, priceNow: 167.6,
     setup: 'Base above the fifty day after the reclaim, volume drying up into it; out before the weekend either way.',
     catalyst: 'Supply agreement reported before the open.', invalidation: 'Back under 165 and the base is broken.',
     status: 'open', expiresAt: later(48),
@@ -633,7 +633,7 @@ export function seed({ set, file }) {
   REC('r-demo-4', {
     slot: 4, horizon: 'scalp', ticker: 'TSLA', side: 'long', instrument: 'put', strike: 405, expiry: dk(-3),
     entryLow: 3.1, entryHigh: 3.3, stop: 2.6, targets: [4.2, 5], holdMinutes: 20, allocPct: 15,
-    profitLow: 52, profitHigh: 59, agreement: 2, lastPrice: 409.8,
+    profitLow: 52, profitHigh: 59, agreement: 2, backers: [1, 5], doubters: [3, 4], lastPrice: 409.8,
     setup: 'Rejected VWAP twice in the first half hour on rising volume after the delivery miss.',
     catalyst: 'Deliveries 4% under the street estimate.', invalidation: 'A reclaim of VWAP at 412.',
     status: 'open', expiresAt: later(2),
@@ -642,7 +642,7 @@ export function seed({ set, file }) {
   REC('r-demo-5', {
     runId: 'run-demo-earlier', slot: 1, horizon: 'intraday', ticker: 'PLTR', side: 'long', instrument: 'stock',
     entryLow: 40.9, entryHigh: 41.1, stop: 40.3, targets: [42.2, 43], holdMinutes: 180, allocPct: 30,
-    profitLow: 55, profitHigh: 62, agreement: 4, lastPrice: 41, priceNow: 41, at: hours(5), priceAt: hours(5),
+    profitLow: 55, profitHigh: 62, agreement: 4, backers: [1, 2, 3, 4], doubters: [], lastPrice: 41, priceNow: 41, at: hours(5), priceAt: hours(5),
     setup: 'Reclaimed VWAP on the contract headline and held it through the first pullback.',
     catalyst: 'Army contract extension announced at 06:30.', invalidation: 'Back under VWAP at 40.60.',
     status: 'took', tookAt: hours(0.66), expiresAt: later(3),

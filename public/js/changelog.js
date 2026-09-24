@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.12';
+export const VERSION = '7.13';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.12';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // NAMED VOTES (Eric, 2026-09-24: "The agents each need names ... When I'm
+    // told to hold, add, trim, or sell, I need to know what agents and how many
+    // agree"). He named them himself. Admin only.
+    version: '7.13',
+    quiet: true,
+    client: [],
+    admin: [
+      'The desk has names now: Addy Boofer, Clark Kent, God, Swinger and 0 DTE n00b, with Judge, jury, executioner making the call.',
+      'A trade you took gets HOLD, ADD, TRIM or SELL, then who voted for that call and how many, then every other vote by how many, until all five are listed.',
+      'A new trade lists who is for it, who is against it and who had no view.',
+    ],
+  },
   {
     // HOLD OR SELL (Eric, 2026-09-24: "If I took a trade and scan, it should
     // scan that same trade and tell me if I should hold or ... sell, front and

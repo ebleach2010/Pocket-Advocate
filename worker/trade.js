@@ -99,7 +99,9 @@ export function recRow(id, d) {
     agreedAt: iso(d?.agreedAt),
     dropped: d?.dropped ? { at: iso(d.dropped.at), runId: d.dropped.runId || null } : null,
     // HOLD or SELL from the last run that re-checked it (2026-09-24, v7.12).
-    verdict: d?.verdict && (d.verdict.call === 'hold' || d.verdict.call === 'sell') ? { call: d.verdict.call, why: String(d.verdict.why || ''), at: iso(d.verdict.at), runId: d.verdict.runId || null } : null,
+    verdict: d?.verdict && ['hold', 'add', 'trim', 'sell'].includes(d.verdict.call) ? { call: d.verdict.call, why: String(d.verdict.why || ''), at: iso(d.verdict.at), runId: d.verdict.runId || null, votes: d?.verdict?.votes && typeof d.verdict.votes === 'object' ? Object.fromEntries([1, 2, 3, 4, 5].map((n) => [n, ['hold', 'add', 'trim', 'sell'].includes(d.verdict.votes[n]) ? d.verdict.votes[n] : null])) : null } : null,
+    // Who was for and against a new trade, by researcher number (v7.13).
+    backers: Array.isArray(d?.backers) ? d.backers.map(Number).filter((x) => x >= 1 && x <= 5) : [], doubters: Array.isArray(d?.doubters) ? d.doubters.map(Number).filter((x) => x >= 1 && x <= 5) : [],
   };
 }
 const mineOf = (m) => (m && Number(m.amountCents) > 0 && Number(m.riskCents) > 0 ? {
@@ -179,7 +181,7 @@ export async function tradeState(env, { now = Date.now() } = {}) {
     desk: st.desk ? {
       at: st.desk.at ? new Date(st.desk.at).toISOString() : null, trigger: st.desk.trigger || 'manual',
       read: st.desk.read || '', none: st.desk.none || '', count: Number(st.desk.count) || 0, reports: Number(st.desk.reports) || 0,
-      verdicts: Array.isArray(st.desk.verdicts) ? st.desk.verdicts.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday', side: x?.side === 'short' ? 'short' : 'long', instrument: ['stock', 'call', 'put'].includes(x?.instrument) ? x.instrument : 'stock', call: x?.call === 'sell' ? 'sell' : 'hold', why: String(x?.why || '') })) : [],
+      verdicts: Array.isArray(st.desk.verdicts) ? st.desk.verdicts.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday', side: x?.side === 'short' ? 'short' : 'long', instrument: ['stock', 'call', 'put'].includes(x?.instrument) ? x.instrument : 'stock', call: ['hold', 'add', 'trim', 'sell'].includes(x?.call) ? x.call : 'hold', why: String(x?.why || ''), agree: Number.isInteger(x?.agree) ? x.agree : null })) : [],
     } : null,
     recs, active, timedOut,
     market: {

@@ -10,7 +10,7 @@
 // The name is load-bearing: admin-desk.js matches the Worker's asset gate, so
 // this file is a 404 to anyone but him.
 
-import { recSizing, planFor, planAt, positionKey, HORIZON_WORDS } from './trade-math.js';
+import { recSizing, planFor, planAt, positionKey, HORIZON_WORDS, AGENTS, DESK_AGENT } from './trade-math.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const money = (cents, signed = false) => {
@@ -146,6 +146,35 @@ const qtyText = (sz) => {
   return '';
 };
 
+// ---- who voted which way (v7.13) -------------------------------------------------------
+// Eric, 2026-09-24: "When I'm told to hold, add, trim, or sell, I need to know what agents and how many
+// agree with that decision, what the second most popular decision is, third, etc until the agents are
+// fully listed." And on a new trade: "They are listed for and against."
+export const CALL_ORDER = ['hold', 'add', 'trim', 'sell'];
+const agentName = (n) => AGENTS[n]?.name || `Researcher ${n}`;
+/**
+ * The vote on a trade he holds, one line per decision: the call he is shown first, then the others by
+ * how many voted them, then the ones with no word. Every agent is in exactly one line.
+ */
+export function voteLines(votes, call) {
+  const ns = Object.keys(AGENTS).map(Number);
+  const of = (c) => ns.filter((n) => votes?.[n] === c);
+  const others = CALL_ORDER.filter((c) => c !== call && of(c).length)
+    .sort((a, b) => of(b).length - of(a).length || CALL_ORDER.indexOf(a) - CALL_ORDER.indexOf(b));
+  const lines = [{ call, names: of(call).map(agentName) }, ...others.map((c) => ({ call: c, names: of(c).map(agentName) }))];
+  const silent = ns.filter((n) => !CALL_ORDER.includes(votes?.[n]));
+  if (silent.length) lines.push({ call: 'none', names: silent.map(agentName) });
+  return lines.map((l) => ({ ...l, n: l.names.length }));
+}
+/** For, against and no view on a new trade, when the desk named them; every agent in exactly one. */
+export function stanceLines(backers, doubters) {
+  const b = Array.isArray(backers) ? backers : []; const d = Array.isArray(doubters) ? doubters : [];
+  if (!b.length) return [];
+  const rest = Object.keys(AGENTS).map(Number).filter((n) => !b.includes(n) && !d.includes(n));
+  return [['For', b], ['Against', d], ['No view', rest]].filter(([, list], i) => i === 0 || list.length)
+    .map(([label, list]) => ({ label, n: list.length, names: list.map(agentName) }));
+}
+
 /**
  * ONE TRADE, AT A GLANCE (Eric, 2026-09-23). Every field he listed, in the
  * order he reads a trade: what and which way, where it is now, where to get
@@ -172,13 +201,19 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
   // HOLD OR SELL, front and center (Eric, 2026-09-24: "it should scan that same trade and tell me if I
   // should hold or if things have changed and I need to sell"): the last run's call on a trade he took,
   // first thing on the card. A SELL stays until he marks PROFIT or LOSS.
-  const v = active && r.verdict && (r.verdict.call === 'hold' || r.verdict.call === 'sell') ? r.verdict : null;
+  // v7.13: hold, add, trim or sell, and under it who voted which way.
+  const v = active && r.verdict && CALL_ORDER.includes(r.verdict.call) ? r.verdict : null;
   const exit = r.instrument === 'stock' && r.side === 'short' ? 'COVER' : 'SELL';
+  const BIG = { hold: 'HOLD', add: 'ADD', trim: 'TRIM', sell: `${exit} NOW` };
+  const LINE = { hold: 'HOLD', add: 'ADD', trim: 'TRIM', sell: exit, none: 'NO WORD' };
   const today = (x) => dayShort(x) === dayShort(new Date(ctxNow).toISOString());
-  const vWhen = v?.at ? `From the ${today(v.at) ? '' : `${dayShort(v.at)} `}${clock(v.at)} run` : '';
+  const vWhen = v?.at ? `Call by ${DESK_AGENT.name}, from the ${today(v.at) ? '' : `${dayShort(v.at)} `}${clock(v.at)} run` : '';
+  const votesHtml = v?.votes ? `<ul class="votes">${voteLines(v.votes, v.call).map((l) => `<li class="${l.call}"><span class="c">${LINE[l.call]}</span><span class="n">${l.n}</span><span class="who">${l.names.length ? esc(l.names.join(', ')) : 'none of the five'}</span></li>`).join('')}</ul>` : '';
   const verdictHtml = !active ? ''
-    : v ? `<div class="verdict ${v.call}" role="status"><span class="call">${v.call === 'sell' ? `${exit} NOW` : 'HOLD'}</span>${v.why ? `<span class="why">${esc(v.why)}</span>` : ''}${vWhen ? `<span class="when">${esc(vWhen)}</span>` : ''}</div>`
+    : v ? `<div class="verdict ${v.call}" role="status"><span class="call">${BIG[v.call]}</span>${v.why ? `<span class="why">${esc(v.why)}</span>` : ''}${votesHtml}${vWhen ? `<span class="when">${esc(vWhen)}</span>` : ''}</div>`
       : '<div class="verdict none"><span class="why">Not re-checked yet. RUN TRADING DESK checks it.</span></div>';
+  // A new suggestion: who was for it, who against, who had no view.
+  const stance = active ? [] : stanceLines(r.backers, r.doubters);
   const entry = r.entryLow != null && r.entryHigh != null && Number(r.entryLow) !== Number(r.entryHigh)
     ? `${price(r.entryLow)} to ${price(r.entryHigh)}` : price(r.entryLow ?? r.entry ?? r.entryHigh);
   const targets = targetsNow.map(price).filter(Boolean).join(' then ');
@@ -242,6 +277,7 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
     <dl class="why">
       ${r.catalyst ? `<dt>Catalyst</dt><dd>${esc(r.catalyst)}</dd>` : ''}
       ${r.invalidation ? `<dt>Out if</dt><dd>${esc(r.invalidation)}</dd>` : ''}
+      ${stance.map((s) => `<dt>${esc(s.label)}</dt><dd class="stance">${s.n} · ${esc(s.names.join(', ') || 'none')}</dd>`).join('')}
     </dl>
     <div class="acts">
       ${active

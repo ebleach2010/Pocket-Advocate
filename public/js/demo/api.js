@@ -1818,7 +1818,9 @@ export function demoApi(role, store) {
         tookAgreement: Number.isFinite(Number(d.tookAgreement)) && d.tookAgreement !== null ? Number(d.tookAgreement) : null,
         agreedAt: iso(d.agreedAt),
         dropped: d.dropped ? { at: iso(d.dropped.at), runId: d.dropped.runId || null } : null,
-        verdict: d.verdict && (d.verdict.call === 'hold' || d.verdict.call === 'sell') ? { call: d.verdict.call, why: String(d.verdict.why || ''), at: iso(d.verdict.at), runId: d.verdict.runId || null } : null,
+        verdict: d.verdict && ['hold', 'add', 'trim', 'sell'].includes(d.verdict.call) ? { call: d.verdict.call, why: String(d.verdict.why || ''), at: iso(d.verdict.at), runId: d.verdict.runId || null, votes: d.verdict?.votes && typeof d.verdict.votes === 'object' ? Object.fromEntries([1, 2, 3, 4, 5].map((n) => [n, ['hold', 'add', 'trim', 'sell'].includes(d.verdict.votes[n]) ? d.verdict.votes[n] : null])) : null } : null,
+        // Who was for and against a new trade, by researcher number (v7.13).
+        backers: Array.isArray(d.backers) ? d.backers.map(Number).filter((x) => x >= 1 && x <= 5) : [], doubters: Array.isArray(d.doubters) ? d.doubters.map(Number).filter((x) => x >= 1 && x <= 5) : [],
       });
       const BUSY_RUN = ['queued', 'researching', 'decide', 'deciding'];
       const runBlock = (run) => (run ? {
@@ -1857,7 +1859,7 @@ export function demoApi(role, store) {
           desk: st.desk ? {
             at: iso(st.desk.at), trigger: st.desk.trigger || 'manual', read: st.desk.read || '', none: st.desk.none || '',
             count: Number(st.desk.count) || 0, reports: Number(st.desk.reports) || 0,
-            verdicts: Array.isArray(st.desk.verdicts) ? st.desk.verdicts.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday', side: x?.side === 'short' ? 'short' : 'long', instrument: ['stock', 'call', 'put'].includes(x?.instrument) ? x.instrument : 'stock', call: x?.call === 'sell' ? 'sell' : 'hold', why: String(x?.why || '') })) : [],
+            verdicts: Array.isArray(st.desk.verdicts) ? st.desk.verdicts.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday', side: x?.side === 'short' ? 'short' : 'long', instrument: ['stock', 'call', 'put'].includes(x?.instrument) ? x.instrument : 'stock', call: ['hold', 'add', 'trim', 'sell'].includes(x?.call) ? x.call : 'hold', why: String(x?.why || ''), agree: Number.isInteger(x?.agree) ? x.agree : null })) : [],
           } : null,
           recs: rows.filter((r) => deskIds.includes(r.id) && live(r)),
           active: rows.filter((r) => r.status === 'took').sort((a, b) => String(b.tookAt).localeCompare(String(a.tookAt))),
@@ -2106,16 +2108,17 @@ export function demoApi(role, store) {
           }
           const expiry = (days) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' }).format(new Date(now + days * 86_400_000));
           const FRESH = [
-            { horizon: 'intraday', ticker: 'QQQ', side: 'long', instrument: 'stock', entryLow: 497.6, entryHigh: 498.2, stop: 495.9, targets: [501.5, 504], holdMinutes: 180, allocPct: 30, profitLow: 55, profitHigh: 63, agreement: 4, lastPrice: 498.1, priceNow: 498.1,
+            { horizon: 'intraday', ticker: 'QQQ', side: 'long', instrument: 'stock', entryLow: 497.6, entryHigh: 498.2, stop: 495.9, targets: [501.5, 504], holdMinutes: 180, allocPct: 30, profitLow: 55, profitHigh: 63, agreement: 4, backers: [1, 2, 3, 5], doubters: [4], lastPrice: 498.1, priceNow: 498.1,
               setup: 'Broke the opening range and held it on the retest, with volume rising into the break.', catalyst: 'Semis leading after the guidance raise.', invalidation: 'A close back under 496 on volume.' },
-            { horizon: 'swing', ticker: 'MU', side: 'long', instrument: 'stock', entryLow: 118.2, entryHigh: 119, stop: 113.9, targets: [126, 131], holdDays: 3, allocPct: 22, profitLow: 51, profitHigh: 60, agreement: 3, lastPrice: 118.7, priceNow: 118.7,
+            { horizon: 'swing', ticker: 'MU', side: 'long', instrument: 'stock', entryLow: 118.2, entryHigh: 119, stop: 113.9, targets: [126, 131], holdDays: 3, allocPct: 22, profitLow: 51, profitHigh: 60, agreement: 3, backers: [2, 3, 4], doubters: [], lastPrice: 118.7, priceNow: 118.7,
               setup: 'Beat on memory pricing before the open and is basing above the gap.', catalyst: 'Earnings beat and a raised outlook this morning.', invalidation: 'Filling the gap below 114.' },
-            { horizon: 'scalp', ticker: 'AMD', side: 'long', instrument: 'call', strike: 170, expiry: expiry(2), entryLow: 2.05, entryHigh: 2.2, stop: 1.6, targets: [2.9, 3.4], holdMinutes: 15, allocPct: 12, profitLow: 52, profitHigh: 59, agreement: 3, lastPrice: 168.4,
+            { horizon: 'scalp', ticker: 'AMD', side: 'long', instrument: 'call', strike: 170, expiry: expiry(2), entryLow: 2.05, entryHigh: 2.2, stop: 1.6, targets: [2.9, 3.4], holdMinutes: 15, allocPct: 12, profitLow: 52, profitHigh: 59, agreement: 3, backers: [1, 2, 5], doubters: [4], lastPrice: 168.4,
               setup: 'Pressing the day high at 169 with the supply news behind it.', catalyst: 'Supply agreement reported before the open.', invalidation: 'Losing 167.8, the morning low of the push.' },
           ];
           // THE RE-CHECK, as the Worker's run does it (2026-09-24). The demo has no researchers, so their
           // count is stood in for: a held position the run brings again takes that trade's count, and the
-          // demo's own table does the rest. HOLD or SELL (v7.12) follows the count, SOFI at none of the five
+          // demo's own table does the rest. The votes (v7.13) stand in for the five: that many say hold,
+          // the next says trim and the rest say sell, and SOFI at none of the five has all five saying sell,
           // so a SELL can be seen; nothing leaves his list until he marks it.
           const DEMO_BACKING = { PLTR: 3, SOFI: 0 };
           const verdicts = [];
@@ -2125,12 +2128,14 @@ export function demoApi(role, store) {
             const again = FRESH.find((t) => positionKey(t) === positionKey(d));
             const backs = again ? again.agreement : DEMO_BACKING[d.ticker];
             if (backs == null) continue;
+            const votes = Object.fromEntries([1, 2, 3, 4, 5].map((n) => [n, backs === 0 ? 'sell' : n <= backs ? 'hold' : n === backs + 1 ? 'trim' : 'sell']));
             const call = backs >= 3 ? 'hold' : 'sell';
+            const agree = Object.values(votes).filter((x) => x === call).length;
             const why = backs === 0 ? 'None of the five back it any more.' : call === 'hold' ? 'Still holding its level with volume behind it.' : 'Lost the level it was built on.';
-            store.docs.set(`trade/plays/items/${hid}`, { ...d, agreement: backs, agreedAt: new Date(now), agreedRunId: runId, tookAgreement: d.tookAgreement ?? d.agreement ?? null, verdict: { call, why, at: new Date(now), runId } });
-            verdicts.push({ ticker: d.ticker, horizon: d.horizon, side: d.side, instrument: d.instrument, call, why });
+            store.docs.set(`trade/plays/items/${hid}`, { ...d, agreement: agree, agreedAt: new Date(now), agreedRunId: runId, tookAgreement: d.tookAgreement ?? d.agreement ?? null, verdict: { call, why, at: new Date(now), runId, votes } });
+            verdicts.push({ ticker: d.ticker, horizon: d.horizon, side: d.side, instrument: d.instrument, call, why, agree });
           }
-          verdicts.sort((a, b) => (b.call === 'sell') - (a.call === 'sell'));
+          verdicts.sort((a, b) => ({ sell: 0, trim: 1, add: 2, hold: 3 })[a.call] - ({ sell: 0, trim: 1, add: 2, hold: 3 })[b.call]);
           // Screened as the Worker's desk firing screens them: against what he holds and what he passed on.
           const held = (tstate().activeIds || []).map((x) => readRec(x)).filter((d) => d && d.status === 'took').map(positionKey);
           const { keep } = screenTrades(FRESH, { held, declined: tstate().declined || {} });

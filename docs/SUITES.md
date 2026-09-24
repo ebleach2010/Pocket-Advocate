@@ -541,6 +541,17 @@ call is first on the card, a SELL card is red and leads Active, and the push
 and the landing lead with sells. desk.mjs D30 (re-pinned), D32 and D24;
 trade.mjs T81 and T80 (re-pinned); drive-trade.mjs P.
 
+**Named votes (2026-09-24, v7.13).** Eric named the agents himself (Addy
+Boofer, Clark Kent, God, Swinger, 0 DTE n00b; the desk is Judge, jury,
+executioner), kept once in trade-math.js `AGENTS`. Each researcher now votes
+hold, add, trim or sell on a trade he took, kept by number on the call; the
+desk calls one of the four (`callFor`), and how many agree is how many voted
+it. The card lists the call first with who voted it, then each other
+decision by count, then no word, every agent once (`voteLines`). A new trade
+carries the desk's backers and doubters (`stanceOf`), the count being the
+backers, and shows For, Against and No view (`stanceLines`). desk.mjs D30 to
+D33; trade.mjs T81 and T82; drive-trade.mjs P (names, votes, For and Against).
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

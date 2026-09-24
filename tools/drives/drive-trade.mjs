@@ -379,6 +379,9 @@ const heads = await page.evaluate(() => [...document.querySelectorAll('.rec')].m
   return { tk: c.querySelector('.tk').textContent.trim(), order: vs.map((x) => (x.classList.contains('agree') ? 'agree' : 'chance')).join(), agree: a?.textContent.trim() || '', same: !!fa && !!fc && fa.fontFamily === fc.fontFamily && fa.fontSize === fc.fontSize && fa.color === fc.color, desk: [...c.querySelectorAll('.why dt')].some((d) => d.textContent.trim() === 'Desk') };
 }));
 ok('every card shows how many agree just under the chance, in the chance\'s own type, and no Desk row', heads.length >= 5 && heads.every((h) => h.order === 'chance,agree' && /^\d of 5 agree$/.test(h.agree) && h.same && !h.desk), JSON.stringify(heads));
+// v7.13 (Eric: "They are listed for and against"): a new trade names who is for it, against it, and had no view.
+const tsla = await page.evaluate(() => { const c = [...document.querySelectorAll('#board .rec')].find((x) => x.querySelector('.tk')?.textContent.trim() === 'TSLA'); return c ? Object.fromEntries([...c.querySelectorAll('.why dt')].map((d) => [d.textContent.trim(), d.nextElementSibling.textContent.trim()])) : null; });
+ok('a new trade lists For, Against and No view by name, all five once', !!tsla && tsla.For === '2 · Addy Boofer, 0 DTE n00b' && tsla.Against === '2 · God, Swinger' && tsla['No view'] === '1 · Clark Kent', JSON.stringify(tsla));
 ok('PLTR, the trade he holds, reads 4 of 5 before the run', heads.find((h) => h.tk === 'PLTR')?.agree === '4 of 5 agree', JSON.stringify(heads.find((h) => h.tk === 'PLTR')));
 await page.evaluate(() => [...document.querySelectorAll('#board .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'SOFI')?.querySelector('[data-act="take"]')?.click());
 await until(() => [...document.querySelectorAll('#active .rec')].some((c) => c.querySelector('.tk').textContent.trim() === 'SOFI'), 4000);
@@ -386,15 +389,23 @@ await page.click('#run');
 const rechecked = await until(() => !document.getElementById('run').disabled && [...document.querySelectorAll('#toasts .toast')].map((t) => t.textContent).find((t) => /The desk is in/.test(t)), 20000);
 // RE-PINNED 2026-09-24 (v7.12, Eric: "tell me if I should hold or if things have changed and I need to sell,
 // front and center"; a SELL stays up in red until he marks it): nothing is dropped; each taken trade gets HOLD or SELL.
-ok('the run lands and says to sell SOFI and hold PLTR', /Sell SOFI now\. Hold PLTR\.$/.test(rechecked || ''), rechecked || '');
+// RE-PINNED 2026-09-24 (v7.13): with how many agree.
+ok('the run lands and says to sell SOFI and hold PLTR, with how many agree', /Sell SOFI now \(5 of 5\)\. Hold PLTR \(3 of 5\)\.$/.test(rechecked || ''), rechecked || '');
 const activeNow = await page.evaluate(() => [...document.querySelectorAll('#active .rec')].map((c) => ({
   tk: c.querySelector('.tk').textContent.trim(), agree: c.querySelector('.odds .agree')?.textContent.trim(), sell: c.classList.contains('sell'),
   call: c.querySelector('.verdict .call')?.textContent.trim() || '', why: c.querySelector('.verdict .why')?.textContent.trim() || '',
   first: c.firstElementChild?.classList.contains('verdict'),
+  votes: [...c.querySelectorAll('.verdict .votes li')].map((li) => [...li.children].map((x) => x.textContent.trim()).join(' ')),
+  when: c.querySelector('.verdict .when')?.textContent.trim() || '',
   red: getComputedStyle(c.querySelector('.verdict')).borderTopColor,
 })));
 ok('SOFI stays on the Active list, first, red, with SELL NOW and why, at the very top of its card', activeNow[0]?.tk === 'SOFI' && activeNow[0].sell && activeNow[0].call === 'SELL NOW' && /None of the five back it any more\./.test(activeNow[0].why) && activeNow[0].first, JSON.stringify(activeNow));
 ok('PLTR reads HOLD with its reason and the 3 of 5 the run gave it', activeNow.some((x) => x.tk === 'PLTR' && x.call === 'HOLD' && x.why && x.agree === '3 of 5 agree' && !x.sell && x.first), JSON.stringify(activeNow));
+// v7.13 (Eric: "what agents and how many agree with that decision, what the second most popular decision is,
+// third, etc until the agents are fully listed").
+ok('PLTR lists who voted HOLD first, then TRIM, then SELL, every agent once, and names the desk on the call', JSON.stringify(activeNow.find((x) => x.tk === 'PLTR')?.votes) === JSON.stringify(['HOLD 3 Addy Boofer, Clark Kent, God', 'TRIM 1 Swinger', 'SELL 1 0 DTE n00b']) && /^Call by Judge, jury, executioner, from the /.test(activeNow.find((x) => x.tk === 'PLTR')?.when || ''), JSON.stringify(activeNow.find((x) => x.tk === 'PLTR')));
+ok('SOFI\'s SELL lists all five under SELL and reads 5 of 5', JSON.stringify(activeNow[0]?.votes) === JSON.stringify(['SELL 5 Addy Boofer, Clark Kent, God, Swinger, 0 DTE n00b']) && activeNow[0].agree === '5 of 5 agree', JSON.stringify(activeNow[0]));
+
 await page.evaluate(() => document.getElementById('active-wrap')?.scrollIntoView({ block: 'start' }));
 await page.waitForTimeout(300);
 const seen = await page.evaluate(() => { const v = document.querySelector('#active .rec .verdict'); const top = document.querySelector('.top'); return v && top ? { verdict: Math.round(v.getBoundingClientRect().top), bar: Math.round(top.getBoundingClientRect().bottom) } : null; });

@@ -1288,8 +1288,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   check('T35 the portal page and its module are gone and no admin page links them; the seven pages ask for the stylesheet at its new version; the audit proves the desk\'s page and three modules 404 to a stranger; the sideways drive walks the desk; the asset gate covers the desk\'s files and not the shared arithmetic; the demo mirrors the board, a run that walks its stages, YES, PROFIT and LOSS, History, News, the research behind its switch, the balance and the settings, refuses with the Worker\'s exact sentences, seeds the new board with his 3% rule, keeps its desk off the client half, and carries no log, reading, positions, stats or scan',
     !has('public/admin-trade.html') && !has('public/js/admin-trade.js')
     // RE-PINNED 2026-09-23 (v7.3): stat118, for the size cells he can tap; stat119 (2026-09-24, v7.5) for the run's bar;
-    // stat120 (2026-09-24, v7.6) for NO, the Add chip and the back-again note; stat121 (2026-09-24, v7.8) for ADD/TRIM; stat122 (2026-09-24, v7.12) for HOLD and SELL.
-    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat122/.test(f(`public/${p}.html`)))
+    // stat120 (2026-09-24, v7.6) for NO, the Add chip and the back-again note; stat121 (2026-09-24, v7.8) for ADD/TRIM; stat122 (2026-09-24, v7.12) for HOLD and SELL; stat123 (2026-09-24, v7.13) for the votes.
+    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat123/.test(f(`public/${p}.html`)))
     && ['/js/admin-desk.js', '/js/admin-deskapp.js', '/js/admin-deskfx.js'].every((x) => AUDIT.includes(`'${x}'`))
     && /'\/admin-desk',/.test(AUDIT) && !/admin-trade/.test(AUDIT)
     && /'\/admin-desk\.html\?id=demo-case-trade&demo=admin'/.test(NOSIDE) && !/admin-trade/.test(NOSIDE)
@@ -1397,6 +1397,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry711 = (CL.match(/\{\n\s+\/\/ NEVER STUCK ON LOADING \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-24 (v7.12): HOLD or SELL, its own quiet entry.
   const entry712 = (CL.match(/\{\n\s+\/\/ HOLD OR SELL \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-24 (v7.13): the named votes, their own quiet entry.
+  const entry713 = (CL.match(/\{\n\s+\/\/ NAMED VOTES \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1465,8 +1467,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-24 (v7.12): both versions read 7.12 with the hold-sell tag; the 7.11 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-24, v7.12): 'nothing disappears on its own any more' reworded to 'nothing goes away by itself now' in the 7.12 entry made this read
   //   FAIL  T36 both versions read 7.12 ...
-  check('T36 both versions read 7.12 with the new tag, the 4.7 through 7.12 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.12';/.test(CL) && /const VERSION = '7\.12';/.test(W) && /const BUILD_TAG = 'v2026-09-24-hold-sell';/.test(W)
+  // RE-PINNED 2026-09-24 (v7.13): both versions read 7.13 with the named-votes tag; the 7.12 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.13): 'until all five are listed' reworded to 'until all five show' in the 7.13 entry made this read
+  //   FAIL  T36 both versions read 7.13 ...
+  check('T36 both versions read 7.13 with the new tag, the 4.7 through 7.13 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.13';/.test(CL) && /const VERSION = '7\.13';/.test(W) && /const BUILD_TAG = 'v2026-09-24-named-votes';/.test(W)
+    && /version: '7\.13',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry713)
+    && /until all five are listed/.test(entry713) && /Addy Boofer, Clark Kent, God, Swinger and 0 DTE n00b/.test(entry713) && !DASH.test(entry713) && !HARD.some((re) => re.test(entry713))
     && /version: '7\.12',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry712)
     && /nothing disappears on its own any more/.test(entry712) && /HOLD or SELL/.test(entry712) && !DASH.test(entry712) && !HARD.some((re) => re.test(entry712))
     && /version: '7\.11',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry711)
@@ -1540,7 +1547,7 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && (entry60.match(/^\s+'[^\n]+',$/gm) || []).length >= 5
     // The page itself: always dark, its own stylesheet token, the three modules it mounts.
     && /<html lang="en" data-scheme="calm" data-desk>/.test(PAGE)
-    && /admin\.css\?v=stat122/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
+    && /admin\.css\?v=stat123/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
     && /js\/admin-deskapp\.js/.test(PAGE) && /js\/admin-presence\.js/.test(PAGE) && /js\/version-note\.js/.test(PAGE)
     && (PAGE.match(/<section class="page"/g) || []).length === 3
     && (PAGE.match(/<button data-page="/g) || []).length === 3 && /data-page="trades"[\s\S]*data-page="news"[\s\S]*data-page="history"/.test(PAGE)
@@ -2617,20 +2624,61 @@ const BA_HELD = { ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'sto
   //   FAIL  T81 HOLD or SELL, front and center ...
   // NEGATIVE CONTROL (run 2026-09-24): the Active list's sell-first sort removed (`const active = st.active || [];`) made this read
   //   FAIL  T81 HOLD or SELL, front and center ...
+  // NEGATIVE CONTROL (run 2026-09-24, v7.13): the sell, trim, add sort removed (`const active = st.active || [];`) made this read
+  //   FAIL  T81 HOLD or SELL, front and center ...
   check('T81 HOLD or SELL, front and center: a taken trade opens with the last run\'s call, SELL NOW in red with its reason and the run\'s time, or HOLD in green, dated when it is not today\'s; a short stock says COVER NOW; a taken trade not yet re-checked says so and how to check it; a new suggestion carries no call; a SELL card is red all over; the row carries the call; the Active list puts sells first; and the landing says sell or cover and hold, and brings the list into view when there is a sell',
-    /^<article class="outlined rec active sell"[^>]*>\s*<div class="verdict sell" role="status"><span class="call">SELL NOW<\/span><span class="why">Lost 200 on volume\.<\/span><span class="when">From the 10:02 AM run<\/span><\/div>\s*<div class="head">/.test(sell)
-    && /<div class="verdict hold" role="status"><span class="call">HOLD<\/span><span class="why">Still basing above 200\.<\/span><span class="when">From the Sep 23 10:02 AM run<\/span><\/div>/.test(hold) && !/rec active sell/.test(hold)
+    // RE-PINNED 2026-09-24 (v7.13): the time line names the desk, Judge, jury, executioner, as the one who made the call.
+    /^<article class="outlined rec active sell"[^>]*>\s*<div class="verdict sell" role="status"><span class="call">SELL NOW<\/span><span class="why">Lost 200 on volume\.<\/span><span class="when">Call by Judge, jury, executioner, from the 10:02 AM run<\/span><\/div>\s*<div class="head">/.test(sell)
+    && /<div class="verdict hold" role="status"><span class="call">HOLD<\/span><span class="why">Still basing above 200\.<\/span><span class="when">Call by Judge, jury, executioner, from the Sep 23 10:02 AM run<\/span><\/div>/.test(hold) && !/rec active sell/.test(hold)
     && /<span class="call">COVER NOW<\/span>/.test(cover)
     && /<div class="verdict none"><span class="why">Not re-checked yet\. RUN TRADING DESK checks it\.<\/span><\/div>/.test(fresh)
     && !/class="verdict/.test(open)
     && row.verdict?.call === 'sell' && row.verdict.why === 'Lost 200.' && row.verdict.at === '2026-09-24T16:02:00.000Z' && K.recRow('x', { ...REC }).verdict === null
-    && /const active = \[\.\.\.\(st\.active \|\| \[\]\)\]\.sort\(\(a, b\) => \(b\.verdict\?\.call === 'sell'\) - \(a\.verdict\?\.call === 'sell'\)\);/.test(APP)
-    && /`\$\{x\.instrument === 'stock' && x\.side === 'short' \? 'Cover' : 'Sell'\} \$\{x\.ticker\} now\.`/.test(APP) && /Hold \$\{holds\.join\(', '\)\}\./.test(APP)
+    // RE-PINNED 2026-09-24 (v7.13): the list sorts sell, trim, add, then holds and unchecked trades together in the
+    // order he took them (so the one just taken lands on top); the landing says each with how many agree (T82).
+    && /const active = \[\.\.\.\(st\.active \|\| \[\]\)\]\.sort\(\(a, b\) => \(URGENT\[a\.verdict\?\.call\] \?\? 3\) - \(URGENT\[b\.verdict\?\.call\] \?\? 3\)\);/.test(APP)
+    && /`\$\{x\.instrument === 'stock' && x\.side === 'short' \? 'Cover' : 'Sell'\} \$\{x\.ticker\} now\$\{of\(x\)\}\.`/.test(APP)
     && /if \(sells\.length\) \$\('#active-wrap'\)\?\.scrollIntoView/.test(APP) && /html\[data-desk\]:root #active-wrap, html\[data-desk\]:root \.rec \{ scroll-margin-top: calc\(var\(--demo-bar-h, 0px\) \+ var\(--top-h\)/.test(CSS)
     && /html\[data-desk\]:root \.rec \.verdict\.sell \{ border-color: var\(--red\);/.test(CSS) && /html\[data-desk\]:root \.rec\.active\.sell \{ border-color: var\(--red\);/.test(CSS)
     && /html\[data-desk\]:root \.rec \.verdict \.call \{ font-family: var\(--display\); font-weight: 800; font-size: 26px;/.test(CSS)
     && ![sell, hold, cover, fresh].some((h) => DASH.test(h)),
     sell.slice(0, 400));
+}
+
+// ---- T82: the agents by name, and who voted which way (2026-09-24, v7.13) -------------------------------
+// Eric: "The agents each need names, humorous, related to their role. They are listed for and against. When
+// I'm told to hold, add, trim, or sell, I need to know what agents and how many agree with that decision, what
+// the second most popular decision is, third, etc until the agents are fully listed." He named them himself.
+{
+  const mod = await import('../../public/js/admin-desk.js');
+  const ctx = { accountCents: 245000, rules: { riskPct: 3 }, now: at('2026-09-24T18:00:00Z') };
+  const REC = { id: 'h1', ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'stock', entryLow: 200.5, entryHigh: 203, stop: 197.4, targets: [206, 209], allocPct: 10, profitLow: 51, profitHigh: 56, agreement: 3, status: 'took' };
+  const txt = (h) => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const votes = { 1: 'hold', 2: 'hold', 3: 'trim', 4: 'hold', 5: 'sell' };
+  const lines = mod.voteLines(votes, 'hold').map((l) => `${l.call}:${l.n}:${l.names.join('|')}`).join(' / ');
+  // The desk overruled the vote: its call leads even with no one behind it, then the rest by count.
+  const over = mod.voteLines({ 1: 'hold', 2: 'hold', 3: 'sell', 4: null, 5: 'hold' }, 'trim').map((l) => `${l.call}:${l.n}`).join(' ');
+  const card = mod.recCardHtml({ ...REC, verdict: { call: 'hold', why: 'Still basing above 200.', at: '2026-09-24T16:02:00Z', votes } }, ctx);
+  const open = mod.recCardHtml({ ...REC, status: 'open', backers: [1, 2, 4], doubters: [5] }, ctx);
+  const openAll = mod.recCardHtml({ ...REC, status: 'open', backers: [1, 2, 3, 4, 5], doubters: [] }, ctx);
+  const nameless = mod.recCardHtml({ ...REC, status: 'open' }, ctx);
+  const row = K.recRow('h1', { ...REC, backers: [1, 3, 9], doubters: [5], verdict: { call: 'trim', why: 'x', at: new Date('2026-09-24T16:02:00Z'), votes: { 1: 'trim', 2: 'bogus', 3: 'hold' } } });
+  const APP = f('public/js/admin-deskapp.js');
+  // NEGATIVE CONTROL (run 2026-09-24): voteLines' call-first line dropped (the lines ordered by count alone) made this read
+  //   FAIL  T82 the agents by name ...
+  check('T82 the agents by name, and who voted which way: the five and the desk carry his names word for word; a taken trade lists the call first with who voted it, then each other decision by how many, then no word, every agent once, and the desk named on the call; an overruled call leads even at none; a new trade shows For, Against and No view by name, every agent once, and leaves out an empty Against or No view; a trade with no names shows no rows; the row carries the votes and the lists, dropping what is not a vote or an agent; the research view is titled by name; and the landing says how many agree with each call',
+    Object.values(math.AGENTS).map((a) => a.name).join('|') === 'Addy Boofer|Clark Kent|God|Swinger|0 DTE n00b' && math.DESK_AGENT.name === 'Judge, jury, executioner'
+    && lines === 'hold:3:Addy Boofer|Clark Kent|Swinger / trim:1:God / sell:1:0 DTE n00b'
+    && over === 'trim:0 hold:3 sell:1 none:1'
+    && /<ul class="votes"><li class="hold"><span class="c">HOLD<\/span><span class="n">3<\/span><span class="who">Addy Boofer, Clark Kent, Swinger<\/span><\/li><li class="trim"><span class="c">TRIM<\/span><span class="n">1<\/span><span class="who">God<\/span><\/li><li class="sell"><span class="c">SELL<\/span><span class="n">1<\/span><span class="who">0 DTE n00b<\/span><\/li><\/ul><span class="when">Call by Judge, jury, executioner, from the 10:02 AM run<\/span>/.test(card)
+    && /For 3 · Addy Boofer, Clark Kent, Swinger Against 1 · 0 DTE n00b No view 1 · God/.test(txt(open))
+    && /For 5 · Addy Boofer, Clark Kent, God, Swinger, 0 DTE n00b/.test(txt(openAll)) && !/Against|No view/.test(txt(openAll))
+    && !/<dt>For<\/dt>/.test(nameless) && !/<dt>For<\/dt>/.test(card)
+    && row.backers.join() === '1,3' && row.doubters.join() === '5' && JSON.stringify(row.verdict.votes) === '{"1":"trim","2":null,"3":"hold","4":null,"5":null}'
+    && /AGENTS\[r\.n\]\?\.name \? `\$\{AGENTS\[r\.n\]\.name\}, \$\{r\.beat\}` : r\.beat/.test(APP)
+    && /const rest = \['trim', 'add', 'hold'\]\.map/.test(APP)
+    && ![card, open].some((h) => DASH.test(h)),
+    JSON.stringify({ lines, over, open: txt(open).slice(-160) }));
 }
 
 // ---- T67: the board in one read (2026-09-23, v7.2) ----------------------------------------------
